@@ -1,0 +1,29 @@
+{
+  "name": "@coachartie/sms",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "SMS interface for Coach Artie via Twilio",
+  "main": "./dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx watch src/index.ts",
+    "start": "node dist/index.js",
+    "test": "vitest",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@coachartie/shared": "workspace:*",
+    "@supabase/supabase-js": "^2.39.0",
+    "bullmq": "^5.1.0",
+    "express": "^4.18.2",
+    "helmet": "^7.1.0",
+    "twilio": "^4.19.0"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/node": "^20.11.0",
+    "tsx": "^4.7.0",
+    "typescript": "^5.3.0",
+    "vitest": "^1.2.0"
+  }
+}

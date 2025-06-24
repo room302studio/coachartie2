@@ -13,7 +13,8 @@
     "typecheck": "turbo run typecheck",
     "clean": "turbo run clean && rm -rf node_modules",
     "prepare": "husky install",
-    "test:queue": "tsx scripts/test-queue-flow.ts"
+    "test:queue": "tsx scripts/test-queue-flow.ts",
+    "test:all": "tsx scripts/test-all-services.ts"
   },
   "devDependencies": {
     "@types/node": "^20.11.0",
