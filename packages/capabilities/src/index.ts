@@ -4,6 +4,9 @@ import { logger } from '@coachartie/shared';
 import { startMessageConsumer } from './queues/consumer.js';
 import { healthRouter } from './routes/health.js';
 import { chatRouter } from './routes/chat.js';
+import { capabilitiesRouter } from './routes/capabilities.js';
+import { schedulerRouter } from './routes/scheduler.js';
+import { schedulerService } from './services/scheduler.js';
 
 const app = express();
 const PORT = process.env.PORT || 9991;
@@ -15,8 +18,10 @@ app.use(express.json());
 // Routes
 app.use('/health', healthRouter);
 app.use('/chat', chatRouter);
+app.use('/capabilities', capabilitiesRouter);
+app.use('/scheduler', schedulerRouter);
 
-// Start queue consumers
+// Start queue consumers and scheduler
 async function startQueueWorkers() {
   try {
     logger.info('Starting queue consumers...');
@@ -28,16 +33,37 @@ async function startQueueWorkers() {
   }
 }
 
+async function startScheduler() {
+  try {
+    logger.info('Setting up scheduled tasks...');
+    
+    // Setup default tasks if enabled
+    if (process.env.ENABLE_SCHEDULING !== 'false') {
+      await schedulerService.setupDefaultTasks();
+      logger.info('Scheduler initialized with default tasks');
+    } else {
+      logger.info('Scheduling disabled by configuration');
+    }
+  } catch (error) {
+    logger.error('Failed to setup scheduler:', error);
+    // Don't exit - scheduler is optional
+  }
+}
+
 // Start server
 async function start() {
   try {
     // Start queue workers first
     await startQueueWorkers();
+    
+    // Start scheduler
+    await startScheduler();
 
     // Start HTTP server (for health checks)
     app.listen(PORT, () => {
       logger.info(`Capabilities service listening on port ${PORT}`);
       logger.info('Service is ready to process messages from queue');
+      logger.info('Scheduler service is ready for task management');
     });
   } catch (error) {
     logger.error('Failed to start capabilities service:', error);
