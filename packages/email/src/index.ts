@@ -6,7 +6,7 @@ import { healthRouter } from './routes/health.js';
 import { emailRouter } from './routes/email.js';
 
 const app = express();
-const PORT = process.env.PORT || 9994;
+const PORT = process.env.EMAIL_SERVICE_PORT || process.env.PORT || 23703;
 
 // Middleware
 app.use(helmet());

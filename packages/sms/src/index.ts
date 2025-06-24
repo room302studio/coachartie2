@@ -6,7 +6,7 @@ import { healthRouter } from './routes/health.js';
 import { smsRouter } from './routes/sms.js';
 
 const app = express();
-const PORT = process.env.PORT || 9993;
+const PORT = process.env.SMS_PORT || process.env.PORT || 23702;
 
 // Middleware
 app.use(helmet());

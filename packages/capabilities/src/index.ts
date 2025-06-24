@@ -1,4 +1,13 @@
-import 'dotenv/config';
+import { config } from 'dotenv';
+import { resolve, dirname } from 'path';
+import { fileURLToPath } from 'url';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+
+// Load .env from monorepo root (go up from packages/capabilities/src to monorepo root)
+config({ path: resolve(__dirname, '../../../.env') });
+// Also try package-specific .env
+config({ path: resolve(__dirname, '../.env') });
 import express from 'express';
 import helmet from 'helmet';
 import { logger } from '@coachartie/shared';
@@ -8,9 +17,10 @@ import { chatRouter } from './routes/chat.js';
 import { capabilitiesRouter } from './routes/capabilities.js';
 import { schedulerRouter } from './routes/scheduler.js';
 import { schedulerService } from './services/scheduler.js';
+import { capabilityRegistry } from './services/capability-registry.js';
 
 const app = express();
-const PORT = process.env.PORT || 9991;
+const PORT = process.env.CAPABILITIES_PORT || process.env.PORT || 23701;
 
 // Middleware
 app.use(helmet());

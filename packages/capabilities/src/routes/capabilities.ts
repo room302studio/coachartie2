@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { logger } from '@coachartie/shared';
 import { capabilityOrchestrator } from '../services/capability-orchestrator.js';
+import { capabilityRegistry } from '../services/capability-registry.js';
 
 const router: Router = Router();
 
@@ -101,8 +102,115 @@ router.post('/test', (req: Request, res: Response) => {
   }
 });
 
+// GET /capabilities/registry - List all registered capabilities
+router.get('/registry', (req: Request, res: Response) => {
+  try {
+    const capabilities = capabilityRegistry.list();
+    const stats = capabilityRegistry.getStats();
+    
+    res.json({
+      success: true,
+      stats,
+      capabilities: capabilities.map(cap => ({
+        name: cap.name,
+        supportedActions: cap.supportedActions,
+        description: cap.description,
+        hasRequiredParams: !!(cap.requiredParams && cap.requiredParams.length > 0),
+        requiredParams: cap.requiredParams || []
+      }))
+    });
+
+  } catch (error) {
+    logger.error('Error listing registered capabilities:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Internal server error'
+    });
+  }
+});
+
+// GET /capabilities/registry/:name - Get specific capability info
+router.get('/registry/:name', (req: Request, res: Response) => {
+  try {
+    const { name } = req.params;
+    
+    if (!capabilityRegistry.has(name)) {
+      return res.status(404).json({
+        success: false,
+        error: `Capability '${name}' not found`
+      });
+    }
+    
+    const capabilities = capabilityRegistry.list();
+    const capability = capabilities.find(cap => cap.name === name);
+    
+    res.json({
+      success: true,
+      capability: {
+        name: capability!.name,
+        supportedActions: capability!.supportedActions,
+        description: capability!.description,
+        requiredParams: capability!.requiredParams || []
+      }
+    });
+
+  } catch (error) {
+    logger.error('Error getting capability info:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Internal server error'
+    });
+  }
+});
+
+// POST /capabilities/registry/:name/execute - Execute a capability directly
+router.post('/registry/:name/execute', async (req: Request, res: Response) => {
+  try {
+    const { name } = req.params;
+    const { action, params = {}, content } = req.body;
+    
+    if (!action) {
+      return res.status(400).json({
+        success: false,
+        error: 'Action is required'
+      });
+    }
+
+    if (!capabilityRegistry.has(name)) {
+      return res.status(404).json({
+        success: false,
+        error: `Capability '${name}' not found`
+      });
+    }
+
+    if (!capabilityRegistry.supportsAction(name, action)) {
+      const capability = capabilityRegistry.list().find(cap => cap.name === name);
+      return res.status(400).json({
+        success: false,
+        error: `Capability '${name}' does not support action '${action}'. Supported actions: ${capability!.supportedActions.join(', ')}`
+      });
+    }
+
+    const result = await capabilityRegistry.execute(name, action, params, content);
+    
+    res.json({
+      success: true,
+      result
+    });
+
+  } catch (error) {
+    logger.error(`Error executing capability ${req.params.name}:`, error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Internal server error'
+    });
+  }
+});
+
 // GET /capabilities/health - Health check for capabilities
 router.get('/health', (req: Request, res: Response) => {
+  const stats = capabilityRegistry.getStats();
+  
   res.json({
     status: 'healthy',
     service: 'capabilities',
@@ -110,7 +218,12 @@ router.get('/health', (req: Request, res: Response) => {
     features: {
       orchestration: true,
       extraction: true,
-      chaining: true
+      chaining: true,
+      registry: true
+    },
+    registry: {
+      totalCapabilities: stats.totalCapabilities,
+      totalActions: stats.totalActions
     }
   });
 });

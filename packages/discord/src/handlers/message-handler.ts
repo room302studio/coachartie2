@@ -4,6 +4,9 @@ import { publishMessage } from '../queues/publisher.js';
 
 export function setupMessageHandler(client: Client) {
   client.on(Events.MessageCreate, async (message: Message) => {
+    // Debug: Log all incoming messages
+    logger.info(`DEBUG: Received message - Author: ${message.author.tag}, Channel Type: ${message.channel.type}, Content: ${message.content}`);
+    
     // Ignore bot messages
     if (message.author.bot) return;
 

@@ -8,7 +8,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 config({ path: resolve(__dirname, '../../../.env') });
 // Also try package-specific .env
 config({ path: resolve(__dirname, '../.env') });
-import { Client, GatewayIntentBits, Events } from 'discord.js';
+import { Client, GatewayIntentBits, Events, Partials } from 'discord.js';
 import { logger } from '@coachartie/shared';
 import { setupMessageHandler } from './handlers/message-handler.js';
 import { startResponseConsumer } from './queues/consumer.js';
@@ -20,6 +20,7 @@ const client = new Client({
     GatewayIntentBits.MessageContent,
     GatewayIntentBits.DirectMessages,
   ],
+  partials: [Partials.Message, Partials.Channel, Partials.User],
 });
 
 async function start() {
@@ -27,6 +28,8 @@ async function start() {
     // Setup event handlers
     client.on(Events.ClientReady, () => {
       logger.info(`Discord bot logged in as ${client.user?.tag}`);
+      logger.info(`Bot can see ${client.guilds.cache.size} guilds`);
+      logger.info(`Bot permissions: ${client.user?.flags?.bitfield || 'none'}`);
     });
 
     // Setup message handler
