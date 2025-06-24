@@ -1,0 +1,27 @@
+{
+  "name": "@coachartie/discord",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Discord bot interface for Coach Artie",
+  "main": "./dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx watch src/index.ts",
+    "start": "node dist/index.js",
+    "test": "vitest",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@coachartie/shared": "workspace:*",
+    "@supabase/supabase-js": "^2.49.4",
+    "bullmq": "^5.1.0",
+    "discord.js": "^14.18.0",
+    "dotenv": "^16.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "tsx": "^4.7.0",
+    "typescript": "^5.3.0",
+    "vitest": "^1.2.0"
+  }
+}
