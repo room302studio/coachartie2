@@ -1,3 +1,13 @@
+import { config } from 'dotenv';
+import { resolve, dirname } from 'path';
+import { fileURLToPath } from 'url';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+
+// Load .env from monorepo root (go up from packages/discord/src to monorepo root)
+config({ path: resolve(__dirname, '../../../.env') });
+// Also try package-specific .env
+config({ path: resolve(__dirname, '../.env') });
 import { Client, GatewayIntentBits, Events } from 'discord.js';
 import { logger } from '@coachartie/shared';
 import { setupMessageHandler } from './handlers/message-handler.js';
