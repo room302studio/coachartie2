@@ -3,6 +3,7 @@ import helmet from 'helmet';
 import { logger } from '@coachartie/shared';
 import { startMessageConsumer } from './queues/consumer.js';
 import { healthRouter } from './routes/health.js';
+import { chatRouter } from './routes/chat.js';
 
 const app = express();
 const PORT = process.env.PORT || 9991;
@@ -13,6 +14,7 @@ app.use(express.json());
 
 // Routes
 app.use('/health', healthRouter);
+app.use('/chat', chatRouter);
 
 // Start queue consumers
 async function startQueueWorkers() {

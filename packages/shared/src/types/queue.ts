@@ -10,11 +10,12 @@ export interface IncomingMessage extends BaseQueueMessage {
   message: string;
   context?: Record<string, any>;
   respondTo: {
-    type: 'discord' | 'sms' | 'email';
+    type: 'discord' | 'sms' | 'email' | 'api';
     channelId?: string;
     phoneNumber?: string;
     emailAddress?: string;
     threadId?: string;
+    apiResponseId?: string;
   };
 }
 

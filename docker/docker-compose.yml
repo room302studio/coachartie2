@@ -20,6 +20,8 @@ services:
     build:
       context: ..
       dockerfile: docker/Dockerfile.capabilities
+    ports:
+      - "${CAPABILITIES_PORT:-9991}:${CAPABILITIES_PORT:-9991}"
     environment:
       - REDIS_HOST=redis
       - DATABASE_URL=${DATABASE_URL}
@@ -27,6 +29,7 @@ services:
       - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - SERVICE_NAME=capabilities
+      - PORT=${CAPABILITIES_PORT:-9991}
     depends_on:
       redis:
         condition: service_healthy
@@ -56,7 +59,7 @@ services:
       context: ..
       dockerfile: docker/Dockerfile.sms
     ports:
-      - "9993:9993"
+      - "${SMS_PORT:-9993}:${SMS_PORT:-9993}"
     environment:
       - REDIS_HOST=redis
       - DATABASE_URL=${DATABASE_URL}
@@ -64,6 +67,7 @@ services:
       - TWILIO_AUTH_TOKEN=${TWILIO_AUTH_TOKEN}
       - TWILIO_PHONE_NUMBER=${TWILIO_PHONE_NUMBER}
       - SERVICE_NAME=sms
+      - PORT=${SMS_PORT:-9993}
     depends_on:
       - redis
       - capabilities
@@ -76,7 +80,7 @@ services:
       context: ..
       dockerfile: docker/Dockerfile.email
     ports:
-      - "9994:9994"
+      - "${EMAIL_SERVICE_PORT:-9994}:${EMAIL_SERVICE_PORT:-9994}"
     environment:
       - REDIS_HOST=redis
       - DATABASE_URL=${DATABASE_URL}
@@ -86,6 +90,7 @@ services:
       - EMAIL_PASS=${EMAIL_PASS}
       - EMAIL_FROM=${EMAIL_FROM}
       - SERVICE_NAME=email
+      - PORT=${EMAIL_SERVICE_PORT:-9994}
     depends_on:
       - redis
       - capabilities
