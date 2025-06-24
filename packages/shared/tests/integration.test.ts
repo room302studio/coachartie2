@@ -95,11 +95,11 @@ describe('Redis Queue Integration Tests', () => {
   });
 
   it('should handle queue failures gracefully', async () => {
-    const testQueue = createQueue<{ shouldFail: boolean }>('test:failures');
+    const testQueue = createQueue<{ shouldFail: boolean }>('test-failures');
     let failureCount = 0;
 
     const worker = createWorker<{ shouldFail: boolean }, void>(
-      'test:failures',
+      'test-failures',
       async (job) => {
         if (job.data.shouldFail) {
           failureCount++;

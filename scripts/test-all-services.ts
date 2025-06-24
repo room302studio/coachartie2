@@ -16,7 +16,7 @@ import {
   IncomingMessage,
   OutgoingMessage,
   logger
-} from '@coachartie/shared';
+} from '../packages/shared/dist/index.js';
 
 async function testAllServices() {
   logger.info('🚀 Starting comprehensive service test...');

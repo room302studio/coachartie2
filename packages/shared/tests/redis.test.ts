@@ -13,7 +13,7 @@ describe('Redis Queue Tests', () => {
   });
 
   it('should create a queue and add a job', async () => {
-    const testQueue = createQueue<IncomingMessage>('test:queue');
+    const testQueue = createQueue<IncomingMessage>('test-queue');
     
     const testMessage: IncomingMessage = {
       id: 'test-123',
@@ -37,11 +37,11 @@ describe('Redis Queue Tests', () => {
   });
 
   it('should process jobs with a worker', async () => {
-    const testQueue = createQueue<{ message: string }>('test:worker');
+    const testQueue = createQueue<{ message: string }>('test-worker');
     let processedMessage = '';
 
     const worker = createWorker<{ message: string }, void>(
-      'test:worker',
+      'test-worker',
       async (job) => {
         processedMessage = job.data.message;
       }
