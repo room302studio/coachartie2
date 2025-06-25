@@ -43,6 +43,10 @@ class OpenRouterService {
     logger.info(`OpenRouter client initialized with models: ${this.models.join(', ')}`);
   }
 
+  getCurrentModel(): string {
+    return this.models[this.currentModelIndex];
+  }
+
   async generateResponse(
     userMessage: string, 
     userId: string, 

@@ -14,10 +14,12 @@ import { logger } from '@coachartie/shared';
 import { startMessageConsumer } from './queues/consumer.js';
 import { healthRouter } from './routes/health.js';
 import { chatRouter } from './routes/chat.js';
-import { capabilitiesRouter } from './routes/capabilities.js';
 import { schedulerRouter } from './routes/scheduler.js';
 import { schedulerService } from './services/scheduler.js';
+// Import orchestrator FIRST to trigger capability registration
+import { capabilityOrchestrator } from './services/capability-orchestrator.js';
 import { capabilityRegistry } from './services/capability-registry.js';
+import { capabilitiesRouter } from './routes/capabilities.js';
 
 const app = express();
 const PORT = process.env.CAPABILITIES_PORT || process.env.PORT || 23701;
@@ -64,6 +66,12 @@ async function startScheduler() {
 // Start server
 async function start() {
   try {
+    // Ensure orchestrator is initialized (this will register all capabilities)
+    logger.info('🚀 Initializing capability orchestrator...');
+    // Just accessing the orchestrator will trigger its constructor and capability registration
+    const stats = capabilityRegistry.getStats();
+    logger.info(`📊 Capability registry initialized with ${stats.totalCapabilities} capabilities and ${stats.totalActions} actions`);
+    
     // Start queue workers first
     await startQueueWorkers();
     
