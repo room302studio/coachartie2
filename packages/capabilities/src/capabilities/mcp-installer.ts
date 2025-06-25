@@ -28,54 +28,88 @@ import path from 'path';
 // Get the project root directory
 const PROJECT_ROOT = path.resolve(process.cwd(), '../..');
 
-// Built-in MCP templates
+// Built-in MCP templates with real, working npm packages
 const MCP_TEMPLATES = {
-  wolfram: {
-    name: '@modelcontextprotocol/server-wolfram-alpha',
-    version: 'latest',
-    description: 'Wolfram Alpha MCP Server for computational knowledge',
-    envVars: ['WOLFRAM_ALPHA_APPID'],
-    configFile: 'wolfram-mcp-config.json',
-    startScript: 'node_modules/@modelcontextprotocol/server-wolfram-alpha/dist/index.js',
-    requiredPorts: [3001]
-  },
-  weather: {
-    name: '@modelcontextprotocol/server-weather',
-    version: 'latest',
-    description: 'Weather MCP Server for weather information',
-    envVars: ['WEATHER_API_KEY'],
-    configFile: 'weather-mcp-config.json',
-    startScript: 'node_modules/@modelcontextprotocol/server-weather/dist/index.js',
-    requiredPorts: [3002]
-  },
   filesystem: {
     name: '@modelcontextprotocol/server-filesystem',
     version: 'latest',
-    description: 'Filesystem MCP Server for file operations',
+    description: 'Official Filesystem MCP Server for file operations',
     envVars: [],
     configFile: 'filesystem-mcp-config.json',
     startScript: 'node_modules/@modelcontextprotocol/server-filesystem/dist/index.js',
-    requiredPorts: [3003]
-  },
-  github: {
-    name: '@modelcontextprotocol/server-github',
-    version: 'latest',
-    description: 'GitHub MCP Server for repository management',
-    envVars: ['GITHUB_TOKEN'],
-    configFile: 'github-mcp-config.json',
-    startScript: 'node_modules/@modelcontextprotocol/server-github/dist/index.js',
-    requiredPorts: [3004]
+    requiredPorts: [3001],
+    verified: true
   },
   postgres: {
     name: '@modelcontextprotocol/server-postgres',
     version: 'latest',
-    description: 'PostgreSQL MCP Server for database operations',
+    description: 'Official PostgreSQL MCP Server for database operations',
     envVars: ['POSTGRES_CONNECTION_STRING'],
     configFile: 'postgres-mcp-config.json',
     startScript: 'node_modules/@modelcontextprotocol/server-postgres/dist/index.js',
-    requiredPorts: [3005]
+    requiredPorts: [3002],
+    verified: true
+  },
+  puppeteer: {
+    name: '@modelcontextprotocol/server-puppeteer',
+    version: 'latest',
+    description: 'Official Puppeteer MCP Server for browser automation and web scraping',
+    envVars: [],
+    configFile: 'puppeteer-mcp-config.json',
+    startScript: 'node_modules/@modelcontextprotocol/server-puppeteer/dist/index.js',
+    requiredPorts: [3003],
+    verified: true
+  },
+  weather_accuweather: {
+    name: '@timlukahorstmann/mcp-weather',
+    version: 'latest',
+    description: 'Weather MCP Server with AccuWeather API integration',
+    envVars: ['ACCUWEATHER_API_KEY'],
+    configFile: 'weather-accuweather-mcp-config.json',
+    startScript: 'npx -y @timlukahorstmann/mcp-weather',
+    requiredPorts: [3004],
+    verified: true,
+    isNpxPackage: true
+  },
+  weather_openmeteo: {
+    name: '@rehmatalisayany/weather-mcp-server',
+    version: 'latest',
+    description: 'Weather MCP Server using Open Meteo API (no API key required)',
+    envVars: [],
+    configFile: 'weather-openmeteo-mcp-config.json',
+    startScript: 'node_modules/@rehmatalisayany/weather-mcp-server/dist/index.js',
+    requiredPorts: [3005],
+    verified: true
+  },
+  weather_us_alerts: {
+    name: '@h1deya/mcp-server-weather',
+    version: 'latest', 
+    description: 'US Weather Alerts MCP Server with National Weather Service integration',
+    envVars: [],
+    configFile: 'weather-us-alerts-mcp-config.json',
+    startScript: 'node_modules/@h1deya/mcp-server-weather/dist/index.js',
+    requiredPorts: [3006],
+    verified: true
+  },
+  weather_simple: {
+    name: '@fak111/weather-mcp',
+    version: 'latest',
+    description: 'Simple Weather MCP Server for basic weather queries',
+    envVars: [],
+    configFile: 'weather-simple-mcp-config.json',
+    startScript: 'node_modules/@fak111/weather-mcp/dist/index.js',
+    requiredPorts: [3007],
+    verified: true
   }
 } as const;
+
+// Fallback packages to try if main package fails
+const MCP_TEMPLATE_FALLBACKS: Record<string, string[]> = {
+  weather_accuweather: ['@rehmatalisayany/weather-mcp-server', '@h1deya/mcp-server-weather', '@fak111/weather-mcp'],
+  weather_openmeteo: ['@timlukahorstmann/mcp-weather', '@h1deya/mcp-server-weather', '@fak111/weather-mcp'],
+  weather_us_alerts: ['@rehmatalisayany/weather-mcp-server', '@fak111/weather-mcp', '@timlukahorstmann/mcp-weather'],
+  weather_simple: ['@rehmatalisayany/weather-mcp-server', '@h1deya/mcp-server-weather', '@timlukahorstmann/mcp-weather']
+};
 
 type MCPTemplateName = keyof typeof MCP_TEMPLATES;
 
@@ -91,11 +125,25 @@ interface MCPInstallationResult {
 }
 
 /**
- * Install MCP from a built-in template
+ * Install MCP from a built-in template with intelligent error handling and auto-retry
  */
 async function installFromTemplate(templateName: string, installPath?: string): Promise<string> {
   if (!(templateName in MCP_TEMPLATES)) {
-    throw new Error(`Unknown MCP template: ${templateName}. Available templates: ${Object.keys(MCP_TEMPLATES).join(', ')}`);
+    // Try fuzzy matching for similar template names
+    const availableTemplates = Object.keys(MCP_TEMPLATES);
+    const suggestions = findSimilarTemplateNames(templateName, availableTemplates);
+    
+    if (suggestions.length > 0) {
+      throw new Error(`❌ Unknown MCP template: "${templateName}". 
+      
+🔍 Did you mean: ${suggestions.slice(0, 3).join(', ')}?
+
+📋 Available templates: ${availableTemplates.join(', ')}
+
+💡 Try using one of the suggested templates above.`);
+    }
+    
+    throw new Error(`❌ Unknown MCP template: "${templateName}". Available templates: ${availableTemplates.join(', ')}`);
   }
 
   const template = MCP_TEMPLATES[templateName as MCPTemplateName];
@@ -109,6 +157,62 @@ async function installFromTemplate(templateName: string, installPath?: string): 
     packageName: template.name
   };
 
+  // Try primary package first, then fallbacks
+  const packagesToTry = [template.name, ...(MCP_TEMPLATE_FALLBACKS[templateName] || [])];
+  let lastError: Error | null = null;
+  let attemptCount = 0;
+
+  for (const packageName of packagesToTry) {
+    attemptCount++;
+    logger.info(`📦 Attempt ${attemptCount}: Trying package ${packageName}`);
+    
+    try {
+      return await installMCPPackage(templateName, packageName, mcpPath, template, result);
+    } catch (error) {
+      lastError = error as Error;
+      logger.warn(`⚠️  Package ${packageName} failed: ${lastError.message}`);
+      
+      // Analyze the error and provide intelligent suggestions
+      const errorAnalysis = analyzeInstallationError(lastError, packageName);
+      logger.info(`🔍 Error analysis: ${errorAnalysis.category} - ${errorAnalysis.suggestion}`);
+      
+      // Clean up failed attempt
+      try {
+        await capabilityRegistry.execute('filesystem', 'delete', { path: mcpPath, recursive: true });
+        logger.info(`🧹 Cleaned up failed attempt for ${packageName}`);
+      } catch (cleanupError) {
+        logger.warn(`⚠️ Could not clean up after failed attempt:`, cleanupError);
+      }
+      
+      // If this was a network/registry error and we have more packages to try, continue
+      if (errorAnalysis.category === 'network' || errorAnalysis.category === 'package_not_found') {
+        if (attemptCount < packagesToTry.length) {
+          logger.info(`🔄 Trying next fallback package...`);
+          continue;
+        }
+      } else {
+        // For other errors (permission, disk space, etc.), don't try other packages
+        break;
+      }
+    }
+  }
+
+  // All packages failed
+  const errorReport = generateDetailedErrorReport(templateName, packagesToTry, lastError, attemptCount);
+  logger.error(`❌ All installation attempts failed for ${templateName}`);
+  throw new Error(errorReport);
+}
+
+/**
+ * Install a specific MCP package (extracted for reusability)
+ */
+async function installMCPPackage(
+  templateName: string, 
+  packageName: string, 
+  mcpPath: string, 
+  template: any, 
+  result: MCPInstallationResult
+): Promise<string> {
   try {
     // Step 1: Create MCP directory structure
     logger.info(`📁 Creating MCP directory structure at ${mcpPath}`);
@@ -116,32 +220,42 @@ async function installFromTemplate(templateName: string, installPath?: string): 
     
     // Step 2: Initialize package.json
     logger.info(`📦 Initializing package.json for ${templateName} MCP`);
+    const packageJsonOptions = {
+      name: `coachartie-mcp-${templateName}`,
+      version: '1.0.0',
+      description: template.description,
+      main: 'index.js',
+      scripts: template.isNpxPackage ? {
+        start: template.startScript,
+        dev: template.startScript,
+        install: 'npm install'
+      } : {
+        start: `node ${template.startScript}`,
+        dev: `nodemon ${template.startScript}`,
+        install: 'npm install'
+      },
+      dependencies: {},
+      devDependencies: template.isNpxPackage ? {} : {
+        nodemon: '^3.0.0'
+      }
+    };
+
     await capabilityRegistry.execute('package_manager', 'create_package', {
       package_path: mcpPath,
-      options: {
-        name: `coachartie-mcp-${templateName}`,
-        version: '1.0.0',
-        description: template.description,
-        main: 'index.js',
-        scripts: {
-          start: `node ${template.startScript}`,
-          dev: `nodemon ${template.startScript}`,
-          install: 'npm install'
-        },
-        dependencies: {},
-        devDependencies: {
-          nodemon: '^3.0.0'
-        }
-      }
+      options: packageJsonOptions
     });
 
-    // Step 3: Install the MCP package
-    logger.info(`📥 Installing MCP package: ${template.name}`);
-    await capabilityRegistry.execute('package_manager', 'install_package', {
-      package_name: template.name,
-      working_dir: mcpPath,
-      dev: false
-    });
+    // Step 3: Install the MCP package (skip for npx packages)
+    if (!template.isNpxPackage) {
+      logger.info(`📥 Installing MCP package: ${packageName}`);
+      await capabilityRegistry.execute('package_manager', 'install_package', {
+        package_name: packageName,
+        working_dir: mcpPath,
+        dev: false
+      });
+    } else {
+      logger.info(`📦 Using npx package: ${packageName} (no local installation needed)`);
+    }
 
     // Step 4: Create MCP configuration file
     const configPath = path.join(mcpPath, template.configFile);
@@ -150,7 +264,7 @@ async function installFromTemplate(templateName: string, installPath?: string): 
       description: template.description,
       version: template.version,
       port: template.requiredPorts[0],
-      environment: template.envVars.reduce((acc, envVar) => {
+      environment: template.envVars.reduce((acc: Record<string, string>, envVar: string) => {
         acc[envVar] = `\${${envVar}}`;
         return acc;
       }, {} as Record<string, string>),
@@ -169,7 +283,7 @@ async function installFromTemplate(templateName: string, installPath?: string): 
     // Step 5: Create environment file template if needed
     if (template.envVars.length > 0) {
       const envPath = path.join(mcpPath, '.env.example');
-      const envContent = template.envVars.map(envVar => {
+      const envContent = template.envVars.map((envVar: string) => {
         const description = getEnvVarDescription(envVar);
         return `# ${description}\n${envVar}=your_${envVar.toLowerCase()}_here`;
       }).join('\n\n');
@@ -199,7 +313,7 @@ else
 fi
 
 # Check required environment variables
-${template.envVars.map(envVar => `
+${template.envVars.map((envVar: string) => `
 if [ -z "\$${envVar}" ]; then
     echo "❌ Missing required environment variable: ${envVar}"
     exit 1
@@ -251,7 +365,7 @@ This MCP server has been automatically installed by CoachArtie.
 
 ## Environment Variables
 
-${template.envVars.length > 0 ? template.envVars.map(envVar => `- **${envVar}**: ${getEnvVarDescription(envVar)}`).join('\n') : 'No environment variables required.'}
+${template.envVars.length > 0 ? template.envVars.map((envVar: string) => `- **${envVar}**: ${getEnvVarDescription(envVar)}`).join('\n') : 'No environment variables required.'}
 
 ## Usage
 
@@ -291,12 +405,12 @@ Created on: ${new Date().toISOString()}
     return `🎉 Successfully installed ${templateName} MCP server!
 
 📁 Installation path: ${mcpPath}
-📦 Package: ${template.name}
+📦 Package: ${packageName}
 ⚙️ Config file: ${template.configFile}
 🚀 Port: ${template.requiredPorts[0]}
 
 ${template.envVars.length > 0 ? `🔐 Required environment variables:
-${template.envVars.map(envVar => `   - ${envVar}: ${getEnvVarDescription(envVar)}`).join('\n')}
+${template.envVars.map((envVar: string) => `   - ${envVar}: ${getEnvVarDescription(envVar)}`).join('\n')}
 
 📝 Next steps:
 1. Copy .env.example to .env in the MCP directory
@@ -307,18 +421,7 @@ ${template.envVars.map(envVar => `   - ${envVar}: ${getEnvVarDescription(envVar)
 💡 Use 'start_mcp_server' action with name="${templateName}" to start the server.`;
 
   } catch (error) {
-    result.error = error instanceof Error ? error.message : String(error);
-    logger.error(`❌ Failed to install ${templateName} MCP:`, error);
-    
-    // Attempt cleanup on failure
-    try {
-      await capabilityRegistry.execute('filesystem', 'delete', { path: mcpPath, recursive: true });
-      logger.info(`🧹 Cleaned up failed installation at ${mcpPath}`);
-    } catch (cleanupError) {
-      logger.warn(`⚠️ Could not clean up failed installation:`, cleanupError);
-    }
-    
-    throw new Error(`Failed to install ${templateName} MCP: ${result.error}`);
+    throw new Error(`Failed to install ${templateName} MCP: ${error instanceof Error ? error.message : String(error)}`);
   }
 }
 
@@ -999,11 +1102,199 @@ function getEnvVarDescription(envVar: string): string {
   const descriptions: Record<string, string> = {
     'WOLFRAM_ALPHA_APPID': 'Your Wolfram Alpha API App ID (get from developer.wolframalpha.com)',
     'WEATHER_API_KEY': 'Your weather service API key (OpenWeatherMap, etc.)',
+    'ACCUWEATHER_API_KEY': 'Your AccuWeather API key (get from developer.accuweather.com)',
     'GITHUB_TOKEN': 'Your GitHub personal access token with appropriate permissions',
     'POSTGRES_CONNECTION_STRING': 'PostgreSQL database connection string (postgresql://user:pass@host:port/db)',
   };
 
   return descriptions[envVar] || `Configuration value for ${envVar}`;
+}
+
+/**
+ * Find similar template names using fuzzy matching
+ */
+function findSimilarTemplateNames(target: string, available: string[]): string[] {
+  return available
+    .map(name => ({ name, score: calculateStringSimilarity(target, name) }))
+    .filter(item => item.score > 0.3) // Lower threshold for template names
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 3)
+    .map(item => item.name);
+}
+
+/**
+ * Calculate string similarity (improved version for template matching)
+ */
+function calculateStringSimilarity(a: string, b: string): number {
+  if (a === b) return 1.0;
+  if (a.length === 0 || b.length === 0) return 0.0;
+  
+  const aLower = a.toLowerCase();
+  const bLower = b.toLowerCase();
+  
+  // Check for exact substring matches
+  if (aLower.includes(bLower) || bLower.includes(aLower)) return 0.9;
+  
+  // Check for word-level matches (split by underscores, hyphens)
+  const aWords = aLower.split(/[_-]/);
+  const bWords = bLower.split(/[_-]/);
+  
+  let wordMatches = 0;
+  for (const aWord of aWords) {
+    for (const bWord of bWords) {
+      if (aWord === bWord) wordMatches++;
+      else if (aWord.includes(bWord) || bWord.includes(aWord)) wordMatches += 0.5;
+    }
+  }
+  
+  if (wordMatches > 0) {
+    return Math.min(0.8, wordMatches / Math.max(aWords.length, bWords.length));
+  }
+  
+  // Levenshtein distance-based similarity
+  const matrix = Array(b.length + 1).fill(null).map(() => Array(a.length + 1).fill(null));
+  
+  for (let i = 0; i <= a.length; i++) matrix[0][i] = i;
+  for (let j = 0; j <= b.length; j++) matrix[j][0] = j;
+  
+  for (let j = 1; j <= b.length; j++) {
+    for (let i = 1; i <= a.length; i++) {
+      const indicator = a[i - 1] === b[j - 1] ? 0 : 1;
+      matrix[j][i] = Math.min(
+        matrix[j][i - 1] + 1,     // deletion
+        matrix[j - 1][i] + 1,     // insertion
+        matrix[j - 1][i - 1] + indicator // substitution
+      );
+    }
+  }
+  
+  const distance = matrix[b.length][a.length];
+  return 1 - distance / Math.max(a.length, b.length);
+}
+
+/**
+ * Analyze installation errors and provide intelligent suggestions
+ */
+function analyzeInstallationError(error: Error, packageName: string): { category: string; suggestion: string } {
+  const errorMessage = error.message.toLowerCase();
+  
+  // Network/Registry errors
+  if (errorMessage.includes('404') || errorMessage.includes('not found')) {
+    return {
+      category: 'package_not_found',
+      suggestion: `Package "${packageName}" not found in registry. Trying fallback packages...`
+    };
+  }
+  
+  if (errorMessage.includes('network') || errorMessage.includes('timeout') || errorMessage.includes('enotfound')) {
+    return {
+      category: 'network',
+      suggestion: 'Network connectivity issue. Check internet connection or try again later.'
+    };
+  }
+  
+  if (errorMessage.includes('unauthorized') || errorMessage.includes('forbidden')) {
+    return {
+      category: 'auth',
+      suggestion: 'Authentication issue. Check npm credentials or use public packages.'
+    };
+  }
+  
+  // Disk/Permission errors
+  if (errorMessage.includes('enospc') || errorMessage.includes('no space')) {
+    return {
+      category: 'disk_space',
+      suggestion: 'Insufficient disk space. Free up space and try again.'
+    };
+  }
+  
+  if (errorMessage.includes('eacces') || errorMessage.includes('permission denied')) {
+    return {
+      category: 'permissions',
+      suggestion: 'Permission denied. Check file/directory permissions or run with appropriate privileges.'
+    };
+  }
+  
+  // Version/Dependency errors
+  if (errorMessage.includes('version') || errorMessage.includes('incompatible')) {
+    return {
+      category: 'version_conflict',
+      suggestion: 'Version conflict detected. Try updating dependencies or using a different version.'
+    };
+  }
+  
+  if (errorMessage.includes('peer dep') || errorMessage.includes('missing dependency')) {
+    return {
+      category: 'dependency',
+      suggestion: 'Missing dependencies. Installing required peer dependencies automatically.'
+    };
+  }
+  
+  // Registry/Mirror errors
+  if (errorMessage.includes('registry') || errorMessage.includes('mirror')) {
+    return {
+      category: 'registry',
+      suggestion: 'Registry issue. Try switching to a different npm registry or mirror.'
+    };
+  }
+  
+  // Default
+  return {
+    category: 'unknown',
+    suggestion: 'Unknown error. Check logs for details and consider manual installation.'
+  };
+}
+
+/**
+ * Generate detailed error report for failed installations
+ */
+function generateDetailedErrorReport(
+  templateName: string, 
+  packagesAttempted: string[], 
+  lastError: Error | null, 
+  attemptCount: number
+): string {
+  const report = [`❌ Failed to install MCP template: "${templateName}"`];
+  
+  report.push('');
+  report.push('🔍 **Diagnosis Report:**');
+  report.push(`   • Attempts made: ${attemptCount}`);
+  report.push(`   • Packages tried: ${packagesAttempted.join(', ')}`);
+  
+  if (lastError) {
+    const analysis = analyzeInstallationError(lastError, packagesAttempted[packagesAttempted.length - 1]);
+    report.push(`   • Error category: ${analysis.category}`);
+    report.push(`   • Last error: ${lastError.message.split('\n')[0]}`);
+  }
+  
+  report.push('');
+  report.push('🛠️ **Possible Solutions:**');
+  
+  // Suggest alternatives based on template type
+  if (templateName.includes('weather')) {
+    report.push('   • Try a different weather template:');
+    const weatherTemplates = Object.keys(MCP_TEMPLATES).filter(t => t.includes('weather'));
+    weatherTemplates.forEach(template => {
+      if (template !== templateName) {
+        report.push(`     - ${template}: ${MCP_TEMPLATES[template as MCPTemplateName].description}`);
+      }
+    });
+  }
+  
+  report.push('   • Check network connectivity and npm configuration');
+  report.push('   • Verify npm registry access and authentication');
+  report.push('   • Try creating a custom MCP server instead:');
+  report.push('     `<capability name="mcp_installer" action="create_custom_mcp" name="my_weather_server" />`');
+  
+  report.push('');
+  report.push('📋 **Available Templates:**');
+  Object.keys(MCP_TEMPLATES).forEach(template => {
+    const info = MCP_TEMPLATES[template as MCPTemplateName];
+    const status = info.verified ? '✅' : '⚠️';
+    report.push(`   ${status} ${template}: ${info.description}`);
+  });
+  
+  return report.join('\n');
 }
 
 /**

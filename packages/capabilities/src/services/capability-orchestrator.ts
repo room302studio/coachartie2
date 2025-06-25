@@ -11,7 +11,9 @@ import { filesystemCapability } from "../capabilities/filesystem.js";
 import { environmentCapability } from "../capabilities/environment.js";
 import { mcpClientCapability } from "../capabilities/mcp-client.js";
 import { mcpInstallerCapability } from "../capabilities/mcp-installer.js";
+import { memoryCapability } from "../capabilities/memory.js";
 import { XMLParser } from "fast-xml-parser";
+import { CapabilitySuggester } from "../utils/capability-suggester.js";
 
 // Define capability extraction types
 interface ExtractedCapability {
@@ -43,10 +45,14 @@ interface OrchestrationContext {
 
 export class CapabilityOrchestrator {
   private contexts = new Map<string, OrchestrationContext>();
+  private capabilitySuggester: CapabilitySuggester;
 
   constructor() {
     // Initialize the capability registry with existing capabilities
     this.initializeCapabilityRegistry();
+    
+    // Initialize the capability suggester
+    this.capabilitySuggester = new CapabilitySuggester(capabilityRegistry.list());
   }
 
   /**
@@ -78,35 +84,8 @@ export class CapabilityOrchestrator {
       // Register MCP installer capability from external file
       capabilityRegistry.register(mcpInstallerCapability);
 
-      // Register memory capability
-      capabilityRegistry.register({
-        name: 'memory',
-        supportedActions: ['remember', 'recall'],
-        description: 'Stores and retrieves information from memory',
-        handler: async (params, content) => {
-          const { action } = params;
-
-          if (action === 'remember') {
-            const contentToRemember = params.content || content;
-            if (!contentToRemember) {
-              throw new Error('No content provided to remember');
-            }
-            // Placeholder - would store in actual memory system
-            return `Remembered: ${contentToRemember}`;
-          }
-
-          if (action === 'recall') {
-            const query = params.query || content;
-            if (!query) {
-              throw new Error('No query provided for recall');
-            }
-            // Placeholder - would query actual memory system
-            return `Recalled information about "${query}": [Placeholder - would show actual memories]`;
-          }
-
-          throw new Error(`Unknown memory action: ${action}`);
-        }
-      });
+      // Register real memory capability with persistence
+      capabilityRegistry.register(memoryCapability);
 
       // Register wolfram capability
       capabilityRegistry.register({
@@ -378,21 +357,26 @@ Remember: Use capability tags for ALL calculations, searches, and operations!`;
   }
 
   /**
-   * Generate simpler instructions for free/smaller models
+   * Generate simpler instructions for free/smaller models with intelligent suggestions
    */
   private generateSimpleCapabilityInstructions(userMessage: string, capabilities: RegisteredCapability[]): string {
-    const lowerMessage = userMessage.toLowerCase();
+    // Get intelligent suggestions based on user query
+    const suggestions = this.capabilitySuggester.suggestCapabilities(userMessage, 2);
     
-    // Pick the most relevant capability based on the message
+    // Use the top suggestion as primary example
     let primaryExample = '<capability name="calculator" action="calculate">2 + 2</capability>';
+    let suggestionsSection = '';
     
-    if (lowerMessage.includes('calculate') || lowerMessage.includes('math') || lowerMessage.includes('times') || lowerMessage.includes('plus')) {
-      const mathExpression = this.extractMathExpression(userMessage);
-      primaryExample = `<capability name="calculator" action="calculate">${mathExpression}</capability>`;
-    } else if (lowerMessage.includes('search') || lowerMessage.includes('find') || lowerMessage.includes('web')) {
-      primaryExample = `<capability name="web" action="search">latest AI news</capability>`;
-    } else if (lowerMessage.includes('remember') || lowerMessage.includes('save')) {
-      primaryExample = `<capability name="memory" action="remember">important info</capability>`;
+    if (suggestions.length > 0) {
+      primaryExample = suggestions[0].example;
+      
+      // Create suggestions section
+      suggestionsSection = `
+
+🎯 **Suggested capabilities for your query:**
+${suggestions.map((s, i) => `${i + 1}. ${s.example} (${Math.round(s.confidence * 100)}% match - ${s.reasoning})`).join('\n')}
+
+💡 Use these suggestions to accomplish your task!`;
     }
     
     return `You are Coach Artie. Use XML tags for actions.
@@ -402,7 +386,7 @@ SUPPORTED FORMATS:
 ✅ Self-closing: <capability name="web" action="search" query="latest news" />
 ✅ With params: <capability name="scheduler" action="remind" delay="60000" message="task">content</capability>
 
-Example for your task: ${primaryExample}
+Best suggestion for your task: ${primaryExample}${suggestionsSection}
 
 User: ${userMessage}
 
@@ -424,6 +408,99 @@ Your response:`;
     
     // Fallback to the whole message
     return message;
+  }
+
+  /**
+   * Generate helpful error messages with actionable suggestions
+   */
+  private generateHelpfulErrorMessage(capability: ExtractedCapability, originalError: string): string {
+    const { name, action } = capability;
+    
+    // Check if the capability exists
+    if (!capabilityRegistry.has(name)) {
+      const availableCapabilities = capabilityRegistry.list().map(cap => cap.name);
+      const suggestions = this.findSimilarCapabilities(name, availableCapabilities);
+      
+      return `❌ Capability '${name}' not found. Available capabilities: ${availableCapabilities.join(', ')}. Did you mean: ${suggestions.join(' or ')}?`;
+    }
+    
+    // Check if the action is supported
+    const registryCapability = capabilityRegistry.list().find(cap => cap.name === name);
+    if (registryCapability && !registryCapability.supportedActions.includes(action)) {
+      const supportedActions = registryCapability.supportedActions.join(', ');
+      const suggestions = this.findSimilarActions(action, registryCapability.supportedActions);
+      
+      return `❌ Capability '${name}' does not support action '${action}'. Supported actions: ${supportedActions}. Did you mean: ${suggestions.join(' or ')}?`;
+    }
+    
+    // Check for missing required parameters
+    if (registryCapability?.requiredParams?.length) {
+      const missingParams = registryCapability.requiredParams.filter(param => 
+        !capability.params[param] && !capability.content
+      );
+      
+      if (missingParams.length > 0) {
+        return `❌ Missing required parameters for '${name}:${action}': ${missingParams.join(', ')}. Example: <capability name="${name}" action="${action}" ${missingParams.map(p => `${p}="value"`).join(' ')}>content</capability>`;
+      }
+    }
+    
+    // Return enhanced original error with context
+    return `❌ ${originalError}. For '${name}' capability, use: <capability name="${name}" action="${registryCapability?.supportedActions[0] || action}">content</capability>`;
+  }
+
+  /**
+   * Find similar capability names using string similarity
+   */
+  private findSimilarCapabilities(target: string, available: string[]): string[] {
+    return available
+      .map(name => ({ name, score: this.calculateSimilarity(target, name) }))
+      .filter(item => item.score > 0.5)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 2)
+      .map(item => item.name);
+  }
+
+  /**
+   * Find similar action names using string similarity
+   */
+  private findSimilarActions(target: string, available: string[]): string[] {
+    return available
+      .map(action => ({ action, score: this.calculateSimilarity(target, action) }))
+      .filter(item => item.score > 0.4)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 2)
+      .map(item => item.action);
+  }
+
+  /**
+   * Simple string similarity calculation (Jaro-Winkler inspired)
+   */
+  private calculateSimilarity(a: string, b: string): number {
+    if (a === b) return 1.0;
+    if (a.length === 0 || b.length === 0) return 0.0;
+    
+    // Check for substring matches
+    if (a.includes(b) || b.includes(a)) return 0.8;
+    
+    // Check for common substrings
+    const aLower = a.toLowerCase();
+    const bLower = b.toLowerCase();
+    
+    if (aLower.includes(bLower) || bLower.includes(aLower)) return 0.7;
+    
+    // Check for similar starting characters
+    let matchingChars = 0;
+    const minLength = Math.min(a.length, b.length);
+    
+    for (let i = 0; i < minLength; i++) {
+      if (aLower[i] === bLower[i]) {
+        matchingChars++;
+      } else {
+        break;
+      }
+    }
+    
+    return matchingChars / Math.max(a.length, b.length);
   }
 
   /**
@@ -641,8 +718,8 @@ Your response:`;
     const userId = context ? context.userId : 'unknown-user';
 
     try {
-      // Inject userId into params for scheduler capabilities
-      const paramsWithContext = capability.name === 'scheduler' 
+      // Inject userId into params for capabilities that need user context
+      const paramsWithContext = ['scheduler', 'memory'].includes(capability.name)
         ? { ...capability.params, userId }
         : capability.params;
       
@@ -655,7 +732,11 @@ Your response:`;
       );
       result.success = true;
     } catch (error) {
-      result.error = error instanceof Error ? error.message : String(error);
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      
+      // Generate helpful error message with suggestions
+      const helpfulError = this.generateHelpfulErrorMessage(capability, errorMessage);
+      result.error = helpfulError;
       result.success = false;
       
       // For backwards compatibility, fall back to legacy hardcoded handlers

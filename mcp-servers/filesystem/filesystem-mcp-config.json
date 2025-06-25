@@ -1,0 +1,9 @@
+{
+  "name": "filesystem",
+  "description": "Filesystem MCP Server for file operations",
+  "version": "latest",
+  "port": 3003,
+  "environment": {},
+  "createdAt": "2025-06-25T19:35:36.200Z",
+  "installedBy": "CoachArtie MCP Installer"
+}
