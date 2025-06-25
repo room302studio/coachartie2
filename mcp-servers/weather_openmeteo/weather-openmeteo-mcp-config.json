@@ -1,0 +1,9 @@
+{
+  "name": "weather_openmeteo",
+  "description": "Weather MCP Server using Open Meteo API (no API key required)",
+  "version": "latest",
+  "port": 3005,
+  "environment": {},
+  "createdAt": "2025-06-25T19:38:30.059Z",
+  "installedBy": "CoachArtie MCP Installer"
+}
