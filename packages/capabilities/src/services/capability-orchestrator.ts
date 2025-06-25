@@ -3,9 +3,14 @@ import { openRouterService } from "./openrouter.js";
 import { schedulerService } from "./scheduler.js";
 import { wolframService } from "./wolfram.js";
 import { promptManager } from "./prompt-manager.js";
-import { capabilityRegistry } from "./capability-registry.js";
+import { capabilityRegistry, RegisteredCapability } from "./capability-registry.js";
 import { calculatorCapability } from "../capabilities/calculator.js";
 import { webCapability } from "../capabilities/web.js";
+import { packageManagerCapability } from "../capabilities/package-manager.js";
+import { filesystemCapability } from "../capabilities/filesystem.js";
+import { environmentCapability } from "../capabilities/environment.js";
+import { mcpClientCapability } from "../capabilities/mcp-client.js";
+import { mcpInstallerCapability } from "../capabilities/mcp-installer.js";
 import { XMLParser } from "fast-xml-parser";
 
 // Define capability extraction types
@@ -57,6 +62,21 @@ export class CapabilityOrchestrator {
 
       // Register web capability from external file
       capabilityRegistry.register(webCapability);
+
+      // Register package manager capability from external file
+      capabilityRegistry.register(packageManagerCapability);
+
+      // Register filesystem capability from external file
+      capabilityRegistry.register(filesystemCapability);
+
+      // Register environment capability from external file
+      capabilityRegistry.register(environmentCapability);
+
+      // Register MCP client capability from external file
+      capabilityRegistry.register(mcpClientCapability);
+
+      // Register MCP installer capability from external file
+      capabilityRegistry.register(mcpInstallerCapability);
 
       // Register memory capability
       capabilityRegistry.register({
@@ -276,30 +296,200 @@ export class CapabilityOrchestrator {
 
   /**
    * Get LLM response with capability instruction prompts
-   * Now powered by hot-reloadable SQLite database! 🔥
+   * Dynamically generates instructions based on registered capabilities
    */
   private async getLLMResponseWithCapabilities(
     message: IncomingMessage
   ): Promise<string> {
     try {
-      // Get fresh capability instructions from database (hot-reloadable!)
+      // Try to get from database first
       const capabilityInstructions = await promptManager.getCapabilityInstructions(message.message);
       
-      logger.info(`🎯 Using capability instructions (cached: ${promptManager.getCacheStats().size > 0})`);
+      logger.info(`🎯 Using capability instructions from database`);
       
       return await openRouterService.generateResponse(
         capabilityInstructions,
         message.userId
       );
     } catch (error) {
-      logger.error('❌ Failed to get capability instructions from database, using fallback', error);
+      logger.error('❌ Failed to get capability instructions from database, generating dynamic fallback', error);
       
-      // Fallback to a simple response if database fails
+      // Generate dynamic instructions based on registered capabilities
+      const dynamicInstructions = this.generateDynamicCapabilityInstructions(message.message);
+      
       return await openRouterService.generateResponse(
-        `You are Coach Artie, a helpful AI assistant. User's message: ${message.message}`,
+        dynamicInstructions,
         message.userId
       );
     }
+  }
+
+  /**
+   * Dynamically generate capability instructions based on what's registered
+   */
+  private generateDynamicCapabilityInstructions(userMessage: string): string {
+    const capabilities = capabilityRegistry.list();
+    
+    // Check if we're using a free/smaller model
+    const currentModel = openRouterService.getCurrentModel();
+    const isFreeModel = currentModel?.includes('free') || currentModel?.includes('mini') || currentModel?.includes('3b');
+    
+    if (isFreeModel) {
+      // Simpler, more direct prompt for free/smaller models
+      return this.generateSimpleCapabilityInstructions(userMessage, capabilities);
+    }
+    
+    // Full prompt for more capable models
+    // Build capability descriptions
+    const capabilityDocs = capabilities.map(cap => {
+      const actions = cap.supportedActions.join(', ');
+      const params = cap.requiredParams?.length ? ` (requires: ${cap.requiredParams.join(', ')})` : '';
+      return `- ${cap.name}: ${cap.description || 'No description'}. Actions: ${actions}${params}`;
+    }).join('\n');
+
+    // Generate contextual examples based on the user's message
+    const examples = this.generateContextualExamples(userMessage, capabilities);
+
+    return `You are Coach Artie, a helpful AI assistant with access to powerful capabilities through XML tags.
+
+CRITICAL: You MUST use XML capability tags for ANY action that requires computation, data retrieval, or external operations.
+
+SUPPORTED FORMATS:
+- With content: <capability name="calculator" action="calculate">2+2</capability>
+- Self-closing: <capability name="web" action="search" query="latest news" />
+- Mixed: <capability name="scheduler" action="remind" delay="60000" message="task">reminder content</capability>
+
+AVAILABLE CAPABILITIES:
+${capabilityDocs}
+
+EXAMPLES:
+${examples}
+
+IMPORTANT RULES:
+1. ALWAYS use capability tags when you need to calculate, search, or perform any action
+2. Use self-closing tags for simple operations with only attributes
+3. Use content tags for complex expressions or text
+4. You can chain multiple capabilities in one response
+5. If unsure, use a capability rather than trying to answer directly
+
+User's message: ${userMessage}
+
+Remember: Use capability tags for ALL calculations, searches, and operations!`;
+  }
+
+  /**
+   * Generate simpler instructions for free/smaller models
+   */
+  private generateSimpleCapabilityInstructions(userMessage: string, capabilities: RegisteredCapability[]): string {
+    const lowerMessage = userMessage.toLowerCase();
+    
+    // Pick the most relevant capability based on the message
+    let primaryExample = '<capability name="calculator" action="calculate">2 + 2</capability>';
+    
+    if (lowerMessage.includes('calculate') || lowerMessage.includes('math') || lowerMessage.includes('times') || lowerMessage.includes('plus')) {
+      const mathExpression = this.extractMathExpression(userMessage);
+      primaryExample = `<capability name="calculator" action="calculate">${mathExpression}</capability>`;
+    } else if (lowerMessage.includes('search') || lowerMessage.includes('find') || lowerMessage.includes('web')) {
+      primaryExample = `<capability name="web" action="search">latest AI news</capability>`;
+    } else if (lowerMessage.includes('remember') || lowerMessage.includes('save')) {
+      primaryExample = `<capability name="memory" action="remember">important info</capability>`;
+    }
+    
+    return `You are Coach Artie. Use XML tags for actions.
+
+SUPPORTED FORMATS:
+✅ With content: <capability name="calculator" action="calculate">2+2</capability>
+✅ Self-closing: <capability name="web" action="search" query="latest news" />
+✅ With params: <capability name="scheduler" action="remind" delay="60000" message="task">content</capability>
+
+Example for your task: ${primaryExample}
+
+User: ${userMessage}
+
+Your response:`;
+  }
+
+  /**
+   * Extract mathematical expression from user message
+   */
+  private extractMathExpression(message: string): string {
+    // Try to extract numbers and operators
+    const mathPattern = /[\d\s\+\-\*\/\(\)\.]+/g;
+    const matches = message.match(mathPattern);
+    
+    if (matches && matches.length > 0) {
+      // Join all matches and clean up
+      return matches.join(' ').trim();
+    }
+    
+    // Fallback to the whole message
+    return message;
+  }
+
+  /**
+   * Generate contextual examples based on user's message
+   */
+  private generateContextualExamples(userMessage: string, capabilities: RegisteredCapability[]): string {
+    const examples: string[] = [];
+    const lowerMessage = userMessage.toLowerCase();
+    
+    // Collect examples from capabilities that have them defined
+    for (const cap of capabilities) {
+      if (cap.examples && cap.examples.length > 0) {
+        // Check if this capability is relevant to the user's message
+        const isRelevant = this.isCapabilityRelevant(cap.name, lowerMessage);
+        
+        if (isRelevant || examples.length < 3) {
+          // Add the first example from this capability
+          examples.push(cap.examples[0]);
+        }
+      }
+    }
+    
+    // If we don't have enough examples, generate some defaults
+    if (examples.length < 3) {
+      // Always include calculator example if available
+      if (capabilityRegistry.has('calculator')) {
+        examples.push('<capability name="calculator" action="calculate">25 * 4 + 10</capability>');
+      }
+      
+      // Add other common examples based on available capabilities
+      if (capabilityRegistry.has('web') && examples.length < 3) {
+        examples.push('<capability name="web" action="search">latest news about AI</capability>');
+      }
+      
+      if (capabilityRegistry.has('memory') && examples.length < 3) {
+        examples.push('<capability name="memory" action="remember">important information</capability>');
+      }
+      
+      if (capabilityRegistry.has('scheduler') && examples.length < 3) {
+        examples.push('<capability name="scheduler" action="remind" delay="60000" message="Check task">Reminder</capability>');
+      }
+    }
+    
+    // Format examples with labels
+    return examples.map((ex, i) => `Example ${i + 1}: ${ex}`).join('\n');
+  }
+
+  /**
+   * Check if a capability is relevant to the user's message
+   */
+  private isCapabilityRelevant(capabilityName: string, lowerMessage: string): boolean {
+    const relevanceMap: Record<string, string[]> = {
+      calculator: ['calculate', 'math', 'add', 'subtract', 'multiply', 'divide', 'sum', 'times', 'plus', 'minus', 'equals'],
+      web: ['search', 'find', 'look up', 'google', 'web', 'internet', 'online'],
+      memory: ['remember', 'recall', 'note', 'save', 'store', 'memorize', 'forget'],
+      scheduler: ['remind', 'schedule', 'later', 'tomorrow', 'alarm', 'timer', 'notification'],
+      wolfram: ['wolfram', 'complex', 'scientific', 'integral', 'derivative', 'equation', 'physics'],
+      filesystem: ['file', 'directory', 'folder', 'read', 'write', 'create', 'delete'],
+      environment: ['env', 'environment', 'variable', 'config', 'setting'],
+      package_manager: ['install', 'npm', 'package', 'dependency', 'module'],
+      mcp_client: ['mcp', 'connect', 'tool', 'external'],
+      mcp_installer: ['install mcp', 'setup mcp', 'configure mcp']
+    };
+    
+    const keywords = relevanceMap[capabilityName] || [];
+    return keywords.some(keyword => lowerMessage.includes(keyword));
   }
 
   /**

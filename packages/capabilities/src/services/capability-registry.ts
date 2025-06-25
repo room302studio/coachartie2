@@ -14,6 +14,7 @@ export interface RegisteredCapability {
   handler: CapabilityHandler;
   description?: string;
   requiredParams?: string[];
+  examples?: string[];
 }
 
 /**
