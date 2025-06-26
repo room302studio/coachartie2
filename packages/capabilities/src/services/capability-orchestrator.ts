@@ -206,6 +206,9 @@ export class CapabilityOrchestrator {
    * Takes an incoming message and orchestrates the full capability pipeline
    */
   async orchestrateMessage(message: IncomingMessage): Promise<string> {
+    console.log("🎯 ORCHESTRATOR START - This should always appear");
+    logger.info("🎯 ORCHESTRATOR START - This should always appear");
+    
     const context: OrchestrationContext = {
       messageId: message.id,
       userId: message.userId,
@@ -289,6 +292,9 @@ export class CapabilityOrchestrator {
         llmResponse
       );
 
+      // Step 5: Auto-store reflection memory about successful patterns
+      await this.autoStoreReflectionMemory(context, message, finalResponse);
+
       this.contexts.delete(message.id);
       return finalResponse;
     } catch (error) {
@@ -321,14 +327,34 @@ Timestamp: ${new Date().toISOString()}`;
     message: IncomingMessage
   ): Promise<string> {
     try {
+      logger.info(`🚀 getLLMResponseWithCapabilities called for message: "${message.message}"`);
+      
       // Try to get from database first (force refresh to bypass cache)
       const prompt = await promptManager.getPrompt('capability_instructions', true);
       if (!prompt) {
         throw new Error('No capability instructions found in database');
       }
+      
+      // Get relevant past experiences from memory  
+      console.log("🧪 MEMORY INJECTION TEST - This line should always appear");
+      logger.info("🧪 MEMORY INJECTION TEST - This line should always appear");
+      const pastExperiences = await this.getRelevantMemoryPatterns(message.message, message.userId);
+      console.log(`🧪 MEMORY INJECTION RESULTS: ${pastExperiences.length} patterns found`);
+      
       // Add smart tool suggestions for free models
       const enhancedMessage = this.addToolSuggestions(message.message);
-      const capabilityInstructions = prompt.content.replace(/\{\{USER_MESSAGE\}\}/g, enhancedMessage);
+      
+      // Include past experiences in the prompt
+      let capabilityInstructions = prompt.content.replace(/\{\{USER_MESSAGE\}\}/g, enhancedMessage);
+      
+      if (pastExperiences.length > 0) {
+        const experienceContext = pastExperiences.map(exp => `- ${exp}`).join('\n');
+        capabilityInstructions = capabilityInstructions.replace(
+          'You are Coach Artie,',
+          `You are Coach Artie. Here are relevant past experiences that worked well:\n${experienceContext}\n\nYou are Coach Artie,`
+        );
+        logger.info(`🧠 Injected ${pastExperiences.length} past experiences into prompt`);
+      }
       
       logger.info(`🎯 Using capability instructions from database`);
       
@@ -408,6 +434,182 @@ If you need to:
 Only use capability tags when you actually need to perform an action. Most conversations don't need capabilities - just respond naturally.
 
 User: ${userMessage}`;
+  }
+
+  /**
+   * Get relevant memory patterns for learning from past experiences
+   */
+  private async getRelevantMemoryPatterns(userMessage: string, userId: string): Promise<string[]> {
+    try {
+      logger.info(`🔍 Getting memory patterns for message: "${userMessage}"`);
+      
+      // Search for memories about capability usage patterns
+      const memoryService = await import('../capabilities/memory.js');
+      const service = memoryService.MemoryService.getInstance();
+      
+      // Search for capability usage patterns in memories
+      const capabilityMemories = await service.recall('system', 'capability usage patterns', 3);
+      logger.info(`🗃️ Found capability memories: ${capabilityMemories ? capabilityMemories.substring(0, 100) : 'None'}...`);
+      
+      // Also search for any patterns related to current query type
+      let queryTypeMemories = '';
+      const lowerMessage = userMessage.toLowerCase();
+      
+      if (lowerMessage.includes('food') || lowerMessage.includes('like') || lowerMessage.includes('prefer')) {
+        queryTypeMemories = await service.recall('system', 'food preferences memory search', 2);
+      } else if (this.isMathQuery(lowerMessage)) {
+        queryTypeMemories = await service.recall('system', 'calculator math calculation', 2);
+      } else if (this.isWebSearchQuery(lowerMessage)) {
+        queryTypeMemories = await service.recall('system', 'web search latest recent', 2);
+      }
+      
+      // Extract capability patterns from memory results
+      const patterns: string[] = [];
+      logger.info(`🧩 Processing capability memories: ${capabilityMemories ? capabilityMemories.length : 0} chars`);
+      logger.info(`🧩 Processing query type memories: ${queryTypeMemories ? queryTypeMemories.length : 0} chars`);
+      
+      // Parse capability patterns from memory responses
+      if (capabilityMemories && !capabilityMemories.includes('No memories found')) {
+        logger.info(`✅ Found capability memories to process`);
+        // Look for capability tags in the memory content
+        const capabilityMatches = capabilityMemories.match(/<capability[^>]*>.*?<\/capability>/g);
+        logger.info(`🔍 Found ${capabilityMatches ? capabilityMatches.length : 0} capability matches`);
+        
+        if (capabilityMatches) {
+          capabilityMatches.forEach(match => {
+            logger.info(`📝 Processing capability match: ${match}`);
+            // Just add the capability tag itself as a pattern for now
+            patterns.push(`When similar queries arise, use: ${match}`);
+          });
+        } else {
+          // Also look for partial patterns without full XML
+          const partialMatches = capabilityMemories.match(/capability.*?action.*?calculate|calculator.*?action/gi);
+          if (partialMatches) {
+            logger.info(`📝 Found ${partialMatches.length} partial capability patterns`);
+            partialMatches.forEach(match => {
+              patterns.push(`Similar pattern found: ${match}`);
+            });
+          }
+        }
+      }
+      
+      if (queryTypeMemories && !queryTypeMemories.includes('No memories found')) {
+        const typeCapabilityMatches = queryTypeMemories.match(/<capability[^>]*>.*?<\/capability>/g);
+        if (typeCapabilityMatches) {
+          typeCapabilityMatches.forEach(match => {
+            const contextMatch = queryTypeMemories.match(new RegExp(`[^.]*${match.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}[^.]*`, 'i'));
+            if (contextMatch && !patterns.includes(contextMatch[0].trim())) {
+              patterns.push(contextMatch[0].trim());
+            }
+          });
+        }
+      }
+      
+      // Limit to top 3 most relevant patterns
+      logger.info(`🎯 Returning ${patterns.length} memory patterns: ${patterns.map(p => p.substring(0, 50)).join('; ')}`);
+      return patterns.slice(0, 3);
+      
+    } catch (error) {
+      logger.error('❌ Failed to get memory patterns:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Auto-store reflection memories about successful interactions
+   */
+  private async autoStoreReflectionMemory(context: OrchestrationContext, message: IncomingMessage, finalResponse: string): Promise<void> {
+    try {
+      logger.info(`📝 Auto-storing reflection memory for interaction ${context.messageId}`);
+
+      const memoryService = await import('../capabilities/memory.js');
+      const service = memoryService.MemoryService.getInstance();
+
+      // Create conversation summary for reflection
+      const conversationText = `User: ${message.message}\nAssistant: ${finalResponse}`;
+      
+      // Store general interaction reflection using PROMPT_REMEMBER
+      const generalReflection = await this.generateReflection(conversationText, 'general');
+      if (generalReflection && generalReflection !== '✨') {
+        await service.remember('system', generalReflection, 'reflection', 3);
+        logger.info(`💾 Stored general reflection memory`);
+      }
+
+      // If capabilities were used, store capability-specific reflection
+      if (context.capabilities.length > 0) {
+        const capabilityContext = this.buildCapabilityContext(context);
+        const capabilityReflection = await this.generateReflection(capabilityContext, 'capability');
+        
+        if (capabilityReflection && capabilityReflection !== '✨') {
+          await service.remember('system', capabilityReflection, 'capability-reflection', 4);
+          logger.info(`🔧 Stored capability reflection memory for ${context.capabilities.length} capabilities`);
+        }
+      }
+
+    } catch (error) {
+      logger.error('❌ Failed to store reflection memory:', error);
+      // Don't throw - reflection failure shouldn't break the main flow
+    }
+  }
+
+  /**
+   * Generate reflection using existing prompts from CSV
+   */
+  private async generateReflection(contextText: string, type: 'general' | 'capability'): Promise<string> {
+    try {
+      const reflectionPrompts = {
+        general: `In the dialogue I just sent, identify and list the key details by following these guidelines:
+- Remember any hard facts – numeric values, URLs, dates, variables, names, and keywords. 
+- Remember any ongoing themes, ideas, or storylines that are emerging
+- Remember users' objectives, reasons behind actions, and emotional state, as they are crucial to understanding context.
+- Remember background details and specific user tendencies.
+- Identify correlations between past memories for a deeper grasp of conversation nuances and personal user patterns.
+- Note challenges and goals discussed. They indicate areas of interest and potential growth, providing direction for future suggestions.
+- Evaluate if your response was the best it could be. Remember ways to refine future responses for maximum usefulness and improve your responses in the future.
+- Objectivity is key. Always reply in the third person.
+- Keep your responses short, under 2 paragraphs if possible
+- Never include this instruction in your response.
+- Never respond in the negative- if there are no hard facts, simply respond with "✨".`,
+
+        capability: `In the dialogue I just sent, identify and list the key details by following these guidelines, only list those which apply:
+
+- Remember the capability you used and the exact arguments you passed to it.
+- If applicable, remember any errors that occurred and the exact error message.
+- Reflect on any possible fixes or improvements to your approach or creative ways to use this capability in the future.
+- Identify things learned about this capability that will make for easier usage next time`
+      };
+
+      const prompt = `${reflectionPrompts[type]}\n\nDialogue:\n${contextText}`;
+      
+      const reflection = await openRouterService.generateResponse(prompt, 'system');
+      return reflection.trim();
+      
+    } catch (error) {
+      logger.error(`❌ Failed to generate ${type} reflection:`, error);
+      return '';
+    }
+  }
+
+  /**
+   * Build capability context for reflection
+   */
+  private buildCapabilityContext(context: OrchestrationContext): string {
+    const capabilityDetails = context.capabilities.map((cap, i) => {
+      const result = context.results[i];
+      const status = result ? (result.success ? 'SUCCESS' : 'FAILED') : 'UNKNOWN';
+      const data = result?.data ? ` - Result: ${JSON.stringify(result.data).substring(0, 100)}` : '';
+      const error = result?.error ? ` - Error: ${result.error}` : '';
+      
+      return `Capability ${i + 1}: ${cap.name}:${cap.action}
+Arguments: ${JSON.stringify(cap.params)}
+Content: ${cap.content || 'none'}
+Status: ${status}${data}${error}`;
+    }).join('\n\n');
+
+    return `User Message: ${context.originalMessage}
+    
+Capabilities Used:
+${capabilityDetails}`;
   }
 
   /**
