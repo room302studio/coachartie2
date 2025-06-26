@@ -54,6 +54,17 @@ const CAPABILITY_KEYWORDS = {
       alerts: ['alert', 'warning', 'emergency', 'severe']
     }
   },
+  mcp_client: {
+    keywords: ['mcp', 'connect', 'tool', 'external', 'server', 'list tools', 'available tools', 'call tool', 'mcp server', 'model context protocol', 'disconnect', 'health check'],
+    actions: {
+      connect: ['connect', 'connect to', 'establish connection', 'link to'],
+      disconnect: ['disconnect', 'close connection', 'unlink', 'stop connection'],
+      list_tools: ['list tools', 'available tools', 'show tools', 'what tools', 'tools available'],
+      call_tool: ['call tool', 'execute tool', 'run tool', 'use tool', 'invoke'],
+      list_servers: ['list servers', 'connected servers', 'show servers', 'mcp servers'],
+      health_check: ['health check', 'server health', 'check status', 'ping servers']
+    }
+  },
   mcp_installer: {
     keywords: ['install', 'setup', 'configure', 'add', 'create', 'build', 'deploy', 'template', 'mcp', 'server', 'service'],
     actions: {
@@ -132,7 +143,10 @@ const INTENT_PATTERNS = {
   remember: /(?:remember|save|note|store|memorize)/i,
   recall: /(?:recall|what\s+did|remember|retrieve)/i,
   schedule: /(?:remind|schedule|later|timer|alarm)/i,
-  status: /(?:status|check|health|running|working)/i
+  status: /(?:status|check|health|running|working)/i,
+  mcp_connect: /(?:connect\s+to.*mcp|mcp.*connect|connect.*server|link.*mcp)/i,
+  mcp_tools: /(?:list.*tools|available.*tools|what.*tools|tools.*available|mcp.*tools)/i,
+  mcp_servers: /(?:mcp.*servers|list.*servers|connected.*servers|show.*servers)/i
 };
 
 export class CapabilitySuggester {
@@ -295,6 +309,15 @@ export class CapabilitySuggester {
       ],
       status: [
         { capability: 'mcp_installer', action: 'check_mcp_status', confidence: 0.8 }
+      ],
+      mcp_connect: [
+        { capability: 'mcp_client', action: 'connect', confidence: 0.95 }
+      ],
+      mcp_tools: [
+        { capability: 'mcp_client', action: 'list_tools', confidence: 0.95 }
+      ],
+      mcp_servers: [
+        { capability: 'mcp_client', action: 'list_servers', confidence: 0.95 }
       ]
     };
 
@@ -389,6 +412,14 @@ export class CapabilitySuggester {
       web: {
         search: `<capability name="web" action="search" query="${this.extractSearchQuery(analysis)}" />`,
         fetch: `<capability name="web" action="fetch" url="https://example.com" />`
+      },
+      mcp_client: {
+        connect: `<capability name="mcp_client" action="connect" url="http://localhost:3005" name="weather_server" />`,
+        disconnect: `<capability name="mcp_client" action="disconnect" connection_id="mcp_12345" />`,
+        list_tools: `<capability name="mcp_client" action="list_tools" />`,
+        call_tool: `<capability name="mcp_client" action="call_tool" connection_id="mcp_12345" tool_name="get_weather" args='{"location": "New York"}' />`,
+        list_servers: `<capability name="mcp_client" action="list_servers" />`,
+        health_check: `<capability name="mcp_client" action="health_check" />`
       },
       mcp_installer: {
         install_from_template: `<capability name="mcp_installer" action="install_from_template" template="weather_openmeteo" />`,
