@@ -2,6 +2,55 @@
 
 A unified monorepo for all Coach Artie services using Redis queue-based communication.
 
+## 🚀 Quick Development Start
+
+### Prerequisites
+- Node.js 18+ and pnpm 8+
+- Redis server running locally
+
+### Start Development Environment
+```bash
+# Install dependencies
+pnpm install
+
+# Start all services in development mode
+pnpm run dev
+
+# View logs in real-time
+tail -f /tmp/turbo.log
+```
+
+### Restart Services
+```bash
+# Kill existing processes and restart
+pkill -f "tsx watch" && pnpm run dev
+
+# Or force kill all node processes if needed
+pkill -f node && pnpm run dev
+```
+
+### Access Logs
+```bash
+# View live development logs
+tail -f /tmp/turbo.log
+
+# View specific service logs
+tail -f /tmp/turbo.log | grep "@coachartie/capabilities"
+tail -f /tmp/turbo.log | grep "@coachartie/discord"
+
+# Search logs for errors
+grep -E "(error|ERROR|failed|FAILED)" /tmp/turbo.log
+
+# View last 50 lines of logs
+tail -50 /tmp/turbo.log
+```
+
+### Service Endpoints (Development)
+- **Capabilities**: http://localhost:23701/health
+- **SMS**: http://localhost:23702 
+- **Email**: http://localhost:23703
+- **Redis**: localhost:6379
+
 ## 🏗 Architecture
 
 - **Monorepo**: All services in one repository using pnpm workspaces

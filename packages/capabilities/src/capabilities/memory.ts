@@ -125,11 +125,25 @@ export class MemoryService {
     try {
       const db = await getDatabase();
       
-      // Improve FTS query by splitting into individual terms and using OR
-      const queryTerms = query.toLowerCase().split(/\s+/).filter(term => term.length > 2);
-      const ftsQuery = queryTerms.join(' OR ');
+      // Build a fuzzy FTS query that's actually useful
+      const cleanQuery = query.toLowerCase().trim();
       
-      logger.debug(`🔍 Searching for: "${query}" -> FTS query: "${ftsQuery}"`);
+      // For single words, add fuzzy matching with wildcards
+      const queryTerms = cleanQuery.split(/\s+/).filter(term => term.length > 1);
+      
+      // Create fuzzy query: exact matches first, then prefix matches
+      let ftsQuery = '';
+      if (queryTerms.length === 1) {
+        // Single term: try exact, then prefix
+        const term = queryTerms[0];
+        ftsQuery = `"${term}" OR ${term}*`;
+      } else {
+        // Multiple terms: try exact phrase, then all terms, then any terms
+        ftsQuery = `"${cleanQuery}" OR (${queryTerms.join(' AND ')}) OR (${queryTerms.join(' OR ')})`;
+      }
+      
+      logger.info(`🔍 Memory recall started - User: ${userId}, Query: "${query}"`);
+      logger.info(`🔍 FTS query being used: "${ftsQuery}" (terms: ${queryTerms.join(', ')})`);
       
       // Use full-text search for better matching
       const searchResults = await db.all(`
@@ -143,9 +157,19 @@ export class MemoryService {
         LIMIT ?
       `, [userId, ftsQuery, limit]);
 
+      logger.info(`📊 FTS search results: ${searchResults.length} memories found`);
+      if (searchResults.length > 0) {
+        logger.info(`📊 FTS search results details:`, searchResults.map(r => ({
+          id: r.id,
+          content: r.content.substring(0, 50) + '...',
+          relevance_score: r.relevance_score,
+          importance: r.importance
+        })));
+      }
+
       // Fallback to partial matching if no FTS results
       if (searchResults.length === 0) {
-        logger.debug(`🔍 FTS found no results, trying partial match for each term`);
+        logger.info(`🔍 FTS found no results, trying partial match for each term: ${queryTerms.join(', ')}`);
         
         // Try each term separately in partial matching
         const fallbackQueries = queryTerms.map(term => {
@@ -160,19 +184,38 @@ export class MemoryService {
         const allResults = await Promise.all(fallbackQueries);
         const flatResults = allResults.flat();
         
+        logger.info(`📊 Partial match results: ${flatResults.length} total results (before deduplication)`);
+        
         // Remove duplicates and limit
         const uniqueResults = Array.from(
           new Map(flatResults.map(r => [r.id, r])).values()
         ).slice(0, limit);
         
+        logger.info(`📊 Partial match unique results: ${uniqueResults.length} memories after deduplication`);
+        if (uniqueResults.length > 0) {
+          logger.info(`📊 Partial match results details:`, uniqueResults.map(r => ({
+            id: r.id,
+            content: r.content.substring(0, 50) + '...',
+            importance: r.importance
+          })));
+        }
+        
         if (uniqueResults.length === 0) {
-          return `🤔 No memories found for "${query}". Try a different search term or ask me to remember something first.`;
+          const noResultsMessage = `🤔 No memories found for "${query}". Try a different search term or ask me to remember something first.`;
+          logger.info(`🔍 Returning no results message: ${noResultsMessage}`);
+          return noResultsMessage;
         }
 
-        return this.formatRecallResults(uniqueResults, query, 'partial match');
+        const formattedResult = this.formatRecallResults(uniqueResults, query, 'partial match');
+        logger.info(`📝 Formatted partial match output length: ${formattedResult.length} characters`);
+        logger.info(`📝 Formatted partial match output preview: ${formattedResult.substring(0, 200)}...`);
+        return formattedResult;
       }
 
-      return this.formatRecallResults(searchResults, query, 'full-text search');
+      const formattedResult = this.formatRecallResults(searchResults, query, 'full-text search');
+      logger.info(`📝 Formatted FTS output length: ${formattedResult.length} characters`);
+      logger.info(`📝 Formatted FTS output preview: ${formattedResult.substring(0, 200)}...`);
+      return formattedResult;
     } catch (error) {
       logger.error('❌ Failed to recall memories:', error);
       throw new Error(`Failed to recall memories: ${error instanceof Error ? error.message : String(error)}`);
@@ -243,62 +286,36 @@ export class MemoryService {
   }
 
   private extractTags(content: string, context: string): string[] {
-    const text = `${content} ${context}`.toLowerCase();
-    const tags: string[] = [];
-
-    // Extract common themes and keywords
-    const patterns = {
-      weather: /weather|temperature|forecast|rain|snow|sunny|cloudy/g,
-      calculation: /math|calculate|equation|formula|number|result/g,
-      installation: /install|setup|configure|deploy|create|build/g,
-      file: /file|folder|directory|path|save|load/g,
-      memory: /remember|recall|memory|note|important/g,
-      schedule: /schedule|remind|timer|alarm|later|time/g,
-      search: /search|find|lookup|google|web/g,
-      mcp: /mcp|server|capability|template|service/g,
-      food: /food|eat|eating|meal|lunch|dinner|breakfast|snack|taste|flavor|cuisine|recipe|cook|cooking|restaurant|diet|dietary|nutrition|preference|prefer|like|dislike|favorite|pizza|burger|pasta|rice|bread|meat|vegetable|fruit|drink|beverage|coffee|tea|wine|beer|spicy|sweet|salty|bitter|sour/g,
-      preferences: /prefer|preference|like|dislike|love|hate|enjoy|favorite|favourite|choice|opinion|want|need|wish|desire/g
-    };
-
-    for (const [tag, pattern] of Object.entries(patterns)) {
-      if (pattern.test(text)) {
-        tags.push(tag);
-      }
-    }
-
-    // Extract any explicit hashtags or @mentions
-    const hashtags = text.match(/#\w+/g);
-    if (hashtags) {
-      tags.push(...hashtags.map(tag => tag.substring(1)));
-    }
-
-    // Extract important nouns (simple approach)
-    const importantWords = text.match(/\b[a-z]{4,}\b/g);
-    if (importantWords) {
-      const filtered = importantWords
-        .filter(word => !['that', 'this', 'with', 'from', 'have', 'been', 'they', 'were', 'said', 'each', 'which', 'their', 'time', 'will', 'about', 'would', 'there', 'could', 'other', 'more', 'very', 'what', 'know', 'just', 'first', 'year', 'work', 'such', 'make', 'even', 'also', 'many'].includes(word))
-        .slice(0, 3); // Max 3 noun tags
-      tags.push(...filtered);
-    }
-
-    return [...new Set(tags)]; // Remove duplicates
+    // Just store the content as-is, no automatic tagging
+    return [];
   }
 
   private formatRecallResults(results: any[], query: string, searchType: string): string {
+    logger.info(`🎨 Formatting ${results.length} recall results for query "${query}" using ${searchType}`);
+    
     const formatted = results.map((memory, index) => {
       const tags = JSON.parse(memory.tags || '[]');
       const date = new Date(memory.created_at || memory.timestamp).toLocaleDateString();
       const importance = '⭐'.repeat(Math.min(memory.importance || 0, 5));
       
-      return `${index + 1}. **${memory.content}** ${importance}
+      const formattedEntry = `${index + 1}. **${memory.content}** ${importance}
    📅 ${date} | 🏷️ ${tags.join(', ') || 'no tags'}${memory.context ? ` | 📝 ${memory.context}` : ''}`;
+      
+      logger.info(`🎨 Formatted entry ${index + 1}: ${formattedEntry.substring(0, 100)}...`);
+      
+      return formattedEntry;
     }).join('\n\n');
 
-    return `🧠 Recalled ${results.length} memories for "${query}" (${searchType}):
+    const finalOutput = `🧠 Recalled ${results.length} memories for "${query}" (${searchType}):
 
 ${formatted}
 
 💡 Use these memories to provide context for your response!`;
+
+    logger.info(`🎨 Final formatted output:
+${finalOutput}`);
+
+    return finalOutput;
   }
 }
 
@@ -308,6 +325,11 @@ ${formatted}
 async function handleMemoryAction(params: Record<string, any>, content?: string): Promise<string> {
   const { action, userId = 'unknown-user' } = params;
   const memoryService = MemoryService.getInstance();
+
+  logger.info(`🎯 Memory handler called - Action: ${action}, UserId: ${userId}, Params:`, params);
+  if (content) {
+    logger.info(`🎯 Memory handler content: ${content.substring(0, 100)}...`);
+  }
 
   try {
     switch (action) {
@@ -320,17 +342,24 @@ async function handleMemoryAction(params: Record<string, any>, content?: string)
         const context = params.context || '';
         const importance = Math.max(1, Math.min(10, parseInt(params.importance) || 5));
         
-        return await memoryService.remember(userId, contentToRemember, context, importance);
+        const result = await memoryService.remember(userId, contentToRemember, context, importance);
+        logger.info(`🎯 Memory remember result: ${result}`);
+        return result;
       }
 
-      case 'recall': {
+      case 'recall':
+      case 'search': {
         const query = params.query || content;
         if (!query) {
-          throw new Error('No query provided for recall');
+          throw new Error('No query provided for search');
         }
         
+        logger.info(`🎯 Memory search starting - Query: "${query}"`);
         const limit = Math.max(1, Math.min(20, parseInt(params.limit) || 5));
-        return await memoryService.recall(userId, query, limit);
+        const targetUserId = params.user || userId; // Allow searching other users if specified
+        const result = await memoryService.recall(targetUserId, query, limit);
+        logger.info(`🎯 Memory search completed - Result length: ${result.length} characters`);
+        return result;
       }
 
       case 'stats': {
@@ -368,11 +397,13 @@ async function handleMemoryAction(params: Record<string, any>, content?: string)
  */
 export const memoryCapability: RegisteredCapability = {
   name: 'memory',
-  supportedActions: ['remember', 'recall', 'stats', 'recent'],
+  supportedActions: ['remember', 'recall', 'search', 'stats', 'recent'],
   description: 'Persistent memory system for storing and retrieving information across conversations',
   handler: handleMemoryAction,
   examples: [
     '<capability name="memory" action="remember" importance="8">Important user preference or fact</capability>',
+    '<capability name="memory" action="search" query="chocolate preferences" />',
+    '<capability name="memory" action="search" query="food" user="john" limit="3" />',
     '<capability name="memory" action="recall">search query for previous information</capability>',
     '<capability name="memory" action="stats" />',
     '<capability name="memory" action="recent" limit="5" />'
