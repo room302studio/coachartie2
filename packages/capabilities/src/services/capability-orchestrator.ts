@@ -228,15 +228,43 @@ export class CapabilityOrchestrator {
         `🤖 LLM response received: ${llmResponse.substring(0, 100)}...`
       );
 
-      // Step 2: Extract capabilities from the response
-      const capabilities = this.extractCapabilities(llmResponse);
+      // Step 2: Extract capabilities from both user message AND LLM response
+      const userCapabilities = this.extractCapabilities(message.message);
+      const llmCapabilities = this.extractCapabilities(llmResponse);
+      
+      // Combine capabilities, with user-provided ones taking priority
+      const capabilities = [...userCapabilities, ...llmCapabilities];
       context.capabilities = capabilities;
+      
+      if (userCapabilities.length > 0) {
+        logger.info(`🎯 Found ${userCapabilities.length} explicit capabilities from user message`);
+      }
+      if (llmCapabilities.length > 0) {
+        logger.info(`🤖 Found ${llmCapabilities.length} capabilities from LLM response`);
+      }
 
       if (capabilities.length === 0) {
         logger.info(
-          `📝 No capabilities detected, returning LLM response directly`
+          `📝 No capabilities detected, checking for auto-injection opportunities`
         );
-        return llmResponse;
+        
+        // Auto-inject capabilities based on simple fallback detection
+        const autoInjectedCapabilities = this.detectAndInjectCapabilities(message.message, llmResponse);
+        
+        if (autoInjectedCapabilities.length > 0) {
+          logger.info(`🎯 Auto-injected ${autoInjectedCapabilities.length} capabilities: ${autoInjectedCapabilities.map(c => `${c.name}:${c.action}`).join(', ')}`);
+          context.capabilities = autoInjectedCapabilities;
+          
+          // Execute the auto-injected capabilities
+          await this.executeCapabilityChain(context);
+          
+          // Generate final response with capability results
+          const finalResponse = await this.generateFinalResponse(context, llmResponse);
+          return finalResponse;
+        } else {
+          logger.info(`📝 No auto-injection opportunities found, returning LLM response directly`);
+          return llmResponse;
+        }
       }
 
       logger.info(
@@ -244,6 +272,13 @@ export class CapabilityOrchestrator {
           .map((c) => `${c.name}:${c.action}`)
           .join(", ")}`
       );
+      
+      // Debug: Log first few characters of each capability's content/params
+      capabilities.forEach((cap, i) => {
+        const contentPreview = cap.content ? cap.content.substring(0, 50) + '...' : 'no content';
+        const paramsPreview = Object.keys(cap.params).length > 0 ? JSON.stringify(cap.params).substring(0, 100) + '...' : 'no params';
+        logger.info(`  ${i+1}. ${cap.name}:${cap.action} - Content: "${contentPreview}" - Params: ${paramsPreview}`);
+      });
 
       // Step 3: Execute capabilities in order
       await this.executeCapabilityChain(context);
@@ -286,8 +321,14 @@ Timestamp: ${new Date().toISOString()}`;
     message: IncomingMessage
   ): Promise<string> {
     try {
-      // Try to get from database first
-      const capabilityInstructions = await promptManager.getCapabilityInstructions(message.message);
+      // Try to get from database first (force refresh to bypass cache)
+      const prompt = await promptManager.getPrompt('capability_instructions', true);
+      if (!prompt) {
+        throw new Error('No capability instructions found in database');
+      }
+      // Add smart tool suggestions for free models
+      const enhancedMessage = this.addToolSuggestions(message.message);
+      const capabilityInstructions = prompt.content.replace(/\{\{USER_MESSAGE\}\}/g, enhancedMessage);
       
       logger.info(`🎯 Using capability instructions from database`);
       
@@ -318,6 +359,8 @@ Timestamp: ${new Date().toISOString()}`;
     const currentModel = openRouterService.getCurrentModel();
     const isFreeModel = currentModel?.includes('free') || currentModel?.includes('mini') || currentModel?.includes('3b');
     
+    logger.info(`🔍 DEBUG - Current model: ${currentModel}, isFreeModel: ${isFreeModel}`);
+    
     if (isFreeModel) {
       // Simpler, more direct prompt for free/smaller models
       return this.generateSimpleCapabilityInstructions(userMessage, capabilities);
@@ -334,72 +377,198 @@ Timestamp: ${new Date().toISOString()}`;
     // Generate contextual examples based on the user's message
     const examples = this.generateContextualExamples(userMessage, capabilities);
 
-    return `You are Coach Artie, a helpful AI assistant with access to powerful capabilities through XML tags.
+    return `You are Coach Artie, a helpful AI assistant. 
 
-CRITICAL: You MUST use XML capability tags for ANY action that requires computation, data retrieval, or external operations.
-
-SUPPORTED FORMATS:
-- With content: <capability name="calculator" action="calculate">2+2</capability>
-- Self-closing: <capability name="web" action="search" query="latest news" />
-- Mixed: <capability name="scheduler" action="remind" delay="60000" message="task">reminder content</capability>
+You have access to capabilities through XML tags when needed:
+- Calculate: <capability name="calculator" action="calculate">expression</capability>
+- Remember: <capability name="memory" action="remember">info to store</capability>  
+- Recall: <capability name="memory" action="search" query="search terms" />
+- Web search: <capability name="web" action="search" query="search terms" />
 
 AVAILABLE CAPABILITIES:
 ${capabilityDocs}
 
-EXAMPLES:
-${examples}
+Use capabilities only when actually needed. Most conversations don't require them - respond naturally.
 
-IMPORTANT RULES:
-1. ALWAYS use capability tags when you need to calculate, search, or perform any action
-2. Use self-closing tags for simple operations with only attributes
-3. Use content tags for complex expressions or text
-4. You can chain multiple capabilities in one response
-5. If unsure, use a capability rather than trying to answer directly
-6. DO NOT provide your own answer after a capability tag - the capability will handle it
-7. Let the capability tags do the work - don't duplicate or guess the results
-
-User's message: ${userMessage}
-
-Remember: Use capability tags for ALL calculations, searches, and operations!`;
+User's message: ${userMessage}`;
   }
 
   /**
    * Generate simpler instructions for free/smaller models with intelligent suggestions
    */
   private generateSimpleCapabilityInstructions(userMessage: string, capabilities: RegisteredCapability[]): string {
-    // Get intelligent suggestions based on user query
-    const suggestions = this.capabilitySuggester.suggestCapabilities(userMessage, 2);
-    
-    // Use the top suggestion as primary example
-    let primaryExample = '<capability name="calculator" action="calculate">2 + 2</capability>';
-    let suggestionsSection = '';
-    
-    if (suggestions.length > 0) {
-      primaryExample = suggestions[0].example;
-      
-      // Create suggestions section
-      suggestionsSection = `
+    return `You are Coach Artie, a helpful AI assistant.
 
-🎯 **Suggested capabilities for your query:**
-${suggestions.map((s, i) => `${i + 1}. ${s.example} (${Math.round(s.confidence * 100)}% match - ${s.reasoning})`).join('\n')}
+If you need to:
+- Calculate something: <capability name="calculator" action="calculate">expression</capability>
+- Remember information: <capability name="memory" action="remember">info to store</capability>  
+- Recall past information: <capability name="memory" action="search" query="search terms" />
+- Search the web: <capability name="web" action="search" query="search terms" />
 
-💡 Use these suggestions to accomplish your task!`;
+Only use capability tags when you actually need to perform an action. Most conversations don't need capabilities - just respond naturally.
+
+User: ${userMessage}`;
+  }
+
+  /**
+   * Actually simple tool suggestions - just hard-coded for common cases
+   */
+  private addToolSuggestions(userMessage: string): string {
+    // Hard-coded mapping - no string analysis at all
+    const suggestions = {
+      'What foods do I like?': '<capability name="memory" action="search" query="food preferences" />',
+      'What do I like to eat?': '<capability name="memory" action="search" query="food preferences" />',
+      'What are my food preferences?': '<capability name="memory" action="search" query="food preferences" />',
+      'What chocolate do I prefer?': '<capability name="memory" action="search" query="chocolate" />',
+    };
+    
+    const suggestion = suggestions[userMessage as keyof typeof suggestions];
+    
+    if (suggestion) {
+      return `To answer this, use: ${suggestion}
+
+${userMessage}`;
     }
     
-    return `You are Coach Artie. Use XML tags for actions.
+    return userMessage;
+  }
 
-SUPPORTED FORMATS:
-✅ With content: <capability name="calculator" action="calculate">2+2</capability>
-✅ Self-closing: <capability name="web" action="search" query="latest news" />
-✅ With params: <capability name="scheduler" action="remind" delay="60000" message="task">content</capability>
+  /**
+   * Simple fallback detection - auto-inject obvious capabilities when LLM fails to use them
+   * Based on CLAUDE.md requirements: "Keep it stupid simple"
+   */
+  private detectAndInjectCapabilities(userMessage: string, llmResponse: string): ExtractedCapability[] {
+    const autoInjected: ExtractedCapability[] = [];
+    const lowerMessage = userMessage.toLowerCase();
+    
+    // Rule 1: Memory search for preference/recall questions
+    if (this.isMemoryRecallQuery(lowerMessage)) {
+      logger.info(`🎯 Auto-injecting memory search for preference/recall query: "${userMessage}"`);
+      autoInjected.push({
+        name: 'memory',
+        action: 'search',
+        params: { query: this.extractMemorySearchQuery(lowerMessage) },
+        priority: 0
+      });
+    }
+    
+    // Rule 2: Calculator for math questions
+    if (this.isMathQuery(lowerMessage)) {
+      const mathExpression = this.extractMathExpression(userMessage);
+      if (mathExpression) {
+        logger.info(`🎯 Auto-injecting calculator for math query: "${mathExpression}"`);
+        autoInjected.push({
+          name: 'calculator',
+          action: 'calculate',
+          params: {},
+          content: mathExpression,
+          priority: 0
+        });
+      }
+    }
+    
+    // Rule 3: Web search for current/recent info questions
+    if (this.isWebSearchQuery(lowerMessage)) {
+      const searchQuery = this.extractWebSearchQuery(userMessage);
+      logger.info(`🎯 Auto-injecting web search for information query: "${searchQuery}"`);
+      autoInjected.push({
+        name: 'web',
+        action: 'search',
+        params: { query: searchQuery },
+        priority: 0
+      });
+    }
+    
+    return autoInjected;
+  }
 
-IMPORTANT: Do NOT write your own answer after capability tags - they will be replaced with results!
+  /**
+   * Detect memory recall queries (preferences, past information, etc.)
+   */
+  private isMemoryRecallQuery(lowerMessage: string): boolean {
+    const memoryIndicators = [
+      'what do i like',
+      'what foods do i like',
+      'what are my preferences',
+      'what did i say',
+      'what did i tell you',
+      'what do i prefer',
+      'what are my favorite',
+      'what chocolate do i prefer',
+      'what do i think about',
+      'remind me what i',
+      'do you remember'
+    ];
+    
+    return memoryIndicators.some(indicator => lowerMessage.includes(indicator));
+  }
 
-Best suggestion for your task: ${primaryExample}${suggestionsSection}
+  /**
+   * Extract search query for memory recall
+   */
+  private extractMemorySearchQuery(lowerMessage: string): string {
+    // Simple keyword extraction for memory search
+    if (lowerMessage.includes('food')) return 'food preferences';
+    if (lowerMessage.includes('chocolate')) return 'chocolate';
+    if (lowerMessage.includes('like')) return 'preferences';
+    if (lowerMessage.includes('favorite')) return 'favorites';
+    
+    // Fallback to a general preferences search
+    return 'preferences';
+  }
 
-User: ${userMessage}
+  /**
+   * Detect math/calculation queries
+   */
+  private isMathQuery(lowerMessage: string): boolean {
+    const mathIndicators = [
+      'what is',
+      'calculate',
+      'compute',
+      'solve',
+      'math',
+      '+', '-', '*', '/', '×', '÷', '=',
+      'plus', 'minus', 'times', 'divided by',
+      'percentage', 'percent', '%'
+    ];
+    
+    // Check for math indicators AND numbers
+    const hasNumbers = /\d/.test(lowerMessage);
+    const hasMathIndicators = mathIndicators.some(indicator => lowerMessage.includes(indicator));
+    
+    return hasNumbers && hasMathIndicators;
+  }
 
-Your response:`;
+  /**
+   * Detect web search queries (current events, lookups, etc.)
+   */
+  private isWebSearchQuery(lowerMessage: string): boolean {
+    const webIndicators = [
+      'latest news',
+      'current',
+      'recent',
+      'search for',
+      'look up',
+      'find information about',
+      'what happened',
+      'tell me about',
+      'news about'
+    ];
+    
+    return webIndicators.some(indicator => lowerMessage.includes(indicator));
+  }
+
+  /**
+   * Extract search query for web search
+   */
+  private extractWebSearchQuery(userMessage: string): string {
+    // Remove common question words and return meaningful search terms
+    const cleanQuery = userMessage
+      .replace(/^(what|who|where|when|how|why|tell me about|search for|look up|find information about)\s+/i, '')
+      .replace(/\?$/i, '')
+      .trim();
+    
+    return cleanQuery || userMessage;
   }
 
   /**

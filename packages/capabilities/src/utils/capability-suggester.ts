@@ -55,14 +55,14 @@ const CAPABILITY_KEYWORDS = {
     }
   },
   mcp_client: {
-    keywords: ['mcp', 'connect', 'tool', 'external', 'server', 'list tools', 'available tools', 'call tool', 'mcp server', 'model context protocol', 'disconnect', 'health check'],
+    keywords: ['mcp', 'connect', 'tool', 'external', 'server', 'list', 'available', 'call', 'model context protocol', 'disconnect', 'health', 'protocol', 'client'],
     actions: {
-      connect: ['connect', 'connect to', 'establish connection', 'link to'],
-      disconnect: ['disconnect', 'close connection', 'unlink', 'stop connection'],
-      list_tools: ['list tools', 'available tools', 'show tools', 'what tools', 'tools available'],
-      call_tool: ['call tool', 'execute tool', 'run tool', 'use tool', 'invoke'],
-      list_servers: ['list servers', 'connected servers', 'show servers', 'mcp servers'],
-      health_check: ['health check', 'server health', 'check status', 'ping servers']
+      connect: ['connect', 'connection', 'establish', 'link'],
+      disconnect: ['disconnect', 'close', 'unlink', 'stop'],
+      list_tools: ['list', 'tools', 'available', 'show', 'what'],
+      call_tool: ['call', 'execute', 'run', 'use', 'invoke'],
+      list_servers: ['servers', 'connected', 'show'],
+      health_check: ['health', 'status', 'check', 'ping']
     }
   },
   mcp_installer: {
@@ -144,9 +144,9 @@ const INTENT_PATTERNS = {
   recall: /(?:recall|what\s+did|remember|retrieve)/i,
   schedule: /(?:remind|schedule|later|timer|alarm)/i,
   status: /(?:status|check|health|running|working)/i,
-  mcp_connect: /(?:connect\s+to.*mcp|mcp.*connect|connect.*server|link.*mcp)/i,
-  mcp_tools: /(?:list.*tools|available.*tools|what.*tools|tools.*available|mcp.*tools)/i,
-  mcp_servers: /(?:mcp.*servers|list.*servers|connected.*servers|show.*servers)/i
+  mcp_connect: /(?:connect.*mcp|mcp.*connect|connect.*server|link.*mcp|mcp.*client|use.*mcp)/i,
+  mcp_tools: /(?:list.*tools|available.*tools|what.*tools|tools.*available|mcp.*tools|show.*tools)/i,
+  mcp_servers: /(?:mcp.*servers|list.*servers|connected.*servers|show.*servers|mcp.*client)/i
 };
 
 export class CapabilitySuggester {

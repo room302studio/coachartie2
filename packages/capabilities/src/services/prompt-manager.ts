@@ -28,7 +28,7 @@ export interface CapabilityConfig {
 
 export class PromptManager {
   private cache = new Map<string, PromptTemplate>();
-  private lastCacheUpdate = 0;
+  private cacheTimestamps = new Map<string, number>();
   private cacheExpiryMs = 30000; // 30 seconds cache
 
   /**
@@ -37,9 +37,10 @@ export class PromptManager {
   async getPrompt(name: string, forceRefresh = false): Promise<PromptTemplate | null> {
     const cacheKey = `prompt:${name}`;
     const now = Date.now();
+    const lastUpdate = this.cacheTimestamps.get(cacheKey) || 0;
 
     // Check cache first (unless force refresh)
-    if (!forceRefresh && this.cache.has(cacheKey) && (now - this.lastCacheUpdate) < this.cacheExpiryMs) {
+    if (!forceRefresh && this.cache.has(cacheKey) && (now - lastUpdate) < this.cacheExpiryMs) {
       logger.debug(`📋 Prompt '${name}' loaded from cache`);
       return this.cache.get(cacheKey) || null;
     }
@@ -73,7 +74,7 @@ export class PromptManager {
 
       // Update cache
       this.cache.set(cacheKey, prompt);
-      this.lastCacheUpdate = now;
+      this.cacheTimestamps.set(cacheKey, now);
 
       logger.debug(`🔄 Prompt '${name}' loaded from database (v${prompt.version})`);
       return prompt;
@@ -123,7 +124,9 @@ export class PromptManager {
       );
 
       // Clear cache for this prompt
-      this.cache.delete(`prompt:${name}`);
+      const cacheKey = `prompt:${name}`;
+      this.cache.delete(cacheKey);
+      this.cacheTimestamps.delete(cacheKey);
 
       logger.info(`✅ Prompt '${name}' updated successfully`);
       
