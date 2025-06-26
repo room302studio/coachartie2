@@ -40,6 +40,17 @@ export async function processMessage(message: IncomingMessage): Promise<string> 
     
   } catch (error) {
     logger.error('Error processing message:', error);
-    return "I'm sorry, I encountered an error processing your message. Please try again.";
+    return `🚨 VERBOSE ERROR DEBUG INFO 🚨
+Message ID: ${message.id}
+User ID: ${message.userId}
+Source: ${message.source}
+Original Message: "${message.message}"
+Error: ${error instanceof Error ? error.message : String(error)}
+Stack: ${error instanceof Error ? error.stack : 'No stack trace'}
+Timestamp: ${new Date().toISOString()}
+OpenRouter Key Status: ${process.env.OPENROUTER_API_KEY ? 'CONFIGURED' : 'MISSING'}
+Capabilities Enabled: ${process.env.ENABLE_CAPABILITIES !== 'false'}
+Environment: ${process.env.NODE_ENV || 'unknown'}
+Available Capabilities: ${require('../services/capability-registry.js').capabilityRegistry.list().map((c: any) => c.name).join(', ')}`;
   }
 }

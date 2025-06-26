@@ -260,16 +260,21 @@ export class CapabilityOrchestrator {
       logger.error(`❌ Orchestration failed for message ${message.id}:`, error);
       this.contexts.delete(message.id);
 
-      // Fallback to simple LLM response
-      try {
-        return await openRouterService.generateResponse(
-          message.message,
-          message.userId
-        );
-      } catch (fallbackError) {
-        logger.error("❌ Fallback also failed:", fallbackError);
-        return "I encountered an error processing your request. Please try again.";
-      }
+      // Fallback to super verbose error instead of simple LLM response
+      return `🚨 ORCHESTRATION FAILURE DEBUG 🚨
+Message ID: ${message.id}
+User ID: ${message.userId}
+Original Message: "${message.message}"
+Source: ${message.source}
+Orchestration Error: ${error instanceof Error ? error.message : String(error)}
+Stack: ${error instanceof Error ? error.stack : 'No stack trace'}
+Capabilities Found: ${context.capabilities.length}
+Capability Details: ${context.capabilities.map(c => `${c.name}:${c.action}`).join(', ')}
+Results Generated: ${context.results.length}
+Result Details: ${context.results.map(r => `${r.capability.name}:${r.success ? 'SUCCESS' : 'FAILED'}`).join(', ')}
+Current Step: ${context.currentStep}
+Registry Stats: ${capabilityRegistry.getStats().totalCapabilities} capabilities, ${capabilityRegistry.getStats().totalActions} actions
+Timestamp: ${new Date().toISOString()}`;
     }
   }
 
@@ -350,6 +355,8 @@ IMPORTANT RULES:
 3. Use content tags for complex expressions or text
 4. You can chain multiple capabilities in one response
 5. If unsure, use a capability rather than trying to answer directly
+6. DO NOT provide your own answer after a capability tag - the capability will handle it
+7. Let the capability tags do the work - don't duplicate or guess the results
 
 User's message: ${userMessage}
 
@@ -385,6 +392,8 @@ SUPPORTED FORMATS:
 ✅ With content: <capability name="calculator" action="calculate">2+2</capability>
 ✅ Self-closing: <capability name="web" action="search" query="latest news" />
 ✅ With params: <capability name="scheduler" action="remind" delay="60000" message="task">content</capability>
+
+IMPORTANT: Do NOT write your own answer after capability tags - they will be replaced with results!
 
 Best suggestion for your task: ${primaryExample}${suggestionsSection}
 
@@ -956,6 +965,7 @@ Your response:`;
 
   /**
    * Generate final response incorporating capability results
+   * Now sends capability results back to LLM for coherent response generation
    */
   private async generateFinalResponse(
     context: OrchestrationContext,
@@ -965,33 +975,53 @@ Your response:`;
       `🎯 Generating final response with ${context.results.length} capability results`
     );
 
-    // Replace capability tags with actual results
-    let finalResponse = originalLLMResponse;
-
-    for (const result of context.results) {
-      const capability = result.capability;
-
-      // Build replacement text
-      let replacement: string;
-      if (result.success && result.data) {
-        replacement = result.data;
-      } else if (result.error) {
-        replacement = `[Error: ${result.error}]`;
-      } else {
-        replacement = "[No result]";
-      }
-
-      // Find and replace the original capability tag
-      const tagPattern = new RegExp(
-        `<capability\\s+[^>]*name="${capability.name}"[^>]*action="${capability.action}"[^>]*(?:\\/?>|>.*?</capability>)`,
-        "gs"
-      );
-
-      finalResponse = finalResponse.replace(tagPattern, replacement);
+    // If no capabilities were executed, return original response
+    if (context.results.length === 0) {
+      return originalLLMResponse;
     }
 
-    logger.info(`✅ Final response generated successfully`);
-    return finalResponse;
+    // Build capability results summary for LLM
+    const capabilityResults = context.results.map(result => {
+      const capability = result.capability;
+      if (result.success && result.data) {
+        return `${capability.name}:${capability.action} → ${result.data}`;
+      } else if (result.error) {
+        return `${capability.name}:${capability.action} → Error: ${result.error}`;
+      } else {
+        return `${capability.name}:${capability.action} → No result`;
+      }
+    }).join('\n');
+
+    // Create final response prompt
+    const finalPrompt = `You are Coach Artie. The user asked: "${context.originalMessage}"
+
+You initially planned to use these capabilities, and here are the results:
+${capabilityResults}
+
+Please provide a final, coherent response that incorporates these capability results naturally. Be conversational, helpful, and don't repeat the raw capability output - instead, present the information in a natural way.
+
+Important: 
+- Don't use capability tags in your final response
+- Present the results as if you calculated/found them yourself
+- Be concise but friendly
+- If there were errors, acknowledge them helpfully`;
+
+    try {
+      // Get final coherent response from LLM
+      const finalResponse = await openRouterService.generateResponse(
+        finalPrompt,
+        context.userId
+      );
+      
+      logger.info(`✅ Final coherent response generated successfully`);
+      return finalResponse;
+      
+    } catch (error) {
+      logger.error('❌ Failed to generate final coherent response, returning error message', error);
+      
+      // Return a simple error message instead of trying to parse XML with regex
+      return `I apologize, but I encountered an error while processing your request. The capability results were: ${capabilityResults}`;
+    }
   }
 
   /**

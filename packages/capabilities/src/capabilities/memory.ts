@@ -125,6 +125,12 @@ export class MemoryService {
     try {
       const db = await getDatabase();
       
+      // Improve FTS query by splitting into individual terms and using OR
+      const queryTerms = query.toLowerCase().split(/\s+/).filter(term => term.length > 2);
+      const ftsQuery = queryTerms.join(' OR ');
+      
+      logger.debug(`🔍 Searching for: "${query}" -> FTS query: "${ftsQuery}"`);
+      
       // Use full-text search for better matching
       const searchResults = await db.all(`
         SELECT m.*, 
@@ -135,23 +141,35 @@ export class MemoryService {
         AND memories_fts MATCH ?
         ORDER BY relevance_score, m.importance DESC, m.created_at DESC
         LIMIT ?
-      `, [userId, query, limit]);
+      `, [userId, ftsQuery, limit]);
 
       // Fallback to partial matching if no FTS results
       if (searchResults.length === 0) {
-        const fallbackResults = await db.all(`
-          SELECT * FROM memories 
-          WHERE user_id = ? 
-          AND (content LIKE ? OR tags LIKE ? OR context LIKE ?)
-          ORDER BY importance DESC, created_at DESC
-          LIMIT ?
-        `, [userId, `%${query}%`, `%${query}%`, `%${query}%`, limit]);
-
-        if (fallbackResults.length === 0) {
+        logger.debug(`🔍 FTS found no results, trying partial match for each term`);
+        
+        // Try each term separately in partial matching
+        const fallbackQueries = queryTerms.map(term => {
+          return db.all(`
+            SELECT * FROM memories 
+            WHERE user_id = ? 
+            AND (content LIKE ? OR tags LIKE ? OR context LIKE ?)
+            ORDER BY importance DESC, created_at DESC
+          `, [userId, `%${term}%`, `%${term}%`, `%${term}%`]);
+        });
+        
+        const allResults = await Promise.all(fallbackQueries);
+        const flatResults = allResults.flat();
+        
+        // Remove duplicates and limit
+        const uniqueResults = Array.from(
+          new Map(flatResults.map(r => [r.id, r])).values()
+        ).slice(0, limit);
+        
+        if (uniqueResults.length === 0) {
           return `🤔 No memories found for "${query}". Try a different search term or ask me to remember something first.`;
         }
 
-        return this.formatRecallResults(fallbackResults, query, 'partial match');
+        return this.formatRecallResults(uniqueResults, query, 'partial match');
       }
 
       return this.formatRecallResults(searchResults, query, 'full-text search');
@@ -237,7 +255,9 @@ export class MemoryService {
       memory: /remember|recall|memory|note|important/g,
       schedule: /schedule|remind|timer|alarm|later|time/g,
       search: /search|find|lookup|google|web/g,
-      mcp: /mcp|server|capability|template|service/g
+      mcp: /mcp|server|capability|template|service/g,
+      food: /food|eat|eating|meal|lunch|dinner|breakfast|snack|taste|flavor|cuisine|recipe|cook|cooking|restaurant|diet|dietary|nutrition|preference|prefer|like|dislike|favorite|pizza|burger|pasta|rice|bread|meat|vegetable|fruit|drink|beverage|coffee|tea|wine|beer|spicy|sweet|salty|bitter|sour/g,
+      preferences: /prefer|preference|like|dislike|love|hate|enjoy|favorite|favourite|choice|opinion|want|need|wish|desire/g
     };
 
     for (const [tag, pattern] of Object.entries(patterns)) {
