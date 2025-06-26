@@ -20,6 +20,7 @@ export const calculatorCapability: RegisteredCapability = {
   description: 'Performs mathematical calculations and evaluates expressions',
   requiredParams: ['expression'],
   handler: async (params, content) => {
+    logger.info(`🧮 Calculator called with params: ${JSON.stringify(params)}, content: "${content}"`);
     const expression = params.expression || content;
     
     if (!expression) {
