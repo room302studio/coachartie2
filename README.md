@@ -524,8 +524,8 @@ We offer flexible commercial licensing options for:
 - **Custom Integrations** - Tailored licensing for specific use cases
 
 **Contact for Commercial Licensing:**
-- Email: [Your Email]
-- Website: [Your Website]
+- Email: ejfox@room302.studio
+- Website: room302.studio
 
 ---
 
