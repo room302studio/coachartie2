@@ -7,6 +7,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 config({ path: resolve(__dirname, '../../../../.env') });
 
 import { logger } from '@coachartie/shared';
+import { UsageTracker, TokenUsage } from './usage-tracker.js';
 
 class OpenRouterService {
   private client: OpenAI;
@@ -50,12 +51,15 @@ class OpenRouterService {
   async generateResponse(
     userMessage: string, 
     userId: string, 
-    context?: string
+    context?: string,
+    messageId?: string
   ): Promise<string> {
     const systemPrompt = `You are Coach Artie, a helpful and encouraging AI assistant. You provide supportive, motivational, and practical advice. Keep responses concise but warm and engaging.
 
 ${context ? `Context from previous conversations: ${context}` : ''}`;
 
+    const startTime = Date.now();
+    
     // Try each model in order until one works
     for (let i = 0; i < this.models.length; i++) {
       const model = this.models[i];
@@ -85,7 +89,41 @@ ${context ? `Context from previous conversations: ${context}` : ''}`;
           throw new Error('No response generated');
         }
 
-        logger.info(`✅ Generated response for user ${userId} using ${model}`);
+        const responseTime = Date.now() - startTime;
+        
+        // Extract token usage from API response
+        const usage: TokenUsage = {
+          prompt_tokens: completion.usage?.prompt_tokens || 0,
+          completion_tokens: completion.usage?.completion_tokens || 0,
+          total_tokens: completion.usage?.total_tokens || 0
+        };
+
+        // Calculate cost and record usage
+        const estimatedCost = UsageTracker.calculateCost(model, usage);
+        
+        // Record usage statistics (don't await to avoid blocking)
+        if (messageId) {
+          UsageTracker.recordUsage({
+            model_name: model,
+            user_id: userId,
+            message_id: messageId,
+            input_length: userMessage.length,
+            output_length: response.length,
+            response_time_ms: responseTime,
+            capabilities_detected: 0, // Will be updated by orchestrator
+            capabilities_executed: 0, // Will be updated by orchestrator
+            capability_types: '',     // Will be updated by orchestrator
+            success: true,
+            prompt_tokens: usage.prompt_tokens,
+            completion_tokens: usage.completion_tokens,
+            total_tokens: usage.total_tokens,
+            estimated_cost: estimatedCost
+          }).catch(error => {
+            logger.error('Failed to record usage stats:', error);
+          });
+        }
+
+        logger.info(`✅ Generated response for user ${userId} using ${model} (${usage.total_tokens} tokens, $${estimatedCost.toFixed(4)})`);
         return response.trim();
 
       } catch (error: any) {
