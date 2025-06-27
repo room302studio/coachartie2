@@ -1,7 +1,19 @@
 # Coach Artie 2 - Development SITREP
 
-**Last Updated:** 2025-06-26 15:00:00 UTC  
-**Status:** Memory System Fixed ✅ | Free Model Guidance In Progress
+**Last Updated:** 2025-06-27 01:20 UTC (Claude Session Complete)  
+**Status:** Major Improvements ✅ | Discord Fixed ✅ | Token Tracking ✅ | Auto-Injection ✅
+
+## ✅ FIXED: Discord Double Response Issue
+**Problem**: Discord bot was processing same message twice, sending duplicate responses
+**Root Cause**: Two parallel Discord implementations were both active:
+  - Legacy `index.js` directly calling `capabilitiesClient.chat()` 
+  - New `src/index.ts` using BullMQ message queue
+**Fix Applied**: Renamed `index.js` to `index.js.backup` to disable legacy implementation
+**Result**: Only the TypeScript queue-based implementation is active now
+
+---
+
+**Previous Status:** Memory System Fixed ✅ | Free Model Guidance In Progress
 
 ---
 
@@ -11,13 +23,13 @@
 - **Memory System**: Fixed! Now extracts capabilities from user messages AND LLM responses
 - **Basic API**: Chat endpoint on port 23701, all services healthy  
 - **Capability Architecture**: 10 capabilities, 41+ actions registered
-- **Free Model Fallback**: Graceful degradation when credits exhausted
+- **Free Model Fallback**: Graceful degradation when credits exhausted + auto-injection
 - **Database**: SQLite persistence, prompt hot-reloading fixed
+- **Token Usage Tracking**: Full implementation with cost calculation and stats
 
 ### ⚠️ NEEDS WORK
-- **Free Model Guidance**: Models ignore capability suggestions
 - **MCP stdio://**: Only HTTP/HTTPS supported, can't connect to local servers
-- **Tool Suggestions**: Half-baked, need simple fallback detection
+- **CapabilitySuggester**: Broken substring matching, needs keyword improvements
 
 ### ❌ KNOWN BROKEN
 - **Brain Migration**: Core brain still in ARCHIVE, needs monorepo integration
@@ -55,6 +67,37 @@ curl -X POST http://localhost:23701/chat -d '{"message": "<capability name=\"mem
 
 ---
 
+## 📊 Token Usage & Cost Tracking (NEW)
+
+### Implementation Complete ✅
+- **UsageTracker Service**: Captures token usage from OpenRouter API responses
+- **Database Schema**: Extended `model_usage_stats` table with token columns
+- **Cost Calculation**: Model-specific pricing per 1K tokens (Claude, GPT, free models)
+- **Statistics API**: User usage, model usage, daily aggregations
+
+### How It Works
+```typescript
+// Automatic capture in OpenRouter service
+const usage = completion.usage; // { prompt_tokens, completion_tokens, total_tokens }
+const cost = UsageTracker.calculateCost(model, usage);
+
+// Stats queries
+const userStats = await UsageTracker.getUserUsage('user123', 30);
+const modelStats = await UsageTracker.getModelUsage('claude-3.5-sonnet', 7);
+const dailyStats = await UsageTracker.getDailyUsage(7);
+```
+
+### Current Pricing (per 1K tokens)
+- **Claude 3.5 Sonnet**: $0.003 input / $0.015 output  
+- **GPT-3.5**: $0.0005 input / $0.0015 output
+- **Free Models**: $0 (Mistral, Phi-3, Llama, Gemma)
+
+### Database Columns Added
+- `prompt_tokens`, `completion_tokens`, `total_tokens`, `estimated_cost`
+- Fully backward compatible with existing data
+
+---
+
 ## 🤖 Free Model Challenge
 
 **The Problem**: Free models don't naturally generate capability XML tags for memory searches, calculations, etc.
@@ -69,10 +112,11 @@ curl -X POST http://localhost:23701/chat -d '{"message": "<capability name=\"mem
 - ❌ Hard-coded string mappings
 - ❌ Over-engineered suggestions
 
-**Next Approach**: Simple fallback detection
-- If LLM response has no capability tags AND user asked about preferences → auto-inject memory search
-- If user asks math question AND no calculator tag → auto-inject calculator
-- Keep it stupid simple
+**Fixed**: Simple fallback detection implemented ✅
+- Auto-injects memory search for preference queries ("What do I like?", "What are my favorites?")
+- Auto-injects calculator for math questions with numbers
+- Auto-injects web search for information queries
+- Works when LLM response contains no capability tags
 
 ---
 

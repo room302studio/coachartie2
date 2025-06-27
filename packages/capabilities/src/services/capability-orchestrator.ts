@@ -341,11 +341,8 @@ Timestamp: ${new Date().toISOString()}`;
       const pastExperiences = await this.getRelevantMemoryPatterns(message.message, message.userId);
       console.log(`🧪 MEMORY INJECTION RESULTS: ${pastExperiences.length} patterns found`);
       
-      // Add smart tool suggestions for free models
-      const enhancedMessage = this.addToolSuggestions(message.message);
-      
       // Include past experiences in the prompt
-      let capabilityInstructions = prompt.content.replace(/\{\{USER_MESSAGE\}\}/g, enhancedMessage);
+      let capabilityInstructions = prompt.content.replace(/\{\{USER_MESSAGE\}\}/g, message.message);
       
       if (pastExperiences.length > 0) {
         const experienceContext = pastExperiences.map(exp => `- ${exp}`).join('\n');
@@ -360,7 +357,9 @@ Timestamp: ${new Date().toISOString()}`;
       
       return await openRouterService.generateResponse(
         capabilityInstructions,
-        message.userId
+        message.userId,
+        undefined,
+        message.id
       );
     } catch (error) {
       logger.error('❌ Failed to get capability instructions from database, generating dynamic fallback', error);
@@ -370,7 +369,9 @@ Timestamp: ${new Date().toISOString()}`;
       
       return await openRouterService.generateResponse(
         dynamicInstructions,
-        message.userId
+        message.userId,
+        undefined,
+        message.id
       );
     }
   }
@@ -612,28 +613,6 @@ Capabilities Used:
 ${capabilityDetails}`;
   }
 
-  /**
-   * Actually simple tool suggestions - just hard-coded for common cases
-   */
-  private addToolSuggestions(userMessage: string): string {
-    // Hard-coded mapping - no string analysis at all
-    const suggestions = {
-      'What foods do I like?': '<capability name="memory" action="search" query="food preferences" />',
-      'What do I like to eat?': '<capability name="memory" action="search" query="food preferences" />',
-      'What are my food preferences?': '<capability name="memory" action="search" query="food preferences" />',
-      'What chocolate do I prefer?': '<capability name="memory" action="search" query="chocolate" />',
-    };
-    
-    const suggestion = suggestions[userMessage as keyof typeof suggestions];
-    
-    if (suggestion) {
-      return `To answer this, use: ${suggestion}
-
-${userMessage}`;
-    }
-    
-    return userMessage;
-  }
 
   /**
    * Simple fallback detection - auto-inject obvious capabilities when LLM fails to use them
@@ -772,6 +751,7 @@ ${userMessage}`;
     
     return cleanQuery || userMessage;
   }
+
 
   /**
    * Extract mathematical expression from user message
@@ -1381,7 +1361,9 @@ Important:
       // Get final coherent response from LLM
       const finalResponse = await openRouterService.generateResponse(
         finalPrompt,
-        context.userId
+        context.userId,
+        undefined,
+        context.messageId
       );
       
       logger.info(`✅ Final coherent response generated successfully`);
