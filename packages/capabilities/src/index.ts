@@ -22,7 +22,7 @@ import { capabilityRegistry } from './services/capability-registry.js';
 import { capabilitiesRouter } from './routes/capabilities.js';
 
 const app = express();
-const PORT = process.env.CAPABILITIES_PORT || process.env.PORT || 23701;
+const PORT = process.env.CAPABILITIES_PORT || process.env.PORT || 18239;
 
 // Middleware
 app.use(helmet());
@@ -79,11 +79,32 @@ async function start() {
     await startScheduler();
 
     // Start HTTP server (for health checks)
-    app.listen(PORT, () => {
-      logger.info(`Capabilities service listening on port ${PORT}`);
+    const server = app.listen(PORT, () => {
+      logger.info(`✅ Capabilities service successfully bound to port ${PORT}`);
       logger.info('Service is ready to process messages from queue');
       logger.info('Scheduler service is ready for task management');
     });
+
+    server.on('error', (error: any) => {
+      if (error.code === 'EADDRINUSE') {
+        logger.error(`❌ PORT CONFLICT: Port ${PORT} is already in use!`);
+        logger.error(`❌ Another service is likely running on this port. Check with: lsof -i :${PORT}`);
+        logger.error(`❌ Kill competing process or use a different port.`);
+      } else {
+        logger.error(`❌ Server failed to start on port ${PORT}:`, error);
+      }
+      process.exit(1);
+    });
+
+    // Verify the server is actually listening after a brief delay
+    setTimeout(() => {
+      const address = server.address();
+      if (address && typeof address === 'object') {
+        logger.info(`🔍 Verified: Server is listening on ${address.address}:${address.port}`);
+      } else {
+        logger.error(`❌ Server address verification failed. Server may not be properly bound.`);
+      }
+    }, 1000);
   } catch (error) {
     logger.error('Failed to start capabilities service:', error);
     process.exit(1);
