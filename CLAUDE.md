@@ -1,7 +1,42 @@
 # Coach Artie 2 - Development SITREP
 
-**Last Updated:** 2025-06-27 01:20 UTC (Claude Session Complete)  
-**Status:** Major Improvements ✅ | Discord Fixed ✅ | Token Tracking ✅ | Auto-Injection ✅
+**Last Updated:** 2025-06-27 15:32 UTC (Docker Working!)  
+**Status:** XML Parser Refactored ✅ | TypeScript Fixed ✅ | Docker Compose Working ✅
+
+## ✅ FIXED: XML Parser Refactoring (2025-06-27)
+**Problem**: Hardcoded regex patterns scattered throughout codebase for XML capability parsing
+**Solution**: Created centralized `xml-parser.ts` using `fast-xml-parser` library
+**Files Changed**:
+- `packages/capabilities/src/utils/xml-parser.ts` (NEW - centralized parser)
+- `packages/capabilities/src/services/capability-orchestrator.ts` (removed regex methods)
+- `packages/capabilities/src/capabilities/memory.ts` (uses new parser)
+**Benefits**: Clean, maintainable, properly tested XML parsing with comprehensive unit tests
+**Test Results**: ✅ Memory remember/search, ✅ Calculator parsing, ✅ Self-closing tags, ✅ Multiple capabilities
+
+## ✅ FIXED: TypeScript Compilation Errors (2025-06-27)
+**Problem**: Build failures due to missing methods and type errors
+**Solution**: 
+- Fixed missing `lastCacheUpdate` property in PromptManager
+- Replaced deleted method calls with inline logic
+- Fixed OpenRouter service call signatures
+**Result**: `pnpm build` now completes successfully
+
+## ✅ FIXED: Docker Compose Setup (2025-06-27)
+**Problem**: Development server networking issues with tsx/turbo, lockfile conflicts, environment variable handling
+**Solution**: Fully working Docker Compose setup with proper environment variable management
+**Key Fixes**:
+1. **Lockfile**: Deleted and regenerated pnpm-lock.yaml to fix Docker build failures
+2. **Environment Variables**: Added OPENROUTER_API_KEY and WOLFRAM_APP_ID to docker-compose.yml
+3. **Docker .env Location**: Must copy .env to docker/.env directory for Docker Compose to read
+4. **Port Consistency**: Updated Dockerfile.capabilities EXPOSE to 47101
+
+**Verified Working**:
+- ✅ Health endpoint: `curl http://localhost:47101/health` returns `{"status":"healthy","service":"capabilities","timestamp":"...","checks":{"redis":"connected"}}`
+- ✅ Chat endpoint: `curl -X POST http://localhost:47101/chat` returns proper JSON response
+- ✅ Redis connection working
+- ✅ Service properly bound to port 47101
+
+**Impact**: Full API testing now possible via Docker Compose. Development server networking bypassed.
 
 ## ✅ FIXED: Discord Double Response Issue
 **Problem**: Discord bot was processing same message twice, sending duplicate responses

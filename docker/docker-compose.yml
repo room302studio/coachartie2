@@ -21,15 +21,17 @@ services:
       context: ..
       dockerfile: docker/Dockerfile.capabilities
     ports:
-      - "${CAPABILITIES_PORT:-9991}:${CAPABILITIES_PORT:-9991}"
+      - "${CAPABILITIES_PORT:-47101}:${CAPABILITIES_PORT:-47101}"
     environment:
       - REDIS_HOST=redis
       - DATABASE_URL=${DATABASE_URL}
       - SUPABASE_URL=${SUPABASE_URL}
       - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+      - WOLFRAM_APP_ID=${WOLFRAM_APP_ID}
       - SERVICE_NAME=capabilities
-      - PORT=${CAPABILITIES_PORT:-9991}
+      - PORT=${CAPABILITIES_PORT:-47101}
     depends_on:
       redis:
         condition: service_healthy
@@ -59,7 +61,7 @@ services:
       context: ..
       dockerfile: docker/Dockerfile.sms
     ports:
-      - "${SMS_PORT:-9993}:${SMS_PORT:-9993}"
+      - "${SMS_PORT:-47102}:${SMS_PORT:-47102}"
     environment:
       - REDIS_HOST=redis
       - DATABASE_URL=${DATABASE_URL}
@@ -67,7 +69,7 @@ services:
       - TWILIO_AUTH_TOKEN=${TWILIO_AUTH_TOKEN}
       - TWILIO_PHONE_NUMBER=${TWILIO_PHONE_NUMBER}
       - SERVICE_NAME=sms
-      - PORT=${SMS_PORT:-9993}
+      - PORT=${SMS_PORT:-47102}
     depends_on:
       - redis
       - capabilities
@@ -80,7 +82,7 @@ services:
       context: ..
       dockerfile: docker/Dockerfile.email
     ports:
-      - "${EMAIL_SERVICE_PORT:-9994}:${EMAIL_SERVICE_PORT:-9994}"
+      - "${EMAIL_PORT:-47103}:${EMAIL_PORT:-47103}"
     environment:
       - REDIS_HOST=redis
       - DATABASE_URL=${DATABASE_URL}
@@ -90,7 +92,7 @@ services:
       - EMAIL_PASS=${EMAIL_PASS}
       - EMAIL_FROM=${EMAIL_FROM}
       - SERVICE_NAME=email
-      - PORT=${EMAIL_SERVICE_PORT:-9994}
+      - PORT=${EMAIL_PORT:-47103}
     depends_on:
       - redis
       - capabilities
@@ -104,7 +106,7 @@ services:
     environment:
       - REDIS_HOSTS=local:redis:6379
     ports:
-      - "8081:8081"
+      - "47104:8081"
     depends_on:
       - redis
     networks:

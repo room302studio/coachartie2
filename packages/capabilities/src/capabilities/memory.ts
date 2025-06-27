@@ -101,18 +101,24 @@ export class MemoryService {
     try {
       const db = await getDatabase();
       
-      // Extract tags from content (simple keyword extraction)
-      const tags = this.extractTags(content, context);
+      // Store memory first with basic tags
+      const basicTags = this.extractBasicTags(content, context);
       const timestamp = new Date().toISOString();
 
       const result = await db.run(`
         INSERT INTO memories (user_id, content, tags, context, timestamp, importance)
         VALUES (?, ?, ?, ?, ?, ?)
-      `, [userId, content, JSON.stringify(tags), context, timestamp, importance]);
+      `, [userId, content, JSON.stringify(basicTags), context, timestamp, importance]);
 
+      const memoryId = result.lastID!;
       logger.info(`💾 Stored memory for user ${userId}: ${content.substring(0, 50)}...`);
+
+      // Generate semantic tags asynchronously 
+      this.generateSemanticTags(memoryId, content, context).catch(error => {
+        logger.error('❌ Failed to generate semantic tags:', error);
+      });
       
-      return `✅ Remembered: "${content}" (ID: ${result.lastID}, importance: ${importance}/10, tags: ${tags.join(', ')})`;
+      return `✅ Remembered: "${content}" (ID: ${memoryId}, importance: ${importance}/10, tags: ${basicTags.join(', ')})`;
     } catch (error) {
       logger.error('❌ Failed to store memory:', error);
       throw new Error(`Failed to store memory: ${error instanceof Error ? error.message : String(error)}`);
@@ -285,9 +291,103 @@ export class MemoryService {
     }
   }
 
-  private extractTags(content: string, context: string): string[] {
-    // Just store the content as-is, no automatic tagging
-    return [];
+  private extractBasicTags(content: string, context: string): string[] {
+    // Basic keyword extraction for immediate storage
+    const words = content.toLowerCase().split(/\s+/);
+    const basicTags = [];
+    
+    // Extract obvious content words (3+ letters, not common words)
+    const commonWords = new Set(['the', 'and', 'for', 'are', 'but', 'not', 'you', 'all', 'can', 'had', 'her', 'was', 'one', 'our', 'out', 'day', 'get', 'has', 'him', 'his', 'how', 'its', 'may', 'new', 'now', 'old', 'see', 'two', 'way', 'who', 'boy', 'did', 'man', 'end', 'few', 'got', 'lot', 'own', 'say', 'she', 'use', 'her', 'now', 'find', 'only', 'come', 'made', 'over', 'such', 'take', 'than', 'them', 'well', 'were', 'what', 'your', 'work', 'life', 'only', 'then', 'first', 'would', 'there', 'could', 'water', 'after', 'where', 'think', 'being', 'every', 'these', 'those', 'their', 'said', 'each', 'which', 'much', 'very', 'when', 'need', 'said', 'each', 'which', 'into', 'that', 'have', 'from', 'they', 'know', 'want', 'been', 'good', 'much', 'some', 'time', 'very', 'when', 'come', 'here', 'just', 'like', 'long', 'make', 'many', 'over', 'such', 'take', 'than', 'them', 'well', 'were']);
+    
+    for (const word of words) {
+      if (word.length >= 3 && !commonWords.has(word) && /^[a-zA-Z]+$/.test(word)) {
+        basicTags.push(word);
+      }
+    }
+    
+    return basicTags.slice(0, 5); // Limit to first 5 basic tags
+  }
+
+  private async generateSemanticTags(memoryId: number, content: string, context: string): Promise<void> {
+    try {
+      logger.info(`🏷️ Generating semantic tags for memory ${memoryId}: "${content.substring(0, 50)}..."`);
+      
+      const prompt = `Analyze this user memory and generate 3-8 semantic tags that would help find this memory later.
+
+Memory: "${content}"
+Context: "${context}"
+
+Generate tags that capture:
+- DOMAIN (food, music, work, travel, etc.)
+- EMOTION (like, love, hate, prefer, etc.) 
+- CATEGORY (specific type, genre, style, etc.)
+- RELATIONS (family, friend, colleague, etc.)
+
+Return ONLY a JSON array of lowercase tag strings, no other text.
+Example: ["food", "pizza", "italian", "preference", "like"]`;
+
+      const { openRouterService } = await import('../services/openrouter.js');
+      const response = await openRouterService.generateResponse(prompt, 'mistralai/mistral-7b-instruct:free');
+
+      // Parse the tags from LLM response
+      const tags = this.parseTagsFromResponse(response);
+      
+      if (tags.length > 0) {
+        // Update the memory with semantic tags
+        await this.updateMemoryTags(memoryId, tags);
+        logger.info(`🏷️ Added ${tags.length} semantic tags to memory ${memoryId}: ${tags.join(', ')}`);
+      } else {
+        logger.warn(`🏷️ No semantic tags generated for memory ${memoryId}`);
+      }
+    } catch (error) {
+      logger.error(`❌ Failed to generate semantic tags for memory ${memoryId}:`, error);
+    }
+  }
+
+  private parseTagsFromResponse(response: string): string[] {
+    try {
+      // Try to extract JSON array from response
+      const jsonMatch = response.match(/\[.*?\]/);
+      if (jsonMatch) {
+        const tags = JSON.parse(jsonMatch[0]);
+        if (Array.isArray(tags)) {
+          return tags.filter(tag => typeof tag === 'string' && tag.length > 1).slice(0, 8);
+        }
+      }
+      
+      // Fallback: split by comma and clean up
+      const fallbackTags = response
+        .toLowerCase()
+        .replace(/[^a-z,\s]/g, '')
+        .split(',')
+        .map(tag => tag.trim())
+        .filter(tag => tag.length > 1)
+        .slice(0, 8);
+      
+      return fallbackTags;
+    } catch (error) {
+      logger.error('❌ Failed to parse tags from LLM response:', error);
+      return [];
+    }
+  }
+
+  private async updateMemoryTags(memoryId: number, semanticTags: string[]): Promise<void> {
+    try {
+      const db = await getDatabase();
+      
+      // Get current tags
+      const result = await db.get(`SELECT tags FROM memories WHERE id = ?`, [memoryId]);
+      if (!result) return;
+      
+      const currentTags = JSON.parse(result.tags || '[]');
+      const allTags = [...new Set([...currentTags, ...semanticTags])]; // Merge and dedupe
+      
+      // Update memory with combined tags
+      await db.run(`UPDATE memories SET tags = ? WHERE id = ?`, [JSON.stringify(allTags), memoryId]);
+      
+    } catch (error) {
+      logger.error(`❌ Failed to update tags for memory ${memoryId}:`, error);
+    }
   }
 
   private formatRecallResults(results: any[], query: string, searchType: string): string {
