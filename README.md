@@ -28,6 +28,18 @@ curl http://localhost:47101/health
 
 **Service URLs**: 47101 (capabilities), 47102 (SMS), 47103 (email), 47104 (monitoring)
 
+## 🎯 Current Status
+
+✅ **Fully Working System** - Complete end-to-end AI capabilities with Discord integration  
+✅ **Docker Compose Deployment** - Verified working on local and VPS environments  
+✅ **Multi-model AI** - OpenRouter integration with graceful fallback to free models  
+✅ **Memory System** - SQLite with FTS5 search, stores and recalls user context  
+✅ **Auto-injection** - Smart capability detection for natural language queries  
+✅ **Rigorous Deploy Script** - `./scripts/deploy-local.sh` for systematic environment setup  
+✅ **Production Ready** - Standardized ports, comprehensive documentation, health checks  
+
+**Last Verified**: 2025-06-27 - Discord bot responding, capabilities processing, memory recall working
+
 ---
 
 ## 🚀 Quick Development Start
@@ -81,18 +93,66 @@ tail -50 /tmp/turbo.log
 
 ## 🏗 Architecture
 
+### Core Design Principles
 - **Monorepo**: All services in one repository using pnpm workspaces
-- **Queue-based**: Redis (BullMQ) for inter-service communication
-- **TypeScript**: Fully typed with shared types package
-- **Docker**: Containerized services with Docker Compose
+- **Queue-based Communication**: Redis (BullMQ) for reliable inter-service messaging
+- **TypeScript First**: Fully typed with shared types package across all services
+- **Docker Native**: Containerized services with Docker Compose for consistent deployment
+- **Local-first Development**: SQLite + Redis for zero external dependencies during development
+
+### AI & Capabilities System
+- **Multi-model Support**: OpenRouter integration with Claude 3.5 Sonnet, GPT, and free models (Mistral, Phi-3, Llama, Gemma)
+- **Graceful Degradation**: Automatic fallback to free models when credits exhausted
+- **Centralized XML Parser**: `fast-xml-parser` library replaces scattered regex patterns
+- **Auto-injection**: Smart capability detection for natural language queries
+- **Memory System**: SQLite with FTS5 full-text search for user context and preferences
+
+### Service Communication
+- **Redis Queues**: All inter-service communication via BullMQ for reliability
+- **Health Checks**: Each service exposes `/health` endpoint for monitoring
+- **Standardized Ports**: Development (47001-47003), Production (47101-47103)
+- **Environment Management**: Rigorous `.env` handling with deployment scripts
+
+### Data Persistence
+- **Local SQLite**: Zero-config database with FTS5 search capabilities
+- **Redis Queue Storage**: Message persistence and retry logic
+- **Memory Auto-tagging**: Semantic tag generation using free models for better search
 
 ## 📦 Services
 
-- `packages/capabilities` - Core AI capabilities and message processing (Port: 18239)
-- `packages/discord` - Discord bot interface 
-- `packages/sms` - SMS interface via Twilio (Port: 27461)
-- `packages/email` - Email interface (Port: 35892)
-- `packages/shared` - Shared types, utilities, and constants
+### Core Services
+- **`packages/capabilities`** - Core AI orchestration and capabilities processing
+  - Multi-model AI integration (OpenRouter)
+  - Memory system with SQLite + FTS5 search
+  - XML capability parsing and execution
+  - Auto-injection for natural language queries
+  - Port: 47001 (dev), 47101 (prod)
+
+- **`packages/discord`** - Discord bot interface
+  - Real-time chat processing via Redis queues
+  - Direct message and mention handling
+  - Capability integration for rich responses
+
+- **`packages/sms`** - SMS interface via Twilio webhooks
+  - Port: 47002 (dev), 47102 (prod)
+
+- **`packages/email`** - Email interface with SMTP support  
+  - Port: 47003 (dev), 47103 (prod)
+
+### Supporting Infrastructure
+- **`packages/shared`** - Shared types, utilities, and constants
+  - Database connections and models
+  - Redis queue configurations
+  - Common types and interfaces
+
+- **`packages/mcp-calculator`** - Local MCP server for math operations
+  - Standalone calculator service
+  - Model Context Protocol (MCP) integration
+
+### Data & Queue Management
+- **Redis** - Message queues and session storage (Port: 6379)
+- **SQLite** - Local database with full-text search
+- **Redis Commander** - Queue monitoring interface (Port: 47104)
 
 ## 🚀 VPS Deployment (Production Ready)
 
@@ -325,6 +385,30 @@ After deployment, your services will be available at:
 - **SMS Webhook**: `http://your-vps-ip:47102/sms/webhook`
 - **Email Webhook**: `http://your-vps-ip:47103/email/webhook`
 - **Redis Commander**: `http://your-vps-ip:47104` (monitoring)
+
+## 🚀 Deployment Scripts
+
+### Local Development Script
+Use the rigorous deployment script for local development:
+
+```bash
+# Run the complete local deployment
+./scripts/deploy-local.sh
+```
+
+**What it does:**
+- ✅ Verifies `.env.local` exists with your API keys
+- ✅ Copies environment variables to `docker/.env` (critical step!)  
+- ✅ Adds Docker-specific settings automatically
+- ✅ Stops existing services cleanly
+- ✅ Builds and starts all services with proper environment
+- ✅ Tests health endpoints and provides service URLs
+- ✅ Shows logs and restart commands
+
+**Environment Files:**
+- `.env.local` - Your actual API keys (OpenRouter, Discord, etc.)
+- `docker/.env` - Auto-generated Docker environment (don't edit manually)
+- `.env.production` - Template for VPS deployment
 
 ## 🔄 Updates & Maintenance
 
