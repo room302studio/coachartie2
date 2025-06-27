@@ -6,7 +6,7 @@ import { healthRouter } from './routes/health.js';
 import { smsRouter } from './routes/sms.js';
 
 const app = express();
-const PORT = process.env.SMS_PORT || process.env.PORT || 23702;
+const PORT = process.env.SMS_PORT || process.env.PORT || 27461;
 
 // Middleware
 app.use(helmet());
@@ -36,9 +36,19 @@ async function start() {
     await startQueueWorkers();
 
     // Start HTTP server (for Twilio webhooks)
-    app.listen(PORT, () => {
-      logger.info(`SMS service listening on port ${PORT}`);
+    const server = app.listen(PORT, () => {
+      logger.info(`✅ SMS service successfully bound to port ${PORT}`);
       logger.info('Ready to receive Twilio webhooks and process SMS responses');
+    });
+
+    server.on('error', (error: any) => {
+      if (error.code === 'EADDRINUSE') {
+        logger.error(`❌ PORT CONFLICT: Port ${PORT} is already in use!`);
+        logger.error(`❌ Another SMS service is likely running. Check with: lsof -i :${PORT}`);
+      } else {
+        logger.error(`❌ SMS server failed to start on port ${PORT}:`, error);
+      }
+      process.exit(1);
     });
   } catch (error) {
     logger.error('Failed to start SMS service:', error);

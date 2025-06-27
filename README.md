@@ -46,9 +46,9 @@ tail -50 /tmp/turbo.log
 ```
 
 ### Service Endpoints (Development)
-- **Capabilities**: http://localhost:23701/health
-- **SMS**: http://localhost:23702 
-- **Email**: http://localhost:23703
+- **Capabilities**: http://localhost:18239/health
+- **SMS**: http://localhost:27461 
+- **Email**: http://localhost:35892
 - **Redis**: localhost:6379
 
 ## 🏗 Architecture
@@ -60,10 +60,10 @@ tail -50 /tmp/turbo.log
 
 ## 📦 Services
 
-- `packages/capabilities` - Core AI capabilities and message processing (Port: 9991)
+- `packages/capabilities` - Core AI capabilities and message processing (Port: 18239)
 - `packages/discord` - Discord bot interface 
-- `packages/sms` - SMS interface via Twilio (Port: 9993)
-- `packages/email` - Email interface (Port: 9994)
+- `packages/sms` - SMS interface via Twilio (Port: 27461)
+- `packages/email` - Email interface (Port: 35892)
 - `packages/shared` - Shared types, utilities, and constants
 
 ## 🚀 VPS Deployment (Production Ready)
