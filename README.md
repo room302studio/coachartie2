@@ -2,6 +2,8 @@
 
 A unified monorepo for all Coach Artie services using Redis queue-based communication.
 
+> **📄 License**: Non-commercial use only • [Commercial licenses available](#-license--commercial-use) • Built by Room 302 Studio
+
 ## ⚡ TL;DR VPS Setup (Debian/Ubuntu)
 
 ```bash
@@ -494,3 +496,39 @@ docker-compose -f docker/docker-compose.yml ps
 ```
 
 That's it! Your Coach Artie services should now be running and processing messages through Redis queues. 🚀
+
+## 📄 License & Commercial Use
+
+**Non-Commercial License**: This project is licensed under Creative Commons Attribution-NonCommercial 4.0 International License.
+
+### ✅ Permitted (Non-Commercial):
+- Personal use and experimentation
+- Educational and research purposes  
+- Open source contributions and improvements
+- Non-profit organization usage
+
+### ❌ Requires Commercial License:
+- Business or commercial environments
+- Revenue-generating services or products
+- Integration into commercial software
+- Providing paid services using this platform
+
+### 💼 Commercial Licensing Available
+
+For commercial use, please contact **Room 302 Studio** to obtain a commercial license.
+
+We offer flexible commercial licensing options for:
+- **Startups** - Affordable licensing for growing businesses
+- **Enterprise** - Full commercial rights with support
+- **SaaS Providers** - White-label licensing options
+- **Custom Integrations** - Tailored licensing for specific use cases
+
+**Contact for Commercial Licensing:**
+- Email: [Your Email]
+- Website: [Your Website]
+
+---
+
+**Why This Licensing Model?**
+
+We've made sophisticated AI infrastructure accessible to everyone for learning and personal use, while ensuring sustainable development through commercial licensing. This approach supports open innovation while enabling us to continue improving the platform.
