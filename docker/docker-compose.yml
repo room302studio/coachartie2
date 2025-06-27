@@ -48,6 +48,8 @@ services:
       - DATABASE_URL=${DATABASE_URL}
       - DISCORD_TOKEN=${DISCORD_TOKEN}
       - DISCORD_CLIENT_ID=${DISCORD_CLIENT_ID}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+      - WOLFRAM_APP_ID=${WOLFRAM_APP_ID}
       - SERVICE_NAME=discord
     depends_on:
       - redis
