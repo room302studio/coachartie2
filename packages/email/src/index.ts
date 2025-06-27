@@ -6,7 +6,7 @@ import { healthRouter } from './routes/health.js';
 import { emailRouter } from './routes/email.js';
 
 const app = express();
-const PORT = process.env.EMAIL_SERVICE_PORT || process.env.PORT || 23703;
+const PORT = process.env.EMAIL_SERVICE_PORT || process.env.PORT || 35892;
 
 // Middleware
 app.use(helmet());
@@ -36,9 +36,19 @@ async function start() {
     await startQueueWorkers();
 
     // Start HTTP server (for email webhooks)
-    app.listen(PORT, () => {
-      logger.info(`Email service listening on port ${PORT}`);
+    const server = app.listen(PORT, () => {
+      logger.info(`✅ Email service successfully bound to port ${PORT}`);
       logger.info('Ready to receive email webhooks and process email responses');
+    });
+
+    server.on('error', (error: any) => {
+      if (error.code === 'EADDRINUSE') {
+        logger.error(`❌ PORT CONFLICT: Port ${PORT} is already in use!`);
+        logger.error(`❌ Another email service is likely running. Check with: lsof -i :${PORT}`);
+      } else {
+        logger.error(`❌ Email server failed to start on port ${PORT}:`, error);
+      }
+      process.exit(1);
     });
   } catch (error) {
     logger.error('Failed to start email service:', error);
