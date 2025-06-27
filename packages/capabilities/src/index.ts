@@ -22,11 +22,16 @@ import { capabilityRegistry } from './services/capability-registry.js';
 import { capabilitiesRouter } from './routes/capabilities.js';
 
 const app = express();
-const PORT = process.env.CAPABILITIES_PORT || process.env.PORT || 18239;
+const PORT = parseInt(process.env.CAPABILITIES_PORT || process.env.PORT || '18239');
 
 // Middleware
 app.use(helmet());
 app.use(express.json());
+
+// Test route
+app.get('/test', (req, res) => {
+  res.send('Server is running!');
+});
 
 // Routes
 app.use('/health', healthRouter);
@@ -78,11 +83,16 @@ async function start() {
     // Start scheduler
     await startScheduler();
 
-    // Start HTTP server (for health checks)
-    const server = app.listen(PORT, () => {
-      logger.info(`✅ Capabilities service successfully bound to port ${PORT}`);
+    // Start HTTP server (for health checks) - bind to 0.0.0.0 for both IPv4 and IPv6
+    logger.info(`🔄 Attempting to bind to port ${PORT}...`);
+    const server = app.listen(PORT, '0.0.0.0', () => {
+      logger.info(`✅ Capabilities service successfully bound to port ${PORT} on 0.0.0.0`);
       logger.info('Service is ready to process messages from queue');
       logger.info('Scheduler service is ready for task management');
+      
+      // Double-check the server is actually listening
+      const addr = server.address();
+      logger.info(`🔍 Server address:`, addr);
     });
 
     server.on('error', (error: any) => {
@@ -101,6 +111,12 @@ async function start() {
       const address = server.address();
       if (address && typeof address === 'object') {
         logger.info(`🔍 Verified: Server is listening on ${address.address}:${address.port}`);
+        
+        // Try to connect to ourselves
+        fetch(`http://localhost:${PORT}/test`)
+          .then(res => res.text())
+          .then(text => logger.info(`✅ Self-test successful: ${text}`))
+          .catch(err => logger.error(`❌ Self-test failed:`, err));
       } else {
         logger.error(`❌ Server address verification failed. Server may not be properly bound.`);
       }
@@ -122,5 +138,21 @@ process.on('SIGINT', async () => {
   process.exit(0);
 });
 
+// Catch unhandled errors
+process.on('uncaughtException', (error) => {
+  logger.error('Uncaught Exception:', error);
+  // Don't exit, just log
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  logger.error('Unhandled Rejection at:', promise, 'reason:', reason);
+  // Don't exit, just log
+});
+
 // Start the service
 start();
+
+// Keep the process alive
+setInterval(() => {
+  logger.debug('Process keepalive tick');
+}, 30000); // Every 30 seconds

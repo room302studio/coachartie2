@@ -2,6 +2,10 @@ import { Client, Events, Message } from 'discord.js';
 import { logger } from '@coachartie/shared';
 import { publishMessage } from '../queues/publisher.js';
 
+// Simple deduplication cache to prevent duplicate message processing
+const messageCache = new Map<string, number>();
+const MESSAGE_CACHE_TTL = 10000; // 10 seconds
+
 export function setupMessageHandler(client: Client) {
   client.on(Events.MessageCreate, async (message: Message) => {
     // Debug: Log all incoming messages
@@ -24,6 +28,26 @@ export function setupMessageHandler(client: Client) {
         .trim();
 
       if (!cleanMessage) return;
+
+      // Deduplication check: prevent processing the same message twice
+      const messageKey = `${message.author.id}-${cleanMessage}-${message.channelId}`;
+      const now = Date.now();
+      
+      // Clean up old cache entries
+      for (const [key, timestamp] of messageCache.entries()) {
+        if (now - timestamp > MESSAGE_CACHE_TTL) {
+          messageCache.delete(key);
+        }
+      }
+      
+      // Check if we've seen this exact message recently
+      if (messageCache.has(messageKey)) {
+        logger.info(`🚫 Duplicate message detected, skipping: ${messageKey}`);
+        return;
+      }
+      
+      // Cache this message
+      messageCache.set(messageKey, now);
 
       logger.info(`Received message from ${message.author.tag}: ${cleanMessage}`);
 

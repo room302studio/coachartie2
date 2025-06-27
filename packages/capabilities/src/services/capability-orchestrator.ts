@@ -12,8 +12,8 @@ import { environmentCapability } from "../capabilities/environment.js";
 import { mcpClientCapability } from "../capabilities/mcp-client.js";
 import { mcpInstallerCapability } from "../capabilities/mcp-installer.js";
 import { memoryCapability } from "../capabilities/memory.js";
-import { XMLParser } from "fast-xml-parser";
 import { CapabilitySuggester } from "../utils/capability-suggester.js";
+import { capabilityXMLParser } from "../utils/xml-parser.js";
 
 // Define capability extraction types
 interface ExtractedCapability {
@@ -458,9 +458,9 @@ User: ${userMessage}`;
       
       if (lowerMessage.includes('food') || lowerMessage.includes('like') || lowerMessage.includes('prefer')) {
         queryTypeMemories = await service.recall('system', 'food preferences memory search', 2);
-      } else if (this.isMathQuery(lowerMessage)) {
+      } else if (lowerMessage.match(/\d+.*[+\-*/].*\d+/)) {
         queryTypeMemories = await service.recall('system', 'calculator math calculation', 2);
-      } else if (this.isWebSearchQuery(lowerMessage)) {
+      } else if (lowerMessage.includes('what is') || lowerMessage.includes('search') || lowerMessage.includes('find')) {
         queryTypeMemories = await service.recall('system', 'web search latest recent', 2);
       }
       
@@ -473,38 +473,17 @@ User: ${userMessage}`;
       if (capabilityMemories && !capabilityMemories.includes('No memories found')) {
         logger.info(`✅ Found capability memories to process`);
         // Look for capability tags in the memory content
-        const capabilityMatches = capabilityMemories.match(/<capability[^>]*>.*?<\/capability>/g);
-        logger.info(`🔍 Found ${capabilityMatches ? capabilityMatches.length : 0} capability matches`);
+        const capabilityTags = capabilityXMLParser.findCapabilityTags(capabilityMemories);
+        logger.info(`🔍 Found ${capabilityTags.length} capability matches`);
         
-        if (capabilityMatches) {
-          capabilityMatches.forEach(match => {
-            logger.info(`📝 Processing capability match: ${match}`);
-            // Just add the capability tag itself as a pattern for now
-            patterns.push(`When similar queries arise, use: ${match}`);
+        if (capabilityTags.length > 0) {
+          capabilityTags.forEach(tag => {
+            logger.info(`📝 Processing capability match: ${tag}`);
+            patterns.push(`When similar queries arise, use: ${tag}`);
           });
-        } else {
-          // Also look for partial patterns without full XML
-          const partialMatches = capabilityMemories.match(/capability.*?action.*?calculate|calculator.*?action/gi);
-          if (partialMatches) {
-            logger.info(`📝 Found ${partialMatches.length} partial capability patterns`);
-            partialMatches.forEach(match => {
-              patterns.push(`Similar pattern found: ${match}`);
-            });
-          }
         }
       }
       
-      if (queryTypeMemories && !queryTypeMemories.includes('No memories found')) {
-        const typeCapabilityMatches = queryTypeMemories.match(/<capability[^>]*>.*?<\/capability>/g);
-        if (typeCapabilityMatches) {
-          typeCapabilityMatches.forEach(match => {
-            const contextMatch = queryTypeMemories.match(new RegExp(`[^.]*${match.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}[^.]*`, 'i'));
-            if (contextMatch && !patterns.includes(contextMatch[0].trim())) {
-              patterns.push(contextMatch[0].trim());
-            }
-          });
-        }
-      }
       
       // Limit to top 3 most relevant patterns
       logger.info(`🎯 Returning ${patterns.length} memory patterns: ${patterns.map(p => p.substring(0, 50)).join('; ')}`);
@@ -623,7 +602,7 @@ ${capabilityDetails}`;
     const lowerMessage = userMessage.toLowerCase();
     
     // Rule 1: Memory search for preference/recall questions
-    if (this.isMemoryRecallQuery(lowerMessage)) {
+    if (lowerMessage.includes('what do i') || lowerMessage.includes('what are my') || lowerMessage.includes('remind me')) {
       logger.info(`🎯 Auto-injecting memory search for preference/recall query: "${userMessage}"`);
       autoInjected.push({
         name: 'memory',
@@ -634,8 +613,9 @@ ${capabilityDetails}`;
     }
     
     // Rule 2: Calculator for math questions
-    if (this.isMathQuery(lowerMessage)) {
-      const mathExpression = this.extractMathExpression(userMessage);
+    const mathMatch = lowerMessage.match(/\d+.*[+\-*/].*\d+/);
+    if (mathMatch) {
+      const mathExpression = userMessage.match(/[\d+\-*/().\s]+/)?.[0]?.trim();
       if (mathExpression) {
         logger.info(`🎯 Auto-injecting calculator for math query: "${mathExpression}"`);
         autoInjected.push({
@@ -649,8 +629,8 @@ ${capabilityDetails}`;
     }
     
     // Rule 3: Web search for current/recent info questions
-    if (this.isWebSearchQuery(lowerMessage)) {
-      const searchQuery = this.extractWebSearchQuery(userMessage);
+    if (lowerMessage.includes('what is') || lowerMessage.includes('latest') || lowerMessage.includes('current')) {
+      const searchQuery = userMessage.replace(/^(what is|tell me about|search for)\s*/i, '').trim();
       logger.info(`🎯 Auto-injecting web search for information query: "${searchQuery}"`);
       autoInjected.push({
         name: 'web',
@@ -663,62 +643,18 @@ ${capabilityDetails}`;
     return autoInjected;
   }
 
-  /**
-   * Detect memory recall queries (preferences, past information, etc.)
-   */
-  private isMemoryRecallQuery(lowerMessage: string): boolean {
-    const memoryIndicators = [
-      'what do i like',
-      'what foods do i like',
-      'what are my preferences',
-      'what did i say',
-      'what did i tell you',
-      'what do i prefer',
-      'what are my favorite',
-      'what chocolate do i prefer',
-      'what do i think about',
-      'remind me what i',
-      'do you remember'
-    ];
-    
-    return memoryIndicators.some(indicator => lowerMessage.includes(indicator));
-  }
 
   /**
    * Extract search query for memory recall
    */
   private extractMemorySearchQuery(lowerMessage: string): string {
-    // Simple keyword extraction for memory search
-    if (lowerMessage.includes('food')) return 'food preferences';
-    if (lowerMessage.includes('chocolate')) return 'chocolate';
-    if (lowerMessage.includes('like')) return 'preferences';
-    if (lowerMessage.includes('favorite')) return 'favorites';
+    // Extract key terms from the message for memory search
+    const words = lowerMessage.split(/\s+/).filter(word => word.length > 2);
     
-    // Fallback to a general preferences search
-    return 'preferences';
+    // Return the main content words for FTS search
+    return words.join(' OR ');
   }
 
-  /**
-   * Detect math/calculation queries
-   */
-  private isMathQuery(lowerMessage: string): boolean {
-    const mathIndicators = [
-      'what is',
-      'calculate',
-      'compute',
-      'solve',
-      'math',
-      '+', '-', '*', '/', '×', '÷', '=',
-      'plus', 'minus', 'times', 'divided by',
-      'percentage', 'percent', '%'
-    ];
-    
-    // Check for math indicators AND numbers
-    const hasNumbers = /\d/.test(lowerMessage);
-    const hasMathIndicators = mathIndicators.some(indicator => lowerMessage.includes(indicator));
-    
-    return hasNumbers && hasMathIndicators;
-  }
 
   /**
    * Detect web search queries (current events, lookups, etc.)
@@ -742,33 +678,11 @@ ${capabilityDetails}`;
   /**
    * Extract search query for web search
    */
-  private extractWebSearchQuery(userMessage: string): string {
-    // Remove common question words and return meaningful search terms
-    const cleanQuery = userMessage
-      .replace(/^(what|who|where|when|how|why|tell me about|search for|look up|find information about)\s+/i, '')
-      .replace(/\?$/i, '')
-      .trim();
-    
-    return cleanQuery || userMessage;
-  }
 
 
   /**
    * Extract mathematical expression from user message
    */
-  private extractMathExpression(message: string): string {
-    // Try to extract numbers and operators
-    const mathPattern = /[\d\s\+\-\*\/\(\)\.]+/g;
-    const matches = message.match(mathPattern);
-    
-    if (matches && matches.length > 0) {
-      // Join all matches and clean up
-      return matches.join(' ').trim();
-    }
-    
-    // Fallback to the whole message
-    return message;
-  }
 
   /**
    * Generate helpful error messages with actionable suggestions
@@ -933,94 +847,24 @@ ${capabilityDetails}`;
    * Extract capability XML tags from LLM response using fast-xml-parser
    */
   private extractCapabilities(response: string): ExtractedCapability[] {
-    const capabilities: ExtractedCapability[] = [];
-
     try {
-      // Extract capability tags from the response using regex to find individual tags
-      // We still use regex to find the tags, but then parse each one with XML parser
-      const capabilityRegex = /<capability\s+[^>]*(?:\/>|>.*?<\/capability>)/gs;
-      const matches = response.match(capabilityRegex);
+      const parsedCapabilities = capabilityXMLParser.extractCapabilities(response);
+      
+      // Convert to ExtractedCapability format with priority
+      const capabilities = parsedCapabilities.map((cap, index) => ({
+        name: cap.name,
+        action: cap.action,
+        params: cap.params,
+        content: cap.content,
+        priority: index
+      }));
 
-      if (!matches) {
-        return capabilities;
-      }
-
-      // Configure XML parser
-      const parser = new XMLParser({
-        ignoreAttributes: false,
-        attributeNamePrefix: "@_",
-        textNodeName: "#text",
-        parseAttributeValue: true,
-        trimValues: true,
-        preserveOrder: false,
-        parseTagValue: false,
-      });
-
-      let priority = 0;
-
-      for (const match of matches) {
-        try {
-          // Wrap in a root element to make it valid XML
-          const wrappedXml = `<root>${match}</root>`;
-          const parsed = parser.parse(wrappedXml);
-
-          if (parsed.root && parsed.root.capability) {
-            const capabilityNode = parsed.root.capability;
-            
-            // Extract name and action from attributes
-            const name = capabilityNode["@_name"];
-            const action = capabilityNode["@_action"];
-
-            if (!name || !action) {
-              logger.warn(`Skipping capability tag missing required attributes: name="${name}", action="${action}"`);
-              continue;
-            }
-
-            // Extract all other attributes as params
-            const params: Record<string, any> = {};
-            Object.keys(capabilityNode).forEach(key => {
-              if (key.startsWith("@_") && key !== "@_name" && key !== "@_action") {
-                const paramName = key.substring(2); // Remove "@_" prefix
-                params[paramName] = capabilityNode[key];
-              }
-            });
-
-            // Extract content (text between opening and closing tags)
-            let contentStr: string | undefined;
-            
-            // For self-closing tags, there's no content
-            if (match.includes('/>')) {
-              contentStr = undefined;
-            } else {
-              // For tags with content, extract everything between opening and closing tags
-              const contentMatch = match.match(/>(.+?)<\/capability>/s);
-              if (contentMatch) {
-                contentStr = contentMatch[1].trim();
-              }
-            }
-
-            capabilities.push({
-              name,
-              action,
-              params,
-              content: contentStr,
-              priority: priority++,
-            });
-
-            logger.debug(`Extracted capability: ${name}:${action} with params:`, params);
-          }
-        } catch (parseError) {
-          logger.warn(`Failed to parse capability XML: ${match}`, parseError);
-          // Continue processing other capability tags even if one fails
-        }
-      }
+      logger.info(`Extracted ${capabilities.length} capabilities from response`);
+      return capabilities;
     } catch (error) {
       logger.error("Error extracting capabilities:", error);
-      // Fall back to empty array rather than throwing
+      return [];
     }
-
-    logger.info(`Extracted ${capabilities.length} capabilities from response`);
-    return capabilities;
   }
 
   /**

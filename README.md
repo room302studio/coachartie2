@@ -46,9 +46,9 @@ tail -50 /tmp/turbo.log
 ```
 
 ### Service Endpoints (Development)
-- **Capabilities**: http://localhost:18239/health
-- **SMS**: http://localhost:27461 
-- **Email**: http://localhost:35892
+- **Capabilities**: http://localhost:47001/health
+- **SMS**: http://localhost:47002/health 
+- **Email**: http://localhost:47003/health
 - **Redis**: localhost:6379
 
 ## 🏗 Architecture
@@ -142,10 +142,10 @@ EMAIL_USER=your-email@gmail.com
 EMAIL_PASS=your-app-password
 EMAIL_FROM=your-email@gmail.com
 
-# Optional: Custom Ports (if needed)
-CAPABILITIES_PORT=9991
-SMS_PORT=9993
-EMAIL_SERVICE_PORT=9994
+# Service Ports (Production)
+CAPABILITIES_PORT=47101
+SMS_PORT=47102
+EMAIL_PORT=47103
 
 # Optional: Logging & Monitoring
 LOG_LEVEL=info

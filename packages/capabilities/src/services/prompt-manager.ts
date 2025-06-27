@@ -30,6 +30,7 @@ export class PromptManager {
   private cache = new Map<string, PromptTemplate>();
   private cacheTimestamps = new Map<string, number>();
   private cacheExpiryMs = 30000; // 30 seconds cache
+  private lastCacheUpdate = 0;
 
   /**
    * Get prompt by name with hot-reloading support 🔥
