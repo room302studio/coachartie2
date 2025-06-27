@@ -2,6 +2,34 @@
 
 A unified monorepo for all Coach Artie services using Redis queue-based communication.
 
+## ⚡ TL;DR VPS Setup (Debian/Ubuntu)
+
+```bash
+# Install Docker
+curl -fsSL https://get.docker.com | sudo sh
+sudo usermod -aG docker $USER && logout
+
+# Clone and setup
+git clone https://github.com/room302studio/coachartie2.git && cd coachartie2
+cp .env.production .env
+
+# Edit .env with your API keys (OPENAI_API_KEY, OPENROUTER_API_KEY, WOLFRAM_APP_ID required)
+nano .env
+
+# CRITICAL: Copy to docker directory
+cp .env docker/.env
+
+# Deploy!
+docker-compose -f docker/docker-compose.yml up -d
+
+# Test it
+curl http://localhost:47101/health
+```
+
+**Service URLs**: 47101 (capabilities), 47102 (SMS), 47103 (email), 47104 (monitoring)
+
+---
+
 ## 🚀 Quick Development Start
 
 ### Prerequisites
@@ -106,6 +134,9 @@ cp .env.production .env
 
 # Edit environment variables (see Environment Configuration below)
 nano .env
+
+# CRITICAL: Copy .env to docker directory (required for Docker Compose)
+cp .env docker/.env
 ```
 
 ### Step 3: Environment Configuration
@@ -123,8 +154,10 @@ DATABASE_URL=postgresql://your-db-url
 SUPABASE_URL=https://your-project.supabase.co
 SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
 
-# Required: OpenAI
+# Required: AI Services
 OPENAI_API_KEY=sk-your-openai-key
+OPENROUTER_API_KEY=sk-your-openrouter-key
+WOLFRAM_APP_ID=your-wolfram-app-id
 
 # Optional: Discord Bot
 DISCORD_TOKEN=your-discord-bot-token
@@ -176,11 +209,11 @@ docker-compose -f docker/docker-compose.yml logs -f discord
 sudo ufw allow ssh
 
 # Allow service ports
-sudo ufw allow 9993  # SMS webhook
-sudo ufw allow 9994  # Email webhook
+sudo ufw allow 47102  # SMS webhook
+sudo ufw allow 47103  # Email webhook
 
 # Optional: Redis Commander (monitoring)
-sudo ufw allow 8081
+sudo ufw allow 47104
 
 # Enable firewall
 sudo ufw enable
@@ -191,25 +224,25 @@ sudo ufw enable
 #### SMS (Twilio)
 In your Twilio console, set webhook URL to:
 ```
-http://your-vps-ip:9993/sms/webhook
+http://your-vps-ip:47102/sms/webhook
 ```
 
 #### Email 
 Configure your email provider's webhook to:
 ```
-http://your-vps-ip:9994/email/webhook
+http://your-vps-ip:47103/email/webhook
 ```
 
 ### Step 7: Health Checks & Monitoring
 
 ```bash
 # Check service health
-curl http://localhost:9991/health  # Capabilities
-curl http://localhost:9993/health  # SMS
-curl http://localhost:9994/health  # Email
+curl http://localhost:47101/health  # Capabilities
+curl http://localhost:47102/health  # SMS
+curl http://localhost:47103/health  # Email
 
 # Monitor Redis queues (optional)
-# Visit http://your-vps-ip:8081 for Redis Commander
+# Visit http://your-vps-ip:47104 for Redis Commander
 ```
 
 ## 🛠 Managing the Deployment
@@ -252,12 +285,12 @@ docker ps
 docker exec -it coachartie2-redis-1 redis-cli ping
 
 # Check service health endpoints
-curl http://localhost:9991/health
-curl http://localhost:9993/health
-curl http://localhost:9994/health
+curl http://localhost:47101/health
+curl http://localhost:47102/health
+curl http://localhost:47103/health
 
 # Check queue status (Redis Commander)
-# Visit http://your-vps-ip:8081
+# Visit http://your-vps-ip:47104
 ```
 
 ## 🔧 Custom Port Configuration
@@ -288,10 +321,10 @@ email:
 
 After deployment, your services will be available at:
 
-- **Capabilities Health**: `http://your-vps-ip:9991/health`
-- **SMS Webhook**: `http://your-vps-ip:9993/sms/webhook`
-- **Email Webhook**: `http://your-vps-ip:9994/email/webhook`
-- **Redis Commander**: `http://your-vps-ip:8081` (monitoring)
+- **Capabilities Health**: `http://your-vps-ip:47101/health`
+- **SMS Webhook**: `http://your-vps-ip:47102/sms/webhook`
+- **Email Webhook**: `http://your-vps-ip:47103/email/webhook`
+- **Redis Commander**: `http://your-vps-ip:47104` (monitoring)
 
 ## 🔄 Updates & Maintenance
 
@@ -316,12 +349,12 @@ docker cp coachartie2-redis-1:/data/dump.rdb ./backup-$(date +%Y%m%d).rdb
 # Bot should respond via Discord
 
 # Test SMS (if configured)
-curl -X POST http://your-vps-ip:9993/sms/webhook \
+curl -X POST http://your-vps-ip:47102/sms/webhook \
   -H "Content-Type: application/x-www-form-urlencoded" \
   -d "From=+1234567890&Body=Hello&MessageSid=test123"
 
 # Test Email (if configured)  
-curl -X POST http://your-vps-ip:9994/email/inbound \
+curl -X POST http://your-vps-ip:47103/email/inbound \
   -H "Content-Type: application/json" \
   -d '{"from":"test@example.com","subject":"Test","body":"Hello Coach Artie"}'
 ```
@@ -350,6 +383,8 @@ sudo certbot --nginx -d your-domain.com
 |----------|----------|-------------|---------|
 | `DATABASE_URL` | Yes | Supabase database URL | `postgresql://...` |
 | `OPENAI_API_KEY` | Yes | OpenAI API key | `sk-...` |
+| `OPENROUTER_API_KEY` | Yes | OpenRouter API key | `sk-or-...` |
+| `WOLFRAM_APP_ID` | Yes | Wolfram Alpha App ID | `XXXXXX-XXXXXXXXXX` |
 | `DISCORD_TOKEN` | No | Discord bot token | |
 | `TWILIO_ACCOUNT_SID` | No | Twilio account SID | |
 | `EMAIL_USER` | No | SMTP email username | |
@@ -364,10 +399,13 @@ git clone https://github.com/room302studio/coachartie2.git && cd coachartie2
 # 2. Configure environment
 cp .env.production .env && nano .env
 
-# 3. Deploy
+# 3. Copy .env to docker directory (CRITICAL!)
+cp .env docker/.env
+
+# 4. Deploy
 docker-compose -f docker/docker-compose.yml up -d
 
-# 4. Check status
+# 5. Check status
 docker-compose -f docker/docker-compose.yml ps
 ```
 
