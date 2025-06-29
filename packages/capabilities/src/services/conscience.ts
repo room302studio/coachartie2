@@ -7,9 +7,17 @@ export interface CapabilityRequest {
   params: any;
 }
 
+interface SafetyManifestCapability {
+  dangerousActions: string[];
+  warnings: Record<string, string>;
+  blacklistedPaths?: string[];
+  blacklistedCommands?: string[];
+  sqlInjectionPatterns?: string[];
+}
+
 export class ConscienceLLM {
   // Safety manifest for capabilities
-  private readonly SAFETY_MANIFEST = {
+  private readonly SAFETY_MANIFEST: Record<string, SafetyManifestCapability> = {
     filesystem: {
       dangerousActions: ['delete', 'write_file'],
       warnings: {
@@ -34,20 +42,20 @@ export class ConscienceLLM {
 
   private checkBlacklist(capability: CapabilityRequest): string[] {
     const warnings: string[] = [];
-    const manifest = this.SAFETY_MANIFEST[capability.name as keyof typeof this.SAFETY_MANIFEST];
+    const manifest = this.SAFETY_MANIFEST[capability.name];
     
     if (!manifest) return warnings;
 
     // Check for dangerous actions
     if (manifest.dangerousActions?.includes(capability.action)) {
-      const warning = manifest.warnings?.[capability.action as keyof typeof manifest.warnings];
+      const warning = manifest.warnings[capability.action];
       if (warning) warnings.push(`⚠️ ${warning}`);
     }
 
     // Check filesystem paths - be more precise about dangerous paths
     if (capability.name === 'filesystem' && capability.action === 'delete' && capability.params) {
       const path = typeof capability.params === 'string' ? capability.params : capability.params.path;
-      if (path && manifest.blacklistedPaths?.some(blocked => path.includes(blocked))) {
+      if (path && manifest.blacklistedPaths?.some((blocked: string) => path.includes(blocked))) {
         warnings.push('🚨 BLACKLISTED PATH: This targets system directories that must never be modified!');
       }
     }
@@ -55,7 +63,7 @@ export class ConscienceLLM {
     // Check shell commands
     if (capability.name === 'shell' && capability.params) {
       const command = typeof capability.params === 'string' ? capability.params : capability.params.command;
-      if (command && manifest.blacklistedCommands?.some(blocked => command.includes(blocked))) {
+      if (command && manifest.blacklistedCommands?.some((blocked: string) => command.includes(blocked))) {
         warnings.push('🚨 BLACKLISTED COMMAND: This shell command is known to be destructive!');
       }
     }
@@ -63,7 +71,7 @@ export class ConscienceLLM {
     // Check SQL injection patterns
     if (capability.name === 'memory' && capability.params) {
       const content = typeof capability.params === 'string' ? capability.params : JSON.stringify(capability.params);
-      if (manifest.sqlInjectionPatterns?.some(pattern => content.toUpperCase().includes(pattern))) {
+      if (manifest.sqlInjectionPatterns?.some((pattern: string) => content.toUpperCase().includes(pattern))) {
         warnings.push('🚨 SQL INJECTION DETECTED: This content contains dangerous SQL patterns!');
       }
     }
@@ -95,6 +103,19 @@ export class ConscienceLLM {
         }
       }
 
+      // Allow safe operations immediately without LLM review
+      if (capability.name === 'memory' || capability.name === 'calculator' || capability.name === 'web') {
+        logger.info(`✅ IMMEDIATE ALLOW: Safe operation ${capability.name}:${capability.action}`);
+        
+        if (capability.params && typeof capability.params === 'object' && Object.keys(capability.params).length > 0) {
+          return `<capability name="${capability.name}" action="${capability.action}">${JSON.stringify(capability.params)}</capability>`;
+        } else if (capability.params && typeof capability.params === 'string') {
+          return `<capability name="${capability.name}" action="${capability.action}">${capability.params}</capability>`;
+        } else {
+          return `<capability name="${capability.name}" action="${capability.action}" />`;
+        }
+      }
+
       // Get dynamic safety warnings
       const blacklistWarnings = this.checkBlacklist(capability);
       const warningsText = blacklistWarnings.length > 0 
@@ -102,7 +123,7 @@ export class ConscienceLLM {
         : '';
 
       // Get capability-specific guidance
-      const manifest = this.SAFETY_MANIFEST[capability.name as keyof typeof this.SAFETY_MANIFEST];
+      const manifest = this.SAFETY_MANIFEST[capability.name];
       const capabilityGuidance = manifest?.dangerousActions?.includes(capability.action)
         ? `\n⚡ HIGH-RISK CAPABILITY: ${capability.name}:${capability.action} requires extra scrutiny!\n`
         : '';

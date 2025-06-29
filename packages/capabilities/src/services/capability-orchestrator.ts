@@ -14,6 +14,7 @@ import { mcpInstallerCapability } from "../capabilities/mcp-installer.js";
 import { memoryCapability } from "../capabilities/memory.js";
 import { CapabilitySuggester } from "../utils/capability-suggester.js";
 import { capabilityXMLParser } from "../utils/xml-parser.js";
+import { conscienceLLM, CapabilityRequest } from './conscience.js';
 
 // Define capability extraction types
 interface ExtractedCapability {
@@ -237,7 +238,6 @@ export class CapabilityOrchestrator {
       
       // Combine capabilities, with user-provided ones taking priority
       const capabilities = [...userCapabilities, ...llmCapabilities];
-      context.capabilities = capabilities;
       
       if (userCapabilities.length > 0) {
         logger.info(`🎯 Found ${userCapabilities.length} explicit capabilities from user message`);
@@ -246,7 +246,33 @@ export class CapabilityOrchestrator {
         logger.info(`🤖 Found ${llmCapabilities.length} capabilities from LLM response`);
       }
 
-      if (capabilities.length === 0) {
+      // Step 2.5: Conscience review for risky operations
+      const reviewedCapabilities = [];
+      let conscienceResponse = '';
+      
+      for (const capability of capabilities) {
+        logger.info(`🧠 Conscience reviewing: ${capability.name}:${capability.action}`);
+        
+        const review = await conscienceLLM.review(message.message, {
+          name: capability.name,
+          action: capability.action,
+          params: capability.params
+        });
+        
+        // Extract any capabilities the conscience approved/modified
+        const approvedCapabilities = this.extractCapabilities(review);
+        reviewedCapabilities.push(...approvedCapabilities);
+        
+        conscienceResponse += review + '\n';
+      }
+      
+      context.capabilities = reviewedCapabilities;
+      
+      if (reviewedCapabilities.length !== capabilities.length) {
+        logger.info(`🧠 Conscience modified capabilities: ${capabilities.length} → ${reviewedCapabilities.length}`);
+      }
+
+      if (reviewedCapabilities.length === 0 && capabilities.length === 0) {
         logger.info(
           `📝 No capabilities detected, checking for auto-injection opportunities`
         );
@@ -270,8 +296,14 @@ export class CapabilityOrchestrator {
         }
       }
 
+      // If conscience blocked capabilities but provided a response, return that
+      if (reviewedCapabilities.length === 0 && capabilities.length > 0) {
+        logger.info(`🧠 Conscience blocked all capabilities, returning conscience response`);
+        return conscienceResponse.trim();
+      }
+
       logger.info(
-        `🔧 Found ${capabilities.length} capabilities to execute: ${capabilities
+        `🔧 Found ${reviewedCapabilities.length} capabilities to execute: ${reviewedCapabilities
           .map((c) => `${c.name}:${c.action}`)
           .join(", ")}`
       );
