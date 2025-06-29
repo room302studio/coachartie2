@@ -6,7 +6,8 @@ export async function publishMessage(
   userId: string,
   message: string,
   channelId: string,
-  userTag: string
+  userTag: string,
+  shouldRespond: boolean = true
 ): Promise<void> {
   const queueMessage: IncomingMessage = {
     id: `discord-${Date.now()}-${Math.random()}`,
@@ -17,7 +18,8 @@ export async function publishMessage(
     message,
     context: {
       userTag,
-      platform: 'discord'
+      platform: 'discord',
+      shouldRespond
     },
     respondTo: {
       type: 'discord',

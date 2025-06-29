@@ -16,8 +16,16 @@ export async function startMessageConsumer() {
       logger.info(`Processing message ${message.id} from ${message.source}`);
 
       try {
-        // Process the message and get response
+        // Always process the message for capability extraction and memory formation
         const response = await processMessage(message);
+
+        // Check if we should respond (from context.shouldRespond)
+        const shouldRespond = message.context?.shouldRespond !== false;
+
+        if (!shouldRespond) {
+          logger.info(`Passive observation completed for message ${message.id} - no response queued`);
+          return;
+        }
 
         // Handle API responses differently - just log them
         if (message.respondTo.type === 'api') {
