@@ -6,7 +6,7 @@ export const deploymentCheerleaderCapability: RegisteredCapability = {
   name: 'deployment_cheerleader',
   supportedActions: ['monitor_releases', 'celebrate_deployment', 'check_repo_activity'],
   description: 'Monitors deployments and celebrates team achievements automatically',
-  requiredParams: ['repo'],
+  requiredParams: ['repo', 'version', 'author'],
   
   handler: async (params: any, content: string | undefined) => {
     const action = params.action;
@@ -29,21 +29,10 @@ async function monitorReleases(params: { repo: string; hours?: number }) {
     logger.info(`🔍 Monitoring releases for ${params.repo} (last ${params.hours || 24} hours)`);
     
     // For now, return a placeholder until GitHub MCP is installed
-    return {
-      success: true,
-      data: {
-        repository: params.repo,
-        period_hours: params.hours || 24,
-        releases_found: 0,
-        message: `GitHub monitoring not yet configured. Use MCP installer to set up GitHub integration first.`
-      }
-    };
+    return `GitHub monitoring not yet configured for ${params.repo}. Use MCP installer to set up GitHub integration first.`;
   } catch (error) {
     logger.error('❌ Failed to monitor releases:', error);
-    return {
-      success: false,
-      error: `Failed to monitor releases: ${error instanceof Error ? error.message : 'Unknown error'}`
-    };
+    return `Failed to monitor releases: ${error instanceof Error ? error.message : 'Unknown error'}`;
   }
 }
 
@@ -53,6 +42,7 @@ async function celebrateDeployment(params: {
   author: string; 
   description?: string;
   type?: string;
+  channelId?: string;
 }) {
   try {
     logger.info(`🎉 Generating celebration for ${params.repo} ${params.version}`);
@@ -68,24 +58,16 @@ async function celebrateDeployment(params: {
         event: 'manual_celebration',
         repository: params.repo,
         version: params.version,
-        author: params.author
+        author: params.author,
+        channelId: params.channelId || 'general'
       }
     });
 
-    return {
-      success: true,
-      data: {
-        celebration,
-        message: `🎉 Celebration sent for ${params.repo} ${params.version}!`
-      }
-    };
+    return `🎉 Celebration sent for ${params.repo} ${params.version}!\n\n${celebration.message}`;
 
   } catch (error) {
     logger.error('❌ Failed to generate celebration:', error);
-    return {
-      success: false,
-      error: `Failed to generate celebration: ${error instanceof Error ? error.message : 'Unknown error'}`
-    };
+    return `Failed to generate celebration: ${error instanceof Error ? error.message : 'Unknown error'}`;
   }
 }
 
@@ -94,29 +76,11 @@ async function checkRepoActivity(params: { repo: string; days?: number }) {
     logger.info(`📊 Checking activity for ${params.repo} (last ${params.days || 7} days)`);
     
     // For now, return a placeholder until GitHub integration is set up
-    return {
-      success: true,
-      data: {
-        repository: params.repo,
-        period_days: params.days || 7,
-        stats: {
-          total_commits: 0,
-          total_releases: 0,
-          unique_contributors: 0,
-          contributors: [],
-          latest_release: null
-        },
-        summary: `Activity monitoring not yet configured for ${params.repo}. Set up GitHub integration first.`,
-        celebration_worthy: false
-      }
-    };
+    return `Activity monitoring not yet configured for ${params.repo}. Set up GitHub integration first.`;
 
   } catch (error) {
     logger.error('❌ Failed to check repository activity:', error);
-    return {
-      success: false,
-      error: `Failed to check repository activity: ${error instanceof Error ? error.message : 'Unknown error'}`
-    };
+    return `Failed to check repository activity: ${error instanceof Error ? error.message : 'Unknown error'}`;
   }
 }
 

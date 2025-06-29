@@ -46,28 +46,14 @@ async function getReleases(params: { repo: string; limit?: number }) {
     const releases = await response.json();
     const limitedReleases = releases.slice(0, params.limit || 10);
 
-    return {
-      success: true,
-      data: {
-        repository: params.repo,
-        releases: limitedReleases.map((release: any) => ({
-          tag_name: release.tag_name,
-          name: release.name,
-          published_at: release.published_at,
-          author: release.author.login,
-          html_url: release.html_url,
-          prerelease: release.prerelease,
-          draft: release.draft
-        })),
-        total_count: releases.length
-      }
-    };
+    const releaseList = limitedReleases.map((release: any) => 
+      `• ${release.tag_name} by ${release.author.login} (${new Date(release.published_at).toLocaleDateString()})`
+    ).join('\n');
+    
+    return `Found ${releases.length} releases for ${params.repo}:\n${releaseList}`;
   } catch (error) {
     logger.error('❌ Failed to fetch GitHub releases:', error);
-    return {
-      success: false,
-      error: `Failed to fetch releases: ${error instanceof Error ? error.message : 'Unknown error'}`
-    };
+    return `Failed to fetch releases: ${error instanceof Error ? error.message : 'Unknown error'}`;
   }
 }
 
@@ -93,26 +79,14 @@ async function getRecentCommits(params: { repo: string; limit?: number }) {
 
     const commits = await response.json();
 
-    return {
-      success: true,
-      data: {
-        repository: params.repo,
-        commits: commits.map((commit: any) => ({
-          sha: commit.sha.substring(0, 7),
-          message: commit.commit.message,
-          author: commit.commit.author.name,
-          date: commit.commit.author.date,
-          html_url: commit.html_url
-        })),
-        total_count: commits.length
-      }
-    };
+    const commitList = commits.map((commit: any) => 
+      `• ${commit.sha.substring(0, 7)} by ${commit.commit.author.name}: ${commit.commit.message.split('\n')[0]}`
+    ).join('\n');
+    
+    return `Found ${commits.length} recent commits for ${params.repo}:\n${commitList}`;
   } catch (error) {
     logger.error('❌ Failed to fetch GitHub commits:', error);
-    return {
-      success: false,
-      error: `Failed to fetch commits: ${error instanceof Error ? error.message : 'Unknown error'}`
-    };
+    return `Failed to fetch commits: ${error instanceof Error ? error.message : 'Unknown error'}`;
   }
 }
 
@@ -160,29 +134,11 @@ async function getDeploymentStats(params: { repo: string; days?: number }) {
     // Get unique contributors
     const contributors = new Set(commits.map((commit: any) => commit.commit.author.name));
 
-    return {
-      success: true,
-      data: {
-        repository: params.repo,
-        period_days: days,
-        stats: {
-          total_commits: commits.length,
-          total_releases: recentReleases.length,
-          unique_contributors: contributors.size,
-          contributors: Array.from(contributors),
-          latest_release: recentReleases[0] ? {
-            tag_name: recentReleases[0].tag_name,
-            published_at: recentReleases[0].published_at,
-            author: recentReleases[0].author.login
-          } : null
-        }
-      }
-    };
+    const latestRelease = recentReleases[0] ? `Latest: ${recentReleases[0].tag_name} by ${recentReleases[0].author.login}` : 'No recent releases';
+    
+    return `📊 ${params.repo} stats (last ${days} days):\n• ${commits.length} commits\n• ${recentReleases.length} releases\n• ${contributors.size} contributors\n• ${latestRelease}`;
   } catch (error) {
     logger.error('❌ Failed to fetch GitHub deployment stats:', error);
-    return {
-      success: false,
-      error: `Failed to fetch deployment stats: ${error instanceof Error ? error.message : 'Unknown error'}`
-    };
+    return `Failed to fetch deployment stats: ${error instanceof Error ? error.message : 'Unknown error'}`;
   }
 }
