@@ -9,7 +9,7 @@ export interface PromptTemplate {
   description?: string;
   category: string;
   isActive: boolean;
-  metadata: Record<string, any>;
+  metadata: Record<string, unknown>;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -18,12 +18,30 @@ export interface CapabilityConfig {
   id?: number;
   name: string;
   version: number;
-  config: Record<string, any>;
+  config: Record<string, unknown>;
   description?: string;
   isEnabled: boolean;
-  metadata: Record<string, any>;
+  metadata: Record<string, unknown>;
   createdAt?: string;
   updatedAt?: string;
+}
+
+interface DatabaseRow {
+  id: number;
+  name: string;
+  version: number;
+  content: string;
+  description?: string;
+  category: string;
+  is_active: number;
+  metadata: string | Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+}
+
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+interface PromptHistoryRow extends DatabaseRow {
+  // Additional fields specific to history if any
 }
 
 export class PromptManager {
@@ -110,8 +128,8 @@ export class PromptManager {
   async updatePrompt(
     name: string,
     content: string,
-    changedBy = 'system',
-    changeReason = 'Content updated'
+    _changedBy = 'system',
+    _changeReason = 'Content updated'
   ): Promise<PromptTemplate> {
     try {
       const db = await getDatabase();
@@ -187,7 +205,7 @@ export class PromptManager {
       const db = await getDatabase();
       
       let query = 'SELECT * FROM prompts WHERE 1=1';
-      const params: any[] = [];
+      const params: (string | number)[] = [];
       
       if (activeOnly) {
         query += ' AND is_active = 1';
@@ -202,7 +220,7 @@ export class PromptManager {
       
       const rows = await db.all(query, params);
       
-      return rows.map((row: any) => ({
+      return rows.map((row: DatabaseRow) => ({
         id: row.id,
         name: row.name,
         version: row.version,
@@ -223,7 +241,7 @@ export class PromptManager {
   /**
    * Get prompt history for versioning 📚
    */
-  async getPromptHistory(name: string): Promise<any[]> {
+  async getPromptHistory(name: string): Promise<PromptTemplate[]> {
     try {
       const db = await getDatabase();
       
@@ -235,7 +253,18 @@ export class PromptManager {
         ORDER BY ph.version DESC
       `, [name]);
       
-      return rows;
+      return rows.map((row: DatabaseRow) => ({
+        id: row.id,
+        name: row.name,
+        version: row.version,
+        content: row.content,
+        description: row.description,
+        category: row.category,
+        isActive: Boolean(row.is_active),
+        metadata: typeof row.metadata === 'string' ? JSON.parse(row.metadata) : row.metadata,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at
+      }));
     } catch (error) {
       logger.error(`❌ Failed to get prompt history for '${name}':`, error);
       throw error;

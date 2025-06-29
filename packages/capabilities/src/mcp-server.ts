@@ -3,7 +3,14 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { logger } from '@coachartie/shared';
-import { capabilityRegistry } from './services/capability-registry.js';
+import { capabilityRegistry, RegisteredCapability } from './services/capability-registry.js';
+
+interface ToolInputSchema {
+  type: string;
+  properties?: Record<string, unknown>;
+  required?: string[];
+  [key: string]: unknown; // Allow additional properties
+}
 import { calculatorCapability } from './capabilities/calculator.js';
 import { webCapability } from './capabilities/web.js';
 import { schedulerService } from './services/scheduler.js';
@@ -83,6 +90,7 @@ class CapabilitiesMCPServer {
         }
 
         // Extract content from args if provided
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const { content, ...params } = args as any;
 
         // Execute the capability
@@ -131,8 +139,8 @@ class CapabilitiesMCPServer {
     return [capabilityName, action];
   }
 
-  private getToolInputSchema(capability: any, action: string) {
-    const schema: any = {};
+  private getToolInputSchema(capability: RegisteredCapability, action: string): ToolInputSchema {
+    const schema: ToolInputSchema = { type: 'object' };
 
     // Add common parameters based on capability
     switch (capability.name) {
@@ -289,7 +297,7 @@ class CapabilitiesMCPServer {
           }
         }
       });
-    } catch (error) {
+    } catch {
       logger.warn('⚠️  Wolfram Alpha capability not available (missing WOLFRAM_APP_ID)');
     }
 
@@ -298,7 +306,7 @@ class CapabilitiesMCPServer {
       name: 'scheduler',
       supportedActions: ['remind', 'schedule', 'list', 'cancel'],
       description: 'Manages scheduled tasks and reminders',
-      handler: async (params, content) => {
+      handler: async (params, _content) => {
         const { action } = params;
 
         switch (action) {

@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { mcpClientCapability } from '../capabilities/mcp-client.js';
 
 describe('MCP Client Capability', () => {

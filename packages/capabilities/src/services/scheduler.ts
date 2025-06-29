@@ -5,7 +5,7 @@ export interface ScheduledTask {
   id: string;
   name: string;
   cron: string;
-  data?: any;
+  data?: Record<string, unknown>;
   options?: {
     timezone?: string;
     startDate?: Date;
@@ -19,8 +19,34 @@ export interface ScheduledJob {
   name: string;
   nextRun: Date;
   lastRun?: Date;
-  data: any;
+  data: Record<string, unknown>;
   cron: string;
+}
+
+interface BullJob {
+  name: string;
+  data: {
+    taskId?: string;
+    [key: string]: unknown;
+  };
+}
+
+interface SchedulerStats {
+  jobs: {
+    waiting: number;
+    active: number;
+    completed: number;
+    failed: number;
+    delayed: number;
+  };
+  repeatable: number;
+  tasks: number;
+}
+
+interface ReminderJobData {
+  userId: string;
+  reminderType: string;
+  [key: string]: unknown;
 }
 
 export class SchedulerService {
@@ -99,7 +125,7 @@ export class SchedulerService {
    */
   async scheduleOnce(
     name: string,
-    data: any,
+    data: Record<string, unknown>,
     delay: number
   ): Promise<void> {
     try {
@@ -176,8 +202,8 @@ export class SchedulerService {
   /**
    * Execute a scheduled job
    */
-  private async executeScheduledJob(job: any): Promise<void> {
-    const { taskId, immediate } = job.data;
+  private async executeScheduledJob(job: BullJob): Promise<void> {
+    const { taskId } = job.data;
     
     try {
       logger.info(`Executing scheduled job: ${job.name} (taskId: ${taskId})`);
@@ -193,7 +219,7 @@ export class SchedulerService {
           break;
           
         case 'user-reminder':
-          await this.executeUserReminder(job.data);
+          await this.executeUserReminder(job.data as ReminderJobData);
           break;
           
         case 'cleanup-old-data':
@@ -214,7 +240,7 @@ export class SchedulerService {
   /**
    * Execute health check job
    */
-  private async executeHealthCheck(data: any): Promise<void> {
+  private async executeHealthCheck(_data: Record<string, unknown>): Promise<void> {
     logger.info('🔍 Executing scheduled health check');
     
     // TODO: Implement comprehensive system health check
@@ -229,7 +255,7 @@ export class SchedulerService {
   /**
    * Execute daily summary job
    */
-  private async executeDailySummary(data: any): Promise<void> {
+  private async executeDailySummary(_data: Record<string, unknown>): Promise<void> {
     logger.info('📊 Executing daily summary generation');
     
     // TODO: Implement daily summary
@@ -243,8 +269,8 @@ export class SchedulerService {
   /**
    * Execute user reminder job
    */
-  private async executeUserReminder(data: any): Promise<void> {
-    const { userId, reminderType, message } = data;
+  private async executeUserReminder(data: ReminderJobData): Promise<void> {
+    const { userId, reminderType } = data;
     
     logger.info(`💭 Executing user reminder for ${userId}: ${reminderType}`);
     
@@ -259,7 +285,7 @@ export class SchedulerService {
   /**
    * Execute cleanup job
    */
-  private async executeCleanup(data: any): Promise<void> {
+  private async executeCleanup(_data: Record<string, unknown>): Promise<void> {
     logger.info('🧹 Executing data cleanup');
     
     // TODO: Implement data cleanup
@@ -309,7 +335,7 @@ export class SchedulerService {
   /**
    * Get scheduler statistics
    */
-  async getStats(): Promise<any> {
+  async getStats(): Promise<SchedulerStats> {
     try {
       const waiting = await this.schedulerQueue.getWaiting();
       const active = await this.schedulerQueue.getActive();

@@ -5,7 +5,7 @@ export interface ParsedCapability {
   name: string;
   action: string;
   content: string;
-  params: Record<string, any>;
+  params: Record<string, unknown>;
 }
 
 export class CapabilityXMLParser {
@@ -82,7 +82,7 @@ export class CapabilityXMLParser {
       }
 
       // Extract all other attributes as params
-      const params: Record<string, any> = {};
+      const params: Record<string, unknown> = {};
       Object.keys(cap).forEach(key => {
         if (key.startsWith('@_') && key !== '@_name' && key !== '@_action') {
           const paramName = key.substring(2); // Remove "@_" prefix

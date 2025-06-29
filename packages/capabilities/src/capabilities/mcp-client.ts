@@ -22,7 +22,7 @@ interface MCPServerConnection {
 interface MCPTool {
   name: string;
   description?: string;
-  inputSchema?: any;
+  inputSchema?: Record<string, unknown>;
 }
 
 /**
@@ -32,7 +32,7 @@ interface MCPRequest {
   jsonrpc: string;
   id: string | number;
   method: string;
-  params?: any;
+  params?: Record<string, unknown>;
 }
 
 /**
@@ -41,12 +41,29 @@ interface MCPRequest {
 interface MCPResponse {
   jsonrpc: string;
   id: string | number;
-  result?: any;
+  result?: unknown;
   error?: {
     code: number;
     message: string;
-    data?: any;
+    data?: unknown;
   };
+}
+
+interface MCPClientParams {
+  action: string;
+  url?: string;
+  name?: string;
+  connection_id?: string;
+  id?: string;
+  tool_name?: string;
+  args?: Record<string, unknown>;
+}
+
+interface MCPToolCallResult {
+  content?: Array<{
+    type: string;
+    text?: string;
+  }>;
 }
 
 /**
@@ -88,7 +105,7 @@ class MCPClientService {
       }
 
       return { isValid: true };
-    } catch (error) {
+    } catch {
       return { isValid: false, error: 'Invalid URL format' };
     }
   }
@@ -96,7 +113,7 @@ class MCPClientService {
   /**
    * Make a JSON-RPC call to an MCP server
    */
-  private async makeJsonRpcCall(url: string, method: string, params?: any): Promise<any> {
+  private async makeJsonRpcCall(url: string, method: string, params?: Record<string, unknown>): Promise<unknown> {
     const request: MCPRequest = {
       jsonrpc: '2.0',
       id: this.getNextRequestId(),
@@ -169,7 +186,7 @@ class MCPClientService {
 
     try {
       // Test connection with initialize call
-      const initResult = await this.makeJsonRpcCall(url, 'initialize', {
+      await this.makeJsonRpcCall(url, 'initialize', {
         protocolVersion: '2024-11-05',
         capabilities: {
           tools: { listChanged: true }
@@ -189,7 +206,7 @@ class MCPClientService {
       // Try to get available tools
       try {
         const toolsResult = await this.makeJsonRpcCall(url, 'tools/list');
-        connection.tools = toolsResult.tools || [];
+        connection.tools = (toolsResult as any)?.tools || [];
       } catch (toolsError) {
         logger.warn(`Failed to get tools from MCP server ${url}:`, toolsError);
         connection.tools = [];
@@ -304,7 +321,7 @@ class MCPClientService {
   /**
    * Call a specific tool on an MCP server
    */
-  async callTool(connectionId: string, toolName: string, args: any = {}): Promise<string> {
+  async callTool(connectionId: string, toolName: string, args: Record<string, unknown> = {}): Promise<string> {
     const connection = this.connections.get(connectionId);
     if (!connection) {
       throw new Error(`Connection not found: ${connectionId}`);
@@ -330,10 +347,12 @@ class MCPClientService {
       connection.lastPing = new Date();
 
       // Format the result
-      if (result.content && Array.isArray(result.content)) {
-        const textContent = result.content
-          .filter((item: any) => item.type === 'text')
-          .map((item: any) => item.text)
+      const typedResult = result as MCPToolCallResult;
+      if (typedResult.content && Array.isArray(typedResult.content)) {
+        const textContent = typedResult.content
+          .filter((item) => item.type === 'text')
+          .map((item) => item.text)
+          .filter((text): text is string => typeof text === 'string')
           .join('\n');
         
         if (textContent) {
@@ -422,7 +441,7 @@ export const mcpClientCapability: RegisteredCapability = {
   name: 'mcp_client',
   supportedActions: ['connect', 'disconnect', 'list_tools', 'call_tool', 'list_servers', 'health_check'],
   description: 'Connects to and manages MCP (Model Context Protocol) servers',
-  handler: async (params, content) => {
+  handler: async (params: MCPClientParams, content?: string) => {
     const { action } = params;
 
     try {

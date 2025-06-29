@@ -2,6 +2,29 @@ import { logger } from '@coachartie/shared';
 import { RegisteredCapability } from '../services/capability-registry.js';
 import { getDatabase } from '@coachartie/shared';
 
+interface MemoryRow {
+  id: number;
+  content: string;
+  user_id: string;
+  created_at: string;
+  content_hash: string;
+  semantic_tags?: string;
+  importance_score: number;
+  tags?: string;
+  context?: string;
+  timestamp?: string;
+  importance?: number;
+}
+
+interface MemoryParams {
+  action: string;
+  user_id?: string;
+  query?: string;
+  content?: string;
+  limit?: string;
+  [key: string]: unknown;
+}
+
 /**
  * Real Memory Capability - Persistent storage and retrieval
  * 
@@ -31,7 +54,7 @@ export class MemoryService {
   }
 
   async initializeDatabase(): Promise<void> {
-    if (this.dbReady) return;
+    if (this.dbReady) {return;}
 
     try {
       const db = await getDatabase();
@@ -241,14 +264,14 @@ export class MemoryService {
         LIMIT ?
       `, [userId, limit]);
 
-      return results.map((row: any) => ({
+      return results.map((row: MemoryRow) => ({
         id: row.id,
         userId: row.user_id,
         content: row.content,
         tags: JSON.parse(row.tags || '[]'),
-        context: row.context,
-        timestamp: row.timestamp,
-        importance: row.importance
+        context: row.context || '',
+        timestamp: row.timestamp || row.created_at,
+        importance: row.importance || row.importance_score
       }));
     } catch (error) {
       logger.error('❌ Failed to get recent memories:', error);
@@ -291,7 +314,7 @@ export class MemoryService {
     }
   }
 
-  private extractBasicTags(content: string, context: string): string[] {
+  private extractBasicTags(content: string, _context: string): string[] {
     // Basic keyword extraction for immediate storage
     const words = content.toLowerCase().split(/\s+/);
     const basicTags = [];
@@ -377,7 +400,7 @@ Example: ["food", "pizza", "italian", "preference", "like"]`;
       
       // Get current tags
       const result = await db.get(`SELECT tags FROM memories WHERE id = ?`, [memoryId]);
-      if (!result) return;
+      if (!result) {return;}
       
       const currentTags = JSON.parse(result.tags || '[]');
       const allTags = [...new Set([...currentTags, ...semanticTags])]; // Merge and dedupe
@@ -390,12 +413,12 @@ Example: ["food", "pizza", "italian", "preference", "like"]`;
     }
   }
 
-  private formatRecallResults(results: any[], query: string, searchType: string): string {
+  private formatRecallResults(results: MemoryRow[], query: string, searchType: string): string {
     logger.info(`🎨 Formatting ${results.length} recall results for query "${query}" using ${searchType}`);
     
     const formatted = results.map((memory, index) => {
       const tags = JSON.parse(memory.tags || '[]');
-      const date = new Date(memory.created_at || memory.timestamp).toLocaleDateString();
+      const date = new Date(memory.created_at || memory.timestamp || '').toLocaleDateString();
       const importance = '⭐'.repeat(Math.min(memory.importance || 0, 5));
       
       const formattedEntry = `${index + 1}. **${memory.content}** ${importance}
@@ -422,7 +445,7 @@ ${finalOutput}`);
 /**
  * Memory capability handler
  */
-async function handleMemoryAction(params: Record<string, any>, content?: string): Promise<string> {
+async function handleMemoryAction(params: MemoryParams, content?: string): Promise<string> {
   const { action, userId = 'unknown-user' } = params;
   const memoryService = MemoryService.getInstance();
 
@@ -439,10 +462,10 @@ async function handleMemoryAction(params: Record<string, any>, content?: string)
           throw new Error('No content provided to remember');
         }
         
-        const context = params.context || '';
-        const importance = Math.max(1, Math.min(10, parseInt(params.importance) || 5));
+        const context = String(params.context || '');
+        const importance = Math.max(1, Math.min(10, parseInt(String(params.importance)) || 5));
         
-        const result = await memoryService.remember(userId, contentToRemember, context, importance);
+        const result = await memoryService.remember(String(userId), String(contentToRemember), context, importance);
         logger.info(`🎯 Memory remember result: ${result}`);
         return result;
       }
@@ -455,20 +478,20 @@ async function handleMemoryAction(params: Record<string, any>, content?: string)
         }
         
         logger.info(`🎯 Memory search starting - Query: "${query}"`);
-        const limit = Math.max(1, Math.min(20, parseInt(params.limit) || 5));
-        const targetUserId = params.user || userId; // Allow searching other users if specified
-        const result = await memoryService.recall(targetUserId, query, limit);
+        const limit = Math.max(1, Math.min(20, parseInt(String(params.limit)) || 5));
+        const targetUserId = String(params.user || userId); // Allow searching other users if specified
+        const result = await memoryService.recall(targetUserId, String(query), limit);
         logger.info(`🎯 Memory search completed - Result length: ${result.length} characters`);
         return result;
       }
 
       case 'stats': {
-        return await memoryService.getMemoryStats(userId);
+        return await memoryService.getMemoryStats(String(userId));
       }
 
       case 'recent': {
-        const limit = Math.max(1, Math.min(20, parseInt(params.limit) || 10));
-        const memories = await memoryService.getRecentMemories(userId, limit);
+        const limit = Math.max(1, Math.min(20, parseInt(String(params.limit)) || 10));
+        const memories = await memoryService.getRecentMemories(String(userId), limit);
         
         if (memories.length === 0) {
           return '📭 No recent memories found. Start remembering things to build your memory!';

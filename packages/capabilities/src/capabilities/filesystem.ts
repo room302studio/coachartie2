@@ -3,6 +3,10 @@ import path from 'path';
 import { logger } from '@coachartie/shared';
 import { RegisteredCapability } from '../services/capability-registry.js';
 
+interface NodeError extends Error {
+  code?: string;
+}
+
 /**
  * Filesystem capability - manages files and directories autonomously
  * 
@@ -93,7 +97,7 @@ async function readFile(filePath: string): Promise<string> {
     logger.info(`📖 Read file: ${relativePath} (${content.length} characters)`);
     return `File content from ${relativePath}:\n${content}`;
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+    if ((error as NodeError).code === 'ENOENT') {
       throw new Error(`File not found: ${path.relative(PROJECT_ROOT, validPath)}`);
     }
     throw error;
@@ -135,7 +139,7 @@ async function createDirectory(dirPath: string, recursive: boolean = true): Prom
     logger.info(`📁 Created directory: ${relativePath}`);
     return `Successfully created directory: ${relativePath}`;
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'EEXIST') {
+    if ((error as NodeError).code === 'EEXIST') {
       const relativePath = path.relative(PROJECT_ROOT, validPath);
       return `Directory already exists: ${relativePath}`;
     }
@@ -173,7 +177,7 @@ async function listDirectory(dirPath: string): Promise<string> {
     logger.info(`📋 Listed directory: ${relativePath} (${items.length} items)`);
     return `Contents of ${relativePath}:\n${fileList}`;
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+    if ((error as NodeError).code === 'ENOENT') {
       throw new Error(`Directory not found: ${path.relative(PROJECT_ROOT, validPath)}`);
     }
     throw error;
@@ -194,7 +198,7 @@ async function exists(targetPath: string): Promise<string> {
     logger.info(`✅ Checked existence: ${relativePath} (${type})`);
     return `${type.charAt(0).toUpperCase() + type.slice(1)} exists: ${relativePath}`;
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+    if ((error as NodeError).code === 'ENOENT') {
       const relativePath = path.relative(PROJECT_ROOT, validPath);
       return `Path does not exist: ${relativePath}`;
     }
@@ -228,10 +232,10 @@ async function deleteFileOrDirectory(targetPath: string, recursive: boolean = fa
       return `Successfully deleted file: ${relativePath}`;
     }
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+    if ((error as NodeError).code === 'ENOENT') {
       throw new Error(`Path not found: ${path.relative(PROJECT_ROOT, validPath)}`);
     }
-    if ((error as NodeJS.ErrnoException).code === 'ENOTEMPTY') {
+    if ((error as NodeError).code === 'ENOTEMPTY') {
       throw new Error(`Directory not empty (use recursive=true to delete contents): ${path.relative(PROJECT_ROOT, validPath)}`);
     }
     const relativePath = path.relative(PROJECT_ROOT, validPath);
@@ -258,12 +262,13 @@ export const filesystemCapability: RegisteredCapability = {
         case 'read_file':
           return await readFile(filePath);
           
-        case 'write_file':
+        case 'write_file': {
           const writeContent = params.content || content;
           if (!writeContent) {
             throw new Error('Content is required for write_file operation');
           }
           return await writeFile(filePath, writeContent);
+        }
           
         case 'create_directory':
           return await createDirectory(filePath, recursive !== false);

@@ -4,7 +4,7 @@ import { logger } from '@coachartie/shared';
 export interface CapabilityRequest {
   name: string;
   action: string;
-  params: any;
+  params: Record<string, unknown>;
 }
 
 interface SafetyManifestCapability {
@@ -44,18 +44,18 @@ export class ConscienceLLM {
     const warnings: string[] = [];
     const manifest = this.SAFETY_MANIFEST[capability.name];
     
-    if (!manifest) return warnings;
+    if (!manifest) {return warnings;}
 
     // Check for dangerous actions
     if (manifest.dangerousActions?.includes(capability.action)) {
       const warning = manifest.warnings[capability.action];
-      if (warning) warnings.push(`⚠️ ${warning}`);
+      if (warning) {warnings.push(`⚠️ ${warning}`);}
     }
 
     // Check filesystem paths - be more precise about dangerous paths
     if (capability.name === 'filesystem' && capability.action === 'delete' && capability.params) {
       const path = typeof capability.params === 'string' ? capability.params : capability.params.path;
-      if (path && manifest.blacklistedPaths?.some((blocked: string) => path.includes(blocked))) {
+      if (path && typeof path === 'string' && manifest.blacklistedPaths?.some((blocked: string) => path.includes(blocked))) {
         warnings.push('🚨 BLACKLISTED PATH: This targets system directories that must never be modified!');
       }
     }
@@ -63,7 +63,7 @@ export class ConscienceLLM {
     // Check shell commands
     if (capability.name === 'shell' && capability.params) {
       const command = typeof capability.params === 'string' ? capability.params : capability.params.command;
-      if (command && manifest.blacklistedCommands?.some((blocked: string) => command.includes(blocked))) {
+      if (command && typeof command === 'string' && manifest.blacklistedCommands?.some((blocked: string) => command.includes(blocked))) {
         warnings.push('🚨 BLACKLISTED COMMAND: This shell command is known to be destructive!');
       }
     }
@@ -86,7 +86,7 @@ export class ConscienceLLM {
         const path = typeof capability.params === 'string' ? capability.params : capability.params?.path || '';
         const dangerousPaths = ['/etc/', '/usr/', '/var/', '/System/', '/boot/', '/root/', 'passwd', 'shadow', 'hosts'];
         
-        if (dangerousPaths.some(dangerous => path.includes(dangerous))) {
+        if (typeof path === 'string' && dangerousPaths.some(dangerous => path.includes(dangerous))) {
           logger.info(`🚨 IMMEDIATE BLOCK: Dangerous filesystem path detected: ${path}`);
           return 'BLOCKED: Critical system file access denied. This operation targets protected system files and cannot be executed.';
         }
@@ -97,7 +97,7 @@ export class ConscienceLLM {
         const command = typeof capability.params === 'string' ? capability.params : capability.params?.command || '';
         const dangerousCommands = ['rm -rf', 'dd', 'mkfs', 'fdisk', 'format', 'del /s'];
         
-        if (dangerousCommands.some(dangerous => command.includes(dangerous))) {
+        if (typeof command === 'string' && dangerousCommands.some(dangerous => command.includes(dangerous))) {
           logger.info(`🚨 IMMEDIATE BLOCK: Dangerous shell command detected: ${command}`);
           return 'BLOCKED: Destructive command access denied. This operation could cause irreversible system damage.';
         }
