@@ -15,6 +15,7 @@ import { startMessageConsumer } from './queues/consumer.js';
 import { healthRouter } from './routes/health.js';
 import { chatRouter } from './routes/chat.js';
 import { schedulerRouter } from './routes/scheduler.js';
+import { githubRouter } from './routes/github.js';
 import { schedulerService } from './services/scheduler.js';
 // Import orchestrator FIRST to trigger capability registration
 import { capabilityOrchestrator } from './services/capability-orchestrator.js';
@@ -38,6 +39,7 @@ app.use('/health', healthRouter);
 app.use('/chat', chatRouter);
 app.use('/capabilities', capabilitiesRouter);
 app.use('/scheduler', schedulerRouter);
+app.use('/github', githubRouter);
 
 // Start queue consumers and scheduler
 async function startQueueWorkers() {

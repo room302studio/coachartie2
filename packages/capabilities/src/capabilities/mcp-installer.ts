@@ -100,6 +100,16 @@ const MCP_TEMPLATES = {
     startScript: 'node_modules/@fak111/weather-mcp/dist/index.js',
     requiredPorts: [3007],
     verified: true
+  },
+  github: {
+    name: '@modelcontextprotocol/server-github',
+    version: 'latest',
+    description: 'Official GitHub MCP Server for repository management and deployment monitoring',
+    envVars: ['GITHUB_TOKEN'],
+    configFile: 'github-mcp-config.json',
+    startScript: 'node_modules/@modelcontextprotocol/server-github/dist/index.js',
+    requiredPorts: [3008],
+    verified: true
   }
 } as const;
 

@@ -12,6 +12,8 @@ import { environmentCapability } from "../capabilities/environment.js";
 import { mcpClientCapability } from "../capabilities/mcp-client.js";
 import { mcpInstallerCapability } from "../capabilities/mcp-installer.js";
 import { memoryCapability } from "../capabilities/memory.js";
+import { githubCapability } from "../capabilities/github.js";
+import { deploymentCheerleaderCapability } from "../capabilities/deployment-cheerleader.js";
 import { CapabilitySuggester } from "../utils/capability-suggester.js";
 import { capabilityXMLParser } from "../utils/xml-parser.js";
 import { conscienceLLM, CapabilityRequest } from './conscience.js';
@@ -87,6 +89,12 @@ export class CapabilityOrchestrator {
 
       // Register real memory capability with persistence
       capabilityRegistry.register(memoryCapability);
+
+      // Register GitHub capability for deployment celebrations
+      capabilityRegistry.register(githubCapability);
+
+      // Register deployment cheerleader capability
+      capabilityRegistry.register(deploymentCheerleaderCapability);
 
       // Register wolfram capability
       capabilityRegistry.register({
