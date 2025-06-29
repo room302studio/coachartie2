@@ -104,7 +104,8 @@ export class ConscienceLLM {
       }
 
       // Allow safe operations immediately without LLM review
-      if (capability.name === 'memory' || capability.name === 'calculator' || capability.name === 'web') {
+      if (capability.name === 'memory' || capability.name === 'calculator' || capability.name === 'web' || 
+          capability.name === 'deployment_cheerleader' || capability.name === 'github') {
         logger.info(`✅ IMMEDIATE ALLOW: Safe operation ${capability.name}:${capability.action}`);
         
         if (capability.params && typeof capability.params === 'object' && Object.keys(capability.params).length > 0) {
