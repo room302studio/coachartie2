@@ -126,14 +126,15 @@ ${context ? `Context from previous conversations: ${context}` : ''}`;
         logger.info(`✅ Generated response for user ${userId} using ${model} (${usage.total_tokens} tokens, $${estimatedCost.toFixed(4)})`);
         return response.trim();
 
-      } catch (error: any) {
-        logger.warn(`❌ Model ${model} failed: ${error.message}`);
+      } catch (error: unknown) {
+        logger.warn(`❌ Model ${model} failed: ${error instanceof Error ? error.message : String(error)}`);
         
         // If this was a credit/billing error, try free models
-        if (error.message?.includes('credit') || 
-            error.message?.includes('billing') || 
-            error.message?.includes('quota') ||
-            error.status === 402) {
+        const errorMessage = error instanceof Error ? error.message : '';
+        if (errorMessage.includes('credit') || 
+            errorMessage.includes('billing') || 
+            errorMessage.includes('quota') ||
+            (error as { status?: number }).status === 402) {
           logger.info('💳 Billing/credit error detected, skipping to free models...');
           continue;
         }

@@ -18,7 +18,7 @@ import { schedulerRouter } from './routes/scheduler.js';
 import { githubRouter } from './routes/github.js';
 import { schedulerService } from './services/scheduler.js';
 // Import orchestrator FIRST to trigger capability registration
-import { capabilityOrchestrator } from './services/capability-orchestrator.js';
+import './services/capability-orchestrator.js';
 import { capabilityRegistry } from './services/capability-registry.js';
 import { capabilitiesRouter } from './routes/capabilities.js';
 
@@ -97,8 +97,9 @@ async function start() {
       logger.info(`🔍 Server address:`, addr);
     });
 
-    server.on('error', (error: any) => {
-      if (error.code === 'EADDRINUSE') {
+    server.on('error', (error: Error) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      if ((error as any).code === 'EADDRINUSE') {
         logger.error(`❌ PORT CONFLICT: Port ${PORT} is already in use!`);
         logger.error(`❌ Another service is likely running on this port. Check with: lsof -i :${PORT}`);
         logger.error(`❌ Kill competing process or use a different port.`);

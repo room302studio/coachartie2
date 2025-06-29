@@ -80,7 +80,7 @@ router.post('/test', (req: Request, res: Response) => {
 
     // Test the orchestration (this will be async)
     capabilityOrchestrator.orchestrateMessage(testMessage)
-      .then(response => {
+      .then(_response => {
         logger.info(`Test orchestration completed for: ${message}`);
       })
       .catch(error => {

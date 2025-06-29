@@ -2,6 +2,13 @@ import { logger } from '@coachartie/shared';
 import { schedulerService } from '../services/scheduler.js';
 import { publishMessage } from '../queues/publisher.js';
 
+interface TaskData {
+  type: string;
+  repositories?: string[];
+  interval?: number;
+  [key: string]: unknown;
+}
+
 interface DeploymentMonitorConfig {
   repositories: string[]; // List of repos to monitor
   checkInterval: string; // Cron expression
@@ -75,18 +82,18 @@ export class DeploymentMonitor {
     }
   }
 
-  async processScheduledTask(taskData: any): Promise<void> {
-    const { type, repositories, action } = taskData;
+  async processScheduledTask(taskData: TaskData): Promise<void> {
+    const { type, repositories } = taskData;
 
-    logger.info(`🔄 Processing scheduled deployment task: ${type}`, { repositories: repositories.length });
+    logger.info(`🔄 Processing scheduled deployment task: ${type}`, { repositories: repositories?.length || 0 });
 
     switch (type) {
       case 'deployment-check':
-        await this.checkRepositoriesForDeployments(repositories);
+        await this.checkRepositoriesForDeployments(repositories || []);
         break;
       
       case 'deployment-weekly-summary':
-        await this.generateWeeklySummary(repositories);
+        await this.generateWeeklySummary(repositories || []);
         break;
       
       default:
@@ -100,16 +107,13 @@ export class DeploymentMonitor {
     for (const repo of repositories) {
       try {
         // Use deployment cheerleader to monitor releases (last 4 hours)
-        await publishMessage('INCOMING_MESSAGES', {
-          id: `deployment-check-${Date.now()}-${repo.replace('/', '-')}`,
-          message: `<capability name="deployment_cheerleader" action="monitor_releases" repo="${repo}" hours="4" />`,
-          userId: 'deployment-monitor',
-          source: 'scheduled-deployment-check',
-          metadata: {
-            repository: repo,
-            scheduledTask: 'deployment-check'
-          }
-        });
+        await publishMessage(
+          'deployment-monitor',
+          `<capability name="deployment_cheerleader" action="monitor_releases" repo="${repo}" hours="4" />`,
+          'general',
+          'Deployment Monitor',
+          true
+        );
 
         // Small delay to avoid overwhelming the system
         await new Promise(resolve => setTimeout(resolve, 1000));
@@ -132,17 +136,13 @@ export class DeploymentMonitor {
 
       // Check activity for all repositories (last 7 days)
       for (const repo of repositories) {
-        await publishMessage('INCOMING_MESSAGES', {
-          id: `weekly-summary-${Date.now()}-${repo.replace('/', '-')}`,
-          message: `<capability name="deployment_cheerleader" action="check_repo_activity" repo="${repo}" days="7" />`,
-          userId: 'deployment-monitor',
-          source: 'weekly-deployment-summary',
-          metadata: {
-            repository: repo,
-            scheduledTask: 'weekly-summary',
-            ...summaryData
-          }
-        });
+        await publishMessage(
+          'deployment-monitor',
+          `<capability name="deployment_cheerleader" action="check_repo_activity" repo="${repo}" days="7" />`,
+          'general',
+          'Deployment Monitor',
+          true
+        );
 
         await new Promise(resolve => setTimeout(resolve, 500));
       }
@@ -150,15 +150,13 @@ export class DeploymentMonitor {
       // Send summary header message
       const summaryMessage = this.generateWeeklySummaryMessage(summaryData);
       
-      await publishMessage('OUTGOING_DISCORD', {
-        message: summaryMessage,
-        userId: 'deployment-monitor',
-        source: 'weekly-deployment-summary',
-        metadata: {
-          event: 'weekly_deployment_summary',
-          ...summaryData
-        }
-      });
+      await publishMessage(
+        'deployment-monitor',
+        summaryMessage,
+        'general',
+        'Deployment Monitor',
+        true
+      );
 
     } catch (error) {
       logger.error('❌ Failed to generate weekly deployment summary:', error);
@@ -254,7 +252,7 @@ export async function initializeDeploymentMonitor(config?: DeploymentMonitorConf
 }
 
 // Process scheduled deployment tasks
-export async function processDeploymentTask(taskData: any): Promise<void> {
+export async function processDeploymentTask(taskData: TaskData): Promise<void> {
   if (!deploymentMonitor) {
     logger.warn('⚠️ Deployment monitor not initialized, skipping task');
     return;

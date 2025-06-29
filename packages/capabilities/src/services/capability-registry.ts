@@ -3,7 +3,8 @@ import { logger } from '@coachartie/shared';
 /**
  * Type definition for a capability handler function
  */
-export type CapabilityHandler = (params: Record<string, any>, content?: string) => Promise<string>;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type CapabilityHandler = (params: any, content?: string) => Promise<string>;
 
 /**
  * Interface for a registered capability
@@ -233,7 +234,8 @@ export class CapabilityRegistry {
    * @returns Promise resolving to the capability result
    * @throws Error if capability not found, action not supported, or required params missing
    */
-  async execute(name: string, action: string, params: Record<string, any> = {}, content?: string): Promise<string> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  async execute(name: string, action: string, params: any = {}, content?: string): Promise<string> {
     // Get and validate capability
     const capability = this.get(name, action);
 

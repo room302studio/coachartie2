@@ -60,9 +60,9 @@ export const webCapability: RegisteredCapability = {
 
         if (result.success) {
           let content = '';
-          if (result.title) content += `Title: ${result.title}\n`;
-          if (result.description) content += `Description: ${result.description}\n`;
-          if (result.content) content += `Content: ${result.content}`;
+          if (result.title) {content += `Title: ${result.title}\n`;}
+          if (result.description) {content += `Description: ${result.description}\n`;}
+          if (result.content) {content += `Content: ${result.content}`;}
           return content || `No content extracted from ${url}`;
         } else {
           return `Failed to fetch ${url}: ${result.error}`;

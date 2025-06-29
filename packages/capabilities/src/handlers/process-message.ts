@@ -51,6 +51,6 @@ Timestamp: ${new Date().toISOString()}
 OpenRouter Key Status: ${process.env.OPENROUTER_API_KEY ? 'CONFIGURED' : 'MISSING'}
 Capabilities Enabled: ${process.env.ENABLE_CAPABILITIES !== 'false'}
 Environment: ${process.env.NODE_ENV || 'unknown'}
-Available Capabilities: ${require('../services/capability-registry.js').capabilityRegistry.list().map((c: any) => c.name).join(', ')}`;
+Available Capabilities: ${require('../services/capability-registry.js').capabilityRegistry.list().map((c: { name: string }) => c.name).join(', ')}`;
   }
 }

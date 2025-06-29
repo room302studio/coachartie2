@@ -1,5 +1,60 @@
 import crypto from 'crypto';
 import { logger } from '@coachartie/shared';
+
+interface GitHubWebhookPayload {
+  action?: string;
+  repository?: {
+    name: string;
+    full_name: string;
+    html_url: string;
+  };
+  head_commit?: {
+    id: string;
+    message: string;
+    author: {
+      name: string;
+    };
+    url: string;
+  };
+  release?: {
+    tag_name: string;
+    name: string;
+    body: string;
+    html_url: string;
+    author: {
+      login: string;
+    };
+    published_at: string;
+  };
+  pull_request?: {
+    number: number;
+    title: string;
+    user: {
+      login: string;
+    };
+    html_url: string;
+    merged: boolean;
+    state: string;
+    additions?: number;
+    deletions?: number;
+    base?: {
+      ref: string;
+    };
+  };
+  pusher?: {
+    name: string;
+  };
+  ref?: string;
+  commits?: Array<{
+    id: string;
+    message: string;
+    author: {
+      name: string;
+    };
+    url: string;
+  }>;
+  [key: string]: unknown;
+}
 import { publishMessage } from '../queues/publisher.js';
 
 interface GitHubWebhookHeaders {
@@ -62,7 +117,7 @@ interface GitHubReleasePayload {
   };
 }
 
-export async function handleGitHubWebhook(payload: any, headers: GitHubWebhookHeaders): Promise<void> {
+export async function handleGitHubWebhook(payload: GitHubWebhookPayload, headers: GitHubWebhookHeaders): Promise<void> {
   const event = headers['x-github-event'];
   const delivery = headers['x-github-delivery'];
 
@@ -79,11 +134,11 @@ export async function handleGitHubWebhook(payload: any, headers: GitHubWebhookHe
 
   switch (event) {
     case 'push':
-      await handlePushEvent(payload as GitHubPushPayload);
+      await handlePushEvent(payload as unknown as GitHubPushPayload);
       break;
     
     case 'release':
-      await handleReleaseEvent(payload as GitHubReleasePayload);
+      await handleReleaseEvent(payload as unknown as GitHubReleasePayload);
       break;
     
     case 'pull_request':
@@ -96,7 +151,7 @@ export async function handleGitHubWebhook(payload: any, headers: GitHubWebhookHe
 }
 
 async function handlePushEvent(payload: GitHubPushPayload): Promise<void> {
-  const { ref, repository, pusher, commits, head_commit } = payload;
+  const { ref, repository, pusher, commits } = payload;
   
   // Only celebrate pushes to main/master
   const branch = ref.replace('refs/heads/', '');
@@ -113,18 +168,13 @@ async function handlePushEvent(payload: GitHubPushPayload): Promise<void> {
 
   const celebrationMessage = generatePushCelebration(payload);
   
-  await publishMessage('OUTGOING_DISCORD', {
-    message: celebrationMessage,
-    userId: 'github-bot',
-    source: 'github-webhook',
-    metadata: {
-      event: 'push',
-      repository: repository.full_name,
-      branch,
-      commits: commits.length,
-      pusher: pusher.name
-    }
-  });
+  await publishMessage(
+    'github-bot',
+    celebrationMessage,
+    'general',
+    'GitHub Bot',
+    true
+  );
 }
 
 async function handleReleaseEvent(payload: GitHubReleasePayload): Promise<void> {
@@ -144,25 +194,25 @@ async function handleReleaseEvent(payload: GitHubReleasePayload): Promise<void> 
 
   const celebrationMessage = generateReleaseCelebration(payload);
   
-  await publishMessage('OUTGOING_DISCORD', {
-    message: celebrationMessage,
-    userId: 'github-bot',
-    source: 'github-webhook',
-    metadata: {
-      event: 'release',
-      repository: repository.full_name,
-      tag: release.tag_name,
-      author: release.author.login,
-      prerelease: release.prerelease
-    }
-  });
+  await publishMessage(
+    'github-bot',
+    celebrationMessage,
+    'general',
+    'GitHub Bot',
+    true
+  );
 }
 
-async function handlePullRequestEvent(payload: any): Promise<void> {
+async function handlePullRequestEvent(payload: GitHubWebhookPayload): Promise<void> {
   const { action, pull_request, repository } = payload;
   
+  if (!pull_request || !repository) {
+    logger.warn('Missing pull_request or repository data');
+    return;
+  }
+  
   // Only celebrate merged PRs to main
-  if (action !== 'closed' || !pull_request.merged || pull_request.base.ref !== 'main') {
+  if (action !== 'closed' || !pull_request.merged || pull_request.base?.ref !== 'main') {
     return;
   }
 
@@ -174,17 +224,13 @@ async function handlePullRequestEvent(payload: any): Promise<void> {
 
   const celebrationMessage = generatePRCelebration(payload);
   
-  await publishMessage('OUTGOING_DISCORD', {
-    message: celebrationMessage,
-    userId: 'github-bot',
-    source: 'github-webhook',
-    metadata: {
-      event: 'pull_request_merged',
-      repository: repository.full_name,
-      pr_number: pull_request.number,
-      author: pull_request.user.login
-    }
-  });
+  await publishMessage(
+    'github-bot',
+    celebrationMessage,
+    'general',
+    'GitHub Bot',
+    true
+  );
 }
 
 function generatePushCelebration(payload: GitHubPushPayload): string {
@@ -231,8 +277,12 @@ function generateReleaseCelebration(payload: GitHubReleasePayload): string {
   return message;
 }
 
-function generatePRCelebration(payload: any): string {
+function generatePRCelebration(payload: GitHubWebhookPayload): string {
   const { pull_request, repository } = payload;
+  
+  if (!pull_request || !repository) {
+    throw new Error('Invalid payload: missing pull_request or repository');
+  }
   
   const emojis = ['🔀', '✅', '🎯', '💪', '🏆'];
   const emoji = emojis[Math.floor(Math.random() * emojis.length)];
@@ -248,7 +298,7 @@ function generatePRCelebration(payload: any): string {
   return message;
 }
 
-function verifySignature(payload: any, signature: string | undefined, secret: string): boolean {
+function verifySignature(payload: GitHubWebhookPayload, signature: string | undefined, secret: string): boolean {
   if (!signature) {
     return false;
   }

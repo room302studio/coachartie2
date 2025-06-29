@@ -228,7 +228,7 @@ export class CapabilitySuggester {
     for (const [capabilityName, capabilityData] of Object.entries(CAPABILITY_KEYWORDS)) {
       // Check if this capability is available
       const registeredCapability = this.capabilities.find(cap => cap.name === capabilityName);
-      if (!registeredCapability) continue;
+      if (!registeredCapability) {continue;}
 
       // Calculate keyword match score
       const matchingKeywords = capabilityData.keywords.filter(keyword =>
@@ -243,7 +243,7 @@ export class CapabilitySuggester {
         let bestActionScore = 0;
 
         for (const [actionName, actionKeywords] of Object.entries(capabilityData.actions)) {
-          if (!registeredCapability.supportedActions.includes(actionName)) continue;
+          if (!registeredCapability.supportedActions.includes(actionName)) {continue;}
 
           const actionMatches = actionKeywords.filter(keyword =>
             analysis.keywords.some(queryWord => 
@@ -380,10 +380,10 @@ export class CapabilitySuggester {
     const targetLower = target.toLowerCase();
 
     // Exact match
-    if (queryLower === targetLower) return 1.0;
+    if (queryLower === targetLower) {return 1.0;}
 
     // Substring match
-    if (queryLower.includes(targetLower) || targetLower.includes(queryLower)) return 0.8;
+    if (queryLower.includes(targetLower) || targetLower.includes(queryLower)) {return 0.8;}
 
     // Word-level matches
     const queryWords = queryLower.split(/[\s_-]+/);
@@ -392,8 +392,8 @@ export class CapabilitySuggester {
     let matches = 0;
     for (const qWord of queryWords) {
       for (const tWord of targetWords) {
-        if (qWord === tWord) matches += 1;
-        else if (qWord.includes(tWord) || tWord.includes(qWord)) matches += 0.5;
+        if (qWord === tWord) {matches += 1;}
+        else if (qWord.includes(tWord) || tWord.includes(qWord)) {matches += 0.5;}
       }
     }
 
@@ -444,7 +444,7 @@ export class CapabilitySuggester {
    */
   private extractMathExpression(analysis: QueryAnalysis): string {
     const query = analysis.keywords.join(' ');
-    const mathPattern = /[\d\s\+\-\*\/\(\)\.]+/g;
+    const mathPattern = /[\d\s+\-*/().]+/g;
     const matches = query.match(mathPattern);
     return matches ? matches.join(' ').trim() : '';
   }
@@ -482,13 +482,13 @@ export class CapabilitySuggester {
    * Determine the domain/category of the query
    */
   private determineDomain(query: string): string {
-    if (/weather|temperature|forecast/i.test(query)) return 'weather';
-    if (/math|calculate|equation/i.test(query)) return 'math';
-    if (/file|folder|directory/i.test(query)) return 'filesystem';
-    if (/search|find|lookup/i.test(query)) return 'search';
-    if (/install|setup|create/i.test(query)) return 'installation';
-    if (/remember|recall|memory/i.test(query)) return 'memory';
-    if (/schedule|remind|timer/i.test(query)) return 'scheduling';
+    if (/weather|temperature|forecast/i.test(query)) {return 'weather';}
+    if (/math|calculate|equation/i.test(query)) {return 'math';}
+    if (/file|folder|directory/i.test(query)) {return 'filesystem';}
+    if (/search|find|lookup/i.test(query)) {return 'search';}
+    if (/install|setup|create/i.test(query)) {return 'installation';}
+    if (/remember|recall|memory/i.test(query)) {return 'memory';}
+    if (/schedule|remind|timer/i.test(query)) {return 'scheduling';}
     return 'general';
   }
 

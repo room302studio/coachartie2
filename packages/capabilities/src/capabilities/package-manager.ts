@@ -1,11 +1,13 @@
-import { spawn, exec } from 'child_process';
-import { promisify } from 'util';
+import { spawn } from 'child_process';
 import { readFile, writeFile, access, constants } from 'fs/promises';
 import { resolve, dirname, join } from 'path';
 import { logger } from '@coachartie/shared';
 import { RegisteredCapability } from '../services/capability-registry.js';
 
-const execAsync = promisify(exec);
+interface NodeError extends Error {
+  code?: string;
+}
+
 
 /**
  * Package Manager capability - manages npm packages and package.json files safely
@@ -32,7 +34,7 @@ interface PackageJson {
   dependencies?: Record<string, string>;
   devDependencies?: Record<string, string>;
   peerDependencies?: Record<string, string>;
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 /**
@@ -169,7 +171,7 @@ async function installPackage(packageName: string, workingDir: string, isDev = f
   logger.info(`📦 Installing package: ${packageName} in ${workingDir} (dev: ${isDev})`);
   
   try {
-    const result = await executePnpmCommand(command, workingDir);
+    await executePnpmCommand(command, workingDir);
     logger.info(`✅ Successfully installed ${packageName}`);
     return `Successfully installed ${packageName}${isDev ? ' as dev dependency' : ''}`;
   } catch (error) {
@@ -190,7 +192,7 @@ async function createPackage(packagePath: string, options: Partial<PackageJson> 
     await access(packageJsonPath, constants.F_OK);
     throw new Error(`package.json already exists at ${packageJsonPath}`);
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+    if ((error as NodeError).code !== 'ENOENT') {
       throw error;
     }
   }
@@ -321,7 +323,7 @@ export const packageManagerCapability: RegisteredCapability = {
   name: 'package_manager',
   supportedActions: ['install_package', 'create_package', 'run_script', 'check_dependencies', 'update_package_json'],
   description: 'Manages npm packages and package.json files safely within project workspace',
-  handler: async (params, content) => {
+  handler: async (params, _content) => {
     const { action } = params;
     
     try {

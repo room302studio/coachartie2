@@ -30,7 +30,7 @@ export async function startMessageConsumer() {
         // Handle API responses differently - just log them
         if (message.respondTo.type === 'api') {
           logger.info(`API Response for ${message.id}: ${response}`);
-          logger.info(`API message processed successfully: ${(message.respondTo as any).apiResponseId}`);
+          logger.info(`API message processed successfully: ${(message.respondTo as { apiResponseId?: string })?.apiResponseId}`);
         } else {
           // Determine which outgoing queue to use for other types
           const outgoingQueueName = getOutgoingQueueName(message.respondTo.type);

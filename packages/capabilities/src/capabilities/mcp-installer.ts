@@ -1,8 +1,51 @@
 import { logger } from '@coachartie/shared';
 import { RegisteredCapability } from '../services/capability-registry.js';
 import { capabilityRegistry } from '../services/capability-registry.js';
-import { promises as fs } from 'fs';
 import path from 'path';
+
+interface MCPTemplate {
+  name: string;
+  version: string;
+  description: string;
+  envVars: readonly string[];
+  configFile: string;
+  startScript: string;
+  requiredPorts: readonly number[];
+  verified: boolean;
+  isNpxPackage?: boolean;
+}
+
+interface MCPInstallerParams {
+  action: string;
+  template?: string;
+  name?: string;
+  path?: string;
+  install_path?: string;
+  description?: string;
+  port?: string;
+  mcp_name?: string;
+  env_vars?: Record<string, unknown>;
+  environment?: Record<string, unknown>;
+  variables?: Record<string, unknown>;
+}
+
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+interface HelloArgs {
+  name?: string;
+}
+
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+interface StatusArgs {
+  [key: string]: unknown;
+}
+
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+interface MCPHandlerResult {
+  content: Array<{
+    type: string;
+    text: string;
+  }>;
+}
 
 /**
  * MCP (Model Context Protocol) Installer Capability - The Master MCP Installation Orchestrator
@@ -220,7 +263,7 @@ async function installMCPPackage(
   templateName: string, 
   packageName: string, 
   mcpPath: string, 
-  template: any, 
+  template: MCPTemplate, 
   result: MCPInstallationResult
 ): Promise<string> {
   try {
@@ -316,7 +359,7 @@ echo "🚀 Starting ${templateName} MCP Server..."
 
 # Load environment variables
 if [ -f .env ]; then
-    export \$(cat .env | grep -v ^# | xargs)
+    export $(cat .env | grep -v ^# | xargs)
     echo "✅ Environment variables loaded"
 else
     echo "⚠️  No .env file found. Using system environment."
@@ -324,7 +367,7 @@ fi
 
 # Check required environment variables
 ${template.envVars.map((envVar: string) => `
-if [ -z "\$${envVar}" ]; then
+if [ -z "$${envVar}" ]; then
     echo "❌ Missing required environment variable: ${envVar}"
     exit 1
 fi`).join('')}
@@ -595,7 +638,7 @@ class ${name.charAt(0).toUpperCase() + name.slice(1)}MCPServer {
     });
   }
 
-  private async handleHello(args: any): Promise<any> {
+  private async handleHello(args: HelloArgs): Promise<MCPHandlerResult> {
     const name = args.name || 'World';
     return {
       content: [
@@ -607,7 +650,7 @@ class ${name.charAt(0).toUpperCase() + name.slice(1)}MCPServer {
     };
   }
 
-  private async handleStatus(args: any): Promise<any> {
+  private async handleStatus(args: StatusArgs): Promise<MCPHandlerResult> {
     return {
       content: [
         {
@@ -799,7 +842,7 @@ async function setupEnvironment(mcpName: string, envVars: Record<string, string>
 
     // Create .env file
     const envPath = path.join(mcpPath, '.env');
-    const envContent = Object.entries(envVars)
+    Object.entries(envVars)
       .map(([key, value]) => `${key}=${value}`)
       .join('\n');
 
@@ -859,11 +902,10 @@ async function startMCPServer(mcpName: string): Promise<string> {
           stdio: ['ignore', 'pipe', 'pipe']
         });
 
-        let output = '';
         let errorOutput = '';
 
-        startProcess.stdout?.on('data', (data: Buffer) => {
-          output += data.toString();
+        startProcess.stdout?.on('data', (_data: Buffer) => {
+          // Capture stdout but don't store it
         });
 
         startProcess.stderr?.on('data', (data: Buffer) => {
@@ -902,11 +944,10 @@ async function startMCPServer(mcpName: string): Promise<string> {
           stdio: ['ignore', 'pipe', 'pipe']
         });
 
-        let output = '';
         let errorOutput = '';
 
-        startProcess.stdout?.on('data', (data: Buffer) => {
-          output += data.toString();
+        startProcess.stdout?.on('data', (_data: Buffer) => {
+          // Capture stdout but don't store it
         });
 
         startProcess.stderr?.on('data', (data: Buffer) => {
@@ -971,11 +1012,10 @@ async function startCustomMCPServer(mcpName: string, mcpPath: string): Promise<s
         stdio: ['ignore', 'pipe', 'pipe']
       });
 
-      let output = '';
       let errorOutput = '';
 
-      startProcess.stdout?.on('data', (data: Buffer) => {
-        output += data.toString();
+      startProcess.stdout?.on('data', (_data: Buffer) => {
+        // Capture stdout but don't store it
       });
 
       startProcess.stderr?.on('data', (data: Buffer) => {
@@ -1078,7 +1118,7 @@ async function checkMCPStatus(): Promise<string> {
             statusReport.push(`   🚀 Port: ${config.port}`);
             statusReport.push(`   📄 Description: ${config.description}`);
           }
-        } catch (configError) {
+        } catch {
           statusReport.push(`   ⚠️  Could not read configuration`);
         }
         
@@ -1136,14 +1176,14 @@ function findSimilarTemplateNames(target: string, available: string[]): string[]
  * Calculate string similarity (improved version for template matching)
  */
 function calculateStringSimilarity(a: string, b: string): number {
-  if (a === b) return 1.0;
-  if (a.length === 0 || b.length === 0) return 0.0;
+  if (a === b) {return 1.0;}
+  if (a.length === 0 || b.length === 0) {return 0.0;}
   
   const aLower = a.toLowerCase();
   const bLower = b.toLowerCase();
   
   // Check for exact substring matches
-  if (aLower.includes(bLower) || bLower.includes(aLower)) return 0.9;
+  if (aLower.includes(bLower) || bLower.includes(aLower)) {return 0.9;}
   
   // Check for word-level matches (split by underscores, hyphens)
   const aWords = aLower.split(/[_-]/);
@@ -1152,8 +1192,8 @@ function calculateStringSimilarity(a: string, b: string): number {
   let wordMatches = 0;
   for (const aWord of aWords) {
     for (const bWord of bWords) {
-      if (aWord === bWord) wordMatches++;
-      else if (aWord.includes(bWord) || bWord.includes(aWord)) wordMatches += 0.5;
+      if (aWord === bWord) {wordMatches++;}
+      else if (aWord.includes(bWord) || bWord.includes(aWord)) {wordMatches += 0.5;}
     }
   }
   
@@ -1164,8 +1204,8 @@ function calculateStringSimilarity(a: string, b: string): number {
   // Levenshtein distance-based similarity
   const matrix = Array(b.length + 1).fill(null).map(() => Array(a.length + 1).fill(null));
   
-  for (let i = 0; i <= a.length; i++) matrix[0][i] = i;
-  for (let j = 0; j <= b.length; j++) matrix[j][0] = j;
+  for (let i = 0; i <= a.length; i++) {matrix[0][i] = i;}
+  for (let j = 0; j <= b.length; j++) {matrix[j][0] = j;}
   
   for (let j = 1; j <= b.length; j++) {
     for (let i = 1; i <= a.length; i++) {
@@ -1310,7 +1350,7 @@ function generateDetailedErrorReport(
 /**
  * MCP Installer capability handler
  */
-async function handleMCPInstallerAction(params: Record<string, any>, content?: string): Promise<string> {
+async function handleMCPInstallerAction(params: MCPInstallerParams, content?: string): Promise<string> {
   const { action } = params;
   
   try {
@@ -1342,7 +1382,7 @@ async function handleMCPInstallerAction(params: Record<string, any>, content?: s
 /**
  * Handle install from template action
  */
-async function handleInstallFromTemplate(params: Record<string, any>, content?: string): Promise<string> {
+async function handleInstallFromTemplate(params: MCPInstallerParams, _content?: string): Promise<string> {
   const templateName = params.template || params.name;
   const installPath = params.path || params.install_path;
   
@@ -1356,7 +1396,7 @@ async function handleInstallFromTemplate(params: Record<string, any>, content?: 
 /**
  * Handle create custom MCP action
  */
-async function handleCreateCustomMCP(params: Record<string, any>, content?: string): Promise<string> {
+async function handleCreateCustomMCP(params: MCPInstallerParams, content?: string): Promise<string> {
   const name = params.name;
   const description = params.description || content;
   const port = params.port ? parseInt(params.port) : undefined;
@@ -1376,7 +1416,7 @@ async function handleCreateCustomMCP(params: Record<string, any>, content?: stri
 /**
  * Handle setup environment action
  */
-async function handleSetupEnvironment(params: Record<string, any>, content?: string): Promise<string> {
+async function handleSetupEnvironment(params: MCPInstallerParams, _content?: string): Promise<string> {
   const mcpName = params.mcp_name || params.name;
   const envVars = params.env_vars || params.environment || params.variables;
   
@@ -1388,13 +1428,19 @@ async function handleSetupEnvironment(params: Record<string, any>, content?: str
     throw new Error('Environment variables object is required for setup_environment action');
   }
 
-  return await setupEnvironment(mcpName, envVars);
+  // Convert unknown values to strings
+  const stringEnvVars: Record<string, string> = {};
+  for (const [key, value] of Object.entries(envVars)) {
+    stringEnvVars[key] = String(value);
+  }
+  
+  return await setupEnvironment(mcpName, stringEnvVars);
 }
 
 /**
  * Handle start MCP server action
  */
-async function handleStartMCPServer(params: Record<string, any>, content?: string): Promise<string> {
+async function handleStartMCPServer(params: MCPInstallerParams, _content?: string): Promise<string> {
   const mcpName = params.name || params.mcp_name;
   
   if (!mcpName) {
@@ -1407,7 +1453,7 @@ async function handleStartMCPServer(params: Record<string, any>, content?: strin
 /**
  * Handle check MCP status action
  */
-async function handleCheckMCPStatus(params: Record<string, any>, content?: string): Promise<string> {
+async function handleCheckMCPStatus(_params: MCPInstallerParams, _content?: string): Promise<string> {
   return await checkMCPStatus();
 }
 

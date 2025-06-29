@@ -1,6 +1,55 @@
 import { logger } from '@coachartie/shared';
 import { publishMessage } from '../queues/publisher.js';
+import { RegisteredCapability } from '../services/capability-registry.js';
 
+interface GitHubRelease {
+  tag_name: string;
+  author: string;
+  body: string;
+  html_url: string;
+  published_at: string;
+  draft: boolean;
+  prerelease: boolean;
+}
+
+interface GitHubMCPResult<T = unknown> {
+  success: boolean;
+  data?: T;
+  error?: string;
+}
+
+interface GitHubReleasesData {
+  releases: GitHubRelease[];
+}
+
+interface DeploymentStats {
+  total_commits: number;
+  total_releases: number;
+  unique_contributors: number;
+  contributors: string[];
+  latest_release?: {
+    tag_name: string;
+    author: string;
+  };
+}
+
+interface GitHubStatsData {
+  stats: DeploymentStats;
+}
+
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+interface DeploymentCheerleaderParams {
+  action?: string;
+  repo?: string;
+  version?: string;
+  author?: string;
+  description?: string;
+  type?: string;
+  hours?: number;
+  days?: number;
+}
+
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 interface DeploymentCheerleaderCapability {
   name: 'deployment_cheerleader';
   description: 'Monitors deployments and celebrates achievements';
@@ -32,11 +81,30 @@ interface DeploymentCheerleaderCapability {
   };
 }
 
-export const deploymentCheerleaderCapability = {
+export const deploymentCheerleaderCapability: RegisteredCapability = {
   name: 'deployment_cheerleader',
+  supportedActions: ['monitor_releases', 'celebrate_deployment', 'check_repo_activity'],
   description: 'Monitors deployments and celebrates team achievements automatically',
+  requiredParams: ['action'],
   
-  actions: {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  handler: async (params: any, _content: string | undefined) => {
+    const action = params.action;
+    
+    switch (action) {
+      case 'monitor_releases':
+        return JSON.stringify(await cheerleaderActions.monitor_releases(params));
+      case 'celebrate_deployment':
+        return JSON.stringify(await cheerleaderActions.celebrate_deployment(params));
+      case 'check_repo_activity':
+        return JSON.stringify(await cheerleaderActions.check_repo_activity(params));
+      default:
+        throw new Error(`Unknown deployment_cheerleader action: ${action}`);
+    }
+  }
+};
+
+const cheerleaderActions = {
     monitor_releases: async (params: { repo: string; hours?: number }) => {
       try {
         logger.info(`🔍 Monitoring releases for ${params.repo} (last ${params.hours || 24} hours)`);
@@ -51,11 +119,11 @@ export const deploymentCheerleaderCapability = {
           throw new Error(`GitHub MCP failed: ${githubResult.error}`);
         }
 
-        const releases = githubResult.data.releases;
+        const releases = (githubResult.data as GitHubReleasesData).releases;
         const hoursAgo = new Date(Date.now() - (params.hours || 24) * 60 * 60 * 1000);
         
         // Filter to recent releases
-        const recentReleases = releases.filter((release: any) => 
+        const recentReleases = releases.filter((release: GitHubRelease) => 
           new Date(release.published_at) > hoursAgo && !release.draft
         );
 
@@ -87,17 +155,13 @@ export const deploymentCheerleaderCapability = {
           celebrations.push(celebration);
           
           // Send celebration to Discord
-          await publishMessage('OUTGOING_DISCORD', {
-            message: celebration.message,
-            userId: 'deployment-cheerleader',
-            source: 'deployment-monitoring',
-            metadata: {
-              event: 'release_celebration',
-              repository: params.repo,
-              version: release.tag_name,
-              author: release.author
-            }
-          });
+          await publishMessage(
+            'deployment-cheerleader',
+            celebration.message,
+            'general', // default channel
+            'Deployment Bot',
+            true
+          );
         }
 
         return {
@@ -133,17 +197,13 @@ export const deploymentCheerleaderCapability = {
         const celebration = await generateReleaseCelebration(params);
         
         // Send celebration to Discord
-        await publishMessage('OUTGOING_DISCORD', {
-          message: celebration.message,
-          userId: 'deployment-cheerleader',
-          source: 'manual-celebration',
-          metadata: {
-            event: 'manual_celebration',
-            repository: params.repo,
-            version: params.version,
-            author: params.author
-          }
-        });
+        await publishMessage(
+          'deployment-cheerleader',
+          celebration.message,
+          'general', // default channel
+          'Deployment Bot',
+          true
+        );
 
         return {
           success: true,
@@ -176,7 +236,7 @@ export const deploymentCheerleaderCapability = {
           throw new Error(`GitHub MCP failed: ${statsResult.error}`);
         }
 
-        const stats = statsResult.data.stats;
+        const stats = (statsResult.data as GitHubStatsData).stats;
         const activitySummary = generateActivitySummary(params.repo, stats, params.days || 7);
 
         return {
@@ -198,11 +258,10 @@ export const deploymentCheerleaderCapability = {
         };
       }
     }
-  }
 };
 
 // Helper function to call GitHub MCP actions (will be replaced with actual MCP client calls)
-async function executeGitHubMCPAction(action: string, params: any): Promise<any> {
+async function executeGitHubMCPAction(action: string, params: Record<string, unknown>): Promise<GitHubMCPResult<GitHubReleasesData | GitHubStatsData>> {
   // This is a placeholder - in real implementation, this would call the GitHub MCP server
   // For now, we'll simulate the response structure
   logger.info(`🔗 Calling GitHub MCP: ${action}`, params);
@@ -270,7 +329,7 @@ async function generateReleaseCelebration(params: {
   };
 }
 
-function generateActivitySummary(repo: string, stats: any, days: number): string {
+function generateActivitySummary(repo: string, stats: DeploymentStats, days: number): string {
   const { total_commits, total_releases, unique_contributors, contributors } = stats;
   
   let summary = `📊 **${repo}** activity summary (last ${days} days):\n\n`;

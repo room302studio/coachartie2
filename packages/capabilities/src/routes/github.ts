@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { logger } from '@coachartie/shared';
 import { handleGitHubWebhook } from '../handlers/github-webhook.js';
 
-export const githubRouter = Router();
+export const githubRouter: Router = Router();
 
 githubRouter.post('/webhook', async (req, res) => {
   try {

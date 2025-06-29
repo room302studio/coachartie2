@@ -3,6 +3,21 @@ import { join, resolve, dirname, basename } from 'path';
 import { logger } from '@coachartie/shared';
 import { RegisteredCapability } from '../services/capability-registry.js';
 
+interface EnvParams {
+  action?: string;
+  file?: string;
+  filename?: string;
+  key?: string;
+  name?: string;
+  value?: string;
+  variables?: Record<string, string> | string[];
+  required?: string[];
+}
+
+interface NodeError extends Error {
+  code?: string;
+}
+
 /**
  * Environment Variable Management Capability
  * 
@@ -151,7 +166,7 @@ async function readEnvFile(filePath: string): Promise<Record<string, string>> {
     const content = await readFile(validatedPath, 'utf-8');
     return parseEnvContent(content);
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+    if ((error as NodeError).code === 'ENOENT') {
       return {}; // File doesn't exist, return empty object
     }
     throw error;
@@ -169,7 +184,7 @@ async function writeEnvFile(filePath: string, envVars: Record<string, string>): 
   const dir = dirname(validatedPath);
   try {
     await mkdir(dir, { recursive: true });
-  } catch (error) {
+  } catch {
     // Directory might already exist, ignore error
   }
   
@@ -184,7 +199,7 @@ async function createBackup(filePath: string): Promise<string> {
   
   try {
     await access(validatedPath);
-  } catch (error) {
+  } catch {
     // File doesn't exist, no backup needed
     return '';
   }
@@ -199,7 +214,8 @@ async function createBackup(filePath: string): Promise<string> {
 /**
  * Environment management capability handler
  */
-async function handleEnvironmentAction(params: Record<string, any>, content?: string): Promise<string> {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function handleEnvironmentAction(params: any, content?: string): Promise<string> {
   const { action } = params;
   
   try {
@@ -231,7 +247,7 @@ async function handleEnvironmentAction(params: Record<string, any>, content?: st
 /**
  * Handle read_env action
  */
-async function handleReadEnv(params: Record<string, any>, content?: string): Promise<string> {
+async function handleReadEnv(params: EnvParams, _content?: string): Promise<string> {
   const fileName = params.file || params.filename || '.env';
   validateEnvFileName(fileName);
   
@@ -259,7 +275,7 @@ async function handleReadEnv(params: Record<string, any>, content?: string): Pro
 /**
  * Handle set_env action
  */
-async function handleSetEnv(params: Record<string, any>, content?: string): Promise<string> {
+async function handleSetEnv(params: EnvParams, content?: string): Promise<string> {
   const fileName = params.file || params.filename || '.env';
   validateEnvFileName(fileName);
   
@@ -306,7 +322,7 @@ async function handleSetEnv(params: Record<string, any>, content?: string): Prom
 /**
  * Handle create_env_file action
  */
-async function handleCreateEnvFile(params: Record<string, any>, content?: string): Promise<string> {
+async function handleCreateEnvFile(params: EnvParams, content?: string): Promise<string> {
   const fileName = params.file || params.filename;
   
   if (!fileName) {
@@ -324,7 +340,7 @@ async function handleCreateEnvFile(params: Record<string, any>, content?: string
     await access(filePath);
     throw new Error(`File ${fileName} already exists. Use set_env to modify existing files.`);
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+    if ((error as NodeError).code !== 'ENOENT') {
       throw error; // Re-throw if it's not a "file not found" error
     }
   }
@@ -354,7 +370,7 @@ async function handleCreateEnvFile(params: Record<string, any>, content?: string
 /**
  * Handle backup_env action
  */
-async function handleBackupEnv(params: Record<string, any>, content?: string): Promise<string> {
+async function handleBackupEnv(params: EnvParams, _content?: string): Promise<string> {
   const fileName = params.file || params.filename || '.env';
   validateEnvFileName(fileName);
   
@@ -376,7 +392,7 @@ async function handleBackupEnv(params: Record<string, any>, content?: string): P
 /**
  * Handle validate_env action
  */
-async function handleValidateEnv(params: Record<string, any>, content?: string): Promise<string> {
+async function handleValidateEnv(params: EnvParams, _content?: string): Promise<string> {
   const fileName = params.file || params.filename || '.env';
   validateEnvFileName(fileName);
   

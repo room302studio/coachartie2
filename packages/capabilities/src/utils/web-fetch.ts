@@ -1,16 +1,8 @@
 import axios, { AxiosResponse, AxiosRequestConfig } from 'axios';
-import { Readability } from '@mozilla/readability';
 import * as cheerio from 'cheerio';
 import { decode as decodeHtmlEntities } from 'html-entities';
 import { z } from 'zod';
 import { logger } from '@coachartie/shared';
-
-// Mock JSDOM for Readability - we'll use cheerio instead for DOM operations
-const mockJSDOM = {
-  window: {
-    document: null as any
-  }
-};
 
 // Configuration constants
 const CONFIG = {
@@ -124,7 +116,7 @@ export function validateUrl(url: string): { isValid: boolean; error?: string; no
       isValid: true,
       normalizedUrl: parsedUrl.toString()
     };
-  } catch (error) {
+  } catch {
     return {
       isValid: false,
       error: 'Failed to parse URL'
@@ -156,7 +148,7 @@ function isPrivateIP(hostname: string): boolean {
 /**
  * Extracts readable text content from HTML
  */
-function extractTextFromHtml(html: string, url: string): { title?: string; description?: string; content?: string } {
+function extractTextFromHtml(html: string, _url: string): { title?: string; description?: string; content?: string } {
   // For now, skip Readability since JSDOM is not available
   // Focus on cheerio-based extraction which is more reliable for our use case
 

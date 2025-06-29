@@ -16,13 +16,13 @@ import { githubCapability } from "../capabilities/github.js";
 import { deploymentCheerleaderCapability } from "../capabilities/deployment-cheerleader.js";
 import { CapabilitySuggester } from "../utils/capability-suggester.js";
 import { capabilityXMLParser } from "../utils/xml-parser.js";
-import { conscienceLLM, CapabilityRequest } from './conscience.js';
+import { conscienceLLM } from './conscience.js';
 
 // Define capability extraction types
 interface ExtractedCapability {
   name: string;
   action: string;
-  params: Record<string, any>;
+  params: Record<string, unknown>;
   content?: string;
   priority: number;
 }
@@ -30,7 +30,7 @@ interface ExtractedCapability {
 interface CapabilityResult {
   capability: ExtractedCapability;
   success: boolean;
-  data?: any;
+  data?: unknown;
   error?: string;
   timestamp: string;
 }
@@ -123,7 +123,7 @@ export class CapabilityOrchestrator {
         name: 'scheduler',
         supportedActions: ['remind', 'schedule', 'list', 'cancel'],
         description: 'Manages scheduled tasks and reminders',
-        handler: async (params, content) => {
+        handler: async (params, _content) => {
           const { action } = params;
 
           switch (action) {
@@ -133,7 +133,7 @@ export class CapabilityOrchestrator {
                 throw new Error('Reminder message is required');
               }
 
-              const delayMs = parseInt(delay) || 60000; // Default 1 minute
+              const delayMs = parseInt(String(delay)) || 60000; // Default 1 minute
               const reminderName = `reminder-${Date.now()}`;
 
               await schedulerService.scheduleOnce(
@@ -442,7 +442,7 @@ Timestamp: ${new Date().toISOString()}`;
     }).join('\n');
 
     // Generate contextual examples based on the user's message
-    const examples = this.generateContextualExamples(userMessage, capabilities);
+    this.generateContextualExamples(userMessage, capabilities);
 
     return `You are Coach Artie, a helpful AI assistant. 
 
@@ -463,7 +463,7 @@ User's message: ${userMessage}`;
   /**
    * Generate simpler instructions for free/smaller models with intelligent suggestions
    */
-  private generateSimpleCapabilityInstructions(userMessage: string, capabilities: RegisteredCapability[]): string {
+  private generateSimpleCapabilityInstructions(userMessage: string, _capabilities: RegisteredCapability[]): string {
     return `You are Coach Artie, a helpful AI assistant.
 
 If you need to:
@@ -480,7 +480,7 @@ User: ${userMessage}`;
   /**
    * Get relevant memory patterns for learning from past experiences
    */
-  private async getRelevantMemoryPatterns(userMessage: string, userId: string): Promise<string[]> {
+  private async getRelevantMemoryPatterns(userMessage: string, _userId: string): Promise<string[]> {
     try {
       logger.info(`🔍 Getting memory patterns for message: "${userMessage}"`);
       
@@ -637,7 +637,7 @@ ${capabilityDetails}`;
    * Simple fallback detection - auto-inject obvious capabilities when LLM fails to use them
    * Based on CLAUDE.md requirements: "Keep it stupid simple"
    */
-  private detectAndInjectCapabilities(userMessage: string, llmResponse: string): ExtractedCapability[] {
+  private detectAndInjectCapabilities(userMessage: string, _llmResponse: string): ExtractedCapability[] {
     const autoInjected: ExtractedCapability[] = [];
     const lowerMessage = userMessage.toLowerCase();
     
@@ -790,17 +790,17 @@ ${capabilityDetails}`;
    * Simple string similarity calculation (Jaro-Winkler inspired)
    */
   private calculateSimilarity(a: string, b: string): number {
-    if (a === b) return 1.0;
-    if (a.length === 0 || b.length === 0) return 0.0;
+    if (a === b) {return 1.0;}
+    if (a.length === 0 || b.length === 0) {return 0.0;}
     
     // Check for substring matches
-    if (a.includes(b) || b.includes(a)) return 0.8;
+    if (a.includes(b) || b.includes(a)) {return 0.8;}
     
     // Check for common substrings
     const aLower = a.toLowerCase();
     const bLower = b.toLowerCase();
     
-    if (aLower.includes(bLower) || bLower.includes(aLower)) return 0.7;
+    if (aLower.includes(bLower) || bLower.includes(aLower)) {return 0.7;}
     
     // Check for similar starting characters
     let matchingChars = 0;
@@ -1067,7 +1067,7 @@ ${capabilityDetails}`;
     }
 
     try {
-      const result = await wolframService.query(input);
+      const result = await wolframService.query(String(input));
       return result;
     } catch (error) {
       logger.error("Wolfram Alpha capability failed:", error);
@@ -1113,7 +1113,7 @@ ${capabilityDetails}`;
       throw new Error("Reminder message is required");
     }
 
-    const delayMs = parseInt(delay) || 60000; // Default 1 minute
+    const delayMs = parseInt(String(delay)) || 60000; // Default 1 minute
     const reminderName = `reminder-${Date.now()}`;
 
     await schedulerService.scheduleOnce(
@@ -1150,8 +1150,8 @@ ${capabilityDetails}`;
 
     await schedulerService.scheduleTask({
       id: taskId,
-      name,
-      cron,
+      name: String(name),
+      cron: String(cron),
       data: {
         type: "user-task",
         message: message || `Scheduled task: ${name}`,
@@ -1166,7 +1166,7 @@ ${capabilityDetails}`;
    * Execute scheduler list action
    */
   private async executeSchedulerList(
-    capability: ExtractedCapability
+    _capability: ExtractedCapability
   ): Promise<string> {
     const tasks = await schedulerService.getScheduledTasks();
 
@@ -1193,7 +1193,7 @@ ${capabilityDetails}`;
       throw new Error("Task ID is required for cancellation");
     }
 
-    await schedulerService.removeTask(taskId);
+    await schedulerService.removeTask(String(taskId));
 
     return `✅ Task "${taskId}" cancelled successfully`;
   }
