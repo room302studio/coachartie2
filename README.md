@@ -6,6 +6,33 @@ This document provides a comprehensive, in-depth guide to the Coach Artie 2 mono
 
 ---
 
+## 🎯 MCP Tool Syntax (CRITICAL)
+
+When calling MCP tools, **ALWAYS** use this simple syntax:
+
+```xml
+<!-- Search Wikipedia -->
+<search-wikipedia>Python programming language</search-wikipedia>
+
+<!-- Get Wikipedia article with optional params -->
+<get-wikipedia-article limit="5">Python (programming language)</get-wikipedia-article>
+
+<!-- Get current time (no args) -->
+<get-current-time />
+
+<!-- Parse a date -->
+<parse-date>2025-06-30</parse-date>
+```
+
+**Rules:**
+- Tool name = XML tag name (kebab-case like `search-wikipedia`)
+- Main argument = tag content
+- Optional params = XML attributes
+- No args = self-closing tag
+- **DO NOT** use the old format: `<capability name="mcp_client" action="call_tool"...>`
+
+---
+
 ## 1. Core Philosophy & Architecture
 
 Coach Artie 2 is designed as a modular, resilient, and extensible AI assistant platform. Its architecture is built on several key principles:
