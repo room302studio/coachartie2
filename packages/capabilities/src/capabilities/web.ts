@@ -1,6 +1,7 @@
 import { logger } from '@coachartie/shared';
 import { RegisteredCapability } from '../services/capability-registry.js';
 import { searchWeb, fetchWebContent } from '../utils/web-fetch.js';
+import { capabilityRegistry } from '../services/capability-registry.js';
 
 /**
  * Web capability - performs web searches and fetches content from URLs
@@ -31,6 +32,34 @@ export const webCapability: RegisteredCapability = {
       logger.info(`🔍 Performing web search for: ${query}`);
       
       try {
+        // Try MCP Brave Search first if available
+        try {
+          if (capabilityRegistry.has('mcp_client')) {
+            const mcpClientCapability = capabilityRegistry.get('mcp_client', 'list_servers');
+            // Check if we have a connected Brave Search server
+            const servers = await mcpClientCapability.handler({ action: 'list_servers' });
+            if (typeof servers === 'string' && servers.includes('brave_search')) {
+              // Try to use Brave Search MCP
+              logger.info('🚀 Using Brave Search MCP server for web search');
+              const mcpCallCapability = capabilityRegistry.get('mcp_client', 'call_tool');
+              const mcpResult = await mcpCallCapability.handler({
+                action: 'call_tool',
+                connection_id: 'brave_search',
+                tool_name: 'brave_web_search',
+                args: { query }
+              });
+              
+              if (typeof mcpResult === 'string' && mcpResult.length > 0) {
+                return mcpResult;
+              }
+            }
+          }
+        } catch (mcpError) {
+          logger.warn('MCP Brave Search failed, falling back to DuckDuckGo:', mcpError);
+        }
+
+        // Fallback to DuckDuckGo search
+        logger.info('🦆 Using DuckDuckGo fallback for web search');
         const result = await searchWeb(query);
 
         if (result.success) {

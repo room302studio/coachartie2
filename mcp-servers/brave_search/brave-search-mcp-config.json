@@ -1,0 +1,11 @@
+{
+  "name": "brave_search",
+  "description": "Official Brave Search MCP Server for web search",
+  "version": "latest",
+  "port": 3009,
+  "environment": {
+    "BRAVE_API_KEY": "${BRAVE_API_KEY}"
+  },
+  "createdAt": "2025-06-30T00:24:50.070Z",
+  "installedBy": "CoachArtie MCP Installer"
+}

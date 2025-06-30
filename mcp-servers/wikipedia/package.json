@@ -1,0 +1,17 @@
+{
+  "name": "coachartie-mcp-wikipedia",
+  "version": "1.0.0",
+  "description": "Official Wikipedia MCP Server for encyclopedia searches and article retrieval",
+  "main": "index.js",
+  "scripts": {
+    "start": "node node_modules/@shelm/wikipedia-mcp-server/dist/index.js",
+    "dev": "nodemon node_modules/@shelm/wikipedia-mcp-server/dist/index.js",
+    "install": "npm install"
+  },
+  "dependencies": {
+    "@shelm/wikipedia-mcp-server": "^1.0.1"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.0"
+  }
+}

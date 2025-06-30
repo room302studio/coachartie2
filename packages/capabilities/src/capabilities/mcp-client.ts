@@ -1,6 +1,7 @@
 import { logger } from '@coachartie/shared';
 import { RegisteredCapability } from '../services/capability-registry.js';
 import axios, { AxiosRequestConfig } from 'axios';
+import { spawn, ChildProcess } from 'child_process';
 
 /**
  * Interface for MCP server connection details
@@ -9,11 +10,13 @@ interface MCPServerConnection {
   id: string;
   url: string;
   name?: string;
+  transport: 'http' | 'stdio';
   connected: boolean;
   connectedAt?: Date;
   lastPing?: Date;
   tools?: MCPTool[];
   error?: string;
+  process?: ChildProcess; // For stdio connections
 }
 
 /**
@@ -111,6 +114,79 @@ class MCPClientService {
   }
 
   /**
+   * Make a JSON-RPC call to a stdio MCP server
+   */
+  private async makeStdioJsonRpcCall(connection: MCPServerConnection, method: string, params?: Record<string, unknown>): Promise<unknown> {
+    if (!connection.process || connection.process.killed) {
+      throw new Error('Stdio process not available or killed');
+    }
+
+    const request: MCPRequest = {
+      jsonrpc: '2.0',
+      id: this.getNextRequestId(),
+      method,
+      params
+    };
+
+    return new Promise((resolve, reject) => {
+      const requestJson = JSON.stringify(request) + '\n';
+      let responseBuffer = '';
+      
+      // Set up response handler
+      const onData = (data: Buffer) => {
+        responseBuffer += data.toString();
+        
+        // Check if we have a complete JSON response
+        const lines = responseBuffer.split('\n');
+        for (let i = 0; i < lines.length - 1; i++) {
+          const line = lines[i].trim();
+          if (line) {
+            try {
+              const response: MCPResponse = JSON.parse(line);
+              if (response.id === request.id) {
+                // Clean up listener and timeout
+                clearTimeout(timeout);
+                connection.process?.stdout?.off('data', onData);
+                
+                if (response.error) {
+                  reject(new Error(`MCP Error ${response.error.code}: ${response.error.message}`));
+                } else {
+                  resolve(response.result);
+                }
+                return;
+              }
+            } catch (parseError) {
+              // Continue parsing other lines
+            }
+          }
+        }
+        
+        // Keep any incomplete line for next iteration
+        responseBuffer = lines[lines.length - 1];
+      };
+
+      // Set up timeout
+      const timeout = setTimeout(() => {
+        connection.process?.stdout?.off('data', onData);
+        reject(new Error('Stdio JSON-RPC call timeout'));
+      }, 30000);
+
+      // Listen for response
+      connection.process?.stdout?.on('data', onData);
+
+      // Send request
+      try {
+        logger.info(`Making stdio JSON-RPC call: ${method} to ${connection.url}`);
+        connection.process?.stdin?.write(requestJson);
+      } catch (error) {
+        clearTimeout(timeout);
+        connection.process?.stdout?.off('data', onData);
+        reject(error);
+      }
+    });
+  }
+
+  /**
    * Make a JSON-RPC call to an MCP server
    */
   private async makeJsonRpcCall(url: string, method: string, params?: Record<string, unknown>): Promise<unknown> {
@@ -155,9 +231,33 @@ class MCPClientService {
   }
 
   /**
-   * Connect to an MCP server
+   * Connect to an MCP server (supports both HTTP and stdio)
    */
   async connect(url: string, name?: string): Promise<string> {
+    // Determine transport type
+    const transport = this.detectTransport(url);
+    
+    if (transport === 'http') {
+      return this.connectHttp(url, name);
+    } else {
+      return this.connectStdio(url, name);
+    }
+  }
+
+  /**
+   * Detect transport type from URL
+   */
+  private detectTransport(url: string): 'http' | 'stdio' {
+    if (url.startsWith('http://') || url.startsWith('https://')) {
+      return 'http';
+    }
+    return 'stdio';
+  }
+
+  /**
+   * Connect to HTTP-based MCP server
+   */
+  private async connectHttp(url: string, name?: string): Promise<string> {
     // Validate URL
     const validation = this.validateServerUrl(url);
     if (!validation.isValid) {
@@ -179,6 +279,7 @@ class MCPClientService {
       id: connectionId,
       url,
       name: name || `MCP Server ${connectionId}`,
+      transport: 'http',
       connected: false
     };
 
@@ -206,6 +307,7 @@ class MCPClientService {
       // Try to get available tools
       try {
         const toolsResult = await this.makeJsonRpcCall(url, 'tools/list');
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         connection.tools = (toolsResult as any)?.tools || [];
       } catch (toolsError) {
         logger.warn(`Failed to get tools from MCP server ${url}:`, toolsError);
@@ -219,6 +321,104 @@ class MCPClientService {
       connection.error = error instanceof Error ? error.message : String(error);
       logger.error(`Failed to connect to MCP server ${url}:`, error);
       throw new Error(`Failed to connect to MCP server: ${connection.error}`);
+    }
+  }
+
+  /**
+   * Connect to stdio-based MCP server
+   */
+  private async connectStdio(command: string, name?: string): Promise<string> {
+    // Basic validation for stdio commands
+    if (!command || command.trim().length === 0) {
+      throw new Error('Command cannot be empty');
+    }
+
+    // Check if already connected
+    const existingConnection = Array.from(this.connections.values())
+      .find(conn => conn.url === command && conn.connected);
+    
+    if (existingConnection) {
+      return `Already connected to MCP server: ${existingConnection.id}`;
+    }
+
+    const connectionId = this.generateConnectionId(command);
+    
+    // Parse command (supports "npx @shelm/wikipedia-mcp-server" format)
+    let cmd: string;
+    let args: string[];
+    
+    if (command.includes(' ')) {
+      const parts = command.split(' ');
+      cmd = parts[0];
+      args = parts.slice(1);
+    } else {
+      cmd = command;
+      args = [];
+    }
+
+    // Create initial connection record
+    const connection: MCPServerConnection = {
+      id: connectionId,
+      url: command,
+      name: name || `MCP Server ${connectionId}`,
+      transport: 'stdio',
+      connected: false
+    };
+
+    this.connections.set(connectionId, connection);
+
+    try {
+      logger.info(`Spawning stdio MCP server: ${cmd} ${args.join(' ')}`);
+      
+      // Spawn the process
+      const childProcess = spawn(cmd, args, {
+        stdio: ['pipe', 'pipe', 'pipe']
+      });
+
+      connection.process = childProcess;
+
+      // Set up error handling
+      childProcess.on('error', (error) => {
+        logger.error(`MCP server process error:`, error);
+        connection.error = error.message;
+        connection.connected = false;
+      });
+
+      childProcess.on('exit', (code, signal) => {
+        logger.info(`MCP server process exited with code ${code}, signal ${signal}`);
+        connection.connected = false;
+      });
+
+      // Wait a moment for the process to start
+      await new Promise(resolve => setTimeout(resolve, 1000));
+
+      if (childProcess.killed || childProcess.exitCode !== null) {
+        throw new Error('Failed to start MCP server process');
+      }
+
+      // Mark as connected
+      connection.connected = true;
+      connection.connectedAt = new Date();
+      connection.lastPing = new Date();
+      connection.error = undefined;
+
+      // For stdio servers, get the actual tools via JSON-RPC
+      try {
+        const toolsResult = await this.makeStdioJsonRpcCall(connection, 'tools/list');
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        connection.tools = (toolsResult as any)?.tools || [];
+      } catch (toolsError) {
+        logger.warn(`Failed to get tools from stdio MCP server ${command}:`, toolsError);
+        connection.tools = [];
+      }
+
+      logger.info(`Successfully connected to stdio MCP server: ${connectionId}`);
+      return `Connected to stdio MCP server: ${connectionId} (${connection.tools?.length || 0} tools available)`;
+
+    } catch (error) {
+      connection.error = error instanceof Error ? error.message : String(error);
+      logger.error(`Failed to connect to stdio MCP server ${command}:`, error);
+      throw new Error(`Failed to connect to stdio MCP server: ${connection.error}`);
     }
   }
 
@@ -338,10 +538,23 @@ class MCPClientService {
     }
 
     try {
-      const result = await this.makeJsonRpcCall(connection.url, 'tools/call', {
-        name: toolName,
-        arguments: args
-      });
+      let result: unknown;
+
+      logger.info(`Connection transport: ${connection.transport}, URL: ${connection.url}`);
+      
+      if (connection.transport === 'stdio') {
+        logger.info('Using stdio JSON-RPC call');
+        result = await this.makeStdioJsonRpcCall(connection, 'tools/call', {
+          name: toolName,
+          arguments: args
+        });
+      } else {
+        logger.info('Using HTTP JSON-RPC call');
+        result = await this.makeJsonRpcCall(connection.url, 'tools/call', {
+          name: toolName,
+          arguments: args
+        });
+      }
 
       // Update last ping time
       connection.lastPing = new Date();
@@ -382,6 +595,24 @@ class MCPClientService {
    */
   findConnectionByUrl(url: string): MCPServerConnection | undefined {
     return Array.from(this.connections.values()).find(conn => conn.url === url);
+  }
+
+  /**
+   * Find connection that supports a specific tool
+   */
+  async findConnectionForTool(toolName: string): Promise<string | null> {
+    const connections = Array.from(this.connections.values());
+    
+    for (const connection of connections) {
+      if (!connection.connected) continue;
+      
+      // Check if this connection has the tool
+      if (connection.tools && connection.tools.some(tool => tool.name === toolName)) {
+        return connection.id;
+      }
+    }
+    
+    return null;
   }
 
   /**
@@ -475,24 +706,46 @@ export const mcpClientCapability: RegisteredCapability = {
         }
 
         case 'call_tool': {
-          const connectionId = params.connection_id || params.id;
+          let connectionId = params.connection_id || params.id;
           const toolName = params.tool_name || params.name;
           
-          if (!connectionId) {
-            throw new Error('Connection ID is required');
-          }
+          logger.info(`MCP call_tool debug - params: ${JSON.stringify(params)}, toolName: ${toolName}`);
+          
           if (!toolName) {
             throw new Error('Tool name is required');
           }
 
-          // Parse args from params or content
-          let args = params.args || {};
-          if (content && !params.args) {
+          // Auto-resolve connection if not provided
+          if (!connectionId) {
+            connectionId = await mcpClientService.findConnectionForTool(toolName);
+            if (!connectionId) {
+              throw new Error(`No MCP connection found that supports tool: ${toolName}`);
+            }
+          }
+
+          // Parse args from params or content  
+          let args = {};
+          
+          // Try content first (cleaner approach)
+          if (content && content.trim()) {
             try {
               args = JSON.parse(content);
             } catch {
               // If content is not JSON, pass it as a single argument
               args = { input: content };
+            }
+          }
+          
+          // Fallback to params.args if no content
+          if (Object.keys(args).length === 0 && params.args) {
+            if (typeof params.args === 'string') {
+              try {
+                args = JSON.parse(params.args);
+              } catch {
+                args = { input: params.args };
+              }
+            } else {
+              args = params.args;
             }
           }
 

@@ -1,0 +1,9 @@
+{
+  "name": "wikipedia",
+  "description": "Official Wikipedia MCP Server for encyclopedia searches and article retrieval",
+  "version": "latest",
+  "port": 3010,
+  "environment": {},
+  "createdAt": "2025-06-30T00:55:50.018Z",
+  "installedBy": "CoachArtie MCP Installer"
+}

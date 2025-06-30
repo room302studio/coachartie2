@@ -638,49 +638,8 @@ ${capabilityDetails}`;
    * Based on CLAUDE.md requirements: "Keep it stupid simple"
    */
   private detectAndInjectCapabilities(userMessage: string, _llmResponse: string): ExtractedCapability[] {
-    const autoInjected: ExtractedCapability[] = [];
-    const lowerMessage = userMessage.toLowerCase();
-    
-    // Rule 1: Memory search for preference/recall questions
-    if (lowerMessage.includes('what do i') || lowerMessage.includes('what are my') || lowerMessage.includes('remind me')) {
-      logger.info(`🎯 Auto-injecting memory search for preference/recall query: "${userMessage}"`);
-      autoInjected.push({
-        name: 'memory',
-        action: 'search',
-        params: { query: this.extractMemorySearchQuery(lowerMessage) },
-        priority: 0
-      });
-    }
-    
-    // Rule 2: Calculator for math questions
-    const mathMatch = lowerMessage.match(/\d+.*[+\-*/].*\d+/);
-    if (mathMatch) {
-      const mathExpression = userMessage.match(/[\d+\-*/().\s]+/)?.[0]?.trim();
-      if (mathExpression) {
-        logger.info(`🎯 Auto-injecting calculator for math query: "${mathExpression}"`);
-        autoInjected.push({
-          name: 'calculator',
-          action: 'calculate',
-          params: {},
-          content: mathExpression,
-          priority: 0
-        });
-      }
-    }
-    
-    // Rule 3: Web search for current/recent info questions
-    if (lowerMessage.includes('what is') || lowerMessage.includes('latest') || lowerMessage.includes('current')) {
-      const searchQuery = userMessage.replace(/^(what is|tell me about|search for)\s*/i, '').trim();
-      logger.info(`🎯 Auto-injecting web search for information query: "${searchQuery}"`);
-      autoInjected.push({
-        name: 'web',
-        action: 'search',
-        params: { query: searchQuery },
-        priority: 0
-      });
-    }
-    
-    return autoInjected;
+    // No auto-injection for now - let the LLM handle it or user be explicit
+    return [];
   }
 
 
@@ -966,6 +925,9 @@ ${capabilityDetails}`;
       const paramsWithContext = ['scheduler', 'memory'].includes(capability.name)
         ? { ...capability.params, userId }
         : capability.params;
+      
+      // Debug: log what we're passing to the registry
+      logger.info(`🔍 Orchestrator executing: name=${capability.name}, action=${capability.action}, params=${JSON.stringify(paramsWithContext)}, content="${capability.content}"`);
       
       // Use the capability registry to execute the capability
       result.data = await capabilityRegistry.execute(
