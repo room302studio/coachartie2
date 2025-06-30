@@ -48,12 +48,12 @@ export class CapabilityXMLParser {
         });
       }
 
-      // Also find MCP tool tags (e.g., <search-wikipedia>query</search-wikipedia>)
-      const mcpToolMatches = this.extractMCPToolTags(text);
-      if (mcpToolMatches.length > 0) {
-        logger.info(`🎯 NEW XML SYNTAX: Found ${mcpToolMatches.length} MCP tool tags: ${JSON.stringify(mcpToolMatches)}`);
+      // Also find simple capability tags (e.g., <remember>content</remember>, <search-wikipedia>query</search-wikipedia>)
+      const simpleCapabilityMatches = this.extractSimpleCapabilityTags(text);
+      if (simpleCapabilityMatches.length > 0) {
+        logger.info(`🎯 SIMPLE SYNTAX: Found ${simpleCapabilityMatches.length} simple capability tags: ${JSON.stringify(simpleCapabilityMatches)}`);
       }
-      capabilities.push(...mcpToolMatches);
+      capabilities.push(...simpleCapabilityMatches);
 
     } catch (error) {
       logger.error('Failed to extract capabilities from text:', error);
@@ -121,19 +121,21 @@ export class CapabilityXMLParser {
   }
 
   /**
-   * Extract MCP tool tags with simplified syntax
+   * Extract simple capability tags with unified syntax
+   * Handles both MCP tools (kebab-case) and regular capabilities (single words)
    * e.g., <search-wikipedia>query</search-wikipedia>
-   * or <get-wikipedia-article limit="5">Python</get-wikipedia-article>
+   * e.g., <remember>I love pizza</remember>
+   * e.g., <calculate>2 + 2</calculate>
    */
-  private extractMCPToolTags(text: string): ParsedCapability[] {
+  private extractSimpleCapabilityTags(text: string): ParsedCapability[] {
     const capabilities: ParsedCapability[] = [];
     
-    // Match any tag that looks like an MCP tool (kebab-case)
-    const toolTagRegex = /<([a-z]+(?:-[a-z]+)+)([^>]*?)(?:\/>|>(.*?)<\/\1>)/gs;
+    // Match any simple tag (single word or kebab-case)
+    const simpleTagRegex = /<([a-z]+(?:-[a-z]+)*)([^>]*?)(?:\/>|>(.*?)<\/\1>)/gs;
     
     let match;
-    while ((match = toolTagRegex.exec(text)) !== null) {
-      const [fullMatch, toolName, attributesStr, content] = match;
+    while ((match = simpleTagRegex.exec(text)) !== null) {
+      const [fullMatch, tagName, attributesStr, content] = match;
       
       try {
         // Parse attributes if any
@@ -146,25 +148,102 @@ export class CapabilityXMLParser {
           }
         }
         
-        // Convert kebab-case to snake_case for tool name
-        const snakeToolName = toolName.replace(/-/g, '_');
-        
-        capabilities.push({
-          name: 'mcp_client',
-          action: 'call_tool',
-          params: {
-            tool_name: snakeToolName,
-            ...params
-          },
-          content: content?.trim() || ''
-        });
+        // Map tag names to capabilities
+        const capability = this.mapTagToCapability(tagName, params, content?.trim() || '');
+        if (capability) {
+          capabilities.push(capability);
+        }
         
       } catch (error) {
-        logger.warn(`Failed to parse MCP tool tag: ${fullMatch}`, error);
+        logger.warn(`Failed to parse simple capability tag: ${fullMatch}`, error);
       }
     }
     
     return capabilities;
+  }
+
+  /**
+   * Map simple tag names to capability format
+   */
+  private mapTagToCapability(tagName: string, params: Record<string, unknown>, content: string): ParsedCapability | null {
+    // Memory capabilities
+    if (tagName === 'remember') {
+      return {
+        name: 'memory',
+        action: 'remember',
+        params,
+        content
+      };
+    }
+    
+    if (tagName === 'recall') {
+      // Handle different recall patterns:
+      // <recall>pizza</recall> -> search for "pizza"
+      // <recall user="john">pizza</recall> -> search for "pizza" for user "john"  
+      // <recall auto /> -> get recent memories automatically
+      return {
+        name: 'memory',
+        action: content ? 'search' : 'recent',
+        params: {
+          query: content,
+          ...params
+        },
+        content: ''
+      };
+    }
+    
+    if (tagName === 'search-memory') {
+      return {
+        name: 'memory',
+        action: 'search',
+        params: {
+          query: content,
+          ...params
+        },
+        content: ''
+      };
+    }
+    
+    // Calculator
+    if (tagName === 'calculate') {
+      return {
+        name: 'calculator',
+        action: 'calculate',
+        params,
+        content
+      };
+    }
+    
+    // Web search
+    if (tagName === 'web-search') {
+      return {
+        name: 'web',
+        action: 'search',
+        params: {
+          query: content,
+          ...params
+        },
+        content: ''
+      };
+    }
+    
+    // MCP tools (kebab-case with multiple parts)
+    if (tagName.includes('-')) {
+      const snakeToolName = tagName.replace(/-/g, '_');
+      return {
+        name: 'mcp_client',
+        action: 'call_tool',
+        params: {
+          tool_name: snakeToolName,
+          ...params
+        },
+        content
+      };
+    }
+    
+    // Unknown tag - log and skip
+    logger.warn(`Unknown simple capability tag: ${tagName}`);
+    return null;
   }
 
   /**

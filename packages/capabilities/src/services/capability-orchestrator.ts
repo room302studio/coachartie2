@@ -454,17 +454,17 @@ Timestamp: ${new Date().toISOString()}`;
     // Get available MCP tools
     const mcpTools = this.getAvailableMCPTools();
     const mcpExamples = mcpTools.length > 0 ? `
-- Search Wikipedia: <capability name="mcp_client" action="call_tool" tool_name="search_wikipedia">{"query": "search terms"}</capability>
-- Get Wikipedia article: <capability name="mcp_client" action="call_tool" tool_name="get_wikipedia_article">{"title": "article title"}</capability>
-- Get current time: <capability name="mcp_client" action="call_tool" tool_name="get_current_time">{}</capability>` : '';
+- Search Wikipedia: <search-wikipedia>search terms</search-wikipedia>
+- Get Wikipedia article: <get-wikipedia-article limit="5">article title</get-wikipedia-article>
+- Get current time: <get-current-time />` : '';
 
     return `You are Coach Artie, a helpful AI assistant. 
 
-You have access to capabilities through XML tags when needed:
-- Calculate: <capability name="calculator" action="calculate">expression</capability>
-- Remember: <capability name="memory" action="remember">info to store</capability>  
-- Recall: <capability name="memory" action="search" query="search terms" />
-- Web search: <capability name="web" action="search" query="search terms" />${mcpExamples}
+You have access to capabilities through simple XML tags when needed:
+- Calculate: <calculate>2 + 2 * 5</calculate>
+- Remember: <remember>I love Hawaiian pizza</remember>  
+- Recall: <recall>pizza</recall> or <recall user="john">preferences</recall> or <recall auto />
+- Web search: <web-search>latest AI news</web-search>${mcpExamples}
 
 AVAILABLE CAPABILITIES:
 ${capabilityDocs}
@@ -472,8 +472,10 @@ ${capabilityDocs}
 ${mcpTools.length > 0 ? `AVAILABLE MCP TOOLS:
 ${mcpTools.map(tool => `- ${tool.name}: ${tool.description || 'No description'}`).join('\n')}
 
-IMPORTANT: For MCP tools, always use this format:
-<capability name="mcp_client" action="call_tool" tool_name="TOOL_NAME">{"param": "value"}</capability>
+IMPORTANT: Use simple syntax for all capabilities:
+- Single word tags: <remember>content</remember>, <calculate>2+2</calculate>
+- Kebab-case for MCP tools: <search-wikipedia>query</search-wikipedia>
+- Optional attributes: <recall query="specific">general search</recall>
 ` : ''}
 
 Use capabilities only when actually needed. Most conversations don't require them - respond naturally.
@@ -521,19 +523,19 @@ User's message: ${userMessage}`;
     // Get available MCP tools for simple prompt too
     const mcpTools = this.getAvailableMCPTools();
     const mcpExamples = mcpTools.length > 0 ? `
-- Search Wikipedia: <capability name="mcp_client" action="call_tool" tool_name="search_wikipedia">{"query": "search terms"}</capability>
-- Get current time: <capability name="mcp_client" action="call_tool" tool_name="get_current_time">{}</capability>` : '';
+- Search Wikipedia: <search-wikipedia>search terms</search-wikipedia>
+- Get current time: <get-current-time />` : '';
 
     return `You are Coach Artie, a helpful AI assistant.
 
 If you need to:
-- Calculate something: <capability name="calculator" action="calculate">expression</capability>
-- Remember information: <capability name="memory" action="remember">info to store</capability>  
-- Recall past information: <capability name="memory" action="search" query="search terms" />
-- Search the web: <capability name="web" action="search" query="search terms" />${mcpExamples}
+- Calculate something: <calculate>2 + 2</calculate>
+- Remember information: <remember>info to store</remember>  
+- Recall past information: <recall>search terms</recall>
+- Search the web: <web-search>search terms</web-search>${mcpExamples}
 
 ${mcpTools.length > 0 ? `
-IMPORTANT: For MCP tools, use: <capability name="mcp_client" action="call_tool" tool_name="TOOL_NAME">{"param": "value"}</capability>
+Use simple tags for everything - much easier than complex XML!
 ` : ''}
 
 Only use capability tags when you actually need to perform an action. Most conversations don't need capabilities - just respond naturally.
