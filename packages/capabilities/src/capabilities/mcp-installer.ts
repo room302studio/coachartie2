@@ -153,6 +153,26 @@ const MCP_TEMPLATES = {
     startScript: 'node_modules/@modelcontextprotocol/server-github/dist/index.js',
     requiredPorts: [3008],
     verified: true
+  },
+  brave_search: {
+    name: '@modelcontextprotocol/server-brave-search',
+    version: 'latest',
+    description: 'Official Brave Search MCP Server for web search',
+    envVars: ['BRAVE_API_KEY'],
+    configFile: 'brave-search-mcp-config.json',
+    startScript: 'node_modules/@modelcontextprotocol/server-brave-search/dist/index.js',
+    requiredPorts: [3009],
+    verified: true
+  },
+  wikipedia: {
+    name: '@shelm/wikipedia-mcp-server',
+    version: 'latest',
+    description: 'Official Wikipedia MCP Server for encyclopedia searches and article retrieval',
+    envVars: [],
+    configFile: 'wikipedia-mcp-config.json',
+    startScript: 'node_modules/@shelm/wikipedia-mcp-server/dist/index.js',
+    requiredPorts: [3010],
+    verified: true
   }
 } as const;
 

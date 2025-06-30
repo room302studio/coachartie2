@@ -207,6 +207,88 @@ router.post('/registry/:name/execute', async (req: Request, res: Response) => {
   }
 });
 
+// POST /capabilities/mcp/test - Direct MCP testing without LLM
+router.post('/mcp/test', async (req: Request, res: Response) => {
+  try {
+    const { action, params = {} } = req.body;
+    
+    if (!action) {
+      return res.status(400).json({
+        success: false,
+        error: 'Action is required (connect, list_servers, list_tools, call_tool, health_check, disconnect)'
+      });
+    }
+
+    // Execute MCP client action directly
+    const mcpClientCapability = capabilityRegistry.get('mcp_client', action);
+    const startTime = Date.now();
+    
+    const result = await mcpClientCapability.handler(
+      { action, ...params },
+      params.content
+    );
+    
+    const duration = Date.now() - startTime;
+    
+    res.json({
+      success: true,
+      action,
+      params,
+      result,
+      duration: `${duration}ms`,
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error) {
+    logger.error('MCP test endpoint error:', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Internal server error'
+    });
+  }
+});
+
+// POST /capabilities/web/test - Direct web search testing without LLM
+router.post('/web/test', async (req: Request, res: Response) => {
+  try {
+    const { query, url, action = 'search' } = req.body;
+    
+    if (!query && !url) {
+      return res.status(400).json({
+        success: false,
+        error: 'Query (for search) or URL (for fetch) is required'
+      });
+    }
+
+    const params = action === 'search' ? { query } : { url };
+    const webCapability = capabilityRegistry.get('web', action);
+    const startTime = Date.now();
+    
+    const result = await webCapability.handler(
+      { action, ...params },
+      query || url
+    );
+    
+    const duration = Date.now() - startTime;
+    
+    res.json({
+      success: true,
+      action,
+      params,
+      result,
+      duration: `${duration}ms`,
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error) {
+    logger.error('Web test endpoint error:', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Internal server error'
+    });
+  }
+});
+
 // GET /capabilities/health - Health check for capabilities
 router.get('/health', (req: Request, res: Response) => {
   const stats = capabilityRegistry.getStats();

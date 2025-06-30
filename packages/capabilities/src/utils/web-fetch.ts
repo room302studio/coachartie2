@@ -365,13 +365,121 @@ export async function fetchWebContent(
  * Simple web search placeholder (would integrate with actual search API)
  */
 export async function searchWeb(query: string): Promise<WebFetchResult> {
-  // This would integrate with a real search API like Google, Bing, DuckDuckGo, etc.
-  // For now, return a structured placeholder
-  return {
-    success: true,
-    url: `https://search.example.com/search?q=${encodeURIComponent(query)}`,
-    title: `Search Results for "${query}"`,
-    content: `[Search functionality not yet implemented. This would show search results for: "${query}"]`,
-    contentType: 'text/html'
-  };
+  try {
+    // Use DuckDuckGo's instant answer API (no API key needed!)
+    const searchUrl = `https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_html=1&skip_disambig=1`;
+    
+    logger.info(`🦆 Searching DuckDuckGo for: ${query}`);
+    
+    const response = await fetch(searchUrl, {
+      headers: {
+        'User-Agent': 'CoachArtie-Bot/1.0'
+      }
+    });
+
+    if (!response.ok) {
+      throw new Error(`Search API returned ${response.status}`);
+    }
+
+    const data = await response.json() as any;
+    
+    // Build response from DuckDuckGo instant answers
+    let content = '';
+    
+    // Abstract (summary)
+    if (data.Abstract) {
+      content += `**Summary**: ${data.Abstract}\n\n`;
+    }
+    
+    // Answer (direct answer)
+    if (data.Answer) {
+      content += `**Answer**: ${data.Answer}\n`;
+      if (data.AnswerType) {
+        content += ` (${data.AnswerType})\n`;
+      }
+      content += '\n';
+    }
+    
+    // Definition
+    if (data.Definition) {
+      content += `**Definition**: ${data.Definition}\n`;
+      if (data.DefinitionSource) {
+        content += `Source: ${data.DefinitionSource}\n`;
+      }
+      content += '\n';
+    }
+    
+    // Related topics
+    if (data.RelatedTopics && data.RelatedTopics.length > 0) {
+      content += '**Related Topics**:\n';
+      data.RelatedTopics.slice(0, 5).forEach((topic: any) => {
+        if (topic.Text) {
+          content += `• ${topic.Text}\n`;
+          if (topic.FirstURL) {
+            content += `  ${topic.FirstURL}\n`;
+          }
+        }
+      });
+      content += '\n';
+    }
+    
+    // Infobox data
+    if (data.Infobox && data.Infobox.content && data.Infobox.content.length > 0) {
+      content += '**Quick Facts**:\n';
+      data.Infobox.content.slice(0, 5).forEach((item: any) => {
+        if (item.label && item.value) {
+          content += `• ${item.label}: ${item.value}\n`;
+        }
+      });
+      content += '\n';
+    }
+    
+    // If we got no useful content, try a web scrape approach
+    if (!content.trim()) {
+      // Fallback to scraping DuckDuckGo HTML results
+      const htmlSearchUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
+      const htmlResponse = await fetch(htmlSearchUrl, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (compatible; CoachArtie/1.0)'
+        }
+      });
+      
+      if (htmlResponse.ok) {
+        const html = await htmlResponse.text();
+        
+        // Extract result snippets using regex (quick and dirty)
+        const snippetMatches = html.match(/<a class="snippet"[^>]*>([^<]+)<\/a>/g);
+        if (snippetMatches && snippetMatches.length > 0) {
+          content = '**Search Results**:\n\n';
+          snippetMatches.slice(0, 5).forEach((match, i) => {
+            const snippet = match.replace(/<[^>]*>/g, '').trim();
+            content += `${i + 1}. ${snippet}\n\n`;
+          });
+        } else {
+          content = `No detailed results found for "${query}". Try rephrasing your search.`;
+        }
+      }
+    }
+    
+    return {
+      success: true,
+      url: searchUrl,
+      title: `Search Results for "${query}"`,
+      content: content.trim() || `No results found for "${query}"`,
+      contentType: 'application/json'
+    };
+    
+  } catch (error) {
+    logger.error('DuckDuckGo search failed:', error);
+    
+    // Last resort - at least give them a search link
+    return {
+      success: false,
+      url: `https://duckduckgo.com/?q=${encodeURIComponent(query)}`,
+      title: 'Search Error',
+      content: `Search failed: ${error instanceof Error ? error.message : 'Unknown error'}. Try searching directly at: https://duckduckgo.com/?q=${encodeURIComponent(query)}`,
+      contentType: 'text/plain',
+      error: error instanceof Error ? error.message : 'Search failed'
+    };
+  }
 }
