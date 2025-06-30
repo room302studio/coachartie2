@@ -107,13 +107,8 @@ export class ConscienceLLM {
       if (capability.name === 'memory' || capability.name === 'calculator' || capability.name === 'web' || capability.name === 'mcp_client') {
         logger.info(`✅ IMMEDIATE ALLOW: Safe operation ${capability.name}:${capability.action}`);
         
-        if (capability.params && typeof capability.params === 'object' && Object.keys(capability.params).length > 0) {
-          return `<capability name="${capability.name}" action="${capability.action}">${JSON.stringify(capability.params)}</capability>`;
-        } else if (capability.params && typeof capability.params === 'string') {
-          return `<capability name="${capability.name}" action="${capability.action}">${capability.params}</capability>`;
-        } else {
-          return `<capability name="${capability.name}" action="${capability.action}" />`;
-        }
+        // Just return approval text - DON'T regenerate XML!
+        return `APPROVED: Safe operation ${capability.name}:${capability.action} is allowed.`;
       }
 
       // Get dynamic safety warnings

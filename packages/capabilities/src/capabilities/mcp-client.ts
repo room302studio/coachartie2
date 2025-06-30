@@ -650,6 +650,9 @@ class MCPClientService {
 // Singleton instance
 const mcpClientService = new MCPClientService();
 
+// Export service for other modules
+export { mcpClientService };
+
 /**
  * MCP Client capability - connects to and manages MCP servers
  * 
@@ -717,10 +720,11 @@ export const mcpClientCapability: RegisteredCapability = {
 
           // Auto-resolve connection if not provided
           if (!connectionId) {
-            connectionId = await mcpClientService.findConnectionForTool(toolName);
-            if (!connectionId) {
+            const foundConnectionId = await mcpClientService.findConnectionForTool(toolName);
+            if (!foundConnectionId) {
               throw new Error(`No MCP connection found that supports tool: ${toolName}`);
             }
+            connectionId = foundConnectionId;
           }
 
           // Parse args from params or content  
@@ -731,9 +735,25 @@ export const mcpClientCapability: RegisteredCapability = {
             try {
               args = JSON.parse(content);
             } catch {
-              // If content is not JSON, pass it as a single argument
-              args = { input: content };
+              // If content is not JSON, use smart defaults based on tool name
+              if (toolName === 'search_wikipedia') {
+                args = { query: content };
+              } else if (toolName === 'get_wikipedia_article') {
+                args = { title: content };
+              } else if (toolName === 'parse_date') {
+                args = { date_string: content };
+              } else {
+                // Generic fallback
+                args = { input: content };
+              }
             }
+          }
+          
+          // Merge any additional params from XML attributes
+          if (params && typeof params === 'object') {
+            // Extract only the extra params (not action, tool_name, etc)
+            const { action, tool_name, name, connection_id, id, ...extraParams } = params;
+            args = { ...args, ...extraParams };
           }
           
           // Fallback to params.args if no content

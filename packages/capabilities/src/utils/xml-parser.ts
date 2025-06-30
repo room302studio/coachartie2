@@ -35,20 +35,25 @@ export class CapabilityXMLParser {
       // Find capability tags using a simple regex
       const capabilityMatches = text.match(/<capability[^>]*(?:\/>|>.*?<\/capability>)/gs);
       
-      if (!capabilityMatches) {
-        return [];
+      if (capabilityMatches) {
+        capabilityMatches.forEach((match) => {
+          try {
+            const parsed = this.parseCapabilityTag(match);
+            if (parsed) {
+              capabilities.push(parsed);
+            }
+          } catch (error) {
+            logger.warn(`Failed to parse capability tag: ${match}`, error);
+          }
+        });
       }
 
-      capabilityMatches.forEach((match) => {
-        try {
-          const parsed = this.parseCapabilityTag(match);
-          if (parsed) {
-            capabilities.push(parsed);
-          }
-        } catch (error) {
-          logger.warn(`Failed to parse capability tag: ${match}`, error);
-        }
-      });
+      // Also find MCP tool tags (e.g., <search-wikipedia>query</search-wikipedia>)
+      const mcpToolMatches = this.extractMCPToolTags(text);
+      if (mcpToolMatches.length > 0) {
+        logger.info(`🎯 NEW XML SYNTAX: Found ${mcpToolMatches.length} MCP tool tags: ${JSON.stringify(mcpToolMatches)}`);
+      }
+      capabilities.push(...mcpToolMatches);
 
     } catch (error) {
       logger.error('Failed to extract capabilities from text:', error);
@@ -113,6 +118,53 @@ export class CapabilityXMLParser {
       logger.error(`Failed to parse capability XML: ${capabilityTag}`, error);
       return null;
     }
+  }
+
+  /**
+   * Extract MCP tool tags with simplified syntax
+   * e.g., <search-wikipedia>query</search-wikipedia>
+   * or <get-wikipedia-article limit="5">Python</get-wikipedia-article>
+   */
+  private extractMCPToolTags(text: string): ParsedCapability[] {
+    const capabilities: ParsedCapability[] = [];
+    
+    // Match any tag that looks like an MCP tool (kebab-case)
+    const toolTagRegex = /<([a-z]+(?:-[a-z]+)+)([^>]*?)(?:\/>|>(.*?)<\/\1>)/gs;
+    
+    let match;
+    while ((match = toolTagRegex.exec(text)) !== null) {
+      const [fullMatch, toolName, attributesStr, content] = match;
+      
+      try {
+        // Parse attributes if any
+        const params: Record<string, unknown> = {};
+        if (attributesStr.trim()) {
+          const attrRegex = /(\w+)="([^"]*)"/g;
+          let attrMatch;
+          while ((attrMatch = attrRegex.exec(attributesStr)) !== null) {
+            params[attrMatch[1]] = attrMatch[2];
+          }
+        }
+        
+        // Convert kebab-case to snake_case for tool name
+        const snakeToolName = toolName.replace(/-/g, '_');
+        
+        capabilities.push({
+          name: 'mcp_client',
+          action: 'call_tool',
+          params: {
+            tool_name: snakeToolName,
+            ...params
+          },
+          content: content?.trim() || ''
+        });
+        
+      } catch (error) {
+        logger.warn(`Failed to parse MCP tool tag: ${fullMatch}`, error);
+      }
+    }
+    
+    return capabilities;
   }
 
   /**

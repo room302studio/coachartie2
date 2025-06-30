@@ -9,7 +9,7 @@ import { webCapability } from "../capabilities/web.js";
 import { packageManagerCapability } from "../capabilities/package-manager.js";
 import { filesystemCapability } from "../capabilities/filesystem.js";
 import { environmentCapability } from "../capabilities/environment.js";
-import { mcpClientCapability } from "../capabilities/mcp-client.js";
+import { mcpClientCapability, mcpClientService } from "../capabilities/mcp-client.js";
 import { mcpInstallerCapability } from "../capabilities/mcp-installer.js";
 import { memoryCapability } from "../capabilities/memory.js";
 import { githubCapability } from "../capabilities/github.js";
@@ -241,7 +241,9 @@ export class CapabilityOrchestrator {
       );
 
       // Step 2: Extract capabilities from both user message AND LLM response
+      logger.info(`🔍 EXTRACTING FROM USER MESSAGE: "${message.message}"`);
       const userCapabilities = this.extractCapabilities(message.message);
+      logger.info(`🔍 EXTRACTING FROM LLM RESPONSE: "${llmResponse.substring(0, 200)}..."`);
       const llmCapabilities = this.extractCapabilities(llmResponse);
       
       // Combine capabilities, with user-provided ones taking priority
@@ -267,9 +269,14 @@ export class CapabilityOrchestrator {
           params: capability.params
         });
         
-        // Extract any capabilities the conscience approved/modified
-        const approvedCapabilities = this.extractCapabilities(review);
-        reviewedCapabilities.push(...approvedCapabilities);
+        // If conscience approved, keep the original capability
+        if (review.includes('APPROVED:')) {
+          reviewedCapabilities.push(capability);
+        } else {
+          // If not approved, extract any modified capabilities from review
+          const approvedCapabilities = this.extractCapabilities(review);
+          reviewedCapabilities.push(...approvedCapabilities);
+        }
         
         conscienceResponse += review + '\n';
       }
@@ -444,16 +451,30 @@ Timestamp: ${new Date().toISOString()}`;
     // Generate contextual examples based on the user's message
     this.generateContextualExamples(userMessage, capabilities);
 
+    // Get available MCP tools
+    const mcpTools = this.getAvailableMCPTools();
+    const mcpExamples = mcpTools.length > 0 ? `
+- Search Wikipedia: <capability name="mcp_client" action="call_tool" tool_name="search_wikipedia">{"query": "search terms"}</capability>
+- Get Wikipedia article: <capability name="mcp_client" action="call_tool" tool_name="get_wikipedia_article">{"title": "article title"}</capability>
+- Get current time: <capability name="mcp_client" action="call_tool" tool_name="get_current_time">{}</capability>` : '';
+
     return `You are Coach Artie, a helpful AI assistant. 
 
 You have access to capabilities through XML tags when needed:
 - Calculate: <capability name="calculator" action="calculate">expression</capability>
 - Remember: <capability name="memory" action="remember">info to store</capability>  
 - Recall: <capability name="memory" action="search" query="search terms" />
-- Web search: <capability name="web" action="search" query="search terms" />
+- Web search: <capability name="web" action="search" query="search terms" />${mcpExamples}
 
 AVAILABLE CAPABILITIES:
 ${capabilityDocs}
+
+${mcpTools.length > 0 ? `AVAILABLE MCP TOOLS:
+${mcpTools.map(tool => `- ${tool.name}: ${tool.description || 'No description'}`).join('\n')}
+
+IMPORTANT: For MCP tools, always use this format:
+<capability name="mcp_client" action="call_tool" tool_name="TOOL_NAME">{"param": "value"}</capability>
+` : ''}
 
 Use capabilities only when actually needed. Most conversations don't require them - respond naturally.
 
@@ -461,16 +482,59 @@ User's message: ${userMessage}`;
   }
 
   /**
+   * Get available MCP tools from all connected servers
+   */
+  private getAvailableMCPTools(): Array<{name: string, description?: string}> {
+    try {
+      // Get MCP client capability to access connected servers
+      const mcpClient = capabilityRegistry.list().find(cap => cap.name === 'mcp_client');
+      if (!mcpClient) return [];
+
+      const tools: Array<{name: string, description?: string}> = [];
+      
+      // Get all connections (this is accessing private state, but needed for context)
+      const connections = Array.from((mcpClientService as any).connections?.values() || []);
+      
+      for (const connection of connections) {
+        const conn = connection as any;
+        if (conn.connected && conn.tools) {
+          for (const tool of conn.tools) {
+            tools.push({
+              name: tool.name,
+              description: tool.description
+            });
+          }
+        }
+      }
+      
+      return tools;
+    } catch (error) {
+      logger.warn('Failed to get MCP tools for context:', error);
+      return [];
+    }
+  }
+
+  /**
    * Generate simpler instructions for free/smaller models with intelligent suggestions
    */
   private generateSimpleCapabilityInstructions(userMessage: string, _capabilities: RegisteredCapability[]): string {
+    // Get available MCP tools for simple prompt too
+    const mcpTools = this.getAvailableMCPTools();
+    const mcpExamples = mcpTools.length > 0 ? `
+- Search Wikipedia: <capability name="mcp_client" action="call_tool" tool_name="search_wikipedia">{"query": "search terms"}</capability>
+- Get current time: <capability name="mcp_client" action="call_tool" tool_name="get_current_time">{}</capability>` : '';
+
     return `You are Coach Artie, a helpful AI assistant.
 
 If you need to:
 - Calculate something: <capability name="calculator" action="calculate">expression</capability>
 - Remember information: <capability name="memory" action="remember">info to store</capability>  
 - Recall past information: <capability name="memory" action="search" query="search terms" />
-- Search the web: <capability name="web" action="search" query="search terms" />
+- Search the web: <capability name="web" action="search" query="search terms" />${mcpExamples}
+
+${mcpTools.length > 0 ? `
+IMPORTANT: For MCP tools, use: <capability name="mcp_client" action="call_tool" tool_name="TOOL_NAME">{"param": "value"}</capability>
+` : ''}
 
 Only use capability tags when you actually need to perform an action. Most conversations don't need capabilities - just respond naturally.
 
@@ -850,13 +914,16 @@ ${capabilityDetails}`;
       const parsedCapabilities = capabilityXMLParser.extractCapabilities(response);
       
       // Convert to ExtractedCapability format with priority
-      const capabilities = parsedCapabilities.map((cap, index) => ({
-        name: cap.name,
-        action: cap.action,
-        params: cap.params,
-        content: cap.content,
-        priority: index
-      }));
+      const capabilities = parsedCapabilities.map((cap, index) => {
+        logger.info(`🔍 MAPPING DEBUG: cap.name=${cap.name}, cap.params=${JSON.stringify(cap.params)}, cap.content="${cap.content}"`);
+        return {
+          name: cap.name,
+          action: cap.action,
+          params: cap.params,
+          content: cap.content,
+          priority: index
+        };
+      });
 
       logger.info(`Extracted ${capabilities.length} capabilities from response`);
       return capabilities;
