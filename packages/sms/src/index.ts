@@ -1,3 +1,9 @@
+import { config } from 'dotenv';
+import { resolve } from 'path';
+
+// Load environment variables from root .env file
+config({ path: resolve(process.cwd(), '../../.env') });
+
 import express from 'express';
 import helmet from 'helmet';
 import { logger } from '@coachartie/shared';
