@@ -53,7 +53,7 @@ export class PortDiscovery {
     capabilities: 18239,
     sms: 27461,
     email: 35892,
-    brain: 3000,
+    brain: 24680,
     discord: 8080, // Discord doesn't need HTTP but keeping for consistency
   };
 
