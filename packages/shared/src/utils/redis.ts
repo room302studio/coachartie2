@@ -28,6 +28,9 @@ export const createRedisConnection = (): Redis => {
   return redisConnection;
 };
 
+// Export redis instance for service discovery
+export const redis = createRedisConnection();
+
 export const createQueue = <T = any>(name: string): Queue<T> => {
   return new Queue<T>(name, {
     connection: createRedisConnection(),

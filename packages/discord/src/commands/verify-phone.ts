@@ -1,4 +1,4 @@
-import { SlashCommandBuilder, CommandInteraction, EmbedBuilder } from 'discord.js';
+import { SlashCommandBuilder, ChatInputCommandInteraction, EmbedBuilder } from 'discord.js';
 import { logger } from '@coachartie/shared';
 import { createRedisConnection } from '@coachartie/shared';
 import crypto from 'crypto';
@@ -15,7 +15,7 @@ export const verifyPhoneCommand = {
         .setRequired(true)
     ),
 
-  async execute(interaction: CommandInteraction) {
+  async execute(interaction: ChatInputCommandInteraction) {
     try {
       const providedCode = interaction.options.get('code')?.value as string;
       const userId = interaction.user.id;

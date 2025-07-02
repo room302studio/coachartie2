@@ -8,3 +8,5 @@ export * from './constants/queues.js';
 export * from './utils/redis.js';
 export * from './utils/logger.js';
 export * from './utils/database.js';
+export * from './utils/port-discovery.js';
+export * from './utils/service-discovery.js';

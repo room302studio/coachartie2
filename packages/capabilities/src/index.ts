@@ -10,12 +10,13 @@ config({ path: resolve(__dirname, '../../../.env') });
 config({ path: resolve(__dirname, '../.env') });
 import express from 'express';
 import helmet from 'helmet';
-import { logger } from '@coachartie/shared';
+import { logger, createRequestLogger, parsePortWithFallback, registerServiceWithDiscovery, serviceDiscovery } from '@coachartie/shared';
 import { startMessageConsumer } from './queues/consumer.js';
 import { healthRouter } from './routes/health.js';
 import { chatRouter } from './routes/chat.js';
 import { schedulerRouter } from './routes/scheduler.js';
 import { githubRouter } from './routes/github.js';
+import { servicesRouter } from './routes/services.js';
 import { schedulerService } from './services/scheduler.js';
 // Import orchestrator FIRST to trigger capability registration
 import './services/capability-orchestrator.js';
@@ -23,11 +24,11 @@ import { capabilityRegistry } from './services/capability-registry.js';
 import { capabilitiesRouter } from './routes/capabilities.js';
 
 const app = express();
-const PORT = parseInt(process.env.CAPABILITIES_PORT || process.env.PORT || '18239');
 
 // Middleware
 app.use(helmet());
 app.use(express.json());
+app.use(createRequestLogger('capabilities'));
 
 // Test route
 app.get('/test', (req, res) => {
@@ -40,6 +41,7 @@ app.use('/chat', chatRouter);
 app.use('/capabilities', capabilitiesRouter);
 app.use('/scheduler', schedulerRouter);
 app.use('/github', githubRouter);
+app.use('/services', servicesRouter);
 
 // Start queue consumers and scheduler
 async function startQueueWorkers() {
@@ -85,24 +87,33 @@ async function start() {
     // Start scheduler
     await startScheduler();
 
+    // Auto-discover available port
+    logger.info('🔍 Auto-discovering available port for capabilities service...');
+    const PORT = await parsePortWithFallback('CAPABILITIES_PORT', 'capabilities');
+
     // Start HTTP server (for health checks) - bind to 0.0.0.0 for both IPv4 and IPv6
-    logger.info(`🔄 Attempting to bind to port ${PORT}...`);
-    const server = app.listen(PORT, '0.0.0.0', () => {
-      logger.info(`✅ Capabilities service successfully bound to port ${PORT} on 0.0.0.0`);
-      logger.info('Service is ready to process messages from queue');
-      logger.info('Scheduler service is ready for task management');
+    logger.info(`🔄 Starting server on port ${PORT}...`);
+    const server = app.listen(PORT, '0.0.0.0', async () => {
+      logger.info(`✅ Capabilities service successfully started on port ${PORT}`);
+      logger.info('🚀 Service is ready to process messages from queue');
+      logger.info('📅 Scheduler service is ready for task management');
+      logger.info(`🌐 Health check available at: http://localhost:${PORT}/health`);
+      
+      // Register with service discovery
+      await registerServiceWithDiscovery('capabilities', PORT);
       
       // Double-check the server is actually listening
       const addr = server.address();
-      logger.info(`🔍 Server address:`, addr);
+      logger.info(`🔍 Server bound to:`, addr);
     });
 
+    // Enhanced error handling - should rarely trigger with auto-discovery
     server.on('error', (error: Error) => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       if ((error as any).code === 'EADDRINUSE') {
-        logger.error(`❌ PORT CONFLICT: Port ${PORT} is already in use!`);
-        logger.error(`❌ Another service is likely running on this port. Check with: lsof -i :${PORT}`);
-        logger.error(`❌ Kill competing process or use a different port.`);
+        logger.error(`❌ UNEXPECTED PORT CONFLICT: Port ${PORT} became busy after discovery!`);
+        logger.error(`❌ This suggests a race condition or rapid port allocation.`);
+        logger.error(`❌ Check with: lsof -i :${PORT}`);
       } else {
         logger.error(`❌ Server failed to start on port ${PORT}:`, error);
       }
@@ -113,7 +124,7 @@ async function start() {
     setTimeout(() => {
       const address = server.address();
       if (address && typeof address === 'object') {
-        logger.info(`🔍 Verified: Server is listening on ${address.address}:${address.port}`);
+        logger.info(`✅ Verified: Server is listening on ${address.address}:${address.port}`);
         
         // Try to connect to ourselves
         fetch(`http://localhost:${PORT}/test`)
@@ -133,11 +144,13 @@ async function start() {
 // Handle graceful shutdown
 process.on('SIGTERM', async () => {
   logger.info('SIGTERM signal received: closing HTTP server');
+  await serviceDiscovery.shutdown();
   process.exit(0);
 });
 
 process.on('SIGINT', async () => {
   logger.info('SIGINT signal received: closing HTTP server');
+  await serviceDiscovery.shutdown();
   process.exit(0);
 });
 

@@ -155,7 +155,7 @@ class MCPClientService {
                 }
                 return;
               }
-            } catch (parseError) {
+            } catch {
               // Continue parsing other lines
             }
           }
@@ -604,7 +604,9 @@ class MCPClientService {
     const connections = Array.from(this.connections.values());
     
     for (const connection of connections) {
-      if (!connection.connected) continue;
+      if (!connection.connected) {
+        continue;
+      }
       
       // Check if this connection has the tool
       if (connection.tools && connection.tools.some(tool => tool.name === toolName)) {
@@ -752,7 +754,10 @@ export const mcpClientCapability: RegisteredCapability = {
           // Merge any additional params from XML attributes
           if (params && typeof params === 'object') {
             // Extract only the extra params (not action, tool_name, etc)
-            const { action, tool_name, name, connection_id, id, ...extraParams } = params;
+            const excludedKeys = ['action', 'tool_name', 'name', 'connection_id', 'id'];
+            const extraParams = Object.entries(params)
+              .filter(([key]) => !excludedKeys.includes(key))
+              .reduce((acc, [key, value]) => ({ ...acc, [key]: value }), {});
             args = { ...args, ...extraParams };
           }
           

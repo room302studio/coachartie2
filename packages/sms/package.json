@@ -4,6 +4,10 @@
   "type": "module",
   "description": "SMS interface for Coach Artie via Twilio",
   "main": "./dist/index.js",
+  "exports": {
+    ".": "./dist/index.js",
+    "./utils": "./dist/utils/index.js"
+  },
   "scripts": {
     "build": "tsc",
     "dev": "tsx watch src/index.ts",

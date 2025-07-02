@@ -8,6 +8,8 @@
   "scripts": {
     "build": "turbo run build",
     "dev": "turbo run dev",
+    "dev:clean": "npm run kill-all && pnpm run dev",
+    "kill-all": "pkill -f 'coachartie2.*tsx' && pkill -f 'coachartie2.*node' && sleep 2 || true",
     "dev:pm2": "pm2 start ecosystem.config.js",
     "dev:docker": "docker-compose -f docker/docker-compose.yml up",
     "stop": "pm2 stop all",
