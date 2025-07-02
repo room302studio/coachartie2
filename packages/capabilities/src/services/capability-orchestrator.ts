@@ -490,15 +490,17 @@ User's message: ${userMessage}`;
     try {
       // Get MCP client capability to access connected servers
       const mcpClient = capabilityRegistry.list().find(cap => cap.name === 'mcp_client');
-      if (!mcpClient) return [];
+      if (!mcpClient) {
+        return [];
+      }
 
       const tools: Array<{name: string, description?: string}> = [];
       
       // Get all connections (this is accessing private state, but needed for context)
-      const connections = Array.from((mcpClientService as any).connections?.values() || []);
+      const connections = Array.from((mcpClientService as unknown as { connections?: Map<string, unknown> }).connections?.values() || []);
       
       for (const connection of connections) {
-        const conn = connection as any;
+        const conn = connection as { connected?: boolean; tools?: Array<{ name: string; description?: string }> };
         if (conn.connected && conn.tools) {
           for (const tool of conn.tools) {
             tools.push({
@@ -703,7 +705,7 @@ ${capabilityDetails}`;
    * Simple fallback detection - auto-inject obvious capabilities when LLM fails to use them
    * Based on CLAUDE.md requirements: "Keep it stupid simple"
    */
-  private detectAndInjectCapabilities(userMessage: string, _llmResponse: string): ExtractedCapability[] {
+  private detectAndInjectCapabilities(_userMessage: string, _llmResponse: string): ExtractedCapability[] {
     // No auto-injection for now - let the LLM handle it or user be explicit
     return [];
   }

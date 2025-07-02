@@ -34,8 +34,22 @@ But LLMs should NEVER generate the complex format - only the simple one!
 
 ---
 
-**Last Updated:** 2025-06-30 14:25 UTC  
-**Status:** MCP Tool Syntax Simplified ✅ | XML Parser Updated ✅
+**Last Updated:** 2025-06-30 19:30 UTC  
+**Status:** Brain Integration Started 🧠 | Migration Plan Created 📋 | Ready for Implementation 🚀
+
+## 🔄 RECENT: Documentation & Process Cleanup (2025-06-30 19:30)
+**Problem**: CLAUDE.md was outdated and networking issues were misdiagnosed
+**Solution**: Updated documentation and identified real root cause
+**Findings**:
+- Previous "networking issue" was actually port conflicts from zombie processes
+- Multiple tsx processes from previous dev sessions were still running
+- Services now have proper error handling showing port conflicts
+- Documentation updated with current status and realistic next steps
+**Actions Taken**:
+- Killed conflicting tsx processes with `pkill -f "coachartie2.*tsx"`
+- Updated status timestamps and current priority tasks
+- Corrected networking issue diagnosis (was process cleanup, not macOS networking)
+**Next**: Restart services cleanly and verify all endpoints work
 
 ## ✅ NEW: Simplified MCP Tool Syntax (2025-06-30)
 **Problem**: Complex XML syntax was confusing LLMs
@@ -64,40 +78,149 @@ But LLMs should NEVER generate the complex format - only the simple one!
 - Fixed OpenRouter service call signatures
 **Result**: `pnpm build` now completes successfully
 
-## 🚨 MAJOR ISSUE: Development Server Networking (2025-06-27)
-**Problem**: Service claims to bind successfully but nothing actually listens on the port
+## 🚨 CURRENT ISSUE: Port Conflicts (2025-06-30)
+**Problem**: Multiple service instances causing port binding conflicts
 **Symptoms**: 
-- Logs show "✅ Capabilities service successfully bound to port 18239 on 0.0.0.0"
-- Express server.listen() callback executes without errors
-- BUT: `lsof -i :18239` shows nothing listening
-- `curl http://localhost:18239/health` fails with "Connection refused"
-- Tried multiple ports (18239, 8888) - same issue
+- Capabilities service: "❌ PORT CONFLICT: Port 18239 is already in use!"
+- SMS service: "❌ PORT CONFLICT: Port 27461 is already in use!"
+- Multiple tsx processes running from previous sessions
+- Services crash immediately due to port conflicts
 
-**Debugging Attempts**:
-- ✅ Fixed Express binding to use '0.0.0.0' instead of default
-- ✅ Killed all tsx/node processes multiple times
-- ✅ Used killall -9 to force kill everything
-- ✅ Tried different ports to rule out conflicts
-- ✅ Checked for zombie processes and port conflicts
-- ❌ Service still claims success but port never actually binds
+**Root Cause**: Previous development sessions left processes running
+- Found multiple coachartie2 tsx processes still active
+- Services attempting to bind to already occupied ports
+- Need to clean up zombie processes
 
-**This is NOT a minor quirk** - something is fundamentally broken with the Express server binding or macOS networking. The Express callback fires (suggesting successful bind) but the OS shows no process listening on the port.
+**Solution Applied**:
+```bash
+# Kill all coachartie2 processes
+pkill -f "coachartie2"
+# Or more targeted:
+ps aux | grep coachartie2 | grep -v grep | awk '{print $2}' | xargs kill
+```
 
-**Next Steps**: 
-1. **System reboot** (most likely fix)
-2. Check for macOS firewall/security restrictions
-3. Investigate Express version compatibility issues
-4. Consider Docker networking as alternative
+**Status**: ⚠️ DAILY RECURRING ISSUE - Need permanent fix
 
-**Impact**: Cannot test API endpoints, but core XML parsing logic verified via unit tests
+**PERMANENT SOLUTION IMPLEMENTED** ✅:
+```bash
+# Now available in package.json
+pnpm run dev:clean    # Kills all processes + starts fresh
+pnpm run kill-all     # Just kills processes
+```
 
-## ✅ FIXED: Discord Double Response Issue
-**Problem**: Discord bot was processing same message twice, sending duplicate responses
-**Root Cause**: Two parallel Discord implementations were both active:
-  - Legacy `index.js` directly calling `capabilitiesClient.chat()` 
-  - New `src/index.ts` using BullMQ message queue
-**Fix Applied**: Renamed `index.js` to `index.js.backup` to disable legacy implementation
-**Result**: Only the TypeScript queue-based implementation is active now
+**Commands added to package.json**:
+- `kill-all`: Kills all coachartie2 tsx/node processes
+- `dev:clean`: Clean kill + restart (use this every time)
+
+**Why This Keeps Happening**:
+- tsx watch processes don't die when terminals close
+- Multiple dev sessions leave zombie processes
+- No graceful shutdown handling
+- Process management is fundamentally broken
+
+## ✅ NEW: SMS Service + Discord Phone Linking (2025-06-30)
+**Problem**: SMS service existed but wasn't loading environment variables, no phone linking
+**Solution**: Added dotenv configuration + secure Discord slash commands
+**Implementation**:
+- Fixed SMS service environment loading with proper dotenv path resolution
+- Added `/link-phone`, `/verify-phone`, `/unlink-phone` Discord commands
+- Secure phone verification with 6-digit codes, rate limiting, encrypted storage
+- Fallback system: shows code in Discord when SMS is unavailable
+**Result**: Production-ready SMS + phone linking system (awaits Twilio account recharge)
+
+## 🧠 ACTIVE: Brain Frontend Integration (2025-06-30 19:45)
+**Status**: ✅ Cloned, 📊 Analyzed, 📋 Migration Planning
+**Repo**: Integrated into `packages/brain` (original will be archived)
+**Stack**: Nuxt 3 + Vue 3 + TypeScript + Tailwind CSS + D3.js
+
+### 📊 Analysis Complete ✅
+**Framework**: Nuxt 3 with sophisticated data visualization capabilities
+**Key Features Discovered**:
+- Advanced memory clustering (t-SNE, UMAP dimensional reduction)
+- Real-time D3.js network graphs of entity relationships  
+- Comprehensive queue monitoring and task tracking
+- Vector similarity search with multiple embeddings
+- Time-series analytics and sparkline visualizations
+- Hot-reloading prompt management system
+- Real-time log streaming with filtering
+
+**Database Schema** (8 main tables):
+- `memories` - Core memory storage with vector embeddings
+- `messages` - Message history with platform metadata
+- `queue` - Task management with priority/retry logic
+- `prompts` - System prompt management with versioning
+- `config` - Key-value configuration with history
+- `user_identities` - Cross-platform user mapping
+- `logs` - Structured logging with levels
+- `todos` - Task tracking
+
+### 📋 Migration Plan - 3 Phase Approach
+
+**Phase 1: Database Layer (Priority 1)**
+1. **Create SQLite Adapter** (`packages/brain/lib/database.ts`)
+   - Replace `@nuxtjs/supabase` with direct SQLite client
+   - Port PostgreSQL schema to SQLite (simplify complex types)
+   - Implement basic CRUD operations for all 8 tables
+   
+2. **Vector Search Adaptation**  
+   - PostgreSQL pgvector → SQLite FTS5 + manual similarity
+   - May lose some advanced vector operations but keep core search
+   - Preserve embedding storage, simplify similarity calculations
+
+3. **API Layer Creation**
+   - Build REST endpoints: `/api/{memories,messages,queue,logs}`
+   - Replace direct Supabase calls with internal API
+   - Maintain existing component interfaces
+
+**Phase 2: Real-time & Integration (Priority 2)**  
+1. **Remove Authentication** (local-only deployment)
+2. **Replace Real-time Subscriptions**
+   - Supabase real-time → WebSocket or polling
+   - Update components to handle connection state
+3. **Connect to Capabilities API**
+   - Link to `http://localhost:23701` for live data
+   - Sync queue status with capabilities service
+   - Pull memory/message data from shared SQLite database
+
+**Phase 3: Advanced Features (Priority 3)**
+1. **Preserve Clustering** - Keep t-SNE/UMAP capabilities
+2. **Enhance Network Graphs** - Connect to capabilities relationship data  
+3. **Performance Optimization** - SQLite query optimization for large datasets
+
+### 🔧 Technical Migration Details
+
+**Dependencies to Replace**:
+- `@nuxtjs/supabase` → Custom SQLite adapter
+- Authentication flows → Remove entirely  
+- Real-time subscriptions → WebSocket/polling
+
+**Dependencies to Keep**:
+- `d3` - Network graphs and visualizations
+- `tsne-js` & `umap-js` - Clustering algorithms
+- `openai` - Can proxy through capabilities service
+- `tailwindcss` - Styling system
+
+**New Environment Variables**:
+```bash
+# Remove
+SUPABASE_URL, SUPABASE_KEY
+
+# Add  
+DATABASE_PATH=/path/to/coachartie.db
+CAPABILITIES_API_URL=http://localhost:23701
+```
+
+### 🎯 Success Metrics
+- ✅ Brain runs locally without Supabase dependency
+- ✅ All 8 data tables migrated and functional
+- ✅ Vector search working (even if simplified)
+- ✅ Real-time updates via WebSocket/polling
+- ✅ Integration with capabilities service for live data
+- ✅ Clustering visualizations preserved (t-SNE, UMAP)
+- ✅ Network graphs showing memory relationships
+
+**Estimated Effort**: 2-3 focused work sessions
+**Complexity**: Medium-High (vector search adaptation is the main challenge)
 
 ---
 
@@ -109,8 +232,9 @@ But LLMs should NEVER generate the complex format - only the simple one!
 
 ### ✅ WORKING PROPERLY
 - **Memory System**: Fixed! Now extracts capabilities from user messages AND LLM responses
-- **Basic API**: Chat endpoint on port 23701, all services healthy  
-- **Capability Architecture**: 10 capabilities, 41+ actions registered
+- **SMS Service**: Environment loading fixed, ready for production (needs Twilio funding)
+- **Discord Phone Linking**: Secure verification system with `/link-phone`, `/verify-phone`, `/unlink-phone`
+- **Capability Architecture**: 12 capabilities, 48+ actions registered
 - **Free Model Fallback**: Graceful degradation when credits exhausted + auto-injection
 - **Database**: SQLite persistence, prompt hot-reloading fixed
 - **Token Usage Tracking**: Full implementation with cost calculation and stats
@@ -120,8 +244,9 @@ But LLMs should NEVER generate the complex format - only the simple one!
 - **MCP stdio://**: Only HTTP/HTTPS supported, can't connect to local servers
 - **CapabilitySuggester**: Broken substring matching, needs keyword improvements
 
-### ❌ KNOWN BROKEN
-- **Brain Migration**: Core brain still in ARCHIVE, needs monorepo integration
+### 🎯 PLANNED WORK
+- **Brain Migration**: Integrate existing Vue brain (https://github.com/room302studio/coachartie_brain) with local SQLite
+- **Networking Issue**: Port binding claims success but connections fail (needs system reboot)
 
 ---
 
@@ -281,14 +406,18 @@ curl -X POST http://localhost:23701/chat \
 
 ## 🚀 Development Workflow
 
-### Start Services
+### Start Services (ALWAYS USE CLEAN)
 ```bash
-pnpm run dev          # Start all services  
+pnpm run dev:clean    # Kill zombies + start fresh (RECOMMENDED)
+# OR if you're sure no conflicts:
+pnpm run dev          # Standard start
 tail -f /tmp/turbo.log # Watch logs
 ```
 
 ### Restart After Changes
 ```bash
+pnpm run dev:clean    # Clean restart (RECOMMENDED)
+# OR old way:
 pkill -f "tsx watch" && pnpm run dev
 ```
 
@@ -304,19 +433,21 @@ SELECT * FROM memories LIMIT 5;
 ## 🎯 Next Sprint
 
 ### Immediate (This Session)
-1. **Test new MCP syntax**: Verify `<search-wikipedia>query</search-wikipedia>` works
-2. **Add MCP status capability**: So bot can check what tools are available
-3. **Update all prompts**: Include new syntax examples
+1. **Fix Port Conflicts**: Clean up zombie processes and restart services properly
+2. **Test Service Health**: Verify all endpoints work after cleanup
+3. **Update Service Ports**: Document actual working ports (not just planned ones)
 
 ### Soon  
-1. **stdio:// MCP Support**: Connect to local MCP calculator server
-2. **Brain Migration**: Move brain from ARCHIVE to packages/brain
-3. **Integration Tests**: Automated testing for capability workflows
+1. **Brain Frontend Migration**: Integrate Vue.js brain with local SQLite + capabilities API
+2. **stdio:// MCP Support**: Enable local MCP calculator server connection
+3. **Service Monitoring**: Add health checks and automatic restart logic
+4. **Docker Alternative**: Consider containerized development to avoid port conflicts
 
 ### Eventually
-1. **Semantic Search**: Embeddings for better memory matching
-2. **Usage Analytics**: Track which capabilities are used most
-3. **Auto-prompting**: Dynamic prompt optimization based on model performance
+1. **Process Management**: Implement proper process lifecycle management
+2. **Service Discovery**: Automatic port allocation and service registry
+3. **Integration Tests**: Automated testing for capability workflows
+4. **Production Deployment**: Move beyond development mode conflicts
 
 ---
 

@@ -381,7 +381,7 @@ export async function searchWeb(query: string): Promise<WebFetchResult> {
       throw new Error(`Search API returned ${response.status}`);
     }
 
-    const data = await response.json() as any;
+    const data = await response.json() as Record<string, unknown>;
     
     // Build response from DuckDuckGo instant answers
     let content = '';
@@ -410,9 +410,9 @@ export async function searchWeb(query: string): Promise<WebFetchResult> {
     }
     
     // Related topics
-    if (data.RelatedTopics && data.RelatedTopics.length > 0) {
+    if (data.RelatedTopics && Array.isArray(data.RelatedTopics) && data.RelatedTopics.length > 0) {
       content += '**Related Topics**:\n';
-      data.RelatedTopics.slice(0, 5).forEach((topic: any) => {
+      (data.RelatedTopics as Array<Record<string, unknown>>).slice(0, 5).forEach((topic: Record<string, unknown>) => {
         if (topic.Text) {
           content += `• ${topic.Text}\n`;
           if (topic.FirstURL) {
@@ -424,9 +424,10 @@ export async function searchWeb(query: string): Promise<WebFetchResult> {
     }
     
     // Infobox data
-    if (data.Infobox && data.Infobox.content && data.Infobox.content.length > 0) {
+    const infobox = data.Infobox as Record<string, unknown> | undefined;
+    if (infobox && infobox.content && Array.isArray(infobox.content) && infobox.content.length > 0) {
       content += '**Quick Facts**:\n';
-      data.Infobox.content.slice(0, 5).forEach((item: any) => {
+      (infobox.content as Array<Record<string, unknown>>).slice(0, 5).forEach((item: Record<string, unknown>) => {
         if (item.label && item.value) {
           content += `• ${item.label}: ${item.value}\n`;
         }

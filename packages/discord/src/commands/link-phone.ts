@@ -1,4 +1,4 @@
-import { SlashCommandBuilder, CommandInteraction, EmbedBuilder } from 'discord.js';
+import { SlashCommandBuilder, ChatInputCommandInteraction, EmbedBuilder } from 'discord.js';
 import { logger } from '@coachartie/shared';
 import { createRedisConnection } from '@coachartie/shared';
 import crypto from 'crypto';
@@ -15,7 +15,7 @@ export const linkPhoneCommand = {
         .setRequired(true)
     ),
 
-  async execute(interaction: CommandInteraction) {
+  async execute(interaction: ChatInputCommandInteraction) {
     try {
       const phoneNumber = interaction.options.get('phone')?.value as string;
       const userId = interaction.user.id;
@@ -45,7 +45,7 @@ export const linkPhoneCommand = {
       let smsResult = null;
       try {
         // Import dynamically to avoid issues if SMS service is down
-        const { sendVerificationSMS } = await import('@coachartie/sms/src/utils/twilio.js');
+        const { sendVerificationSMS } = await import('@coachartie/sms/utils');
         smsResult = await sendVerificationSMS(phoneNumber, verificationCode);
       } catch (error) {
         logger.warn('SMS verification failed, showing code in Discord instead:', error);

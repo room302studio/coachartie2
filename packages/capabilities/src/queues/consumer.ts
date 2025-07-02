@@ -4,7 +4,9 @@ import {
   QUEUES, 
   IncomingMessage, 
   OutgoingMessage,
-  logger 
+  logger,
+  queueLogger,
+  performanceLogger
 } from '@coachartie/shared';
 import { processMessage } from '../handlers/process-message.js';
 
@@ -13,7 +15,13 @@ export async function startMessageConsumer() {
     QUEUES.INCOMING_MESSAGES,
     async (job) => {
       const message = job.data;
-      logger.info(`Processing message ${message.id} from ${message.source}`);
+      const timer = performanceLogger.startTimer(`Process message ${message.id}`);
+      
+      queueLogger.jobStarted('process-message', job.id!.toString(), {
+        userId: message.userId,
+        source: message.source,
+        messageLength: message.message.length
+      });
 
       try {
         // Always process the message for capability extraction and memory formation
@@ -24,6 +32,8 @@ export async function startMessageConsumer() {
 
         if (!shouldRespond) {
           logger.info(`Passive observation completed for message ${message.id} - no response queued`);
+          const duration = timer.end({ userId: message.userId, messageId: message.id });
+          queueLogger.jobCompleted('process-message', job.id!.toString(), duration);
           return;
         }
 
@@ -58,8 +68,20 @@ export async function startMessageConsumer() {
           logger.info(`Response queued for ${message.respondTo.type} (${message.id})`);
         }
 
+        const duration = timer.end({ 
+          userId: message.userId, 
+          messageId: message.id,
+          responseLength: response.length
+        });
+        queueLogger.jobCompleted('process-message', job.id!.toString(), duration);
+
       } catch (error) {
-        logger.error(`Error processing message ${message.id}:`, error);
+        timer.end({ 
+          userId: message.userId, 
+          messageId: message.id,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        });
+        queueLogger.jobFailed('process-message', job.id!.toString(), error as Error);
         throw error; // Let BullMQ handle retries
       }
     }
