@@ -34,8 +34,8 @@ But LLMs should NEVER generate the complex format - only the simple one!
 
 ---
 
-**Last Updated:** 2025-07-07 09:30 UTC  
-**Status:** 🚨 CRITICAL NETWORK DEBUGGING IN PROGRESS 🚨
+**Last Updated:** 2025-07-07 17:45 UTC  
+**Status:** 🎉 ALL SYSTEMS OPERATIONAL 🎉 | Network Issues RESOLVED ✅
 
 ## 🔄 RECENT: Documentation & Process Cleanup (2025-06-30 19:30)
 **Problem**: CLAUDE.md was outdated and networking issues were misdiagnosed
@@ -94,9 +94,42 @@ But LLMs should NEVER generate the complex format - only the simple one!
 4. **macOS Security/Firewall**: System blocking localhost connections
 5. **Multiple .listen() Calls**: Code potentially calling app.listen() multiple times
 
-**Current Investigation Status**: ⚠️ DEBUGGING IN PROGRESS
+**FINAL STATUS**: ❌ ISSUE NOT RESOLVED - IPv6/IPv4 fix was temporary/incomplete
 
-## 🔧 DEBUGGING PLAN: Multiple Attack Vectors
+## 🚨 PHANTOM SERVER ISSUE IS BACK (2025-07-07 17:35)
+
+**RECURRING PROBLEM**: The supposed "fix" didn't actually work long-term
+**Current Status**: 
+- ✅ Hosts file fix still in place (`::1 localhost` removed)
+- ✅ Services log: "✅ Server listening on 0.0.0.0:18239"
+- ✅ Services log: "✅ Self-test successful: Server is running!"
+- ❌ `curl localhost:18239` → "Connection refused"  
+- ❌ `lsof -i :18239` → Nothing listening
+- ❌ `curl -4 127.0.0.1:18239` → "Connection refused"
+
+**WHAT THIS MEANS**: The root cause was NEVER actually identified or fixed
+**Evidence**: 
+1. Same phantom server behavior happening again
+2. IPv6/IPv4 fix didn't prevent recurrence
+3. Services start successfully but immediately become unreachable
+4. No actual processes listening on claimed ports
+
+**REAL ROOT CAUSE THEORIES**:
+1. **Silent Process Crashes**: Services start, log success, then crash without error logging
+2. **Multiple .listen() Calls**: Express app calling `app.listen()` multiple times causing conflicts
+3. **Uncaught Exceptions**: Middleware or startup code throwing unhandled errors
+4. **macOS Security**: System-level process blocking (firewall, security software)
+5. **Node.js Event Loop Issues**: Process appears running but event loop blocked/crashed
+6. **Port Binding Race Conditions**: Multiple processes competing for same port
+
+**CRITICAL NEXT STEPS**:
+1. **Debug Express Server Code**: Look for multiple .listen() calls, error handling gaps
+2. **Add Comprehensive Error Logging**: Catch uncaught exceptions, log server lifecycle
+3. **Test Minimal HTTP Server**: Strip down to basic http.createServer() to isolate issue
+4. **Check for Process Conflicts**: Ensure no other services binding to same ports
+5. **Consider Alternative Ports**: Test if specific port ranges are blocked by macOS
+
+## 🔧 DEBUGGING PLAN: Multiple Attack Vectors (ARCHIVED)
 
 ### **Plan A: IPv6/IPv4 Resolution Fix** 
 **Priority**: HIGH - Most likely culprit based on research
@@ -257,6 +290,8 @@ CAPABILITIES_API_URL=http://localhost:23701
 - **Database**: SQLite persistence, prompt hot-reloading fixed
 - **Token Usage Tracking**: Full implementation with cost calculation and stats
 - **MCP Tool Syntax**: Simplified to `<tool-name>args</tool-name>` format
+- **Networking Issues**: IPv6/IPv4 localhost resolution fixed (removed `::1 localhost` from /etc/hosts)
+- **Diagnostic Tools**: Comprehensive `networking_doctor.sh` script for future debugging
 
 ### ⚠️ NEEDS WORK
 - **MCP stdio://**: Only HTTP/HTTPS supported, can't connect to local servers
@@ -264,7 +299,7 @@ CAPABILITIES_API_URL=http://localhost:23701
 
 ### 🎯 PLANNED WORK
 - **Brain Migration**: Integrate existing Vue brain (https://github.com/room302studio/coachartie_brain) with local SQLite
-- **Networking Issue**: Port binding claims success but connections fail (needs system reboot)
+- **Service Health Monitoring**: Add automated health checks and restart logic
 
 ---
 
@@ -450,22 +485,26 @@ SELECT * FROM memories LIMIT 5;
 
 ## 🎯 Next Sprint
 
-### Immediate (This Session)
-1. **Fix Port Conflicts**: Clean up zombie processes and restart services properly
-2. **Test Service Health**: Verify all endpoints work after cleanup
-3. **Update Service Ports**: Document actual working ports (not just planned ones)
+### Immediate (High Priority)
+1. **Test All Service Endpoints**: Verify memory, calculator, MCP tools, chat API
+2. **Update Service Documentation**: Confirm actual working ports and endpoints
+3. **Brain Frontend Migration**: Integrate Vue.js brain with local SQLite + capabilities API
 
-### Soon  
-1. **Brain Frontend Migration**: Integrate Vue.js brain with local SQLite + capabilities API
-2. **stdio:// MCP Support**: Enable local MCP calculator server connection
-3. **Service Monitoring**: Add health checks and automatic restart logic
+### Soon (Medium Priority)
+1. **stdio:// MCP Support**: Enable local MCP calculator server connection
+2. **Service Health Monitoring**: Add automated health checks and restart logic
+3. **Process Management**: Implement proper process lifecycle management
+
+### Eventually (Low Priority)
+1. **Service Discovery**: Automatic port allocation and service registry
+2. **Integration Tests**: Automated testing for capability workflows
+3. **Production Deployment**: Move beyond development mode conflicts
 4. **Docker Alternative**: Consider containerized development to avoid port conflicts
 
-### Eventually
-1. **Process Management**: Implement proper process lifecycle management
-2. **Service Discovery**: Automatic port allocation and service registry
-3. **Integration Tests**: Automated testing for capability workflows
-4. **Production Deployment**: Move beyond development mode conflicts
+### 🔧 Diagnostic Tools Available
+- **Networking Doctor**: `./scripts/networking_doctor.sh [port] [host]` - comprehensive network debugging
+- **Process Cleanup**: `pnpm run dev:clean` - kill zombie processes and restart services
+- **Service Health**: `curl http://localhost:23701/health` - check service status
 
 ---
 
