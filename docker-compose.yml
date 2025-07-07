@@ -1,0 +1,73 @@
+version: '3.8'
+
+services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  capabilities:
+    build:
+      context: .
+      dockerfile: ./packages/capabilities/Dockerfile
+    ports:
+      - "18239:18239"
+    environment:
+      - NODE_ENV=development
+      - DATABASE_PATH=/app/data/coachartie.db
+      - CAPABILITIES_PORT=18239
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - LOG_LEVEL=info
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+      - DISCORD_TOKEN=${DISCORD_TOKEN}
+      - DISCORD_CLIENT_ID=${DISCORD_CLIENT_ID}
+      - WOLFRAM_APP_ID=${WOLFRAM_APP_ID}
+      - TWILIO_ACCOUNT_SID=${TWILIO_ACCOUNT_SID}
+      - TWILIO_AUTH_TOKEN=${TWILIO_AUTH_TOKEN}
+      - TWILIO_PHONE_NUMBER=${TWILIO_PHONE_NUMBER}
+    volumes:
+      - ./packages/capabilities/data:/app/data
+      - ./packages/capabilities/src:/app/src
+      - /app/node_modules
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:18239/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+
+  # Future services can be added here
+  # discord:
+  #   build:
+  #     context: ./packages/discord
+  #   environment:
+  #     - CAPABILITIES_URL=http://capabilities:18239
+  #   depends_on:
+  #     - capabilities
+
+  # sms:
+  #   build:
+  #     context: ./packages/sms
+  #   environment:
+  #     - CAPABILITIES_URL=http://capabilities:18239
+  #   depends_on:
+  #     - capabilities
+
+volumes:
+  redis_data:
+
+networks:
+  default:
+    name: coachartie_network

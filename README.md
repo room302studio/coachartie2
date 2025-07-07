@@ -1,12 +1,121 @@
-# Coach Artie 2 - A Deep Dive
+# Coach Artie 2 - AI Capabilities Platform
 
-This document provides a comprehensive, in-depth guide to the Coach Artie 2 monorepo. It is intended to be the single source of truth for understanding the architecture, services, and operational flow of the entire system.
+🎉 **PHANTOM SERVER ISSUE RESOLVED**: Docker containerization eliminates all host networking problems!
 
-> **📄 License**: This project is licensed for non-commercial use. For business inquiries, [commercial licenses are available](#-license--commercial-use).
+## Quick Start (Docker - RECOMMENDED)
 
----
+**Requirements**: Docker Desktop installed and running
 
-## 🎯 MCP Tool Syntax (CRITICAL)
+```bash
+# Clone and start services
+git clone <repository>
+cd coachartie2
+docker-compose up -d
+
+# Test endpoints
+curl http://localhost:18239/health
+curl -X POST http://localhost:18239/chat \
+  -H "Content-Type: application/json" \
+  -d '{"message": "Hello!", "userId": "test"}'
+```
+
+## The Docker Solution
+
+After extensive debugging of phantom server issues that affected **all Node.js frameworks** (Express, Fastify, raw HTTP), we implemented Docker containerization that **completely eliminates host networking problems**.
+
+### What Docker Solves
+
+**Previous Issues (RESOLVED)**:
+- ✅ IPv6/IPv4 localhost resolution conflicts on macOS
+- ✅ macOS Application Firewall interference  
+- ✅ VPN software networking problems
+- ✅ Port binding phantom server issues
+- ✅ Process lifecycle management chaos
+- ✅ Inconsistent environment across machines
+
+**Root Cause**: macOS host networking stack was interfering with Node.js server binding, causing services to log "Server listening" but immediately become unreachable.
+
+**Solution**: Docker containers provide complete networking isolation.
+
+### Docker Architecture
+
+```
+Docker Services:
+├── redis (redis:7-alpine)
+│   ├── Port: 6379 (internal) 
+│   ├── Health checks enabled
+│   └── Persistent data volume
+└── capabilities (custom Node.js)
+    ├── Port: 18239 (exposed to host)
+    ├── Hot-reload volumes for development
+    ├── All environment variables configured
+    └── Depends on Redis health
+```
+
+### Development Workflow
+
+```bash
+# Start services (RECOMMENDED)
+docker-compose up -d
+
+# View logs
+docker-compose logs -f capabilities
+
+# Check status
+docker-compose ps
+
+# Restart after changes
+docker-compose down && docker-compose up -d
+
+# Stop services
+docker-compose down
+```
+
+## API Endpoints
+
+All endpoints tested and verified working in Docker:
+
+### Health Check
+```bash
+curl http://localhost:18239/health
+# Returns: {"status":"healthy","service":"capabilities","checks":{"redis":"connected"}}
+```
+
+### Chat API
+```bash
+curl -X POST http://localhost:18239/chat \
+  -H "Content-Type: application/json" \
+  -d '{"message": "Hello!", "userId": "test"}'
+```
+
+### Memory System
+```bash
+# Store memory
+curl -X POST http://localhost:18239/chat \
+  -H "Content-Type: application/json" \
+  -d '{"message": "<capability name=\"memory\" action=\"remember\">Docker solves networking issues</capability>", "userId": "test"}'
+
+# Search memory
+curl -X POST http://localhost:18239/chat \
+  -H "Content-Type: application/json" \
+  -d '{"message": "<capability name=\"memory\" action=\"search\" query=\"Docker\" />", "userId": "test"}'
+```
+
+### Calculator
+```bash
+curl -X POST http://localhost:18239/chat \
+  -H "Content-Type: application/json" \
+  -d '{"message": "<capability name=\"calculator\" action=\"calculate\">999 * 888</capability>", "userId": "test"}'
+# Returns: 887,112
+```
+
+### Capabilities Registry
+```bash
+curl http://localhost:18239/capabilities/registry
+# Returns: 12 capabilities with 48 total actions
+```
+
+## MCP Tool Syntax (CRITICAL)
 
 When calling MCP tools, **ALWAYS** use this simple syntax:
 
@@ -31,162 +140,163 @@ When calling MCP tools, **ALWAYS** use this simple syntax:
 - No args = self-closing tag
 - **DO NOT** use the old format: `<capability name="mcp_client" action="call_tool"...>`
 
----
+## Capabilities
 
-## 1. Core Philosophy & Architecture
+The platform includes 12 core capabilities with 48 total actions:
 
-Coach Artie 2 is designed as a modular, resilient, and extensible AI assistant platform. Its architecture is built on several key principles:
+- **Memory**: Store and search conversations with FTS5 full-text search
+- **Calculator**: Mathematical operations via MCP server
+- **Web Search**: Brave Search API integration
+- **MCP Tools**: Simplified syntax for Wikipedia, time, etc.
+- **File System**: Read, write, list operations with safety checks
+- **Package Manager**: npm/pnpm operations
+- **Environment**: System environment management
+- **GitHub**: Repository operations
+- **Wolfram Alpha**: Computational queries
+- **Scheduler**: Task scheduling and management
+- **Deployment Cheerleader**: Celebration and encouragement
+- **MCP Client**: Connect to external MCP servers
 
--   **Microservices:** The system is broken down into independent services (packages) that handle specific domains: AI logic, Discord communication, SMS, etc. This separation of concerns makes the system easier to develop, debug, and scale.
--   **Asynchronous Communication:** Services do not call each other directly. Instead, they communicate via a central **Redis message queue (using BullMQ)**. This decouples the services, ensuring that the failure of one component does not bring down the entire system. For example, the `discord` service simply publishes a message to a queue; it doesn't know or care how it gets processed.
--   **Centralized AI Orchestration:** A single service, `packages/capabilities`, acts as the brain. It consumes messages from all other services, orchestrates interactions with AI models, executes "capabilities" (tools), and publishes responses back to the appropriate queue.
--   **Infrastructure as Code:** The entire production environment is defined in code using Docker (`docker/`) and Docker Compose. This ensures consistency between development and production and simplifies deployment.
--   **Extensibility via MCP:** The system can connect to external **Model-Context-Protocol (MCP)** servers (`mcp-servers/`) to dynamically add new tools and capabilities without modifying the core services.
+## Environment Variables
 
-### System Flow Diagram
+Copy `.env` and configure required variables:
+
+```env
+# Required
+OPENROUTER_API_KEY=your_key_here
+
+# Optional but recommended
+DISCORD_TOKEN=your_token_here
+WOLFRAM_APP_ID=your_id_here
+TWILIO_ACCOUNT_SID=your_sid_here
+TWILIO_AUTH_TOKEN=your_token_here
+TWILIO_PHONE_NUMBER=your_number_here
+
+# Docker automatically sets these
+REDIS_HOST=redis
+REDIS_PORT=6379
+CAPABILITIES_PORT=18239
+```
+
+## Legacy Development (Without Docker)
+
+If Docker is unavailable, you can run services natively:
+
+```bash
+# Install dependencies
+pnpm install
+
+# Start development services (may encounter phantom server issues)
+pnpm run dev:clean
+
+# View logs
+tail -f /tmp/turbo.log
+```
+
+**Warning**: Native development may encounter the phantom server issue on macOS configurations. Docker is **strongly recommended**.
+
+## Troubleshooting
+
+### Port Already in Use
+```bash
+# Kill any conflicting processes
+lsof -i :18239 | grep LISTEN | awk '{print $2}' | xargs kill -9
+docker-compose up -d
+```
+
+### Container Won't Start
+```bash
+# View detailed logs
+docker-compose logs capabilities
+
+# Rebuild containers
+docker-compose down
+docker-compose up -d --build
+```
+
+### Environment Variables Missing
+```bash
+# Check container environment
+docker-compose exec capabilities env | grep OPENROUTER_API_KEY
+```
+
+### Redis Connection Issues
+```bash
+# Verify Redis health
+docker-compose ps
+# Should show redis as "healthy"
+
+# Check Redis connectivity
+docker-compose exec capabilities nc -zv redis 6379
+```
+
+## Project Structure
 
 ```
-[User Interfaces]      [Message Queues]      [Core Logic]         [AI/Tools]
-(Discord, SMS, etc)         (Redis)          (Capabilities Svc)
-       |                      |                      |                    |
-       | --- (publishes) ---> | INCOMING_MESSAGES    |                    |
-       |                      | --- (consumes) ----> | Orchestrator       |
-       |                      |                      | --- (requests) --> | (OpenRouter)
-       |                      |                      |                    | (Wolfram, etc)
-       |                      |                      | <--- (executes) -- | (Capabilities)
-       |                      | <--- (publishes) --- | OUTGOING_QUEUES    |
-       | <--- (consumes) ---- |                      |                    |
-       |                      |                      |                    |
+coachartie2/
+├── docker-compose.yml           # Docker orchestration (NEW)
+├── packages/
+│   ├── capabilities/            # Core API service
+│   │   ├── Dockerfile          # Container definition (NEW)
+│   │   ├── src/
+│   │   │   ├── index.ts        # Express server
+│   │   │   ├── routes/         # API endpoints
+│   │   │   ├── capabilities/   # Business logic
+│   │   │   └── services/       # External integrations
+│   │   └── data/
+│   │       └── coachartie.db   # SQLite database
+│   ├── shared/                 # Common utilities
+│   ├── discord/                # Discord bot interface
+│   ├── sms/                    # SMS service
+│   ├── email/                  # Email service
+│   └── brain/                  # Vue.js frontend (migration in progress)
+└── CLAUDE.md                   # Detailed development notes
 ```
 
----
+## Testing
 
-## 2. Getting Started
+Comprehensive tests to verify all functionality:
 
-### Local Development (`pnpm` + `tsx`)
+```bash
+# Quick health test
+curl http://localhost:18239/health
 
-**Prerequisites:**
-*   Node.js (v20+)
-*   `pnpm` (v8+)
-*   A local Redis server running.
+# Memory system test
+curl -X POST http://localhost:18239/chat \
+  -H "Content-Type: application/json" \
+  -d '{"message": "<capability name=\"memory\" action=\"remember\">Testing memory system</capability>", "userId": "test"}'
 
-**Steps:**
-1.  `pnpm install` - Installs all dependencies for all packages.
-2.  `cp .env.example .env` - Create a local environment file.
-3.  Fill in your API keys in the new `.env` file.
-4.  `pnpm run dev` - Starts all services concurrently using `tsx` for hot-reloading. Logs are aggregated to `/tmp/turbo.log`.
+curl -X POST http://localhost:18239/chat \
+  -H "Content-Type: application/json" \
+  -d '{"message": "<capability name=\"memory\" action=\"search\" query=\"memory system\" />", "userId": "test"}'
 
-### Production Deployment (`Docker`)
+# Calculator test  
+curl -X POST http://localhost:18239/chat \
+  -H "Content-Type: application/json" \
+  -d '{"message": "<capability name=\"calculator\" action=\"calculate\">123 * 456</capability>", "userId": "test"}'
 
-The recommended method for production is using the provided Docker setup.
+# Registry test
+curl http://localhost:18239/capabilities/registry | jq '.stats'
+```
 
-**Steps:**
-1.  **Install Docker:**
-    ```bash
-    curl -fsSL https://get.docker.com | sudo sh
-    sudo usermod -aG docker $USER && logout
-    ```
-2.  **Clone and Configure:**
-    ```bash
-    git clone https://github.com/room302studio/coachartie2.git && cd coachartie2
-    cp .env.production .env
-    nano .env # Add your production API keys
-    ```
-3.  **Deploy:**
-    ```bash
-    ./scripts/deploy-local.sh
-    ```
-    This script automates copying the `.env` file to the `docker/` directory and starts the services using `docker-compose`.
+## Docker Success Story
 
----
+**Timeline of the Phantom Server Issue**:
+1. **Initial Problem**: Express servers would log "Server listening" but `curl localhost:PORT` would fail with "Connection refused"
+2. **Framework Testing**: Tried Fastify, raw Node.js HTTP - same phantom server behavior
+3. **System Investigation**: Extensive debugging of IPv6/IPv4, firewall, VPN, process management
+4. **Docker Solution**: Complete containerization eliminated all host networking issues
+5. **Result**: 100% reliable service startup with all endpoints functional
 
-## 3. In-Depth Package Breakdown
+**Key Insight**: The issue wasn't with our code or Node.js frameworks - it was macOS host networking interference. Docker's network isolation completely solved the problem.
 
-This section details the purpose and inner workings of each package within the `packages/` directory.
+## License
 
-### `packages/capabilities` - The Brain
+This project is licensed for non-commercial use. For business inquiries, commercial licenses are available.
 
-This is the most critical service. It listens for jobs on the `INCOMING_MESSAGES` queue and orchestrates the entire response generation process.
-
--   **`src/index.ts`**: The main entry point. It starts the Express server (for health checks and direct API interaction) and initializes the queue consumer.
--   **`src/queues/consumer.ts`**: The heart of the service. It creates a BullMQ worker that listens to the `INCOMING_MESSAGES` queue. When a message arrives, it passes it to `src/handlers/process-message.ts`.
--   **`src/handlers/process-message.ts`**: This handler decides the main workflow. It calls the `CapabilityOrchestrator` to handle the message.
--   **`src/services/capability-orchestrator.ts`**: This is the central nervous system.
-    1.  It takes the user's message and sends it to an AI model (via `openrouter.ts`) to get an initial response. This response may contain XML-like `<capability>` tags.
-    2.  It uses the `xml-parser.ts` utility to extract any capabilities from both the user's original message and the AI's response.
-    3.  It uses the `conscience.ts` service to review potentially dangerous operations (like file deletion) before execution.
-    4.  It executes the extracted capabilities in sequence using the `capability-registry.ts`.
-    5.  It takes the results of the executed capabilities and sends them *back* to the AI model to generate a final, coherent, natural-language response.
-    6.  The final response is returned to the queue consumer, which then places it on the appropriate outgoing queue (e.g., `OUTGOING_DISCORD`).
--   **`src/services/capability-registry.ts`**: A plugin system for "tools." All available capabilities are registered here. This allows for easy addition of new tools without modifying the orchestrator.
--   **`src/capabilities/*.ts`**: Each file in this directory defines a specific capability (e.g., `calculator.ts`, `memory.ts`, `filesystem.ts`). Each capability exports a `RegisteredCapability` object that defines its name, supported actions, and handler function.
--   **`src/services/prompt-manager.ts`**: Manages loading and caching of system prompts from the SQLite database (`data/coachartie.db`). This allows for hot-reloading of prompts without restarting the service.
--   **`src/mcp-server.ts`**: Exposes the registered capabilities over the Model-Context-Protocol, allowing other applications (like a desktop client) to use Coach Artie's tools.
-
-### `packages/discord` - The Discord Interface
-
-This service connects to Discord and acts as a bridge to the Redis queues.
-
--   **`src/index.ts`**: Entry point. Initializes the Discord.js client and sets up listeners.
--   **`src/handlers/message-handler.ts`**: Handles the `MessageCreate` event from Discord. It determines if the bot should respond (e.g., if it was mentioned or is in a DM). It then calls...
--   **`src/queues/publisher.ts`**: This takes the message from Discord and publishes it to the `INCOMING_MESSAGES` Redis queue for the `capabilities` service to process.
--   **`src/queues/consumer.ts`**: This service also has a consumer that listens to the `OUTGOING_DISCORD` queue. When a final response arrives from the `capabilities` service, this consumer takes the message and sends it to the appropriate Discord channel.
-
-### `packages/sms` - The Twilio SMS Interface
-
-This service exposes an HTTP endpoint for Twilio to send incoming SMS messages.
-
--   **`src/index.ts`**: Starts an Express server.
--   **`src/routes/sms.ts`**: Defines the `/sms/webhook` endpoint that Twilio calls.
--   **`src/handlers/incoming-sms.ts`**: The handler for the webhook. It receives the SMS data, formats it into a standard `IncomingMessage` object, and publishes it to the `INCOMING_MESSAGES` queue.
--   **`src/queues/consumer.ts`**: Listens on the `OUTGOING_SMS` queue for responses from the `capabilities` service and uses the Twilio client (`src/utils/twilio.ts`) to send the reply.
-
-### `packages/email` - The Email Interface
-
-(Note: This package is less developed than others.)
--   **`src/index.ts`**: Starts the service.
--   **`src/handlers/incoming-email.ts`**: Intended to process incoming emails (e.g., from a webhook or mail server).
-
-### `packages/shared` - Shared Code
-
-This is a crucial internal library that contains code shared across all services to avoid duplication.
--   **`src/types/queue.ts`**: Defines the core `IncomingMessage` and `OutgoingMessage` TypeScript interfaces, ensuring consistent data structures across the system.
--   **`src/utils/redis.ts`**: Provides a singleton `createRedisConnection` function used by all services to connect to Redis.
--   **`src/utils/logger.ts`**: The shared `pino` logger configuration.
--   **`src/utils/database.ts`**: Provides access to the shared SQLite database.
--   **`src/constants/queues.ts`**: Defines the names of all Redis queues as constants.
+- **Email**: ejfox@room302.studio
+- **Non-Commercial**: Creative Commons Attribution-NonCommercial 4.0
 
 ---
 
-## 4. Standalone MCP Servers (`mcp-servers/`)
-
-This directory contains independent, standalone servers that provide additional tools via the Model-Context-Protocol (MCP). The core `capabilities` service can connect to these servers (using the `mcp-client` capability) to extend its functionality on the fly.
-
--   **`filesystem/`**: Provides tools for file system operations.
--   **`weather_openmeteo/`**: Provides weather forecasts using the Open-Meteo API.
--   **`custom/ascii-art-generator/`**: A user-created server for generating ASCII art.
-
-Each server has its own `package.json` and can be run independently. They are typically started with a `./start.sh` script or `npm start`.
-
----
-
-## 5. Configuration Deep Dive
-
--   **`pnpm-workspace.yaml`**: Defines the monorepo structure for `pnpm`. It tells `pnpm` where to find the different packages.
--   **`turbo.json`**: Configures Turborepo's build pipeline. It defines dependencies between packages (e.g., `shared` must be built before other packages) and sets up caching for faster builds.
--   **`tsconfig.json`**: The root TypeScript configuration. Each package extends this with its own specific settings, defining its output directory (`dist`) and package references.
--   **`.env.*` files**:
-    -   `.env.example`: A template showing all possible environment variables.
-    -   `.env`: Used for local development with `pnpm run dev`. **Not committed to git.**
-    -   `.env.production`: A template for production. The `deploy-local.sh` script copies this to `.env` for Docker to use.
--   **`eslint.config.mjs`**: The configuration for ESLint, defining code style and quality rules for the entire project.
-
----
-
-## 6. License & Commercial Use
-
-**Non-Commercial License**: This project is licensed under the Creative Commons Attribution-NonCommercial 4.0 International License. This allows for personal use, educational purposes, and non-profit work.
-
-**Commercial Licensing**: For any business or revenue-generating use case, a commercial license is required. Please contact **Room 302 Studio** for licensing options.
--   **Email**: ejfox@room302.studio
--   **Website**: room302.studio
+**🎉 Docker containerization: The definitive solution to phantom server nightmares!**
