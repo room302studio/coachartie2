@@ -1,121 +1,81 @@
-import { FastifyPluginAsync } from 'fastify';
-import { CapabilityOrchestrator } from '../services/capability-orchestrator';
-import { logger } from '@coachartie/shared/dist/utils/logger';
+import { Router, Request, Response } from 'express';
+import { logger } from '@coachartie/shared';
+import { processMessage } from '../handlers/process-message.js';
+import { v4 as uuidv4 } from 'uuid';
+
+const router: Router = Router();
 
 interface ChatRequest {
   message: string;
-  userId: string;
-  conversationId?: string;
-  metadata?: Record<string, any>;
+  userId?: string;
 }
 
 interface ChatResponse {
-  response: string;
-  conversationId: string;
-  timestamp: string;
-  tokensUsed?: number;
-  model?: string;
-  capabilities?: any[];
+  success: boolean;
+  messageId: string;
+  response?: string;
+  error?: string;
 }
 
-export function createChatRoute(orchestrator: CapabilityOrchestrator): FastifyPluginAsync {
-  return async (fastify) => {
-    fastify.post<{ Body: ChatRequest }>('/chat', {
-      schema: {
-        body: {
-          type: 'object',
-          required: ['message', 'userId'],
-          properties: {
-            message: { type: 'string', minLength: 1 },
-            userId: { type: 'string', minLength: 1 },
-            conversationId: { type: 'string' },
-            metadata: { type: 'object' }
-          }
-        }
+// POST /chat - Process message and return AI response immediately
+router.post('/', async (req: Request, res: Response) => {
+  try {
+    const { message, userId = 'api-user' }: ChatRequest = req.body;
+
+    if (!message || typeof message !== 'string') {
+      return res.status(400).json({
+        success: false,
+        messageId: '',
+        error: 'Message is required and must be a string'
+      } as ChatResponse);
+    }
+
+    const messageId = uuidv4();
+    
+    logger.info(`Processing chat message from ${userId}: ${message.substring(0, 100)}...`);
+
+    // Create message object for processing
+    const incomingMessage = {
+      id: messageId,
+      timestamp: new Date(),
+      retryCount: 0,
+      source: 'api' as const,
+      userId,
+      message: message.trim(),
+      respondTo: {
+        type: 'api' as const,
+        apiResponseId: messageId
       }
-    }, async (request, reply) => {
-      const startTime = Date.now();
-      const { message, userId, conversationId, metadata } = request.body;
+    };
 
-      logger.info('💬 Chat request received:', {
-        userId,
-        conversationId,
-        messageLength: message.length,
-        hasMetadata: !!metadata
-      });
+    // Process message directly and get AI response
+    const aiResponse = await processMessage(incomingMessage);
 
-      try {
-        // Process the message through the orchestrator
-        const result = await orchestrator.processMessage({
-          message,
-          userId,
-          conversationId,
-          metadata,
-          timestamp: new Date()
-        });
+    logger.info(`Generated AI response for ${userId} (${messageId})`);
 
-        const processingTime = Date.now() - startTime;
+    res.json({
+      success: true,
+      messageId,
+      response: aiResponse
+    } as ChatResponse);
 
-        logger.info('✅ Chat request processed successfully:', {
-          userId,
-          conversationId: result.conversationId,
-          responseLength: result.response.length,
-          processingTime: `${processingTime}ms`,
-          tokensUsed: result.tokensUsed,
-          model: result.model
-        });
+  } catch (error) {
+    logger.error('Error in chat endpoint:', error);
+    res.status(500).json({
+      success: false,
+      messageId: '',
+      error: 'Internal server error'
+    } as ChatResponse);
+  }
+});
 
-        const response: ChatResponse = {
-          response: result.response,
-          conversationId: result.conversationId || conversationId || `conv_${Date.now()}`,
-          timestamp: new Date().toISOString(),
-          tokensUsed: result.tokensUsed,
-          model: result.model,
-          capabilities: result.capabilities
-        };
+// GET /chat/health - Simple health check for chat endpoint
+router.get('/health', (req: Request, res: Response) => {
+  res.json({
+    status: 'healthy',
+    endpoint: 'chat',
+    timestamp: new Date().toISOString()
+  });
+});
 
-        await reply.send(response);
-
-      } catch (error) {
-        const processingTime = Date.now() - startTime;
-        
-        logger.error('❌ Chat request failed:', {
-          userId,
-          conversationId,
-          error: error instanceof Error ? error.message : 'Unknown error',
-          processingTime: `${processingTime}ms`,
-          stack: error instanceof Error ? error.stack : undefined
-        });
-
-        await reply.status(500).send({
-          error: 'Chat processing failed',
-          message: error instanceof Error ? error.message : 'An unexpected error occurred',
-          timestamp: new Date().toISOString(),
-          conversationId: conversationId || `conv_${Date.now()}`
-        });
-      }
-    });
-
-    // Health check endpoint for chat service
-    fastify.get('/chat/health', async (request, reply) => {
-      try {
-        const stats = await orchestrator.getStats();
-        return {
-          status: 'healthy',
-          timestamp: new Date().toISOString(),
-          orchestrator: {
-            capabilities: stats.capabilities,
-            totalActions: stats.totalActions,
-            activeConnections: stats.activeConnections || 0
-          }
-        };
-      } catch (error) {
-        await reply.status(503).send({
-          status: 'unhealthy',
-          timestamp: new Date().toISOString(),
-          error: error instanceof Error ? error.message : 'Unknown error'
-        });
-      }
-    });
-  };
-}
+export { router as chatRouter };
