@@ -34,8 +34,8 @@ But LLMs should NEVER generate the complex format - only the simple one!
 
 ---
 
-**Last Updated:** 2025-06-30 19:30 UTC  
-**Status:** Brain Integration Started 🧠 | Migration Plan Created 📋 | Ready for Implementation 🚀
+**Last Updated:** 2025-07-07 09:30 UTC  
+**Status:** 🚨 CRITICAL NETWORK DEBUGGING IN PROGRESS 🚨
 
 ## 🔄 RECENT: Documentation & Process Cleanup (2025-06-30 19:30)
 **Problem**: CLAUDE.md was outdated and networking issues were misdiagnosed
@@ -78,45 +78,63 @@ But LLMs should NEVER generate the complex format - only the simple one!
 - Fixed OpenRouter service call signatures
 **Result**: `pnpm build` now completes successfully
 
-## 🚨 CURRENT ISSUE: Port Conflicts (2025-06-30)
-**Problem**: Multiple service instances causing port binding conflicts
+## 🚨 CRITICAL ISSUE: Phantom Server Problem (2025-07-07)
+**Problem**: Services claim to start successfully but connections fail
 **Symptoms**: 
-- Capabilities service: "❌ PORT CONFLICT: Port 18239 is already in use!"
-- SMS service: "❌ PORT CONFLICT: Port 27461 is already in use!"
-- Multiple tsx processes running from previous sessions
-- Services crash immediately due to port conflicts
+- Services log: "✅ Server listening on 0.0.0.0:18239"
+- `curl localhost:18239` → "Connection refused"
+- `lsof -i :18239` → No output (nothing listening)
+- `netstat | grep 18239` → Shows TIME_WAIT connections only
+- Services appear to start then silently crash or stop listening
 
-**Root Cause**: Previous development sessions left processes running
-- Found multiple coachartie2 tsx processes still active
-- Services attempting to bind to already occupied ports
-- Need to clean up zombie processes
+**Root Cause Analysis**: Multiple possible causes identified from research
+1. **IPv6/IPv4 Resolution Conflict**: macOS resolves `localhost` to `::1` (IPv6) but Express binds to IPv4
+2. **Hosts File IPv6 Entry**: `/etc/hosts` has both `127.0.0.1 localhost` and `::1 localhost`
+3. **Phantom Process Issue**: Services start, log success, then immediately crash
+4. **macOS Security/Firewall**: System blocking localhost connections
+5. **Multiple .listen() Calls**: Code potentially calling app.listen() multiple times
 
-**Solution Applied**:
-```bash
-# Kill all coachartie2 processes
-pkill -f "coachartie2"
-# Or more targeted:
-ps aux | grep coachartie2 | grep -v grep | awk '{print $2}' | xargs kill
-```
+**Current Investigation Status**: ⚠️ DEBUGGING IN PROGRESS
 
-**Status**: ⚠️ DAILY RECURRING ISSUE - Need permanent fix
+## 🔧 DEBUGGING PLAN: Multiple Attack Vectors
 
-**PERMANENT SOLUTION IMPLEMENTED** ✅:
-```bash
-# Now available in package.json
-pnpm run dev:clean    # Kills all processes + starts fresh
-pnpm run kill-all     # Just kills processes
-```
+### **Plan A: IPv6/IPv4 Resolution Fix** 
+**Priority**: HIGH - Most likely culprit based on research
+**Steps**:
+1. Apply hosts file fix: `sudo cp ~/hosts_fixed /etc/hosts` (removes `::1 localhost`)
+2. Test with IPv4 explicit: `curl -4 http://localhost:18239/health`
+3. Test with IP direct: `curl http://127.0.0.1:18239/health`
+4. Flush DNS cache: `sudo dscacheutil -flushcache`
 
-**Commands added to package.json**:
-- `kill-all`: Kills all coachartie2 tsx/node processes
-- `dev:clean`: Clean kill + restart (use this every time)
+### **Plan B: Process Debugging & Isolation**
+**Priority**: HIGH - Debug phantom process issue
+**Steps**:
+1. Run single service in foreground: `npx tsx src/index.ts`
+2. Check for multiple .listen() calls in code
+3. Use `sudo lsof -nP -i :18239` (elevated permissions)
+4. Add detailed logging to server.listen() callback
+5. Check for uncaught exceptions causing silent crashes
 
-**Why This Keeps Happening**:
-- tsx watch processes don't die when terminals close
-- Multiple dev sessions leave zombie processes
-- No graceful shutdown handling
-- Process management is fundamentally broken
+### **Plan C: macOS Security & Firewall**
+**Priority**: MEDIUM - System-level blocking
+**Steps**:
+1. Temporarily disable macOS firewall: System Preferences → Security & Privacy
+2. Check for antivirus/security software blocking Node.js
+3. Add Node.js to firewall exceptions
+4. Test with different ports (avoid common blocked ranges)
+
+### **Plan D: Alternative Binding Strategy**
+**Priority**: LOW - Fallback if others fail
+**Steps**:
+1. Try binding to 127.0.0.1 specifically instead of 0.0.0.0
+2. Use different port ranges (8000s, 9000s)
+3. Implement port auto-discovery with retry logic
+4. Test with basic HTTP server (no Express middleware)
+
+**Research Sources**:
+- Stack Overflow: IPv6/IPv4 localhost resolution on macOS
+- GitHub Issues: Node.js phantom listening processes
+- Apple Forums: macOS networking security changes
 
 ## ✅ NEW: SMS Service + Discord Phone Linking (2025-06-30)
 **Problem**: SMS service existed but wasn't loading environment variables, no phone linking
