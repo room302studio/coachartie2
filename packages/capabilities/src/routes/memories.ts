@@ -9,8 +9,9 @@ router.get('/', async (req, res) => {
     const { userId, limit = 100, search } = req.query;
     
     if (search) {
-      // Use memory search capability
-      const result = await capabilityOrchestrator.executeCapability('memory', 'search', {
+      // Use memory capability directly via registry
+      const { capabilityRegistry } = await import('../services/capability-registry.js');
+      const result = await capabilityRegistry.execute('memory', 'search', {
         query: search as string,
         userId: userId as string,
         limit: parseInt(limit as string)
@@ -18,8 +19,8 @@ router.get('/', async (req, res) => {
       
       return res.json({
         success: true,
-        data: result.memories || [],
-        count: result.memories?.length || 0
+        data: result || [],
+        count: Array.isArray(result) ? result.length : 0
       });
     } else {
       // Get recent memories directly

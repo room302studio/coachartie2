@@ -17,6 +17,9 @@ import { deploymentCheerleaderCapability } from "../capabilities/deployment-chee
 import { CapabilitySuggester } from "../utils/capability-suggester.js";
 import { capabilityXMLParser } from "../utils/xml-parser.js";
 import { conscienceLLM } from './conscience.js';
+import { bulletproofExtractor } from "../utils/bulletproof-capability-extractor.js";
+import { robustExecutor } from "../utils/robust-capability-executor.js";
+import { modelAwarePrompter } from "../utils/model-aware-prompter.js";
 
 // Define capability extraction types
 interface ExtractedCapability {
@@ -241,10 +244,14 @@ export class CapabilityOrchestrator {
       );
 
       // Step 2: Extract capabilities from both user message AND LLM response
+      // Get current model name for model-aware extraction
+      const currentModel = openRouterService.getCurrentModel();
+      logger.info(`🔍 EXTRACTING WITH MODEL CONTEXT: ${currentModel}`);
+      
       logger.info(`🔍 EXTRACTING FROM USER MESSAGE: "${message.message}"`);
-      const userCapabilities = this.extractCapabilities(message.message);
+      const userCapabilities = this.extractCapabilities(message.message, currentModel);
       logger.info(`🔍 EXTRACTING FROM LLM RESPONSE: "${llmResponse.substring(0, 200)}..."`);
-      const llmCapabilities = this.extractCapabilities(llmResponse);
+      const llmCapabilities = this.extractCapabilities(llmResponse, currentModel);
       
       // Combine capabilities, with user-provided ones taking priority
       const capabilities = [...userCapabilities, ...llmCapabilities];
@@ -292,8 +299,18 @@ export class CapabilityOrchestrator {
           `📝 No capabilities detected, checking for auto-injection opportunities`
         );
         
-        // Auto-inject capabilities based on simple fallback detection
-        const autoInjectedCapabilities = this.detectAndInjectCapabilities(message.message, llmResponse);
+        // Auto-inject capabilities using bulletproof detection
+        const currentModel = openRouterService.getCurrentModel();
+        logger.info(`🎯 AUTO-INJECT: Using bulletproof auto-injection for model: ${currentModel}`);
+        
+        const bulletproofAutoCapabilities = bulletproofExtractor.detectAutoInjectCapabilities(message.message, llmResponse);
+        const autoInjectedCapabilities = bulletproofAutoCapabilities.map((cap, index) => ({
+          name: cap.name,
+          action: cap.action,
+          params: cap.params,
+          content: cap.content,
+          priority: index
+        }));
         
         if (autoInjectedCapabilities.length > 0) {
           logger.info(`🎯 Auto-injected ${autoInjectedCapabilities.length} capabilities: ${autoInjectedCapabilities.map(c => `${c.name}:${c.action}`).join(', ')}`);
@@ -400,10 +417,14 @@ Timestamp: ${new Date().toISOString()}`;
         logger.info(`🧠 Injected ${pastExperiences.length} past experiences into prompt`);
       }
       
-      logger.info(`🎯 Using capability instructions from database`);
+      // Apply model-aware prompting for better capability generation
+      const currentModel = openRouterService.getCurrentModel();
+      const modelAwareInstructions = modelAwarePrompter.generateCapabilityPrompt(currentModel, capabilityInstructions);
+      
+      logger.info(`🎯 Using model-aware capability instructions for ${currentModel}`);
       
       return await openRouterService.generateResponse(
-        capabilityInstructions,
+        modelAwareInstructions,
         message.userId,
         undefined,
         message.id
@@ -414,8 +435,14 @@ Timestamp: ${new Date().toISOString()}`;
       // Generate dynamic instructions based on registered capabilities
       const dynamicInstructions = this.generateDynamicCapabilityInstructions(message.message);
       
+      // Apply model-aware prompting to fallback instructions too
+      const currentModel = openRouterService.getCurrentModel();
+      const modelAwareInstructions = modelAwarePrompter.generateCapabilityPrompt(currentModel, dynamicInstructions);
+      
+      logger.info(`🔄 Using model-aware fallback instructions for ${currentModel}`);
+      
       return await openRouterService.generateResponse(
-        dynamicInstructions,
+        modelAwareInstructions,
         message.userId,
         undefined,
         message.id
@@ -548,28 +575,29 @@ User: ${userMessage}`;
   /**
    * Get relevant memory patterns for learning from past experiences
    */
-  private async getRelevantMemoryPatterns(userMessage: string, _userId: string): Promise<string[]> {
+  private async getRelevantMemoryPatterns(userMessage: string, userId: string): Promise<string[]> {
     try {
-      logger.info(`🔍 Getting memory patterns for message: "${userMessage}"`);
+      logger.info(`🔍 Getting memory patterns for user ${userId}, message: "${userMessage}"`);
       
-      // Search for memories about capability usage patterns
+      // SECURITY FIX: Use user-specific memory instead of shared 'system' memory
+      // This prevents parallel request contamination between users
       const memoryService = await import('../capabilities/memory.js');
       const service = memoryService.MemoryService.getInstance();
       
-      // Search for capability usage patterns in memories
-      const capabilityMemories = await service.recall('system', 'capability usage patterns', 3);
-      logger.info(`🗃️ Found capability memories: ${capabilityMemories ? capabilityMemories.substring(0, 100) : 'None'}...`);
+      // Search for USER-SPECIFIC capability usage patterns in memories
+      const capabilityMemories = await service.recall(userId, 'capability usage patterns', 3);
+      logger.info(`🗃️ Found user ${userId} capability memories: ${capabilityMemories ? capabilityMemories.substring(0, 100) : 'None'}...`);
       
-      // Also search for any patterns related to current query type
+      // Also search for any patterns related to current query type for THIS USER ONLY
       let queryTypeMemories = '';
       const lowerMessage = userMessage.toLowerCase();
       
       if (lowerMessage.includes('food') || lowerMessage.includes('like') || lowerMessage.includes('prefer')) {
-        queryTypeMemories = await service.recall('system', 'food preferences memory search', 2);
+        queryTypeMemories = await service.recall(userId, 'food preferences memory search', 2);
       } else if (lowerMessage.match(/\d+.*[+\-*/].*\d+/)) {
-        queryTypeMemories = await service.recall('system', 'calculator math calculation', 2);
+        queryTypeMemories = await service.recall(userId, 'calculator math calculation', 2);
       } else if (lowerMessage.includes('what is') || lowerMessage.includes('search') || lowerMessage.includes('find')) {
-        queryTypeMemories = await service.recall('system', 'web search latest recent', 2);
+        queryTypeMemories = await service.recall(userId, 'web search latest recent', 2);
       }
       
       // Extract capability patterns from memory results
@@ -616,21 +644,23 @@ User: ${userMessage}`;
       // Create conversation summary for reflection
       const conversationText = `User: ${message.message}\nAssistant: ${finalResponse}`;
       
-      // Store general interaction reflection using PROMPT_REMEMBER
-      const generalReflection = await this.generateReflection(conversationText, 'general');
+      // Store USER-SPECIFIC interaction reflection using PROMPT_REMEMBER
+      // SECURITY FIX: Store reflection memories per user to prevent contamination
+      const generalReflection = await this.generateReflection(conversationText, 'general', context.userId);
       if (generalReflection && generalReflection !== '✨') {
-        await service.remember('system', generalReflection, 'reflection', 3);
-        logger.info(`💾 Stored general reflection memory`);
+        await service.remember(context.userId, generalReflection, 'reflection', 3);
+        logger.info(`💾 Stored general reflection memory for user ${context.userId}`);
       }
 
-      // If capabilities were used, store capability-specific reflection
+      // If capabilities were used, store USER-SPECIFIC capability reflection
+      // SECURITY FIX: Store capability reflections per user to prevent contamination
       if (context.capabilities.length > 0) {
         const capabilityContext = this.buildCapabilityContext(context);
-        const capabilityReflection = await this.generateReflection(capabilityContext, 'capability');
+        const capabilityReflection = await this.generateReflection(capabilityContext, 'capability', context.userId);
         
         if (capabilityReflection && capabilityReflection !== '✨') {
-          await service.remember('system', capabilityReflection, 'capability-reflection', 4);
-          logger.info(`🔧 Stored capability reflection memory for ${context.capabilities.length} capabilities`);
+          await service.remember(context.userId, capabilityReflection, 'capability-reflection', 4);
+          logger.info(`🔧 Stored capability reflection memory for user ${context.userId} (${context.capabilities.length} capabilities)`);
         }
       }
 
@@ -643,7 +673,7 @@ User: ${userMessage}`;
   /**
    * Generate reflection using existing prompts from CSV
    */
-  private async generateReflection(contextText: string, type: 'general' | 'capability'): Promise<string> {
+  private async generateReflection(contextText: string, type: 'general' | 'capability', userId: string): Promise<string> {
     try {
       const reflectionPrompts = {
         general: `In the dialogue I just sent, identify and list the key details by following these guidelines:
@@ -669,7 +699,8 @@ User: ${userMessage}`;
 
       const prompt = `${reflectionPrompts[type]}\n\nDialogue:\n${contextText}`;
       
-      const reflection = await openRouterService.generateResponse(prompt, 'system');
+      // SECURITY FIX: Use actual userId for reflection generation to prevent contamination
+      const reflection = await openRouterService.generateResponse(prompt, userId);
       return reflection.trim();
       
     } catch (error) {
@@ -913,8 +944,29 @@ ${capabilityDetails}`;
   /**
    * Extract capability XML tags from LLM response using fast-xml-parser
    */
-  private extractCapabilities(response: string): ExtractedCapability[] {
+  private extractCapabilities(response: string, modelName?: string): ExtractedCapability[] {
     try {
+      // Try bulletproof extraction first (handles weak models)
+      logger.info(`🔍 BULLETPROOF: Attempting extraction with model context: ${modelName || 'unknown'}`);
+      const bulletproofCapabilities = bulletproofExtractor.extractCapabilities(response, modelName);
+      
+      if (bulletproofCapabilities.length > 0) {
+        logger.info(`🎯 BULLETPROOF: Found ${bulletproofCapabilities.length} capabilities via bulletproof extractor`);
+        
+        // Convert to ExtractedCapability format
+        const capabilities = bulletproofCapabilities.map((cap, index) => ({
+          name: cap.name,
+          action: cap.action,
+          params: cap.params,
+          content: cap.content,
+          priority: index
+        }));
+        
+        return capabilities;
+      }
+      
+      // Fallback to original XML parser
+      logger.info(`🔧 FALLBACK: Trying original XML parser`);
       const parsedCapabilities = capabilityXMLParser.extractCapabilities(response);
       
       // Convert to ExtractedCapability format with priority
@@ -929,7 +981,7 @@ ${capabilityDetails}`;
         };
       });
 
-      logger.info(`Extracted ${capabilities.length} capabilities from response`);
+      logger.info(`Extracted ${capabilities.length} capabilities from response via XML parser`);
       return capabilities;
     } catch (error) {
       logger.error("Error extracting capabilities:", error);
@@ -949,7 +1001,28 @@ ${capabilityDetails}`;
           `🔧 Executing capability ${capability.name}:${capability.action}`
         );
 
-        const result = await this.executeCapability(capability, context);
+        // Use robust executor with retry logic for bulletproof capability execution
+        const capabilityForRobustExecution = {
+          name: capability.name,
+          action: capability.action,
+          content: capability.content || '',
+          params: capability.params
+        };
+        
+        const robustResult = await robustExecutor.executeWithRetry(
+          capabilityForRobustExecution,
+          { userId: context.userId, messageId: context.messageId },
+          3 // max retries
+        );
+        
+        // Convert robust result to orchestrator format
+        const result: CapabilityResult = {
+          capability,
+          success: robustResult.success,
+          data: robustResult.data,
+          error: robustResult.error,
+          timestamp: robustResult.timestamp
+        };
         context.results.push(result);
         context.currentStep++;
 
