@@ -1,5 +1,5 @@
 import { FastifyPluginAsync } from 'fastify';
-import { logger } from '@coachartie/shared/dist/utils/logger';
+import { logger } from '@coachartie/shared';
 
 export const createApiRoutes: FastifyPluginAsync = async (fastify) => {
   // API namespace
