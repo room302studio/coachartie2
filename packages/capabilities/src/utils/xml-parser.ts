@@ -32,10 +32,10 @@ export class CapabilityXMLParser {
     const capabilities: ParsedCapability[] = [];
     
     try {
-      // Find capability tags using a simple regex
-      const capabilityMatches = text.match(/<capability[^>]*(?:\/>|>.*?<\/capability>)/gs);
+      // Find capability tags using proper XML parsing
+      const capabilityMatches = this.extractCapabilityTagsWithXMLParser(text);
       
-      if (capabilityMatches) {
+      if (capabilityMatches.length > 0) {
         capabilityMatches.forEach((match) => {
           try {
             const parsed = this.parseCapabilityTag(match);
@@ -102,9 +102,21 @@ export class CapabilityXMLParser {
       } else if (cap['#text']) {
         content = cap['#text'];
       } else if (capabilityTag.includes('</capability>')) {
-        // For tags with content, extract everything between opening and closing tags
-        const contentMatch = capabilityTag.match(/>(.+?)<\/capability>/s);
-        content = contentMatch ? contentMatch[1].trim() : '';
+        // For tags with content, use XML parser to extract content safely
+        try {
+          const wrappedTag = `<root>${capabilityTag}</root>`;
+          const parsed = this.xmlParser.parse(wrappedTag);
+          if (parsed.root?.capability?.['#text']) {
+            content = parsed.root.capability['#text'];
+          } else if (typeof parsed.root?.capability === 'string') {
+            content = parsed.root.capability;
+          }
+        } catch (error) {
+          // Fallback to regex if XML parsing fails
+          logger.debug('XML content extraction failed, using regex fallback:', error);
+          const contentMatch = capabilityTag.match(/>(.+?)<\/capability>/s);
+          content = contentMatch ? contentMatch[1].trim() : '';
+        }
       }
 
       return {
@@ -227,6 +239,19 @@ export class CapabilityXMLParser {
       };
     }
     
+    // MCP auto-installation tags
+    if (tagName === 'mcp-auto-install' || tagName === 'mcp-install' || tagName === 'install-mcp') {
+      return {
+        name: 'mcp_auto_installer',
+        action: 'install_npm',
+        params: {
+          package: content,
+          ...params
+        },
+        content: ''
+      };
+    }
+    
     // MCP tools (kebab-case with multiple parts)
     if (tagName.includes('-')) {
       const snakeToolName = tagName.replace(/-/g, '_');
@@ -247,11 +272,96 @@ export class CapabilityXMLParser {
   }
 
   /**
+   * Extract capability tags using proper XML parsing instead of regex
+   */
+  private extractCapabilityTagsWithXMLParser(text: string): string[] {
+    const matches: string[] = [];
+    
+    try {
+      // Try to parse the entire text as XML wrapped in a root element
+      const wrappedText = `<root>${text}</root>`;
+      const parsed = this.xmlParser.parse(wrappedText);
+      
+      if (parsed.root) {
+        // Look for capability elements recursively
+        this.findCapabilityElementsRecursive(parsed.root, text, matches);
+      }
+    } catch (error) {
+      // Fallback to regex if XML parsing fails (for malformed XML)
+      logger.debug('XML parsing failed, falling back to regex for capability extraction:', error);
+      const regexMatches = text.match(/<capability[^>]*(?:\/>|>.*?<\/capability>)/gs);
+      if (regexMatches) {
+        matches.push(...regexMatches);
+      }
+    }
+    
+    return matches;
+  }
+
+  /**
+   * Recursively find capability elements in parsed XML
+   */
+  private findCapabilityElementsRecursive(obj: any, originalText: string, matches: string[]): void {
+    if (typeof obj !== 'object' || obj === null) return;
+    
+    // Check if this object represents a capability element
+    if (obj.capability !== undefined) {
+      // Extract the original XML string for this capability
+      const capabilityXML = this.reconstructCapabilityXML(obj.capability);
+      if (capabilityXML) {
+        matches.push(capabilityXML);
+      }
+    }
+    
+    // Recursively search all properties
+    for (const key in obj) {
+      if (obj.hasOwnProperty(key) && key !== 'capability') {
+        this.findCapabilityElementsRecursive(obj[key], originalText, matches);
+      }
+    }
+  }
+
+  /**
+   * Reconstruct capability XML from parsed object
+   */
+  private reconstructCapabilityXML(capabilityData: any): string | null {
+    try {
+      if (typeof capabilityData === 'string') {
+        return `<capability>${capabilityData}</capability>`;
+      }
+      
+      if (typeof capabilityData === 'object') {
+        let attributes = '';
+        let content = '';
+        
+        // Extract attributes (prefixed with @_)
+        for (const key in capabilityData) {
+          if (key.startsWith('@_')) {
+            const attrName = key.substring(2);
+            attributes += ` ${attrName}="${capabilityData[key]}"`;
+          } else if (key === '#text') {
+            content = capabilityData[key];
+          }
+        }
+        
+        if (content) {
+          return `<capability${attributes}>${content}</capability>`;
+        } else {
+          return `<capability${attributes} />`;
+        }
+      }
+    } catch (error) {
+      logger.debug('Failed to reconstruct capability XML:', error);
+    }
+    
+    return null;
+  }
+
+  /**
    * Find capability tags in memory content for pattern extraction
    */
   findCapabilityTags(text: string): string[] {
-    const matches = text.match(/<capability[^>]*>.*?<\/capability>/g);
-    return matches || [];
+    return this.extractCapabilityTagsWithXMLParser(text);
   }
 }
 

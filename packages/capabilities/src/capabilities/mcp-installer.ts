@@ -1,7 +1,9 @@
 import { logger } from '@coachartie/shared';
 import { RegisteredCapability } from '../services/capability-registry.js';
 import { capabilityRegistry } from '../services/capability-registry.js';
-import path from 'path';
+import { join, resolve } from 'path';
+import { readFile as fsReadFile, writeFile as fsWriteFile, access, mkdir, constants } from 'fs/promises';
+import { spawn } from 'child_process';
 
 interface MCPTemplate {
   name: string;
@@ -27,6 +29,11 @@ interface MCPInstallerParams {
   env_vars?: Record<string, unknown>;
   environment?: Record<string, unknown>;
   variables?: Record<string, unknown>;
+  // New GitHub installation params
+  url?: string;
+  github_url?: string;
+  repo_url?: string;
+  git_url?: string;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -69,7 +76,7 @@ interface MCPHandlerResult {
  */
 
 // Get the project root directory
-const PROJECT_ROOT = path.resolve(process.cwd(), '../..');
+const PROJECT_ROOT = resolve(process.cwd(), '../..');
 
 // Built-in MCP templates with real, working npm packages
 const MCP_TEMPLATES = {
@@ -103,45 +110,14 @@ const MCP_TEMPLATES = {
     requiredPorts: [3003],
     verified: true
   },
-  weather_accuweather: {
-    name: '@timlukahorstmann/mcp-weather',
-    version: 'latest',
-    description: 'Weather MCP Server with AccuWeather API integration',
-    envVars: ['ACCUWEATHER_API_KEY'],
-    configFile: 'weather-accuweather-mcp-config.json',
-    startScript: 'npx -y @timlukahorstmann/mcp-weather',
-    requiredPorts: [3004],
-    verified: true,
-    isNpxPackage: true
-  },
-  weather_openmeteo: {
+  weather: {
     name: '@rehmatalisayany/weather-mcp-server',
     version: 'latest',
     description: 'Weather MCP Server using Open Meteo API (no API key required)',
     envVars: [],
-    configFile: 'weather-openmeteo-mcp-config.json',
+    configFile: 'weather-mcp-config.json',
     startScript: 'node_modules/@rehmatalisayany/weather-mcp-server/dist/index.js',
-    requiredPorts: [3005],
-    verified: true
-  },
-  weather_us_alerts: {
-    name: '@h1deya/mcp-server-weather',
-    version: 'latest', 
-    description: 'US Weather Alerts MCP Server with National Weather Service integration',
-    envVars: [],
-    configFile: 'weather-us-alerts-mcp-config.json',
-    startScript: 'node_modules/@h1deya/mcp-server-weather/dist/index.js',
-    requiredPorts: [3006],
-    verified: true
-  },
-  weather_simple: {
-    name: '@fak111/weather-mcp',
-    version: 'latest',
-    description: 'Simple Weather MCP Server for basic weather queries',
-    envVars: [],
-    configFile: 'weather-simple-mcp-config.json',
-    startScript: 'node_modules/@fak111/weather-mcp/dist/index.js',
-    requiredPorts: [3007],
+    requiredPorts: [3004],
     verified: true
   },
   github: {
@@ -176,13 +152,6 @@ const MCP_TEMPLATES = {
   }
 } as const;
 
-// Fallback packages to try if main package fails
-const MCP_TEMPLATE_FALLBACKS: Record<string, string[]> = {
-  weather_accuweather: ['@rehmatalisayany/weather-mcp-server', '@h1deya/mcp-server-weather', '@fak111/weather-mcp'],
-  weather_openmeteo: ['@timlukahorstmann/mcp-weather', '@h1deya/mcp-server-weather', '@fak111/weather-mcp'],
-  weather_us_alerts: ['@rehmatalisayany/weather-mcp-server', '@fak111/weather-mcp', '@timlukahorstmann/mcp-weather'],
-  weather_simple: ['@rehmatalisayany/weather-mcp-server', '@h1deya/mcp-server-weather', '@timlukahorstmann/mcp-weather']
-};
 
 type MCPTemplateName = keyof typeof MCP_TEMPLATES;
 
@@ -220,7 +189,7 @@ async function installFromTemplate(templateName: string, installPath?: string): 
   }
 
   const template = MCP_TEMPLATES[templateName as MCPTemplateName];
-  const mcpPath = installPath || path.join(PROJECT_ROOT, 'mcp-servers', templateName);
+  const mcpPath = installPath || join(PROJECT_ROOT, 'mcp-servers', templateName);
   
   logger.info(`🚀 Installing MCP from template: ${templateName} at ${mcpPath}`);
 
@@ -230,8 +199,8 @@ async function installFromTemplate(templateName: string, installPath?: string): 
     packageName: template.name
   };
 
-  // Try primary package first, then fallbacks
-  const packagesToTry = [template.name, ...(MCP_TEMPLATE_FALLBACKS[templateName] || [])];
+  // Install the specified package
+  const packagesToTry = [template.name];
   let lastError: Error | null = null;
   let attemptCount = 0;
 
@@ -260,7 +229,7 @@ async function installFromTemplate(templateName: string, installPath?: string): 
       // If this was a network/registry error and we have more packages to try, continue
       if (errorAnalysis.category === 'network' || errorAnalysis.category === 'package_not_found') {
         if (attemptCount < packagesToTry.length) {
-          logger.info(`🔄 Trying next fallback package...`);
+          logger.info(`🔄 Retrying package installation...`);
           continue;
         }
       } else {
@@ -331,7 +300,7 @@ async function installMCPPackage(
     }
 
     // Step 4: Create MCP configuration file
-    const configPath = path.join(mcpPath, template.configFile);
+    const configPath = join(mcpPath, template.configFile);
     const config = {
       name: templateName,
       description: template.description,
@@ -355,7 +324,7 @@ async function installMCPPackage(
 
     // Step 5: Create environment file template if needed
     if (template.envVars.length > 0) {
-      const envPath = path.join(mcpPath, '.env.example');
+      const envPath = join(mcpPath, '.env.example');
       const envContent = template.envVars.map((envVar: string) => {
         const description = getEnvVarDescription(envVar);
         return `# ${description}\n${envVar}=your_${envVar.toLowerCase()}_here`;
@@ -397,7 +366,7 @@ echo "🌟 Starting MCP server on port ${template.requiredPorts[0]}..."
 exec node ${template.startScript}
 `;
 
-    const scriptPath = path.join(mcpPath, 'start.sh');
+    const scriptPath = join(mcpPath, 'start.sh');
     await capabilityRegistry.execute('filesystem', 'write_file', {
       path: scriptPath,
       content: startupScript
@@ -465,7 +434,7 @@ Created on: ${new Date().toISOString()}
 `;
 
     await capabilityRegistry.execute('filesystem', 'write_file', {
-      path: path.join(mcpPath, 'README.md'),
+      path: join(mcpPath, 'README.md'),
       content: readme
     });
 
@@ -502,7 +471,7 @@ ${template.envVars.map((envVar: string) => `   - ${envVar}: ${getEnvVarDescripti
  * Create a custom MCP server from scratch
  */
 async function createCustomMCP(name: string, description?: string, port?: number): Promise<string> {
-  const mcpPath = path.join(PROJECT_ROOT, 'mcp-servers', 'custom', name);
+  const mcpPath = join(PROJECT_ROOT, 'mcp-servers', 'custom', name);
   const serverPort = port || 3100;
   
   logger.info(`🛠️ Creating custom MCP server: ${name} at ${mcpPath}`);
@@ -510,7 +479,7 @@ async function createCustomMCP(name: string, description?: string, port?: number
   try {
     // Step 1: Create directory structure
     await capabilityRegistry.execute('filesystem', 'create_directory', { path: mcpPath });
-    await capabilityRegistry.execute('filesystem', 'create_directory', { path: path.join(mcpPath, 'src') });
+    await capabilityRegistry.execute('filesystem', 'create_directory', { path: join(mcpPath, 'src') });
 
     // Step 2: Create package.json
     await capabilityRegistry.execute('package_manager', 'create_package', {
@@ -558,7 +527,7 @@ async function createCustomMCP(name: string, description?: string, port?: number
     };
 
     await capabilityRegistry.execute('filesystem', 'write_file', {
-      path: path.join(mcpPath, 'tsconfig.json'),
+      path: join(mcpPath, 'tsconfig.json'),
       content: JSON.stringify(tsConfig, null, 2)
     });
 
@@ -725,7 +694,7 @@ export { ${name.charAt(0).toUpperCase() + name.slice(1)}MCPServer };
 `;
 
     await capabilityRegistry.execute('filesystem', 'write_file', {
-      path: path.join(mcpPath, 'src', 'index.ts'),
+      path: join(mcpPath, 'src', 'index.ts'),
       content: serverTemplate
     });
 
@@ -741,7 +710,7 @@ export { ${name.charAt(0).toUpperCase() + name.slice(1)}MCPServer };
     };
 
     await capabilityRegistry.execute('filesystem', 'write_file', {
-      path: path.join(mcpPath, 'mcp-config.json'),
+      path: join(mcpPath, 'mcp-config.json'),
       content: JSON.stringify(config, null, 2)
     });
 
@@ -784,7 +753,7 @@ Created on: ${new Date().toISOString()}
 `;
 
     await capabilityRegistry.execute('filesystem', 'write_file', {
-      path: path.join(mcpPath, 'README.md'),
+      path: join(mcpPath, 'README.md'),
       content: readme
     });
 
@@ -849,7 +818,7 @@ Created on: ${new Date().toISOString()}
  * Set up environment variables for an MCP server
  */
 async function setupEnvironment(mcpName: string, envVars: Record<string, string>): Promise<string> {
-  const mcpPath = path.join(PROJECT_ROOT, 'mcp-servers', mcpName);
+  const mcpPath = join(PROJECT_ROOT, 'mcp-servers', mcpName);
   
   logger.info(`🔐 Setting up environment for MCP: ${mcpName}`);
 
@@ -861,13 +830,13 @@ async function setupEnvironment(mcpName: string, envVars: Record<string, string>
     }
 
     // Create .env file
-    const envPath = path.join(mcpPath, '.env');
+    const envPath = join(mcpPath, '.env');
     Object.entries(envVars)
       .map(([key, value]) => `${key}=${value}`)
       .join('\n');
 
     await capabilityRegistry.execute('environment', 'create_env_file', {
-      file: path.relative(PROJECT_ROOT, envPath),
+      file: envPath,
       variables: envVars
     });
 
@@ -890,7 +859,7 @@ async function setupEnvironment(mcpName: string, envVars: Record<string, string>
  * Start an MCP server
  */
 async function startMCPServer(mcpName: string): Promise<string> {
-  const mcpPath = path.join(PROJECT_ROOT, 'mcp-servers', mcpName);
+  const mcpPath = join(PROJECT_ROOT, 'mcp-servers', mcpName);
   
   logger.info(`🚀 Starting MCP server: ${mcpName}`);
 
@@ -899,7 +868,7 @@ async function startMCPServer(mcpName: string): Promise<string> {
     const mcpExists = await capabilityRegistry.execute('filesystem', 'exists', { path: mcpPath });
     if (!mcpExists.includes('directory exists')) {
       // Check if it's a custom MCP
-      const customMcpPath = path.join(PROJECT_ROOT, 'mcp-servers', 'custom', mcpName);
+      const customMcpPath = join(PROJECT_ROOT, 'mcp-servers', 'custom', mcpName);
       const customExists = await capabilityRegistry.execute('filesystem', 'exists', { path: customMcpPath });
       if (customExists.includes('directory exists')) {
         return await startCustomMCPServer(mcpName, customMcpPath);
@@ -908,7 +877,7 @@ async function startMCPServer(mcpName: string): Promise<string> {
     }
 
     // Check if there's a startup script
-    const startupScriptPath = path.join(mcpPath, 'start.sh');
+    const startupScriptPath = join(mcpPath, 'start.sh');
     const scriptExists = await capabilityRegistry.execute('filesystem', 'exists', { path: startupScriptPath });
     
     if (scriptExists.includes('file exists')) {
@@ -1011,7 +980,7 @@ async function startCustomMCPServer(mcpName: string, mcpPath: string): Promise<s
 
   try {
     // Check if it's built
-    const distExists = await capabilityRegistry.execute('filesystem', 'exists', { path: path.join(mcpPath, 'dist') });
+    const distExists = await capabilityRegistry.execute('filesystem', 'exists', { path: join(mcpPath, 'dist') });
     
     if (!distExists.includes('directory exists')) {
       // Build the TypeScript project first
@@ -1078,7 +1047,7 @@ async function checkMCPStatus(): Promise<string> {
   logger.info(`🔍 Checking MCP server status`);
 
   try {
-    const mcpServersPath = path.join(PROJECT_ROOT, 'mcp-servers');
+    const mcpServersPath = join(PROJECT_ROOT, 'mcp-servers');
     
     // Check if MCP servers directory exists
     const mcpDirExists = await capabilityRegistry.execute('filesystem', 'exists', { path: mcpServersPath });
@@ -1108,7 +1077,7 @@ async function checkMCPStatus(): Promise<string> {
       const serverName = entry.replace('📁 ', '').trim();
       if (serverName === 'custom') {
         // Handle custom servers
-        const customPath = path.join(mcpServersPath, 'custom');
+        const customPath = join(mcpServersPath, 'custom');
         const customListing = await capabilityRegistry.execute('filesystem', 'list_directory', { path: customPath });
         
         if (!customListing.includes('is empty')) {
@@ -1116,15 +1085,15 @@ async function checkMCPStatus(): Promise<string> {
           for (const customEntry of customEntries) {
             const customServerName = customEntry.replace('📁 ', '').trim();
             statusReport.push(`🛠️ Custom MCP Server: ${customServerName}`);
-            statusReport.push(`   📁 Path: ${path.join(customPath, customServerName)}`);
+            statusReport.push(`   📁 Path: ${join(customPath, customServerName)}`);
             statusReport.push(`   🔧 Type: Custom TypeScript MCP Server`);
             statusReport.push('');
           }
         }
       } else {
         // Regular template-based server
-        const serverPath = path.join(mcpServersPath, serverName);
-        const configPath = path.join(serverPath, `${serverName}-mcp-config.json`);
+        const serverPath = join(mcpServersPath, serverName);
+        const configPath = join(serverPath, `${serverName}-mcp-config.json`);
         
         statusReport.push(`📦 Template MCP Server: ${serverName}`);
         statusReport.push(`   📁 Path: ${serverPath}`);
@@ -1252,7 +1221,7 @@ function analyzeInstallationError(error: Error, packageName: string): { category
   if (errorMessage.includes('404') || errorMessage.includes('not found')) {
     return {
       category: 'package_not_found',
-      suggestion: `Package "${packageName}" not found in registry. Trying fallback packages...`
+      suggestion: `Package "${packageName}" not found in registry. Please check the package name or network connection.`
     };
   }
   
@@ -1378,6 +1347,9 @@ async function handleMCPInstallerAction(params: MCPInstallerParams, content?: st
       case 'install_from_template':
         return await handleInstallFromTemplate(params, content);
       
+      case 'install_from_github':
+        return await handleInstallFromGitHub(params, content);
+      
       case 'create_custom_mcp':
         return await handleCreateCustomMCP(params, content);
       
@@ -1411,6 +1383,25 @@ async function handleInstallFromTemplate(params: MCPInstallerParams, _content?: 
   }
 
   return await installFromTemplate(templateName, installPath);
+}
+
+/**
+ * Handle install from GitHub action
+ */
+async function handleInstallFromGitHub(params: MCPInstallerParams, _content?: string): Promise<string> {
+  const githubUrl = params.url || params.github_url || params.repo_url || params.git_url;
+  const installPath = params.path || params.install_path;
+  
+  if (!githubUrl) {
+    throw new Error('GitHub URL is required for install_from_github action');
+  }
+
+  // Validate GitHub URL
+  if (!isValidGitHubUrl(githubUrl)) {
+    throw new Error(`Invalid GitHub URL: ${githubUrl}. Expected format: https://github.com/user/repo`);
+  }
+
+  return await installFromGitHub(githubUrl, installPath);
 }
 
 /**
@@ -1478,11 +1469,296 @@ async function handleCheckMCPStatus(_params: MCPInstallerParams, _content?: stri
 }
 
 /**
+ * Utility functions
+ */
+async function fileExists(filePath: string): Promise<boolean> {
+  try {
+    await access(filePath, constants.F_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function ensureDirectoryExists(dirPath: string): Promise<void> {
+  try {
+    await mkdir(dirPath, { recursive: true });
+  } catch (error) {
+    if ((error as { code?: string }).code !== 'EEXIST') {
+      throw error;
+    }
+  }
+}
+
+async function readFile(filePath: string): Promise<string> {
+  return await fsReadFile(filePath, 'utf-8');
+}
+
+async function writeFile(filePath: string, content: string): Promise<void> {
+  await fsWriteFile(filePath, content, 'utf-8');
+}
+
+async function runCommand(
+  command: string, 
+  args: string[], 
+  options: { cwd?: string } = {}
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, args, {
+      cwd: options.cwd || process.cwd(),
+      stdio: ['pipe', 'pipe', 'pipe']
+    });
+    
+    let stdout = '';
+    let stderr = '';
+    
+    child.stdout?.on('data', (data) => {
+      stdout += data.toString();
+    });
+    
+    child.stderr?.on('data', (data) => {
+      stderr += data.toString();
+    });
+    
+    child.on('close', (code) => {
+      if (code === 0) {
+        resolve();
+      } else {
+        const error = new Error(`Command failed: ${command} ${args.join(' ')}\nstdout: ${stdout}\nstderr: ${stderr}`);
+        reject(error);
+      }
+    });
+    
+    child.on('error', (error) => {
+      reject(error);
+    });
+  });
+}
+
+/**
+ * Validate GitHub URL format
+ */
+function isValidGitHubUrl(url: string): boolean {
+  const githubUrlPattern = /^https:\/\/github\.com\/[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+\/?$/;
+  return githubUrlPattern.test(url);
+}
+
+/**
+ * Extract repository info from GitHub URL
+ */
+function parseGitHubUrl(url: string): { owner: string; repo: string; fullName: string } {
+  const match = url.match(/^https:\/\/github\.com\/([a-zA-Z0-9_.-]+)\/([a-zA-Z0-9_.-]+)\/?$/);
+  if (!match) {
+    throw new Error(`Could not parse GitHub URL: ${url}`);
+  }
+  
+  const [, owner, repo] = match;
+  return {
+    owner,
+    repo: repo.replace(/\.git$/, ''), // Remove .git suffix if present
+    fullName: `${owner}/${repo.replace(/\.git$/, '')}`
+  };
+}
+
+/**
+ * Install MCP server from GitHub repository
+ */
+async function installFromGitHub(githubUrl: string, customInstallPath?: string): Promise<string> {
+  logger.info(`🚀 Starting GitHub MCP installation from: ${githubUrl}`);
+  
+  const { repo, fullName } = parseGitHubUrl(githubUrl);
+  const mcpServersPath = customInstallPath || join(process.cwd(), 'mcp-servers');
+  const serverPath = join(mcpServersPath, repo);
+  
+  try {
+    // Check if already installed
+    if (await fileExists(serverPath)) {
+      return `❌ MCP server '${repo}' is already installed at ${serverPath}. Use update action to refresh.`;
+    }
+
+    // Create mcp-servers directory if it doesn't exist
+    await ensureDirectoryExists(mcpServersPath);
+    
+    // Clone the repository
+    logger.info(`📥 Cloning repository ${fullName}...`);
+    await runCommand('git', ['clone', githubUrl, serverPath]);
+    
+    // Check if it's actually an MCP server
+    const mcpDetection = await detectMCPServer(serverPath);
+    if (!mcpDetection.isMCP) {
+      // Clean up the cloned repo
+      await runCommand('rm', ['-rf', serverPath]);
+      return `❌ Repository ${fullName} does not appear to be an MCP server. ${mcpDetection.reason}`;
+    }
+    
+    logger.info(`✅ Detected MCP server: ${mcpDetection.description}`);
+    
+    // Install dependencies
+    const packageJsonPath = join(serverPath, 'package.json');
+    if (await fileExists(packageJsonPath)) {
+      logger.info(`📦 Installing dependencies for ${repo}...`);
+      await runCommand('npm', ['install'], { cwd: serverPath });
+    }
+    
+    // Generate configuration
+    const config = {
+      name: repo,
+      description: mcpDetection.description || `MCP server installed from ${fullName}`,
+      version: 'latest',
+      port: 3020 + Math.floor(Math.random() * 100), // Random port to avoid conflicts
+      environment: {},
+      githubUrl,
+      installedBy: 'CoachArtie GitHub MCP Installer',
+      createdAt: new Date().toISOString(),
+      startCommand: mcpDetection.startCommand,
+      protocol: 'stdio' // Default to stdio for GitHub MCPs
+    };
+    
+    const configPath = join(serverPath, `${repo}-mcp-config.json`);
+    await writeFile(configPath, JSON.stringify(config, null, 2));
+    
+    // Create start script
+    const startScript = `#!/bin/bash
+cd "${serverPath}"
+${mcpDetection.startCommand}
+`;
+    const startScriptPath = join(serverPath, 'start.sh');
+    await writeFile(startScriptPath, startScript);
+    await runCommand('chmod', ['+x', startScriptPath]);
+    
+    logger.info(`🎉 Successfully installed MCP server '${repo}' from GitHub!`);
+    
+    return `✅ Successfully installed MCP server '${repo}' from GitHub repository ${fullName}!
+
+📁 Installation path: ${serverPath}
+📄 Configuration: ${configPath}
+🚀 Start command: ${mcpDetection.startCommand}
+📜 Description: ${mcpDetection.description}
+
+The server is ready to use. You can start it with the 'start_mcp_server' action using name "${repo}".`;
+
+  } catch (error) {
+    logger.error(`❌ Failed to install MCP server from GitHub: ${error}`);
+    
+    // Clean up on failure
+    if (await fileExists(serverPath)) {
+      await runCommand('rm', ['-rf', serverPath]).catch(() => {
+        // Ignore cleanup errors
+      });
+    }
+    
+    throw new Error(`Failed to install MCP server from GitHub: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
+/**
+ * Detect if a directory contains an MCP server
+ */
+async function detectMCPServer(serverPath: string): Promise<{
+  isMCP: boolean;
+  reason?: string;
+  description?: string;
+  startCommand?: string;
+}> {
+  const packageJsonPath = join(serverPath, 'package.json');
+  const readmePath = join(serverPath, 'README.md');
+  
+  // Check package.json for MCP indicators
+  if (await fileExists(packageJsonPath)) {
+    try {
+      const packageJson = JSON.parse(await readFile(packageJsonPath));
+      
+      // Look for MCP-related keywords in dependencies or description
+      const mcpKeywords = ['mcp', 'model-context-protocol', '@modelcontextprotocol'];
+      const deps = { ...packageJson.dependencies, ...packageJson.devDependencies };
+      const hasMCPDeps = Object.keys(deps).some(dep => 
+        mcpKeywords.some(keyword => dep.includes(keyword))
+      );
+      
+      const description = packageJson.description || '';
+      const hasMCPDescription = mcpKeywords.some(keyword => 
+        description.toLowerCase().includes(keyword.toLowerCase())
+      );
+      
+      if (hasMCPDeps || hasMCPDescription) {
+        // Determine start command
+        let startCommand = 'npm start';
+        if (packageJson.scripts?.start) {
+          startCommand = `npm start`;
+        } else if (packageJson.main) {
+          startCommand = `node ${packageJson.main}`;
+        } else if (await fileExists(join(serverPath, 'dist', 'index.js'))) {
+          startCommand = 'node dist/index.js';
+        }
+        
+        return {
+          isMCP: true,
+          description: description || `MCP server: ${packageJson.name}`,
+          startCommand
+        };
+      }
+    } catch (error) {
+      logger.warn(`Could not parse package.json: ${error}`);
+    }
+  }
+  
+  // Check README for MCP indicators
+  if (await fileExists(readmePath)) {
+    try {
+      const readme = await readFile(readmePath);
+      const mcpIndicators = [
+        'model context protocol',
+        'mcp server',
+        '@modelcontextprotocol',
+        'claude mcp',
+        'mcp tools'
+      ];
+      
+      if (mcpIndicators.some(indicator => 
+        readme.toLowerCase().includes(indicator.toLowerCase())
+      )) {
+        return {
+          isMCP: true,
+          description: 'MCP server (detected from README)',
+          startCommand: 'npm start'
+        };
+      }
+    } catch (error) {
+      logger.warn(`Could not read README: ${error}`);
+    }
+  }
+  
+  // Check for common MCP file patterns
+  const mcpFiles = [
+    'mcp.json',
+    'mcp-config.json',
+    'tools.json',
+    'src/tools.ts',
+    'src/server.ts'
+  ];
+  
+  for (const mcpFile of mcpFiles) {
+    if (await fileExists(join(serverPath, mcpFile))) {
+      return {
+        isMCP: true,
+        description: `MCP server (detected ${mcpFile})`,
+        startCommand: 'npm start'
+      };
+    }
+  }
+  
+  return {
+    isMCP: false,
+    reason: 'No MCP indicators found in package.json, README.md, or common MCP files'
+  };
+}
+
+/**
  * MCP Installer capability definition
  */
 export const mcpInstallerCapability: RegisteredCapability = {
   name: 'mcp_installer',
-  supportedActions: ['install_from_template', 'create_custom_mcp', 'setup_environment', 'start_mcp_server', 'check_mcp_status'],
+  supportedActions: ['install_from_template', 'install_from_github', 'create_custom_mcp', 'setup_environment', 'start_mcp_server', 'check_mcp_status'],
   description: 'Autonomous MCP (Model Context Protocol) installation and management capability that orchestrates filesystem, package management, and environment setup',
   handler: handleMCPInstallerAction
 };
