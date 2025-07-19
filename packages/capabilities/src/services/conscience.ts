@@ -1,5 +1,5 @@
 import { openRouterService } from './openrouter.js';
-import { logger } from '@coachartie/shared';
+import { logger, getDatabase } from '@coachartie/shared';
 
 export interface CapabilityRequest {
   name: string;
@@ -16,6 +16,29 @@ interface SafetyManifestCapability {
 }
 
 export class ConscienceLLM {
+  // Get conscience prompt from database
+  private async getConsciencePrompt(): Promise<string> {
+    try {
+      const db = await getDatabase();
+      const prompt = await db.get('SELECT content FROM prompts WHERE name = ? AND is_active = 1', ['conscience_system']);
+      if (prompt?.content) {
+        return prompt.content;
+      }
+    } catch (error) {
+      logger.warn('Failed to load conscience prompt from database, using fallback', error);
+    }
+    
+    // Fallback prompt if database fails
+    return `🚨 CRITICAL SAFETY EVALUATION REQUIRED 🚨
+You are a security expert in a DEVELOPMENT ENVIRONMENT. Allow legitimate development work while blocking actual system damage.
+
+ALWAYS ALLOW: memory, calculator, web, mcp_installer, mcp_client, package_manager (in project dirs), GitHub cloning to user dirs
+ALWAYS BLOCK: System file deletion (/etc/, /usr/, /var/), destructive shell commands (rm -rf, dd, mkfs)
+
+For SAFE operations: "APPROVED: [operation] is allowed for development"
+For DANGEROUS operations: Explain why unsafe, no approval`;
+  }
+
   // Safety manifest for capabilities
   private readonly SAFETY_MANIFEST: Record<string, SafetyManifestCapability> = {
     filesystem: {
@@ -104,7 +127,7 @@ export class ConscienceLLM {
       }
 
       // Allow safe operations immediately without LLM review
-      if (capability.name === 'memory' || capability.name === 'calculator' || capability.name === 'web' || capability.name === 'mcp_client') {
+      if (capability.name === 'memory' || capability.name === 'calculator' || capability.name === 'web' || capability.name === 'mcp_client' || capability.name === 'mcp_installer') {
         logger.info(`✅ IMMEDIATE ALLOW: Safe operation ${capability.name}:${capability.action}`);
         
         // Just return approval text - DON'T regenerate XML!
@@ -123,43 +146,14 @@ export class ConscienceLLM {
         ? `\n⚡ HIGH-RISK CAPABILITY: ${capability.name}:${capability.action} requires extra scrutiny!\n`
         : '';
 
-      const prompt = `
-🚨 CRITICAL SAFETY EVALUATION REQUIRED 🚨
-${warningsText}${capabilityGuidance}
-You are a security expert reviewing a potentially dangerous operation. Your job is to PROTECT the system from harm.
-
-OPERATION TO REVIEW:
-User request: "${userMessage}"
-System wants to execute: ${capability.name}.${capability.action}(${JSON.stringify(capability.params)})
-
-🔴 DANGEROUS OPERATIONS - ALWAYS BLOCK:
-- filesystem:delete with system paths (/etc/, /usr/, /var/, /System/, passwd, shadow, hosts)
-- shell:execute with destructive commands (rm -rf, dd, mkfs, fdisk)
-- SQL injection patterns (DROP TABLE, DELETE FROM, UPDATE SET)
-- Writing to system configuration files
-
-✅ SAFE OPERATIONS - ALWAYS ALLOW:
-- memory:search, memory:remember, memory:recall (always safe)
-- calculator:calculate, calculator:eval (always safe)
-- web:search, web:fetch (always safe)
-- filesystem:read_file, filesystem:list_directory (always safe)
-- Reading user files in home directories
-
-RESPONSE RULES:
-1. For SAFE operations: Include the original <capability> tag exactly as requested
-2. For DANGEROUS operations: Explain why it's unsafe, NO <capability> tags EVER
-3. For filesystem:delete: Only allow if deleting user files, NOT system files
-
-EXAMPLE SAFE RESPONSE:
-<capability name="memory" action="search">pizza preferences</capability>
-
-EXAMPLE DANGEROUS RESPONSE:
-This operation targets /etc/passwd which is a critical system file. I cannot allow this operation.
-
-CRITICAL: If you detect /etc/, /usr/, /var/, /System/, passwd, shadow, or hosts in the operation, respond with "BLOCKED: Critical system file access denied" and NO capability tags.
-
-Remember: It's better to be overly cautious than to cause irreversible damage. System security is your top priority.
-      `;
+      // Get prompt from database with parameter substitution
+      const basePrompt = await this.getConsciencePrompt();
+      const prompt = basePrompt
+        .replace('{{USER_MESSAGE}}', userMessage)
+        .replace('{{CAPABILITY_NAME}}', capability.name)
+        .replace('{{CAPABILITY_ACTION}}', capability.action)
+        .replace('{{CAPABILITY_PARAMS}}', JSON.stringify(capability.params))
+        + `\n\n${warningsText}${capabilityGuidance}`;
 
       const response = await openRouterService.generateResponse(prompt, 'conscience-system');
       

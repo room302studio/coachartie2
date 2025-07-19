@@ -11,6 +11,8 @@ import { filesystemCapability } from "../capabilities/filesystem.js";
 import { environmentCapability } from "../capabilities/environment.js";
 import { mcpClientCapability, mcpClientService } from "../capabilities/mcp-client.js";
 import { mcpInstallerCapability } from "../capabilities/mcp-installer.js";
+import { mcpAutoInstallerCapability } from "../capabilities/mcp-auto-installer.js";
+import { systemInstallerCapability } from "../capabilities/system-installer.js";
 import { memoryCapability } from "../capabilities/memory.js";
 import { githubCapability } from "../capabilities/github.js";
 import { deploymentCheerleaderCapability } from "../capabilities/deployment-cheerleader.js";
@@ -89,6 +91,12 @@ export class CapabilityOrchestrator {
 
       // Register MCP installer capability from external file
       capabilityRegistry.register(mcpInstallerCapability);
+
+      // Register MCP auto-installer capability from external file
+      capabilityRegistry.register(mcpAutoInstallerCapability);
+
+      // Register system installer capability for dependency management
+      capabilityRegistry.register(systemInstallerCapability);
 
       // Register real memory capability with persistence
       capabilityRegistry.register(memoryCapability);

@@ -2,6 +2,7 @@ import { logger } from '@coachartie/shared';
 import { RegisteredCapability } from '../services/capability-registry.js';
 import axios, { AxiosRequestConfig } from 'axios';
 import { spawn, ChildProcess } from 'child_process';
+import { mcpProcessManager, MCPProcess } from '../services/mcp-process-manager.js';
 
 /**
  * Interface for MCP server connection details
@@ -17,6 +18,7 @@ interface MCPServerConnection {
   tools?: MCPTool[];
   error?: string;
   process?: ChildProcess; // For stdio connections
+  processId?: string; // Process manager ID
 }
 
 /**
@@ -165,11 +167,12 @@ class MCPClientService {
         responseBuffer = lines[lines.length - 1];
       };
 
-      // Set up timeout
+      // Set up timeout (longer for initial calls that might need to download dependencies)
+      const timeoutMs = method === 'tools/list' || method === 'initialize' ? 120000 : 30000; // 2 min for discovery, 30s for regular calls
       const timeout = setTimeout(() => {
         connection.process?.stdout?.off('data', onData);
-        reject(new Error('Stdio JSON-RPC call timeout'));
-      }, 30000);
+        reject(new Error(`Stdio JSON-RPC call timeout after ${timeoutMs}ms`));
+      }, timeoutMs);
 
       // Listen for response
       connection.process?.stdout?.on('data', onData);
@@ -325,7 +328,7 @@ class MCPClientService {
   }
 
   /**
-   * Connect to stdio-based MCP server
+   * Connect to stdio-based MCP server using process manager
    */
   private async connectStdio(command: string, name?: string): Promise<string> {
     // Basic validation for stdio commands
@@ -343,19 +346,6 @@ class MCPClientService {
 
     const connectionId = this.generateConnectionId(command);
     
-    // Parse command (supports "npx @shelm/wikipedia-mcp-server" format)
-    let cmd: string;
-    let args: string[];
-    
-    if (command.includes(' ')) {
-      const parts = command.split(' ');
-      cmd = parts[0];
-      args = parts.slice(1);
-    } else {
-      cmd = command;
-      args = [];
-    }
-
     // Create initial connection record
     const connection: MCPServerConnection = {
       id: connectionId,
@@ -368,51 +358,80 @@ class MCPClientService {
     this.connections.set(connectionId, connection);
 
     try {
-      logger.info(`Spawning stdio MCP server: ${cmd} ${args.join(' ')}`);
+      // Use process manager to start the stdio process
+      let processUrl = command;
+      if (!command.startsWith('stdio://')) {
+        processUrl = `stdio://${command}`;
+      }
       
-      // Spawn the process
-      const childProcess = spawn(cmd, args, {
-        stdio: ['pipe', 'pipe', 'pipe']
-      });
-
-      connection.process = childProcess;
-
-      // Set up error handling
-      childProcess.on('error', (error) => {
-        logger.error(`MCP server process error:`, error);
-        connection.error = error.message;
-        connection.connected = false;
-      });
-
-      childProcess.on('exit', (code, signal) => {
-        logger.info(`MCP server process exited with code ${code}, signal ${signal}`);
-        connection.connected = false;
-      });
-
-      // Wait a moment for the process to start
-      await new Promise(resolve => setTimeout(resolve, 1000));
-
-      if (childProcess.killed || childProcess.exitCode !== null) {
-        throw new Error('Failed to start MCP server process');
+      const processId = await mcpProcessManager.startProcess(processUrl);
+      const mcpProcess = mcpProcessManager.getProcess(processId);
+      
+      if (!mcpProcess || !mcpProcess.process) {
+        throw new Error('Failed to start MCP process');
       }
 
-      // Mark as connected
+      // Link connection to process
+      connection.processId = processId;
+      connection.process = mcpProcess.process;
+      
+      // Set up process event handlers for connection management
+      mcpProcessManager.on('processError', (process, error) => {
+        if (process.id === processId) {
+          connection.error = error.message;
+          connection.connected = false;
+        }
+      });
+
+      mcpProcessManager.on('processExited', (process) => {
+        if (process.id === processId) {
+          connection.connected = false;
+        }
+      });
+
+      // Wait for process to stabilize
+      await new Promise(resolve => setTimeout(resolve, 1000));
+
+      if (mcpProcess.status !== 'running') {
+        throw new Error(`MCP process failed to start: ${mcpProcess.error || 'Unknown error'}`);
+      }
+
+      // Perform MCP initialization handshake
+      try {
+        logger.info(`Performing MCP initialization handshake for ${command}`);
+        await this.makeStdioJsonRpcCall(connection, 'initialize', {
+          protocolVersion: '2024-11-05',
+          capabilities: {},
+          clientInfo: {
+            name: 'CoachArtie MCP Client',
+            version: '1.0.0'
+          }
+        });
+        logger.info(`MCP initialization successful for ${command}`);
+      } catch (initError) {
+        logger.error(`MCP initialization failed for ${command}:`, initError);
+        throw new Error(`MCP initialization failed: ${initError instanceof Error ? initError.message : String(initError)}`);
+      }
+
+      // Mark as connected after successful initialization
       connection.connected = true;
       connection.connectedAt = new Date();
       connection.lastPing = new Date();
       connection.error = undefined;
 
-      // For stdio servers, get the actual tools via JSON-RPC
+      // Try to discover tools via JSON-RPC after initialization
       try {
+        logger.info(`Discovering tools for ${command}`);
         const toolsResult = await this.makeStdioJsonRpcCall(connection, 'tools/list');
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         connection.tools = (toolsResult as any)?.tools || [];
+        logger.info(`Discovered ${connection.tools?.length || 0} tools for ${command}`);
       } catch (toolsError) {
         logger.warn(`Failed to get tools from stdio MCP server ${command}:`, toolsError);
         connection.tools = [];
       }
 
-      logger.info(`Successfully connected to stdio MCP server: ${connectionId}`);
+      logger.info(`Successfully connected to stdio MCP server: ${connectionId} (process: ${processId})`);
       return `Connected to stdio MCP server: ${connectionId} (${connection.tools?.length || 0} tools available)`;
 
     } catch (error) {
@@ -437,10 +456,18 @@ class MCPClientService {
     }
 
     try {
-      // Attempt graceful shutdown
-      await this.makeJsonRpcCall(connection.url, 'notifications/cancelled');
+      // Attempt graceful shutdown based on transport
+      if (connection.transport === 'stdio') {
+        // For stdio connections, stop the managed process
+        if (connection.processId) {
+          await mcpProcessManager.stopProcess(connection.processId);
+        }
+      } else {
+        // For HTTP connections, send cancellation
+        await this.makeJsonRpcCall(connection.url, 'notifications/cancelled');
+      }
     } catch (error) {
-      logger.warn(`Failed to send cancellation to MCP server ${connectionId}:`, error);
+      logger.warn(`Failed to gracefully shutdown MCP server ${connectionId}:`, error);
     }
 
     // Remove connection
