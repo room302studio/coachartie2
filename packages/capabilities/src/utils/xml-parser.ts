@@ -112,10 +112,9 @@ export class CapabilityXMLParser {
             content = parsed.root.capability;
           }
         } catch (error) {
-          // Fallback to regex if XML parsing fails
-          logger.debug('XML content extraction failed, using regex fallback:', error);
-          const contentMatch = capabilityTag.match(/>(.+?)<\/capability>/s);
-          content = contentMatch ? contentMatch[1].trim() : '';
+          // If XML parsing fails completely, content stays empty
+          logger.debug('XML content extraction failed, content will be empty:', error);
+          content = '';
         }
       }
 
@@ -133,7 +132,7 @@ export class CapabilityXMLParser {
   }
 
   /**
-   * Extract simple capability tags with unified syntax
+   * Extract simple capability tags using proper XML parsing
    * Handles both MCP tools (kebab-case) and regular capabilities (single words)
    * e.g., <search-wikipedia>query</search-wikipedia>
    * e.g., <remember>I love pizza</remember>
@@ -142,33 +141,17 @@ export class CapabilityXMLParser {
   private extractSimpleCapabilityTags(text: string): ParsedCapability[] {
     const capabilities: ParsedCapability[] = [];
     
-    // Match any simple tag (single word or kebab-case)
-    const simpleTagRegex = /<([a-z]+(?:-[a-z]+)*)([^>]*?)(?:\/>|>(.*?)<\/\1>)/gs;
-    
-    let match;
-    while ((match = simpleTagRegex.exec(text)) !== null) {
-      const [fullMatch, tagName, attributesStr, content] = match;
+    try {
+      // Parse the entire text as XML
+      const wrappedText = `<root>${text}</root>`;
+      const parsed = this.xmlParser.parse(wrappedText);
       
-      try {
-        // Parse attributes if any
-        const params: Record<string, unknown> = {};
-        if (attributesStr.trim()) {
-          const attrRegex = /(\w+)="([^"]*)"/g;
-          let attrMatch;
-          while ((attrMatch = attrRegex.exec(attributesStr)) !== null) {
-            params[attrMatch[1]] = attrMatch[2];
-          }
-        }
-        
-        // Map tag names to capabilities
-        const capability = this.mapTagToCapability(tagName, params, content?.trim() || '');
-        if (capability) {
-          capabilities.push(capability);
-        }
-        
-      } catch (error) {
-        logger.warn(`Failed to parse simple capability tag: ${fullMatch}`, error);
+      if (parsed.root) {
+        // Look for simple capability tags recursively
+        this.findSimpleCapabilityTagsRecursive(parsed.root, capabilities);
       }
+    } catch (error) {
+      logger.debug('XML parsing failed for simple tags, skipping:', error);
     }
     
     return capabilities;
@@ -254,7 +237,15 @@ export class CapabilityXMLParser {
     
     // MCP tools (kebab-case with multiple parts)
     if (tagName.includes('-')) {
-      const snakeToolName = tagName.replace(/-/g, '_');
+      // Convert kebab-case to snake_case without regex
+      let snakeToolName = '';
+      for (let i = 0; i < tagName.length; i++) {
+        if (tagName[i] === '-') {
+          snakeToolName += '_';
+        } else {
+          snakeToolName += tagName[i];
+        }
+      }
       return {
         name: 'mcp_client',
         action: 'call_tool',
@@ -287,12 +278,8 @@ export class CapabilityXMLParser {
         this.findCapabilityElementsRecursive(parsed.root, text, matches);
       }
     } catch (error) {
-      // Fallback to regex if XML parsing fails (for malformed XML)
-      logger.debug('XML parsing failed, falling back to regex for capability extraction:', error);
-      const regexMatches = text.match(/<capability[^>]*(?:\/>|>.*?<\/capability>)/gs);
-      if (regexMatches) {
-        matches.push(...regexMatches);
-      }
+      // If XML parsing fails, we don't extract anything rather than falling back to regex
+      logger.debug('XML parsing failed, no capabilities extracted:', error);
     }
     
     return matches;
@@ -362,6 +349,88 @@ export class CapabilityXMLParser {
    */
   findCapabilityTags(text: string): string[] {
     return this.extractCapabilityTagsWithXMLParser(text);
+  }
+
+  /**
+   * Recursively find simple capability tags in parsed XML
+   */
+  private findSimpleCapabilityTagsRecursive(obj: any, capabilities: ParsedCapability[]): void {
+    if (typeof obj !== 'object' || obj === null) return;
+    
+    // Check each property to see if it represents a simple capability tag
+    for (const key in obj) {
+      if (obj.hasOwnProperty(key)) {
+        const value = obj[key];
+        
+        // Skip special XML parser properties
+        if (key.startsWith('@_') || key === '#text') {
+          continue;
+        }
+        
+        // Check if this could be a simple capability tag
+        if (this.isSimpleCapabilityTag(key)) {
+          // Extract attributes and content from the parsed object
+          const params: Record<string, unknown> = {};
+          let content = '';
+          
+          if (typeof value === 'string') {
+            content = value;
+          } else if (typeof value === 'object' && value !== null) {
+            // Extract attributes (prefixed with @_)
+            for (const attrKey in value) {
+              if (attrKey.startsWith('@_')) {
+                const paramName = attrKey.substring(2);
+                params[paramName] = value[attrKey];
+              } else if (attrKey === '#text') {
+                content = value[attrKey] || '';
+              }
+            }
+          }
+          
+          // Map to capability
+          const capability = this.mapTagToCapability(key, params, content.trim());
+          if (capability) {
+            capabilities.push(capability);
+          }
+        }
+        
+        // Recursively search nested objects
+        if (typeof value === 'object' && value !== null) {
+          this.findSimpleCapabilityTagsRecursive(value, capabilities);
+        }
+      }
+    }
+  }
+
+  /**
+   * Check if a tag name represents a simple capability
+   */
+  private isSimpleCapabilityTag(tagName: string): boolean {
+    // Known simple capability tags
+    const knownTags = [
+      'remember', 'recall', 'search-memory', 'calculate', 'calc', 'web-search',
+      'mcp-auto-install', 'mcp-install', 'install-mcp'
+    ];
+    
+    if (knownTags.includes(tagName)) {
+      return true;
+    }
+    
+    // MCP tools (kebab-case with dashes) - use simple string checks instead of regex
+    if (tagName.includes('-')) {
+      // Check if it's a valid kebab-case pattern (letters and dashes only)
+      let isValid = true;
+      for (let i = 0; i < tagName.length; i++) {
+        const char = tagName[i];
+        if (!(char >= 'a' && char <= 'z') && char !== '-') {
+          isValid = false;
+          break;
+        }
+      }
+      return isValid && !tagName.startsWith('-') && !tagName.endsWith('-');
+    }
+    
+    return false;
   }
 }
 
