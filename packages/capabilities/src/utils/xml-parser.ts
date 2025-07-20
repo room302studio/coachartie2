@@ -31,6 +31,12 @@ export class CapabilityXMLParser {
   extractCapabilities(text: string): ParsedCapability[] {
     const capabilities: ParsedCapability[] = [];
     
+    // Debug: Check global registry at start of parsing
+    console.log(`🔍 XML PARSE START: Global registry has ${global.mcpToolRegistry ? global.mcpToolRegistry.size : 0} tools`);
+    if (global.mcpToolRegistry && global.mcpToolRegistry.size > 0) {
+      console.log(`🔍 Available tools: ${Array.from(global.mcpToolRegistry.keys()).join(', ')}`);
+    }
+    
     try {
       // Find capability tags using proper XML parsing
       const capabilityMatches = this.extractCapabilityTagsWithXMLParser(text);
@@ -132,26 +138,37 @@ export class CapabilityXMLParser {
   }
 
   /**
-   * Extract simple capability tags using proper XML parsing
-   * Handles both MCP tools (kebab-case) and regular capabilities (single words)
-   * e.g., <search-wikipedia>query</search-wikipedia>
-   * e.g., <remember>I love pizza</remember>
-   * e.g., <calculate>2 + 2</calculate>
+   * Extract simple capability tags using simple pattern matching
+   * DELETE-DRIVEN: Remove complex XML parsing, use simple patterns
    */
   private extractSimpleCapabilityTags(text: string): ParsedCapability[] {
     const capabilities: ParsedCapability[] = [];
     
-    try {
-      // Parse the entire text as XML
-      const wrappedText = `<root>${text}</root>`;
-      const parsed = this.xmlParser.parse(wrappedText);
-      
-      if (parsed.root) {
-        // Look for simple capability tags recursively
-        this.findSimpleCapabilityTagsRecursive(parsed.root, capabilities);
+    // DELETE complex XML parsing, use simple patterns that actually work
+    const tagPatterns = [
+      /<(search[-_]wikipedia)>([^<]+)<\/\1>/g,
+      /<(get[-_]wikipedia[-_]article)>([^<]+)<\/\1>/g, 
+      /<(get[-_]random[-_]wikipedia)\s*\/>/g,
+      /<(calculate)>([^<]+)<\/\1>/g,
+      /<(remember)>([^<]+)<\/\1>/g,
+      /<(recall)>([^<]+)<\/\1>/g,
+      /<(web[-_]search)>([^<]+)<\/\1>/g,
+      /<(mcp[-_]auto[-_]install)>([^<]+)<\/\1>/g,
+      /<(list[-_]departments)\s*\/>/g
+    ];
+    
+    for (const pattern of tagPatterns) {
+      let match;
+      while ((match = pattern.exec(text)) !== null) {
+        const tagName = match[1];
+        const content = match[2] || '';
+        
+        const capability = this.mapTagToCapability(tagName, {}, content);
+        if (capability) {
+          capabilities.push(capability);
+          console.log(`🎯 PATTERN MATCH: Found ${tagName} with content: "${content}"`);
+        }
       }
-    } catch (error) {
-      logger.debug('XML parsing failed for simple tags, skipping:', error);
     }
     
     return capabilities;
@@ -222,17 +239,45 @@ export class CapabilityXMLParser {
       };
     }
     
-    // MCP auto-installation tags
+    // MCP auto-installation with corruption resistance
     if (tagName === 'mcp-auto-install' || tagName === 'mcp-install' || tagName === 'install-mcp') {
+      // Extract package name from content, validate and sanitize
+      const packageName = this.sanitizePackageName(content);
+      if (packageName) {
+        console.log(`🔧 VALIDATED MCP INSTALL: ${packageName} (from: "${content}")`);
+        return {
+          name: 'mcp_auto_installer',
+          action: 'install_npm',
+          params: { package: packageName },
+          content: packageName
+        };
+      } else {
+        console.log(`❌ INVALID PACKAGE NAME: "${content}" failed validation`);
+        return null;
+      }
+    }
+    
+    // Check for registered MCP tools first (prioritize MCP system)
+    if (global.mcpToolRegistry && global.mcpToolRegistry.has(tagName)) {
+      const mcpTool = global.mcpToolRegistry.get(tagName);
+      console.log(`🎯 MCP REGISTRY HIT: ${tagName} found in MCP registry (${global.mcpToolRegistry.size} total tools)`);
       return {
-        name: 'mcp_auto_installer',
-        action: 'install_npm',
+        name: 'mcp_client',
+        action: 'call_tool', 
         params: {
-          package: content,
-          ...params
+          connectionId: mcpTool.connectionId,
+          tool_name: tagName,
+          args: content ? { q: content, __intent: `Search for ${content}` } : params
         },
         content: ''
       };
+    }
+    
+    console.log(`❌ TOOL NOT FOUND: ${tagName} not available in MCP registry`);
+    if (global.mcpToolRegistry && global.mcpToolRegistry.size > 0) {
+      console.log(`🔍 Available MCP tools: ${Array.from(global.mcpToolRegistry.keys()).join(', ')}`);
+    } else {
+      console.log(`🔍 No MCP tools currently registered`);
     }
     
     // MCP tools (kebab-case with multiple parts)
@@ -289,7 +334,7 @@ export class CapabilityXMLParser {
    * Recursively find capability elements in parsed XML
    */
   private findCapabilityElementsRecursive(obj: any, originalText: string, matches: string[]): void {
-    if (typeof obj !== 'object' || obj === null) return;
+    if (typeof obj !== 'object' || obj === null) {return;}
     
     // Check if this object represents a capability element
     if (obj.capability !== undefined) {
@@ -355,7 +400,7 @@ export class CapabilityXMLParser {
    * Recursively find simple capability tags in parsed XML
    */
   private findSimpleCapabilityTagsRecursive(obj: any, capabilities: ParsedCapability[]): void {
-    if (typeof obj !== 'object' || obj === null) return;
+    if (typeof obj !== 'object' || obj === null) {return;}
     
     // Check each property to see if it represents a simple capability tag
     for (const key in obj) {
@@ -400,6 +445,44 @@ export class CapabilityXMLParser {
         }
       }
     }
+  }
+
+  /**
+   * Sanitize and validate npm package names to prevent model corruption
+   */
+  private sanitizePackageName(input: string): string | null {
+    if (!input || typeof input !== 'string') {
+      return null;
+    }
+
+    // Remove any extra whitespace and newlines
+    const cleaned = input.trim().replace(/\s+/g, '');
+    
+    // Valid npm package name patterns
+    const npmPackagePattern = /^(@[a-z0-9-~][a-z0-9-._~]*\/)?[a-z0-9-~][a-z0-9-._~]*$/;
+    
+    // Check if it matches valid npm package format
+    if (npmPackagePattern.test(cleaned)) {
+      return cleaned;
+    }
+
+    // Try to extract package name from corrupted output
+    // Look for patterns like "metmuseum-mcp" or "@shelm/wikipedia-mcp-server"
+    const extractPatterns = [
+      /(@?[a-z0-9-]+\/[a-z0-9-]+)/i,  // Scoped packages
+      /([a-z][a-z0-9-]*mcp[a-z0-9-]*)/i,  // Packages with "mcp" in name
+      /([a-z][a-z0-9-]{2,})/i  // General package-like strings
+    ];
+
+    for (const pattern of extractPatterns) {
+      const match = cleaned.match(pattern);
+      if (match && npmPackagePattern.test(match[1])) {
+        console.log(`🔧 EXTRACTED: "${match[1]}" from corrupted input: "${input}"`);
+        return match[1];
+      }
+    }
+
+    return null;
   }
 
   /**
