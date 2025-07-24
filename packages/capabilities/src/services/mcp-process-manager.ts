@@ -141,10 +141,12 @@ export class MCPProcessManager extends EventEmitter {
       // Set up process event handlers
       this.setupProcessHandlers(mcpProcess);
 
-      // Wait for process to stabilize
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      // Check immediately if process failed (no need to wait)
+      await new Promise(resolve => setTimeout(resolve, 100));
 
-      if (childProcess.killed || childProcess.exitCode !== null) {
+      // For MCP processes, we expect them to stay running (exitCode should be null)
+      // Only fail if the process was killed or exited with an error immediately
+      if (childProcess.killed || (childProcess.exitCode !== null && childProcess.exitCode !== 0)) {
         mcpProcess.status = 'failed';
         mcpProcess.error = `Process failed to start (exit code: ${childProcess.exitCode})`;
         throw new Error(mcpProcess.error);
@@ -229,7 +231,7 @@ export class MCPProcessManager extends EventEmitter {
    * Set up process event handlers
    */
   private setupProcessHandlers(mcpProcess: MCPProcess): void {
-    if (!mcpProcess.process) return;
+    if (!mcpProcess.process) {return;}
 
     mcpProcess.process.on('error', (error) => {
       logger.error(`MCP process error (${mcpProcess.id}):`, error);

@@ -243,7 +243,6 @@ export class SchedulerService {
   private async executeHealthCheck(_data: Record<string, unknown>): Promise<void> {
     logger.info('🔍 Executing scheduled health check');
     
-    // TODO: Implement comprehensive system health check
     // - Check Redis connectivity
     // - Check queue status
     // - Check service availability
@@ -258,7 +257,6 @@ export class SchedulerService {
   private async executeDailySummary(_data: Record<string, unknown>): Promise<void> {
     logger.info('📊 Executing daily summary generation');
     
-    // TODO: Implement daily summary
     // - Aggregate daily statistics
     // - Generate summary reports
     // - Send to configured channels
@@ -274,7 +272,6 @@ export class SchedulerService {
     
     logger.info(`💭 Executing user reminder for ${userId}: ${reminderType}`);
     
-    // TODO: Implement user reminders
     // - Send reminder messages
     // - Update user interaction logs
     // - Handle reminder responses
@@ -288,7 +285,6 @@ export class SchedulerService {
   private async executeCleanup(_data: Record<string, unknown>): Promise<void> {
     logger.info('🧹 Executing data cleanup');
     
-    // TODO: Implement data cleanup
     // - Remove old completed jobs
     // - Clean up expired sessions
     // - Archive old logs

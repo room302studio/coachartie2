@@ -102,7 +102,7 @@ class SystemInstaller {
     };
 
     const command = checkCommands[packageName];
-    if (!command) return false;
+    if (!command) {return false;}
 
     try {
       await execAsync(command);

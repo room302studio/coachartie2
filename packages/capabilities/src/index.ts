@@ -116,7 +116,6 @@ async function start() {
 
     // Enhanced error handling - should rarely trigger with auto-discovery
     server.on('error', (error: Error) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       if ((error as any).code === 'EADDRINUSE') {
         logger.error(`❌ UNEXPECTED PORT CONFLICT: Port ${PORT} became busy after discovery!`);
         logger.error(`❌ This suggests a race condition or rapid port allocation.`);
@@ -176,8 +175,3 @@ process.on('unhandledRejection', (reason, promise) => {
 
 // Start the service
 start();
-
-// Keep the process alive
-setInterval(() => {
-  logger.debug('Process keepalive tick');
-}, 30000); // Every 30 seconds

@@ -19,7 +19,7 @@ export class RobustCapabilityExecutor {
   async executeWithRetry(
     capability: ParsedCapability, 
     context: { userId: string; messageId: string },
-    maxRetries = 3
+    maxRetries = capability.name === 'mcp_auto_installer' ? 1 : 3  // No retries for MCP installs
   ): Promise<CapabilityResult> {
     logger.info(`🔧 ROBUST: Executing ${capability.name}:${capability.action} with retry capability`);
     
@@ -164,19 +164,19 @@ export class RobustCapabilityExecutor {
     switch (capability.name) {
       case 'calculator':
         // Calculator should return a number or string that looks like a calculation result
-        if (typeof result === 'number') return true;
-        if (typeof result === 'string' && /\d+/.test(result)) return true;
+        if (typeof result === 'number') {return true;}
+        if (typeof result === 'string' && /\d+/.test(result)) {return true;}
         return false;
         
       case 'memory':
         // Memory operations should return some kind of response
-        if (typeof result === 'string' && result.length > 0) return true;
-        if (typeof result === 'object' && result !== null) return true;
+        if (typeof result === 'string' && result.length > 0) {return true;}
+        if (typeof result === 'object' && result !== null) {return true;}
         return false;
         
       case 'web':
         // Web search should return some content
-        if (typeof result === 'string' && result.length > 10) return true;
+        if (typeof result === 'string' && result.length > 10) {return true;}
         return false;
         
       default:
@@ -317,9 +317,9 @@ export class RobustCapabilityExecutor {
    * Infer MCP tool name from content
    */
   private inferMCPToolName(content: string): string {
-    if (/time|clock/i.test(content)) return 'get_current_time';
-    if (/wikipedia/i.test(content)) return 'search_wikipedia';
-    if (/weather/i.test(content)) return 'get_weather';
+    if (/time|clock/i.test(content)) {return 'get_current_time';}
+    if (/wikipedia/i.test(content)) {return 'search_wikipedia';}
+    if (/weather/i.test(content)) {return 'get_weather';}
     return 'unknown_tool';
   }
   

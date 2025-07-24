@@ -1,0 +1,39 @@
+# Production Dockerfile for Coach Artie 2 Capabilities Service
+FROM node:20-alpine
+
+# Set working directory
+WORKDIR /app
+
+# Install system dependencies including curl for health checks
+RUN npm install -g pnpm && \
+    apk add --no-cache curl git python3 make g++
+
+# Copy package configuration files
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY packages/shared ./packages/shared
+COPY packages/capabilities/package.json ./packages/capabilities/
+
+# Install dependencies
+RUN pnpm install --filter "@coachartie/capabilities" --filter "@coachartie/shared" --frozen-lockfile --prod
+
+# Copy source code
+COPY packages/capabilities ./packages/capabilities
+
+# Set working directory to capabilities package
+WORKDIR /app/packages/capabilities
+
+# Create necessary directories
+RUN mkdir -p /app/packages/capabilities/data /app/mcp-servers
+
+# Build the application
+RUN pnpm run build
+
+# Expose port
+EXPOSE 18239
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=5 \
+  CMD curl -f http://localhost:18239/health || exit 1
+
+# Start the application
+CMD ["pnpm", "start"]

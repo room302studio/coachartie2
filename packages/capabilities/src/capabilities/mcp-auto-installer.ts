@@ -1,8 +1,6 @@
 import { logger } from '@coachartie/shared';
 import { RegisteredCapability } from '../services/capability-registry.js';
 import { mcpClientService } from './mcp-client.js';
-import { dependencyResolver } from '../services/dependency-resolver.js';
-import { systemInstaller } from './system-installer.js';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import { access, readFile } from 'fs/promises';
@@ -311,33 +309,85 @@ class MCPAutoInstaller {
   }
 
   /**
+   * Sanitize and validate package name to prevent corruption from free models
+   */
+  private sanitizePackageName(input: string): string {
+    // Try to extract valid package names from corrupted text
+    const packagePatterns = [
+      // Look for npm package patterns anywhere in the text
+      /@?[a-z][a-z0-9-]*(?:\/[a-z][a-z0-9-]*)?(?:-mcp)?/gi,
+      // Look for common MCP package names
+      /[a-z]+(?:-mcp|-server)/gi,
+      // Look for scoped packages
+      /@[a-z][a-z0-9-]*\/[a-z][a-z0-9-]*/gi
+    ];
+    
+    let bestMatch = '';
+    
+    // Try each pattern to find the best package name
+    for (const pattern of packagePatterns) {
+      const matches = input.match(pattern);
+      if (matches) {
+        // Find the longest match that looks like a real package name
+        for (const match of matches) {
+          const normalized = match.toLowerCase();
+          if (normalized.length > bestMatch.length && 
+              (normalized.includes('mcp') || normalized.includes('@') || normalized.includes('-server'))) {
+            bestMatch = normalized;
+          }
+        }
+      }
+    }
+    
+    // If no good match found, try basic cleanup
+    if (!bestMatch) {
+      bestMatch = input.trim()
+        .replace(/[^a-zA-Z0-9\-_@\/\.]/g, '') // Remove invalid characters
+        .toLowerCase();
+    }
+    
+    // Validate it looks like a real package name
+    if (!bestMatch || bestMatch.length < 2 || !bestMatch.match(/^(@[\w\-]+\/)?[\w\-\.]+$/)) {
+      throw new Error(`Invalid package name after sanitization: "${input}" -> "${bestMatch}". Expected format: "package-name" or "@scope/package-name"`);
+    }
+    
+    return bestMatch;
+  }
+
+  /**
    * Install MCP server from npm package with intelligent dependency resolution
    */
   async installFromNpm(packageName: string, name?: string): Promise<string> {
-    logger.info(`Installing MCP server from npm with dependency resolution: ${packageName}`);
+    // Sanitize package name to prevent free model corruption
+    const sanitizedPackageName = this.sanitizePackageName(packageName);
+    logger.info(`Installing MCP server from npm (sanitized: ${packageName} -> ${sanitizedPackageName})`);
     
     try {
       // Step 1: Try direct npx first (fast and simple)
-      logger.info(`Attempting direct installation: ${packageName}`);
-      const directCommand = `stdio://npx ${packageName}`;
+      logger.info(`Attempting direct installation: ${sanitizedPackageName}`);
+      const directCommand = `stdio://npx ${sanitizedPackageName}`;
       
       try {
-        const result = await mcpClientService.connect(directCommand, name || packageName);
-        logger.info(`✅ Direct installation successful: ${packageName}`);
-        return `Successfully installed ${packageName} using direct npx strategy`;
+        // Quick timeout wrapper to fail fast on broken packages
+        const result = await Promise.race([
+          mcpClientService.connect(directCommand, name || sanitizedPackageName),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('Fast timeout')), 5000))
+        ]);
+        logger.info(`✅ Direct installation successful: ${sanitizedPackageName}`);
+        return `Successfully installed ${sanitizedPackageName} using direct npx strategy`;
       } catch (directError) {
         logger.info(`Direct installation failed, trying Docker fallback: ${directError instanceof Error ? directError.message : String(directError)}`);
         
         // Step 2: Try Docker fallback for known problematic packages
-        if (packageName.includes('puppeteer')) {
+        if (sanitizedPackageName.includes('puppeteer')) {
           const dockerCommand = `stdio://docker run -i --rm ghcr.io/puppeteer/puppeteer`;
           try {
-            const result = await mcpClientService.connect(dockerCommand, name || packageName);
-            logger.info(`✅ Docker fallback successful: ${packageName}`);
-            return `Successfully installed ${packageName} using Docker strategy (dependencies bundled)`;
+            const result = await mcpClientService.connect(dockerCommand, name || sanitizedPackageName);
+            logger.info(`✅ Docker fallback successful: ${sanitizedPackageName}`);
+            return `Successfully installed ${sanitizedPackageName} using Docker strategy (dependencies bundled)`;
           } catch (dockerError) {
             logger.error(`Docker fallback also failed: ${dockerError instanceof Error ? dockerError.message : String(dockerError)}`);
-            throw new Error(`Both direct and Docker installation failed for ${packageName}: ${directError instanceof Error ? directError.message : String(directError)}`);
+            throw new Error(`Both direct and Docker installation failed for ${sanitizedPackageName}: ${directError instanceof Error ? directError.message : String(directError)}`);
           }
         } else {
           // For non-Puppeteer packages, just fail with the direct error
@@ -346,15 +396,15 @@ class MCPAutoInstaller {
       }
       
     } catch (error) {
-      logger.error(`Failed to install MCP server from npm ${packageName}:`, error);
+      logger.error(`Failed to install MCP server from npm ${sanitizedPackageName}:`, error);
       
       // Enhanced error handling with fallback suggestions
       if (error instanceof Error) {
         if (error.message.includes('timeout')) {
-          throw new Error(`Installation timeout for ${packageName}. This package may need to download dependencies. The auto-installer will handle this automatically next time.`);
+          throw new Error(`Installation timeout for ${sanitizedPackageName}. This package may need to download dependencies. The auto-installer will handle this automatically next time.`);
         }
         if (error.message.includes('dependency')) {
-          throw new Error(`Dependency issue with ${packageName}: ${error.message}. Try using Docker fallback or manual dependency installation.`);
+          throw new Error(`Dependency issue with ${sanitizedPackageName}: ${error.message}. Try using Docker fallback or manual dependency installation.`);
         }
       }
       
@@ -402,7 +452,14 @@ class MCPAutoInstaller {
       // Direct stdio URL - just connect
       return mcpClientService.connect(url, name);
     } else {
-      throw new Error(`Unsupported URL type: ${url}`);
+      // Fallback: treat as npm package name if it looks like one
+      try {
+        this.sanitizePackageName(url); // Test if it's a valid package name
+        logger.info(`Treating "${url}" as npm package name`);
+        return this.installFromNpm(url, name);
+      } catch (sanitizeError) {
+        throw new Error(`Unsupported URL type and invalid package name: ${url}. ${sanitizeError instanceof Error ? sanitizeError.message : String(sanitizeError)}`);
+      }
     }
   }
 

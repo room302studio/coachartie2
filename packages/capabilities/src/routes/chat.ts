@@ -48,16 +48,17 @@ router.post('/', async (req: Request, res: Response) => {
       }
     };
 
-    // Process message directly and get AI response
-    const aiResponse = await processMessage(incomingMessage);
-
-    logger.info(`Generated AI response for ${userId} (${messageId})`);
-
+    // Return immediately, process async
     res.json({
       success: true,
       messageId,
-      response: aiResponse
+      response: "working on it..."
     } as ChatResponse);
+
+    // Process in background
+    processMessage(incomingMessage)
+      .then(aiResponse => logger.info(`✅ Background processing complete: ${aiResponse.substring(0, 100)}`))
+      .catch(error => logger.error(`❌ Background processing failed:`, error));
 
   } catch (error) {
     logger.error('Error in chat endpoint:', error);

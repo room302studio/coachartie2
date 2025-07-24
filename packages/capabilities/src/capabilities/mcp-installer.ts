@@ -36,17 +36,14 @@ interface MCPInstallerParams {
   git_url?: string;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 interface HelloArgs {
   name?: string;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 interface StatusArgs {
   [key: string]: unknown;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 interface MCPHandlerResult {
   content: Array<{
     type: string;
@@ -662,7 +659,6 @@ class ${name.charAt(0).toUpperCase() + name.slice(1)}MCPServer {
     };
 
     process.on('SIGINT', async () => {
-      console.log('\\n🛑 Shutting down ${name} MCP server...');
       await this.server.close();
       process.exit(0);
     });
@@ -671,7 +667,6 @@ class ${name.charAt(0).toUpperCase() + name.slice(1)}MCPServer {
   async start(): Promise<void> {
     const transport = new StdioServerTransport();
     await this.server.connect(transport);
-    console.log('🚀 ${name} MCP server started successfully!');
   }
 }
 

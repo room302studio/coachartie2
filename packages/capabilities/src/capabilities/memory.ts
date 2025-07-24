@@ -377,21 +377,13 @@ Example: ["food", "pizza", "italian", "preference", "like"]`;
           return tags.filter(tag => typeof tag === 'string' && tag.length > 1).slice(0, 8);
         }
       }
-      
-      // Fallback: split by comma and clean up
-      const fallbackTags = response
-        .toLowerCase()
-        .replace(/[^a-z,\s]/g, '')
-        .split(',')
-        .map(tag => tag.trim())
-        .filter(tag => tag.length > 1)
-        .slice(0, 8);
-      
-      return fallbackTags;
-    } catch (error) {
-      logger.error('❌ Failed to parse tags from LLM response:', error);
+    } catch (parseError) {
+      // Don't crash the entire response for memory parsing failures
+      logger.warn(`Memory tag parsing failed, continuing without tags: ${parseError}`);
       return [];
     }
+    
+    return [];
   }
 
   private async updateMemoryTags(memoryId: number, semanticTags: string[]): Promise<void> {

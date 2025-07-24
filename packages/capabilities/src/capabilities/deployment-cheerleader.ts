@@ -37,7 +37,6 @@ interface GitHubStatsData {
   stats: DeploymentStats;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 interface DeploymentCheerleaderParams {
   action?: string;
   repo?: string;
@@ -49,7 +48,6 @@ interface DeploymentCheerleaderParams {
   days?: number;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 interface DeploymentCheerleaderCapability {
   name: 'deployment_cheerleader';
   description: 'Monitors deployments and celebrates achievements';
@@ -87,7 +85,6 @@ export const deploymentCheerleaderCapability: RegisteredCapability = {
   description: 'Monitors deployments and celebrates team achievements automatically',
   requiredParams: ['action'],
   
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   handler: async (params: any, _content: string | undefined) => {
     const action = params.action;
     
@@ -266,7 +263,6 @@ async function executeGitHubMCPAction(action: string, params: Record<string, unk
   // For now, we'll simulate the response structure
   logger.info(`🔗 Calling GitHub MCP: ${action}`, params);
   
-  // TODO: Replace with actual MCP client call when GitHub MCP server is installed
   // Example: return await mcpClient.call('github', action, params);
   
   return {

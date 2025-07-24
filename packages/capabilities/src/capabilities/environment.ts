@@ -214,7 +214,6 @@ async function createBackup(filePath: string): Promise<string> {
 /**
  * Environment management capability handler
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function handleEnvironmentAction(params: any, content?: string): Promise<string> {
   const { action } = params;
   

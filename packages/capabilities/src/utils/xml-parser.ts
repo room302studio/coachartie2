@@ -32,9 +32,7 @@ export class CapabilityXMLParser {
     const capabilities: ParsedCapability[] = [];
     
     // Debug: Check global registry at start of parsing
-    console.log(`🔍 XML PARSE START: Global registry has ${global.mcpToolRegistry ? global.mcpToolRegistry.size : 0} tools`);
     if (global.mcpToolRegistry && global.mcpToolRegistry.size > 0) {
-      console.log(`🔍 Available tools: ${Array.from(global.mcpToolRegistry.keys()).join(', ')}`);
     }
     
     try {
@@ -119,7 +117,6 @@ export class CapabilityXMLParser {
           }
         } catch (error) {
           // If XML parsing fails completely, content stays empty
-          logger.debug('XML content extraction failed, content will be empty:', error);
           content = '';
         }
       }
@@ -166,7 +163,6 @@ export class CapabilityXMLParser {
         const capability = this.mapTagToCapability(tagName, {}, content);
         if (capability) {
           capabilities.push(capability);
-          console.log(`🎯 PATTERN MATCH: Found ${tagName} with content: "${content}"`);
         }
       }
     }
@@ -244,7 +240,6 @@ export class CapabilityXMLParser {
       // Extract package name from content, validate and sanitize
       const packageName = this.sanitizePackageName(content);
       if (packageName) {
-        console.log(`🔧 VALIDATED MCP INSTALL: ${packageName} (from: "${content}")`);
         return {
           name: 'mcp_auto_installer',
           action: 'install_npm',
@@ -252,7 +247,6 @@ export class CapabilityXMLParser {
           content: packageName
         };
       } else {
-        console.log(`❌ INVALID PACKAGE NAME: "${content}" failed validation`);
         return null;
       }
     }
@@ -260,7 +254,6 @@ export class CapabilityXMLParser {
     // Check for registered MCP tools first (prioritize MCP system)
     if (global.mcpToolRegistry && global.mcpToolRegistry.has(tagName)) {
       const mcpTool = global.mcpToolRegistry.get(tagName);
-      console.log(`🎯 MCP REGISTRY HIT: ${tagName} found in MCP registry (${global.mcpToolRegistry.size} total tools)`);
       return {
         name: 'mcp_client',
         action: 'call_tool', 
@@ -273,11 +266,8 @@ export class CapabilityXMLParser {
       };
     }
     
-    console.log(`❌ TOOL NOT FOUND: ${tagName} not available in MCP registry`);
     if (global.mcpToolRegistry && global.mcpToolRegistry.size > 0) {
-      console.log(`🔍 Available MCP tools: ${Array.from(global.mcpToolRegistry.keys()).join(', ')}`);
     } else {
-      console.log(`🔍 No MCP tools currently registered`);
     }
     
     // MCP tools (kebab-case with multiple parts)
@@ -324,7 +314,6 @@ export class CapabilityXMLParser {
       }
     } catch (error) {
       // If XML parsing fails, we don't extract anything rather than falling back to regex
-      logger.debug('XML parsing failed, no capabilities extracted:', error);
     }
     
     return matches;
@@ -383,7 +372,6 @@ export class CapabilityXMLParser {
         }
       }
     } catch (error) {
-      logger.debug('Failed to reconstruct capability XML:', error);
     }
     
     return null;
@@ -477,7 +465,6 @@ export class CapabilityXMLParser {
     for (const pattern of extractPatterns) {
       const match = cleaned.match(pattern);
       if (match && npmPackagePattern.test(match[1])) {
-        console.log(`🔧 EXTRACTED: "${match[1]}" from corrupted input: "${input}"`);
         return match[1];
       }
     }
