@@ -18,14 +18,12 @@ class OpenRouterService {
     const apiKey = process.env.OPENROUTER_API_KEY;
     const baseURL = process.env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1';
     
-    // Primary model + fallback free models
+    // Free models only (claude credits exhausted)
     this.models = [
-      process.env.OPENROUTER_MODEL || 'anthropic/claude-3.5-sonnet',
       'mistralai/mistral-7b-instruct:free',
       'microsoft/phi-3-mini-128k-instruct:free',
       'meta-llama/llama-3.2-3b-instruct:free',
-      'google/gemma-2-9b-it:free',
-      'openai/gpt-3.5-turbo'  // Sometimes has free tier
+      'google/gemma-2-9b-it:free'
     ];
 
     if (!apiKey) {

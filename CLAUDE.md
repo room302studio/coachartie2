@@ -3,8 +3,8 @@
 ## 🧠 MISSION: BULLETPROOF INTELLIGENCE PLATFORM
 
 **Current Sprint:** Evolution from POC to Production-Grade System
-**Philosophy:** Build systems that are impossible to break, not just systems that work
-**Status:** 🚀 ARCHITECTURE UPGRADE IN PROGRESS 🚀
+**Philosophy:** DELETE-DRIVEN DEVELOPMENT - Remove code until it works, no clever fixes
+**Status:** 🗑️ DELETE-DRIVEN DEVELOPMENT IN PROGRESS 🗑️
 
 **Vision**: 
 ```
@@ -205,7 +205,28 @@ async updateMemory(id: number, updates: Partial<MemoryInput>): Promise<Memory> {
 
 ---
 
-**Status:** 🧠 ARCHITECTURE EVOLUTION | 🎯 NEXT: API DOCUMENTATION EMERGENCY
+## 🗑️ DELETE-DRIVEN DEVELOPMENT MANIFESTO
+
+**CORE PRINCIPLE:** When system hangs, delete code until it works. No clever fixes, no complex solutions.
+
+**THE DELETE-DRIVEN WAY:**
+- Find the bloat, the memory leaks, the duplicate parsers, the orphaned listeners - **DELETE THEM**
+- Broken thing? **Delete it**
+- Hanging timeout? **Delete the timeout** 
+- Memory leak? **Delete the event handlers**
+- Syntax error? **Delete the broken lines**
+- **Always prefer removing code over adding it**
+- **Simple beats complex. Working beats perfect.**
+- **Delete your way to success. This is the way.**
+
+**RECENT DELETE-DRIVEN VICTORIES:**
+✅ **Deleted confusing `brain_memories` table** → Brain API now works  
+✅ **Deleted regex XML parsing** → Multi-tool detection works perfectly
+✅ **Deleted complex MCP auto-install** → Simple embedded runtime approach
+✅ **Deleted zombie processes** → Docker isolation eliminates networking chaos
+✅ **Deleted schema confusion** → Direct SQL fix, usage tracking works
+
+**Status:** 🗑️ DELETE-DRIVEN SUCCESS | 🎯 NEXT: FIND MORE SHIT TO DELETE
 
 ## 🚀 SENIOR STAFF ENGINEER PLANS: "MAKE IT ACTUALLY GOOD"
 

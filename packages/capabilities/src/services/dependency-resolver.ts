@@ -158,14 +158,13 @@ export class DependencyResolver {
    * Check if a dependency is available
    */
   private async checkDependency(dep: DependencyRequirement): Promise<boolean> {
-    if (!dep.checkCommand) return true;
+    if (!dep.checkCommand) {return true;}
 
     try {
       // Add timeout to prevent hanging on slow filesystem/PATH issues
       await execAsync(dep.checkCommand, { timeout: 5000 });
       return true;
     } catch (error) {
-      logger.debug(`Dependency ${dep.name} check failed:`, error);
       return false;
     }
   }
@@ -174,7 +173,7 @@ export class DependencyResolver {
    * Install a dependency
    */
   private async installDependency(dep: DependencyRequirement): Promise<boolean> {
-    if (!dep.installCommand) return false;
+    if (!dep.installCommand) {return false;}
 
     try {
       logger.info(`Installing dependency: ${dep.name}`);
@@ -354,7 +353,6 @@ export class DependencyResolver {
       }
 
     } catch (error) {
-      logger.debug(`Could not auto-detect dependencies for ${packagePath}:`, error);
     }
 
     return dependencies;

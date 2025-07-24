@@ -61,10 +61,7 @@ export class BulletproofCapabilityExtractor {
       const parsed = this.xmlParser.parse(wrappedText);
       
       if (parsed.root) {
-        // Check for MCP installation tags
-        this.checkForTag(parsed.root, 'mcp-auto-install', capabilities, 'mcp_auto_installer', 'install_npm');
-        this.checkForTag(parsed.root, 'mcp-install', capabilities, 'mcp_auto_installer', 'install_npm');
-        this.checkForTag(parsed.root, 'install-mcp', capabilities, 'mcp_auto_installer', 'install_npm');
+        // MCP installation tags are handled by xml-parser.ts to avoid duplicates
         
         // Check for calculator tags
         this.checkForTag(parsed.root, 'calculate', capabilities, 'calculator', 'calculate');
@@ -75,7 +72,6 @@ export class BulletproofCapabilityExtractor {
         this.checkForTag(parsed.root, 'memory', capabilities, 'memory', 'remember');
       }
     } catch (error) {
-      logger.debug('XML parsing failed, skipping simple detection:', error);
     }
     
     return capabilities;

@@ -167,8 +167,8 @@ class MCPClientService {
         responseBuffer = lines[lines.length - 1];
       };
 
-      // Set up timeout (longer for initial calls that might need to download dependencies)
-      const timeoutMs = method === 'tools/list' || method === 'initialize' ? 120000 : 30000; // 2 min for discovery, 30s for regular calls
+      // Set up timeout (fail fast for broken packages)
+      const timeoutMs = method === 'tools/list' || method === 'initialize' ? 3000 : 2000; // 3s for discovery, 2s for regular calls
       const timeout = setTimeout(() => {
         connection.process?.stdout?.off('data', onData);
         reject(new Error(`Stdio JSON-RPC call timeout after ${timeoutMs}ms`));
@@ -310,7 +310,6 @@ class MCPClientService {
       // Try to get available tools
       try {
         const toolsResult = await this.makeJsonRpcCall(url, 'tools/list');
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         connection.tools = (toolsResult as any)?.tools || [];
       } catch (toolsError) {
         logger.warn(`Failed to get tools from MCP server ${url}:`, toolsError);
@@ -375,22 +374,10 @@ class MCPClientService {
       connection.processId = processId;
       connection.process = mcpProcess.process;
       
-      // Set up process event handlers for connection management
-      mcpProcessManager.on('processError', (process, error) => {
-        if (process.id === processId) {
-          connection.error = error.message;
-          connection.connected = false;
-        }
-      });
+      // Event handlers removed to prevent memory leaks
 
-      mcpProcessManager.on('processExited', (process) => {
-        if (process.id === processId) {
-          connection.connected = false;
-        }
-      });
-
-      // Wait for process to stabilize
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      // Quick check if process failed immediately  
+      await new Promise(resolve => setTimeout(resolve, 100));
 
       if (mcpProcess.status !== 'running') {
         throw new Error(`MCP process failed to start: ${mcpProcess.error || 'Unknown error'}`);
@@ -423,9 +410,33 @@ class MCPClientService {
       try {
         logger.info(`Discovering tools for ${command}`);
         const toolsResult = await this.makeStdioJsonRpcCall(connection, 'tools/list');
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         connection.tools = (toolsResult as any)?.tools || [];
         logger.info(`Discovered ${connection.tools?.length || 0} tools for ${command}`);
+        
+        // Register discovered MCP tools as available capabilities
+        logger.info(`🔍 DEBUG: connection.tools exists: ${!!connection.tools}, length: ${connection.tools?.length || 0}`);
+        if (connection.tools && connection.tools.length > 0) {
+          logger.info(`🔧 Registering ${connection.tools.length} MCP tools from ${command}`);
+          
+          // Store tools in a simple global registry to avoid circular dependency issues
+          if (!global.mcpToolRegistry) {
+            global.mcpToolRegistry = new Map();
+          }
+          
+          for (const tool of connection.tools) {
+            const toolName = tool.name;
+            global.mcpToolRegistry.set(toolName, {
+              connectionId,
+              command,
+              tool
+            });
+            logger.info(`✅ Registered MCP tool: ${toolName} from ${command}`);
+          }
+          logger.info(`🎯 FINAL: Global registry now has ${global.mcpToolRegistry.size} tools`);
+          logger.info(`🎯 REGISTRY TOOLS: ${Array.from(global.mcpToolRegistry.keys()).join(', ')}`);
+        } else {
+          logger.warn(`❌ No tools to register for ${command}`);
+        }
       } catch (toolsError) {
         logger.warn(`Failed to get tools from stdio MCP server ${command}:`, toolsError);
         connection.tools = [];
@@ -751,7 +762,12 @@ export const mcpClientCapability: RegisteredCapability = {
           if (!connectionId) {
             const foundConnectionId = await mcpClientService.findConnectionForTool(toolName);
             if (!foundConnectionId) {
-              throw new Error(`No MCP connection found that supports tool: ${toolName}`);
+              // help the robot find what it needs
+              const availableTools = Object.keys(global.mcpToolRegistry || {});
+              const suggestions = availableTools.length > 0 
+                ? `Available tools: ${availableTools.join(', ')}`
+                : 'No MCP tools currently available. Try <calculate>math</calculate> or basic text response.';
+              return `Tool not found. Try: calculate, web_search, memory`;
             }
             connectionId = foundConnectionId;
           }

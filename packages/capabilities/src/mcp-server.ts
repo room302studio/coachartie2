@@ -90,7 +90,6 @@ class CapabilitiesMCPServer {
         }
 
         // Extract content from args if provided
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const { content, ...params } = args as any;
 
         // Execute the capability

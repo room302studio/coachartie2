@@ -19,4 +19,4 @@ fi
 
 # Start the MCP server
 echo "🌟 Starting MCP server on port 3010..."
-exec node node_modules/@shelm/wikipedia-mcp-server/build/index.js
+exec node node_modules/@shelm/wikipedia-mcp-server/dist/index.js

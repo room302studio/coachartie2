@@ -1,0 +1,74 @@
+version: '3.8'
+
+services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+        reservations:
+          memory: 128M
+
+  capabilities:
+    build:
+      context: .
+      dockerfile: ./packages/capabilities/Dockerfile.prod
+    ports:
+      - "18239:18239"
+    environment:
+      - NODE_ENV=production
+      - DATABASE_PATH=/app/data/coachartie.db
+      - CAPABILITIES_PORT=18239
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - LOG_LEVEL=info
+      # Production env vars to be set via .env or environment
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+      - DISCORD_TOKEN=${DISCORD_TOKEN}
+      - DISCORD_CLIENT_ID=${DISCORD_CLIENT_ID}
+      - WOLFRAM_APP_ID=${WOLFRAM_APP_ID}
+      - TWILIO_ACCOUNT_SID=${TWILIO_ACCOUNT_SID}
+      - TWILIO_AUTH_TOKEN=${TWILIO_AUTH_TOKEN}
+      - TWILIO_PHONE_NUMBER=${TWILIO_PHONE_NUMBER}
+    volumes:
+      - capabilities_data:/app/data
+      - mcp_data:/app/mcp-servers
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:18239/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+        reservations:
+          memory: 512M
+
+volumes:
+  redis_data:
+    driver: local
+  capabilities_data:
+    driver: local
+  mcp_data:
+    driver: local
+
+networks:
+  default:
+    name: coachartie_network

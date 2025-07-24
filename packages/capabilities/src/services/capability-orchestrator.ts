@@ -226,7 +226,6 @@ export class CapabilityOrchestrator {
    * Takes an incoming message and orchestrates the full capability pipeline
    */
   async orchestrateMessage(message: IncomingMessage): Promise<string> {
-    console.log("🎯 ORCHESTRATOR START - This should always appear");
     logger.info("🎯 ORCHESTRATOR START - This should always appear");
     
     const context: OrchestrationContext = {
@@ -408,10 +407,8 @@ Timestamp: ${new Date().toISOString()}`;
       }
       
       // Get relevant past experiences from memory  
-      console.log("🧪 MEMORY INJECTION TEST - This line should always appear");
       logger.info("🧪 MEMORY INJECTION TEST - This line should always appear");
       const pastExperiences = await this.getRelevantMemoryPatterns(message.message, message.userId);
-      console.log(`🧪 MEMORY INJECTION RESULTS: ${pastExperiences.length} patterns found`);
       
       // Include past experiences in the prompt
       let capabilityInstructions = prompt.content.replace(/\{\{USER_MESSAGE\}\}/g, message.message);
@@ -1098,7 +1095,6 @@ ${capabilityDetails}`;
       result.success = false;
       
       // For backwards compatibility, fall back to legacy hardcoded handlers
-      // TODO: Remove this fallback once all capabilities are migrated to registry
       logger.warn(`Registry execution failed for ${capability.name}:${capability.action}, trying legacy handlers`);
       
       try {
@@ -1170,7 +1166,6 @@ ${capabilityDetails}`;
   /**
    * Wolfram Alpha capability
    */
-  // TODO: ALSO MOVED TO ITS OWN FILE
   private async executeWolfram(
     capability: ExtractedCapability
   ): Promise<string> {
@@ -1193,7 +1188,6 @@ ${capabilityDetails}`;
    * Execute scheduler capability
    */
 
-  // TODO: I think we already have a schedule file somewhere? Centralize all the code in one place, ideally
   private async executeScheduler(
     capability: ExtractedCapability,
     userId: string

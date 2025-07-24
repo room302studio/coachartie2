@@ -2,7 +2,6 @@ import { logger } from '@coachartie/shared';
 
 import { RegisteredCapability } from '../services/capability-registry.js';
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 interface GitHubParams {
   action?: string;
   repo?: string;
@@ -40,7 +39,6 @@ export const githubCapability: RegisteredCapability = {
   description: 'GitHub integration for repository monitoring and celebration',
   requiredParams: ['action'],
   
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   handler: async (params: any, _content: string | undefined) => {
     const action = params.action;
     

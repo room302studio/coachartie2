@@ -400,7 +400,6 @@ export class HybridDataLayer {
       }
     }
     
-    logger.debug(`Evicted ${toEvict.length} old memories from hot cache`);
   }
 
   /**
@@ -410,7 +409,6 @@ export class HybridDataLayer {
     if (!this.coldStorage) return;
 
     // This method can be enhanced to sync dirty flags, etc.
-    logger.debug('Background sync completed');
   }
 
   /**

@@ -3,7 +3,6 @@ import { logger } from '@coachartie/shared';
 /**
  * Type definition for a capability handler function
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type CapabilityHandler = (params: any, content?: string) => Promise<string>;
 
 /**
@@ -35,6 +34,7 @@ export interface CapabilityValidationError {
  */
 export class CapabilityRegistry {
   private capabilities = new Map<string, RegisteredCapability>();
+  private mcpTools = new Map<string, {connectionId: string, command: string, tool: any}>();
 
   /**
    * Register a new capability in the registry
@@ -234,7 +234,6 @@ export class CapabilityRegistry {
    * @returns Promise resolving to the capability result
    * @throws Error if capability not found, action not supported, or required params missing
    */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   async execute(name: string, action: string, params: any = {}, content?: string): Promise<string> {
     // Get and validate capability
     const capability = this.get(name, action);
@@ -285,13 +284,40 @@ export class CapabilityRegistry {
   }
 
   /**
+   * Register an MCP tool for XML tag mapping
+   */
+  registerMCPTool(toolName: string, connectionId: string, command: string, tool: any): void {
+    this.mcpTools.set(toolName, { connectionId, command, tool });
+    logger.info(`✅ Registered MCP tool: ${toolName} from ${command}`);
+  }
+
+  /**
+   * Get registered MCP tool by name
+   */
+  getMCPTool(toolName: string): {connectionId: string, command: string, tool: any} | undefined {
+    return this.mcpTools.get(toolName);
+  }
+
+  /**
+   * List all registered MCP tools
+   */
+  listMCPTools(): string[] {
+    return Array.from(this.mcpTools.keys());
+  }
+
+  /**
    * Clear all registered capabilities (useful for testing)
    */
   clear(): void {
     logger.info(`🧹 Clearing all ${this.capabilities.size} registered capabilities`);
     this.capabilities.clear();
+    this.mcpTools.clear();
   }
 }
 
 // Export singleton instance
 export const capabilityRegistry = new CapabilityRegistry();
+
+// Auto-register embedded MCP capability
+import { embeddedMCPCapability } from '../capabilities/embedded-mcp.js';
+capabilityRegistry.register(embeddedMCPCapability);

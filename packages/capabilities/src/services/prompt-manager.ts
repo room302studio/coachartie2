@@ -39,7 +39,6 @@ interface DatabaseRow {
   updated_at: string;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 interface PromptHistoryRow extends DatabaseRow {
   // Additional fields specific to history if any
 }
@@ -60,7 +59,6 @@ export class PromptManager {
 
     // Check cache first (unless force refresh)
     if (!forceRefresh && this.cache.has(cacheKey) && (now - lastUpdate) < this.cacheExpiryMs) {
-      logger.debug(`📋 Prompt '${name}' loaded from cache`);
       return this.cache.get(cacheKey) || null;
     }
 
@@ -95,7 +93,6 @@ export class PromptManager {
       this.cache.set(cacheKey, prompt);
       this.cacheTimestamps.set(cacheKey, now);
 
-      logger.debug(`🔄 Prompt '${name}' loaded from database (v${prompt.version})`);
       return prompt;
     } catch (error) {
       logger.error(`❌ Failed to get prompt '${name}':`, error);
