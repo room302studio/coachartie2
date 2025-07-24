@@ -23,6 +23,7 @@ import { schedulerService } from './services/scheduler.js';
 import './services/capability-orchestrator.js';
 import { capabilityRegistry } from './services/capability-registry.js';
 import { capabilitiesRouter } from './routes/capabilities.js';
+import { simpleHealer } from './runtime/simple-healer.js';
 
 const app = express();
 
@@ -89,6 +90,10 @@ async function start() {
     // Start scheduler
     await startScheduler();
 
+    // Start simple healer
+    simpleHealer.start();
+    logger.info('🩺 Simple healer initialized');
+
     // Auto-discover available port
     logger.info('🔍 Auto-discovering available port for capabilities service...');
     const PORT = await parsePortWithFallback('CAPABILITIES_PORT', 'capabilities');
@@ -146,12 +151,14 @@ async function start() {
 // Handle graceful shutdown
 process.on('SIGTERM', async () => {
   logger.info('SIGTERM signal received: closing HTTP server');
+  simpleHealer.stop();
   await serviceDiscovery.shutdown();
   process.exit(0);
 });
 
 process.on('SIGINT', async () => {
   logger.info('SIGINT signal received: closing HTTP server');
+  simpleHealer.stop();
   await serviceDiscovery.shutdown();
   process.exit(0);
 });
