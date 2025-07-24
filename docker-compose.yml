@@ -48,22 +48,81 @@ services:
       start_period: 10s
     restart: unless-stopped
 
-  # Future services can be added here
-  # discord:
-  #   build:
-  #     context: ./packages/discord
-  #   environment:
-  #     - CAPABILITIES_URL=http://capabilities:18239
-  #   depends_on:
-  #     - capabilities
+  discord:
+    build:
+      context: .
+      dockerfile: ./packages/discord/Dockerfile
+    environment:
+      - NODE_ENV=development
+      - CAPABILITIES_URL=http://capabilities:18239
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - DISCORD_TOKEN=${DISCORD_TOKEN}
+      - DISCORD_CLIENT_ID=${DISCORD_CLIENT_ID}
+    volumes:
+      - ./packages/capabilities/data:/Users/ejfox/code/coachartie2/packages/capabilities/data
+    depends_on:
+      redis:
+        condition: service_healthy
+      capabilities:
+        condition: service_healthy
+    restart: unless-stopped
 
-  # sms:
-  #   build:
-  #     context: ./packages/sms
-  #   environment:
-  #     - CAPABILITIES_URL=http://capabilities:18239
-  #   depends_on:
-  #     - capabilities
+  sms:
+    build:
+      context: .
+      dockerfile: ./packages/sms/Dockerfile
+    ports:
+      - "27461:27461"
+    environment:
+      - NODE_ENV=development
+      - CAPABILITIES_URL=http://capabilities:18239
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - SMS_PORT=27461
+      - TWILIO_ACCOUNT_SID=${TWILIO_ACCOUNT_SID}
+      - TWILIO_AUTH_TOKEN=${TWILIO_AUTH_TOKEN}
+      - TWILIO_PHONE_NUMBER=${TWILIO_PHONE_NUMBER}
+    depends_on:
+      redis:
+        condition: service_healthy
+      capabilities:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:27461/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+
+  brain:
+    build:
+      context: .
+      dockerfile: ./packages/brain/Dockerfile
+    ports:
+      - "24680:24680"
+    network_mode: "host"
+    environment:
+      - NODE_ENV=development
+      - CAPABILITIES_URL=http://localhost:18239
+      - REDIS_HOST=localhost
+      - REDIS_PORT=6379
+      - BRAIN_PORT=24680
+    volumes:
+      - ./packages/capabilities/data:/app/data
+    depends_on:
+      redis:
+        condition: service_healthy
+      capabilities:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:24680/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    restart: unless-stopped
 
 volumes:
   redis_data:
