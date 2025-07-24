@@ -106,6 +106,80 @@ async function initializeDatabase(database: Database): Promise<void> {
           
           UPDATE prompts SET version = version + 1 WHERE id = NEW.id;
         END;
+
+      -- Model usage statistics table
+      CREATE TABLE IF NOT EXISTS model_usage_stats (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        model_name TEXT NOT NULL,
+        user_id TEXT NOT NULL,
+        message_id TEXT,
+        input_length INTEGER DEFAULT 0,
+        output_length INTEGER DEFAULT 0,
+        response_time_ms INTEGER DEFAULT 0,
+        capabilities_detected INTEGER DEFAULT 0,
+        capabilities_executed INTEGER DEFAULT 0,
+        capability_types TEXT DEFAULT '',
+        success BOOLEAN DEFAULT 1,
+        error_type TEXT,
+        prompt_tokens INTEGER DEFAULT 0,
+        completion_tokens INTEGER DEFAULT 0,
+        total_tokens INTEGER DEFAULT 0,
+        estimated_cost REAL DEFAULT 0.0,
+        timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_usage_user_time ON model_usage_stats(user_id, timestamp);
+      CREATE INDEX IF NOT EXISTS idx_usage_model_time ON model_usage_stats(model_name, timestamp);
+      CREATE INDEX IF NOT EXISTS idx_usage_timestamp ON model_usage_stats(timestamp);
+
+      -- Memories table for user memory storage
+      CREATE TABLE IF NOT EXISTS memories (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id TEXT NOT NULL,
+        content TEXT NOT NULL,
+        tags TEXT NOT NULL DEFAULT '[]',
+        context TEXT DEFAULT '',
+        timestamp TEXT NOT NULL,
+        importance INTEGER DEFAULT 5,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_memories_user_id ON memories(user_id);
+      CREATE INDEX IF NOT EXISTS idx_memories_timestamp ON memories(timestamp);
+      CREATE INDEX IF NOT EXISTS idx_memories_importance ON memories(importance);
+
+      -- Full-text search for memories
+      CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts USING fts5(
+        content, tags, context,
+        content='memories',
+        content_rowid='id'
+      );
+
+      -- Triggers to keep FTS in sync
+      CREATE TRIGGER IF NOT EXISTS memories_fts_insert AFTER INSERT ON memories BEGIN
+        INSERT INTO memories_fts(rowid, content, tags, context) 
+        VALUES (new.id, new.content, new.tags, new.context);
+      END;
+
+      CREATE TRIGGER IF NOT EXISTS memories_fts_delete AFTER DELETE ON memories BEGIN
+        INSERT INTO memories_fts(memories_fts, rowid, content, tags, context) 
+        VALUES ('delete', old.id, old.content, old.tags, old.context);
+      END;
+
+      CREATE TRIGGER IF NOT EXISTS memories_fts_update AFTER UPDATE ON memories BEGIN
+        INSERT INTO memories_fts(memories_fts, rowid, content, tags, context) 
+        VALUES ('delete', old.id, old.content, old.tags, old.context);
+        INSERT INTO memories_fts(rowid, content, tags, context) 
+        VALUES (new.id, new.content, new.tags, new.context);
+      END;
+
+      -- Update timestamps on memories
+      CREATE TRIGGER IF NOT EXISTS update_memories_timestamp 
+        AFTER UPDATE ON memories
+        BEGIN
+          UPDATE memories SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
+        END;
     `);
 
     // Insert default capability instructions if not exists
