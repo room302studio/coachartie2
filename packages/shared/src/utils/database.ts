@@ -132,6 +132,36 @@ async function initializeDatabase(database: Database): Promise<void> {
       CREATE INDEX IF NOT EXISTS idx_usage_model_time ON model_usage_stats(model_name, timestamp);
       CREATE INDEX IF NOT EXISTS idx_usage_timestamp ON model_usage_stats(timestamp);
 
+      -- Credit balance tracking table
+      CREATE TABLE IF NOT EXISTS credit_balance (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        provider TEXT NOT NULL DEFAULT 'openrouter',
+        credits_remaining REAL,
+        credits_used REAL,
+        daily_spend REAL DEFAULT 0.0,
+        monthly_spend REAL DEFAULT 0.0,
+        rate_limit_remaining INTEGER,
+        rate_limit_reset DATETIME,
+        last_updated DATETIME DEFAULT CURRENT_TIMESTAMP,
+        raw_response TEXT -- Store the full credit response for debugging
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_credit_provider_time ON credit_balance(provider, last_updated);
+
+      -- Credit usage alerts table
+      CREATE TABLE IF NOT EXISTS credit_alerts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        alert_type TEXT NOT NULL, -- 'low_balance', 'rate_limit', 'daily_limit', etc.
+        threshold_value REAL,
+        current_value REAL,
+        message TEXT,
+        severity TEXT DEFAULT 'info', -- 'info', 'warning', 'critical'
+        acknowledged BOOLEAN DEFAULT 0,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_alerts_type_time ON credit_alerts(alert_type, created_at);
+
       -- Memories table for user memory storage
       CREATE TABLE IF NOT EXISTS memories (
         id INTEGER PRIMARY KEY AUTOINCREMENT,

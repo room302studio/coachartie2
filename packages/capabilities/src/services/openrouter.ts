@@ -8,6 +8,7 @@ config({ path: resolve(__dirname, '../../../../.env') });
 
 import { logger } from '@coachartie/shared';
 import { UsageTracker, TokenUsage } from './usage-tracker.js';
+import { creditMonitor } from './credit-monitor.js';
 
 class OpenRouterService {
   private client: OpenAI;
@@ -95,6 +96,27 @@ ${context ? `Context from previous conversations: ${context}` : ''}`;
           completion_tokens: completion.usage?.completion_tokens || 0,
           total_tokens: completion.usage?.total_tokens || 0
         };
+
+        // Check for credit/billing info in OpenRouter response
+        const creditInfo = {
+          usage: completion.usage,
+          model: completion.model,
+          id: completion.id,
+          system_fingerprint: completion.system_fingerprint,
+          // OpenRouter sometimes includes these fields
+          cost: (completion as any).cost,
+          credits_used: (completion as any).credits_used,
+          credits_remaining: (completion as any).credits_remaining,
+          generation_time: (completion as any).generation_time,
+          provider: (completion as any).provider
+        };
+        
+        logger.info('💳 OpenRouter Credit Info:', creditInfo);
+        
+        // Record credit info if available
+        if (creditInfo.credits_remaining !== undefined || creditInfo.credits_used !== undefined) {
+          await creditMonitor.recordCreditInfo(creditInfo);
+        }
 
         // Calculate cost and record usage
         const estimatedCost = UsageTracker.calculateCost(model, usage);
