@@ -3,11 +3,13 @@ import { logger } from '@coachartie/shared';
 import { linkPhoneCommand } from '../commands/link-phone.js';
 import { verifyPhoneCommand } from '../commands/verify-phone.js';
 import { unlinkPhoneCommand } from '../commands/unlink-phone.js';
+import { statusCommand } from '../commands/status.js';
 
 const commands = new Map([
   ['link-phone', linkPhoneCommand],
   ['verify-phone', verifyPhoneCommand],
-  ['unlink-phone', unlinkPhoneCommand]
+  ['unlink-phone', unlinkPhoneCommand],
+  ['status', statusCommand]
 ]);
 
 export function setupInteractionHandler(client: Client) {
