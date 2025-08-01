@@ -11,6 +11,7 @@ config({ path: resolve(__dirname, '../.env') });
 import { Client, GatewayIntentBits, Events, Partials } from 'discord.js';
 import { logger } from '@coachartie/shared';
 import { setupMessageHandler } from './handlers/message-handler.js';
+import { setupInteractionHandler } from './handlers/interaction-handler.js';
 import { startResponseConsumer } from './queues/consumer.js';
 import { writeFileSync } from 'fs';
 import { join } from 'path';
@@ -31,7 +32,7 @@ const STATUS_FILE = '/Users/ejfox/code/coachartie2/packages/capabilities/data/di
 // Write status to shared file
 function writeStatus(status: 'starting' | 'ready' | 'error' | 'shutdown', data?: any) {
   try {
-    let guildInfo = [];
+    let guildInfo: Array<{name: string, memberCount: number, channels: number, id: string}> = [];
     let totalChannels = 0;
     let totalMembers = 0;
     
@@ -92,6 +93,9 @@ async function start() {
     // Setup message handler
     setupMessageHandler(client);
 
+    // Setup interaction handler for slash commands
+    setupInteractionHandler(client);
+
     // Start queue consumer for responses
     await startResponseConsumer(client);
 
@@ -111,7 +115,8 @@ async function start() {
 
   } catch (error) {
     logger.error('Failed to start Discord bot:', error);
-    writeStatus('error', { error: error.message });
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    writeStatus('error', { error: errorMessage });
     process.exit(1);
   }
 }

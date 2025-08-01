@@ -9,11 +9,13 @@ import { REST, Routes } from 'discord.js';
 import { linkPhoneCommand } from './src/commands/link-phone.js';
 import { verifyPhoneCommand } from './src/commands/verify-phone.js';
 import { unlinkPhoneCommand } from './src/commands/unlink-phone.js';
+import { statusCommand } from './src/commands/status.js';
 
 const commands = [
   linkPhoneCommand.data.toJSON(),
   verifyPhoneCommand.data.toJSON(),
-  unlinkPhoneCommand.data.toJSON()
+  unlinkPhoneCommand.data.toJSON(),
+  statusCommand.data.toJSON()
 ];
 
 const rest = new REST().setToken(process.env.DISCORD_TOKEN!);
@@ -33,6 +35,7 @@ async function registerCommands() {
     console.log('  - /link-phone - Link phone number for SMS notifications');
     console.log('  - /verify-phone - Verify phone number with code');
     console.log('  - /unlink-phone - Remove linked phone number');
+    console.log('  - /status - Show LLM model used for most recent message');
     
   } catch (error) {
     console.error('❌ Error registering commands:', error);
