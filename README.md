@@ -2,7 +2,35 @@
 
 🚀 **Production-grade AI system with embedded MCP tools, free model fallbacks, and bulletproof Docker architecture**
 
-## ⚡ Quick Start (5 Minutes)
+## 🚨 IMPORTANT: Choose ONE Method - Docker OR Local Development
+
+⚠️ **WARNING**: You cannot run both Docker and local development at the same time - they will fight over the same ports!
+
+### Option 1: Docker (Recommended for Production/Stability)
+```bash
+# Make sure no local services are running first!
+pnpm run kill-all  # or pkill -f coachartie2
+
+# Then start Docker
+docker-compose up -d
+
+# Test it works
+curl http://localhost:18239/health
+```
+
+### Option 2: Local Development (For Hot-Reloading/Development)
+```bash
+# Make sure Docker is NOT running first!
+docker-compose down
+
+# Then just run:
+pnpm install
+pnpm run dev
+
+# That's it! Services auto-discover available ports
+```
+
+## ⚡ Quick Start
 
 **Prerequisites**: Docker Desktop installed and running
 
@@ -12,14 +40,13 @@ git clone https://github.com/room302studio/coachartie2.git
 cd coachartie2
 cp .env.example .env  # Add your OPENROUTER_API_KEY
 
-# 2. Start everything with Docker
-docker-compose up -d
+# 2. Choose your method (see above)
+# Either: docker-compose up -d
+# Or: pnpm install && pnpm run dev
 
 # 3. Test it works
 curl http://localhost:18239/health
 ```
-
-**That's it!** 🎉 All services are now running.
 
 ## 🧪 Test Your Installation
 

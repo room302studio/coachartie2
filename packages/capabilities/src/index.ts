@@ -60,14 +60,11 @@ async function startQueueWorkers() {
 
 async function startScheduler() {
   try {
-    logger.info('Setting up scheduled tasks...');
+    // Setup scheduler
     
     // Setup default tasks if enabled
     if (process.env.ENABLE_SCHEDULING !== 'false') {
       await schedulerService.setupDefaultTasks();
-      logger.info('Scheduler initialized with default tasks');
-    } else {
-      logger.info('Scheduling disabled by configuration');
     }
   } catch (error) {
     logger.error('Failed to setup scheduler:', error);
@@ -78,11 +75,8 @@ async function startScheduler() {
 // Start server
 async function start() {
   try {
-    // Ensure orchestrator is initialized (this will register all capabilities)
-    logger.info('🚀 Initializing capability orchestrator...');
-    // Just accessing the orchestrator will trigger its constructor and capability registration
+    // Initialize orchestrator
     const stats = capabilityRegistry.getStats();
-    logger.info(`📊 Capability registry initialized with ${stats.totalCapabilities} capabilities and ${stats.totalActions} actions`);
     
     // Start queue workers first
     await startQueueWorkers();
@@ -92,55 +86,49 @@ async function start() {
 
     // Start simple healer
     simpleHealer.start();
-    logger.info('🩺 Simple healer initialized');
-
-    // Auto-discover available port
-    logger.info('🔍 Auto-discovering available port for capabilities service...');
     const PORT = await parsePortWithFallback('CAPABILITIES_PORT', 'capabilities');
 
-    // Start HTTP server (for health checks) - bind to 0.0.0.0 for both IPv4 and IPv6
-    logger.info(`🔄 Starting server on port ${PORT}...`);
+    // Start HTTP server
     const server = app.listen(PORT, '0.0.0.0', async () => {
-      logger.info(`✅ Capabilities service successfully started on port ${PORT}`);
-      logger.info('🚀 Service is ready to process messages from queue');
-      logger.info('📅 Scheduler service is ready for task management');
-      logger.info(`🌐 Health check available at: http://localhost:${PORT}/health`);
-      
-      // Register with service discovery
+      logger.info(`✅ capabilities: ${PORT} [${stats.totalCapabilities} caps, ${stats.totalActions} actions]`);
       await registerServiceWithDiscovery('capabilities', PORT);
-      
-      // Double-check the server is actually listening
-      const addr = server.address();
-      logger.info(`🔍 Server bound to:`, addr);
     });
 
-    // Enhanced error handling - should rarely trigger with auto-discovery
+    // Enhanced error handling with helpful developer guidance
     server.on('error', (error: Error) => {
       if ((error as any).code === 'EADDRINUSE') {
-        logger.error(`❌ UNEXPECTED PORT CONFLICT: Port ${PORT} became busy after discovery!`);
-        logger.error(`❌ This suggests a race condition or rapid port allocation.`);
-        logger.error(`❌ Check with: lsof -i :${PORT}`);
+        console.error('\n' + '='.repeat(60));
+        console.error('❌ PORT CONFLICT DETECTED!');
+        console.error('='.repeat(60));
+        console.error(`Port ${PORT} is already in use!\n`);
+        
+        console.error('This usually means one of the following:');
+        console.error('1. Docker is running Coach Artie (check: docker ps)');
+        console.error('2. A previous instance is still running');
+        console.error('3. Another service is using this port\n');
+        
+        console.error('TO FIX THIS:');
+        console.error('------------');
+        console.error('Option 1: If Docker is running Coach Artie:');
+        console.error('  $ docker-compose down');
+        console.error('  $ pnpm run dev\n');
+        
+        console.error('Option 2: Kill the process using this port:');
+        console.error(`  $ lsof -ti :${PORT} | xargs kill -9`);
+        console.error('  $ pnpm run dev\n');
+        
+        console.error('Option 3: Use the built-in port checker:');
+        console.error('  $ pnpm run check-ports');
+        console.error('  (This will show you exactly what\'s using each port)\n');
+        
+        console.error('='.repeat(60) + '\n');
       } else {
         logger.error(`❌ Server failed to start on port ${PORT}:`, error);
       }
       process.exit(1);
     });
 
-    // Verify the server is actually listening after a brief delay
-    setTimeout(() => {
-      const address = server.address();
-      if (address && typeof address === 'object') {
-        logger.info(`✅ Verified: Server is listening on ${address.address}:${address.port}`);
-        
-        // Try to connect to ourselves
-        fetch(`http://localhost:${PORT}/test`)
-          .then(res => res.text())
-          .then(text => logger.info(`✅ Self-test successful: ${text}`))
-          .catch(err => logger.error(`❌ Self-test failed:`, err));
-      } else {
-        logger.error(`❌ Server address verification failed. Server may not be properly bound.`);
-      }
-    }, 1000);
+    // DELETE the self-test - if it works, it works
   } catch (error) {
     logger.error('Failed to start capabilities service:', error);
     process.exit(1);
@@ -149,14 +137,12 @@ async function start() {
 
 // Handle graceful shutdown
 process.on('SIGTERM', async () => {
-  logger.info('SIGTERM signal received: closing HTTP server');
   simpleHealer.stop();
   await serviceDiscovery.shutdown();
   process.exit(0);
 });
 
 process.on('SIGINT', async () => {
-  logger.info('SIGINT signal received: closing HTTP server');
   simpleHealer.stop();
   await serviceDiscovery.shutdown();
   process.exit(0);

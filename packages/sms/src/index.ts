@@ -26,9 +26,7 @@ app.use('/sms', smsRouter);
 // Start queue consumers
 async function startQueueWorkers() {
   try {
-    logger.info('Starting SMS queue consumers...');
     await startResponseConsumer();
-    logger.info('SMS queue consumers started successfully');
   } catch (error) {
     logger.error('Failed to start SMS queue consumers:', error);
     process.exit(1);
@@ -42,15 +40,11 @@ async function start() {
     await startQueueWorkers();
 
     // Auto-discover available port
-    logger.info('🔍 Auto-discovering available port for SMS service...');
     const PORT = await parsePortWithFallback('SMS_PORT', 'sms');
 
-    // Start HTTP server (for Twilio webhooks)
-    logger.info(`🔄 Starting SMS service on port ${PORT}...`);
+    // Start HTTP server
     const server = app.listen(PORT, '0.0.0.0', async () => {
-      logger.info(`✅ SMS service successfully started on port ${PORT}`);
-      logger.info('📱 Ready to receive Twilio webhooks and process SMS responses');
-      logger.info(`🌐 Webhook endpoint: http://localhost:${PORT}/sms/webhook`);
+      logger.info(`✅ sms: ${PORT}`);
       
       // Register with service discovery
       await registerServiceWithDiscovery('sms', PORT);
@@ -74,7 +68,6 @@ async function start() {
 
 // Handle graceful shutdown
 process.on('SIGTERM', async () => {
-  logger.info('SIGTERM signal received: closing SMS service');
   await serviceDiscovery.shutdown();
   process.exit(0);
 });

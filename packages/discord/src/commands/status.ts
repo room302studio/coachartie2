@@ -1,6 +1,6 @@
 import { SlashCommandBuilder, ChatInputCommandInteraction, EmbedBuilder, InteractionResponse } from 'discord.js';
-import { logger } from '@coachartie/shared';
 import { getDatabase } from '@coachartie/shared';
+import { logger } from '@coachartie/shared';
 
 export const statusCommand = {
   data: new SlashCommandBuilder()
@@ -10,9 +10,9 @@ export const statusCommand = {
   async execute(interaction: ChatInputCommandInteraction): Promise<InteractionResponse<boolean> | undefined> {
     try {
       const userId = interaction.user.id;
-
-      // Query database for the most recent model usage by this user
       const db = await getDatabase();
+      
+      // Query for the most recent model usage by this user
       const recentUsage = await db.get(`
         SELECT 
           model_name,
@@ -30,82 +30,91 @@ export const statusCommand = {
         LIMIT 1
       `, [userId]);
 
-      const embed = new EmbedBuilder()
-        .setColor(0x0099FF)
-        .setTitle('🤖 Model Status')
-        .setTimestamp();
-
       if (!recentUsage) {
-        embed.setDescription('No recent model usage found for your account.')
-          .addFields(
-            { name: '💡 Info', value: 'Send a message to Coach Artie first to see model usage statistics!', inline: false }
-          );
-      } else {
-        // Format the model name for display
-        const modelName = recentUsage.model_name;
-        const modelDisplayName = modelName.includes(':free') 
-          ? `${modelName.replace(':free', '')} (Free)`
-          : modelName;
+        const embed = new EmbedBuilder()
+          .setColor(0xFF9900)
+          .setTitle('🤖 Model Status')
+          .setDescription('No recent activity found')
+          .setFooter({ text: 'Send a message to start tracking!' })
+          .setTimestamp();
 
-        // Format timestamp
-        const timestamp = new Date(recentUsage.timestamp);
-        const timeAgo = formatTimeAgo(timestamp);
-
-        embed.setDescription(`Your most recent message was processed using **${modelDisplayName}**`)
-          .addFields(
-            { name: '⏰ When', value: `${timeAgo}\n${timestamp.toLocaleString()}`, inline: true },
-            { name: '🎯 Tokens', value: `${recentUsage.total_tokens || 0}`, inline: true },
-            { name: '💰 Cost', value: `$${(recentUsage.estimated_cost || 0).toFixed(4)}`, inline: true },
-            { name: '⚡ Response Time', value: `${recentUsage.response_time_ms || 0}ms`, inline: true },
-            { name: '🔧 Capabilities', value: `${recentUsage.capabilities_executed || 0} used`, inline: true },
-            { name: '✅ Success', value: recentUsage.success ? 'Yes' : 'No', inline: true }
-          );
-
-        // Add message ID if available
-        if (recentUsage.message_id) {
-          embed.setFooter({ text: `Message ID: ${recentUsage.message_id}` });
-        }
+        return await interaction.reply({
+          embeds: [embed],
+          ephemeral: true
+        });
       }
 
-      const response = await interaction.reply({
+      // Format timestamp
+      const timestamp = new Date(recentUsage.timestamp);
+      const timeDiff = Date.now() - timestamp.getTime();
+      const timeAgo = formatTimeAgo(timeDiff);
+
+      // Determine model type
+      const isFreeModel = recentUsage.model_name.includes(':free');
+      const modelType = isFreeModel ? '(Free)' : '(Paid)';
+      
+      // Create embed with actual data
+      const embed = new EmbedBuilder()
+        .setColor(recentUsage.success ? 0x00FF00 : 0xFF0000)
+        .setTitle('🤖 Model Status')
+        .setDescription(`**Current Model:** ${recentUsage.model_name} ${modelType}`)
+        .addFields(
+          { name: '⏰ When', value: timeAgo, inline: true },
+          { name: '🎯 Tokens', value: recentUsage.total_tokens.toString(), inline: true },
+          { name: '💰 Cost', value: `$${recentUsage.estimated_cost.toFixed(4)}`, inline: true }
+        )
+        .setTimestamp(timestamp);
+
+      // Add additional fields if capabilities were used
+      if (recentUsage.capabilities_detected > 0) {
+        embed.addFields({
+          name: '🛠️ Capabilities',
+          value: `Detected: ${recentUsage.capabilities_detected}, Executed: ${recentUsage.capabilities_executed}`,
+          inline: false
+        });
+      }
+
+      // Add response time if available
+      if (recentUsage.response_time_ms) {
+        embed.addFields({
+          name: '⚡ Response Time',
+          value: `${recentUsage.response_time_ms}ms`,
+          inline: true
+        });
+      }
+
+      return await interaction.reply({
         embeds: [embed],
         ephemeral: true
       });
 
-      logger.info('Status command executed', {
-        userId,
-        username: interaction.user.username,
-        hasUsage: !!recentUsage,
-        model: recentUsage?.model_name || 'none',
-        service: 'discord'
-      });
-
-      return response;
-
     } catch (error) {
-      logger.error('Error in status command:', error);
+      logger.error('Failed to fetch model status:', error);
+      
+      const errorEmbed = new EmbedBuilder()
+        .setColor(0xFF0000)
+        .setTitle('❌ Error')
+        .setDescription('Failed to fetch model status. Please try again later.')
+        .setTimestamp();
+
       return await interaction.reply({
-        content: '❌ An error occurred while retrieving your status. Please try again.',
+        embeds: [errorEmbed],
         ephemeral: true
       });
     }
   }
 };
 
-function formatTimeAgo(date: Date): string {
-  const now = new Date();
-  const diffMs = now.getTime() - date.getTime();
-  const diffMinutes = Math.floor(diffMs / (1000 * 60));
-  const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
-  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+// Helper function to format relative time
+function formatTimeAgo(ms: number): string {
+  const seconds = Math.floor(ms / 1000);
+  const minutes = Math.floor(seconds / 60);
+  const hours = Math.floor(minutes / 60);
+  const days = Math.floor(hours / 24);
 
-  if (diffMinutes < 1) {
-    return 'Just now';
-  } else if (diffMinutes < 60) {
-    return `${diffMinutes} minute${diffMinutes === 1 ? '' : 's'} ago`;
-  } else if (diffHours < 24) {
-    return `${diffHours} hour${diffHours === 1 ? '' : 's'} ago`;
-  } else {
-    return `${diffDays} day${diffDays === 1 ? '' : 's'} ago`;
-  }
+  if (days > 0) return `${days} day${days > 1 ? 's' : ''} ago`;
+  if (hours > 0) return `${hours} hour${hours > 1 ? 's' : ''} ago`;
+  if (minutes > 0) return `${minutes} minute${minutes > 1 ? 's' : ''} ago`;
+  if (seconds > 0) return `${seconds} second${seconds > 1 ? 's' : ''} ago`;
+  return 'Just now';
 }

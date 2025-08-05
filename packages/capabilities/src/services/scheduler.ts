@@ -164,7 +164,7 @@ export class SchedulerService {
       }
 
       this.tasks.delete(taskId);
-      logger.info(`Removed scheduled task '${taskId}'`);
+      // Task removed
     } catch (error) {
       logger.error(`Failed to remove task '${taskId}':`, error);
       throw error;
@@ -206,7 +206,7 @@ export class SchedulerService {
     const { taskId } = job.data;
     
     try {
-      logger.info(`Executing scheduled job: ${job.name} (taskId: ${taskId})`);
+      // Silent execution - no logs
 
       // Handle different types of scheduled jobs
       switch (job.name) {
@@ -230,7 +230,7 @@ export class SchedulerService {
           logger.warn(`Unknown scheduled job type: ${job.name}`);
       }
 
-      logger.info(`Completed scheduled job: ${job.name}`);
+      // Job completed
     } catch (error) {
       logger.error(`Scheduled job '${job.name}' failed:`, error);
       throw error;
@@ -241,7 +241,7 @@ export class SchedulerService {
    * Execute health check job
    */
   private async executeHealthCheck(_data: Record<string, unknown>): Promise<void> {
-    logger.info('🔍 Executing scheduled health check');
+    // Health check
     
     // - Check Redis connectivity
     // - Check queue status
@@ -296,7 +296,7 @@ export class SchedulerService {
    * Setup default scheduled tasks
    */
   async setupDefaultTasks(): Promise<void> {
-    logger.info('Setting up default scheduled tasks...');
+    // Set up default tasks
 
     // Health check every 5 minutes
     await this.scheduleTask({
@@ -325,7 +325,7 @@ export class SchedulerService {
       options: { immediate: false },
     });
 
-    logger.info('✅ Default scheduled tasks setup completed');
+    // Tasks scheduled
   }
 
   /**

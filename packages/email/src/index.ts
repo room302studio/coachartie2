@@ -20,9 +20,7 @@ app.use('/email', emailRouter);
 // Start queue consumers
 async function startQueueWorkers() {
   try {
-    logger.info('Starting email queue consumers...');
     await startResponseConsumer();
-    logger.info('Email queue consumers started successfully');
   } catch (error) {
     logger.error('Failed to start email queue consumers:', error);
     process.exit(1);
@@ -36,15 +34,11 @@ async function start() {
     await startQueueWorkers();
 
     // Auto-discover available port
-    logger.info('🔍 Auto-discovering available port for email service...');
     const PORT = await parsePortWithFallback('EMAIL_SERVICE_PORT', 'email');
 
-    // Start HTTP server (for email webhooks)
-    logger.info(`🔄 Starting email service on port ${PORT}...`);
+    // Start HTTP server
     const server = app.listen(PORT, '0.0.0.0', async () => {
-      logger.info(`✅ Email service successfully started on port ${PORT}`);
-      logger.info('📧 Ready to receive email webhooks and process email responses');
-      logger.info(`🌐 Webhook endpoint: http://localhost:${PORT}/email/webhook`);
+      logger.info(`✅ email: ${PORT}`);
       
       // Register with service discovery
       await registerServiceWithDiscovery('email', PORT);
@@ -68,13 +62,11 @@ async function start() {
 
 // Handle graceful shutdown
 process.on('SIGTERM', async () => {
-  logger.info('SIGTERM signal received: closing email service');
   await serviceDiscovery.shutdown();
   process.exit(0);
 });
 
 process.on('SIGINT', async () => {
-  logger.info('SIGINT signal received: closing email service');
   await serviceDiscovery.shutdown();
   process.exit(0);
 });
