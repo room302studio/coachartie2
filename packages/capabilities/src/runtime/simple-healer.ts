@@ -16,13 +16,13 @@ export class SimpleHealer {
     
     this.isRunning = true;
     this.interval = setInterval(() => this.heal(), 30000); // Every 30s
-    logger.info('🩺 Simple healer started');
+    // Healer started
   }
 
   stop(): void {
     if (this.interval) clearInterval(this.interval);
     this.isRunning = false;
-    logger.info('🛑 Simple healer stopped');
+    // Healer stopped
   }
 
   private async heal(): Promise<void> {
@@ -36,7 +36,7 @@ export class SimpleHealer {
       const memMB = Math.round(process.memoryUsage().heapUsed / 1024 / 1024);
       if (memMB > 200 && global.gc) {
         global.gc();
-        logger.info(`🗑️ GC: ${memMB}MB heap cleaned`);
+        // GC forced
       }
 
     } catch (error) {
@@ -47,7 +47,7 @@ export class SimpleHealer {
     try {
       const { mcpProcessManager } = await import('../services/mcp-process-manager.js');
       await mcpProcessManager.startMCPProcess('stdio://npx @shelm/wikipedia-mcp-server');
-      logger.info('🔄 Restarted Wikipedia MCP');
+      // MCP restarted
     } catch (error) {
     }
   }

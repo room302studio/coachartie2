@@ -43,7 +43,6 @@ export class CapabilityRegistry {
    * @throws Error if capability is invalid or already exists
    */
   register(capability: RegisteredCapability): void {
-    logger.info(`🔧 Registering capability: ${capability.name}`);
 
     // Validate the capability
     const validationErrors = this.validate(capability);
@@ -60,7 +59,6 @@ export class CapabilityRegistry {
     // Register the capability
     this.capabilities.set(capability.name, capability);
     
-    logger.info(`✅ Capability '${capability.name}' registered successfully with actions: ${capability.supportedActions.join(', ')}`);
   }
 
   /**
@@ -251,11 +249,9 @@ export class CapabilityRegistry {
     // Add action to params for the handler
     const handlerParams = { ...params, action };
 
-    logger.info(`🔧 Executing capability '${name}' with action '${action}'`);
 
     try {
       const result = await capability.handler(handlerParams, content);
-      logger.info(`✅ Capability '${name}:${action}' executed successfully`);
       return result;
     } catch (error) {
       logger.error(`❌ Capability '${name}:${action}' failed:`, error);
@@ -288,7 +284,6 @@ export class CapabilityRegistry {
    */
   registerMCPTool(toolName: string, connectionId: string, command: string, tool: any): void {
     this.mcpTools.set(toolName, { connectionId, command, tool });
-    logger.info(`✅ Registered MCP tool: ${toolName} from ${command}`);
   }
 
   /**
@@ -309,7 +304,6 @@ export class CapabilityRegistry {
    * Clear all registered capabilities (useful for testing)
    */
   clear(): void {
-    logger.info(`🧹 Clearing all ${this.capabilities.size} registered capabilities`);
     this.capabilities.clear();
     this.mcpTools.clear();
   }

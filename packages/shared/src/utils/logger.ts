@@ -25,14 +25,29 @@ class SQLiteTransport extends TransportStream {
 
 // Create base logger with multiple transports
 const transports: winston.transport[] = [
-  // Console transport with colors for development
+  // Console transport with high-density format
   new winston.transports.Console({
     format: winston.format.combine(
       winston.format.colorize(),
-      winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
-      winston.format.printf(({ timestamp, level, service, message, ...meta }) => {
-        let metaStr = Object.keys(meta).length ? JSON.stringify(meta, null, 2) : '';
-        return `${timestamp} [${service}] ${level}: ${message} ${metaStr}`;
+      winston.format.timestamp({ format: 'HH:mm:ss' }),
+      winston.format.printf(({ timestamp, level, service, message, ...meta }: any) => {
+        // Skip pid and nodeVersion
+        const { pid, nodeVersion, ...cleanMeta } = meta;
+        
+        // Collapse message to single line
+        const cleanMessage = String(message).replace(/\n/g, ' ').replace(/\s+/g, ' ').trim();
+        
+        // Only show meta if it has meaningful content
+        const hasUsefulMeta = Object.keys(cleanMeta).length > 0 && 
+          !Object.values(cleanMeta).every(v => v === undefined || v === null);
+        
+        // Super compact format
+        const metaStr = hasUsefulMeta ? ` ${JSON.stringify(cleanMeta)}` : '';
+        
+        // Short service names
+        const shortService = String(service || 'unknown').replace('@coachartie/', '').substring(0, 8);
+        
+        return `${timestamp} ${shortService}: ${cleanMessage}${metaStr}`;
       })
     ),
   }),

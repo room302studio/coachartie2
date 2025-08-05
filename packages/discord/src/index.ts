@@ -22,6 +22,7 @@ const client = new Client({
     GatewayIntentBits.GuildMessages,
     GatewayIntentBits.MessageContent,
     GatewayIntentBits.DirectMessages,
+    GatewayIntentBits.GuildIntegrations,
   ],
   partials: [Partials.Message, Partials.Channel, Partials.User],
 });
@@ -60,9 +61,8 @@ function writeStatus(status: 'starting' | 'ready' | 'error' | 'shutdown', data?:
       ...data
     };
     
-    logger.info(`Writing status to ${STATUS_FILE}:`, { status, guilds: statusData.guilds });
+    // Silently write status file
     writeFileSync(STATUS_FILE, JSON.stringify(statusData, null, 2));
-    logger.info('Status file written successfully');
   } catch (error) {
     logger.error('Failed to write status file:', error);
   }
@@ -74,9 +74,7 @@ async function start() {
 
     // Setup event handlers
     client.on(Events.ClientReady, () => {
-      logger.info(`Discord bot logged in as ${client.user?.tag}`);
-      logger.info(`Bot can see ${client.guilds.cache.size} guilds`);
-      logger.info(`Bot permissions: ${client.user?.flags?.bitfield || 'none'}`);
+      logger.info(`✅ discord: ${client.user?.tag} [${client.guilds.cache.size} guilds]`);
       
       writeStatus('ready', {
         username: client.user?.tag,
@@ -102,16 +100,8 @@ async function start() {
     // Login to Discord
     await client.login(process.env.DISCORD_TOKEN);
 
-    // Update status every 30 seconds
-    setInterval(() => {
-      if (client.isReady()) {
-        writeStatus('ready', {
-          username: client.user?.tag,
-          guilds: client.guilds.cache.size,
-          permissions: client.user?.flags?.bitfield || 'none'
-        });
-      }
-    }, 30000);
+    // Status updates disabled - only update on actual state changes
+    // This reduces log spam and Clickhouse costs
 
   } catch (error) {
     logger.error('Failed to start Discord bot:', error);
