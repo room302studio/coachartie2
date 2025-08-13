@@ -57,15 +57,17 @@ export class ContextAlchemy {
       // 1. Calculate token budget
       const budget = this.calculateTokenBudget(userMessage, baseSystemPrompt);
       
-      // 2. Gather all available context sources
+      // 2. Assemble message context (beautiful, readable pattern)
       const mockMessage = { message: userMessage, userId, id: 'context-gen', source: 'alchemy' } as IncomingMessage;
-      const contextSources = await this.gatherContextSources(mockMessage);
+      const contextSources = await this.assembleMessageContext(mockMessage);
       
       // 3. Prioritize and select context within budget
       selectedContext = this.selectOptimalContext(contextSources, budget);
     } else {
       // Minimal mode: only add temporal context for date/time awareness
-      selectedContext = [await this.getTemporalContext()];
+      const minimalSources: ContextSource[] = [];
+      await this.addCurrentDateTime(minimalSources);
+      selectedContext = minimalSources;
     }
     
     // 4. Build message chain
@@ -107,31 +109,27 @@ export class ContextAlchemy {
   }
 
   /**
-   * Gather context from all available sources
+   * Assemble message context (inspired by the beautiful assembleMessagePreamble pattern)
+   * Each step is crystal clear, single responsibility, easy to debug
    */
-  private async gatherContextSources(message: IncomingMessage): Promise<ContextSource[]> {
+  private async assembleMessageContext(message: IncomingMessage): Promise<ContextSource[]> {
+    logger.info(`📝 Assembling message context for <${message.userId}> message`);
     const sources: ContextSource[] = [];
 
-    // 1. Temporal context (always high priority)
-    sources.push(await this.getTemporalContext());
-    
-    // 2. Goal context (high priority if goals exist)
-    sources.push(await this.getGoalContext(message));
-    
-    // 3. Memory context (medium priority)
-    const memoryContext = await this.getMemoryContext(message);
-    if (memoryContext) sources.push(memoryContext);
-    
-    // 4. Capability context (low priority - just essential info)
-    sources.push(await this.getCapabilityContext());
+    await this.addCurrentDateTime(sources);
+    await this.addGoalWhisper(message, sources);  
+    await this.addRelevantMemories(message, sources);
+    await this.addCapabilityManifest(sources);
+    // Future: await this.addUserPreferences(message, sources);
+    // Future: await this.addConversationHistory(message, sources);
 
     return sources.filter(source => source.content.length > 0);
   }
 
   /**
-   * Get current date/time context
+   * Add current date/time to message context (matches assembleMessagePreamble pattern)
    */
-  private async getTemporalContext(): Promise<ContextSource> {
+  private async addCurrentDateTime(sources: ContextSource[]): Promise<void> {
     const now = new Date();
     const formatted = now.toLocaleDateString('en-US', { 
       weekday: 'long', 
@@ -145,87 +143,75 @@ export class ContextAlchemy {
     
     const content = `Current date and time: ${formatted}\nISO timestamp: ${now.toISOString()}`;
     
-    return {
+    sources.push({
       name: 'temporal_context',
       priority: 100, // Always highest priority
       tokenWeight: Math.ceil(content.length / 4),
       content,
       category: 'temporal'
-    };
+    });
   }
 
   /**
-   * Get goal-aware context via conscience whisper
+   * Add goal whisper to message context (matches assembleMessagePreamble pattern)
    */
-  private async getGoalContext(message: IncomingMessage): Promise<ContextSource> {
+  private async addGoalWhisper(message: IncomingMessage, sources: ContextSource[]): Promise<void> {
     try {
       const goalWhisper = await conscienceLLM.getGoalWhisper(message.message, message.userId);
       
-      if (!goalWhisper) {
-        return {
-          name: 'goal_context',
-          priority: 0,
-          tokenWeight: 0,
-          content: '',
+      if (goalWhisper) {
+        const content = `[Conscience: ${goalWhisper}]`;
+        
+        sources.push({
+          name: 'goal_context', 
+          priority: 90, // High priority when available
+          tokenWeight: Math.ceil(content.length / 4),
+          content,
           category: 'goals'
-        };
+        });
       }
-      
-      const content = `[Conscience: ${goalWhisper}]`;
-      
-      return {
-        name: 'goal_context', 
-        priority: 90, // High priority when available
-        tokenWeight: Math.ceil(content.length / 4),
-        content,
-        category: 'goals'
-      };
     } catch (error) {
-      logger.warn('Failed to get goal context:', error);
-      return {
-        name: 'goal_context',
-        priority: 0,
-        tokenWeight: 0,
-        content: '',
-        category: 'goals'
-      };
+      logger.warn('Failed to add goal whisper:', error);
+      // Graceful degradation - continue without goal context
     }
   }
 
   /**
-   * Get relevant memory patterns
+   * Add relevant memories to message context (matches assembleMessagePreamble pattern)
    */
-  private async getMemoryContext(message: IncomingMessage): Promise<ContextSource | null> {
+  private async addRelevantMemories(message: IncomingMessage, sources: ContextSource[]): Promise<void> {
     try {
-      // This would integrate with the existing memory pattern system
-      // For now, return a placeholder to maintain the architecture
-      return {
+      // This will integrate with the existing memory pattern system
+      // For now, add placeholder to maintain the architecture
+      const content = '# Recent relevant experiences: (memory integration pending)';
+      
+      sources.push({
         name: 'memory_context',
         priority: 70,
-        tokenWeight: 50,
-        content: '# Recent relevant experiences: (memory integration pending)',
+        tokenWeight: Math.ceil(content.length / 4),
+        content,
         category: 'memory'
-      };
+      });
     } catch (error) {
-      logger.warn('Failed to get memory context:', error);
-      return null;
+      logger.warn('Failed to add relevant memories:', error);
+      // Graceful degradation - continue without memory context
     }
   }
 
   /**
-   * Get essential capability information
+   * Add capability manifest to message context (matches assembleMessagePreamble pattern)
    */
-  private async getCapabilityContext(): Promise<ContextSource> {
+  private async addCapabilityManifest(sources: ContextSource[]): Promise<void> {
     // Just the essential capability info, not a massive list
     const content = `Available capabilities: calculate, remember, recall, web-search, goal, variable_store, todo, linkedin`;
     
-    return {
+    sources.push({
       name: 'capability_context',
       priority: 30, // Lower priority - capabilities can be learned
       tokenWeight: Math.ceil(content.length / 4),
       content,
       category: 'capabilities'
-    };
+    });
   }
 
   /**
