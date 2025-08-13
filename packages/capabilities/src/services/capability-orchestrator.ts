@@ -27,6 +27,7 @@ import { conscienceLLM } from './conscience.js';
 import { bulletproofExtractor } from "../utils/bulletproof-capability-extractor.js";
 import { robustExecutor } from "../utils/robust-capability-executor.js";
 import { modelAwarePrompter } from "../utils/model-aware-prompter.js";
+import { contextAlchemy } from './context-alchemy.js';
 
 // Define capability extraction types
 interface ExtractedCapability {
@@ -420,20 +421,34 @@ Timestamp: ${new Date().toISOString()}`;
     try {
       logger.info(`🚀 getLLMResponseWithCapabilities called for message: "${message.message}"`);
       
-      // Use existing prompt manager with context alchemy integration
-      logger.info("🧪 CONTEXT ALCHEMY: Using intelligent context assembly via prompt manager");
-      const systemMessage = await promptManager.getCapabilityInstructions(message.message, message.userId);
+      // Get base capability instructions template
+      const baseInstructions = await promptManager.getCapabilityInstructions(message.message);
       
-      // Apply model-aware prompting for better capability generation
-      const currentModel = openRouterService.getCurrentModel();
-      const modelAwareInstructions = modelAwarePrompter.generateCapabilityPrompt(currentModel, systemMessage);
-      
-      logger.info(`🎯 Using model-aware capability instructions for ${currentModel}`);
-      
-      return await openRouterService.generateResponse(
-        modelAwareInstructions,
+      // Use Context Alchemy to build intelligent message chain
+      logger.info("🧪 CONTEXT ALCHEMY: Building intelligent message chain");
+      const { messages } = await contextAlchemy.buildMessageChain(
+        message.message,
         message.userId,
-        undefined,
+        baseInstructions
+      );
+      
+      // Apply model-aware prompting to the system message
+      const currentModel = openRouterService.getCurrentModel();
+      const modelAwareMessages = messages.map(msg => {
+        if (msg.role === 'system') {
+          return {
+            ...msg,
+            content: modelAwarePrompter.generateCapabilityPrompt(currentModel, msg.content)
+          };
+        }
+        return msg;
+      });
+      
+      logger.info(`🎯 Using Context Alchemy with model-aware prompting for ${currentModel} (${modelAwareMessages.length} messages)`);
+      
+      return await openRouterService.generateFromMessageChain(
+        modelAwareMessages,
+        message.userId,
         message.id
       );
     } catch (error) {

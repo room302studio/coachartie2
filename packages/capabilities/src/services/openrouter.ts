@@ -62,6 +62,17 @@ class OpenRouterService {
 
 ${context ? `Context from previous conversations: ${context}` : ''}`;
 
+    return this.generateFromMessageChain([
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: userMessage }
+    ], userId, messageId);
+  }
+
+  async generateFromMessageChain(
+    messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>,
+    userId: string,
+    messageId?: string
+  ): Promise<string> {
     const startTime = Date.now();
     
     // Try each model in order until one works
@@ -69,20 +80,11 @@ ${context ? `Context from previous conversations: ${context}` : ''}`;
       const model = this.models[i];
       
       try {
-        logger.info(`Attempting to generate response with model: ${model}`);
+        logger.info(`Attempting to generate response with model: ${model} using ${messages.length} messages`);
         
         const completion = await this.client.chat.completions.create({
           model,
-          messages: [
-            {
-              role: 'system',
-              content: systemPrompt,
-            },
-            {
-              role: 'user',
-              content: userMessage,
-            },
-          ],
+          messages,
           max_tokens: 1000,
           temperature: 0.7,
         });
