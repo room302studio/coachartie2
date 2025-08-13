@@ -166,17 +166,92 @@ class LinkedInService {
    * Generate professional LinkedIn content using AI
    */
   async generateContent(topic: string, tone: 'professional' | 'casual' | 'thought-leadership' = 'professional'): Promise<string> {
-    // This would integrate with Coach Artie's AI capabilities
-    const prompts = {
-      professional: `Create a professional LinkedIn post about "${topic}". Keep it engaging, informative, and under 300 characters. Include relevant hashtags.`,
-      casual: `Write a casual but professional LinkedIn post about "${topic}". Make it conversational and relatable. Under 250 characters.`,
-      'thought-leadership': `Write a thought-leadership LinkedIn post about "${topic}". Share insights, ask questions, and encourage discussion. Under 400 characters.`
-    };
+    const startTime = Date.now();
+    logger.info(`🔍 Starting LinkedIn content generation for topic: "${topic}", tone: ${tone}`);
+    
+    try {
+      const { openRouterService } = await import('../services/openrouter.js');
+      
+      // Quick health check with shorter timeout
+      const healthTimeout = 5000; // 5 seconds for health check
+      const healthPromise = new Promise<boolean>((resolve) => {
+        setTimeout(() => resolve(false), healthTimeout);
+        openRouterService.isHealthy().then(resolve).catch(() => resolve(false));
+      });
+      
+      const isHealthy = await healthPromise;
+      if (!isHealthy) {
+        throw new Error('OpenRouter service is not available for content generation - health check failed');
+      }
+      
+      const prompts = {
+        professional: `Write a professional LinkedIn post about "${topic}". Keep it engaging, informative, and under 300 characters. Include 2-3 relevant hashtags at the end.`,
+        casual: `Write a casual but professional LinkedIn post about "${topic}". Make it conversational and relatable. Under 250 characters with hashtags.`,
+        'thought-leadership': `Write a thought-leadership LinkedIn post about "${topic}". Share insights, ask an engaging question, and encourage discussion. Under 400 characters with hashtags.`
+      };
 
-    // TODO: Integrate with Coach Artie's AI service
-    // For now, return a placeholder
-    return `Excited to share thoughts on ${topic}! As an AI assistant, I'm constantly learning and growing. What are your thoughts on this topic? #AI #Innovation #TechTrends`;
+      const prompt = `You are Coach Artie, an AI assistant and coach. ${prompts[tone]}
+
+Write in Coach Artie's authentic voice:
+- Encouraging and supportive
+- Growth-oriented and optimistic
+- Professional but not corporate
+- Genuine and authentic
+
+Return only the post content, ready to publish on LinkedIn.`;
+
+      logger.info(`🚀 Sending request to OpenRouter service...`);
+      
+      // Add more aggressive timeout for content generation
+      const timeoutMs = 25000; // 25 seconds (reduced from 30)
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        setTimeout(() => reject(new Error(`LinkedIn content generation timed out after ${timeoutMs}ms`)), timeoutMs);
+      });
+      
+      const response = await Promise.race([
+        openRouterService.generateResponse(prompt, 'linkedin-content-generation'),
+        timeoutPromise
+      ]);
+      
+      const duration = Date.now() - startTime;
+      logger.info(`✅ LinkedIn content generated successfully in ${duration}ms`);
+      
+      // Validate response length and content
+      const trimmedResponse = response.trim();
+      if (trimmedResponse.length < 10) {
+        throw new Error('Generated content too short, AI service returned invalid response');
+      }
+      
+      if (trimmedResponse.toLowerCase().includes('technical difficulties') || 
+          trimmedResponse.toLowerCase().includes('i cannot') || 
+          trimmedResponse.toLowerCase().includes('i am unable')) {
+        throw new Error('AI service returned error message instead of content');
+      }
+      
+      return trimmedResponse;
+      
+    } catch (error) {
+      const duration = Date.now() - startTime;
+      logger.error(`❌ Failed to generate LinkedIn content after ${duration}ms:`, error);
+      
+      // Provide detailed error context
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      logger.error(`❌ LinkedIn generation error details: ${errorMessage}`);
+      
+      // Enhanced error context for debugging
+      if (errorMessage.includes('timeout')) {
+        throw new Error(`LinkedIn content generation timeout after ${duration}ms - free models may be overloaded. Try again or consider upgrading to premium models.`);
+      }
+      
+      if (errorMessage.includes('health check failed')) {
+        throw new Error(`LinkedIn content generation failed - OpenRouter service is currently unavailable. Please try again later.`);
+      }
+      
+      // Re-throw the error with additional context
+      throw new Error(`Failed to generate LinkedIn content: ${errorMessage}. Duration: ${duration}ms`);
+    }
   }
+
 
   /**
    * Update LinkedIn profile information
@@ -277,14 +352,23 @@ ID: ${profile.id}`;
           : '❌ Failed to create LinkedIn post';
 
       case 'generate_content':
+        logger.info(`🚀 LinkedIn generate_content called with params:`, params);
         const topic = params.topic || content;
         if (!topic) {
           return '❌ Topic is required for content generation';
         }
         
         const tone = params.tone || 'professional';
-        const generatedContent = await linkedInService.generateContent(topic, tone);
-        return `📝 Generated LinkedIn content:\n\n${generatedContent}`;
+        logger.info(`🎯 About to call linkedInService.generateContent with topic: "${topic}", tone: "${tone}"`);
+        
+        try {
+          const generatedContent = await linkedInService.generateContent(topic, tone);
+          logger.info(`✅ LinkedIn content generated successfully: ${generatedContent.substring(0, 100)}...`);
+          return `📝 Generated LinkedIn content:\n\n${generatedContent}`;
+        } catch (error) {
+          logger.error(`❌ LinkedIn content generation failed:`, error);
+          throw error;
+        }
 
       case 'update_profile':
         if (!linkedInService.isAuthenticated()) {
