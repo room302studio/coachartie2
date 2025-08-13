@@ -492,9 +492,10 @@ Timestamp: ${new Date().toISOString()}`;
 - Get Wikipedia article: <get-wikipedia-article limit="5">article title</get-wikipedia-article>
 - Get current time: <get-current-time />` : '';
 
-    return `You are Coach Artie, a helpful AI assistant. 
-
-You have access to capabilities through simple XML tags when needed:
+    // DEPRECATED: Hardcoded prompts removed - use Context Alchemy and prompt database instead
+    logger.warn('⚠️ generateDynamicCapabilityInstructions is deprecated - use Context Alchemy');
+    
+    return `Assistant with capabilities access through XML tags:
 - Calculate: <calculate>2 + 2 * 5</calculate>
 - Remember: <remember>I love Hawaiian pizza</remember>  
 - Recall: <recall>pizza</recall> or <recall user="john">preferences</recall> or <recall auto />
@@ -562,7 +563,10 @@ User's message: ${userMessage}`;
 - Search Wikipedia: <search-wikipedia>search terms</search-wikipedia>
 - Get current time: <get-current-time />` : '';
 
-    return `You are Coach Artie, a helpful AI assistant.
+    // DEPRECATED: Hardcoded prompts removed - use Context Alchemy and prompt database instead
+    logger.warn('⚠️ generateSimpleFallbackInstructions is deprecated - use Context Alchemy');
+    
+    return `Assistant with basic capabilities.
 
 If you need to:
 - Calculate something: <calculate>2 + 2</calculate>
@@ -706,8 +710,18 @@ User: ${userMessage}`;
 
       const prompt = `${reflectionPrompts[type]}\n\nDialogue:\n${contextText}`;
       
-      // SECURITY FIX: Use actual userId for reflection generation to prevent contamination
-      const reflection = await openRouterService.generateResponse(prompt, userId);
+      // Use Context Alchemy for all LLM requests - SECURITY FIX: Use actual userId for reflection generation
+      const { contextAlchemy } = await import('./context-alchemy.js');
+      const { promptManager } = await import('./prompt-manager.js');
+      
+      const baseSystemPrompt = await promptManager.getCapabilityInstructions(prompt);
+      const { messages } = await contextAlchemy.buildMessageChain(
+        prompt,
+        userId,
+        baseSystemPrompt
+      );
+      
+      const reflection = await openRouterService.generateFromMessageChain(messages, userId);
       return reflection.trim();
       
     } catch (error) {
@@ -1399,10 +1413,11 @@ ${capabilityDetails}`;
       }
     }).join('\n');
 
-    // Create final response prompt
-    const finalPrompt = `You are Coach Artie. The user asked: "${context.originalMessage}"
+    // Create final response prompt - TODO: Move to Context Alchemy
+    // This should also use the prompt database, not hardcoded text
+    const finalPrompt = `Assistant response synthesis. User asked: "${context.originalMessage}"
 
-You initially planned to use these capabilities, and here are the results:
+Capability execution results:
 ${capabilityResults}
 
 Please provide a final, coherent response that incorporates these capability results naturally. Be conversational, helpful, and don't repeat the raw capability output - instead, present the information in a natural way.
@@ -1414,11 +1429,20 @@ Important:
 - If there were errors, acknowledge them helpfully`;
 
     try {
-      // Get final coherent response from LLM
-      const finalResponse = await openRouterService.generateResponse(
+      // Use Context Alchemy for final response generation
+      const { contextAlchemy } = await import('./context-alchemy.js');
+      const { promptManager } = await import('./prompt-manager.js');
+      
+      const baseSystemPrompt = await promptManager.getCapabilityInstructions(finalPrompt);
+      const { messages } = await contextAlchemy.buildMessageChain(
         finalPrompt,
         context.userId,
-        undefined,
+        baseSystemPrompt
+      );
+      
+      const finalResponse = await openRouterService.generateFromMessageChain(
+        messages,
+        context.userId,
         context.messageId
       );
       

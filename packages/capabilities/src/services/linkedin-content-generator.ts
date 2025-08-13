@@ -39,12 +39,25 @@ class LinkedInContentGenerator {
     const { topic, tone, length, includeHashtags, includeCallToAction, targetAudience } = options;
     
     try {
-      const prompt = this.buildPrompt(options);
+      const { contextAlchemy } = await import('./context-alchemy.js');
+      const { promptManager } = await import('./prompt-manager.js');
+      
+      const userMessage = this.buildPrompt(options);
       
       logger.info(`🎯 Generating LinkedIn content for topic: "${topic}" with tone: ${tone}`);
       
-      const response = await openRouterService.generateResponse(
-        prompt,
+      // Get base system prompt from database
+      const baseSystemPrompt = await promptManager.getCapabilityInstructions(userMessage);
+      
+      // Build intelligent message chain via Context Alchemy
+      const { messages } = await contextAlchemy.buildMessageChain(
+        userMessage,
+        'linkedin-content-generation',
+        baseSystemPrompt
+      );
+      
+      const response = await openRouterService.generateFromMessageChain(
+        messages,
         'linkedin-content-generation'
       );
       
@@ -133,7 +146,20 @@ Requirements:
 - End with 2-3 relevant hashtags`;
 
     try {
-      const response = await openRouterService.generateResponse(prompt, 'linkedin-activity-content');
+      const { contextAlchemy } = await import('./context-alchemy.js');
+      const { promptManager } = await import('./prompt-manager.js');
+      
+      // Get base system prompt from database
+      const baseSystemPrompt = await promptManager.getCapabilityInstructions(prompt);
+      
+      // Build intelligent message chain via Context Alchemy
+      const { messages } = await contextAlchemy.buildMessageChain(
+        prompt,
+        'linkedin-activity-content',
+        baseSystemPrompt
+      );
+      
+      const response = await openRouterService.generateFromMessageChain(messages, 'linkedin-activity-content');
       
       return this.parseGeneratedContent(response, {
         topic: 'personal insight',

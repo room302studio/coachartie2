@@ -171,6 +171,8 @@ class LinkedInService {
     
     try {
       const { openRouterService } = await import('../services/openrouter.js');
+      const { contextAlchemy } = await import('../services/context-alchemy.js');
+      const { promptManager } = await import('../services/prompt-manager.js');
       
       // Quick health check with shorter timeout
       const healthTimeout = 5000; // 5 seconds for health check
@@ -190,9 +192,9 @@ class LinkedInService {
         'thought-leadership': `Write a thought-leadership LinkedIn post about "${topic}". Share insights, ask an engaging question, and encourage discussion. Under 400 characters with hashtags.`
       };
 
-      const prompt = `You are Coach Artie, an AI assistant and coach. ${prompts[tone]}
+      const userMessage = `${prompts[tone]}
 
-Write in Coach Artie's authentic voice:
+Write in an authentic, professional voice that is:
 - Encouraging and supportive
 - Growth-oriented and optimistic
 - Professional but not corporate
@@ -200,7 +202,19 @@ Write in Coach Artie's authentic voice:
 
 Return only the post content, ready to publish on LinkedIn.`;
 
-      logger.info(`🚀 Sending request to OpenRouter service...`);
+      logger.info(`🚀 Building message chain via Context Alchemy...`);
+      
+      // Get base system prompt from prompt database  
+      const baseSystemPrompt = await promptManager.getCapabilityInstructions(userMessage);
+      
+      // Build intelligent message chain via Context Alchemy
+      const { messages } = await contextAlchemy.buildMessageChain(
+        userMessage,
+        'linkedin-content-generation',
+        baseSystemPrompt
+      );
+      
+      logger.info(`🚀 Sending request to OpenRouter service with ${messages.length} messages...`);
       
       // Add more aggressive timeout for content generation
       const timeoutMs = 25000; // 25 seconds (reduced from 30)
@@ -209,7 +223,7 @@ Return only the post content, ready to publish on LinkedIn.`;
       });
       
       const response = await Promise.race([
-        openRouterService.generateResponse(prompt, 'linkedin-content-generation'),
+        openRouterService.generateFromMessageChain(messages, 'linkedin-content-generation'),
         timeoutPromise
       ]);
       

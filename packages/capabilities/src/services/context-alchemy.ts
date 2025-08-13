@@ -43,22 +43,30 @@ export class ContextAlchemy {
     userMessage: string, 
     userId: string, 
     baseSystemPrompt: string, 
-    existingMessages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = []
+    existingMessages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [],
+    options: { minimal?: boolean } = {}
   ): Promise<{
     messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>;
     contextSources: ContextSource[];
   }> {
-    logger.info('🧪 Context Alchemy: Building intelligent message chain');
+    logger.info(`🧪 Context Alchemy: Building ${options.minimal ? 'minimal' : 'intelligent'} message chain`);
     
-    // 1. Calculate token budget
-    const budget = this.calculateTokenBudget(userMessage, baseSystemPrompt);
+    let selectedContext: ContextSource[] = [];
     
-    // 2. Gather all available context sources
-    const mockMessage = { message: userMessage, userId, id: 'context-gen', source: 'alchemy' } as IncomingMessage;
-    const contextSources = await this.gatherContextSources(mockMessage);
-    
-    // 3. Prioritize and select context within budget
-    const selectedContext = this.selectOptimalContext(contextSources, budget);
+    if (!options.minimal) {
+      // 1. Calculate token budget
+      const budget = this.calculateTokenBudget(userMessage, baseSystemPrompt);
+      
+      // 2. Gather all available context sources
+      const mockMessage = { message: userMessage, userId, id: 'context-gen', source: 'alchemy' } as IncomingMessage;
+      const contextSources = await this.gatherContextSources(mockMessage);
+      
+      // 3. Prioritize and select context within budget
+      selectedContext = this.selectOptimalContext(contextSources, budget);
+    } else {
+      // Minimal mode: only add temporal context for date/time awareness
+      selectedContext = [await this.getTemporalContext()];
+    }
     
     // 4. Build message chain
     const messageChain = this.assembleMessageChain(

@@ -27,11 +27,21 @@ export async function processMessage(message: IncomingMessage): Promise<string> 
     } else {
       logger.info(`🤖 Processing message with simple AI chat: ${message.id}`);
       
-      // Fallback to simple AI response (previous behavior)
-      const aiResponse = await openRouterService.generateResponse(
+      // Fallback to Context Alchemy-powered AI response  
+      const { contextAlchemy } = await import('../services/context-alchemy.js');
+      const { promptManager } = await import('../services/prompt-manager.js');
+      
+      const baseSystemPrompt = await promptManager.getCapabilityInstructions(message.message);
+      const { messages } = await contextAlchemy.buildMessageChain(
         message.message,
         message.userId,
-        message.context?.conversationHistory
+        baseSystemPrompt,
+        message.context?.conversationHistory || []
+      );
+      
+      const aiResponse = await openRouterService.generateFromMessageChain(
+        messages,
+        message.userId
       );
       
       logger.info(`Generated simple AI response for user ${message.userId}`);

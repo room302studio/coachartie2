@@ -23,24 +23,41 @@ Every complex behavior should emerge from combining simple, reliable tools:
 - **IDENTIFY GAPS**: Find missing atomic tools, not missing features
 - **FIX THE ATOMS**: Debug individual tools, not complex systems
 
+## 🧪 CONTEXT ALCHEMY: SINGLE SOURCE OF TRUTH
+
+**IRON-CLAD RULE:** Every LLM request MUST go through Context Alchemy → OpenRouter. No exceptions. No backdoors. No direct API calls.
+
+```typescript
+// ✅ CORRECT: The ONLY way to call LLMs
+const { messages } = await contextAlchemy.buildMessageChain(userMessage, userId, basePrompt);
+const response = await openRouterService.generateFromMessageChain(messages, userId);
+
+// ❌ FORBIDDEN: Direct API calls, bypasses security
+await openai.chat.completions.create(...)
+await axios.post('https://api.openai.com/v1/chat/completions', ...)
+await openRouterService.generateResponse(...) // DEPRECATED, throws error
+```
+
+**Context Alchemy Modes:**
+```typescript
+// Full intelligent context (default) - goals, memories, temporal awareness
+await contextAlchemy.buildMessageChain(userMessage, userId, basePrompt)
+
+// Minimal context - just date/time, for simple/fast requests
+await contextAlchemy.buildMessageChain(userMessage, userId, basePrompt, [], { minimal: true })
+```
+
+**Security Benefits:**
+- 🔒 All requests monitored and logged
+- 💰 Usage tracking and cost management  
+- 🛡️ Model fallback when APIs fail
+- 🧠 Intelligent context assembly
+- 📊 Credit monitoring and alerts
+- 🚫 Zero API key leakage risk
+
 ## 🧠 THE CONSCIENCE WHISPER: Parallel Goal Awareness
 
-**The Simplification:** Every LLM interaction gets a parallel "conscience whisper" injected into context.
-
-```python
-async def get_llm_response(user_message: str):
-    goals = await get_active_goals()
-    conscience_whisper = await cheap_llm(
-        f"Goals: {goals}\nUser said: {user_message}\n"
-        f"What should I keep in mind? (one sentence)"
-    )
-    response = await main_llm(
-        f"User: {user_message}\n"
-        f"[Conscience: {conscience_whisper}]\n"
-        f"Respond naturally."
-    )
-    return response
-```
+**The Simplification:** Every LLM interaction gets a parallel "conscience whisper" injected into context via Context Alchemy.
 
 **Example:**
 ```
@@ -142,6 +159,14 @@ Response: "Nice! Quick cereal break sounds perfect before we tackle that final P
 - Graceful handling of model hallucinations
 
 ## ✅ CURRENT STATUS
+
+### Security Infrastructure Complete ✅
+- ✅ **Context Alchemy**: Single source of truth for ALL LLM requests
+- ✅ **Zero Direct API Calls**: All requests route through proper security layers
+- ✅ **OpenRouter Purity**: Only handles API communication, no context building
+- ✅ **Minimal Context Mode**: Available for lightweight requests
+- ✅ **Usage Tracking**: All LLM calls monitored and logged
+- ✅ **Model Fallbacks**: Automatic failover when models unavailable
 
 ### POC Infrastructure Complete
 - ✅ **XML Parsing**: 100% regex-free, functional  

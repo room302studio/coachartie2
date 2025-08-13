@@ -68,7 +68,17 @@ Examples:
 - "They're in deep work mode, be concise and helpful"`;
 
     try {
-      const response = await openRouterService.generateResponse(prompt, userId);
+      const { contextAlchemy } = await import('./context-alchemy.js');
+      const { promptManager } = await import('./prompt-manager.js');
+      
+      const baseSystemPrompt = await promptManager.getCapabilityInstructions(prompt);
+      const { messages } = await contextAlchemy.buildMessageChain(
+        prompt,
+        userId,
+        baseSystemPrompt
+      );
+      
+      const response = await openRouterService.generateFromMessageChain(messages, userId);
       return response.trim();
     } catch (error) {
       logger.warn('Whisper generation failed:', error);
@@ -261,7 +271,17 @@ For DANGEROUS operations: Explain why unsafe, no approval`;
         .replace('{{CAPABILITY_PARAMS}}', JSON.stringify(capability.params))
         + `\n\n${warningsText}${capabilityGuidance}`;
 
-      const response = await openRouterService.generateResponse(prompt, 'conscience-system');
+      const { contextAlchemy } = await import('./context-alchemy.js');
+      const { promptManager } = await import('./prompt-manager.js');
+      
+      const baseSystemPrompt = await promptManager.getCapabilityInstructions(prompt);
+      const { messages } = await contextAlchemy.buildMessageChain(
+        prompt,
+        'conscience-system',
+        baseSystemPrompt
+      );
+      
+      const response = await openRouterService.generateFromMessageChain(messages, 'conscience-system');
       
       logger.info(`Conscience reviewed ${capability.name}:${capability.action} - response length: ${response.length}`);
       

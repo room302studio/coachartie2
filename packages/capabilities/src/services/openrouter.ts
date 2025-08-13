@@ -58,14 +58,10 @@ class OpenRouterService {
     context?: string,
     messageId?: string
   ): Promise<string> {
-    const systemPrompt = `You are Coach Artie, a helpful and encouraging AI assistant. You provide supportive, motivational, and practical advice. Keep responses concise but warm and engaging.
-
-${context ? `Context from previous conversations: ${context}` : ''}`;
-
-    return this.generateFromMessageChain([
-      { role: 'system', content: systemPrompt },
-      { role: 'user', content: userMessage }
-    ], userId, messageId);
+    // DEPRECATED: This method should NOT exist - OpenRouter should be PURE
+    // All message building should happen in Context Alchemy
+    logger.error('🚨 generateResponse should NOT be used - OpenRouter must be PURE. Use Context Alchemy!');
+    throw new Error('DEPRECATED: Use Context Alchemy to build messages, then call generateFromMessageChain directly');
   }
 
   async generateFromMessageChain(

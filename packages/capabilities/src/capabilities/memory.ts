@@ -359,7 +359,17 @@ Return ONLY a JSON array of lowercase tag strings, no other text.
 Example: ["food", "pizza", "italian", "preference", "like"]`;
 
       const { openRouterService } = await import('../services/openrouter.js');
-      const response = await openRouterService.generateResponse(prompt, 'mistralai/mistral-7b-instruct:free');
+      const { contextAlchemy } = await import('../services/context-alchemy.js');
+      const { promptManager } = await import('../services/prompt-manager.js');
+      
+      const baseSystemPrompt = await promptManager.getCapabilityInstructions(prompt);
+      const { messages } = await contextAlchemy.buildMessageChain(
+        prompt,
+        'memory-tagging-system',
+        baseSystemPrompt
+      );
+      
+      const response = await openRouterService.generateFromMessageChain(messages, 'memory-tagging-system');
 
       // Parse the tags from LLM response
       const tags = this.parseTagsFromResponse(response);
