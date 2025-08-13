@@ -27,7 +27,6 @@ import { conscienceLLM } from './conscience.js';
 import { bulletproofExtractor } from "../utils/bulletproof-capability-extractor.js";
 import { robustExecutor } from "../utils/robust-capability-executor.js";
 import { modelAwarePrompter } from "../utils/model-aware-prompter.js";
-import { contextAlchemy } from './context-alchemy.js';
 
 // Define capability extraction types
 interface ExtractedCapability {
@@ -421,18 +420,9 @@ Timestamp: ${new Date().toISOString()}`;
     try {
       logger.info(`🚀 getLLMResponseWithCapabilities called for message: "${message.message}"`);
       
-      // Get base capability instructions from database
-      const prompt = await promptManager.getPrompt('capability_instructions', true);
-      if (!prompt) {
-        throw new Error('No capability instructions found in database');
-      }
-      
-      // Replace placeholder with actual user message
-      const baseInstructions = prompt.content.replace(/\{\{USER_MESSAGE\}\}/g, message.message);
-      
-      // Use Context Alchemy for intelligent context assembly
-      logger.info("🧪 CONTEXT ALCHEMY: Using intelligent context assembly system");
-      const { systemMessage, userMessage } = await contextAlchemy.assembleContext(message, baseInstructions);
+      // Use existing prompt manager with context alchemy integration
+      logger.info("🧪 CONTEXT ALCHEMY: Using intelligent context assembly via prompt manager");
+      const systemMessage = await promptManager.getCapabilityInstructions(message.message, message.userId);
       
       // Apply model-aware prompting for better capability generation
       const currentModel = openRouterService.getCurrentModel();

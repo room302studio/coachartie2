@@ -101,7 +101,7 @@ export class PromptManager {
   }
 
   /**
-   * Get capability instructions with variable substitution 🚀
+   * Get raw capability instructions template - context assembly happens in Context Alchemy 🚀
    */
   async getCapabilityInstructions(userMessage: string): Promise<string> {
     const prompt = await this.getPrompt('capability_instructions');
@@ -115,7 +115,7 @@ export class PromptManager {
     let instructions = prompt.content;
     instructions = instructions.replace(/\{\{USER_MESSAGE\}\}/g, userMessage);
 
-    logger.info(`🎯 Generated capability instructions (v${prompt.version})`);
+    logger.info(`🎯 Generated raw capability instructions (v${prompt.version}) - context assembly happens in Context Alchemy`);
     return instructions;
   }
 

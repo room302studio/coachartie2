@@ -37,37 +37,43 @@ export class ContextAlchemy {
   }
 
   /**
-   * Main entry point - assembles optimal context for an LLM request
+   * Main entry point - builds contextual message chain (user message is always last)
    */
-  async assembleContext(message: IncomingMessage, baseInstructions: string): Promise<{
-    systemMessage: string;
-    userMessage: string;
+  async buildMessageChain(
+    userMessage: string, 
+    userId: string, 
+    baseSystemPrompt: string, 
+    existingMessages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = []
+  ): Promise<{
+    messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>;
     contextSources: ContextSource[];
   }> {
-    logger.info('🧪 Context Alchemy: Starting intelligent context assembly');
+    logger.info('🧪 Context Alchemy: Building intelligent message chain');
     
     // 1. Calculate token budget
-    const budget = this.calculateTokenBudget(message.message, baseInstructions);
+    const budget = this.calculateTokenBudget(userMessage, baseSystemPrompt);
     
     // 2. Gather all available context sources
-    const contextSources = await this.gatherContextSources(message);
+    const mockMessage = { message: userMessage, userId, id: 'context-gen', source: 'alchemy' } as IncomingMessage;
+    const contextSources = await this.gatherContextSources(mockMessage);
     
     // 3. Prioritize and select context within budget
     const selectedContext = this.selectOptimalContext(contextSources, budget);
     
-    // 4. Assemble final messages
-    const { systemMessage, userMessage } = this.assembleMessages(
-      baseInstructions, 
-      message.message, 
-      selectedContext
+    // 4. Build message chain
+    const messageChain = this.assembleMessageChain(
+      baseSystemPrompt, 
+      userMessage, 
+      selectedContext, 
+      existingMessages
     );
     
-    logger.info(`🧪 Context Alchemy: Assembled context with ${selectedContext.length} sources`);
+    logger.info(`🧪 Context Alchemy: Built chain with ${messageChain.length} messages and ${selectedContext.length} context sources`);
     selectedContext.forEach(ctx => {
       logger.info(`  📝 ${ctx.name} (${ctx.category}, priority: ${ctx.priority}, tokens: ~${ctx.tokenWeight})`);
     });
     
-    return { systemMessage, userMessage, contextSources: selectedContext };
+    return { messages: messageChain, contextSources: selectedContext };
   }
 
   /**
@@ -240,46 +246,54 @@ export class ContextAlchemy {
   }
 
   /**
-   * Assemble final system and user messages
+   * Assemble message chain with intelligent context placement
    */
-  private assembleMessages(
-    baseInstructions: string, 
-    userMessage: string, 
-    contextSources: ContextSource[]
-  ): { systemMessage: string; userMessage: string } {
+  private assembleMessageChain(
+    baseSystemPrompt: string,
+    userMessage: string,
+    contextSources: ContextSource[],
+    existingMessages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = []
+  ): Array<{ role: 'system' | 'user' | 'assistant'; content: string }> {
     
-    // Build system message with context
     const contextByCategory = this.groupContextByCategory(contextSources);
+    const messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [];
     
-    let systemMessage = baseInstructions;
-    
-    // Add temporal context first (always present)
+    // 1. System message with temporal context
+    let systemContent = baseSystemPrompt;
     if (contextByCategory.temporal.length > 0) {
-      systemMessage = `${contextByCategory.temporal[0].content}\n\n${systemMessage}`;
+      systemContent = `${contextByCategory.temporal[0].content}\n\n${systemContent}`;
     }
-    
-    // Add capability context if selected
     if (contextByCategory.capabilities.length > 0) {
-      systemMessage += `\n\n${contextByCategory.capabilities[0].content}`;
+      systemContent += `\n\n${contextByCategory.capabilities[0].content}`;
     }
     
-    // Add memory context if selected  
+    messages.push({ role: 'system', content: systemContent.trim() });
+    
+    // 2. Add any existing conversation history
+    messages.push(...existingMessages);
+    
+    // 3. Add context messages (some randomization for variety)
     if (contextByCategory.memory.length > 0) {
-      systemMessage += `\n\n${contextByCategory.memory[0].content}`;
+      // Randomly decide if memory goes as assistant context or user context
+      const role = Math.random() > 0.5 ? 'assistant' : 'user';
+      messages.push({
+        role,
+        content: `Context: ${contextByCategory.memory[0].content}`
+      });
     }
     
-    // Build enhanced user message
-    let enhancedUserMessage = userMessage;
-    
-    // Add goal context as conscience whisper if available
+    // 4. Add goal whisper as system-level context if available
     if (contextByCategory.goals.length > 0) {
-      enhancedUserMessage += `\n\n${contextByCategory.goals[0].content}`;
+      messages.push({
+        role: 'system',
+        content: contextByCategory.goals[0].content
+      });
     }
     
-    return {
-      systemMessage: systemMessage.trim(),
-      userMessage: enhancedUserMessage.trim()
-    };
+    // 5. User message ALWAYS comes last
+    messages.push({ role: 'user', content: userMessage });
+    
+    return messages;
   }
 
   /**
