@@ -243,13 +243,56 @@ export class CapabilityOrchestrator {
   }
 
   /**
-   * Main orchestration entry point
+   * Main orchestration entry point - Gospel Methodology Implementation
    * Takes an incoming message and orchestrates the full capability pipeline
    */
   async orchestrateMessage(message: IncomingMessage): Promise<string> {
     logger.info("🎯 ORCHESTRATOR START - This should always appear");
     
-    const context: OrchestrationContext = {
+    const context = this.createOrchestrationContext(message);
+    this.contexts.set(message.id, context);
+
+    try {
+      logger.info(`🎬 Starting orchestration for message ${message.id}`);
+      return await this.assembleMessageOrchestration(context, message);
+    } catch (error) {
+      logger.error(`❌ Orchestration failed for message ${message.id}:`, error);
+      this.contexts.delete(message.id);
+      return this.generateOrchestrationFailureResponse(error, context, message);
+    }
+  }
+
+  /**
+   * Gospel Method: Assemble message orchestration pipeline
+   * Crystal clear what each step does, easy to debug by commenting out steps
+   */
+  private async assembleMessageOrchestration(context: OrchestrationContext, message: IncomingMessage): Promise<string> {
+    logger.info(`⚡ Assembling message orchestration for <${message.userId}> message`);
+    
+    const llmResponse = await this.getLLMResponseWithCapabilities(message);
+    await this.extractCapabilitiesFromUserAndLLM(context, message, llmResponse);
+    await this.reviewCapabilitiesWithConscience(context, message);
+    
+    // Handle no capabilities case
+    if (context.capabilities.length === 0) {
+      const autoInjectionResult = await this.handleAutoInjectionFlow(context, message, llmResponse);
+      if (autoInjectionResult) return autoInjectionResult;
+      return llmResponse; // No capabilities needed, return original response
+    }
+    
+    await this.executeCapabilityChain(context);
+    const finalResponse = await this.generateFinalResponse(context, llmResponse);
+    await this.storeReflectionMemory(context, message, finalResponse);
+    
+    this.contexts.delete(message.id);
+    return finalResponse;
+  }
+
+  /**
+   * Gospel Method: Create orchestration context
+   */
+  private createOrchestrationContext(message: IncomingMessage): OrchestrationContext {
+    return {
       messageId: message.id,
       userId: message.userId,
       originalMessage: message.message,
@@ -259,142 +302,147 @@ export class CapabilityOrchestrator {
       currentStep: 0,
       respondTo: message.respondTo,
     };
+  }
 
-    this.contexts.set(message.id, context);
+  /**
+   * Gospel Method: Extract capabilities from both user message and LLM response
+   */
+  private async extractCapabilitiesFromUserAndLLM(
+    context: OrchestrationContext, 
+    message: IncomingMessage, 
+    llmResponse: string
+  ): Promise<void> {
+    logger.info(`🔍 Extracting capabilities from user and LLM responses`);
+    
+    const currentModel = openRouterService.getCurrentModel();
+    logger.info(`🔍 EXTRACTING WITH MODEL CONTEXT: ${currentModel}`);
+    
+    logger.info(`🔍 EXTRACTING FROM USER MESSAGE: "${message.message}"`);
+    const userCapabilities = this.extractCapabilities(message.message, currentModel);
+    
+    logger.info(`🔍 EXTRACTING FROM LLM RESPONSE: "${llmResponse.substring(0, 200)}..."`);
+    const llmCapabilities = this.extractCapabilities(llmResponse, currentModel);
+    
+    // Combine capabilities, with user-provided ones taking priority
+    const allCapabilities = [...userCapabilities, ...llmCapabilities];
+    
+    if (userCapabilities.length > 0) {
+      logger.info(`🎯 Found ${userCapabilities.length} explicit capabilities from user message`);
+    }
+    if (llmCapabilities.length > 0) {
+      logger.info(`🤖 Found ${llmCapabilities.length} capabilities from LLM response`);
+    }
+    
+    // Store in context for conscience review
+    context.capabilities = allCapabilities;
+  }
 
-    try {
-      logger.info(`🎬 Starting orchestration for message ${message.id}`);
-
-      // Step 1: Get initial LLM response with capability instructions
-      const llmResponse = await this.getLLMResponseWithCapabilities(message);
-      logger.info(
-        `🤖 LLM response received: ${llmResponse.substring(0, 100)}...`
-      );
-
-      // Step 2: Extract capabilities from both user message AND LLM response
-      // Get current model name for model-aware extraction
-      const currentModel = openRouterService.getCurrentModel();
-      logger.info(`🔍 EXTRACTING WITH MODEL CONTEXT: ${currentModel}`);
+  /**
+   * Gospel Method: Review capabilities with conscience for safety
+   */
+  private async reviewCapabilitiesWithConscience(
+    context: OrchestrationContext, 
+    message: IncomingMessage
+  ): Promise<void> {
+    if (context.capabilities.length === 0) return;
+    
+    logger.info(`🧠 Reviewing ${context.capabilities.length} capabilities with conscience`);
+    
+    const reviewedCapabilities = [];
+    let conscienceResponse = '';
+    
+    for (const capability of context.capabilities) {
+      logger.info(`🧠 Conscience reviewing: ${capability.name}:${capability.action}`);
       
-      logger.info(`🔍 EXTRACTING FROM USER MESSAGE: "${message.message}"`);
-      const userCapabilities = this.extractCapabilities(message.message, currentModel);
-      logger.info(`🔍 EXTRACTING FROM LLM RESPONSE: "${llmResponse.substring(0, 200)}..."`);
-      const llmCapabilities = this.extractCapabilities(llmResponse, currentModel);
-      
-      // Combine capabilities, with user-provided ones taking priority
-      const capabilities = [...userCapabilities, ...llmCapabilities];
-      
-      if (userCapabilities.length > 0) {
-        logger.info(`🎯 Found ${userCapabilities.length} explicit capabilities from user message`);
-      }
-      if (llmCapabilities.length > 0) {
-        logger.info(`🤖 Found ${llmCapabilities.length} capabilities from LLM response`);
-      }
-
-      // Step 2.5: Conscience review for risky operations
-      const reviewedCapabilities = [];
-      let conscienceResponse = '';
-      
-      for (const capability of capabilities) {
-        logger.info(`🧠 Conscience reviewing: ${capability.name}:${capability.action}`);
-        
-        const review = await conscienceLLM.review(message.message, {
-          name: capability.name,
-          action: capability.action,
-          params: capability.params
-        });
-        
-        // If conscience approved, keep the original capability
-        if (review.includes('APPROVED:')) {
-          reviewedCapabilities.push(capability);
-        } else {
-          // If not approved, extract any modified capabilities from review
-          const approvedCapabilities = this.extractCapabilities(review);
-          reviewedCapabilities.push(...approvedCapabilities);
-        }
-        
-        conscienceResponse += review + '\n';
-      }
-      
-      context.capabilities = reviewedCapabilities;
-      
-      if (reviewedCapabilities.length !== capabilities.length) {
-        logger.info(`🧠 Conscience modified capabilities: ${capabilities.length} → ${reviewedCapabilities.length}`);
-      }
-
-      if (reviewedCapabilities.length === 0 && capabilities.length === 0) {
-        logger.info(
-          `📝 No capabilities detected, checking for auto-injection opportunities`
-        );
-        
-        // Auto-inject capabilities using bulletproof detection
-        const currentModel = openRouterService.getCurrentModel();
-        logger.info(`🎯 AUTO-INJECT: Using bulletproof auto-injection for model: ${currentModel}`);
-        
-        const bulletproofAutoCapabilities = bulletproofExtractor.detectAutoInjectCapabilities(message.message, llmResponse);
-        const autoInjectedCapabilities = bulletproofAutoCapabilities.map((cap, index) => ({
-          name: cap.name,
-          action: cap.action,
-          params: cap.params,
-          content: cap.content,
-          priority: index
-        }));
-        
-        if (autoInjectedCapabilities.length > 0) {
-          logger.info(`🎯 Auto-injected ${autoInjectedCapabilities.length} capabilities: ${autoInjectedCapabilities.map(c => `${c.name}:${c.action}`).join(', ')}`);
-          context.capabilities = autoInjectedCapabilities;
-          
-          // Execute the auto-injected capabilities
-          await this.executeCapabilityChain(context);
-          
-          // Generate final response with capability results
-          const finalResponse = await this.generateFinalResponse(context, llmResponse);
-          return finalResponse;
-        } else {
-          logger.info(`📝 No auto-injection opportunities found, returning LLM response directly`);
-          return llmResponse;
-        }
-      }
-
-      // If conscience blocked capabilities but provided a response, return that
-      if (reviewedCapabilities.length === 0 && capabilities.length > 0) {
-        logger.info(`🧠 Conscience blocked all capabilities, returning conscience response`);
-        return conscienceResponse.trim();
-      }
-
-      logger.info(
-        `🔧 Found ${reviewedCapabilities.length} capabilities to execute: ${reviewedCapabilities
-          .map((c) => `${c.name}:${c.action}`)
-          .join(", ")}`
-      );
-      
-      // Debug: Log first few characters of each capability's content/params
-      capabilities.forEach((cap, i) => {
-        const contentPreview = cap.content ? cap.content.substring(0, 50) + '...' : 'no content';
-        const paramsPreview = Object.keys(cap.params).length > 0 ? JSON.stringify(cap.params).substring(0, 100) + '...' : 'no params';
-        logger.info(`  ${i+1}. ${cap.name}:${cap.action} - Content: "${contentPreview}" - Params: ${paramsPreview}`);
+      const review = await conscienceLLM.review(message.message, {
+        name: capability.name,
+        action: capability.action,
+        params: capability.params
       });
+      
+      // If conscience approved, keep the original capability
+      if (review.includes('APPROVED:')) {
+        reviewedCapabilities.push(capability);
+      } else {
+        // If not approved, extract any modified capabilities from review
+        const approvedCapabilities = this.extractCapabilities(review);
+        reviewedCapabilities.push(...approvedCapabilities);
+      }
+      
+      conscienceResponse += review + '\n';
+    }
+    
+    // Update context with reviewed capabilities
+    const originalCount = context.capabilities.length;
+    context.capabilities = reviewedCapabilities;
+    
+    if (reviewedCapabilities.length !== originalCount) {
+      logger.info(`🧠 Conscience modified capabilities: ${originalCount} → ${reviewedCapabilities.length}`);
+    }
+    
+    // Store conscience response for potential fallback
+    (context as any).conscienceResponse = conscienceResponse;
+  }
 
-      // Step 3: Execute capabilities in order
+  /**
+   * Gospel Method: Handle auto-injection flow when no capabilities detected
+   */
+  private async handleAutoInjectionFlow(
+    context: OrchestrationContext, 
+    message: IncomingMessage, 
+    llmResponse: string
+  ): Promise<string | null> {
+    logger.info(`📝 No capabilities detected, checking for auto-injection opportunities`);
+    
+    const currentModel = openRouterService.getCurrentModel();
+    logger.info(`🎯 AUTO-INJECT: Using bulletproof auto-injection for model: ${currentModel}`);
+    
+    const bulletproofAutoCapabilities = bulletproofExtractor.detectAutoInjectCapabilities(message.message, llmResponse);
+    const autoInjectedCapabilities = bulletproofAutoCapabilities.map((cap, index) => ({
+      name: cap.name,
+      action: cap.action,
+      params: cap.params,
+      content: cap.content,
+      priority: index
+    }));
+    
+    if (autoInjectedCapabilities.length > 0) {
+      logger.info(`🎯 Auto-injected ${autoInjectedCapabilities.length} capabilities: ${autoInjectedCapabilities.map(c => `${c.name}:${c.action}`).join(', ')}`);
+      context.capabilities = autoInjectedCapabilities;
+      
       await this.executeCapabilityChain(context);
+      return await this.generateFinalResponse(context, llmResponse);
+    }
+    
+    logger.info(`📝 No auto-injection opportunities found`);
+    return null; // No auto-injection possible
+  }
 
-      // Step 4: Generate final response with capability results
-      const finalResponse = await this.generateFinalResponse(
-        context,
-        llmResponse
-      );
-
-      // Step 5: Auto-store reflection memory about successful patterns
+  /**
+   * Gospel Method: Store reflection memory about successful patterns
+   */
+  private async storeReflectionMemory(
+    context: OrchestrationContext, 
+    message: IncomingMessage, 
+    finalResponse: string
+  ): Promise<void> {
+    try {
       await this.autoStoreReflectionMemory(context, message, finalResponse);
-
-      this.contexts.delete(message.id);
-      return finalResponse;
     } catch (error) {
-      logger.error(`❌ Orchestration failed for message ${message.id}:`, error);
-      this.contexts.delete(message.id);
+      logger.error('❌ Failed to store reflection memory (non-critical):', error);
+      // Don't throw - reflection failure shouldn't break the main flow
+    }
+  }
 
-      // Fallback to super verbose error instead of simple LLM response
-      return `🚨 ORCHESTRATION FAILURE DEBUG 🚨
+  /**
+   * Gospel Method: Generate orchestration failure response with full context
+   */
+  private generateOrchestrationFailureResponse(
+    error: unknown, 
+    context: OrchestrationContext, 
+    message: IncomingMessage
+  ): string {
+    return `🚨 ORCHESTRATION FAILURE DEBUG 🚨
 Message ID: ${message.id}
 User ID: ${message.userId}
 Original Message: "${message.message}"
@@ -408,7 +456,6 @@ Result Details: ${context.results.map(r => `${r.capability.name}:${r.success ? '
 Current Step: ${context.currentStep}
 Registry Stats: ${capabilityRegistry.getStats().totalCapabilities} capabilities, ${capabilityRegistry.getStats().totalActions} actions
 Timestamp: ${new Date().toISOString()}`;
-    }
   }
 
   /**
