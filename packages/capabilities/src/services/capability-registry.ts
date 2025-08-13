@@ -77,10 +77,7 @@ export class CapabilityRegistry {
     }
 
     if (!capability.supportedActions.includes(action)) {
-      throw new Error(
-        `Capability '${name}' does not support action '${action}'. ` +
-        `Supported actions: ${capability.supportedActions.join(', ')}`
-      );
+      throw new Error(this.generateActionError(name, action));
     }
 
     return capability;
@@ -307,6 +304,98 @@ export class CapabilityRegistry {
     this.capabilities.clear();
     this.mcpTools.clear();
   }
+
+  /**
+   * Common action aliases mapping
+   */
+  private static readonly ACTION_ALIASES = new Map([
+    ['write', 'write_file'],
+    ['read', 'read_file'],
+    ['store', 'remember'],
+    ['save', 'remember'],
+    ['search', 'recall'],
+    ['find', 'recall'],
+    ['get', 'recall'],
+    ['create', 'create_directory'],
+    ['mkdir', 'create_directory'],
+    ['list', 'list_directory'],
+    ['ls', 'list_directory'],
+    ['check', 'exists'],
+    ['remove', 'delete'],
+    ['rm', 'delete']
+  ]);
+
+  /**
+   * Find similar actions using fuzzy matching and common aliases
+   */
+  private findSimilarActions(target: string, available: string[]): string[] {
+    // First check for exact alias match
+    const alias = CapabilityRegistry.ACTION_ALIASES.get(target.toLowerCase());
+    if (alias && available.includes(alias)) {
+      return [alias];
+    }
+
+    // Then use fuzzy matching
+    return available
+      .map(action => ({ action, score: this.calculateSimilarity(target, action) }))
+      .filter(item => item.score > 0.4)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 2)
+      .map(item => item.action);
+  }
+
+  /**
+   * Simple string similarity calculation (Jaro-Winkler inspired)
+   */
+  private calculateSimilarity(a: string, b: string): number {
+    if (a === b) return 1.0;
+    if (a.length === 0 || b.length === 0) return 0.0;
+    
+    // Check for substring matches
+    if (a.includes(b) || b.includes(a)) return 0.8;
+    
+    // Check for common substrings
+    const aLower = a.toLowerCase();
+    const bLower = b.toLowerCase();
+    
+    if (aLower.includes(bLower) || bLower.includes(aLower)) return 0.7;
+    
+    // Check for similar starting characters
+    let matchingChars = 0;
+    const minLength = Math.min(a.length, b.length);
+    
+    for (let i = 0; i < minLength; i++) {
+      if (aLower[i] === bLower[i]) {
+        matchingChars++;
+      } else {
+        break;
+      }
+    }
+    
+    return matchingChars / Math.max(a.length, b.length);
+  }
+
+  /**
+   * Generate helpful error message with action suggestions
+   */
+  generateActionError(capabilityName: string, attemptedAction: string): string {
+    const capability = this.capabilities.get(capabilityName);
+    if (!capability) {
+      return `Capability '${capabilityName}' not found`;
+    }
+
+    const supportedActions = capability.supportedActions.join(', ');
+    const suggestions = this.findSimilarActions(attemptedAction, capability.supportedActions);
+    
+    if (suggestions.length > 0) {
+      return `❌ Capability '${capabilityName}' does not support action '${attemptedAction}'. ` +
+             `💡 Did you mean '${suggestions.join("' or '")}'? ` +
+             `📋 Supported actions: ${supportedActions}`;
+    }
+    
+    return `❌ Capability '${capabilityName}' does not support action '${attemptedAction}'. ` +
+           `📋 Supported actions: ${supportedActions}`;
+  }
 }
 
 // Export singleton instance
@@ -319,3 +408,7 @@ capabilityRegistry.register(embeddedMCPCapability);
 // Auto-register LinkedIn capability
 import { linkedInCapability } from '../capabilities/linkedin.js';
 capabilityRegistry.register(linkedInCapability);
+
+// Auto-register Semantic Search capability 
+import { semanticSearchCapability } from '../capabilities/semantic-search.js';
+capabilityRegistry.register(semanticSearchCapability);

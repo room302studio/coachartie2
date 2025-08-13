@@ -16,6 +16,112 @@ interface SafetyManifestCapability {
 }
 
 export class ConscienceLLM {
+  private conscienceModel = 'microsoft/phi-3-mini-128k-instruct:free';
+  
+  /**
+   * Generate a quick goal-aware whisper for the main LLM
+   * This provides contextual awareness without being heavy-handed
+   */
+  async getGoalWhisper(userMessage: string, userId: string): Promise<string> {
+    if (!process.env.ENABLE_CONSCIENCE || process.env.ENABLE_CONSCIENCE === 'false') {
+      return '';
+    }
+    
+    try {
+      const timeoutMs = parseInt(process.env.CONSCIENCE_TIMEOUT_MS || '200');
+      
+      // Race against timeout
+      const whisperPromise = this.generateWhisper(userMessage, userId);
+      const timeoutPromise = new Promise<string>((resolve) => 
+        setTimeout(() => resolve(''), timeoutMs)
+      );
+      
+      const whisper = await Promise.race([whisperPromise, timeoutPromise]);
+      
+      if (whisper) {
+        logger.debug(`🧠 Conscience whisper: "${whisper}"`);
+      }
+      
+      return whisper;
+    } catch (error) {
+      logger.warn('Conscience whisper failed, continuing without context:', error);
+      return '';
+    }
+  }
+  
+  private async generateWhisper(userMessage: string, userId: string): Promise<string> {
+    // Get context quickly
+    const context = await this.getQuickContext(userId);
+    
+    const prompt = `Active goals: ${context.goals}
+Recent activity: ${context.recentTopics}
+Current time: ${new Date().toLocaleTimeString()}
+User energy: ${this.inferEnergyLevel(userMessage)}
+
+User just said: "${userMessage}"
+
+In ONE sentence, what should I keep in mind when responding? Focus on emotional context, energy levels, deadline pressure, or goal relevance. Be subtle and supportive.
+
+Examples:
+- "They have a deadline in 30 minutes but seem stressed - encourage a quick break"
+- "No active goals set, good opportunity to help them plan"
+- "They're in deep work mode, be concise and helpful"`;
+
+    try {
+      const response = await openRouterService.generateResponse(prompt, userId);
+      return response.trim();
+    } catch (error) {
+      logger.warn('Whisper generation failed:', error);
+      return '';
+    }
+  }
+  
+  private async getQuickContext(userId: string): Promise<{goals: string, recentTopics: string}> {
+    try {
+      const db = await getDatabase();
+      
+      // Get active goals
+      const goals = await db.all(
+        'SELECT objective, deadline FROM goals WHERE user_id = ? AND status != "completed" ORDER BY priority DESC LIMIT 3',
+        [userId]
+      );
+      
+      // Get recent conversation topics
+      const recentMemories = await db.all(
+        'SELECT content FROM memories WHERE user_id = ? ORDER BY created_at DESC LIMIT 5',
+        [userId]
+      );
+      
+      return {
+        goals: goals.length > 0 
+          ? goals.map(g => g.objective + (g.deadline ? ` (due: ${new Date(g.deadline).toLocaleDateString()})` : '')).join(', ')
+          : 'No active goals',
+        recentTopics: recentMemories.length > 0
+          ? recentMemories.map(m => m.content.substring(0, 50)).join(', ')
+          : 'No recent activity'
+      };
+    } catch (error) {
+      logger.warn('Failed to get context for whisper:', error);
+      return { goals: 'Unknown', recentTopics: 'Unknown' };
+    }
+  }
+  
+  private inferEnergyLevel(message: string): string {
+    const lower = message.toLowerCase();
+    
+    if (lower.includes('tired') || lower.includes('exhausted') || lower.includes('burned out')) {
+      return 'low';
+    }
+    if (lower.includes('excited') || lower.includes('pumped') || lower.includes('love')) {
+      return 'high';
+    }
+    if (lower.includes('frustrated') || lower.includes('stuck') || lower.includes('confused')) {
+      return 'frustrated';
+    }
+    
+    return 'neutral';
+  }
+
   // Get conscience prompt from database
   private async getConsciencePrompt(): Promise<string> {
     try {

@@ -46,7 +46,7 @@ export class SimpleHealer {
   private async restartWikipedia(): Promise<void> {
     try {
       const { mcpProcessManager } = await import('../services/mcp-process-manager.js');
-      await mcpProcessManager.startMCPProcess('stdio://npx @shelm/wikipedia-mcp-server');
+      await mcpProcessManager.startProcess('stdio://npx @shelm/wikipedia-mcp-server');
       // MCP restarted
     } catch (error) {
     }

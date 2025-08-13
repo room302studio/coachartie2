@@ -1,0 +1,53 @@
+{
+  "mcpServers": {
+    "linkedin": {
+      "command": "uvx",
+      "args": ["--from", "git+https://github.com/adhikasp/mcp-linkedin", "mcp-linkedin"],
+      "env": {
+        "LINKEDIN_EMAIL": "",
+        "LINKEDIN_PASSWORD": ""
+      }
+    }
+  },
+  "tools": [
+    {
+      "name": "get_feed_posts", 
+      "description": "Get recent LinkedIn feed posts",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "description": "Number of posts to retrieve (default: 10)",
+            "minimum": 1,
+            "maximum": 100
+          }
+        }
+      }
+    },
+    {
+      "name": "search_jobs",
+      "description": "Search for LinkedIn job postings",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "keywords": {
+            "type": "string",
+            "description": "Keywords to search for in job postings"
+          },
+          "location": {
+            "type": "string", 
+            "description": "Location to search for jobs"
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Number of jobs to retrieve (default: 10)",
+            "minimum": 1,
+            "maximum": 50
+          }
+        },
+        "required": ["keywords"]
+      }
+    }
+  ]
+}

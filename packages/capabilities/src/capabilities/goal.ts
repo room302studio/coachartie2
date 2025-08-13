@@ -134,8 +134,25 @@ export class GoalService {
       }
 
       const formattedGoals = goals.map((goal: GoalRow) => {
-        const deadlineText = goal.deadline ? 
-          ` 📅 Due: ${new Date(goal.deadline).toLocaleDateString()}` : '';
+        let deadlineText = '';
+        if (goal.deadline) {
+          const deadlineDate = new Date(goal.deadline);
+          const now = new Date();
+          const timeDiff = deadlineDate.getTime() - now.getTime();
+          const daysDiff = Math.ceil(timeDiff / (1000 * 60 * 60 * 24));
+          const hoursDiff = Math.ceil(timeDiff / (1000 * 60 * 60));
+          
+          if (daysDiff === 0) {
+            deadlineText = ` 📅 Due: Today (${hoursDiff > 0 ? `in ${hoursDiff}h` : 'overdue'})`;
+          } else if (daysDiff === 1) {
+            deadlineText = ` 📅 Due: Tomorrow`;
+          } else if (daysDiff > 0) {
+            deadlineText = ` 📅 Due: ${deadlineDate.toLocaleDateString()} (in ${daysDiff} days)`;
+          } else {
+            deadlineText = ` 📅 Due: ${deadlineDate.toLocaleDateString()} (${Math.abs(daysDiff)} days overdue)`;
+          }
+        }
+        
         const priority = '⭐'.repeat(Math.min(goal.priority, 5));
         const statusIcon = goal.status === 'in_progress' ? '🔄' : 
                           goal.status === 'blocked' ? '🚫' : '📋';

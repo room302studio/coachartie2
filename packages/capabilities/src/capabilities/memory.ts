@@ -157,8 +157,17 @@ export class MemoryService {
       // Build a fuzzy FTS query that's actually useful
       const cleanQuery = query.toLowerCase().trim();
       
+      // Escape FTS5 special characters (dots, quotes, etc.)
+      const escapeFTS5 = (text: string): string => {
+        return text.replace(/[."]/g, '');  // Remove dots and quotes that break FTS5
+      };
+      
       // For single words, add fuzzy matching with wildcards
-      const queryTerms = cleanQuery.split(/\s+/).filter(term => term.length > 1);
+      const queryTerms = cleanQuery.split(/\s+/)
+        .filter(term => term.length > 1)
+        .map(term => escapeFTS5(term));
+      
+      const escapedCleanQuery = escapeFTS5(cleanQuery);
       
       // Create fuzzy query: exact matches first, then prefix matches
       let ftsQuery = '';
@@ -168,7 +177,7 @@ export class MemoryService {
         ftsQuery = `"${term}" OR ${term}*`;
       } else {
         // Multiple terms: try exact phrase, then all terms, then any terms
-        ftsQuery = `"${cleanQuery}" OR (${queryTerms.join(' AND ')}) OR (${queryTerms.join(' OR ')})`;
+        ftsQuery = `"${escapedCleanQuery}" OR (${queryTerms.join(' AND ')}) OR (${queryTerms.join(' OR ')})`;
       }
       
       logger.info(`🔍 Memory recall started - User: ${userId}, Query: "${query}"`);

@@ -27,6 +27,7 @@ import { conscienceLLM } from './conscience.js';
 import { bulletproofExtractor } from "../utils/bulletproof-capability-extractor.js";
 import { robustExecutor } from "../utils/robust-capability-executor.js";
 import { modelAwarePrompter } from "../utils/model-aware-prompter.js";
+import { contextAlchemy } from './context-alchemy.js';
 
 // Define capability extraction types
 interface ExtractedCapability {
@@ -420,31 +421,22 @@ Timestamp: ${new Date().toISOString()}`;
     try {
       logger.info(`🚀 getLLMResponseWithCapabilities called for message: "${message.message}"`);
       
-      // Try to get from database first (force refresh to bypass cache)
+      // Get base capability instructions from database
       const prompt = await promptManager.getPrompt('capability_instructions', true);
       if (!prompt) {
         throw new Error('No capability instructions found in database');
       }
       
-      // Get relevant past experiences from memory  
-      logger.info("🧪 MEMORY INJECTION TEST - This line should always appear");
-      const pastExperiences = await this.getRelevantMemoryPatterns(message.message, message.userId);
+      // Replace placeholder with actual user message
+      const baseInstructions = prompt.content.replace(/\{\{USER_MESSAGE\}\}/g, message.message);
       
-      // Include past experiences in the prompt
-      let capabilityInstructions = prompt.content.replace(/\{\{USER_MESSAGE\}\}/g, message.message);
-      
-      if (pastExperiences.length > 0) {
-        const experienceContext = pastExperiences.map(exp => `- ${exp}`).join('\n');
-        capabilityInstructions = capabilityInstructions.replace(
-          'You are Coach Artie,',
-          `You are Coach Artie. Here are relevant past experiences that worked well:\n${experienceContext}\n\nYou are Coach Artie,`
-        );
-        logger.info(`🧠 Injected ${pastExperiences.length} past experiences into prompt`);
-      }
+      // Use Context Alchemy for intelligent context assembly
+      logger.info("🧪 CONTEXT ALCHEMY: Using intelligent context assembly system");
+      const { systemMessage, userMessage } = await contextAlchemy.assembleContext(message, baseInstructions);
       
       // Apply model-aware prompting for better capability generation
       const currentModel = openRouterService.getCurrentModel();
-      const modelAwareInstructions = modelAwarePrompter.generateCapabilityPrompt(currentModel, capabilityInstructions);
+      const modelAwareInstructions = modelAwarePrompter.generateCapabilityPrompt(currentModel, systemMessage);
       
       logger.info(`🎯 Using model-aware capability instructions for ${currentModel}`);
       
@@ -455,23 +447,8 @@ Timestamp: ${new Date().toISOString()}`;
         message.id
       );
     } catch (error) {
-      logger.error('❌ Failed to get capability instructions from database, generating dynamic fallback', error);
-      
-      // Generate dynamic instructions based on registered capabilities
-      const dynamicInstructions = this.generateDynamicCapabilityInstructions(message.message);
-      
-      // Apply model-aware prompting to fallback instructions too
-      const currentModel = openRouterService.getCurrentModel();
-      const modelAwareInstructions = modelAwarePrompter.generateCapabilityPrompt(currentModel, dynamicInstructions);
-      
-      logger.info(`🔄 Using model-aware fallback instructions for ${currentModel}`);
-      
-      return await openRouterService.generateResponse(
-        modelAwareInstructions,
-        message.userId,
-        undefined,
-        message.id
-      );
+      logger.error('❌ Failed to get capability instructions from database', error);
+      throw new Error('System configuration error: capability instructions not available');
     }
   }
 
@@ -1021,17 +998,24 @@ ${capabilityDetails}`;
     context: OrchestrationContext
   ): Promise<void> {
     for (const capability of context.capabilities) {
+      // Apply template variable substitution using previous results
+      const processedCapability = this.substituteTemplateVariables(capability, context.results);
+      
       try {
         logger.info(
           `🔧 Executing capability ${capability.name}:${capability.action}`
         );
+        
+        logger.info(
+          `🔄 Template substitution: ${JSON.stringify(capability.content)} -> ${JSON.stringify(processedCapability.content)}`
+        );
 
         // Use robust executor with retry logic for bulletproof capability execution
         const capabilityForRobustExecution = {
-          name: capability.name,
-          action: capability.action,
-          content: capability.content || '',
-          params: capability.params
+          name: processedCapability.name,
+          action: processedCapability.action,
+          content: processedCapability.content || '',
+          params: processedCapability.params
         };
         
         const robustResult = await robustExecutor.executeWithRetry(
@@ -1042,7 +1026,7 @@ ${capabilityDetails}`;
         
         // Convert robust result to orchestrator format
         const result: CapabilityResult = {
-          capability,
+          capability: processedCapability,
           success: robustResult.success,
           data: robustResult.data,
           error: robustResult.error,
@@ -1063,7 +1047,7 @@ ${capabilityDetails}`;
         );
 
         context.results.push({
-          capability,
+          capability: processedCapability,
           success: false,
           error: error instanceof Error ? error.message : String(error),
           timestamp: new Date().toISOString(),
@@ -1071,6 +1055,61 @@ ${capabilityDetails}`;
         context.currentStep++;
       }
     }
+  }
+
+  /**
+   * Perform template variable substitution on capability content and params
+   */
+  private substituteTemplateVariables(
+    capability: ExtractedCapability, 
+    previousResults: CapabilityResult[]
+  ): ExtractedCapability {
+    // Create substitution map from previous results
+    const substitutions = new Map<string, string>();
+    
+    // Add common template variables from previous results
+    if (previousResults.length > 0) {
+      const lastResult = previousResults[previousResults.length - 1];
+      substitutions.set('result', String(lastResult.data || ''));
+      substitutions.set('content', String(lastResult.data || ''));
+      
+      // Add indexed results (result_1, result_2, etc.)
+      previousResults.forEach((result, index) => {
+        substitutions.set(`result_${index + 1}`, String(result.data || ''));
+      });
+      
+      // Special handling for memory results
+      const memoryResults = previousResults.filter(r => r.capability.name === 'memory');
+      if (memoryResults.length > 0) {
+        substitutions.set('memories', String(memoryResults[memoryResults.length - 1].data || ''));
+      }
+    }
+    
+    // Substitute in content
+    let processedContent = capability.content;
+    if (processedContent) {
+      for (const [key, value] of substitutions) {
+        const pattern = new RegExp(`\\{\\{\\s*${key}\\s*\\}\\}`, 'g');
+        processedContent = processedContent.replace(pattern, value);
+      }
+    }
+    
+    // Substitute in params (deep copy to avoid mutation)
+    const processedParams = JSON.parse(JSON.stringify(capability.params));
+    for (const [paramKey, paramValue] of Object.entries(processedParams)) {
+      if (typeof paramValue === 'string') {
+        for (const [key, value] of substitutions) {
+          const pattern = new RegExp(`\\{\\{\\s*${key}\\s*\\}\\}`, 'g');
+          processedParams[paramKey] = paramValue.replace(pattern, value);
+        }
+      }
+    }
+    
+    return {
+      ...capability,
+      content: processedContent,
+      params: processedParams
+    };
   }
 
   /**

@@ -4,7 +4,9 @@ import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+// Load from both root and local env files
 config({ path: resolve(__dirname, '../../../../.env') });
+config({ path: resolve(__dirname, '../../.env') });
 
 import { logger } from '@coachartie/shared';
 import { UsageTracker, TokenUsage } from './usage-tracker.js';
@@ -21,6 +23,9 @@ class OpenRouterService {
     
     // Free models only (claude credits exhausted)
     this.models = [
+      'openai/gpt-oss-20b:free',
+      'z-ai/glm-4.5-air:free',
+      'qwen/qwen3-coder:free',
       'mistralai/mistral-7b-instruct:free',
       'microsoft/phi-3-mini-128k-instruct:free',
       'meta-llama/llama-3.2-3b-instruct:free',
@@ -78,7 +83,7 @@ ${context ? `Context from previous conversations: ${context}` : ''}`;
               content: userMessage,
             },
           ],
-          max_tokens: 500,
+          max_tokens: 1000,
           temperature: 0.7,
         });
 

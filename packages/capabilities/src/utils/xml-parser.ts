@@ -254,16 +254,18 @@ export class CapabilityXMLParser {
     // Check for registered MCP tools first (prioritize MCP system)
     if (global.mcpToolRegistry && global.mcpToolRegistry.has(tagName)) {
       const mcpTool = global.mcpToolRegistry.get(tagName);
-      return {
-        name: 'mcp_client',
-        action: 'call_tool', 
-        params: {
-          connectionId: mcpTool.connectionId,
-          tool_name: tagName,
-          args: content ? { q: content, __intent: `Search for ${content}` } : params
-        },
-        content: ''
-      };
+      if (mcpTool) {
+        return {
+          name: 'mcp_client',
+          action: 'call_tool', 
+          params: {
+            connectionId: mcpTool.connectionId,
+            tool_name: tagName,
+            args: content ? { q: content, __intent: `Search for ${content}` } : params
+          },
+          content: ''
+        };
+      }
     }
     
     if (global.mcpToolRegistry && global.mcpToolRegistry.size > 0) {

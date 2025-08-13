@@ -204,10 +204,9 @@ router.post('/registry/:name/execute', async (req: Request, res: Response) => {
     }
 
     if (!capabilityRegistry.supportsAction(name, action)) {
-      const capability = capabilityRegistry.list().find(cap => cap.name === name);
       return res.status(400).json({
         success: false,
-        error: `Capability '${name}' does not support action '${action}'. Supported actions: ${capability!.supportedActions.join(', ')}`
+        error: capabilityRegistry.generateActionError(name, action)
       });
     }
 

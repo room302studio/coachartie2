@@ -36,13 +36,13 @@ class WikipediaSearchTool implements EmbeddedMCPTool {
       const response = await fetch(searchUrl);
       
       if (response.ok) {
-        const data = await response.json();
-        return `**${data.title}**\n\n${data.extract || 'No summary available.'}`;
+        const data = await response.json() as { title?: string; extract?: string };
+        return `**${data.title || 'Unknown'}**\n\n${data.extract || 'No summary available.'}`;
       } else {
         // Fallback to search API
         const searchApiUrl = `https://en.wikipedia.org/w/api.php?action=opensearch&search=${encodeURIComponent(query)}&limit=3&format=json&origin=*`;
         const searchResponse = await fetch(searchApiUrl);
-        const searchData = await searchResponse.json();
+        const searchData = await searchResponse.json() as [string, string[], string[], string[]];
         
         if (searchData[1] && searchData[1].length > 0) {
           const results = searchData[1].slice(0, 3).map((title: string, index: number) => 

@@ -1,5 +1,4 @@
-import { logger } from '@coachartie/shared';
-import { Database } from 'better-sqlite3';
+import { logger, getDatabase } from '@coachartie/shared';
 
 /**
  * Memory Record interface
@@ -68,14 +67,14 @@ export class HybridDataLayer {
   private hotData = new Map<string, MemoryRecord>(); // In-memory for active data
   private userIndex = new Map<string, Set<string>>(); // User ID -> Memory IDs
   private writeQueue = new AsyncQueue(); // Serialize writes
-  private coldStorage?: Database; // SQLite for persistence
+  private coldStorage?: any; // SQLite for persistence
   private maxHotMemories = 10000; // Keep most recent 10k in memory
   private syncInterval: NodeJS.Timeout;
 
   constructor(databasePath?: string) {
     if (databasePath) {
       try {
-        this.coldStorage = new Database(databasePath);
+        this.coldStorage = getDatabase();
         this.initializeDatabase();
         this.loadRecentMemories();
       } catch (error) {

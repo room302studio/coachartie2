@@ -428,7 +428,11 @@ class MCPClientService {
             global.mcpToolRegistry.set(toolName, {
               connectionId,
               command,
-              tool
+              tool: {
+                name: tool.name,
+                description: tool.description || `Tool: ${tool.name}`,
+                inputSchema: tool.inputSchema || {}
+              }
             });
             logger.info(`✅ Registered MCP tool: ${toolName} from ${command}`);
           }

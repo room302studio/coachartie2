@@ -139,10 +139,10 @@ export class ConsensusEngine {
     
     try {
       // Import capability extractor
-      const { bulletproofCapabilityExtractor } = await import('../utils/bulletproof-capability-extractor.js');
+      const { bulletproofExtractor } = await import('../utils/bulletproof-capability-extractor.js');
       
       // Extract capabilities using the bulletproof extractor
-      const capabilities = await bulletproofCapabilityExtractor.extractCapabilities(
+      const capabilities = await bulletproofExtractor.extractCapabilities(
         message,
         model.name
       );
