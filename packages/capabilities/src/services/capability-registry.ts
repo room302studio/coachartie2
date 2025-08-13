@@ -315,3 +315,7 @@ export const capabilityRegistry = new CapabilityRegistry();
 // Auto-register embedded MCP capability
 import { embeddedMCPCapability } from '../capabilities/embedded-mcp.js';
 capabilityRegistry.register(embeddedMCPCapability);
+
+// Auto-register LinkedIn capability
+import { linkedInCapability } from '../capabilities/linkedin.js';
+capabilityRegistry.register(linkedInCapability);

@@ -4,7 +4,7 @@ services:
   redis:
     image: redis:7-alpine
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6380:6379"  # Bind to localhost only, use port 6380
     volumes:
       - redis_data:/data
     healthcheck:
@@ -18,7 +18,7 @@ services:
       context: .
       dockerfile: ./packages/capabilities/Dockerfile
     ports:
-      - "18239:18239"
+      - "127.0.0.1:18239:18239"  # Bind to localhost only
     environment:
       - NODE_ENV=development
       - DATABASE_PATH=/app/data/coachartie.db
@@ -74,7 +74,7 @@ services:
       context: .
       dockerfile: ./packages/sms/Dockerfile
     ports:
-      - "27461:27461"
+      - "127.0.0.1:27461:27461"  # Bind to localhost only
     environment:
       - NODE_ENV=development
       - CAPABILITIES_URL=http://capabilities:18239
@@ -102,7 +102,7 @@ services:
       context: .
       dockerfile: ./packages/brain/Dockerfile
     ports:
-      - "24680:24680"
+      - "127.0.0.1:24680:24680"  # Bind to localhost only
     environment:
       - NODE_ENV=development
       - CAPABILITIES_URL=http://capabilities:18239

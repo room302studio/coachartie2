@@ -91,7 +91,21 @@ async function readFile(filePath: string): Promise<string> {
       throw new Error(`Path is not a file: ${path.relative(PROJECT_ROOT, validPath)}`);
     }
     
-    const content = await fs.readFile(validPath, 'utf-8');
+    // Prevent V8 crashes from large files (limit to 10MB)
+    const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
+    if (stats.size > MAX_FILE_SIZE) {
+      throw new Error(`File too large: ${path.relative(PROJECT_ROOT, validPath)} (${Math.round(stats.size / 1024 / 1024)}MB > 10MB limit)`);
+    }
+    
+    // Use try-catch around actual file read to prevent V8 UTF-8 crashes
+    let content: string;
+    try {
+      content = await fs.readFile(validPath, 'utf-8');
+    } catch (encodingError) {
+      logger.error(`UTF-8 encoding error reading file: ${path.relative(PROJECT_ROOT, validPath)}`, encodingError);
+      throw new Error(`File encoding error: ${path.relative(PROJECT_ROOT, validPath)} - file may be corrupted or binary`);
+    }
+    
     const relativePath = path.relative(PROJECT_ROOT, validPath);
     
     logger.info(`📖 Read file: ${relativePath} (${content.length} characters)`);

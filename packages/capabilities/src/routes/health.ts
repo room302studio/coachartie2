@@ -16,11 +16,7 @@ healthRouter.get('/', async (req, res) => {
 
     res.json({
       status: 'healthy',
-      service: 'capabilities',
-      timestamp: new Date().toISOString(),
-      checks: {
-        redis: 'connected'
-      }
+      timestamp: new Date().toISOString()
     });
   } catch (error) {
     res.status(503).json({

@@ -5,6 +5,26 @@ import { capabilityRegistry } from '../services/capability-registry.js';
 
 const router: Router = Router();
 
+// GET /capabilities - List all registered capabilities
+router.get('/', (req: Request, res: Response) => {
+  try {
+    const capabilities = capabilityRegistry.list();
+    const stats = capabilityRegistry.getStats();
+    
+    res.json({
+      success: true,
+      stats,
+      capabilities
+    });
+  } catch (error) {
+    logger.error('Error listing capabilities:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Internal server error'
+    });
+  }
+});
+
 // GET /capabilities/active - List active orchestrations
 router.get('/active', (req: Request, res: Response) => {
   try {

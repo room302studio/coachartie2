@@ -17,6 +17,10 @@ import { memoryCapability } from "../capabilities/memory.js";
 import { githubCapability } from "../capabilities/github.js";
 import { deploymentCheerleaderCapability } from "../capabilities/deployment-cheerleader.js";
 import { creditStatusCapability } from "../capabilities/credit-status.js";
+import { linkedInCapability } from "../capabilities/linkedin.js";
+import { goalCapability } from "../capabilities/goal.js";
+import { variableStoreCapability } from "../capabilities/variable-store.js";
+import { todoCapability } from "../capabilities/todo.js";
 import { CapabilitySuggester } from "../utils/capability-suggester.js";
 import { capabilityXMLParser } from "../utils/xml-parser.js";
 import { conscienceLLM } from './conscience.js';
@@ -110,6 +114,18 @@ export class CapabilityOrchestrator {
 
       // Register credit status capability for monitoring API usage
       capabilityRegistry.register(creditStatusCapability);
+
+      // Register LinkedIn capability
+      capabilityRegistry.register(linkedInCapability);
+
+      // Register goal capability
+      capabilityRegistry.register(goalCapability);
+
+      // Register variable store capability
+      capabilityRegistry.register(variableStoreCapability);
+
+      // Register todo capability
+      capabilityRegistry.register(todoCapability);
 
       // Register wolfram capability
       capabilityRegistry.register({

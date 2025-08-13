@@ -16,12 +16,7 @@ healthRouter.get('/', async (req, res) => {
 
     res.json({
       status: 'healthy',
-      service: 'sms',
-      timestamp: new Date().toISOString(),
-      checks: {
-        redis: 'connected',
-        twilio: isValidAuth ? 'configured' : 'missing_credentials'
-      }
+      timestamp: new Date().toISOString()
     });
   } catch (error) {
     res.status(503).json({

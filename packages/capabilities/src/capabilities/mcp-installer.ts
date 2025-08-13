@@ -146,6 +146,16 @@ const MCP_TEMPLATES = {
     startScript: 'node_modules/@shelm/wikipedia-mcp-server/dist/index.js',
     requiredPorts: [3010],
     verified: true
+  },
+  linkedin: {
+    name: 'mcp-linkedin',
+    version: 'latest',
+    description: 'LinkedIn MCP Server for feed posts, job search, and profile interactions',
+    envVars: ['LINKEDIN_EMAIL', 'LINKEDIN_PASSWORD'],
+    configFile: 'linkedin-mcp-config.json',
+    startScript: 'uvx --from git+https://github.com/adhikasp/mcp-linkedin mcp-linkedin',
+    requiredPorts: [3011],
+    verified: true
   }
 } as const;
 
