@@ -36,28 +36,12 @@ export class CapabilityXMLParser {
     }
     
     try {
-      // Find capability tags using proper XML parsing
-      const capabilityMatches = this.extractCapabilityTagsWithXMLParser(text);
-      
-      if (capabilityMatches.length > 0) {
-        capabilityMatches.forEach((match) => {
-          try {
-            const parsed = this.parseCapabilityTag(match);
-            if (parsed) {
-              capabilities.push(parsed);
-            }
-          } catch (error) {
-            logger.warn(`Failed to parse capability tag: ${match}`, error);
-          }
-        });
+      // UNIFIED EXTRACTION: Handle both attribute and content-based formats
+      const unifiedCapabilities = this.extractUnifiedCapabilityTags(text);
+      if (unifiedCapabilities.length > 0) {
+        logger.info(`🎯 UNIFIED XML: Found ${unifiedCapabilities.length} capability tags: ${JSON.stringify(unifiedCapabilities.map(c => `${c.name}:${c.action}`))}`);
+        capabilities.push(...unifiedCapabilities);
       }
-
-      // Also find simple capability tags (e.g., <remember>content</remember>, <search-wikipedia>query</search-wikipedia>)
-      const simpleCapabilityMatches = this.extractSimpleCapabilityTags(text);
-      if (simpleCapabilityMatches.length > 0) {
-        logger.info(`🎯 SIMPLE SYNTAX: Found ${simpleCapabilityMatches.length} simple capability tags: ${JSON.stringify(simpleCapabilityMatches)}`);
-      }
-      capabilities.push(...simpleCapabilityMatches);
 
     } catch (error) {
       logger.error('Failed to extract capabilities from text:', error);
@@ -96,6 +80,7 @@ export class CapabilityXMLParser {
         if (key.startsWith('@_') && key !== '@_name' && key !== '@_action') {
           const paramName = key.substring(2); // Remove "@_" prefix
           params[paramName] = cap[key];
+          logger.info(`🔍 XML PARSER: Found param ${paramName} = ${JSON.stringify(cap[key])}`);
         }
       });
 
@@ -121,6 +106,8 @@ export class CapabilityXMLParser {
         }
       }
 
+      logger.info(`🔍 XML PARSER: Final parsed capability: name="${name}" action="${action}" params=${JSON.stringify(params)} content="${content}"`);
+
       return {
         name,
         action,
@@ -135,36 +122,104 @@ export class CapabilityXMLParser {
   }
 
   /**
-   * Extract simple capability tags using simple pattern matching
-   * DELETE-DRIVEN: Remove complex XML parsing, use simple patterns
+   * Extract ALL capability tags using HYBRID format support
+   * Handles both: <capability name="X" action="Y" param="value" /> AND <capability name="X" action="Y">content</capability>
    */
-  private extractSimpleCapabilityTags(text: string): ParsedCapability[] {
+  private extractUnifiedCapabilityTags(text: string): ParsedCapability[] {
     const capabilities: ParsedCapability[] = [];
     
-    // DELETE complex XML parsing, use simple patterns that actually work
-    const tagPatterns = [
-      /<(search[-_]wikipedia)>([^<]+)<\/\1>/g,
-      /<(get[-_]wikipedia[-_]article)>([^<]+)<\/\1>/g, 
-      /<(get[-_]random[-_]wikipedia)\s*\/>/g,
-      /<(calculate)>([^<]+)<\/\1>/g,
-      /<(remember)>([^<]+)<\/\1>/g,
-      /<(recall)>([^<]+)<\/\1>/g,
-      /<(web[-_]search)>([^<]+)<\/\1>/g,
-      /<(mcp[-_]auto[-_]install)>([^<]+)<\/\1>/g,
-      /<(list[-_]departments)\s*\/>/g
-    ];
+    // Extract attribute-based format first
+    capabilities.push(...this.extractAttributeCapabilities(text));
     
-    for (const pattern of tagPatterns) {
-      let match;
-      while ((match = pattern.exec(text)) !== null) {
-        const tagName = match[1];
-        const content = match[2] || '';
+    // Extract content-based format second
+    capabilities.push(...this.extractContentCapabilities(text));
+    
+    return capabilities;
+  }
+
+  /**
+   * Extract attribute-based capabilities: <capability name="X" action="Y" param="value" />
+   */
+  private extractAttributeCapabilities(text: string): ParsedCapability[] {
+    const capabilities: ParsedCapability[] = [];
+    
+    // ONE PATTERN TO RULE THEM ALL: <capability name="X" action="Y" ...attributes />
+    const unifiedPattern = /<capability\s+([^>]+)\s*\/?>/g;
+    
+    let match;
+    while ((match = unifiedPattern.exec(text)) !== null) {
+      const attributeString = match[1];
+      
+      // Parse all attributes
+      const attributes = this.parseAttributes(attributeString);
+      
+      if (attributes.name && attributes.action) {
+        const { name, action, ...params } = attributes;
         
-        const capability = this.mapTagToCapability(tagName, {}, content);
-        if (capability) {
-          capabilities.push(capability);
+        // Convert specific content attributes to content field
+        let content = '';
+        if (params.content) {
+          content = String(params.content);
+          delete params.content;
+        } else if (params.expression) {
+          content = String(params.expression);
+          delete params.expression;
+        } else if (params.query) {
+          content = String(params.query);
+          delete params.query;
+        } else if (params.data) {
+          content = String(params.data);
+          delete params.data;
         }
+        
+        capabilities.push({
+          name,
+          action,
+          content: content.trim(),
+          params
+        });
       }
+    }
+    
+    return capabilities;
+  }
+  
+  /**
+   * Parse XML attributes from attribute string
+   */
+  private parseAttributes(attributeString: string): Record<string, string> {
+    const attributes: Record<string, string> = {};
+    const attrPattern = /(\w+)="([^"]*)"/g;
+    
+    let match;
+    while ((match = attrPattern.exec(attributeString)) !== null) {
+      attributes[match[1]] = match[2];
+    }
+    
+    return attributes;
+  }
+
+  /**
+   * Extract content-based capabilities: <capability name="X" action="Y">content</capability>
+   */
+  private extractContentCapabilities(text: string): ParsedCapability[] {
+    const capabilities: ParsedCapability[] = [];
+    
+    // Match content-based capability tags
+    const contentPattern = /<capability\s+name="([^"]+)"\s+action="([^"]+)"[^>]*>([^<]*)<\/capability>/g;
+    
+    let match;
+    while ((match = contentPattern.exec(text)) !== null) {
+      const name = match[1];
+      const action = match[2];
+      const content = match[3].trim();
+      
+      capabilities.push({
+        name,
+        action,
+        content,
+        params: {}
+      });
     }
     
     return capabilities;

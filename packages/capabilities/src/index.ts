@@ -19,6 +19,7 @@ import { githubRouter } from './routes/github.js';
 import { servicesRouter } from './routes/services.js';
 import { memoriesRouter } from './routes/memories.js';
 import modelsRouter from './routes/models.js';
+import { logsRouter } from './routes/logs.js';
 import { schedulerService } from './services/scheduler.js';
 // Import orchestrator FIRST to trigger capability registration
 import './services/capability-orchestrator.js';
@@ -50,6 +51,7 @@ app.use('/github', githubRouter);
 app.use('/services', servicesRouter);
 app.use('/api/memories', memoriesRouter);
 app.use('/api/models', modelsRouter);
+app.use('/logs', logsRouter);
 
 // Start queue consumers and scheduler
 async function startQueueWorkers() {

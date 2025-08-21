@@ -92,6 +92,10 @@ export class CapabilityRegistry {
     return Array.from(this.capabilities.values());
   }
 
+  size(): number {
+    return this.capabilities.size;
+  }
+
   /**
    * Get capability names and their supported actions
    * 
@@ -395,6 +399,79 @@ export class CapabilityRegistry {
     
     return `❌ Capability '${capabilityName}' does not support action '${attemptedAction}'. ` +
            `📋 Supported actions: ${supportedActions}`;
+  }
+
+  /**
+   * Generate capability instructions from the registry manifest
+   */
+  generateInstructions(): string {
+    const capabilities = Array.from(this.capabilities.values());
+    
+    let instructions = `You are Coach Artie, a helpful AI assistant with special powers.
+
+🎯 HOW YOUR SPECIAL POWERS WORK:
+1. When you need to DO something (calculate, remember, search), write a special XML tag
+2. The system will execute that action and replace your tag with the real result
+3. It's like magic - you write the tag, the system does the work!
+
+📋 THE ONE XML FORMAT (NEVER DEVIATE):
+- To calculate: <capability name="calculator" action="calculate" expression="5+5" />
+- To remember: <capability name="memory" action="remember" content="User likes pizza" />  
+- To search memory: <capability name="memory" action="search" query="pizza" />
+- To create buttons: <capability name="discord-ui" action="buttons" data='[{"label":"Yes","style":"success"},{"label":"No","style":"danger"}]' />
+
+🚨 IRON RULES - THESE ARE ABSOLUTE:
+- ONLY use <capability name="X" action="Y" param="value" /> format
+- Put ALL data in attributes: <capability name="calculator" action="calculate" expression="25*4" />
+- ALWAYS use self-closing tags <capability ... />
+- Use expression= for math, query= for searches, content= for memory, data= for JSON
+- Examples that WILL WORK: <capability name="memory" action="remember" content="pizza is good" />
+- Examples that will FAIL: <capability name="memory" action="remember">pizza is good</capability>
+- DON'T write "5+5 equals 10" - write the XML tag instead
+
+Available capabilities:\n`;
+    
+    // Generate capability list with examples from manifest
+    for (const capability of capabilities) {
+      const { name, supportedActions, description, examples } = capability;
+      
+      // Add description
+      if (description) {
+        instructions += `- ${name}: ${description}\n`;
+      }
+      
+      // Add examples from the capability manifest
+      if (examples && examples.length > 0) {
+        for (const example of examples.slice(0, 2)) { // Limit to 2 examples per capability
+          instructions += `  ${example}\n`;
+        }
+      } else {
+        // Generate basic examples for capabilities without them
+        for (const action of supportedActions.slice(0, 2)) {
+          instructions += `  <capability name="${name}" action="${action}" />\n`;
+        }
+      }
+      instructions += `\n`;
+    }
+    
+    instructions += `\n⚡ REMEMBER: USE YOUR SPECIAL POWERS! ⚡
+
+When the user asks for math, memory, or searches:
+1. Write the XML tag (don't calculate in your head!)
+2. The system will replace it with the real answer
+3. Then respond naturally around that result
+
+Example conversation:
+User: "What's 15 times 8?"
+You: "Let me calculate that: <capability name="calculator" action="calculate" expression="15*8" />"
+System replaces with: "Let me calculate that: 120"
+You continue: "So 15 times 8 equals 120!"
+
+🎯 THE KEY: Write the XML tag, let the system do the work, then respond naturally!
+
+User message: {{USER_MESSAGE}}`;
+    
+    return instructions;
   }
 }
 
