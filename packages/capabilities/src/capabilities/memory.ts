@@ -1,6 +1,8 @@
 import { logger } from '@coachartie/shared';
 import { RegisteredCapability } from '../services/capability-registry.js';
 import { getDatabase } from '@coachartie/shared';
+import { hybridDataLayer, MemoryRecord } from '../runtime/hybrid-data-layer.js';
+import { v4 as uuidv4 } from 'uuid';
 
 interface MemoryRow {
   id: number;
@@ -45,6 +47,8 @@ interface MemoryEntry {
 export class MemoryService {
   private static instance: MemoryService;
   private dbReady = false;
+  private useHybridLayer = true; // FLAG: Use high-performance hybrid layer
+  public lastRecallMemoryIds: string[] = []; // 🔍 For debugging memory ID tracking
 
   static getInstance(): MemoryService {
     if (!MemoryService.instance) {
@@ -119,12 +123,47 @@ export class MemoryService {
   }
 
   async remember(userId: string, content: string, context: string = '', importance: number = 5): Promise<string> {
+    if (this.useHybridLayer) {
+      // FAST PATH: Use hybrid data layer for instant storage + background persistence
+      try {
+        const basicTags = this.extractBasicTags(content, context);
+        const memoryId = uuidv4();
+        
+        const memory: MemoryRecord = {
+          id: memoryId,
+          user_id: userId,
+          content,
+          timestamp: new Date(),
+          metadata: {
+            tags: basicTags,
+            context,
+            importance
+          }
+        };
+
+        // Instant hot cache storage + async SQLite persistence
+        await hybridDataLayer.storeMemory(memory);
+        
+        logger.info(`💾 [HYBRID] Stored memory for user ${userId}: ${content.substring(0, 50)}...`);
+
+        // Generate semantic tags asynchronously (non-blocking)
+        this.generateSemanticTagsHybrid(memoryId, content, context).catch(error => {
+          logger.error('❌ Failed to generate semantic tags:', error);
+        });
+        
+        return `✅ Remembered: "${content}" (ID: ${memoryId.substring(0, 8)}, importance: ${importance}/10, tags: ${basicTags.join(', ')})`;
+      } catch (error) {
+        logger.error('❌ [HYBRID] Failed to store memory, falling back to legacy:', error);
+        this.useHybridLayer = false; // Fallback to legacy
+      }
+    }
+
+    // LEGACY FALLBACK: Original SQLite approach
     await this.initializeDatabase();
 
     try {
       const db = await getDatabase();
       
-      // Store memory first with basic tags
       const basicTags = this.extractBasicTags(content, context);
       const timestamp = new Date().toISOString();
 
@@ -134,9 +173,8 @@ export class MemoryService {
       `, [userId, content, JSON.stringify(basicTags), context, timestamp, importance]);
 
       const memoryId = result.lastID!;
-      logger.info(`💾 Stored memory for user ${userId}: ${content.substring(0, 50)}...`);
+      logger.info(`💾 [LEGACY] Stored memory for user ${userId}: ${content.substring(0, 50)}...`);
 
-      // Generate semantic tags asynchronously 
       this.generateSemanticTags(memoryId, content, context).catch(error => {
         logger.error('❌ Failed to generate semantic tags:', error);
       });
@@ -149,6 +187,32 @@ export class MemoryService {
   }
 
   async recall(userId: string, query: string, limit: number = 5): Promise<string> {
+    if (this.useHybridLayer) {
+      // FAST PATH: Use hybrid layer for instant search
+      try {
+        logger.info(`🔍 [HYBRID] Memory recall started - User: ${userId}, Query: "${query}"`);
+        
+        const memories = await hybridDataLayer.searchMemories(userId, query, limit);
+        
+        logger.info(`📊 [HYBRID] Search results: ${memories.length} memories found`);
+        
+        if (memories.length === 0) {
+          return `🤔 No memories found for "${query}". Try a different search term or ask me to remember something first.`;
+        }
+
+        const formatted = this.formatHybridRecallResults(memories, query);
+        // 🔍 Store memory IDs for debugging 
+        this.lastRecallMemoryIds = memories.map(m => m.id);
+        logger.info(`📝 [HYBRID] Formatted output length: ${formatted.length} characters`);
+        logger.info(`🔍 [HYBRID] Memory IDs: [${this.lastRecallMemoryIds.join(', ')}]`);
+        return formatted;
+      } catch (error) {
+        logger.error('❌ [HYBRID] Failed to recall memories, falling back to legacy:', error);
+        this.useHybridLayer = false; // Fallback to legacy
+      }
+    }
+
+    // LEGACY FALLBACK: Original SQLite approach
     await this.initializeDatabase();
 
     try {
@@ -245,14 +309,18 @@ export class MemoryService {
         }
 
         const formattedResult = this.formatRecallResults(uniqueResults, query, 'partial match');
+        // 🔍 Store memory IDs for debugging
+        this.lastRecallMemoryIds = uniqueResults.map(m => String(m.id));
         logger.info(`📝 Formatted partial match output length: ${formattedResult.length} characters`);
-        logger.info(`📝 Formatted partial match output preview: ${formattedResult.substring(0, 200)}...`);
+        logger.info(`🔍 [LEGACY] Memory IDs: [${this.lastRecallMemoryIds.join(', ')}]`);
         return formattedResult;
       }
 
       const formattedResult = this.formatRecallResults(searchResults, query, 'full-text search');
+      // 🔍 Store memory IDs for debugging
+      this.lastRecallMemoryIds = searchResults.map(m => String(m.id));
       logger.info(`📝 Formatted FTS output length: ${formattedResult.length} characters`);
-      logger.info(`📝 Formatted FTS output preview: ${formattedResult.substring(0, 200)}...`);
+      logger.info(`🔍 [LEGACY] Memory IDs: [${this.lastRecallMemoryIds.join(', ')}]`);
       return formattedResult;
     } catch (error) {
       logger.error('❌ Failed to recall memories:', error);
@@ -261,6 +329,27 @@ export class MemoryService {
   }
 
   async getRecentMemories(userId: string, limit: number = 10): Promise<MemoryEntry[]> {
+    if (this.useHybridLayer) {
+      // FAST PATH: Use hybrid layer
+      try {
+        const memories = await hybridDataLayer.getRecentMemories(userId, limit);
+        
+        return memories.map(memory => ({
+          id: parseInt(memory.id) || 0,
+          userId: memory.user_id,
+          content: memory.content,
+          tags: (memory.metadata?.tags as string[]) || [],
+          context: (memory.metadata?.context as string) || '',
+          timestamp: memory.timestamp.toISOString(),
+          importance: (memory.metadata?.importance as number) || 5
+        }));
+      } catch (error) {
+        logger.error('❌ [HYBRID] Failed to get recent memories, falling back to legacy:', error);
+        this.useHybridLayer = false;
+      }
+    }
+
+    // LEGACY FALLBACK
     await this.initializeDatabase();
 
     try {
@@ -338,6 +427,79 @@ export class MemoryService {
     }
     
     return basicTags.slice(0, 5); // Limit to first 5 basic tags
+  }
+
+  private formatHybridRecallResults(memories: MemoryRecord[], query: string): string {
+    const formatted = memories.map((memory, index) => {
+      const tags = (memory.metadata?.tags as string[]) || [];
+      const context = (memory.metadata?.context as string) || '';
+      const importance = (memory.metadata?.importance as number) || 5;
+      
+      const date = memory.timestamp.toLocaleDateString();
+      const stars = '⭐'.repeat(Math.min(importance, 5));
+      
+      return `${index + 1}. **${memory.content}** ${stars}
+   📅 ${date} | 🏷️ ${tags.join(', ') || 'no tags'}${context ? ` | 📝 ${context}` : ''}`;
+    }).join('\n\n');
+
+    return `🧠 Recalled ${memories.length} memories for "${query}" (hybrid search):
+
+${formatted}
+
+💡 Use these memories to provide context for your response!`;
+  }
+
+  private async generateSemanticTagsHybrid(memoryId: string, content: string, context: string): Promise<void> {
+    try {
+      logger.info(`🏷️ [HYBRID] Generating semantic tags for memory ${memoryId}: "${content.substring(0, 50)}..."`);
+      
+      const prompt = `Analyze this user memory and generate 3-8 semantic tags that would help find this memory later.
+
+Memory: "${content}"
+Context: "${context}"
+
+Generate tags that capture:
+- DOMAIN (food, music, work, travel, etc.)
+- EMOTION (like, love, hate, prefer, etc.) 
+- CATEGORY (specific type, genre, style, etc.)
+- RELATIONS (family, friend, colleague, etc.)
+
+Return ONLY a JSON array of lowercase tag strings, no other text.
+Example: ["food", "pizza", "italian", "preference", "like"]`;
+
+      const { openRouterService } = await import('../services/openrouter.js');
+      const { contextAlchemy } = await import('../services/context-alchemy.js');
+      const { promptManager } = await import('../services/prompt-manager.js');
+      
+      const baseSystemPrompt = await promptManager.getCapabilityInstructions(prompt);
+      const { messages } = await contextAlchemy.buildMessageChain(
+        prompt,
+        'memory-tagging-system',
+        baseSystemPrompt
+      );
+      
+      const response = await openRouterService.generateFromMessageChain(messages, 'memory-tagging-system');
+      const tags = this.parseTagsFromResponse(response);
+      
+      if (tags.length > 0) {
+        // Update memory in hybrid layer
+        const memory = await hybridDataLayer.getMemory(memoryId);
+        if (memory) {
+          const existingTags = (memory.metadata?.tags as string[]) || [];
+          const allTags = [...new Set([...existingTags, ...tags])];
+          
+          memory.metadata = {
+            ...memory.metadata,
+            tags: allTags
+          };
+          
+          await hybridDataLayer.storeMemory(memory); // Update with new tags
+          logger.info(`🏷️ [HYBRID] Added ${tags.length} semantic tags to memory ${memoryId}: ${tags.join(', ')}`);
+        }
+      }
+    } catch (error) {
+      logger.error(`❌ [HYBRID] Failed to generate semantic tags for memory ${memoryId}:`, error);
+    }
   }
 
   private async generateSemanticTags(memoryId: number, content: string, context: string): Promise<void> {

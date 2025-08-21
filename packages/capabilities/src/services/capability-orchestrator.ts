@@ -21,6 +21,7 @@ import { linkedInCapability } from "../capabilities/linkedin.js";
 import { goalCapability } from "../capabilities/goal.js";
 import { variableStoreCapability } from "../capabilities/variable-store.js";
 import { todoCapability } from "../capabilities/todo.js";
+import { discordUICapability } from "../capabilities/discord-ui.js";
 import { CapabilitySuggester } from "../utils/capability-suggester.js";
 import { capabilityXMLParser } from "../utils/xml-parser.js";
 import { conscienceLLM } from './conscience.js';
@@ -127,6 +128,9 @@ export class CapabilityOrchestrator {
 
       // Register todo capability
       capabilityRegistry.register(todoCapability);
+
+      // Register Discord UI capability for interactive components
+      capabilityRegistry.register(discordUICapability);
 
       // Register wolfram capability
       capabilityRegistry.register({
@@ -1267,22 +1271,9 @@ ${capabilityDetails}`;
   ): Promise<string> {
     const action = capability.action;
 
-    if (action === "remember") {
-      const content = capability.params.content || capability.content;
-      if (!content) {
-        throw new Error("No content provided to remember");
-      }
-      // Placeholder - would store in actual memory system
-      return `Remembered: ${content}`;
-    }
-
-    if (action === "recall") {
-      const query = capability.params.query || capability.content;
-      if (!query) {
-        throw new Error("No query provided for recall");
-      }
-      // Placeholder - would query actual memory system
-      return `Recalled information about "${query}": [Placeholder - would show actual memories]`;
+    // CANCER REMOVED: Redirect to real memory capability
+    if (action === "remember" || action === "recall") {
+      throw new Error(`Use real memory capability instead: <capability name="memory" action="${action}" ${action === "remember" ? "content" : "query"}="${capability.params.content || capability.params.query || capability.content}" />`);
     }
 
     throw new Error(`Unknown memory action: ${action}`);
