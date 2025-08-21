@@ -21,16 +21,66 @@ class OpenRouterService {
     const apiKey = process.env.OPENROUTER_API_KEY;
     const baseURL = process.env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1';
     
-    // Free models only (claude credits exhausted)
-    this.models = [
-      'openai/gpt-oss-20b:free',
-      'z-ai/glm-4.5-air:free',
-      'qwen/qwen3-coder:free',
-      'mistralai/mistral-7b-instruct:free',
-      'microsoft/phi-3-mini-128k-instruct:free',
-      'meta-llama/llama-3.2-3b-instruct:free',
-      'google/gemma-2-9b-it:free'
-    ];
+    // Primary configuration: comma-separated OPENROUTER_MODELS env var
+    if (process.env.OPENROUTER_MODELS) {
+      const rawModels = process.env.OPENROUTER_MODELS
+        .split(',')
+        .map(m => m.trim())
+        .filter(m => m.length > 0); // Remove empty strings
+      
+      // Validate model format (should be provider/model or provider/model:variant)
+      const validModels: string[] = [];
+      const invalidModels: string[] = [];
+      
+      rawModels.forEach(model => {
+        // Basic validation: should contain a slash and reasonable format
+        if (model.includes('/') && model.length > 3 && !model.includes(' ')) {
+          validModels.push(model);
+        } else {
+          invalidModels.push(model);
+        }
+      });
+      
+      if (invalidModels.length > 0) {
+        logger.error(`❌ Invalid model names detected in OPENROUTER_MODELS:`, invalidModels);
+        logger.error('💡 Model format should be: provider/model-name or provider/model-name:variant');
+        logger.error('🔗 Find valid models at: https://openrouter.ai/models');
+        
+        if (validModels.length === 0) {
+          logger.error('🚨 No valid models found! Using fallback models to prevent crash');
+        } else {
+          logger.warn(`⚠️ Continuing with ${validModels.length} valid models, ignoring ${invalidModels.length} invalid ones`);
+        }
+      }
+      
+      this.models = validModels.length > 0 ? validModels : [
+        // Emergency fallback if all models are invalid
+        'openai/gpt-oss-20b:free',
+        'z-ai/glm-4.5-air:free',
+        'qwen/qwen3-coder:free'
+      ];
+      
+      logger.info(`🎯 Using ${this.models.length} models:`, this.models);
+      
+      if (validModels.length !== rawModels.length) {
+        logger.warn(`⚠️ ${rawModels.length - validModels.length} invalid models were ignored`);
+      }
+      
+    } else {
+      // Fallback to current free models for development
+      this.models = [
+        'openai/gpt-oss-20b:free',
+        'z-ai/glm-4.5-air:free',
+        'qwen/qwen3-coder:free',
+        'mistralai/mistral-7b-instruct:free',
+        'microsoft/phi-3-mini-128k-instruct:free',
+        'meta-llama/llama-3.2-3b-instruct:free',
+        'google/gemma-2-9b-it:free'
+      ];
+      
+      logger.warn('⚠️ OPENROUTER_MODELS not set, using fallback free models');
+      logger.info('💡 Set OPENROUTER_MODELS="model1,model2,model3" for full control');
+    }
 
     if (!apiKey) {
       throw new Error('OPENROUTER_API_KEY environment variable is required');
@@ -52,6 +102,10 @@ class OpenRouterService {
     return this.models[this.currentModelIndex];
   }
 
+  getAvailableModels(): string[] {
+    return [...this.models];
+  }
+
   async generateResponse(
     userMessage: string, 
     userId: string, 
@@ -71,9 +125,13 @@ class OpenRouterService {
   ): Promise<string> {
     const startTime = Date.now();
     
-    // Try each model in order until one works
+    // Rotate through models for testing different tool usage performance
+    const startIndex = this.currentModelIndex;
+    
+    // Try each model starting from current rotation position
     for (let i = 0; i < this.models.length; i++) {
-      const model = this.models[i];
+      const modelIndex = (startIndex + i) % this.models.length;
+      const model = this.models[modelIndex];
       
       try {
         logger.info(`Attempting to generate response with model: ${model} using ${messages.length} messages`);
@@ -130,7 +188,7 @@ class OpenRouterService {
             model_name: model,
             user_id: userId,
             message_id: messageId,
-            input_length: userMessage.length,
+            input_length: messages.reduce((total, msg) => total + msg.content.length, 0),
             output_length: response.length,
             response_time_ms: responseTime,
             capabilities_detected: 0, // Will be updated by orchestrator
@@ -146,30 +204,47 @@ class OpenRouterService {
           });
         }
 
+        // Rotate to next model for testing different models' tool usage
+        this.currentModelIndex = (this.currentModelIndex + 1) % this.models.length;
+        
         logger.info(`✅ Generated response for user ${userId} using ${model} (${usage.total_tokens} tokens, $${estimatedCost.toFixed(4)})`);
+        logger.info(`🔄 Rotated to next model: ${this.getCurrentModel()}`);
         return response.trim();
 
       } catch (error: unknown) {
-        logger.warn(`❌ Model ${model} failed: ${error instanceof Error ? error.message : String(error)}`);
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        const errorStatus = (error as { status?: number }).status;
         
-        // If this was a credit/billing error, try free models
-        const errorMessage = error instanceof Error ? error.message : '';
-        if (errorMessage.includes('credit') || 
-            errorMessage.includes('billing') || 
-            errorMessage.includes('quota') ||
-            (error as { status?: number }).status === 402) {
-          logger.info('💳 Billing/credit error detected, skipping to free models...');
-          continue;
+        logger.warn(`❌ Model ${model} failed:`, {
+          error: errorMessage,
+          status: errorStatus,
+          modelIndex: i + 1,
+          totalModels: this.models.length
+        });
+        
+        // Detect specific error types
+        if (errorStatus === 404 || errorMessage.includes('not found') || errorMessage.includes('does not exist')) {
+          logger.error(`🚨 Model "${model}" does not exist on OpenRouter! Check https://openrouter.ai/models`);
+        } else if (errorMessage.includes('credit') || 
+                   errorMessage.includes('billing') || 
+                   errorMessage.includes('quota') ||
+                   errorStatus === 402) {
+          logger.info('💳 Billing/credit error detected, trying next model...');
+        } else if (errorStatus === 429) {
+          logger.warn('🚦 Rate limit hit, trying next model...');
+        } else if (errorStatus === 500 || errorStatus === 502 || errorStatus === 503) {
+          logger.warn('🔧 Server error, trying next model...');
+        } else {
+          logger.warn('🔄 Unknown error, trying next model...');
         }
         
         // For other errors, try next model
         if (i < this.models.length - 1) {
-          logger.info(`🔄 Trying next model...`);
           continue;
         }
         
         // Last model failed
-        logger.error('All models failed:', error);
+        logger.error('💥 All models failed. Last error:', error);
       }
     }
     

@@ -18,12 +18,16 @@ import { schedulerRouter } from './routes/scheduler.js';
 import { githubRouter } from './routes/github.js';
 import { servicesRouter } from './routes/services.js';
 import { memoriesRouter } from './routes/memories.js';
+import modelsRouter from './routes/models.js';
 import { schedulerService } from './services/scheduler.js';
 // Import orchestrator FIRST to trigger capability registration
 import './services/capability-orchestrator.js';
 import { capabilityRegistry } from './services/capability-registry.js';
 import { capabilitiesRouter } from './routes/capabilities.js';
 import { simpleHealer } from './runtime/simple-healer.js';
+
+// Export openRouterService for models endpoint
+export { openRouterService } from './services/openrouter.js';
 
 const app = express();
 
@@ -45,6 +49,7 @@ app.use('/scheduler', schedulerRouter);
 app.use('/github', githubRouter);
 app.use('/services', servicesRouter);
 app.use('/api/memories', memoriesRouter);
+app.use('/api/models', modelsRouter);
 
 // Start queue consumers and scheduler
 async function startQueueWorkers() {

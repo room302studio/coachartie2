@@ -15,6 +15,8 @@ import { setupInteractionHandler } from './handlers/interaction-handler.js';
 import { startResponseConsumer } from './queues/consumer.js';
 import { writeFileSync } from 'fs';
 import { join } from 'path';
+import { telemetry } from './services/telemetry.js';
+import { healthServer } from './services/health-server.js';
 
 const client = new Client({
   intents: [
@@ -27,8 +29,8 @@ const client = new Client({
   partials: [Partials.Message, Partials.Channel, Partials.User],
 });
 
-// Status file path - write to host directory that brain can read
-const STATUS_FILE = '/Users/ejfox/code/coachartie2/packages/capabilities/data/discord-status.json';
+// Status file path - configurable via environment variable
+const STATUS_FILE = process.env.DISCORD_STATUS_FILE || '/app/data/discord-status.json';
 
 // Write status to shared file
 function writeStatus(status: 'starting' | 'ready' | 'error' | 'shutdown', data?: any) {
@@ -76,6 +78,20 @@ async function start() {
     client.on(Events.ClientReady, () => {
       logger.info(`✅ discord: ${client.user?.tag} [${client.guilds.cache.size} guilds]`);
       
+      // Update telemetry with connection info
+      const guildCount = client.guilds.cache.size;
+      const channelCount = client.guilds.cache.reduce((total, guild) => total + guild.channels.cache.size, 0);
+      telemetry.updateConnectionMetrics(guildCount, channelCount);
+      telemetry.logEvent('discord_ready', {
+        username: client.user?.tag,
+        guilds: guildCount,
+        channels: channelCount
+      });
+      
+      // Start health server
+      healthServer.setDiscordClient(client);
+      healthServer.start();
+      
       writeStatus('ready', {
         username: client.user?.tag,
         guilds: client.guilds.cache.size,
@@ -85,7 +101,15 @@ async function start() {
 
     client.on(Events.Error, (error) => {
       logger.error('Discord client error:', error);
+      telemetry.incrementApiErrors(error.message);
+      telemetry.logEvent('discord_error', { error: error.message }, undefined, undefined, undefined, false);
       writeStatus('error', { error: error.message });
+    });
+
+    client.on('reconnecting', () => {
+      logger.warn('Discord client reconnecting...');
+      telemetry.incrementReconnections();
+      telemetry.logEvent('discord_reconnecting');
     });
 
     // Setup message handler
@@ -114,14 +138,20 @@ async function start() {
 // Handle graceful shutdown
 process.on('SIGTERM', async () => {
   logger.info('SIGTERM received, shutting down Discord bot');
+  telemetry.logEvent('shutdown', { signal: 'SIGTERM' });
+  telemetry.persistMetrics();
   writeStatus('shutdown');
+  healthServer.stop();
   client.destroy();
   process.exit(0);
 });
 
 process.on('SIGINT', async () => {
   logger.info('SIGINT received, shutting down Discord bot');
+  telemetry.logEvent('shutdown', { signal: 'SIGINT' });
+  telemetry.persistMetrics();
   writeStatus('shutdown');
+  healthServer.stop();
   client.destroy();
   process.exit(0);
 });
