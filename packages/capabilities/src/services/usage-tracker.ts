@@ -167,6 +167,63 @@ export class UsageTracker {
   }
 
   /**
+   * Get tool usage performance by model
+   */
+  static async getToolUsagePerformance(days: number = 30): Promise<Array<{
+    model_name: string;
+    total_requests: number;
+    capabilities_detected: number;
+    capabilities_executed: number;
+    tool_success_rate: number;
+    xml_format_success_rate: number;
+    avg_response_time: number;
+  }>> {
+    try {
+      const db = await getDatabase();
+      
+      const results = await db.all(`
+        SELECT 
+          model_name,
+          COUNT(*) as total_requests,
+          SUM(capabilities_detected) as capabilities_detected,
+          SUM(capabilities_executed) as capabilities_executed,
+          ROUND(
+            CASE 
+              WHEN SUM(capabilities_detected) > 0 
+              THEN (SUM(capabilities_executed) * 100.0 / SUM(capabilities_detected))
+              ELSE 0 
+            END, 2
+          ) as tool_success_rate,
+          ROUND(
+            CASE 
+              WHEN COUNT(*) > 0
+              THEN (SUM(CASE WHEN capabilities_detected > 0 THEN 1 ELSE 0 END) * 100.0 / COUNT(*))
+              ELSE 0
+            END, 2
+          ) as xml_format_success_rate,
+          ROUND(AVG(response_time_ms), 0) as avg_response_time
+        FROM model_usage_stats 
+        WHERE timestamp >= datetime('now', '-${days} days')
+        GROUP BY model_name
+        ORDER BY tool_success_rate DESC, xml_format_success_rate DESC
+      `);
+
+      return results.map(row => ({
+        model_name: row.model_name,
+        total_requests: row.total_requests,
+        capabilities_detected: row.capabilities_detected,
+        capabilities_executed: row.capabilities_executed,
+        tool_success_rate: row.tool_success_rate,
+        xml_format_success_rate: row.xml_format_success_rate,
+        avg_response_time: row.avg_response_time
+      }));
+    } catch (error) {
+      logger.error('❌ Failed to get tool usage performance:', error);
+      return [];
+    }
+  }
+
+  /**
    * Get daily usage summary
    */
   static async getDailyUsage(days: number = 7): Promise<Array<{

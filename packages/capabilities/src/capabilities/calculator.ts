@@ -19,6 +19,10 @@ export const calculatorCapability: RegisteredCapability = {
   supportedActions: ['calculate', 'eval'],
   description: 'Performs mathematical calculations and evaluates expressions',
   requiredParams: ['expression'],
+  examples: [
+    '<capability name="calculator" action="calculate" expression="5+5" />',
+    '<capability name="calculator" action="calculate" expression="(42 * 2) / 3" />'
+  ],
   handler: async (params, content) => {
     logger.info(`🧮 Calculator called with params: ${JSON.stringify(params)}, content: "${content}"`);
     const expression = params.expression || content;

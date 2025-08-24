@@ -27,19 +27,18 @@ export class SimpleHealer {
 
   private async heal(): Promise<void> {
     try {
-      // Fix 1: Restart Wikipedia if registry is empty
-      if (!global.mcpToolRegistry || global.mcpToolRegistry.size === 0) {
-        await this.restartWikipedia();
-      }
-
-      // Fix 2: Force GC if memory > 200MB
+      // CANCER FIXED: Don't check non-existent mcpToolRegistry
+      // The Wikipedia MCP processes are working fine!
+      
+      // Fix: Force GC if memory > 200MB
       const memMB = Math.round(process.memoryUsage().heapUsed / 1024 / 1024);
       if (memMB > 200 && global.gc) {
         global.gc();
-        // GC forced
+        logger.info(`🧹 Forced GC: ${memMB}MB -> ${Math.round(process.memoryUsage().heapUsed / 1024 / 1024)}MB`);
       }
 
     } catch (error) {
+      logger.error('Simple healer error:', error);
     }
   }
 

@@ -220,6 +220,7 @@ For DANGEROUS operations: Explain why unsafe, no approval`;
 
   async review(userMessage: string, capability: CapabilityRequest): Promise<string> {
     try {
+      logger.info(`🔍 CONSCIENCE REVIEW: Checking capability ${capability.name}:${capability.action} with params: ${JSON.stringify(capability.params)}`);
       // Immediate failsafe: Block dangerous filesystem operations without LLM
       if (capability.name === 'filesystem' && capability.action === 'delete') {
         const path = typeof capability.params === 'string' ? capability.params : capability.params?.path || '';
@@ -243,12 +244,14 @@ For DANGEROUS operations: Explain why unsafe, no approval`;
       }
 
       // Allow safe operations immediately without LLM review
-      if (capability.name === 'memory' || capability.name === 'calculator' || capability.name === 'web' || capability.name === 'mcp_client' || capability.name === 'mcp_installer' || capability.name === 'goal' || capability.name === 'variable' || capability.name === 'todo') {
+      if (capability.name === 'memory' || capability.name === 'calculator' || capability.name === 'web' || capability.name === 'mcp_client' || capability.name === 'mcp_installer' || capability.name === 'goal' || capability.name === 'variable' || capability.name === 'todo' || capability.name === 'discord-ui') {
         logger.info(`✅ IMMEDIATE ALLOW: Safe operation ${capability.name}:${capability.action}`);
         
         // Just return approval text - DON'T regenerate XML!
         return `APPROVED: Safe operation ${capability.name}:${capability.action} is allowed.`;
       }
+      
+      logger.info(`🤔 CONSCIENCE: ${capability.name} not in safe operations list, proceeding with LLM review`);
 
       // Get dynamic safety warnings
       const blacklistWarnings = this.checkBlacklist(capability);

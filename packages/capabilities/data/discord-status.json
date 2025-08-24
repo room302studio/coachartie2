@@ -1,7 +1,7 @@
 {
   "status": "ready",
-  "timestamp": "2025-08-12T22:50:42.916Z",
-  "pid": 45,
+  "timestamp": "2025-08-20T16:33:58.088Z",
+  "pid": 5535,
   "guilds": 4,
   "guildDetails": [
     {
@@ -31,7 +31,7 @@
   ],
   "totalChannels": 122,
   "totalMembers": 280,
-  "uptime": 781.707468313,
+  "uptime": 1.53447675,
   "username": "coachartie#3359",
   "permissions": "none"
 }

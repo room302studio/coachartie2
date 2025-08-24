@@ -250,7 +250,10 @@ export class CapabilityOrchestrator {
    * Main orchestration entry point - Gospel Methodology Implementation
    * Takes an incoming message and orchestrates the full capability pipeline
    */
-  async orchestrateMessage(message: IncomingMessage): Promise<string> {
+  async orchestrateMessage(
+    message: IncomingMessage, 
+    onPartialResponse?: (partial: string) => void
+  ): Promise<string> {
     logger.info("🎯 ORCHESTRATOR START - This should always appear");
     
     const context = this.createOrchestrationContext(message);
@@ -258,7 +261,7 @@ export class CapabilityOrchestrator {
 
     try {
       logger.info(`🎬 Starting orchestration for message ${message.id}`);
-      return await this.assembleMessageOrchestration(context, message);
+      return await this.assembleMessageOrchestration(context, message, onPartialResponse);
     } catch (error) {
       logger.error(`❌ Orchestration failed for message ${message.id}:`, error);
       this.contexts.delete(message.id);
@@ -270,10 +273,14 @@ export class CapabilityOrchestrator {
    * Gospel Method: Assemble message orchestration pipeline
    * Crystal clear what each step does, easy to debug by commenting out steps
    */
-  private async assembleMessageOrchestration(context: OrchestrationContext, message: IncomingMessage): Promise<string> {
+  private async assembleMessageOrchestration(
+    context: OrchestrationContext, 
+    message: IncomingMessage, 
+    onPartialResponse?: (partial: string) => void
+  ): Promise<string> {
     logger.info(`⚡ Assembling message orchestration for <${message.userId}> message`);
     
-    const llmResponse = await this.getLLMResponseWithCapabilities(message);
+    const llmResponse = await this.getLLMResponseWithCapabilities(message, onPartialResponse);
     await this.extractCapabilitiesFromUserAndLLM(context, message, llmResponse);
     await this.reviewCapabilitiesWithConscience(context, message);
     
@@ -467,7 +474,8 @@ Timestamp: ${new Date().toISOString()}`;
    * Dynamically generates instructions based on registered capabilities
    */
   private async getLLMResponseWithCapabilities(
-    message: IncomingMessage
+    message: IncomingMessage,
+    onPartialResponse?: (partial: string) => void
   ): Promise<string> {
     try {
       logger.info(`🚀 getLLMResponseWithCapabilities called for message: "${message.message}"`);
@@ -497,11 +505,10 @@ Timestamp: ${new Date().toISOString()}`;
       
       logger.info(`🎯 Using Context Alchemy with model-aware prompting for ${currentModel} (${modelAwareMessages.length} messages)`);
       
-      return await openRouterService.generateFromMessageChain(
-        modelAwareMessages,
-        message.userId,
-        message.id
-      );
+      // Use streaming if callback provided, otherwise regular generation
+      return onPartialResponse
+        ? await openRouterService.generateFromMessageChainStreaming(modelAwareMessages, message.userId, onPartialResponse)
+        : await openRouterService.generateFromMessageChain(modelAwareMessages, message.userId, message.id);
     } catch (error) {
       logger.error('❌ Failed to get capability instructions from database', error);
       throw new Error('System configuration error: capability instructions not available');

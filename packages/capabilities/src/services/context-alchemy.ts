@@ -1,6 +1,9 @@
 import { logger } from '@coachartie/shared';
 import { conscienceLLM } from './conscience.js';
 import { IncomingMessage } from '@coachartie/shared';
+import { MemoryEntourageInterface } from './memory-entourage-interface.js';
+import { BasicKeywordMemoryEntourage } from './basic-keyword-memory-entourage.js';
+import { CombinedMemoryEntourage } from './combined-memory-entourage.js';
 
 interface ContextSource {
   name: string;
@@ -28,12 +31,27 @@ interface ContextBudget {
  */
 export class ContextAlchemy {
   private static instance: ContextAlchemy;
+  private memoryEntourage: MemoryEntourageInterface;
+  
+  constructor() {
+    // Initialize with CombinedMemoryEntourage for multi-layered memory integration
+    this.memoryEntourage = new CombinedMemoryEntourage();
+    logger.info('🧠 Context Alchemy: Initialized with CombinedMemoryEntourage (keyword + semantic)');
+  }
   
   static getInstance(): ContextAlchemy {
     if (!ContextAlchemy.instance) {
       ContextAlchemy.instance = new ContextAlchemy();
     }
     return ContextAlchemy.instance;
+  }
+
+  /**
+   * Upgrade the memory entourage implementation (for dependency injection)
+   */
+  setMemoryEntourage(memoryEntourage: MemoryEntourageInterface): void {
+    this.memoryEntourage = memoryEntourage;
+    logger.info('🧠 Context Alchemy: Memory entourage implementation upgraded');
   }
 
   /**
@@ -58,7 +76,15 @@ export class ContextAlchemy {
       const budget = this.calculateTokenBudget(userMessage, baseSystemPrompt);
       
       // 2. Assemble message context (beautiful, readable pattern)
-      const mockMessage = { message: userMessage, userId, id: 'context-gen', source: 'alchemy' } as IncomingMessage;
+      const mockMessage: IncomingMessage = { 
+        message: userMessage, 
+        userId, 
+        id: 'context-gen', 
+        source: 'capabilities',
+        respondTo: { type: 'api' },
+        timestamp: new Date(),
+        retryCount: 0
+      };
       const contextSources = await this.assembleMessageContext(mockMessage);
       
       // 3. Prioritize and select context within budget
@@ -181,17 +207,37 @@ export class ContextAlchemy {
    */
   private async addRelevantMemories(message: IncomingMessage, sources: ContextSource[]): Promise<void> {
     try {
-      // This will integrate with the existing memory pattern system
-      // For now, add placeholder to maintain the architecture
-      const content = '# Recent relevant experiences: (memory integration pending)';
+      // Calculate available token budget for memory context
+      const estimatedOtherTokens = 500; // Conservative estimate for other context
+      const maxTokensForMemory = 800; // Max tokens for memory content
       
-      sources.push({
-        name: 'memory_context',
-        priority: 70,
-        tokenWeight: Math.ceil(content.length / 4),
-        content,
-        category: 'memory'
-      });
+      const memoryResult = await this.memoryEntourage.getMemoryContext(
+        message.message,
+        message.userId,
+        {
+          maxTokens: maxTokensForMemory,
+          priority: 'speed', // Default to speed for responsive interactions
+          minimal: false
+        }
+      );
+      
+      // Only add memory context if we actually have useful content
+      if (memoryResult.content && memoryResult.content.trim().length > 0) {
+        sources.push({
+          name: 'memory_context',
+          priority: 70,
+          tokenWeight: Math.ceil(memoryResult.content.length / 4),
+          content: memoryResult.content,
+          category: 'memory'
+        });
+        
+        logger.debug(`📝 Added memory context: ${memoryResult.memoryCount} memories, confidence: ${memoryResult.confidence}`);
+        
+        // 🔍 DEBUG: Log memory IDs for backward debugging
+        if (memoryResult.memoryIds && memoryResult.memoryIds.length > 0) {
+          logger.info(`🔍 Memory IDs included in context: [${memoryResult.memoryIds.join(', ')}]`);
+        }
+      }
     } catch (error) {
       logger.warn('Failed to add relevant memories:', error);
       // Graceful degradation - continue without memory context

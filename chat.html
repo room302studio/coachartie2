@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Coach Artie Chat</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-900 text-white">
+    <div class="max-w-2xl mx-auto p-4">
+        <h1 class="text-2xl font-bold mb-4">🤖 Coach Artie Chat</h1>
+        
+        <div id="messages" class="border border-gray-700 rounded p-4 h-96 overflow-y-auto mb-4 bg-gray-800">
+            <div class="text-gray-400 text-center py-8">Start chatting with Coach Artie...</div>
+        </div>
+        
+        <div class="flex gap-2">
+            <input 
+                id="messageInput" 
+                type="text" 
+                placeholder="Chat with Coach Artie..."
+                class="flex-1 bg-gray-800 border border-gray-700 p-3 rounded text-white"
+                onkeypress="if(event.key==='Enter') sendMessage()"
+            />
+            <button 
+                onclick="sendMessage()" 
+                class="px-6 py-3 bg-blue-600 hover:bg-blue-700 rounded text-white"
+            >
+                Send
+            </button>
+        </div>
+        
+        <div id="status" class="mt-2 text-sm text-gray-400"></div>
+    </div>
+
+    <script>
+        const messages = document.getElementById('messages');
+        const messageInput = document.getElementById('messageInput');
+        const status = document.getElementById('status');
+        
+        function addMessage(role, content, timestamp = new Date()) {
+            const messageDiv = document.createElement('div');
+            messageDiv.className = 'mb-4';
+            
+            const time = timestamp.toLocaleTimeString('en-US', {
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit',
+                hour12: false
+            });
+            
+            messageDiv.innerHTML = `
+                <div class="flex items-center gap-2 mb-1">
+                    <span class="text-xs font-medium ${role === 'user' ? 'text-blue-400' : 'text-green-400'}">
+                        ${role === 'user' ? 'YOU' : 'ARTIE'}
+                    </span>
+                    <span class="text-xs text-gray-500">${time}</span>
+                </div>
+                <div class="p-3 rounded text-sm whitespace-pre-wrap ${role === 'user' ? 'bg-blue-900/30' : 'bg-gray-700'}">
+${content}
+                </div>
+            `;
+            
+            messages.appendChild(messageDiv);
+            messages.scrollTop = messages.scrollHeight;
+        }
+        
+        async function sendMessage() {
+            const message = messageInput.value.trim();
+            if (!message) return;
+            
+            addMessage('user', message);
+            messageInput.value = '';
+            status.textContent = '🤔 Thinking...';
+            
+            try {
+                const response = await fetch('http://localhost:18239/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        message: message,
+                        userId: 'web-user'
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success && data.jobUrl) {
+                    await pollForResult(data.jobUrl);
+                } else {
+                    addMessage('assistant', '❌ Error: Invalid response format');
+                }
+            } catch (error) {
+                addMessage('assistant', `❌ Error: ${error.message}`);
+                status.textContent = '';
+            }
+        }
+        
+        async function pollForResult(jobUrl) {
+            const maxAttempts = 30;
+            let attempts = 0;
+            
+            while (attempts < maxAttempts) {
+                try {
+                    const response = await fetch(`http://localhost:18239${jobUrl}`);
+                    const data = await response.json();
+                    
+                    if (data.status === 'completed') {
+                        addMessage('assistant', data.response);
+                        status.textContent = '';
+                        break;
+                    } else if (data.status === 'failed') {
+                        addMessage('assistant', `❌ Error: ${data.error || 'Job failed'}`);
+                        status.textContent = '';
+                        break;
+                    }
+                    
+                    status.textContent = `🔄 ${data.status}... (${Math.round(data.processingTime / 1000)}s)`;
+                    await new Promise(resolve => setTimeout(resolve, 1000));
+                    attempts++;
+                } catch (error) {
+                    addMessage('assistant', `❌ Polling error: ${error.message}`);
+                    status.textContent = '';
+                    break;
+                }
+            }
+            
+            if (attempts >= maxAttempts) {
+                addMessage('assistant', '❌ Request timed out');
+                status.textContent = '';
+            }
+        }
+        
+        // Clear initial placeholder
+        messages.innerHTML = '';
+    </script>
+</body>
+</html>

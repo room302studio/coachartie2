@@ -254,8 +254,8 @@ class CapabilitiesMCPServer {
           if (!contentToRemember) {
             throw new Error('No content provided to remember');
           }
-          // Placeholder - would store in actual memory system
-          return `Remembered: ${contentToRemember}`;
+          // CANCER REMOVED: Use real memory system
+          throw new Error('Use real memory capability: <capability name="memory" action="remember" content="..." />');
         }
 
         if (action === 'recall') {
@@ -263,8 +263,8 @@ class CapabilitiesMCPServer {
           if (!query) {
             throw new Error('No query provided for recall');
           }
-          // Placeholder - would query actual memory system
-          return `Recalled information about "${query}": [Placeholder - would show actual memories]`;
+          // CANCER REMOVED: Use real memory system
+          throw new Error('Use real memory capability: <capability name="memory" action="recall" query="..." />');
         }
 
         throw new Error(`Unknown memory action: ${action}`);

@@ -2,7 +2,10 @@ import { IncomingMessage, logger } from '@coachartie/shared';
 import { openRouterService } from '../services/openrouter.js';
 import { capabilityOrchestrator } from '../services/capability-orchestrator.js';
 
-export async function processMessage(message: IncomingMessage): Promise<string> {
+export async function processMessage(
+  message: IncomingMessage, 
+  onPartialResponse?: (partial: string) => void
+): Promise<string> {
   try {
     // Check if OpenRouter is configured
     if (!process.env.OPENROUTER_API_KEY || process.env.OPENROUTER_API_KEY === 'sk-or-your-openrouter-key-here') {
@@ -18,8 +21,8 @@ export async function processMessage(message: IncomingMessage): Promise<string> 
     if (enableCapabilities) {
       logger.info(`🎬 Processing message with capability orchestration: ${message.id}`);
       
-      // Use capability orchestrator for full pipeline
-      const orchestratedResponse = await capabilityOrchestrator.orchestrateMessage(message);
+      // Use capability orchestrator for full pipeline with streaming support
+      const orchestratedResponse = await capabilityOrchestrator.orchestrateMessage(message, onPartialResponse);
       
       logger.info(`✅ Capability orchestration completed for user ${message.userId}`);
       return orchestratedResponse;
@@ -39,10 +42,10 @@ export async function processMessage(message: IncomingMessage): Promise<string> 
         message.context?.conversationHistory || []
       );
       
-      const aiResponse = await openRouterService.generateFromMessageChain(
-        messages,
-        message.userId
-      );
+      // Use streaming if callback provided, otherwise regular generation
+      const aiResponse = onPartialResponse 
+        ? await openRouterService.generateFromMessageChainStreaming(messages, message.userId, onPartialResponse)
+        : await openRouterService.generateFromMessageChain(messages, message.userId);
       
       logger.info(`Generated simple AI response for user ${message.userId}`);
       return aiResponse;

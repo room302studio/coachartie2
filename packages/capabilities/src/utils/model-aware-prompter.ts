@@ -51,17 +51,9 @@ export class ModelAwarePrompter {
    * Generate capability instruction prompt based on model capabilities
    */
   generateCapabilityPrompt(modelName: string, basePrompt: string): string {
-    const capabilities = this.getModelCapabilities(modelName);
-    
-    logger.info(`🎯 MODEL-AWARE: Generating prompt for ${modelName} (weak: ${capabilities.isWeakModel})`);
-    
-    if (capabilities.isWeakModel) {
-      return this.generateWeakModelPrompt(basePrompt);
-    } else if (capabilities.maxComplexity === 'medium') {
-      return this.generateMediumModelPrompt(basePrompt);
-    } else {
-      return this.generateStrongModelPrompt(basePrompt);
-    }
+    // DEBUGGING: Force return basePrompt to test XML
+    logger.info(`🎯 FORCED XML MODE: Returning original basePrompt for ${modelName}`);
+    return basePrompt;
   }
   
   /**

@@ -11,6 +11,8 @@ export interface JobResult {
   originalMessage: string;
   additionalContext?: string[];
   cancellationReason?: string;
+  partialResponse?: string; // For streaming responses
+  lastStreamUpdate?: Date;
 }
 
 export class JobTracker {
@@ -62,6 +64,18 @@ export class JobTracker {
   }
 
   /**
+   * Update partial response for streaming
+   */
+  updatePartialResponse(messageId: string, partialResponse: string): void {
+    const job = this.jobs.get(messageId);
+    if (job && (job.status === 'pending' || job.status === 'processing')) {
+      job.partialResponse = partialResponse;
+      job.lastStreamUpdate = new Date();
+      logger.debug(`🔄 Updated partial response for job ${messageId}: ${partialResponse.substring(0, 100)}...`);
+    }
+  }
+
+  /**
    * Complete a job with success result
    */
   completeJob(messageId: string, result: string): void {
@@ -70,6 +84,8 @@ export class JobTracker {
       job.status = 'completed';
       job.result = result;
       job.endTime = new Date();
+      // Clear partial response when complete
+      job.partialResponse = undefined;
       
       const duration = job.endTime.getTime() - job.startTime.getTime();
       logger.info(`✅ Job ${messageId} completed successfully in ${duration}ms`);

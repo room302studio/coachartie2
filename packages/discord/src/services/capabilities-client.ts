@@ -19,12 +19,14 @@ export interface JobStatusResponse {
   processingTime: number;
   startTime: string;
   endTime?: string;
+  partialResponse?: string; // For streaming
+  lastStreamUpdate?: string;
 }
 
 export class CapabilitiesClient {
   private baseUrl: string;
 
-  constructor(baseUrl = 'http://localhost:18239') {
+  constructor(baseUrl = process.env.CAPABILITIES_URL || 'http://localhost:18239') {
     this.baseUrl = baseUrl;
   }
 

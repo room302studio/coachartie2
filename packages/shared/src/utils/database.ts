@@ -26,7 +26,17 @@ export async function getDatabase(): Promise<Database<sqlite3.Database, sqlite3.
       driver: sqlite3.Database
     });
 
-    logger.info(`🗄️ SQLite database connected: ${dbPath}`);
+    // CONCURRENCY FIXES: Enable WAL mode and set timeouts
+    await db.exec(`
+      PRAGMA journal_mode = WAL;
+      PRAGMA synchronous = NORMAL;
+      PRAGMA cache_size = 10000;
+      PRAGMA temp_store = MEMORY;
+      PRAGMA mmap_size = 268435456;
+    `);
+    await db.run('PRAGMA busy_timeout = 30000');
+
+    logger.info(`🗄️ SQLite database connected: ${dbPath} (WAL mode enabled)`);
     
     // Initialize database schema
     await initializeDatabase(db);

@@ -82,8 +82,14 @@ router.post('/', rateLimiter(50, 60000), async (req: Request, res: Response) => 
       jobUrl: `/chat/${messageId}`
     } as ChatResponse);
 
-    // Process in background with job tracking
-    processMessage(incomingMessage)
+    // Process in background with job tracking and simple streaming
+    processMessage(
+      incomingMessage,
+      // Simple streaming callback - update on paragraph completion
+      (partialResponse: string) => {
+        jobTracker.updatePartialResponse(messageId, partialResponse);
+      }
+    )
       .then(aiResponse => {
         jobTracker.completeJob(messageId, aiResponse);
         logger.info(`✅ Background processing complete for job ${messageId}: ${aiResponse.substring(0, 100)}...`);
@@ -267,6 +273,10 @@ router.get('/:messageId', (req: Request, res: Response) => {
       response.error = job.error;
     } else if (job.status === 'cancelled') {
       response.cancellationReason = job.cancellationReason;
+    } else if ((job.status === 'processing' || job.status === 'pending') && job.partialResponse) {
+      // Include partial response for streaming
+      (response as any).partialResponse = job.partialResponse;
+      (response as any).lastStreamUpdate = job.lastStreamUpdate?.toISOString();
     }
 
     // Add additional context if present

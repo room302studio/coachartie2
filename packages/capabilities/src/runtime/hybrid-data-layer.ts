@@ -73,13 +73,9 @@ export class HybridDataLayer {
 
   constructor(databasePath?: string) {
     if (databasePath) {
-      try {
-        this.coldStorage = getDatabase();
-        this.initializeDatabase();
-        this.loadRecentMemories();
-      } catch (error) {
+      this.initializeAsync().catch(error => {
         logger.warn('Failed to initialize SQLite, running in memory-only mode:', error);
-      }
+      });
     }
 
     // Periodic sync every 30 seconds
@@ -93,41 +89,59 @@ export class HybridDataLayer {
   }
 
   /**
+   * Async initialization helper
+   */
+  private async initializeAsync(): Promise<void> {
+    try {
+      this.coldStorage = await getDatabase();
+      await this.initializeDatabase();
+      await this.loadRecentMemories();
+    } catch (error) {
+      logger.error('Failed to initialize database:', error);
+      throw error;
+    }
+  }
+
+  /**
    * Initialize SQLite database schema
    */
-  private initializeDatabase(): void {
+  private async initializeDatabase(): Promise<void> {
     if (!this.coldStorage) return;
 
     try {
-      this.coldStorage.exec(`
+      await this.coldStorage.exec(`
         CREATE TABLE IF NOT EXISTS memories (
           id TEXT PRIMARY KEY,
           user_id TEXT NOT NULL,
           content TEXT NOT NULL,
-          timestamp INTEGER NOT NULL,
-          metadata TEXT,
-          created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+          timestamp TEXT NOT NULL,
+          metadata TEXT DEFAULT '{}',
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          tags TEXT NOT NULL DEFAULT '[]',
+          context TEXT DEFAULT '',
+          importance INTEGER DEFAULT 5,
+          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
         );
         
         CREATE INDEX IF NOT EXISTS idx_memories_user_id ON memories(user_id);
         CREATE INDEX IF NOT EXISTS idx_memories_timestamp ON memories(timestamp);
         CREATE INDEX IF NOT EXISTS idx_memories_user_timestamp ON memories(user_id, timestamp DESC);
         
-        -- FTS for search
+        -- FTS for search (compatible with legacy schema)
         CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts USING fts5(
-          content, user_id, 
+          content, tags, context,
           content='memories', 
-          content_rowid='rowid'
+          content_rowid='id'
         );
         
-        CREATE TRIGGER IF NOT EXISTS memories_ai AFTER INSERT ON memories BEGIN
-          INSERT INTO memories_fts(rowid, content, user_id) 
-          VALUES (new.rowid, new.content, new.user_id);
+        CREATE TRIGGER IF NOT EXISTS memories_fts_insert AFTER INSERT ON memories BEGIN
+          INSERT INTO memories_fts(rowid, content, tags, context) 
+          VALUES (new.id, new.content, '', '');
         END;
         
-        CREATE TRIGGER IF NOT EXISTS memories_ad AFTER DELETE ON memories BEGIN
-          INSERT INTO memories_fts(memories_fts, rowid, content, user_id) 
-          VALUES ('delete', old.rowid, old.content, old.user_id);
+        CREATE TRIGGER IF NOT EXISTS memories_fts_delete AFTER DELETE ON memories BEGIN
+          INSERT INTO memories_fts(memories_fts, rowid, content, tags, context) 
+          VALUES ('delete', old.id, old.content, '', '');
         END;
       `);
       
@@ -141,22 +155,20 @@ export class HybridDataLayer {
   /**
    * Load recent memories into hot cache
    */
-  private loadRecentMemories(): void {
+  private async loadRecentMemories(): Promise<void> {
     if (!this.coldStorage) return;
 
     try {
-      const stmt = this.coldStorage.prepare(`
+      const rows = await this.coldStorage.all(`
         SELECT id, user_id, content, timestamp, metadata 
         FROM memories 
         ORDER BY timestamp DESC 
         LIMIT ?
-      `);
-      
-      const rows = stmt.all(this.maxHotMemories) as Array<{
+      `, this.maxHotMemories) as Array<{
         id: string;
         user_id: string;
         content: string;
-        timestamp: number;
+        timestamp: string;
         metadata: string | null;
       }>;
 
@@ -213,7 +225,7 @@ export class HybridDataLayer {
   /**
    * Get memory by ID - instant hot cache lookup
    */
-  getMemory(id: string): MemoryRecord | null {
+  async getMemory(id: string): Promise<MemoryRecord | null> {
     const memory = this.hotData.get(id);
     if (memory) {
       return memory;
@@ -222,11 +234,10 @@ export class HybridDataLayer {
     // If not in hot cache, try cold storage
     if (this.coldStorage) {
       try {
-        const stmt = this.coldStorage.prepare(`
+        const row = await this.coldStorage.get(`
           SELECT id, user_id, content, timestamp, metadata 
           FROM memories WHERE id = ?
-        `);
-        const row = stmt.get(id) as any;
+        `, id) as any;
         
         if (row) {
           const memory: MemoryRecord = {
@@ -252,7 +263,7 @@ export class HybridDataLayer {
   /**
    * Get recent memories for user - fast index lookup
    */
-  getRecentMemories(userId: string, limit = 10): MemoryRecord[] {
+  async getRecentMemories(userId: string, limit = 10): Promise<MemoryRecord[]> {
     const userMemoryIds = this.userIndex.get(userId);
     if (!userMemoryIds) {
       return [];
@@ -268,19 +279,17 @@ export class HybridDataLayer {
     // If we don't have enough in hot cache, check cold storage
     if (memories.length < limit && this.coldStorage) {
       try {
-        const stmt = this.coldStorage.prepare(`
+        const rows = await this.coldStorage.all(`
           SELECT id, user_id, content, timestamp, metadata 
           FROM memories 
           WHERE user_id = ? 
           ORDER BY timestamp DESC 
           LIMIT ?
-        `);
-        
-        const rows = stmt.all(userId, limit) as Array<{
+        `, userId, limit) as Array<{
           id: string;
           user_id: string;
           content: string;
-          timestamp: number;
+          timestamp: string;
           metadata: string | null;
         }>;
 
@@ -322,20 +331,18 @@ export class HybridDataLayer {
 
     // Try FTS search in cold storage
     try {
-      const stmt = this.coldStorage.prepare(`
+      const rows = await this.coldStorage.all(`
         SELECT m.id, m.user_id, m.content, m.timestamp, m.metadata
         FROM memories_fts f
         JOIN memories m ON m.rowid = f.rowid
         WHERE f.content MATCH ? AND m.user_id = ?
         ORDER BY m.timestamp DESC
         LIMIT ?
-      `);
-      
-      const rows = stmt.all(query, userId, limit) as Array<{
+      `, query, userId, limit) as Array<{
         id: string;
         user_id: string;
         content: string;
-        timestamp: number;
+        timestamp: string;
         metadata: string | null;
       }>;
 
@@ -359,17 +366,15 @@ export class HybridDataLayer {
     if (!this.coldStorage) return;
 
     try {
-      const stmt = this.coldStorage.prepare(`
+      await this.coldStorage.run(`
         INSERT OR REPLACE INTO memories 
         (id, user_id, content, timestamp, metadata)
         VALUES (?, ?, ?, ?, ?)
-      `);
-      
-      stmt.run(
+      `, 
         memory.id,
         memory.user_id,
         memory.content,
-        memory.timestamp.getTime(),
+        memory.timestamp.toISOString(),
         memory.metadata ? JSON.stringify(memory.metadata) : null
       );
     } catch (error) {
@@ -442,7 +447,7 @@ export class HybridDataLayer {
   }
 }
 
-// Singleton instance
+// Singleton instance - Use shared database path for consolidation
 export const hybridDataLayer = new HybridDataLayer(
-  process.env.DATABASE_PATH || '/Users/ejfox/code/coachartie2/packages/capabilities/data/coachartie.db'
+  process.env.DATABASE_PATH || '/Users/ejfox/code/coachartie2/data/coachartie.db'
 );

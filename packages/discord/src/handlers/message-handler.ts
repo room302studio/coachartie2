@@ -2,15 +2,83 @@ import { Client, Events, Message } from 'discord.js';
 import { logger } from '@coachartie/shared';
 import { publishMessage } from '../queues/publisher.js';
 import { capabilitiesClient } from '../services/capabilities-client.js';
+import { telemetry } from '../services/telemetry.js';
+import { CorrelationContext, generateCorrelationId, getShortCorrelationId } from '../utils/correlation.js';
 
 // Simple deduplication cache to prevent duplicate message processing
 const messageCache = new Map<string, number>();
 const MESSAGE_CACHE_TTL = 10000; // 10 seconds
 
+// Helper function to chunk long messages for Discord's 2000 character limit
+function chunkMessage(text: string, maxLength: number = 2000): string[] {
+  if (text.length <= maxLength) return [text];
+  
+  const chunks: string[] = [];
+  let currentChunk = '';
+  
+  // Split by lines first to preserve formatting
+  const lines = text.split('\n');
+  
+  for (const line of lines) {
+    // If adding this line would exceed the limit, start a new chunk
+    if (currentChunk.length + line.length + 1 > maxLength) {
+      if (currentChunk.trim()) {
+        chunks.push(currentChunk.trim());
+        currentChunk = '';
+      }
+      
+      // If a single line is too long, split it further
+      if (line.length > maxLength) {
+        const words = line.split(' ');
+        for (const word of words) {
+          if (currentChunk.length + word.length + 1 > maxLength) {
+            if (currentChunk.trim()) {
+              chunks.push(currentChunk.trim());
+              currentChunk = '';
+            }
+          }
+          currentChunk += (currentChunk ? ' ' : '') + word;
+        }
+      } else {
+        currentChunk += (currentChunk ? '\n' : '') + line;
+      }
+    } else {
+      currentChunk += (currentChunk ? '\n' : '') + line;
+    }
+  }
+  
+  if (currentChunk.trim()) {
+    chunks.push(currentChunk.trim());
+  }
+  
+  return chunks;
+}
+
 export function setupMessageHandler(client: Client) {
   client.on(Events.MessageCreate, async (message: Message) => {
-    // Debug: Log all incoming messages
-    logger.info(`DEBUG: Received message - Author: ${message.author.tag}, Channel Type: ${message.channel.type}, Content: ${message.content}`);
+    // Generate correlation ID for this message
+    const correlationId = CorrelationContext.getForMessage(message.id);
+    const shortId = getShortCorrelationId(correlationId);
+    
+    // Structured logging with correlation ID
+    logger.info(`📨 Message received [${shortId}]`, {
+      correlationId,
+      author: message.author.tag,
+      userId: message.author.id,
+      channelType: message.channel.type,
+      channelId: message.channelId,
+      messageId: message.id,
+      contentLength: message.content.length,
+      guildId: message.guildId || 'DM'
+    });
+    
+    // Track message received
+    telemetry.incrementMessagesReceived(message.author.id);
+    telemetry.logEvent('message_received', {
+      channelType: message.channel.type,
+      guildId: message.guildId,
+      contentLength: message.content.length
+    }, correlationId, message.author.id);
     
     // Ignore our own messages to prevent loops, but observe other bots (GitHub, webhooks, etc.)
     if (message.author.id === client.user!.id) return;
@@ -47,7 +115,8 @@ export function setupMessageHandler(client: Client) {
       
       // Check if we've seen this exact message recently
       if (messageCache.has(messageKey)) {
-        logger.info(`🚫 Duplicate message detected, skipping: ${messageKey}`);
+        logger.info(`🚫 Duplicate message detected [${shortId}]`, { correlationId, messageKey });
+        telemetry.logEvent('message_duplicate', { messageKey }, correlationId, message.author.id);
         return;
       }
       
@@ -56,12 +125,31 @@ export function setupMessageHandler(client: Client) {
 
       // Handle response vs passive observation
       if (shouldRespond) {
-        logger.info(`Will respond to message from ${message.author.tag}: ${cleanMessage}`);
+        logger.info(`🤖 Will respond to message [${shortId}]`, {
+          correlationId,
+          author: message.author.tag,
+          cleanMessage: cleanMessage.substring(0, 100) + (cleanMessage.length > 100 ? '...' : '')
+        });
+        
+        telemetry.logEvent('message_will_respond', {
+          messageLength: cleanMessage.length,
+          triggerType: botMentioned ? 'mention' : isDM ? 'dm' : 'robot_channel'
+        }, correlationId, message.author.id);
         
         // Start typing indicator and process with job tracking
-        await handleResponseWithJobTracking(message, cleanMessage);
+        await handleResponseWithJobTracking(message, cleanMessage, correlationId);
       } else {
-        logger.info(`Passive observation of message from ${message.author.tag} in #${message.channel.type === 0 && 'name' in message.channel ? message.channel.name : 'DM'}`);
+        const channelName = message.channel.type === 0 && 'name' in message.channel ? message.channel.name : 'DM';
+        logger.info(`👁️ Passive observation [${shortId}]`, {
+          correlationId,
+          author: message.author.tag,
+          channel: channelName
+        });
+        
+        telemetry.logEvent('message_observed', {
+          channelName,
+          messageLength: fullMessage.length
+        }, correlationId, message.author.id);
         
         // Still process for passive observation using queue system
         await publishMessage(
@@ -74,8 +162,25 @@ export function setupMessageHandler(client: Client) {
       }
 
     } catch (error) {
-      logger.error('Error handling Discord message:', error);
-      await message.reply('Sorry, I encountered an error processing your message.');
+      logger.error(`❌ Error handling Discord message [${shortId}]:`, {
+        correlationId,
+        error: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined,
+        author: message.author.tag,
+        messageId: message.id
+      });
+      
+      telemetry.incrementMessagesFailed(message.author.id, error instanceof Error ? error.message : String(error));
+      telemetry.logEvent('message_error', {
+        error: error instanceof Error ? error.message : String(error)
+      }, correlationId, message.author.id, undefined, false);
+      
+      await message.reply(`Sorry, I encountered an error processing your message. [${shortId}]`);
+    }
+    
+    // Clean up correlation context periodically
+    if (Math.random() < 0.01) { // 1% chance
+      CorrelationContext.cleanup();
     }
   });
 }
@@ -83,7 +188,9 @@ export function setupMessageHandler(client: Client) {
 /**
  * Handle Discord message with job tracking and live updates
  */
-async function handleResponseWithJobTracking(message: Message, cleanMessage: string): Promise<void> {
+async function handleResponseWithJobTracking(message: Message, cleanMessage: string, correlationId: string): Promise<void> {
+  const shortId = getShortCorrelationId(correlationId);
+  const startTime = Date.now();
   let typingInterval: NodeJS.Timeout | null = null;
   let statusMessage: Message | null = null;
 
@@ -91,27 +198,48 @@ async function handleResponseWithJobTracking(message: Message, cleanMessage: str
     // Start continuous typing indicator
     if ('sendTyping' in message.channel) {
       await message.channel.sendTyping();
+      telemetry.incrementTypingIndicators();
+      telemetry.logEvent('typing_started', {}, correlationId, message.author.id);
+      
       // Keep typing indicator alive during processing
       typingInterval = setInterval(async () => {
         try {
           if ('sendTyping' in message.channel) {
             await message.channel.sendTyping();
+            telemetry.incrementTypingIndicators();
           }
         } catch (error) {
-          logger.error('Failed to send typing indicator:', error);
+          logger.error(`❌ Failed to send typing indicator [${shortId}]:`, {
+            correlationId,
+            error: error instanceof Error ? error.message : String(error)
+          });
+          telemetry.incrementApiErrors(error instanceof Error ? error.message : String(error));
         }
       }, 8000); // Refresh every 8 seconds (Discord typing lasts 10 seconds)
     }
 
     // Submit job and get immediate response
     const jobInfo = await capabilitiesClient.submitJob(cleanMessage, message.author.id);
-    logger.info(`🤖 Job ${jobInfo.messageId} submitted for Discord user ${message.author.tag}`);
+    logger.info(`🤖 Job submitted [${shortId}]`, {
+      correlationId,
+      jobId: jobInfo.messageId,
+      author: message.author.tag,
+      messageLength: cleanMessage.length
+    });
+    
+    telemetry.incrementJobsSubmitted(message.author.id, jobInfo.messageId);
+    telemetry.logEvent('job_submitted', {
+      jobId: jobInfo.messageId,
+      messageLength: cleanMessage.length
+    }, correlationId, message.author.id);
 
     // Send initial status message
-    statusMessage = await message.reply(`🤔 Working on it... (Job: \`${jobInfo.messageId.slice(-8)}\`)`);
+    const jobShortId = jobInfo.messageId.slice(-8);
+    statusMessage = await message.reply(`🤔 Working on it... (${shortId}/${jobShortId})`);
 
     let lastStatus = 'pending';
     let updateCount = 0;
+    let sentPartialResponse = false;
 
     // Poll for completion with live updates
     const result = await capabilitiesClient.pollJobUntilComplete(jobInfo.messageId, {
@@ -120,25 +248,50 @@ async function handleResponseWithJobTracking(message: Message, cleanMessage: str
       
       onProgress: async (status) => {
         try {
-          // Only update if status changed or every 5th poll (to show it's alive)
+          // Simple streaming - just send partial response once when available
+          if (status.partialResponse && !sentPartialResponse) {
+            if ('send' in message.channel && typeof message.channel.send === 'function') {
+              const chunks = chunkMessage(status.partialResponse);
+              for (const chunk of chunks) {
+                await (message.channel as any).send(chunk);
+              }
+              sentPartialResponse = true;
+              logger.info(`📡 Sent streaming response [${shortId}]`);
+            }
+          }
+          
+          // Update status message
           const shouldUpdate = status.status !== lastStatus || (updateCount % 5 === 0);
           
           if (shouldUpdate && statusMessage) {
             const processingTime = Math.round(status.processingTime / 1000);
             const statusEmoji = status.status === 'processing' ? '🔄' : '🤔';
-            const newContent = `${statusEmoji} ${status.status}... (${processingTime}s, Job: \`${jobInfo.messageId.slice(-8)}\`)`;
+            const streamEmoji = status.partialResponse ? '📡' : '';
+            const newContent = `${statusEmoji}${streamEmoji} ${status.status}... (${processingTime}s, ${shortId}/${jobShortId})`;
             
             await statusMessage.edit(newContent);
             lastStatus = status.status;
+            
+            telemetry.logEvent('status_updated', {
+              status: status.status,
+              processingTime: status.processingTime,
+              updateCount
+            }, correlationId, message.author.id);
           }
           updateCount++;
         } catch (error) {
-          logger.error('Failed to update status message:', error);
+          logger.error(`❌ Failed to update status message [${shortId}]:`, {
+            correlationId,
+            error: error instanceof Error ? error.message : String(error)
+          });
+          telemetry.incrementApiErrors(error instanceof Error ? error.message : String(error));
         }
       },
 
       onComplete: async (result) => {
         try {
+          const duration = Date.now() - startTime;
+          
           // Stop typing and clear status message
           if (typingInterval) {
             clearInterval(typingInterval);
@@ -146,34 +299,100 @@ async function handleResponseWithJobTracking(message: Message, cleanMessage: str
           }
 
           if (statusMessage) {
-            // Edit status message to show completion, then send result
-            await statusMessage.edit(`✅ Complete! (Job: \`${jobInfo.messageId.slice(-8)}\`)`);
+            // Edit status message to show completion
+            await statusMessage.edit(`✅ Complete! (${shortId}/${jobShortId})`);
             
-            // Send the actual result as a new message
-            if ('send' in message.channel) {
-              await message.channel.send(result);
-            } else {
-              await message.reply(result);
+            // Only send full response if we didn't already stream it
+            if (!sentPartialResponse) {
+              const chunks = chunkMessage(result);
+              
+              if ('send' in message.channel && typeof message.channel.send === 'function') {
+                for (const chunk of chunks) {
+                  await (message.channel as any).send(chunk);
+                }
+              } else {
+                await message.reply(chunks[0]);
+                for (let i = 1; i < chunks.length; i++) {
+                  if ('send' in message.channel && typeof message.channel.send === 'function') {
+                    await (message.channel as any).send(chunks[i]);
+                  }
+                }
+              }
+              
+              telemetry.incrementResponsesDelivered(message.author.id, chunks.length);
             }
           } else {
-            // Fallback if status message failed
-            await message.reply(result);
+            // Fallback if status message failed - chunk the reply
+            const chunks = chunkMessage(result);
+            await message.reply(chunks[0]);
+            for (let i = 1; i < chunks.length; i++) {
+              if ('send' in message.channel && typeof message.channel.send === 'function') {
+                await (message.channel as any).send(chunks[i]);
+              }
+            }
+            
+            telemetry.incrementResponsesDelivered(message.author.id, chunks.length);
           }
 
-          logger.info(`✅ Discord job ${jobInfo.messageId} completed for ${message.author.tag}`);
+          // Track completion metrics
+          telemetry.incrementJobsCompleted(message.author.id, jobInfo.messageId, duration);
+          telemetry.incrementMessagesProcessed(message.author.id, duration);
+          
+          logger.info(`✅ Discord job completed [${shortId}]`, {
+            correlationId,
+            jobId: jobInfo.messageId,
+            author: message.author.tag,
+            duration: `${duration}ms`,
+            responseLength: result.length
+          });
+          
+          telemetry.logEvent('job_completed', {
+            jobId: jobInfo.messageId,
+            duration,
+            responseLength: result.length
+          }, correlationId, message.author.id, duration, true);
+          
         } catch (error) {
-          logger.error('Failed to send completion message:', error);
-          // Fallback: try to reply directly
+          logger.error(`❌ Failed to send completion message [${shortId}]:`, {
+            correlationId,
+            error: error instanceof Error ? error.message : String(error)
+          });
+          
+          telemetry.incrementApiErrors(error instanceof Error ? error.message : String(error));
+          
+          // Fallback: try to reply directly with chunking
           try {
-            await message.reply(`✅ ${result}`);
+            const chunks = chunkMessage(`✅ ${result}`);
+            await message.reply(chunks[0]);
+            for (let i = 1; i < chunks.length; i++) {
+              if ('send' in message.channel && typeof message.channel.send === 'function') {
+                await (message.channel as any).send(chunks[i]);
+              }
+            }
+            telemetry.incrementResponsesDelivered(message.author.id, chunks.length);
           } catch (fallbackError) {
-            logger.error('Fallback reply also failed:', fallbackError);
+            logger.error(`❌ Fallback reply also failed [${shortId}]:`, {
+              correlationId,
+              fallbackError: fallbackError instanceof Error ? fallbackError.message : String(fallbackError)
+            });
+            
+            // Last resort: send a simple error message
+            try {
+              await message.reply(`✅ Response ready but too long for Discord. [${shortId}]`);
+            } catch (lastResortError) {
+              logger.error(`❌ Last resort error message failed [${shortId}]:`, {
+                correlationId,
+                lastResortError: lastResortError instanceof Error ? lastResortError.message : String(lastResortError)
+              });
+            }
           }
         }
       },
 
       onError: async (error) => {
         try {
+          const duration = Date.now() - startTime;
+          
           // Stop typing
           if (typingInterval) {
             clearInterval(typingInterval);
@@ -182,34 +401,72 @@ async function handleResponseWithJobTracking(message: Message, cleanMessage: str
 
           // Update status message with error
           if (statusMessage) {
-            await statusMessage.edit(`❌ Error: ${error} (Job: \`${jobInfo.messageId.slice(-8)}\`)`);
+            await statusMessage.edit(`❌ Error: ${error} (${shortId}/${jobShortId})`);
           } else {
-            await message.reply(`❌ Sorry, something went wrong: ${error}`);
+            await message.reply(`❌ Sorry, something went wrong: ${error} [${shortId}]`);
           }
 
-          logger.error(`❌ Discord job ${jobInfo.messageId} failed for ${message.author.tag}: ${error}`);
+          // Track error metrics
+          telemetry.incrementJobsFailed(message.author.id, jobInfo.messageId, error, duration);
+          telemetry.incrementMessagesFailed(message.author.id, error, duration);
+          
+          logger.error(`❌ Discord job failed [${shortId}]:`, {
+            correlationId,
+            jobId: jobInfo.messageId,
+            author: message.author.tag,
+            error,
+            duration: `${duration}ms`
+          });
+          
+          telemetry.logEvent('job_failed', {
+            jobId: jobInfo.messageId,
+            error,
+            duration
+          }, correlationId, message.author.id, duration, false);
+          
         } catch (updateError) {
-          logger.error('Failed to send error message:', updateError);
+          logger.error(`❌ Failed to send error message [${shortId}]:`, {
+            correlationId,
+            updateError: updateError instanceof Error ? updateError.message : String(updateError)
+          });
+          telemetry.incrementApiErrors(updateError instanceof Error ? updateError.message : String(updateError));
         }
       }
     });
 
   } catch (error) {
+    const duration = Date.now() - startTime;
+    
     // Clean up on any error
     if (typingInterval) {
       clearInterval(typingInterval);
     }
 
-    logger.error('Job tracking failed for Discord message:', error);
+    logger.error(`❌ Job tracking failed [${shortId}]:`, {
+      correlationId,
+      error: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : undefined,
+      duration: `${duration}ms`
+    });
+    
+    telemetry.incrementMessagesFailed(message.author.id, error instanceof Error ? error.message : String(error), duration);
+    telemetry.logEvent('job_tracking_failed', {
+      error: error instanceof Error ? error.message : String(error),
+      duration
+    }, correlationId, message.author.id, duration, false);
 
     try {
       if (statusMessage) {
-        await statusMessage.edit(`❌ Failed to process: ${error instanceof Error ? error.message : String(error)}`);
+        await statusMessage.edit(`❌ Failed to process: ${error instanceof Error ? error.message : String(error)} [${shortId}]`);
       } else {
-        await message.reply(`❌ Sorry, I couldn't process your message: ${error instanceof Error ? error.message : String(error)}`);
+        await message.reply(`❌ Sorry, I couldn't process your message: ${error instanceof Error ? error.message : String(error)} [${shortId}]`);
       }
     } catch (replyError) {
-      logger.error('Failed to send error reply:', replyError);
+      logger.error(`❌ Failed to send error reply [${shortId}]:`, {
+        correlationId,
+        replyError: replyError instanceof Error ? replyError.message : String(replyError)
+      });
+      telemetry.incrementApiErrors(replyError instanceof Error ? replyError.message : String(replyError));
     }
   }
 }

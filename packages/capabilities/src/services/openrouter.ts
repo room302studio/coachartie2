@@ -253,6 +253,81 @@ class OpenRouterService {
     return "I'm Coach Artie! I'm having some technical difficulties right now, but I'm here to help. What can I assist you with today?";
   }
 
+  /**
+   * Generate streaming response with partial updates on double linebreaks
+   */
+  async generateFromMessageChainStreaming(
+    messages: Array<{ role: string; content: string }>,
+    userId: string,
+    onPartialResponse?: (partial: string) => void
+  ): Promise<string> {
+    if (messages.length === 0) {
+      throw new Error('No messages provided');
+    }
+
+    // Start with first model
+    let currentModel = this.getCurrentModel();
+    logger.info(`🤖 Starting streaming generation for user ${userId} using model ${currentModel}`);
+    
+    for (let i = 0; i < this.models.length; i++) {
+      const model = this.models[(this.currentModelIndex + i) % this.models.length];
+      
+      try {
+        logger.info(`📡 Attempting streaming with model ${model} (${i + 1}/${this.models.length})`);
+        
+        const completion = await this.client.chat.completions.create({
+          model,
+          messages,
+          max_tokens: 4000,
+          temperature: 0.7,
+          stream: true // Enable streaming
+        });
+
+        let fullResponse = '';
+        
+        // Process streaming chunks - send update on paragraph breaks
+        for await (const chunk of completion) {
+          const delta = chunk.choices[0]?.delta?.content;
+          if (delta) {
+            fullResponse += delta;
+            
+            // Send update when we see paragraph break (like teenager typing)
+            if (delta.includes('\n\n') && onPartialResponse) {
+              onPartialResponse(fullResponse);
+            }
+          }
+        }
+
+        logger.info(`✅ Streaming completed for user ${userId} using ${model}`);
+        return fullResponse.trim();
+
+      } catch (error: unknown) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        const errorStatus = (error as { status?: number }).status;
+        
+        logger.warn(`❌ Streaming with model ${model} failed:`, {
+          error: errorMessage,
+          status: errorStatus,
+          modelIndex: i + 1,
+          totalModels: this.models.length
+        });
+        
+        // Try next model on failure
+        if (i < this.models.length - 1) {
+          continue;
+        }
+        
+        // Last model failed - fallback to regular generation
+        logger.warn('📡 Streaming failed, falling back to regular generation');
+        return await this.generateFromMessageChain(messages, userId);
+      }
+    }
+    
+    // Fallback response
+    logger.error('🚨 All streaming attempts failed');
+    return "I'm Coach Artie! I'm having some technical difficulties with streaming, but I'm here to help. What can I assist you with today?";
+  }
+
   async isHealthy(): Promise<boolean> {
     try {
       // Simple health check - try the first model

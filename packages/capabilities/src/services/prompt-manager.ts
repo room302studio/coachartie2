@@ -104,18 +104,14 @@ export class PromptManager {
    * Get raw capability instructions template - context assembly happens in Context Alchemy 🚀
    */
   async getCapabilityInstructions(userMessage: string): Promise<string> {
-    const prompt = await this.getPrompt('capability_instructions');
+    // Generate instructions directly from capability registry manifest
+    const { capabilityRegistry } = await import('./capability-registry.js');
     
-    if (!prompt) {
-      logger.error('❌ No capability instructions prompt found!');
-      throw new Error('Capability instructions not configured');
-    }
-
-    // Replace variables in the prompt
-    let instructions = prompt.content;
+    let instructions = capabilityRegistry.generateInstructions();
     instructions = instructions.replace(/\{\{USER_MESSAGE\}\}/g, userMessage);
-
-    logger.info(`🎯 Generated raw capability instructions (v${prompt.version}) - context assembly happens in Context Alchemy`);
+    
+    logger.info(`🎯 Generated capability instructions from manifest (${capabilityRegistry.size()} capabilities)`);
+    
     return instructions;
   }
 
