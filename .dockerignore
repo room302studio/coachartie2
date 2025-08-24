@@ -1,0 +1,12 @@
+node_modules
+**/node_modules
+npm-debug.log
+**/.nuxt
+**/.output
+**/dist
+.git
+*.log
+**/.DS_Store
+.env
+.env.*
+!.env.example

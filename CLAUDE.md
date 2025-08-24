@@ -126,11 +126,28 @@ export const calculatorCapability: RegisteredCapability = {
 
 ## 🔧 Development Workflow
 
-### Start Services
+### Quick Start - Debug Chat with Sidebar
 ```bash
-docker-compose up -d redis
-docker-compose up --build capabilities
+# 1. Start backend services (Redis + Capabilities)
+docker-compose up -d redis capabilities
+
+# 2. Start Brain UI locally (Docker build is fucked due to cross-package deps)
+cd packages/brain && PORT=24680 npm run dev
+
+# 3. Open debug chat with the sick new sidebar
+open http://localhost:24680/debugChat
 ```
+
+**Debug Chat Features:**
+- Click "Show Info" button (top right) to open sidebar
+- **Capabilities Tab**: Live view of all registered capabilities and actions
+- **Memory Tab**: Recent memories with tags and metadata
+- **Logs Tab**: Real-time system logs with refresh button
+
+### Service Ports
+- Brain UI: `24680` (run locally)
+- Capabilities API: `18239` (Docker)
+- Redis: `6380` (Docker)
 
 ### Test Endpoints
 ```bash
