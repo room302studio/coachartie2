@@ -103,31 +103,12 @@ export class BulletproofCapabilityExtractor {
 
   /**
    * Detect auto-injection opportunities based on message content
+   * NO REGEX ALLOWED - This should use LLMs, not pattern matching!
    */
   detectAutoInjectCapabilities(userMessage: string, llmResponse: string): ParsedCapability[] {
-    const capabilities: ParsedCapability[] = [];
-    
-    // Look for math expressions in user message
-    if (/\d+\s*[+\-*/]\s*\d+/.test(userMessage)) {
-      capabilities.push({
-        name: 'calculator',
-        action: 'calculate', 
-        content: userMessage.match(/\d+\s*[+\-*/]\s*\d+[^.]*/)![0],
-        params: {}
-      });
-    }
-    
-    // Look for memory-related keywords
-    if (/remember|memorize|note|save/.test(userMessage.toLowerCase())) {
-      capabilities.push({
-        name: 'memory',
-        action: 'remember',
-        content: userMessage,
-        params: {}
-      });
-    }
-    
-    return capabilities;
+    // Auto-injection disabled - LLMs should generate XML properly
+    // If they don't, we need better prompts, not regex hacks
+    return [];
   }
 }
 
