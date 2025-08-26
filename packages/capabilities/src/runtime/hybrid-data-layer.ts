@@ -128,21 +128,7 @@ export class HybridDataLayer {
         CREATE INDEX IF NOT EXISTS idx_memories_user_timestamp ON memories(user_id, timestamp DESC);
         
         -- FTS for search (compatible with legacy schema)
-        CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts USING fts5(
-          content, tags, context,
-          content='memories', 
-          content_rowid='id'
-        );
-        
-        CREATE TRIGGER IF NOT EXISTS memories_fts_insert AFTER INSERT ON memories BEGIN
-          INSERT INTO memories_fts(rowid, content, tags, context) 
-          VALUES (new.id, new.content, '', '');
-        END;
-        
-        CREATE TRIGGER IF NOT EXISTS memories_fts_delete AFTER DELETE ON memories BEGIN
-          INSERT INTO memories_fts(memories_fts, rowid, content, tags, context) 
-          VALUES ('delete', old.id, old.content, '', '');
-        END;
+        -- Note: Skip FTS setup to avoid trigger conflicts with existing schema
       `);
       
       logger.info('✅ SQLite database schema initialized');
@@ -174,7 +160,7 @@ export class HybridDataLayer {
 
       for (const row of rows) {
         const memory: MemoryRecord = {
-          id: row.id,
+          id: String(row.id), // Convert INTEGER id to string for consistency
           user_id: row.user_id,
           content: row.content,
           timestamp: new Date(row.timestamp),
@@ -241,7 +227,7 @@ export class HybridDataLayer {
         
         if (row) {
           const memory: MemoryRecord = {
-            id: row.id,
+            id: String(row.id), // Convert INTEGER id to string for consistency
             user_id: row.user_id,
             content: row.content,
             timestamp: new Date(row.timestamp),
@@ -249,7 +235,7 @@ export class HybridDataLayer {
           };
           
           // Promote to hot cache
-          this.hotData.set(id, memory);
+          this.hotData.set(String(row.id), memory);
           return memory;
         }
       } catch (error) {
@@ -294,7 +280,7 @@ export class HybridDataLayer {
         }>;
 
         const coldMemories = rows.map(row => ({
-          id: row.id,
+          id: String(row.id), // Convert INTEGER id to string for consistency
           user_id: row.user_id,
           content: row.content,
           timestamp: new Date(row.timestamp),
@@ -314,31 +300,52 @@ export class HybridDataLayer {
    * Search memories - uses FTS if available
    */
   async searchMemories(userId: string, query: string, limit = 10): Promise<MemoryRecord[]> {
-    // First try hot cache simple search
+    // Get user's memories
     const userMemoryIds = this.userIndex.get(userId) || new Set();
+    
+    // Parse query into searchable words (skip short words)
+    const queryWords = query.toLowerCase().split(/\s+/).filter(word => word.length > 2);
+    if (queryWords.length === 0) return []; // Nothing to search
+    
+    // Search hot cache
     const hotResults = Array.from(userMemoryIds)
       .map(id => this.hotData.get(id))
-      .filter((memory): memory is MemoryRecord => 
-        memory !== undefined && 
-        memory.content.toLowerCase().includes(query.toLowerCase())
-      )
+      .filter((memory): memory is MemoryRecord => {
+        if (!memory) return false;
+        // Check if ANY query word appears in content
+        const content = memory.content.toLowerCase();
+        return queryWords.some(word => content.includes(word));
+      })
       .sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime())
       .slice(0, limit);
+    
+    logger.info(`🔍 Search "${query}" found ${hotResults.length}/${limit} in cache`);
 
     if (hotResults.length >= limit || !this.coldStorage) {
       return hotResults;
     }
 
-    // Try FTS search in cold storage
+    // Fall back to cold storage if needed
     try {
+      // Build WHERE clause for word matching
+      const wordConditions = queryWords
+        .map(() => 'LOWER(content) LIKE ?')
+        .join(' OR ');
+      
+      const params = [
+        userId,
+        ...queryWords.map(word => `%${word}%`),
+        limit - hotResults.length
+      ];
+      
       const rows = await this.coldStorage.all(`
-        SELECT m.id, m.user_id, m.content, m.timestamp, m.metadata
-        FROM memories_fts f
-        JOIN memories m ON m.rowid = f.rowid
-        WHERE f.content MATCH ? AND m.user_id = ?
-        ORDER BY m.timestamp DESC
+        SELECT id, user_id, content, timestamp, metadata
+        FROM memories 
+        WHERE user_id = ? 
+        AND (${wordConditions})
+        ORDER BY timestamp DESC
         LIMIT ?
-      `, query, userId, limit) as Array<{
+      `, ...params) as Array<{
         id: string;
         user_id: string;
         content: string;
@@ -346,15 +353,21 @@ export class HybridDataLayer {
         metadata: string | null;
       }>;
 
-      return rows.map(row => ({
-        id: row.id,
-        user_id: row.user_id,
-        content: row.content,
-        timestamp: new Date(row.timestamp),
-        metadata: row.metadata ? JSON.parse(row.metadata) : undefined
-      }));
+      // Convert and merge results (deduped by id)
+      const existingIds = new Set(hotResults.map(m => m.id));
+      const coldResults = rows
+        .filter(row => !existingIds.has(String(row.id)))
+        .map(row => ({
+          id: String(row.id),
+          user_id: row.user_id,
+          content: row.content,
+          timestamp: new Date(row.timestamp),
+          metadata: row.metadata ? JSON.parse(row.metadata) : undefined
+        }));
+
+      return [...hotResults, ...coldResults].slice(0, limit);
     } catch (error) {
-      logger.error('FTS search failed, falling back to hot cache results:', error);
+      logger.error('Cold storage search failed, falling back to hot cache results:', error);
       return hotResults;
     }
   }
@@ -366,17 +379,53 @@ export class HybridDataLayer {
     if (!this.coldStorage) return;
 
     try {
-      await this.coldStorage.run(`
-        INSERT OR REPLACE INTO memories 
-        (id, user_id, content, timestamp, metadata)
-        VALUES (?, ?, ?, ?, ?)
-      `, 
-        memory.id,
+      // Handle schema mismatch: legacy schema uses INTEGER id, hybrid uses TEXT uuid
+      // Insert without specifying id (let SQLite auto-increment), then update our memory record
+      const tags = memory.metadata?.tags ? JSON.stringify(memory.metadata.tags) : '[]';
+      const context = memory.metadata?.context as string || '';
+      const importance = memory.metadata?.importance as number || 5;
+      
+      logger.info(`🔍 Persisting memory - user_id: ${memory.user_id}, content: ${memory.content.substring(0, 50)}..., tags: ${tags}, context: ${context}, timestamp: ${memory.timestamp.toISOString()}, importance: ${importance}`);
+      
+      // Log the parameters as an array to see exactly what's being passed
+      const params = [
         memory.user_id,
         memory.content,
+        tags,
+        context,
         memory.timestamp.toISOString(),
-        memory.metadata ? JSON.stringify(memory.metadata) : null
-      );
+        importance,
+        memory.metadata ? JSON.stringify(memory.metadata) : '{}'
+      ];
+      logger.info(`🔍 SQL parameters:`, params);
+      
+      logger.info(`🔍 About to execute INSERT statement with ${params.length} parameters`);
+      const result = await this.coldStorage.run(`
+        INSERT INTO memories 
+        (user_id, content, tags, context, timestamp, importance, metadata)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `, ...params);
+      logger.info(`✅ INSERT successful, lastID: ${result.lastID}`);
+
+      // Update our in-memory record to use the SQLite-generated ID
+      if (result.lastID) {
+        const oldId = memory.id;
+        const newId = String(result.lastID);
+        
+        // Update hot cache with new ID
+        this.hotData.delete(oldId);
+        memory.id = newId;
+        this.hotData.set(newId, memory);
+        
+        // Update user index
+        const userSet = this.userIndex.get(memory.user_id);
+        if (userSet) {
+          userSet.delete(oldId);
+          userSet.add(newId);
+        }
+        
+        logger.debug(`✅ Persisted memory with SQLite ID: ${newId} (was UUID: ${oldId})`);
+      }
     } catch (error) {
       logger.error('Failed to persist memory to cold storage:', error);
       throw error;

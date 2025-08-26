@@ -104,10 +104,10 @@ export class ContextAlchemy {
       existingMessages
     );
     
-    logger.info(`🧪 Context Alchemy: Built chain with ${messageChain.length} messages and ${selectedContext.length} context sources`);
-    selectedContext.forEach(ctx => {
-      logger.info(`  📝 ${ctx.name} (${ctx.category}, priority: ${ctx.priority}, tokens: ~${ctx.tokenWeight})`);
-    });
+    // Single comprehensive context alchemy log
+    const contextBreakdown = selectedContext.map(ctx => `${ctx.name}:${ctx.tokenWeight}t`).join(',');
+    const totalTokens = selectedContext.reduce((sum, ctx) => sum + ctx.tokenWeight, 0);
+    logger.info(`🧪 ALCHEMY: ${messageChain.length} msgs | ${selectedContext.length} contexts | ${totalTokens}t total | [${contextBreakdown}]`);
     
     return { messages: messageChain, contextSources: selectedContext };
   }
@@ -145,6 +145,9 @@ export class ContextAlchemy {
     await this.addCurrentDateTime(sources);
     await this.addGoalWhisper(message, sources);  
     await this.addRelevantMemories(message, sources);
+    await this.addTodoContext(message, sources);
+    // Skip goals - they overlap with TODOs too much
+    await this.addCreditBalanceContext(sources);
     await this.addCapabilityManifest(sources);
     // Future: await this.addUserPreferences(message, sources);
     // Future: await this.addConversationHistory(message, sources);
@@ -231,16 +234,89 @@ export class ContextAlchemy {
           category: 'memory'
         });
         
-        logger.debug(`📝 Added memory context: ${memoryResult.memoryCount} memories, confidence: ${memoryResult.confidence}`);
+        // Condensed but detailed memory audit log
+        const memoryIds = memoryResult.memoryIds || [];
+        const preview = memoryResult.content.substring(0, 150).replace(/\n/g, ' ');
+        logger.info(`🧠 MEMORY: ${memoryResult.memoryCount} memories | conf=${memoryResult.confidence.toFixed(2)} | ${memoryResult.content.length} chars | IDs=[${memoryIds.slice(0, 8).join(',')}${memoryIds.length > 8 ? '...' : ''}] | cats=[${memoryResult.categories.join(',')}] | "${preview}..."`);
         
-        // 🔍 DEBUG: Log memory IDs for backward debugging
-        if (memoryResult.memoryIds && memoryResult.memoryIds.length > 0) {
-          logger.info(`🔍 Memory IDs included in context: [${memoryResult.memoryIds.join(', ')}]`);
-        }
       }
     } catch (error) {
       logger.warn('Failed to add relevant memories:', error);
       // Graceful degradation - continue without memory context
+    }
+  }
+
+  /**
+   * Add TODO context - simple is better
+   */
+  private async addTodoContext(message: IncomingMessage, sources: ContextSource[]): Promise<void> {
+    try {
+      const { TodoService } = await import('../capabilities/todo.js');
+      const todoService = TodoService.getInstance();
+      
+      const allLists = await todoService.listAllLists(message.userId);
+      
+      if (!allLists || allLists.includes('No todo lists found')) return;
+      
+      // Just grab the numbers
+      const pendingMatch = allLists.match(/(\d+) pending/);
+      const pending = pendingMatch ? parseInt(pendingMatch[1]) : 0;
+      
+      if (pending > 0) {
+        const todoContent = `📋 You have ${pending} pending TODOs`;
+        
+        sources.push({
+          name: 'todo_context',
+          priority: 85,
+          tokenWeight: 20,
+          content: todoContent,
+          category: 'user_state'
+        });
+      }
+    } catch (e) {
+      // TODOs broken? Move on without them
+    }
+  }
+
+  /**
+   * Add credit balance warning to context if low
+   */
+  private async addCreditBalanceContext(sources: ContextSource[]): Promise<void> {
+    try {
+      const { getDatabase } = await import('@coachartie/shared');
+      const dbInstance = await getDatabase();
+      
+      // Get latest credit info
+      const creditInfo = await dbInstance.get(`
+        SELECT credits_remaining, daily_spend 
+        FROM credit_balance 
+        WHERE provider = 'openrouter' 
+        ORDER BY last_updated DESC 
+        LIMIT 1
+      `);
+      
+      if (creditInfo && creditInfo.credits_remaining !== null) {
+        const remaining = creditInfo.credits_remaining;
+        const dailySpend = creditInfo.daily_spend || 0;
+        
+        // Only add warning if credits are low
+        if (remaining < 0.50) {  // Less than 50 cents
+          const content = `⚠️ API Credits Low: $${remaining.toFixed(2)} remaining (daily usage: $${dailySpend.toFixed(2)})`;
+          
+          sources.push({
+            name: 'credit_warning',
+            priority: 95, // Very high priority - important operational info
+            tokenWeight: Math.ceil(content.length / 4),
+            content,
+            category: 'user_state'
+          });
+          
+          logger.warn(`💳 Low credit warning added to context: $${remaining.toFixed(2)}`);
+        }
+      }
+    } catch (error) {
+      // Silent fail - credits aren't critical for operation
+      logger.debug('Could not fetch credit balance:', error);
     }
   }
 
@@ -261,11 +337,33 @@ export class ContextAlchemy {
   }
 
   /**
-   * Select optimal context sources within token budget
+   * Throw the I Ching for guidance
+   */
+  private throwIChing(): string {
+    const hexagrams = [
+      '☰ Creative', '☷ Receptive', '☳ Thunder', '☵ Water',
+      '☶ Mountain', '☴ Wind', '☲ Fire', '☱ Lake'
+    ];
+    return hexagrams[Math.floor(Math.random() * hexagrams.length)];
+  }
+
+  /**
+   * Select context with stochastic variation - guided by I Ching
    */
   private selectOptimalContext(sources: ContextSource[], budget: ContextBudget): ContextSource[] {
-    // Sort by priority (highest first)
-    const sortedSources = [...sources].sort((a, b) => b.priority - a.priority);
+    const hexagram = this.throwIChing();
+    
+    // Add 10-30% randomness to priorities based on hexagram
+    const chaos = hexagram.includes('Thunder') ? 0.3 : 0.1;
+    
+    const stochastic = [...sources].map(s => ({
+      ...s,
+      originalPriority: s.priority,
+      priority: s.priority * (1 - chaos + Math.random() * chaos * 2)
+    }));
+    
+    // Sort by stochastic priority
+    const sortedSources = stochastic.sort((a, b) => b.priority - a.priority);
     
     const selected: ContextSource[] = [];
     let usedTokens = 0;
@@ -274,13 +372,14 @@ export class ContextAlchemy {
       if (usedTokens + source.tokenWeight <= budget.availableForContext) {
         selected.push(source);
         usedTokens += source.tokenWeight;
-        logger.debug(`✅ Selected ${source.name} (${source.tokenWeight} tokens)`);
-      } else {
-        logger.debug(`❌ Skipped ${source.name} (${source.tokenWeight} tokens, would exceed budget)`);
       }
     }
     
-    logger.info(`🧪 Context selection: ${usedTokens}/${budget.availableForContext} tokens used`);
+    // Detailed stochastic log showing chaos factor and what got selected
+    const selectionDetails = selected.map(s => `${s.name}(${s.tokenWeight}t)`).join(',');
+    const totalSources = sources.length;
+    const selectedRatio = (selected.length / totalSources * 100).toFixed(0);
+    logger.info(`🎲 CONTEXT: ${hexagram} | chaos=${chaos} | ${selected.length}/${totalSources} sources (${selectedRatio}%) | ${usedTokens}/${budget.availableForContext}t | [${selectionDetails}]`);
     
     return selected;
   }

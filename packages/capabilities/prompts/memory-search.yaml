@@ -1,0 +1,61 @@
+memory_search_explosion:
+  system: You are a memory search assistant specialized in understanding user intent.
+  user: |
+    The user just said: "{{userMessage}}"
+    
+    Generate 24 different memory search queries to find relevant past conversations and memories.
+    Be creative! Think about:
+    - What they're REALLY asking about
+    - Related topics and concepts  
+    - Past contexts this might relate to
+    - Emotional undertones
+    - Similar situations
+    - Broader themes
+    - Specific details they might be referencing
+    - Time-based patterns
+
+    Output ONLY XML tags, one per line, no other text:
+    <capability name="memory" action="search" query="[your search query here]" />
+
+    Example for "What food do I like?":
+    <capability name="memory" action="search" query="favorite foods" />
+    <capability name="memory" action="search" query="pizza preferences" />
+    <capability name="memory" action="search" query="restaurant recommendations" />
+    <capability name="memory" action="search" query="dietary restrictions" />
+    <capability name="memory" action="search" query="cooking at home" />
+    <capability name="memory" action="search" query="breakfast habits" />
+    <capability name="memory" action="search" query="coffee preferences" />
+    <capability name="memory" action="search" query="takeout orders" />
+    <capability name="memory" action="search" query="food allergies" />
+    <capability name="memory" action="search" query="favorite cuisines" />
+    <capability name="memory" action="search" query="meal planning" />
+    <capability name="memory" action="search" query="snack preferences" />
+    <capability name="memory" action="search" query="dinner conversations about food" />
+    <capability name="memory" action="search" query="taco tuesday" />
+    <capability name="memory" action="search" query="weekend brunch spots" />
+    <capability name="memory" action="search" query="spicy food tolerance" />
+    <capability name="memory" action="search" query="vegetarian options discussed" />
+    <capability name="memory" action="search" query="food delivery apps used" />
+    <capability name="memory" action="search" query="grocery shopping habits" />
+    <capability name="memory" action="search" query="eating schedule" />
+    <capability name="memory" action="search" query="comfort foods mentioned" />
+    <capability name="memory" action="search" query="food-related memories shared" />
+    <capability name="memory" action="search" query="restaurant experiences" />
+    <capability name="memory" action="search" query="cultural food preferences" />
+
+    Now generate 24 queries for: "{{userMessage}}"
+
+memory_ranking:
+  system: You are a memory relevance scorer that rates how relevant memories are to user queries.
+  user: |
+    User asked: "{{userMessage}}"
+    
+    Rate each memory's relevance (0-10):
+    {{memoryList}}
+
+    Output format - just numbers, one per line:
+    8
+    2
+    10
+    5
+    ...

@@ -9,6 +9,50 @@ import { CorrelationContext, generateCorrelationId, getShortCorrelationId } from
 const messageCache = new Map<string, number>();
 const MESSAGE_CACHE_TTL = 10000; // 10 seconds
 
+// Helper function to split content into paragraph-based chunks for streaming
+function splitIntoParagraphs(text: string): string[] {
+  if (!text || text.trim().length === 0) return [];
+  
+  // Split on double linebreaks (natural paragraph breaks)
+  let paragraphs = text.split('\n\n');
+  
+  // If no double linebreaks, split on single linebreaks for bullet points/lists
+  if (paragraphs.length === 1 && text.includes('\n')) {
+    paragraphs = text.split('\n').filter(p => p.trim().length > 0);
+  }
+  
+  // If still no breaks, split on sentences for very long single paragraphs
+  if (paragraphs.length === 1 && text.length > 500) {
+    // Split on sentence endings but keep them attached
+    const sentences = text.match(/[^.!?]+[.!?]+/g) || [text];
+    paragraphs = sentences.map(s => s.trim()).filter(s => s.length > 0);
+  }
+  
+  // Group small paragraphs together to avoid too many tiny messages
+  const groupedParagraphs: string[] = [];
+  let currentGroup = '';
+  
+  for (const para of paragraphs) {
+    const trimmed = para.trim();
+    if (!trimmed) continue;
+    
+    // If adding this paragraph would make the group too long, start a new group
+    if (currentGroup && (currentGroup.length + trimmed.length > 800)) {
+      groupedParagraphs.push(currentGroup.trim());
+      currentGroup = trimmed;
+    } else {
+      currentGroup += (currentGroup ? '\n\n' : '') + trimmed;
+    }
+  }
+  
+  // Don't forget the last group
+  if (currentGroup.trim()) {
+    groupedParagraphs.push(currentGroup.trim());
+  }
+  
+  return groupedParagraphs;
+}
+
 // Helper function to chunk long messages for Discord's 2000 character limit
 function chunkMessage(text: string, maxLength: number = 2000): string[] {
   if (text.length <= maxLength) return [text];
@@ -239,7 +283,10 @@ async function handleResponseWithJobTracking(message: Message, cleanMessage: str
 
     let lastStatus = 'pending';
     let updateCount = 0;
-    let sentPartialResponse = false;
+    let lastSentLength = 0; // Track how much content we've already sent
+    let streamingMessages: Message[] = []; // Track messages we've sent for streaming
+    let lastStreamSendTime = 0; // Track rate limiting for streaming
+    const STREAM_RATE_LIMIT = 2000; // Minimum 2 seconds between stream updates
 
     // Poll for completion with live updates
     const result = await capabilitiesClient.pollJobUntilComplete(jobInfo.messageId, {
@@ -248,15 +295,35 @@ async function handleResponseWithJobTracking(message: Message, cleanMessage: str
       
       onProgress: async (status) => {
         try {
-          // Simple streaming - just send partial response once when available
-          if (status.partialResponse && !sentPartialResponse) {
-            if ('send' in message.channel && typeof message.channel.send === 'function') {
-              const chunks = chunkMessage(status.partialResponse);
-              for (const chunk of chunks) {
-                await (message.channel as any).send(chunk);
+          // Paragraph-based streaming - send new content as it arrives
+          if (status.partialResponse && status.partialResponse.length > lastSentLength) {
+            // Get only the new content since last update
+            const newContent = status.partialResponse.substring(lastSentLength);
+            
+            // Rate limiting - don't spam Discord
+            const now = Date.now();
+            if (now - lastStreamSendTime < STREAM_RATE_LIMIT) {
+              return; // Skip this update to avoid rate limits
+            }
+            
+            // Split new content into paragraphs (double linebreaks or significant chunks)
+            const paragraphs = splitIntoParagraphs(newContent);
+            
+            if (paragraphs.length > 0 && 'send' in message.channel && typeof message.channel.send === 'function') {
+              // Send each paragraph as a separate message for better readability
+              for (const paragraph of paragraphs) {
+                if (paragraph.trim().length > 0) {
+                  const chunks = chunkMessage(paragraph.trim());
+                  for (const chunk of chunks) {
+                    const sentMessage = await (message.channel as any).send(chunk);
+                    streamingMessages.push(sentMessage);
+                  }
+                }
               }
-              sentPartialResponse = true;
-              logger.info(`📡 Sent streaming response [${shortId}]`);
+              
+              lastSentLength = status.partialResponse.length;
+              lastStreamSendTime = now;
+              logger.info(`📡 Sent ${paragraphs.length} streaming paragraphs [${shortId}]`);
             }
           }
           
@@ -302,25 +369,32 @@ async function handleResponseWithJobTracking(message: Message, cleanMessage: str
             // Edit status message to show completion
             await statusMessage.edit(`✅ Complete! (${shortId}/${jobShortId})`);
             
-            // Only send full response if we didn't already stream it
-            if (!sentPartialResponse) {
-              const chunks = chunkMessage(result);
-              
-              if ('send' in message.channel && typeof message.channel.send === 'function') {
-                for (const chunk of chunks) {
-                  await (message.channel as any).send(chunk);
-                }
-              } else {
-                await message.reply(chunks[0]);
-                for (let i = 1; i < chunks.length; i++) {
-                  if ('send' in message.channel && typeof message.channel.send === 'function') {
-                    await (message.channel as any).send(chunks[i]);
+              // Send any remaining content that wasn't streamed
+            if (lastSentLength < result.length) {
+              const remainingContent = result.substring(lastSentLength);
+              if (remainingContent.trim().length > 0) {
+                const chunks = chunkMessage(remainingContent.trim());
+                
+                if ('send' in message.channel && typeof message.channel.send === 'function') {
+                  for (const chunk of chunks) {
+                    await (message.channel as any).send(chunk);
+                  }
+                } else {
+                  await message.reply(chunks[0]);
+                  for (let i = 1; i < chunks.length; i++) {
+                    if ('send' in message.channel && typeof message.channel.send === 'function') {
+                      await (message.channel as any).send(chunks[i]);
+                    }
                   }
                 }
+                
+                logger.info(`📡 Sent remaining content (${remainingContent.length} chars) [${shortId}]`);
               }
-              
-              telemetry.incrementResponsesDelivered(message.author.id, chunks.length);
             }
+            
+            // Track total messages sent (streaming + remaining)
+            const totalChunks = streamingMessages.length + (lastSentLength < result.length ? chunkMessage(result.substring(lastSentLength)).length : 0);
+            telemetry.incrementResponsesDelivered(message.author.id, totalChunks)
           } else {
             // Fallback if status message failed - chunk the reply
             const chunks = chunkMessage(result);

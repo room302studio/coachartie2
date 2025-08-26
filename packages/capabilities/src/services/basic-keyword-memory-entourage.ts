@@ -2,6 +2,7 @@ import { logger } from '@coachartie/shared';
 import { MemoryEntourageInterface, MemoryEntourageResult } from './memory-entourage-interface.js';
 import { MemoryService } from '../capabilities/memory.js';
 import { openRouterService } from './openrouter.js';
+import { memorySearchReflection } from './memory-search-reflection.js';
 
 /**
  * BasicKeywordMemoryEntourage - Semantic stochastic expansion with cosine similarity
@@ -65,31 +66,24 @@ export class BasicKeywordMemoryEntourage implements MemoryEntourageInterface {
     }
 
     try {
-      // 🧬 SEMANTIC STOCHASTIC EXPANSION ENGINE
-      const keywords = this.extractKeywords(userMessage);
-      const entities = this.extractEntities(userMessage);
-      const expandedTerms = await this.semanticExpansion(userMessage, keywords, options.priority);
+      // 🧠 AI-POWERED QUERY EXPLOSION - NO MORE KEYWORDS!
+      const searchQueries = await memorySearchReflection.explodeQuery(userMessage, userId);
       
-      const allSearchTerms = [...keywords, ...expandedTerms];
-      
-      if (allSearchTerms.length === 0) {
-        logger.debug('📝 No search terms extracted, skipping memory search');
+      if (searchQueries.length === 0) {
+        logger.debug('📝 No search queries generated');
         return {
           content: '',
           confidence: 0.0,
           memoryCount: 0,
-          categories: ['no_keywords'],
+          categories: ['no_queries'],
           memoryIds: []
         };
       }
 
-      // Multi-vector search with entity-enhanced SQL queries
-      const searchLimit = this.calculateSearchLimit(options.priority, options.maxTokens);
-      const searchQueries = this.buildEnhancedSearchQueries(allSearchTerms, entities, options.priority);
+      logger.info(`🎆 LLM generated ${searchQueries.length} search queries from: "${userMessage.substring(0, 30)}..."`);
       
-      logger.info(`🔍 Enhanced search: ${keywords.length} keywords + ${expandedTerms.length} expanded + ${entities.length} entities`);
-      
-      // Execute parallel searches for maximum recall
+      // Execute parallel searches with all AI-generated queries
+      const searchLimit = Math.min(options.maxTokens ? Math.floor(options.maxTokens / 50) : 10, 50);
       const memoryResults = await this.executeParallelSearches(userId, searchQueries, searchLimit);
       
       // Parse the enhanced memory service response

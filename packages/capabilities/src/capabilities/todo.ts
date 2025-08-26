@@ -215,6 +215,46 @@ export class TodoService {
     }
   }
 
+  // New simplified complete by text match
+  async completeByText(userId: string, searchText: string): Promise<string> {
+    await this.initializeDatabase();
+    
+    try {
+      const db = await getDatabase();
+      
+      // Find matching uncompleted items
+      const matches = await db.all(`
+        SELECT ti.id, ti.content, tl.name as list_name
+        FROM todo_items ti
+        JOIN todo_lists tl ON ti.list_id = tl.id
+        WHERE tl.user_id = ? AND ti.content LIKE ? AND ti.status = 'pending'
+        LIMIT 5
+      `, [userId, `%${searchText}%`]);
+
+      if (matches.length === 0) {
+        return `❌ No pending tasks match "${searchText}"`;
+      }
+
+      if (matches.length === 1) {
+        // Single match - complete it
+        await db.run(`
+          UPDATE todo_items 
+          SET status = 'completed', completed_at = CURRENT_TIMESTAMP
+          WHERE id = ?
+        `, [matches[0].id]);
+        
+        return `✅ Completed: "${matches[0].content}"`;
+      }
+      
+      // Multiple matches
+      const list = matches.map((m: any) => `• "${m.content}" (${m.list_name})`).join('\n');
+      return `🤔 Multiple matches:\n${list}\n\nBe more specific.`;
+    } catch (error) {
+      logger.error('Failed to complete by text:', error);
+      return '❌ Could not complete task';
+    }
+  }
+
   async completeItem(userId: string, listName: string, itemPosition: number): Promise<string> {
     await this.initializeDatabase();
 
@@ -389,83 +429,59 @@ export class TodoService {
  * Todo capability handler
  */
 async function handleTodoAction(params: TodoParams, content?: string): Promise<string> {
-  const { action, user_id = 'unknown-user' } = params;
+  const { action, user_id = 'default-user' } = params;
   const todoService = TodoService.getInstance();
 
   logger.info(`📋 Todo handler called - Action: ${action}, UserId: ${user_id}, Params:`, params);
 
   try {
     switch (action) {
-      case 'create': {
-        const listName = params.list;
-        const goalId = params.goal_id ? parseInt(String(params.goal_id)) : undefined;
-        
-        if (!listName) {
-          return '❌ Please provide a list name. Example: <capability name="todo" action="create" list="my_tasks">- Task 1\\n- Task 2</capability>';
-        }
-        
-        if (!content) {
-          return '❌ Please provide todo items. Example: <capability name="todo" action="create" list="my_tasks">- Task 1\\n- Task 2</capability>';
-        }
-        
-        return await todoService.createTodoList(String(user_id), String(listName), content, goalId);
-      }
-
       case 'add': {
-        const listName = params.list;
-        
-        if (!listName) {
-          return '❌ Please provide a list name. Example: <capability name="todo" action="add" list="my_tasks">- New task</capability>';
-        }
+        // Simplified: combines create + add, auto-creates list
+        const listName = params.list || 'tasks';  // Default list name
         
         if (!content) {
-          return '❌ Please provide items to add. Example: <capability name="todo" action="add" list="my_tasks">- New task</capability>';
+          return '❌ What tasks do you want to add?';
         }
         
-        return await todoService.addItemsToList(String(user_id), String(listName), content);
-      }
-
-      case 'next': {
-        const listName = params.list;
+        // Try to add to existing list first
+        const addResult = await todoService.addItemsToList(String(user_id), String(listName), content);
         
-        if (!listName) {
-          return '❌ Please provide a list name. Example: <capability name="todo" action="next" list="my_tasks" />';
+        // If list doesn't exist, create it
+        if (addResult.includes('not found')) {
+          return await todoService.createTodoList(String(user_id), String(listName), content);
         }
         
-        return await todoService.getNextItem(String(user_id), String(listName));
+        return addResult;
       }
 
       case 'complete': {
-        const listName = params.list;
-        const itemPosition = params.item;
-        
-        if (!listName) {
-          return '❌ Please provide a list name. Example: <capability name="todo" action="complete" list="my_tasks" item="1" />';
+        // Simplified: complete by text match instead of position
+        if (!content) {
+          return '❌ Which task did you complete?';
         }
         
-        if (!itemPosition) {
-          return '❌ Please provide item position. Example: <capability name="todo" action="complete" list="my_tasks" item="1" />';
-        }
-        
-        return await todoService.completeItem(String(user_id), String(listName), parseInt(String(itemPosition)));
+        return await todoService.completeByText(String(user_id), content);
       }
 
-      case 'status': {
+      case 'show': {
+        // Simplified: combines list, status, and next
         const listName = params.list;
         
-        if (!listName) {
-          return '❌ Please provide a list name. Example: <capability name="todo" action="status" list="my_tasks" />';
+        if (listName) {
+          // Show specific list with next item
+          const status = await todoService.getListStatus(String(user_id), String(listName));
+          const next = await todoService.getNextItem(String(user_id), String(listName));
+          const nextText = next.includes('❌') ? '' : `\n\n💡 **Next:** ${next}`;
+          return status + nextText;
+        } else {
+          // Show all lists
+          return await todoService.listAllLists(String(user_id));
         }
-        
-        return await todoService.getListStatus(String(user_id), String(listName));
-      }
-
-      case 'list': {
-        return await todoService.listAllLists(String(user_id));
       }
 
       default:
-        return `❌ Unknown todo action: ${action}. Supported actions: create, add, next, complete, status, list`;
+        return `📋 Simple todos! Just use:\n• add - Add tasks\n• complete - Mark done\n• show - See everything`;
     }
   } catch (error) {
     logger.error(`Todo capability error for action '${action}':`, error);
@@ -478,14 +494,12 @@ async function handleTodoAction(params: TodoParams, content?: string): Promise<s
  */
 export const todoCapability: RegisteredCapability = {
   name: 'todo',
-  supportedActions: ['create', 'add', 'next', 'complete', 'status', 'list'],
-  description: 'Manage todo lists and track task progress',
+  supportedActions: ['add', 'complete', 'show'],  // Simplified to just 3 actions
+  description: 'Simple todo lists - add tasks, complete them, see progress',
   handler: handleTodoAction,
   examples: [
-    '<capability name="todo" action="create" list="build_resume">- Gather professional memories\\n- Extract key achievements\\n- Generate resume content\\n- Save to filesystem</capability>',
-    '<capability name="todo" action="next" list="build_resume" />',
-    '<capability name="todo" action="complete" list="build_resume" item="1" />',
-    '<capability name="todo" action="status" list="build_resume" />',
-    '<capability name="todo" action="list" />'
+    '<capability name="todo" action="add">Build feature X</capability>',
+    '<capability name="todo" action="complete">Build feature X</capability>',
+    '<capability name="todo" action="show" />',
   ]
 };

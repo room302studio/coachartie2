@@ -41,9 +41,16 @@ export class TemporalMemoryEntourage implements MemoryEntourageInterface {
     try {
       logger.info('⏰ TemporalMemoryEntourage: Starting temporal pattern analysis');
       
-      // Get all recent memories for temporal analysis
-      const allMemoriesResult = await this.memoryService.recall(userId, '', 100); // More memories for pattern detection
-      const memories = this.parseMemoryResult(allMemoriesResult);
+      // Get recent memories directly from the database (more reliable than recall with empty string)
+      const recentMemories = await this.memoryService.getRecentMemories(userId, 50);
+      const memories = recentMemories.map(memory => ({
+        content: memory.content,
+        importance: memory.importance,
+        date: memory.timestamp,
+        tags: memory.tags
+      }));
+      
+      logger.info(`⏰ TemporalMemoryEntourage: Retrieved ${memories.length} memories for temporal analysis`);
       
       if (memories.length === 0) {
         return {
@@ -116,7 +123,12 @@ export class TemporalMemoryEntourage implements MemoryEntourageInterface {
 
       const temporalAnalysis = this.analyzeTemporalRelevance(userMessage, memory, memoryDate, now);
       
-      if (temporalAnalysis.score > 0.1) {
+      // Debug logging for temporal scores
+      if (memories.indexOf(memory) < 3) { // Log first few for debugging
+        logger.info(`⏰ Memory "${memory.content.substring(0, 30)}..." from ${memory.date} scored ${temporalAnalysis.score.toFixed(3)} (${temporalAnalysis.type})`);
+      }
+      
+      if (temporalAnalysis.score > 0.05) {
         matches.push({
           ...memory,
           temporalScore: temporalAnalysis.score,
@@ -134,6 +146,7 @@ export class TemporalMemoryEntourage implements MemoryEntourageInterface {
 
   /**
    * Analyze temporal relevance of a memory to current context
+   * SIMPLIFIED: Focus on recent memories (24-48 hours) for reliable results
    */
   private analyzeTemporalRelevance(
     userMessage: string,
@@ -142,46 +155,69 @@ export class TemporalMemoryEntourage implements MemoryEntourageInterface {
     currentDate: Date
   ): {score: number, type: string} {
     const timeDelta = currentDate.getTime() - memoryDate.getTime();
+    const hoursDelta = timeDelta / (1000 * 60 * 60);
     const daysDelta = timeDelta / (1000 * 60 * 60 * 24);
     
-    // Recent memory boost (exponential decay)
-    const recentScore = Math.exp(-daysDelta / 7) * 0.5; // Strong boost for last week
-    
-    // Time-of-day pattern matching
-    const currentHour = currentDate.getHours();
-    const memoryHour = memoryDate.getHours();
-    const hourDiff = Math.min(Math.abs(currentHour - memoryHour), 24 - Math.abs(currentHour - memoryHour));
-    const timeOfDayScore = (6 - hourDiff) / 6 * 0.3; // Similar time of day
-    
-    // Day-of-week pattern matching  
-    const currentDayOfWeek = currentDate.getDay();
-    const memoryDayOfWeek = memoryDate.getDay();
-    const dayOfWeekScore = currentDayOfWeek === memoryDayOfWeek ? 0.2 : 0;
-    
-    // Contextual temporal keywords
-    const temporalKeywords = this.extractTemporalKeywords(userMessage);
-    const contextualScore = this.matchTemporalContext(memory.content, temporalKeywords, memoryDate, currentDate);
-    
-    // Historical significance (anniversaries, milestones)
-    const historicalScore = this.detectHistoricalSignificance(memory, memoryDate, currentDate);
-    
-    const totalScore = Math.max(
-      recentScore,
-      timeOfDayScore,
-      dayOfWeekScore,
-      contextualScore,
-      historicalScore
-    );
-    
-    // Determine primary temporal type
+    // SIMPLE RECENT MEMORY SCORING - focus on last 24-48 hours
+    let recentScore = 0;
     let type = 'general';
-    if (recentScore === totalScore) type = 'recent';
-    else if (timeOfDayScore === totalScore) type = 'time_of_day';
-    else if (dayOfWeekScore === totalScore) type = 'day_of_week';
-    else if (contextualScore === totalScore) type = 'contextual';
-    else if (historicalScore === totalScore) type = 'historical';
     
-    return { score: totalScore, type };
+    if (hoursDelta <= 6) {
+      // Very recent - last 6 hours
+      recentScore = 0.9;
+      type = 'very_recent';
+    } else if (hoursDelta <= 24) {
+      // Recent - last 24 hours  
+      recentScore = 0.7;
+      type = 'recent';
+    } else if (daysDelta <= 2) {
+      // Past 2 days
+      recentScore = 0.5;
+      type = 'recent';
+    } else if (daysDelta <= 7) {
+      // Past week
+      recentScore = 0.3;
+      type = 'week_old';
+    } else {
+      // Older memories get minimal score unless they have contextual relevance
+      recentScore = 0.1;
+      type = 'old';
+    }
+    
+    // Simple contextual boost for temporal keywords
+    const temporalKeywords = this.extractTemporalKeywords(userMessage);
+    if (temporalKeywords.length > 0) {
+      const contextualBoost = this.getSimpleContextualBoost(memory.content, temporalKeywords);
+      recentScore += contextualBoost;
+    }
+    
+    // Cap the score at 1.0
+    const finalScore = Math.min(recentScore, 1.0);
+    
+    return { score: finalScore, type };
+  }
+
+  /**
+   * Simple contextual boost for temporal keywords (replaces complex matchTemporalContext)
+   */
+  private getSimpleContextualBoost(memoryContent: string, temporalKeywords: string[]): number {
+    if (temporalKeywords.length === 0) return 0;
+    
+    const contentLower = memoryContent.toLowerCase();
+    let boost = 0;
+    
+    for (const keyword of temporalKeywords) {
+      if (contentLower.includes(keyword.toLowerCase())) {
+        boost += 0.1; // Small boost per matching keyword
+      }
+    }
+    
+    // Special boosts for high-relevance temporal words
+    if (temporalKeywords.some(kw => ['today', 'recently', 'now', 'just'].includes(kw.toLowerCase()))) {
+      boost += 0.2;
+    }
+    
+    return Math.min(boost, 0.4); // Cap contextual boost
   }
 
   /**
@@ -391,14 +427,22 @@ export class TemporalMemoryEntourage implements MemoryEntourageInterface {
 
     const selectedMemories = this.selectTemporalMemoriesWithVariety(matches, maxTokens);
     
-    const styles = [
-      'temporal_contextual',
-      'temporal_chronological', 
-      'temporal_pattern'
-    ];
-    const style = styles[Math.floor(Math.random() * styles.length)];
+    // SIMPLIFIED FORMATTING: Clear and consistent temporal context
+    const memoryTexts = selectedMemories.map(memory => {
+      const timeAgo = this.formatRelativeTime(memory.date);
+      return `${timeAgo}: ${memory.content}`;
+    });
     
-    return this.formatByTemporalStyle(selectedMemories, style, userMessage);
+    // Simple, clear format that LLMs can easily understand
+    if (selectedMemories.length === 1) {
+      const memory = selectedMemories[0];
+      if (memory.temporalType === 'very_recent' || memory.temporalType === 'recent') {
+        return `Recently, you ${memory.content.toLowerCase().replace(/^(remember that )?i? ?/i, '')}`;
+      }
+      return `From your recent activity: ${memory.content}`;
+    } else {
+      return `Recent timeline:\n${memoryTexts.join('\n')}`;
+    }
   }
 
   private selectTemporalMemoriesWithVariety(

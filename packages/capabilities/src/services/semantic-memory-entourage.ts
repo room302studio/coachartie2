@@ -40,11 +40,22 @@ export class SemanticMemoryEntourage implements MemoryEntourageInterface {
     try {
       logger.info('🧠 SemanticMemoryEntourage: Starting semantic similarity search');
       
-      // Get all memories for the user (we need to analyze them semantically)
-      const allMemoriesResult = await this.memoryService.recall(userId, '', 50); // Get more for analysis
-      const memories = this.parseMemoryResult(allMemoriesResult);
+      // Get all memories for the user using getRecentMemories (more reliable than empty query)
+      const recentMemories = await this.memoryService.getRecentMemories(userId, 50);
+      const memories = recentMemories.map(memory => ({
+        content: memory.content,
+        importance: memory.importance,
+        date: memory.timestamp,
+        tags: memory.tags
+      }));
+      
+      logger.info(`🧠 SemanticMemoryEntourage: Retrieved ${memories.length} memories for semantic analysis`);
+      if (memories.length > 0) {
+        logger.info(`🧠 First few memories: ${memories.slice(0, 3).map(m => m.content.substring(0, 40) + '...').join(', ')}`);
+      }
       
       if (memories.length === 0) {
+        logger.info('🧠 SemanticMemoryEntourage: No memories found to analyze');
         return {
           content: '',
           confidence: 0.0,
@@ -74,8 +85,12 @@ export class SemanticMemoryEntourage implements MemoryEntourageInterface {
 
       logger.info(`🧠 SemanticMemoryEntourage found ${semanticMatches.length} semantic matches (confidence: ${confidence.toFixed(2)})`);
 
-      // 🔍 Get memory IDs from semantic matches (using dummy IDs for now)
-      const memoryIds = semanticMatches.map((_, index) => `semantic_${index}`);
+      // 🔍 Get memory IDs from semantic matches - get actual memory IDs from recent memories
+      const memoryIds = semanticMatches.map((match) => {
+        // Find the original memory by content to get its real ID
+        const originalMemory = recentMemories.find(mem => mem.content === match.content);
+        return originalMemory ? String(originalMemory.id) : `semantic_unknown`;
+      });
       
       return {
         content: formattedContent,
@@ -113,12 +128,13 @@ export class SemanticMemoryEntourage implements MemoryEntourageInterface {
       const memoryVector = this.createTfIdfVector(memory.content);
       const similarity = this.calculateCosineSimilarity(queryVector, memoryVector);
       
-      // Only include memories with meaningful semantic similarity
-      if (similarity > 0.1) {
+      // Only include memories with meaningful semantic similarity (lowered threshold for better recall)
+      if (similarity > 0.02) {
         matches.push({
           ...memory,
           semanticScore: similarity
         });
+        logger.info(`🧠 Added semantic match: "${memory.content.substring(0, 30)}..." (score: ${similarity.toFixed(3)})`);
       }
     }
 
@@ -175,24 +191,23 @@ export class SemanticMemoryEntourage implements MemoryEntourageInterface {
    * Calculate cosine similarity between two TF-IDF vectors
    */
   private calculateCosineSimilarity(vectorA: Map<string, number>, vectorB: Map<string, number>): number {
-    const termsA = new Set(vectorA.keys());
-    const termsB = new Set(vectorB.keys());
-    const commonTerms = new Set([...termsA].filter(term => termsB.has(term)));
-
-    if (commonTerms.size === 0) return 0;
+    // Get all unique terms from both vectors
+    const allTerms = new Set([...vectorA.keys(), ...vectorB.keys()]);
+    
+    if (allTerms.size === 0) return 0;
 
     let dotProduct = 0;
     let normA = 0;
     let normB = 0;
 
-    // Calculate dot product and norms
-    for (const term of commonTerms) {
+    // Calculate dot product using all terms (0 for missing terms)
+    for (const term of allTerms) {
       const valA = vectorA.get(term) || 0;
       const valB = vectorB.get(term) || 0;
       dotProduct += valA * valB;
     }
 
-    // Calculate norms
+    // Calculate norms using all terms
     for (const val of vectorA.values()) {
       normA += val * val;
     }
@@ -202,7 +217,14 @@ export class SemanticMemoryEntourage implements MemoryEntourageInterface {
 
     if (normA === 0 || normB === 0) return 0;
 
-    return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
+    const similarity = dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
+    
+    // Debug logging for similarity calculation
+    if (similarity > 0.05) {
+      logger.info(`🧠 Semantic similarity: ${similarity.toFixed(3)} (${Math.sqrt(normA).toFixed(2)} × ${Math.sqrt(normB).toFixed(2)} = ${(Math.sqrt(normA) * Math.sqrt(normB)).toFixed(2)})`);
+    }
+    
+    return similarity;
   }
 
   /**

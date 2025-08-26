@@ -29,6 +29,7 @@ import { bulletproofExtractor } from "../utils/bulletproof-capability-extractor.
 import { robustExecutor } from "../utils/robust-capability-executor.js";
 import { modelAwarePrompter } from "../utils/model-aware-prompter.js";
 import { contextAlchemy } from './context-alchemy.js';
+import { FuzzyMatcher } from '../utils/fuzzy-matcher.js';
 
 // Define capability extraction types
 interface ExtractedCapability {
@@ -710,16 +711,16 @@ User: ${userMessage}`;
       const memoryService = await import('../capabilities/memory.js');
       const service = memoryService.MemoryService.getInstance();
 
-      // Create conversation summary for reflection
+      // DISABLED: Don't store raw conversations as memories
+      // Only store actual insights/reflections, not the raw Q&A
+      /*
       const conversationText = `User: ${message.message}\nAssistant: ${finalResponse}`;
-      
-      // Store USER-SPECIFIC interaction reflection using PROMPT_REMEMBER
-      // SECURITY FIX: Store reflection memories per user to prevent contamination
       const generalReflection = await this.generateReflection(conversationText, 'general', context.userId);
       if (generalReflection && generalReflection !== '✨') {
         await service.remember(context.userId, generalReflection, 'reflection', 3);
         logger.info(`💾 Stored general reflection memory for user ${context.userId}`);
       }
+      */
 
       // If capabilities were used, store USER-SPECIFIC capability reflection
       // SECURITY FIX: Store capability reflections per user to prevent contamination
@@ -862,26 +863,27 @@ ${capabilityDetails}`;
    */
 
   /**
-   * Generate helpful error messages with actionable suggestions
+   * ⚡ ENHANCED: Generate helpful error messages with BLAZING-FAST fuzzy suggestions!
+   * Now using unified FuzzyMatcher system! *swoosh*
    */
   private generateHelpfulErrorMessage(capability: ExtractedCapability, originalError: string): string {
     const { name, action } = capability;
     
-    // Check if the capability exists
+    // Check if the capability exists - use FuzzyMatcher for suggestions!
     if (!capabilityRegistry.has(name)) {
       const availableCapabilities = capabilityRegistry.list().map(cap => cap.name);
-      const suggestions = this.findSimilarCapabilities(name, availableCapabilities);
-      
-      return `❌ Capability '${name}' not found. Available capabilities: ${availableCapabilities.join(', ')}. Did you mean: ${suggestions.join(' or ')}?`;
+      return FuzzyMatcher.generateHelpfulError('capability', name, availableCapabilities);
     }
     
-    // Check if the action is supported
+    // Check if the action is supported - use FuzzyMatcher for action suggestions!
     const registryCapability = capabilityRegistry.list().find(cap => cap.name === name);
     if (registryCapability && !registryCapability.supportedActions.includes(action)) {
-      const supportedActions = registryCapability.supportedActions.join(', ');
-      const suggestions = this.findSimilarActions(action, registryCapability.supportedActions);
-      
-      return `❌ Capability '${name}' does not support action '${action}'. Supported actions: ${supportedActions}. Did you mean: ${suggestions.join(' or ')}?`;
+      return FuzzyMatcher.generateHelpfulError(
+        'action', 
+        action, 
+        registryCapability.supportedActions, 
+        { capabilityName: name }
+      );
     }
     
     // Check for missing required parameters
@@ -899,60 +901,11 @@ ${capabilityDetails}`;
     return `❌ ${originalError}. For '${name}' capability, use: <capability name="${name}" action="${registryCapability?.supportedActions[0] || action}">content</capability>`;
   }
 
-  /**
-   * Find similar capability names using string similarity
-   */
-  private findSimilarCapabilities(target: string, available: string[]): string[] {
-    return available
-      .map(name => ({ name, score: this.calculateSimilarity(target, name) }))
-      .filter(item => item.score > 0.5)
-      .sort((a, b) => b.score - a.score)
-      .slice(0, 2)
-      .map(item => item.name);
-  }
+  // ⚡ REMOVED: Old findSimilarCapabilities - now using unified FuzzyMatcher! *pew pew*
 
-  /**
-   * Find similar action names using string similarity
-   */
-  private findSimilarActions(target: string, available: string[]): string[] {
-    return available
-      .map(action => ({ action, score: this.calculateSimilarity(target, action) }))
-      .filter(item => item.score > 0.4)
-      .sort((a, b) => b.score - a.score)
-      .slice(0, 2)
-      .map(item => item.action);
-  }
+  // ⚡ REMOVED: Old findSimilarActions - now using unified FuzzyMatcher! *zoom*
 
-  /**
-   * Simple string similarity calculation (Jaro-Winkler inspired)
-   */
-  private calculateSimilarity(a: string, b: string): number {
-    if (a === b) {return 1.0;}
-    if (a.length === 0 || b.length === 0) {return 0.0;}
-    
-    // Check for substring matches
-    if (a.includes(b) || b.includes(a)) {return 0.8;}
-    
-    // Check for common substrings
-    const aLower = a.toLowerCase();
-    const bLower = b.toLowerCase();
-    
-    if (aLower.includes(bLower) || bLower.includes(aLower)) {return 0.7;}
-    
-    // Check for similar starting characters
-    let matchingChars = 0;
-    const minLength = Math.min(a.length, b.length);
-    
-    for (let i = 0; i < minLength; i++) {
-      if (aLower[i] === bLower[i]) {
-        matchingChars++;
-      } else {
-        break;
-      }
-    }
-    
-    return matchingChars / Math.max(a.length, b.length);
-  }
+  // ⚡ REMOVED: Old calculateSimilarity - now using Levenshtein distance in FuzzyMatcher! *swoosh*
 
   /**
    * Generate contextual examples based on user's message
@@ -1449,12 +1402,25 @@ ${capabilityDetails}`;
     // Build capability results summary for LLM
     const capabilityResults = context.results.map(result => {
       const capability = result.capability;
+      
+      // Build input description from params and content
+      let inputDesc = '';
+      if (capability.params && Object.keys(capability.params).length > 0) {
+        const paramStrs = Object.entries(capability.params).map(([key, value]) => 
+          `${key}: "${value}"`
+        );
+        inputDesc = ` (${paramStrs.join(', ')})`;
+      }
+      if (capability.content) {
+        inputDesc += inputDesc ? `, content: "${capability.content}"` : ` (content: "${capability.content}")`;
+      }
+      
       if (result.success && result.data) {
-        return `${capability.name}:${capability.action} → ${result.data}`;
+        return `${capability.name}:${capability.action}${inputDesc} → ${result.data}`;
       } else if (result.error) {
-        return `${capability.name}:${capability.action} → Error: ${result.error}`;
+        return `${capability.name}:${capability.action}${inputDesc} → Error: ${result.error}`;
       } else {
-        return `${capability.name}:${capability.action} → No result`;
+        return `${capability.name}:${capability.action}${inputDesc} → No result`;
       }
     }).join('\n');
 
@@ -1462,7 +1428,7 @@ ${capabilityDetails}`;
     // This should also use the prompt database, not hardcoded text
     const finalPrompt = `Assistant response synthesis. User asked: "${context.originalMessage}"
 
-Capability execution results:
+Capability execution results (format: capability:action (inputs) → result):
 ${capabilityResults}
 
 Please provide a final, coherent response that incorporates these capability results naturally. Be conversational, helpful, and don't repeat the raw capability output - instead, present the information in a natural way.
@@ -1471,7 +1437,9 @@ Important:
 - Don't use capability tags in your final response
 - Present the results as if you calculated/found them yourself
 - Be concise but friendly
-- If there were errors, acknowledge them helpfully`;
+- If there were errors, acknowledge them helpfully
+- CRITICAL: Use the EXACT input values shown in parentheses above when referring to what was calculated/processed
+- Do NOT change or approximate the input values (e.g., if the input was "456", don't say "458")`;
 
     try {
       // Use Context Alchemy for final response generation
