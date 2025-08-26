@@ -49,3 +49,6 @@ tmp/
 temp/.turbo/
 
 *.db
+*.db
+*.db-shm
+*.db-wal
