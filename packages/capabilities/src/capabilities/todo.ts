@@ -432,6 +432,9 @@ async function handleTodoAction(params: TodoParams, content?: string): Promise<s
   const { action, user_id = 'default-user' } = params;
   const todoService = TodoService.getInstance();
 
+  // Accept both 'expression' and 'content' for consistency
+  const taskContent = content || (params as any).expression || '';
+
   logger.info(`📋 Todo handler called - Action: ${action}, UserId: ${user_id}, Params:`, params);
 
   try {
@@ -440,16 +443,16 @@ async function handleTodoAction(params: TodoParams, content?: string): Promise<s
         // Simplified: combines create + add, auto-creates list
         const listName = params.list || 'tasks';  // Default list name
         
-        if (!content) {
+        if (!taskContent) {
           return '❌ What tasks do you want to add?';
         }
         
         // Try to add to existing list first
-        const addResult = await todoService.addItemsToList(String(user_id), String(listName), content);
+        const addResult = await todoService.addItemsToList(String(user_id), String(listName), taskContent);
         
         // If list doesn't exist, create it
         if (addResult.includes('not found')) {
-          return await todoService.createTodoList(String(user_id), String(listName), content);
+          return await todoService.createTodoList(String(user_id), String(listName), taskContent);
         }
         
         return addResult;
@@ -457,11 +460,11 @@ async function handleTodoAction(params: TodoParams, content?: string): Promise<s
 
       case 'complete': {
         // Simplified: complete by text match instead of position
-        if (!content) {
+        if (!taskContent) {
           return '❌ Which task did you complete?';
         }
         
-        return await todoService.completeByText(String(user_id), content);
+        return await todoService.completeByText(String(user_id), taskContent);
       }
 
       case 'show': {

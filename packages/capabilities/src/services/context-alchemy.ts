@@ -397,13 +397,10 @@ export class ContextAlchemy {
     const contextByCategory = this.groupContextByCategory(contextSources);
     const messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [];
     
-    // 1. System message with temporal context
+    // 1. System message with temporal context (NO capabilities yet!)
     let systemContent = baseSystemPrompt;
     if (contextByCategory.temporal.length > 0) {
       systemContent = `${contextByCategory.temporal[0].content}\n\n${systemContent}`;
-    }
-    if (contextByCategory.capabilities.length > 0) {
-      systemContent += `\n\n${contextByCategory.capabilities[0].content}`;
     }
     
     messages.push({ role: 'system', content: systemContent.trim() });
@@ -429,7 +426,16 @@ export class ContextAlchemy {
       });
     }
     
-    // 5. User message ALWAYS comes last
+    // 5. CAPABILITY INSTRUCTIONS RIGHT BEFORE USER MESSAGE!
+    // This ensures they're fresh in the LLM's context window
+    if (contextByCategory.capabilities.length > 0) {
+      messages.push({
+        role: 'system',
+        content: `IMPORTANT INSTRUCTIONS:\n${contextByCategory.capabilities[0].content}\n\nUSE THE XML TAGS ABOVE TO RESPOND!`
+      });
+    }
+    
+    // 6. User message ALWAYS comes last
     messages.push({ role: 'user', content: userMessage });
     
     return messages;
