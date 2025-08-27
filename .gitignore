@@ -49,3 +49,5 @@ tmp/
 temp/.turbo/
 
 *.db
+packages/capabilities/data/
+data/
