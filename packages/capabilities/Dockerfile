@@ -14,6 +14,9 @@ COPY packages/capabilities/package.json ./packages/capabilities/
 # Install all workspace dependencies
 RUN pnpm install --filter "@coachartie/capabilities" --filter "@coachartie/shared"
 
+# Build shared package
+RUN cd packages/shared && pnpm build
+
 # Copy capabilities source
 COPY packages/capabilities ./packages/capabilities
 
