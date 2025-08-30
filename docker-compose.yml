@@ -17,6 +17,7 @@ services:
     build:
       context: .
       dockerfile: ./packages/capabilities/Dockerfile
+    user: "1000:1000"
     ports:
       - "127.0.0.1:18239:18239"  # Bind to localhost only
     environment:
@@ -34,7 +35,7 @@ services:
       - TWILIO_AUTH_TOKEN=${TWILIO_AUTH_TOKEN}
       - TWILIO_PHONE_NUMBER=${TWILIO_PHONE_NUMBER}
     volumes:
-      - ./packages/capabilities/data:/app/data
+      - ./packages/capabilities/data:/app/data:rw
       - ./packages/capabilities/src:/app/src
       - /app/node_modules
     depends_on:
@@ -101,17 +102,17 @@ services:
     build:
       context: .
       dockerfile: ./packages/brain/Dockerfile
+    user: "1000:1000"
     ports:
-      - "127.0.0.1:24680:24680"  # Bind to localhost only
+      - "127.0.0.1:24680:3000"  # Map external 24680 to internal 3000
     environment:
       - NODE_ENV=development
       - CAPABILITIES_URL=http://capabilities:18239
       - API_BASE_URL=http://localhost:18239
       - REDIS_HOST=redis
       - REDIS_PORT=6379
-      - BRAIN_PORT=24680
     volumes:
-      - ./packages/capabilities/data:/app/data
+      - ./packages/capabilities/data:/app/data:rw  # Explicit read-write permissions
     depends_on:
       redis:
         condition: service_healthy
