@@ -1,7 +1,7 @@
 import express from 'express';
 import { capabilityOrchestrator } from '../services/capability-orchestrator.js';
 
-const router = express.Router();
+const router: express.Router = express.Router();
 
 // GET /api/memories
 router.get('/', async (req, res) => {

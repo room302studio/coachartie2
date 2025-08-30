@@ -257,7 +257,7 @@ class OpenRouterService {
    * Generate streaming response with partial updates on double linebreaks
    */
   async generateFromMessageChainStreaming(
-    messages: Array<{ role: string; content: string }>,
+    messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>,
     userId: string,
     onPartialResponse?: (partial: string) => void
   ): Promise<string> {

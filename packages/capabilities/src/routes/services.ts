@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { logger } from '@coachartie/shared';
 import { serviceDiscovery } from '@coachartie/shared';
 
-export const servicesRouter = Router();
+export const servicesRouter: Router = Router();
 
 /**
  * Get all available services

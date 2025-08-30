@@ -41,6 +41,9 @@ export async function getDatabase(): Promise<Database<sqlite3.Database, sqlite3.
     // Initialize database schema
     await initializeDatabase(db);
     
+    // Run migrations
+    await runMigrations(db);
+    
     return db;
   } catch (error) {
     logger.error('❌ Failed to connect to database:', error);
@@ -181,6 +184,7 @@ async function initializeDatabase(database: Database): Promise<void> {
         context TEXT DEFAULT '',
         timestamp TEXT NOT NULL,
         importance INTEGER DEFAULT 5,
+        metadata TEXT DEFAULT '{}',
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
       );
@@ -285,6 +289,29 @@ User's message: {{USER_MESSAGE}}`;
     }
   } catch (error) {
     logger.error('❌ Failed to insert default prompts:', error);
+  }
+}
+
+async function runMigrations(database: Database): Promise<void> {
+  try {
+    logger.info('🔄 Running database migrations...');
+    
+    // Check if metadata column exists in memories table
+    const columns = await database.all("PRAGMA table_info(memories)");
+    const hasMetadata = columns.some((col: any) => col.name === 'metadata');
+    
+    if (!hasMetadata) {
+      logger.info('📝 Adding metadata column to memories table');
+      await database.exec(`
+        ALTER TABLE memories ADD COLUMN metadata TEXT DEFAULT '{}';
+      `);
+      logger.info('✅ Added metadata column to memories table');
+    }
+    
+    logger.info('✅ Database migrations completed');
+  } catch (error) {
+    logger.error('❌ Failed to run migrations:', error);
+    // Don't throw - migrations should be non-fatal
   }
 }
 

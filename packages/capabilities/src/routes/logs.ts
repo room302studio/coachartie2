@@ -4,7 +4,7 @@ import { exec } from 'child_process';
 import { promisify } from 'util';
 
 const execAsync = promisify(exec);
-const router = Router();
+const router: Router = Router();
 
 // In-memory log storage for this session
 const jobLogs = new Map<string, Array<{timestamp: string, level: string, message: string}>>();
