@@ -1,0 +1,3 @@
+[submodule "packages/brain"]
+	path = packages/brain
+	url = https://github.com/room302studio/coachartie_brain.git
