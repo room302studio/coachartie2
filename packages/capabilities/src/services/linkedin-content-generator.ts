@@ -242,23 +242,23 @@ Return only the post content, ready to publish on LinkedIn.`;
     let score = 0;
     
     // Length score
-    if (content.length >= 200 && content.length <= 300) score += 2;
-    else if (content.length > 300) score += 1;
+    if (content.length >= 200 && content.length <= 300) {score += 2;}
+    else if (content.length > 300) {score += 1;}
     
     // Question mark indicates engagement-driving question
-    if (content.includes('?')) score += 2;
+    if (content.includes('?')) {score += 2;}
     
     // Tone impact
-    if (options.tone === 'thought-leadership' || options.tone === 'inspirational') score += 2;
+    if (options.tone === 'thought-leadership' || options.tone === 'inspirational') {score += 2;}
     
     // Call to action
-    if (options.includeCallToAction) score += 1;
+    if (options.includeCallToAction) {score += 1;}
     
     // Hashtags help discoverability
-    if (options.includeHashtags) score += 1;
+    if (options.includeHashtags) {score += 1;}
     
-    if (score >= 6) return 'high';
-    if (score >= 4) return 'medium';
+    if (score >= 6) {return 'high';}
+    if (score >= 4) {return 'medium';}
     return 'low';
   }
 

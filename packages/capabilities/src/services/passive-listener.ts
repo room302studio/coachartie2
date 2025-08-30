@@ -66,7 +66,7 @@ export class PassiveListener {
   }
 
   async initializeDatabase(): Promise<void> {
-    if (this.dbReady) return;
+    if (this.dbReady) {return;}
 
     try {
       const db = await getDatabase();
@@ -295,20 +295,20 @@ export class PassiveListener {
     const lowerText = text.toLowerCase();
 
     // High importance indicators
-    if (lowerText.includes('deadline') || lowerText.includes('urgent')) score += 3;
-    if (lowerText.includes('meeting') || lowerText.includes('call')) score += 2;
-    if (lowerText.includes('canceled') || lowerText.includes('postponed')) score += 2;
-    if (lowerText.includes('important') || lowerText.includes('critical')) score += 2;
+    if (lowerText.includes('deadline') || lowerText.includes('urgent')) {score += 3;}
+    if (lowerText.includes('meeting') || lowerText.includes('call')) {score += 2;}
+    if (lowerText.includes('canceled') || lowerText.includes('postponed')) {score += 2;}
+    if (lowerText.includes('important') || lowerText.includes('critical')) {score += 2;}
     
     // Time-based urgency
-    if (lowerText.includes('today') || lowerText.includes('now')) score += 2;
-    if (lowerText.includes('tomorrow')) score += 1;
+    if (lowerText.includes('today') || lowerText.includes('now')) {score += 2;}
+    if (lowerText.includes('tomorrow')) {score += 1;}
     
     // Entity count bonus
     score += Math.min(entities.length, 3); // Up to 3 bonus points for entities
 
     // Question indicators (less important for passive capture)
-    if (text.includes('?')) score -= 1;
+    if (text.includes('?')) {score -= 1;}
 
     return Math.max(1, Math.min(10, score));
   }
@@ -356,8 +356,8 @@ export class PassiveListener {
     const positiveCount = positiveWords.filter(word => lowerText.includes(word)).length;
     const negativeCount = negativeWords.filter(word => lowerText.includes(word)).length;
     
-    if (positiveCount > negativeCount) return 'positive';
-    if (negativeCount > positiveCount) return 'negative';
+    if (positiveCount > negativeCount) {return 'positive';}
+    if (negativeCount > positiveCount) {return 'negative';}
     return 'neutral';
   }
 

@@ -179,7 +179,7 @@ export class SemanticMemoryEntourage implements MemoryEntourageInterface {
     const termsB = new Set(vectorB.keys());
     const commonTerms = new Set([...termsA].filter(term => termsB.has(term)));
 
-    if (commonTerms.size === 0) return 0;
+    if (commonTerms.size === 0) {return 0;}
 
     let dotProduct = 0;
     let normA = 0;
@@ -200,7 +200,7 @@ export class SemanticMemoryEntourage implements MemoryEntourageInterface {
       normB += val * val;
     }
 
-    if (normA === 0 || normB === 0) return 0;
+    if (normA === 0 || normB === 0) {return 0;}
 
     return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
   }
@@ -285,7 +285,7 @@ export class SemanticMemoryEntourage implements MemoryEntourageInterface {
     userMessage: string,
     maxTokens?: number
   ): string {
-    if (matches.length === 0) return '';
+    if (matches.length === 0) {return '';}
 
     // Apply stochastic selection
     const selectedMemories = this.selectSemanticMemoriesWithVariety(matches, maxTokens);
@@ -308,7 +308,7 @@ export class SemanticMemoryEntourage implements MemoryEntourageInterface {
     matches: Array<{content: string, importance: number, date: string, tags: string[], semanticScore: number}>,
     maxTokens?: number
   ): Array<{content: string, importance: number, date: string, tags: string[], semanticScore: number}> {
-    if (matches.length <= 2) return matches;
+    if (matches.length <= 2) {return matches;}
     
     // Always include highest semantic score
     const sorted = [...matches].sort((a, b) => b.semanticScore - a.semanticScore);
@@ -375,7 +375,7 @@ export class SemanticMemoryEntourage implements MemoryEntourageInterface {
   private calculateSemanticConfidence(
     matches: Array<{content: string, importance: number, date: string, tags: string[], semanticScore: number}>
   ): number {
-    if (matches.length === 0) return 0.0;
+    if (matches.length === 0) {return 0.0;}
     
     const avgSemanticScore = matches.reduce((sum, m) => sum + m.semanticScore, 0) / matches.length;
     const avgImportance = matches.reduce((sum, m) => sum + m.importance, 0) / matches.length;

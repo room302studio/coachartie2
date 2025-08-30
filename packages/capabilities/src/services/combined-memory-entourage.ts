@@ -152,9 +152,9 @@ export class CombinedMemoryEntourage implements MemoryEntourageInterface {
 
     // Handle cases where only one or two layers found memories
     const activeLayers = [];
-    if (keywordResult.memoryCount > 0) activeLayers.push({name: 'keyword', result: keywordResult});
-    if (semanticResult.memoryCount > 0) activeLayers.push({name: 'semantic', result: semanticResult});
-    if (temporalResult.memoryCount > 0) activeLayers.push({name: 'temporal', result: temporalResult});
+    if (keywordResult.memoryCount > 0) {activeLayers.push({name: 'keyword', result: keywordResult});}
+    if (semanticResult.memoryCount > 0) {activeLayers.push({name: 'semantic', result: semanticResult});}
+    if (temporalResult.memoryCount > 0) {activeLayers.push({name: 'temporal', result: temporalResult});}
 
     if (activeLayers.length === 1) {
       return {
@@ -193,8 +193,8 @@ export class CombinedMemoryEntourage implements MemoryEntourageInterface {
     const temporalContent = temporalResult.content.trim();
     
     const contents = [keywordContent, semanticContent, temporalContent].filter(c => c.length > 0);
-    if (contents.length === 0) return '';
-    if (contents.length === 1) return contents[0];
+    if (contents.length === 0) {return '';}
+    if (contents.length === 1) {return contents[0];}
 
     // Apply stochastic fusion patterns for variety
     const fusionPatterns = [
@@ -210,9 +210,9 @@ export class CombinedMemoryEntourage implements MemoryEntourageInterface {
     switch (pattern) {
       case 'layered':
         let layered = '';
-        if (keywordContent) layered += keywordContent;
-        if (semanticContent) layered += layered ? `\n\nRelated: ${semanticContent.toLowerCase()}` : semanticContent;
-        if (temporalContent) layered += layered ? `\n\nTiming: ${temporalContent.toLowerCase()}` : temporalContent;
+        if (keywordContent) {layered += keywordContent;}
+        if (semanticContent) {layered += layered ? `\n\nRelated: ${semanticContent.toLowerCase()}` : semanticContent;}
+        if (temporalContent) {layered += layered ? `\n\nTiming: ${temporalContent.toLowerCase()}` : temporalContent;}
         return layered;
         
       case 'interleaved':
@@ -220,9 +220,9 @@ export class CombinedMemoryEntourage implements MemoryEntourageInterface {
         
       case 'comparative':
         let comparative = '';
-        if (keywordContent) comparative += `Direct: ${keywordContent}`;
-        if (semanticContent) comparative += comparative ? `\nConceptual: ${semanticContent}` : `Conceptual: ${semanticContent}`;
-        if (temporalContent) comparative += comparative ? `\nTemporal: ${temporalContent}` : `Temporal: ${temporalContent}`;
+        if (keywordContent) {comparative += `Direct: ${keywordContent}`;}
+        if (semanticContent) {comparative += comparative ? `\nConceptual: ${semanticContent}` : `Conceptual: ${semanticContent}`;}
+        if (temporalContent) {comparative += comparative ? `\nTemporal: ${temporalContent}` : `Temporal: ${temporalContent}`;}
         return comparative;
         
       case 'synthesized':
@@ -306,9 +306,9 @@ export class CombinedMemoryEntourage implements MemoryEntourageInterface {
     
     // Add convergence categories based on which layers found memories
     const activeLayers = [];
-    if (keywordResult.memoryCount > 0) activeLayers.push('keyword');
-    if (semanticResult.memoryCount > 0) activeLayers.push('semantic');
-    if (temporalResult.memoryCount > 0) activeLayers.push('temporal');
+    if (keywordResult.memoryCount > 0) {activeLayers.push('keyword');}
+    if (semanticResult.memoryCount > 0) {activeLayers.push('semantic');}
+    if (temporalResult.memoryCount > 0) {activeLayers.push('temporal');}
     
     if (activeLayers.length === 3) {
       allCategories.add('full_convergence'); // All three methods found memories

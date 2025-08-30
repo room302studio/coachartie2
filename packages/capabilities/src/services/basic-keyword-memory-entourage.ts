@@ -340,8 +340,8 @@ Return only the search terms, comma-separated:`;
     let confidence = 0.5;
     
     // Boost for length and specific patterns
-    if (match.length > 5) confidence += 0.2;
-    if (match.length > 10) confidence += 0.1;
+    if (match.length > 5) {confidence += 0.2;}
+    if (match.length > 10) {confidence += 0.1;}
     
     // Type-specific boosts
     if (entityType === 'FOOD' && /pizza|atlanta|restaurant/.test(match.toLowerCase())) {
@@ -355,7 +355,7 @@ Return only the search terms, comma-separated:`;
    * Build search query based on keywords and priority
    */
   private buildSearchQuery(keywords: string[], priority: 'speed' | 'accuracy' | 'comprehensive' = 'speed'): string {
-    if (keywords.length === 0) return '';
+    if (keywords.length === 0) {return '';}
     
     switch (priority) {
       case 'speed':
@@ -457,7 +457,7 @@ Return only the search terms, comma-separated:`;
     userMessage: string, 
     maxTokens?: number
   ): string {
-    if (memories.length === 0) return '';
+    if (memories.length === 0) {return '';}
 
     // Apply stochastic selection for variety
     const selectedMemories = this.selectMemoriesWithVariety(memories, maxTokens);
@@ -480,7 +480,7 @@ Return only the search terms, comma-separated:`;
     memories: Array<{content: string, importance: number, date: string, tags: string[]}>,
     maxTokens?: number
   ): Array<{content: string, importance: number, date: string, tags: string[]}> {
-    if (memories.length <= 2) return memories;
+    if (memories.length <= 2) {return memories;}
     
     // Always include the highest importance memory
     const sorted = [...memories].sort((a, b) => b.importance - a.importance);
@@ -547,7 +547,7 @@ Return only the search terms, comma-separated:`;
     memories: Array<{content: string, importance: number, date: string, tags: string[]}>,
     keywords: string[]
   ): number {
-    if (memories.length === 0) return 0.0;
+    if (memories.length === 0) {return 0.0;}
     
     let totalScore = 0;
     let maxScore = 0;

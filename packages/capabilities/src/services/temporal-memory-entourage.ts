@@ -112,7 +112,7 @@ export class TemporalMemoryEntourage implements MemoryEntourageInterface {
 
     for (const memory of memories) {
       const memoryDate = this.parseMemoryDate(memory.date);
-      if (!memoryDate) continue;
+      if (!memoryDate) {continue;}
 
       const temporalAnalysis = this.analyzeTemporalRelevance(userMessage, memory, memoryDate, now);
       
@@ -175,11 +175,11 @@ export class TemporalMemoryEntourage implements MemoryEntourageInterface {
     
     // Determine primary temporal type
     let type = 'general';
-    if (recentScore === totalScore) type = 'recent';
-    else if (timeOfDayScore === totalScore) type = 'time_of_day';
-    else if (dayOfWeekScore === totalScore) type = 'day_of_week';
-    else if (contextualScore === totalScore) type = 'contextual';
-    else if (historicalScore === totalScore) type = 'historical';
+    if (recentScore === totalScore) {type = 'recent';}
+    else if (timeOfDayScore === totalScore) {type = 'time_of_day';}
+    else if (dayOfWeekScore === totalScore) {type = 'day_of_week';}
+    else if (contextualScore === totalScore) {type = 'contextual';}
+    else if (historicalScore === totalScore) {type = 'historical';}
     
     return { score: totalScore, type };
   }
@@ -220,7 +220,7 @@ export class TemporalMemoryEntourage implements MemoryEntourageInterface {
     memoryDate: Date,
     currentDate: Date
   ): number {
-    if (temporalKeywords.length === 0) return 0;
+    if (temporalKeywords.length === 0) {return 0;}
     
     let score = 0;
     const contentLower = memoryContent.toLowerCase();
@@ -231,12 +231,12 @@ export class TemporalMemoryEntourage implements MemoryEntourageInterface {
       }
       
       // Contextual temporal matching
-      if (keyword === 'recently' && this.isRecent(memoryDate, currentDate, 7)) score += 0.2;
-      if (keyword === 'yesterday' && this.isDaysAgo(memoryDate, currentDate, 1)) score += 0.3;
-      if (keyword === 'today' && this.isToday(memoryDate, currentDate)) score += 0.4;
-      if (keyword === 'weekend' && this.isWeekend(memoryDate)) score += 0.2;
-      if (keyword === 'morning' && this.isMorning(memoryDate)) score += 0.15;
-      if (keyword === 'evening' && this.isEvening(memoryDate)) score += 0.15;
+      if (keyword === 'recently' && this.isRecent(memoryDate, currentDate, 7)) {score += 0.2;}
+      if (keyword === 'yesterday' && this.isDaysAgo(memoryDate, currentDate, 1)) {score += 0.3;}
+      if (keyword === 'today' && this.isToday(memoryDate, currentDate)) {score += 0.4;}
+      if (keyword === 'weekend' && this.isWeekend(memoryDate)) {score += 0.2;}
+      if (keyword === 'morning' && this.isMorning(memoryDate)) {score += 0.15;}
+      if (keyword === 'evening' && this.isEvening(memoryDate)) {score += 0.15;}
     }
     
     return Math.min(score, 0.8); // Cap contextual score
@@ -274,7 +274,7 @@ export class TemporalMemoryEntourage implements MemoryEntourageInterface {
    * Parse memory date string into Date object
    */
   private parseMemoryDate(dateString: string): Date | null {
-    if (!dateString || dateString === '') return null;
+    if (!dateString || dateString === '') {return null;}
     
     try {
       // Handle various date formats
@@ -387,7 +387,7 @@ export class TemporalMemoryEntourage implements MemoryEntourageInterface {
     userMessage: string,
     maxTokens?: number
   ): string {
-    if (matches.length === 0) return '';
+    if (matches.length === 0) {return '';}
 
     const selectedMemories = this.selectTemporalMemoriesWithVariety(matches, maxTokens);
     
@@ -405,7 +405,7 @@ export class TemporalMemoryEntourage implements MemoryEntourageInterface {
     matches: Array<{content: string, importance: number, date: string, tags: string[], temporalScore: number, temporalType: string}>,
     maxTokens?: number
   ): Array<{content: string, importance: number, date: string, tags: string[], temporalScore: number, temporalType: string}> {
-    if (matches.length <= 2) return matches;
+    if (matches.length <= 2) {return matches;}
     
     const sorted = [...matches].sort((a, b) => b.temporalScore - a.temporalScore);
     const selected = [sorted[0]]; // Always include highest temporal score
@@ -476,10 +476,10 @@ export class TemporalMemoryEntourage implements MemoryEntourageInterface {
 
   private getTemporalContext(memories: Array<{temporalType: string}>): string {
     const types = memories.map(m => m.temporalType);
-    if (types.includes('recent')) return 'From recent memory';
-    if (types.includes('historical')) return 'Looking back';
-    if (types.includes('time_of_day')) return 'Around this time';
-    if (types.includes('day_of_week')) return 'Similar to today';
+    if (types.includes('recent')) {return 'From recent memory';}
+    if (types.includes('historical')) {return 'Looking back';}
+    if (types.includes('time_of_day')) {return 'Around this time';}
+    if (types.includes('day_of_week')) {return 'Similar to today';}
     return 'From what I remember';
   }
 
@@ -489,11 +489,11 @@ export class TemporalMemoryEntourage implements MemoryEntourageInterface {
     const timeDelta = now.getTime() - date.getTime();
     const daysDelta = Math.floor(timeDelta / (1000 * 60 * 60 * 24));
     
-    if (daysDelta === 0) return 'Today';
-    if (daysDelta === 1) return 'Yesterday';
-    if (daysDelta < 7) return `${daysDelta} days ago`;
-    if (daysDelta < 30) return `${Math.floor(daysDelta / 7)} weeks ago`;
-    if (daysDelta < 365) return `${Math.floor(daysDelta / 30)} months ago`;
+    if (daysDelta === 0) {return 'Today';}
+    if (daysDelta === 1) {return 'Yesterday';}
+    if (daysDelta < 7) {return `${daysDelta} days ago`;}
+    if (daysDelta < 30) {return `${Math.floor(daysDelta / 7)} weeks ago`;}
+    if (daysDelta < 365) {return `${Math.floor(daysDelta / 30)} months ago`;}
     return `${Math.floor(daysDelta / 365)} years ago`;
   }
 
@@ -518,7 +518,7 @@ export class TemporalMemoryEntourage implements MemoryEntourageInterface {
   private calculateTemporalConfidence(
     matches: Array<{temporalScore: number, importance: number}>
   ): number {
-    if (matches.length === 0) return 0.0;
+    if (matches.length === 0) {return 0.0;}
     
     const avgTemporalScore = matches.reduce((sum, m) => sum + m.temporalScore, 0) / matches.length;
     const avgImportance = matches.reduce((sum, m) => sum + m.importance, 0) / matches.length;
@@ -541,13 +541,13 @@ export class TemporalMemoryEntourage implements MemoryEntourageInterface {
     // Add time-based categories
     const now = new Date();
     const hasRecent = matches.some(m => this.isRecent(new Date(m.date), now, 7));
-    if (hasRecent) categories.add('recent_activity');
+    if (hasRecent) {categories.add('recent_activity');}
     
     const hasHistorical = matches.some(m => {
       const memDate = new Date(m.date);
       return now.getTime() - memDate.getTime() > (365 * 24 * 60 * 60 * 1000);
     });
-    if (hasHistorical) categories.add('long_term');
+    if (hasHistorical) {categories.add('long_term');}
     
     return Array.from(categories);
   }

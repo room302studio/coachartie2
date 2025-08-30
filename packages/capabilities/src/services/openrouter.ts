@@ -266,7 +266,7 @@ class OpenRouterService {
     }
 
     // Start with first model
-    let currentModel = this.getCurrentModel();
+    const currentModel = this.getCurrentModel();
     logger.info(`🤖 Starting streaming generation for user ${userId} using model ${currentModel}`);
     
     for (let i = 0; i < this.models.length; i++) {

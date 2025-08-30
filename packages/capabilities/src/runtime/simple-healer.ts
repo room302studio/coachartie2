@@ -12,7 +12,7 @@ export class SimpleHealer {
   private interval: NodeJS.Timeout | null = null;
 
   start(): void {
-    if (this.isRunning) return;
+    if (this.isRunning) {return;}
     
     this.isRunning = true;
     this.interval = setInterval(() => this.heal(), 30000); // Every 30s
@@ -20,7 +20,7 @@ export class SimpleHealer {
   }
 
   stop(): void {
-    if (this.interval) clearInterval(this.interval);
+    if (this.interval) {clearInterval(this.interval);}
     this.isRunning = false;
     // Healer stopped
   }

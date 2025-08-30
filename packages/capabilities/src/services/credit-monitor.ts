@@ -97,7 +97,7 @@ export class CreditMonitor {
         LIMIT 1
       `);
 
-      if (!result) return null;
+      if (!result) {return null;}
 
       return {
         provider: result.provider,

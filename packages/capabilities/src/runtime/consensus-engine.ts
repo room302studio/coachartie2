@@ -172,8 +172,8 @@ export class ConsensusEngine {
    * Find capabilities that appear in majority of responses
    */
   private findConsensusCapabilities(responses: ModelResponse[]): ParsedCapability[] {
-    if (responses.length === 0) return [];
-    if (responses.length === 1) return responses[0].capabilities;
+    if (responses.length === 0) {return [];}
+    if (responses.length === 1) {return responses[0].capabilities;}
 
     const capabilityVotes = new Map<string, { 
       capability: ParsedCapability; 
@@ -216,7 +216,7 @@ export class ConsensusEngine {
     responses: ModelResponse[], 
     consensusCapabilities: ParsedCapability[]
   ): number {
-    if (responses.length === 0) return 0;
+    if (responses.length === 0) {return 0;}
     
     let agreementCount = 0;
     
@@ -250,8 +250,8 @@ export class ConsensusEngine {
     score += (model.priority / 10) * 0.2;
 
     // Response time penalty (prefer faster responses)
-    if (responseTime < 2000) score += 0.1;
-    else if (responseTime > 5000) score -= 0.1;
+    if (responseTime < 2000) {score += 0.1;}
+    else if (responseTime > 5000) {score -= 0.1;}
 
     // Capability consistency bonus
     if (capabilities.length > 0) {
@@ -259,7 +259,7 @@ export class ConsensusEngine {
       score += 0.2;
       
       // Small bonus for reasonable number of capabilities (not too many)
-      if (capabilities.length <= 3) score += 0.1;
+      if (capabilities.length <= 3) {score += 0.1;}
     }
 
     // Ensure score is between 0 and 1
@@ -273,7 +273,7 @@ export class ConsensusEngine {
     responses: ModelResponse[], 
     consensusCapabilities: ParsedCapability[]
   ): number {
-    if (responses.length === 0) return 0;
+    if (responses.length === 0) {return 0;}
     
     const averageModelConfidence = responses.reduce((sum, r) => sum + r.confidence, 0) / responses.length;
     const agreementBonus = this.calculateModelAgreement(responses, consensusCapabilities) * 0.3;

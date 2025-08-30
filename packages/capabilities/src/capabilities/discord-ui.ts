@@ -132,10 +132,10 @@ async function createModal(params: DiscordUIParams, content?: string): Promise<s
       style: input.style === 'paragraph' ? TextInputStyle.Paragraph : TextInputStyle.Short,
     };
     
-    if (input.placeholder) textInput.placeholder = input.placeholder;
-    if (input.required !== undefined) textInput.required = input.required;
-    if (input.minLength) textInput.min_length = input.minLength;
-    if (input.maxLength) textInput.max_length = input.maxLength;
+    if (input.placeholder) {textInput.placeholder = input.placeholder;}
+    if (input.required !== undefined) {textInput.required = input.required;}
+    if (input.minLength) {textInput.min_length = input.minLength;}
+    if (input.maxLength) {textInput.max_length = input.maxLength;}
     
     const actionRow = {
       type: 1, // ActionRow component type
@@ -256,7 +256,7 @@ async function createContextMenu(params: DiscordUIParams, content?: string): Pro
 
 // Helper functions
 function parseInputsFromContent(content?: string): Array<any> {
-  if (!content) return [];
+  if (!content) {return [];}
   
   // Simple parsing - could be enhanced with XML parsing
   const lines = content.split('\n').filter(line => line.trim());

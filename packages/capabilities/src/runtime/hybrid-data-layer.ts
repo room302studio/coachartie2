@@ -106,7 +106,7 @@ export class HybridDataLayer {
    * Initialize SQLite database schema
    */
   private async initializeDatabase(): Promise<void> {
-    if (!this.coldStorage) return;
+    if (!this.coldStorage) {return;}
 
     try {
       await this.coldStorage.exec(`
@@ -156,7 +156,7 @@ export class HybridDataLayer {
    * Load recent memories into hot cache
    */
   private async loadRecentMemories(): Promise<void> {
-    if (!this.coldStorage) return;
+    if (!this.coldStorage) {return;}
 
     try {
       const rows = await this.coldStorage.all(`
@@ -363,7 +363,7 @@ export class HybridDataLayer {
    * Persist memory to cold storage
    */
   private async persistMemory(memory: MemoryRecord): Promise<void> {
-    if (!this.coldStorage) return;
+    if (!this.coldStorage) {return;}
 
     try {
       await this.coldStorage.run(`
@@ -410,7 +410,7 @@ export class HybridDataLayer {
    * Background sync to storage
    */
   private async syncToStorage(): Promise<void> {
-    if (!this.coldStorage) return;
+    if (!this.coldStorage) {return;}
 
     // This method can be enhanced to sync dirty flags, etc.
   }

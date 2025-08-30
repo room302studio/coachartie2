@@ -38,7 +38,7 @@ export class GoalService {
   }
 
   async initializeDatabase(): Promise<void> {
-    if (this.dbReady) return;
+    if (this.dbReady) {return;}
 
     try {
       const db = await getDatabase();

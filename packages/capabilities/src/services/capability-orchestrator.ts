@@ -287,7 +287,7 @@ export class CapabilityOrchestrator {
     // Handle no capabilities case
     if (context.capabilities.length === 0) {
       const autoInjectionResult = await this.handleAutoInjectionFlow(context, message, llmResponse);
-      if (autoInjectionResult) return autoInjectionResult;
+      if (autoInjectionResult) {return autoInjectionResult;}
       return llmResponse; // No capabilities needed, return original response
     }
     
@@ -355,7 +355,7 @@ export class CapabilityOrchestrator {
     context: OrchestrationContext, 
     message: IncomingMessage
   ): Promise<void> {
-    if (context.capabilities.length === 0) return;
+    if (context.capabilities.length === 0) {return;}
     
     logger.info(`🧠 Reviewing ${context.capabilities.length} capabilities with conscience`);
     

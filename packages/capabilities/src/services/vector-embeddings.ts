@@ -38,7 +38,7 @@ export class VectorEmbeddingService {
    * Initialize the vector embedding service with real OpenAI client
    */
   async initialize(): Promise<void> {
-    if (this.initialized) return;
+    if (this.initialized) {return;}
 
     const apiKey = process.env.OPENAI_API_KEY;
     if (!apiKey) {

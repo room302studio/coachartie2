@@ -352,17 +352,17 @@ export class CapabilityRegistry {
    * Simple string similarity calculation (Jaro-Winkler inspired)
    */
   private calculateSimilarity(a: string, b: string): number {
-    if (a === b) return 1.0;
-    if (a.length === 0 || b.length === 0) return 0.0;
+    if (a === b) {return 1.0;}
+    if (a.length === 0 || b.length === 0) {return 0.0;}
     
     // Check for substring matches
-    if (a.includes(b) || b.includes(a)) return 0.8;
+    if (a.includes(b) || b.includes(a)) {return 0.8;}
     
     // Check for common substrings
     const aLower = a.toLowerCase();
     const bLower = b.toLowerCase();
     
-    if (aLower.includes(bLower) || bLower.includes(aLower)) return 0.7;
+    if (aLower.includes(bLower) || bLower.includes(aLower)) {return 0.7;}
     
     // Check for similar starting characters
     let matchingChars = 0;
