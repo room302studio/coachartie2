@@ -30,6 +30,24 @@ pnpm run dev
 # That's it! Services auto-discover available ports
 ```
 
+## 💻 System Requirements
+
+### Minimum VPS Specs
+```
+CPU: 2 vCPU
+RAM: 2GB
+Disk: 5GB SSD
+Network: 1Gbps
+```
+
+### Recommended VPS Specs
+```
+CPU: 4 vCPU (for AI workload bursts)
+RAM: 4GB (2GB services + 2GB buffer)
+Disk: 10GB SSD
+Network: 1Gbps+ with good OpenRouter connectivity
+```
+
 ## ⚡ Quick Start
 
 **Prerequisites**: Docker Desktop installed and running

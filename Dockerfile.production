@@ -23,6 +23,9 @@ COPY packages/capabilities ./packages/capabilities
 # Set working directory to capabilities package
 WORKDIR /app/packages/capabilities
 
+# Build TypeScript to ensure compilation succeeds
+RUN pnpm build
+
 # Create data directory
 RUN mkdir -p /app/data
 
@@ -34,9 +37,9 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
   CMD curl -f http://localhost:18239/health || exit 1
 
 # Set environment variables
-ENV NODE_ENV=development
+ENV NODE_ENV=production
 ENV DATABASE_PATH=/app/data/coachartie.db
 ENV CAPABILITIES_PORT=18239
 
-# Start the application
-CMD ["pnpm", "dev:tsx"]
+# Start the application with built code
+CMD ["pnpm", "start"]

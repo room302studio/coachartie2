@@ -57,70 +57,7 @@ export class MemoryService {
     return MemoryService.instance;
   }
 
-  async initializeDatabase(): Promise<void> {
-    if (this.dbReady) {return;}
-
-    try {
-      const db = await getDatabase();
-      
-      // Create memories table
-      await db.exec(`
-        CREATE TABLE IF NOT EXISTS memories (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          user_id TEXT NOT NULL,
-          content TEXT NOT NULL,
-          tags TEXT NOT NULL DEFAULT '[]',
-          context TEXT DEFAULT '',
-          timestamp TEXT NOT NULL,
-          importance INTEGER DEFAULT 5,
-          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-        )
-      `);
-
-      // Create indexes for fast searching
-      await db.exec(`
-        CREATE INDEX IF NOT EXISTS idx_memories_user_id ON memories(user_id);
-        CREATE INDEX IF NOT EXISTS idx_memories_timestamp ON memories(timestamp);
-        CREATE INDEX IF NOT EXISTS idx_memories_importance ON memories(importance);
-      `);
-
-      // Create full-text search table for content
-      await db.exec(`
-        CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts USING fts5(
-          content, tags, context,
-          content='memories',
-          content_rowid='id'
-        );
-      `);
-
-      // Create triggers to keep FTS table in sync
-      await db.exec(`
-        CREATE TRIGGER IF NOT EXISTS memories_fts_insert AFTER INSERT ON memories BEGIN
-          INSERT INTO memories_fts(rowid, content, tags, context) 
-          VALUES (new.id, new.content, new.tags, new.context);
-        END;
-
-        CREATE TRIGGER IF NOT EXISTS memories_fts_delete AFTER DELETE ON memories BEGIN
-          INSERT INTO memories_fts(memories_fts, rowid, content, tags, context) 
-          VALUES ('delete', old.id, old.content, old.tags, old.context);
-        END;
-
-        CREATE TRIGGER IF NOT EXISTS memories_fts_update AFTER UPDATE ON memories BEGIN
-          INSERT INTO memories_fts(memories_fts, rowid, content, tags, context) 
-          VALUES ('delete', old.id, old.content, old.tags, old.context);
-          INSERT INTO memories_fts(rowid, content, tags, context) 
-          VALUES (new.id, new.content, new.tags, new.context);
-        END;
-      `);
-
-      this.dbReady = true;
-      logger.info('✅ Memory database initialized successfully');
-    } catch (error) {
-      logger.error('❌ Failed to initialize memory database:', error);
-      throw error;
-    }
-  }
+  // Legacy initializeDatabase deleted - hybrid layer handles schema
 
   async remember(userId: string, content: string, context: string = '', importance: number = 5): Promise<string> {
     if (this.useHybridLayer) {
@@ -158,32 +95,8 @@ export class MemoryService {
       }
     }
 
-    // LEGACY FALLBACK: Original SQLite approach
-    await this.initializeDatabase();
-
-    try {
-      const db = await getDatabase();
-      
-      const basicTags = this.extractBasicTags(content, context);
-      const timestamp = new Date().toISOString();
-
-      const result = await db.run(`
-        INSERT INTO memories (user_id, content, tags, context, timestamp, importance)
-        VALUES (?, ?, ?, ?, ?, ?)
-      `, [userId, content, JSON.stringify(basicTags), context, timestamp, importance]);
-
-      const memoryId = result.lastID!;
-      logger.info(`💾 [LEGACY] Stored memory for user ${userId}: ${content.substring(0, 50)}...`);
-
-      this.generateSemanticTags(memoryId, content, context).catch(error => {
-        logger.error('❌ Failed to generate semantic tags:', error);
-      });
-      
-      return `✅ Remembered: "${content}" (ID: ${memoryId}, importance: ${importance}/10, tags: ${basicTags.join(', ')})`;
-    } catch (error) {
-      logger.error('❌ Failed to store memory:', error);
-      throw new Error(`Failed to store memory: ${error instanceof Error ? error.message : String(error)}`);
-    }
+    // Legacy system removed - hybrid layer handles all memory operations
+    throw new Error('Legacy memory system disabled - use hybrid layer');
   }
 
   async recall(userId: string, query: string, limit: number = 5): Promise<string> {
@@ -344,70 +257,30 @@ export class MemoryService {
           importance: (memory.metadata?.importance as number) || 5
         }));
       } catch (error) {
-        logger.error('❌ [HYBRID] Failed to get recent memories, falling back to legacy:', error);
-        this.useHybridLayer = false;
+        logger.error('❌ [HYBRID] Failed to get recent memories:', error);
+        throw error;
       }
     }
 
-    // LEGACY FALLBACK
-    await this.initializeDatabase();
-
-    try {
-      const db = await getDatabase();
-      
-      const results = await db.all(`
-        SELECT * FROM memories 
-        WHERE user_id = ?
-        ORDER BY created_at DESC
-        LIMIT ?
-      `, [userId, limit]);
-
-      return results.map((row: MemoryRow) => ({
-        id: row.id,
-        userId: row.user_id,
-        content: row.content,
-        tags: JSON.parse(row.tags || '[]'),
-        context: row.context || '',
-        timestamp: row.timestamp || row.created_at,
-        importance: row.importance || row.importance_score
-      }));
-    } catch (error) {
-      logger.error('❌ Failed to get recent memories:', error);
-      return [];
-    }
+    // Legacy fallback removed
+    return [];
   }
 
   async getMemoryStats(userId: string): Promise<string> {
-    await this.initializeDatabase();
-
+    // Use hybrid layer for stats
     try {
-      const db = await getDatabase();
+      const recentMemories = await hybridDataLayer.getRecentMemories(userId, 1000);
+      const totalCount = recentMemories.length;
+      const recentCount = recentMemories.filter(m => {
+        const daysDiff = (Date.now() - m.timestamp.getTime()) / (1000 * 60 * 60 * 24);
+        return daysDiff <= 7;
+      }).length;
       
-      const stats = await db.get(`
-        SELECT 
-          COUNT(*) as total_memories,
-          AVG(importance) as avg_importance,
-          MAX(created_at) as last_memory,
-          MIN(created_at) as first_memory
-        FROM memories 
-        WHERE user_id = ?
-      `, [userId]);
-
-      const recentCount = await db.get(`
-        SELECT COUNT(*) as recent_count
-        FROM memories 
-        WHERE user_id = ? 
-        AND created_at > datetime('now', '-7 days')
-      `, [userId]);
-
       return `📊 Memory Stats for ${userId}:
-• Total memories: ${stats.total_memories}
-• Recent (7 days): ${recentCount.recent_count}
-• Average importance: ${stats.avg_importance ? stats.avg_importance.toFixed(1) : 'N/A'}/10
-• First memory: ${stats.first_memory ? new Date(stats.first_memory).toLocaleDateString() : 'None'}
-• Latest memory: ${stats.last_memory ? new Date(stats.last_memory).toLocaleDateString() : 'None'}`;
+• Total memories: ${totalCount}
+• Recent (7 days): ${recentCount}
+• Storage: Hybrid layer (in-memory + SQLite)`;
     } catch (error) {
-      logger.error('❌ Failed to get memory stats:', error);
       return `❌ Could not retrieve memory statistics: ${error instanceof Error ? error.message : String(error)}`;
     }
   }

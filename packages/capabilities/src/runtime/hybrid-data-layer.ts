@@ -94,7 +94,7 @@ export class HybridDataLayer {
   private async initializeAsync(): Promise<void> {
     try {
       this.coldStorage = await getDatabase();
-      await this.initializeDatabase();
+      // Database schema already initialized
       await this.loadRecentMemories();
     } catch (error) {
       logger.error('Failed to initialize database:', error);
@@ -102,55 +102,7 @@ export class HybridDataLayer {
     }
   }
 
-  /**
-   * Initialize SQLite database schema
-   */
-  private async initializeDatabase(): Promise<void> {
-    if (!this.coldStorage) {return;}
-
-    try {
-      await this.coldStorage.exec(`
-        CREATE TABLE IF NOT EXISTS memories (
-          id TEXT PRIMARY KEY,
-          user_id TEXT NOT NULL,
-          content TEXT NOT NULL,
-          timestamp TEXT NOT NULL,
-          metadata TEXT DEFAULT '{}',
-          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-          tags TEXT NOT NULL DEFAULT '[]',
-          context TEXT DEFAULT '',
-          importance INTEGER DEFAULT 5,
-          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-        );
-        
-        CREATE INDEX IF NOT EXISTS idx_memories_user_id ON memories(user_id);
-        CREATE INDEX IF NOT EXISTS idx_memories_timestamp ON memories(timestamp);
-        CREATE INDEX IF NOT EXISTS idx_memories_user_timestamp ON memories(user_id, timestamp DESC);
-        
-        -- FTS for search (compatible with legacy schema)
-        CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts USING fts5(
-          content, tags, context,
-          content='memories', 
-          content_rowid='id'
-        );
-        
-        CREATE TRIGGER IF NOT EXISTS memories_fts_insert AFTER INSERT ON memories BEGIN
-          INSERT INTO memories_fts(rowid, content, tags, context) 
-          VALUES (new.id, new.content, '', '');
-        END;
-        
-        CREATE TRIGGER IF NOT EXISTS memories_fts_delete AFTER DELETE ON memories BEGIN
-          INSERT INTO memories_fts(memories_fts, rowid, content, tags, context) 
-          VALUES ('delete', old.id, old.content, '', '');
-        END;
-      `);
-      
-      logger.info('✅ SQLite database schema initialized');
-    } catch (error) {
-      logger.error('Failed to initialize database schema:', error);
-      throw error;
-    }
-  }
+  // Schema initialization deleted - use existing database schema
 
   /**
    * Load recent memories into hot cache
@@ -329,16 +281,17 @@ export class HybridDataLayer {
       return hotResults;
     }
 
-    // Try FTS search in cold storage
-    try {
-      const rows = await this.coldStorage.all(`
-        SELECT m.id, m.user_id, m.content, m.timestamp, m.metadata
-        FROM memories_fts f
-        JOIN memories m ON m.rowid = f.rowid
-        WHERE f.content MATCH ? AND m.user_id = ?
-        ORDER BY m.timestamp DESC
-        LIMIT ?
-      `, query, userId, limit) as Array<{
+    // Try FTS search in cold storage (only if query is not empty)
+    if (query && query.trim().length > 0) {
+      try {
+        const rows = await this.coldStorage.all(`
+          SELECT m.id, m.user_id, m.content, m.timestamp, m.metadata
+          FROM memories_fts f
+          JOIN memories m ON m.rowid = f.rowid
+          WHERE f.content MATCH ? AND m.user_id = ?
+          ORDER BY m.timestamp DESC
+          LIMIT ?
+        `, query.trim(), userId, limit) as Array<{
         id: string;
         user_id: string;
         content: string;
@@ -346,17 +299,19 @@ export class HybridDataLayer {
         metadata: string | null;
       }>;
 
-      return rows.map(row => ({
-        id: row.id,
-        user_id: row.user_id,
-        content: row.content,
-        timestamp: new Date(row.timestamp),
-        metadata: row.metadata ? JSON.parse(row.metadata) : undefined
-      }));
-    } catch (error) {
-      logger.error('FTS search failed, falling back to hot cache results:', error);
-      return hotResults;
+        return rows.map(row => ({
+          id: row.id,
+          user_id: row.user_id,
+          content: row.content,
+          timestamp: new Date(row.timestamp),
+          metadata: row.metadata ? JSON.parse(row.metadata) : undefined
+        }));
+      } catch (error) {
+        logger.error('FTS search failed, falling back to hot cache results:', error);
+      }
     }
+    
+    return hotResults;
   }
 
   /**
@@ -367,15 +322,17 @@ export class HybridDataLayer {
 
     try {
       await this.coldStorage.run(`
-        INSERT OR REPLACE INTO memories 
-        (id, user_id, content, timestamp, metadata)
-        VALUES (?, ?, ?, ?, ?)
+        INSERT INTO memories 
+        (user_id, content, tags, context, timestamp, importance, metadata)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
       `, 
-        memory.id,
         memory.user_id,
         memory.content,
+        JSON.stringify([]), // empty tags array as string
+        '', // empty context
         memory.timestamp.toISOString(),
-        memory.metadata ? JSON.stringify(memory.metadata) : null
+        5, // default importance
+        memory.metadata ? JSON.stringify(memory.metadata) : '{}'
       );
     } catch (error) {
       logger.error('Failed to persist memory to cold storage:', error);
