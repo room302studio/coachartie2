@@ -1,3 +1,7 @@
 [submodule "packages/brain"]
 	path = packages/brain
 	url = https://github.com/room302studio/coachartie_brain.git
+
+[submodule "mcp-servers/mcp-linkedin"]
+	path = mcp-servers/mcp-linkedin
+	url = https://github.com/adhikasp/mcp-linkedin.git

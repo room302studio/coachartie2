@@ -17,6 +17,7 @@ import { writeFileSync } from 'fs';
 import { join } from 'path';
 import { telemetry } from './services/telemetry.js';
 import { healthServer } from './services/health-server.js';
+import { pathResolver } from './utils/path-resolver.js';
 
 const client = new Client({
   intents: [
@@ -28,9 +29,6 @@ const client = new Client({
   ],
   partials: [Partials.Message, Partials.Channel, Partials.User],
 });
-
-// Status file path - configurable via environment variable
-const STATUS_FILE = process.env.DISCORD_STATUS_FILE || '/app/data/discord-status.json';
 
 // Write status to shared file
 function writeStatus(status: 'starting' | 'ready' | 'error' | 'shutdown', data?: any) {
@@ -63,8 +61,9 @@ function writeStatus(status: 'starting' | 'ready' | 'error' | 'shutdown', data?:
       ...data
     };
     
-    // Silently write status file
-    writeFileSync(STATUS_FILE, JSON.stringify(statusData, null, 2));
+    // Silently write status file using environment-aware path resolution
+    const statusFile = pathResolver.getStatusFilePath();
+    writeFileSync(statusFile, JSON.stringify(statusData, null, 2));
   } catch (error) {
     logger.error('Failed to write status file:', error);
   }

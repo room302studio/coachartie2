@@ -1,0 +1,37 @@
+{
+  "status": "ready",
+  "timestamp": "2025-08-31T21:40:08.233Z",
+  "pid": 43255,
+  "guilds": 4,
+  "guildDetails": [
+    {
+      "name": "Birch School",
+      "memberCount": 71,
+      "channels": 60,
+      "id": "689484951954915353"
+    },
+    {
+      "name": "Ejfox's server",
+      "memberCount": 7,
+      "channels": 6,
+      "id": "690321440612155673"
+    },
+    {
+      "name": "Room 302 Studio",
+      "memberCount": 42,
+      "channels": 30,
+      "id": "932719842522443928"
+    },
+    {
+      "name": "VizHub",
+      "memberCount": 185,
+      "channels": 11,
+      "id": "1149071828258660402"
+    }
+  ],
+  "totalChannels": 107,
+  "totalMembers": 305,
+  "uptime": 1.399416792,
+  "username": "coachartie#3359",
+  "permissions": "none"
+}

@@ -1,6 +1,7 @@
 import { logger } from '@coachartie/shared';
 import { writeFileSync, existsSync, mkdirSync } from 'fs';
 import { dirname } from 'path';
+import { pathResolver } from '../utils/path-resolver.js';
 
 export interface DiscordMetrics {
   // Message metrics
@@ -56,8 +57,8 @@ export class DiscordTelemetry {
 
   constructor() {
     this.startTime = Date.now();
-    this.metricsFile = process.env.DISCORD_METRICS_FILE || '/app/data/discord-metrics.json';
-    this.eventsFile = process.env.DISCORD_EVENTS_FILE || '/app/data/discord-events.json';
+    this.metricsFile = pathResolver.getMetricsFilePath();
+    this.eventsFile = pathResolver.getEventsFilePath();
     
     // Initialize metrics
     this.metrics = {
@@ -81,29 +82,9 @@ export class DiscordTelemetry {
       guildCount: 0,
       channelCount: 0
     };
-
-    // Ensure data directories exist
-    this.ensureDataDirectories();
     
     // Auto-persist metrics every 30 seconds
     setInterval(() => this.persistMetrics(), 30000);
-  }
-
-  private ensureDataDirectories(): void {
-    try {
-      const metricsDir = dirname(this.metricsFile);
-      const eventsDir = dirname(this.eventsFile);
-      
-      if (!existsSync(metricsDir)) {
-        mkdirSync(metricsDir, { recursive: true });
-      }
-      
-      if (!existsSync(eventsDir)) {
-        mkdirSync(eventsDir, { recursive: true });
-      }
-    } catch (error) {
-      logger.error('Failed to create telemetry data directories:', error);
-    }
   }
 
   // Event logging

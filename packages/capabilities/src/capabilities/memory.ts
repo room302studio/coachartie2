@@ -120,125 +120,13 @@ export class MemoryService {
         logger.info(`🔍 [HYBRID] Memory IDs: [${this.lastRecallMemoryIds.join(', ')}]`);
         return formatted;
       } catch (error) {
-        logger.error('❌ [HYBRID] Failed to recall memories, falling back to legacy:', error);
-        this.useHybridLayer = false; // Fallback to legacy
+        logger.error('❌ [HYBRID] Failed to recall memories:', error);
+        throw new Error(`Memory recall failed: ${error instanceof Error ? error.message : String(error)}`);
       }
     }
 
-    // LEGACY FALLBACK: Original SQLite approach
-    await this.initializeDatabase();
-
-    try {
-      const db = await getDatabase();
-      
-      // Build a fuzzy FTS query that's actually useful
-      const cleanQuery = query.toLowerCase().trim();
-      
-      // Escape FTS5 special characters (dots, quotes, etc.)
-      const escapeFTS5 = (text: string): string => {
-        return text.replace(/[."]/g, '');  // Remove dots and quotes that break FTS5
-      };
-      
-      // For single words, add fuzzy matching with wildcards
-      const queryTerms = cleanQuery.split(/\s+/)
-        .filter(term => term.length > 1)
-        .map(term => escapeFTS5(term));
-      
-      const escapedCleanQuery = escapeFTS5(cleanQuery);
-      
-      // Create fuzzy query: exact matches first, then prefix matches
-      let ftsQuery = '';
-      if (queryTerms.length === 1) {
-        // Single term: try exact, then prefix
-        const term = queryTerms[0];
-        ftsQuery = `"${term}" OR ${term}*`;
-      } else {
-        // Multiple terms: try exact phrase, then all terms, then any terms
-        ftsQuery = `"${escapedCleanQuery}" OR (${queryTerms.join(' AND ')}) OR (${queryTerms.join(' OR ')})`;
-      }
-      
-      logger.info(`🔍 Memory recall started - User: ${userId}, Query: "${query}"`);
-      logger.info(`🔍 FTS query being used: "${ftsQuery}" (terms: ${queryTerms.join(', ')})`);
-      
-      // Use full-text search for better matching
-      const searchResults = await db.all(`
-        SELECT m.*, 
-               memories_fts.rank as relevance_score
-        FROM memories m
-        JOIN memories_fts ON m.id = memories_fts.rowid
-        WHERE m.user_id = ? 
-        AND memories_fts MATCH ?
-        ORDER BY relevance_score, m.importance DESC, m.created_at DESC
-        LIMIT ?
-      `, [userId, ftsQuery, limit]);
-
-      logger.info(`📊 FTS search results: ${searchResults.length} memories found`);
-      if (searchResults.length > 0) {
-        logger.info(`📊 FTS search results details:`, searchResults.map(r => ({
-          id: r.id,
-          content: r.content.substring(0, 50) + '...',
-          relevance_score: r.relevance_score,
-          importance: r.importance
-        })));
-      }
-
-      // Fallback to partial matching if no FTS results
-      if (searchResults.length === 0) {
-        logger.info(`🔍 FTS found no results, trying partial match for each term: ${queryTerms.join(', ')}`);
-        
-        // Try each term separately in partial matching
-        const fallbackQueries = queryTerms.map(term => {
-          return db.all(`
-            SELECT * FROM memories 
-            WHERE user_id = ? 
-            AND (content LIKE ? OR tags LIKE ? OR context LIKE ?)
-            ORDER BY importance DESC, created_at DESC
-          `, [userId, `%${term}%`, `%${term}%`, `%${term}%`]);
-        });
-        
-        const allResults = await Promise.all(fallbackQueries);
-        const flatResults = allResults.flat();
-        
-        logger.info(`📊 Partial match results: ${flatResults.length} total results (before deduplication)`);
-        
-        // Remove duplicates and limit
-        const uniqueResults = Array.from(
-          new Map(flatResults.map(r => [r.id, r])).values()
-        ).slice(0, limit);
-        
-        logger.info(`📊 Partial match unique results: ${uniqueResults.length} memories after deduplication`);
-        if (uniqueResults.length > 0) {
-          logger.info(`📊 Partial match results details:`, uniqueResults.map(r => ({
-            id: r.id,
-            content: r.content.substring(0, 50) + '...',
-            importance: r.importance
-          })));
-        }
-        
-        if (uniqueResults.length === 0) {
-          const noResultsMessage = `🤔 No memories found for "${query}". Try a different search term or ask me to remember something first.`;
-          logger.info(`🔍 Returning no results message: ${noResultsMessage}`);
-          return noResultsMessage;
-        }
-
-        const formattedResult = this.formatRecallResults(uniqueResults, query, 'partial match');
-        // 🔍 Store memory IDs for debugging
-        this.lastRecallMemoryIds = uniqueResults.map(m => String(m.id));
-        logger.info(`📝 Formatted partial match output length: ${formattedResult.length} characters`);
-        logger.info(`🔍 [LEGACY] Memory IDs: [${this.lastRecallMemoryIds.join(', ')}]`);
-        return formattedResult;
-      }
-
-      const formattedResult = this.formatRecallResults(searchResults, query, 'full-text search');
-      // 🔍 Store memory IDs for debugging
-      this.lastRecallMemoryIds = searchResults.map(m => String(m.id));
-      logger.info(`📝 Formatted FTS output length: ${formattedResult.length} characters`);
-      logger.info(`🔍 [LEGACY] Memory IDs: [${this.lastRecallMemoryIds.join(', ')}]`);
-      return formattedResult;
-    } catch (error) {
-      logger.error('❌ Failed to recall memories:', error);
-      throw new Error(`Failed to recall memories: ${error instanceof Error ? error.message : String(error)}`);
-    }
+    // Legacy system removed - hybrid layer is the only supported memory system
+    throw new Error('Memory recall failed - hybrid layer disabled');
   }
 
   async getRecentMemories(userId: string, limit: number = 10): Promise<MemoryEntry[]> {
