@@ -18,6 +18,7 @@ import { join } from 'path';
 import { telemetry } from './services/telemetry.js';
 import { healthServer } from './services/health-server.js';
 import { pathResolver } from './utils/path-resolver.js';
+import { jobMonitor } from './services/job-monitor.js';
 
 const client = new Client({
   intents: [
@@ -91,6 +92,9 @@ async function start() {
       healthServer.setDiscordClient(client);
       healthServer.start();
       
+      // Start the persistent job monitor (single wheel for all jobs)
+      jobMonitor.startMonitoring();
+      
       writeStatus('ready', {
         username: client.user?.tag,
         guilds: client.guilds.cache.size,
@@ -141,6 +145,7 @@ process.on('SIGTERM', async () => {
   telemetry.persistMetrics();
   writeStatus('shutdown');
   healthServer.stop();
+  jobMonitor.stopMonitoring();
   client.destroy();
   process.exit(0);
 });
@@ -151,6 +156,7 @@ process.on('SIGINT', async () => {
   telemetry.persistMetrics();
   writeStatus('shutdown');
   healthServer.stop();
+  jobMonitor.stopMonitoring();
   client.destroy();
   process.exit(0);
 });

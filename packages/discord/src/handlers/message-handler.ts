@@ -3,6 +3,7 @@ import { logger } from '@coachartie/shared';
 import { publishMessage } from '../queues/publisher.js';
 import { capabilitiesClient } from '../services/capabilities-client.js';
 import { telemetry } from '../services/telemetry.js';
+import { jobMonitor } from '../services/job-monitor.js';
 import { CorrelationContext, generateCorrelationId, getShortCorrelationId } from '../utils/correlation.js';
 
 // Simple deduplication cache to prevent duplicate message processing
@@ -241,10 +242,11 @@ async function handleResponseWithJobTracking(message: Message, cleanMessage: str
     let updateCount = 0;
     let sentPartialResponse = false;
 
-    // Poll for completion with live updates
-    const result = await capabilitiesClient.pollJobUntilComplete(jobInfo.messageId, {
+    // Register job with persistent monitor instead of individual polling
+    logger.info(`🎯 SETUP: Registering job ${jobInfo.messageId.slice(-8)} with persistent monitor`);
+    
+    jobMonitor.monitorJob(jobInfo.messageId, {
       maxAttempts: 60, // 5 minutes max
-      pollInterval: 3000, // 3 seconds for responsive Discord UX
       
       onProgress: async (status) => {
         try {
@@ -289,8 +291,12 @@ async function handleResponseWithJobTracking(message: Message, cleanMessage: str
       },
 
       onComplete: async (result) => {
+        logger.info(`🎯 CALLBACK TRIGGERED: onComplete handler started [${shortId}]`);
+        logger.info(`🎯 CALLBACK: result type: ${typeof result}, length: ${result?.length || 'N/A'}`);
+        logger.info(`🎯 CALLBACK: result preview: "${result?.substring(0, 100)}..."`);
         try {
           const duration = Date.now() - startTime;
+          logger.info(`🎯 CALLBACK: Processing completion after ${duration}ms`);
           
           // Stop typing and clear status message
           if (typingInterval) {
@@ -299,93 +305,23 @@ async function handleResponseWithJobTracking(message: Message, cleanMessage: str
           }
 
           if (statusMessage) {
-            // Edit status message to show completion
             await statusMessage.edit(`✅ Complete! (${shortId}/${jobShortId})`);
-            
-            // Only send full response if we didn't already stream it
-            if (!sentPartialResponse) {
-              const chunks = chunkMessage(result);
-              
-              if ('send' in message.channel && typeof message.channel.send === 'function') {
-                for (const chunk of chunks) {
-                  await (message.channel as any).send(chunk);
-                }
-              } else {
-                await message.reply(chunks[0]);
-                for (let i = 1; i < chunks.length; i++) {
-                  if ('send' in message.channel && typeof message.channel.send === 'function') {
-                    await (message.channel as any).send(chunks[i]);
-                  }
-                }
-              }
-              
-              telemetry.incrementResponsesDelivered(message.author.id, chunks.length);
-            }
-          } else {
-            // Fallback if status message failed - chunk the reply
-            const chunks = chunkMessage(result);
-            await message.reply(chunks[0]);
-            for (let i = 1; i < chunks.length; i++) {
-              if ('send' in message.channel && typeof message.channel.send === 'function') {
-                await (message.channel as any).send(chunks[i]);
-              }
-            }
-            
-            telemetry.incrementResponsesDelivered(message.author.id, chunks.length);
+          }
+
+          // Split message and send all chunks
+          const chunks = chunkMessage(result);
+          await message.reply(chunks[0]);
+          
+          for (let i = 1; i < chunks.length; i++) {
+            await message.channel.send(chunks[i]);
           }
 
           // Track completion metrics
+          telemetry.incrementResponsesDelivered(message.author.id, chunks.length);
           telemetry.incrementJobsCompleted(message.author.id, jobInfo.messageId, duration);
           telemetry.incrementMessagesProcessed(message.author.id, duration);
-          
-          logger.info(`✅ Discord job completed [${shortId}]`, {
-            correlationId,
-            jobId: jobInfo.messageId,
-            author: message.author.tag,
-            duration: `${duration}ms`,
-            responseLength: result.length
-          });
-          
-          telemetry.logEvent('job_completed', {
-            jobId: jobInfo.messageId,
-            duration,
-            responseLength: result.length
-          }, correlationId, message.author.id, duration, true);
-          
         } catch (error) {
-          logger.error(`❌ Failed to send completion message [${shortId}]:`, {
-            correlationId,
-            error: error instanceof Error ? error.message : String(error)
-          });
-          
-          telemetry.incrementApiErrors(error instanceof Error ? error.message : String(error));
-          
-          // Fallback: try to reply directly with chunking
-          try {
-            const chunks = chunkMessage(`✅ ${result}`);
-            await message.reply(chunks[0]);
-            for (let i = 1; i < chunks.length; i++) {
-              if ('send' in message.channel && typeof message.channel.send === 'function') {
-                await (message.channel as any).send(chunks[i]);
-              }
-            }
-            telemetry.incrementResponsesDelivered(message.author.id, chunks.length);
-          } catch (fallbackError) {
-            logger.error(`❌ Fallback reply also failed [${shortId}]:`, {
-              correlationId,
-              fallbackError: fallbackError instanceof Error ? fallbackError.message : String(fallbackError)
-            });
-            
-            // Last resort: send a simple error message
-            try {
-              await message.reply(`✅ Response ready but too long for Discord. [${shortId}]`);
-            } catch (lastResortError) {
-              logger.error(`❌ Last resort error message failed [${shortId}]:`, {
-                correlationId,
-                lastResortError: lastResortError instanceof Error ? lastResortError.message : String(lastResortError)
-              });
-            }
-          }
+          logger.error(`❌ Error in onComplete handler [${shortId}]:`, error);
         }
       },
 
@@ -433,6 +369,9 @@ async function handleResponseWithJobTracking(message: Message, cleanMessage: str
         }
       }
     });
+
+    // Job is now being monitored by the persistent wheel, no need to await
+    logger.info(`✅ Job ${jobInfo.messageId.slice(-8)} registered with monitor - wheel will handle completion`);
 
   } catch (error) {
     const duration = Date.now() - startTime;

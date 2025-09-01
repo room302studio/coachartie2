@@ -255,13 +255,17 @@ export class CapabilityOrchestrator {
     onPartialResponse?: (partial: string) => void
   ): Promise<string> {
     logger.info("🎯 ORCHESTRATOR START - This should always appear");
+    logger.info("🔥 ORCHESTRATOR ENTRY - About to create context and call assembleMessageOrchestration");
     
     const context = this.createOrchestrationContext(message);
     this.contexts.set(message.id, context);
 
     try {
       logger.info(`🎬 Starting orchestration for message ${message.id}`);
-      return await this.assembleMessageOrchestration(context, message, onPartialResponse);
+      logger.info(`🔥 ABOUT TO CALL assembleMessageOrchestration for ${message.id}`);
+      const result = await this.assembleMessageOrchestration(context, message, onPartialResponse);
+      logger.info(`🔥 assembleMessageOrchestration COMPLETED for ${message.id}`);
+      return result;
     } catch (error) {
       logger.error(`❌ Orchestration failed for message ${message.id}:`, error);
       this.contexts.delete(message.id);
@@ -278,6 +282,7 @@ export class CapabilityOrchestrator {
     message: IncomingMessage, 
     onPartialResponse?: (partial: string) => void
   ): Promise<string> {
+    logger.info(`⚡ ASSEMBLING MESSAGE ORCHESTRATION - ENTRY POINT REACHED!`);
     logger.info(`⚡ Assembling message orchestration for <${message.userId}> message`);
     
     const llmResponse = await this.getLLMResponseWithCapabilities(message, onPartialResponse);
@@ -291,8 +296,15 @@ export class CapabilityOrchestrator {
       return llmResponse; // No capabilities needed, return original response
     }
     
-    await this.executeCapabilityChain(context);
-    const finalResponse = await this.generateFinalResponse(context, llmResponse);
+    // Stream the initial LLM response before executing capabilities
+    if (onPartialResponse) {
+      onPartialResponse(llmResponse);
+    }
+    
+    // Use LLM-driven recursive execution (always enabled now)
+    logger.info(`🔥 ABOUT TO CALL LLM-DRIVEN LOOP - This confirms the method will be called`);
+    const finalResponse = await this.executeLLMDrivenLoop(context, llmResponse, onPartialResponse);
+    logger.info(`🔥 LLM-DRIVEN LOOP RETURNED: ${finalResponse ? 'SUCCESS' : 'NULL'}`);
     await this.storeReflectionMemory(context, message, finalResponse);
     
     this.contexts.delete(message.id);
@@ -1069,7 +1081,269 @@ ${capabilityDetails}`;
   }
 
   /**
-   * Execute capability chain in order
+   * LLM-driven execution loop - let the LLM decide what to do next
+   */
+  private async executeLLMDrivenLoop(
+    context: OrchestrationContext,
+    initialResponse: string,
+    onPartialResponse?: (partial: string) => void
+  ): Promise<string> {
+    // Always use LLM-driven execution - streaming is optional bonus
+
+    logger.info(`🤖 STARTING LLM-DRIVEN EXECUTION LOOP - This confirms new system is active!`);
+    
+    // Build the conversation history for the loop
+    const conversationHistory = [
+      `User: ${context.originalMessage}`,
+      `Assistant: ${initialResponse}`
+    ];
+    
+    let iterationCount = 0;
+    const maxIterations = 10; // Prevent infinite loops
+    
+    while (iterationCount < maxIterations) {
+      iterationCount++;
+      logger.info(`🔄 LLM LOOP ITERATION ${iterationCount}/${maxIterations} - RECURSIVE EXECUTION IN PROGRESS`);
+      
+      // Ask LLM what to do next
+      const nextAction = await this.getLLMNextAction(context, conversationHistory);
+      
+      if (!nextAction || !nextAction.trim()) {
+        logger.info(`🏁 LLM provided empty response - ending loop`);
+        break;
+      }
+      
+      // Extract capabilities from the LLM's next action
+      const capabilities = this.extractCapabilities(nextAction);
+      
+      if (capabilities.length === 0) {
+        // LLM said something without capabilities - this is the final response
+        logger.info(`🏁 LLM provided final response without capabilities: "${nextAction.substring(0, 100)}..."`);
+        if (onPartialResponse) {
+          onPartialResponse(nextAction);
+        }
+        
+        // Add to conversation history and return
+        conversationHistory.push(`Assistant: ${nextAction}`);
+        return nextAction;
+      }
+      
+      // Stream the LLM's response (shows user what's about to happen)
+      logger.info(`📡 LLM action: "${nextAction.substring(0, 100)}..." with ${capabilities.length} capabilities`);
+      if (onPartialResponse) {
+        onPartialResponse(nextAction);
+      }
+      conversationHistory.push(`Assistant: ${nextAction}`);
+      
+      // Execute the capabilities the LLM requested
+      let systemFeedback = '';
+      for (const capability of capabilities) {
+        try {
+          logger.info(`🔧 Executing LLM-requested capability: ${capability.name}:${capability.action}`);
+          
+          const processedCapability = this.substituteTemplateVariables(capability, context.results);
+          const capabilityForExecution = {
+            name: processedCapability.name,
+            action: processedCapability.action,
+            content: processedCapability.content || '',
+            params: processedCapability.params
+          };
+          
+          const robustResult = await robustExecutor.executeWithRetry(
+            capabilityForExecution,
+            { userId: context.userId, messageId: context.messageId },
+            3
+          );
+          
+          const result: CapabilityResult = {
+            capability: processedCapability,
+            success: robustResult.success,
+            data: robustResult.data,
+            error: robustResult.error,
+            timestamp: robustResult.timestamp
+          };
+          
+          context.results.push(result);
+          context.currentStep++;
+          
+          // Add system feedback about the capability execution
+          if (result.success) {
+            systemFeedback += `[SYSTEM: ${capability.name}:${capability.action} succeeded → ${result.data}]\n`;
+            logger.info(`✅ Capability ${capability.name}:${capability.action} succeeded`);
+          } else {
+            systemFeedback += `[SYSTEM: ${capability.name}:${capability.action} failed → ${result.error}]\n`;
+            logger.error(`❌ Capability ${capability.name}:${capability.action} failed: ${result.error}`);
+          }
+          
+        } catch (error) {
+          logger.error(`❌ Failed to execute capability ${capability.name}:`, error);
+          systemFeedback += `[SYSTEM: ${capability.name}:${capability.action} threw error → ${error}]\n`;
+          
+          context.results.push({
+            capability,
+            success: false,
+            error: error instanceof Error ? error.message : String(error),
+            timestamp: new Date().toISOString(),
+          });
+          context.currentStep++;
+        }
+      }
+      
+      // Add system feedback to conversation history
+      if (systemFeedback) {
+        conversationHistory.push(systemFeedback.trim());
+        logger.info(`🔄 Added system feedback to conversation: ${systemFeedback.length} chars`);
+      }
+    }
+    
+    logger.warn(`⚠️ LLM-driven loop reached maximum iterations (${maxIterations}) - ending`);
+    return "I've completed the available steps for your request.";
+  }
+
+  /**
+   * Ask LLM what it should do next given the current context
+   */
+  private async getLLMNextAction(
+    context: OrchestrationContext, 
+    conversationHistory: string[]
+  ): Promise<string> {
+    try {
+      const contextSummary = conversationHistory.join('\n');
+      
+      const nextActionPrompt = `You are Coach Artie continuing a conversation. Based on the conversation so far, decide what to do next.
+
+CONVERSATION HISTORY:
+${contextSummary}
+
+INSTRUCTIONS:
+- If you need to execute capabilities (calculate, remember, search, etc.), include them as XML tags in your response
+- If you have everything you need to give a final answer, just provide that answer (no XML tags)
+- Be natural and conversational
+- Keep responses concise (1-2 sentences)
+
+What should you do/say next?`;
+
+      // Get base capability instructions for available tools
+      const baseInstructions = await promptManager.getCapabilityInstructions("Continue the conversation");
+      
+      // Use Context Alchemy to build the message chain
+      const { messages } = await contextAlchemy.buildMessageChain(
+        nextActionPrompt,
+        context.userId,
+        baseInstructions
+      );
+      
+      const nextAction = await openRouterService.generateFromMessageChain(
+        messages,
+        context.userId,
+        `${context.messageId}_next_action_${context.currentStep}`
+      );
+      
+      return nextAction.trim();
+      
+    } catch (error) {
+      logger.error('❌ Failed to get LLM next action:', error);
+      return ''; // Empty response will end the loop
+    }
+  }
+
+  /**
+   * Execute capability chain with streaming intermediate responses (LEGACY - replaced by LLM-driven loop)
+   */
+  private async executeCapabilityChainWithStreaming(
+    context: OrchestrationContext,
+    onPartialResponse?: (partial: string) => void
+  ): Promise<string | null> {
+    if (!onPartialResponse || context.capabilities.length === 0) {
+      return null; // Fall back to old method
+    }
+
+    logger.info(`🔄 Starting streaming capability chain with ${context.capabilities.length} initial capabilities`);
+    
+    // Process capabilities one at a time with LLM interaction
+    let capabilityIndex = 0;
+    while (capabilityIndex < context.capabilities.length) {
+      const capability = context.capabilities[capabilityIndex];
+      
+      try {
+        // Execute this capability
+        logger.info(`🔧 Executing capability ${capabilityIndex + 1}/${context.capabilities.length}: ${capability.name}:${capability.action}`);
+        
+        const processedCapability = this.substituteTemplateVariables(capability, context.results);
+        const capabilityForExecution = {
+          name: processedCapability.name,
+          action: processedCapability.action,
+          content: processedCapability.content || '',
+          params: processedCapability.params
+        };
+        
+        const robustResult = await robustExecutor.executeWithRetry(
+          capabilityForExecution,
+          { userId: context.userId, messageId: context.messageId },
+          3
+        );
+        
+        const result: CapabilityResult = {
+          capability: processedCapability,
+          success: robustResult.success,
+          data: robustResult.data,
+          error: robustResult.error,
+          timestamp: robustResult.timestamp
+        };
+        
+        context.results.push(result);
+        context.currentStep++;
+        
+        // Ask LLM to respond to this specific capability result
+        const intermediateResponse = await this.getLLMIntermediateResponse(
+          context, 
+          capability, 
+          result,
+          capabilityIndex + 1,
+          context.capabilities.length
+        );
+        
+        // Stream this intermediate response
+        if (intermediateResponse && intermediateResponse.trim()) {
+          logger.info(`📡 Streaming intermediate response for ${capability.name}: "${intermediateResponse.substring(0, 100)}..."`);
+          onPartialResponse(intermediateResponse);
+          
+          // Check if this intermediate response contains NEW capabilities
+          const newCapabilities = this.extractCapabilities(intermediateResponse);
+          if (newCapabilities.length > 0) {
+            logger.info(`🔍 Found ${newCapabilities.length} additional capabilities from intermediate response`);
+            // Add new capabilities to the queue with appropriate priority
+            newCapabilities.forEach((cap, index) => {
+              cap.priority = context.capabilities.length + index;
+              context.capabilities.push(cap);
+            });
+          }
+        }
+        
+      } catch (error) {
+        logger.error(`❌ Capability ${capability.name}:${capability.action} failed:`, error);
+        
+        context.results.push({
+          capability,
+          success: false,
+          error: error instanceof Error ? error.message : String(error),
+          timestamp: new Date().toISOString(),
+        });
+        context.currentStep++;
+      }
+      
+      capabilityIndex++;
+    }
+    
+    // Generate final summary response
+    logger.info(`🎯 All ${context.capabilities.length} capabilities executed, generating final summary`);
+    const finalSummary = await this.generateFinalSummaryResponse(context);
+    
+    return finalSummary;
+  }
+
+  /**
+   * Execute capability chain in order (legacy method for non-streaming)
    */
   private async executeCapabilityChain(
     context: OrchestrationContext
@@ -1430,6 +1704,99 @@ ${capabilityDetails}`;
   }
 
   /**
+   * Generate intermediate response after executing a single capability
+   */
+  private async getLLMIntermediateResponse(
+    context: OrchestrationContext,
+    capability: ExtractedCapability,
+    result: CapabilityResult,
+    currentStep: number,
+    totalSteps: number
+  ): Promise<string> {
+    try {
+      const resultSummary = result.success 
+        ? `Success: ${result.data}`
+        : `Error: ${result.error}`;
+      
+      const intermediatePrompt = `You just executed a capability and got a result. Provide a brief, natural response about what happened, and if there are more steps, mention what you're doing next.
+
+Original user message: "${context.originalMessage}"
+Capability executed: ${capability.name}:${capability.action}
+Result: ${resultSummary}
+Progress: Step ${currentStep} of ${totalSteps}
+
+Provide a brief, conversational update (1-2 sentences). If this was the last step, don't mention next steps.`;
+
+      // Use Context Alchemy for intermediate response
+      const { messages } = await contextAlchemy.buildMessageChain(
+        intermediatePrompt,
+        context.userId,
+        "You are Coach Artie providing brief progress updates during task execution."
+      );
+      
+      const intermediateResponse = await openRouterService.generateFromMessageChain(
+        messages,
+        context.userId,
+        `${context.messageId}_intermediate_${currentStep}`
+      );
+      
+      return intermediateResponse.trim();
+      
+    } catch (error) {
+      logger.error('❌ Failed to generate intermediate response:', error);
+      // Fallback to simple status message
+      return result.success 
+        ? `✅ Completed ${capability.name} successfully!`
+        : `❌ ${capability.name} encountered an error.`;
+    }
+  }
+
+  /**
+   * Generate final summary response after all capabilities are complete
+   */
+  private async generateFinalSummaryResponse(context: OrchestrationContext): Promise<string> {
+    if (context.results.length === 0) {
+      return "Task completed!";
+    }
+
+    try {
+      const summaryPrompt = `All tasks have been completed. Provide a brief, friendly summary of what was accomplished.
+
+Original user request: "${context.originalMessage}"
+Tasks completed: ${context.results.length}
+
+Results summary:
+${context.results.map((result, i) => {
+  const status = result.success ? '✅' : '❌';
+  const summary = result.success ? result.data : result.error;
+  return `${i + 1}. ${status} ${result.capability.name}: ${summary}`;
+}).join('\n')}
+
+Provide a concise, friendly summary (1-2 sentences) of what was accomplished overall.`;
+
+      const { messages } = await contextAlchemy.buildMessageChain(
+        summaryPrompt,
+        context.userId,
+        "You are Coach Artie providing a final summary after completing multiple tasks."
+      );
+      
+      const finalSummary = await openRouterService.generateFromMessageChain(
+        messages,
+        context.userId,
+        `${context.messageId}_final_summary`
+      );
+      
+      return finalSummary.trim();
+      
+    } catch (error) {
+      logger.error('❌ Failed to generate final summary:', error);
+      // Fallback to simple completion message
+      const successCount = context.results.filter(r => r.success).length;
+      return `✅ Completed ${successCount}/${context.results.length} tasks successfully!`;
+    }
+  }
+
+  /**
    * Generate final response incorporating capability results
    * Now sends capability results back to LLM for coherent response generation
    */
@@ -1493,9 +1860,7 @@ Important:
       
       logger.info(`✅ Final coherent response generated successfully`);
       
-      // Clean up malformed responses from weak models
-      const cleanedResponse = this.cleanupMalformedResponse(finalResponse, context);
-      return cleanedResponse;
+      return finalResponse;
       
     } catch (error) {
       logger.error('❌ Failed to generate final coherent response, using fallback', error);
@@ -1513,72 +1878,6 @@ Important:
     }
   }
 
-  /**
-   * Clean up malformed responses from weak models that just parrot back capability result fragments
-   */
-  private cleanupMalformedResponse(response: string, context: OrchestrationContext): string {
-    // Check if the response looks like a malformed capability result fragment
-    const trimmedResponse = response.trim();
-    
-    // Pattern 1: Response starts with ": " (fragment after capability name)
-    if (trimmedResponse.match(/^:\s*.+/)) {
-      logger.warn(`🚨 Detected malformed response pattern ": xxx" - fixing it`);
-      const result = trimmedResponse.replace(/^:\s*/, '');
-      
-      // Build a proper response using the capability result
-      if (context.results.length > 0) {
-        const firstResult = context.results[0];
-        if (firstResult.success && firstResult.capability.name === 'calculator') {
-          return `The calculation result is ${result}.`;
-        } else if (firstResult.success) {
-          return `The result is: ${result}`;
-        }
-      }
-      
-      // Generic fallback
-      return `The result is ${result}.`;
-    }
-    
-    // Pattern 2: Response contains only the arrow fragment "→ result"
-    if (trimmedResponse.match(/^→\s*.+/)) {
-      logger.warn(`🚨 Detected malformed response pattern "→ xxx" - fixing it`);
-      const result = trimmedResponse.replace(/^→\s*/, '');
-      return `The result is ${result}.`;
-    }
-    
-    // Pattern 3: Response is just a bare number/result without context
-    if (trimmedResponse.match(/^\d+(\.\d+)?$/) && context.results.length > 0) {
-      const firstResult = context.results[0];
-      if (firstResult.success && firstResult.capability.name === 'calculator') {
-        logger.warn(`🚨 Detected malformed response pattern "bare number" - fixing it`);
-        return `The calculation result is ${trimmedResponse}.`;
-      }
-    }
-    
-    // Pattern 4: Response contains raw capability format fragments
-    if (trimmedResponse.includes('→') && trimmedResponse.length < 100) {
-      logger.warn(`🚨 Detected malformed response with arrow fragments - cleaning it`);
-      // Try to extract just the result part
-      const resultMatch = trimmedResponse.match(/→\s*(.+)$/);
-      if (resultMatch) {
-        return `The result is ${resultMatch[1]}.`;
-      }
-    }
-    
-    // If response is too short and doesn't look like a proper sentence, enhance it
-    if (trimmedResponse.length < 20 && !trimmedResponse.match(/^(The|I|Here|This|That)/i)) {
-      if (context.results.length > 0) {
-        const firstResult = context.results[0];
-        if (firstResult.success) {
-          logger.warn(`🚨 Detected very short response - enhancing it`);
-          return `I've processed your request and the result is: ${trimmedResponse}`;
-        }
-      }
-    }
-    
-    // Return original response if no malformed patterns detected
-    return response;
-  }
 
   /**
    * Get orchestration context for a message (for debugging)

@@ -65,16 +65,23 @@ export class CapabilitiesClient {
    */
   async checkJobStatus(messageId: string): Promise<JobStatusResponse> {
     try {
+      logger.info(`🔍 API CALL: GET /chat/${messageId.slice(-8)}`);
       const response = await fetch(`${this.baseUrl}/chat/${messageId}`);
 
       if (!response.ok) {
         if (response.status === 404) {
+          logger.warn(`🔍 API RESPONSE: 404 Job not found - ${messageId.slice(-8)}`);
           throw new Error('Job not found or expired');
         }
+        logger.error(`🔍 API RESPONSE: HTTP ${response.status} - ${messageId.slice(-8)}`);
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
 
       const result = await response.json() as JobStatusResponse;
+      logger.info(`🔍 API RESPONSE: status="${result.status}", hasResponse=${!!result.response}, responseLength=${result.response?.length || 0}`);
+      if (result.status === 'completed') {
+        logger.info(`🔍 API RESPONSE: Full response preview: "${result.response?.substring(0, 150)}..."`);
+      }
       
       return result;
     } catch (error) {
@@ -110,16 +117,38 @@ export class CapabilitiesClient {
       const poll = async () => {
         try {
           attempts++;
+          logger.info(`🔄 POLL #${attempts}: Checking job ${messageId.slice(-8)} status...`);
           const status = await this.checkJobStatus(messageId);
+          logger.info(`🔄 POLL #${attempts}: Got status="${status.status}", hasResponse=${!!status.response}, responseLength=${status.response?.length || 0}`);
 
           // Call progress callback
           if (onProgress) {
+            logger.info(`🔄 POLL #${attempts}: Calling onProgress callback`);
             onProgress(status);
           }
 
           if (status.status === 'completed') {
+            logger.info(`🎯 JOB COMPLETED! Details:`);
+            logger.info(`  - messageId: ${messageId}`);
+            logger.info(`  - status.response exists: ${!!status.response}`);
+            logger.info(`  - status.response type: ${typeof status.response}`);
+            logger.info(`  - status.response length: ${status.response?.length || 0}`);
+            logger.info(`  - onComplete callback exists: ${!!onComplete}`);
+            logger.info(`  - onComplete type: ${typeof onComplete}`);
+            
             if (status.response && onComplete) {
-              onComplete(status.response);
+              logger.info(`🚀 TRIGGERING onComplete callback with response: "${status.response.substring(0, 100)}..."`);
+              try {
+                onComplete(status.response);
+                logger.info(`✅ onComplete callback executed successfully`);
+              } catch (callbackError) {
+                logger.error(`❌ onComplete callback threw error:`, callbackError);
+              }
+            } else {
+              logger.warn(`🚨 NOT calling onComplete:`);
+              logger.warn(`  - status.response truthy: ${!!status.response}`);
+              logger.warn(`  - status.response value: ${JSON.stringify(status.response)}`);
+              logger.warn(`  - onComplete exists: ${!!onComplete}`);
             }
             resolve(status);
             return;
