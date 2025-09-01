@@ -1492,14 +1492,92 @@ Important:
       );
       
       logger.info(`✅ Final coherent response generated successfully`);
-      return finalResponse;
+      
+      // Clean up malformed responses from weak models
+      const cleanedResponse = this.cleanupMalformedResponse(finalResponse, context);
+      return cleanedResponse;
       
     } catch (error) {
-      logger.error('❌ Failed to generate final coherent response, returning error message', error);
+      logger.error('❌ Failed to generate final coherent response, using fallback', error);
       
-      // Return a simple error message instead of trying to parse XML with regex
-      return `I apologize, but I encountered an error while processing your request. The capability results were: ${capabilityResults}`;
+      // Instead of showing raw capability results, provide a cleaner fallback
+      if (context.results.length > 0) {
+        const successfulResults = context.results.filter(r => r.success);
+        if (successfulResults.length > 0) {
+          const results = successfulResults.map(r => r.data).join(', ');
+          return `I processed your request and found: ${results}. However, I had trouble generating a complete response.`;
+        }
+      }
+      
+      return `I apologize, but I encountered an error while processing your request. Please try again.`;
     }
+  }
+
+  /**
+   * Clean up malformed responses from weak models that just parrot back capability result fragments
+   */
+  private cleanupMalformedResponse(response: string, context: OrchestrationContext): string {
+    // Check if the response looks like a malformed capability result fragment
+    const trimmedResponse = response.trim();
+    
+    // Pattern 1: Response starts with ": " (fragment after capability name)
+    if (trimmedResponse.match(/^:\s*.+/)) {
+      logger.warn(`🚨 Detected malformed response pattern ": xxx" - fixing it`);
+      const result = trimmedResponse.replace(/^:\s*/, '');
+      
+      // Build a proper response using the capability result
+      if (context.results.length > 0) {
+        const firstResult = context.results[0];
+        if (firstResult.success && firstResult.capability.name === 'calculator') {
+          return `The calculation result is ${result}.`;
+        } else if (firstResult.success) {
+          return `The result is: ${result}`;
+        }
+      }
+      
+      // Generic fallback
+      return `The result is ${result}.`;
+    }
+    
+    // Pattern 2: Response contains only the arrow fragment "→ result"
+    if (trimmedResponse.match(/^→\s*.+/)) {
+      logger.warn(`🚨 Detected malformed response pattern "→ xxx" - fixing it`);
+      const result = trimmedResponse.replace(/^→\s*/, '');
+      return `The result is ${result}.`;
+    }
+    
+    // Pattern 3: Response is just a bare number/result without context
+    if (trimmedResponse.match(/^\d+(\.\d+)?$/) && context.results.length > 0) {
+      const firstResult = context.results[0];
+      if (firstResult.success && firstResult.capability.name === 'calculator') {
+        logger.warn(`🚨 Detected malformed response pattern "bare number" - fixing it`);
+        return `The calculation result is ${trimmedResponse}.`;
+      }
+    }
+    
+    // Pattern 4: Response contains raw capability format fragments
+    if (trimmedResponse.includes('→') && trimmedResponse.length < 100) {
+      logger.warn(`🚨 Detected malformed response with arrow fragments - cleaning it`);
+      // Try to extract just the result part
+      const resultMatch = trimmedResponse.match(/→\s*(.+)$/);
+      if (resultMatch) {
+        return `The result is ${resultMatch[1]}.`;
+      }
+    }
+    
+    // If response is too short and doesn't look like a proper sentence, enhance it
+    if (trimmedResponse.length < 20 && !trimmedResponse.match(/^(The|I|Here|This|That)/i)) {
+      if (context.results.length > 0) {
+        const firstResult = context.results[0];
+        if (firstResult.success) {
+          logger.warn(`🚨 Detected very short response - enhancing it`);
+          return `I've processed your request and the result is: ${trimmedResponse}`;
+        }
+      }
+    }
+    
+    // Return original response if no malformed patterns detected
+    return response;
   }
 
   /**
