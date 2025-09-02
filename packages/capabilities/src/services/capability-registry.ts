@@ -310,77 +310,7 @@ export class CapabilityRegistry {
   }
 
   /**
-   * Common action aliases mapping
-   */
-  private static readonly ACTION_ALIASES = new Map([
-    ['write', 'write_file'],
-    ['read', 'read_file'],
-    ['store', 'remember'],
-    ['save', 'remember'],
-    ['search', 'recall'],
-    ['find', 'recall'],
-    ['get', 'recall'],
-    ['create', 'create_directory'],
-    ['mkdir', 'create_directory'],
-    ['list', 'list_directory'],
-    ['ls', 'list_directory'],
-    ['check', 'exists'],
-    ['remove', 'delete'],
-    ['rm', 'delete']
-  ]);
-
-  /**
-   * Find similar actions using fuzzy matching and common aliases
-   */
-  private findSimilarActions(target: string, available: string[]): string[] {
-    // First check for exact alias match
-    const alias = CapabilityRegistry.ACTION_ALIASES.get(target.toLowerCase());
-    if (alias && available.includes(alias)) {
-      return [alias];
-    }
-
-    // Then use fuzzy matching
-    return available
-      .map(action => ({ action, score: this.calculateSimilarity(target, action) }))
-      .filter(item => item.score > 0.4)
-      .sort((a, b) => b.score - a.score)
-      .slice(0, 2)
-      .map(item => item.action);
-  }
-
-  /**
-   * Simple string similarity calculation (Jaro-Winkler inspired)
-   */
-  private calculateSimilarity(a: string, b: string): number {
-    if (a === b) {return 1.0;}
-    if (a.length === 0 || b.length === 0) {return 0.0;}
-    
-    // Check for substring matches
-    if (a.includes(b) || b.includes(a)) {return 0.8;}
-    
-    // Check for common substrings
-    const aLower = a.toLowerCase();
-    const bLower = b.toLowerCase();
-    
-    if (aLower.includes(bLower) || bLower.includes(aLower)) {return 0.7;}
-    
-    // Check for similar starting characters
-    let matchingChars = 0;
-    const minLength = Math.min(a.length, b.length);
-    
-    for (let i = 0; i < minLength; i++) {
-      if (aLower[i] === bLower[i]) {
-        matchingChars++;
-      } else {
-        break;
-      }
-    }
-    
-    return matchingChars / Math.max(a.length, b.length);
-  }
-
-  /**
-   * Generate helpful error message with action suggestions
+   * Generate error message with action suggestions using simple fuzzy matching
    */
   generateActionError(capabilityName: string, attemptedAction: string): string {
     const capability = this.capabilities.get(capabilityName);
@@ -388,17 +318,35 @@ export class CapabilityRegistry {
       return `Capability '${capabilityName}' not found`;
     }
 
-    const supportedActions = capability.supportedActions.join(', ');
-    const suggestions = this.findSimilarActions(attemptedAction, capability.supportedActions);
+    const available = capability.supportedActions;
+    const supportedActions = available.join(', ');
     
-    if (suggestions.length > 0) {
-      return `❌ Capability '${capabilityName}' does not support action '${attemptedAction}'. ` +
-             `💡 Did you mean '${suggestions.join("' or '")}'? ` +
-             `📋 Supported actions: ${supportedActions}`;
+    // Simple alias check and fuzzy matching
+    const aliases = new Map([
+      ['write', 'write_file'], ['read', 'read_file'], ['store', 'remember'],
+      ['save', 'remember'], ['search', 'recall'], ['find', 'recall'],
+      ['get', 'recall'], ['create', 'create_directory'], ['list', 'list_directory'],
+      ['check', 'exists'], ['remove', 'delete'], ['calc', 'calculate']
+    ]);
+    
+    const alias = aliases.get(attemptedAction.toLowerCase());
+    if (alias && available.includes(alias)) {
+      return `Capability '${capabilityName}' does not support action '${attemptedAction}'. Did you mean '${alias}'? Supported actions: ${supportedActions}`;
     }
     
-    return `❌ Capability '${capabilityName}' does not support action '${attemptedAction}'. ` +
-           `📋 Supported actions: ${supportedActions}`;
+    // Find best match by substring/prefix similarity
+    const target = attemptedAction.toLowerCase();
+    const match = available.find(action => {
+      const actionLower = action.toLowerCase();
+      return actionLower.includes(target) || target.includes(actionLower) || 
+             actionLower.startsWith(target.slice(0, 3)) || target.startsWith(actionLower.slice(0, 3));
+    });
+    
+    if (match) {
+      return `Capability '${capabilityName}' does not support action '${attemptedAction}'. Did you mean '${match}'? Supported actions: ${supportedActions}`;
+    }
+    
+    return `Capability '${capabilityName}' does not support action '${attemptedAction}'. Supported actions: ${supportedActions}`;
   }
 
   /**

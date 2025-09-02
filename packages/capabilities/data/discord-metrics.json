@@ -1,0 +1,29 @@
+{
+  "messagesReceived": 9,
+  "messagesProcessed": 1,
+  "messagesFailed": 0,
+  "responsesDelivered": 1,
+  "jobsSubmitted": 1,
+  "jobsCompleted": 1,
+  "jobsFailed": 0,
+  "jobsTimedOut": 0,
+  "averageResponseTime": 24675,
+  "maxResponseTime": 24675,
+  "minResponseTime": 24675,
+  "typingIndicatorsSent": 4,
+  "messageChunksSent": 1,
+  "apiErrors": 0,
+  "reconnections": 0,
+  "uptime": 25084478,
+  "uniqueUsers": [
+    "688448399879438340",
+    "1086489885269037128",
+    "1291577517571834010",
+    "747851999361499217",
+    "395776847767535616"
+  ],
+  "guildCount": 4,
+  "channelCount": 107,
+  "uniqueUserCount": 5,
+  "timestamp": "2025-09-02T02:29:47.419Z"
+}

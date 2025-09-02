@@ -1,13 +1,13 @@
 {
   "status": "ready",
-  "timestamp": "2025-08-20T16:33:58.088Z",
-  "pid": 5535,
+  "timestamp": "2025-09-01T19:31:43.865Z",
+  "pid": 45,
   "guilds": 4,
   "guildDetails": [
     {
       "name": "Birch School",
-      "memberCount": 70,
-      "channels": 78,
+      "memberCount": 71,
+      "channels": 60,
       "id": "689484951954915353"
     },
     {
@@ -24,14 +24,14 @@
     },
     {
       "name": "VizHub",
-      "memberCount": 161,
-      "channels": 8,
+      "memberCount": 185,
+      "channels": 11,
       "id": "1149071828258660402"
     }
   ],
-  "totalChannels": 122,
-  "totalMembers": 280,
-  "uptime": 1.53447675,
+  "totalChannels": 107,
+  "totalMembers": 305,
+  "uptime": 2.496564585,
   "username": "coachartie#3359",
   "permissions": "none"
 }
