@@ -14,7 +14,7 @@
   "messageChunksSent": 1,
   "apiErrors": 0,
   "reconnections": 0,
-  "uptime": 25084478,
+  "uptime": 61637770,
   "uniqueUsers": [
     "688448399879438340",
     "1086489885269037128",
@@ -25,5 +25,5 @@
   "guildCount": 4,
   "channelCount": 107,
   "uniqueUserCount": 5,
-  "timestamp": "2025-09-02T02:29:47.419Z"
+  "timestamp": "2025-09-02T12:39:00.711Z"
 }

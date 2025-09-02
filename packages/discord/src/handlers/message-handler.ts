@@ -240,7 +240,7 @@ async function handleResponseWithJobTracking(message: Message, cleanMessage: str
 
     let lastStatus = 'pending';
     let updateCount = 0;
-    let sentPartialResponse = false;
+    let streamedChunks = 0;
 
     // Register job with persistent monitor instead of individual polling
     logger.info(`🎯 SETUP: Registering job ${jobInfo.messageId.slice(-8)} with persistent monitor`);
@@ -250,16 +250,19 @@ async function handleResponseWithJobTracking(message: Message, cleanMessage: str
       
       onProgress: async (status) => {
         try {
-          // Simple streaming - just send partial response once when available
-          if (status.partialResponse && !sentPartialResponse) {
-            if ('send' in message.channel && typeof message.channel.send === 'function') {
-              const chunks = chunkMessage(status.partialResponse);
-              for (const chunk of chunks) {
-                await (message.channel as any).send(chunk);
+          // Paragraph-based streaming - send each new partial response as it arrives
+          if (status.partialResponse && 'send' in message.channel && typeof message.channel.send === 'function') {
+            const chunks = chunkMessage(status.partialResponse);
+            for (const chunk of chunks) {
+              await (message.channel as any).send(chunk);
+              streamedChunks++;
+              
+              // Basic rate limiting - wait 200ms between chunks to avoid Discord rate limits
+              if (streamedChunks > 1) {
+                await new Promise(resolve => setTimeout(resolve, 200));
               }
-              sentPartialResponse = true;
-              logger.info(`📡 Sent streaming response [${shortId}]`);
             }
+            logger.info(`📡 Sent streaming paragraph ${streamedChunks} [${shortId}]`);
           }
           
           // Update status message
@@ -268,7 +271,7 @@ async function handleResponseWithJobTracking(message: Message, cleanMessage: str
           if (shouldUpdate && statusMessage) {
             const processingTime = Math.round(status.processingTime / 1000);
             const statusEmoji = status.status === 'processing' ? '🔄' : '🤔';
-            const streamEmoji = status.partialResponse ? '📡' : '';
+            const streamEmoji = streamedChunks > 0 ? `📡${streamedChunks}` : '';
             const newContent = `${statusEmoji}${streamEmoji} ${status.status}... (${processingTime}s, ${shortId}/${jobShortId})`;
             
             await statusMessage.edit(newContent);

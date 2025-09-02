@@ -284,16 +284,29 @@ class OpenRouterService {
         });
 
         let fullResponse = '';
+        let lastSentLength = 0;
         
-        // Process streaming chunks - send update on paragraph breaks
+        // Process streaming chunks - send new paragraphs as they complete
         for await (const chunk of completion) {
           const delta = chunk.choices[0]?.delta?.content;
           if (delta) {
             fullResponse += delta;
             
-            // Send update when we see paragraph break (like teenager typing)
+            // Check for completed paragraphs (double newline indicates paragraph end)
             if (delta.includes('\n\n') && onPartialResponse) {
-              onPartialResponse(fullResponse);
+              // Split response into paragraphs and send only new ones
+              const paragraphs = fullResponse.split('\n\n');
+              if (paragraphs.length > 1) {
+                // Get the completed paragraph(s) - everything except the last incomplete one
+                const completedText = paragraphs.slice(0, -1).join('\n\n') + '\n\n';
+                if (completedText.length > lastSentLength) {
+                  const newContent = completedText.slice(lastSentLength);
+                  if (newContent.trim()) {
+                    onPartialResponse(newContent.trim());
+                    lastSentLength = completedText.length;
+                  }
+                }
+              }
             }
           }
         }

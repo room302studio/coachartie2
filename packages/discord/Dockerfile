@@ -14,6 +14,9 @@ COPY packages/discord/package.json ./packages/discord/
 # Install all workspace dependencies
 RUN pnpm install --filter "@coachartie/discord" --filter "@coachartie/shared"
 
+# Build shared package first
+RUN pnpm --filter "@coachartie/shared" run build
+
 # Copy discord source
 COPY packages/discord ./packages/discord
 
