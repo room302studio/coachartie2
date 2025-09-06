@@ -165,7 +165,7 @@ export class JobMonitor {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
 
-      const status: JobStatusResponse = await response.json();
+      const status = await response.json() as JobStatusResponse;
       logger.info(`🔍 Job ${shortId} status: "${status.status}", hasResponse: ${!!status.response}, responseLength: ${status.response?.length || 0}`);
 
       // Call progress callback if status changed
@@ -177,11 +177,15 @@ export class JobMonitor {
       if (status.status === 'completed') {
         logger.info(`🎉 Job ${shortId} COMPLETED!`);
         
+        // CRITICAL: Unregister job FIRST to prevent duplicate callbacks
+        this.unmonitorJob(jobId);
+        
         if (status.response && callback.onComplete) {
           logger.info(`🚀 Calling onComplete for job ${shortId} with ${status.response.length} chars`);
           logger.info(`📝 Response preview: "${status.response.substring(0, 100)}..."`);
           
           try {
+            // Fire and forget - job is already unregistered
             callback.onComplete(status.response);
             logger.info(`✅ onComplete callback executed successfully for job ${shortId}`);
           } catch (callbackError) {
@@ -191,7 +195,6 @@ export class JobMonitor {
           logger.warn(`⚠️ Job ${shortId} completed but missing response (${!!status.response}) or callback (${!!callback.onComplete})`);
         }
         
-        this.unmonitorJob(jobId);
         return;
       }
 

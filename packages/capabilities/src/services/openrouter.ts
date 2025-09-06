@@ -54,10 +54,10 @@ class OpenRouterService {
       }
       
       this.models = validModels.length > 0 ? validModels : [
-        // Emergency fallback if all models are invalid
-        'openai/gpt-oss-20b:free',
+        // Emergency fallback if all models are invalid (no openai/gpt-oss-20b:free - outputs internal reasoning)
         'z-ai/glm-4.5-air:free',
-        'qwen/qwen3-coder:free'
+        'qwen/qwen3-coder:free',
+        'mistralai/mistral-7b-instruct:free'
       ];
       
       logger.info(`🎯 Using ${this.models.length} models:`, this.models);
@@ -67,11 +67,10 @@ class OpenRouterService {
       }
       
     } else {
-      // Fallback to current free models for development
+      // Fallback to current free models for development (removed openai/gpt-oss-20b:free - outputs internal reasoning)
       this.models = [
-        'openai/gpt-oss-20b:free',
         'z-ai/glm-4.5-air:free',
-        'qwen/qwen3-coder:free',
+        'qwen/qwen3-coder:free', 
         'mistralai/mistral-7b-instruct:free',
         'microsoft/phi-3-mini-128k-instruct:free',
         'meta-llama/llama-3.2-3b-instruct:free',
@@ -294,16 +293,18 @@ class OpenRouterService {
             
             // Check for completed paragraphs (double newline indicates paragraph end)
             if (delta.includes('\n\n') && onPartialResponse) {
-              // Split response into paragraphs and send only new ones
-              const paragraphs = fullResponse.split('\n\n');
-              if (paragraphs.length > 1) {
-                // Get the completed paragraph(s) - everything except the last incomplete one
-                const completedText = paragraphs.slice(0, -1).join('\n\n') + '\n\n';
-                if (completedText.length > lastSentLength) {
-                  const newContent = completedText.slice(lastSentLength);
-                  if (newContent.trim()) {
-                    onPartialResponse(newContent.trim());
-                    lastSentLength = completedText.length;
+              // Find the new content since last sent
+              if (fullResponse.length > lastSentLength) {
+                // Look for complete paragraphs in the new content
+                const newContent = fullResponse.slice(lastSentLength);
+                const paragraphEndIndex = newContent.indexOf('\n\n');
+                
+                if (paragraphEndIndex !== -1) {
+                  // We have at least one complete paragraph
+                  const completeParagraph = newContent.slice(0, paragraphEndIndex).trim();
+                  if (completeParagraph) {
+                    onPartialResponse(completeParagraph);
+                    lastSentLength = lastSentLength + paragraphEndIndex + 2; // +2 for '\n\n'
                   }
                 }
               }
