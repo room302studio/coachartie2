@@ -122,8 +122,23 @@ export async function processUserIntent(
               (status.status !== lastStatus || (updateCount % statusUpdateInterval === 0))) {
             let progressText = status.status === 'processing' ? 'Processing...' : 'Working on it...';
             
-            // Add partial content preview if available and not streaming
-            if (!enableStreaming && status.partialResponse) {
+            // CLEAN capability execution indicators - show what's happening without XML tags
+            if (status.partialResponse && status.partialResponse.includes('<capability')) {
+              if (status.partialResponse.includes('name="web"') && status.partialResponse.includes('action="search"')) {
+                progressText = '🔍 Searching the web...';
+              } else if (status.partialResponse.includes('name="calculator"')) {
+                progressText = '🧮 Calculating...';
+              } else if (status.partialResponse.includes('name="memory"')) {
+                progressText = '🧠 Accessing memory...';
+              } else if (status.partialResponse.includes('name="scheduler"')) {
+                progressText = '⏰ Setting reminder...';
+              } else if (status.partialResponse.includes('<capability')) {
+                progressText = '⚙️ Running capability...';
+              }
+            }
+            
+            // Add partial content preview if available and not streaming (but clean it up)
+            if (!enableStreaming && status.partialResponse && !status.partialResponse.includes('<capability')) {
               const preview = status.partialResponse.slice(0, 100);
               progressText += `\n\n${preview}${status.partialResponse.length > 100 ? '...' : ''}`;
             }

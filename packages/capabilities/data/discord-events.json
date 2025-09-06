@@ -203,5 +203,211 @@
     },
     "duration": 45159,
     "success": true
+  },
+  {
+    "timestamp": "2025-09-06T13:47:01.877Z",
+    "userId": "688448399879438340",
+    "event": "message_received",
+    "data": {
+      "userId": "688448399879438340"
+    }
+  },
+  {
+    "timestamp": "2025-09-06T13:47:01.877Z",
+    "correlationId": "0419db32-933a-49e2-a62d-55bf87d63718",
+    "userId": "688448399879438340",
+    "event": "message_received",
+    "data": {
+      "channelType": 0,
+      "guildId": "932719842522443928",
+      "contentLength": 64
+    }
+  },
+  {
+    "timestamp": "2025-09-06T13:47:01.878Z",
+    "correlationId": "0419db32-933a-49e2-a62d-55bf87d63718",
+    "userId": "688448399879438340",
+    "event": "message_will_respond",
+    "data": {
+      "messageLength": 41,
+      "triggerType": "mention"
+    }
+  },
+  {
+    "timestamp": "2025-09-06T13:47:02.061Z",
+    "userId": "1086489885269037128",
+    "event": "message_received",
+    "data": {
+      "userId": "1086489885269037128"
+    }
+  },
+  {
+    "timestamp": "2025-09-06T13:47:02.061Z",
+    "correlationId": "9d885a17-4d25-4065-b890-863b9115c2b8",
+    "userId": "1086489885269037128",
+    "event": "message_received",
+    "data": {
+      "channelType": 0,
+      "guildId": "932719842522443928",
+      "contentLength": 19
+    }
+  },
+  {
+    "timestamp": "2025-09-06T13:47:02.121Z",
+    "correlationId": "0a890708-1369-4abe-915f-acba9fd1ff02",
+    "userId": "688448399879438340",
+    "event": "intent_started",
+    "data": {
+      "source": "message",
+      "contentLength": 41,
+      "enableStreaming": true,
+      "enableTyping": true
+    }
+  },
+  {
+    "timestamp": "2025-09-06T13:47:02.143Z",
+    "userId": "1086489885269037128",
+    "event": "message_received",
+    "data": {
+      "userId": "1086489885269037128"
+    }
+  },
+  {
+    "timestamp": "2025-09-06T13:47:02.143Z",
+    "correlationId": "28390f75-983b-4e4d-9571-a0089028bfe0",
+    "userId": "1086489885269037128",
+    "event": "message_received",
+    "data": {
+      "channelType": 0,
+      "guildId": "932719842522443928",
+      "contentLength": 19
+    }
+  },
+  {
+    "timestamp": "2025-09-06T13:47:02.425Z",
+    "correlationId": "01603fa7-58ec-4a0a-976e-a321c74e8dec",
+    "userId": "688448399879438340",
+    "event": "job_submitted",
+    "data": {
+      "jobId": "01603fa7-58ec-4a0a-976e-a321c74e8dec"
+    }
+  },
+  {
+    "timestamp": "2025-09-06T13:47:07.827Z",
+    "userId": "1086489885269037128",
+    "event": "message_received",
+    "data": {
+      "userId": "1086489885269037128"
+    }
+  },
+  {
+    "timestamp": "2025-09-06T13:47:07.827Z",
+    "correlationId": "7054945e-a657-4b96-8658-56f194dbbf7d",
+    "userId": "1086489885269037128",
+    "event": "message_received",
+    "data": {
+      "channelType": 0,
+      "guildId": "932719842522443928",
+      "contentLength": 130
+    }
+  },
+  {
+    "timestamp": "2025-09-06T13:47:10.930Z",
+    "userId": "1086489885269037128",
+    "event": "message_received",
+    "data": {
+      "userId": "1086489885269037128"
+    }
+  },
+  {
+    "timestamp": "2025-09-06T13:47:10.930Z",
+    "correlationId": "70ba5371-7665-4b33-a309-10f4c9810704",
+    "userId": "1086489885269037128",
+    "event": "message_received",
+    "data": {
+      "channelType": 0,
+      "guildId": "932719842522443928",
+      "contentLength": 13
+    }
+  },
+  {
+    "timestamp": "2025-09-06T13:47:14.454Z",
+    "userId": "1086489885269037128",
+    "event": "message_received",
+    "data": {
+      "userId": "1086489885269037128"
+    }
+  },
+  {
+    "timestamp": "2025-09-06T13:47:14.454Z",
+    "correlationId": "29dc27ce-3e74-4a4e-8e67-a7385ef94b97",
+    "userId": "1086489885269037128",
+    "event": "message_received",
+    "data": {
+      "channelType": 0,
+      "guildId": "932719842522443928",
+      "contentLength": 430
+    }
+  },
+  {
+    "timestamp": "2025-09-06T13:47:14.503Z",
+    "userId": "688448399879438340",
+    "event": "response_delivered",
+    "data": {
+      "chunks": 1
+    }
+  },
+  {
+    "timestamp": "2025-09-06T13:47:40.873Z",
+    "userId": "1086489885269037128",
+    "event": "message_received",
+    "data": {
+      "userId": "1086489885269037128"
+    }
+  },
+  {
+    "timestamp": "2025-09-06T13:47:40.873Z",
+    "correlationId": "452429ba-814e-4efa-8034-d7878e029b24",
+    "userId": "1086489885269037128",
+    "event": "message_received",
+    "data": {
+      "channelType": 0,
+      "guildId": "932719842522443928",
+      "contentLength": 617
+    }
+  },
+  {
+    "timestamp": "2025-09-06T13:47:47.107Z",
+    "userId": "1086489885269037128",
+    "event": "message_received",
+    "data": {
+      "userId": "1086489885269037128"
+    }
+  },
+  {
+    "timestamp": "2025-09-06T13:47:47.107Z",
+    "correlationId": "442ea137-efa7-4870-9eb5-c89951be40e3",
+    "userId": "1086489885269037128",
+    "event": "message_received",
+    "data": {
+      "channelType": 0,
+      "guildId": "932719842522443928",
+      "contentLength": 734
+    }
+  },
+  {
+    "timestamp": "2025-09-06T13:48:05.349Z",
+    "correlationId": "0a890708-1369-4abe-915f-acba9fd1ff02",
+    "userId": "688448399879438340",
+    "event": "intent_completed",
+    "data": {
+      "source": "message",
+      "jobId": "01603fa7-58ec-4a0a-976e-a321c74e8dec",
+      "duration": 63229,
+      "streamedChunks": 1,
+      "resultLength": 52
+    },
+    "duration": 63229,
+    "success": true
   }
 ]

@@ -1284,6 +1284,15 @@ ${capabilityDetails}`;
     cleanedContent = cleanedContent.replace(/Available capabilities[^]*?(?=I'll|Let me|Sure|I apologize)/gim, '');
     cleanedContent = cleanedContent.replace(/The system[^]*?(?=I'll|Let me|Sure|I apologize)/gim, '');
 
+    // Pattern 13: CRITICAL - Remove capability XML tags that leak to users
+    // Remove both self-closing and regular capability tags
+    cleanedContent = cleanedContent.replace(/<capability[^>]*\/>/gi, '');
+    cleanedContent = cleanedContent.replace(/<capability[^>]*>[\s\S]*?<\/capability>/gi, '');
+    
+    // Remove other common XML-like tags that leak
+    cleanedContent = cleanedContent.replace(/<(remember|recall|search|calculate)[^>]*>[\s\S]*?<\/\1>/gi, '');
+    cleanedContent = cleanedContent.replace(/<(remember|recall|search|calculate)[^>]*\/>/gi, '');
+
     // Clean up excessive whitespace left behind
     cleanedContent = cleanedContent.replace(/\n\s*\n\s*\n/g, '\n\n').trim();
     

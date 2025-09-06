@@ -1,20 +1,20 @@
 {
-  "messagesReceived": 6,
+  "messagesReceived": 14,
   "messagesProcessed": 0,
   "messagesFailed": 0,
-  "responsesDelivered": 2,
-  "jobsSubmitted": 1,
+  "responsesDelivered": 3,
+  "jobsSubmitted": 2,
   "jobsCompleted": 0,
   "jobsFailed": 0,
   "jobsTimedOut": 0,
   "averageResponseTime": 0,
   "maxResponseTime": 0,
   "minResponseTime": 0,
-  "typingIndicatorsSent": 6,
-  "messageChunksSent": 2,
+  "typingIndicatorsSent": 14,
+  "messageChunksSent": 3,
   "apiErrors": 0,
   "reconnections": 0,
-  "uptime": 360051,
+  "uptime": 600028,
   "uniqueUsers": [
     "688448399879438340",
     "1086489885269037128"
@@ -22,5 +22,5 @@
   "guildCount": 4,
   "channelCount": 108,
   "uniqueUserCount": 2,
-  "timestamp": "2025-09-06T13:46:37.251Z"
+  "timestamp": "2025-09-06T13:50:37.229Z"
 }
