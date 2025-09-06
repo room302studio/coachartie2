@@ -48,6 +48,11 @@ coverage/
 tmp/
 temp/.turbo/
 
+# Runtime telemetry data
+**/data/discord-events.json
+**/data/discord-metrics.json
+**/data/discord-status.json
+
 *.db
 *.db
 *.db-shm
