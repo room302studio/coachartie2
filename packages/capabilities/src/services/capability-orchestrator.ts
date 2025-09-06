@@ -576,27 +576,17 @@ Timestamp: ${new Date().toISOString()}`;
     // DEPRECATED: Hardcoded prompts removed - use Context Alchemy and prompt database instead
     logger.warn('⚠️ generateDynamicCapabilityInstructions is deprecated - use Context Alchemy');
     
-    return `Assistant with capabilities access through XML tags:
-- Calculate: <calculate>2 + 2 * 5</calculate>
-- Remember: <remember>I love Hawaiian pizza</remember>  
-- Recall: <recall>pizza</recall> or <recall user="john">preferences</recall> or <recall auto />
-- Web search: <capability name="web" action="search" query="latest AI news" />${mcpExamples}
+    return `Use capabilities with XML tags when needed:
 
-AVAILABLE CAPABILITIES:
+AVAILABLE:
 ${capabilityDocs}
 
-${mcpTools.length > 0 ? `AVAILABLE MCP TOOLS:
-${mcpTools.map(tool => `- ${tool.name}: ${tool.description || 'No description'}`).join('\n')}
+Examples:
+- <capability name="web" action="search" query="news" />
+- <capability name="calculator" action="calculate" expression="2+2" />
+- <capability name="memory" action="remember" content="info" />
 
-IMPORTANT: Use simple syntax for all capabilities:
-- Single word tags: <remember>content</remember>, <calculate>2+2</calculate>
-- Kebab-case for MCP tools: <search-wikipedia>query</search-wikipedia>
-- Optional attributes: <recall query="specific">general search</recall>
-` : ''}
-
-Use capabilities only when actually needed. Most conversations don't require them - respond naturally.
-
-User's message: ${userMessage}`;
+${userMessage}`;
   }
 
   /**
@@ -1222,92 +1212,8 @@ ${capabilityDetails}`;
    * SECURITY CRITICAL: This prevents exposure of system prompts, internal logic, and debug information
    */
   private stripThinkingTags(content: string, userId?: string, messageId?: string): string {
-    if (!content || !content.trim()) {
-      return '';
-    }
-
-    let cleanedContent = content;
-    const originalLength = content.length;
-
-    // SECURITY: Remove <thinking> tags and content
-    cleanedContent = cleanedContent.replace(/<thinking>[\s\S]*?<\/thinking>/gi, '');
-    cleanedContent = cleanedContent.replace(/<thinking[^>]*\/>/gi, '');
-
-    // SECURITY: Remove structured LLM output patterns that expose internal reasoning
-    // Pattern 1: "analysisWe need to..." - internal analysis leaking (FIXED: removed space requirement)
-    cleanedContent = cleanedContent.replace(/^analysis[A-Za-z][^]*?(?=assistant|$)/gim, '');
-    cleanedContent = cleanedContent.replace(/analysis[A-Za-z][^]*?(?=\n\nassistant|\n\n\w+:|\n\n[A-Z]|I'll|Let me|Sure|I apologize)/gim, '');
-    
-    // Pattern 2: "assistantcommentary to=..." - structured commentary leaking (ENHANCED)
-    cleanedContent = cleanedContent.replace(/^assistant\s*commentary[\s\S]*?(?=\n\n|$)/gim, '');
-    cleanedContent = cleanedContent.replace(/assistantcommentary[\s\S]*?(?=\n\n|assistant|$)/gim, '');
-    
-    // Pattern 3: "assistantfinal" markers - extract content AFTER marker (CRITICAL BUG FIX)
-    const assistantFinalMatch = cleanedContent.match(/assistant\s*final\s*([\s\S]*)/i);
-    if (assistantFinalMatch && assistantFinalMatch[1]) {
-      // If assistantfinal exists, keep ONLY what comes after it (this is the actual response)
-      cleanedContent = assistantFinalMatch[1].trim();
-      logger.info(`🔧 SECURITY: Extracted final response after assistantfinal marker`);
-    } else {
-      // Remove assistantfinal markers if no content follows
-      cleanedContent = cleanedContent.replace(/^assistant\s*final[\s\S]*?(?=\n\n|$)/gim, '');
-      cleanedContent = cleanedContent.replace(/assistantfinal/gim, '');
-    }
-    
-    // Pattern 4: Long reasoning blocks that start with complex analysis
-    cleanedContent = cleanedContent.replace(/We need to answer[^]*?(?=I'll|Let me|Sure|I apologize)/gim, '');
-    cleanedContent = cleanedContent.replace(/But no query attribute[^]*?(?=I'll|Let me|Sure|I apologize)/gim, '');
-    
-    // Pattern 5: JSON-like structured output "json{...}" leaking
-    cleanedContent = cleanedContent.replace(/json\s*\{[^}]*\}/gi, '');
-    
-    // Pattern 6: Capability execution debug output patterns
-    cleanedContent = cleanedContent.replace(/^(execute|processing|result):\s*[^\n]*\n?/gim, '');
-    
-    // Pattern 7: XML-like structured tags that aren't proper capabilities
-    cleanedContent = cleanedContent.replace(/<(analysis|commentary|debug|internal)[^>]*>[\s\S]*?<\/\1>/gi, '');
-    
-    // Pattern 8: Arrow-based structured output "→ result" without context
-    cleanedContent = cleanedContent.replace(/^→\s*[^\n]*\n?/gim, '');
-    
-    // Pattern 9: Colon-prefixed fragments ": result" without context
-    cleanedContent = cleanedContent.replace(/^:\s*[^\n]*\n?/gim, '');
-    
-    // Pattern 10: System message markers
-    cleanedContent = cleanedContent.replace(/^\[SYSTEM[^\]]*\][^\n]*\n?/gim, '');
-    
-    // Pattern 11: Debug markers and trace output
-    cleanedContent = cleanedContent.replace(/^(DEBUG|TRACE|INFO):[^\n]*\n?/gim, '');
-
-    // Pattern 12: Large thinking blocks that contain decision making process
-    cleanedContent = cleanedContent.replace(/The user wants[^]*?(?=I'll|Let me|Sure|I apologize)/gim, '');
-    cleanedContent = cleanedContent.replace(/Available capabilities[^]*?(?=I'll|Let me|Sure|I apologize)/gim, '');
-    cleanedContent = cleanedContent.replace(/The system[^]*?(?=I'll|Let me|Sure|I apologize)/gim, '');
-
-    // Pattern 13: CRITICAL - Remove capability XML tags that leak to users
-    // Remove both self-closing and regular capability tags
-    cleanedContent = cleanedContent.replace(/<capability[^>]*\/>/gi, '');
-    cleanedContent = cleanedContent.replace(/<capability[^>]*>[\s\S]*?<\/capability>/gi, '');
-    
-    // Remove other common XML-like tags that leak
-    cleanedContent = cleanedContent.replace(/<(remember|recall|search|calculate)[^>]*>[\s\S]*?<\/\1>/gi, '');
-    cleanedContent = cleanedContent.replace(/<(remember|recall|search|calculate)[^>]*\/>/gi, '');
-
-    // Clean up excessive whitespace left behind
-    cleanedContent = cleanedContent.replace(/\n\s*\n\s*\n/g, '\n\n').trim();
-    
-    // If we stripped too much and left nothing useful, provide a safe fallback
-    if (cleanedContent.length < 10 && originalLength > 50) {
-      logger.warn(`🚨 SECURITY: Stripped response too aggressively - ${originalLength} → ${cleanedContent.length} chars`);
-      cleanedContent = "I've processed your request, but had trouble formatting the response properly.";
-    }
-    
-    // Security monitoring: Log sanitization events for analysis
-    if (cleanedContent.length !== originalLength && userId && messageId) {
-      securityMonitor.logSanitizationEvent(content, cleanedContent, userId, messageId);
-    }
-    
-    return cleanedContent;
+    // Just remove actual <thinking> tags, nothing else
+    return content.replace(/<thinking>[\s\S]*?<\/thinking>/gi, '').trim();
   }
 
   /**
