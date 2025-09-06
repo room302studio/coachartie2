@@ -1,17 +1,70 @@
+/**
+ * Discord Message Handler - Core message processing and streaming system
+ * 
+ * Features:
+ * - Smart response detection (mentions, DMs, robot channels)
+ * - Real-time streaming with duplicate prevention
+ * - Job tracking with persistent monitoring
+ * - Message chunking for Discord's 2000 character limit
+ * - Comprehensive telemetry and correlation tracking
+ */
+
 import { Client, Events, Message } from 'discord.js';
 import { logger } from '@coachartie/shared';
 import { publishMessage } from '../queues/publisher.js';
-import { capabilitiesClient } from '../services/capabilities-client.js';
 import { telemetry } from '../services/telemetry.js';
-import { jobMonitor } from '../services/job-monitor.js';
 import { CorrelationContext, generateCorrelationId, getShortCorrelationId } from '../utils/correlation.js';
+import { processUserIntent } from '../services/user-intent-processor.js';
 
-// Simple deduplication cache to prevent duplicate message processing
+// =============================================================================
+// CONSTANTS & CONFIGURATION
+// =============================================================================
+
+// Message deduplication cache to prevent duplicate processing
 const messageCache = new Map<string, number>();
-const MESSAGE_CACHE_TTL = 10000; // 10 seconds
+const MESSAGE_CACHE_TTL = 10000; // 10 seconds TTL
 
-// Helper function to chunk long messages for Discord's 2000 character limit
-function chunkMessage(text: string, maxLength: number = 2000): string[] {
+// Discord API limits and timeouts
+const TYPING_REFRESH_INTERVAL = 8000; // Refresh typing every 8s (Discord typing lasts 10s)
+const CHUNK_RATE_LIMIT_DELAY = 200;   // 200ms delay between message chunks
+const MAX_JOB_ATTEMPTS = 60;          // 5 minute max job timeout (60 * 3s checks)
+const DISCORD_MESSAGE_LIMIT = 2000;   // Discord's maximum message length
+
+// UI and status constants
+const STATUS_UPDATE_INTERVAL = 5;     // Update status every 5 progress callbacks
+const CONTEXT_CLEANUP_PROBABILITY = 0.01; // 1% chance to cleanup correlation context
+const ID_SLICE_LENGTH = -8;           // Last 8 characters for job short IDs
+
+// Channel detection constants
+const GUILD_CHANNEL_TYPE = 0;         // Discord guild text channel type
+
+// Status emojis
+const STATUS_EMOJI_PROCESSING = '🔄';
+const STATUS_EMOJI_THINKING = '🤔';
+const STREAM_EMOJI = '📡';
+
+// =============================================================================
+// MESSAGE CHUNKING UTILITIES
+// =============================================================================
+
+/**
+ * Helper: Check if channel name indicates robot interaction
+ */
+function isRobotChannelName(channel: Message['channel']): boolean {
+  return channel.type === GUILD_CHANNEL_TYPE && 
+         'name' in channel && 
+         (channel.name?.includes('🤖') || channel.name?.includes('robot')) || false;
+}
+
+/**
+ * Split long messages into Discord-compatible chunks
+ * Preserves formatting by splitting on lines first, then words if needed
+ * 
+ * @param text - The text to chunk
+ * @param maxLength - Maximum chunk size (default: 2000)
+ * @returns Array of message chunks
+ */
+function chunkMessage(text: string, maxLength: number = DISCORD_MESSAGE_LIMIT): string[] {
   if (text.length <= maxLength) return [text];
   
   const chunks: string[] = [];
@@ -55,9 +108,114 @@ function chunkMessage(text: string, maxLength: number = 2000): string[] {
   return chunks;
 }
 
+/**
+ * Check if we should stream this partial response
+ */
+function shouldStreamPartialResponse(
+  status: any, 
+  lastSentContent: string, 
+  channel: Message['channel']
+): boolean {
+  return !!(
+    status.partialResponse && 
+    status.partialResponse !== lastSentContent && 
+    'send' in channel && 
+    typeof channel.send === 'function'
+  );
+}
+
+/**
+ * Send message chunks with rate limiting
+ */
+async function sendMessageChunks(
+  content: string, 
+  channel: Message['channel'], 
+  currentChunkCount: number
+): Promise<number> {
+  const chunks = chunkMessage(content);
+  let chunksAdded = 0;
+  
+  for (const chunk of chunks) {
+    await (channel as any).send(chunk);
+    chunksAdded++;
+    
+    // Rate limiting: prevent Discord API abuse
+    if (currentChunkCount + chunksAdded > 1) {
+      await new Promise(resolve => setTimeout(resolve, CHUNK_RATE_LIMIT_DELAY));
+    }
+  }
+  
+  return chunksAdded;
+}
+
+/**
+ * Check if status message should be updated
+ */
+function shouldUpdateStatus(
+  currentStatus: string, 
+  lastStatus: string, 
+  updateCount: number
+): boolean {
+  return currentStatus !== lastStatus || (updateCount % STATUS_UPDATE_INTERVAL === 0);
+}
+
+/**
+ * Update the status message with current progress
+ */
+async function updateStatusMessage(
+  statusMessage: Message, 
+  status: any, 
+  streamedChunks: number, 
+  shortId: string, 
+  jobShortId: string
+): Promise<void> {
+  const statusEmoji = status.status === 'processing' ? STATUS_EMOJI_PROCESSING : STATUS_EMOJI_THINKING;
+  const streamEmoji = streamedChunks > 0 ? ` ${STREAM_EMOJI}` : '';
+  
+  // Human-friendly status messages without technical clutter
+  let statusText = status.status === 'processing' ? 'Processing' : 'Working on it';
+  const statusContent = `${statusEmoji}${streamEmoji} ${statusText}...`;
+  
+  await statusMessage.edit(statusContent);
+}
+
+/**
+ * Send complete response in chunks
+ */
+async function sendCompleteResponse(message: Message, result: string): Promise<number> {
+  const chunks = chunkMessage(result);
+  await message.reply(chunks[0]);
+  
+  for (let i = 1; i < chunks.length; i++) {
+    if ('send' in message.channel) {
+      await (message.channel as any).send(chunks[i]);
+    }
+  }
+  
+  return chunks.length;
+}
+
+// =============================================================================
+// MAIN MESSAGE HANDLER SETUP
+// =============================================================================
+
+/**
+ * Initialize Discord message handler with smart response detection
+ * 
+ * Handles:
+ * - Message deduplication
+ * - Response condition detection (mentions, DMs, robot channels)
+ * - Active response vs passive observation
+ * - Error handling and telemetry
+ * 
+ * @param client - Discord.js client instance
+ */
 export function setupMessageHandler(client: Client) {
   client.on(Events.MessageCreate, async (message: Message) => {
-    // Generate correlation ID for this message
+    // -------------------------------------------------------------------------
+    // CORRELATION & LOGGING SETUP
+    // -------------------------------------------------------------------------
+    
     const correlationId = CorrelationContext.getForMessage(message.id);
     const shortId = getShortCorrelationId(correlationId);
     
@@ -81,51 +239,63 @@ export function setupMessageHandler(client: Client) {
       contentLength: message.content.length
     }, correlationId, message.author.id);
     
-    // Ignore our own messages to prevent loops, but observe other bots (GitHub, webhooks, etc.)
+    // -------------------------------------------------------------------------
+    // RESPONSE CONDITION DETECTION
+    // -------------------------------------------------------------------------
+    
+    // Ignore our own messages to prevent loops
     if (message.author.id === client.user!.id) return;
 
-    // Check response conditions
-    const botMentioned = message.mentions.has(client.user!.id);
-    const isDM = message.channel.isDMBased();
-    const isRobotChannel = message.channel.type === 0 && 'name' in message.channel && 
-      (message.channel.name?.includes('🤖') || message.channel.name?.includes('robot'));
+    // Check various response triggers
+    const responseConditions = {
+      botMentioned: message.mentions.has(client.user!.id),
+      isDM: message.channel.isDMBased(),
+      isRobotChannel: isRobotChannelName(message.channel)
+    };
     
-    // Determine if we should respond vs just observe
-    const shouldRespond = botMentioned || isDM || isRobotChannel;
+    // Determine response mode: active response vs passive observation
+    const shouldRespond = responseConditions.botMentioned || 
+                         responseConditions.isDM || 
+                         responseConditions.isRobotChannel;
 
     try {
-      // Always process the full message for passive observation
-      const fullMessage = message.content;
+      // -------------------------------------------------------------------------
+      // MESSAGE PROCESSING & DEDUPLICATION
+      // -------------------------------------------------------------------------
       
-      // Clean message for response (remove bot mentions)
+      const fullMessage = message.content;
       const cleanMessage = message.content
-        .replace(`<@${client.user!.id}>`, '')
-        .replace(`<@!${client.user!.id}>`, '')
+        .replace(`<@${client.user!.id}>`, '')    // Remove @bot mentions
+        .replace(`<@!${client.user!.id}>`, '')   // Remove @bot nickname mentions
         .trim();
 
-      // Deduplication check: prevent processing the same message twice
+      // Deduplication: prevent processing identical messages within TTL window
       const messageKey = `${message.author.id}-${fullMessage}-${message.channelId}`;
       const now = Date.now();
       
-      // Clean up old cache entries
+      // Cleanup expired cache entries
       for (const [key, timestamp] of messageCache.entries()) {
         if (now - timestamp > MESSAGE_CACHE_TTL) {
           messageCache.delete(key);
         }
       }
       
-      // Check if we've seen this exact message recently
+      // Skip if we've seen this exact message recently
       if (messageCache.has(messageKey)) {
         logger.info(`🚫 Duplicate message detected [${shortId}]`, { correlationId, messageKey });
         telemetry.logEvent('message_duplicate', { messageKey }, correlationId, message.author.id);
         return;
       }
       
-      // Cache this message
+      // Cache this message to prevent future duplicates
       messageCache.set(messageKey, now);
 
-      // Handle response vs passive observation
+      // -------------------------------------------------------------------------
+      // RESPONSE ROUTING
+      // -------------------------------------------------------------------------
+      
       if (shouldRespond) {
+        // ACTIVE RESPONSE: Bot will generate and send a response
         logger.info(`🤖 Will respond to message [${shortId}]`, {
           correlationId,
           author: message.author.tag,
@@ -134,13 +304,15 @@ export function setupMessageHandler(client: Client) {
         
         telemetry.logEvent('message_will_respond', {
           messageLength: cleanMessage.length,
-          triggerType: botMentioned ? 'mention' : isDM ? 'dm' : 'robot_channel'
+          triggerType: responseConditions.botMentioned ? 'mention' : responseConditions.isDM ? 'dm' : 'robot_channel'
         }, correlationId, message.author.id);
         
-        // Start typing indicator and process with job tracking
-        await handleResponseWithJobTracking(message, cleanMessage, correlationId);
+        // Process with unified intent processor
+        await handleMessageAsIntent(message, cleanMessage, correlationId);
+        
       } else {
-        const channelName = message.channel.type === 0 && 'name' in message.channel ? message.channel.name : 'DM';
+        // PASSIVE OBSERVATION: Just process for learning, no response
+        const channelName = message.channel.type === GUILD_CHANNEL_TYPE && 'name' in message.channel ? message.channel.name : 'DM';
         logger.info(`👁️ Passive observation [${shortId}]`, {
           correlationId,
           author: message.author.tag,
@@ -176,239 +348,106 @@ export function setupMessageHandler(client: Client) {
         error: error instanceof Error ? error.message : String(error)
       }, correlationId, message.author.id, undefined, false);
       
-      await message.reply(`Sorry, I encountered an error processing your message. [${shortId}]`);
+      await message.reply(`Sorry, I encountered an error processing your message.`);
     }
     
     // Clean up correlation context periodically
-    if (Math.random() < 0.01) { // 1% chance
+    if (Math.random() < CONTEXT_CLEANUP_PROBABILITY) {
       CorrelationContext.cleanup();
     }
   });
 }
 
+// =============================================================================
+// MESSAGE ADAPTER - SIMPLE BRIDGE TO UNIFIED PROCESSOR
+// =============================================================================
+
 /**
- * Handle Discord message with job tracking and live updates
+ * Simple adapter: Convert Discord message to UserIntent and delegate to unified processor
+ * Replaces ~400 lines of duplicate logic with ~30 lines of adapter code
  */
-async function handleResponseWithJobTracking(message: Message, cleanMessage: string, correlationId: string): Promise<void> {
+async function handleMessageAsIntent(
+  message: Message, 
+  cleanMessage: string, 
+  correlationId: string
+): Promise<void> {
   const shortId = getShortCorrelationId(correlationId);
-  const startTime = Date.now();
-  let typingInterval: NodeJS.Timeout | null = null;
   let statusMessage: Message | null = null;
-
+  
   try {
-    // Start continuous typing indicator
-    if ('sendTyping' in message.channel) {
-      await message.channel.sendTyping();
-      telemetry.incrementTypingIndicators();
-      telemetry.logEvent('typing_started', {}, correlationId, message.author.id);
-      
-      // Keep typing indicator alive during processing
-      typingInterval = setInterval(async () => {
-        try {
-          if ('sendTyping' in message.channel) {
-            await message.channel.sendTyping();
-            telemetry.incrementTypingIndicators();
-          }
-        } catch (error) {
-          logger.error(`❌ Failed to send typing indicator [${shortId}]:`, {
-            correlationId,
-            error: error instanceof Error ? error.message : String(error)
-          });
-          telemetry.incrementApiErrors(error instanceof Error ? error.message : String(error));
-        }
-      }, 8000); // Refresh every 8 seconds (Discord typing lasts 10 seconds)
-    }
-
-    // Submit job and get immediate response
-    const jobInfo = await capabilitiesClient.submitJob(cleanMessage, message.author.id);
-    logger.info(`🤖 Job submitted [${shortId}]`, {
-      correlationId,
-      jobId: jobInfo.messageId,
-      author: message.author.tag,
-      messageLength: cleanMessage.length
-    });
-    
-    telemetry.incrementJobsSubmitted(message.author.id, jobInfo.messageId);
-    telemetry.logEvent('job_submitted', {
-      jobId: jobInfo.messageId,
-      messageLength: cleanMessage.length
-    }, correlationId, message.author.id);
-
     // Send initial status message
-    const jobShortId = jobInfo.messageId.slice(-8);
-    statusMessage = await message.reply(`🤔 Working on it... (${shortId}/${jobShortId})`);
+    statusMessage = await message.reply(`🤔 Working on it...`);
 
-    let lastStatus = 'pending';
-    let updateCount = 0;
-    let streamedChunks = 0;
-
-    // Register job with persistent monitor instead of individual polling
-    logger.info(`🎯 SETUP: Registering job ${jobInfo.messageId.slice(-8)} with persistent monitor`);
-    
-    jobMonitor.monitorJob(jobInfo.messageId, {
-      maxAttempts: 60, // 5 minutes max
+    // Create unified intent and delegate to shared processor
+    await processUserIntent({
+      content: cleanMessage,
+      userId: message.author.id,
+      username: message.author.username,
+      source: 'message',
+      metadata: {
+        messageId: message.id,
+        channelId: message.channelId,
+        guildId: message.guildId,
+        correlationId
+      },
       
-      onProgress: async (status) => {
-        try {
-          // Paragraph-based streaming - send each new partial response as it arrives
-          if (status.partialResponse && 'send' in message.channel && typeof message.channel.send === 'function') {
-            const chunks = chunkMessage(status.partialResponse);
-            for (const chunk of chunks) {
-              await (message.channel as any).send(chunk);
-              streamedChunks++;
-              
-              // Basic rate limiting - wait 200ms between chunks to avoid Discord rate limits
-              if (streamedChunks > 1) {
-                await new Promise(resolve => setTimeout(resolve, 200));
-              }
-            }
-            logger.info(`📡 Sent streaming paragraph ${streamedChunks} [${shortId}]`);
+      // Response handlers
+      respond: async (content: string) => {
+        const chunks = chunkMessage(content);
+        await message.reply(chunks[0]);
+        
+        // Send additional chunks
+        for (let i = 1; i < chunks.length; i++) {
+          if ('send' in message.channel) {
+            await (message.channel as any).send(chunks[i]);
+            await new Promise(resolve => setTimeout(resolve, CHUNK_RATE_LIMIT_DELAY));
           }
-          
-          // Update status message
-          const shouldUpdate = status.status !== lastStatus || (updateCount % 5 === 0);
-          
-          if (shouldUpdate && statusMessage) {
-            const processingTime = Math.round(status.processingTime / 1000);
-            const statusEmoji = status.status === 'processing' ? '🔄' : '🤔';
-            const streamEmoji = streamedChunks > 0 ? `📡${streamedChunks}` : '';
-            const newContent = `${statusEmoji}${streamEmoji} ${status.status}... (${processingTime}s, ${shortId}/${jobShortId})`;
-            
-            await statusMessage.edit(newContent);
-            lastStatus = status.status;
-            
-            telemetry.logEvent('status_updated', {
-              status: status.status,
-              processingTime: status.processingTime,
-              updateCount
-            }, correlationId, message.author.id);
-          }
-          updateCount++;
-        } catch (error) {
-          logger.error(`❌ Failed to update status message [${shortId}]:`, {
-            correlationId,
-            error: error instanceof Error ? error.message : String(error)
-          });
-          telemetry.incrementApiErrors(error instanceof Error ? error.message : String(error));
+        }
+        
+        telemetry.incrementResponsesDelivered(message.author.id, chunks.length);
+      },
+      
+      updateProgress: async (status: string) => {
+        if (statusMessage) {
+          await statusMessage.edit(status);
         }
       },
-
-      onComplete: async (result) => {
-        logger.info(`🎯 CALLBACK TRIGGERED: onComplete handler started [${shortId}]`);
-        logger.info(`🎯 CALLBACK: result type: ${typeof result}, length: ${result?.length || 'N/A'}`);
-        logger.info(`🎯 CALLBACK: result preview: "${result?.substring(0, 100)}..."`);
-        try {
-          const duration = Date.now() - startTime;
-          logger.info(`🎯 CALLBACK: Processing completion after ${duration}ms`);
-          
-          // Stop typing and clear status message
-          if (typingInterval) {
-            clearInterval(typingInterval);
-            typingInterval = null;
-          }
-
-          if (statusMessage) {
-            await statusMessage.edit(`✅ Complete! (${shortId}/${jobShortId})`);
-          }
-
-          // Split message and send all chunks
-          const chunks = chunkMessage(result);
-          await message.reply(chunks[0]);
-          
-          for (let i = 1; i < chunks.length; i++) {
-            await message.channel.send(chunks[i]);
-          }
-
-          // Track completion metrics
-          telemetry.incrementResponsesDelivered(message.author.id, chunks.length);
-          telemetry.incrementJobsCompleted(message.author.id, jobInfo.messageId, duration);
-          telemetry.incrementMessagesProcessed(message.author.id, duration);
-        } catch (error) {
-          logger.error(`❌ Error in onComplete handler [${shortId}]:`, error);
-        }
-      },
-
-      onError: async (error) => {
-        try {
-          const duration = Date.now() - startTime;
-          
-          // Stop typing
-          if (typingInterval) {
-            clearInterval(typingInterval);
-            typingInterval = null;
-          }
-
-          // Update status message with error
-          if (statusMessage) {
-            await statusMessage.edit(`❌ Error: ${error} (${shortId}/${jobShortId})`);
-          } else {
-            await message.reply(`❌ Sorry, something went wrong: ${error} [${shortId}]`);
-          }
-
-          // Track error metrics
-          telemetry.incrementJobsFailed(message.author.id, jobInfo.messageId, error, duration);
-          telemetry.incrementMessagesFailed(message.author.id, error, duration);
-          
-          logger.error(`❌ Discord job failed [${shortId}]:`, {
-            correlationId,
-            jobId: jobInfo.messageId,
-            author: message.author.tag,
-            error,
-            duration: `${duration}ms`
-          });
-          
-          telemetry.logEvent('job_failed', {
-            jobId: jobInfo.messageId,
-            error,
-            duration
-          }, correlationId, message.author.id, duration, false);
-          
-        } catch (updateError) {
-          logger.error(`❌ Failed to send error message [${shortId}]:`, {
-            correlationId,
-            updateError: updateError instanceof Error ? updateError.message : String(updateError)
-          });
-          telemetry.incrementApiErrors(updateError instanceof Error ? updateError.message : String(updateError));
-        }
-      }
+      
+      sendTyping: 'sendTyping' in message.channel ? async () => {
+        await (message.channel as any).sendTyping();
+        telemetry.incrementTypingIndicators();
+      } : undefined
+      
+    }, {
+      enableStreaming: true,  // Enable streaming for messages
+      enableTyping: true,     // Enable typing indicators for messages
+      maxAttempts: MAX_JOB_ATTEMPTS,
+      statusUpdateInterval: STATUS_UPDATE_INTERVAL
     });
 
-    // Job is now being monitored by the persistent wheel, no need to await
-    logger.info(`✅ Job ${jobInfo.messageId.slice(-8)} registered with monitor - wheel will handle completion`);
+    // Update final status
+    if (statusMessage) {
+      setTimeout(async () => {
+        try {
+          await statusMessage!.edit(`✅ Complete! (${shortId})`);
+        } catch (error) {
+          logger.warn(`Failed to update final status: ${error}`);
+        }
+      }, 750);
+    }
 
   } catch (error) {
-    const duration = Date.now() - startTime;
+    logger.error(`Message intent processing failed [${shortId}]:`, error);
     
-    // Clean up on any error
-    if (typingInterval) {
-      clearInterval(typingInterval);
-    }
-
-    logger.error(`❌ Job tracking failed [${shortId}]:`, {
-      correlationId,
-      error: error instanceof Error ? error.message : String(error),
-      stack: error instanceof Error ? error.stack : undefined,
-      duration: `${duration}ms`
-    });
-    
-    telemetry.incrementMessagesFailed(message.author.id, error instanceof Error ? error.message : String(error), duration);
-    telemetry.logEvent('job_tracking_failed', {
-      error: error instanceof Error ? error.message : String(error),
-      duration
-    }, correlationId, message.author.id, duration, false);
-
+    // Fallback error handling
     try {
       if (statusMessage) {
-        await statusMessage.edit(`❌ Failed to process: ${error instanceof Error ? error.message : String(error)} [${shortId}]`);
+        await statusMessage.edit(`❌ Failed to process your request`);
       } else {
-        await message.reply(`❌ Sorry, I couldn't process your message: ${error instanceof Error ? error.message : String(error)} [${shortId}]`);
+        await message.reply(`❌ Sorry, I couldn't process your message`);
       }
     } catch (replyError) {
-      logger.error(`❌ Failed to send error reply [${shortId}]:`, {
-        correlationId,
-        replyError: replyError instanceof Error ? replyError.message : String(replyError)
-      });
-      telemetry.incrementApiErrors(replyError instanceof Error ? replyError.message : String(replyError));
+      logger.error(`Failed to send error reply [${shortId}]:`, replyError);
     }
   }
 }

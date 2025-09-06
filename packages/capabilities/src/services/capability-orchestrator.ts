@@ -29,6 +29,7 @@ import { bulletproofExtractor } from "../utils/bulletproof-capability-extractor.
 import { robustExecutor } from "../utils/robust-capability-executor.js";
 import { modelAwarePrompter } from "../utils/model-aware-prompter.js";
 import { contextAlchemy } from './context-alchemy.js';
+import { securityMonitor } from './security-monitor.js';
 
 // Define capability extraction types
 interface ExtractedCapability {
@@ -296,9 +297,19 @@ export class CapabilityOrchestrator {
       return llmResponse; // No capabilities needed, return original response
     }
     
+    // EXECUTE DETECTED CAPABILITIES FIRST - Fix for web search bug
+    logger.info(`🔥 EXECUTING ${context.capabilities.length} DETECTED CAPABILITIES BEFORE LLM LOOP`);
+    if (context.capabilities.length > 0) {
+      await this.executeCapabilityChain(context);
+      logger.info(`✅ CAPABILITIES EXECUTED - Results: ${context.results.length} results`);
+    }
+    
     // Stream the initial LLM response before executing capabilities
     if (onPartialResponse) {
-      onPartialResponse(llmResponse);
+      const cleanResponse = this.stripThinkingTags(llmResponse, context.userId, context.messageId);
+      if (cleanResponse.trim()) {
+        onPartialResponse(cleanResponse);
+      }
     }
     
     // Use LLM-driven recursive execution (always enabled now)
@@ -569,7 +580,7 @@ Timestamp: ${new Date().toISOString()}`;
 - Calculate: <calculate>2 + 2 * 5</calculate>
 - Remember: <remember>I love Hawaiian pizza</remember>  
 - Recall: <recall>pizza</recall> or <recall user="john">preferences</recall> or <recall auto />
-- Web search: <web-search>latest AI news</web-search>${mcpExamples}
+- Web search: <capability name="web" action="search" query="latest AI news" />${mcpExamples}
 
 AVAILABLE CAPABILITIES:
 ${capabilityDocs}
@@ -642,7 +653,7 @@ If you need to:
 - Calculate something: <calculate>2 + 2</calculate>
 - Remember information: <remember>info to store</remember>  
 - Recall past information: <recall>search terms</recall>
-- Search the web: <web-search>search terms</web-search>${mcpExamples}
+- Search the web: <capability name="web" action="search" query="search terms" />${mcpExamples}
 
 ${mcpTools.length > 0 ? `
 Use simple tags for everything - much easier than complex XML!
@@ -1120,7 +1131,10 @@ ${capabilityDetails}`;
         // LLM said something without capabilities - this is the final response
         logger.info(`🏁 LLM provided final response without capabilities: "${nextAction.substring(0, 100)}..."`);
         if (onPartialResponse) {
-          onPartialResponse(nextAction);
+          const cleanResponse = this.stripThinkingTags(nextAction, context.userId, context.messageId);
+          if (cleanResponse.trim()) {
+            onPartialResponse(cleanResponse);
+          }
         }
         
         // Add to conversation history and return
@@ -1131,7 +1145,10 @@ ${capabilityDetails}`;
       // Stream the LLM's response (shows user what's about to happen)
       logger.info(`📡 LLM action: "${nextAction.substring(0, 100)}..." with ${capabilities.length} capabilities`);
       if (onPartialResponse) {
-        onPartialResponse(nextAction);
+        const cleanResponse = this.stripThinkingTags(nextAction, context.userId, context.messageId);
+        if (cleanResponse.trim()) {
+          onPartialResponse(cleanResponse);
+        }
       }
       conversationHistory.push(`Assistant: ${nextAction}`);
       
@@ -1201,6 +1218,90 @@ ${capabilityDetails}`;
   }
 
   /**
+   * Strip internal reasoning and structured output from LLM response to prevent information disclosure
+   * SECURITY CRITICAL: This prevents exposure of system prompts, internal logic, and debug information
+   */
+  private stripThinkingTags(content: string, userId?: string, messageId?: string): string {
+    if (!content || !content.trim()) {
+      return '';
+    }
+
+    let cleanedContent = content;
+    const originalLength = content.length;
+
+    // SECURITY: Remove <thinking> tags and content
+    cleanedContent = cleanedContent.replace(/<thinking>[\s\S]*?<\/thinking>/gi, '');
+    cleanedContent = cleanedContent.replace(/<thinking[^>]*\/>/gi, '');
+
+    // SECURITY: Remove structured LLM output patterns that expose internal reasoning
+    // Pattern 1: "analysisWe need to..." - internal analysis leaking (FIXED: removed space requirement)
+    cleanedContent = cleanedContent.replace(/^analysis[A-Za-z][^]*?(?=assistant|$)/gim, '');
+    cleanedContent = cleanedContent.replace(/analysis[A-Za-z][^]*?(?=\n\nassistant|\n\n\w+:|\n\n[A-Z]|I'll|Let me|Sure|I apologize)/gim, '');
+    
+    // Pattern 2: "assistantcommentary to=..." - structured commentary leaking (ENHANCED)
+    cleanedContent = cleanedContent.replace(/^assistant\s*commentary[\s\S]*?(?=\n\n|$)/gim, '');
+    cleanedContent = cleanedContent.replace(/assistantcommentary[\s\S]*?(?=\n\n|assistant|$)/gim, '');
+    
+    // Pattern 3: "assistantfinal" markers - extract content AFTER marker (CRITICAL BUG FIX)
+    const assistantFinalMatch = cleanedContent.match(/assistant\s*final\s*([\s\S]*)/i);
+    if (assistantFinalMatch && assistantFinalMatch[1]) {
+      // If assistantfinal exists, keep ONLY what comes after it (this is the actual response)
+      cleanedContent = assistantFinalMatch[1].trim();
+      logger.info(`🔧 SECURITY: Extracted final response after assistantfinal marker`);
+    } else {
+      // Remove assistantfinal markers if no content follows
+      cleanedContent = cleanedContent.replace(/^assistant\s*final[\s\S]*?(?=\n\n|$)/gim, '');
+      cleanedContent = cleanedContent.replace(/assistantfinal/gim, '');
+    }
+    
+    // Pattern 4: Long reasoning blocks that start with complex analysis
+    cleanedContent = cleanedContent.replace(/We need to answer[^]*?(?=I'll|Let me|Sure|I apologize)/gim, '');
+    cleanedContent = cleanedContent.replace(/But no query attribute[^]*?(?=I'll|Let me|Sure|I apologize)/gim, '');
+    
+    // Pattern 5: JSON-like structured output "json{...}" leaking
+    cleanedContent = cleanedContent.replace(/json\s*\{[^}]*\}/gi, '');
+    
+    // Pattern 6: Capability execution debug output patterns
+    cleanedContent = cleanedContent.replace(/^(execute|processing|result):\s*[^\n]*\n?/gim, '');
+    
+    // Pattern 7: XML-like structured tags that aren't proper capabilities
+    cleanedContent = cleanedContent.replace(/<(analysis|commentary|debug|internal)[^>]*>[\s\S]*?<\/\1>/gi, '');
+    
+    // Pattern 8: Arrow-based structured output "→ result" without context
+    cleanedContent = cleanedContent.replace(/^→\s*[^\n]*\n?/gim, '');
+    
+    // Pattern 9: Colon-prefixed fragments ": result" without context
+    cleanedContent = cleanedContent.replace(/^:\s*[^\n]*\n?/gim, '');
+    
+    // Pattern 10: System message markers
+    cleanedContent = cleanedContent.replace(/^\[SYSTEM[^\]]*\][^\n]*\n?/gim, '');
+    
+    // Pattern 11: Debug markers and trace output
+    cleanedContent = cleanedContent.replace(/^(DEBUG|TRACE|INFO):[^\n]*\n?/gim, '');
+
+    // Pattern 12: Large thinking blocks that contain decision making process
+    cleanedContent = cleanedContent.replace(/The user wants[^]*?(?=I'll|Let me|Sure|I apologize)/gim, '');
+    cleanedContent = cleanedContent.replace(/Available capabilities[^]*?(?=I'll|Let me|Sure|I apologize)/gim, '');
+    cleanedContent = cleanedContent.replace(/The system[^]*?(?=I'll|Let me|Sure|I apologize)/gim, '');
+
+    // Clean up excessive whitespace left behind
+    cleanedContent = cleanedContent.replace(/\n\s*\n\s*\n/g, '\n\n').trim();
+    
+    // If we stripped too much and left nothing useful, provide a safe fallback
+    if (cleanedContent.length < 10 && originalLength > 50) {
+      logger.warn(`🚨 SECURITY: Stripped response too aggressively - ${originalLength} → ${cleanedContent.length} chars`);
+      cleanedContent = "I've processed your request, but had trouble formatting the response properly.";
+    }
+    
+    // Security monitoring: Log sanitization events for analysis
+    if (cleanedContent.length !== originalLength && userId && messageId) {
+      securityMonitor.logSanitizationEvent(content, cleanedContent, userId, messageId);
+    }
+    
+    return cleanedContent;
+  }
+
+  /**
    * Ask LLM what it should do next given the current context
    */
   private async getLLMNextAction(
@@ -1215,13 +1316,15 @@ ${capabilityDetails}`;
 CONVERSATION HISTORY:
 ${contextSummary}
 
-INSTRUCTIONS:
-- If you need to execute capabilities (calculate, remember, search, etc.), include them as XML tags in your response
-- If you have everything you need to give a final answer, just provide that answer (no XML tags)
-- Be natural and conversational
-- Keep responses concise (1-2 sentences)
+CRITICAL INSTRUCTIONS:
+- Look at your previous response - did you mention needing to search, calculate, or perform any action?
+- If you said you would do something (like search, calculate, remember), you MUST do it now using XML capability tags
+- Do NOT provide answers without actually executing the capabilities you mentioned
+- If you need to search the web, use: <capability name="web" action="search" query="your search terms" />
+- If you need to calculate, use: <capability name="calculator" action="evaluate" expression="math expression" />
+- Only give a final answer AFTER you've executed all necessary capabilities
 
-What should you do/say next?`;
+What capability should you execute next, or what is your final answer?`;
 
       // Get base capability instructions for available tools
       const baseInstructions = await promptManager.getCapabilityInstructions("Continue the conversation");
@@ -1239,7 +1342,10 @@ What should you do/say next?`;
         `${context.messageId}_next_action_${context.currentStep}`
       );
       
-      return nextAction.trim();
+      // SECURITY: Apply sanitization to prevent information disclosure
+      const sanitizedAction = this.stripThinkingTags(nextAction, context.userId, context.messageId);
+      
+      return sanitizedAction;
       
     } catch (error) {
       logger.error('❌ Failed to get LLM next action:', error);
@@ -1740,7 +1846,10 @@ Provide a brief, conversational update (1-2 sentences). If this was the last ste
         `${context.messageId}_intermediate_${currentStep}`
       );
       
-      return intermediateResponse.trim();
+      // SECURITY: Apply sanitization to prevent information disclosure
+      const sanitizedResponse = this.stripThinkingTags(intermediateResponse, context.userId, context.messageId);
+      
+      return sanitizedResponse;
       
     } catch (error) {
       logger.error('❌ Failed to generate intermediate response:', error);
@@ -1786,7 +1895,10 @@ Provide a concise, friendly summary (1-2 sentences) of what was accomplished ove
         `${context.messageId}_final_summary`
       );
       
-      return finalSummary.trim();
+      // SECURITY: Apply sanitization to prevent information disclosure
+      const sanitizedSummary = this.stripThinkingTags(finalSummary, context.userId, context.messageId);
+      
+      return sanitizedSummary;
       
     } catch (error) {
       logger.error('❌ Failed to generate final summary:', error);
@@ -1858,9 +1970,12 @@ Important:
         context.messageId
       );
       
-      logger.info(`✅ Final coherent response generated successfully`);
+      // SECURITY: Apply sanitization to prevent information disclosure
+      const sanitizedResponse = this.stripThinkingTags(finalResponse, context.userId, context.messageId);
       
-      return finalResponse;
+      logger.info(`✅ Final coherent response generated and sanitized successfully`);
+      
+      return sanitizedResponse;
       
     } catch (error) {
       logger.error('❌ Failed to generate final coherent response, using fallback', error);
