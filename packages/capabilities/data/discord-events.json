@@ -1,15 +1,15 @@
 [
   {
-    "timestamp": "2025-09-01T19:31:43.863Z",
+    "timestamp": "2025-09-06T13:40:37.857Z",
     "event": "discord_ready",
     "data": {
       "username": "coachartie#3359",
       "guilds": 4,
-      "channels": 107
+      "channels": 108
     }
   },
   {
-    "timestamp": "2025-09-01T19:35:04.551Z",
+    "timestamp": "2025-09-06T13:41:25.781Z",
     "userId": "688448399879438340",
     "event": "message_received",
     "data": {
@@ -17,8 +17,66 @@
     }
   },
   {
-    "timestamp": "2025-09-01T19:35:04.551Z",
-    "correlationId": "7c230cdb-e782-43ec-8fe3-d5437c922348",
+    "timestamp": "2025-09-06T13:41:25.781Z",
+    "correlationId": "63b53459-9ebd-47aa-8161-b1114322548e",
+    "userId": "688448399879438340",
+    "event": "message_received",
+    "data": {
+      "channelType": 0,
+      "guildId": "932719842522443928",
+      "contentLength": 85
+    }
+  },
+  {
+    "timestamp": "2025-09-06T13:41:25.781Z",
+    "correlationId": "63b53459-9ebd-47aa-8161-b1114322548e",
+    "userId": "688448399879438340",
+    "event": "message_observed",
+    "data": {
+      "channelName": "collab-subwaybuilder",
+      "messageLength": 85
+    }
+  },
+  {
+    "timestamp": "2025-09-06T13:41:29.352Z",
+    "userId": "688448399879438340",
+    "event": "message_received",
+    "data": {
+      "userId": "688448399879438340"
+    }
+  },
+  {
+    "timestamp": "2025-09-06T13:41:29.352Z",
+    "correlationId": "06b18bb4-69d7-4196-9f48-4716b3e4cc04",
+    "userId": "688448399879438340",
+    "event": "message_received",
+    "data": {
+      "channelType": 0,
+      "guildId": "932719842522443928",
+      "contentLength": 33
+    }
+  },
+  {
+    "timestamp": "2025-09-06T13:41:29.353Z",
+    "correlationId": "06b18bb4-69d7-4196-9f48-4716b3e4cc04",
+    "userId": "688448399879438340",
+    "event": "message_observed",
+    "data": {
+      "channelName": "collab-subwaybuilder",
+      "messageLength": 33
+    }
+  },
+  {
+    "timestamp": "2025-09-06T13:43:55.694Z",
+    "userId": "688448399879438340",
+    "event": "message_received",
+    "data": {
+      "userId": "688448399879438340"
+    }
+  },
+  {
+    "timestamp": "2025-09-06T13:43:55.694Z",
+    "correlationId": "812c539d-14cf-43e9-ac26-7568c324a80a",
     "userId": "688448399879438340",
     "event": "message_received",
     "data": {
@@ -28,8 +86,8 @@
     }
   },
   {
-    "timestamp": "2025-09-01T19:35:04.552Z",
-    "correlationId": "7c230cdb-e782-43ec-8fe3-d5437c922348",
+    "timestamp": "2025-09-06T13:43:55.694Z",
+    "correlationId": "812c539d-14cf-43e9-ac26-7568c324a80a",
     "userId": "688448399879438340",
     "event": "message_will_respond",
     "data": {
@@ -38,33 +96,47 @@
     }
   },
   {
-    "timestamp": "2025-09-01T19:35:04.783Z",
-    "correlationId": "7c230cdb-e782-43ec-8fe3-d5437c922348",
-    "userId": "688448399879438340",
-    "event": "typing_started",
-    "data": {}
+    "timestamp": "2025-09-06T13:43:55.890Z",
+    "userId": "1086489885269037128",
+    "event": "message_received",
+    "data": {
+      "userId": "1086489885269037128"
+    }
   },
   {
-    "timestamp": "2025-09-01T19:35:04.814Z",
-    "correlationId": "2097b8e7-b9a6-4260-8ac4-164be0fcd904",
+    "timestamp": "2025-09-06T13:43:55.890Z",
+    "correlationId": "65a72329-9fe5-42e6-99ee-dd7085a25a3c",
+    "userId": "1086489885269037128",
+    "event": "message_received",
+    "data": {
+      "channelType": 0,
+      "guildId": "932719842522443928",
+      "contentLength": 19
+    }
+  },
+  {
+    "timestamp": "2025-09-06T13:43:55.970Z",
+    "correlationId": "79e36090-9430-465f-b663-1bbbbb369454",
+    "userId": "688448399879438340",
+    "event": "intent_started",
+    "data": {
+      "source": "message",
+      "contentLength": 4,
+      "enableStreaming": true,
+      "enableTyping": true
+    }
+  },
+  {
+    "timestamp": "2025-09-06T13:43:56.171Z",
+    "correlationId": "2220ed58-c766-4895-ab32-97ce7199747c",
     "userId": "688448399879438340",
     "event": "job_submitted",
     "data": {
-      "jobId": "2097b8e7-b9a6-4260-8ac4-164be0fcd904"
+      "jobId": "2220ed58-c766-4895-ab32-97ce7199747c"
     }
   },
   {
-    "timestamp": "2025-09-01T19:35:04.814Z",
-    "correlationId": "7c230cdb-e782-43ec-8fe3-d5437c922348",
-    "userId": "688448399879438340",
-    "event": "job_submitted",
-    "data": {
-      "jobId": "2097b8e7-b9a6-4260-8ac4-164be0fcd904",
-      "messageLength": 4
-    }
-  },
-  {
-    "timestamp": "2025-09-01T19:35:04.966Z",
+    "timestamp": "2025-09-06T13:43:59.247Z",
     "userId": "1086489885269037128",
     "event": "message_received",
     "data": {
@@ -72,89 +144,18 @@
     }
   },
   {
-    "timestamp": "2025-09-01T19:35:04.966Z",
-    "correlationId": "735fcd2b-98b7-4849-be57-fee30b6664e2",
+    "timestamp": "2025-09-06T13:43:59.247Z",
+    "correlationId": "19098228-631b-4396-baaa-1aff848162e9",
     "userId": "1086489885269037128",
     "event": "message_received",
     "data": {
       "channelType": 0,
       "guildId": "932719842522443928",
-      "contentLength": 39
+      "contentLength": 738
     }
   },
   {
-    "timestamp": "2025-09-01T19:35:05.401Z",
-    "correlationId": "7c230cdb-e782-43ec-8fe3-d5437c922348",
-    "userId": "688448399879438340",
-    "event": "status_updated",
-    "data": {
-      "status": "pending",
-      "processingTime": 385,
-      "updateCount": 0
-    }
-  },
-  {
-    "timestamp": "2025-09-01T19:35:08.347Z",
-    "userId": "1086489885269037128",
-    "event": "message_received",
-    "data": {
-      "userId": "1086489885269037128"
-    }
-  },
-  {
-    "timestamp": "2025-09-01T19:35:08.347Z",
-    "correlationId": "1cb82768-244f-4f72-837a-7ef992b512a5",
-    "userId": "1086489885269037128",
-    "event": "message_received",
-    "data": {
-      "channelType": 0,
-      "guildId": "932719842522443928",
-      "contentLength": 146
-    }
-  },
-  {
-    "timestamp": "2025-09-01T19:35:20.446Z",
-    "correlationId": "7c230cdb-e782-43ec-8fe3-d5437c922348",
-    "userId": "688448399879438340",
-    "event": "status_updated",
-    "data": {
-      "status": "pending",
-      "processingTime": 15402,
-      "updateCount": 5
-    }
-  },
-  {
-    "timestamp": "2025-09-01T19:35:29.378Z",
-    "correlationId": "7c230cdb-e782-43ec-8fe3-d5437c922348",
-    "userId": "688448399879438340",
-    "event": "status_updated",
-    "data": {
-      "status": "completed",
-      "processingTime": 21627,
-      "updateCount": 8
-    }
-  },
-  {
-    "timestamp": "2025-09-01T19:35:29.854Z",
-    "userId": "1086489885269037128",
-    "event": "message_received",
-    "data": {
-      "userId": "1086489885269037128"
-    }
-  },
-  {
-    "timestamp": "2025-09-01T19:35:29.854Z",
-    "correlationId": "27436b73-4f69-4346-9875-b80fd3b8904e",
-    "userId": "1086489885269037128",
-    "event": "message_received",
-    "data": {
-      "channelType": 0,
-      "guildId": "932719842522443928",
-      "contentLength": 860
-    }
-  },
-  {
-    "timestamp": "2025-09-01T19:35:30.017Z",
+    "timestamp": "2025-09-06T13:43:59.325Z",
     "userId": "688448399879438340",
     "event": "response_delivered",
     "data": {
@@ -162,170 +163,45 @@
     }
   },
   {
-    "timestamp": "2025-09-01T19:35:30.017Z",
-    "correlationId": "2097b8e7-b9a6-4260-8ac4-164be0fcd904",
+    "timestamp": "2025-09-06T13:44:02.254Z",
+    "userId": "1086489885269037128",
+    "event": "message_received",
+    "data": {
+      "userId": "1086489885269037128"
+    }
+  },
+  {
+    "timestamp": "2025-09-06T13:44:02.254Z",
+    "correlationId": "eaaa989e-7770-4ec9-8a64-5f7781f681d0",
+    "userId": "1086489885269037128",
+    "event": "message_received",
+    "data": {
+      "channelType": 0,
+      "guildId": "932719842522443928",
+      "contentLength": 182
+    }
+  },
+  {
+    "timestamp": "2025-09-06T13:44:02.295Z",
     "userId": "688448399879438340",
-    "event": "job_completed",
+    "event": "response_delivered",
     "data": {
-      "jobId": "2097b8e7-b9a6-4260-8ac4-164be0fcd904",
-      "duration": 24675
-    },
-    "duration": 24675,
-    "success": true
+      "chunks": 1
+    }
   },
   {
-    "timestamp": "2025-09-01T19:35:30.017Z",
+    "timestamp": "2025-09-06T13:44:41.129Z",
+    "correlationId": "79e36090-9430-465f-b663-1bbbbb369454",
     "userId": "688448399879438340",
-    "event": "message_processed",
+    "event": "intent_completed",
     "data": {
-      "duration": 24675
+      "source": "message",
+      "jobId": "2220ed58-c766-4895-ab32-97ce7199747c",
+      "duration": 45159,
+      "streamedChunks": 2,
+      "resultLength": 692
     },
-    "duration": 24675,
+    "duration": 45159,
     "success": true
-  },
-  {
-    "timestamp": "2025-09-02T00:18:25.966Z",
-    "userId": "1291577517571834010",
-    "event": "message_received",
-    "data": {
-      "userId": "1291577517571834010"
-    }
-  },
-  {
-    "timestamp": "2025-09-02T00:18:25.967Z",
-    "correlationId": "df8eabda-8894-4b82-a723-84592b06cee8",
-    "userId": "1291577517571834010",
-    "event": "message_received",
-    "data": {
-      "channelType": 0,
-      "guildId": "1149071828258660402",
-      "contentLength": 1173
-    }
-  },
-  {
-    "timestamp": "2025-09-02T00:18:25.968Z",
-    "correlationId": "df8eabda-8894-4b82-a723-84592b06cee8",
-    "userId": "1291577517571834010",
-    "event": "message_observed",
-    "data": {
-      "channelName": "wpi-dataviz-2025",
-      "messageLength": 1173
-    }
-  },
-  {
-    "timestamp": "2025-09-02T00:32:21.527Z",
-    "userId": "747851999361499217",
-    "event": "message_received",
-    "data": {
-      "userId": "747851999361499217"
-    }
-  },
-  {
-    "timestamp": "2025-09-02T00:32:21.527Z",
-    "correlationId": "a621a46a-73b9-416d-86b0-e4dab7dad6a0",
-    "userId": "747851999361499217",
-    "event": "message_received",
-    "data": {
-      "channelType": 0,
-      "guildId": "1149071828258660402",
-      "contentLength": 751
-    }
-  },
-  {
-    "timestamp": "2025-09-02T00:32:21.527Z",
-    "correlationId": "a621a46a-73b9-416d-86b0-e4dab7dad6a0",
-    "userId": "747851999361499217",
-    "event": "message_observed",
-    "data": {
-      "channelName": "wpi-dataviz-2025",
-      "messageLength": 751
-    }
-  },
-  {
-    "timestamp": "2025-09-02T00:47:15.747Z",
-    "userId": "1291577517571834010",
-    "event": "message_received",
-    "data": {
-      "userId": "1291577517571834010"
-    }
-  },
-  {
-    "timestamp": "2025-09-02T00:47:15.747Z",
-    "correlationId": "1dea19d8-d45f-4bd4-b70c-a6c5cde374d2",
-    "userId": "1291577517571834010",
-    "event": "message_received",
-    "data": {
-      "channelType": 0,
-      "guildId": "1149071828258660402",
-      "contentLength": 1169
-    }
-  },
-  {
-    "timestamp": "2025-09-02T00:47:15.747Z",
-    "correlationId": "1dea19d8-d45f-4bd4-b70c-a6c5cde374d2",
-    "userId": "1291577517571834010",
-    "event": "message_observed",
-    "data": {
-      "channelName": "wpi-dataviz-2025",
-      "messageLength": 1169
-    }
-  },
-  {
-    "timestamp": "2025-09-02T01:38:26.620Z",
-    "userId": "395776847767535616",
-    "event": "message_received",
-    "data": {
-      "userId": "395776847767535616"
-    }
-  },
-  {
-    "timestamp": "2025-09-02T01:38:26.620Z",
-    "correlationId": "6c83b26f-c705-488c-83a6-c4e73014921f",
-    "userId": "395776847767535616",
-    "event": "message_received",
-    "data": {
-      "channelType": 0,
-      "guildId": "1149071828258660402",
-      "contentLength": 1947
-    }
-  },
-  {
-    "timestamp": "2025-09-02T01:38:26.641Z",
-    "correlationId": "6c83b26f-c705-488c-83a6-c4e73014921f",
-    "userId": "395776847767535616",
-    "event": "message_observed",
-    "data": {
-      "channelName": "wpi-dataviz-2025",
-      "messageLength": 1947
-    }
-  },
-  {
-    "timestamp": "2025-09-02T01:46:24.150Z",
-    "userId": "395776847767535616",
-    "event": "message_received",
-    "data": {
-      "userId": "395776847767535616"
-    }
-  },
-  {
-    "timestamp": "2025-09-02T01:46:24.150Z",
-    "correlationId": "ab0dc416-043f-4c6a-a657-d65e8b387271",
-    "userId": "395776847767535616",
-    "event": "message_received",
-    "data": {
-      "channelType": 0,
-      "guildId": "1149071828258660402",
-      "contentLength": 579
-    }
-  },
-  {
-    "timestamp": "2025-09-02T01:46:24.156Z",
-    "correlationId": "ab0dc416-043f-4c6a-a657-d65e8b387271",
-    "userId": "395776847767535616",
-    "event": "message_observed",
-    "data": {
-      "channelName": "wpi-dataviz-2025",
-      "messageLength": 579
-    }
   }
 ]

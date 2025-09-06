@@ -166,7 +166,8 @@ export class JobMonitor {
       }
 
       const status = await response.json() as JobStatusResponse;
-      logger.info(`🔍 Job ${shortId} status: "${status.status}", hasResponse: ${!!status.response}, responseLength: ${status.response?.length || 0}`);
+      const actualResponse = status.partialResponse || status.response;
+      logger.info(`🔍 Job ${shortId} status: "${status.status}", hasResponse: ${!!actualResponse}, responseLength: ${actualResponse?.length || 0}`);
 
       // Call progress callback if status changed
       if (callback.onProgress) {
@@ -180,19 +181,19 @@ export class JobMonitor {
         // CRITICAL: Unregister job FIRST to prevent duplicate callbacks
         this.unmonitorJob(jobId);
         
-        if (status.response && callback.onComplete) {
-          logger.info(`🚀 Calling onComplete for job ${shortId} with ${status.response.length} chars`);
-          logger.info(`📝 Response preview: "${status.response.substring(0, 100)}..."`);
+        if (actualResponse && callback.onComplete) {
+          logger.info(`🚀 Calling onComplete for job ${shortId} with ${actualResponse.length} chars`);
+          logger.info(`📝 Response preview: "${actualResponse.substring(0, 100)}..."`);
           
           try {
             // Fire and forget - job is already unregistered
-            callback.onComplete(status.response);
+            callback.onComplete(actualResponse);
             logger.info(`✅ onComplete callback executed successfully for job ${shortId}`);
           } catch (callbackError) {
             logger.error(`❌ onComplete callback failed for job ${shortId}:`, callbackError);
           }
         } else {
-          logger.warn(`⚠️ Job ${shortId} completed but missing response (${!!status.response}) or callback (${!!callback.onComplete})`);
+          logger.warn(`⚠️ Job ${shortId} completed but missing response (${!!actualResponse}) or callback (${!!callback.onComplete})`);
         }
         
         return;

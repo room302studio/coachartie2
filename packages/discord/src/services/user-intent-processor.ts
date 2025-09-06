@@ -163,10 +163,10 @@ export async function processUserIntent(
         });
 
         try {
-          // Send response if not already streamed
-          if (streamedChunks === 0) {
-            await intent.respond(result || 'No response received');
-          }
+          // ALWAYS send the final clean response (it overwrites any streamed partial content)
+          // This ensures users get the properly sanitized response, not raw LLM output
+          await intent.respond(result || 'No response received');
+          logger.info(`Sent final clean response [${shortId}] (${result?.length || 0} chars, had ${streamedChunks} streamed chunks)`);
 
           telemetry.logEvent('intent_completed', {
             source: intent.source,

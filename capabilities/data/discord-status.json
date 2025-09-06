@@ -1,7 +1,7 @@
 {
   "status": "ready",
-  "timestamp": "2025-08-31T21:40:08.233Z",
-  "pid": 43255,
+  "timestamp": "2025-09-06T13:46:31.609Z",
+  "pid": 6511,
   "guilds": 4,
   "guildDetails": [
     {
@@ -18,8 +18,8 @@
     },
     {
       "name": "Room 302 Studio",
-      "memberCount": 42,
-      "channels": 30,
+      "memberCount": 43,
+      "channels": 31,
       "id": "932719842522443928"
     },
     {
@@ -29,9 +29,9 @@
       "id": "1149071828258660402"
     }
   ],
-  "totalChannels": 107,
-  "totalMembers": 305,
-  "uptime": 1.399416792,
+  "totalChannels": 108,
+  "totalMembers": 306,
+  "uptime": 2.006004166,
   "username": "coachartie#3359",
   "permissions": "none"
 }

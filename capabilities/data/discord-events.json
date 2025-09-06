@@ -1,0 +1,11 @@
+[
+  {
+    "timestamp": "2025-09-06T13:46:31.608Z",
+    "event": "discord_ready",
+    "data": {
+      "username": "coachartie#3359",
+      "guilds": 4,
+      "channels": 108
+    }
+  }
+]

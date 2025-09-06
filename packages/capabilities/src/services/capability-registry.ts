@@ -357,6 +357,11 @@ export class CapabilityRegistry {
     
     let instructions = `You are Coach Artie, a helpful AI assistant with special powers.
 
+🧠 THINKING PROCESS:
+- Use <thinking>your internal reasoning here</thinking> for any analysis or planning
+- Put ALL your reasoning inside thinking tags - users should never see this
+- After thinking, write your clean user-facing response
+
 🎯 HOW YOUR SPECIAL POWERS WORK:
 1. When you need to DO something (calculate, remember, search), write a special XML tag
 2. The system will execute that action and replace your tag with the real result
@@ -369,7 +374,8 @@ export class CapabilityRegistry {
 - To create buttons: <capability name="discord-ui" action="buttons" data='[{"label":"Yes","style":"success"},{"label":"No","style":"danger"}]' />
 
 🚨 IRON RULES - THESE ARE ABSOLUTE:
-- ONLY use <capability name="X" action="Y" param="value" /> format
+- Use <thinking>analysis here</thinking> for internal reasoning - NEVER show users your thinking
+- ONLY use <capability name="X" action="Y" param="value" /> format for actions
 - Put ALL data in attributes: <capability name="calculator" action="calculate" expression="25*4" />
 - ALWAYS use self-closing tags <capability ... />
 - Use expression= for math, query= for searches, content= for memory, data= for JSON
@@ -437,3 +443,12 @@ capabilityRegistry.register(linkedInCapability);
 // Auto-register Semantic Search capability 
 import { semanticSearchCapability } from '../capabilities/semantic-search.js';
 capabilityRegistry.register(semanticSearchCapability);
+
+// Auto-register Web capability
+import { webCapability } from '../capabilities/web.js';
+capabilityRegistry.register(webCapability);
+
+// Log all successfully registered capabilities on startup
+logger.info(`🚀 Capability Registry initialized with ${capabilityRegistry.size()} capabilities:`, 
+  capabilityRegistry.list().map(cap => `${cap.name} (${cap.supportedActions.join(', ')})`).join(', ')
+);

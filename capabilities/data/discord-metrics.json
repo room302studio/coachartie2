@@ -1,0 +1,23 @@
+{
+  "messagesReceived": 0,
+  "messagesProcessed": 0,
+  "messagesFailed": 0,
+  "responsesDelivered": 0,
+  "jobsSubmitted": 0,
+  "jobsCompleted": 0,
+  "jobsFailed": 0,
+  "jobsTimedOut": 0,
+  "averageResponseTime": 0,
+  "maxResponseTime": 0,
+  "minResponseTime": 0,
+  "typingIndicatorsSent": 0,
+  "messageChunksSent": 0,
+  "apiErrors": 0,
+  "reconnections": 0,
+  "uptime": 30001,
+  "uniqueUsers": [],
+  "guildCount": 4,
+  "channelCount": 108,
+  "uniqueUserCount": 0,
+  "timestamp": "2025-09-06T13:47:01.013Z"
+}

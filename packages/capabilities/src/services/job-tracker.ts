@@ -71,7 +71,7 @@ export class JobTracker {
     if (job && (job.status === 'pending' || job.status === 'processing')) {
       job.partialResponse = partialResponse;
       job.lastStreamUpdate = new Date();
-      logger.debug(`🔄 Updated partial response for job ${messageId}: ${partialResponse.substring(0, 100)}...`);
+      logger.info(`🔄 Updated partial response for job ${messageId}: ${partialResponse.substring(0, 100)}...`);
     }
   }
 

@@ -249,7 +249,7 @@ export class ContextAlchemy {
    */
   private async addCapabilityManifest(sources: ContextSource[]): Promise<void> {
     // Just the essential capability info, not a massive list
-    const content = `Available capabilities: calculate, remember, recall, web-search, goal, variable_store, todo, linkedin`;
+    const content = `Available capabilities: calculate, remember, recall, web, goal, variable_store, todo, linkedin`;
     
     sources.push({
       name: 'capability_context',
