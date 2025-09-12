@@ -226,131 +226,11 @@ export class CapabilityXMLParser {
   }
 
   /**
-   * Map simple tag names to capability format
+   * Map simple tag names to capability format - DELETED COMPLEX MAPPINGS
    */
   private mapTagToCapability(tagName: string, params: Record<string, unknown>, content: string): ParsedCapability | null {
-    // Memory capabilities
-    if (tagName === 'remember') {
-      return {
-        name: 'memory',
-        action: 'remember',
-        params,
-        content
-      };
-    }
-    
-    if (tagName === 'recall') {
-      // Handle different recall patterns:
-      // <recall>pizza</recall> -> search for "pizza"
-      // <recall user="john">pizza</recall> -> search for "pizza" for user "john"  
-      // <recall auto /> -> get recent memories automatically
-      return {
-        name: 'memory',
-        action: content ? 'search' : 'recent',
-        params: {
-          query: content,
-          ...params
-        },
-        content: ''
-      };
-    }
-    
-    if (tagName === 'search-memory') {
-      return {
-        name: 'memory',
-        action: 'search',
-        params: {
-          query: content,
-          ...params
-        },
-        content: ''
-      };
-    }
-    
-    // Calculator
-    if (tagName === 'calculate') {
-      return {
-        name: 'calculator',
-        action: 'calculate',
-        params,
-        content
-      };
-    }
-    
-    // Web search
-    if (tagName === 'web-search') {
-      return {
-        name: 'web',
-        action: 'search',
-        params: {
-          query: content,
-          ...params
-        },
-        content: ''
-      };
-    }
-    
-    // MCP auto-installation with corruption resistance
-    if (tagName === 'mcp-auto-install' || tagName === 'mcp-install' || tagName === 'install-mcp') {
-      // Extract package name from content, validate and sanitize
-      const packageName = this.sanitizePackageName(content);
-      if (packageName) {
-        return {
-          name: 'mcp_auto_installer',
-          action: 'install_npm',
-          params: { package: packageName },
-          content: packageName
-        };
-      } else {
-        return null;
-      }
-    }
-    
-    // Check for registered MCP tools first (prioritize MCP system)
-    if (global.mcpToolRegistry && global.mcpToolRegistry.has(tagName)) {
-      const mcpTool = global.mcpToolRegistry.get(tagName);
-      if (mcpTool) {
-        return {
-          name: 'mcp_client',
-          action: 'call_tool', 
-          params: {
-            connectionId: mcpTool.connectionId,
-            tool_name: tagName,
-            args: content ? { q: content, __intent: `Search for ${content}` } : params
-          },
-          content: ''
-        };
-      }
-    }
-    
-    if (global.mcpToolRegistry && global.mcpToolRegistry.size > 0) {
-    } else {
-    }
-    
-    // MCP tools (kebab-case with multiple parts)
-    if (tagName.includes('-')) {
-      // Convert kebab-case to snake_case without regex
-      let snakeToolName = '';
-      for (let i = 0; i < tagName.length; i++) {
-        if (tagName[i] === '-') {
-          snakeToolName += '_';
-        } else {
-          snakeToolName += tagName[i];
-        }
-      }
-      return {
-        name: 'mcp_client',
-        action: 'call_tool',
-        params: {
-          tool_name: snakeToolName,
-          ...params
-        },
-        content
-      };
-    }
-    
-    // Unknown tag - log and skip
-    logger.warn(`Unknown simple capability tag: ${tagName}`);
+    // DELETED - let the registry handle everything
+    logger.warn(`Simple tag format not supported: ${tagName}. Use: <capability name="..." action="..." />`);
     return null;
   }
 
@@ -492,71 +372,13 @@ export class CapabilityXMLParser {
     }
   }
 
-  /**
-   * Sanitize and validate npm package names to prevent model corruption
-   */
-  private sanitizePackageName(input: string): string | null {
-    if (!input || typeof input !== 'string') {
-      return null;
-    }
-
-    // Remove any extra whitespace and newlines
-    const cleaned = input.trim().replace(/\s+/g, '');
-    
-    // Valid npm package name patterns
-    const npmPackagePattern = /^(@[a-z0-9-~][a-z0-9-._~]*\/)?[a-z0-9-~][a-z0-9-._~]*$/;
-    
-    // Check if it matches valid npm package format
-    if (npmPackagePattern.test(cleaned)) {
-      return cleaned;
-    }
-
-    // Try to extract package name from corrupted output
-    // Look for patterns like "metmuseum-mcp" or "@shelm/wikipedia-mcp-server"
-    const extractPatterns = [
-      /(@?[a-z0-9-]+\/[a-z0-9-]+)/i,  // Scoped packages
-      /([a-z][a-z0-9-]*mcp[a-z0-9-]*)/i,  // Packages with "mcp" in name
-      /([a-z][a-z0-9-]{2,})/i  // General package-like strings
-    ];
-
-    for (const pattern of extractPatterns) {
-      const match = cleaned.match(pattern);
-      if (match && npmPackagePattern.test(match[1])) {
-        return match[1];
-      }
-    }
-
-    return null;
-  }
+  // DELETED - sanitizePackageName method - not needed
 
   /**
-   * Check if a tag name represents a simple capability
+   * Check if a tag name represents a simple capability - DELETED
    */
   private isSimpleCapabilityTag(tagName: string): boolean {
-    // Known simple capability tags
-    const knownTags = [
-      'remember', 'recall', 'search-memory', 'calculate', 'calc', 'web-search',
-      'mcp-auto-install', 'mcp-install', 'install-mcp'
-    ];
-    
-    if (knownTags.includes(tagName)) {
-      return true;
-    }
-    
-    // MCP tools (kebab-case with dashes) - use simple string checks instead of regex
-    if (tagName.includes('-')) {
-      // Check if it's a valid kebab-case pattern (letters and dashes only)
-      let isValid = true;
-      for (let i = 0; i < tagName.length; i++) {
-        const char = tagName[i];
-        if (!(char >= 'a' && char <= 'z') && char !== '-') {
-          isValid = false;
-          break;
-        }
-      }
-      return isValid && !tagName.startsWith('-') && !tagName.endsWith('-');
-    }
-    
+    // DELETED - no more simple tags, force proper syntax
     return false;
   }
 }

@@ -2,6 +2,25 @@
 
 🚀 **Production-grade AI system with embedded MCP tools, free model fallbacks, and bulletproof Docker architecture**
 
+## 🚀 Quick Start - One Command Launch
+
+```bash
+# Start all services with one command:
+./start.sh
+```
+
+**That's it!** The script will:
+- ✅ Check for required `.env` file
+- ✅ Build and start all Docker services
+- ✅ Show you all available endpoints
+- ✅ Display useful management commands
+
+**Available after startup:**
+- **Brain UI**: http://localhost:24680
+- **Capabilities API**: http://localhost:18239  
+- **SMS Service**: http://localhost:27461
+- **Redis**: localhost:6380
+
 ## 🚨 IMPORTANT: Choose ONE Method - Docker OR Local Development
 
 ⚠️ **WARNING**: You cannot run both Docker and local development at the same time - they will fight over the same ports!
