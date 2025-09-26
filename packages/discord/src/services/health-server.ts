@@ -24,7 +24,7 @@ export class HealthServer {
   private port: number;
   private discordClient: any;
 
-  constructor(port: number = 3001) {
+  constructor(port: number = 47319) {
     this.port = port;
   }
 
@@ -235,5 +235,5 @@ export class HealthServer {
 
 // Export singleton instance
 export const healthServer = new HealthServer(
-  parseInt(process.env.HEALTH_PORT || '3001')
+  parseInt(process.env.HEALTH_PORT || '47319')
 );

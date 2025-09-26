@@ -109,7 +109,7 @@ healthRouter.get('/detailed', async (req, res) => {
     checks.environment = {
       nodeEnv: process.env.NODE_ENV || 'development',
       logLevel: process.env.LOG_LEVEL || 'info',
-      port: process.env.CAPABILITIES_PORT || '18239'
+      port: process.env.CAPABILITIES_PORT || '47324'
     };
 
     const responseTime = Date.now() - startTime;

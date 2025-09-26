@@ -2,7 +2,7 @@
   "name": "wikipedia",
   "description": "Official Wikipedia MCP Server for encyclopedia searches and article retrieval",
   "version": "latest",
-  "port": 3010,
+  "port": 47322,
   "environment": {},
   "createdAt": "2025-07-08T12:39:09.501Z",
   "installedBy": "CoachArtie MCP Installer"

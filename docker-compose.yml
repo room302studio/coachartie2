@@ -19,11 +19,11 @@ services:
       dockerfile: ./packages/capabilities/Dockerfile
     user: "1000:1000"
     ports:
-      - "127.0.0.1:18239:18239"  # Bind to localhost only
+      - "127.0.0.1:47324:47324"  # Bind to localhost only
     environment:
       - NODE_ENV=development
       - DATABASE_PATH=/app/data/coachartie.db
-      - CAPABILITIES_PORT=18239
+      - CAPABILITIES_PORT=47324
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - LOG_LEVEL=info
@@ -42,7 +42,7 @@ services:
       redis:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:18239/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:47324/health"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -55,7 +55,7 @@ services:
       dockerfile: ./packages/discord/Dockerfile
     environment:
       - NODE_ENV=development
-      - CAPABILITIES_URL=http://capabilities:18239
+      - CAPABILITIES_URL=http://capabilities:47324
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - DISCORD_TOKEN=${DISCORD_TOKEN}
@@ -75,13 +75,13 @@ services:
       context: .
       dockerfile: ./packages/sms/Dockerfile
     ports:
-      - "127.0.0.1:27461:27461"  # Bind to localhost only
+      - "127.0.0.1:47326:47326"  # Bind to localhost only
     environment:
       - NODE_ENV=development
-      - CAPABILITIES_URL=http://capabilities:18239
+      - CAPABILITIES_URL=http://capabilities:47324
       - REDIS_HOST=redis
       - REDIS_PORT=6379
-      - SMS_PORT=27461
+      - SMS_PORT=47326
       - TWILIO_ACCOUNT_SID=${TWILIO_ACCOUNT_SID}
       - TWILIO_AUTH_TOKEN=${TWILIO_AUTH_TOKEN}
       - TWILIO_PHONE_NUMBER=${TWILIO_PHONE_NUMBER}
@@ -91,7 +91,7 @@ services:
       capabilities:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:27461/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:47326/health"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -104,11 +104,11 @@ services:
       dockerfile: ./packages/brain/Dockerfile
     user: "1000:1000"
     ports:
-      - "127.0.0.1:24680:3000"  # Map external 24680 to internal 3000
+      - "127.0.0.1:47325:3000"  # Map external 47325 to internal 3000
     environment:
       - NODE_ENV=development
-      - CAPABILITIES_URL=http://capabilities:18239
-      - API_BASE_URL=http://localhost:18239
+      - CAPABILITIES_URL=http://capabilities:47324
+      - API_BASE_URL=http://localhost:47324
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - DATABASE_PATH=/app/data/coachartie.db
