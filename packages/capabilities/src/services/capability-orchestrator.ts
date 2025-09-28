@@ -22,7 +22,7 @@ import { goalCapability } from "../capabilities/goal.js";
 import { variableStoreCapability } from "../capabilities/variable-store.js";
 import { todoCapability } from "../capabilities/todo.js";
 import { discordUICapability } from "../capabilities/discord-ui.js";
-import { CapabilitySuggester } from "../utils/capability-suggester.js";
+// import { CapabilitySuggester } from "../utils/capability-suggester.js"; // Removed during refactoring
 import { capabilityXMLParser } from "../utils/xml-parser.js";
 import { conscienceLLM } from './conscience.js';
 import { bulletproofExtractor } from "../utils/bulletproof-capability-extractor.js";
@@ -61,14 +61,14 @@ interface OrchestrationContext {
 
 export class CapabilityOrchestrator {
   private contexts = new Map<string, OrchestrationContext>();
-  private capabilitySuggester: CapabilitySuggester;
+  // private capabilitySuggester: CapabilitySuggester; // Removed during refactoring
 
   constructor() {
     // Initialize the capability registry with existing capabilities
     this.initializeCapabilityRegistry();
     
-    // Initialize the capability suggester
-    this.capabilitySuggester = new CapabilitySuggester(capabilityRegistry.list());
+    // Initialize the capability suggester - Removed during refactoring
+    // this.capabilitySuggester = new CapabilitySuggester(capabilityRegistry.list());
   }
 
   /**
@@ -1501,9 +1501,13 @@ What capability should you execute next, or what is your final answer?`;
     const userId = context ? context.userId : 'unknown-user';
 
     try {
-      // Inject userId into params for capabilities that need user context
+      // Inject userId and messageId into params for capabilities that need context
       const paramsWithContext = ['scheduler', 'memory'].includes(capability.name)
-        ? { ...capability.params, userId }
+        ? {
+            ...capability.params,
+            userId,
+            messageId: context?.messageId
+          }
         : capability.params;
       
       // Debug: log what we're passing to the registry
@@ -1852,24 +1856,13 @@ Provide a concise, friendly summary (1-2 sentences) of what was accomplished ove
       }
     }).join('\n');
 
-    // Create final response prompt - TODO: Move to Context Alchemy
-    // This should also use the prompt database, not hardcoded text
-    const finalPrompt = `Assistant response synthesis. User asked: "${context.originalMessage}"
-
-Capability execution results:
-${capabilityResults}
-
-Please provide a final, coherent response that incorporates these capability results naturally. Be conversational, helpful, and don't repeat the raw capability output - instead, present the information in a natural way.
-
-Important: 
-- Don't use capability tags in your final response
-- Present the results as if you calculated/found them yourself
-- Be concise but friendly
-- If there were errors, acknowledge them helpfully`;
-
     try {
-      // Use Context Alchemy for final response generation
+      // Use Context Alchemy for synthesis prompt and final response generation
       const { contextAlchemy } = await import('./context-alchemy.js');
+      const finalPrompt = await contextAlchemy.generateCapabilitySynthesisPrompt(
+        context.originalMessage,
+        capabilityResults
+      );
       const { promptManager } = await import('./prompt-manager.js');
       
       const baseSystemPrompt = await promptManager.getCapabilityInstructions(finalPrompt);

@@ -137,9 +137,13 @@ export class RobustCapabilityExecutor {
     capability: ParsedCapability, 
     context: { userId: string; messageId: string }
   ): Promise<unknown> {
-    // Inject userId into params for capabilities that need it
+    // Inject userId and messageId into params for capabilities that need context
     const paramsWithContext = ['scheduler', 'memory'].includes(capability.name)
-      ? { ...capability.params, userId: context.userId }
+      ? {
+          ...capability.params,
+          userId: context.userId,
+          messageId: context.messageId
+        }
       : capability.params;
     
     logger.info(`🎯 REGISTRY: Executing ${capability.name}:${capability.action} with params: ${JSON.stringify(paramsWithContext)}`);

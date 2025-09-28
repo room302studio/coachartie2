@@ -59,7 +59,7 @@ export class MemoryService {
 
   // Legacy initializeDatabase deleted - hybrid layer handles schema
 
-  async remember(userId: string, content: string, context: string = '', importance: number = 5): Promise<string> {
+  async remember(userId: string, content: string, context: string = '', importance: number = 5, relatedMessageId?: number): Promise<string> {
     if (this.useHybridLayer) {
       // FAST PATH: Use hybrid data layer for instant storage + background persistence
       try {
@@ -75,7 +75,8 @@ export class MemoryService {
             tags: basicTags,
             context,
             importance
-          }
+          },
+          related_message_id: relatedMessageId
         };
 
         // Instant hot cache storage + async SQLite persistence
@@ -88,7 +89,8 @@ export class MemoryService {
           logger.error('❌ Failed to generate semantic tags:', error);
         });
         
-        return `✅ Remembered: "${content}" (ID: ${memoryId.substring(0, 8)}, importance: ${importance}/10, tags: ${basicTags.join(', ')})`;
+        const relationshipNote = relatedMessageId ? ` linked to message ${relatedMessageId}` : '';
+        return `✅ Remembered: "${content}" (ID: ${memoryId.substring(0, 8)}, importance: ${importance}/10, tags: ${basicTags.join(', ')}${relationshipNote})`;
       } catch (error) {
         logger.error('❌ [HYBRID] Failed to store memory, falling back to legacy:', error);
         this.useHybridLayer = false; // Fallback to legacy
@@ -399,7 +401,16 @@ async function handleMemoryAction(params: MemoryParams, content?: string): Promi
         const context = String(params.context || '');
         const importance = Math.max(1, Math.min(10, parseInt(String(params.importance)) || 5));
         
-        const result = await memoryService.remember(String(userId), String(contentToRemember), context, importance);
+        // Get messageId from params (set by capability orchestrator)
+        const relatedMessageId = params.messageId ? parseInt(String(params.messageId)) : undefined;
+
+        const result = await memoryService.remember(
+          String(userId),
+          String(contentToRemember),
+          context,
+          importance,
+          relatedMessageId
+        );
         logger.info(`🎯 Memory remember result: ${result}`);
         return result;
       }
