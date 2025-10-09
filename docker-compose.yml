@@ -3,15 +3,24 @@ version: '3.8'
 services:
   redis:
     image: redis:7-alpine
+    command: redis-server --port 47320 --appendonly yes --maxmemory 512mb --maxmemory-policy noeviction
     ports:
-      - "127.0.0.1:6380:6379"  # Bind to localhost only, use port 6380
+      - "127.0.0.1:47320:47320"  # Same port internally and externally
     volumes:
       - redis_data:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD", "redis-cli", "-p", "47320", "ping"]
       interval: 30s
       timeout: 10s
       retries: 3
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 128M
+    restart: unless-stopped
 
   capabilities:
     build:
@@ -19,15 +28,20 @@ services:
       dockerfile: ./packages/capabilities/Dockerfile
     user: "1000:1000"
     ports:
-      - "127.0.0.1:47324:47324"  # Bind to localhost only
+      - "127.0.0.1:47324:47324"  # Same port internally and externally
     environment:
       - NODE_ENV=development
       - DATABASE_PATH=/app/data/coachartie.db
       - CAPABILITIES_PORT=47324
       - REDIS_HOST=redis
-      - REDIS_PORT=6379
+      - REDIS_PORT=47320
       - LOG_LEVEL=info
+      - CONSOLE_LOG_LEVEL=info
+      - SERVICE_NAME=capabilities
+      - LOGS_DIR=/app/logs
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - CONTEXT_ALCHEMY_DEBUG=${CONTEXT_ALCHEMY_DEBUG}
       - DISCORD_TOKEN=${DISCORD_TOKEN}
       - DISCORD_CLIENT_ID=${DISCORD_CLIENT_ID}
       - WOLFRAM_APP_ID=${WOLFRAM_APP_ID}
@@ -37,6 +51,7 @@ services:
     volumes:
       - ./packages/capabilities/data:/app/data:rw
       - ./packages/capabilities/src:/app/src
+      - ./logs:/app/logs:rw
       - /app/node_modules
     depends_on:
       redis:
@@ -53,16 +68,24 @@ services:
     build:
       context: .
       dockerfile: ./packages/discord/Dockerfile
+    ports:
+      - "127.0.0.1:47321:47321"  # Same port internally and externally
     environment:
       - NODE_ENV=development
       - CAPABILITIES_URL=http://capabilities:47324
       - REDIS_HOST=redis
-      - REDIS_PORT=6379
+      - REDIS_PORT=47320
+      - DISCORD_PORT=47321
       - DISCORD_TOKEN=${DISCORD_TOKEN}
       - DISCORD_CLIENT_ID=${DISCORD_CLIENT_ID}
       - DATABASE_PATH=/app/data/coachartie.db
+      - LOG_LEVEL=info
+      - CONSOLE_LOG_LEVEL=warn
+      - SERVICE_NAME=discord
+      - LOGS_DIR=/app/logs
     volumes:
       - ./packages/capabilities/data:/app/data:rw
+      - ./logs:/app/logs:rw
     depends_on:
       redis:
         condition: service_healthy
@@ -80,11 +103,17 @@ services:
       - NODE_ENV=development
       - CAPABILITIES_URL=http://capabilities:47324
       - REDIS_HOST=redis
-      - REDIS_PORT=6379
+      - REDIS_PORT=47320
       - SMS_PORT=47326
+      - LOG_LEVEL=info
+      - CONSOLE_LOG_LEVEL=warn
+      - SERVICE_NAME=sms
+      - LOGS_DIR=/app/logs
       - TWILIO_ACCOUNT_SID=${TWILIO_ACCOUNT_SID}
       - TWILIO_AUTH_TOKEN=${TWILIO_AUTH_TOKEN}
       - TWILIO_PHONE_NUMBER=${TWILIO_PHONE_NUMBER}
+    volumes:
+      - ./logs:/app/logs:rw
     depends_on:
       redis:
         condition: service_healthy
@@ -104,23 +133,29 @@ services:
       dockerfile: ./packages/brain/Dockerfile
     user: "1000:1000"
     ports:
-      - "127.0.0.1:47325:3000"  # Map external 47325 to internal 3000
+      - "127.0.0.1:47325:47325"  # Same port internally and externally
     environment:
       - NODE_ENV=development
+      - BRAIN_PORT=47325
       - CAPABILITIES_URL=http://capabilities:47324
       - API_BASE_URL=http://localhost:47324
       - REDIS_HOST=redis
-      - REDIS_PORT=6379
+      - REDIS_PORT=47320
       - DATABASE_PATH=/app/data/coachartie.db
+      - LOG_LEVEL=info
+      - CONSOLE_LOG_LEVEL=warn
+      - SERVICE_NAME=brain
+      - LOGS_DIR=/app/logs
     volumes:
-      - ./packages/capabilities/data:/app/data:rw  # Explicit read-write permissions
+      - ./packages/capabilities/data:/app/data:rw
+      - ./logs:/app/logs:rw  # Explicit read-write permissions
     depends_on:
       redis:
         condition: service_healthy
       capabilities:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3000/api/status"]
+      test: ["CMD", "curl", "-f", "http://localhost:47325/api/status"]
       interval: 30s
       timeout: 10s
       retries: 3

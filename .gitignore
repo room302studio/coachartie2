@@ -57,3 +57,7 @@ temp/.turbo/
 *.db
 *.db-shm
 *.db-wal
+
+# Log files
+logs/
+*.log
