@@ -9,12 +9,13 @@
  * - Comprehensive telemetry and correlation tracking
  */
 
-import { Client, Events, Message } from 'discord.js';
+import { Client, Events, Message, EmbedBuilder } from 'discord.js';
 import { logger } from '@coachartie/shared';
 import { publishMessage } from '../queues/publisher.js';
 import { telemetry } from '../services/telemetry.js';
 import { CorrelationContext, generateCorrelationId, getShortCorrelationId } from '../utils/correlation.js';
 import { processUserIntent } from '../services/user-intent-processor.js';
+import { isGuildWhitelisted } from '../config/guild-whitelist.js';
 
 // =============================================================================
 // CONSTANTS & CONFIGURATION
@@ -246,6 +247,12 @@ export function setupMessageHandler(client: Client) {
     // Ignore our own messages to prevent loops
     if (message.author.id === client.user!.id) return;
 
+    // Check guild whitelist - only process messages from whitelisted guilds
+    if (message.guildId && !isGuildWhitelisted(message.guildId)) {
+      logger.debug(`🚫 Ignoring message from non-whitelisted guild: ${message.guildId} [${shortId}]`);
+      return;
+    }
+
     // Check various response triggers
     const responseConditions = {
       botMentioned: message.mentions.has(client.user!.id),
@@ -348,7 +355,12 @@ export function setupMessageHandler(client: Client) {
         error: error instanceof Error ? error.message : String(error)
       }, correlationId, message.author.id, undefined, false);
       
-      await message.reply(`Sorry, I encountered an error processing your message.`);
+      // ENHANCED: User-friendly error with transparency
+      const errorMsg = error instanceof Error && error.message.length < 100
+        ? `Sorry, I encountered an error: ${error.message}`
+        : 'Sorry, I encountered an error processing your message. The issue has been logged.';
+
+      await message.reply(`❌ ${errorMsg}`);
     }
     
     // Clean up correlation context periodically
@@ -367,16 +379,49 @@ export function setupMessageHandler(client: Client) {
  * Replaces ~400 lines of duplicate logic with ~30 lines of adapter code
  */
 async function handleMessageAsIntent(
-  message: Message, 
-  cleanMessage: string, 
+  message: Message,
+  cleanMessage: string,
   correlationId: string
 ): Promise<void> {
   const shortId = getShortCorrelationId(correlationId);
   let statusMessage: Message | null = null;
+  let streamingMessage: Message | null = null;
   
   try {
-    // Send initial status message
-    statusMessage = await message.reply(`🤔 Working on it...`);
+    // MINIMAL: No status messages - just start working like a human
+
+    // ENHANCED: Gather Discord context for Context Alchemy
+    const guildInfo = message.guild ? {
+      guildId: message.guild.id,
+      guildName: message.guild.name,
+      memberCount: message.guild.memberCount
+    } : null;
+
+    const channelInfo = {
+      channelId: message.channelId,
+      channelType: message.channel.type,
+      channelName: 'name' in message.channel ? message.channel.name : 'DM'
+    };
+
+    const userInfo = {
+      userId: message.author.id,
+      username: message.author.username,
+      displayName: message.author.displayName,
+      userTag: message.author.tag,
+      isBot: message.author.bot
+    };
+
+    const discordContext = {
+      platform: 'discord',
+      ...guildInfo,
+      ...channelInfo,
+      ...userInfo,
+      messageId: message.id,
+      timestamp: message.createdAt.toISOString(),
+      hasAttachments: message.attachments.size > 0,
+      mentionedUsers: message.mentions.users.size,
+      replyingTo: message.reference?.messageId || null
+    };
 
     // Create unified intent and delegate to shared processor
     await processUserIntent({
@@ -384,6 +429,7 @@ async function handleMessageAsIntent(
       userId: message.author.id,
       username: message.author.username,
       source: 'message',
+      context: discordContext, // Pass rich Discord context
       metadata: {
         messageId: message.id,
         channelId: message.channelId,
@@ -392,10 +438,15 @@ async function handleMessageAsIntent(
       },
       
       // Response handlers
-      respond: async (content: string) => {
+      respond: async (content: string): Promise<void> => {
         const chunks = chunkMessage(content);
-        await message.reply(chunks[0]);
-        
+        const responseMessage = await message.reply(chunks[0]);
+
+        // Store reference for potential editing
+        if (!streamingMessage) {
+          streamingMessage = responseMessage;
+        }
+
         // Send additional chunks
         for (let i = 1; i < chunks.length; i++) {
           if ('send' in message.channel) {
@@ -403,49 +454,139 @@ async function handleMessageAsIntent(
             await new Promise(resolve => setTimeout(resolve, CHUNK_RATE_LIMIT_DELAY));
           }
         }
-        
+
         telemetry.incrementResponsesDelivered(message.author.id, chunks.length);
       },
-      
-      updateProgress: async (status: string) => {
-        if (statusMessage) {
-          await statusMessage.edit(status);
+
+      // ENHANCED: Edit response capability for cleaner streaming
+      editResponse: async (content: string) => {
+        if (!streamingMessage) {
+          logger.warn(`No streaming message to edit [${shortId}]`);
+          return;
+        }
+
+        try {
+          // Discord has 2000 char limit for edits too
+          const truncatedContent = content.length > 2000
+            ? content.slice(0, 1997) + '...'
+            : content;
+
+          await streamingMessage.edit(truncatedContent);
+          telemetry.logEvent('message_edited', {
+            contentLength: content.length,
+            truncated: content.length > 2000
+          }, correlationId, message.author.id);
+        } catch (error) {
+          logger.warn(`Failed to edit message [${shortId}]:`, error);
+          throw error;
         }
       },
+      
+      updateProgress: statusMessage ? async (status: string) => {
+        const msg = statusMessage as Message;
+        await msg.edit(status);
+      } : undefined,
       
       sendTyping: 'sendTyping' in message.channel ? async () => {
         await (message.channel as any).sendTyping();
         telemetry.incrementTypingIndicators();
+      } : undefined,
+
+      // ENHANCED: Discord-native reaction support
+      addReaction: async (emoji: string) => {
+        try {
+          await message.react(emoji);
+          telemetry.logEvent('reaction_added', { emoji }, correlationId, message.author.id);
+        } catch (error) {
+          logger.warn(`Failed to add reaction ${emoji} [${shortId}]:`, error);
+        }
+      },
+
+      removeReaction: async (emoji: string) => {
+        try {
+          const reaction = message.reactions.cache.get(emoji);
+          if (reaction) {
+            await reaction.users.remove(message.client.user!.id);
+            telemetry.logEvent('reaction_removed', { emoji }, correlationId, message.author.id);
+          }
+        } catch (error) {
+          logger.warn(`Failed to remove reaction ${emoji} [${shortId}]:`, error);
+        }
+      },
+
+      // ENHANCED: Thread creation for complex conversations
+      createThread: async (threadName: string) => {
+        try {
+          if (message.channel.type === 0 && 'threads' in message.channel) { // Guild text channel
+            const thread = await message.startThread({
+              name: threadName,
+              autoArchiveDuration: 60, // Auto-archive after 1 hour of inactivity
+              reason: 'Complex conversation - keeping channel organized'
+            });
+
+            // Add thread reaction to original message
+            await message.react('🧵');
+
+            telemetry.logEvent('thread_created', {
+              threadName,
+              threadId: thread.id
+            }, correlationId, message.author.id);
+
+            logger.info(`Created thread "${threadName}" [${shortId}]`);
+            return thread;
+          }
+        } catch (error) {
+          logger.warn(`Failed to create thread "${threadName}" [${shortId}]:`, error);
+        }
+        return null;
+      },
+
+      // ENHANCED: Rich embed support
+      sendEmbed: async (embedData: any) => {
+        try {
+          const embed = new EmbedBuilder(embedData);
+          await message.reply({ embeds: [embed] });
+          telemetry.logEvent('embed_sent', {
+            title: embedData.title,
+            fieldCount: embedData.fields?.length || 0
+          }, correlationId, message.author.id);
+        } catch (error) {
+          logger.warn(`Failed to send embed [${shortId}]:`, error);
+        }
+      },
+
+      updateProgressEmbed: statusMessage ? async (embedData: any) => {
+        try {
+          const msg = statusMessage as Message;
+          const embed = new EmbedBuilder(embedData);
+          await msg.edit({ embeds: [embed] });
+          telemetry.logEvent('embed_updated', {
+            title: embedData.title
+          }, correlationId, message.author.id);
+        } catch (error) {
+          logger.warn(`Failed to update progress embed [${shortId}]:`, error);
+        }
       } : undefined
       
     }, {
       enableStreaming: true,  // Enable streaming for messages
       enableTyping: true,     // Enable typing indicators for messages
+      enableReactions: false, // MINIMAL: No emoji reactions
+      enableEditing: true,    // Enable message editing for cleaner streaming
+      enableThreading: false, // MINIMAL: No auto-threading
       maxAttempts: MAX_JOB_ATTEMPTS,
       statusUpdateInterval: STATUS_UPDATE_INTERVAL
     });
 
-    // Update final status
-    if (statusMessage) {
-      setTimeout(async () => {
-        try {
-          await statusMessage!.edit(`✅ Complete! (${shortId})`);
-        } catch (error) {
-          logger.warn(`Failed to update final status: ${error}`);
-        }
-      }, 750);
-    }
+    // MINIMAL: No final status updates
 
   } catch (error) {
     logger.error(`Message intent processing failed [${shortId}]:`, error);
     
     // Fallback error handling
     try {
-      if (statusMessage) {
-        await statusMessage.edit(`❌ Failed to process your request`);
-      } else {
-        await message.reply(`❌ Sorry, I couldn't process your message`);
-      }
+      // statusMessage is always null in current implementation
+      await message.reply(`❌ Sorry, I couldn't process your message`);
     } catch (replyError) {
       logger.error(`Failed to send error reply [${shortId}]:`, replyError);
     }
