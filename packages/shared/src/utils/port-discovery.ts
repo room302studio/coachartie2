@@ -50,11 +50,12 @@ export async function findAvailablePort(options: PortDiscoveryOptions): Promise<
  */
 export class PortDiscovery {
   private static readonly DEFAULT_PORTS = {
-    capabilities: 18239,
-    sms: 27461,
-    email: 35892,
-    brain: 24680,
-    discord: 8080, // Discord doesn't need HTTP but keeping for consistency
+    redis: 47320,
+    discord: 47321,
+    capabilities: 47324,
+    brain: 47325,
+    sms: 47326,
+    email: 35892, // Not currently used but keeping for future
   };
 
   /**

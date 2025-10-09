@@ -12,7 +12,7 @@ export async function getDatabase(): Promise<Database<sqlite3.Database, sqlite3.
 
   try {
     // Use environment variable for database path, with fallback
-    const dbPath = process.env.DATABASE_PATH || path.join(process.cwd(), 'data', 'coachartie.db');
+    const dbPath = process.env.DATABASE_PATH || '/app/data/coachartie.db';
     
     // Ensure the directory exists
     const fs = await import('fs');
@@ -175,6 +175,24 @@ async function initializeDatabase(database: Database): Promise<void> {
 
       CREATE INDEX IF NOT EXISTS idx_alerts_type_time ON credit_alerts(alert_type, created_at);
 
+      -- OAuth tokens table for secure token storage
+      CREATE TABLE IF NOT EXISTS oauth_tokens (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id TEXT NOT NULL,
+        provider TEXT NOT NULL, -- 'linkedin', 'github', 'google', etc.
+        access_token TEXT NOT NULL,
+        refresh_token TEXT,
+        expires_at DATETIME,
+        scopes TEXT, -- JSON array of scopes
+        metadata TEXT, -- JSON object for provider-specific data
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(user_id, provider)
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_oauth_user_provider ON oauth_tokens(user_id, provider);
+      CREATE INDEX IF NOT EXISTS idx_oauth_expires ON oauth_tokens(expires_at);
+
       -- Memories table for user memory storage
       CREATE TABLE IF NOT EXISTS memories (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -185,6 +203,7 @@ async function initializeDatabase(database: Database): Promise<void> {
         timestamp TEXT NOT NULL,
         importance INTEGER DEFAULT 5,
         metadata TEXT DEFAULT '{}',
+        embedding TEXT, -- JSON array of embedding vectors
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
       );
@@ -295,11 +314,11 @@ User's message: {{USER_MESSAGE}}`;
 async function runMigrations(database: Database): Promise<void> {
   try {
     logger.info('🔄 Running database migrations...');
-    
+
     // Check if metadata column exists in memories table
     const columns = await database.all("PRAGMA table_info(memories)");
     const hasMetadata = columns.some((col: any) => col.name === 'metadata');
-    
+
     if (!hasMetadata) {
       logger.info('📝 Adding metadata column to memories table');
       await database.exec(`
@@ -307,7 +326,46 @@ async function runMigrations(database: Database): Promise<void> {
       `);
       logger.info('✅ Added metadata column to memories table');
     }
-    
+
+    // Check if messages table exists for Discord/SMS message history
+    const tables = await database.all(`
+      SELECT name FROM sqlite_master
+      WHERE type='table' AND name='messages'
+    `);
+
+    if (tables.length === 0) {
+      logger.info('📝 Creating messages table for conversation history');
+      await database.exec(`
+        CREATE TABLE IF NOT EXISTS messages (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          value TEXT NOT NULL,
+          user_id TEXT NOT NULL,
+          message_type TEXT DEFAULT 'discord',
+          channel_id TEXT,
+          guild_id TEXT,
+          conversation_id TEXT,
+          role TEXT,
+          memory_id INTEGER,
+          metadata TEXT DEFAULT '{}',
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_messages_user_id ON messages(user_id);
+        CREATE INDEX IF NOT EXISTS idx_messages_created_at ON messages(created_at);
+        CREATE INDEX IF NOT EXISTS idx_messages_channel_id ON messages(channel_id);
+        CREATE INDEX IF NOT EXISTS idx_messages_guild_id ON messages(guild_id);
+        CREATE INDEX IF NOT EXISTS idx_messages_conversation_id ON messages(conversation_id);
+
+        CREATE TRIGGER IF NOT EXISTS update_messages_timestamp
+          AFTER UPDATE ON messages
+          BEGIN
+            UPDATE messages SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
+          END;
+      `);
+      logger.info('✅ Created messages table for conversation history');
+    }
+
     logger.info('✅ Database migrations completed');
   } catch (error) {
     logger.error('❌ Failed to run migrations:', error);

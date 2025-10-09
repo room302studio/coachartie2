@@ -6,22 +6,37 @@ let redisConnection: Redis | null = null;
 
 export const createRedisConnection = (): Redis => {
   if (redisConnection) {
+    console.log('♻️ Reusing existing Redis connection');
     return redisConnection;
   }
 
+  const redisHost = process.env.REDIS_HOST || 'localhost';
+  const redisPort = parseInt(process.env.REDIS_PORT || '47320');
+
+  console.log('🔴 CREATING NEW REDIS CONNECTION - SNUCKS ARE JUCKED!');
+  console.log(`  - Host: ${redisHost}`);
+  console.log(`  - Port: ${redisPort}`);
+  console.log(`  - Full address: ${redisHost}:${redisPort}`);
+
   redisConnection = new Redis({
-    host: process.env.REDIS_HOST || 'localhost',
-    port: parseInt(process.env.REDIS_PORT || '6379'),
+    host: redisHost,
+    port: redisPort,
     password: process.env.REDIS_PASSWORD,
     maxRetriesPerRequest: null,
     enableReadyCheck: false,
   });
 
   redisConnection.on('error', (err) => {
+    console.error('💥 REDIS CONNECTION ERROR - BOOKITY BROKEN!');
+    console.error(`  - Error: ${err.message}`);
+    console.error(`  - Code: ${(err as any).code}`);
+    console.error(`  - Attempting to connect to: ${redisHost}:${redisPort}`);
     logger.error('Redis connection error:', err);
   });
 
   redisConnection.on('connect', () => {
+    console.log('✅ REDIS CONNECTED SUCCESSFULLY - FLUCKS ARE BUCKED!');
+    console.log(`  - Connected to: ${redisHost}:${redisPort}`);
     logger.info('Redis connected successfully');
   });
 
