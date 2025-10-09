@@ -1,13 +1,27 @@
+console.log('🚀 CAPABILITIES SERVICE STARTING - BOOKITY SNOOKITY!');
+console.log('📍 Current directory:', process.cwd());
+console.log('🔧 Node version:', process.version);
+console.log('🌍 Environment:', process.env.NODE_ENV);
+
 import { config } from 'dotenv';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
+console.log('📁 __dirname:', __dirname);
+console.log('🔑 Loading environment variables...');
+
 // Load .env from monorepo root (go up from packages/capabilities/src to monorepo root)
 config({ path: resolve(__dirname, '../../../.env') });
 // Also try package-specific .env
 config({ path: resolve(__dirname, '../.env') });
+
+console.log('🔌 Port Configuration:');
+console.log('  - CAPABILITIES_PORT:', process.env.CAPABILITIES_PORT || 'not set');
+console.log('  - REDIS_HOST:', process.env.REDIS_HOST || 'not set');
+console.log('  - REDIS_PORT:', process.env.REDIS_PORT || 'not set');
+
 import express from 'express';
 import helmet from 'helmet';
 import { logger, createRequestLogger, parsePortWithFallback, registerServiceWithDiscovery, serviceDiscovery } from '@coachartie/shared';
@@ -96,22 +110,33 @@ async function startScheduler() {
 
 // Start server
 async function start() {
+  console.log('🎯 Start function called - LUCKS ARE SNUCK!');
   try {
     // Initialize orchestrator
+    console.log('📊 Initializing orchestrator...');
     const stats = capabilityRegistry.getStats();
-    
+
     // Start queue workers first
+    console.log('👷 Starting queue workers...');
     await startQueueWorkers();
-    
+
     // Start scheduler
+    console.log('⏰ Starting scheduler...');
     await startScheduler();
 
     // Start simple healer
+    console.log('🏥 Starting simple healer...');
     simpleHealer.start();
+
+    console.log('🔍 Parsing port configuration...');
+    console.log('  - CAPABILITIES_PORT env:', process.env.CAPABILITIES_PORT);
     const PORT = await parsePortWithFallback('CAPABILITIES_PORT', 'capabilities');
+    console.log(`🎲 Selected port: ${PORT}`);
 
     // Start HTTP server
+    console.log(`🌐 Starting HTTP server on 0.0.0.0:${PORT}...`);
     const server = app.listen(PORT, '0.0.0.0', async () => {
+      console.log(`✅ HTTP SERVER LISTENING - SNUCKS ARE JUCKED!`);
       logger.info(`✅ capabilities: ${PORT} [${stats.totalCapabilities} caps, ${stats.totalActions} actions]`);
       await registerServiceWithDiscovery('capabilities', PORT);
     });

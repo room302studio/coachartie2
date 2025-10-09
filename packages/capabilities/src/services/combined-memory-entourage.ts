@@ -52,12 +52,15 @@ export class CombinedMemoryEntourage implements MemoryEntourageInterface {
     }
 
     try {
-      logger.info(`🧠 CombinedMemoryEntourage: Running parallel 3-layer memory search (${options.priority || 'speed'} mode)`);
-      
+      logger.info('│ 🧠 Running 3-LAYER PARALLEL SEARCH:');
+      logger.info(`│ Priority Mode: ${options.priority || 'speed'} | Max Tokens: ${options.maxTokens || 800}`);
+
       // Calculate token budget for each layer
       const tokenBudget = this.calculateLayerTokenBudgets(options.maxTokens);
-      
+      logger.info(`│ Token Split: Keyword=${tokenBudget.keyword}, Semantic=${tokenBudget.semantic}, Temporal=${tokenBudget.temporal}`);
+
       // Run memory searches in parallel (entourage pattern)
+      const startTime = Date.now();
       const [keywordResult, semanticResult, temporalResult] = await Promise.all([
         this.keywordEntourage.getMemoryContext(userMessage, userId, {
           ...options,
@@ -72,18 +75,27 @@ export class CombinedMemoryEntourage implements MemoryEntourageInterface {
           maxTokens: tokenBudget.temporal
         })
       ]);
+      const parallelTime = Date.now() - startTime;
+      logger.info(`│ ⚡ Parallel search completed in ${parallelTime}ms`);
+
+      // Log individual layer results
+      logger.info('│ ┌─ LAYER RESULTS ─────────────────────────────────────────┐');
+      logger.info(`│ │ 🔍 Keyword:  ${keywordResult.memoryCount} memories, ${(keywordResult.confidence * 100).toFixed(1)}% confidence`);
+      logger.info(`│ │ 🧠 Semantic: ${semanticResult.memoryCount} memories, ${(semanticResult.confidence * 100).toFixed(1)}% confidence`);
+      logger.info(`│ │ 📅 Temporal: ${temporalResult.memoryCount} memories, ${(temporalResult.confidence * 100).toFixed(1)}% confidence`);
+      logger.info('│ └───────────────────────────────────────────────────────────┘');
 
       // Combine results intelligently
       const combinedResult = this.fuseMemoryResults(
-        keywordResult, 
-        semanticResult, 
+        keywordResult,
+        semanticResult,
         temporalResult,
-        userMessage, 
+        userMessage,
         options
       );
 
-      logger.info(`🧠 CombinedMemoryEntourage: Fused ${keywordResult.memoryCount} keyword + ${semanticResult.memoryCount} semantic + ${temporalResult.memoryCount} temporal = ${combinedResult.memoryCount} total memories`);
-      logger.info(`   📊 Combined confidence: ${combinedResult.confidence.toFixed(2)} | Categories: ${combinedResult.categories.join(', ')}`);
+      logger.info(`│ 🎯 FUSION COMPLETE: ${combinedResult.memoryCount} total memories`);
+      logger.info(`│ Confidence: ${(combinedResult.confidence * 100).toFixed(1)}% | Categories: ${combinedResult.categories.join(', ')}`);
 
       return combinedResult;
 
@@ -191,7 +203,7 @@ export class CombinedMemoryEntourage implements MemoryEntourageInterface {
     const keywordContent = keywordResult.content.trim();
     const semanticContent = semanticResult.content.trim();
     const temporalContent = temporalResult.content.trim();
-    
+
     const contents = [keywordContent, semanticContent, temporalContent].filter(c => c.length > 0);
     if (contents.length === 0) {return '';}
     if (contents.length === 1) {return contents[0];}
@@ -204,9 +216,10 @@ export class CombinedMemoryEntourage implements MemoryEntourageInterface {
       'synthesized',    // Combine into unified narrative
       'temporal_flow'   // Organize by temporal context
     ];
-    
+
     const pattern = fusionPatterns[Math.floor(Math.random() * fusionPatterns.length)];
-    
+    logger.info(`│ 🎲 FUSION PATTERN: "${pattern}" (randomly selected for variety)`);
+
     switch (pattern) {
       case 'layered':
         let layered = '';

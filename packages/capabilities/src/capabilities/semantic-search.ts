@@ -48,8 +48,23 @@ async function handleSemanticSearchCapability(params: SemanticSearchParams, cont
         if (!memoryId) {
           return '❌ Please provide a memory_id. Example: <capability name="semantic-search" action="similar" memory_id="123" />';
         }
-        // TODO: Implement similar memory search based on memory ID
-        return '🔍 Memory similarity analysis available via search action for now.';
+
+        if (!vectorEmbeddingService.isReady()) {
+          await vectorEmbeddingService.initialize();
+        }
+
+        const similarResults = await vectorEmbeddingService.findSimilarToMemory(
+          Number(memoryId),
+          params.limit || 10
+        );
+
+        if (similarResults.length === 0) {
+          return `🔍 No similar memories found for memory #${memoryId}`;
+        }
+
+        return `🧠 Memories similar to #${memoryId}:\n\n${similarResults.map((result, i) =>
+          `${i + 1}. Memory #${result.memory_id}: ${result.content.substring(0, 100)}... (${(result.similarity_score * 100).toFixed(1)}% similarity)`
+        ).join('\n')}`;
 
       case 'cluster':
         const userId = params.user_id as string;

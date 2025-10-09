@@ -133,8 +133,8 @@ class OpenRouterService {
       const model = this.models[modelIndex];
       
       try {
-        logger.info(`Attempting to generate response with model: ${model} using ${messages.length} messages`);
-        
+        logger.info(`🤖 MODEL SELECTION: Using ${model} (${i+1}/${this.models.length}) for ${messages.length} messages`);
+
         const completion = await this.client.chat.completions.create({
           model,
           messages,
@@ -143,6 +143,8 @@ class OpenRouterService {
         });
 
         const response = completion.choices[0]?.message?.content;
+
+        logger.info(`✅ MODEL RESPONSE: ${model} generated ${response?.length || 0} chars successfully`);
         
         if (!response) {
           throw new Error('No response generated');

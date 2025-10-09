@@ -1,19 +1,26 @@
-import { 
-  createWorker, 
-  createQueue, 
-  QUEUES, 
-  IncomingMessage, 
+import {
+  createWorker,
+  createQueue,
+  QUEUES,
+  IncomingMessage,
   OutgoingMessage,
   logger,
   queueLogger,
   performanceLogger
 } from '@coachartie/shared';
 import { processMessage } from '../handlers/process-message.js';
+import { jobTracker } from '../services/job-tracker.js';
 
 export async function startMessageConsumer() {
+  console.log('🚀 Starting message consumer - BOOKITY BOOKITY!');
+  console.log('  - REDIS_HOST:', process.env.REDIS_HOST || 'not set');
+  console.log('  - REDIS_PORT:', process.env.REDIS_PORT || 'not set');
+  console.log('  - Queue name:', QUEUES.INCOMING_MESSAGES);
+
   const worker = createWorker<IncomingMessage, void>(
     QUEUES.INCOMING_MESSAGES,
     async (job) => {
+      console.log(`📬 Processing job ${job.id} - SNOOKITY LOOKITY!`);
       const message = job.data;
       const timer = performanceLogger.startTimer(`Process message ${message.id}`);
       
@@ -24,8 +31,40 @@ export async function startMessageConsumer() {
       });
 
       try {
+        // Store message in database for context history (only for Discord messages)
+        if (message.source === 'discord' || (message.source === 'api' && message.context?.platform === 'discord')) {
+          try {
+            const { database } = await import('../services/database.js');
+            await database.run(`
+              INSERT INTO messages (value, user_id, message_type, channel_id, guild_id, created_at)
+              VALUES (?, ?, ?, ?, ?, datetime('now'))
+            `, [
+              message.message,
+              message.userId,
+              'discord',
+              message.context?.channelId || message.respondTo?.channelId || null,
+              message.context?.guildId || null
+            ]);
+            logger.info(`💾 Stored Discord message in database for context history`);
+          } catch (dbError) {
+            logger.warn('Failed to store message in database:', dbError);
+            // Continue processing even if storage fails
+          }
+        }
+
+        // Update job status to processing (if it's from API)
+        if (message.source === 'api' && message.respondTo.type === 'api') {
+          jobTracker.markJobProcessing(message.id);
+          logger.info(`📊 Job ${message.id} marked as processing`);
+        }
+
         // Always process the message for capability extraction and memory formation
-        const response = await processMessage(message);
+        const response = await processMessage(message, (partial) => {
+          // Update partial response for streaming (if it's from API)
+          if (message.source === 'api' && message.respondTo.type === 'api') {
+            jobTracker.updatePartialResponse(message.id, partial);
+          }
+        });
 
         // Check if we should respond (from context.shouldRespond)
         const shouldRespond = message.context?.shouldRespond !== false;
@@ -37,10 +76,13 @@ export async function startMessageConsumer() {
           return;
         }
 
-        // Handle API responses differently - just log them
+        // Handle API responses differently - just log them and complete the job
         if (message.respondTo.type === 'api') {
           logger.info(`API Response for ${message.id}: ${response}`);
           logger.info(`API message processed successfully: ${(message.respondTo as { apiResponseId?: string })?.apiResponseId}`);
+          // Mark job as complete
+          jobTracker.completeJob(message.id, response);
+          logger.info(`📊 Job ${message.id} marked as complete`);
         } else {
           // Determine which outgoing queue to use for other types
           const outgoingQueueName = getOutgoingQueueName(message.respondTo.type);
@@ -76,12 +118,19 @@ export async function startMessageConsumer() {
         queueLogger.jobCompleted('process-message', job.id!.toString(), duration);
 
       } catch (error) {
-        timer.end({ 
-          userId: message.userId, 
+        timer.end({
+          userId: message.userId,
           messageId: message.id,
           error: error instanceof Error ? error.message : 'Unknown error'
         });
         queueLogger.jobFailed('process-message', job.id!.toString(), error as Error);
+
+        // Mark job as failed if it's from API
+        if (message.source === 'api' && message.respondTo.type === 'api') {
+          jobTracker.failJob(message.id, error instanceof Error ? error.message : 'Unknown error');
+          logger.info(`📊 Job ${message.id} marked as failed`);
+        }
+
         throw error; // Let BullMQ handle retries
       }
     }

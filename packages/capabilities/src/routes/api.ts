@@ -8,7 +8,7 @@ export const createApiRoutes: FastifyPluginAsync = async (fastify) => {
     fastify.get('/memories', async (request, reply) => {
       try {
         const Database = require('better-sqlite3');
-        const dbPath = process.env.DATABASE_PATH || './data/coachartie.db';
+        const dbPath = process.env.DATABASE_PATH || '/app/data/coachartie.db';
         const db = new Database(dbPath, { readonly: true });
 
         const memories = db.prepare(`
@@ -38,7 +38,7 @@ export const createApiRoutes: FastifyPluginAsync = async (fastify) => {
     fastify.get('/messages', async (request, reply) => {
       try {
         const Database = require('better-sqlite3');
-        const dbPath = process.env.DATABASE_PATH || './data/coachartie.db';
+        const dbPath = process.env.DATABASE_PATH || '/app/data/coachartie.db';
         const db = new Database(dbPath, { readonly: true });
 
         const messages = db.prepare(`
@@ -68,7 +68,7 @@ export const createApiRoutes: FastifyPluginAsync = async (fastify) => {
     fastify.get('/stats', async (request, reply) => {
       try {
         const Database = require('better-sqlite3');
-        const dbPath = process.env.DATABASE_PATH || './data/coachartie.db';
+        const dbPath = process.env.DATABASE_PATH || '/app/data/coachartie.db';
         const db = new Database(dbPath, { readonly: true });
 
         const stats = {
