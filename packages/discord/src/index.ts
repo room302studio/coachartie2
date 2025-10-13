@@ -35,6 +35,9 @@ import { telemetry } from './services/telemetry.js';
 import { healthServer } from './services/health-server.js';
 import { pathResolver } from './utils/path-resolver.js';
 import { jobMonitor } from './services/job-monitor.js';
+import { initializeForumTraversal } from './services/forum-traversal.js';
+import { initializeGitHubIntegration } from './services/github-integration.js';
+import { initializeConversationState } from './services/conversation-state.js';
 
 const client = new Client({
   intents: [
@@ -114,7 +117,25 @@ async function start() {
       
       // Start the persistent job monitor (single wheel for all jobs)
       jobMonitor.startMonitoring();
-      
+
+      // Initialize forum traversal service
+      initializeForumTraversal(client);
+
+      // Initialize conversation state manager
+      initializeConversationState();
+
+      // Initialize GitHub integration (if token provided)
+      try {
+        if (process.env.GITHUB_TOKEN) {
+          initializeGitHubIntegration();
+          logger.info('✅ GitHub integration enabled');
+        } else {
+          logger.info('ℹ️  GitHub integration disabled (no GITHUB_TOKEN)');
+        }
+      } catch (error) {
+        logger.warn('Failed to initialize GitHub integration:', error);
+      }
+
       writeStatus('ready', {
         username: client.user?.tag,
         guilds: client.guilds.cache.size,

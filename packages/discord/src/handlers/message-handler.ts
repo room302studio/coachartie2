@@ -9,13 +9,16 @@
  * - Comprehensive telemetry and correlation tracking
  */
 
-import { Client, Events, Message, EmbedBuilder } from 'discord.js';
+import { Client, Events, Message, EmbedBuilder, ChannelType } from 'discord.js';
 import { logger } from '@coachartie/shared';
 import { publishMessage } from '../queues/publisher.js';
 import { telemetry } from '../services/telemetry.js';
 import { CorrelationContext, generateCorrelationId, getShortCorrelationId } from '../utils/correlation.js';
 import { processUserIntent } from '../services/user-intent-processor.js';
 import { isGuildWhitelisted } from '../config/guild-whitelist.js';
+import { getConversationState } from '../services/conversation-state.js';
+import { getGitHubIntegration } from '../services/github-integration.js';
+import { getForumTraversal } from '../services/forum-traversal.js';
 
 // =============================================================================
 // CONSTANTS & CONFIGURATION
@@ -52,9 +55,23 @@ const STREAM_EMOJI = '📡';
  * Helper: Check if channel name indicates robot interaction
  */
 function isRobotChannelName(channel: Message['channel']): boolean {
-  return channel.type === GUILD_CHANNEL_TYPE && 
-         'name' in channel && 
+  return channel.type === GUILD_CHANNEL_TYPE &&
+         'name' in channel &&
          (channel.name?.includes('🤖') || channel.name?.includes('robot')) || false;
+}
+
+/**
+ * Helper: Check if message is in a forum thread (Discord Discussions)
+ */
+async function isForumThread(message: Message): Promise<boolean> {
+  if (message.channel.type !== ChannelType.PublicThread &&
+      message.channel.type !== ChannelType.PrivateThread) {
+    return false;
+  }
+
+  // Get the parent channel to check if it's a forum
+  const parent = message.channel.parent;
+  return parent?.type === ChannelType.GuildForum;
 }
 
 /**
@@ -253,16 +270,37 @@ export function setupMessageHandler(client: Client) {
       return;
     }
 
+    // -------------------------------------------------------------------------
+    // CONVERSATION FLOW HANDLING
+    // -------------------------------------------------------------------------
+
+    // Check if user has an active conversation (multi-turn interaction)
+    try {
+      const conversationState = getConversationState();
+      const activeConversation = conversationState.getConversation(message.author.id);
+
+      if (activeConversation && activeConversation.conversationType === 'sync-discussions') {
+        await handleSyncDiscussionsConversation(message, activeConversation, conversationState);
+        return; // Don't process as normal message
+      }
+    } catch (error) {
+      logger.warn(`Conversation handling failed [${shortId}]:`, error);
+      // Continue with normal message processing
+    }
+
     // Check various response triggers
+    const isForum = await isForumThread(message);
     const responseConditions = {
       botMentioned: message.mentions.has(client.user!.id),
       isDM: message.channel.isDMBased(),
-      isRobotChannel: isRobotChannelName(message.channel)
+      isRobotChannel: isRobotChannelName(message.channel),
+      isForumThread: isForum
     };
-    
+
     // Determine response mode: active response vs passive observation
-    const shouldRespond = responseConditions.botMentioned || 
-                         responseConditions.isDM || 
+    // In forums, only respond when mentioned (too noisy otherwise)
+    const shouldRespond = responseConditions.botMentioned ||
+                         responseConditions.isDM ||
                          responseConditions.isRobotChannel;
 
     try {
@@ -371,6 +409,135 @@ export function setupMessageHandler(client: Client) {
 }
 
 // =============================================================================
+// CONVERSATION HANDLERS
+// =============================================================================
+
+/**
+ * Handle multi-turn conversation for sync-discussions command
+ */
+async function handleSyncDiscussionsConversation(
+  message: Message,
+  conversation: any,
+  conversationState: any
+): Promise<void> {
+  const { forumId, forumName, step } = conversation.state;
+
+  if (step !== 'awaiting_repo') {
+    // Unknown step, end conversation
+    conversationState.endConversation(message.author.id);
+    return;
+  }
+
+  const repo = message.content.trim();
+
+  try {
+    // Get services
+    const githubService = getGitHubIntegration();
+    const forumTraversal = getForumTraversal();
+
+    // Parse repo reference
+    const repoInfo = githubService.parseRepoReference(repo);
+    if (!repoInfo) {
+      await message.reply({
+        content: `❌ Invalid repository format. Please use \`owner/repo\` format (e.g., \`facebook/react\`) or a full GitHub URL.\n\nTry again, or say "cancel" to stop.`
+      });
+      return;
+    }
+
+    // Check for cancel
+    if (repo.toLowerCase() === 'cancel') {
+      conversationState.endConversation(message.author.id);
+      await message.reply('❌ Sync cancelled.');
+      return;
+    }
+
+    // Verify repository
+    const statusMsg = await message.reply(`🔍 Verifying access to **${repoInfo.owner}/${repoInfo.repo}**...`);
+
+    const hasAccess = await githubService.verifyRepository(repoInfo.owner, repoInfo.repo);
+    if (!hasAccess) {
+      await statusMsg.edit({
+        content: `❌ Cannot access repository **${repoInfo.owner}/${repoInfo.repo}**. Please check:\n- Repository exists\n- GitHub token has access\n- Repository name is correct\n\nTry again with a different repo, or say "cancel" to stop.`
+      });
+      return;
+    }
+
+    // Start sync
+    await statusMsg.edit({
+      content: `✅ Repository verified!\n\n🔄 Fetching discussions from **${forumName}**...`
+    });
+
+    const forumSummary = await forumTraversal.getForumSummary(forumId);
+
+    if (forumSummary.threads.length === 0) {
+      conversationState.endConversation(message.author.id);
+      await statusMsg.edit({
+        content: `ℹ️ No discussions found in **${forumName}** to sync.`
+      });
+      return;
+    }
+
+    await statusMsg.edit({
+      content: `📊 Found **${forumSummary.threads.length}** discussions\n\n🚀 Creating GitHub issues in **${repoInfo.owner}/${repoInfo.repo}**...\n\n_This may take a minute..._`
+    });
+
+    // Sync threads
+    const results = await githubService.syncThreadsToGitHub(
+      repoInfo.owner,
+      repoInfo.repo,
+      forumSummary.threads,
+      forumName,
+      async (current, total, result) => {
+        if (current % 5 === 0 || current === total) {
+          await statusMsg.edit({
+            content: `🚀 Creating GitHub issues... (${current}/${total})\n\n${result.success ? '✅' : '❌'} ${result.issueUrl || 'Processing...'}`
+          }).catch(() => { /* Ignore rate limit errors */ });
+        }
+      }
+    );
+
+    // Report results
+    const successCount = results.filter(r => r.success).length;
+    const failureCount = results.length - successCount;
+
+    let resultMessage = `## ✅ Sync Complete!\n\n`;
+    resultMessage += `**Forum:** ${forumName}\n`;
+    resultMessage += `**Repository:** ${repoInfo.owner}/${repoInfo.repo}\n\n`;
+    resultMessage += `**Results:**\n`;
+    resultMessage += `✅ ${successCount} issues created successfully\n`;
+
+    if (failureCount > 0) {
+      resultMessage += `❌ ${failureCount} failed\n`;
+    }
+
+    resultMessage += `\n**Created Issues:**\n`;
+    const successfulIssues = results.filter(r => r.success && r.issueUrl);
+    successfulIssues.slice(0, 10).forEach(result => {
+      resultMessage += `- ${result.issueUrl}\n`;
+    });
+
+    if (successfulIssues.length > 10) {
+      resultMessage += `_...and ${successfulIssues.length - 10} more_\n`;
+    }
+
+    await statusMsg.edit({ content: resultMessage });
+
+    // End conversation
+    conversationState.endConversation(message.author.id);
+
+    logger.info(`Conversational sync completed for user ${message.author.id}: ${successCount}/${results.length} issues created`);
+
+  } catch (error) {
+    logger.error('Error in sync-discussions conversation:', error);
+    conversationState.endConversation(message.author.id);
+
+    await message.reply({
+      content: `❌ Sync failed: ${error instanceof Error ? error.message : String(error)}`
+    });
+  }
+}
+
+// =============================================================================
 // MESSAGE ADAPTER - SIMPLE BRIDGE TO UNIFIED PROCESSOR
 // =============================================================================
 
@@ -411,11 +578,33 @@ async function handleMessageAsIntent(
       isBot: message.author.bot
     };
 
+    // ENHANCED: Forum-specific metadata
+    const forumInfo = await (async () => {
+      const isForum = await isForumThread(message);
+      if (!isForum) return null;
+
+      const thread = message.channel;
+      if (!('parent' in thread)) return null;
+
+      return {
+        isForumThread: true,
+        forumId: thread.parent?.id,
+        forumName: thread.parent?.name,
+        threadId: thread.id,
+        threadName: thread.name,
+        threadTags: 'appliedTags' in thread ? thread.appliedTags : [],
+        threadCreatedAt: thread.createdAt?.toISOString(),
+        threadMessageCount: 'messageCount' in thread ? thread.messageCount : null,
+        isThreadOwner: 'ownerId' in thread && thread.ownerId === message.author.id
+      };
+    })();
+
     const discordContext = {
       platform: 'discord',
       ...guildInfo,
       ...channelInfo,
       ...userInfo,
+      ...forumInfo,
       messageId: message.id,
       timestamp: message.createdAt.toISOString(),
       hasAttachments: message.attachments.size > 0,
