@@ -14,6 +14,12 @@ export interface HealthCheckResponse {
     guilds: number;
     users: number;
     latency?: number;
+    guildDetails?: Array<{
+      id: string;
+      name: string;
+      memberCount: number;
+      channels: number;
+    }>;
   };
   telemetry?: any;
   issues?: string[];
@@ -200,11 +206,20 @@ export class HealthServer {
       ) || 0;
       const latency = this.discordClient.ws?.ping;
 
+      // Extract guild details for environment context
+      const guildDetails = this.discordClient.guilds?.cache.map((guild: any) => ({
+        id: guild.id,
+        name: guild.name,
+        memberCount: guild.memberCount || 0,
+        channels: guild.channels?.cache.size || 0
+      })) || [];
+
       return {
         connected,
         guilds,
         users,
-        latency: latency >= 0 ? latency : undefined
+        latency: latency >= 0 ? latency : undefined,
+        guildDetails
       };
     } catch (error) {
       logger.error('Failed to get Discord status:', error);

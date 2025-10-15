@@ -22,6 +22,7 @@ import { goalCapability } from "../capabilities/goal.js";
 import { variableStoreCapability } from "../capabilities/variable-store.js";
 import { todoCapability } from "../capabilities/todo.js";
 import { discordUICapability } from "../capabilities/discord-ui.js";
+import { discordForumsCapability } from "../capabilities/discord-forums.js";
 // import { CapabilitySuggester } from "../utils/capability-suggester.js"; // Removed during refactoring
 import { capabilityXMLParser } from "../utils/xml-parser.js";
 import { conscienceLLM } from './conscience.js';
@@ -80,6 +81,7 @@ export class CapabilityOrchestrator {
 
     try {
       // Register calculator capability from external file
+      logger.info('📦 Registering calculator...');
       capabilityRegistry.register(calculatorCapability);
 
       // Register web capability from external file
@@ -131,7 +133,13 @@ export class CapabilityOrchestrator {
       capabilityRegistry.register(todoCapability);
 
       // Register Discord UI capability for interactive components
+      logger.info('📦 Registering discord-ui...');
       capabilityRegistry.register(discordUICapability);
+
+      // Register Discord Forums capability for forum traversal and GitHub sync
+      logger.info('📦 Registering discord-forums...');
+      capabilityRegistry.register(discordForumsCapability);
+      logger.info('✅ discord-forums registered successfully');
 
       // Register wolfram capability
       capabilityRegistry.register({
@@ -240,9 +248,12 @@ export class CapabilityOrchestrator {
         }
       });
 
-      logger.info('✅ Capability registry initialized successfully');
+      const totalCaps = capabilityRegistry.list().length;
+      logger.info(`✅ Capability registry initialized successfully: ${totalCaps} capabilities registered`);
+      logger.info(`📋 Registered: ${capabilityRegistry.list().map(c => c.name).join(', ')}`);
     } catch (error) {
       logger.error('❌ Failed to initialize capability registry:', error);
+      logger.error('Stack:', error);
       // Don't throw - allow service to continue with legacy handlers
     }
   }

@@ -33,6 +33,7 @@ import { writeFileSync } from 'fs';
 import { join } from 'path';
 import { telemetry } from './services/telemetry.js';
 import { healthServer } from './services/health-server.js';
+import { apiServer } from './services/api-server.js';
 import { pathResolver } from './utils/path-resolver.js';
 import { jobMonitor } from './services/job-monitor.js';
 import { initializeForumTraversal } from './services/forum-traversal.js';
@@ -114,18 +115,37 @@ async function start() {
       // Start health server
       healthServer.setDiscordClient(client);
       healthServer.start();
-      
+
+      // Start API server for forum access
+      apiServer.setDiscordClient(client);
+      apiServer.start();
+
       // Start the persistent job monitor (single wheel for all jobs)
       jobMonitor.startMonitoring();
 
       // Initialize forum traversal service
-      initializeForumTraversal(client);
+      try {
+        console.log('🔧 Initializing forum traversal...');
+        initializeForumTraversal(client);
+        logger.info('✅ Forum traversal service enabled');
+      } catch (error) {
+        logger.warn('Failed to initialize forum traversal:', error);
+        console.error('❌ Forum traversal init failed:', error);
+      }
 
       // Initialize conversation state manager
-      initializeConversationState();
+      try {
+        console.log('🔧 Initializing conversation state...');
+        initializeConversationState();
+        logger.info('✅ Conversation state tracking enabled');
+      } catch (error) {
+        logger.warn('Failed to initialize conversation state:', error);
+        console.error('❌ Conversation state init failed:', error);
+      }
 
       // Initialize GitHub integration (if token provided)
       try {
+        console.log('🔧 Checking GitHub integration...');
         if (process.env.GITHUB_TOKEN) {
           initializeGitHubIntegration();
           logger.info('✅ GitHub integration enabled');
@@ -134,6 +154,7 @@ async function start() {
         }
       } catch (error) {
         logger.warn('Failed to initialize GitHub integration:', error);
+        console.error('❌ GitHub integration init failed:', error);
       }
 
       writeStatus('ready', {
@@ -193,6 +214,7 @@ process.on('SIGTERM', async () => {
   telemetry.persistMetrics();
   writeStatus('shutdown');
   healthServer.stop();
+  apiServer.stop();
   jobMonitor.stopMonitoring();
   client.destroy();
   process.exit(0);
@@ -204,6 +226,7 @@ process.on('SIGINT', async () => {
   telemetry.persistMetrics();
   writeStatus('shutdown');
   healthServer.stop();
+  apiServer.stop();
   jobMonitor.stopMonitoring();
   client.destroy();
   process.exit(0);

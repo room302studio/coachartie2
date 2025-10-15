@@ -354,23 +354,34 @@ export class CapabilityRegistry {
    */
   generateInstructions(): string {
     const capabilities = Array.from(this.capabilities.values());
-    
-    let instructions = `You are Coach Artie. When you need to DO something, use XML tags.
 
-Format: <capability name="X" action="Y" param="value" />
+    let instructions = `CRITICAL CAPABILITY FORMAT RULES:
+
+When you need to execute a capability, you MUST use this EXACT XML format:
+<capability name="capability-name" action="action-name" data='{"param":"value"}' />
+
+CORRECT EXAMPLES:
+<capability name="discord-forums" action="list-forums" data='{"guildId":"123456"}' />
+<capability name="calculator" action="calculate" data='{"expression":"2+2"}' />
+<capability name="web" action="search" data='{"query":"machine learning"}' />
+
+WRONG FORMATS (DO NOT USE):
+❌ discord-forums.list-forums("123456")
+❌ /discord-forums(list-forums, 123456)
+❌ discord-forums(list-forums: 123456)
+❌ /execute_tool discord-forums list-forums
 
 Available capabilities:
 `;
-    
-    // Simple list with examples
+
+    // List with examples
     for (const capability of capabilities) {
-      instructions += `- ${capability.name}: ${capability.description || 'No description'}\n`;
+      instructions += `\n- ${capability.name}: ${capability.description || 'No description'}`;
       if (capability.examples && capability.examples.length > 0) {
-        instructions += `  ${capability.examples[0]}\n`;
+        instructions += `\n  Example: ${capability.examples[0]}`;
       }
-      instructions += `\n`;
     }
-    
+
     return instructions;
   }
 }

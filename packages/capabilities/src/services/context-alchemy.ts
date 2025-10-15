@@ -211,6 +211,7 @@ Important:
     await this.addRecentGuildMessages(message, sources);    // Add broader guild context
     await this.addRelevantMemories(message, sources);
     await this.addCapabilityManifest(sources);
+    await this.addDiscordEnvironment(sources);              // Add Discord server context
     // Future: await this.addUserPreferences(message, sources);
     // Future: await this.addConversationHistory(message, sources);
 
@@ -416,16 +417,76 @@ Important:
    * Add capability manifest to message context (matches assembleMessagePreamble pattern)
    */
   private async addCapabilityManifest(sources: ContextSource[]): Promise<void> {
-    // Just the essential capability info, not a massive list
-    const content = `Available capabilities: calculate, remember, recall, web, goal, variable_store, todo, linkedin`;
-    
-    sources.push({
-      name: 'capability_context',
-      priority: 30, // Lower priority - capabilities can be learned
-      tokenWeight: Math.ceil(content.length / 4),
-      content,
-      category: 'capabilities'
-    });
+    try {
+      // Use the comprehensive format instructions from the capability registry
+      // This includes explicit format rules and examples that the LLM actually follows
+      const { capabilityRegistry } = await import('./capability-registry.js');
+      const content = capabilityRegistry.generateInstructions();
+
+      sources.push({
+        name: 'capability_context',
+        priority: 30, // Lower priority - capabilities can be learned
+        tokenWeight: Math.ceil(content.length / 4),
+        content,
+        category: 'capabilities'
+      });
+
+      const capCount = capabilityRegistry.size();
+      if (DEBUG) logger.info(`│ ✅ Added capability instructions (${capCount} capabilities, ${content.length} chars)`);
+    } catch (error) {
+      logger.warn('Failed to add capability manifest:', error);
+      // Graceful fallback to minimal instructions
+      const content = `Use XML format: <capability name="X" action="Y" data='{"param":"value"}' />
+Available: web, calculator, memory`;
+      sources.push({
+        name: 'capability_context',
+        priority: 30,
+        tokenWeight: Math.ceil(content.length / 4),
+        content,
+        category: 'capabilities'
+      });
+    }
+  }
+
+  /**
+   * Add Discord environment context - available servers and their IDs
+   * This helps Coach Artie understand what Discord servers it's connected to
+   */
+  private async addDiscordEnvironment(sources: ContextSource[]): Promise<void> {
+    try {
+      // Fetch Discord health info from the health server
+      const response = await fetch('http://localhost:47319/health');
+      if (!response.ok) {
+        if (DEBUG) logger.info('│ ⚠️  Discord health endpoint not available');
+        return;
+      }
+
+      const health = await response.json() as any; // Type as any for flexible health response
+      if (!health?.discord?.guildDetails || health.discord.guildDetails.length === 0) {
+        if (DEBUG) logger.info('│ ⚠️  No Discord guild details available');
+        return;
+      }
+
+      // Format guild info for token efficiency: Name (ID: xxx)
+      const guildInfo = health.discord.guildDetails
+        .map((g: any) => `${g.name} (ID: ${g.id})`)
+        .join(', ');
+
+      const content = `Connected Discord servers: ${guildInfo}`;
+
+      sources.push({
+        name: 'discord_environment',
+        priority: 50, // Between capabilities and memories
+        tokenWeight: Math.ceil(content.length / 4),
+        content,
+        category: 'user_state'
+      });
+
+      if (DEBUG) logger.info(`│ ✅ Added Discord environment: ${health.discord.guildDetails.length} servers`);
+    } catch (error) {
+      logger.warn('Failed to add Discord environment:', error);
+      // Graceful degradation - continue without Discord environment
+    }
   }
 
   /**

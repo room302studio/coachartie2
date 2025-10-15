@@ -168,8 +168,20 @@ export class CapabilityXMLParser {
           content = String(params.query);
           delete params.query;
         } else if (params.data) {
-          content = String(params.data);
-          delete params.data;
+          // Special handling for 'data' attribute - parse JSON into params
+          try {
+            const dataStr = String(params.data);
+            const parsedData = JSON.parse(dataStr);
+            // Merge parsed JSON data into params
+            Object.assign(params, parsedData);
+            delete params.data;
+            logger.info(`🔍 XML PARSER: Parsed data attribute as JSON: ${JSON.stringify(parsedData)}`);
+          } catch (error) {
+            // If JSON parsing fails, treat as content
+            content = String(params.data);
+            delete params.data;
+            logger.warn(`⚠️ XML PARSER: Failed to parse data attribute as JSON, using as content`);
+          }
         }
         
         capabilities.push({
