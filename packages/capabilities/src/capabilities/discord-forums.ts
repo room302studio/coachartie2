@@ -21,6 +21,28 @@ interface DiscordForumsParams {
 }
 
 const DISCORD_BASE_URL = process.env.DISCORD_SERVICE_URL || 'http://localhost:47321';
+const FETCH_TIMEOUT = 30000; // 30 second timeout
+
+// Helper function for fetch with timeout
+async function fetchWithTimeout(url: string, options: any = {}, timeout = FETCH_TIMEOUT): Promise<Response> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeout);
+
+  try {
+    const response = await fetch(url, {
+      ...options,
+      signal: controller.signal
+    });
+    clearTimeout(timeoutId);
+    return response;
+  } catch (error) {
+    clearTimeout(timeoutId);
+    if (error instanceof Error && error.name === 'AbortError') {
+      throw new Error(`Request to ${url} timed out after ${timeout}ms`);
+    }
+    throw error;
+  }
+}
 
 const handler = async (params: DiscordForumsParams, content?: string): Promise<string> => {
   const { action } = params;
@@ -63,7 +85,7 @@ async function listForums(params: DiscordForumsParams): Promise<string> {
   if (!guildId) {
     // Fetch available guilds from health endpoint to provide helpful error
     try {
-      const healthResponse = await fetch('http://localhost:47319/health');
+      const healthResponse = await fetchWithTimeout('http://localhost:47319/health');
       if (healthResponse.ok) {
         const health = await healthResponse.json();
         if (health.discord?.guildDetails && health.discord.guildDetails.length > 0) {
@@ -83,7 +105,7 @@ async function listForums(params: DiscordForumsParams): Promise<string> {
   }
 
   // Call Discord service endpoint to list forums
-  const response = await fetch(`${DISCORD_BASE_URL}/api/guilds/${guildId}/forums`);
+  const response = await fetchWithTimeout(`${DISCORD_BASE_URL}/api/guilds/${guildId}/forums`);
 
   if (!response.ok) {
     throw new Error(`Failed to fetch forums: ${response.statusText}`);
@@ -160,7 +182,7 @@ async function listThreads(params: DiscordForumsParams): Promise<string> {
     // If guildId was provided, try to help by listing forums
     if (guildId) {
       try {
-        const forumsResponse = await fetch(`${DISCORD_BASE_URL}/api/guilds/${guildId}/forums`);
+        const forumsResponse = await fetchWithTimeout(`${DISCORD_BASE_URL}/api/guilds/${guildId}/forums`);
         if (forumsResponse.ok) {
           const forumsData = await forumsResponse.json();
           if (forumsData.forums && forumsData.forums.length > 0) {
@@ -180,7 +202,7 @@ async function listThreads(params: DiscordForumsParams): Promise<string> {
     throw new Error(helpMessage);
   }
 
-  const response = await fetch(`${DISCORD_BASE_URL}/api/forums/${forumId}/threads`);
+  const response = await fetchWithTimeout(`${DISCORD_BASE_URL}/api/forums/${forumId}/threads`);
 
   if (!response.ok) {
     throw new Error(`Failed to fetch threads: ${response.statusText}`);
@@ -270,7 +292,7 @@ async function getThread(params: DiscordForumsParams): Promise<string> {
     throw new Error('threadId is required for get-thread action');
   }
 
-  const response = await fetch(`${DISCORD_BASE_URL}/api/threads/${threadId}`);
+  const response = await fetchWithTimeout(`${DISCORD_BASE_URL}/api/threads/${threadId}`);
 
   if (!response.ok) {
     throw new Error(`Failed to fetch thread: ${response.statusText}`);
@@ -359,7 +381,7 @@ async function getForumSummary(params: DiscordForumsParams): Promise<string> {
     throw new Error('forumId is required for get-forum-summary action');
   }
 
-  const response = await fetch(`${DISCORD_BASE_URL}/api/forums/${forumId}/summary`);
+  const response = await fetchWithTimeout(`${DISCORD_BASE_URL}/api/forums/${forumId}/summary`);
 
   if (!response.ok) {
     throw new Error(`Failed to fetch forum summary: ${response.statusText}`);
@@ -384,13 +406,13 @@ async function syncToGitHub(params: DiscordForumsParams, content?: string): Prom
   }
 
   // Call Discord service to trigger GitHub sync
-  const response = await fetch(`${DISCORD_BASE_URL}/api/forums/${forumId}/sync-to-github`, {
+  const response = await fetchWithTimeout(`${DISCORD_BASE_URL}/api/forums/${forumId}/sync-to-github`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json'
     },
     body: JSON.stringify({ repo })
-  });
+  }, 60000); // 60 second timeout for GitHub sync (can be slow)
 
   if (!response.ok) {
     throw new Error(`Failed to sync to GitHub: ${response.statusText}`);
