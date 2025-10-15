@@ -405,7 +405,11 @@ capabilityRegistry.register(semanticSearchCapability);
 import { webCapability } from '../capabilities/web.js';
 capabilityRegistry.register(webCapability);
 
+// Auto-register Discord Forums capability
+import { discordForumsCapability } from '../capabilities/discord-forums.js';
+capabilityRegistry.register(discordForumsCapability);
+
 // Log all successfully registered capabilities on startup
-logger.info(`🚀 Capability Registry initialized with ${capabilityRegistry.size()} capabilities:`, 
+logger.info(`🚀 Capability Registry initialized with ${capabilityRegistry.size()} capabilities:`,
   capabilityRegistry.list().map(cap => `${cap.name} (${cap.supportedActions.join(', ')})`).join(', ')
 );
