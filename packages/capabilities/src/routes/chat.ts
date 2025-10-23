@@ -1,15 +1,18 @@
 import { Router, Request, Response } from 'express';
-import { logger } from '@coachartie/shared';
+import { logger, createQueue, QUEUES, IncomingMessage } from '@coachartie/shared';
 import { processMessage } from '../handlers/process-message.js';
 import { v4 as uuidv4 } from 'uuid';
 import { rateLimiter } from '../middleware/rate-limiter.js';
 import { jobTracker } from '../services/job-tracker.js';
+
+const messageQueue = createQueue<IncomingMessage>(QUEUES.INCOMING_MESSAGES);
 
 const router: Router = Router();
 
 interface ChatRequest {
   message: string;
   userId?: string;
+  context?: Record<string, any>;  // Discord context including guildId, channelId
 }
 
 interface ChatResponse {
@@ -26,7 +29,7 @@ interface ChatResponse {
 // POST /chat - Process message and return AI response immediately
 router.post('/', rateLimiter(50, 60000), async (req: Request, res: Response) => {
   try {
-    const { message, userId = 'api-user' }: ChatRequest = req.body;
+    const { message, userId = 'api-user', context }: ChatRequest = req.body;
 
     if (!message || typeof message !== 'string') {
       return res.status(400).json({
@@ -58,47 +61,42 @@ router.post('/', rateLimiter(50, 60000), async (req: Request, res: Response) => 
     logger.info(`Processing chat message from ${userId}: ${message.substring(0, 100)}...`);
 
     // Create message object for processing
-    const incomingMessage = {
+    const incomingMessage: IncomingMessage = {
       id: messageId,
       timestamp: new Date(),
       retryCount: 0,
       source: 'api' as const,
       userId,
       message: message.trim(),
+      context: context || {},  // Pass Discord context through
       respondTo: {
         type: 'api' as const,
         apiResponseId: messageId
       }
     };
 
-    // Start job tracking
-    jobTracker.startJob(messageId, userId, message.trim());
-    
-    // Return job info immediately
-    res.json({
-      success: true,
-      messageId,
-      status: 'pending',
-      jobUrl: `/chat/${messageId}`
-    } as ChatResponse);
+    // Start tracking the job
+    jobTracker.startJob(messageId, userId, message);
+    logger.info(`📊 Started tracking job ${messageId} for user ${userId}`);
 
-    // Process in background with job tracking and simple streaming
-    processMessage(
-      incomingMessage,
-      // Simple streaming callback - update on paragraph completion
-      (partialResponse: string) => {
-        jobTracker.updatePartialResponse(messageId, partialResponse);
-      }
-    )
-      .then(aiResponse => {
-        jobTracker.completeJob(messageId, aiResponse);
-        logger.info(`✅ Background processing complete for job ${messageId}: ${aiResponse.substring(0, 100)}...`);
-      })
-      .catch(error => {
-        const errorMessage = error instanceof Error ? error.message : String(error);
-        jobTracker.failJob(messageId, errorMessage);
-        logger.error(`❌ Background processing failed for job ${messageId}:`, error);
-      });
+    // Add message to queue for processing
+    try {
+      const job = await messageQueue.add('process', incomingMessage);
+      logger.info(`✅ Message ${messageId} added to queue with job ID: ${job.id}`);
+
+      // Return job info immediately
+      res.json({
+        success: true,
+        messageId,
+        status: 'pending',
+        jobUrl: `/chat/${messageId}`
+      } as ChatResponse);
+    } catch (queueError) {
+      logger.error(`Failed to queue message ${messageId}:`, queueError);
+      // Mark job as failed if queuing fails
+      jobTracker.failJob(messageId, 'Failed to queue message');
+      throw queueError;
+    }
 
   } catch (error) {
     logger.error('Error in chat endpoint:', error);

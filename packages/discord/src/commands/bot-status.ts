@@ -134,7 +134,7 @@ async function createSystemStatusEmbed(): Promise<EmbedBuilder> {
     // Test capabilities service
     const capabilitiesStart = Date.now();
     const testResult = await Promise.race([
-      fetch('http://localhost:18239/health').then(r => r.ok),
+      fetch('http://localhost:47324/health').then(r => r.ok),
       new Promise(resolve => setTimeout(() => resolve(false), 5000))
     ]);
     const capabilitiesLatency = Date.now() - capabilitiesStart;
@@ -147,7 +147,7 @@ async function createSystemStatusEmbed(): Promise<EmbedBuilder> {
       { name: '⚡ Capabilities Latency', value: capabilitiesLatencyText, inline: true },
       { name: '🔄 Redis Queue', value: '🟢 Connected', inline: true }, // TODO: actual check
       { name: '🌐 Discord API', value: '🟢 Connected', inline: true },
-      { name: '📊 Health Server', value: '🟢 Running :3001', inline: true },
+      { name: '📊 Health Server', value: '🟢 Running :47319', inline: true },
       { name: '💾 Telemetry', value: '🟢 Recording', inline: true }
     );
 

@@ -1610,7 +1610,7 @@ async function installFromGitHub(githubUrl: string, customInstallPath?: string):
       name: repo,
       description: mcpDetection.description || `MCP server installed from ${fullName}`,
       version: 'latest',
-      port: 3020 + Math.floor(Math.random() * 100), // Random port to avoid conflicts
+      port: 47327 + Math.floor(Math.random() * 100), // Random port in 47327-47427 range
       environment: {},
       githubUrl,
       installedBy: 'CoachArtie GitHub MCP Installer',

@@ -15,6 +15,7 @@ import { modelsCommand } from './src/commands/models.js';
 import { memoryCommand } from './src/commands/memory.js';
 import { usageCommand } from './src/commands/usage.js';
 import { debugCommand } from './src/commands/debug.js';
+import { data as syncDiscussionsData } from './src/commands/sync-discussions.js';
 
 const commands = [
   linkPhoneCommand.data.toJSON(),
@@ -25,7 +26,8 @@ const commands = [
   modelsCommand.data.toJSON(),
   memoryCommand.data.toJSON(),
   usageCommand.data.toJSON(),
-  debugCommand.data.toJSON()
+  debugCommand.data.toJSON(),
+  syncDiscussionsData.toJSON()
 ];
 
 const rest = new REST().setToken(process.env.DISCORD_TOKEN!);
@@ -51,6 +53,7 @@ async function registerCommands() {
     console.log('  - /memory - Search and manage conversation memories');
     console.log('  - /usage - View AI usage statistics and costs');
     console.log('  - /debug - Troubleshoot connection and performance issues');
+    console.log('  - /sync-discussions - Sync Discord forum discussions to GitHub issues');
     
   } catch (error) {
     console.error('❌ Error registering commands:', error);

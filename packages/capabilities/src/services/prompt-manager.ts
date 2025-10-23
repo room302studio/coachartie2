@@ -101,16 +101,35 @@ export class PromptManager {
   }
 
   /**
-   * Get raw capability instructions template - context assembly happens in Context Alchemy 🚀
+   * Get capability instructions - DB first, registry fallback 🚀
    */
   async getCapabilityInstructions(userMessage: string): Promise<string> {
-    // Generate instructions directly from capability registry manifest
+    try {
+      // First, try to get the rich system prompt
+      logger.info(`🔍 Attempting to load rich system prompt from database`);
+      const systemPrompt = await this.getPrompt('PROMPT_SYSTEM');
+      if (systemPrompt) {
+        const instructions = systemPrompt.content.replace(/\{\{USER_MESSAGE\}\}/g, userMessage);
+        logger.info(`🎯 Using rich PROMPT_SYSTEM from database (v${systemPrompt.version})`);
+        return instructions;
+      } else {
+        // Fallback to basic capability instructions
+        logger.warn(`⚠️ Rich system prompt not found, trying capability_instructions`);
+        const dbPrompt = await this.getPrompt('capability_instructions');
+        if (dbPrompt) {
+          const instructions = dbPrompt.content.replace(/\{\{USER_MESSAGE\}\}/g, userMessage);
+          logger.info(`🎯 Using basic capability instructions from database (v${dbPrompt.version})`);
+          return instructions;
+        }
+      }
+    } catch (error) {
+      logger.warn(`⚠️ Failed to load DB prompts, falling back to registry:`, error);
+    }
+    
+    // Fallback: Generate instructions from capability registry manifest
     const { capabilityRegistry } = await import('./capability-registry.js');
-    
-    let instructions = capabilityRegistry.generateInstructions();
-    instructions = instructions.replace(/\{\{USER_MESSAGE\}\}/g, userMessage);
-    
-    logger.info(`🎯 Generated capability instructions from manifest (${capabilityRegistry.size()} capabilities)`);
+    const instructions = capabilityRegistry.generateInstructions().replace(/\{\{USER_MESSAGE\}\}/g, userMessage);
+    logger.info(`🎯 Using fallback capability instructions from registry (${capabilityRegistry.size()} capabilities)`);
     
     return instructions;
   }

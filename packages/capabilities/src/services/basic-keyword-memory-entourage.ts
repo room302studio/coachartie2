@@ -247,28 +247,11 @@ Return only the search terms, comma-separated:`;
   }
 
   /**
-   * Fast semantic expansion using pre-defined mappings
+   * DELETED - hardcoded keyword mapping was broken by design
    */
   private fastSemanticExpansion(baseKeywords: string[]): string[] {
-    const expansionMap: Record<string, string[]> = {
-      pizza: ['food', 'restaurant', 'italian', 'cooking', 'meal', 'atlanta', 'episode'],
-      coding: ['programming', 'development', 'debugging', 'tech', 'project'],
-      meeting: ['work', 'discussion', 'team', 'project', 'collaboration'],
-      travel: ['trip', 'vacation', 'location', 'visit', 'journey'],
-      debugging: ['testing', 'fixing', 'coding', 'problem', 'system']
-    };
-
-    const expanded: string[] = [];
-    for (const keyword of baseKeywords) {
-      const related = expansionMap[keyword.toLowerCase()];
-      if (related) {
-        // Stochastic selection for variety
-        const selected = related.sort(() => Math.random() - 0.5).slice(0, 3);
-        expanded.push(...selected);
-      }
-    }
-
-    return [...new Set(expanded)]; // Deduplicate
+    // Just return the original keywords - let the real semantic search do its job
+    return baseKeywords;
   }
 
   /**

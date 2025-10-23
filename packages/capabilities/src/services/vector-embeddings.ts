@@ -1,11 +1,11 @@
-import { logger } from '@coachartie/shared';
+import { logger, getDatabase } from '@coachartie/shared';
 import OpenAI from 'openai';
 
 /**
- * Vector Embeddings Service - REAL OpenAI + Supabase Implementation
- * 
+ * Vector Embeddings Service - OpenAI + Local SQLite Implementation
+ *
  * Uses OpenAI's text-embedding-3-small model to generate 1536-dimensional vectors
- * and stores them in Supabase with pgvector for real semantic search.
+ * and stores them locally in SQLite with cosine similarity search.
  */
 
 export interface EmbeddingVector {
@@ -26,6 +26,7 @@ export class VectorEmbeddingService {
   private static instance: VectorEmbeddingService;
   private initialized = false;
   private openai: OpenAI | null = null;
+  private db: any = null;
 
   static getInstance(): VectorEmbeddingService {
     if (!VectorEmbeddingService.instance) {
@@ -47,7 +48,8 @@ export class VectorEmbeddingService {
     }
 
     this.openai = new OpenAI({ apiKey });
-    logger.info('🧠 Vector Embedding Service: Real OpenAI implementation initialized');
+    this.db = await getDatabase();
+    logger.info('🧠 Vector Embedding Service: OpenAI + Local SQLite initialized');
     this.initialized = true;
   }
 
@@ -77,30 +79,73 @@ export class VectorEmbeddingService {
   }
 
   /**
-   * Find semantically similar memories using Supabase vector search
-   * 
-   * Note: This requires the Supabase database connection and match_memories function.
-   * For now, returns empty until Supabase connection is available.
+   * Calculate cosine similarity between two vectors
    */
-  async findSimilarMemories(queryText: string, limit: number = 10): Promise<SimilarityResult[]> {
-    if (!this.openai) {
-      logger.warn('🚧 Vector search unavailable - missing OPENAI_API_KEY');
+  private cosineSimilarity(vecA: number[], vecB: number[]): number {
+    if (vecA.length !== vecB.length) {
+      throw new Error('Vectors must have same dimensions');
+    }
+
+    let dotProduct = 0;
+    let normA = 0;
+    let normB = 0;
+
+    for (let i = 0; i < vecA.length; i++) {
+      dotProduct += vecA[i] * vecB[i];
+      normA += vecA[i] * vecA[i];
+      normB += vecB[i] * vecB[i];
+    }
+
+    return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
+  }
+
+  /**
+   * Find semantically similar memories using local vector search
+   */
+  async findSimilarMemories(queryText: string, limit: number = 10, threshold: number = 0.7): Promise<SimilarityResult[]> {
+    if (!this.openai || !this.db) {
+      logger.warn('🚧 Vector search unavailable - service not initialized');
       return [];
     }
 
     try {
       // Generate embedding for the query
       const queryEmbedding = await this.generateEmbedding(queryText);
-      
-      // TODO: Connect to Supabase and use match_memories function
-      // const { data, error } = await supabase.rpc('match_memories', {
-      //   query_embedding: JSON.stringify(queryEmbedding),
-      //   match_threshold: 0.7,
-      //   match_count: limit
-      // });
-      
-      logger.warn('🚧 Supabase vector search not yet connected - use match_memories RPC');
-      return [];
+
+      // Get all memories with embeddings from SQLite
+      const memories = await this.db.all(`
+        SELECT id AS memory_id, content, embedding
+        FROM memories
+        WHERE embedding IS NOT NULL
+      `);
+
+      // Calculate similarities
+      const results: SimilarityResult[] = [];
+
+      for (const memory of memories) {
+        try {
+          const memoryEmbedding = JSON.parse(memory.embedding);
+          const similarity = this.cosineSimilarity(queryEmbedding, memoryEmbedding);
+
+          if (similarity >= threshold) {
+            results.push({
+              memory_id: memory.memory_id,
+              similarity_score: similarity,
+              content: memory.content
+            });
+          }
+        } catch (e) {
+          // Skip memories with invalid embeddings
+          continue;
+        }
+      }
+
+      // Sort by similarity and limit results
+      results.sort((a, b) => b.similarity_score - a.similarity_score);
+      const topResults = results.slice(0, limit);
+
+      logger.info(`🔍 Found ${topResults.length} similar memories (threshold: ${threshold})`);
+      return topResults;
 
     } catch (error) {
       logger.error('❌ Vector similarity search failed:', error);
@@ -109,29 +154,100 @@ export class VectorEmbeddingService {
   }
 
   /**
-   * Store embedding in database (requires Supabase connection)
+   * Store embedding in local SQLite database
    */
   async storeEmbedding(memoryId: number, text: string): Promise<boolean> {
-    if (!this.openai) {
-      logger.warn('🚧 Cannot store embedding - missing OPENAI_API_KEY');
+    if (!this.openai || !this.db) {
+      logger.warn('🚧 Cannot store embedding - service not initialized');
       return false;
     }
 
     try {
       const embedding = await this.generateEmbedding(text);
-      
-      // TODO: Store in Supabase memories table
-      // const { error } = await supabase
-      //   .from('memories')
-      //   .update({ embedding: JSON.stringify(embedding) })
-      //   .eq('id', memoryId);
-      
-      logger.warn('🚧 Supabase connection not available for storing embeddings');
-      return false;
-      
+
+      // Store in SQLite memories table
+      const result = await this.db.run(`
+        UPDATE memories
+        SET embedding = ?
+        WHERE id = ?
+      `, JSON.stringify(embedding), memoryId);
+
+      if (result.changes > 0) {
+        logger.info(`✅ Stored embedding for memory #${memoryId}`);
+        return true;
+      } else {
+        logger.warn(`⚠️ Memory #${memoryId} not found`);
+        return false;
+      }
+
     } catch (error) {
       logger.error('❌ Failed to store embedding:', error);
       return false;
+    }
+  }
+
+  /**
+   * Find similar memories based on an existing memory's embedding
+   */
+  async findSimilarToMemory(memoryId: number, limit: number = 10, threshold: number = 0.7): Promise<SimilarityResult[]> {
+    if (!this.db) {
+      logger.warn('🚧 Vector search unavailable - database not initialized');
+      return [];
+    }
+
+    try {
+      // Get the memory and its embedding
+      const memory = await this.db.get(`
+        SELECT content, embedding
+        FROM memories
+        WHERE id = ?
+      `, memoryId);
+
+      if (!memory || !memory.embedding) {
+        logger.warn(`⚠️ Memory #${memoryId} not found or has no embedding`);
+        return [];
+      }
+
+      const baseEmbedding = JSON.parse(memory.embedding);
+
+      // Get all other memories with embeddings
+      const otherMemories = await this.db.all(`
+        SELECT id AS memory_id, content, embedding
+        FROM memories
+        WHERE embedding IS NOT NULL AND id != ?
+      `, memoryId);
+
+      // Calculate similarities
+      const results: SimilarityResult[] = [];
+
+      for (const otherMemory of otherMemories) {
+        try {
+          const otherEmbedding = JSON.parse(otherMemory.embedding);
+          const similarity = this.cosineSimilarity(baseEmbedding, otherEmbedding);
+
+          if (similarity >= threshold) {
+            results.push({
+              memory_id: otherMemory.memory_id,
+              similarity_score: similarity,
+              content: otherMemory.content
+            });
+          }
+        } catch (e) {
+          // Skip memories with invalid embeddings
+          continue;
+        }
+      }
+
+      // Sort by similarity and limit results
+      results.sort((a, b) => b.similarity_score - a.similarity_score);
+      const topResults = results.slice(0, limit);
+
+      logger.info(`🔍 Found ${topResults.length} memories similar to #${memoryId}`);
+      return topResults;
+
+    } catch (error) {
+      logger.error('❌ Failed to find similar memories:', error);
+      return [];
     }
   }
 

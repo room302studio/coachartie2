@@ -22,7 +22,8 @@ import { goalCapability } from "../capabilities/goal.js";
 import { variableStoreCapability } from "../capabilities/variable-store.js";
 import { todoCapability } from "../capabilities/todo.js";
 import { discordUICapability } from "../capabilities/discord-ui.js";
-import { CapabilitySuggester } from "../utils/capability-suggester.js";
+import { discordForumsCapability } from "../capabilities/discord-forums.js";
+// import { CapabilitySuggester } from "../utils/capability-suggester.js"; // Removed during refactoring
 import { capabilityXMLParser } from "../utils/xml-parser.js";
 import { conscienceLLM } from './conscience.js';
 import { bulletproofExtractor } from "../utils/bulletproof-capability-extractor.js";
@@ -57,18 +58,19 @@ interface OrchestrationContext {
   results: CapabilityResult[];
   currentStep: number;
   respondTo: IncomingMessage["respondTo"];
+  capabilityFailureCount: Map<string, number>; // Circuit breaker: track failures per capability
 }
 
 export class CapabilityOrchestrator {
   private contexts = new Map<string, OrchestrationContext>();
-  private capabilitySuggester: CapabilitySuggester;
+  // private capabilitySuggester: CapabilitySuggester; // Removed during refactoring
 
   constructor() {
     // Initialize the capability registry with existing capabilities
     this.initializeCapabilityRegistry();
     
-    // Initialize the capability suggester
-    this.capabilitySuggester = new CapabilitySuggester(capabilityRegistry.list());
+    // Initialize the capability suggester - Removed during refactoring
+    // this.capabilitySuggester = new CapabilitySuggester(capabilityRegistry.list());
   }
 
   /**
@@ -80,6 +82,7 @@ export class CapabilityOrchestrator {
 
     try {
       // Register calculator capability from external file
+      logger.info('📦 Registering calculator...');
       capabilityRegistry.register(calculatorCapability);
 
       // Register web capability from external file
@@ -131,7 +134,13 @@ export class CapabilityOrchestrator {
       capabilityRegistry.register(todoCapability);
 
       // Register Discord UI capability for interactive components
+      logger.info('📦 Registering discord-ui...');
       capabilityRegistry.register(discordUICapability);
+
+      // Register Discord Forums capability for forum traversal and GitHub sync
+      logger.info('📦 Registering discord-forums...');
+      capabilityRegistry.register(discordForumsCapability);
+      logger.info('✅ discord-forums registered successfully');
 
       // Register wolfram capability
       capabilityRegistry.register({
@@ -240,9 +249,12 @@ export class CapabilityOrchestrator {
         }
       });
 
-      logger.info('✅ Capability registry initialized successfully');
+      const totalCaps = capabilityRegistry.list().length;
+      logger.info(`✅ Capability registry initialized successfully: ${totalCaps} capabilities registered`);
+      logger.info(`📋 Registered: ${capabilityRegistry.list().map(c => c.name).join(', ')}`);
     } catch (error) {
       logger.error('❌ Failed to initialize capability registry:', error);
+      logger.error('Stack:', error);
       // Don't throw - allow service to continue with legacy handlers
     }
   }
@@ -289,35 +301,36 @@ export class CapabilityOrchestrator {
     const llmResponse = await this.getLLMResponseWithCapabilities(message, onPartialResponse);
     await this.extractCapabilitiesFromUserAndLLM(context, message, llmResponse);
     await this.reviewCapabilitiesWithConscience(context, message);
-    
-    // Handle no capabilities case
-    if (context.capabilities.length === 0) {
-      const autoInjectionResult = await this.handleAutoInjectionFlow(context, message, llmResponse);
-      if (autoInjectionResult) {return autoInjectionResult;}
-      return llmResponse; // No capabilities needed, return original response
-    }
-    
-    // EXECUTE DETECTED CAPABILITIES FIRST - Fix for web search bug
-    logger.info(`🔥 EXECUTING ${context.capabilities.length} DETECTED CAPABILITIES BEFORE LLM LOOP`);
-    if (context.capabilities.length > 0) {
-      await this.executeCapabilityChain(context);
-      logger.info(`✅ CAPABILITIES EXECUTED - Results: ${context.results.length} results`);
-    }
-    
-    // Stream the initial LLM response before executing capabilities
+
+    // Stream the initial LLM response
     if (onPartialResponse) {
       const cleanResponse = this.stripThinkingTags(llmResponse, context.userId, context.messageId);
       if (cleanResponse.trim()) {
         onPartialResponse(cleanResponse);
       }
     }
-    
-    // Use LLM-driven recursive execution (always enabled now)
-    logger.info(`🔥 ABOUT TO CALL LLM-DRIVEN LOOP - This confirms the method will be called`);
-    const finalResponse = await this.executeLLMDrivenLoop(context, llmResponse, onPartialResponse);
-    logger.info(`🔥 LLM-DRIVEN LOOP RETURNED: ${finalResponse ? 'SUCCESS' : 'NULL'}`);
+
+    // EXECUTE CAPABILITIES WITH STREAMING - natural loop via LLM seeing results
+    if (context.capabilities.length > 0 && onPartialResponse) {
+      logger.info(`🔄 STARTING STREAMING CAPABILITY CHAIN - LLM will naturally continue based on results`);
+      const finalResponse = await this.executeCapabilityChainWithStreaming(context, onPartialResponse);
+      if (finalResponse) {
+        await this.storeReflectionMemory(context, message, finalResponse);
+        this.contexts.delete(message.id);
+        return finalResponse;
+      }
+    }
+
+    // Fallback: execute capabilities without streaming (old path)
+    if (context.capabilities.length > 0) {
+      logger.info(`🔧 Executing ${context.capabilities.length} capabilities (non-streaming)`);
+      await this.executeCapabilityChain(context);
+    }
+
+    // Generate final response from capability results
+    const finalResponse = await this.generateFinalResponse(context, llmResponse);
     await this.storeReflectionMemory(context, message, finalResponse);
-    
+
     this.contexts.delete(message.id);
     return finalResponse;
   }
@@ -335,6 +348,7 @@ export class CapabilityOrchestrator {
       results: [],
       currentStep: 0,
       respondTo: message.respondTo,
+      capabilityFailureCount: new Map(), // Circuit breaker
     };
   }
 
@@ -456,10 +470,19 @@ export class CapabilityOrchestrator {
    * Gospel Method: Store reflection memory about successful patterns
    */
   private async storeReflectionMemory(
-    context: OrchestrationContext, 
-    message: IncomingMessage, 
+    context: OrchestrationContext,
+    message: IncomingMessage,
     finalResponse: string
   ): Promise<void> {
+    // COST CONTROL: Automatic reflection is expensive (2 LLM calls per message)
+    // Only enable if explicitly requested via environment variable
+    const enableAutoReflection = process.env.ENABLE_AUTO_REFLECTION === 'true';
+
+    if (!enableAutoReflection) {
+      logger.info('⏭️  Skipping automatic reflection (disabled for cost control)');
+      return;
+    }
+
     try {
       await this.autoStoreReflectionMemory(context, message, finalResponse);
     } catch (error) {
@@ -530,7 +553,7 @@ Timestamp: ${new Date().toISOString()}`;
       
       // Use streaming if callback provided, otherwise regular generation
       return onPartialResponse
-        ? await openRouterService.generateFromMessageChainStreaming(modelAwareMessages, message.userId, onPartialResponse)
+        ? await openRouterService.generateFromMessageChainStreaming(modelAwareMessages, message.userId, onPartialResponse, message.id)
         : await openRouterService.generateFromMessageChain(modelAwareMessages, message.userId, message.id);
     } catch (error) {
       logger.error('❌ Failed to get capability instructions from database', error);
@@ -1092,17 +1115,32 @@ ${capabilityDetails}`;
     // Always use LLM-driven execution - streaming is optional bonus
 
     logger.info(`🤖 STARTING LLM-DRIVEN EXECUTION LOOP - This confirms new system is active!`);
-    
+
+    // CRITICAL: Global timeout to prevent hung jobs
+    const GLOBAL_TIMEOUT_MS = 120000; // 2 minutes
+    const startTime = Date.now();
+
+    const checkTimeout = () => {
+      const elapsed = Date.now() - startTime;
+      if (elapsed > GLOBAL_TIMEOUT_MS) {
+        const elapsedSeconds = (elapsed / 1000).toFixed(1);
+        logger.warn(`⏱️ Orchestration timeout after ${elapsedSeconds}s (limit: ${GLOBAL_TIMEOUT_MS / 1000}s)`);
+        throw new Error(`Orchestration timeout after ${elapsedSeconds}s - this prevents infinite loops and resource exhaustion`);
+      }
+    };
+
     // Build the conversation history for the loop
     const conversationHistory = [
       `User: ${context.originalMessage}`,
       `Assistant: ${initialResponse}`
     ];
-    
+
     let iterationCount = 0;
-    const maxIterations = 10; // Prevent infinite loops
-    
+    const maxIterations = 24; // Accommodate 9 capabilities + error recovery + discovery
+    const minIterations = 3; // Reduced from 5 to allow faster completion when appropriate
+
     while (iterationCount < maxIterations) {
+      checkTimeout(); // Check timeout before each iteration
       iterationCount++;
       logger.info(`🔄 LLM LOOP ITERATION ${iterationCount}/${maxIterations} - RECURSIVE EXECUTION IN PROGRESS`);
       
@@ -1116,18 +1154,25 @@ ${capabilityDetails}`;
       
       // Extract capabilities from the LLM's next action
       const capabilities = this.extractCapabilities(nextAction);
-      
+
       if (capabilities.length === 0) {
-        // LLM said something without capabilities - this is the final response
-        logger.info(`🏁 LLM provided final response without capabilities: "${nextAction.substring(0, 100)}..."`);
+        // LLM wants to stop - check if minimum depth reached
+        if (iterationCount < minIterations) {
+          logger.warn(`⚠️ LLM tried to stop at iteration ${iterationCount} but minimum is ${minIterations} - forcing continuation`);
+          conversationHistory.push(`Assistant: ${nextAction}`);
+          conversationHistory.push(`[SYSTEM: Minimum exploration depth not reached. Continue analysis with suggested actions.]`);
+          continue; // Force loop to continue
+        }
+
+        // Minimum depth reached, allow stopping
+        logger.info(`🏁 LLM provided final response without capabilities after ${iterationCount} iterations: "${nextAction.substring(0, 100)}..."`);
         if (onPartialResponse) {
           const cleanResponse = this.stripThinkingTags(nextAction, context.userId, context.messageId);
           if (cleanResponse.trim()) {
             onPartialResponse(cleanResponse);
           }
         }
-        
-        // Add to conversation history and return
+
         conversationHistory.push(`Assistant: ${nextAction}`);
         return nextAction;
       }
@@ -1145,9 +1190,20 @@ ${capabilityDetails}`;
       // Execute the capabilities the LLM requested
       let systemFeedback = '';
       for (const capability of capabilities) {
+        // CIRCUIT BREAKER: Check if this capability has failed too many times
+        const capabilityKey = `${capability.name}:${capability.action}`;
+        const failureCount = context.capabilityFailureCount.get(capabilityKey) || 0;
+        const MAX_FAILURES_PER_CAPABILITY = 5;
+
+        if (failureCount >= MAX_FAILURES_PER_CAPABILITY) {
+          logger.warn(`🚫 CIRCUIT BREAKER: ${capabilityKey} has failed ${failureCount} times - skipping further attempts`);
+          systemFeedback += `[SYSTEM: ${capabilityKey} circuit breaker open - failed ${failureCount} times. Try a different approach.]\n`;
+          continue; // Skip this capability
+        }
+
         try {
-          logger.info(`🔧 Executing LLM-requested capability: ${capability.name}:${capability.action}`);
-          
+          logger.info(`🔧 Executing LLM-requested capability: ${capability.name}:${capability.action} (failure count: ${failureCount}/${MAX_FAILURES_PER_CAPABILITY})`);
+
           const processedCapability = this.substituteTemplateVariables(capability, context.results);
           const capabilityForExecution = {
             name: processedCapability.name,
@@ -1155,13 +1211,13 @@ ${capabilityDetails}`;
             content: processedCapability.content || '',
             params: processedCapability.params
           };
-          
+
           const robustResult = await robustExecutor.executeWithRetry(
             capabilityForExecution,
             { userId: context.userId, messageId: context.messageId },
             3
           );
-          
+
           const result: CapabilityResult = {
             capability: processedCapability,
             success: robustResult.success,
@@ -1169,23 +1225,29 @@ ${capabilityDetails}`;
             error: robustResult.error,
             timestamp: robustResult.timestamp
           };
-          
+
           context.results.push(result);
           context.currentStep++;
-          
+
           // Add system feedback about the capability execution
           if (result.success) {
+            // Reset failure count on success
+            context.capabilityFailureCount.set(capabilityKey, 0);
             systemFeedback += `[SYSTEM: ${capability.name}:${capability.action} succeeded → ${result.data}]\n`;
             logger.info(`✅ Capability ${capability.name}:${capability.action} succeeded`);
           } else {
-            systemFeedback += `[SYSTEM: ${capability.name}:${capability.action} failed → ${result.error}]\n`;
+            // Increment failure count
+            context.capabilityFailureCount.set(capabilityKey, failureCount + 1);
+            systemFeedback += `[SYSTEM: ${capability.name}:${capability.action} failed (attempt ${failureCount + 1}/${MAX_FAILURES_PER_CAPABILITY}) → ${result.error}]\n`;
             logger.error(`❌ Capability ${capability.name}:${capability.action} failed: ${result.error}`);
           }
-          
+
         } catch (error) {
+          // Increment failure count on exception
+          context.capabilityFailureCount.set(capabilityKey, failureCount + 1);
           logger.error(`❌ Failed to execute capability ${capability.name}:`, error);
-          systemFeedback += `[SYSTEM: ${capability.name}:${capability.action} threw error → ${error}]\n`;
-          
+          systemFeedback += `[SYSTEM: ${capability.name}:${capability.action} threw error (attempt ${failureCount + 1}/${MAX_FAILURES_PER_CAPABILITY}) → ${error}]\n`;
+
           context.results.push({
             capability,
             success: false,
@@ -1217,29 +1279,154 @@ ${capabilityDetails}`;
   }
 
   /**
+   * SYSTEM: Extract suggested next actions from capability results
+   * Parses "Next Actions:" sections from capability responses
+   * Works for ANY capability following CAPABILITY_RESPONSE_PATTERN.md
+   */
+  private extractSuggestedNextActions(results: CapabilityResult[]): string[] {
+    const suggestions: string[] = [];
+
+    for (const result of results) {
+      if (!result.success || !result.data) continue;
+
+      const data = String(result.data);
+
+      // Look for "Next Actions:" section in capability response
+      const nextActionsMatch = data.match(/Next Actions?:\s*([\s\S]*?)(?=\n\n|💡|📦|$)/i);
+      if (nextActionsMatch) {
+        const actionsText = nextActionsMatch[1];
+
+        // Extract capability XML tags from the next actions section
+        const capabilityTags = actionsText.match(/<capability[^>]*\/>/g);
+        if (capabilityTags) {
+          suggestions.push(...capabilityTags);
+        }
+      }
+
+      // Also look for "💡 Recommended Next Steps:" section
+      const recommendedMatch = data.match(/💡 Recommended Next Steps?:\s*([\s\S]*?)(?=\n\n|📦|$)/i);
+      if (recommendedMatch) {
+        const recommendedText = recommendedMatch[1];
+        const capabilityTags = recommendedText.match(/<capability[^>]*\/>/g);
+        if (capabilityTags) {
+          suggestions.push(...capabilityTags);
+        }
+      }
+    }
+
+    // Deduplicate suggestions
+    return [...new Set(suggestions)];
+  }
+
+  /**
+   * SYSTEM: Intelligently truncate conversation history to prevent context overflow
+   * Keeps first 2 messages (user + initial response) + recent messages within token budget
+   */
+  private truncateConversationHistory(
+    history: string[],
+    maxTokens: number
+  ): string[] {
+    // Strategy: Keep first 2 messages (user + initial response) + recent N messages
+    const keepFirst = 2;
+
+    // Estimate tokens (rough approximation: 4 chars per token)
+    const estimateTokens = (text: string) => Math.ceil(text.length / 4);
+    const estimatedTokens = history.reduce((sum, msg) => sum + estimateTokens(msg), 0);
+
+    if (estimatedTokens <= maxTokens) {
+      return history; // No truncation needed
+    }
+
+    logger.info(`📊 Truncating conversation history: ${estimatedTokens} tokens → target ${maxTokens}`);
+
+    // Keep first messages + most recent messages that fit budget
+    const firstMessages = history.slice(0, keepFirst);
+    const firstTokens = firstMessages.reduce((sum, msg) => sum + estimateTokens(msg), 0);
+    const remainingBudget = maxTokens - firstTokens;
+
+    // Take messages from end until budget exhausted
+    const recentMessages: string[] = [];
+    let currentTokens = 0;
+
+    for (let i = history.length - 1; i >= keepFirst; i--) {
+      const msgTokens = estimateTokens(history[i]);
+      if (currentTokens + msgTokens > remainingBudget) break;
+      recentMessages.unshift(history[i]);
+      currentTokens += msgTokens;
+    }
+
+    // Add separator if we truncated
+    const separator = recentMessages.length < (history.length - keepFirst)
+      ? ['[... earlier messages omitted for context budget ...]']
+      : [];
+
+    const truncated = [...firstMessages, ...separator, ...recentMessages];
+    const finalTokens = truncated.reduce((sum, msg) => sum + estimateTokens(msg), 0);
+    logger.info(`✂️ Truncated to ${truncated.length} messages (${finalTokens} tokens)`);
+
+    return truncated;
+  }
+
+  /**
    * Ask LLM what it should do next given the current context
    */
   private async getLLMNextAction(
-    context: OrchestrationContext, 
+    context: OrchestrationContext,
     conversationHistory: string[]
   ): Promise<string> {
     try {
-      const contextSummary = conversationHistory.join('\n');
-      
-      const nextActionPrompt = `You are Coach Artie continuing a conversation. Based on the conversation so far, decide what to do next.
+      // CRITICAL: Truncate conversation history to prevent context overflow
+      const truncatedHistory = this.truncateConversationHistory(
+        conversationHistory,
+        3000 // Max tokens for history (leaves room for prompt + response)
+      );
+      const contextSummary = truncatedHistory.join('\n');
+
+      // SYSTEM: Extract suggested next actions from previous capability results
+      const suggestedActions = this.extractSuggestedNextActions(context.results);
+      const actionGuidance = suggestedActions.length > 0
+        ? `\n\nSUGGESTED NEXT ACTIONS (from previous capability results):\n${suggestedActions.join('\n')}\n`
+        : '';
+
+      // Calculate exploration depth requirements
+      const iterationCount = context.currentStep;
+      const minDepth = 3;
+      const canStop = iterationCount >= minDepth;
+      const progressIndicator = `[Step ${iterationCount + 1}/24]`;
+
+      // Check if previous iteration had errors
+      const hasErrors = contextSummary.includes('failed') || contextSummary.includes('error');
+      const errorRecoveryPrompt = hasErrors ? `
+
+🚨 ERROR RECOVERY PROTOCOL:
+Previous capability FAILED. To fix this:
+1. READ the error message carefully for exact example syntax
+2. EXTRACT the example capability tag shown in the error
+3. USE THAT EXACT SYNTAX with corrected parameters
+4. DO NOT retry with the same missing/incorrect parameters
+5. If same capability fails 2+ times, try a DIFFERENT approach
+
+⚠️ CRITICAL: If you see "Missing required parameters", the error message shows you EXACTLY how to fix it. Copy that syntax.
+` : '';
+
+      const nextActionPrompt = `${progressIndicator} You are Coach Artie in AUTONOMOUS DEEP EXPLORATION MODE.
 
 CONVERSATION HISTORY:
 ${contextSummary}
+${actionGuidance}${errorRecoveryPrompt}
+SYSTEM REQUIREMENTS:
+${!canStop ? `❗ MINIMUM DEPTH NOT REACHED: You MUST continue exploring. Cannot provide final answer until step ${minDepth}.` : `✓ Sufficient depth reached. May continue OR provide final synthesis.`}
 
-CRITICAL INSTRUCTIONS:
-- Look at your previous response - did you mention needing to search, calculate, or perform any action?
-- If you said you would do something (like search, calculate, remember), you MUST do it now using XML capability tags
-- Do NOT provide answers without actually executing the capabilities you mentioned
-- If you need to search the web, use: <capability name="web" action="search" query="your search terms" />
-- If you need to calculate, use: <capability name="calculator" action="evaluate" expression="math expression" />
-- Only give a final answer AFTER you've executed all necessary capabilities
+EXPLORATION STRATEGY:
+- When you see a list/index → pick 3-5 interesting items and examine each one individually
+- Got suggested next actions? → Execute the first 2-3 automatically
+- After examining items → look for patterns, dig into anomalies, examine edge cases
+- Think: "What would a thorough analyst do?" then do that
 
-What capability should you execute next, or what is your final answer?`;
+CONTINUE BY:
+${suggestedActions.length > 0 ? `Using these exact capability tags:\n${suggestedActions.slice(0, 3).join('\n')}` : 'Identifying what data you need next and calling the appropriate capability'}
+
+${!canStop ? 'Execute the next capability now.' : 'Execute next capability OR provide final synthesis if exploration is truly complete.'}`;
 
       // Get base capability instructions for available tools
       const baseInstructions = await promptManager.getCapabilityInstructions("Continue the conversation");
@@ -1315,30 +1502,72 @@ What capability should you execute next, or what is your final answer?`;
         context.results.push(result);
         context.currentStep++;
         
-        // Ask LLM to respond to this specific capability result
-        const intermediateResponse = await this.getLLMIntermediateResponse(
-          context, 
-          capability, 
-          result,
-          capabilityIndex + 1,
-          context.capabilities.length
-        );
-        
-        // Stream this intermediate response
-        if (intermediateResponse && intermediateResponse.trim()) {
-          logger.info(`📡 Streaming intermediate response for ${capability.name}: "${intermediateResponse.substring(0, 100)}..."`);
-          onPartialResponse(intermediateResponse);
-          
-          // Check if this intermediate response contains NEW capabilities
-          const newCapabilities = this.extractCapabilities(intermediateResponse);
-          if (newCapabilities.length > 0) {
-            logger.info(`🔍 Found ${newCapabilities.length} additional capabilities from intermediate response`);
-            // Add new capabilities to the queue with appropriate priority
-            newCapabilities.forEach((cap, index) => {
-              cap.priority = context.capabilities.length + index;
-              context.capabilities.push(cap);
-            });
+        // COST CONTROL: Intermediate responses enable natural chaining but cost 1 LLM call per capability
+        // Only generate if explicitly enabled (default: disabled to save costs)
+        const enableIntermediateResponses = process.env.ENABLE_INTERMEDIATE_RESPONSES === 'true';
+
+        if (enableIntermediateResponses) {
+          // Ask LLM to respond to this specific capability result
+          const intermediateResponse = await this.getLLMIntermediateResponse(
+            context,
+            capability,
+            result,
+            capabilityIndex + 1,
+            context.capabilities.length
+          );
+
+          // Stream this intermediate response
+          if (intermediateResponse && intermediateResponse.trim()) {
+            logger.info(`📡 Streaming intermediate response for ${capability.name}: "${intermediateResponse.substring(0, 100)}..."`);
+            onPartialResponse(intermediateResponse);
+
+            // Check if this intermediate response contains NEW capabilities
+            const newCapabilities = this.extractCapabilities(intermediateResponse);
+            if (newCapabilities.length > 0) {
+              logger.info(`🔍 Found ${newCapabilities.length} capabilities from intermediate response - validating...`);
+
+              // CRITICAL FIX: Only add capabilities that are complete and valid
+              // Don't add capabilities extracted from streaming/partial responses
+              const validCapabilities = newCapabilities.filter(cap => {
+                // Check if capability looks complete (has required params or content)
+                const registeredCap = capabilityRegistry.list().find(c => c.name === cap.name);
+                if (!registeredCap) {
+                  logger.warn(`⚠️ Skipping unknown capability from intermediate: ${cap.name}`);
+                  return false;
+                }
+
+                // Check if required params are present
+                const hasRequiredParams = !registeredCap.requiredParams ||
+                  registeredCap.requiredParams.length === 0 ||
+                  registeredCap.requiredParams.every(param =>
+                    cap.params[param] || (cap.content && cap.content.trim())
+                  );
+
+                if (!hasRequiredParams) {
+                  logger.warn(`⚠️ Skipping incomplete capability from intermediate: ${cap.name}:${cap.action} (missing required params or content)`);
+                  return false;
+                }
+
+                return true;
+              });
+
+              if (validCapabilities.length > 0) {
+                logger.info(`✅ Adding ${validCapabilities.length} VALID capabilities from intermediate response`);
+                validCapabilities.forEach((cap, index) => {
+                  cap.priority = context.capabilities.length + index;
+                  context.capabilities.push(cap);
+                });
+              } else {
+                logger.warn(`⚠️ No valid capabilities found in intermediate response (all were incomplete/invalid)`);
+              }
+            }
           }
+        } else {
+          // Just stream the capability result directly without LLM processing
+          const resultSummary = result.success
+            ? `✅ ${capability.name}:${capability.action} completed`
+            : `❌ ${capability.name}:${capability.action} failed: ${result.error}`;
+          onPartialResponse(resultSummary);
         }
         
       } catch (error) {
@@ -1501,9 +1730,13 @@ What capability should you execute next, or what is your final answer?`;
     const userId = context ? context.userId : 'unknown-user';
 
     try {
-      // Inject userId into params for capabilities that need user context
+      // Inject userId and messageId into params for capabilities that need context
       const paramsWithContext = ['scheduler', 'memory'].includes(capability.name)
-        ? { ...capability.params, userId }
+        ? {
+            ...capability.params,
+            userId,
+            messageId: context?.messageId
+          }
         : capability.params;
       
       // Debug: log what we're passing to the registry
@@ -1735,41 +1968,55 @@ What capability should you execute next, or what is your final answer?`;
     totalSteps: number
   ): Promise<string> {
     try {
-      const resultSummary = result.success 
+      // IMPORTANT: When there's an error, pass the FULL error message to the LLM
+      // Don't ask it to summarize - errors often contain exact examples that should be used immediately
+      const resultSummary = result.success
         ? `Success: ${result.data}`
         : `Error: ${result.error}`;
-      
-      const intermediatePrompt = `You just executed a capability and got a result. Provide a brief, natural response about what happened, and if there are more steps, mention what you're doing next.
+
+      const intermediatePrompt = result.success
+        ? `You just executed a capability and got a result. Provide a brief, natural response about what happened, and if there are more steps, mention what you're doing next.
 
 Original user message: "${context.originalMessage}"
 Capability executed: ${capability.name}:${capability.action}
 Result: ${resultSummary}
 Progress: Step ${currentStep} of ${totalSteps}
 
-Provide a brief, conversational update (1-2 sentences). If this was the last step, don't mention next steps.`;
+Provide a brief, conversational update (1-2 sentences). If this was the last step, don't mention next steps.`
+        : `You just executed a capability but it failed with an error. The error message contains helpful guidance - read it carefully and use any examples provided.
+
+Original user message: "${context.originalMessage}"
+Capability executed: ${capability.name}:${capability.action}
+
+FULL ERROR MESSAGE (READ CAREFULLY - MAY CONTAIN EXACT EXAMPLES TO USE):
+${result.error}
+
+Progress: Step ${currentStep} of ${totalSteps}
+
+If the error contains an example capability tag, extract it and use it immediately in your next response. If no example is provided, explain the error briefly and suggest what to try next.`;
 
       // Use Context Alchemy for intermediate response
       const { messages } = await contextAlchemy.buildMessageChain(
         intermediatePrompt,
         context.userId,
-        "You are Coach Artie providing brief progress updates during task execution."
+        "You are Coach Artie. When you see errors with examples, extract and use those examples immediately - don't just say there was an error."
       );
-      
+
       const intermediateResponse = await openRouterService.generateFromMessageChain(
         messages,
         context.userId,
         `${context.messageId}_intermediate_${currentStep}`
       );
-      
+
       // SECURITY: Apply sanitization to prevent information disclosure
       const sanitizedResponse = this.stripThinkingTags(intermediateResponse, context.userId, context.messageId);
-      
+
       return sanitizedResponse;
-      
+
     } catch (error) {
       logger.error('❌ Failed to generate intermediate response:', error);
       // Fallback to simple status message
-      return result.success 
+      return result.success
         ? `✅ Completed ${capability.name} successfully!`
         : `❌ ${capability.name} encountered an error.`;
     }
@@ -1852,24 +2099,13 @@ Provide a concise, friendly summary (1-2 sentences) of what was accomplished ove
       }
     }).join('\n');
 
-    // Create final response prompt - TODO: Move to Context Alchemy
-    // This should also use the prompt database, not hardcoded text
-    const finalPrompt = `Assistant response synthesis. User asked: "${context.originalMessage}"
-
-Capability execution results:
-${capabilityResults}
-
-Please provide a final, coherent response that incorporates these capability results naturally. Be conversational, helpful, and don't repeat the raw capability output - instead, present the information in a natural way.
-
-Important: 
-- Don't use capability tags in your final response
-- Present the results as if you calculated/found them yourself
-- Be concise but friendly
-- If there were errors, acknowledge them helpfully`;
-
     try {
-      // Use Context Alchemy for final response generation
+      // Use Context Alchemy for synthesis prompt and final response generation
       const { contextAlchemy } = await import('./context-alchemy.js');
+      const finalPrompt = await contextAlchemy.generateCapabilitySynthesisPrompt(
+        context.originalMessage,
+        capabilityResults
+      );
       const { promptManager } = await import('./prompt-manager.js');
       
       const baseSystemPrompt = await promptManager.getCapabilityInstructions(finalPrompt);

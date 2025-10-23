@@ -19,16 +19,160 @@ export interface UserIntent {
   username?: string;
   source: 'message' | 'button' | 'select' | 'slash_command';
   metadata?: Record<string, unknown>;
+  context?: Record<string, any>; // Discord context for Context Alchemy
   respond: (content: string) => Promise<void>;
   updateProgress?: (status: string) => Promise<void>;
   sendTyping?: () => Promise<void>;
+  // ENHANCED: Discord-native features
+  addReaction?: (emoji: string) => Promise<void>;
+  removeReaction?: (emoji: string) => Promise<void>;
+  editResponse?: (content: string) => Promise<void>;
+  createThread?: (name: string) => Promise<any>;
+  sendEmbed?: (embed: any) => Promise<void>;
+  updateProgressEmbed?: (embed: any) => Promise<void>;
 }
 
 export interface ProcessorOptions {
   enableStreaming?: boolean;
   enableTyping?: boolean;
+  enableReactions?: boolean;
+  enableEditing?: boolean;
+  enableThreading?: boolean;
   maxAttempts?: number;
   statusUpdateInterval?: number;
+}
+
+/**
+ * Clean capability tags and technical syntax from user-facing text
+ * ENHANCED: Catches chain-of-thought leakage and internal reasoning
+ */
+function cleanCapabilityTags(text: string): string {
+  // Remove XML capability tags and content
+  text = text.replace(/<capability[^>]*>.*?<\/capability>/gs, '');
+  text = text.replace(/<thinking[^>]*>.*?<\/thinking>/gs, '');
+  text = text.replace(/<thinking[^>]*>.*?<\/antml:thinking>/gs, '');
+
+  // Remove markdown-style capability indicators
+  text = text.replace(/\[\w+\]\s*[^\[]*\[\/\w+\]/gs, '');
+
+  // ENHANCED: Remove common LLM chain-of-thought patterns
+  text = text.replace(/^(Let me|I'll|I need to|I should|I will|I'm going to)\s+.*?\.\s*/gim, '');
+  text = text.replace(/^(First,|Next,|Then,|Now,|Finally,)\s+.*?\.\s*/gim, '');
+  text = text.replace(/^(Looking at|Based on|Given that|Since)\s+.*?\.\s*/gim, '');
+
+  // Remove reasoning phrases
+  text = text.replace(/\b(Let me think about this|I think|I believe|It seems|It appears)\s+.*?\.\s*/gi, '');
+  text = text.replace(/\b(This suggests|This indicates|This means)\s+.*?\.\s*/gi, '');
+
+  // Remove meta-commentary about capabilities
+  text = text.replace(/I'm (using|calling|invoking)\s+.*?\s+(capability|tool|function)\s*\.?\s*/gi, '');
+  text = text.replace(/The\s+.*?\s+(capability|tool|function)\s+(will|should|can)\s+.*?\.\s*/gi, '');
+
+  // Remove status indicators that leaked through
+  text = text.replace(/^(Working on|Processing|Analyzing)\s+.*?\.\s*/gim, '');
+  text = text.replace(/^(Status:|Progress:|Update:)\s+.*?\.\s*/gim, '');
+
+  // Remove function call descriptions
+  text = text.replace(/^I'll use the \w+ (tool|function) to\s+.*?\.\s*/gim, '');
+  text = text.replace(/^Using the \w+ (tool|function)\s+.*?\.\s*/gim, '');
+
+  // Clean up multiple line breaks and extra whitespace
+  text = text.replace(/\n\s*\n\s*\n+/g, '\n\n');
+  text = text.replace(/^\s+|\s+$/gm, ''); // Trim each line
+  text = text.trim();
+
+  return text;
+}
+
+/**
+ * Determine if content warrants a thread
+ */
+function shouldCreateThread(content: string): boolean {
+  // Create threads for:
+  return (
+    content.length > 200 ||                                    // Long requests
+    content.includes('explain') && content.length > 100 ||     // Explanations
+    content.includes('help me with') && content.length > 80 ||  // Help requests
+    content.includes('how do I') && content.length > 60 ||     // How-to questions
+    content.includes('walk me through') ||                     // Step-by-step requests
+    content.includes('tutorial') ||                            // Tutorial requests
+    content.includes('step by step') ||                        // Detailed instructions
+    content.split('?').length > 2                              // Multiple questions
+  );
+}
+
+/**
+ * Generate a friendly thread name from content
+ */
+function generateThreadName(content: string): string {
+  // Extract key phrases for thread naming
+  const truncated = content.slice(0, 80);
+
+  // Common patterns for better naming
+  if (content.includes('explain')) {
+    const match = content.match(/explain\s+([^?.,]+)/i);
+    if (match) return `Explaining ${match[1].trim()}`;
+  }
+
+  if (content.includes('help me with')) {
+    const match = content.match(/help me with\s+([^?.,]+)/i);
+    if (match) return `Help with ${match[1].trim()}`;
+  }
+
+  if (content.includes('how do I') || content.includes('how to')) {
+    const match = content.match(/how (?:do I|to)\s+([^?.,]+)/i);
+    if (match) return `How to ${match[1].trim()}`;
+  }
+
+  // Fallback: first meaningful phrase
+  const words = truncated.split(' ').slice(0, 8);
+  return words.join(' ') + (content.length > 80 ? '...' : '');
+}
+
+/**
+ * Create rich Discord embed for status updates
+ */
+function createStatusEmbed(status: string, jobId: string, startTime: number, streamedChunks: number = 0) {
+  const duration = Date.now() - startTime;
+  const statusColors: Record<string, number> = {
+    pending: 0xFFA500,   // Orange
+    processing: 0x3498DB, // Blue
+    completed: 0x2ECC71,  // Green
+    error: 0xE74C3C       // Red
+  };
+
+  const statusEmojis: Record<string, string> = {
+    pending: '⏸️',
+    processing: '⚡',
+    completed: '✅',
+    error: '❌'
+  };
+
+  return {
+    color: statusColors[status] || statusColors.pending,
+    title: `${statusEmojis[status] || '🤖'} Coach Artie Status`,
+    fields: [
+      {
+        name: 'Status',
+        value: status.charAt(0).toUpperCase() + status.slice(1),
+        inline: true
+      },
+      {
+        name: 'Duration',
+        value: `${Math.round(duration / 1000)}s`,
+        inline: true
+      },
+      {
+        name: 'Job ID',
+        value: `\`${jobId.slice(-8)}\``,
+        inline: true
+      }
+    ],
+    timestamp: new Date().toISOString(),
+    footer: {
+      text: streamedChunks > 0 ? `${streamedChunks} chunks streamed` : 'Processing your request...'
+    }
+  };
 }
 
 /**
@@ -39,8 +183,11 @@ export async function processUserIntent(
   options: ProcessorOptions = {}
 ): Promise<void> {
   const {
-    enableStreaming = false,
-    enableTyping = false,
+    enableStreaming = true,    // Default to streaming for better UX
+    enableTyping = true,       // Default to typing indicators
+    enableReactions = false,   // MINIMAL: No emoji spam
+    enableEditing = true,      // DEFAULT TO EDITING to prevent spam
+    enableThreading = false,   // MINIMAL: Less auto-organization
     maxAttempts = 60,
     statusUpdateInterval = 5
   } = options;
@@ -56,6 +203,9 @@ export async function processUserIntent(
   let updateCount = 0;
   let streamedChunks = 0;
   let lastSentContent = '';
+  let streamingMessage: any = null; // For edit-based streaming
+  let lastUpdateTime = 0; // Track time between edits to prevent spam
+  let lastEmoji: string | null = null; // Track dynamic emoji reactions
 
   try {
     logger.info(`Processing user intent [${shortId}]:`, {
@@ -75,6 +225,8 @@ export async function processUserIntent(
       enableTyping
     }, correlationId, intent.userId);
 
+    // MINIMAL: No acknowledgment emoji - just start typing like a human
+
     // Start typing indicator if enabled
     if (enableTyping && intent.sendTyping) {
       await intent.sendTyping();
@@ -87,8 +239,29 @@ export async function processUserIntent(
       }, 8000);
     }
 
-    // Submit job to capability system
-    const jobInfo = await capabilitiesClient.submitJob(intent.content, intent.userId);
+    // ENHANCED: Auto-threading for complex conversations
+    if (enableThreading && intent.createThread && shouldCreateThread(intent.content)) {
+      try {
+        const threadName = generateThreadName(intent.content);
+        const thread = await intent.createThread(threadName);
+        if (thread) {
+          logger.info(`Created thread "${threadName}" [${shortId}]`);
+          telemetry.logEvent('thread_created', { threadName }, correlationId, intent.userId);
+        }
+      } catch (error) {
+        logger.warn(`Failed to create thread [${shortId}]:`, error);
+      }
+    }
+
+    // ENHANCED: Prepare for edit-based streaming (message created on first content)
+    // We'll create the message when we have actual content to show, not before
+    if (enableEditing && enableStreaming) {
+      logger.info(`Edit-based streaming enabled [${shortId}]`);
+      // Message will be created on first streaming update
+    }
+
+    // Submit job to capability system with Discord context
+    const jobInfo = await capabilitiesClient.submitJob(intent.content, intent.userId, intent.context);
     const jobShortId = jobInfo.messageId.slice(-8);
 
     logger.info(`Job submitted [${shortId}]:`, {
@@ -106,46 +279,72 @@ export async function processUserIntent(
       // Progress updates
       onProgress: async (status) => {
         try {
-          // Handle streaming if enabled
+          // ENHANCED: Smart streaming with better formatting
           if (enableStreaming && status.partialResponse && status.partialResponse !== lastSentContent) {
-            const newContent = status.partialResponse.slice(lastSentContent.length);
+            // Clean capability tags before streaming
+            const cleanedResponse = cleanCapabilityTags(status.partialResponse);
+            const newContent = cleanedResponse.slice(lastSentContent.length);
+
             if (newContent.trim()) {
-              await intent.respond(newContent);
-              lastSentContent = status.partialResponse;
-              streamedChunks++;
-              logger.info(`Streamed chunk ${streamedChunks} [${shortId}]`);
+              // HUMAN-LIKE: Update on natural breaks, like hitting enter
+              const endsWithNewline = newContent.endsWith('\n');
+              const hasDoubleLine = newContent.includes('\n\n');
+              const timeSinceLastUpdate = Date.now() - (lastUpdateTime || startTime);
+              const minTimeBetweenUpdates = 500; // Half second minimum to prevent flicker
+
+              // Natural update points - like a human would send
+              const shouldStream = (
+                endsWithNewline && timeSinceLastUpdate > minTimeBetweenUpdates || // Natural line break
+                hasDoubleLine ||                                    // Paragraph break
+                newContent.length > 150 ||                         // Getting long, send it
+                timeSinceLastUpdate > 1500 ||                      // 1.5s pause = send
+                /[.!?]\s*\n/.test(newContent)                      // Sentence ending with newline
+              );
+
+              if (shouldStream) {
+                // HUMAN-LIKE: Stop typing as soon as we start responding
+                if (typingInterval && streamedChunks === 0) {
+                  clearInterval(typingInterval);
+                  typingInterval = null;
+                  logger.info(`Stopped typing indicator [${shortId}]`);
+                }
+
+                // Create initial message if needed
+                if (!streamingMessage && enableEditing) {
+                  try {
+                    streamingMessage = await intent.respond(cleanedResponse);
+                    lastSentContent = cleanedResponse;
+                    lastUpdateTime = Date.now();
+                    streamedChunks = 1;
+                    logger.info(`Created initial streaming message [${shortId}]`);
+                  } catch (error) {
+                    logger.warn(`Failed to create streaming message [${shortId}]:`, error);
+                  }
+                } else if (enableEditing && intent.editResponse && streamingMessage) {
+                  // Edit existing message
+                  try {
+                    await intent.editResponse(cleanedResponse);
+                    lastSentContent = cleanedResponse;
+                    lastUpdateTime = Date.now();
+                    streamedChunks++;
+                    logger.info(`Edited streaming message [${shortId}]: ${cleanedResponse.length} chars`);
+                  } catch (error) {
+                    // NO FALLBACK - just log and continue accumulating
+                    logger.warn(`Failed to edit, will retry next batch [${shortId}]:`, error);
+                  }
+                } else if (!enableEditing && streamedChunks === 0) {
+                  // Non-edit mode: single initial message only
+                  await intent.respond(cleanedResponse);
+                  lastSentContent = cleanedResponse;
+                  streamedChunks = 1;
+                  logger.info(`Sent initial response [${shortId}]`);
+                }
+              }
             }
           }
 
-          // Progress status updates
-          if (intent.updateProgress && 
-              (status.status !== lastStatus || (updateCount % statusUpdateInterval === 0))) {
-            let progressText = status.status === 'processing' ? 'Processing...' : 'Working on it...';
-            
-            // CLEAN capability execution indicators - show what's happening without XML tags
-            if (status.partialResponse && status.partialResponse.includes('<capability')) {
-              if (status.partialResponse.includes('name="web"') && status.partialResponse.includes('action="search"')) {
-                progressText = '🔍 Searching the web...';
-              } else if (status.partialResponse.includes('name="calculator"')) {
-                progressText = '🧮 Calculating...';
-              } else if (status.partialResponse.includes('name="memory"')) {
-                progressText = '🧠 Accessing memory...';
-              } else if (status.partialResponse.includes('name="scheduler"')) {
-                progressText = '⏰ Setting reminder...';
-              } else if (status.partialResponse.includes('<capability')) {
-                progressText = '⚙️ Running capability...';
-              }
-            }
-            
-            // Add partial content preview if available and not streaming (but clean it up)
-            if (!enableStreaming && status.partialResponse && !status.partialResponse.includes('<capability')) {
-              const preview = status.partialResponse.slice(0, 100);
-              progressText += `\n\n${preview}${status.partialResponse.length > 100 ? '...' : ''}`;
-            }
-            
-            await intent.updateProgress(progressText);
-            lastStatus = status.status;
-          }
+          // MINIMAL: No emoji reactions - just pure human-like behavior
+          lastStatus = status.status;
           updateCount++;
 
         } catch (error) {
@@ -177,11 +376,59 @@ export async function processUserIntent(
           streamedChunks
         });
 
+        // MINIMAL: Just clean up any working emojis, no completion spam
+        if (enableReactions && intent.removeReaction) {
+          try {
+            if (lastEmoji) await intent.removeReaction(lastEmoji);
+            // No checkmark - response speaks for itself
+          } catch (error) {
+            // Silent cleanup
+          }
+        }
+
         try {
-          // ALWAYS send the final clean response (it overwrites any streamed partial content)
-          // This ensures users get the properly sanitized response, not raw LLM output
-          await intent.respond(result || 'No response received');
-          logger.info(`Sent final clean response [${shortId}] (${result?.length || 0} chars, had ${streamedChunks} streamed chunks)`);
+          // Clean the response of capability tags
+          const cleanResult = cleanCapabilityTags(result || 'No response received');
+
+          // ENHANCED: Handle final response with edit-based streaming
+          if (enableEditing && streamingMessage && lastSentContent) {
+            // For edit-based streaming, ensure final content is properly set
+            const trimmedResult = cleanResult.trim();
+            const trimmedSent = lastSentContent.trim();
+
+            if (trimmedResult !== trimmedSent && trimmedResult.length > trimmedSent.length) {
+              try {
+                if (intent.editResponse) {
+                  await intent.editResponse(cleanResult);
+                  logger.info(`Final edit completed [${shortId}]: ${cleanResult.length} chars`);
+                }
+              } catch (error) {
+                logger.warn(`Failed final edit [${shortId}]:`, error);
+              }
+            } else {
+              logger.info(`No final edit needed [${shortId}] (content complete)`);
+            }
+          } else if (streamedChunks === 0) {
+            // No streaming happened, send complete response
+            await intent.respond(cleanResult);
+            logger.info(`Sent final response [${shortId}] (no streaming)`);
+          } else {
+            // Traditional streaming - check for additional content
+            const trimmedResult = cleanResult.trim();
+            const trimmedSent = lastSentContent.trim();
+
+            if (trimmedResult.length > trimmedSent.length + 20) {
+              const additionalContent = trimmedResult.slice(trimmedSent.length).trim();
+              if (additionalContent && !additionalContent.startsWith(trimmedSent.slice(-10))) {
+                await intent.respond(additionalContent);
+                logger.info(`Sent additional final content [${shortId}]: ${additionalContent.slice(0,50)}...`);
+              } else {
+                logger.info(`Skipped final response [${shortId}] (redundant with stream)`);
+              }
+            } else {
+              logger.info(`Skipped final response [${shortId}] (already fully streamed)`);
+            }
+          }
 
           telemetry.logEvent('intent_completed', {
             source: intent.source,
@@ -213,8 +460,22 @@ export async function processUserIntent(
           duration: `${duration}ms`
         });
 
+        // MINIMAL: Just clean up any working emojis on error
+        if (enableReactions && intent.removeReaction && lastEmoji) {
+          try {
+            await intent.removeReaction(lastEmoji);
+          } catch (error) {
+            // Silent cleanup
+          }
+        }
+
         try {
-          await intent.respond('Something went wrong processing your request.');
+          // ENHANCED: User-friendly error messages while staying transparent
+          const userFriendlyError = typeof error === 'string' && error.length < 100
+            ? `Something went wrong: ${error}`
+            : 'Something went wrong processing your request. The issue has been logged.';
+
+          await intent.respond(`❌ ${userFriendlyError}`);
 
           telemetry.logEvent('intent_failed', {
             source: intent.source,

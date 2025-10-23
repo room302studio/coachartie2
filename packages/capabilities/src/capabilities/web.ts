@@ -19,7 +19,11 @@ import { capabilityRegistry } from '../services/capability-registry.js';
 export const webCapability: RegisteredCapability = {
   name: 'web',
   supportedActions: ['search', 'fetch'],
-  description: 'Performs web searches and fetches content from URLs',
+  description: 'Performs web searches and fetches content from URLs with comprehensive results and links',
+  examples: [
+    '<capability name="web" action="search" query="React onboarding libraries 2024" />',
+    '<capability name="web" action="fetch" url="https://example.com/article" />'
+  ],
   handler: async (params, content) => {
     const { action } = params;
 

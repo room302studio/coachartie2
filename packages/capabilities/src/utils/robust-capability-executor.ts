@@ -137,9 +137,13 @@ export class RobustCapabilityExecutor {
     capability: ParsedCapability, 
     context: { userId: string; messageId: string }
   ): Promise<unknown> {
-    // Inject userId into params for capabilities that need it
+    // Inject userId and messageId into params for capabilities that need context
     const paramsWithContext = ['scheduler', 'memory'].includes(capability.name)
-      ? { ...capability.params, userId: context.userId }
+      ? {
+          ...capability.params,
+          userId: context.userId,
+          messageId: context.messageId
+        }
       : capability.params;
     
     logger.info(`🎯 REGISTRY: Executing ${capability.name}:${capability.action} with params: ${JSON.stringify(paramsWithContext)}`);
@@ -220,18 +224,25 @@ export class RobustCapabilityExecutor {
   
   /**
    * Fallback calculator using basic math evaluation
+   * NEVER THROWS - always returns a user-friendly message
    */
   private fallbackCalculation(expression: string): string {
     try {
+      if (!expression || expression.trim().length === 0) {
+        logger.warn(`🧮 FALLBACK: No expression provided for fallback calculation`);
+        return `I couldn't find a mathematical expression to calculate. Please use: <capability name="calculator" action="calculate" expression="2+2" />`;
+      }
+
       // Clean the expression
       const cleaned = this.cleanMathExpression(expression);
       logger.info(`🧮 FALLBACK: Calculating "${cleaned}"`);
-      
+
       // Basic math evaluation (secure approach)
       const result = this.safeEvaluate(cleaned);
       return `The result of ${cleaned} is ${result}`;
-      
+
     } catch (error) {
+      logger.warn(`🧮 FALLBACK: Failed to calculate "${expression}":`, error);
       return `I tried to calculate "${expression}" but couldn't parse the mathematical expression. Please try rephrasing it like "42 * 42" or "100 + 50".`;
     }
   }

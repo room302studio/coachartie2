@@ -1,10 +1,18 @@
 import winston from 'winston';
 import LokiTransport from 'winston-loki';
 import TransportStream from 'winston-transport';
+import path from 'path';
+import fs from 'fs';
 
 const logLevel = process.env.LOG_LEVEL || 'info';
 const serviceName = process.env.SERVICE_NAME || 'coachartie';
 const lokiUrl = process.env.LOKI_URL || 'http://localhost:3100';
+
+// Create logs directory if it doesn't exist
+const logsDir = process.env.LOGS_DIR || './logs';
+if (!fs.existsSync(logsDir)) {
+  fs.mkdirSync(logsDir, { recursive: true });
+}
 
 // SQLite transport for local log storage
 class SQLiteTransport extends TransportStream {
@@ -25,28 +33,29 @@ class SQLiteTransport extends TransportStream {
 
 // Create base logger with multiple transports
 const transports: winston.transport[] = [
-  // Console transport with high-density format
+  // Console transport - minimal output for important messages only
   new winston.transports.Console({
+    level: process.env.CONSOLE_LOG_LEVEL || 'warn', // Only warnings and errors to console
     format: winston.format.combine(
       winston.format.colorize(),
       winston.format.timestamp({ format: 'HH:mm:ss' }),
       winston.format.printf(({ timestamp, level, service, message, ...meta }: any) => {
         // Skip pid and nodeVersion
         const { pid, nodeVersion, ...cleanMeta } = meta;
-        
+
         // Collapse message to single line
         const cleanMessage = String(message).replace(/\n/g, ' ').replace(/\s+/g, ' ').trim();
-        
+
         // Only show meta if it has meaningful content
-        const hasUsefulMeta = Object.keys(cleanMeta).length > 0 && 
+        const hasUsefulMeta = Object.keys(cleanMeta).length > 0 &&
           !Object.values(cleanMeta).every(v => v === undefined || v === null);
-        
+
         // Super compact format
         const metaStr = hasUsefulMeta ? ` ${JSON.stringify(cleanMeta)}` : '';
-        
+
         // Short service names
         const shortService = String(service || 'unknown').replace('@coachartie/', '').substring(0, 8);
-        
+
         return `${timestamp} ${shortService}: ${cleanMessage}${metaStr}`;
       })
     ),
@@ -76,20 +85,44 @@ if (process.env.LOKI_URL && process.env.LOKI_URL !== 'disabled') {
   );
 }
 
-// Add file transports in production
-if (process.env.NODE_ENV === 'production') {
-  transports.push(
-    new winston.transports.File({
-      filename: 'logs/error.log',
-      level: 'error',
-      format: winston.format.json(),
-    }),
-    new winston.transports.File({
-      filename: 'logs/combined.log',
-      format: winston.format.json(),
-    })
-  );
-}
+// Always add file transports (not just in production)
+// These write to .log files for proper debugging
+transports.push(
+  // Error log - only errors
+  new winston.transports.File({
+    filename: path.join(logsDir, `${serviceName}-error.log`),
+    level: 'error',
+    format: winston.format.combine(
+      winston.format.timestamp(),
+      winston.format.json()
+    ),
+    maxsize: 5242880, // 5MB
+    maxFiles: 5,
+  }),
+
+  // Combined log - all levels
+  new winston.transports.File({
+    filename: path.join(logsDir, `${serviceName}-combined.log`),
+    format: winston.format.combine(
+      winston.format.timestamp(),
+      winston.format.json()
+    ),
+    maxsize: 10485760, // 10MB
+    maxFiles: 10,
+  }),
+
+  // Debug log - verbose output for debugging
+  new winston.transports.File({
+    filename: path.join(logsDir, `${serviceName}-debug.log`),
+    level: 'debug',
+    format: winston.format.combine(
+      winston.format.timestamp(),
+      winston.format.json()
+    ),
+    maxsize: 20971520, // 20MB
+    maxFiles: 3,
+  })
+);
 
 export const logger = winston.createLogger({
   level: logLevel,

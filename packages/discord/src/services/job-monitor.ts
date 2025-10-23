@@ -34,7 +34,7 @@ export class JobMonitor {
   private baseUrl: string;
   private isRunning = false;
 
-  private constructor(baseUrl = process.env.CAPABILITIES_URL || 'http://localhost:18239') {
+  private constructor(baseUrl = process.env.CAPABILITIES_URL || 'http://localhost:47324') {
     this.baseUrl = baseUrl;
   }
 

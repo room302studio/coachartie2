@@ -1,5 +1,6 @@
 import { logger } from '@coachartie/shared';
 import { creditMonitor } from '../services/credit-monitor.js';
+import { costMonitor } from '../services/cost-monitor.js';
 import { RegisteredCapability } from '../services/capability-registry.js';
 
 export const creditStatusCapability: RegisteredCapability = {
@@ -13,16 +14,19 @@ export const creditStatusCapability: RegisteredCapability = {
       case 'check_balance':
         try {
           const currentBalance = await creditMonitor.getCurrentBalance();
-          
+          const usageStats = await creditMonitor.getUsageStats(7);
+          const activeAlerts = await creditMonitor.getActiveAlerts();
+
+          // Check if currentBalance is null
           if (!currentBalance) {
             return JSON.stringify({
               success: false,
-              error: 'No credit information available yet. Make a few API calls first.'
+              error: 'Failed to retrieve current balance - API returned null'
             });
           }
 
-          const usageStats = await creditMonitor.getUsageStats(7);
-          const activeAlerts = await creditMonitor.getActiveAlerts();
+          // Get real-time cost monitor stats
+          const realtimeStats = costMonitor.getStats();
 
           const status = {
             credits_remaining: currentBalance.credits_remaining,
@@ -36,15 +40,15 @@ export const creditStatusCapability: RegisteredCapability = {
           };
 
           let statusMessage = '💳 **Credit Status:**\n';
-          
+
           if (currentBalance.credits_remaining !== undefined) {
             statusMessage += '💰 Credits Remaining: $' + currentBalance.credits_remaining.toFixed(2) + '\n';
           }
-          
+
           if (currentBalance.daily_spend !== undefined) {
             statusMessage += '📅 Daily Spend: $' + currentBalance.daily_spend.toFixed(2) + '\n';
           }
-          
+
           if (currentBalance.monthly_spend !== undefined) {
             statusMessage += '📊 Monthly Spend: $' + currentBalance.monthly_spend.toFixed(2) + '\n';
           }
@@ -64,6 +68,14 @@ export const creditStatusCapability: RegisteredCapability = {
           statusMessage += '- Total Requests: ' + usageStats.requests_count + '\n';
           statusMessage += '- Total Spend: $' + usageStats.total_spend.toFixed(4) + '\n';
           statusMessage += '- Daily Average: $' + usageStats.daily_average.toFixed(4);
+
+          // Add real-time session stats
+          statusMessage += '\n\n⚡ **Current Session:**\n';
+          statusMessage += '- API Calls: ' + realtimeStats.totalCalls + '\n';
+          statusMessage += '- Tokens Used: ' + realtimeStats.totalTokens.toLocaleString() + '\n';
+          statusMessage += '- Session Cost: $' + realtimeStats.estimatedCost.toFixed(4) + '\n';
+          statusMessage += '- Burn Rate: $' + realtimeStats.costPerHour.toFixed(2) + '/hour\n';
+          statusMessage += '- Uptime: ' + (realtimeStats.uptime / (1000 * 60)).toFixed(1) + ' minutes';
 
           return JSON.stringify({
             success: true,

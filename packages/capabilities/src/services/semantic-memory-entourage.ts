@@ -1,13 +1,14 @@
 import { logger } from '@coachartie/shared';
 import { MemoryEntourageInterface, MemoryEntourageResult } from './memory-entourage-interface.js';
 import { MemoryService } from '../capabilities/memory.js';
+import { vectorEmbeddingService } from './vector-embeddings.js';
 
 /**
- * SemanticMemoryEntourage - Adds semantic similarity to memory search
- * 
- * This layer complements BasicKeywordMemoryEntourage by finding memories
- * that are semantically related even without keyword matches.
- * Uses lightweight TF-IDF similarity for now (can upgrade to vectors later).
+ * SemanticMemoryEntourage - Real OpenAI vector-based semantic memory search
+ *
+ * This layer uses OpenAI's text-embedding-3-small model to find memories
+ * that are semantically related through cosine similarity of embeddings.
+ * Falls back to TF-IDF when OpenAI API is unavailable.
  */
 export class SemanticMemoryEntourage implements MemoryEntourageInterface {
   private memoryService: MemoryService;
@@ -15,6 +16,10 @@ export class SemanticMemoryEntourage implements MemoryEntourageInterface {
 
   constructor() {
     this.memoryService = MemoryService.getInstance();
+    // Initialize vector service on construction
+    vectorEmbeddingService.initialize().catch(err =>
+      logger.warn('🚧 SemanticMemoryEntourage: Vector service init failed, will use TF-IDF fallback')
+    );
   }
 
   async getMemoryContext(
@@ -38,12 +43,42 @@ export class SemanticMemoryEntourage implements MemoryEntourageInterface {
     }
 
     try {
-      logger.info('🧠 SemanticMemoryEntourage: Starting semantic similarity search');
-      
+      // Try real vector search first if available
+      if (vectorEmbeddingService.isReady()) {
+        logger.info('🧠 SemanticMemoryEntourage: Using real OpenAI vector search');
+
+        const limit = this.getSemanticLimit(options);
+        const vectorResults = await vectorEmbeddingService.findSimilarMemories(
+          userMessage,
+          limit,
+          0.5 // Lower threshold for semantic relevance
+        );
+
+        if (vectorResults.length > 0) {
+          // Format vector search results
+          const formattedContent = this.formatVectorResults(vectorResults, userMessage);
+          const confidence = this.calculateVectorConfidence(vectorResults);
+          const memoryIds = vectorResults.map(r => r.memory_id.toString());
+
+          logger.info(`🧠 SemanticMemoryEntourage: Found ${vectorResults.length} vector matches (avg similarity: ${(confidence * 100).toFixed(1)}%)`);
+
+          return {
+            content: formattedContent,
+            confidence,
+            memoryCount: vectorResults.length,
+            categories: ['semantic', 'vector_based', 'openai_embeddings'],
+            memoryIds
+          };
+        }
+      }
+
+      // Fall back to TF-IDF if vector search unavailable or no results
+      logger.info('🧠 SemanticMemoryEntourage: Using TF-IDF fallback for semantic search');
+
       // Get all memories for the user (we need to analyze them semantically)
       const allMemoriesResult = await this.memoryService.recall(userId, '', 50); // Get more for analysis
       const memories = this.parseMemoryResult(allMemoriesResult);
-      
+
       if (memories.length === 0) {
         return {
           content: '',
@@ -56,7 +91,7 @@ export class SemanticMemoryEntourage implements MemoryEntourageInterface {
 
       // Calculate semantic similarity scores
       const semanticMatches = await this.findSemanticMatches(userMessage, memories, options);
-      
+
       if (semanticMatches.length === 0) {
         return {
           content: '',
@@ -72,11 +107,11 @@ export class SemanticMemoryEntourage implements MemoryEntourageInterface {
       const confidence = this.calculateSemanticConfidence(semanticMatches);
       const categories = this.detectSemanticCategories(semanticMatches);
 
-      logger.info(`🧠 SemanticMemoryEntourage found ${semanticMatches.length} semantic matches (confidence: ${confidence.toFixed(2)})`);
+      logger.info(`🧠 SemanticMemoryEntourage: Found ${semanticMatches.length} TF-IDF matches (confidence: ${confidence.toFixed(2)})`);
 
-      // 🔍 Get memory IDs from semantic matches (using dummy IDs for now)
-      const memoryIds = semanticMatches.map((_, index) => `semantic_${index}`);
-      
+      // 🔍 Get memory IDs from semantic matches (using dummy IDs for TF-IDF)
+      const memoryIds = semanticMatches.map((_, index) => `tfidf_${index}`);
+
       return {
         content: formattedContent,
         confidence,
@@ -394,30 +429,83 @@ export class SemanticMemoryEntourage implements MemoryEntourageInterface {
   ): string[] {
     const categories = new Set<string>();
     categories.add('semantic');
-    
+
     // Add based on semantic strength
     const highSemanticMatches = matches.filter(m => m.semanticScore > 0.3);
     if (highSemanticMatches.length > 0) {
       categories.add('high_relevance');
     }
-    
+
     // Add patterns detected in content
     for (const match of matches) {
       const content = match.content.toLowerCase();
-      
+
       if (content.includes('feel') || content.includes('emotion') || content.includes('mood')) {
         categories.add('emotional');
       }
-      
+
       if (content.includes('plan') || content.includes('goal') || content.includes('want')) {
         categories.add('planning');
       }
-      
+
       if (content.includes('learn') || content.includes('understand') || content.includes('know')) {
         categories.add('learning');
       }
     }
-    
+
     return Array.from(categories);
+  }
+
+  /**
+   * Format vector search results with variety
+   */
+  private formatVectorResults(
+    results: Array<{memory_id: number, similarity_score: number, content: string}>,
+    userMessage: string
+  ): string {
+    if (results.length === 0) return '';
+
+    // Apply stochastic formatting
+    const styles = [
+      'vector_contextual',
+      'vector_similarity',
+      'vector_narrative'
+    ];
+    const style = styles[Math.floor(Math.random() * styles.length)];
+
+    switch (style) {
+      case 'vector_contextual':
+        return `Based on deep semantic understanding: ${results.map(r => r.content).join('. Also relevant: ')}.`;
+
+      case 'vector_similarity':
+        return results.map(r =>
+          `${r.content} (${(r.similarity_score * 100).toFixed(0)}% semantic match)`
+        ).join('\n');
+
+      case 'vector_narrative':
+        const avgSimilarity = results.reduce((sum, r) => sum + r.similarity_score, 0) / results.length;
+        return `Semantically related (${(avgSimilarity * 100).toFixed(0)}% avg relevance): ${results.map(r => r.content).join(', and ')}.`;
+
+      default:
+        return results.map(r => r.content).join('\n');
+    }
+  }
+
+  /**
+   * Calculate confidence from vector similarity scores
+   */
+  private calculateVectorConfidence(
+    results: Array<{memory_id: number, similarity_score: number, content: string}>
+  ): number {
+    if (results.length === 0) return 0.0;
+
+    // Average similarity score represents confidence
+    const avgSimilarity = results.reduce((sum, r) => sum + r.similarity_score, 0) / results.length;
+
+    // Boost confidence if we have multiple high-quality matches
+    const highQualityMatches = results.filter(r => r.similarity_score > 0.7).length;
+    const boost = Math.min(0.2, highQualityMatches * 0.05);
+
+    return Math.min(1.0, avgSimilarity + boost);
   }
 }

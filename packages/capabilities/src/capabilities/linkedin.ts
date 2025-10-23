@@ -1,6 +1,7 @@
 import { logger } from '@coachartie/shared';
 import axios from 'axios';
 import { RegisteredCapability } from '../services/capability-registry.js';
+import { oauthManager } from '../services/oauth-manager.js';
 
 /**
  * LinkedIn integration capability for autonomous posting and profile management
@@ -35,12 +36,49 @@ interface LinkedInPost {
 class LinkedInService {
   private accessToken: string | null = null;
   private refreshToken: string | null = null;
+  private userId: string = 'default'; // Can be overridden per request
   private baseUrl = 'https://api.linkedin.com/v2';
-  
-  constructor() {
-    // Load tokens from environment or database
-    this.accessToken = process.env.LINKEDIN_ACCESS_TOKEN || null;
-    this.refreshToken = process.env.LINKEDIN_REFRESH_TOKEN || null;
+
+  constructor(userId?: string) {
+    if (userId) {
+      this.userId = userId;
+    }
+    // Tokens will be loaded from database when needed
+  }
+
+  /**
+   * Load tokens from database
+   */
+  async loadTokens(): Promise<boolean> {
+    try {
+      const tokens = await oauthManager.getTokens(this.userId, 'linkedin');
+      if (tokens) {
+        // Check if token is expired
+        if (oauthManager.isTokenExpired(tokens)) {
+          logger.warn('⚠️ LinkedIn token is expired, needs refresh');
+          // TODO: Implement token refresh
+          return false;
+        }
+
+        this.accessToken = tokens.accessToken;
+        this.refreshToken = tokens.refreshToken || null;
+        logger.info(`✅ LinkedIn tokens loaded from database for user ${this.userId}`);
+        return true;
+      }
+
+      // Fallback to environment variables for backward compatibility
+      if (process.env.LINKEDIN_ACCESS_TOKEN) {
+        this.accessToken = process.env.LINKEDIN_ACCESS_TOKEN;
+        this.refreshToken = process.env.LINKEDIN_REFRESH_TOKEN || null;
+        logger.info('📦 LinkedIn tokens loaded from environment variables');
+        return true;
+      }
+
+      return false;
+    } catch (error) {
+      logger.error('❌ Failed to load LinkedIn tokens:', error);
+      return false;
+    }
   }
 
   /**
@@ -83,9 +121,29 @@ class LinkedInService {
 
       this.accessToken = response.data.access_token;
       this.refreshToken = response.data.refresh_token;
-      
-      // TODO: Store tokens securely in database
-      logger.info('✅ LinkedIn OAuth tokens obtained successfully');
+
+      if (!this.accessToken) {
+        throw new Error('No access token received from LinkedIn');
+      }
+
+      // Store tokens securely in database
+      const expiresIn = response.data.expires_in; // Seconds until expiration
+      const expiresAt = expiresIn ? new Date(Date.now() + expiresIn * 1000) : undefined;
+
+      await oauthManager.storeTokens({
+        userId: this.userId,
+        provider: 'linkedin',
+        accessToken: this.accessToken,
+        refreshToken: this.refreshToken || undefined,
+        expiresAt: expiresAt,
+        scopes: ['openid', 'profile', 'w_member_social', 'email'],
+        metadata: {
+          tokenType: response.data.token_type,
+          scope: response.data.scope
+        }
+      });
+
+      logger.info(`✅ LinkedIn OAuth tokens obtained and stored for user ${this.userId}`);
     } catch (error) {
       logger.error('❌ Failed to exchange LinkedIn OAuth code:', error);
       throw error;
@@ -96,8 +154,12 @@ class LinkedInService {
    * Get current user's LinkedIn profile
    */
   async getProfile(): Promise<LinkedInProfile | null> {
+    // Try to load tokens if not already loaded
     if (!this.accessToken) {
-      throw new Error('No LinkedIn access token available');
+      const tokensLoaded = await this.loadTokens();
+      if (!tokensLoaded) {
+        throw new Error('No LinkedIn access token available');
+      }
     }
 
     try {
@@ -119,8 +181,12 @@ class LinkedInService {
    * Post content to LinkedIn
    */
   async createPost(post: LinkedInPost): Promise<boolean> {
+    // Try to load tokens if not already loaded
     if (!this.accessToken) {
-      throw new Error('No LinkedIn access token available');
+      const tokensLoaded = await this.loadTokens();
+      if (!tokensLoaded) {
+        throw new Error('No LinkedIn access token available');
+      }
     }
 
     try {
@@ -306,14 +372,28 @@ Return only the post content, ready to publish on LinkedIn.`;
   }
 }
 
-// Singleton service instance
-const linkedInService = new LinkedInService();
+// Service instance cache per user
+const serviceCache = new Map<string, LinkedInService>();
+
+/**
+ * Get or create LinkedIn service for a specific user
+ */
+function getLinkedInService(userId: string = 'default'): LinkedInService {
+  if (!serviceCache.has(userId)) {
+    serviceCache.set(userId, new LinkedInService(userId));
+  }
+  return serviceCache.get(userId)!;
+}
 
 /**
  * LinkedIn capability handler
  */
 async function handleLinkedInCapability(params: any, content?: string): Promise<string> {
   const { action } = params;
+
+  // Extract userId from params or use default
+  const userId = params.userId || params.user_id || 'default';
+  const linkedInService = getLinkedInService(userId);
 
   try {
     switch (action) {
@@ -438,4 +518,4 @@ export const linkedInCapability: RegisteredCapability = {
   ]
 };
 
-export { linkedInService, LinkedInService };
+export { LinkedInService, getLinkedInService };

@@ -9,6 +9,7 @@ import { modelsCommand } from '../commands/models.js';
 import { memoryCommand } from '../commands/memory.js';
 import { usageCommand } from '../commands/usage.js';
 import { debugCommand } from '../commands/debug.js';
+import * as syncDiscussionsCommand from '../commands/sync-discussions.js';
 import { telemetry } from '../services/telemetry.js';
 import { CorrelationContext, generateCorrelationId, getShortCorrelationId } from '../utils/correlation.js';
 import { processUserIntent } from '../services/user-intent-processor.js';
@@ -22,7 +23,8 @@ const commands = new Map([
   ['models', modelsCommand],
   ['memory', memoryCommand],
   ['usage', usageCommand],
-  ['debug', debugCommand]
+  ['debug', debugCommand],
+  ['sync-discussions', syncDiscussionsCommand]
 ] as any);
 
 export function setupInteractionHandler(client: Client) {

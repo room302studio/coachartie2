@@ -9,12 +9,16 @@
  * - Comprehensive telemetry and correlation tracking
  */
 
-import { Client, Events, Message } from 'discord.js';
+import { Client, Events, Message, EmbedBuilder, ChannelType } from 'discord.js';
 import { logger } from '@coachartie/shared';
 import { publishMessage } from '../queues/publisher.js';
 import { telemetry } from '../services/telemetry.js';
 import { CorrelationContext, generateCorrelationId, getShortCorrelationId } from '../utils/correlation.js';
 import { processUserIntent } from '../services/user-intent-processor.js';
+import { isGuildWhitelisted } from '../config/guild-whitelist.js';
+import { getConversationState } from '../services/conversation-state.js';
+import { getGitHubIntegration } from '../services/github-integration.js';
+import { getForumTraversal } from '../services/forum-traversal.js';
 
 // =============================================================================
 // CONSTANTS & CONFIGURATION
@@ -51,9 +55,23 @@ const STREAM_EMOJI = '📡';
  * Helper: Check if channel name indicates robot interaction
  */
 function isRobotChannelName(channel: Message['channel']): boolean {
-  return channel.type === GUILD_CHANNEL_TYPE && 
-         'name' in channel && 
+  return channel.type === GUILD_CHANNEL_TYPE &&
+         'name' in channel &&
          (channel.name?.includes('🤖') || channel.name?.includes('robot')) || false;
+}
+
+/**
+ * Helper: Check if message is in a forum thread (Discord Discussions)
+ */
+async function isForumThread(message: Message): Promise<boolean> {
+  if (message.channel.type !== ChannelType.PublicThread &&
+      message.channel.type !== ChannelType.PrivateThread) {
+    return false;
+  }
+
+  // Get the parent channel to check if it's a forum
+  const parent = message.channel.parent;
+  return parent?.type === ChannelType.GuildForum;
 }
 
 /**
@@ -246,16 +264,43 @@ export function setupMessageHandler(client: Client) {
     // Ignore our own messages to prevent loops
     if (message.author.id === client.user!.id) return;
 
+    // Check guild whitelist - only process messages from whitelisted guilds
+    if (message.guildId && !isGuildWhitelisted(message.guildId)) {
+      logger.debug(`🚫 Ignoring message from non-whitelisted guild: ${message.guildId} [${shortId}]`);
+      return;
+    }
+
+    // -------------------------------------------------------------------------
+    // CONVERSATION FLOW HANDLING
+    // -------------------------------------------------------------------------
+
+    // Check if user has an active conversation (multi-turn interaction)
+    try {
+      const conversationState = getConversationState();
+      const activeConversation = conversationState.getConversation(message.author.id);
+
+      if (activeConversation && activeConversation.conversationType === 'sync-discussions') {
+        await handleSyncDiscussionsConversation(message, activeConversation, conversationState);
+        return; // Don't process as normal message
+      }
+    } catch (error) {
+      logger.warn(`Conversation handling failed [${shortId}]:`, error);
+      // Continue with normal message processing
+    }
+
     // Check various response triggers
+    const isForum = await isForumThread(message);
     const responseConditions = {
       botMentioned: message.mentions.has(client.user!.id),
       isDM: message.channel.isDMBased(),
-      isRobotChannel: isRobotChannelName(message.channel)
+      isRobotChannel: isRobotChannelName(message.channel),
+      isForumThread: isForum
     };
-    
+
     // Determine response mode: active response vs passive observation
-    const shouldRespond = responseConditions.botMentioned || 
-                         responseConditions.isDM || 
+    // In forums, only respond when mentioned (too noisy otherwise)
+    const shouldRespond = responseConditions.botMentioned ||
+                         responseConditions.isDM ||
                          responseConditions.isRobotChannel;
 
     try {
@@ -348,7 +393,12 @@ export function setupMessageHandler(client: Client) {
         error: error instanceof Error ? error.message : String(error)
       }, correlationId, message.author.id, undefined, false);
       
-      await message.reply(`Sorry, I encountered an error processing your message.`);
+      // ENHANCED: User-friendly error with transparency
+      const errorMsg = error instanceof Error && error.message.length < 100
+        ? `Sorry, I encountered an error: ${error.message}`
+        : 'Sorry, I encountered an error processing your message. The issue has been logged.';
+
+      await message.reply(`❌ ${errorMsg}`);
     }
     
     // Clean up correlation context periodically
@@ -356,6 +406,135 @@ export function setupMessageHandler(client: Client) {
       CorrelationContext.cleanup();
     }
   });
+}
+
+// =============================================================================
+// CONVERSATION HANDLERS
+// =============================================================================
+
+/**
+ * Handle multi-turn conversation for sync-discussions command
+ */
+async function handleSyncDiscussionsConversation(
+  message: Message,
+  conversation: any,
+  conversationState: any
+): Promise<void> {
+  const { forumId, forumName, step } = conversation.state;
+
+  if (step !== 'awaiting_repo') {
+    // Unknown step, end conversation
+    conversationState.endConversation(message.author.id);
+    return;
+  }
+
+  const repo = message.content.trim();
+
+  try {
+    // Get services
+    const githubService = getGitHubIntegration();
+    const forumTraversal = getForumTraversal();
+
+    // Parse repo reference
+    const repoInfo = githubService.parseRepoReference(repo);
+    if (!repoInfo) {
+      await message.reply({
+        content: `❌ Invalid repository format. Please use \`owner/repo\` format (e.g., \`facebook/react\`) or a full GitHub URL.\n\nTry again, or say "cancel" to stop.`
+      });
+      return;
+    }
+
+    // Check for cancel
+    if (repo.toLowerCase() === 'cancel') {
+      conversationState.endConversation(message.author.id);
+      await message.reply('❌ Sync cancelled.');
+      return;
+    }
+
+    // Verify repository
+    const statusMsg = await message.reply(`🔍 Verifying access to **${repoInfo.owner}/${repoInfo.repo}**...`);
+
+    const hasAccess = await githubService.verifyRepository(repoInfo.owner, repoInfo.repo);
+    if (!hasAccess) {
+      await statusMsg.edit({
+        content: `❌ Cannot access repository **${repoInfo.owner}/${repoInfo.repo}**. Please check:\n- Repository exists\n- GitHub token has access\n- Repository name is correct\n\nTry again with a different repo, or say "cancel" to stop.`
+      });
+      return;
+    }
+
+    // Start sync
+    await statusMsg.edit({
+      content: `✅ Repository verified!\n\n🔄 Fetching discussions from **${forumName}**...`
+    });
+
+    const forumSummary = await forumTraversal.getForumSummary(forumId);
+
+    if (forumSummary.threads.length === 0) {
+      conversationState.endConversation(message.author.id);
+      await statusMsg.edit({
+        content: `ℹ️ No discussions found in **${forumName}** to sync.`
+      });
+      return;
+    }
+
+    await statusMsg.edit({
+      content: `📊 Found **${forumSummary.threads.length}** discussions\n\n🚀 Creating GitHub issues in **${repoInfo.owner}/${repoInfo.repo}**...\n\n_This may take a minute..._`
+    });
+
+    // Sync threads
+    const results = await githubService.syncThreadsToGitHub(
+      repoInfo.owner,
+      repoInfo.repo,
+      forumSummary.threads,
+      forumName,
+      async (current, total, result) => {
+        if (current % 5 === 0 || current === total) {
+          await statusMsg.edit({
+            content: `🚀 Creating GitHub issues... (${current}/${total})\n\n${result.success ? '✅' : '❌'} ${result.issueUrl || 'Processing...'}`
+          }).catch(() => { /* Ignore rate limit errors */ });
+        }
+      }
+    );
+
+    // Report results
+    const successCount = results.filter(r => r.success).length;
+    const failureCount = results.length - successCount;
+
+    let resultMessage = `## ✅ Sync Complete!\n\n`;
+    resultMessage += `**Forum:** ${forumName}\n`;
+    resultMessage += `**Repository:** ${repoInfo.owner}/${repoInfo.repo}\n\n`;
+    resultMessage += `**Results:**\n`;
+    resultMessage += `✅ ${successCount} issues created successfully\n`;
+
+    if (failureCount > 0) {
+      resultMessage += `❌ ${failureCount} failed\n`;
+    }
+
+    resultMessage += `\n**Created Issues:**\n`;
+    const successfulIssues = results.filter(r => r.success && r.issueUrl);
+    successfulIssues.slice(0, 10).forEach(result => {
+      resultMessage += `- ${result.issueUrl}\n`;
+    });
+
+    if (successfulIssues.length > 10) {
+      resultMessage += `_...and ${successfulIssues.length - 10} more_\n`;
+    }
+
+    await statusMsg.edit({ content: resultMessage });
+
+    // End conversation
+    conversationState.endConversation(message.author.id);
+
+    logger.info(`Conversational sync completed for user ${message.author.id}: ${successCount}/${results.length} issues created`);
+
+  } catch (error) {
+    logger.error('Error in sync-discussions conversation:', error);
+    conversationState.endConversation(message.author.id);
+
+    await message.reply({
+      content: `❌ Sync failed: ${error instanceof Error ? error.message : String(error)}`
+    });
+  }
 }
 
 // =============================================================================
@@ -367,16 +546,71 @@ export function setupMessageHandler(client: Client) {
  * Replaces ~400 lines of duplicate logic with ~30 lines of adapter code
  */
 async function handleMessageAsIntent(
-  message: Message, 
-  cleanMessage: string, 
+  message: Message,
+  cleanMessage: string,
   correlationId: string
 ): Promise<void> {
   const shortId = getShortCorrelationId(correlationId);
   let statusMessage: Message | null = null;
+  let streamingMessage: Message | null = null;
   
   try {
-    // Send initial status message
-    statusMessage = await message.reply(`🤔 Working on it...`);
+    // MINIMAL: No status messages - just start working like a human
+
+    // ENHANCED: Gather Discord context for Context Alchemy
+    const guildInfo = message.guild ? {
+      guildId: message.guild.id,
+      guildName: message.guild.name,
+      memberCount: message.guild.memberCount
+    } : null;
+
+    const channelInfo = {
+      channelId: message.channelId,
+      channelType: message.channel.type,
+      channelName: 'name' in message.channel ? message.channel.name : 'DM'
+    };
+
+    const userInfo = {
+      userId: message.author.id,
+      username: message.author.username,
+      displayName: message.author.displayName,
+      userTag: message.author.tag,
+      isBot: message.author.bot
+    };
+
+    // ENHANCED: Forum-specific metadata
+    const forumInfo = await (async () => {
+      const isForum = await isForumThread(message);
+      if (!isForum) return null;
+
+      const thread = message.channel;
+      if (!('parent' in thread)) return null;
+
+      return {
+        isForumThread: true,
+        forumId: thread.parent?.id,
+        forumName: thread.parent?.name,
+        threadId: thread.id,
+        threadName: thread.name,
+        threadTags: 'appliedTags' in thread ? thread.appliedTags : [],
+        threadCreatedAt: thread.createdAt?.toISOString(),
+        threadMessageCount: 'messageCount' in thread ? thread.messageCount : null,
+        isThreadOwner: 'ownerId' in thread && thread.ownerId === message.author.id
+      };
+    })();
+
+    const discordContext = {
+      platform: 'discord',
+      ...guildInfo,
+      ...channelInfo,
+      ...userInfo,
+      ...forumInfo,
+      messageId: message.id,
+      timestamp: message.createdAt.toISOString(),
+      hasAttachments: message.attachments.size > 0,
+      mentionedUsers: message.mentions.users.size,
+      replyingTo: message.reference?.messageId || null
+    };
 
     // Create unified intent and delegate to shared processor
     await processUserIntent({
@@ -384,6 +618,7 @@ async function handleMessageAsIntent(
       userId: message.author.id,
       username: message.author.username,
       source: 'message',
+      context: discordContext, // Pass rich Discord context
       metadata: {
         messageId: message.id,
         channelId: message.channelId,
@@ -392,10 +627,15 @@ async function handleMessageAsIntent(
       },
       
       // Response handlers
-      respond: async (content: string) => {
+      respond: async (content: string): Promise<void> => {
         const chunks = chunkMessage(content);
-        await message.reply(chunks[0]);
-        
+        const responseMessage = await message.reply(chunks[0]);
+
+        // Store reference for potential editing
+        if (!streamingMessage) {
+          streamingMessage = responseMessage;
+        }
+
         // Send additional chunks
         for (let i = 1; i < chunks.length; i++) {
           if ('send' in message.channel) {
@@ -403,49 +643,139 @@ async function handleMessageAsIntent(
             await new Promise(resolve => setTimeout(resolve, CHUNK_RATE_LIMIT_DELAY));
           }
         }
-        
+
         telemetry.incrementResponsesDelivered(message.author.id, chunks.length);
       },
-      
-      updateProgress: async (status: string) => {
-        if (statusMessage) {
-          await statusMessage.edit(status);
+
+      // ENHANCED: Edit response capability for cleaner streaming
+      editResponse: async (content: string) => {
+        if (!streamingMessage) {
+          logger.warn(`No streaming message to edit [${shortId}]`);
+          return;
+        }
+
+        try {
+          // Discord has 2000 char limit for edits too
+          const truncatedContent = content.length > 2000
+            ? content.slice(0, 1997) + '...'
+            : content;
+
+          await streamingMessage.edit(truncatedContent);
+          telemetry.logEvent('message_edited', {
+            contentLength: content.length,
+            truncated: content.length > 2000
+          }, correlationId, message.author.id);
+        } catch (error) {
+          logger.warn(`Failed to edit message [${shortId}]:`, error);
+          throw error;
         }
       },
+      
+      updateProgress: statusMessage ? async (status: string) => {
+        const msg = statusMessage as Message;
+        await msg.edit(status);
+      } : undefined,
       
       sendTyping: 'sendTyping' in message.channel ? async () => {
         await (message.channel as any).sendTyping();
         telemetry.incrementTypingIndicators();
+      } : undefined,
+
+      // ENHANCED: Discord-native reaction support
+      addReaction: async (emoji: string) => {
+        try {
+          await message.react(emoji);
+          telemetry.logEvent('reaction_added', { emoji }, correlationId, message.author.id);
+        } catch (error) {
+          logger.warn(`Failed to add reaction ${emoji} [${shortId}]:`, error);
+        }
+      },
+
+      removeReaction: async (emoji: string) => {
+        try {
+          const reaction = message.reactions.cache.get(emoji);
+          if (reaction) {
+            await reaction.users.remove(message.client.user!.id);
+            telemetry.logEvent('reaction_removed', { emoji }, correlationId, message.author.id);
+          }
+        } catch (error) {
+          logger.warn(`Failed to remove reaction ${emoji} [${shortId}]:`, error);
+        }
+      },
+
+      // ENHANCED: Thread creation for complex conversations
+      createThread: async (threadName: string) => {
+        try {
+          if (message.channel.type === 0 && 'threads' in message.channel) { // Guild text channel
+            const thread = await message.startThread({
+              name: threadName,
+              autoArchiveDuration: 60, // Auto-archive after 1 hour of inactivity
+              reason: 'Complex conversation - keeping channel organized'
+            });
+
+            // Add thread reaction to original message
+            await message.react('🧵');
+
+            telemetry.logEvent('thread_created', {
+              threadName,
+              threadId: thread.id
+            }, correlationId, message.author.id);
+
+            logger.info(`Created thread "${threadName}" [${shortId}]`);
+            return thread;
+          }
+        } catch (error) {
+          logger.warn(`Failed to create thread "${threadName}" [${shortId}]:`, error);
+        }
+        return null;
+      },
+
+      // ENHANCED: Rich embed support
+      sendEmbed: async (embedData: any) => {
+        try {
+          const embed = new EmbedBuilder(embedData);
+          await message.reply({ embeds: [embed] });
+          telemetry.logEvent('embed_sent', {
+            title: embedData.title,
+            fieldCount: embedData.fields?.length || 0
+          }, correlationId, message.author.id);
+        } catch (error) {
+          logger.warn(`Failed to send embed [${shortId}]:`, error);
+        }
+      },
+
+      updateProgressEmbed: statusMessage ? async (embedData: any) => {
+        try {
+          const msg = statusMessage as Message;
+          const embed = new EmbedBuilder(embedData);
+          await msg.edit({ embeds: [embed] });
+          telemetry.logEvent('embed_updated', {
+            title: embedData.title
+          }, correlationId, message.author.id);
+        } catch (error) {
+          logger.warn(`Failed to update progress embed [${shortId}]:`, error);
+        }
       } : undefined
       
     }, {
       enableStreaming: true,  // Enable streaming for messages
       enableTyping: true,     // Enable typing indicators for messages
+      enableReactions: false, // MINIMAL: No emoji reactions
+      enableEditing: true,    // Enable message editing for cleaner streaming
+      enableThreading: false, // MINIMAL: No auto-threading
       maxAttempts: MAX_JOB_ATTEMPTS,
       statusUpdateInterval: STATUS_UPDATE_INTERVAL
     });
 
-    // Update final status
-    if (statusMessage) {
-      setTimeout(async () => {
-        try {
-          await statusMessage!.edit(`✅ Complete! (${shortId})`);
-        } catch (error) {
-          logger.warn(`Failed to update final status: ${error}`);
-        }
-      }, 750);
-    }
+    // MINIMAL: No final status updates
 
   } catch (error) {
     logger.error(`Message intent processing failed [${shortId}]:`, error);
     
     // Fallback error handling
     try {
-      if (statusMessage) {
-        await statusMessage.edit(`❌ Failed to process your request`);
-      } else {
-        await message.reply(`❌ Sorry, I couldn't process your message`);
-      }
+      // statusMessage is always null in current implementation
+      await message.reply(`❌ Sorry, I couldn't process your message`);
     } catch (replyError) {
       logger.error(`Failed to send error reply [${shortId}]:`, replyError);
     }

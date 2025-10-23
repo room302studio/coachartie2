@@ -33,9 +33,9 @@ router.get('/', async (req, res) => {
         // Get all recent memories across all users
         const db = await (await import('@coachartie/shared')).getDatabase();
         memories = await db.all(`
-          SELECT id, user_id as userId, content, tags, context, timestamp, importance
-          FROM memories 
-          ORDER BY created_at DESC 
+          SELECT id, user_id as userId, content, tags, context, timestamp, importance, related_message_id
+          FROM memories
+          ORDER BY created_at DESC
           LIMIT ?
         `, [parseInt(limit as string)]);
       }

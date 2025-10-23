@@ -406,7 +406,7 @@ class CapabilitiesMCPServer {
   /**
    * Start the MCP server with HTTP transport on the specified port
    */
-  async startHttp(port: number = 3001) {
+  async startHttp(port: number = 47320) {
     // Register capabilities first
     await this.registerCapabilities();
 

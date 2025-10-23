@@ -9,6 +9,7 @@ export interface MemoryRecord {
   content: string;
   timestamp: Date;
   metadata?: Record<string, unknown>;
+  related_message_id?: number; // Link to the message that triggered this memory
 }
 
 /**
@@ -112,9 +113,9 @@ export class HybridDataLayer {
 
     try {
       const rows = await this.coldStorage.all(`
-        SELECT id, user_id, content, timestamp, metadata 
-        FROM memories 
-        ORDER BY timestamp DESC 
+        SELECT id, user_id, content, timestamp, metadata, related_message_id
+        FROM memories
+        ORDER BY timestamp DESC
         LIMIT ?
       `, this.maxHotMemories) as Array<{
         id: string;
@@ -122,6 +123,7 @@ export class HybridDataLayer {
         content: string;
         timestamp: string;
         metadata: string | null;
+        related_message_id: number | null;
       }>;
 
       for (const row of rows) {
@@ -130,7 +132,8 @@ export class HybridDataLayer {
           user_id: row.user_id,
           content: row.content,
           timestamp: new Date(row.timestamp),
-          metadata: row.metadata ? JSON.parse(row.metadata) : undefined
+          metadata: row.metadata ? JSON.parse(row.metadata) : undefined,
+          related_message_id: row.related_message_id || undefined
         };
 
         this.hotData.set(memory.id, memory);
@@ -187,7 +190,7 @@ export class HybridDataLayer {
     if (this.coldStorage) {
       try {
         const row = await this.coldStorage.get(`
-          SELECT id, user_id, content, timestamp, metadata 
+          SELECT id, user_id, content, timestamp, metadata, related_message_id
           FROM memories WHERE id = ?
         `, id) as any;
         
@@ -197,7 +200,8 @@ export class HybridDataLayer {
             user_id: row.user_id,
             content: row.content,
             timestamp: new Date(row.timestamp),
-            metadata: row.metadata ? JSON.parse(row.metadata) : undefined
+            metadata: row.metadata ? JSON.parse(row.metadata) : undefined,
+            related_message_id: row.related_message_id || undefined
           };
           
           // Promote to hot cache
@@ -232,10 +236,10 @@ export class HybridDataLayer {
     if (memories.length < limit && this.coldStorage) {
       try {
         const rows = await this.coldStorage.all(`
-          SELECT id, user_id, content, timestamp, metadata 
-          FROM memories 
-          WHERE user_id = ? 
-          ORDER BY timestamp DESC 
+          SELECT id, user_id, content, timestamp, metadata, related_message_id
+          FROM memories
+          WHERE user_id = ?
+          ORDER BY timestamp DESC
           LIMIT ?
         `, userId, limit) as Array<{
           id: string;
@@ -243,6 +247,7 @@ export class HybridDataLayer {
           content: string;
           timestamp: string;
           metadata: string | null;
+          related_message_id: number | null;
         }>;
 
         const coldMemories = rows.map(row => ({
@@ -250,7 +255,8 @@ export class HybridDataLayer {
           user_id: row.user_id,
           content: row.content,
           timestamp: new Date(row.timestamp),
-          metadata: row.metadata ? JSON.parse(row.metadata) : undefined
+          metadata: row.metadata ? JSON.parse(row.metadata) : undefined,
+          related_message_id: row.related_message_id || undefined
         }));
 
         return coldMemories.slice(0, limit);
@@ -285,7 +291,7 @@ export class HybridDataLayer {
     if (query && query.trim().length > 0) {
       try {
         const rows = await this.coldStorage.all(`
-          SELECT m.id, m.user_id, m.content, m.timestamp, m.metadata
+          SELECT m.id, m.user_id, m.content, m.timestamp, m.metadata, m.related_message_id
           FROM memories_fts f
           JOIN memories m ON m.rowid = f.rowid
           WHERE f.content MATCH ? AND m.user_id = ?
@@ -297,6 +303,7 @@ export class HybridDataLayer {
         content: string;
         timestamp: string;
         metadata: string | null;
+        related_message_id: number | null;
       }>;
 
         return rows.map(row => ({
@@ -304,7 +311,8 @@ export class HybridDataLayer {
           user_id: row.user_id,
           content: row.content,
           timestamp: new Date(row.timestamp),
-          metadata: row.metadata ? JSON.parse(row.metadata) : undefined
+          metadata: row.metadata ? JSON.parse(row.metadata) : undefined,
+          related_message_id: row.related_message_id || undefined
         }));
       } catch (error) {
         logger.error('FTS search failed, falling back to hot cache results:', error);
@@ -321,22 +329,54 @@ export class HybridDataLayer {
     if (!this.coldStorage) {return;}
 
     try {
-      await this.coldStorage.run(`
-        INSERT INTO memories 
-        (user_id, content, tags, context, timestamp, importance, metadata)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-      `, 
+      const result = await this.coldStorage.run(`
+        INSERT INTO memories
+        (user_id, content, tags, context, timestamp, importance, metadata, related_message_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `,
         memory.user_id,
         memory.content,
         JSON.stringify([]), // empty tags array as string
         '', // empty context
         memory.timestamp.toISOString(),
         5, // default importance
-        memory.metadata ? JSON.stringify(memory.metadata) : '{}'
+        memory.metadata ? JSON.stringify(memory.metadata) : '{}',
+        memory.related_message_id || null
       );
+
+      // Generate and store embedding asynchronously (non-blocking)
+      if (result && result.lastInsertRowid) {
+        this.generateEmbeddingForMemory(result.lastInsertRowid as number, memory.content).catch(err =>
+          logger.warn(`Failed to generate embedding for memory ${result.lastInsertRowid}:`, err)
+        );
+      }
     } catch (error) {
       logger.error('Failed to persist memory to cold storage:', error);
       throw error;
+    }
+  }
+
+  /**
+   * Generate and store embedding for a memory (async, non-blocking)
+   */
+  private async generateEmbeddingForMemory(memoryId: number, content: string): Promise<void> {
+    try {
+      // Dynamic import to avoid circular dependencies
+      const { vectorEmbeddingService } = await import('../services/vector-embeddings.js');
+
+      if (!vectorEmbeddingService.isReady()) {
+        await vectorEmbeddingService.initialize();
+      }
+
+      if (vectorEmbeddingService.isReady()) {
+        const success = await vectorEmbeddingService.storeEmbedding(memoryId, content);
+        if (success) {
+          logger.debug(`🧠 Auto-generated embedding for memory #${memoryId}`);
+        }
+      }
+    } catch (error) {
+      // Silently fail - embeddings are optional enhancement
+      logger.debug(`Embedding generation skipped for memory #${memoryId}`);
     }
   }
 
@@ -406,5 +446,5 @@ export class HybridDataLayer {
 
 // Singleton instance - Use shared database path for consolidation
 export const hybridDataLayer = new HybridDataLayer(
-  process.env.DATABASE_PATH || '/Users/ejfox/code/coachartie2/data/coachartie.db'
+  process.env.DATABASE_PATH || '/app/data/coachartie.db'
 );

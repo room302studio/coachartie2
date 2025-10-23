@@ -19,7 +19,7 @@ import { logger } from '@coachartie/shared';
 async function startMCPServer() {
   try {
     const mcpServer = new CapabilitiesMCPServer();
-    const port = parseInt(process.env.MCP_PORT || '3001');
+    const port = parseInt(process.env.MCP_PORT || '47320');
     
     logger.info('🚀 Starting Coach Artie MCP Server...');
     logger.info(`📋 Port: ${port}`);

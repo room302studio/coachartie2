@@ -25,11 +25,11 @@ services:
       context: .
       dockerfile: ./packages/capabilities/Dockerfile.prod
     ports:
-      - "18239:18239"
+      - "47324:47324"
     environment:
       - NODE_ENV=production
       - DATABASE_PATH=/app/data/coachartie.db
-      - CAPABILITIES_PORT=18239
+      - CAPABILITIES_PORT=47324
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - LOG_LEVEL=info
@@ -48,7 +48,7 @@ services:
       redis:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:18239/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:47324/health"]
       interval: 30s
       timeout: 10s
       retries: 5

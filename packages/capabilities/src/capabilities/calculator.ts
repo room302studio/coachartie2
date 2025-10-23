@@ -25,10 +25,29 @@ export const calculatorCapability: RegisteredCapability = {
   ],
   handler: async (params, content) => {
     logger.info(`🧮 Calculator called with params: ${JSON.stringify(params)}, content: "${content}"`);
-    const expression = params.expression || content;
-    
+
+    // Extract expression from multiple possible sources
+    let expression = params.expression || params.query || content;
+
+    // If params is a stringified JSON, try to parse it
+    if (!expression && typeof params === 'string') {
+      try {
+        const parsed = JSON.parse(params);
+        expression = parsed.expression || parsed.query;
+      } catch {
+        // Not JSON, use as-is
+        expression = params;
+      }
+    }
+
+    // Clean up expression
+    if (expression) {
+      expression = String(expression).trim();
+    }
+
     if (!expression) {
-      throw new Error('No expression provided for calculation');
+      logger.error(`❌ No expression provided. params=${JSON.stringify(params)}, content="${content}"`);
+      throw new Error('No expression provided for calculation. Use: <capability name="calculator" action="calculate" expression="2+2" /> or <capability name="calculator" action="calculate" data=\'{"expression":"2+2"}\' />');
     }
 
     logger.info(`🧮 Calculating expression: ${expression}`);
@@ -37,7 +56,7 @@ export const calculatorCapability: RegisteredCapability = {
       // Use mathjs for safe mathematical expression evaluation
       const result = evaluate(expression);
       const resultString = `${expression} = ${result}`;
-      
+
       logger.info(`✅ Calculation result: ${resultString}`);
       return resultString;
     } catch (error) {

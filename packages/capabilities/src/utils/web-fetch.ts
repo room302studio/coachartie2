@@ -361,125 +361,167 @@ export async function fetchWebContent(
   }
 }
 
+interface SearchResult {
+  title: string;
+  url: string;
+  snippet: string;
+  position?: number;
+}
+
 /**
- * Simple web search placeholder (would integrate with actual search API)
+ * Enhanced web search that returns comprehensive results with links
  */
 export async function searchWeb(query: string): Promise<WebFetchResult> {
   try {
-    // Use DuckDuckGo's instant answer API (no API key needed!)
-    const searchUrl = `https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_html=1&skip_disambig=1`;
+    logger.info(`🔍 Enhanced web search for: ${query}`);
     
-    logger.info(`🦆 Searching DuckDuckGo for: ${query}`);
+    const results: SearchResult[] = [];
+    let instantAnswer = '';
     
-    const response = await fetch(searchUrl, {
-      headers: {
-        'User-Agent': 'CoachArtie-Bot/1.0'
-      }
-    });
-
-    if (!response.ok) {
-      throw new Error(`Search API returned ${response.status}`);
-    }
-
-    const data = await response.json() as Record<string, unknown>;
-    
-    // Build response from DuckDuckGo instant answers
-    let content = '';
-    
-    // Abstract (summary)
-    if (data.Abstract) {
-      content += `**Summary**: ${data.Abstract}\n\n`;
-    }
-    
-    // Answer (direct answer)
-    if (data.Answer) {
-      content += `**Answer**: ${data.Answer}\n`;
-      if (data.AnswerType) {
-        content += ` (${data.AnswerType})\n`;
-      }
-      content += '\n';
-    }
-    
-    // Definition
-    if (data.Definition) {
-      content += `**Definition**: ${data.Definition}\n`;
-      if (data.DefinitionSource) {
-        content += `Source: ${data.DefinitionSource}\n`;
-      }
-      content += '\n';
-    }
-    
-    // Related topics
-    if (data.RelatedTopics && Array.isArray(data.RelatedTopics) && data.RelatedTopics.length > 0) {
-      content += '**Related Topics**:\n';
-      (data.RelatedTopics as Array<Record<string, unknown>>).slice(0, 5).forEach((topic: Record<string, unknown>) => {
-        if (topic.Text) {
-          content += `• ${topic.Text}\n`;
-          if (topic.FirstURL) {
-            content += `  ${topic.FirstURL}\n`;
-          }
-        }
-      });
-      content += '\n';
-    }
-    
-    // Infobox data
-    const infobox = data.Infobox as Record<string, unknown> | undefined;
-    if (infobox && infobox.content && Array.isArray(infobox.content) && infobox.content.length > 0) {
-      content += '**Quick Facts**:\n';
-      (infobox.content as Array<Record<string, unknown>>).slice(0, 5).forEach((item: Record<string, unknown>) => {
-        if (item.label && item.value) {
-          content += `• ${item.label}: ${item.value}\n`;
-        }
-      });
-      content += '\n';
-    }
-    
-    // If we got no useful content, try a web scrape approach
-    if (!content.trim()) {
-      // Fallback to scraping DuckDuckGo HTML results
-      const htmlSearchUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
-      const htmlResponse = await fetch(htmlSearchUrl, {
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (compatible; CoachArtie/1.0)'
-        }
+    // First, try DuckDuckGo instant answers
+    try {
+      const instantUrl = `https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_html=1&skip_disambig=1`;
+      const instantResponse = await fetch(instantUrl, {
+        headers: { 'User-Agent': 'CoachArtie-Bot/1.0' }
       });
       
-      if (htmlResponse.ok) {
-        const html = await htmlResponse.text();
+      if (instantResponse.ok) {
+        const data = await instantResponse.json() as Record<string, unknown>;
         
-        // Extract result snippets using regex (quick and dirty)
-        const snippetMatches = html.match(/<a class="snippet"[^>]*>([^<]+)<\/a>/g);
-        if (snippetMatches && snippetMatches.length > 0) {
-          content = '**Search Results**:\n\n';
-          snippetMatches.slice(0, 5).forEach((match, i) => {
-            const snippet = match.replace(/<[^>]*>/g, '').trim();
-            content += `${i + 1}. ${snippet}\n\n`;
+        // Build instant answer
+        if (data.Abstract) {
+          instantAnswer += `**Summary**: ${data.Abstract}\n`;
+          if (data.AbstractURL) {
+            instantAnswer += `Source: ${data.AbstractURL}\n`;
+          }
+          instantAnswer += '\n';
+        }
+        
+        if (data.Answer) {
+          instantAnswer += `**Answer**: ${data.Answer}\n`;
+          if (data.AnswerType) {
+            instantAnswer += `Type: ${data.AnswerType}\n`;
+          }
+          instantAnswer += '\n';
+        }
+        
+        // Extract related topics as search results
+        if (data.RelatedTopics && Array.isArray(data.RelatedTopics)) {
+          (data.RelatedTopics as Array<Record<string, unknown>>).slice(0, 3).forEach((topic, i) => {
+            if (topic.Text && topic.FirstURL) {
+              results.push({
+                title: String(topic.Text).split(' - ')[0] || `Related Topic ${i + 1}`,
+                url: String(topic.FirstURL),
+                snippet: String(topic.Text),
+                position: i + 1
+              });
+            }
           });
-        } else {
-          content = `No detailed results found for "${query}". Try rephrasing your search.`;
         }
       }
+    } catch (error) {
+      logger.warn('DuckDuckGo instant answers failed:', error);
     }
+    
+    // If we don't have enough results, scrape HTML search results
+    if (results.length < 3) {
+      try {
+        const htmlSearchUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
+        const htmlResponse = await fetch(htmlSearchUrl, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+          }
+        });
+        
+        if (htmlResponse.ok) {
+          const html = await htmlResponse.text();
+          const $ = cheerio.load(html);
+          
+          // Extract search results
+          $('.web-result, .result, .links_main').each((i, elem) => {
+            if (results.length >= 8) return false; // Stop at 8 results
+            
+            const $elem = $(elem);
+            const titleElem = $elem.find('a.result__a, .result__title a, h2 a').first();
+            const title = titleElem.text().trim();
+            const url = titleElem.attr('href');
+            const snippet = $elem.find('.result__snippet, .result-snippet, .snippet').text().trim() || 
+                           $elem.find('.result__body, .web-result__description').text().trim();
+            
+            if (title && url && snippet) {
+              // Clean up URL (DuckDuckGo sometimes uses redirect URLs)
+              let cleanUrl = url;
+              if (url.includes('uddg=')) {
+                try {
+                  const uddgMatch = url.match(/uddg=([^&]+)/);
+                  if (uddgMatch) {
+                    cleanUrl = decodeURIComponent(uddgMatch[1]);
+                  }
+                } catch (e) {
+                  // Use original URL if decoding fails
+                }
+              }
+              
+              results.push({
+                title: title.substring(0, 100),
+                url: cleanUrl,
+                snippet: snippet.substring(0, 200),
+                position: results.length + 1
+              });
+            }
+          });
+        }
+      } catch (error) {
+        logger.warn('HTML search scraping failed:', error);
+      }
+    }
+    
+    // Build comprehensive response
+    let content = '';
+    
+    // Add instant answer first if available
+    if (instantAnswer.trim()) {
+      content += instantAnswer + '---\n\n';
+    }
+    
+    // Add search results
+    if (results.length > 0) {
+      content += '## 🔍 Search Results\n\n';
+      results.forEach((result, i) => {
+        content += `### ${i + 1}. [${result.title}](${result.url})\n`;
+        content += `${result.snippet}\n`;
+        content += `🔗 **URL**: ${result.url}\n\n`;
+      });
+    } else {
+      content += `## No detailed search results found\n\nTry searching directly: [DuckDuckGo Search](https://duckduckgo.com/?q=${encodeURIComponent(query)})\n\n`;
+      content += `**Suggested alternatives:**\n`;
+      content += `• Try more specific keywords\n`;
+      content += `• Use different phrasing\n`;
+      content += `• Check spelling\n`;
+    }
+    
+    // Add helpful search tips
+    content += '\n---\n*💡 Tip: For more current results, try rephrasing your search with specific years (e.g., "2024", "2025") or current terms.*';
     
     return {
       success: true,
-      url: searchUrl,
+      url: `https://duckduckgo.com/?q=${encodeURIComponent(query)}`,
       title: `Search Results for "${query}"`,
-      content: content.trim() || `No results found for "${query}"`,
-      contentType: 'application/json'
+      content: content.trim(),
+      contentType: 'text/markdown'
     };
     
   } catch (error) {
-    logger.error('DuckDuckGo search failed:', error);
+    logger.error('Enhanced web search failed:', error);
     
-    // Last resort - at least give them a search link
     return {
       success: false,
       url: `https://duckduckgo.com/?q=${encodeURIComponent(query)}`,
       title: 'Search Error',
-      content: `Search failed: ${error instanceof Error ? error.message : 'Unknown error'}. Try searching directly at: https://duckduckgo.com/?q=${encodeURIComponent(query)}`,
-      contentType: 'text/plain',
+      content: `**Search failed**: ${error instanceof Error ? error.message : 'Unknown error'}\n\n` +
+               `**Manual search**: [Click here to search "${query}" on DuckDuckGo](https://duckduckgo.com/?q=${encodeURIComponent(query)})\n\n` +
+               `**Try:**\n• Different keywords\n• More specific terms\n• Check your internet connection`,
+      contentType: 'text/markdown',
       error: error instanceof Error ? error.message : 'Search failed'
     };
   }

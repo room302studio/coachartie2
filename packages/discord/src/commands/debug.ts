@@ -80,7 +80,7 @@ async function createConnectionTestEmbed(): Promise<EmbedBuilder> {
   try {
     const start = Date.now();
     const response = await Promise.race([
-      fetch('http://localhost:18239/health'),
+      fetch('http://localhost:47324/health'),
       new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 10000))
     ]) as Response;
     

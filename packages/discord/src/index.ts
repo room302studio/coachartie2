@@ -1,13 +1,29 @@
+console.log('🚀 DISCORD SERVICE STARTING UP - BOOKITY BOOKITY!');
+console.log('📍 Current directory:', process.cwd());
+console.log('🔧 Node version:', process.version);
+console.log('🌍 Environment:', process.env.NODE_ENV);
+
 import { config } from 'dotenv';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
+console.log('📁 __dirname:', __dirname);
+console.log('🔑 Loading environment variables...');
+
 // Load .env from monorepo root (go up from packages/discord/src to monorepo root)
 config({ path: resolve(__dirname, '../../../.env') });
 // Also try package-specific .env
 config({ path: resolve(__dirname, '../.env') });
+
+console.log('🔌 Environment check:');
+console.log('  - DISCORD_TOKEN:', process.env.DISCORD_TOKEN ? '✅ Set' : '❌ Missing');
+console.log('  - REDIS_HOST:', process.env.REDIS_HOST || 'not set');
+console.log('  - REDIS_PORT:', process.env.REDIS_PORT || 'not set');
+console.log('  - CAPABILITIES_URL:', process.env.CAPABILITIES_URL || 'not set');
+console.log('  - DISCORD_PORT:', process.env.DISCORD_PORT || 'not set');
+
 import { Client, GatewayIntentBits, Events, Partials } from 'discord.js';
 import { logger } from '@coachartie/shared';
 import { setupMessageHandler } from './handlers/message-handler.js';
@@ -17,8 +33,12 @@ import { writeFileSync } from 'fs';
 import { join } from 'path';
 import { telemetry } from './services/telemetry.js';
 import { healthServer } from './services/health-server.js';
+import { apiServer } from './services/api-server.js';
 import { pathResolver } from './utils/path-resolver.js';
 import { jobMonitor } from './services/job-monitor.js';
+import { initializeForumTraversal } from './services/forum-traversal.js';
+import { initializeGitHubIntegration } from './services/github-integration.js';
+import { initializeConversationState } from './services/conversation-state.js';
 
 const client = new Client({
   intents: [
@@ -71,11 +91,15 @@ function writeStatus(status: 'starting' | 'ready' | 'error' | 'shutdown', data?:
 }
 
 async function start() {
+  console.log('🎯 Start function called - SNOOKITY LOOKITY!');
   try {
+    console.log('📝 Writing starting status...');
     writeStatus('starting');
 
+    console.log('🎮 Setting up event handlers...');
     // Setup event handlers
     client.on(Events.ClientReady, () => {
+      console.log('✨ CLIENT READY EVENT FIRED - FLUCKED AND BUCKED!');
       logger.info(`✅ discord: ${client.user?.tag} [${client.guilds.cache.size} guilds]`);
       
       // Update telemetry with connection info
@@ -91,10 +115,48 @@ async function start() {
       // Start health server
       healthServer.setDiscordClient(client);
       healthServer.start();
-      
+
+      // Start API server for forum access
+      apiServer.setDiscordClient(client);
+      apiServer.start();
+
       // Start the persistent job monitor (single wheel for all jobs)
       jobMonitor.startMonitoring();
-      
+
+      // Initialize forum traversal service
+      try {
+        console.log('🔧 Initializing forum traversal...');
+        initializeForumTraversal(client);
+        logger.info('✅ Forum traversal service enabled');
+      } catch (error) {
+        logger.warn('Failed to initialize forum traversal:', error);
+        console.error('❌ Forum traversal init failed:', error);
+      }
+
+      // Initialize conversation state manager
+      try {
+        console.log('🔧 Initializing conversation state...');
+        initializeConversationState();
+        logger.info('✅ Conversation state tracking enabled');
+      } catch (error) {
+        logger.warn('Failed to initialize conversation state:', error);
+        console.error('❌ Conversation state init failed:', error);
+      }
+
+      // Initialize GitHub integration (if token provided)
+      try {
+        console.log('🔧 Checking GitHub integration...');
+        if (process.env.GITHUB_TOKEN) {
+          initializeGitHubIntegration();
+          logger.info('✅ GitHub integration enabled');
+        } else {
+          logger.info('ℹ️  GitHub integration disabled (no GITHUB_TOKEN)');
+        }
+      } catch (error) {
+        logger.warn('Failed to initialize GitHub integration:', error);
+        console.error('❌ GitHub integration init failed:', error);
+      }
+
       writeStatus('ready', {
         username: client.user?.tag,
         guilds: client.guilds.cache.size,
@@ -116,16 +178,23 @@ async function start() {
     });
 
     // Setup message handler
+    console.log('📬 Setting up message handler...');
     setupMessageHandler(client);
 
     // Setup interaction handler for slash commands
+    console.log('🎯 Setting up interaction handler...');
     setupInteractionHandler(client);
 
     // Start queue consumer for responses
+    console.log('🚀 Starting queue consumer...');
     await startResponseConsumer(client);
 
     // Login to Discord
+    console.log('🔐 Attempting Discord login...');
+    console.log('   Token exists:', !!process.env.DISCORD_TOKEN);
+    console.log('   Token length:', process.env.DISCORD_TOKEN?.length);
     await client.login(process.env.DISCORD_TOKEN);
+    console.log('✅ Discord login successful!');
 
     // Status updates disabled - only update on actual state changes
     // This reduces log spam and Clickhouse costs
@@ -145,6 +214,7 @@ process.on('SIGTERM', async () => {
   telemetry.persistMetrics();
   writeStatus('shutdown');
   healthServer.stop();
+  apiServer.stop();
   jobMonitor.stopMonitoring();
   client.destroy();
   process.exit(0);
@@ -156,10 +226,16 @@ process.on('SIGINT', async () => {
   telemetry.persistMetrics();
   writeStatus('shutdown');
   healthServer.stop();
+  apiServer.stop();
   jobMonitor.stopMonitoring();
   client.destroy();
   process.exit(0);
 });
 
 // Start the bot
-start();
+console.log('🏁 CALLING START FUNCTION - JUCKS ARE SNUCKED!');
+start().catch(err => {
+  console.error('💥 START FUNCTION FAILED - SHUCKS ARE JUCKED!', err);
+  process.exit(1);
+});
+console.log('🎸 Start function call completed (async)');

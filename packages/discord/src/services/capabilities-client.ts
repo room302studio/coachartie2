@@ -26,14 +26,14 @@ export interface JobStatusResponse {
 export class CapabilitiesClient {
   private baseUrl: string;
 
-  constructor(baseUrl = process.env.CAPABILITIES_URL || 'http://localhost:18239') {
+  constructor(baseUrl = process.env.CAPABILITIES_URL || 'http://localhost:47324') {
     this.baseUrl = baseUrl;
   }
 
   /**
    * Submit a message for processing and get job ID
    */
-  async submitJob(message: string, userId: string): Promise<JobSubmissionResponse> {
+  async submitJob(message: string, userId: string, context?: Record<string, any>): Promise<JobSubmissionResponse> {
     try {
       const response = await fetch(`${this.baseUrl}/chat`, {
         method: 'POST',
@@ -42,7 +42,8 @@ export class CapabilitiesClient {
         },
         body: JSON.stringify({
           message,
-          userId
+          userId,
+          context
         })
       });
 
@@ -205,12 +206,13 @@ export class CapabilitiesClient {
       onProgress?: (status: JobStatusResponse) => void;
       onComplete?: (result: string) => void;
       onError?: (error: string) => void;
+      context?: Record<string, any>;
     } = {}
   ): Promise<string> {
-    const { onJobSubmitted, ...pollOptions } = options;
+    const { onJobSubmitted, context, ...pollOptions } = options;
 
     // Submit job
-    const jobInfo = await this.submitJob(message, userId);
+    const jobInfo = await this.submitJob(message, userId, context);
     
     if (onJobSubmitted) {
       onJobSubmitted(jobInfo.messageId);
