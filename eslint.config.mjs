@@ -12,6 +12,7 @@ export default [
       globals: {
         ...globals.browser,
         ...globals.node,
+        NodeJS: 'readonly', // Allow NodeJS namespace (for Timeout, etc)
       },
       parser: tsparser,
       parserOptions: {

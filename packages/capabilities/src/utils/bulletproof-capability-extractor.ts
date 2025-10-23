@@ -71,7 +71,7 @@ export class BulletproofCapabilityExtractor {
         this.checkForTag(parsed.root, 'remember', capabilities, 'memory', 'remember');
         this.checkForTag(parsed.root, 'memory', capabilities, 'memory', 'remember');
       }
-    } catch (error) {}
+    } catch (_error) {}
 
     return capabilities;
   }

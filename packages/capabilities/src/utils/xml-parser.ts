@@ -33,6 +33,7 @@ export class CapabilityXMLParser {
 
     // Debug: Check global registry at start of parsing
     if (global.mcpToolRegistry && global.mcpToolRegistry.size > 0) {
+      // Registry is available for MCP tool execution
     }
 
     try {
@@ -101,7 +102,7 @@ export class CapabilityXMLParser {
           } else if (typeof parsed.root?.capability === 'string') {
             content = parsed.root.capability;
           }
-        } catch (error) {
+        } catch (_error) {
           // If XML parsing fails completely, content stays empty
           content = '';
         }
@@ -287,13 +288,13 @@ export class CapabilityXMLParser {
    * Map simple tag names to capability format - DELETED COMPLEX MAPPINGS
    */
   private mapTagToCapability(
-    tagName: string,
-    params: Record<string, unknown>,
-    content: string
+    _tagName: string,
+    _params: Record<string, unknown>,
+    _content: string
   ): ParsedCapability | null {
     // DELETED - let the registry handle everything
     logger.warn(
-      `Simple tag format not supported: ${tagName}. Use: <capability name="..." action="..." />`
+      `Simple tag format not supported: ${_tagName}. Use: <capability name="..." action="..." />`
     );
     return null;
   }
@@ -313,7 +314,7 @@ export class CapabilityXMLParser {
         // Look for capability elements recursively
         this.findCapabilityElementsRecursive(parsed.root, text, matches);
       }
-    } catch (error) {
+    } catch (_error) {
       // If XML parsing fails, we don't extract anything rather than falling back to regex
     }
 
@@ -339,7 +340,7 @@ export class CapabilityXMLParser {
 
     // Recursively search all properties
     for (const key in obj) {
-      if (obj.hasOwnProperty(key) && key !== 'capability') {
+      if (Object.prototype.hasOwnProperty.call(obj, key) && key !== 'capability') {
         this.findCapabilityElementsRecursive(obj[key], originalText, matches);
       }
     }
@@ -374,7 +375,7 @@ export class CapabilityXMLParser {
           return `<capability${attributes} />`;
         }
       }
-    } catch (error) {}
+    } catch (_error) {}
 
     return null;
   }
@@ -396,7 +397,7 @@ export class CapabilityXMLParser {
 
     // Check each property to see if it represents a simple capability tag
     for (const key in obj) {
-      if (obj.hasOwnProperty(key)) {
+      if (Object.prototype.hasOwnProperty.call(obj, key)) {
         const value = obj[key];
 
         // Skip special XML parser properties
@@ -444,7 +445,7 @@ export class CapabilityXMLParser {
   /**
    * Check if a tag name represents a simple capability - DELETED
    */
-  private isSimpleCapabilityTag(tagName: string): boolean {
+  private isSimpleCapabilityTag(_tagName: string): boolean {
     // DELETED - no more simple tags, force proper syntax
     return false;
   }

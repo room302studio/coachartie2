@@ -52,7 +52,7 @@ export class SimpleHealer {
       const { mcpProcessManager } = await import('../services/mcp-process-manager.js');
       await mcpProcessManager.startProcess('stdio://npx @shelm/wikipedia-mcp-server');
       // MCP restarted
-    } catch (error) {}
+    } catch (_error) {}
   }
 }
 

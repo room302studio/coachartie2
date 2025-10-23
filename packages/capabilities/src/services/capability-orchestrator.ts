@@ -259,9 +259,9 @@ export class CapabilityOrchestrator {
           .map((c) => c.name)
           .join(', ')}`
       );
-    } catch (error) {
-      logger.error('❌ Failed to initialize capability registry:', error);
-      logger.error('Stack:', error);
+    } catch (_error) {
+      logger.error('❌ Failed to initialize capability registry:', _error);
+      logger.error('Stack:', _error);
       // Don't throw - allow service to continue with legacy handlers
     }
   }
@@ -589,8 +589,8 @@ Timestamp: ${new Date().toISOString()}`;
             message.userId,
             message.id
           );
-    } catch (error) {
-      logger.error('❌ Failed to get capability instructions from database', error);
+    } catch (_error) {
+      logger.error('❌ Failed to get capability instructions from database', _error);
       throw new Error('System configuration error: capability instructions not available');
     }
   }
@@ -692,8 +692,8 @@ ${userMessage}`;
       }
 
       return tools;
-    } catch (error) {
-      logger.warn('Failed to get MCP tools for context:', error);
+    } catch (_error) {
+      logger.warn('Failed to get MCP tools for context:', _error);
       return [];
     }
   }
@@ -805,8 +805,8 @@ User: ${userMessage}`;
         `🎯 Returning ${patterns.length} memory patterns: ${patterns.map((p) => p.substring(0, 50)).join('; ')}`
       );
       return patterns.slice(0, 3);
-    } catch (error) {
-      logger.error('❌ Failed to get memory patterns:', error);
+    } catch (_error) {
+      logger.error('❌ Failed to get memory patterns:', _error);
       return [];
     }
   }
@@ -857,8 +857,8 @@ User: ${userMessage}`;
           );
         }
       }
-    } catch (error) {
-      logger.error('❌ Failed to store reflection memory:', error);
+    } catch (_error) {
+      logger.error('❌ Failed to store reflection memory:', _error);
       // Don't throw - reflection failure shouldn't break the main flow
     }
   }
@@ -905,8 +905,8 @@ User: ${userMessage}`;
 
       const reflection = await openRouterService.generateFromMessageChain(messages, userId);
       return reflection.trim();
-    } catch (error) {
-      logger.error(`❌ Failed to generate ${type} reflection:`, error);
+    } catch (_error) {
+      logger.error(`❌ Failed to generate ${type} reflection:`, _error);
       return '';
     }
   }
@@ -1399,16 +1399,16 @@ ${capabilityDetails}`;
               `❌ Capability ${capability.name}:${capability.action} failed: ${result.error}`
             );
           }
-        } catch (error) {
+        } catch (_error) {
           // Increment failure count on exception
           context.capabilityFailureCount.set(capabilityKey, failureCount + 1);
-          logger.error(`❌ Failed to execute capability ${capability.name}:`, error);
-          systemFeedback += `[SYSTEM: ${capability.name}:${capability.action} threw error (attempt ${failureCount + 1}/${MAX_FAILURES_PER_CAPABILITY}) → ${error}]\n`;
+          logger.error(`❌ Failed to execute capability ${capability.name}:`, _error);
+          systemFeedback += `[SYSTEM: ${capability.name}:${capability.action} threw error (attempt ${failureCount + 1}/${MAX_FAILURES_PER_CAPABILITY}) → ${_error}]\n`;
 
           context.results.push({
             capability,
             success: false,
-            error: error instanceof Error ? error.message : String(error),
+            error: _error instanceof Error ? _error.message : String(_error),
             timestamp: new Date().toISOString(),
           });
           context.currentStep++;
@@ -1614,8 +1614,8 @@ ${!canStop ? 'Execute the next capability now.' : 'Execute next capability OR pr
       const sanitizedAction = this.stripThinkingTags(nextAction, context.userId, context.messageId);
 
       return sanitizedAction;
-    } catch (error) {
-      logger.error('❌ Failed to get LLM next action:', error);
+    } catch (_error) {
+      logger.error('❌ Failed to get LLM next action:', _error);
       return ''; // Empty response will end the loop
     }
   }
@@ -1749,13 +1749,13 @@ ${!canStop ? 'Execute the next capability now.' : 'Execute next capability OR pr
             : `❌ ${capability.name}:${capability.action} failed: ${result.error}`;
           onPartialResponse(resultSummary);
         }
-      } catch (error) {
-        logger.error(`❌ Capability ${capability.name}:${capability.action} failed:`, error);
+      } catch (_error) {
+        logger.error(`❌ Capability ${capability.name}:${capability.action} failed:`, _error);
 
         context.results.push({
           capability,
           success: false,
-          error: error instanceof Error ? error.message : String(error),
+          error: _error instanceof Error ? _error.message : String(_error),
           timestamp: new Date().toISOString(),
         });
         context.currentStep++;
@@ -1818,13 +1818,13 @@ ${!canStop ? 'Execute the next capability now.' : 'Execute next capability OR pr
             result.success ? 'succeeded' : 'failed'
           }`
         );
-      } catch (error) {
-        logger.error(`❌ Capability ${capability.name}:${capability.action} failed:`, error);
+      } catch (_error) {
+        logger.error(`❌ Capability ${capability.name}:${capability.action} failed:`, _error);
 
         context.results.push({
           capability: processedCapability,
           success: false,
-          error: error instanceof Error ? error.message : String(error),
+          error: _error instanceof Error ? _error.message : String(_error),
           timestamp: new Date().toISOString(),
         });
         context.currentStep++;
@@ -1963,8 +1963,8 @@ ${!canStop ? 'Execute the next capability now.' : 'Execute next capability OR pr
             // Keep the original error from registry execution
             break;
         }
-      } catch (legacyError) {
-        logger.error('Legacy handler also failed:', legacyError);
+      } catch (_legacyError) {
+        logger.error('Legacy handler also failed:', _legacyError);
         // Keep the original registry error
       }
     }
@@ -2002,9 +2002,9 @@ ${!canStop ? 'Execute the next capability now.' : 'Execute next capability OR pr
     try {
       const result = await wolframService.query(String(input));
       return result;
-    } catch (error) {
-      logger.error('Wolfram Alpha capability failed:', error);
-      throw error;
+    } catch (_error) {
+      logger.error('Wolfram Alpha capability failed:', _error);
+      throw _error;
     }
   }
 
@@ -2180,8 +2180,8 @@ If the error contains an example capability tag, extract it and use it immediate
       );
 
       return sanitizedResponse;
-    } catch (error) {
-      logger.error('❌ Failed to generate intermediate response:', error);
+    } catch (_error) {
+      logger.error('❌ Failed to generate intermediate response:', _error);
       // Fallback to simple status message
       return result.success
         ? `✅ Completed ${capability.name} successfully!`
@@ -2234,8 +2234,8 @@ Provide a concise, friendly summary (1-2 sentences) of what was accomplished ove
       );
 
       return sanitizedSummary;
-    } catch (error) {
-      logger.error('❌ Failed to generate final summary:', error);
+    } catch (_error) {
+      logger.error('❌ Failed to generate final summary:', _error);
       // Fallback to simple completion message
       const successCount = context.results.filter((r) => r.success).length;
       return `✅ Completed ${successCount}/${context.results.length} tasks successfully!`;
@@ -2303,8 +2303,8 @@ Provide a concise, friendly summary (1-2 sentences) of what was accomplished ove
       logger.info(`✅ Final coherent response generated and sanitized successfully`);
 
       return sanitizedResponse;
-    } catch (error) {
-      logger.error('❌ Failed to generate final coherent response, using fallback', error);
+    } catch (_error) {
+      logger.error('❌ Failed to generate final coherent response, using fallback', _error);
 
       // Instead of showing raw capability results, provide a cleaner fallback
       if (context.results.length > 0) {

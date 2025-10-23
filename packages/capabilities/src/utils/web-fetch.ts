@@ -487,7 +487,7 @@ export async function searchWeb(query: string): Promise<WebFetchResult> {
                   if (uddgMatch) {
                     cleanUrl = decodeURIComponent(uddgMatch[1]);
                   }
-                } catch (e) {
+                } catch (_e) {
                   // Use original URL if decoding fails
                 }
               }

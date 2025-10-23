@@ -166,7 +166,7 @@ export class DependencyResolver {
       // Add timeout to prevent hanging on slow filesystem/PATH issues
       await execAsync(dep.checkCommand, { timeout: 5000 });
       return true;
-    } catch (error) {
+    } catch (_error) {
       return false;
     }
   }
@@ -355,7 +355,7 @@ export class DependencyResolver {
           required: true,
         });
       }
-    } catch (error) {}
+    } catch (_error) {}
 
     return dependencies;
   }

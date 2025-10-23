@@ -142,7 +142,7 @@ export class VectorEmbeddingService {
               content: memory.content,
             });
           }
-        } catch (e) {
+        } catch (_e) {
           // Skip memories with invalid embeddings
           continue;
         }
@@ -252,7 +252,7 @@ export class VectorEmbeddingService {
               content: otherMemory.content,
             });
           }
-        } catch (e) {
+        } catch (_e) {
           // Skip memories with invalid embeddings
           continue;
         }

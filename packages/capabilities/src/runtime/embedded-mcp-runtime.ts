@@ -96,7 +96,7 @@ class TimeProviderTool implements EmbeddedMCPTool {
 
       const formattedTime = now.toLocaleString('en-US', options);
       return `Current time: ${formattedTime}`;
-    } catch (error) {
+    } catch (_error) {
       // Fallback to simple ISO string
       return `Current time (UTC): ${new Date().toISOString()}`;
     }

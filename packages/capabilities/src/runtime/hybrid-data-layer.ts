@@ -397,7 +397,7 @@ export class HybridDataLayer {
           logger.debug(`🧠 Auto-generated embedding for memory #${memoryId}`);
         }
       }
-    } catch (error) {
+    } catch (_error) {
       // Silently fail - embeddings are optional enhancement
       logger.debug(`Embedding generation skipped for memory #${memoryId}`);
     }

@@ -55,7 +55,7 @@ export async function processMessage(
             if (statusData.data?.active_alerts > 0) {
               logger.warn(`🚨 ${statusData.data.active_alerts} active credit alerts detected!`);
             }
-          } catch (e) {
+          } catch (_e) {
             // Ignore parse errors
           }
         } catch (error) {

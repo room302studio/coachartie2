@@ -80,7 +80,7 @@ export class RobustCapabilityExecutor {
         attempts: maxRetries,
         fallbackUsed: true,
       };
-    } catch (fallbackError) {
+    } catch (_fallbackError) {
       // Final failure
       return {
         capability,
@@ -215,7 +215,7 @@ export class RobustCapabilityExecutor {
    */
   private async tryFallbackExecution(
     capability: ParsedCapability,
-    context: { userId: string; messageId: string }
+    _context: { userId: string; messageId: string }
   ): Promise<string> {
     switch (capability.name) {
       case 'calculator':
