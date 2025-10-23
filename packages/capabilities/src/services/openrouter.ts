@@ -11,6 +11,7 @@ config({ path: resolve(__dirname, '../../.env') });
 import { logger } from '@coachartie/shared';
 import { UsageTracker, TokenUsage } from './usage-tracker.js';
 import { creditMonitor } from './credit-monitor.js';
+import { costMonitor } from './cost-monitor.js';
 
 class OpenRouterService {
   private client: OpenAI;
@@ -182,7 +183,15 @@ class OpenRouterService {
 
         // Calculate cost and record usage
         const estimatedCost = UsageTracker.calculateCost(model, usage);
-        
+
+        // Track costs in real-time cost monitor
+        const { shouldCheckCredits, warnings } = costMonitor.trackCall(usage.prompt_tokens, usage.completion_tokens, model);
+
+        // Log warnings if any
+        if (warnings.length > 0) {
+          logger.warn(`💸 Cost warnings for this call:`, warnings);
+        }
+
         // Record usage statistics (don't await to avoid blocking)
         if (messageId) {
           UsageTracker.recordUsage({
@@ -260,39 +269,44 @@ class OpenRouterService {
   async generateFromMessageChainStreaming(
     messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>,
     userId: string,
-    onPartialResponse?: (partial: string) => void
+    onPartialResponse?: (partial: string) => void,
+    messageId?: string
   ): Promise<string> {
     if (messages.length === 0) {
       throw new Error('No messages provided');
     }
 
+    const startTime = Date.now();
+
     // Start with first model
     const currentModel = this.getCurrentModel();
     logger.info(`🤖 Starting streaming generation for user ${userId} using model ${currentModel}`);
-    
+
     for (let i = 0; i < this.models.length; i++) {
       const model = this.models[(this.currentModelIndex + i) % this.models.length];
-      
+
       try {
         logger.info(`📡 Attempting streaming with model ${model} (${i + 1}/${this.models.length})`);
-        
+
         const completion = await this.client.chat.completions.create({
           model,
           messages,
           max_tokens: 4000,
           temperature: 0.7,
-          stream: true // Enable streaming
+          stream: true, // Enable streaming
+          stream_options: { include_usage: true } // Request usage data in stream
         });
 
         let fullResponse = '';
         let lastSentLength = 0;
-        
+        let usage: TokenUsage | undefined;
+
         // Process streaming chunks - send new paragraphs as they complete
         for await (const chunk of completion) {
           const delta = chunk.choices[0]?.delta?.content;
           if (delta) {
             fullResponse += delta;
-            
+
             // Check for completed paragraphs (double newline indicates paragraph end)
             if (delta.includes('\n\n') && onPartialResponse) {
               // Find the new content since last sent
@@ -300,7 +314,7 @@ class OpenRouterService {
                 // Look for complete paragraphs in the new content
                 const newContent = fullResponse.slice(lastSentLength);
                 const paragraphEndIndex = newContent.indexOf('\n\n');
-                
+
                 if (paragraphEndIndex !== -1) {
                   // We have at least one complete paragraph
                   const completeParagraph = newContent.slice(0, paragraphEndIndex).trim();
@@ -312,9 +326,69 @@ class OpenRouterService {
               }
             }
           }
+
+          // Capture usage data from final chunk (OpenRouter sends it at the end)
+          if (chunk.usage) {
+            usage = {
+              prompt_tokens: chunk.usage.prompt_tokens || 0,
+              completion_tokens: chunk.usage.completion_tokens || 0,
+              total_tokens: chunk.usage.total_tokens || 0
+            };
+          }
         }
 
-        logger.info(`✅ Streaming completed for user ${userId} using ${model}`);
+        const responseTime = Date.now() - startTime;
+
+        // If we didn't get usage data from stream, estimate it
+        if (!usage) {
+          logger.warn('⚠️ No usage data received from streaming API, estimating tokens');
+          const estimatedPromptTokens = Math.ceil(messages.reduce((total, msg) => total + msg.content.length, 0) / 4);
+          const estimatedCompletionTokens = Math.ceil(fullResponse.length / 4);
+          usage = {
+            prompt_tokens: estimatedPromptTokens,
+            completion_tokens: estimatedCompletionTokens,
+            total_tokens: estimatedPromptTokens + estimatedCompletionTokens
+          };
+        }
+
+        // Calculate cost and track usage
+        const estimatedCost = UsageTracker.calculateCost(model, usage);
+
+        // Track costs in real-time cost monitor
+        const { shouldCheckCredits, warnings } = costMonitor.trackCall(usage.prompt_tokens, usage.completion_tokens, model);
+
+        // Log warnings if any
+        if (warnings.length > 0) {
+          logger.warn(`💸 Cost warnings for streaming call:`, warnings);
+        }
+
+        // Record usage statistics (don't await to avoid blocking)
+        if (messageId) {
+          UsageTracker.recordUsage({
+            model_name: model,
+            user_id: userId,
+            message_id: messageId,
+            input_length: messages.reduce((total, msg) => total + msg.content.length, 0),
+            output_length: fullResponse.length,
+            response_time_ms: responseTime,
+            capabilities_detected: 0,
+            capabilities_executed: 0,
+            capability_types: '',
+            success: true,
+            prompt_tokens: usage.prompt_tokens,
+            completion_tokens: usage.completion_tokens,
+            total_tokens: usage.total_tokens,
+            estimated_cost: estimatedCost
+          }).catch(error => {
+            logger.error('Failed to record streaming usage stats:', error);
+          });
+        }
+
+        // Rotate to next model for testing different models' tool usage
+        this.currentModelIndex = (this.currentModelIndex + 1) % this.models.length;
+
+        logger.info(`✅ Streaming completed for user ${userId} using ${model} (${usage.total_tokens} tokens, $${estimatedCost.toFixed(4)})`);
+        logger.info(`🔄 Rotated to next model: ${this.getCurrentModel()}`);
         return fullResponse.trim();
 
       } catch (error: unknown) {

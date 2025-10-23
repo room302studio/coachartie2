@@ -58,13 +58,27 @@ export async function startMessageConsumer() {
           logger.info(`📊 Job ${message.id} marked as processing`);
         }
 
-        // Always process the message for capability extraction and memory formation
-        const response = await processMessage(message, (partial) => {
+        // CRITICAL: Global timeout to prevent infinite loops at ANY level
+        // This catches hangs in capability retries, LLM loops, or any other processing
+        const GLOBAL_TIMEOUT_MS = 120000; // 2 minutes
+        const timeoutPromise = new Promise<never>((_, reject) => {
+          setTimeout(() => {
+            const errorMsg = `Global job timeout after ${GLOBAL_TIMEOUT_MS / 1000}s - prevents infinite loops and resource exhaustion`;
+            logger.error(`⏱️ TIMEOUT: ${errorMsg} for message ${message.id}`);
+            reject(new Error(errorMsg));
+          }, GLOBAL_TIMEOUT_MS);
+        });
+
+        // Race between actual processing and timeout
+        const processingPromise = processMessage(message, (partial) => {
           // Update partial response for streaming (if it's from API)
           if (message.source === 'api' && message.respondTo.type === 'api') {
             jobTracker.updatePartialResponse(message.id, partial);
           }
         });
+
+        // Always process the message for capability extraction and memory formation
+        const response = await Promise.race([processingPromise, timeoutPromise]);
 
         // Check if we should respond (from context.shouldRespond)
         const shouldRespond = message.context?.shouldRespond !== false;

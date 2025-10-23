@@ -64,3 +64,4 @@ logs/
 
 # Redis dumps
 dump.rdb
+**/dump.rdb

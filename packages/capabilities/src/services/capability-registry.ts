@@ -237,19 +237,29 @@ export class CapabilityRegistry {
     // Get and validate capability
     const capability = this.get(name, action);
 
-    // Validate required parameters
+    // Validate required parameters - BUT allow content as fallback for single-param capabilities
     if (capability.requiredParams) {
       const missingParams = capability.requiredParams.filter(param => !(param in params));
       if (missingParams.length > 0) {
-        throw new Error(
-          `Missing required parameters for capability '${name}': ${missingParams.join(', ')}`
-        );
+        // Special case: If only one param is required and content is provided, allow it
+        // This handles cases where params.expression is missing but content has "2+2"
+        const canUsContentAsFallback = missingParams.length === 1 && content && content.trim().length > 0;
+
+        if (!canUsContentAsFallback) {
+          throw new Error(
+            `Missing required parameters for capability '${name}': ${missingParams.join(', ')}`
+          );
+        }
+
+        logger.info(`✅ Using content as fallback for required param '${missingParams[0]}' in ${name}:${action}`);
       }
     }
 
     // Add action to params for the handler
     const handlerParams = { ...params, action };
 
+    // Debug: Log what we're passing to the handler
+    logger.info(`🔧 REGISTRY: Calling ${name}:${action} with content="${content}" (${typeof content})`);
 
     try {
       const result = await capability.handler(handlerParams, content);

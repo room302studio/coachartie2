@@ -24,7 +24,7 @@ const DISCORD_BASE_URL = process.env.DISCORD_SERVICE_URL || 'http://localhost:47
 const FETCH_TIMEOUT = 30000; // 30 second timeout
 
 // Helper function for fetch with timeout
-async function fetchWithTimeout(url: string, options: any = {}, timeout = FETCH_TIMEOUT): Promise<Response> {
+async function fetchWithTimeout(url: string, options: any = {}, timeout = FETCH_TIMEOUT): Promise<any> {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeout);
 
@@ -87,7 +87,7 @@ async function listForums(params: DiscordForumsParams): Promise<string> {
     try {
       const healthResponse = await fetchWithTimeout('http://localhost:47319/health');
       if (healthResponse.ok) {
-        const health = await healthResponse.json();
+        const health = await healthResponse.json() as any;
         if (health.discord?.guildDetails && health.discord.guildDetails.length > 0) {
           const guildList = health.discord.guildDetails
             .map((g: any) => `- ${g.name} (ID: ${g.id})`)
@@ -111,7 +111,7 @@ async function listForums(params: DiscordForumsParams): Promise<string> {
     throw new Error(`Failed to fetch forums: ${response.statusText}`);
   }
 
-  const data = await response.json();
+  const data = await response.json() as any;
   const forums = data.forums || data;
 
   logger.info(`📋 Listed ${forums.length} forums in guild ${guildId}`);
@@ -184,7 +184,7 @@ async function listThreads(params: DiscordForumsParams): Promise<string> {
       try {
         const forumsResponse = await fetchWithTimeout(`${DISCORD_BASE_URL}/api/guilds/${guildId}/forums`);
         if (forumsResponse.ok) {
-          const forumsData = await forumsResponse.json();
+          const forumsData = await forumsResponse.json() as any;
           if (forumsData.forums && forumsData.forums.length > 0) {
             const forumList = forumsData.forums
               .map((f: any) => `- ${f.name} (ID: ${f.id})`)
@@ -208,7 +208,7 @@ async function listThreads(params: DiscordForumsParams): Promise<string> {
     throw new Error(`Failed to fetch threads: ${response.statusText}`);
   }
 
-  const data = await response.json();
+  const data = await response.json() as any;
   const threads = data.threads || data;
 
   logger.info(`📝 Listed ${threads.length} threads in forum ${forumId}`);
@@ -298,7 +298,7 @@ async function getThread(params: DiscordForumsParams): Promise<string> {
     throw new Error(`Failed to fetch thread: ${response.statusText}`);
   }
 
-  const thread = await response.json();
+  const thread = await response.json() as any;
 
   logger.info(`💬 Fetched thread ${threadId} with ${thread.messageCount || thread.messages?.length || 0} messages`);
 
@@ -336,12 +336,12 @@ async function getThread(params: DiscordForumsParams): Promise<string> {
   const response_text = `💬 THREAD DETAILS RETRIEVED
 
 📋 Thread Information:
-- Thread ID: ${thread.id || threadId}
-- Title: ${thread.name || thread.title || 'Untitled'}
-- Forum ID: ${thread.parent_id || thread.parentId || 'Unknown'}
-- Created: ${new Date(thread.created_timestamp || thread.createdAt || Date.now()).toLocaleString()}
-- Status: ${thread.locked ? '🔒 Locked' : thread.archived ? '📦 Archived' : '✅ Active'}
-- Tags: ${(thread.applied_tags || thread.appliedTags || []).join(', ') || 'None'}
+- Thread ID: ${(thread as any).id || threadId}
+- Title: ${(thread as any).name || (thread as any).title || 'Untitled'}
+- Forum ID: ${(thread as any).parent_id || (thread as any).parentId || 'Unknown'}
+- Created: ${new Date((thread as any).created_timestamp || (thread as any).createdAt || Date.now()).toLocaleString()}
+- Status: ${(thread as any).locked ? '🔒 Locked' : (thread as any).archived ? '📦 Archived' : '✅ Active'}
+- Tags: ${((thread as any).applied_tags || (thread as any).appliedTags || []).join(', ') || 'None'}
 
 📊 Thread Analytics:
 - Total Messages: ${messages.length}
@@ -366,10 +366,10 @@ ${'-'.repeat(80)}
 
 💡 This thread is ready for analysis or GitHub sync.
 To sync this thread to GitHub:
-<capability name="discord-forums" action="sync-to-github" data='{"forumId":"${thread.parent_id || 'FORUM_ID'}","repo":"owner/repo"}' />
+<capability name="discord-forums" action="sync-to-github" data='{"forumId":"${(thread as any).parent_id || 'FORUM_ID'}","repo":"owner/repo"}' />
 
 📦 Raw Data (for programmatic access):
-${JSON.stringify({ thread: { id: thread.id, name: thread.name, status: thread.locked ? 'locked' : thread.archived ? 'archived' : 'active' }, messages }, null, 2)}`;
+${JSON.stringify({ thread: { id: (thread as any).id, name: (thread as any).name, status: (thread as any).locked ? 'locked' : (thread as any).archived ? 'archived' : 'active' }, messages }, null, 2)}`;
 
   return response_text;
 }
@@ -387,7 +387,7 @@ async function getForumSummary(params: DiscordForumsParams): Promise<string> {
     throw new Error(`Failed to fetch forum summary: ${response.statusText}`);
   }
 
-  const summary = await response.json();
+  const summary = await response.json() as any;
 
   logger.info(`📊 Fetched summary for forum ${forumId}: ${summary.totalThreads} threads`);
 
@@ -418,7 +418,7 @@ async function syncToGitHub(params: DiscordForumsParams, content?: string): Prom
     throw new Error(`Failed to sync to GitHub: ${response.statusText}`);
   }
 
-  const result = await response.json();
+  const result = await response.json() as any;
 
   logger.info(`🔄 Synced forum ${forumId} to GitHub repo ${repo}: ${result.successCount || result.issues?.length || 0} issues created`);
 
@@ -437,7 +437,7 @@ async function syncToGitHub(params: DiscordForumsParams, content?: string): Prom
 - ✅ Successfully Created: ${successCount}
 - ❌ Failed: ${failureCount}
 - ⏭️  Skipped (duplicates): ${skippedCount}
-- Sync Duration: ${result.duration || 'N/A'}
+- Sync Duration: ${(result as any).duration || 'N/A'}
 
 ${successCount > 0 ? `
 ✅ Successfully Created Issues:
@@ -460,11 +460,11 @@ ${idx + 1}. ${issue.title || issue.threadTitle || 'Untitled'}
 `).join('\n')}
 ` : ''}
 
-${result.rateLimitInfo ? `
+${(result as any).rateLimitInfo ? `
 ⚠️  Rate Limit Information:
-- Remaining: ${result.rateLimitInfo.remaining}
-- Limit: ${result.rateLimitInfo.limit}
-- Reset Time: ${new Date(result.rateLimitInfo.reset * 1000).toLocaleString()}
+- Remaining: ${(result as any).rateLimitInfo.remaining}
+- Limit: ${(result as any).rateLimitInfo.limit}
+- Reset Time: ${new Date((result as any).rateLimitInfo.reset * 1000).toLocaleString()}
 ` : ''}
 
 💡 Next Steps:

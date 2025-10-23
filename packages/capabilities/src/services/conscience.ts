@@ -244,9 +244,9 @@ For DANGEROUS operations: Explain why unsafe, no approval`;
       }
 
       // Allow safe operations immediately without LLM review
-      if (capability.name === 'memory' || capability.name === 'calculator' || capability.name === 'web' || capability.name === 'mcp_client' || capability.name === 'mcp_installer' || capability.name === 'goal' || capability.name === 'variable' || capability.name === 'todo' || capability.name === 'discord-ui') {
+      if (capability.name === 'memory' || capability.name === 'calculator' || capability.name === 'web' || capability.name === 'mcp_client' || capability.name === 'mcp_installer' || capability.name === 'goal' || capability.name === 'variable' || capability.name === 'todo' || capability.name === 'discord-ui' || capability.name === 'github') {
         logger.info(`✅ IMMEDIATE ALLOW: Safe operation ${capability.name}:${capability.action}`);
-        
+
         // Just return approval text - DON'T regenerate XML!
         return `APPROVED: Safe operation ${capability.name}:${capability.action} is allowed.`;
       }

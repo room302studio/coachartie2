@@ -142,9 +142,10 @@ export class CapabilityXMLParser {
    */
   private extractAttributeCapabilities(text: string): ParsedCapability[] {
     const capabilities: ParsedCapability[] = [];
-    
-    // ONE PATTERN TO RULE THEM ALL: <capability name="X" action="Y" ...attributes />
-    const unifiedPattern = /<capability\s+([^>]+)\s*\/?>/g;
+
+    // ONLY match self-closing tags: <capability name="X" action="Y" ...attributes />
+    // Do NOT match opening tags like <capability ...> (those are handled by extractContentCapabilities)
+    const unifiedPattern = /<capability\s+([^>]+)\s*\/>/g;
     
     let match;
     while ((match = unifiedPattern.exec(text)) !== null) {
@@ -171,16 +172,26 @@ export class CapabilityXMLParser {
           // Special handling for 'data' attribute - parse JSON into params
           try {
             const dataStr = String(params.data);
+            logger.info(`🔍 XML PARSER: Attempting to parse data attribute: "${dataStr}"`);
+
             const parsedData = JSON.parse(dataStr);
-            // Merge parsed JSON data into params
-            Object.assign(params, parsedData);
-            delete params.data;
-            logger.info(`🔍 XML PARSER: Parsed data attribute as JSON: ${JSON.stringify(parsedData)}`);
+
+            if (typeof parsedData !== 'object' || parsedData === null) {
+              logger.warn(`⚠️ XML PARSER: Parsed data is not an object: ${typeof parsedData}`);
+              content = dataStr;
+              delete params.data;
+            } else {
+              // Merge parsed JSON data into params
+              Object.assign(params, parsedData);
+              delete params.data;
+              logger.info(`✅ XML PARSER: Successfully parsed and merged data attribute: ${JSON.stringify(parsedData)}`);
+              logger.info(`🔍 XML PARSER: Final params after merge: ${JSON.stringify(params)}`);
+            }
           } catch (error) {
             // If JSON parsing fails, treat as content
             content = String(params.data);
             delete params.data;
-            logger.warn(`⚠️ XML PARSER: Failed to parse data attribute as JSON, using as content`);
+            logger.warn(`⚠️ XML PARSER: Failed to parse data attribute as JSON, using as content. Error: ${error instanceof Error ? error.message : String(error)}`);
           }
         }
         
@@ -201,13 +212,25 @@ export class CapabilityXMLParser {
    */
   private parseAttributes(attributeString: string): Record<string, string> {
     const attributes: Record<string, string> = {};
-    const attrPattern = /(\w+)="([^"]*)"/g;
-    
+
+    // Match attributes with proper quote handling:
+    // - Double-quoted: attr="value" (value can't contain unescaped ")
+    // - Single-quoted: attr='value' (value can contain " but not ')
+    // Use separate patterns since we need to match the SAME quote type at start and end
+    const doubleQuotePattern = /(\w+)="([^"]*)"/g;
+    const singleQuotePattern = /(\w+)='([^']*)'/g;
+
+    // First extract all double-quoted attributes
     let match;
-    while ((match = attrPattern.exec(attributeString)) !== null) {
+    while ((match = doubleQuotePattern.exec(attributeString)) !== null) {
       attributes[match[1]] = match[2];
     }
-    
+
+    // Then extract all single-quoted attributes
+    while ((match = singleQuotePattern.exec(attributeString)) !== null) {
+      attributes[match[1]] = match[2];
+    }
+
     return attributes;
   }
 
@@ -216,24 +239,39 @@ export class CapabilityXMLParser {
    */
   private extractContentCapabilities(text: string): ParsedCapability[] {
     const capabilities: ParsedCapability[] = [];
-    
-    // Match content-based capability tags
-    const contentPattern = /<capability\s+name="([^"]+)"\s+action="([^"]+)"[^>]*>([^<]*)<\/capability>/g;
-    
+
+    // Match content-based capability tags (with multi-line support)
+    // Capture the full attribute string so we can parse ALL attributes, not just name/action
+    const contentPattern = /<capability\s+([^>]+)>([\s\S]*?)<\/capability>/g;
+
     let match;
     while ((match = contentPattern.exec(text)) !== null) {
-      const name = match[1];
-      const action = match[2];
-      const content = match[3].trim();
-      
+      const attributeString = match[1];
+      const content = match[2].trim();
+
+      // Parse all attributes from the opening tag
+      const attributes = this.parseAttributes(attributeString);
+      const name = attributes.name;
+      const action = attributes.action;
+
+      if (!name || !action) {
+        logger.warn(`⚠️ Content capability missing name or action: ${attributeString}`);
+        continue;
+      }
+
+      // Remove name and action from attributes since they're stored separately
+      const { name: _, action: __, ...params } = attributes;
+
+      logger.info(`🎯 CONTENT EXTRACTION: Found ${name}:${action} with params: ${JSON.stringify(params)} and content: "${content}"`);
+
       capabilities.push({
         name,
         action,
         content,
-        params: {}
+        params
       });
     }
-    
+
     return capabilities;
   }
 
