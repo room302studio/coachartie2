@@ -52,31 +52,37 @@ DISCORD BOT POLLS JOB EVERY 3 SECONDS
 ## FAILURE POINTS ANALYSIS
 
 ### 1. POLLING NEVER SEES COMPLETED STATUS
+
 **Symptom:** No debug logs at all
 **Cause:** Job API returns wrong status or polling stops early
 **Debug:** Check if `GET /chat/{jobId}` returns `status: "completed"`
 
 ### 2. STATUS IS COMPLETED BUT NO RESPONSE FIELD
+
 **Symptom:** See "🎯 Job completed" but "🎯 NOT calling onComplete"
 **Cause:** API response missing `response` field or it's null/empty
 **Debug:** `curl -s "http://localhost:18239/chat/{jobId}" | jq .response`
 
 ### 3. onComplete CALLBACK NEVER DEFINED
+
 **Symptom:** See "🎯 Job completed" but "callback: false"
 **Cause:** Message handler didn't pass onComplete function
 **Debug:** Check pollJobUntilComplete call has onComplete parameter
 
 ### 4. onComplete TRIGGERS BUT FAILS IMMEDIATELY
+
 **Symptom:** See "🎯 onComplete handler started" but nothing after
 **Cause:** Error in first few lines of callback (duration calc, typing stop)
 **Debug:** Check for exceptions in callback
 
 ### 5. statusMessage.edit() FAILS
+
 **Symptom:** See "🎯 About to edit statusMessage" but no "Successfully edited"
 **Cause:** Discord API error, permissions, or message deleted
 **Debug:** Discord API permissions or rate limiting
 
 ### 6. CHUNKING OR SENDING FAILS
+
 **Symptom:** See "📝 About to send X chunks" but no "📤 Sending chunk"
 **Cause:** Message too long, Discord permissions, or channel error
 **Debug:** Check chunk sizes and channel.send() permissions
@@ -84,13 +90,15 @@ DISCORD BOT POLLS JOB EVERY 3 SECONDS
 ## THE CURRENT EVIDENCE
 
 From our testing:
+
 - ✅ Jobs complete successfully (`"status": "completed"`)
-- ✅ Responses exist (`"response": "analysisWe need..."`) 
+- ✅ Responses exist (`"response": "analysisWe need..."`)
 - ✅ Discord shows "✅ Complete!" (statusMessage.edit works)
 - ❌ No debug logs from onComplete callback
 - ❌ No actual message delivery to Discord
 
 **HYPOTHESIS:** The issue is in **FAILURE POINT #2 or #3**
+
 - Either `status.response` is falsy when polled by Discord
 - Or `onComplete` callback was never properly passed to the polling function
 
@@ -100,7 +108,7 @@ From our testing:
 # Test if polling sees the right status
 curl -s "http://localhost:18239/chat/{recent-job-id}" | jq '{status, response: (.response | length)}'
 
-# Check Discord bot logs for polling debug messages  
+# Check Discord bot logs for polling debug messages
 docker logs coachartie2-discord-1 2>&1 | grep "🎯"
 
 # Test callback definition
@@ -112,7 +120,7 @@ grep -A5 -B5 "onComplete:" packages/discord/src/handlers/message-handler.ts
 The `onComplete` callback is **never being triggered** because:
 
 1. **Timing issue**: Discord polls before job is fully saved
-2. **Response field missing**: Job completes but response isn't stored properly  
+2. **Response field missing**: Job completes but response isn't stored properly
 3. **Callback not passed**: pollJobUntilComplete call missing onComplete parameter
 4. **Silent exception**: Error in polling kills the callback silently
 

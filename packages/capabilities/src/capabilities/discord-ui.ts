@@ -23,7 +23,7 @@ enum ApplicationCommandType {
 
 /**
  * Discord UI Capability - Generate interactive Discord components via XML
- * 
+ *
  * Allows the AI to create modals, buttons, select menus, and context menus
  * dynamically through XML capabilities.
  */
@@ -35,8 +35,8 @@ interface DiscordUIParams {
   name?: string;
   style?: string;
   placeholder?: string;
-  options?: Array<{label: string, value: string, description?: string}>;
-  buttons?: Array<{label: string, style?: string, customId?: string}>;
+  options?: Array<{ label: string; value: string; description?: string }>;
+  buttons?: Array<{ label: string; style?: string; customId?: string }>;
   inputs?: Array<{
     label: string;
     customId: string;
@@ -50,7 +50,7 @@ interface DiscordUIParams {
 
 const handler = async (params: DiscordUIParams, content?: string): Promise<string> => {
   const { action } = params;
-  
+
   try {
     // Parse configuration from content (JSON)
     let config: any = {};
@@ -72,35 +72,36 @@ const handler = async (params: DiscordUIParams, content?: string): Promise<strin
         logger.warn(`Failed to parse JSON content: ${content}`, e);
       }
     }
-    
+
     // Merge params and config
     const mergedParams = { ...params, ...config };
-    
+
     switch (action) {
       case 'modal':
         return await createModal(mergedParams, content);
-        
+
       case 'buttons':
         return await createButtons(mergedParams, content);
-        
+
       case 'select':
         return await createSelectMenu(mergedParams, content);
-        
+
       case 'context-menu':
         return await createContextMenu(mergedParams, content);
-        
+
       default:
         throw new Error(`Unsupported action: ${action}`);
     }
-    
   } catch (error) {
     logger.error('Discord UI capability error:', {
       action,
       error: error instanceof Error ? error.message : String(error),
       params,
-      content
+      content,
     });
-    throw new Error(`Failed to create Discord UI component: ${error instanceof Error ? error.message : String(error)}`);
+    throw new Error(
+      `Failed to create Discord UI component: ${error instanceof Error ? error.message : String(error)}`
+    );
   }
 };
 
@@ -110,7 +111,7 @@ async function createModal(params: DiscordUIParams, content?: string): Promise<s
 
   // Parse inputs from params or content
   const inputs = params.inputs || parseInputsFromContent(content);
-  
+
   if (!inputs || inputs.length === 0) {
     throw new Error('Modal requires at least one input field');
   }
@@ -119,7 +120,7 @@ async function createModal(params: DiscordUIParams, content?: string): Promise<s
   const modalJson = {
     custom_id: modalId,
     title: title,
-    components: [] as any[]
+    components: [] as any[],
   };
 
   // Add up to 5 input fields (Discord limit)
@@ -131,28 +132,36 @@ async function createModal(params: DiscordUIParams, content?: string): Promise<s
       label: input.label,
       style: input.style === 'paragraph' ? TextInputStyle.Paragraph : TextInputStyle.Short,
     };
-    
-    if (input.placeholder) {textInput.placeholder = input.placeholder;}
-    if (input.required !== undefined) {textInput.required = input.required;}
-    if (input.minLength) {textInput.min_length = input.minLength;}
-    if (input.maxLength) {textInput.max_length = input.maxLength;}
-    
+
+    if (input.placeholder) {
+      textInput.placeholder = input.placeholder;
+    }
+    if (input.required !== undefined) {
+      textInput.required = input.required;
+    }
+    if (input.minLength) {
+      textInput.min_length = input.minLength;
+    }
+    if (input.maxLength) {
+      textInput.max_length = input.maxLength;
+    }
+
     const actionRow = {
       type: 1, // ActionRow component type
-      components: [textInput]
+      components: [textInput],
     };
-    
+
     modalJson.components.push(actionRow);
   }
 
   logger.info('🎨 Generated Discord modal:', { modalId, title, inputCount: inputs.length });
-  
+
   // Return special response format that Discord consumer will recognize
   return `DISCORD_UI:MODAL:${JSON.stringify({
     modalId,
     modal: modalJson,
     title,
-    inputCount: inputs.length
+    inputCount: inputs.length,
   })}:Modal "${title}" with ${inputs.length} input fields created! Waiting for user interaction...`;
 }
 
@@ -163,15 +172,15 @@ async function createButtons(params: DiscordUIParams, content?: string): Promise
 
   const actionRows: any[] = [];
   const buttons = params.buttons.slice(0, 25); // Discord limit: 25 buttons total
-  
+
   // Discord allows max 5 buttons per row, max 5 rows
   for (let i = 0; i < buttons.length; i += 5) {
     const rowButtons = buttons.slice(i, i + 5);
     const actionRow = {
       type: 1, // ActionRow component type
-      components: [] as any[]
+      components: [] as any[],
     };
-    
+
     rowButtons.forEach((btn, index) => {
       const button = {
         type: 2, // Button component type
@@ -179,19 +188,22 @@ async function createButtons(params: DiscordUIParams, content?: string): Promise
         label: btn.label,
         style: getButtonStyle(btn.style),
       };
-      
+
       actionRow.components.push(button);
     });
-    
+
     actionRows.push(actionRow);
   }
 
-  logger.info('🔘 Generated Discord buttons:', { buttonCount: buttons.length, rows: actionRows.length });
-  
+  logger.info('🔘 Generated Discord buttons:', {
+    buttonCount: buttons.length,
+    rows: actionRows.length,
+  });
+
   return `DISCORD_UI:BUTTONS:${JSON.stringify({
     actionRows,
     buttonCount: buttons.length,
-    rows: actionRows.length
+    rows: actionRows.length,
   })}:Created ${buttons.length} interactive buttons! Click to interact.`;
 }
 
@@ -204,10 +216,10 @@ async function createSelectMenu(params: DiscordUIParams, content?: string): Prom
   const placeholder = params.placeholder || 'Choose an option...';
 
   // Add options (max 25)
-  const options = params.options.slice(0, 25).map(opt => ({
+  const options = params.options.slice(0, 25).map((opt) => ({
     label: opt.label,
     value: opt.value,
-    description: opt.description
+    description: opt.description,
   }));
 
   const selectMenu = {
@@ -216,23 +228,23 @@ async function createSelectMenu(params: DiscordUIParams, content?: string): Prom
     placeholder,
     min_values: 1,
     max_values: 1,
-    options
+    options,
   };
 
   const actionRow = {
     type: 1, // ActionRow component type
-    components: [selectMenu]
+    components: [selectMenu],
   };
 
-  logger.info('📋 Generated Discord select menu:', { 
-    customId, 
-    optionCount: options.length 
+  logger.info('📋 Generated Discord select menu:', {
+    customId,
+    optionCount: options.length,
   });
-  
+
   return `DISCORD_UI:SELECT:${JSON.stringify({
     actionRow,
     customId,
-    optionCount: options.length
+    optionCount: options.length,
   })}:Select menu with ${options.length} options created! Choose an option to continue.`;
 }
 
@@ -247,48 +259,57 @@ async function createContextMenu(params: DiscordUIParams, content?: string): Pro
   };
 
   logger.info('📝 Generated Discord context menu:', { name: params.name });
-  
+
   return `DISCORD_UI:CONTEXT_MENU:${JSON.stringify({
     command: contextMenu,
-    name: params.name
+    name: params.name,
   })}:Context menu "${params.name}" created! This will be available when right-clicking messages.`;
 }
 
 // Helper functions
 function parseInputsFromContent(content?: string): Array<any> {
-  if (!content) {return [];}
-  
+  if (!content) {
+    return [];
+  }
+
   // Simple parsing - could be enhanced with XML parsing
-  const lines = content.split('\n').filter(line => line.trim());
+  const lines = content.split('\n').filter((line) => line.trim());
   return lines.map((line, index) => ({
     label: line.trim(),
     customId: `field_${index}`,
     style: 'short',
-    required: true
+    required: true,
   }));
 }
 
 function getButtonStyle(style?: string): ButtonStyle {
   switch (style?.toLowerCase()) {
-    case 'primary': return ButtonStyle.Primary;
-    case 'secondary': return ButtonStyle.Secondary;
-    case 'success': return ButtonStyle.Success;
-    case 'danger': return ButtonStyle.Danger;
-    case 'link': return ButtonStyle.Link;
-    default: return ButtonStyle.Secondary;
+    case 'primary':
+      return ButtonStyle.Primary;
+    case 'secondary':
+      return ButtonStyle.Secondary;
+    case 'success':
+      return ButtonStyle.Success;
+    case 'danger':
+      return ButtonStyle.Danger;
+    case 'link':
+      return ButtonStyle.Link;
+    default:
+      return ButtonStyle.Secondary;
   }
 }
 
 export const discordUICapability: RegisteredCapability = {
   name: 'discord-ui',
   supportedActions: ['modal', 'buttons', 'select', 'context-menu'],
-  description: 'Create interactive Discord UI components (modals, buttons, select menus, context menus)',
+  description:
+    'Create interactive Discord UI components (modals, buttons, select menus, context menus)',
   requiredParams: [], // action is automatically injected by capability registry
   examples: [
     '<capability name="discord-ui" action="modal" data=\'{"title":"User Feedback","inputs":[{"label":"Name","required":true},{"label":"Email"},{"label":"Message","style":"paragraph"}]}\' />',
     '<capability name="discord-ui" action="buttons" data=\'[{"label":"Yes","style":"success"},{"label":"No","style":"danger"},{"label":"Maybe","style":"secondary"}]\' />',
     '<capability name="discord-ui" action="select" data=\'{"placeholder":"Choose one...","options":[{"label":"Option 1","value":"1"},{"label":"Option 2","value":"2"}]}\' />',
-    '<capability name="discord-ui" action="context-menu" data=\'{"name":"Analyze Message"}\' />'
+    '<capability name="discord-ui" action="context-menu" data=\'{"name":"Analyze Message"}\' />',
   ],
-  handler
+  handler,
 };

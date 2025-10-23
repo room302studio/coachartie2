@@ -21,7 +21,7 @@ export class CapabilityXMLParser {
       parseTagValue: false,
       parseAttributeValue: false,
       trimValues: true,
-      cdataPropName: false
+      cdataPropName: false,
     });
   }
 
@@ -30,19 +30,20 @@ export class CapabilityXMLParser {
    */
   extractCapabilities(text: string): ParsedCapability[] {
     const capabilities: ParsedCapability[] = [];
-    
+
     // Debug: Check global registry at start of parsing
     if (global.mcpToolRegistry && global.mcpToolRegistry.size > 0) {
     }
-    
+
     try {
       // UNIFIED EXTRACTION: Handle both attribute and content-based formats
       const unifiedCapabilities = this.extractUnifiedCapabilityTags(text);
       if (unifiedCapabilities.length > 0) {
-        logger.info(`🎯 UNIFIED XML: Found ${unifiedCapabilities.length} capability tags: ${JSON.stringify(unifiedCapabilities.map(c => `${c.name}:${c.action}`))}`);
+        logger.info(
+          `🎯 UNIFIED XML: Found ${unifiedCapabilities.length} capability tags: ${JSON.stringify(unifiedCapabilities.map((c) => `${c.name}:${c.action}`))}`
+        );
         capabilities.push(...unifiedCapabilities);
       }
-
     } catch (error) {
       logger.error('Failed to extract capabilities from text:', error);
     }
@@ -76,7 +77,7 @@ export class CapabilityXMLParser {
 
       // Extract all other attributes as params
       const params: Record<string, unknown> = {};
-      Object.keys(cap).forEach(key => {
+      Object.keys(cap).forEach((key) => {
         if (key.startsWith('@_') && key !== '@_name' && key !== '@_action') {
           const paramName = key.substring(2); // Remove "@_" prefix
           params[paramName] = cap[key];
@@ -106,15 +107,16 @@ export class CapabilityXMLParser {
         }
       }
 
-      logger.info(`🔍 XML PARSER: Final parsed capability: name="${name}" action="${action}" params=${JSON.stringify(params)} content="${content}"`);
+      logger.info(
+        `🔍 XML PARSER: Final parsed capability: name="${name}" action="${action}" params=${JSON.stringify(params)} content="${content}"`
+      );
 
       return {
         name,
         action,
         content,
-        params
+        params,
       };
-
     } catch (error) {
       logger.error(`Failed to parse capability XML: ${capabilityTag}`, error);
       return null;
@@ -127,13 +129,13 @@ export class CapabilityXMLParser {
    */
   private extractUnifiedCapabilityTags(text: string): ParsedCapability[] {
     const capabilities: ParsedCapability[] = [];
-    
+
     // Extract attribute-based format first
     capabilities.push(...this.extractAttributeCapabilities(text));
-    
+
     // Extract content-based format second
     capabilities.push(...this.extractContentCapabilities(text));
-    
+
     return capabilities;
   }
 
@@ -146,17 +148,17 @@ export class CapabilityXMLParser {
     // ONLY match self-closing tags: <capability name="X" action="Y" ...attributes />
     // Do NOT match opening tags like <capability ...> (those are handled by extractContentCapabilities)
     const unifiedPattern = /<capability\s+([^>]+)\s*\/>/g;
-    
+
     let match;
     while ((match = unifiedPattern.exec(text)) !== null) {
       const attributeString = match[1];
-      
+
       // Parse all attributes
       const attributes = this.parseAttributes(attributeString);
-      
+
       if (attributes.name && attributes.action) {
         const { name, action, ...params } = attributes;
-        
+
         // Convert specific content attributes to content field
         let content = '';
         if (params.content) {
@@ -184,29 +186,33 @@ export class CapabilityXMLParser {
               // Merge parsed JSON data into params
               Object.assign(params, parsedData);
               delete params.data;
-              logger.info(`✅ XML PARSER: Successfully parsed and merged data attribute: ${JSON.stringify(parsedData)}`);
+              logger.info(
+                `✅ XML PARSER: Successfully parsed and merged data attribute: ${JSON.stringify(parsedData)}`
+              );
               logger.info(`🔍 XML PARSER: Final params after merge: ${JSON.stringify(params)}`);
             }
           } catch (error) {
             // If JSON parsing fails, treat as content
             content = String(params.data);
             delete params.data;
-            logger.warn(`⚠️ XML PARSER: Failed to parse data attribute as JSON, using as content. Error: ${error instanceof Error ? error.message : String(error)}`);
+            logger.warn(
+              `⚠️ XML PARSER: Failed to parse data attribute as JSON, using as content. Error: ${error instanceof Error ? error.message : String(error)}`
+            );
           }
         }
-        
+
         capabilities.push({
           name,
           action,
           content: content.trim(),
-          params
+          params,
         });
       }
     }
-    
+
     return capabilities;
   }
-  
+
   /**
    * Parse XML attributes from attribute string
    */
@@ -262,13 +268,15 @@ export class CapabilityXMLParser {
       // Remove name and action from attributes since they're stored separately
       const { name: _, action: __, ...params } = attributes;
 
-      logger.info(`🎯 CONTENT EXTRACTION: Found ${name}:${action} with params: ${JSON.stringify(params)} and content: "${content}"`);
+      logger.info(
+        `🎯 CONTENT EXTRACTION: Found ${name}:${action} with params: ${JSON.stringify(params)} and content: "${content}"`
+      );
 
       capabilities.push({
         name,
         action,
         content,
-        params
+        params,
       });
     }
 
@@ -278,9 +286,15 @@ export class CapabilityXMLParser {
   /**
    * Map simple tag names to capability format - DELETED COMPLEX MAPPINGS
    */
-  private mapTagToCapability(tagName: string, params: Record<string, unknown>, content: string): ParsedCapability | null {
+  private mapTagToCapability(
+    tagName: string,
+    params: Record<string, unknown>,
+    content: string
+  ): ParsedCapability | null {
     // DELETED - let the registry handle everything
-    logger.warn(`Simple tag format not supported: ${tagName}. Use: <capability name="..." action="..." />`);
+    logger.warn(
+      `Simple tag format not supported: ${tagName}. Use: <capability name="..." action="..." />`
+    );
     return null;
   }
 
@@ -289,12 +303,12 @@ export class CapabilityXMLParser {
    */
   private extractCapabilityTagsWithXMLParser(text: string): string[] {
     const matches: string[] = [];
-    
+
     try {
       // Try to parse the entire text as XML wrapped in a root element
       const wrappedText = `<root>${text}</root>`;
       const parsed = this.xmlParser.parse(wrappedText);
-      
+
       if (parsed.root) {
         // Look for capability elements recursively
         this.findCapabilityElementsRecursive(parsed.root, text, matches);
@@ -302,7 +316,7 @@ export class CapabilityXMLParser {
     } catch (error) {
       // If XML parsing fails, we don't extract anything rather than falling back to regex
     }
-    
+
     return matches;
   }
 
@@ -310,8 +324,10 @@ export class CapabilityXMLParser {
    * Recursively find capability elements in parsed XML
    */
   private findCapabilityElementsRecursive(obj: any, originalText: string, matches: string[]): void {
-    if (typeof obj !== 'object' || obj === null) {return;}
-    
+    if (typeof obj !== 'object' || obj === null) {
+      return;
+    }
+
     // Check if this object represents a capability element
     if (obj.capability !== undefined) {
       // Extract the original XML string for this capability
@@ -320,7 +336,7 @@ export class CapabilityXMLParser {
         matches.push(capabilityXML);
       }
     }
-    
+
     // Recursively search all properties
     for (const key in obj) {
       if (obj.hasOwnProperty(key) && key !== 'capability') {
@@ -337,11 +353,11 @@ export class CapabilityXMLParser {
       if (typeof capabilityData === 'string') {
         return `<capability>${capabilityData}</capability>`;
       }
-      
+
       if (typeof capabilityData === 'object') {
         let attributes = '';
         let content = '';
-        
+
         // Extract attributes (prefixed with @_)
         for (const key in capabilityData) {
           if (key.startsWith('@_')) {
@@ -351,16 +367,15 @@ export class CapabilityXMLParser {
             content = capabilityData[key];
           }
         }
-        
+
         if (content) {
           return `<capability${attributes}>${content}</capability>`;
         } else {
           return `<capability${attributes} />`;
         }
       }
-    } catch (error) {
-    }
-    
+    } catch (error) {}
+
     return null;
   }
 
@@ -375,24 +390,26 @@ export class CapabilityXMLParser {
    * Recursively find simple capability tags in parsed XML
    */
   private findSimpleCapabilityTagsRecursive(obj: any, capabilities: ParsedCapability[]): void {
-    if (typeof obj !== 'object' || obj === null) {return;}
-    
+    if (typeof obj !== 'object' || obj === null) {
+      return;
+    }
+
     // Check each property to see if it represents a simple capability tag
     for (const key in obj) {
       if (obj.hasOwnProperty(key)) {
         const value = obj[key];
-        
+
         // Skip special XML parser properties
         if (key.startsWith('@_') || key === '#text') {
           continue;
         }
-        
+
         // Check if this could be a simple capability tag
         if (this.isSimpleCapabilityTag(key)) {
           // Extract attributes and content from the parsed object
           const params: Record<string, unknown> = {};
           let content = '';
-          
+
           if (typeof value === 'string') {
             content = value;
           } else if (typeof value === 'object' && value !== null) {
@@ -406,14 +423,14 @@ export class CapabilityXMLParser {
               }
             }
           }
-          
+
           // Map to capability
           const capability = this.mapTagToCapability(key, params, content.trim());
           if (capability) {
             capabilities.push(capability);
           }
         }
-        
+
         // Recursively search nested objects
         if (typeof value === 'object' && value !== null) {
           this.findSimpleCapabilityTagsRecursive(value, capabilities);

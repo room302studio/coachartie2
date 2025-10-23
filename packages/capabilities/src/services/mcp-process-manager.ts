@@ -37,63 +37,71 @@ export class MCPProcessManager extends EventEmitter {
   /**
    * Parse stdio:// URL into command and args
    */
-  private parseStdioUrl(url: string): { command: string; args: string[]; transport: 'stdio' | 'docker' } {
+  private parseStdioUrl(url: string): {
+    command: string;
+    args: string[];
+    transport: 'stdio' | 'docker';
+  } {
     // Remove stdio:// prefix
     const cleanUrl = url.replace(/^stdio:\/\//, '');
-    
+
     // Check for Docker patterns
     if (cleanUrl.startsWith('docker/') || cleanUrl.includes('docker run')) {
       return this.parseDockerCommand(cleanUrl);
     }
-    
+
     // Handle npm packages: stdio://npm/@package/name
     if (cleanUrl.startsWith('npm/')) {
       const packageName = cleanUrl.replace('npm/', '');
       return {
         command: 'npx',
         args: [packageName],
-        transport: 'stdio'
+        transport: 'stdio',
       };
     }
-    
+
     // Handle GitHub URLs: stdio://github/user/repo/path
     if (cleanUrl.startsWith('github/')) {
       throw new Error('GitHub MCP servers not yet supported - install locally first');
     }
-    
+
     // Handle direct commands: stdio://node server.js
     const parts = cleanUrl.split(' ');
     return {
       command: parts[0],
       args: parts.slice(1),
-      transport: 'stdio'
+      transport: 'stdio',
     };
   }
 
   /**
    * Parse Docker command
    */
-  private parseDockerCommand(url: string): { command: string; args: string[]; transport: 'docker' } {
+  private parseDockerCommand(url: string): {
+    command: string;
+    args: string[];
+    transport: 'docker';
+  } {
     // Handle docker/ prefix: docker/mcp/wikipedia
     if (url.startsWith('docker/')) {
       const imageName = url.replace('docker/', '');
       return {
         command: 'docker',
         args: ['run', '-i', '--rm', '--init', imageName],
-        transport: 'docker'
+        transport: 'docker',
       };
     }
-    
+
     // Handle full docker commands
     if (url.includes('docker run')) {
       const parts = url.split(' ');
       return {
         command: 'docker',
         args: parts.slice(1),
-        transport: 'docker'
+        transport: 'docker',
       };
     }
-    
+
     throw new Error(`Invalid docker URL format: ${url}`);
   }
 
@@ -104,7 +112,7 @@ export class MCPProcessManager extends EventEmitter {
     try {
       const { command, args, transport } = this.parseStdioUrl(url);
       const processId = this.generateProcessId(url);
-      
+
       // Check if process already exists
       if (this.processes.has(processId)) {
         const existing = this.processes.get(processId)!;
@@ -120,7 +128,7 @@ export class MCPProcessManager extends EventEmitter {
         transport,
         status: 'starting',
         restartCount: 0,
-        maxRestarts
+        maxRestarts,
       };
 
       this.processes.set(processId, mcpProcess);
@@ -131,8 +139,8 @@ export class MCPProcessManager extends EventEmitter {
         stdio: ['pipe', 'pipe', 'pipe'],
         env: {
           ...process.env,
-          DOCKER_CONTAINER: transport === 'docker' ? 'true' : undefined
-        }
+          DOCKER_CONTAINER: transport === 'docker' ? 'true' : undefined,
+        },
       });
 
       mcpProcess.process = childProcess;
@@ -142,7 +150,7 @@ export class MCPProcessManager extends EventEmitter {
       this.setupProcessHandlers(mcpProcess);
 
       // Check immediately if process failed (no need to wait)
-      await new Promise(resolve => setTimeout(resolve, 100));
+      await new Promise((resolve) => setTimeout(resolve, 100));
 
       // For MCP processes, we expect them to stay running (exitCode should be null)
       // Only fail if the process was killed or exited with an error immediately
@@ -153,15 +161,14 @@ export class MCPProcessManager extends EventEmitter {
       }
 
       mcpProcess.status = 'running';
-      
+
       // Start health checking
       this.startHealthCheck(mcpProcess);
-      
+
       this.emit('processStarted', mcpProcess);
       logger.info(`MCP process started successfully: ${processId}`);
-      
-      return processId;
 
+      return processId;
     } catch (error) {
       logger.error(`Failed to start MCP process for ${url}:`, error);
       throw error;
@@ -178,7 +185,7 @@ export class MCPProcessManager extends EventEmitter {
     }
 
     logger.info(`Stopping MCP process: ${processId}`);
-    
+
     // Clear health check
     if (mcpProcess.healthCheckInterval) {
       clearInterval(mcpProcess.healthCheckInterval);
@@ -187,7 +194,7 @@ export class MCPProcessManager extends EventEmitter {
     // Kill the process
     if (mcpProcess.process && !mcpProcess.process.killed) {
       mcpProcess.process.kill('SIGTERM');
-      
+
       // Force kill after 5 seconds
       setTimeout(() => {
         if (mcpProcess.process && !mcpProcess.process.killed) {
@@ -210,17 +217,19 @@ export class MCPProcessManager extends EventEmitter {
     }
 
     if (mcpProcess.restartCount >= mcpProcess.maxRestarts) {
-      throw new Error(`Process ${processId} has exceeded maximum restarts (${mcpProcess.maxRestarts})`);
+      throw new Error(
+        `Process ${processId} has exceeded maximum restarts (${mcpProcess.maxRestarts})`
+      );
     }
 
     logger.info(`Restarting MCP process: ${processId} (attempt ${mcpProcess.restartCount + 1})`);
-    
+
     // Stop current process
     await this.stopProcess(processId);
-    
+
     // Wait a moment
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+
     // Restart with same configuration
     mcpProcess.restartCount++;
     const url = `stdio://${mcpProcess.command} ${mcpProcess.args.join(' ')}`;
@@ -231,18 +240,20 @@ export class MCPProcessManager extends EventEmitter {
    * Set up process event handlers
    */
   private setupProcessHandlers(mcpProcess: MCPProcess): void {
-    if (!mcpProcess.process) {return;}
+    if (!mcpProcess.process) {
+      return;
+    }
 
     mcpProcess.process.on('error', (error) => {
       logger.error(`MCP process error (${mcpProcess.id}):`, error);
       mcpProcess.error = error.message;
       mcpProcess.status = 'failed';
       this.emit('processError', mcpProcess, error);
-      
+
       // Auto-restart if under limit
       if (mcpProcess.restartCount < mcpProcess.maxRestarts) {
         setTimeout(() => {
-          this.restartProcess(mcpProcess.id).catch(err => {
+          this.restartProcess(mcpProcess.id).catch((err) => {
             logger.error(`Failed to auto-restart process ${mcpProcess.id}:`, err);
           });
         }, 5000);
@@ -253,18 +264,18 @@ export class MCPProcessManager extends EventEmitter {
       logger.info(`MCP process exited (${mcpProcess.id}): code=${code}, signal=${signal}`);
       mcpProcess.status = code === 0 ? 'stopped' : 'failed';
       mcpProcess.error = code !== 0 ? `Process exited with code ${code}` : undefined;
-      
+
       // Clear health check
       if (mcpProcess.healthCheckInterval) {
         clearInterval(mcpProcess.healthCheckInterval);
       }
-      
+
       this.emit('processExited', mcpProcess, code, signal);
-      
+
       // Auto-restart on unexpected exit
       if (code !== 0 && mcpProcess.restartCount < mcpProcess.maxRestarts) {
         setTimeout(() => {
-          this.restartProcess(mcpProcess.id).catch(err => {
+          this.restartProcess(mcpProcess.id).catch((err) => {
             logger.error(`Failed to auto-restart process ${mcpProcess.id}:`, err);
           });
         }, 5000);
@@ -314,7 +325,7 @@ export class MCPProcessManager extends EventEmitter {
    * Get running processes
    */
   getRunningProcesses(): MCPProcess[] {
-    return Array.from(this.processes.values()).filter(p => p.status === 'running');
+    return Array.from(this.processes.values()).filter((p) => p.status === 'running');
   }
 
   /**
@@ -341,13 +352,11 @@ export class MCPProcessManager extends EventEmitter {
    */
   async cleanup(): Promise<void> {
     logger.info('Cleaning up all MCP processes...');
-    
-    const stopPromises = Array.from(this.processes.keys()).map(id => 
-      this.stopProcess(id).catch(err => 
-        logger.error(`Failed to stop process ${id}:`, err)
-      )
+
+    const stopPromises = Array.from(this.processes.keys()).map((id) =>
+      this.stopProcess(id).catch((err) => logger.error(`Failed to stop process ${id}:`, err))
     );
-    
+
     await Promise.all(stopPromises);
     this.processes.clear();
   }

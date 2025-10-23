@@ -17,7 +17,7 @@ export class PathResolver {
   private constructor() {
     // Detect if we're running in Docker
     this.isDocker = this.detectDockerEnvironment();
-    
+
     // Set appropriate data directory
     if (this.isDocker) {
       this.dataDir = '/app/data';
@@ -28,8 +28,10 @@ export class PathResolver {
 
     // Ensure data directory exists
     this.ensureDataDirectory();
-    
-    logger.info(`📁 Path resolver initialized: ${this.isDocker ? 'Docker' : 'Local'} mode, data dir: ${this.dataDir}`);
+
+    logger.info(
+      `📁 Path resolver initialized: ${this.isDocker ? 'Docker' : 'Local'} mode, data dir: ${this.dataDir}`
+    );
   }
 
   public static getInstance(): PathResolver {
@@ -52,15 +54,15 @@ export class PathResolver {
       // Current working directory is /app (common Docker pattern)
       process.cwd() === '/app',
       // Check if we're in a path that looks like Docker
-      __dirname.startsWith('/app/')
+      __dirname.startsWith('/app/'),
     ];
 
-    const isDocker = indicators.some(indicator => indicator);
-    logger.debug(`🔍 Docker detection: ${isDocker ? 'Docker' : 'Local'}`, { 
+    const isDocker = indicators.some((indicator) => indicator);
+    logger.debug(`🔍 Docker detection: ${isDocker ? 'Docker' : 'Local'}`, {
       dockerenv: existsSync('/.dockerenv'),
       dockerContainer: !!process.env.DOCKER_CONTAINER,
       cwd: process.cwd(),
-      dirname: __dirname
+      dirname: __dirname,
     });
 
     return isDocker;

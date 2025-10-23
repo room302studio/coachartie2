@@ -47,10 +47,10 @@ interface PrivacySettings {
 
 /**
  * Passive Memory Listening System
- * 
+ *
  * Captures and stores memories from ambient conversations to build
  * contextual awareness without requiring direct interaction.
- * 
+ *
  * Phase 1: Basic message capture with simple entity extraction
  */
 export class PassiveListener {
@@ -66,11 +66,13 @@ export class PassiveListener {
   }
 
   async initializeDatabase(): Promise<void> {
-    if (this.dbReady) {return;}
+    if (this.dbReady) {
+      return;
+    }
 
     try {
       const db = await getDatabase();
-      
+
       // Create passive memories table
       await db.exec(`
         CREATE TABLE IF NOT EXISTS passive_memories (
@@ -136,9 +138,13 @@ export class PassiveListener {
       // Only store if it meets our relevance threshold
       if (extractedInfo.importance >= this.relevanceThreshold) {
         await this.storePassiveMemory(extractedInfo);
-        logger.info(`👂 Passive memory stored: "${extractedInfo.content}" (importance: ${extractedInfo.importance})`);
+        logger.info(
+          `👂 Passive memory stored: "${extractedInfo.content}" (importance: ${extractedInfo.importance})`
+        );
       } else {
-        logger.debug(`👂 Message below relevance threshold: ${extractedInfo.importance}/${this.relevanceThreshold}`);
+        logger.debug(
+          `👂 Message below relevance threshold: ${extractedInfo.importance}/${this.relevanceThreshold}`
+        );
       }
     } catch (error) {
       logger.error('❌ Failed to process ambient message:', error);
@@ -151,11 +157,14 @@ export class PassiveListener {
   private async shouldProcessMessage(message: IncomingMessage): Promise<boolean> {
     try {
       const db = await getDatabase();
-      
+
       // Get user's privacy settings
-      const consent = await db.get(`
+      const consent = await db.get(
+        `
         SELECT * FROM passive_listening_consent WHERE user_id = ?
-      `, [message.userId]);
+      `,
+        [message.userId]
+      );
 
       // Default to no processing if no explicit consent
       if (!consent || !consent.enable_passive_listening) {
@@ -163,8 +172,10 @@ export class PassiveListener {
       }
 
       // Don't process direct messages to the bot (those are handled by main orchestrator)
-      if (message.message.toLowerCase().includes('@coachartie') || 
-          message.message.toLowerCase().includes('coach artie')) {
+      if (
+        message.message.toLowerCase().includes('@coachartie') ||
+        message.message.toLowerCase().includes('coach artie')
+      ) {
         return false;
       }
 
@@ -185,19 +196,19 @@ export class PassiveListener {
    */
   private async extractInformation(message: IncomingMessage): Promise<ExtractedInformation> {
     const text = message.message;
-    
+
     // Simple entity extraction (Phase 1 - basic implementation)
     const entities = this.extractSimpleEntities(text);
-    
+
     // Calculate importance based on content patterns
     const importance = this.calculateImportance(text, entities);
-    
+
     // Categorize the content
     const categories = this.categorizeContent(text, entities);
-    
+
     // Simple sentiment analysis
     const sentiment = this.analyzeSentiment(text);
-    
+
     // Extract the core content
     const content = this.extractCoreContent(text, entities);
 
@@ -211,8 +222,8 @@ export class PassiveListener {
         messageId: message.id,
         userId: message.userId,
         channel: message.source,
-        timestamp: new Date()
-      }
+        timestamp: new Date(),
+      },
     };
   }
 
@@ -227,17 +238,17 @@ export class PassiveListener {
     const timePatterns = [
       /(\d{1,2}:\d{2}\s*(am|pm|AM|PM))/g,
       /(\d{1,2}\s*(am|pm|AM|PM))/g,
-      /(at\s+\d{1,2})/g
+      /(at\s+\d{1,2})/g,
     ];
 
-    timePatterns.forEach(pattern => {
+    timePatterns.forEach((pattern) => {
       const matches = text.match(pattern);
       if (matches) {
-        matches.forEach(match => {
+        matches.forEach((match) => {
           entities.push({
             text: match.trim(),
             type: 'time',
-            confidence: 0.8
+            confidence: 0.8,
           });
         });
       }
@@ -248,17 +259,17 @@ export class PassiveListener {
       /(today|tomorrow|yesterday)/gi,
       /(monday|tuesday|wednesday|thursday|friday|saturday|sunday)/gi,
       /(next\s+week|this\s+week|last\s+week)/gi,
-      /(\d{1,2}\/\d{1,2}\/\d{2,4})/g
+      /(\d{1,2}\/\d{1,2}\/\d{2,4})/g,
     ];
 
-    datePatterns.forEach(pattern => {
+    datePatterns.forEach((pattern) => {
       const matches = text.match(pattern);
       if (matches) {
-        matches.forEach(match => {
+        matches.forEach((match) => {
           entities.push({
             text: match.trim(),
             type: 'date',
-            confidence: 0.8
+            confidence: 0.8,
           });
         });
       }
@@ -267,17 +278,17 @@ export class PassiveListener {
     // Event/meeting patterns
     const eventPatterns = [
       /(meeting|call|conference|demo|presentation|standup|sprint|review)/gi,
-      /(deadline|due\s+date|milestone)/gi
+      /(deadline|due\s+date|milestone)/gi,
     ];
 
-    eventPatterns.forEach(pattern => {
+    eventPatterns.forEach((pattern) => {
       const matches = text.match(pattern);
       if (matches) {
-        matches.forEach(match => {
+        matches.forEach((match) => {
           entities.push({
             text: match.trim(),
             type: 'event',
-            confidence: 0.7
+            confidence: 0.7,
           });
         });
       }
@@ -295,20 +306,34 @@ export class PassiveListener {
     const lowerText = text.toLowerCase();
 
     // High importance indicators
-    if (lowerText.includes('deadline') || lowerText.includes('urgent')) {score += 3;}
-    if (lowerText.includes('meeting') || lowerText.includes('call')) {score += 2;}
-    if (lowerText.includes('canceled') || lowerText.includes('postponed')) {score += 2;}
-    if (lowerText.includes('important') || lowerText.includes('critical')) {score += 2;}
-    
+    if (lowerText.includes('deadline') || lowerText.includes('urgent')) {
+      score += 3;
+    }
+    if (lowerText.includes('meeting') || lowerText.includes('call')) {
+      score += 2;
+    }
+    if (lowerText.includes('canceled') || lowerText.includes('postponed')) {
+      score += 2;
+    }
+    if (lowerText.includes('important') || lowerText.includes('critical')) {
+      score += 2;
+    }
+
     // Time-based urgency
-    if (lowerText.includes('today') || lowerText.includes('now')) {score += 2;}
-    if (lowerText.includes('tomorrow')) {score += 1;}
-    
+    if (lowerText.includes('today') || lowerText.includes('now')) {
+      score += 2;
+    }
+    if (lowerText.includes('tomorrow')) {
+      score += 1;
+    }
+
     // Entity count bonus
     score += Math.min(entities.length, 3); // Up to 3 bonus points for entities
 
     // Question indicators (less important for passive capture)
-    if (text.includes('?')) {score -= 1;}
+    if (text.includes('?')) {
+      score -= 1;
+    }
 
     return Math.max(1, Math.min(10, score));
   }
@@ -320,19 +345,31 @@ export class PassiveListener {
     const categories: string[] = [];
     const lowerText = text.toLowerCase();
 
-    if (lowerText.includes('meeting') || lowerText.includes('call') || lowerText.includes('standup')) {
+    if (
+      lowerText.includes('meeting') ||
+      lowerText.includes('call') ||
+      lowerText.includes('standup')
+    ) {
       categories.push('meeting');
     }
-    
-    if (lowerText.includes('deadline') || lowerText.includes('due') || lowerText.includes('milestone')) {
+
+    if (
+      lowerText.includes('deadline') ||
+      lowerText.includes('due') ||
+      lowerText.includes('milestone')
+    ) {
       categories.push('deadline');
     }
-    
+
     if (lowerText.includes('project') || lowerText.includes('task') || lowerText.includes('work')) {
       categories.push('work');
     }
-    
-    if (lowerText.includes('canceled') || lowerText.includes('postponed') || lowerText.includes('moved')) {
+
+    if (
+      lowerText.includes('canceled') ||
+      lowerText.includes('postponed') ||
+      lowerText.includes('moved')
+    ) {
       categories.push('schedule_change');
     }
 
@@ -349,15 +386,27 @@ export class PassiveListener {
    */
   private analyzeSentiment(text: string): 'positive' | 'negative' | 'neutral' {
     const lowerText = text.toLowerCase();
-    
+
     const positiveWords = ['great', 'good', 'awesome', 'excellent', 'perfect', 'love', 'amazing'];
-    const negativeWords = ['problem', 'issue', 'concern', 'worried', 'difficult', 'hate', 'terrible'];
-    
-    const positiveCount = positiveWords.filter(word => lowerText.includes(word)).length;
-    const negativeCount = negativeWords.filter(word => lowerText.includes(word)).length;
-    
-    if (positiveCount > negativeCount) {return 'positive';}
-    if (negativeCount > positiveCount) {return 'negative';}
+    const negativeWords = [
+      'problem',
+      'issue',
+      'concern',
+      'worried',
+      'difficult',
+      'hate',
+      'terrible',
+    ];
+
+    const positiveCount = positiveWords.filter((word) => lowerText.includes(word)).length;
+    const negativeCount = negativeWords.filter((word) => lowerText.includes(word)).length;
+
+    if (positiveCount > negativeCount) {
+      return 'positive';
+    }
+    if (negativeCount > positiveCount) {
+      return 'negative';
+    }
     return 'neutral';
   }
 
@@ -367,15 +416,15 @@ export class PassiveListener {
   private extractCoreContent(text: string, entities: ExtractedEntity[]): string {
     // For Phase 1, just clean up the text slightly
     let content = text.trim();
-    
+
     // Remove common noise words at the start
     content = content.replace(/^(well,|so,|anyway,|btw,|oh,)\s*/i, '');
-    
+
     // Truncate if too long
     if (content.length > 200) {
       content = content.substring(0, 200) + '...';
     }
-    
+
     return content;
   }
 
@@ -385,27 +434,30 @@ export class PassiveListener {
   private async storePassiveMemory(info: ExtractedInformation): Promise<void> {
     try {
       const db = await getDatabase();
-      
+
       const id = `passive_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
       const expiresAt = new Date();
       expiresAt.setDate(expiresAt.getDate() + 30); // 30-day default retention
 
-      await db.run(`
+      await db.run(
+        `
         INSERT INTO passive_memories 
         (id, content, original_message, speaker, channel, entities, importance, categories, sentiment, expires_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `, [
-        id,
-        info.content,
-        info.source.messageId,
-        info.source.userId,
-        info.source.channel,
-        JSON.stringify(info.entities),
-        info.importance,
-        JSON.stringify(info.categories),
-        info.sentiment,
-        expiresAt.toISOString()
-      ]);
+      `,
+        [
+          id,
+          info.content,
+          info.source.messageId,
+          info.source.userId,
+          info.source.channel,
+          JSON.stringify(info.entities),
+          info.importance,
+          JSON.stringify(info.categories),
+          info.sentiment,
+          expiresAt.toISOString(),
+        ]
+      );
 
       logger.debug(`Stored passive memory: ${id}`);
     } catch (error) {
@@ -422,20 +474,25 @@ export class PassiveListener {
       await this.initializeDatabase();
       const db = await getDatabase();
 
-      await db.run(`
+      await db.run(
+        `
         INSERT OR REPLACE INTO passive_listening_consent 
         (user_id, consent_given, consent_date, data_retention_days, anonymize_personal, enable_passive_listening)
         VALUES (?, ?, ?, ?, ?, ?)
-      `, [
-        userId,
-        settings.enablePassiveListening ? 1 : 0,
-        new Date().toISOString(),
-        settings.dataRetentionDays || 30,
-        settings.anonymizePersonalInfo ? 1 : 0,
-        settings.enablePassiveListening ? 1 : 0
-      ]);
+      `,
+        [
+          userId,
+          settings.enablePassiveListening ? 1 : 0,
+          new Date().toISOString(),
+          settings.dataRetentionDays || 30,
+          settings.anonymizePersonalInfo ? 1 : 0,
+          settings.enablePassiveListening ? 1 : 0,
+        ]
+      );
 
-      logger.info(`Updated passive listening consent for user ${userId}: ${settings.enablePassiveListening ? 'enabled' : 'disabled'}`);
+      logger.info(
+        `Updated passive listening consent for user ${userId}: ${settings.enablePassiveListening ? 'enabled' : 'disabled'}`
+      );
     } catch (error) {
       logger.error('Failed to set user consent:', error);
       throw error;
@@ -450,12 +507,15 @@ export class PassiveListener {
       await this.initializeDatabase();
       const db = await getDatabase();
 
-      const memories = await db.all(`
+      const memories = await db.all(
+        `
         SELECT * FROM passive_memories 
         WHERE speaker = ?
         ORDER BY importance DESC, created_at DESC
         LIMIT ?
-      `, [userId, limit]);
+      `,
+        [userId, limit]
+      );
 
       return memories;
     } catch (error) {

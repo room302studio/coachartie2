@@ -8,13 +8,11 @@ import logger from '../logger.js';
 export const helpCommand = new SlashCommandBuilder()
   .setName('help')
   .setDescription('Get help with Coach Artie')
-  .addSubcommand(subcommand =>
+  .addSubcommand((subcommand) =>
     subcommand.setName('commands').setDescription('List all available commands')
   )
-  .addSubcommand(subcommand =>
-    subcommand
-      .setName('quick-start')
-      .setDescription('Quick start guide for new users')
+  .addSubcommand((subcommand) =>
+    subcommand.setName('quick-start').setDescription('Quick start guide for new users')
   );
 
 /**
@@ -23,19 +21,17 @@ export const helpCommand = new SlashCommandBuilder()
 export const threadCommands = new SlashCommandBuilder()
   .setName('thread')
   .setDescription('Thread management commands')
-  .addSubcommand(subcommand =>
+  .addSubcommand((subcommand) =>
     subcommand
       .setName('summarize')
       .setDescription('Generate a summary of this thread')
-      .addBooleanOption(option =>
+      .addBooleanOption((option) =>
         option
           .setName('rename')
           .setDescription('Automatically rename thread with summary')
           .setRequired(false)
       )
   )
-  .addSubcommand(subcommand =>
-    subcommand
-      .setName('archive')
-      .setDescription('Archive this thread with an AI-generated summary')
+  .addSubcommand((subcommand) =>
+    subcommand.setName('archive').setDescription('Archive this thread with an AI-generated summary')
   );

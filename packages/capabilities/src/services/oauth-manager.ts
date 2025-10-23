@@ -22,7 +22,7 @@ export class OAuthManager {
 
   constructor() {
     this.dbPromise = getDatabase();
-    this.dbPromise.then(db => {
+    this.dbPromise.then((db) => {
       this.db = db;
       logger.info('🔐 OAuth Manager initialized');
     });
@@ -97,7 +97,7 @@ export class OAuthManager {
         refreshToken: row.refresh_token,
         expiresAt: row.expires_at ? new Date(row.expires_at) : undefined,
         scopes: row.scopes ? JSON.parse(row.scopes) : undefined,
-        metadata: row.metadata ? JSON.parse(row.metadata) : undefined
+        metadata: row.metadata ? JSON.parse(row.metadata) : undefined,
       };
     } catch (error) {
       logger.error('❌ Failed to retrieve OAuth tokens:', error);
@@ -109,7 +109,9 @@ export class OAuthManager {
    * Check if token is expired
    */
   isTokenExpired(token: OAuthToken): boolean {
-    if (!token.expiresAt) return false;
+    if (!token.expiresAt) {
+      return false;
+    }
     return new Date() >= new Date(token.expiresAt);
   }
 
@@ -144,7 +146,7 @@ export class OAuthManager {
       `);
 
       const rows = stmt.all(userId) as any[];
-      return rows.map(row => row.provider);
+      return rows.map((row) => row.provider);
     } catch (error) {
       logger.error('❌ Failed to get user providers:', error);
       return [];

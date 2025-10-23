@@ -8,11 +8,11 @@ export const emailRouter: ExpressRouter = Router();
 emailRouter.post('/webhook', async (req, res) => {
   try {
     logger.info('Received email webhook');
-    
+
     // The webhook format depends on your email provider
     // This is a generic implementation that can be adapted
     const { from, to, subject, text, html } = req.body;
-    
+
     if (!from || !text) {
       logger.warn('Invalid email webhook data received:', req.body);
       return res.status(400).json({ error: 'Missing required fields' });
@@ -24,11 +24,10 @@ emailRouter.post('/webhook', async (req, res) => {
       to,
       subject: subject || 'No Subject',
       text,
-      html
+      html,
     });
 
     res.status(200).json({ status: 'processed' });
-    
   } catch (error) {
     logger.error('Error handling email webhook:', error);
     res.status(500).json({ error: 'Internal server error' });
@@ -40,7 +39,7 @@ emailRouter.post('/inbound', async (req, res) => {
   try {
     // Simple format for testing or custom implementations
     const { from, subject, body } = req.body;
-    
+
     if (!from || !body) {
       return res.status(400).json({ error: 'Missing from or body' });
     }
@@ -50,7 +49,7 @@ emailRouter.post('/inbound', async (req, res) => {
       to: process.env.EMAIL_FROM || 'coach@example.com',
       subject: subject || 'Message to Coach Artie',
       text: body,
-      html: null
+      html: null,
     });
 
     res.status(200).json({ status: 'processed' });
@@ -65,6 +64,6 @@ emailRouter.get('/status', (req, res) => {
   res.json({
     service: 'email',
     status: 'operational',
-    timestamp: new Date().toISOString()
+    timestamp: new Date().toISOString(),
   });
 });

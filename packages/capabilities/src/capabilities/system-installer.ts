@@ -20,7 +20,6 @@ interface InstallationResult {
  * System Installer capability - installs system packages and dependencies
  */
 class SystemInstaller {
-  
   /**
    * Detect the package manager available on the system
    */
@@ -32,7 +31,7 @@ class SystemInstaller {
       { name: 'dnf', check: 'which dnf' },
       { name: 'pacman', check: 'which pacman' },
       { name: 'winget', check: 'which winget' },
-      { name: 'choco', check: 'which choco' }
+      { name: 'choco', check: 'which choco' },
     ];
 
     for (const manager of managers) {
@@ -58,7 +57,7 @@ class SystemInstaller {
         yum: 'yum install -y google-chrome-stable',
         dnf: 'dnf install -y google-chrome-stable',
         winget: 'winget install Google.Chrome',
-        choco: 'choco install googlechrome'
+        choco: 'choco install googlechrome',
       },
       git: {
         brew: 'brew install git',
@@ -67,7 +66,7 @@ class SystemInstaller {
         dnf: 'dnf install -y git',
         pacman: 'pacman -S git',
         winget: 'winget install Git.Git',
-        choco: 'choco install git'
+        choco: 'choco install git',
       },
       docker: {
         brew: 'brew install --cask docker',
@@ -75,7 +74,7 @@ class SystemInstaller {
         yum: 'yum install -y docker',
         dnf: 'dnf install -y docker',
         winget: 'winget install Docker.DockerDesktop',
-        choco: 'choco install docker-desktop'
+        choco: 'choco install docker-desktop',
       },
       nodejs: {
         brew: 'brew install node',
@@ -83,8 +82,8 @@ class SystemInstaller {
         yum: 'yum install -y nodejs npm',
         dnf: 'dnf install -y nodejs npm',
         winget: 'winget install OpenJS.NodeJS',
-        choco: 'choco install nodejs'
-      }
+        choco: 'choco install nodejs',
+      },
     };
 
     return commands[packageName]?.[packageManager] || '';
@@ -98,11 +97,13 @@ class SystemInstaller {
       chrome: 'which google-chrome || which chromium || which chrome',
       git: 'which git',
       docker: 'which docker',
-      nodejs: 'which node'
+      nodejs: 'which node',
     };
 
     const command = checkCommands[packageName];
-    if (!command) {return false;}
+    if (!command) {
+      return false;
+    }
 
     try {
       await execAsync(command);
@@ -119,12 +120,12 @@ class SystemInstaller {
     logger.info(`Installing system package: ${packageName}`);
 
     // Check if already installed
-    if (!force && await this.checkPackage(packageName)) {
+    if (!force && (await this.checkPackage(packageName))) {
       return {
         success: true,
         package: packageName,
         method: 'already_installed',
-        output: `${packageName} is already installed`
+        output: `${packageName} is already installed`,
       };
     }
 
@@ -135,7 +136,7 @@ class SystemInstaller {
         success: false,
         package: packageName,
         method: 'none',
-        error: 'No supported package manager found'
+        error: 'No supported package manager found',
       };
     }
 
@@ -146,7 +147,7 @@ class SystemInstaller {
         success: false,
         package: packageName,
         method: packageManager,
-        error: `No installation method for ${packageName} using ${packageManager}`
+        error: `No installation method for ${packageName} using ${packageManager}`,
       };
     }
 
@@ -156,22 +157,21 @@ class SystemInstaller {
 
       // Verify installation
       const isInstalled = await this.checkPackage(packageName);
-      
+
       return {
         success: isInstalled,
         package: packageName,
         method: packageManager,
         output: stdout || stderr,
-        error: isInstalled ? undefined : 'Installation completed but package not found'
+        error: isInstalled ? undefined : 'Installation completed but package not found',
       };
-
     } catch (error) {
       logger.error(`Failed to install ${packageName}:`, error);
       return {
         success: false,
         package: packageName,
         method: packageManager,
-        error: error instanceof Error ? error.message : String(error)
+        error: error instanceof Error ? error.message : String(error),
       };
     }
   }
@@ -181,17 +181,17 @@ class SystemInstaller {
    */
   async installPackages(packages: string[]): Promise<InstallationResult[]> {
     const results: InstallationResult[] = [];
-    
+
     for (const pkg of packages) {
       const result = await this.installPackage(pkg);
       results.push(result);
-      
+
       // Stop on first failure for critical dependencies
       if (!result.success) {
         logger.warn(`Failed to install ${pkg}, continuing with remaining packages`);
       }
     }
-    
+
     return results;
   }
 
@@ -202,7 +202,7 @@ class SystemInstaller {
     const info: Record<string, any> = {
       platform: process.platform,
       arch: process.arch,
-      packageManager: await this.detectPackageManager()
+      packageManager: await this.detectPackageManager(),
     };
 
     // Check available packages
@@ -223,13 +223,13 @@ export { systemInstaller };
 
 /**
  * System Installer capability - installs system packages and dependencies
- * 
+ *
  * Supported actions:
  * - install: Install a system package (chrome, git, docker, nodejs)
  * - check: Check if a package is installed
  * - system_info: Get system and package manager information
  * - install_multiple: Install multiple packages
- * 
+ *
  * Parameters:
  * - package: Package name to install/check
  * - packages: Array of package names (for install_multiple)
@@ -249,10 +249,10 @@ export const systemInstallerCapability: RegisteredCapability = {
           if (!packageName) {
             throw new Error('Package name is required');
           }
-          
+
           const force = params.force || false;
           const result = await systemInstaller.installPackage(packageName, force);
-          
+
           if (result.success) {
             return `Successfully installed ${result.package} using ${result.method}. ${result.output || ''}`;
           } else {
@@ -265,7 +265,7 @@ export const systemInstallerCapability: RegisteredCapability = {
           if (!packageName) {
             throw new Error('Package name is required');
           }
-          
+
           const isInstalled = await systemInstaller.checkPackage(packageName);
           return `${packageName} is ${isInstalled ? 'installed' : 'not installed'}`;
         }
@@ -280,21 +280,21 @@ export const systemInstallerCapability: RegisteredCapability = {
           if (!Array.isArray(packages) || packages.length === 0) {
             throw new Error('Array of package names is required');
           }
-          
+
           const results = await systemInstaller.installPackages(packages);
-          const successful = results.filter(r => r.success);
-          const failed = results.filter(r => !r.success);
-          
+          const successful = results.filter((r) => r.success);
+          const failed = results.filter((r) => !r.success);
+
           let response = `Installation completed: ${successful.length} successful, ${failed.length} failed\n`;
-          
+
           if (successful.length > 0) {
-            response += `\nSuccessful: ${successful.map(r => r.package).join(', ')}`;
+            response += `\nSuccessful: ${successful.map((r) => r.package).join(', ')}`;
           }
-          
+
           if (failed.length > 0) {
-            response += `\nFailed: ${failed.map(r => `${r.package} (${r.error})`).join(', ')}`;
+            response += `\nFailed: ${failed.map((r) => `${r.package} (${r.error})`).join(', ')}`;
           }
-          
+
           return response;
         }
 
@@ -305,5 +305,5 @@ export const systemInstallerCapability: RegisteredCapability = {
       logger.error(`System installer capability failed for action ${action}:`, error);
       throw error;
     }
-  }
+  },
 };

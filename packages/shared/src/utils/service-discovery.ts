@@ -20,7 +20,7 @@ export class ServiceDiscovery {
   private static readonly REDIS_PREFIX = 'coachartie:services:';
   private static readonly PING_INTERVAL = 30000; // 30 seconds
   private static instance: ServiceDiscovery;
-  
+
   private registeredServices = new Map<string, ServiceInfo>();
   private pingInterval?: NodeJS.Timeout;
 
@@ -35,8 +35,8 @@ export class ServiceDiscovery {
    * Register a service with the discovery system
    */
   async registerService(
-    serviceName: string, 
-    port: number, 
+    serviceName: string,
+    port: number,
     host: string = 'localhost'
   ): Promise<void> {
     const serviceInfo: ServiceInfo = {
@@ -46,7 +46,7 @@ export class ServiceDiscovery {
       url: `http://${host}:${port}`,
       status: 'starting',
       lastPing: Date.now(),
-      pid: process.pid
+      pid: process.pid,
     };
 
     // Store in local map
@@ -59,7 +59,7 @@ export class ServiceDiscovery {
         90, // TTL of 90 seconds (must be refreshed by pings)
         JSON.stringify(serviceInfo)
       );
-      
+
       logger.info(`📡 Registered ${serviceName} service at ${serviceInfo.url}`);
     } catch (error) {
       logger.warn(`Failed to register service ${serviceName} in Redis:`, error);
@@ -78,7 +78,7 @@ export class ServiceDiscovery {
     if (service) {
       service.status = 'running';
       service.lastPing = Date.now();
-      
+
       try {
         await redis.setex(
           `${ServiceDiscovery.REDIS_PREFIX}${serviceName}`,
@@ -106,11 +106,11 @@ export class ServiceDiscovery {
     try {
       const redisKey = `${ServiceDiscovery.REDIS_PREFIX}${serviceName}`;
       const serviceData = await redis.get(redisKey);
-      
+
       if (serviceData) {
         const service: ServiceInfo = JSON.parse(serviceData);
         // Only return if service is actively running and recently pinged
-        if (service.status === 'running' && (Date.now() - service.lastPing) < 60000) {
+        if (service.status === 'running' && Date.now() - service.lastPing < 60000) {
           return service;
         }
       }
@@ -142,9 +142,9 @@ export class ServiceDiscovery {
         if (serviceData) {
           const service: ServiceInfo = JSON.parse(serviceData);
           const serviceName = key.replace(ServiceDiscovery.REDIS_PREFIX, '');
-          
+
           // Only include running services with recent pings
-          if (service.status === 'running' && (Date.now() - service.lastPing) < 60000) {
+          if (service.status === 'running' && Date.now() - service.lastPing < 60000) {
             services.set(serviceName, service);
           }
         }
@@ -192,7 +192,7 @@ export class ServiceDiscovery {
       for (const [serviceName, service] of this.registeredServices) {
         if (service.status === 'running') {
           service.lastPing = Date.now();
-          
+
           try {
             await redis.setex(
               `${ServiceDiscovery.REDIS_PREFIX}${serviceName}`,
@@ -222,11 +222,11 @@ export class ServiceDiscovery {
    */
   async shutdown(): Promise<void> {
     this.stopPingSystem();
-    
+
     // Unregister all local services
     const serviceNames = Array.from(this.registeredServices.keys());
-    await Promise.all(serviceNames.map(name => this.unregisterService(name)));
-    
+    await Promise.all(serviceNames.map((name) => this.unregisterService(name)));
+
     logger.info('📡 Service discovery shutdown complete');
   }
 }
@@ -243,7 +243,7 @@ export async function registerServiceWithDiscovery(
   onReady?: () => void
 ): Promise<void> {
   await serviceDiscovery.registerService(serviceName, port);
-  
+
   // Mark as running after brief delay for startup
   setTimeout(async () => {
     await serviceDiscovery.markServiceRunning(serviceName);
@@ -260,11 +260,11 @@ export async function getServiceUrlWithFallback(
   fallbackHost: string = 'localhost'
 ): Promise<string> {
   const serviceUrl = await serviceDiscovery.getServiceUrl(serviceName);
-  
+
   if (serviceUrl) {
     return serviceUrl;
   }
-  
+
   // Return fallback URL
   const fallbackUrl = `http://${fallbackHost}:${fallbackPort}`;
   logger.warn(`Service ${serviceName} not found in discovery, using fallback: ${fallbackUrl}`);

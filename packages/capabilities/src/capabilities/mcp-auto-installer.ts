@@ -44,7 +44,7 @@ class MCPAutoInstaller {
   private parseGitHubUrl(url: string): GitHubRepo | null {
     const patterns = [
       /github\.com\/([^\/]+)\/([^\/]+)(?:\/(?:tree|blob)\/([^\/]+)(?:\/(.+))?)?/,
-      /github\.com\/([^\/]+)\/([^\/]+)\.git/
+      /github\.com\/([^\/]+)\/([^\/]+)\.git/,
     ];
 
     for (const pattern of patterns) {
@@ -55,7 +55,7 @@ class MCPAutoInstaller {
           repo: match[2].replace(/\.git$/, ''),
           branch: match[3] || 'main',
           path: match[4],
-          url
+          url,
         };
       }
     }
@@ -70,7 +70,7 @@ class MCPAutoInstaller {
     const result: MCPServerInfo = {
       type: 'node',
       command: '',
-      detected: false
+      detected: false,
     };
 
     try {
@@ -84,26 +84,28 @@ class MCPAutoInstaller {
 
         // Look for MCP-related keywords
         const mcpKeywords = ['mcp', 'model-context-protocol', 'anthropic'];
-        const hasMcpKeywords = 
-          (packageJson.keywords && packageJson.keywords.some((k: string) => 
-            mcpKeywords.some(mk => k.toLowerCase().includes(mk))
-          )) ||
-          (packageJson.description && 
-            mcpKeywords.some(mk => packageJson.description.toLowerCase().includes(mk))
-          ) ||
-          (packageJson.dependencies && Object.keys(packageJson.dependencies).some((dep: string) => 
-            dep.includes('mcp') || dep.includes('model-context-protocol')
-          ));
+        const hasMcpKeywords =
+          (packageJson.keywords &&
+            packageJson.keywords.some((k: string) =>
+              mcpKeywords.some((mk) => k.toLowerCase().includes(mk))
+            )) ||
+          (packageJson.description &&
+            mcpKeywords.some((mk) => packageJson.description.toLowerCase().includes(mk))) ||
+          (packageJson.dependencies &&
+            Object.keys(packageJson.dependencies).some(
+              (dep: string) => dep.includes('mcp') || dep.includes('model-context-protocol')
+            ));
 
         if (hasMcpKeywords) {
           result.detected = true;
           result.type = 'npm';
-          
+
           // Try to determine the start command
           if (packageJson.bin) {
-            const binName = typeof packageJson.bin === 'string' 
-              ? packageJson.name 
-              : Object.keys(packageJson.bin)[0];
+            const binName =
+              typeof packageJson.bin === 'string'
+                ? packageJson.name
+                : Object.keys(packageJson.bin)[0];
             result.command = `npx ${packageJson.name}`;
           } else if (packageJson.scripts?.start) {
             result.command = `npm run start`;
@@ -165,7 +167,6 @@ class MCPAutoInstaller {
           // File not found, continue
         }
       }
-
     } catch (error) {
       logger.error('Error detecting MCP server:', error);
     }
@@ -178,16 +179,16 @@ class MCPAutoInstaller {
    */
   private async cloneRepo(repo: GitHubRepo): Promise<string> {
     const repoDir = join(this.tempDir, `${repo.owner}-${repo.repo}-${Date.now()}`);
-    
+
     logger.info(`Cloning ${repo.url} to ${repoDir}`);
-    
+
     try {
       // Ensure temp directory exists
       await execAsync(`mkdir -p ${this.tempDir}`);
-      
+
       // Clone the repository
       await execAsync(`git clone --depth 1 --branch ${repo.branch} ${repo.url} ${repoDir}`);
-      
+
       // If specific path is requested, use that as the working directory
       if (repo.path) {
         const specificPath = join(repoDir, repo.path);
@@ -198,7 +199,7 @@ class MCPAutoInstaller {
           logger.warn(`Specified path ${repo.path} not found, using root`);
         }
       }
-      
+
       return repoDir;
     } catch (error) {
       logger.error(`Failed to clone repository:`, error);
@@ -211,12 +212,12 @@ class MCPAutoInstaller {
    */
   private async installDependencies(repoPath: string, serverInfo: MCPServerInfo): Promise<void> {
     logger.info(`Installing dependencies for ${serverInfo.type} MCP server`);
-    
+
     try {
       if (serverInfo.type === 'npm' && serverInfo.packageJson) {
         // Install npm dependencies
         await execAsync('npm install', { cwd: repoPath });
-        
+
         // Build if build script exists
         if (serverInfo.packageJson.scripts?.build) {
           await execAsync('npm run build', { cwd: repoPath });
@@ -228,7 +229,7 @@ class MCPAutoInstaller {
         // Build Docker image
         const imageName = `mcp-auto-${Date.now()}`;
         await execAsync(`docker build -t ${imageName} .`, { cwd: repoPath });
-        
+
         // Update command to use the built image
         serverInfo.command = 'docker';
         serverInfo.args = ['run', '-i', '--rm', '--init', imageName];
@@ -244,7 +245,7 @@ class MCPAutoInstaller {
    */
   async installFromGitHub(url: string, name?: string): Promise<string> {
     logger.info(`Auto-installing MCP server from GitHub: ${url}`);
-    
+
     // Parse GitHub URL
     const repo = this.parseGitHubUrl(url);
     if (!repo) {
@@ -257,44 +258,43 @@ class MCPAutoInstaller {
     try {
       // Clone repository
       repoPath = await this.cloneRepo(repo);
-      
+
       // Detect MCP server
       serverInfo = await this.detectMCPServer(repoPath);
-      
+
       if (!serverInfo.detected) {
         throw new Error('No MCP server detected in repository');
       }
-      
+
       logger.info(`Detected ${serverInfo.type} MCP server: ${serverInfo.command}`);
-      
+
       // Install dependencies
       await this.installDependencies(repoPath, serverInfo);
-      
+
       // Create stdio:// URL for the server
       let stdioUrl: string;
       if (serverInfo.type === 'docker') {
         stdioUrl = `stdio://docker run -i --rm --init ${serverInfo.args?.slice(4).join(' ') || ''}`;
       } else {
-        const fullCommand = serverInfo.args 
+        const fullCommand = serverInfo.args
           ? `${serverInfo.command} ${serverInfo.args.join(' ')}`
           : serverInfo.command;
         stdioUrl = `stdio://${fullCommand}`;
       }
-      
+
       // Update command to include working directory for non-Docker
       if (serverInfo.type !== 'docker') {
         stdioUrl = `stdio://cd ${repoPath} && ${serverInfo.command}`;
       }
-      
+
       // Connect to the MCP server
       const result = await mcpClientService.connect(stdioUrl, name || `${repo.owner}/${repo.repo}`);
-      
+
       logger.info(`Successfully auto-installed MCP server from ${url}`);
       return result;
-      
     } catch (error) {
       logger.error(`Failed to auto-install MCP server from ${url}:`, error);
-      
+
       // Cleanup on failure
       if (repoPath!) {
         try {
@@ -303,7 +303,7 @@ class MCPAutoInstaller {
           logger.warn('Failed to cleanup failed installation:', cleanupError);
         }
       }
-      
+
       throw error;
     }
   }
@@ -319,11 +319,11 @@ class MCPAutoInstaller {
       // Look for common MCP package names
       /[a-z]+(?:-mcp|-server)/gi,
       // Look for scoped packages
-      /@[a-z][a-z0-9-]*\/[a-z][a-z0-9-]*/gi
+      /@[a-z][a-z0-9-]*\/[a-z][a-z0-9-]*/gi,
     ];
-    
+
     let bestMatch = '';
-    
+
     // Try each pattern to find the best package name
     for (const pattern of packagePatterns) {
       const matches = input.match(pattern);
@@ -331,26 +331,33 @@ class MCPAutoInstaller {
         // Find the longest match that looks like a real package name
         for (const match of matches) {
           const normalized = match.toLowerCase();
-          if (normalized.length > bestMatch.length && 
-              (normalized.includes('mcp') || normalized.includes('@') || normalized.includes('-server'))) {
+          if (
+            normalized.length > bestMatch.length &&
+            (normalized.includes('mcp') ||
+              normalized.includes('@') ||
+              normalized.includes('-server'))
+          ) {
             bestMatch = normalized;
           }
         }
       }
     }
-    
+
     // If no good match found, try basic cleanup
     if (!bestMatch) {
-      bestMatch = input.trim()
+      bestMatch = input
+        .trim()
         .replace(/[^a-zA-Z0-9\-_@\/\.]/g, '') // Remove invalid characters
         .toLowerCase();
     }
-    
+
     // Validate it looks like a real package name
     if (!bestMatch || bestMatch.length < 2 || !bestMatch.match(/^(@[\w\-]+\/)?[\w\-\.]+$/)) {
-      throw new Error(`Invalid package name after sanitization: "${input}" -> "${bestMatch}". Expected format: "package-name" or "@scope/package-name"`);
+      throw new Error(
+        `Invalid package name after sanitization: "${input}" -> "${bestMatch}". Expected format: "package-name" or "@scope/package-name"`
+      );
     }
-    
+
     return bestMatch;
   }
 
@@ -360,54 +367,68 @@ class MCPAutoInstaller {
   async installFromNpm(packageName: string, name?: string): Promise<string> {
     // Sanitize package name to prevent free model corruption
     const sanitizedPackageName = this.sanitizePackageName(packageName);
-    logger.info(`Installing MCP server from npm (sanitized: ${packageName} -> ${sanitizedPackageName})`);
-    
+    logger.info(
+      `Installing MCP server from npm (sanitized: ${packageName} -> ${sanitizedPackageName})`
+    );
+
     try {
       // Step 1: Try direct npx first (fast and simple)
       logger.info(`Attempting direct installation: ${sanitizedPackageName}`);
       const directCommand = `stdio://npx ${sanitizedPackageName}`;
-      
+
       try {
         // Quick timeout wrapper to fail fast on broken packages
         const result = await Promise.race([
           mcpClientService.connect(directCommand, name || sanitizedPackageName),
-          new Promise((_, reject) => setTimeout(() => reject(new Error('Fast timeout')), 5000))
+          new Promise((_, reject) => setTimeout(() => reject(new Error('Fast timeout')), 5000)),
         ]);
         logger.info(`✅ Direct installation successful: ${sanitizedPackageName}`);
         return `Successfully installed ${sanitizedPackageName} using direct npx strategy`;
       } catch (directError) {
-        logger.info(`Direct installation failed, trying Docker fallback: ${directError instanceof Error ? directError.message : String(directError)}`);
-        
+        logger.info(
+          `Direct installation failed, trying Docker fallback: ${directError instanceof Error ? directError.message : String(directError)}`
+        );
+
         // Step 2: Try Docker fallback for known problematic packages
         if (sanitizedPackageName.includes('puppeteer')) {
           const dockerCommand = `stdio://docker run -i --rm ghcr.io/puppeteer/puppeteer`;
           try {
-            const result = await mcpClientService.connect(dockerCommand, name || sanitizedPackageName);
+            const result = await mcpClientService.connect(
+              dockerCommand,
+              name || sanitizedPackageName
+            );
             logger.info(`✅ Docker fallback successful: ${sanitizedPackageName}`);
             return `Successfully installed ${sanitizedPackageName} using Docker strategy (dependencies bundled)`;
           } catch (dockerError) {
-            logger.error(`Docker fallback also failed: ${dockerError instanceof Error ? dockerError.message : String(dockerError)}`);
-            throw new Error(`Both direct and Docker installation failed for ${sanitizedPackageName}: ${directError instanceof Error ? directError.message : String(directError)}`);
+            logger.error(
+              `Docker fallback also failed: ${dockerError instanceof Error ? dockerError.message : String(dockerError)}`
+            );
+            throw new Error(
+              `Both direct and Docker installation failed for ${sanitizedPackageName}: ${directError instanceof Error ? directError.message : String(directError)}`
+            );
           }
         } else {
           // For non-Puppeteer packages, just fail with the direct error
           throw directError;
         }
       }
-      
     } catch (error) {
       logger.error(`Failed to install MCP server from npm ${sanitizedPackageName}:`, error);
-      
+
       // Enhanced error handling with fallback suggestions
       if (error instanceof Error) {
         if (error.message.includes('timeout')) {
-          throw new Error(`Installation timeout for ${sanitizedPackageName}. This package may need to download dependencies. The auto-installer will handle this automatically next time.`);
+          throw new Error(
+            `Installation timeout for ${sanitizedPackageName}. This package may need to download dependencies. The auto-installer will handle this automatically next time.`
+          );
         }
         if (error.message.includes('dependency')) {
-          throw new Error(`Dependency issue with ${sanitizedPackageName}: ${error.message}. Try using Docker fallback or manual dependency installation.`);
+          throw new Error(
+            `Dependency issue with ${sanitizedPackageName}: ${error.message}. Try using Docker fallback or manual dependency installation.`
+          );
         }
       }
-      
+
       throw error;
     }
   }
@@ -417,18 +438,17 @@ class MCPAutoInstaller {
    */
   async installFromDocker(imageName: string, name?: string, args?: string[]): Promise<string> {
     logger.info(`Installing MCP server from Docker: ${imageName}`);
-    
+
     try {
       // Create stdio:// URL for Docker image
       const dockerArgs = args ? ` ${args.join(' ')}` : '';
       const stdioUrl = `stdio://docker/${imageName}${dockerArgs}`;
-      
+
       // Connect to the MCP server
       const result = await mcpClientService.connect(stdioUrl, name || imageName);
-      
+
       logger.info(`Successfully installed MCP server from Docker: ${imageName}`);
       return result;
-      
     } catch (error) {
       logger.error(`Failed to install MCP server from Docker ${imageName}:`, error);
       throw error;
@@ -445,8 +465,15 @@ class MCPAutoInstaller {
     } else if (url.startsWith('npm:') || url.includes('npmjs.com')) {
       const packageName = url.replace(/^npm:/, '').replace(/.*npmjs\.com\/package\//, '');
       return this.installFromNpm(packageName, name);
-    } else if (url.startsWith('docker:') || url.includes('docker.io') || url.includes('hub.docker.com')) {
-      const imageName = url.replace(/^docker:/, '').replace(/.*docker\.io\//, '').replace(/.*hub\.docker\.com\//, '');
+    } else if (
+      url.startsWith('docker:') ||
+      url.includes('docker.io') ||
+      url.includes('hub.docker.com')
+    ) {
+      const imageName = url
+        .replace(/^docker:/, '')
+        .replace(/.*docker\.io\//, '')
+        .replace(/.*hub\.docker\.com\//, '');
       return this.installFromDocker(imageName, name);
     } else if (url.startsWith('stdio://')) {
       // Direct stdio URL - just connect
@@ -458,7 +485,9 @@ class MCPAutoInstaller {
         logger.info(`Treating "${url}" as npm package name`);
         return this.installFromNpm(url, name);
       } catch (sanitizeError) {
-        throw new Error(`Unsupported URL type and invalid package name: ${url}. ${sanitizeError instanceof Error ? sanitizeError.message : String(sanitizeError)}`);
+        throw new Error(
+          `Unsupported URL type and invalid package name: ${url}. ${sanitizeError instanceof Error ? sanitizeError.message : String(sanitizeError)}`
+        );
       }
     }
   }
@@ -484,7 +513,7 @@ export { mcpAutoInstaller };
 
 /**
  * MCP Auto-installer capability - automatically detects, installs and connects to MCP servers
- * 
+ *
  * Supported actions:
  * - install: Auto-install MCP server from GitHub/npm/Docker
  * - install_github: Install from GitHub repository
@@ -506,7 +535,7 @@ export const mcpAutoInstallerCapability: RegisteredCapability = {
           if (!url) {
             throw new Error('URL is required for auto-installation');
           }
-          
+
           const name = params.name;
           return await mcpAutoInstaller.autoInstall(url, name);
         }
@@ -516,7 +545,7 @@ export const mcpAutoInstallerCapability: RegisteredCapability = {
           if (!url) {
             throw new Error('GitHub URL is required');
           }
-          
+
           const name = params.name;
           return await mcpAutoInstaller.installFromGitHub(url, name);
         }
@@ -526,7 +555,7 @@ export const mcpAutoInstallerCapability: RegisteredCapability = {
           if (!packageName) {
             throw new Error('npm package name is required');
           }
-          
+
           const name = params.display_name;
           return await mcpAutoInstaller.installFromNpm(packageName, name);
         }
@@ -536,7 +565,7 @@ export const mcpAutoInstallerCapability: RegisteredCapability = {
           if (!imageName) {
             throw new Error('Docker image name is required');
           }
-          
+
           const name = params.name;
           const args = params.args ? params.args.split(' ') : undefined;
           return await mcpAutoInstaller.installFromDocker(imageName, name, args);
@@ -554,5 +583,5 @@ export const mcpAutoInstallerCapability: RegisteredCapability = {
       logger.error(`MCP auto-installer capability failed for action ${action}:`, error);
       throw error;
     }
-  }
+  },
 };

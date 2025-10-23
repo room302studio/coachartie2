@@ -17,24 +17,24 @@ export function createApiRouter(discordClient: Client): Router {
       logger.info(`📋 API: Listing forums in guild ${guildId}`);
       const forums = await forumService.getForumsInGuild(guildId);
 
-      const forumData = forums.map(forum => ({
+      const forumData = forums.map((forum) => ({
         id: forum.id,
         name: forum.name,
         type: forum.type,
-        threadCount: forum.threads?.cache.size || 0
+        threadCount: forum.threads?.cache.size || 0,
       }));
 
       res.json({
         success: true,
         guildId,
         count: forumData.length,
-        forums: forumData
+        forums: forumData,
       });
     } catch (error) {
       logger.error('Error listing forums:', error);
       res.status(500).json({
         success: false,
-        error: error instanceof Error ? error.message : String(error)
+        error: error instanceof Error ? error.message : String(error),
       });
     }
   });
@@ -47,25 +47,25 @@ export function createApiRouter(discordClient: Client): Router {
       logger.info(`📝 API: Listing threads in forum ${forumId}`);
       const threads = await forumService.getThreadsInForum(forumId);
 
-      const threadData = threads.map(thread => ({
+      const threadData = threads.map((thread) => ({
         id: thread.id,
         name: thread.name,
         messageCount: thread.messageCount || 0,
         createdAt: thread.createdAt?.toISOString(),
-        archived: thread.archived
+        archived: thread.archived,
       }));
 
       res.json({
         success: true,
         forumId,
         count: threadData.length,
-        threads: threadData
+        threads: threadData,
       });
     } catch (error) {
       logger.error('Error listing threads:', error);
       res.status(500).json({
         success: false,
-        error: error instanceof Error ? error.message : String(error)
+        error: error instanceof Error ? error.message : String(error),
       });
     }
   });
@@ -80,13 +80,13 @@ export function createApiRouter(discordClient: Client): Router {
 
       res.json({
         success: true,
-        thread: threadData
+        thread: threadData,
       });
     } catch (error) {
       logger.error('Error fetching thread:', error);
       res.status(500).json({
         success: false,
-        error: error instanceof Error ? error.message : String(error)
+        error: error instanceof Error ? error.message : String(error),
       });
     }
   });
@@ -101,13 +101,13 @@ export function createApiRouter(discordClient: Client): Router {
 
       res.json({
         success: true,
-        summary
+        summary,
       });
     } catch (error) {
       logger.error('Error getting forum summary:', error);
       res.status(500).json({
         success: false,
-        error: error instanceof Error ? error.message : String(error)
+        error: error instanceof Error ? error.message : String(error),
       });
     }
   });
@@ -121,7 +121,7 @@ export function createApiRouter(discordClient: Client): Router {
       if (!repo) {
         return res.status(400).json({
           success: false,
-          error: 'Repository (owner/repo) is required'
+          error: 'Repository (owner/repo) is required',
         });
       }
 
@@ -132,7 +132,7 @@ export function createApiRouter(discordClient: Client): Router {
       if (!repoInfo) {
         return res.status(400).json({
           success: false,
-          error: 'Invalid repository format. Use owner/repo or full GitHub URL'
+          error: 'Invalid repository format. Use owner/repo or full GitHub URL',
         });
       }
 
@@ -141,9 +141,7 @@ export function createApiRouter(discordClient: Client): Router {
       logger.info(`📥 Found ${threads.length} threads to sync`);
 
       // Get full thread data for each thread
-      const threadDataPromises = threads.map(thread =>
-        forumService.getThreadData(thread.id)
-      );
+      const threadDataPromises = threads.map((thread) => forumService.getThreadData(thread.id));
       const threadData = await Promise.all(threadDataPromises);
 
       // Get forum name for labeling
@@ -158,8 +156,8 @@ export function createApiRouter(discordClient: Client): Router {
         forumName
       );
 
-      const successCount = results.filter(r => r.success).length;
-      const failureCount = results.filter(r => !r.success).length;
+      const successCount = results.filter((r) => r.success).length;
+      const failureCount = results.filter((r) => !r.success).length;
 
       logger.info(`✅ Sync complete: ${successCount} succeeded, ${failureCount} failed`);
 
@@ -169,13 +167,13 @@ export function createApiRouter(discordClient: Client): Router {
         repo: `${repoInfo.owner}/${repoInfo.repo}`,
         successCount,
         failureCount,
-        results
+        results,
       });
     } catch (error) {
       logger.error('Error syncing to GitHub:', error);
       res.status(500).json({
         success: false,
-        error: error instanceof Error ? error.message : String(error)
+        error: error instanceof Error ? error.message : String(error),
       });
     }
   });

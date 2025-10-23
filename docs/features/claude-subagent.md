@@ -1,9 +1,11 @@
 # Coach Artie Subagent Task Delegation Plan
 
 ## Overview
+
 This document outlines atomic, implementable features that can be delegated to subagents as GitHub issues. Each task is designed to be completed independently, following our LEGO-block architecture philosophy.
 
 ## Core Principles for Subagents
+
 - Each task should be completable in 1-2 days
 - No deep system knowledge required
 - Clear acceptance criteria and test cases provided
@@ -13,6 +15,7 @@ This document outlines atomic, implementable features that can be delegated to s
 ## Task Assignments
 
 ### 🎯 Issue #43: Goal Capability
+
 **GitHub**: https://github.com/room302studio/coachartie2/issues/43
 **File**: `ISSUE_001_GOAL_CAPABILITY.md`
 **Priority**: High (Foundation)
@@ -23,6 +26,7 @@ This document outlines atomic, implementable features that can be delegated to s
 **Why It Matters**: This is the foundation for all goal-aware features. Without it, Coach Artie can't maintain focus on long-term objectives.
 
 **Key Deliverables**:
+
 - SQLite table for goals
 - XML capability interface for goal operations
 - User isolation (multi-tenant support)
@@ -30,7 +34,8 @@ This document outlines atomic, implementable features that can be delegated to s
 
 ---
 
-### 📝 Issue #44: Todo Capability  
+### 📝 Issue #44: Todo Capability
+
 **GitHub**: https://github.com/room302studio/coachartie2/issues/44
 **File**: `ISSUE_002_TODO_CAPABILITY.md`
 **Priority**: High (Core Feature)
@@ -42,6 +47,7 @@ This document outlines atomic, implementable features that can be delegated to s
 **Why It Matters**: Goals are high-level, but Coach Artie needs to track specific steps to achieve them. This enables autonomous task completion.
 
 **Key Deliverables**:
+
 - Todo lists with items
 - Progress tracking (X/Y completed)
 - Bulk operations support
@@ -51,6 +57,7 @@ This document outlines atomic, implementable features that can be delegated to s
 ---
 
 ### 💾 Issue #45: Variable Store Capability
+
 **GitHub**: https://github.com/room302studio/coachartie2/issues/45
 **File**: `ISSUE_003_VARIABLE_STORE.md`
 **Priority**: High (Enabler)
@@ -61,6 +68,7 @@ This document outlines atomic, implementable features that can be delegated to s
 **Why It Matters**: Currently, capabilities can't share data. This is THE key feature that enables true workflow orchestration.
 
 **Key Deliverables**:
+
 - Session-scoped key-value store
 - Variable interpolation with {{syntax}}
 - Support for complex data types
@@ -70,6 +78,7 @@ This document outlines atomic, implementable features that can be delegated to s
 ---
 
 ### 🧠 Issue #46: Conscience Whisper Integration
+
 **GitHub**: https://github.com/room302studio/coachartie2/issues/46
 **File**: `ISSUE_004_CONSCIENCE_WHISPER.md`
 **Priority**: Medium (Enhancement)
@@ -81,6 +90,7 @@ This document outlines atomic, implementable features that can be delegated to s
 **Why It Matters**: This creates natural goal awareness without annoying reminders. Coach Artie stays aware of objectives while maintaining natural conversation.
 
 **Key Deliverables**:
+
 - Parallel LLM call on every interaction
 - Sub-200ms whisper generation
 - Automatic prompt injection
@@ -90,6 +100,7 @@ This document outlines atomic, implementable features that can be delegated to s
 ---
 
 ### 🔧 Issue #47: Goal Tools for Main Thread
+
 **GitHub**: https://github.com/room302studio/coachartie2/issues/47
 **File**: `ISSUE_005_GOAL_TOOLS.md`
 **Priority**: Medium (UX Enhancement)
@@ -101,6 +112,7 @@ This document outlines atomic, implementable features that can be delegated to s
 **Why It Matters**: While conscience whisper provides ambient awareness, sometimes Coach Artie needs to explicitly check or update goals. These tools make that natural and conversational.
 
 **Key Deliverables**:
+
 - Natural language goal commands
 - Vibe-based strictness updates
 - Helpful reflections and insights
@@ -112,19 +124,23 @@ This document outlines atomic, implementable features that can be delegated to s
 ## Implementation Order
 
 ### Phase 1: Foundation (Do First)
+
 1. **Issue #43** - Goal Capability (enables everything else)
 2. **Issue #45** - Variable Store (enables workflows)
 
 ### Phase 2: Core Features (Do Second)
+
 3. **Issue #44** - Todo Capability (builds on goals)
 4. **Issue #47** - Goal Tools (enhances goal UX)
 
 ### Phase 3: Magic (Do Third)
+
 5. **Issue #46** - Conscience Whisper (adds the magic)
 
 ## Success Criteria for Subagents
 
 Each issue should:
+
 - ✅ Pass all defined test cases
 - ✅ Follow existing code patterns
 - ✅ Include helpful error messages
@@ -149,6 +165,7 @@ After implementing each capability:
 ## Code Patterns to Follow
 
 Look at existing capabilities for patterns:
+
 - `/packages/capabilities/src/capabilities/memory.ts` - Database integration
 - `/packages/capabilities/src/capabilities/calculator.ts` - Simple capability structure
 - `/packages/capabilities/src/capabilities/filesystem.ts` - File operations
@@ -156,6 +173,7 @@ Look at existing capabilities for patterns:
 ## Questions?
 
 If a subagent has questions, they should:
+
 1. First check existing similar code
 2. Look for patterns in the codebase
 3. Ask for clarification on acceptance criteria
@@ -164,6 +182,7 @@ If a subagent has questions, they should:
 ## The Vision
 
 When all 5 issues are complete, Coach Artie will have:
+
 - 🎯 Goal awareness and tracking
 - 📝 Task breakdown and management
 - 🔄 Complex workflow orchestration

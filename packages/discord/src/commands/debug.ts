@@ -6,8 +6,9 @@ export const debugCommand = {
   data: new SlashCommandBuilder()
     .setName('debug')
     .setDescription('Troubleshoot connection and performance issues')
-    .addStringOption(option =>
-      option.setName('action')
+    .addStringOption((option) =>
+      option
+        .setName('action')
         .setDescription('Debug action to perform')
         .setRequired(false)
         .addChoices(
@@ -50,22 +51,19 @@ export const debugCommand = {
       }
 
       await interaction.editReply({
-        embeds: embeds.slice(0, 10) // Discord limit
+        embeds: embeds.slice(0, 10), // Discord limit
       });
-
     } catch (error) {
       logger.error('Error running debug command:', error);
       await interaction.editReply({
-        content: '❌ There was an error running diagnostics. Please try again later.'
+        content: '❌ There was an error running diagnostics. Please try again later.',
       });
     }
-  }
+  },
 };
 
 async function createConnectionTestEmbed(): Promise<EmbedBuilder> {
-  const embed = new EmbedBuilder()
-    .setTitle('🔍 Connection Test Results')
-    .setColor(0x3498db);
+  const embed = new EmbedBuilder().setTitle('🔍 Connection Test Results').setColor(0x3498db);
 
   const tests = [];
 
@@ -73,38 +71,38 @@ async function createConnectionTestEmbed(): Promise<EmbedBuilder> {
   tests.push({
     name: '🌐 Discord API',
     status: '🟢 Connected',
-    latency: 'Active'
+    latency: 'Active',
   });
 
   // Test Capabilities Service
   try {
     const start = Date.now();
-    const response = await Promise.race([
+    const response = (await Promise.race([
       fetch('http://localhost:47324/health'),
-      new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 10000))
-    ]) as Response;
-    
+      new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 10000)),
+    ])) as Response;
+
     const latency = Date.now() - start;
-    
+
     if (response.ok) {
       const healthData = await response.json();
       tests.push({
         name: '🧠 Capabilities Service',
         status: '🟢 Online',
-        latency: `${latency}ms`
+        latency: `${latency}ms`,
       });
     } else {
       tests.push({
         name: '🧠 Capabilities Service',
         status: '🟡 Issues Detected',
-        latency: `HTTP ${response.status}`
+        latency: `HTTP ${response.status}`,
       });
     }
   } catch (error) {
     tests.push({
       name: '🧠 Capabilities Service',
       status: '🔴 Offline',
-      latency: 'Failed'
+      latency: 'Failed',
     });
   }
 
@@ -112,7 +110,7 @@ async function createConnectionTestEmbed(): Promise<EmbedBuilder> {
   tests.push({
     name: '🔄 Message Queue',
     status: '🟢 Connected',
-    latency: 'Active'
+    latency: 'Active',
   });
 
   // Test Health Server
@@ -121,21 +119,21 @@ async function createConnectionTestEmbed(): Promise<EmbedBuilder> {
     tests.push({
       name: '📊 Health Server',
       status: response.ok ? '🟢 Online' : '🟡 Issues',
-      latency: response.ok ? 'Active' : 'Degraded'
+      latency: response.ok ? 'Active' : 'Degraded',
     });
   } catch (error) {
     tests.push({
       name: '📊 Health Server',
       status: '🔴 Offline',
-      latency: 'Failed'
+      latency: 'Failed',
     });
   }
 
-  tests.forEach(test => {
+  tests.forEach((test) => {
     embed.addFields({
       name: test.name,
       value: `${test.status}\nLatency: ${test.latency}`,
-      inline: true
+      inline: true,
     });
   });
 
@@ -144,9 +142,7 @@ async function createConnectionTestEmbed(): Promise<EmbedBuilder> {
 }
 
 async function createPerformanceEmbed(userId: string): Promise<EmbedBuilder> {
-  const embed = new EmbedBuilder()
-    .setTitle('📊 Performance Analysis')
-    .setColor(0x9b59b6);
+  const embed = new EmbedBuilder().setTitle('📊 Performance Analysis').setColor(0x9b59b6);
 
   try {
     // Get telemetry data
@@ -154,14 +150,19 @@ async function createPerformanceEmbed(userId: string): Promise<EmbedBuilder> {
     const metrics = healthSummary.metrics;
 
     // Get user-specific performance
-    const userEvents = telemetry.getRecentEvents(100).filter(event => event.userId === userId);
-    const userCompletions = userEvents.filter(event => 
-      event.event === 'job_completed' && event.duration
+    const userEvents = telemetry.getRecentEvents(100).filter((event) => event.userId === userId);
+    const userCompletions = userEvents.filter(
+      (event) => event.event === 'job_completed' && event.duration
     );
 
-    const userAvgResponseTime = userCompletions.length > 0
-      ? (userCompletions.reduce((sum, event) => sum + (event.duration || 0), 0) / userCompletions.length / 1000).toFixed(1)
-      : 'N/A';
+    const userAvgResponseTime =
+      userCompletions.length > 0
+        ? (
+            userCompletions.reduce((sum, event) => sum + (event.duration || 0), 0) /
+            userCompletions.length /
+            1000
+          ).toFixed(1)
+        : 'N/A';
 
     embed.addFields(
       { name: '⚡ Global Avg Response', value: metrics.averageResponseTime, inline: true },
@@ -194,23 +195,23 @@ async function createPerformanceEmbed(userId: string): Promise<EmbedBuilder> {
     embed.addFields({
       name: '🏆 Performance Rating',
       value: performanceRating,
-      inline: false
+      inline: false,
     });
 
     // Add performance tips
     if (avgTime > 15) {
       embed.addFields({
         name: '💡 Performance Tips',
-        value: '• Try shorter messages\n• Avoid complex requests during peak times\n• Use `/models` to see which models are fastest',
-        inline: false
+        value:
+          '• Try shorter messages\n• Avoid complex requests during peak times\n• Use `/models` to see which models are fastest',
+        inline: false,
       });
     }
-
   } catch (error) {
     embed.addFields({
       name: '❌ Performance Data Unavailable',
       value: 'Unable to fetch performance metrics',
-      inline: false
+      inline: false,
     });
   }
 
@@ -219,9 +220,7 @@ async function createPerformanceEmbed(userId: string): Promise<EmbedBuilder> {
 }
 
 async function createCapabilitiesTestEmbed(): Promise<EmbedBuilder> {
-  const embed = new EmbedBuilder()
-    .setTitle('🧠 Capabilities Test')
-    .setColor(0xe74c3c);
+  const embed = new EmbedBuilder().setTitle('🧠 Capabilities Test').setColor(0xe74c3c);
 
   try {
     // Test a simple capability
@@ -231,14 +230,14 @@ async function createCapabilitiesTestEmbed(): Promise<EmbedBuilder> {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         message: 'Test calculation: 2+2',
-        userId: 'debug-test'
-      })
+        userId: 'debug-test',
+      }),
     });
 
     const testDuration = Date.now() - testStart;
 
     if (response.ok) {
-      const result = await response.json() as any;
+      const result = (await response.json()) as any;
       embed.setColor(0x2ecc71);
       embed.addFields(
         { name: '✅ Capabilities Service', value: 'Online and responding', inline: true },
@@ -249,31 +248,31 @@ async function createCapabilitiesTestEmbed(): Promise<EmbedBuilder> {
       // Check if capabilities are being detected
       embed.addFields({
         name: '🔍 Capability Detection',
-        value: 'Test job submitted successfully\nMonitor with `/bot-status` for capability execution',
-        inline: false
+        value:
+          'Test job submitted successfully\nMonitor with `/bot-status` for capability execution',
+        inline: false,
       });
-
     } else {
       embed.addFields({
         name: '❌ Capabilities Service Error',
         value: `HTTP ${response.status}: ${response.statusText}`,
-        inline: false
+        inline: false,
       });
     }
-
   } catch (error) {
     embed.addFields({
       name: '❌ Capabilities Service Offline',
       value: 'Unable to connect to capabilities service',
-      inline: false
+      inline: false,
     });
   }
 
   // Available capabilities info
   embed.addFields({
     name: '🛠️ Available Capabilities',
-    value: '• Calculator (math operations)\n• Memory (save/search conversations)\n• Web search (coming soon)\n• More capabilities available via API',
-    inline: false
+    value:
+      '• Calculator (math operations)\n• Memory (save/search conversations)\n• Web search (coming soon)\n• More capabilities available via API',
+    inline: false,
   });
 
   embed.setTimestamp();
@@ -281,26 +280,28 @@ async function createCapabilitiesTestEmbed(): Promise<EmbedBuilder> {
 }
 
 async function createErrorsEmbed(userId: string): Promise<EmbedBuilder> {
-  const embed = new EmbedBuilder()
-    .setTitle('📋 Recent Errors & Issues')
-    .setColor(0xe67e22);
+  const embed = new EmbedBuilder().setTitle('📋 Recent Errors & Issues').setColor(0xe67e22);
 
   try {
     // Get recent error events from telemetry
     const allEvents = telemetry.getRecentEvents(200);
-    const errorEvents = allEvents.filter(event => 
-      (event.userId === userId || !event.userId) && 
-      (event.success === false || event.event.includes('error') || event.event.includes('failed'))
-    ).slice(0, 10);
+    const errorEvents = allEvents
+      .filter(
+        (event) =>
+          (event.userId === userId || !event.userId) &&
+          (event.success === false ||
+            event.event.includes('error') ||
+            event.event.includes('failed'))
+      )
+      .slice(0, 10);
 
     if (errorEvents.length === 0) {
-      embed.setDescription('🎉 No recent errors found! Everything looks good.')
-        .setColor(0x2ecc71);
-      
+      embed.setDescription('🎉 No recent errors found! Everything looks good.').setColor(0x2ecc71);
+
       embed.addFields({
         name: '✅ System Status',
         value: 'All systems operating normally',
-        inline: false
+        inline: false,
       });
 
       return embed;
@@ -309,34 +310,35 @@ async function createErrorsEmbed(userId: string): Promise<EmbedBuilder> {
     // Display recent errors
     errorEvents.forEach((event, index) => {
       const timestamp = new Date(event.timestamp).toLocaleTimeString();
-      const eventName = event.event.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
-      
+      const eventName = event.event.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase());
+
       let errorDetails = '';
       if (event.data?.error) {
-        errorDetails = event.data.error.length > 100 
-          ? event.data.error.substring(0, 100) + '...'
-          : event.data.error;
+        errorDetails =
+          event.data.error.length > 100
+            ? event.data.error.substring(0, 100) + '...'
+            : event.data.error;
       }
 
       embed.addFields({
         name: `${index + 1}. ${eventName} - ${timestamp}`,
         value: errorDetails || 'No additional details',
-        inline: false
+        inline: false,
       });
     });
 
     // Add troubleshooting tips
     embed.addFields({
       name: '🔧 Troubleshooting Tips',
-      value: '• Try sending your message again\n• Use simpler requests if complex ones fail\n• Check `/bot-status` for system health\n• Report persistent issues to support',
-      inline: false
+      value:
+        '• Try sending your message again\n• Use simpler requests if complex ones fail\n• Check `/bot-status` for system health\n• Report persistent issues to support',
+      inline: false,
     });
-
   } catch (error) {
     embed.addFields({
       name: '❌ Error Log Unavailable',
       value: 'Unable to fetch recent error information',
-      inline: false
+      inline: false,
     });
   }
 

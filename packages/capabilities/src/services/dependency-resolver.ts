@@ -75,20 +75,20 @@ export class DependencyResolver {
           checkCommand: 'which google-chrome || which chromium || which chrome',
           installCommand: this.getChromeInstallCommand(),
           dockerFallback: 'ghcr.io/puppeteer/puppeteer',
-          required: true
-        }
+          required: true,
+        },
       ],
       fallbackStrategies: [
         {
           type: 'docker',
           dockerImage: 'ghcr.io/puppeteer/puppeteer',
-          priority: 1
+          priority: 1,
         },
         {
           type: 'system_install',
-          priority: 2
-        }
-      ]
+          priority: 2,
+        },
+      ],
     });
 
     // Filesystem MCP (needs specific paths)
@@ -99,16 +99,16 @@ export class DependencyResolver {
           name: 'filesystem_access',
           type: 'service',
           checkCommand: 'echo "always available"',
-          required: true
-        }
+          required: true,
+        },
       ],
       fallbackStrategies: [
         {
           type: 'docker',
           dockerImage: 'mcp/filesystem',
-          priority: 1
-        }
-      ]
+          priority: 1,
+        },
+      ],
     });
 
     // GitHub MCP (needs git)
@@ -120,20 +120,20 @@ export class DependencyResolver {
           type: 'binary',
           checkCommand: 'which git',
           installCommand: 'brew install git || apt-get install git || yum install git',
-          required: true
-        }
+          required: true,
+        },
       ],
       fallbackStrategies: [
         {
           type: 'docker',
           dockerImage: 'mcp/github',
-          priority: 1
+          priority: 1,
         },
         {
           type: 'system_install',
-          priority: 2
-        }
-      ]
+          priority: 2,
+        },
+      ],
     });
   }
 
@@ -158,7 +158,9 @@ export class DependencyResolver {
    * Check if a dependency is available
    */
   private async checkDependency(dep: DependencyRequirement): Promise<boolean> {
-    if (!dep.checkCommand) {return true;}
+    if (!dep.checkCommand) {
+      return true;
+    }
 
     try {
       // Add timeout to prevent hanging on slow filesystem/PATH issues
@@ -173,13 +175,15 @@ export class DependencyResolver {
    * Install a dependency
    */
   private async installDependency(dep: DependencyRequirement): Promise<boolean> {
-    if (!dep.installCommand) {return false;}
+    if (!dep.installCommand) {
+      return false;
+    }
 
     try {
       logger.info(`Installing dependency: ${dep.name}`);
       // Add timeout for install commands too
       await execAsync(dep.installCommand, { timeout: 30000 });
-      
+
       // Verify installation
       return await this.checkDependency(dep);
     } catch (error) {
@@ -193,7 +197,7 @@ export class DependencyResolver {
    */
   async resolveDependencies(packageName: string): Promise<DependencyResolution> {
     const profile = this.profiles.get(packageName);
-    
+
     if (!profile) {
       // No known dependencies, try direct installation
       return {
@@ -201,7 +205,7 @@ export class DependencyResolver {
         strategy: 'direct',
         command: `stdio://npx ${packageName}`,
         missingDependencies: [],
-        installedDependencies: []
+        installedDependencies: [],
       };
     }
 
@@ -211,7 +215,7 @@ export class DependencyResolver {
     // Check all dependencies
     for (const dep of profile.dependencies) {
       const isAvailable = await this.checkDependency(dep);
-      
+
       if (!isAvailable) {
         if (dep.required) {
           missingDependencies.push(dep.name);
@@ -228,7 +232,7 @@ export class DependencyResolver {
         strategy: 'direct',
         command: `stdio://npx ${packageName}`,
         missingDependencies: [],
-        installedDependencies
+        installedDependencies,
       };
     }
 
@@ -240,7 +244,7 @@ export class DependencyResolver {
           strategy: 'docker',
           command: `stdio://docker/${strategy.dockerImage}`,
           missingDependencies,
-          installedDependencies
+          installedDependencies,
         };
       }
 
@@ -250,7 +254,7 @@ export class DependencyResolver {
         const newlyInstalled: string[] = [];
 
         for (const depName of missingDependencies) {
-          const dep = profile.dependencies.find(d => d.name === depName);
+          const dep = profile.dependencies.find((d) => d.name === depName);
           if (dep) {
             const installed = await this.installDependency(dep);
             if (installed) {
@@ -268,7 +272,7 @@ export class DependencyResolver {
             strategy: 'system_install',
             command: `stdio://npx ${packageName}`,
             missingDependencies: [],
-            installedDependencies: [...installedDependencies, ...newlyInstalled]
+            installedDependencies: [...installedDependencies, ...newlyInstalled],
           };
         }
       }
@@ -281,7 +285,7 @@ export class DependencyResolver {
       command: '',
       missingDependencies,
       installedDependencies,
-      error: `Unable to resolve dependencies: ${missingDependencies.join(', ')}`
+      error: `Unable to resolve dependencies: ${missingDependencies.join(', ')}`,
     };
   }
 
@@ -316,7 +320,7 @@ export class DependencyResolver {
       const allDeps = {
         ...packageJson.dependencies,
         ...packageJson.devDependencies,
-        ...packageJson.peerDependencies
+        ...packageJson.peerDependencies,
       };
 
       // Detect Puppeteer
@@ -326,7 +330,7 @@ export class DependencyResolver {
           type: 'binary',
           checkCommand: 'which google-chrome || which chromium',
           installCommand: this.getChromeInstallCommand(),
-          required: true
+          required: true,
         });
       }
 
@@ -337,7 +341,7 @@ export class DependencyResolver {
           type: 'binary',
           checkCommand: 'which git',
           installCommand: 'brew install git || apt-get install git',
-          required: true
+          required: true,
         });
       }
 
@@ -348,12 +352,10 @@ export class DependencyResolver {
           type: 'binary',
           checkCommand: 'which docker',
           installCommand: 'echo "Please install Docker manually"',
-          required: true
+          required: true,
         });
       }
-
-    } catch (error) {
-    }
+    } catch (error) {}
 
     return dependencies;
   }

@@ -1,6 +1,13 @@
 import express from 'express';
 import helmet from 'helmet';
-import { logger, structuredLogger, createRequestLogger, parsePortWithFallback, registerServiceWithDiscovery, serviceDiscovery } from '@coachartie/shared';
+import {
+  logger,
+  structuredLogger,
+  createRequestLogger,
+  parsePortWithFallback,
+  registerServiceWithDiscovery,
+  serviceDiscovery,
+} from '@coachartie/shared';
 import { startResponseConsumer } from './queues/consumer.js';
 import { healthRouter } from './routes/health.js';
 import { emailRouter } from './routes/email.js';
@@ -39,7 +46,7 @@ async function start() {
     // Start HTTP server
     const server = app.listen(PORT, '0.0.0.0', async () => {
       logger.info(`✅ email: ${PORT}`);
-      
+
       // Register with service discovery
       await registerServiceWithDiscovery('email', PORT);
     });

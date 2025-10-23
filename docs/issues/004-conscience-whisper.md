@@ -1,12 +1,15 @@
 # Issue #004: Implement Conscience Whisper Integration
 
 ## User Story
+
 As Coach Artie, I need a parallel conscience that whispers goal context into every LLM response so that I can maintain awareness of long-term objectives while naturally conversing with users.
 
 ## Background
+
 Based on our architecture design, every LLM call should automatically get a "conscience whisper" - a quick, cheap LLM call that provides goal context. This whisper is injected into the main LLM's prompt, allowing natural incorporation of goal awareness without forced reminders.
 
 ## Acceptance Criteria
+
 - [ ] Every LLM call automatically triggers a parallel conscience whisper
 - [ ] Conscience uses a cheap/fast model (e.g., Phi-3-mini, Mistral-7B)
 - [ ] Whisper completes within 200ms (doesn't slow main response)
@@ -19,56 +22,57 @@ Based on our architecture design, every LLM call should automatically get a "con
 ## Technical Requirements
 
 ### Integration Point
+
 ```typescript
 // In openrouter.service.ts or wherever LLM calls happen
 async function getLLMResponse(prompt: string, user_id: string): Promise<string> {
   // Fire and forget - don't wait at all
   const whisperPromise = getConscienceWhisper(prompt, user_id);
-  
+
   // Store for NEXT interaction (not this one)
   whisperPromise
-    .then(whisper => {
+    .then((whisper) => {
       // Store in context for next call
       userContext[user_id].lastWhisper = whisper;
       userContext[user_id].whisperTime = Date.now();
     })
     .catch(() => {}); // Silent fail
-  
+
   // Use PREVIOUS whisper if available and recent (< 5 min old)
   const previousWhisper = userContext[user_id]?.lastWhisper;
   const whisperAge = Date.now() - (userContext[user_id]?.whisperTime || 0);
-  
-  const enhancedPrompt = (previousWhisper && whisperAge < 300000)
-    ? `${prompt}\n[Context: ${previousWhisper}]`
-    : prompt;
-  
+
+  const enhancedPrompt =
+    previousWhisper && whisperAge < 300000 ? `${prompt}\n[Context: ${previousWhisper}]` : prompt;
+
   return await mainLLM.generate(enhancedPrompt);
 }
 ```
 
 ### Conscience Service
+
 ```typescript
 class ConscienceService {
   private model = 'microsoft/phi-3-mini-128k-instruct:free';
-  
+
   async getWhisper(userMessage: string, user_id: string): Promise<string> {
     // Get context
     const goals = await this.getActiveGoals(user_id);
     const recentHistory = await this.getRecentInteractions(user_id, 5);
     const currentTime = new Date().toISOString();
-    
+
     // Generate whisper
     const prompt = `
-      Active goals: ${goals.map(g => g.objective).join(', ')}
+      Active goals: ${goals.map((g) => g.objective).join(', ')}
       Current time: ${currentTime}
-      Recent topics: ${recentHistory.map(h => h.topic).join(', ')}
+      Recent topics: ${recentHistory.map((h) => h.topic).join(', ')}
       User just said: "${userMessage}"
       
       In ONE sentence, what should I keep in mind when responding?
       Focus on emotional context, energy levels, or goal relevance.
       Be subtle and human.
     `;
-    
+
     return await this.callLLM(prompt);
   }
 }
@@ -77,6 +81,7 @@ class ConscienceService {
 ## Test Cases
 
 ### Test 1: Conscience Whisper Injection
+
 ```javascript
 // Mock setup
 mockGoals = [{ objective: 'Complete PR by 2pm', deadline: '2024-01-15T14:00:00Z' }];
@@ -91,6 +96,7 @@ assert(logs.includes('[Conscience:'));
 ```
 
 ### Test 2: Whisper Timeout
+
 ```javascript
 // Mock slow conscience (300ms delay)
 conscienceService.getWhisper = async () => {
@@ -107,6 +113,7 @@ assert(duration < 250); // Didn't wait for slow conscience
 ```
 
 ### Test 3: Whisper Content Variations
+
 ```javascript
 // Test different scenarios produce appropriate whispers
 
@@ -117,12 +124,12 @@ whisper = await conscience.getWhisper("Let's chat about movies", userId);
 
 // Scenario 2: User seems stressed
 mockHistory = ['bug fix', 'error', 'not working', 'frustrated'];
-whisper = await conscience.getWhisper("I give up", userId);
+whisper = await conscience.getWhisper('I give up', userId);
 // Should be supportive/encouraging
 
 // Scenario 3: No active goals
 mockGoals = [];
-whisper = await conscience.getWhisper("What should I work on?", userId);
+whisper = await conscience.getWhisper('What should I work on?', userId);
 // Should suggest setting goals
 ```
 
@@ -136,6 +143,7 @@ whisper = await conscience.getWhisper("What should I work on?", userId);
 6. **Logging**: Log all whispers with timestamps for analysis
 
 ## Configuration
+
 ```typescript
 // Environment variables
 ENABLE_CONSCIENCE=true
@@ -145,6 +153,7 @@ CONSCIENCE_LOG_LEVEL=debug
 ```
 
 ## Definition of Done
+
 - [ ] All acceptance criteria met
 - [ ] All test cases pass
 - [ ] Integrated into main LLM service
@@ -154,6 +163,7 @@ CONSCIENCE_LOG_LEVEL=debug
 - [ ] Documentation includes example whispers
 
 ## Example Whispers
+
 ```
 User: "I love cereal!"
 Whisper: "They have a PR due in 45 minutes but seem to need a mental break"
@@ -169,5 +179,6 @@ Whisper: "No active goals set, good opportunity to plan the day"
 ```
 
 ## Dependencies
+
 - Requires Issue #001 (Goal Capability) to fetch active goals
 - Should be implemented after basic goal system is working

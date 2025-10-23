@@ -20,7 +20,7 @@ class ActionAliasMapper {
     ['ls', 'list_directory'],
     ['check', 'exists'],
     ['remove', 'delete'],
-    ['rm', 'delete']
+    ['rm', 'delete'],
   ]);
 
   static resolve(action: string): string {

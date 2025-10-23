@@ -21,12 +21,14 @@ The core AI orchestration service for Coach Artie 2.
 ```
 
 ### Rules:
+
 1. **Tool name = XML tag name** (kebab-case like `search-wikipedia`)
 2. **Main argument = tag content** (the query, title, date, etc.)
 3. **Optional params = XML attributes** (limit, format, etc.)
 4. **No args = self-closing tag** (like `<get-current-time />`)
 
 ### Implementation Details:
+
 - The XML parser (`src/utils/xml-parser.ts`) automatically detects kebab-case tags
 - Converts `<search-wikipedia>query</search-wikipedia>` to internal format
 - Smart parameter mapping based on tool name:
@@ -36,6 +38,7 @@ The core AI orchestration service for Coach Artie 2.
 - Additional XML attributes are merged as extra parameters
 
 ### DO NOT:
+
 - Use the old format: `<capability name="mcp_client" action="call_tool" tool_name="search_wikipedia">`
 - Put tool names in JSON content
 - Use complex nested structures

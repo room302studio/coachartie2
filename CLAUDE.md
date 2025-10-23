@@ -1,9 +1,11 @@
 # Coach Artie 2
 
 ## IMPORTANT
+
 Only do what is explicitly asked. Don't commit unless requested.
 
 ## Ports
+
 ```
 47319 → Health
 47320 → Redis
@@ -17,19 +19,23 @@ Only do what is explicitly asked. Don't commit unless requested.
 ```
 
 ## Start
+
 ```bash
 npm run dev
 ```
 
 ## Missing
+
 - Discord token in `.env`
 
 ## Bug Discovery: Job Tracking Issue (Fixed)
 
 ### The Problem
+
 Coach Artie was getting stuck with "Job not found or expired" errors, causing Discord to infinitely retry checking job status.
 
 ### Root Cause Analysis
+
 1. **Discord → Capabilities Communication Pattern Mismatch**
    - Discord uses job polling pattern: POST `/chat` → get job ID → poll GET `/chat/{jobId}`
    - Capabilities has the endpoints but wasn't actually tracking jobs
@@ -47,15 +53,19 @@ Coach Artie was getting stuck with "Job not found or expired" errors, causing Di
    - Added `jobTracker.failJob()` when errors occur
 
 ### Files Modified
+
 - `/packages/capabilities/src/routes/chat.ts` - Added job tracking on creation
 - `/packages/capabilities/src/queues/consumer.ts` - Added job status updates during processing
 
 ### Testing
+
 After fix, messages should:
+
 1. Get tracked immediately when submitted
 2. Update status as they process
 3. Complete properly so Discord stops polling
 4. No more infinite "Job not found" errors
 
 ### Model Configuration
+
 - Locked to Claude 3.5 Sonnet: `OPENROUTER_MODELS=anthropic/claude-3.5-sonnet` in `.env`

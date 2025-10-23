@@ -21,7 +21,7 @@ graph TD
     Q --> R{Tool Registration}
     R -->|❌ BROKEN HERE| S[Map Tools to Simple XML Tags]
     R -->|❌ NOT HAPPENING| T[Register in Capability Registry]
-    
+
     U[User Message:<br/>'&lt;search-museum-objects&gt;monet&lt;/search-museum-objects&gt;'] --> V[XML Parser]
     V --> W{Tag Detection}
     W -->|✅ Detects MCP Tool| X[Map to MCP Client Call]
@@ -39,6 +39,7 @@ graph TD
 ## Problem Analysis
 
 ### ✅ WORKING PARTS:
+
 1. **XML Parsing** - `<mcp-auto-install>` tags detected correctly
 2. **Package Installation** - NPM packages install successfully
 3. **Process Spawning** - Met Museum MCP process is running
@@ -46,18 +47,23 @@ graph TD
 5. **Tool Discovery** - 3 tools found: list-departments, search-museum-objects, get-museum-object
 
 ### ❌ BROKEN PARTS:
+
 1. **Tool Registration** - Discovered tools aren't being registered in the capability registry
 2. **Tool Mapping** - No mapping from MCP tool names to simple XML tags
 3. **Tool Availability** - When user tries `<search-museum-objects>`, system doesn't know about it
 
 ### 🎯 THE MISSING LINK:
+
 After successful tool discovery (line 428 in mcp-client.ts), we need to:
+
 1. Register each discovered tool in the capability registry
 2. Create mappings from kebab-case XML tags to MCP tool calls
 3. Make tools available for the XML parser to recognize
 
 ### 🔧 FIX NEEDED:
+
 In `mcp-client.ts` after line 428 where tools are discovered:
+
 ```typescript
 // Register discovered tools in capability registry
 for (const tool of connection.tools) {

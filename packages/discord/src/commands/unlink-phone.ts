@@ -19,7 +19,7 @@ export const unlinkPhoneCommand = {
       if (!phoneData) {
         return await interaction.reply({
           content: '❌ No phone number is currently linked to your account.',
-          ephemeral: true
+          ephemeral: true,
         });
       }
 
@@ -30,7 +30,7 @@ export const unlinkPhoneCommand = {
       await redis.del(userPhoneKey);
 
       const embed = new EmbedBuilder()
-        .setColor(0xFF9900)
+        .setColor(0xff9900)
         .setTitle('📱 Phone Number Unlinked')
         .setDescription('Your phone number has been successfully removed.')
         .addFields(
@@ -43,20 +43,19 @@ export const unlinkPhoneCommand = {
       logger.info('Phone number unlinked', {
         userId,
         phoneHash: phone.phoneHash?.substring(0, 8),
-        service: 'discord'
+        service: 'discord',
       });
 
       await interaction.reply({
         embeds: [embed],
-        ephemeral: true
+        ephemeral: true,
       });
-
     } catch (error) {
       logger.error('Error in unlink-phone command:', error);
       await interaction.reply({
         content: '❌ An error occurred while unlinking your phone. Please try again.',
-        ephemeral: true
+        ephemeral: true,
       });
     }
-  }
+  },
 };

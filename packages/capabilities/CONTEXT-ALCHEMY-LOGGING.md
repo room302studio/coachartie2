@@ -1,11 +1,13 @@
 # Context Alchemy Logging Guide
 
 ## Overview
+
 Context Alchemy now has comprehensive logging to help debug and understand how context is assembled and how it affects responses.
 
 ## Enable Debug Mode
 
 Add to your `.env` file:
+
 ```bash
 CONTEXT_ALCHEMY_DEBUG=true  # Enable detailed logging
 ```
@@ -13,6 +15,7 @@ CONTEXT_ALCHEMY_DEBUG=true  # Enable detailed logging
 ## What Gets Logged
 
 ### 1. Session Start
+
 ```
 ╔═══════════════════════════════════════════════════════════════════╗
 ║              🧪 CONTEXT ALCHEMY ASSEMBLY START 🧪               ║
@@ -22,6 +25,7 @@ CONTEXT_ALCHEMY_DEBUG=true  # Enable detailed logging
 ```
 
 ### 2. Token Budget Calculation
+
 ```
 ┌─ TOKEN BUDGET CALCULATION ──────────────────────────────────────┐
 │ Total Window:     4000 tokens
@@ -34,6 +38,7 @@ CONTEXT_ALCHEMY_DEBUG=true  # Enable detailed logging
 ```
 
 ### 3. Memory Search (3-Layer Parallel)
+
 ```
 ┌─ MEMORY SEARCH (3-Layer Entourage) ─────────────────────────────┐
 │ 🧠 Running 3-LAYER PARALLEL SEARCH:
@@ -52,6 +57,7 @@ CONTEXT_ALCHEMY_DEBUG=true  # Enable detailed logging
 ```
 
 ### 4. Context Selection
+
 ```
 ┌─ CONTEXT SELECTION (Priority & Budget) ─────────────────────────┐
 │ ✅ SELECTED: temporal_context       (50 tokens, pri: 100)
@@ -64,6 +70,7 @@ CONTEXT_ALCHEMY_DEBUG=true  # Enable detailed logging
 ```
 
 ### 5. Message Chain Assembly
+
 ```
 ┌─ MESSAGE CHAIN ASSEMBLY ─────────────────────────────────────────┐
 │ 🎲 Memory context role: assistant (random selection for variety)
@@ -78,6 +85,7 @@ CONTEXT_ALCHEMY_DEBUG=true  # Enable detailed logging
 ```
 
 ### 6. Context Sources Summary
+
 ```
 ┌─ CONTEXT SOURCES INCLUDED ───────────────────────────────────────┐
 │ temporal     | Pri:100 |  ~50 tokens | temporal_context
@@ -88,6 +96,7 @@ CONTEXT_ALCHEMY_DEBUG=true  # Enable detailed logging
 ```
 
 ### 7. Session Complete
+
 ```
 ╔═══════════════════════════════════════════════════════════════════╗
 ║ ✅ CONTEXT ASSEMBLY COMPLETE: 4 messages, 4 sources              ║
@@ -97,7 +106,9 @@ CONTEXT_ALCHEMY_DEBUG=true  # Enable detailed logging
 ## Understanding the Logs
 
 ### Fusion Patterns
+
 The system randomly selects from 5 fusion patterns to create variety:
+
 - **layered**: Keywords first, then semantic, then temporal
 - **interleaved**: Mix all three naturally
 - **comparative**: Present as different perspectives
@@ -105,11 +116,13 @@ The system randomly selects from 5 fusion patterns to create variety:
 - **temporal_flow**: Organize by time context
 
 ### Memory Layers
+
 - **🔍 Keyword**: Direct text matches
 - **🧠 Semantic**: Vector similarity (OpenAI when available, TF-IDF fallback)
 - **📅 Temporal**: Time-based relevance
 
 ### Token Management
+
 - Shows exactly how many tokens are used vs available
 - Helps identify when context is being cut off due to token limits
 - Shows which sources get included/excluded based on priority
@@ -134,6 +147,7 @@ The system randomly selects from 5 fusion patterns to create variety:
 ## Performance Metrics
 
 The logs show timing information:
+
 - Parallel search time (all 3 layers)
 - Total context assembly time
 - Individual operation timings
@@ -143,6 +157,7 @@ This helps identify performance bottlenecks.
 ## Disable Logging
 
 To turn off detailed logging:
+
 ```bash
 CONTEXT_ALCHEMY_DEBUG=false  # or remove the line entirely
 ```

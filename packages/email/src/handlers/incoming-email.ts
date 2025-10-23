@@ -15,11 +15,11 @@ export async function handleIncomingEmail(emailData: EmailWebhookData): Promise<
     // Extract email address (remove name if present)
     const emailMatch = emailData.from.match(/<(.+)>/) || [null, emailData.from];
     const senderEmail = emailMatch[1] || emailData.from;
-    
+
     // Use text content, fallback to HTML without tags
-    const messageBody = emailData.text || 
-      (emailData.html ? emailData.html.replace(/<[^>]*>/g, '').trim() : '');
-    
+    const messageBody =
+      emailData.text || (emailData.html ? emailData.html.replace(/<[^>]*>/g, '').trim() : '');
+
     if (!messageBody) {
       logger.warn('Empty email body received from:', senderEmail);
       return;
@@ -37,23 +37,22 @@ export async function handleIncomingEmail(emailData: EmailWebhookData): Promise<
         emailAddress: senderEmail,
         subject: emailData.subject,
         platform: 'email',
-        hasHtml: !!emailData.html
+        hasHtml: !!emailData.html,
       },
       respondTo: {
         type: 'email',
-        emailAddress: senderEmail
-      }
+        emailAddress: senderEmail,
+      },
     };
 
     // Send to capabilities queue for processing
     await messageQueue.add('process', queueMessage);
-    
+
     logger.info(`Email message queued for processing: ${queueMessage.id}`, {
       from: senderEmail,
       subject: emailData.subject,
-      preview: messageBody.substring(0, 100) + (messageBody.length > 100 ? '...' : '')
+      preview: messageBody.substring(0, 100) + (messageBody.length > 100 ? '...' : ''),
     });
-
   } catch (error) {
     logger.error('Failed to queue email message:', error);
     throw error;

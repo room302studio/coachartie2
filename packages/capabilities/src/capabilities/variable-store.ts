@@ -36,17 +36,17 @@ export class VariableStore {
       this.sessions.set(sessionId, new Map());
       this.sessionMetadata.set(sessionId, {
         created: Date.now(),
-        lastAccess: Date.now()
+        lastAccess: Date.now(),
       });
       logger.info(`🗃️ Created new variable session: ${sessionId}`);
     }
-    
+
     // Update last access
     const metadata = this.sessionMetadata.get(sessionId);
     if (metadata) {
       metadata.lastAccess = Date.now();
     }
-    
+
     return this.sessions.get(sessionId)!;
   }
 
@@ -56,7 +56,9 @@ export class VariableStore {
   setVariable(sessionId: string, key: string, value: any): void {
     const session = this.getSession(sessionId);
     session.set(key, value);
-    logger.info(`📦 Set variable ${key} in session ${sessionId}: ${typeof value === 'object' ? JSON.stringify(value).substring(0, 100) + '...' : value}`);
+    logger.info(
+      `📦 Set variable ${key} in session ${sessionId}: ${typeof value === 'object' ? JSON.stringify(value).substring(0, 100) + '...' : value}`
+    );
   }
 
   /**
@@ -65,7 +67,9 @@ export class VariableStore {
   getVariable(sessionId: string, key: string): any {
     const session = this.getSession(sessionId);
     const value = session.get(key);
-    logger.info(`📭 Get variable ${key} from session ${sessionId}: ${value !== undefined ? 'found' : 'not found'}`);
+    logger.info(
+      `📭 Get variable ${key} from session ${sessionId}: ${value !== undefined ? 'found' : 'not found'}`
+    );
     return value;
   }
 
@@ -74,16 +78,18 @@ export class VariableStore {
    */
   interpolateString(sessionId: string, template: string): string {
     const session = this.getSession(sessionId);
-    
+
     return template.replace(/\{\{([^}]+)\}\}/g, (match, varName) => {
       const trimmedVarName = varName.trim();
       const value = session.get(trimmedVarName);
-      
+
       if (value !== undefined) {
         // Convert to string, handling objects
         return typeof value === 'object' ? JSON.stringify(value) : String(value);
       } else {
-        logger.warn(`🔍 Variable ${trimmedVarName} not found in session ${sessionId}, leaving unchanged`);
+        logger.warn(
+          `🔍 Variable ${trimmedVarName} not found in session ${sessionId}, leaving unchanged`
+        );
         return match; // Leave unchanged if variable not found
       }
     });
@@ -95,11 +101,11 @@ export class VariableStore {
   listVariables(sessionId: string): Record<string, any> {
     const session = this.getSession(sessionId);
     const variables: Record<string, any> = {};
-    
+
     for (const [key, value] of session.entries()) {
       variables[key] = value;
     }
-    
+
     return variables;
   }
 
@@ -110,11 +116,11 @@ export class VariableStore {
     const session = this.getSession(sessionId);
     const existed = session.has(key);
     session.delete(key);
-    
+
     if (existed) {
       logger.info(`🗑️ Cleared variable ${key} from session ${sessionId}`);
     }
-    
+
     return existed;
   }
 
@@ -134,18 +140,20 @@ export class VariableStore {
   /**
    * Get session statistics
    */
-  getSessionStats(sessionId: string): { variableCount: number; created: string; lastAccess: string } | null {
+  getSessionStats(
+    sessionId: string
+  ): { variableCount: number; created: string; lastAccess: string } | null {
     const session = this.sessions.get(sessionId);
     const metadata = this.sessionMetadata.get(sessionId);
-    
+
     if (!session || !metadata) {
       return null;
     }
-    
+
     return {
       variableCount: session.size,
       created: new Date(metadata.created).toISOString(),
-      lastAccess: new Date(metadata.lastAccess).toISOString()
+      lastAccess: new Date(metadata.lastAccess).toISOString(),
     };
   }
 
@@ -157,14 +165,14 @@ export class VariableStore {
       const now = Date.now();
       const maxAge = 3600000; // 1 hour
       let cleanedCount = 0;
-      
+
       for (const [sessionId, metadata] of this.sessionMetadata) {
         if (now - metadata.lastAccess > maxAge) {
           this.clearSession(sessionId);
           cleanedCount++;
         }
       }
-      
+
       if (cleanedCount > 0) {
         logger.info(`🧹 Cleaned up ${cleanedCount} old variable sessions`);
       }
@@ -186,22 +194,25 @@ async function handleVariableAction(params: VariableParams, content?: string): P
   const { action, sessionId = 'default-session' } = params;
   const variableStore = VariableStore.getInstance();
 
-  logger.info(`🗃️ Variable handler called - Action: ${action}, SessionId: ${sessionId}, Params:`, params);
+  logger.info(
+    `🗃️ Variable handler called - Action: ${action}, SessionId: ${sessionId}, Params:`,
+    params
+  );
 
   try {
     switch (action) {
       case 'set': {
         const key = params.key;
         const value = params.value || content;
-        
+
         if (!key) {
           return '❌ Please provide a key. Example: <capability name="variable" action="set" key="myvar" value="myvalue" />';
         }
-        
+
         if (value === undefined) {
           return '❌ Please provide a value. Example: <capability name="variable" action="set" key="myvar" value="myvalue" />';
         }
-        
+
         // Try to parse JSON if it looks like JSON
         let parsedValue = value;
         if (typeof value === 'string' && (value.startsWith('{') || value.startsWith('['))) {
@@ -211,7 +222,7 @@ async function handleVariableAction(params: VariableParams, content?: string): P
             // Keep as string if not valid JSON
           }
         }
-        
+
         variableStore.setVariable(sessionId, String(key), parsedValue);
         return `✅ Variable "${key}" set to: ${typeof parsedValue === 'object' ? JSON.stringify(parsedValue).substring(0, 100) + '...' : parsedValue}`;
       }
@@ -221,7 +232,7 @@ async function handleVariableAction(params: VariableParams, content?: string): P
         if (!key) {
           return '❌ Please provide a key. Example: <capability name="variable" action="get" key="myvar" />';
         }
-        
+
         const value = variableStore.getVariable(sessionId, String(key));
         if (value !== undefined) {
           return typeof value === 'object' ? JSON.stringify(value) : String(value);
@@ -235,7 +246,7 @@ async function handleVariableAction(params: VariableParams, content?: string): P
         if (!template) {
           return '❌ Please provide template content. Example: <capability name="variable" action="interpolate">Hello {{name}}</capability>';
         }
-        
+
         const interpolated = variableStore.interpolateString(sessionId, template);
         return interpolated;
       }
@@ -243,19 +254,22 @@ async function handleVariableAction(params: VariableParams, content?: string): P
       case 'list': {
         const variables = variableStore.listVariables(sessionId);
         const keys = Object.keys(variables);
-        
+
         if (keys.length === 0) {
           return '📭 No variables in current session';
         }
-        
-        const varList = keys.map(key => {
-          const value = variables[key];
-          const preview = typeof value === 'object' ? 
-            JSON.stringify(value).substring(0, 50) + '...' : 
-            String(value).substring(0, 50);
-          return `• ${key}: ${preview}`;
-        }).join('\n');
-        
+
+        const varList = keys
+          .map((key) => {
+            const value = variables[key];
+            const preview =
+              typeof value === 'object'
+                ? JSON.stringify(value).substring(0, 50) + '...'
+                : String(value).substring(0, 50);
+            return `• ${key}: ${preview}`;
+          })
+          .join('\n');
+
         return `📦 Variables in session (${keys.length}):\n${varList}`;
       }
 
@@ -264,11 +278,9 @@ async function handleVariableAction(params: VariableParams, content?: string): P
         if (!key) {
           return '❌ Please provide a key. Example: <capability name="variable" action="clear" key="myvar" />';
         }
-        
+
         const existed = variableStore.clearVariable(sessionId, String(key));
-        return existed ? 
-          `✅ Variable "${key}" cleared` : 
-          `Variable "${key}" not found`;
+        return existed ? `✅ Variable "${key}" cleared` : `Variable "${key}" not found`;
       }
 
       case 'clear_all': {
@@ -281,7 +293,7 @@ async function handleVariableAction(params: VariableParams, content?: string): P
         if (!stats) {
           return '📊 Session not found or empty';
         }
-        
+
         return `📊 Session Stats:
 • Variables: ${stats.variableCount}
 • Created: ${new Date(stats.created).toLocaleString()}
@@ -311,6 +323,6 @@ export const variableStoreCapability: RegisteredCapability = {
     '<capability name="variable" action="interpolate">Hello {{name}}, how are you?</capability>',
     '<capability name="variable" action="list" />',
     '<capability name="variable" action="clear" key="name" />',
-    '<capability name="variable" action="clear_all" />'
-  ]
+    '<capability name="variable" action="clear_all" />',
+  ],
 };

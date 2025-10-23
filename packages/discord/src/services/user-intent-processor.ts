@@ -1,6 +1,6 @@
 /**
  * Universal User Intent Processor
- * 
+ *
  * Single implementation for all Discord interactions:
  * - Messages, button clicks, menu selections, slash commands
  * - Handles job submission, monitoring, streaming, completion
@@ -61,12 +61,21 @@ function cleanCapabilityTags(text: string): string {
   text = text.replace(/^(Looking at|Based on|Given that|Since)\s+.*?\.\s*/gim, '');
 
   // Remove reasoning phrases
-  text = text.replace(/\b(Let me think about this|I think|I believe|It seems|It appears)\s+.*?\.\s*/gi, '');
+  text = text.replace(
+    /\b(Let me think about this|I think|I believe|It seems|It appears)\s+.*?\.\s*/gi,
+    ''
+  );
   text = text.replace(/\b(This suggests|This indicates|This means)\s+.*?\.\s*/gi, '');
 
   // Remove meta-commentary about capabilities
-  text = text.replace(/I'm (using|calling|invoking)\s+.*?\s+(capability|tool|function)\s*\.?\s*/gi, '');
-  text = text.replace(/The\s+.*?\s+(capability|tool|function)\s+(will|should|can)\s+.*?\.\s*/gi, '');
+  text = text.replace(
+    /I'm (using|calling|invoking)\s+.*?\s+(capability|tool|function)\s*\.?\s*/gi,
+    ''
+  );
+  text = text.replace(
+    /The\s+.*?\s+(capability|tool|function)\s+(will|should|can)\s+.*?\.\s*/gi,
+    ''
+  );
 
   // Remove status indicators that leaked through
   text = text.replace(/^(Working on|Processing|Analyzing)\s+.*?\.\s*/gim, '');
@@ -90,14 +99,14 @@ function cleanCapabilityTags(text: string): string {
 function shouldCreateThread(content: string): boolean {
   // Create threads for:
   return (
-    content.length > 200 ||                                    // Long requests
-    content.includes('explain') && content.length > 100 ||     // Explanations
-    content.includes('help me with') && content.length > 80 ||  // Help requests
-    content.includes('how do I') && content.length > 60 ||     // How-to questions
-    content.includes('walk me through') ||                     // Step-by-step requests
-    content.includes('tutorial') ||                            // Tutorial requests
-    content.includes('step by step') ||                        // Detailed instructions
-    content.split('?').length > 2                              // Multiple questions
+    content.length > 200 || // Long requests
+    (content.includes('explain') && content.length > 100) || // Explanations
+    (content.includes('help me with') && content.length > 80) || // Help requests
+    (content.includes('how do I') && content.length > 60) || // How-to questions
+    content.includes('walk me through') || // Step-by-step requests
+    content.includes('tutorial') || // Tutorial requests
+    content.includes('step by step') || // Detailed instructions
+    content.split('?').length > 2 // Multiple questions
   );
 }
 
@@ -132,20 +141,25 @@ function generateThreadName(content: string): string {
 /**
  * Create rich Discord embed for status updates
  */
-function createStatusEmbed(status: string, jobId: string, startTime: number, streamedChunks: number = 0) {
+function createStatusEmbed(
+  status: string,
+  jobId: string,
+  startTime: number,
+  streamedChunks: number = 0
+) {
   const duration = Date.now() - startTime;
   const statusColors: Record<string, number> = {
-    pending: 0xFFA500,   // Orange
-    processing: 0x3498DB, // Blue
-    completed: 0x2ECC71,  // Green
-    error: 0xE74C3C       // Red
+    pending: 0xffa500, // Orange
+    processing: 0x3498db, // Blue
+    completed: 0x2ecc71, // Green
+    error: 0xe74c3c, // Red
   };
 
   const statusEmojis: Record<string, string> = {
     pending: '⏸️',
     processing: '⚡',
     completed: '✅',
-    error: '❌'
+    error: '❌',
   };
 
   return {
@@ -155,23 +169,23 @@ function createStatusEmbed(status: string, jobId: string, startTime: number, str
       {
         name: 'Status',
         value: status.charAt(0).toUpperCase() + status.slice(1),
-        inline: true
+        inline: true,
       },
       {
         name: 'Duration',
         value: `${Math.round(duration / 1000)}s`,
-        inline: true
+        inline: true,
       },
       {
         name: 'Job ID',
         value: `\`${jobId.slice(-8)}\``,
-        inline: true
-      }
+        inline: true,
+      },
     ],
     timestamp: new Date().toISOString(),
     footer: {
-      text: streamedChunks > 0 ? `${streamedChunks} chunks streamed` : 'Processing your request...'
-    }
+      text: streamedChunks > 0 ? `${streamedChunks} chunks streamed` : 'Processing your request...',
+    },
   };
 }
 
@@ -179,17 +193,17 @@ function createStatusEmbed(status: string, jobId: string, startTime: number, str
  * Process any user intent through the unified pipeline
  */
 export async function processUserIntent(
-  intent: UserIntent, 
+  intent: UserIntent,
   options: ProcessorOptions = {}
 ): Promise<void> {
   const {
-    enableStreaming = true,    // Default to streaming for better UX
-    enableTyping = true,       // Default to typing indicators
-    enableReactions = false,   // MINIMAL: No emoji spam
-    enableEditing = true,      // DEFAULT TO EDITING to prevent spam
-    enableThreading = false,   // MINIMAL: Less auto-organization
+    enableStreaming = true, // Default to streaming for better UX
+    enableTyping = true, // Default to typing indicators
+    enableReactions = false, // MINIMAL: No emoji spam
+    enableEditing = true, // DEFAULT TO EDITING to prevent spam
+    enableThreading = false, // MINIMAL: Less auto-organization
     maxAttempts = 60,
-    statusUpdateInterval = 5
+    statusUpdateInterval = 5,
   } = options;
 
   const correlationId = generateCorrelationId();
@@ -215,15 +229,20 @@ export async function processUserIntent(
       username: intent.username,
       contentLength: intent.content.length,
       enableStreaming,
-      enableTyping
+      enableTyping,
     });
 
-    telemetry.logEvent('intent_started', {
-      source: intent.source,
-      contentLength: intent.content.length,
-      enableStreaming,
-      enableTyping
-    }, correlationId, intent.userId);
+    telemetry.logEvent(
+      'intent_started',
+      {
+        source: intent.source,
+        contentLength: intent.content.length,
+        enableStreaming,
+        enableTyping,
+      },
+      correlationId,
+      intent.userId
+    );
 
     // MINIMAL: No acknowledgment emoji - just start typing like a human
 
@@ -261,13 +280,17 @@ export async function processUserIntent(
     }
 
     // Submit job to capability system with Discord context
-    const jobInfo = await capabilitiesClient.submitJob(intent.content, intent.userId, intent.context);
+    const jobInfo = await capabilitiesClient.submitJob(
+      intent.content,
+      intent.userId,
+      intent.context
+    );
     const jobShortId = jobInfo.messageId.slice(-8);
 
     logger.info(`Job submitted [${shortId}]:`, {
       correlationId,
       jobId: jobInfo.messageId,
-      source: intent.source
+      source: intent.source,
     });
 
     telemetry.incrementJobsSubmitted(intent.userId, jobInfo.messageId);
@@ -280,7 +303,11 @@ export async function processUserIntent(
       onProgress: async (status) => {
         try {
           // ENHANCED: Smart streaming with better formatting
-          if (enableStreaming && status.partialResponse && status.partialResponse !== lastSentContent) {
+          if (
+            enableStreaming &&
+            status.partialResponse &&
+            status.partialResponse !== lastSentContent
+          ) {
             // Clean capability tags before streaming
             const cleanedResponse = cleanCapabilityTags(status.partialResponse);
             const newContent = cleanedResponse.slice(lastSentContent.length);
@@ -293,13 +320,12 @@ export async function processUserIntent(
               const minTimeBetweenUpdates = 500; // Half second minimum to prevent flicker
 
               // Natural update points - like a human would send
-              const shouldStream = (
-                endsWithNewline && timeSinceLastUpdate > minTimeBetweenUpdates || // Natural line break
-                hasDoubleLine ||                                    // Paragraph break
-                newContent.length > 150 ||                         // Getting long, send it
-                timeSinceLastUpdate > 1500 ||                      // 1.5s pause = send
-                /[.!?]\s*\n/.test(newContent)                      // Sentence ending with newline
-              );
+              const shouldStream =
+                (endsWithNewline && timeSinceLastUpdate > minTimeBetweenUpdates) || // Natural line break
+                hasDoubleLine || // Paragraph break
+                newContent.length > 150 || // Getting long, send it
+                timeSinceLastUpdate > 1500 || // 1.5s pause = send
+                /[.!?]\s*\n/.test(newContent); // Sentence ending with newline
 
               if (shouldStream) {
                 // HUMAN-LIKE: Stop typing as soon as we start responding
@@ -327,7 +353,9 @@ export async function processUserIntent(
                     lastSentContent = cleanedResponse;
                     lastUpdateTime = Date.now();
                     streamedChunks++;
-                    logger.info(`Edited streaming message [${shortId}]: ${cleanedResponse.length} chars`);
+                    logger.info(
+                      `Edited streaming message [${shortId}]: ${cleanedResponse.length} chars`
+                    );
                   } catch (error) {
                     // NO FALLBACK - just log and continue accumulating
                     logger.warn(`Failed to edit, will retry next batch [${shortId}]:`, error);
@@ -346,7 +374,6 @@ export async function processUserIntent(
           // MINIMAL: No emoji reactions - just pure human-like behavior
           lastStatus = status.status;
           updateCount++;
-
         } catch (error) {
           logger.warn(`Progress update failed [${shortId}]:`, error);
         }
@@ -373,7 +400,7 @@ export async function processUserIntent(
           jobId: jobInfo.messageId,
           duration: `${duration}ms`,
           resultLength: result?.length || 0,
-          streamedChunks
+          streamedChunks,
         });
 
         // MINIMAL: Just clean up any working emojis, no completion spam
@@ -421,7 +448,9 @@ export async function processUserIntent(
               const additionalContent = trimmedResult.slice(trimmedSent.length).trim();
               if (additionalContent && !additionalContent.startsWith(trimmedSent.slice(-10))) {
                 await intent.respond(additionalContent);
-                logger.info(`Sent additional final content [${shortId}]: ${additionalContent.slice(0,50)}...`);
+                logger.info(
+                  `Sent additional final content [${shortId}]: ${additionalContent.slice(0, 50)}...`
+                );
               } else {
                 logger.info(`Skipped final response [${shortId}] (redundant with stream)`);
               }
@@ -430,14 +459,20 @@ export async function processUserIntent(
             }
           }
 
-          telemetry.logEvent('intent_completed', {
-            source: intent.source,
-            jobId: jobInfo.messageId,
+          telemetry.logEvent(
+            'intent_completed',
+            {
+              source: intent.source,
+              jobId: jobInfo.messageId,
+              duration,
+              streamedChunks,
+              resultLength: result?.length || 0,
+            },
+            correlationId,
+            intent.userId,
             duration,
-            streamedChunks,
-            resultLength: result?.length || 0
-          }, correlationId, intent.userId, duration, true);
-
+            true
+          );
         } catch (error) {
           logger.error(`Failed to send completion response [${shortId}]:`, error);
         }
@@ -457,7 +492,7 @@ export async function processUserIntent(
           correlationId,
           jobId: jobInfo.messageId,
           error,
-          duration: `${duration}ms`
+          duration: `${duration}ms`,
         });
 
         // MINIMAL: Just clean up any working emojis on error
@@ -471,27 +506,33 @@ export async function processUserIntent(
 
         try {
           // ENHANCED: User-friendly error messages while staying transparent
-          const userFriendlyError = typeof error === 'string' && error.length < 100
-            ? `Something went wrong: ${error}`
-            : 'Something went wrong processing your request. The issue has been logged.';
+          const userFriendlyError =
+            typeof error === 'string' && error.length < 100
+              ? `Something went wrong: ${error}`
+              : 'Something went wrong processing your request. The issue has been logged.';
 
           await intent.respond(`❌ ${userFriendlyError}`);
 
-          telemetry.logEvent('intent_failed', {
-            source: intent.source,
-            jobId: jobInfo.messageId,
-            error,
-            duration
-          }, correlationId, intent.userId, duration, false);
-
+          telemetry.logEvent(
+            'intent_failed',
+            {
+              source: intent.source,
+              jobId: jobInfo.messageId,
+              error,
+              duration,
+            },
+            correlationId,
+            intent.userId,
+            duration,
+            false
+          );
         } catch (replyError) {
           logger.error(`Failed to send error response [${shortId}]:`, replyError);
         }
-      }
+      },
     });
 
     logger.info(`Intent processing setup complete [${shortId}]`);
-
   } catch (error) {
     // Cleanup on setup failure
     if (typingInterval) {
@@ -501,16 +542,23 @@ export async function processUserIntent(
     logger.error(`Intent processing setup failed [${shortId}]:`, {
       correlationId,
       error: error instanceof Error ? error.message : String(error),
-      source: intent.source
+      source: intent.source,
     });
 
-    telemetry.logEvent('intent_setup_failed', {
-      source: intent.source,
-      error: error instanceof Error ? error.message : String(error)
-    }, correlationId, intent.userId);
+    telemetry.logEvent(
+      'intent_setup_failed',
+      {
+        source: intent.source,
+        error: error instanceof Error ? error.message : String(error),
+      },
+      correlationId,
+      intent.userId
+    );
 
     try {
-      await intent.respond(`Failed to process your ${intent.source}: ${error instanceof Error ? error.message : String(error)}`);
+      await intent.respond(
+        `Failed to process your ${intent.source}: ${error instanceof Error ? error.message : String(error)}`
+      );
     } catch (replyError) {
       logger.error(`Failed to send setup error response [${shortId}]:`, replyError);
     }

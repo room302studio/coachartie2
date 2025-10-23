@@ -98,14 +98,17 @@ class MCPClientService {
   private validateServerUrl(url: string): { isValid: boolean; error?: string } {
     try {
       const parsed = new URL(url);
-      
+
       // Only allow HTTP and HTTPS
       if (!['http:', 'https:'].includes(parsed.protocol)) {
         return { isValid: false, error: 'Only HTTP and HTTPS protocols are supported' };
       }
 
       // Basic security check - don't allow localhost in production
-      if (process.env.NODE_ENV === 'production' && ['localhost', '127.0.0.1', '::1'].includes(parsed.hostname)) {
+      if (
+        process.env.NODE_ENV === 'production' &&
+        ['localhost', '127.0.0.1', '::1'].includes(parsed.hostname)
+      ) {
         return { isValid: false, error: 'Localhost connections not allowed in production' };
       }
 
@@ -118,7 +121,11 @@ class MCPClientService {
   /**
    * Make a JSON-RPC call to a stdio MCP server
    */
-  private async makeStdioJsonRpcCall(connection: MCPServerConnection, method: string, params?: Record<string, unknown>): Promise<unknown> {
+  private async makeStdioJsonRpcCall(
+    connection: MCPServerConnection,
+    method: string,
+    params?: Record<string, unknown>
+  ): Promise<unknown> {
     if (!connection.process || connection.process.killed) {
       throw new Error('Stdio process not available or killed');
     }
@@ -127,17 +134,17 @@ class MCPClientService {
       jsonrpc: '2.0',
       id: this.getNextRequestId(),
       method,
-      params
+      params,
     };
 
     return new Promise((resolve, reject) => {
       const requestJson = JSON.stringify(request) + '\n';
       let responseBuffer = '';
-      
+
       // Set up response handler
       const onData = (data: Buffer) => {
         responseBuffer += data.toString();
-        
+
         // Check if we have a complete JSON response
         const lines = responseBuffer.split('\n');
         for (let i = 0; i < lines.length - 1; i++) {
@@ -149,7 +156,7 @@ class MCPClientService {
                 // Clean up listener and timeout
                 clearTimeout(timeout);
                 connection.process?.stdout?.off('data', onData);
-                
+
                 if (response.error) {
                   reject(new Error(`MCP Error ${response.error.code}: ${response.error.message}`));
                 } else {
@@ -162,7 +169,7 @@ class MCPClientService {
             }
           }
         }
-        
+
         // Keep any incomplete line for next iteration
         responseBuffer = lines[lines.length - 1];
       };
@@ -192,12 +199,16 @@ class MCPClientService {
   /**
    * Make a JSON-RPC call to an MCP server
    */
-  private async makeJsonRpcCall(url: string, method: string, params?: Record<string, unknown>): Promise<unknown> {
+  private async makeJsonRpcCall(
+    url: string,
+    method: string,
+    params?: Record<string, unknown>
+  ): Promise<unknown> {
     const request: MCPRequest = {
       jsonrpc: '2.0',
       id: this.getNextRequestId(),
       method,
-      params
+      params,
     };
 
     const config: AxiosRequestConfig = {
@@ -205,11 +216,11 @@ class MCPClientService {
       url,
       headers: {
         'Content-Type': 'application/json',
-        'User-Agent': 'CoachArtie-MCP-Client/1.0.0'
+        'User-Agent': 'CoachArtie-MCP-Client/1.0.0',
       },
       data: request,
       timeout: 30000, // 30 second timeout
-      validateStatus: (status) => status < 500
+      validateStatus: (status) => status < 500,
     };
 
     try {
@@ -239,7 +250,7 @@ class MCPClientService {
   async connect(url: string, name?: string): Promise<string> {
     // Determine transport type
     const transport = this.detectTransport(url);
-    
+
     if (transport === 'http') {
       return this.connectHttp(url, name);
     } else {
@@ -268,22 +279,23 @@ class MCPClientService {
     }
 
     // Check if already connected
-    const existingConnection = Array.from(this.connections.values())
-      .find(conn => conn.url === url && conn.connected);
-    
+    const existingConnection = Array.from(this.connections.values()).find(
+      (conn) => conn.url === url && conn.connected
+    );
+
     if (existingConnection) {
       return `Already connected to MCP server: ${existingConnection.id}`;
     }
 
     const connectionId = this.generateConnectionId(url);
-    
+
     // Create initial connection record
     const connection: MCPServerConnection = {
       id: connectionId,
       url,
       name: name || `MCP Server ${connectionId}`,
       transport: 'http',
-      connected: false
+      connected: false,
     };
 
     this.connections.set(connectionId, connection);
@@ -293,12 +305,12 @@ class MCPClientService {
       await this.makeJsonRpcCall(url, 'initialize', {
         protocolVersion: '2024-11-05',
         capabilities: {
-          tools: { listChanged: true }
+          tools: { listChanged: true },
         },
         clientInfo: {
           name: 'CoachArtie',
-          version: '1.0.0'
-        }
+          version: '1.0.0',
+        },
       });
 
       // Mark as connected
@@ -318,7 +330,6 @@ class MCPClientService {
 
       logger.info(`Successfully connected to MCP server: ${connectionId} at ${url}`);
       return `Connected to MCP server: ${connectionId} (${connection.tools?.length || 0} tools available)`;
-
     } catch (error) {
       connection.error = error instanceof Error ? error.message : String(error);
       logger.error(`Failed to connect to MCP server ${url}:`, error);
@@ -336,22 +347,23 @@ class MCPClientService {
     }
 
     // Check if already connected
-    const existingConnection = Array.from(this.connections.values())
-      .find(conn => conn.url === command && conn.connected);
-    
+    const existingConnection = Array.from(this.connections.values()).find(
+      (conn) => conn.url === command && conn.connected
+    );
+
     if (existingConnection) {
       return `Already connected to MCP server: ${existingConnection.id}`;
     }
 
     const connectionId = this.generateConnectionId(command);
-    
+
     // Create initial connection record
     const connection: MCPServerConnection = {
       id: connectionId,
       url: command,
       name: name || `MCP Server ${connectionId}`,
       transport: 'stdio',
-      connected: false
+      connected: false,
     };
 
     this.connections.set(connectionId, connection);
@@ -362,10 +374,10 @@ class MCPClientService {
       if (!command.startsWith('stdio://')) {
         processUrl = `stdio://${command}`;
       }
-      
+
       const processId = await mcpProcessManager.startProcess(processUrl);
       const mcpProcess = mcpProcessManager.getProcess(processId);
-      
+
       if (!mcpProcess || !mcpProcess.process) {
         throw new Error('Failed to start MCP process');
       }
@@ -373,11 +385,11 @@ class MCPClientService {
       // Link connection to process
       connection.processId = processId;
       connection.process = mcpProcess.process;
-      
+
       // Event handlers removed to prevent memory leaks
 
-      // Quick check if process failed immediately  
-      await new Promise(resolve => setTimeout(resolve, 100));
+      // Quick check if process failed immediately
+      await new Promise((resolve) => setTimeout(resolve, 100));
 
       if (mcpProcess.status !== 'running') {
         throw new Error(`MCP process failed to start: ${mcpProcess.error || 'Unknown error'}`);
@@ -391,13 +403,15 @@ class MCPClientService {
           capabilities: {},
           clientInfo: {
             name: 'CoachArtie MCP Client',
-            version: '1.0.0'
-          }
+            version: '1.0.0',
+          },
         });
         logger.info(`MCP initialization successful for ${command}`);
       } catch (initError) {
         logger.error(`MCP initialization failed for ${command}:`, initError);
-        throw new Error(`MCP initialization failed: ${initError instanceof Error ? initError.message : String(initError)}`);
+        throw new Error(
+          `MCP initialization failed: ${initError instanceof Error ? initError.message : String(initError)}`
+        );
       }
 
       // Mark as connected after successful initialization
@@ -412,17 +426,19 @@ class MCPClientService {
         const toolsResult = await this.makeStdioJsonRpcCall(connection, 'tools/list');
         connection.tools = (toolsResult as any)?.tools || [];
         logger.info(`Discovered ${connection.tools?.length || 0} tools for ${command}`);
-        
+
         // Register discovered MCP tools as available capabilities
-        logger.info(`🔍 DEBUG: connection.tools exists: ${!!connection.tools}, length: ${connection.tools?.length || 0}`);
+        logger.info(
+          `🔍 DEBUG: connection.tools exists: ${!!connection.tools}, length: ${connection.tools?.length || 0}`
+        );
         if (connection.tools && connection.tools.length > 0) {
           logger.info(`🔧 Registering ${connection.tools.length} MCP tools from ${command}`);
-          
+
           // Store tools in a simple global registry to avoid circular dependency issues
           if (!global.mcpToolRegistry) {
             global.mcpToolRegistry = new Map();
           }
-          
+
           for (const tool of connection.tools) {
             const toolName = tool.name;
             global.mcpToolRegistry.set(toolName, {
@@ -431,8 +447,8 @@ class MCPClientService {
               tool: {
                 name: tool.name,
                 description: tool.description || `Tool: ${tool.name}`,
-                inputSchema: tool.inputSchema || {}
-              }
+                inputSchema: tool.inputSchema || {},
+              },
             });
             logger.info(`✅ Registered MCP tool: ${toolName} from ${command}`);
           }
@@ -446,9 +462,10 @@ class MCPClientService {
         connection.tools = [];
       }
 
-      logger.info(`Successfully connected to stdio MCP server: ${connectionId} (process: ${processId})`);
+      logger.info(
+        `Successfully connected to stdio MCP server: ${connectionId} (process: ${processId})`
+      );
       return `Connected to stdio MCP server: ${connectionId} (${connection.tools?.length || 0} tools available)`;
-
     } catch (error) {
       connection.error = error instanceof Error ? error.message : String(error);
       logger.error(`Failed to connect to stdio MCP server ${command}:`, error);
@@ -488,7 +505,7 @@ class MCPClientService {
     // Remove connection
     this.connections.delete(connectionId);
     logger.info(`Disconnected from MCP server: ${connectionId}`);
-    
+
     return `Disconnected from MCP server: ${connectionId}`;
   }
 
@@ -497,19 +514,23 @@ class MCPClientService {
    */
   listServers(): string {
     const connections = Array.from(this.connections.values());
-    
+
     if (connections.length === 0) {
       return 'No MCP servers connected';
     }
 
-    const serverList = connections.map(conn => {
-      const status = conn.connected ? '✅ Connected' : '❌ Disconnected';
-      const toolCount = conn.tools?.length || 0;
-      const connectedTime = conn.connectedAt ? ` (since ${conn.connectedAt.toLocaleString()})` : '';
-      const error = conn.error ? ` - Error: ${conn.error}` : '';
-      
-      return `• ${conn.id}: ${conn.name || conn.url} - ${status} - ${toolCount} tools${connectedTime}${error}`;
-    }).join('\n');
+    const serverList = connections
+      .map((conn) => {
+        const status = conn.connected ? '✅ Connected' : '❌ Disconnected';
+        const toolCount = conn.tools?.length || 0;
+        const connectedTime = conn.connectedAt
+          ? ` (since ${conn.connectedAt.toLocaleString()})`
+          : '';
+        const error = conn.error ? ` - Error: ${conn.error}` : '';
+
+        return `• ${conn.id}: ${conn.name || conn.url} - ${status} - ${toolCount} tools${connectedTime}${error}`;
+      })
+      .join('\n');
 
     return `MCP Servers (${connections.length}):\n${serverList}`;
   }
@@ -519,7 +540,7 @@ class MCPClientService {
    */
   listTools(connectionId?: string): string {
     let connections: MCPServerConnection[];
-    
+
     if (connectionId) {
       const connection = this.connections.get(connectionId);
       if (!connection) {
@@ -527,11 +548,11 @@ class MCPClientService {
       }
       connections = [connection];
     } else {
-      connections = Array.from(this.connections.values()).filter(conn => conn.connected);
+      connections = Array.from(this.connections.values()).filter((conn) => conn.connected);
     }
 
     if (connections.length === 0) {
-      return connectionId 
+      return connectionId
         ? `No connected server found with ID: ${connectionId}`
         : 'No connected MCP servers';
     }
@@ -542,7 +563,7 @@ class MCPClientService {
     for (const connection of connections) {
       const tools = connection.tools || [];
       totalTools += tools.length;
-      
+
       if (tools.length === 0) {
         toolsList += `\n${connection.name || connection.id}: No tools available`;
         continue;
@@ -563,7 +584,11 @@ class MCPClientService {
   /**
    * Call a specific tool on an MCP server
    */
-  async callTool(connectionId: string, toolName: string, args: Record<string, unknown> = {}): Promise<string> {
+  async callTool(
+    connectionId: string,
+    toolName: string,
+    args: Record<string, unknown> = {}
+  ): Promise<string> {
     const connection = this.connections.get(connectionId);
     if (!connection) {
       throw new Error(`Connection not found: ${connectionId}`);
@@ -574,7 +599,7 @@ class MCPClientService {
     }
 
     // Check if tool exists
-    const tool = connection.tools?.find(t => t.name === toolName);
+    const tool = connection.tools?.find((t) => t.name === toolName);
     if (!tool) {
       throw new Error(`Tool '${toolName}' not found on server ${connectionId}`);
     }
@@ -583,18 +608,18 @@ class MCPClientService {
       let result: unknown;
 
       logger.info(`Connection transport: ${connection.transport}, URL: ${connection.url}`);
-      
+
       if (connection.transport === 'stdio') {
         logger.info('Using stdio JSON-RPC call');
         result = await this.makeStdioJsonRpcCall(connection, 'tools/call', {
           name: toolName,
-          arguments: args
+          arguments: args,
         });
       } else {
         logger.info('Using HTTP JSON-RPC call');
         result = await this.makeJsonRpcCall(connection.url, 'tools/call', {
           name: toolName,
-          arguments: args
+          arguments: args,
         });
       }
 
@@ -609,7 +634,7 @@ class MCPClientService {
           .map((item) => item.text)
           .filter((text): text is string => typeof text === 'string')
           .join('\n');
-        
+
         if (textContent) {
           return textContent;
         }
@@ -617,7 +642,6 @@ class MCPClientService {
 
       // Fallback to JSON representation
       return JSON.stringify(result, null, 2);
-
     } catch (error) {
       connection.error = error instanceof Error ? error.message : String(error);
       logger.error(`Failed to call tool ${toolName} on server ${connectionId}:`, error);
@@ -636,7 +660,7 @@ class MCPClientService {
    * Find connection by URL
    */
   findConnectionByUrl(url: string): MCPServerConnection | undefined {
-    return Array.from(this.connections.values()).find(conn => conn.url === url);
+    return Array.from(this.connections.values()).find((conn) => conn.url === url);
   }
 
   /**
@@ -644,18 +668,18 @@ class MCPClientService {
    */
   async findConnectionForTool(toolName: string): Promise<string | null> {
     const connections = Array.from(this.connections.values());
-    
+
     for (const connection of connections) {
       if (!connection.connected) {
         continue;
       }
-      
+
       // Check if this connection has the tool
-      if (connection.tools && connection.tools.some(tool => tool.name === toolName)) {
+      if (connection.tools && connection.tools.some((tool) => tool.name === toolName)) {
         return connection.id;
       }
     }
-    
+
     return null;
   }
 
@@ -685,7 +709,7 @@ class MCPClientService {
       }
     }
 
-    return results.length > 0 
+    return results.length > 0
       ? `MCP Server Health Check:\n${results.join('\n')}`
       : 'No MCP servers to check';
   }
@@ -699,7 +723,7 @@ export { mcpClientService };
 
 /**
  * MCP Client capability - connects to and manages MCP servers
- * 
+ *
  * Supported actions:
  * - connect: Connect to an MCP server by URL
  * - disconnect: Disconnect from an MCP server
@@ -707,7 +731,7 @@ export { mcpClientService };
  * - call_tool: Call a specific tool on a connected server
  * - list_servers: List all connected MCP servers
  * - health_check: Check health of all connections
- * 
+ *
  * Parameters:
  * - url: MCP server URL (for connect action)
  * - name: Optional server name (for connect action)
@@ -717,7 +741,14 @@ export { mcpClientService };
  */
 export const mcpClientCapability: RegisteredCapability = {
   name: 'mcp_client',
-  supportedActions: ['connect', 'disconnect', 'list_tools', 'call_tool', 'list_servers', 'health_check'],
+  supportedActions: [
+    'connect',
+    'disconnect',
+    'list_tools',
+    'call_tool',
+    'list_servers',
+    'health_check',
+  ],
   description: 'Connects to and manages MCP (Model Context Protocol) servers',
   handler: async (params: MCPClientParams, content?: string) => {
     const { action } = params;
@@ -729,7 +760,7 @@ export const mcpClientCapability: RegisteredCapability = {
           if (!url) {
             throw new Error('MCP server URL is required');
           }
-          
+
           const name = params.name;
           return await mcpClientService.connect(url, name);
         }
@@ -739,7 +770,7 @@ export const mcpClientCapability: RegisteredCapability = {
           if (!connectionId) {
             throw new Error('Connection ID is required');
           }
-          
+
           return await mcpClientService.disconnect(connectionId);
         }
 
@@ -755,9 +786,11 @@ export const mcpClientCapability: RegisteredCapability = {
         case 'call_tool': {
           let connectionId = params.connection_id || params.id;
           const toolName = params.tool_name || params.name;
-          
-          logger.info(`MCP call_tool debug - params: ${JSON.stringify(params)}, toolName: ${toolName}`);
-          
+
+          logger.info(
+            `MCP call_tool debug - params: ${JSON.stringify(params)}, toolName: ${toolName}`
+          );
+
           if (!toolName) {
             throw new Error('Tool name is required');
           }
@@ -768,17 +801,18 @@ export const mcpClientCapability: RegisteredCapability = {
             if (!foundConnectionId) {
               // help the robot find what it needs
               const availableTools = Object.keys(global.mcpToolRegistry || {});
-              const suggestions = availableTools.length > 0 
-                ? `Available tools: ${availableTools.join(', ')}`
-                : 'No MCP tools currently available. Try <calculate>math</calculate> or basic text response.';
+              const suggestions =
+                availableTools.length > 0
+                  ? `Available tools: ${availableTools.join(', ')}`
+                  : 'No MCP tools currently available. Try <calculate>math</calculate> or basic text response.';
               return `Tool not found. Try: calculate, web_search, memory`;
             }
             connectionId = foundConnectionId;
           }
 
-          // Parse args from params or content  
+          // Parse args from params or content
           let args = {};
-          
+
           // Try content first (cleaner approach)
           if (content && content.trim()) {
             try {
@@ -797,7 +831,7 @@ export const mcpClientCapability: RegisteredCapability = {
               }
             }
           }
-          
+
           // Merge any additional params from XML attributes
           if (params && typeof params === 'object') {
             // Extract only the extra params (not action, tool_name, etc)
@@ -807,7 +841,7 @@ export const mcpClientCapability: RegisteredCapability = {
               .reduce((acc, [key, value]) => ({ ...acc, [key]: value }), {});
             args = { ...args, ...extraParams };
           }
-          
+
           // Fallback to params.args if no content
           if (Object.keys(args).length === 0 && params.args) {
             if (typeof params.args === 'string') {
@@ -835,5 +869,5 @@ export const mcpClientCapability: RegisteredCapability = {
       logger.error(`MCP client capability failed for action ${action}:`, error);
       throw error;
     }
-  }
+  },
 };

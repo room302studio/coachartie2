@@ -13,7 +13,7 @@ export async function handleIncomingSMS(smsData: SMSWebhookData): Promise<void> 
   try {
     // Clean the phone number (remove +1 if present for US numbers)
     const cleanPhoneNumber = smsData.from.replace(/^\+1/, '');
-    
+
     // Create queue message
     const queueMessage: IncomingMessage = {
       id: `sms-${smsData.messageSid}`,
@@ -25,22 +25,21 @@ export async function handleIncomingSMS(smsData: SMSWebhookData): Promise<void> 
       context: {
         phoneNumber: smsData.from,
         twilioMessageSid: smsData.messageSid,
-        platform: 'sms'
+        platform: 'sms',
       },
       respondTo: {
         type: 'sms',
-        phoneNumber: smsData.from
-      }
+        phoneNumber: smsData.from,
+      },
     };
 
     // Send to capabilities queue for processing
     await messageQueue.add('process', queueMessage);
-    
+
     logger.info(`SMS message queued for processing: ${queueMessage.id}`, {
       from: smsData.from,
-      preview: smsData.body.substring(0, 50) + (smsData.body.length > 50 ? '...' : '')
+      preview: smsData.body.substring(0, 50) + (smsData.body.length > 50 ? '...' : ''),
     });
-
   } catch (error) {
     logger.error('Failed to queue SMS message:', error);
     throw error;

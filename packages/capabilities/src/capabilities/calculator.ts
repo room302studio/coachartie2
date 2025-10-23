@@ -4,14 +4,14 @@ import { RegisteredCapability } from '../services/capability-registry.js';
 
 /**
  * Calculator capability - performs mathematical calculations and evaluates expressions
- * 
+ *
  * Supported actions:
  * - calculate: Evaluates a mathematical expression
  * - eval: Alias for calculate
- * 
+ *
  * Parameters:
  * - expression: The mathematical expression to evaluate
- * 
+ *
  * Content: Can also provide the expression as content instead of a parameter
  */
 export const calculatorCapability: RegisteredCapability = {
@@ -21,10 +21,12 @@ export const calculatorCapability: RegisteredCapability = {
   requiredParams: ['expression'],
   examples: [
     '<capability name="calculator" action="calculate" expression="5+5" />',
-    '<capability name="calculator" action="calculate" expression="(42 * 2) / 3" />'
+    '<capability name="calculator" action="calculate" expression="(42 * 2) / 3" />',
   ],
   handler: async (params, content) => {
-    logger.info(`🧮 Calculator called with params: ${JSON.stringify(params)}, content: "${content}"`);
+    logger.info(
+      `🧮 Calculator called with params: ${JSON.stringify(params)}, content: "${content}"`
+    );
 
     // Extract expression from multiple possible sources
     let expression = params.expression || params.query || content;
@@ -46,8 +48,12 @@ export const calculatorCapability: RegisteredCapability = {
     }
 
     if (!expression) {
-      logger.error(`❌ No expression provided. params=${JSON.stringify(params)}, content="${content}"`);
-      throw new Error('No expression provided for calculation. Use: <capability name="calculator" action="calculate" expression="2+2" /> or <capability name="calculator" action="calculate" data=\'{"expression":"2+2"}\' />');
+      logger.error(
+        `❌ No expression provided. params=${JSON.stringify(params)}, content="${content}"`
+      );
+      throw new Error(
+        'No expression provided for calculation. Use: <capability name="calculator" action="calculate" expression="2+2" /> or <capability name="calculator" action="calculate" data=\'{"expression":"2+2"}\' />'
+      );
     }
 
     logger.info(`🧮 Calculating expression: ${expression}`);
@@ -63,5 +69,5 @@ export const calculatorCapability: RegisteredCapability = {
       logger.error(`❌ Invalid mathematical expression: ${expression}`, error);
       throw new Error(`Invalid mathematical expression: ${expression}`);
     }
-  }
+  },
 };

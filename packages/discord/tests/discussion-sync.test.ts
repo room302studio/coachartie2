@@ -67,8 +67,8 @@ describe('GitHub Integration Service', () => {
             content: 'Login button is broken on mobile',
             createdAt: new Date('2025-01-10'),
             attachments: [],
-            reactions: []
-          }
+            reactions: [],
+          },
         ],
         starterMessage: {
           messageId: '1',
@@ -77,8 +77,8 @@ describe('GitHub Integration Service', () => {
           content: 'Login button is broken on mobile',
           createdAt: new Date('2025-01-10'),
           attachments: [],
-          reactions: []
-        }
+          reactions: [],
+        },
       };
 
       const result = service.formatThreadAsIssue(mockThread, 'Bug Reports');
@@ -109,7 +109,7 @@ describe('GitHub Integration Service', () => {
             content: 'Original post',
             createdAt: new Date('2025-01-10'),
             attachments: [],
-            reactions: []
+            reactions: [],
           },
           {
             messageId: '2',
@@ -118,7 +118,7 @@ describe('GitHub Integration Service', () => {
             content: 'Reply 1',
             createdAt: new Date('2025-01-11'),
             attachments: [],
-            reactions: []
+            reactions: [],
           },
           {
             messageId: '3',
@@ -127,8 +127,8 @@ describe('GitHub Integration Service', () => {
             content: 'Reply 2',
             createdAt: new Date('2025-01-12'),
             attachments: [],
-            reactions: []
-          }
+            reactions: [],
+          },
         ],
         starterMessage: {
           messageId: '1',
@@ -137,8 +137,8 @@ describe('GitHub Integration Service', () => {
           content: 'Original post',
           createdAt: new Date('2025-01-10'),
           attachments: [],
-          reactions: []
-        }
+          reactions: [],
+        },
       };
 
       const result = service.formatThreadAsIssue(mockThread, 'Feedback');
@@ -169,8 +169,8 @@ describe('GitHub Integration Service', () => {
           content: 'I found a bug in the login system',
           createdAt: new Date(),
           attachments: [],
-          reactions: []
-        }
+          reactions: [],
+        },
       };
 
       const result = service.formatThreadAsIssue(mockThread, 'Forum');
@@ -197,8 +197,8 @@ describe('GitHub Integration Service', () => {
           content: 'Would be nice to have dark mode',
           createdAt: new Date(),
           attachments: [],
-          reactions: []
-        }
+          reactions: [],
+        },
       };
 
       const result = service.formatThreadAsIssue(mockThread, 'Forum');
@@ -222,7 +222,7 @@ describe('Conversation State Manager', () => {
     it('should start a new conversation', () => {
       const context = manager.startConversation('user123', 'sync-discussions', {
         forumId: 'forum1',
-        step: 'awaiting_repo'
+        step: 'awaiting_repo',
       });
 
       expect(context.userId).toBe('user123');

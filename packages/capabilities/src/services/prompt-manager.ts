@@ -58,7 +58,7 @@ export class PromptManager {
     const lastUpdate = this.cacheTimestamps.get(cacheKey) || 0;
 
     // Check cache first (unless force refresh)
-    if (!forceRefresh && this.cache.has(cacheKey) && (now - lastUpdate) < this.cacheExpiryMs) {
+    if (!forceRefresh && this.cache.has(cacheKey) && now - lastUpdate < this.cacheExpiryMs) {
       return this.cache.get(cacheKey) || null;
     }
 
@@ -86,7 +86,7 @@ export class PromptManager {
         isActive: Boolean(row.is_active),
         metadata: typeof row.metadata === 'string' ? JSON.parse(row.metadata) : row.metadata,
         createdAt: row.created_at,
-        updatedAt: row.updated_at
+        updatedAt: row.updated_at,
       };
 
       // Update cache
@@ -118,19 +118,25 @@ export class PromptManager {
         const dbPrompt = await this.getPrompt('capability_instructions');
         if (dbPrompt) {
           const instructions = dbPrompt.content.replace(/\{\{USER_MESSAGE\}\}/g, userMessage);
-          logger.info(`🎯 Using basic capability instructions from database (v${dbPrompt.version})`);
+          logger.info(
+            `🎯 Using basic capability instructions from database (v${dbPrompt.version})`
+          );
           return instructions;
         }
       }
     } catch (error) {
       logger.warn(`⚠️ Failed to load DB prompts, falling back to registry:`, error);
     }
-    
+
     // Fallback: Generate instructions from capability registry manifest
     const { capabilityRegistry } = await import('./capability-registry.js');
-    const instructions = capabilityRegistry.generateInstructions().replace(/\{\{USER_MESSAGE\}\}/g, userMessage);
-    logger.info(`🎯 Using fallback capability instructions from registry (${capabilityRegistry.size()} capabilities)`);
-    
+    const instructions = capabilityRegistry
+      .generateInstructions()
+      .replace(/\{\{USER_MESSAGE\}\}/g, userMessage);
+    logger.info(
+      `🎯 Using fallback capability instructions from registry (${capabilityRegistry.size()} capabilities)`
+    );
+
     return instructions;
   }
 
@@ -145,7 +151,7 @@ export class PromptManager {
   ): Promise<PromptTemplate> {
     try {
       const db = await getDatabase();
-      
+
       // Update the prompt (trigger will handle versioning)
       await db.run(
         `UPDATE prompts 
@@ -160,13 +166,13 @@ export class PromptManager {
       this.cacheTimestamps.delete(cacheKey);
 
       logger.info(`✅ Prompt '${name}' updated successfully`);
-      
+
       // Return updated prompt
       const updated = await this.getPrompt(name, true);
       if (!updated) {
         throw new Error(`Failed to retrieve updated prompt '${name}'`);
       }
-      
+
       return updated;
     } catch (error) {
       logger.error(`❌ Failed to update prompt '${name}':`, error);
@@ -177,10 +183,12 @@ export class PromptManager {
   /**
    * Create new prompt 🎪
    */
-  async createPrompt(prompt: Omit<PromptTemplate, 'id' | 'version' | 'createdAt' | 'updatedAt'>): Promise<PromptTemplate> {
+  async createPrompt(
+    prompt: Omit<PromptTemplate, 'id' | 'version' | 'createdAt' | 'updatedAt'>
+  ): Promise<PromptTemplate> {
     try {
       const db = await getDatabase();
-      
+
       const result = await db.run(
         `INSERT INTO prompts (name, content, description, category, is_active, metadata)
          VALUES (?, ?, ?, ?, ?, ?)`,
@@ -190,18 +198,18 @@ export class PromptManager {
           prompt.description || null,
           prompt.category,
           prompt.isActive ? 1 : 0,
-          JSON.stringify(prompt.metadata)
+          JSON.stringify(prompt.metadata),
         ]
       );
 
       logger.info(`✅ Created new prompt '${prompt.name}' with ID ${result.lastID}`);
-      
+
       // Return the created prompt
       const created = await this.getPrompt(prompt.name, true);
       if (!created) {
         throw new Error(`Failed to retrieve created prompt '${prompt.name}'`);
       }
-      
+
       return created;
     } catch (error) {
       logger.error(`❌ Failed to create prompt '${prompt.name}':`, error);
@@ -215,23 +223,23 @@ export class PromptManager {
   async listPrompts(category?: string, activeOnly = true): Promise<PromptTemplate[]> {
     try {
       const db = await getDatabase();
-      
+
       let query = 'SELECT * FROM prompts WHERE 1=1';
       const params: (string | number)[] = [];
-      
+
       if (activeOnly) {
         query += ' AND is_active = 1';
       }
-      
+
       if (category) {
         query += ' AND category = ?';
         params.push(category);
       }
-      
+
       query += ' ORDER BY category, name, version DESC';
-      
+
       const rows = await db.all(query, params);
-      
+
       return rows.map((row: DatabaseRow) => ({
         id: row.id,
         name: row.name,
@@ -242,7 +250,7 @@ export class PromptManager {
         isActive: Boolean(row.is_active),
         metadata: typeof row.metadata === 'string' ? JSON.parse(row.metadata) : row.metadata,
         createdAt: row.created_at,
-        updatedAt: row.updated_at
+        updatedAt: row.updated_at,
       }));
     } catch (error) {
       logger.error('❌ Failed to list prompts:', error);
@@ -256,15 +264,18 @@ export class PromptManager {
   async getPromptHistory(name: string): Promise<PromptTemplate[]> {
     try {
       const db = await getDatabase();
-      
-      const rows = await db.all(`
+
+      const rows = await db.all(
+        `
         SELECT ph.*, p.name
         FROM prompt_history ph
         JOIN prompts p ON ph.prompt_id = p.id
         WHERE p.name = ?
         ORDER BY ph.version DESC
-      `, [name]);
-      
+      `,
+        [name]
+      );
+
       return rows.map((row: DatabaseRow) => ({
         id: row.id,
         name: row.name,
@@ -275,7 +286,7 @@ export class PromptManager {
         isActive: Boolean(row.is_active),
         metadata: typeof row.metadata === 'string' ? JSON.parse(row.metadata) : row.metadata,
         createdAt: row.created_at,
-        updatedAt: row.updated_at
+        updatedAt: row.updated_at,
       }));
     } catch (error) {
       logger.error(`❌ Failed to get prompt history for '${name}':`, error);
@@ -299,7 +310,7 @@ export class PromptManager {
     return {
       size: this.cache.size,
       lastUpdate: this.lastCacheUpdate,
-      expiryMs: this.cacheExpiryMs
+      expiryMs: this.cacheExpiryMs,
     };
   }
 }

@@ -14,7 +14,7 @@ export async function getUserPhone(userId: string): Promise<LinkedPhone | null> 
   try {
     const userPhoneKey = `user_phone:${userId}`;
     const phoneData = await redis.get(userPhoneKey);
-    
+
     if (!phoneData) {
       return null;
     }
@@ -34,7 +34,7 @@ export async function isPhoneLinked(userId: string): Promise<boolean> {
 export async function getMaskedPhone(userId: string): Promise<string | null> {
   const phone = await getUserPhone(userId);
   if (!phone) return null;
-  
+
   // Mask phone number for display (e.g., +1234***6789)
   return phone.phoneNumber.replace(/(\+\d{1,3})\d{6}(\d{4})/, '$1******$2');
 }

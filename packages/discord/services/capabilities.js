@@ -66,10 +66,9 @@ RULES:
 `;
 
 // Add this function to parse XML tags into components
-const parseInteractiveComponents = content => {
+const parseInteractiveComponents = (content) => {
   // More robust button regex that handles attributes in any order
-  const buttonRegex =
-    /<LLMButton\s+(?:[^>]*\s+)?val="([^"]*)"[^>]*>(.*?)<\/LLMButton>/g;
+  const buttonRegex = /<LLMButton\s+(?:[^>]*\s+)?val="([^"]*)"[^>]*>(.*?)<\/LLMButton>/g;
   // More robust select regex that handles attributes and nested elements
   const selectRegex = /<LLMSelect(?:\s+[^>]*)?>([^]*?)<\/LLMSelect>/g;
 
@@ -77,7 +76,7 @@ const parseInteractiveComponents = content => {
   const selectMenus = [];
 
   // Add error checking for malformed XML
-  const validateXML = str => {
+  const validateXML = (str) => {
     const openTags = str.match(/<LLM(Button|Select)[^>]*>/g) || [];
     const closeTags = str.match(/<\/LLM(Button|Select)>/g) || [];
     return openTags.length === closeTags.length;
@@ -128,8 +127,8 @@ const parseInteractiveComponents = content => {
       }
       const cleanOptions = options
         .split('\n')
-        .map(opt => opt.trim())
-        .filter(opt => opt.length > 0);
+        .map((opt) => opt.trim())
+        .filter((opt) => opt.length > 0);
 
       if (cleanOptions.length > 0) {
         selectMenus.push(cleanOptions);
@@ -146,8 +145,8 @@ const parseInteractiveComponents = content => {
   logger.debug('Parsed interactive components', {
     buttonCount: buttons.length,
     selectMenuCount: selectMenus.length,
-    buttons: buttons.map(b => b.id),
-    selectOptions: selectMenus.map(m => m.length),
+    buttons: buttons.map((b) => b.id),
+    selectOptions: selectMenus.map((m) => m.length),
     hasInvalidXML: !validateXML(content),
   });
 
@@ -176,12 +175,7 @@ const parseInteractiveComponents = content => {
  *
  * DO NOT include any additional properties at the root level except threadId when needed.
  */
-const createRespondToObject = (
-  context,
-  isThread,
-  threadId,
-  existingRespondTo = null
-) => {
+const createRespondToObject = (context, isThread, threadId, existingRespondTo = null) => {
   const channel = 'discord';
 
   // Enhanced logging for input parameters
@@ -191,9 +185,7 @@ const createRespondToObject = (
     isThread,
     threadId,
     hasExistingRespondTo: !!existingRespondTo,
-    existingRespondToType: existingRespondTo
-      ? typeof existingRespondTo
-      : 'undefined',
+    existingRespondToType: existingRespondTo ? typeof existingRespondTo : 'undefined',
   });
 
   // Extract all necessary channel information
@@ -237,8 +229,7 @@ const createRespondToObject = (
       existingChannel: existingRespondTo.channel,
       existingType: existingRespondTo.details?.type,
       existingChannelId: existingRespondTo.details?.channelId,
-      existingThreadId:
-        existingRespondTo.details?.threadId || existingRespondTo.threadId,
+      existingThreadId: existingRespondTo.details?.threadId || existingRespondTo.threadId,
     });
 
     if (existingRespondTo.channel === 'discord' && existingRespondTo.details) {
@@ -299,18 +290,15 @@ const validateRespondTo = (respondTo, context, isThread, threadId) => {
   });
 
   const isSuspicious =
-    respondTo.type === respondTo.channelId ||
-    (!respondTo.type && !respondTo.channel);
+    respondTo.type === respondTo.channelId || (!respondTo.type && !respondTo.channel);
 
-  const hasInvalidProperties = Object.keys(respondTo).some(key => {
+  const hasInvalidProperties = Object.keys(respondTo).some((key) => {
     return !['channel', 'details', 'threadId'].includes(key);
   });
 
-  const hasMissingProperties =
-    !respondTo.channel || !respondTo.details || !respondTo.details.type;
+  const hasMissingProperties = !respondTo.channel || !respondTo.details || !respondTo.details.type;
 
-  const hasTypeMismatch =
-    respondTo.details && respondTo.details.type !== respondTo.channel;
+  const hasTypeMismatch = respondTo.details && respondTo.details.type !== respondTo.channel;
 
   const hasMissingChannelProperties =
     respondTo.channel === 'discord' && !respondTo.details?.channelId;
@@ -343,12 +331,7 @@ const validateRespondTo = (respondTo, context, isThread, threadId) => {
   }
 
   // Create a fixed respond_to object
-  const fixedRespondTo = createRespondToObject(
-    context,
-    isThread,
-    threadId,
-    respondTo
-  );
+  const fixedRespondTo = createRespondToObject(context, isThread, threadId, respondTo);
 
   // Log the differences between original and fixed
   if (JSON.stringify(respondTo) !== JSON.stringify(fixedRespondTo)) {
@@ -362,7 +345,7 @@ const validateRespondTo = (respondTo, context, isThread, threadId) => {
 };
 
 // Simplified validateFinalRespondTo function for Discord only
-const validateFinalRespondTo = respondTo => {
+const validateFinalRespondTo = (respondTo) => {
   // Enhanced logging for final validation
   logger.debug('Final validation of respond_to object', {
     hasRespondTo: !!respondTo,
@@ -404,7 +387,7 @@ const validateFinalRespondTo = respondTo => {
   }
 
   const invalidDetailsProps = Object.keys(respondTo.details).filter(
-    key => !['type', 'channelId', 'threadId', 'guildId', 'isDM'].includes(key)
+    (key) => !['type', 'channelId', 'threadId', 'guildId', 'isDM'].includes(key)
   );
 
   if (invalidDetailsProps.length > 0) {
@@ -427,9 +410,7 @@ const validateFinalRespondTo = respondTo => {
   }
 
   const validRootProps = ['channel', 'details', 'threadId'];
-  const invalidRootProps = Object.keys(respondTo).filter(
-    key => !validRootProps.includes(key)
-  );
+  const invalidRootProps = Object.keys(respondTo).filter((key) => !validRootProps.includes(key));
 
   if (invalidRootProps.length > 0) {
     logger.error('Invalid properties at root level of respond_to', {
@@ -452,13 +433,11 @@ const validateFinalRespondTo = respondTo => {
 export const capabilitiesClient = {
   chat: async (message, context, retryCount = 0) => {
     const isInteraction = 'customId' in context;
-    const userId = isInteraction
-      ? context.user.username
-      : context.author.username;
+    const userId = isInteraction ? context.user.username : context.author.username;
 
     try {
       // Normalize the capabilities URL
-      const normalizeUrl = url => {
+      const normalizeUrl = (url) => {
         // Remove any existing http:// or https://
         const cleanUrl = url.replace(/^(https?:\/\/)/, '');
         // Add http:// prefix
@@ -511,11 +490,7 @@ export const capabilitiesClient = {
       });
 
       // Create respond_to object ONCE at the beginning - the single source of truth
-      const initialRespondTo = createRespondToObject(
-        context,
-        isThread,
-        threadId
-      );
+      const initialRespondTo = createRespondToObject(context, isThread, threadId);
 
       logger.debug('Initial respond_to object created', {
         channel: initialRespondTo.channel,
@@ -568,19 +543,15 @@ export const capabilitiesClient = {
       const userRoles =
         !isDM && context.member?.roles?.cache
           ? Array.from(context.member.roles.cache.values())
-              .map(role => ({ id: role.id, name: role.name }))
-              .filter(role => role.name !== '@everyone')
+              .map((role) => ({ id: role.id, name: role.name }))
+              .filter((role) => role.name !== '@everyone')
           : [];
 
       // Get user account information
       const userAccount = {
         id: isInteraction ? context.user.id : context.author.id,
-        username: isInteraction
-          ? context.user.username
-          : context.author.username,
-        discriminator: isInteraction
-          ? context.user.discriminator
-          : context.author.discriminator,
+        username: isInteraction ? context.user.username : context.author.username,
+        discriminator: isInteraction ? context.user.discriminator : context.author.discriminator,
         bot: isInteraction ? context.user.bot : context.author.bot,
         system: isInteraction ? context.user.system : context.author.system,
         createdTimestamp: isInteraction
@@ -588,14 +559,8 @@ export const capabilitiesClient = {
           : context.author.createdTimestamp,
         // Calculate account age in days
         accountAge: isInteraction
-          ? Math.floor(
-              (Date.now() - context.user.createdTimestamp) /
-                (1000 * 60 * 60 * 24)
-            )
-          : Math.floor(
-              (Date.now() - context.author.createdTimestamp) /
-                (1000 * 60 * 60 * 24)
-            ),
+          ? Math.floor((Date.now() - context.user.createdTimestamp) / (1000 * 60 * 60 * 24))
+          : Math.floor((Date.now() - context.author.createdTimestamp) / (1000 * 60 * 60 * 24)),
       };
 
       // Get guild member information if available
@@ -605,8 +570,7 @@ export const capabilitiesClient = {
             joinedTimestamp: context.member.joinedTimestamp,
             // How long they've been in this server in days
             memberAge: Math.floor(
-              (Date.now() - context.member.joinedTimestamp) /
-                (1000 * 60 * 60 * 24)
+              (Date.now() - context.member.joinedTimestamp) / (1000 * 60 * 60 * 24)
             ),
             premiumSince: context.member.premiumSince,
             isOwner: context.guild?.ownerId === userAccount.id,
@@ -617,9 +581,7 @@ export const capabilitiesClient = {
       console.log('[CAPS DEBUG] Channel context:', {
         isDM,
         isInteraction,
-        channelType: isInteraction
-          ? context.channel?.type
-          : context.channel?.type,
+        channelType: isInteraction ? context.channel?.type : context.channel?.type,
         channelId: context.channelId || context.channel?.id,
         isThread,
         threadId,
@@ -648,9 +610,7 @@ export const capabilitiesClient = {
           userId,
           userContext: {
             discordId: isInteraction ? context.user.id : context.author.id,
-            username: isInteraction
-              ? context.user.username
-              : context.author.username,
+            username: isInteraction ? context.user.username : context.author.username,
             tag: isInteraction ? context.user.tag : context.author.tag,
             environment: process.env.LOKI_ENVIRONMENT,
             roles: userRoles,
@@ -736,37 +696,27 @@ export const capabilitiesClient = {
         });
       }
 
-      const { content: cleanContent, components } =
-        parseInteractiveComponents(content);
+      const { content: cleanContent, components } = parseInteractiveComponents(content);
 
       // Final validation check for capabilities
       if (data.capabilities && data.capabilities.length > 0) {
         logger.info('Capabilities detected in response', {
           count: data.capabilities.length,
-          types: data.capabilities.map(cap => cap.type),
+          types: data.capabilities.map((cap) => cap.type),
         });
 
         // Ensure each capability has the correct channel type - use initialRespondTo if invalid
         data.capabilities.forEach((capability, index) => {
-          logger.debug(
-            `Processing capability ${index + 1}/${data.capabilities.length}`,
-            {
-              type: capability.type,
-              hasRespondTo: !!capability.respond_to,
-            }
-          );
+          logger.debug(`Processing capability ${index + 1}/${data.capabilities.length}`, {
+            type: capability.type,
+            hasRespondTo: !!capability.respond_to,
+          });
 
-          if (
-            !capability.respond_to ||
-            !validateFinalRespondTo(capability.respond_to)
-          ) {
+          if (!capability.respond_to || !validateFinalRespondTo(capability.respond_to)) {
             capability.respond_to = initialRespondTo;
-            logger.info(
-              `Using initial respond_to for capability ${capability.type}`,
-              {
-                capability_type: capability.type,
-              }
-            );
+            logger.info(`Using initial respond_to for capability ${capability.type}`, {
+              capability_type: capability.type,
+            });
           }
         });
       }
@@ -813,7 +763,7 @@ export const capabilitiesClient = {
 
         // Exponential backoff
         const backoffMs = Math.pow(2, retryCount) * 500;
-        await new Promise(resolve => setTimeout(resolve, backoffMs));
+        await new Promise((resolve) => setTimeout(resolve, backoffMs));
 
         return capabilitiesClient.chat(message, context, retryCount + 1);
       }
@@ -822,8 +772,7 @@ export const capabilitiesClient = {
         `Failed to process message: ${error.message}`,
         error.status || 500,
         {
-          errorText:
-            'There was a problem connecting to my capabilities service.',
+          errorText: 'There was a problem connecting to my capabilities service.',
           originalError: error,
         }
       );
@@ -848,9 +797,7 @@ function identifyChanges(original, updated) {
     changes.push('Added details object');
   } else if (original.details && updated.details) {
     if (original.details.type !== updated.details.type) {
-      changes.push(
-        `details.type: ${original.details.type} -> ${updated.details.type}`
-      );
+      changes.push(`details.type: ${original.details.type} -> ${updated.details.type}`);
     }
 
     if (original.details.channelId !== updated.details.channelId) {
@@ -876,19 +823,13 @@ function identifyChanges(original, updated) {
     }
 
     if (original.details.isDM !== updated.details.isDM) {
-      changes.push(
-        `details.isDM: ${original.details.isDM} -> ${updated.details.isDM}`
-      );
+      changes.push(`details.isDM: ${original.details.isDM} -> ${updated.details.isDM}`);
     }
   }
 
   // Check threadId at root level
   if (original.threadId !== updated.threadId) {
-    changes.push(
-      `threadId: ${original.threadId || 'none'} -> ${
-        updated.threadId || 'none'
-      }`
-    );
+    changes.push(`threadId: ${original.threadId || 'none'} -> ${updated.threadId || 'none'}`);
   }
 
   return changes.length > 0 ? changes : ['No significant changes'];
@@ -923,13 +864,11 @@ function getValidationErrors(respondTo) {
 
     // Check for invalid properties in details
     const invalidDetailsProps = Object.keys(respondTo.details).filter(
-      key => !['type', 'channelId', 'threadId', 'guildId', 'isDM'].includes(key)
+      (key) => !['type', 'channelId', 'threadId', 'guildId', 'isDM'].includes(key)
     );
 
     if (invalidDetailsProps.length > 0) {
-      errors.push(
-        `Invalid properties in details: ${invalidDetailsProps.join(', ')}`
-      );
+      errors.push(`Invalid properties in details: ${invalidDetailsProps.join(', ')}`);
     }
   }
 
@@ -946,14 +885,10 @@ function getValidationErrors(respondTo) {
 
   // Check for invalid root properties
   const validRootProps = ['channel', 'details', 'threadId'];
-  const invalidRootProps = Object.keys(respondTo).filter(
-    key => !validRootProps.includes(key)
-  );
+  const invalidRootProps = Object.keys(respondTo).filter((key) => !validRootProps.includes(key));
 
   if (invalidRootProps.length > 0) {
-    errors.push(
-      `Invalid properties at root level: ${invalidRootProps.join(', ')}`
-    );
+    errors.push(`Invalid properties at root level: ${invalidRootProps.join(', ')}`);
   }
 
   return errors.length > 0

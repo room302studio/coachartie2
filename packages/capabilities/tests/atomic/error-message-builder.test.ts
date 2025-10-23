@@ -9,40 +9,53 @@ import { ActionAliasMapper } from './action-alias-mapper.test.js';
 
 class ErrorMessageBuilder {
   static buildActionError(
-    capabilityName: string, 
-    attemptedAction: string, 
+    capabilityName: string,
+    attemptedAction: string,
     supportedActions: string[]
   ): string {
     // Try alias first
     const alias = ActionAliasMapper.resolve(attemptedAction);
     if (alias !== attemptedAction && supportedActions.includes(alias)) {
-      return `❌ Capability '${capabilityName}' does not support action '${attemptedAction}'. ` +
-             `💡 Did you mean '${alias}'? ` +
-             `📋 Supported actions: ${supportedActions.join(', ')}`;
+      return (
+        `❌ Capability '${capabilityName}' does not support action '${attemptedAction}'. ` +
+        `💡 Did you mean '${alias}'? ` +
+        `📋 Supported actions: ${supportedActions.join(', ')}`
+      );
     }
 
     // Try fuzzy matching
     const suggestions = supportedActions
-      .map(action => ({ action, score: calculateSimilarity(attemptedAction, action) }))
-      .filter(item => item.score > 0.4)
+      .map((action) => ({ action, score: calculateSimilarity(attemptedAction, action) }))
+      .filter((item) => item.score > 0.4)
       .sort((a, b) => b.score - a.score)
       .slice(0, 2)
-      .map(item => item.action);
+      .map((item) => item.action);
 
     if (suggestions.length > 0) {
-      return `❌ Capability '${capabilityName}' does not support action '${attemptedAction}'. ` +
-             `💡 Did you mean '${suggestions.join("' or '")}'? ` +
-             `📋 Supported actions: ${supportedActions.join(', ')}`;
+      return (
+        `❌ Capability '${capabilityName}' does not support action '${attemptedAction}'. ` +
+        `💡 Did you mean '${suggestions.join("' or '")}'? ` +
+        `📋 Supported actions: ${supportedActions.join(', ')}`
+      );
     }
 
     // Basic error message
-    return `❌ Capability '${capabilityName}' does not support action '${attemptedAction}'. ` +
-           `📋 Supported actions: ${supportedActions.join(', ')}`;
+    return (
+      `❌ Capability '${capabilityName}' does not support action '${attemptedAction}'. ` +
+      `📋 Supported actions: ${supportedActions.join(', ')}`
+    );
   }
 }
 
 describe('Error Message Builder (Atomic Unit)', () => {
-  const supportedActions = ['read_file', 'write_file', 'create_directory', 'list_directory', 'exists', 'delete'];
+  const supportedActions = [
+    'read_file',
+    'write_file',
+    'create_directory',
+    'list_directory',
+    'exists',
+    'delete',
+  ];
 
   it('should suggest exact alias match', () => {
     const error = ErrorMessageBuilder.buildActionError('filesystem', 'write', supportedActions);
@@ -58,12 +71,16 @@ describe('Error Message Builder (Atomic Unit)', () => {
 
   it('should suggest multiple fuzzy matches', () => {
     const error = ErrorMessageBuilder.buildActionError('filesystem', 'cre', supportedActions);
-    expect(error).toContain("Did you mean");
-    expect(error).toContain("create_directory");
+    expect(error).toContain('Did you mean');
+    expect(error).toContain('create_directory');
   });
 
   it('should provide basic error when no good matches', () => {
-    const error = ErrorMessageBuilder.buildActionError('filesystem', 'unknown_xyz', supportedActions);
+    const error = ErrorMessageBuilder.buildActionError(
+      'filesystem',
+      'unknown_xyz',
+      supportedActions
+    );
     expect(error).not.toContain('Did you mean');
     expect(error).toContain('does not support action');
     expect(error).toContain('Supported actions:');
@@ -81,7 +98,9 @@ describe('Error Message Builder (Atomic Unit)', () => {
 
   it('should handle empty supported actions gracefully', () => {
     const error = ErrorMessageBuilder.buildActionError('test', 'action', []);
-    expect(error).toBe("❌ Capability 'test' does not support action 'action'. 📋 Supported actions: ");
+    expect(error).toBe(
+      "❌ Capability 'test' does not support action 'action'. 📋 Supported actions: "
+    );
   });
 });
 

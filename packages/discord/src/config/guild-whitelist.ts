@@ -5,7 +5,7 @@
 
 export const WHITELISTED_GUILDS = {
   // Room 302 Studio Guild (primary)
-  'room_302_studio': '932719842522443928',
+  room_302_studio: '932719842522443928',
 } as const;
 
 // Array of guild IDs for easy checking

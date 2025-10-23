@@ -9,9 +9,9 @@ import logger from '../logger.js';
 export function generateThreadSummary(thread, messageLimit = 100) {
   return ResultAsync.fromPromise(
     thread.messages.fetch({ limit: messageLimit }),
-    error => new Error(`Failed to fetch messages: ${error.message}`)
-  ).andThen(messages => {
-    const threadContent = messages.reverse().map(msg => ({
+    (error) => new Error(`Failed to fetch messages: ${error.message}`)
+  ).andThen((messages) => {
+    const threadContent = messages.reverse().map((msg) => ({
       role: msg.author.bot ? 'assistant' : 'user',
       content: msg.content,
     }));
@@ -28,17 +28,14 @@ export function generateThreadSummary(thread, messageLimit = 100) {
           },
         }),
       }),
-      error => new Error(`Network error: ${error.message}`)
+      (error) => new Error(`Network error: ${error.message}`)
     )
-      .andThen(response =>
+      .andThen((response) =>
         response.ok
-          ? ResultAsync.fromPromise(
-              response.json(),
-              e => new Error(`Parse error: ${e.message}`)
-            )
+          ? ResultAsync.fromPromise(response.json(), (e) => new Error(`Parse error: ${e.message}`))
           : err(new Error(`Capabilities service error: ${response.status}`))
       )
-      .map(data => ({
+      .map((data) => ({
         summary: data.result,
         suggestedTitle: data.metadata?.title || 'Thread Summary',
       }));
@@ -53,7 +50,7 @@ export function updateThreadTitle(thread) {
   return generateThreadSummary(thread).andThen(({ suggestedTitle }) =>
     ResultAsync.fromPromise(
       thread.setName(suggestedTitle),
-      error => new Error(`Failed to update thread title: ${error.message}`)
+      (error) => new Error(`Failed to update thread title: ${error.message}`)
     ).map(() => suggestedTitle)
   );
 }
@@ -73,11 +70,11 @@ export function archiveThreadWithSummary(thread) {
     return ResultAsync.combine([
       ResultAsync.fromPromise(
         thread.send({ embeds: [embed] }),
-        error => new Error(`Failed to send summary: ${error.message}`)
+        (error) => new Error(`Failed to send summary: ${error.message}`)
       ),
       ResultAsync.fromPromise(
         thread.setArchived(true),
-        error => new Error(`Failed to archive thread: ${error.message}`)
+        (error) => new Error(`Failed to archive thread: ${error.message}`)
       ),
     ]).map(() => summary);
   });

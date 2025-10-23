@@ -1,0 +1,45 @@
+# Dependencies
+node_modules
+**/node_modules
+
+# Build outputs
+dist
+build
+.next
+.nuxt
+.output
+**/.turbo
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# Cache
+.cache
+coverage
+.nyc_output
+
+# Lock files
+pnpm-lock.yaml
+package-lock.json
+yarn.lock
+
+# Generated files
+*.d.ts
+!src/**/*.d.ts
+
+# MCP servers (external dependencies)
+mcp-servers/*/node_modules
+mcp-servers/*/dist
+
+# Submodules
+packages/brain/
+
+# Test artifacts
+test-*.ts

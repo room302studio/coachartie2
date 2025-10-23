@@ -8,7 +8,7 @@ export const rateLimiter = (maxRequests: number = 100, windowMs: number = 60000)
   return (req: Request, res: Response, next: NextFunction) => {
     const clientId = req.ip || 'unknown';
     const now = Date.now();
-    
+
     // Clean up old entries every so often
     if (Math.random() < 0.01) {
       for (const [key, value] of requestCounts.entries()) {
@@ -17,14 +17,14 @@ export const rateLimiter = (maxRequests: number = 100, windowMs: number = 60000)
         }
       }
     }
-    
+
     const clientData = requestCounts.get(clientId);
-    
+
     if (!clientData || now > clientData.resetTime) {
       // New window
       requestCounts.set(clientId, {
         count: 1,
-        resetTime: now + windowMs
+        resetTime: now + windowMs,
       });
       next();
     } else if (clientData.count < maxRequests) {
@@ -37,7 +37,7 @@ export const rateLimiter = (maxRequests: number = 100, windowMs: number = 60000)
       res.status(429).json({
         success: false,
         error: 'Too many requests. Please try again later.',
-        retryAfter: Math.ceil((clientData.resetTime - now) / 1000)
+        retryAfter: Math.ceil((clientData.resetTime - now) / 1000),
       });
     }
   };

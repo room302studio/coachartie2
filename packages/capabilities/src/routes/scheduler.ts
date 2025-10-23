@@ -8,18 +8,17 @@ const router: Router = Router();
 router.get('/tasks', async (req: Request, res: Response) => {
   try {
     const tasks = await schedulerService.getScheduledTasks();
-    
+
     res.json({
       success: true,
       count: tasks.length,
-      tasks
+      tasks,
     });
-
   } catch (error) {
     logger.error('Error listing scheduled tasks:', error);
     res.status(500).json({
       success: false,
-      error: 'Internal server error'
+      error: 'Internal server error',
     });
   }
 });
@@ -32,7 +31,7 @@ router.post('/tasks', async (req: Request, res: Response) => {
     if (!id || !name || !cron) {
       return res.status(400).json({
         success: false,
-        error: 'id, name, and cron are required'
+        error: 'id, name, and cron are required',
       });
     }
 
@@ -41,7 +40,7 @@ router.post('/tasks', async (req: Request, res: Response) => {
       name,
       cron,
       data: data || {},
-      options: options || {}
+      options: options || {},
     };
 
     await schedulerService.scheduleTask(task);
@@ -49,14 +48,13 @@ router.post('/tasks', async (req: Request, res: Response) => {
     res.json({
       success: true,
       message: `Scheduled task '${name}' created successfully`,
-      task
+      task,
     });
-
   } catch (error) {
     logger.error('Error creating scheduled task:', error);
     res.status(500).json({
       success: false,
-      error: 'Internal server error'
+      error: 'Internal server error',
     });
   }
 });
@@ -70,14 +68,13 @@ router.delete('/tasks/:taskId', async (req: Request, res: Response) => {
 
     res.json({
       success: true,
-      message: `Scheduled task '${taskId}' removed successfully`
+      message: `Scheduled task '${taskId}' removed successfully`,
     });
-
   } catch (error) {
     logger.error(`Error removing scheduled task '${req.params.taskId}':`, error);
     res.status(500).json({
       success: false,
-      error: 'Internal server error'
+      error: 'Internal server error',
     });
   }
 });
@@ -90,7 +87,7 @@ router.post('/once', async (req: Request, res: Response) => {
     if (!name || delay === undefined) {
       return res.status(400).json({
         success: false,
-        error: 'name and delay are required'
+        error: 'name and delay are required',
       });
     }
 
@@ -99,14 +96,13 @@ router.post('/once', async (req: Request, res: Response) => {
     res.json({
       success: true,
       message: `One-time job '${name}' scheduled successfully`,
-      delay
+      delay,
     });
-
   } catch (error) {
     logger.error('Error scheduling one-time job:', error);
     res.status(500).json({
       success: false,
-      error: 'Internal server error'
+      error: 'Internal server error',
     });
   }
 });
@@ -115,17 +111,16 @@ router.post('/once', async (req: Request, res: Response) => {
 router.get('/stats', async (req: Request, res: Response) => {
   try {
     const stats = await schedulerService.getStats();
-    
+
     res.json({
       success: true,
-      stats
+      stats,
     });
-
   } catch (error) {
     logger.error('Error getting scheduler stats:', error);
     res.status(500).json({
       success: false,
-      error: 'Internal server error'
+      error: 'Internal server error',
     });
   }
 });
@@ -137,14 +132,13 @@ router.post('/setup', async (req: Request, res: Response) => {
 
     res.json({
       success: true,
-      message: 'Default scheduled tasks setup completed'
+      message: 'Default scheduled tasks setup completed',
     });
-
   } catch (error) {
     logger.error('Error setting up default tasks:', error);
     res.status(500).json({
       success: false,
-      error: 'Internal server error'
+      error: 'Internal server error',
     });
   }
 });
@@ -156,24 +150,23 @@ router.post('/test', async (req: Request, res: Response) => {
 
     await schedulerService.scheduleOnce(
       `test-${type}`,
-      { 
+      {
         type,
         testRun: true,
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
       },
       1000 // 1 second delay
     );
 
     res.json({
       success: true,
-      message: `Test job '${type}' scheduled to run in 1 second`
+      message: `Test job '${type}' scheduled to run in 1 second`,
     });
-
   } catch (error) {
     logger.error('Error scheduling test job:', error);
     res.status(500).json({
       success: false,
-      error: 'Internal server error'
+      error: 'Internal server error',
     });
   }
 });
@@ -188,8 +181,8 @@ router.get('/health', (req: Request, res: Response) => {
       cronJobs: true,
       onceJobs: true,
       repeatableJobs: true,
-      queueManagement: true
-    }
+      queueManagement: true,
+    },
   });
 });
 

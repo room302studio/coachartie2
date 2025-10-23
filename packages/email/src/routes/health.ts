@@ -12,8 +12,8 @@ healthRouter.get('/', async (req, res) => {
 
     // Check email configuration
     const hasEmailConfig = !!(
-      process.env.EMAIL_HOST && 
-      process.env.EMAIL_USER && 
+      process.env.EMAIL_HOST &&
+      process.env.EMAIL_USER &&
       process.env.EMAIL_PASS
     );
 
@@ -35,15 +35,15 @@ healthRouter.get('/', async (req, res) => {
       timestamp: new Date().toISOString(),
       checks: {
         redis: 'connected',
-        email: emailStatus
-      }
+        email: emailStatus,
+      },
     });
   } catch (error) {
     res.status(503).json({
       status: 'unhealthy',
       service: 'email',
       timestamp: new Date().toISOString(),
-      error: error instanceof Error ? error.message : 'Unknown error'
+      error: error instanceof Error ? error.message : 'Unknown error',
     });
   }
 });

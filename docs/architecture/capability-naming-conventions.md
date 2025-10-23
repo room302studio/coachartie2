@@ -9,8 +9,9 @@
 ### Context
 
 The Coach Artie 2 system had an architectural inconsistency where the web search capability was referenced by different names across the codebase:
+
 - **Registry**: `'web'` (correct implementation)
-- **Documentation**: `'web-search'` (incorrect legacy reference)  
+- **Documentation**: `'web-search'` (incorrect legacy reference)
 - **Prompts**: Mixed usage of both formats
 
 This created confusion for LLM instruction generation and made the system appear broken when it was actually functioning correctly.
@@ -22,6 +23,7 @@ This created confusion for LLM instruction generation and made the system appear
 ### Naming Standards
 
 #### ✅ CORRECT Format:
+
 ```typescript
 {
   name: 'web',              // Domain/capability name
@@ -31,10 +33,11 @@ This created confusion for LLM instruction generation and made the system appear
 ```
 
 #### ❌ INCORRECT Format:
+
 ```typescript
 {
   name: 'web-search',       // Conflates domain + action
-  supportedActions: ['search'],  
+  supportedActions: ['search'],
   // Creates naming confusion and limits extensibility
 }
 ```
@@ -49,18 +52,19 @@ This created confusion for LLM instruction generation and made the system appear
 
 ### Current Capability Registry
 
-| Capability Name | Actions | Domain |
-|----------------|---------|--------|
-| `web` | `search`, `fetch` | Web operations |
-| `memory` | `remember`, `recall`, `search` | Memory storage |
-| `calculator` | `calculate` | Mathematical operations |
-| `discord-ui` | `buttons`, `embed` | Discord interface |
-| `github` | `create_issue`, `comment`, `search` | GitHub operations |
-| `variable-store` | `set`, `get`, `delete`, `list` | Variable storage |
+| Capability Name  | Actions                             | Domain                  |
+| ---------------- | ----------------------------------- | ----------------------- |
+| `web`            | `search`, `fetch`                   | Web operations          |
+| `memory`         | `remember`, `recall`, `search`      | Memory storage          |
+| `calculator`     | `calculate`                         | Mathematical operations |
+| `discord-ui`     | `buttons`, `embed`                  | Discord interface       |
+| `github`         | `create_issue`, `comment`, `search` | GitHub operations       |
+| `variable-store` | `set`, `get`, `delete`, `list`      | Variable storage        |
 
 ### XML Usage Patterns
 
 #### Standard Capability XML:
+
 ```xml
 <capability name="web" action="search" query="AI news" />
 <capability name="memory" action="remember" content="User loves pizza" />
@@ -68,6 +72,7 @@ This created confusion for LLM instruction generation and made the system appear
 ```
 
 #### Legacy Tag Support (Maintained for Backward Compatibility):
+
 ```xml
 <!-- Still works through XML parser translation -->
 <web-search>AI news</web-search>
@@ -86,11 +91,13 @@ This created confusion for LLM instruction generation and made the system appear
 ### Technical Debt Resolution
 
 **RESOLVED:**
+
 - Documentation now correctly states registry has `'web'` capability
 - Legacy prompts updated to use consistent `<capability>` XML format
 - Context alchemy capability manifest corrected
 
 **PRESERVED:**
+
 - XML parser translation layer for backward compatibility
 - Legacy tag support for existing implementations
 
@@ -103,4 +110,4 @@ This created confusion for LLM instruction generation and made the system appear
 
 ---
 
-*This decision ensures consistent capability naming while maintaining backward compatibility and system reliability.*
+_This decision ensures consistent capability naming while maintaining backward compatibility and system reliability._

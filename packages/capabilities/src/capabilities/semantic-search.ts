@@ -13,7 +13,10 @@ interface SemanticSearchParams {
  * Semantic Search Capability Handler
  * Foundation for vector-based memory search and analysis
  */
-async function handleSemanticSearchCapability(params: SemanticSearchParams, content?: string): Promise<string> {
+async function handleSemanticSearchCapability(
+  params: SemanticSearchParams,
+  content?: string
+): Promise<string> {
   logger.info(`🧠 Semantic search capability called - Action: ${params.action}`);
 
   try {
@@ -34,14 +37,17 @@ async function handleSemanticSearchCapability(params: SemanticSearchParams, cont
         }
 
         const results = await vectorEmbeddingService.findSimilarMemories(query, params.limit || 10);
-        
+
         if (results.length === 0) {
           return `🔍 No semantically similar memories found for: "${query}"`;
         }
 
-        return `🧠 Semantic search results for "${query}":\n\n${results.map((result, i) => 
-          `${i + 1}. ${result.content} (${(result.similarity_score * 100).toFixed(1)}% similarity)`
-        ).join('\n')}`;
+        return `🧠 Semantic search results for "${query}":\n\n${results
+          .map(
+            (result, i) =>
+              `${i + 1}. ${result.content} (${(result.similarity_score * 100).toFixed(1)}% similarity)`
+          )
+          .join('\n')}`;
 
       case 'similar':
         const memoryId = params.memory_id;
@@ -62,9 +68,12 @@ async function handleSemanticSearchCapability(params: SemanticSearchParams, cont
           return `🔍 No similar memories found for memory #${memoryId}`;
         }
 
-        return `🧠 Memories similar to #${memoryId}:\n\n${similarResults.map((result, i) =>
-          `${i + 1}. Memory #${result.memory_id}: ${result.content.substring(0, 100)}... (${(result.similarity_score * 100).toFixed(1)}% similarity)`
-        ).join('\n')}`;
+        return `🧠 Memories similar to #${memoryId}:\n\n${similarResults
+          .map(
+            (result, i) =>
+              `${i + 1}. Memory #${result.memory_id}: ${result.content.substring(0, 100)}... (${(result.similarity_score * 100).toFixed(1)}% similarity)`
+          )
+          .join('\n')}`;
 
       case 'cluster':
         const userId = params.user_id as string;
@@ -79,7 +88,7 @@ async function handleSemanticSearchCapability(params: SemanticSearchParams, cont
         return `🧠 Memory clustering analysis for ${userId}:\nFound ${allResults.length} memories for cluster analysis.\nTop clusters: General discussions, Technical topics, Personal preferences`;
 
       case 'analyze':
-        const analysisUserId = params.user_id as string || 'ejfox';
+        const analysisUserId = (params.user_id as string) || 'ejfox';
         const patternResults = await vectorEmbeddingService.findSimilarMemories('pattern', 20);
         if (patternResults.length === 0) {
           return `🔍 No memory patterns found for analysis for user: ${analysisUserId}`;
@@ -107,6 +116,6 @@ export const semanticSearchCapability: RegisteredCapability = {
     '<capability name="semantic-search" action="status" />',
     '<capability name="semantic-search" action="search" query="memories about stress" />',
     '<capability name="semantic-search" action="similar" memory_id="123" />',
-    '<capability name="semantic-search" action="cluster" user_id="ejfox" />'
-  ]
+    '<capability name="semantic-search" action="cluster" user_id="ejfox" />',
+  ],
 };

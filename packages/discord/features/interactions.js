@@ -9,7 +9,7 @@ import { logger } from '../utils/logger.js';
 export function createButtonRow(buttons) {
   const row = new ActionRowBuilder();
 
-  buttons.forEach(btn => {
+  buttons.forEach((btn) => {
     row.addComponents(
       new ButtonBuilder()
         .setCustomId(btn.id)
@@ -60,10 +60,7 @@ export const createSelectMenu = (options, customId = 'llm_select') => {
         const cleanText = text.trim() || `Option ${index + 1}`;
 
         // Ensure label meets Discord requirements (1-100 chars)
-        const label =
-          cleanText.length > 100
-            ? cleanText.substring(0, 97) + '...'
-            : cleanText;
+        const label = cleanText.length > 100 ? cleanText.substring(0, 97) + '...' : cleanText;
 
         // Create a unique but readable value
         const value = `${index + 1}_${cleanText
@@ -89,6 +86,6 @@ export const createSelectMenu = (options, customId = 'llm_select') => {
 
         return selectOption;
       })
-      .filter(option => option.label.length > 0), // Remove any empty options
+      .filter((option) => option.label.length > 0), // Remove any empty options
   };
 };

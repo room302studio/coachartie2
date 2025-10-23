@@ -27,27 +27,26 @@ export interface CapabilityValidationError {
 
 /**
  * Capability Registry - A plugin-based system for registering and managing capabilities
- * 
+ *
  * This registry allows dynamic registration of capabilities that can be invoked by
  * the capability orchestrator. Each capability can support multiple actions and
  * define required parameters for validation.
  */
 export class CapabilityRegistry {
   private capabilities = new Map<string, RegisteredCapability>();
-  private mcpTools = new Map<string, {connectionId: string, command: string, tool: any}>();
+  private mcpTools = new Map<string, { connectionId: string; command: string; tool: any }>();
 
   /**
    * Register a new capability in the registry
-   * 
+   *
    * @param capability - The capability to register
    * @throws Error if capability is invalid or already exists
    */
   register(capability: RegisteredCapability): void {
-
     // Validate the capability
     const validationErrors = this.validate(capability);
     if (validationErrors.length > 0) {
-      const errorMessages = validationErrors.map(e => `${e.field}: ${e.message}`).join(', ');
+      const errorMessages = validationErrors.map((e) => `${e.field}: ${e.message}`).join(', ');
       throw new Error(`Invalid capability registration: ${errorMessages}`);
     }
 
@@ -58,12 +57,11 @@ export class CapabilityRegistry {
 
     // Register the capability
     this.capabilities.set(capability.name, capability);
-    
   }
 
   /**
    * Get a capability by name and validate it supports the requested action
-   * 
+   *
    * @param name - The capability name
    * @param action - The action to perform
    * @returns The registered capability
@@ -71,7 +69,7 @@ export class CapabilityRegistry {
    */
   get(name: string, action: string): RegisteredCapability {
     const capability = this.capabilities.get(name);
-    
+
     if (!capability) {
       throw new Error(`Capability '${name}' not found in registry`);
     }
@@ -85,7 +83,7 @@ export class CapabilityRegistry {
 
   /**
    * List all registered capabilities
-   * 
+   *
    * @returns Array of all registered capabilities
    */
   list(): RegisteredCapability[] {
@@ -98,22 +96,22 @@ export class CapabilityRegistry {
 
   /**
    * Get capability names and their supported actions
-   * 
+   *
    * @returns Object mapping capability names to their supported actions
    */
   getCapabilityActions(): Record<string, string[]> {
     const result: Record<string, string[]> = {};
-    
+
     for (const [name, capability] of this.capabilities) {
       result[name] = capability.supportedActions;
     }
-    
+
     return result;
   }
 
   /**
    * Check if a capability exists
-   * 
+   *
    * @param name - The capability name
    * @returns True if capability exists
    */
@@ -123,8 +121,8 @@ export class CapabilityRegistry {
 
   /**
    * Check if a capability supports a specific action
-   * 
-   * @param name - The capability name  
+   *
+   * @param name - The capability name
    * @param action - The action to check
    * @returns True if capability exists and supports the action
    */
@@ -135,7 +133,7 @@ export class CapabilityRegistry {
 
   /**
    * Remove a capability from the registry
-   * 
+   *
    * @param name - The capability name to remove
    * @returns True if capability was removed, false if it didn't exist
    */
@@ -150,7 +148,7 @@ export class CapabilityRegistry {
 
   /**
    * Validate a capability has all required fields and correct types
-   * 
+   *
    * @param capability - The capability to validate
    * @returns Array of validation errors (empty if valid)
    */
@@ -161,22 +159,24 @@ export class CapabilityRegistry {
     if (!capability.name || typeof capability.name !== 'string') {
       errors.push({
         field: 'name',
-        message: 'Name is required and must be a string'
+        message: 'Name is required and must be a string',
       });
     }
 
     if (!capability.supportedActions || !Array.isArray(capability.supportedActions)) {
       errors.push({
         field: 'supportedActions',
-        message: 'supportedActions is required and must be an array'
+        message: 'supportedActions is required and must be an array',
       });
     } else {
       // Validate each action is a string
-      const invalidActions = capability.supportedActions.filter(action => typeof action !== 'string');
+      const invalidActions = capability.supportedActions.filter(
+        (action) => typeof action !== 'string'
+      );
       if (invalidActions.length > 0) {
         errors.push({
           field: 'supportedActions',
-          message: 'All actions must be strings'
+          message: 'All actions must be strings',
         });
       }
 
@@ -184,7 +184,7 @@ export class CapabilityRegistry {
       if (capability.supportedActions.length === 0) {
         errors.push({
           field: 'supportedActions',
-          message: 'At least one supported action is required'
+          message: 'At least one supported action is required',
         });
       }
     }
@@ -192,7 +192,7 @@ export class CapabilityRegistry {
     if (!capability.handler || typeof capability.handler !== 'function') {
       errors.push({
         field: 'handler',
-        message: 'Handler is required and must be a function'
+        message: 'Handler is required and must be a function',
       });
     }
 
@@ -200,22 +200,22 @@ export class CapabilityRegistry {
     if (capability.description && typeof capability.description !== 'string') {
       errors.push({
         field: 'description',
-        message: 'Description must be a string if provided'
+        message: 'Description must be a string if provided',
       });
     }
 
     if (capability.requiredParams && !Array.isArray(capability.requiredParams)) {
       errors.push({
         field: 'requiredParams',
-        message: 'requiredParams must be an array if provided'
+        message: 'requiredParams must be an array if provided',
       });
     } else if (capability.requiredParams) {
       // Validate each required param is a string
-      const invalidParams = capability.requiredParams.filter(param => typeof param !== 'string');
+      const invalidParams = capability.requiredParams.filter((param) => typeof param !== 'string');
       if (invalidParams.length > 0) {
         errors.push({
           field: 'requiredParams',
-          message: 'All required parameter names must be strings'
+          message: 'All required parameter names must be strings',
         });
       }
     }
@@ -225,7 +225,7 @@ export class CapabilityRegistry {
 
   /**
    * Execute a capability with the given parameters
-   * 
+   *
    * @param name - The capability name
    * @param action - The action to perform
    * @param params - Parameters for the capability
@@ -239,11 +239,12 @@ export class CapabilityRegistry {
 
     // Validate required parameters - BUT allow content as fallback for single-param capabilities
     if (capability.requiredParams) {
-      const missingParams = capability.requiredParams.filter(param => !(param in params));
+      const missingParams = capability.requiredParams.filter((param) => !(param in params));
       if (missingParams.length > 0) {
         // Special case: If only one param is required and content is provided, allow it
         // This handles cases where params.expression is missing but content has "2+2"
-        const canUsContentAsFallback = missingParams.length === 1 && content && content.trim().length > 0;
+        const canUsContentAsFallback =
+          missingParams.length === 1 && content && content.trim().length > 0;
 
         if (!canUsContentAsFallback) {
           throw new Error(
@@ -251,7 +252,9 @@ export class CapabilityRegistry {
           );
         }
 
-        logger.info(`✅ Using content as fallback for required param '${missingParams[0]}' in ${name}:${action}`);
+        logger.info(
+          `✅ Using content as fallback for required param '${missingParams[0]}' in ${name}:${action}`
+        );
       }
     }
 
@@ -259,7 +262,9 @@ export class CapabilityRegistry {
     const handlerParams = { ...params, action };
 
     // Debug: Log what we're passing to the handler
-    logger.info(`🔧 REGISTRY: Calling ${name}:${action} with content="${content}" (${typeof content})`);
+    logger.info(
+      `🔧 REGISTRY: Calling ${name}:${action} with content="${content}" (${typeof content})`
+    );
 
     try {
       const result = await capability.handler(handlerParams, content);
@@ -272,21 +277,30 @@ export class CapabilityRegistry {
 
   /**
    * Get registry statistics
-   * 
+   *
    * @returns Object with registry statistics
    */
-  getStats(): { totalCapabilities: number; totalActions: number; capabilities: Array<{ name: string; actions: number; hasDescription: boolean; hasRequiredParams: boolean }> } {
+  getStats(): {
+    totalCapabilities: number;
+    totalActions: number;
+    capabilities: Array<{
+      name: string;
+      actions: number;
+      hasDescription: boolean;
+      hasRequiredParams: boolean;
+    }>;
+  } {
     const capabilities = Array.from(this.capabilities.values());
-    
+
     return {
       totalCapabilities: capabilities.length,
       totalActions: capabilities.reduce((sum, cap) => sum + cap.supportedActions.length, 0),
-      capabilities: capabilities.map(cap => ({
+      capabilities: capabilities.map((cap) => ({
         name: cap.name,
         actions: cap.supportedActions.length,
         hasDescription: !!cap.description,
-        hasRequiredParams: !!(cap.requiredParams && cap.requiredParams.length > 0)
-      }))
+        hasRequiredParams: !!(cap.requiredParams && cap.requiredParams.length > 0),
+      })),
     };
   }
 
@@ -300,7 +314,7 @@ export class CapabilityRegistry {
   /**
    * Get registered MCP tool by name
    */
-  getMCPTool(toolName: string): {connectionId: string, command: string, tool: any} | undefined {
+  getMCPTool(toolName: string): { connectionId: string; command: string; tool: any } | undefined {
     return this.mcpTools.get(toolName);
   }
 
@@ -330,32 +344,44 @@ export class CapabilityRegistry {
 
     const available = capability.supportedActions;
     const supportedActions = available.join(', ');
-    
+
     // Simple alias check and fuzzy matching
     const aliases = new Map([
-      ['write', 'write_file'], ['read', 'read_file'], ['store', 'remember'],
-      ['save', 'remember'], ['search', 'recall'], ['find', 'recall'],
-      ['get', 'recall'], ['create', 'create_directory'], ['list', 'list_directory'],
-      ['check', 'exists'], ['remove', 'delete'], ['calc', 'calculate']
+      ['write', 'write_file'],
+      ['read', 'read_file'],
+      ['store', 'remember'],
+      ['save', 'remember'],
+      ['search', 'recall'],
+      ['find', 'recall'],
+      ['get', 'recall'],
+      ['create', 'create_directory'],
+      ['list', 'list_directory'],
+      ['check', 'exists'],
+      ['remove', 'delete'],
+      ['calc', 'calculate'],
     ]);
-    
+
     const alias = aliases.get(attemptedAction.toLowerCase());
     if (alias && available.includes(alias)) {
       return `Capability '${capabilityName}' does not support action '${attemptedAction}'. Did you mean '${alias}'? Supported actions: ${supportedActions}`;
     }
-    
+
     // Find best match by substring/prefix similarity
     const target = attemptedAction.toLowerCase();
-    const match = available.find(action => {
+    const match = available.find((action) => {
       const actionLower = action.toLowerCase();
-      return actionLower.includes(target) || target.includes(actionLower) || 
-             actionLower.startsWith(target.slice(0, 3)) || target.startsWith(actionLower.slice(0, 3));
+      return (
+        actionLower.includes(target) ||
+        target.includes(actionLower) ||
+        actionLower.startsWith(target.slice(0, 3)) ||
+        target.startsWith(actionLower.slice(0, 3))
+      );
     });
-    
+
     if (match) {
       return `Capability '${capabilityName}' does not support action '${attemptedAction}'. Did you mean '${match}'? Supported actions: ${supportedActions}`;
     }
-    
+
     return `Capability '${capabilityName}' does not support action '${attemptedAction}'. Supported actions: ${supportedActions}`;
   }
 
@@ -407,7 +433,7 @@ capabilityRegistry.register(embeddedMCPCapability);
 import { linkedInCapability } from '../capabilities/linkedin.js';
 capabilityRegistry.register(linkedInCapability);
 
-// Auto-register Semantic Search capability 
+// Auto-register Semantic Search capability
 import { semanticSearchCapability } from '../capabilities/semantic-search.js';
 capabilityRegistry.register(semanticSearchCapability);
 
@@ -420,6 +446,10 @@ import { discordForumsCapability } from '../capabilities/discord-forums.js';
 capabilityRegistry.register(discordForumsCapability);
 
 // Log all successfully registered capabilities on startup
-logger.info(`🚀 Capability Registry initialized with ${capabilityRegistry.size()} capabilities:`,
-  capabilityRegistry.list().map(cap => `${cap.name} (${cap.supportedActions.join(', ')})`).join(', ')
+logger.info(
+  `🚀 Capability Registry initialized with ${capabilityRegistry.size()} capabilities:`,
+  capabilityRegistry
+    .list()
+    .map((cap) => `${cap.name} (${cap.supportedActions.join(', ')})`)
+    .join(', ')
 );

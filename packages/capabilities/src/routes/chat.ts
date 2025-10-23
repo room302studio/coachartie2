@@ -12,7 +12,7 @@ const router: Router = Router();
 interface ChatRequest {
   message: string;
   userId?: string;
-  context?: Record<string, any>;  // Discord context including guildId, channelId
+  context?: Record<string, any>; // Discord context including guildId, channelId
 }
 
 interface ChatResponse {
@@ -35,7 +35,7 @@ router.post('/', rateLimiter(50, 60000), async (req: Request, res: Response) => 
       return res.status(400).json({
         success: false,
         messageId: '',
-        error: 'Message is required and must be a string'
+        error: 'Message is required and must be a string',
       } as ChatResponse);
     }
 
@@ -44,7 +44,7 @@ router.post('/', rateLimiter(50, 60000), async (req: Request, res: Response) => 
       return res.status(400).json({
         success: false,
         messageId: '',
-        error: 'Message too long (max 10000 characters)'
+        error: 'Message too long (max 10000 characters)',
       } as ChatResponse);
     }
 
@@ -52,12 +52,12 @@ router.post('/', rateLimiter(50, 60000), async (req: Request, res: Response) => 
       return res.status(400).json({
         success: false,
         messageId: '',
-        error: 'Invalid userId format'
+        error: 'Invalid userId format',
       } as ChatResponse);
     }
 
     const messageId = uuidv4();
-    
+
     logger.info(`Processing chat message from ${userId}: ${message.substring(0, 100)}...`);
 
     // Create message object for processing
@@ -68,11 +68,11 @@ router.post('/', rateLimiter(50, 60000), async (req: Request, res: Response) => 
       source: 'api' as const,
       userId,
       message: message.trim(),
-      context: context || {},  // Pass Discord context through
+      context: context || {}, // Pass Discord context through
       respondTo: {
         type: 'api' as const,
-        apiResponseId: messageId
-      }
+        apiResponseId: messageId,
+      },
     };
 
     // Start tracking the job
@@ -89,7 +89,7 @@ router.post('/', rateLimiter(50, 60000), async (req: Request, res: Response) => 
         success: true,
         messageId,
         status: 'pending',
-        jobUrl: `/chat/${messageId}`
+        jobUrl: `/chat/${messageId}`,
       } as ChatResponse);
     } catch (queueError) {
       logger.error(`Failed to queue message ${messageId}:`, queueError);
@@ -97,13 +97,12 @@ router.post('/', rateLimiter(50, 60000), async (req: Request, res: Response) => 
       jobTracker.failJob(messageId, 'Failed to queue message');
       throw queueError;
     }
-
   } catch (error) {
     logger.error('Error in chat endpoint:', error);
     res.status(500).json({
       success: false,
       messageId: '',
-      error: 'Internal server error'
+      error: 'Internal server error',
     } as ChatResponse);
   }
 });
@@ -113,7 +112,7 @@ router.get('/health', (req: Request, res: Response) => {
   res.json({
     status: 'healthy',
     endpoint: 'chat',
-    timestamp: new Date().toISOString()
+    timestamp: new Date().toISOString(),
   });
 });
 
@@ -124,13 +123,13 @@ router.get('/_stats', (req: Request, res: Response) => {
     res.json({
       success: true,
       stats,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
     });
   } catch (error) {
     logger.error('Error getting job stats:', error);
     res.status(500).json({
       success: false,
-      error: 'Internal server error'
+      error: 'Internal server error',
     });
   }
 });
@@ -140,36 +139,36 @@ router.delete('/:messageId', (req: Request, res: Response) => {
   try {
     const { messageId } = req.params;
     const { reason } = req.body;
-    
+
     if (!messageId) {
       return res.status(400).json({
         success: false,
-        error: 'Message ID is required'
+        error: 'Message ID is required',
       });
     }
 
     const cancelled = jobTracker.cancelJob(messageId, reason || 'User requested cancellation');
-    
+
     if (!cancelled) {
       return res.status(404).json({
         success: false,
-        error: 'Job not found or cannot be cancelled'
+        error: 'Job not found or cannot be cancelled',
       });
     }
 
     logger.info(`🛑 Job ${messageId} cancelled via API`);
-    
+
     res.json({
       success: true,
       messageId,
       status: 'cancelled',
-      message: 'Job cancelled successfully'
+      message: 'Job cancelled successfully',
     });
   } catch (error) {
     logger.error('Error cancelling job:', error);
     res.status(500).json({
       success: false,
-      error: 'Internal server error'
+      error: 'Internal server error',
     });
   }
 });
@@ -179,32 +178,32 @@ router.patch('/:messageId', (req: Request, res: Response) => {
   try {
     const { messageId } = req.params;
     const { context } = req.body;
-    
+
     if (!messageId) {
       return res.status(400).json({
         success: false,
-        error: 'Message ID is required'
+        error: 'Message ID is required',
       });
     }
 
     if (!context || typeof context !== 'string') {
       return res.status(400).json({
         success: false,
-        error: 'Context is required and must be a string'
+        error: 'Context is required and must be a string',
       });
     }
 
     const added = jobTracker.addJobContext(messageId, context);
-    
+
     if (!added) {
       return res.status(404).json({
         success: false,
-        error: 'Job not found or cannot be modified'
+        error: 'Job not found or cannot be modified',
       });
     }
 
     logger.info(`📝 Context added to job ${messageId} via API`);
-    
+
     // Return updated job info
     const job = jobTracker.getJob(messageId);
     if (job) {
@@ -213,20 +212,20 @@ router.patch('/:messageId', (req: Request, res: Response) => {
         messageId,
         status: job.status,
         message: 'Context added successfully',
-        additionalContext: job.additionalContext
+        additionalContext: job.additionalContext,
       });
     } else {
       res.json({
         success: true,
         messageId,
-        message: 'Context added successfully'
+        message: 'Context added successfully',
       });
     }
   } catch (error) {
     logger.error('Error adding context to job:', error);
     res.status(500).json({
       success: false,
-      error: 'Internal server error'
+      error: 'Internal server error',
     });
   }
 });
@@ -235,25 +234,25 @@ router.patch('/:messageId', (req: Request, res: Response) => {
 router.get('/:messageId', (req: Request, res: Response) => {
   try {
     const { messageId } = req.params;
-    
+
     if (!messageId) {
       return res.status(400).json({
         success: false,
-        error: 'Message ID is required'
+        error: 'Message ID is required',
       });
     }
 
     const job = jobTracker.getJob(messageId);
-    
+
     if (!job) {
       return res.status(404).json({
         success: false,
-        error: 'Job not found or expired'
+        error: 'Job not found or expired',
       });
     }
 
     // Calculate processing time
-    const processingTime = job.endTime 
+    const processingTime = job.endTime
       ? job.endTime.getTime() - job.startTime.getTime()
       : Date.now() - job.startTime.getTime();
 
@@ -261,7 +260,7 @@ router.get('/:messageId', (req: Request, res: Response) => {
       success: true,
       messageId: job.messageId,
       status: job.status,
-      jobUrl: `/chat/${messageId}`
+      jobUrl: `/chat/${messageId}`,
     };
 
     // Add result, error, or cancellation info based on status
@@ -290,13 +289,13 @@ router.get('/:messageId', (req: Request, res: Response) => {
     }
 
     logger.info(`📊 Job status check for ${messageId}: ${job.status} (${processingTime}ms)`);
-    
+
     res.json(response);
   } catch (error) {
     logger.error('Error checking job status:', error);
     res.status(500).json({
       success: false,
-      error: 'Internal server error'
+      error: 'Internal server error',
     });
   }
 });

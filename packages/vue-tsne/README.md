@@ -25,38 +25,38 @@ pnpm add @ejfox/vue-tsne
 
 ```vue
 <script setup>
-import { useTsne } from '@ejfox/vue-tsne'
+import { useTsne } from '@ejfox/vue-tsne';
 
-const { initialize, start, coordinates, isInitialized, isRunning } = useTsne()
+const { initialize, start, coordinates, isInitialized, isRunning } = useTsne();
 
 // Your data with embeddings
 const data = [
-  { 
-    id: '1', 
+  {
+    id: '1',
     name: 'Document 1',
-    extractedEmbedding: [0.1, 0.2, 0.3, 0.4, 0.5] // 5D embedding
+    extractedEmbedding: [0.1, 0.2, 0.3, 0.4, 0.5], // 5D embedding
   },
-  { 
-    id: '2', 
-    name: 'Document 2', 
-    extractedEmbedding: [0.6, 0.7, 0.8, 0.9, 1.0] 
+  {
+    id: '2',
+    name: 'Document 2',
+    extractedEmbedding: [0.6, 0.7, 0.8, 0.9, 1.0],
   },
   // ... more data points
-]
+];
 
 // Initialize and start t-SNE
-initialize(data)
-start()
+initialize(data);
+start();
 </script>
 
 <template>
   <div class="tsne-container" style="position: relative; width: 500px; height: 500px;">
     <div v-if="!isInitialized">Loading...</div>
     <div v-else-if="isRunning">Running t-SNE...</div>
-    
+
     <!-- Render points -->
-    <div 
-      v-for="(coord, i) in coordinates" 
+    <div
+      v-for="(coord, i) in coordinates"
       :key="data[i]?.id || i"
       class="point"
       :style="{
@@ -67,7 +67,7 @@ start()
         width: '8px',
         height: '8px',
         backgroundColor: '#3b82f6',
-        borderRadius: '50%'
+        borderRadius: '50%',
       }"
       :title="data[i]?.name"
     />
@@ -88,7 +88,7 @@ Returns an object with the following properties and methods:
   - `options`: Optional configuration object
 
 - **`start()`**: Start the t-SNE process
-- **`stop()`**: Stop t-SNE iterations  
+- **`stop()`**: Stop t-SNE iterations
 - **`reset()`**: Reset t-SNE to initial state
 - **`step()`**: Run a single iteration (advanced usage)
 
@@ -105,10 +105,10 @@ Returns an object with the following properties and methods:
 
 ```typescript
 interface TsneOptions {
-  dim?: number          // Output dimensions (default: 2)
-  perplexity?: number   // Perplexity parameter (default: 30)
-  epsilon?: number      // Learning rate (default: 10)
-  maxIterations?: number // Maximum iterations (default: 500)
+  dim?: number; // Output dimensions (default: 2)
+  perplexity?: number; // Perplexity parameter (default: 30)
+  epsilon?: number; // Learning rate (default: 10)
+  maxIterations?: number; // Maximum iterations (default: 500)
 }
 ```
 
@@ -118,10 +118,10 @@ Your data should be an array of objects with embeddings:
 
 ```typescript
 interface EmbeddingData {
-  id: string
-  extractedEmbedding?: number[]  // Preferred field name
-  embedding?: number[]           // Alternative field name
-  [key: string]: any            // Any other properties
+  id: string;
+  extractedEmbedding?: number[]; // Preferred field name
+  embedding?: number[]; // Alternative field name
+  [key: string]: any; // Any other properties
 }
 ```
 
@@ -131,10 +131,10 @@ interface EmbeddingData {
 
 ```javascript
 initialize(data, {
-  perplexity: 50,        // Higher perplexity for larger datasets
-  epsilon: 20,           // Higher learning rate for faster convergence
-  maxIterations: 1000    // More iterations for better results
-})
+  perplexity: 50, // Higher perplexity for larger datasets
+  epsilon: 20, // Higher learning rate for faster convergence
+  maxIterations: 1000, // More iterations for better results
+});
 ```
 
 ### With Custom Styling
@@ -161,18 +161,16 @@ initialize(data, {
 
 ```vue
 <script setup>
-const { iterations, maxIterations, isRunning } = useTsne()
+const { iterations, maxIterations, isRunning } = useTsne();
 
 // Computed progress percentage
 const progress = computed(() => {
-  return Math.round((iterations.value / maxIterations.value) * 100)
-})
+  return Math.round((iterations.value / maxIterations.value) * 100);
+});
 </script>
 
 <template>
-  <div v-if="isRunning">
-    Progress: {{ progress }}% ({{ iterations }}/{{ maxIterations }})
-  </div>
+  <div v-if="isRunning">Progress: {{ progress }}% ({{ iterations }}/{{ maxIterations }})</div>
 </template>
 ```
 
@@ -180,7 +178,7 @@ const progress = computed(() => {
 
 1. **Data Size**: t-SNE works best with 50-10,000 data points. For larger datasets, consider sampling.
 
-2. **Perplexity**: 
+2. **Perplexity**:
    - Use 5-50 for most datasets
    - Higher values preserve global structure
    - Lower values preserve local structure

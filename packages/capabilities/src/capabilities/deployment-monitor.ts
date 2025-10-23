@@ -33,7 +33,7 @@ export class DeploymentMonitor {
 
     logger.info('🚀 Initializing deployment monitor...', {
       repositories: this.config.repositories.length,
-      checkInterval: this.config.checkInterval
+      checkInterval: this.config.checkInterval,
     });
 
     try {
@@ -45,8 +45,8 @@ export class DeploymentMonitor {
         data: {
           type: 'deployment-check',
           repositories: this.config.repositories,
-          action: 'monitor_releases'
-        }
+          action: 'monitor_releases',
+        },
       });
 
       // Schedule weekly summary if configured
@@ -54,7 +54,7 @@ export class DeploymentMonitor {
         const [hour, minute] = this.config.weeklyReportTime.split(':');
         const weeklyHour = parseInt(hour);
         const weeklyMinute = parseInt(minute);
-        
+
         // Generate cron for weekly report (e.g., "0 9 * * 1" for Monday 9 AM)
         const dayOfWeek = this.getDayOfWeekNumber(this.config.weeklyReportDay);
         const weeklyCron = `${weeklyMinute} ${weeklyHour} * * ${dayOfWeek}`;
@@ -66,16 +66,17 @@ export class DeploymentMonitor {
           data: {
             type: 'deployment-weekly-summary',
             repositories: this.config.repositories,
-            action: 'generate_weekly_summary'
-          }
+            action: 'generate_weekly_summary',
+          },
         });
 
-        logger.info(`📅 Weekly deployment summary scheduled for ${this.config.weeklyReportDay} at ${this.config.weeklyReportTime}`);
+        logger.info(
+          `📅 Weekly deployment summary scheduled for ${this.config.weeklyReportDay} at ${this.config.weeklyReportTime}`
+        );
       }
 
       this.isInitialized = true;
       logger.info('✅ Deployment monitor initialized successfully');
-
     } catch (error) {
       logger.error('❌ Failed to initialize deployment monitor:', error);
       throw error;
@@ -85,17 +86,19 @@ export class DeploymentMonitor {
   async processScheduledTask(taskData: TaskData): Promise<void> {
     const { type, repositories } = taskData;
 
-    logger.info(`🔄 Processing scheduled deployment task: ${type}`, { repositories: repositories?.length || 0 });
+    logger.info(`🔄 Processing scheduled deployment task: ${type}`, {
+      repositories: repositories?.length || 0,
+    });
 
     switch (type) {
       case 'deployment-check':
         await this.checkRepositoriesForDeployments(repositories || []);
         break;
-      
+
       case 'deployment-weekly-summary':
         await this.generateWeeklySummary(repositories || []);
         break;
-      
+
       default:
         logger.warn(`❓ Unknown deployment task type: ${type}`);
     }
@@ -116,8 +119,7 @@ export class DeploymentMonitor {
         );
 
         // Small delay to avoid overwhelming the system
-        await new Promise(resolve => setTimeout(resolve, 1000));
-
+        await new Promise((resolve) => setTimeout(resolve, 1000));
       } catch (error) {
         logger.error(`❌ Failed to check repository ${repo}:`, error);
       }
@@ -131,7 +133,7 @@ export class DeploymentMonitor {
       const summaryData = {
         week: this.getCurrentWeekString(),
         repositories: repositories.length,
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
       };
 
       // Check activity for all repositories (last 7 days)
@@ -144,12 +146,12 @@ export class DeploymentMonitor {
           true
         );
 
-        await new Promise(resolve => setTimeout(resolve, 500));
+        await new Promise((resolve) => setTimeout(resolve, 500));
       }
 
       // Send summary header message
       const summaryMessage = this.generateWeeklySummaryMessage(summaryData);
-      
+
       await publishMessage(
         'deployment-monitor',
         summaryMessage,
@@ -157,7 +159,6 @@ export class DeploymentMonitor {
         'Deployment Monitor',
         true
       );
-
     } catch (error) {
       logger.error('❌ Failed to generate weekly deployment summary:', error);
     }
@@ -165,8 +166,13 @@ export class DeploymentMonitor {
 
   private getDayOfWeekNumber(dayName: string): number {
     const days = {
-      'sunday': 0, 'monday': 1, 'tuesday': 2, 'wednesday': 3,
-      'thursday': 4, 'friday': 5, 'saturday': 6
+      sunday: 0,
+      monday: 1,
+      tuesday: 2,
+      wednesday: 3,
+      thursday: 4,
+      friday: 5,
+      saturday: 6,
     };
     return days[dayName.toLowerCase() as keyof typeof days] || 1; // Default to Monday
   }
@@ -175,12 +181,13 @@ export class DeploymentMonitor {
     const now = new Date();
     const startOfWeek = new Date(now);
     startOfWeek.setDate(now.getDate() - now.getDay()); // Go to Sunday
-    
+
     const endOfWeek = new Date(startOfWeek);
     endOfWeek.setDate(startOfWeek.getDate() + 6); // Go to Saturday
-    
-    const formatDate = (date: Date) => date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-    
+
+    const formatDate = (date: Date) =>
+      date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+
     return `${formatDate(startOfWeek)} - ${formatDate(endOfWeek)}`;
   }
 
@@ -197,7 +204,7 @@ export class DeploymentMonitor {
 
   async updateConfiguration(newConfig: Partial<DeploymentMonitorConfig>): Promise<void> {
     this.config = { ...this.config, ...newConfig };
-    
+
     if (this.isInitialized) {
       logger.info('🔄 Deployment monitor configuration updated, reinitializing...');
       await this.shutdown();
@@ -216,7 +223,7 @@ export class DeploymentMonitor {
       // Remove scheduled tasks
       await schedulerService.removeTask('deployment-monitor-check');
       await schedulerService.removeTask('deployment-weekly-summary');
-      
+
       this.isInitialized = false;
       logger.info('✅ Deployment monitor shut down successfully');
     } catch (error) {
@@ -233,7 +240,7 @@ export const defaultDeploymentMonitorConfig: DeploymentMonitorConfig = {
   ],
   checkInterval: '0 */4 * * *', // Every 4 hours
   weeklyReportDay: 'monday',
-  weeklyReportTime: '09:00'
+  weeklyReportTime: '09:00',
 };
 
 // Global deployment monitor instance
@@ -242,11 +249,11 @@ export let deploymentMonitor: DeploymentMonitor | null = null;
 // Initialize the deployment monitor
 export async function initializeDeploymentMonitor(config?: DeploymentMonitorConfig): Promise<void> {
   const finalConfig = config || defaultDeploymentMonitorConfig;
-  
+
   if (deploymentMonitor) {
     await deploymentMonitor.shutdown();
   }
-  
+
   deploymentMonitor = new DeploymentMonitor(finalConfig);
   await deploymentMonitor.initialize();
 }
@@ -257,6 +264,6 @@ export async function processDeploymentTask(taskData: TaskData): Promise<void> {
     logger.warn('⚠️ Deployment monitor not initialized, skipping task');
     return;
   }
-  
+
   await deploymentMonitor.processScheduledTask(taskData);
 }

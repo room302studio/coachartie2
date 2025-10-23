@@ -13,10 +13,10 @@ const BinaryOperationSchema = z.object({
 
 const DivideSchema = z.object({
   a: z.number().finite('First number must be a finite number'),
-  b: z.number().finite('Second number must be a finite number').refine(
-    (val) => val !== 0,
-    'Division by zero is not allowed'
-  ),
+  b: z
+    .number()
+    .finite('Second number must be a finite number')
+    .refine((val) => val !== 0, 'Division by zero is not allowed'),
 });
 
 // Tool type definition
@@ -33,12 +33,12 @@ interface CalculatorTool {
 async function safeEvaluate(expression: string): Promise<number> {
   try {
     const result = evaluate(expression);
-    
+
     // Ensure result is a number
     if (typeof result !== 'number' || !Number.isFinite(result)) {
       throw new Error('Expression did not evaluate to a finite number');
     }
-    
+
     return result;
   } catch (error) {
     if (error instanceof Error) {
@@ -52,13 +52,15 @@ async function safeEvaluate(expression: string): Promise<number> {
 export const calculatorTools: CalculatorTool[] = [
   {
     name: 'calculate',
-    description: 'Evaluate a mathematical expression using mathjs. Supports arithmetic operations, functions, constants, and more complex mathematical expressions.',
+    description:
+      'Evaluate a mathematical expression using mathjs. Supports arithmetic operations, functions, constants, and more complex mathematical expressions.',
     inputSchema: {
       type: 'object',
       properties: {
         expression: {
           type: 'string',
-          description: 'The mathematical expression to evaluate (e.g., "2 + 3 * 4", "sqrt(16)", "sin(pi/2)")',
+          description:
+            'The mathematical expression to evaluate (e.g., "2 + 3 * 4", "sqrt(16)", "sin(pi/2)")',
         },
       },
       required: ['expression'],
@@ -66,12 +68,12 @@ export const calculatorTools: CalculatorTool[] = [
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     handler: async (args: any): Promise<string> => {
       const { expression } = CalculateSchema.parse(args);
-      
+
       const result = await safeEvaluate(expression);
       return `${expression} = ${result}`;
     },
   },
-  
+
   {
     name: 'add',
     description: 'Add two numbers together.',
@@ -96,7 +98,7 @@ export const calculatorTools: CalculatorTool[] = [
       return `${a} + ${b} = ${result}`;
     },
   },
-  
+
   {
     name: 'subtract',
     description: 'Subtract the second number from the first number.',
@@ -121,7 +123,7 @@ export const calculatorTools: CalculatorTool[] = [
       return `${a} - ${b} = ${result}`;
     },
   },
-  
+
   {
     name: 'multiply',
     description: 'Multiply two numbers together.',
@@ -146,7 +148,7 @@ export const calculatorTools: CalculatorTool[] = [
       return `${a} * ${b} = ${result}`;
     },
   },
-  
+
   {
     name: 'divide',
     description: 'Divide the first number by the second number.',

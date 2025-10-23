@@ -20,22 +20,23 @@ export class WolframService {
       url.searchParams.set('format', 'plaintext');
 
       const response = await fetch(url.toString());
-      
+
       if (!response.ok) {
         throw new Error(`Wolfram Alpha API error: ${response.status} ${response.statusText}`);
       }
 
       const result = await response.text();
-      
+
       if (result.trim() === '') {
         return `No computational result found for "${input}"`;
       }
 
       return result.trim();
-      
     } catch (error) {
       logger.error('Wolfram Alpha query failed:', error);
-      throw new Error(`Failed to query Wolfram Alpha: ${error instanceof Error ? error.message : String(error)}`);
+      throw new Error(
+        `Failed to query Wolfram Alpha: ${error instanceof Error ? error.message : String(error)}`
+      );
     }
   }
 }

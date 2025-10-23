@@ -1,12 +1,15 @@
 # Issue #001: Implement Goal Capability
 
 ## User Story
+
 As Coach Artie, I need to set, track, and complete goals so that I can maintain focus on long-term objectives while helping users with immediate tasks.
 
 ## Background
+
 Currently, Coach Artie has no way to track goals across sessions. We need a simple capability that allows setting goals with deadlines, checking status, and marking completion. This will be the foundation for the conscience whisper system.
 
 ## Acceptance Criteria
+
 - [ ] Can create a new goal with: objective (string), deadline (optional date), priority (optional)
 - [ ] Can list all active goals for a user
 - [ ] Can update goal status (not_started, in_progress, completed, blocked, cancelled)
@@ -19,6 +22,7 @@ Currently, Coach Artie has no way to track goals across sessions. We need a simp
 ## Technical Requirements
 
 ### Database Schema
+
 ```sql
 CREATE TABLE goals (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -34,6 +38,7 @@ CREATE TABLE goals (
 ```
 
 ### Capability Interface
+
 ```xml
 <!-- Set a goal -->
 <capability name="goal" action="set" objective="Complete PR review" deadline="2024-01-15T14:00:00Z" priority="8" />
@@ -52,6 +57,7 @@ CREATE TABLE goals (
 ```
 
 ### Error Handling
+
 - **Invalid goal ID**: Return "Goal not found" (don't throw)
 - **Wrong user**: Return "Goal not found" (don't expose that goal exists)
 - **Past deadline**: Accept but warn "Note: deadline is in the past"
@@ -61,59 +67,83 @@ CREATE TABLE goals (
 ## Test Cases
 
 ### Test 1: Create and Retrieve Goal
+
 ```javascript
 // Create goal
-const result = await goalCapability.handler({
-  action: 'set',
-  objective: 'Test goal',
-  deadline: '2024-12-31'
-}, null);
+const result = await goalCapability.handler(
+  {
+    action: 'set',
+    objective: 'Test goal',
+    deadline: '2024-12-31',
+  },
+  null
+);
 // Should return goal ID
 
 // Retrieve goals
-const goals = await goalCapability.handler({
-  action: 'check'
-}, null);
+const goals = await goalCapability.handler(
+  {
+    action: 'check',
+  },
+  null
+);
 // Should include the created goal
 ```
 
 ### Test 2: User Isolation
+
 ```javascript
 // Create goal for user1
-await goalCapability.handler({
-  action: 'set',
-  objective: 'User1 goal',
-  user_id: 'user1'  // NOTE: use user_id not userId
-}, null);
+await goalCapability.handler(
+  {
+    action: 'set',
+    objective: 'User1 goal',
+    user_id: 'user1', // NOTE: use user_id not userId
+  },
+  null
+);
 
 // Check goals for user2
-const user2Goals = await goalCapability.handler({
-  action: 'check',
-  user_id: 'user2'  // NOTE: use user_id not userId
-}, null);
+const user2Goals = await goalCapability.handler(
+  {
+    action: 'check',
+    user_id: 'user2', // NOTE: use user_id not userId
+  },
+  null
+);
 // Should NOT include user1's goal
 ```
 
 ### Test 3: Status Updates
+
 ```javascript
 // Create goal
-const { goalId } = await goalCapability.handler({
-  action: 'set',
-  objective: 'Status test'
-}, null);
+const { goalId } = await goalCapability.handler(
+  {
+    action: 'set',
+    objective: 'Status test',
+  },
+  null
+);
 
 // Update status
-await goalCapability.handler({
-  action: 'update',
-  goal_id: goalId,
-  status: 'in_progress'
-}, null);
+await goalCapability.handler(
+  {
+    action: 'update',
+    goal_id: goalId,
+    status: 'in_progress',
+  },
+  null
+);
 
 // Complete goal
-await goalCapability.handler({
-  action: 'complete',
-  goal_id: goalId
-}, null);
+await goalCapability.handler(
+  {
+    action: 'complete',
+    goal_id: goalId,
+  },
+  null
+);
 // Should set status to 'completed' and update completed_at
 ```
 
@@ -133,6 +163,7 @@ await goalCapability.handler({
    ```
 
 ## Definition of Done
+
 - [ ] All acceptance criteria met
 - [ ] All test cases pass
 - [ ] Registered in capability-orchestrator.ts
@@ -141,6 +172,7 @@ await goalCapability.handler({
 - [ ] Returns helpful messages for user interaction
 
 ## Example Implementation Structure
+
 ```typescript
 import { RegisteredCapability } from '../services/capability-registry.js';
 import { getDatabase } from '@coachartie/shared';
@@ -150,7 +182,7 @@ export const goalCapability: RegisteredCapability = {
   supportedActions: ['set', 'check', 'update', 'complete', 'history'],
   handler: async (params, content) => {
     const { action, user_id = 'unknown-user' } = params; // NOT userId!
-    
+
     try {
       const db = await getDatabase();
       // Implementation here
@@ -163,6 +195,6 @@ export const goalCapability: RegisteredCapability = {
   examples: [
     '<capability name="goal" action="set" objective="Learn React" />',
     '<capability name="goal" action="check" />',
-  ]
+  ],
 };
 ```

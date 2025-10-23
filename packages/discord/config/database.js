@@ -8,8 +8,7 @@ const DEFAULT_TABLES = {
 };
 
 // Get table name from environment variable or fall back to default
-const getTableName = (envVar, defaultName) =>
-  process.env[envVar] || defaultName;
+const getTableName = (envVar, defaultName) => process.env[envVar] || defaultName;
 
 // Export configured table names
 export const DB_TABLES = {
@@ -18,19 +17,17 @@ export const DB_TABLES = {
 };
 
 // Export function to validate table existence
-export const validateTables = async supabase => {
+export const validateTables = async (supabase) => {
   const tables = [DB_TABLES.QUEUE, DB_TABLES.MEMORY];
 
   const results = await Promise.all(
-    tables.map(async table => {
+    tables.map(async (table) => {
       const { error } = await supabase.from(table).select('*').limit(1);
       return { table, exists: !error };
     })
   );
 
-  const missingTables = results
-    .filter(({ exists }) => !exists)
-    .map(({ table }) => table);
+  const missingTables = results.filter(({ exists }) => !exists).map(({ table }) => table);
 
   if (missingTables.length > 0) {
     throw new Error(`Missing required tables: ${missingTables.join(', ')}`);

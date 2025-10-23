@@ -33,7 +33,11 @@ export class CapabilitiesClient {
   /**
    * Submit a message for processing and get job ID
    */
-  async submitJob(message: string, userId: string, context?: Record<string, any>): Promise<JobSubmissionResponse> {
+  async submitJob(
+    message: string,
+    userId: string,
+    context?: Record<string, any>
+  ): Promise<JobSubmissionResponse> {
     try {
       const response = await fetch(`${this.baseUrl}/chat`, {
         method: 'POST',
@@ -43,21 +47,23 @@ export class CapabilitiesClient {
         body: JSON.stringify({
           message,
           userId,
-          context
-        })
+          context,
+        }),
       });
 
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
 
-      const result = await response.json() as JobSubmissionResponse;
+      const result = (await response.json()) as JobSubmissionResponse;
       logger.info(`📤 Submitted job ${result.messageId} for user ${userId}`);
-      
+
       return result;
     } catch (error) {
       logger.error('Failed to submit job to capabilities service:', error);
-      throw new Error(`Failed to submit job: ${error instanceof Error ? error.message : String(error)}`);
+      throw new Error(
+        `Failed to submit job: ${error instanceof Error ? error.message : String(error)}`
+      );
     }
   }
 
@@ -78,12 +84,16 @@ export class CapabilitiesClient {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
 
-      const result = await response.json() as JobStatusResponse;
-      logger.info(`🔍 API RESPONSE: status="${result.status}", hasResponse=${!!result.response}, responseLength=${result.response?.length || 0}`);
+      const result = (await response.json()) as JobStatusResponse;
+      logger.info(
+        `🔍 API RESPONSE: status="${result.status}", hasResponse=${!!result.response}, responseLength=${result.response?.length || 0}`
+      );
       if (result.status === 'completed') {
-        logger.info(`🔍 API RESPONSE: Full response preview: "${result.response?.substring(0, 150)}..."`);
+        logger.info(
+          `🔍 API RESPONSE: Full response preview: "${result.response?.substring(0, 150)}..."`
+        );
       }
-      
+
       return result;
     } catch (error) {
       logger.error(`Failed to check job status for ${messageId}:`, error);
@@ -109,7 +119,7 @@ export class CapabilitiesClient {
       pollInterval = 5000, // 5 seconds
       onProgress,
       onComplete,
-      onError
+      onError,
     } = options;
 
     let attempts = 0;
@@ -120,7 +130,9 @@ export class CapabilitiesClient {
           attempts++;
           logger.info(`🔄 POLL #${attempts}: Checking job ${messageId.slice(-8)} status...`);
           const status = await this.checkJobStatus(messageId);
-          logger.info(`🔄 POLL #${attempts}: Got status="${status.status}", hasResponse=${!!status.response}, responseLength=${status.response?.length || 0}`);
+          logger.info(
+            `🔄 POLL #${attempts}: Got status="${status.status}", hasResponse=${!!status.response}, responseLength=${status.response?.length || 0}`
+          );
 
           // Call progress callback
           if (onProgress) {
@@ -136,9 +148,11 @@ export class CapabilitiesClient {
             logger.info(`  - status.response length: ${status.response?.length || 0}`);
             logger.info(`  - onComplete callback exists: ${!!onComplete}`);
             logger.info(`  - onComplete type: ${typeof onComplete}`);
-            
+
             if (status.response && onComplete) {
-              logger.info(`🚀 TRIGGERING onComplete callback with response: "${status.response.substring(0, 100)}..."`);
+              logger.info(
+                `🚀 TRIGGERING onComplete callback with response: "${status.response.substring(0, 100)}..."`
+              );
               try {
                 onComplete(status.response);
                 logger.info(`✅ onComplete callback executed successfully`);
@@ -176,11 +190,10 @@ export class CapabilitiesClient {
 
           // Schedule next poll
           setTimeout(poll, pollInterval);
-
         } catch (error) {
           const errorMsg = error instanceof Error ? error.message : String(error);
           logger.error(`Polling error for job ${messageId}:`, error);
-          
+
           if (onError) {
             onError(errorMsg);
           }
@@ -213,7 +226,7 @@ export class CapabilitiesClient {
 
     // Submit job
     const jobInfo = await this.submitJob(message, userId, context);
-    
+
     if (onJobSubmitted) {
       onJobSubmitted(jobInfo.messageId);
     }

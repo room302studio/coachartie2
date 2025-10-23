@@ -1,29 +1,35 @@
 # Cost Monitoring Integration Fix
 
 ## Problem Summary
+
 The cost monitoring system was completely silent - no console logs appeared despite being properly integrated into the codebase.
 
 ## Root Cause Analysis
 
 ### Issue #1: Logger Console Level Misconfiguration
+
 **Location**: `/packages/shared/src/utils/logger.ts:38`
 
 The console transport was configured to only show `warn` level and above:
+
 ```typescript
-level: process.env.CONSOLE_LOG_LEVEL || 'warn'
+level: process.env.CONSOLE_LOG_LEVEL || 'warn';
 ```
 
 But the cost monitor uses `logger.info()` for all cost tracking:
+
 ```typescript
-logger.info(`💰 API Call: ${inputTokens} in + ${outputTokens} out tokens...`)
+logger.info(`💰 API Call: ${inputTokens} in + ${outputTokens} out tokens...`);
 ```
 
 **Impact**: Cost logs were being written to files but never appeared in console where developers need real-time visibility.
 
 ### Issue #2: Missing Cost Tracking in Streaming Method
+
 **Location**: `/packages/capabilities/src/services/openrouter.ts:269-354`
 
 The `generateFromMessageChainStreaming()` method had **zero cost tracking**:
+
 - ❌ No `costMonitor.trackCall()`
 - ❌ No token usage extraction
 - ❌ No usage statistics recording
@@ -36,7 +42,9 @@ This meant any Discord messages using streaming (likely the majority) were **com
 ## The Fix
 
 ### 1. Added CONSOLE_LOG_LEVEL to .env
+
 **File**: `/.env`
+
 ```bash
 CONSOLE_LOG_LEVEL=info
 ```
@@ -44,9 +52,11 @@ CONSOLE_LOG_LEVEL=info
 This enables cost monitoring logs to appear in console in real-time.
 
 ### 2. Added Complete Cost Tracking to Streaming
+
 **File**: `/packages/capabilities/src/services/openrouter.ts`
 
 Added to `generateFromMessageChainStreaming()`:
+
 - ✅ Token usage extraction from streaming API (with fallback estimation)
 - ✅ `costMonitor.trackCall()` integration
 - ✅ Cost calculation and warnings
@@ -55,16 +65,19 @@ Added to `generateFromMessageChainStreaming()`:
 - ✅ Model rotation tracking
 
 **Key Implementation**:
+
 ```typescript
 // Request usage data in stream
-stream_options: { include_usage: true }
+stream_options: {
+  include_usage: true;
+}
 
 // Capture usage from final chunk
 if (chunk.usage) {
   usage = {
     prompt_tokens: chunk.usage.prompt_tokens || 0,
     completion_tokens: chunk.usage.completion_tokens || 0,
-    total_tokens: chunk.usage.total_tokens || 0
+    total_tokens: chunk.usage.total_tokens || 0,
   };
 }
 
@@ -83,42 +96,52 @@ const { shouldCheckCredits, warnings } = costMonitor.trackCall(
 ```
 
 ### 3. Updated All Call Sites
+
 **Files**:
+
 - `/packages/capabilities/src/services/capability-orchestrator.ts:554`
 - `/packages/capabilities/src/handlers/process-message.ts:76`
 
 Both now pass `message.id` to enable usage tracking:
+
 ```typescript
 await openRouterService.generateFromMessageChainStreaming(
   messages,
   message.userId,
   onPartialResponse,
-  message.id  // ← Added
-)
+  message.id // ← Added
+);
 ```
 
 ## Expected Behavior After Fix
 
 ### Console Output
+
 You should now see in real-time:
+
 ```
 💰 API Call: 1234 in + 567 out tokens (~$0.0234) | Total: $1.23 (45 calls)
 ```
 
 Every 5 minutes:
+
 ```
 💰 Cost Monitor Stats: { calls: 45, tokens: 123456, cost: "$1.23", costPerHour: "$2.45/hr" }
 ```
 
 ### Warnings
+
 If burn rate exceeds limits:
+
 ```
 ⚠️ High token usage: 9,000 tokens in single call (limit: 8,000)
 🚨 High burn rate: $12.34/hour (limit: $10.00/hr)
 ```
 
 ### Fallback Protection
+
 If OpenRouter doesn't provide usage data in streaming:
+
 ```
 ⚠️ No usage data received from streaming API, estimating tokens
 ```
@@ -142,16 +165,19 @@ If OpenRouter doesn't provide usage data in streaming:
 ## Robustness Improvements
 
 ### Graceful Degradation
+
 - If usage data unavailable from API → estimates from content length
 - If estimation fails → still logs warning and continues
 - All tracking is async/non-blocking → won't delay responses
 
 ### Error Boundaries
+
 - Token estimation uses safe fallback (4 chars/token rule)
 - Usage recording wrapped in try/catch → won't crash on DB errors
 - Cost warnings logged but don't block execution
 
 ### Monitoring Coverage
+
 - Non-streaming method: ✅ Already tracked
 - Streaming method: ✅ Now tracked
 - Both paths: ✅ Record to database

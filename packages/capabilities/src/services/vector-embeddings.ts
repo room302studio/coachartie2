@@ -39,7 +39,9 @@ export class VectorEmbeddingService {
    * Initialize the vector embedding service with real OpenAI client
    */
   async initialize(): Promise<void> {
-    if (this.initialized) {return;}
+    if (this.initialized) {
+      return;
+    }
 
     const apiKey = process.env.OPENAI_API_KEY;
     if (!apiKey) {
@@ -65,16 +67,18 @@ export class VectorEmbeddingService {
       const response = await this.openai.embeddings.create({
         model: 'text-embedding-3-small',
         input: text,
-        encoding_format: 'float'
+        encoding_format: 'float',
       });
 
       const embedding = response.data[0].embedding;
       logger.debug(`🧠 Generated OpenAI embedding: ${embedding.length} dimensions`);
-      
+
       return embedding;
     } catch (error) {
       logger.error('❌ OpenAI embedding generation failed:', error);
-      throw new Error(`Embedding generation failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      throw new Error(
+        `Embedding generation failed: ${error instanceof Error ? error.message : 'Unknown error'}`
+      );
     }
   }
 
@@ -102,7 +106,11 @@ export class VectorEmbeddingService {
   /**
    * Find semantically similar memories using local vector search
    */
-  async findSimilarMemories(queryText: string, limit: number = 10, threshold: number = 0.7): Promise<SimilarityResult[]> {
+  async findSimilarMemories(
+    queryText: string,
+    limit: number = 10,
+    threshold: number = 0.7
+  ): Promise<SimilarityResult[]> {
     if (!this.openai || !this.db) {
       logger.warn('🚧 Vector search unavailable - service not initialized');
       return [];
@@ -131,7 +139,7 @@ export class VectorEmbeddingService {
             results.push({
               memory_id: memory.memory_id,
               similarity_score: similarity,
-              content: memory.content
+              content: memory.content,
             });
           }
         } catch (e) {
@@ -146,7 +154,6 @@ export class VectorEmbeddingService {
 
       logger.info(`🔍 Found ${topResults.length} similar memories (threshold: ${threshold})`);
       return topResults;
-
     } catch (error) {
       logger.error('❌ Vector similarity search failed:', error);
       return [];
@@ -166,11 +173,15 @@ export class VectorEmbeddingService {
       const embedding = await this.generateEmbedding(text);
 
       // Store in SQLite memories table
-      const result = await this.db.run(`
+      const result = await this.db.run(
+        `
         UPDATE memories
         SET embedding = ?
         WHERE id = ?
-      `, JSON.stringify(embedding), memoryId);
+      `,
+        JSON.stringify(embedding),
+        memoryId
+      );
 
       if (result.changes > 0) {
         logger.info(`✅ Stored embedding for memory #${memoryId}`);
@@ -179,7 +190,6 @@ export class VectorEmbeddingService {
         logger.warn(`⚠️ Memory #${memoryId} not found`);
         return false;
       }
-
     } catch (error) {
       logger.error('❌ Failed to store embedding:', error);
       return false;
@@ -189,7 +199,11 @@ export class VectorEmbeddingService {
   /**
    * Find similar memories based on an existing memory's embedding
    */
-  async findSimilarToMemory(memoryId: number, limit: number = 10, threshold: number = 0.7): Promise<SimilarityResult[]> {
+  async findSimilarToMemory(
+    memoryId: number,
+    limit: number = 10,
+    threshold: number = 0.7
+  ): Promise<SimilarityResult[]> {
     if (!this.db) {
       logger.warn('🚧 Vector search unavailable - database not initialized');
       return [];
@@ -197,11 +211,14 @@ export class VectorEmbeddingService {
 
     try {
       // Get the memory and its embedding
-      const memory = await this.db.get(`
+      const memory = await this.db.get(
+        `
         SELECT content, embedding
         FROM memories
         WHERE id = ?
-      `, memoryId);
+      `,
+        memoryId
+      );
 
       if (!memory || !memory.embedding) {
         logger.warn(`⚠️ Memory #${memoryId} not found or has no embedding`);
@@ -211,11 +228,14 @@ export class VectorEmbeddingService {
       const baseEmbedding = JSON.parse(memory.embedding);
 
       // Get all other memories with embeddings
-      const otherMemories = await this.db.all(`
+      const otherMemories = await this.db.all(
+        `
         SELECT id AS memory_id, content, embedding
         FROM memories
         WHERE embedding IS NOT NULL AND id != ?
-      `, memoryId);
+      `,
+        memoryId
+      );
 
       // Calculate similarities
       const results: SimilarityResult[] = [];
@@ -229,7 +249,7 @@ export class VectorEmbeddingService {
             results.push({
               memory_id: otherMemory.memory_id,
               similarity_score: similarity,
-              content: otherMemory.content
+              content: otherMemory.content,
             });
           }
         } catch (e) {
@@ -244,7 +264,6 @@ export class VectorEmbeddingService {
 
       logger.info(`🔍 Found ${topResults.length} memories similar to #${memoryId}`);
       return topResults;
-
     } catch (error) {
       logger.error('❌ Failed to find similar memories:', error);
       return [];
@@ -264,7 +283,7 @@ export class VectorEmbeddingService {
   getStatus(): string {
     const hasApiKey = !!process.env.OPENAI_API_KEY;
     const isInitialized = this.initialized;
-    
+
     return `🧠 Vector Embedding Service (Real OpenAI Implementation)
 📊 Status: ${isInitialized ? 'Initialized' : 'Not initialized'}
 🔑 OpenAI API Key: ${hasApiKey ? 'Available' : 'Missing'}

@@ -27,7 +27,7 @@ const commands = [
   memoryCommand.data.toJSON(),
   usageCommand.data.toJSON(),
   debugCommand.data.toJSON(),
-  syncDiscussionsData.toJSON()
+  syncDiscussionsData.toJSON(),
 ];
 
 const rest = new REST().setToken(process.env.DISCORD_TOKEN!);
@@ -37,10 +37,7 @@ async function registerCommands() {
     console.log('🚀 Started refreshing Discord application (/) commands...');
 
     // Register commands globally
-    await rest.put(
-      Routes.applicationCommands(process.env.DISCORD_CLIENT_ID!),
-      { body: commands }
-    );
+    await rest.put(Routes.applicationCommands(process.env.DISCORD_CLIENT_ID!), { body: commands });
 
     console.log('✅ Successfully reloaded Discord application (/) commands!');
     console.log('📱 Registered commands:');
@@ -54,7 +51,6 @@ async function registerCommands() {
     console.log('  - /usage - View AI usage statistics and costs');
     console.log('  - /debug - Troubleshoot connection and performance issues');
     console.log('  - /sync-discussions - Sync Discord forum discussions to GitHub issues');
-    
   } catch (error) {
     console.error('❌ Error registering commands:', error);
   }

@@ -6,8 +6,9 @@ export const usageCommand = {
   data: new SlashCommandBuilder()
     .setName('usage')
     .setDescription('View your AI usage statistics and costs')
-    .addStringOption(option =>
-      option.setName('period')
+    .addStringOption((option) =>
+      option
+        .setName('period')
         .setDescription('Time period to analyze')
         .setRequired(false)
         .addChoices(
@@ -27,24 +28,23 @@ export const usageCommand = {
 
       const embed = await createUsageEmbed(userId, period);
       await interaction.editReply({ embeds: [embed] });
-
     } catch (error) {
       logger.error('Error fetching usage stats:', error);
       await interaction.editReply({
-        content: '❌ There was an error fetching your usage statistics. Please try again later.'
+        content: '❌ There was an error fetching your usage statistics. Please try again later.',
       });
     }
-  }
+  },
 };
 
 async function createUsageEmbed(userId: string, period: string): Promise<EmbedBuilder> {
   try {
     const db = await getDatabase();
-    
+
     // Calculate date range based on period
     const now = new Date();
     let startDate: Date;
-    
+
     switch (period) {
       case 'today':
         startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -62,7 +62,8 @@ async function createUsageEmbed(userId: string, period: string): Promise<EmbedBu
     }
 
     // Query usage statistics from the database
-    const usage = await db.get(`
+    const usage = await db.get(
+      `
       SELECT 
         COUNT(*) as total_requests,
         SUM(total_tokens) as total_tokens,
@@ -74,10 +75,13 @@ async function createUsageEmbed(userId: string, period: string): Promise<EmbedBu
         SUM(capabilities_executed) as total_capabilities_executed
       FROM model_usage_stats 
       WHERE user_id = ? AND timestamp >= ?
-    `, [userId, startDate.toISOString()]);
+    `,
+      [userId, startDate.toISOString()]
+    );
 
     // Get model breakdown
-    const modelBreakdown = await db.all(`
+    const modelBreakdown = await db.all(
+      `
       SELECT 
         model_name,
         COUNT(*) as requests,
@@ -88,10 +92,13 @@ async function createUsageEmbed(userId: string, period: string): Promise<EmbedBu
       GROUP BY model_name
       ORDER BY requests DESC
       LIMIT 5
-    `, [userId, startDate.toISOString()]);
+    `,
+      [userId, startDate.toISOString()]
+    );
 
     // Get recent activity
-    const recentActivity = await db.get(`
+    const recentActivity = await db.get(
+      `
       SELECT 
         model_name,
         timestamp,
@@ -102,13 +109,15 @@ async function createUsageEmbed(userId: string, period: string): Promise<EmbedBu
       WHERE user_id = ? 
       ORDER BY timestamp DESC 
       LIMIT 1
-    `, [userId]);
+    `,
+      [userId]
+    );
 
     const periodLabels = {
       today: '📅 Today',
-      week: '📅 This Week', 
+      week: '📅 This Week',
       month: '📅 This Month',
-      all: '📅 All Time'
+      all: '📅 All Time',
     };
 
     const embed = new EmbedBuilder()
@@ -116,24 +125,23 @@ async function createUsageEmbed(userId: string, period: string): Promise<EmbedBu
       .setColor(0x2ecc71);
 
     if (!usage || usage.total_requests === 0) {
-      embed.setDescription('No usage data found for this period.')
-        .addFields({
-          name: '🤖 Start chatting!',
-          value: 'Send me a message to start tracking your usage statistics.',
-          inline: false
-        });
+      embed.setDescription('No usage data found for this period.').addFields({
+        name: '🤖 Start chatting!',
+        value: 'Send me a message to start tracking your usage statistics.',
+        inline: false,
+      });
       return embed;
     }
 
     // Calculate success rate
-    const successRate = usage.total_requests > 0 
-      ? ((usage.successful_requests / usage.total_requests) * 100).toFixed(1)
-      : '0';
+    const successRate =
+      usage.total_requests > 0
+        ? ((usage.successful_requests / usage.total_requests) * 100).toFixed(1)
+        : '0';
 
     // Calculate cost efficiency
-    const costPerMessage = usage.total_cost > 0 
-      ? (usage.total_cost / usage.total_requests).toFixed(4)
-      : '0.0000';
+    const costPerMessage =
+      usage.total_cost > 0 ? (usage.total_cost / usage.total_requests).toFixed(4) : '0.0000';
 
     embed.addFields(
       { name: '📊 Total Requests', value: usage.total_requests.toString(), inline: true },
@@ -141,7 +149,11 @@ async function createUsageEmbed(userId: string, period: string): Promise<EmbedBu
       { name: '🎯 Tokens Used', value: usage.total_tokens?.toLocaleString() || '0', inline: true },
       { name: '💰 Total Cost', value: `$${(usage.total_cost || 0).toFixed(4)}`, inline: true },
       { name: '📈 Cost/Message', value: `$${costPerMessage}`, inline: true },
-      { name: '⚡ Avg Response', value: `${Math.round(usage.avg_response_time || 0)}ms`, inline: true }
+      {
+        name: '⚡ Avg Response',
+        value: `${Math.round(usage.avg_response_time || 0)}ms`,
+        inline: true,
+      }
     );
 
     // Add capabilities usage if available
@@ -149,21 +161,23 @@ async function createUsageEmbed(userId: string, period: string): Promise<EmbedBu
       embed.addFields({
         name: '🛠️ Capabilities Usage',
         value: `Detected: ${usage.total_capabilities_detected}\nExecuted: ${usage.total_capabilities_executed}`,
-        inline: true
+        inline: true,
       });
     }
 
     // Add model breakdown
     if (modelBreakdown && modelBreakdown.length > 0) {
-      const modelStats = modelBreakdown.map((model: any) => {
-        const modelName = model.model_name.split('/')[1]?.split(':')[0] || model.model_name;
-        return `**${modelName}**: ${model.requests} requests ($${model.cost.toFixed(4)})`;
-      }).join('\n');
+      const modelStats = modelBreakdown
+        .map((model: any) => {
+          const modelName = model.model_name.split('/')[1]?.split(':')[0] || model.model_name;
+          return `**${modelName}**: ${model.requests} requests ($${model.cost.toFixed(4)})`;
+        })
+        .join('\n');
 
       embed.addFields({
         name: '🤖 Model Breakdown',
         value: modelStats,
-        inline: false
+        inline: false,
       });
     }
 
@@ -172,14 +186,15 @@ async function createUsageEmbed(userId: string, period: string): Promise<EmbedBu
       const lastUsed = new Date(recentActivity.timestamp);
       const timeDiff = Date.now() - lastUsed.getTime();
       const timeAgo = formatTimeAgo(timeDiff);
-      
-      const recentModel = recentActivity.model_name.split('/')[1]?.split(':')[0] || recentActivity.model_name;
+
+      const recentModel =
+        recentActivity.model_name.split('/')[1]?.split(':')[0] || recentActivity.model_name;
       const recentStatus = recentActivity.success ? '✅' : '❌';
-      
+
       embed.addFields({
         name: '🕐 Last Activity',
         value: `${recentStatus} ${recentModel} - ${timeAgo}\n${recentActivity.total_tokens} tokens ($${recentActivity.estimated_cost.toFixed(4)})`,
-        inline: false
+        inline: false,
       });
     }
 
@@ -188,9 +203,9 @@ async function createUsageEmbed(userId: string, period: string): Promise<EmbedBu
     const totalCost = usage.total_cost || 0;
     if (totalCost < 0.01) {
       costContext = '🎉 All your usage is on free models!';
-    } else if (totalCost < 0.10) {
+    } else if (totalCost < 0.1) {
       costContext = '💚 Very economical usage';
-    } else if (totalCost < 1.00) {
+    } else if (totalCost < 1.0) {
       costContext = '💛 Moderate usage';
     } else {
       costContext = '💰 Heavy usage - consider optimizing';
@@ -199,25 +214,25 @@ async function createUsageEmbed(userId: string, period: string): Promise<EmbedBu
     embed.addFields({
       name: '💡 Cost Analysis',
       value: costContext,
-      inline: false
+      inline: false,
     });
 
     embed.setTimestamp();
     embed.setFooter({ text: 'All costs are estimates based on OpenRouter pricing' });
 
     return embed;
-
   } catch (error) {
     logger.error('Database query failed for usage stats:', error);
-    
+
     const errorEmbed = new EmbedBuilder()
       .setTitle('❌ Usage Statistics Unavailable')
       .setDescription('Unable to fetch usage statistics from the database.')
       .setColor(0xff0000)
       .addFields({
         name: '🔧 Possible Issues',
-        value: '• Database connection problem\n• Usage tracking not yet initialized\n• Capabilities service offline',
-        inline: false
+        value:
+          '• Database connection problem\n• Usage tracking not yet initialized\n• Capabilities service offline',
+        inline: false,
       })
       .setTimestamp();
 

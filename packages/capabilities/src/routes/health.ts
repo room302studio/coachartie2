@@ -16,14 +16,14 @@ healthRouter.get('/', async (req, res) => {
 
     res.json({
       status: 'healthy',
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
     });
   } catch (error) {
     res.status(503).json({
       status: 'unhealthy',
       service: 'capabilities',
       timestamp: new Date().toISOString(),
-      error: error instanceof Error ? error.message : 'Unknown error'
+      error: error instanceof Error ? error.message : 'Unknown error',
     });
   }
 });
@@ -42,12 +42,12 @@ healthRouter.get('/detailed', async (req, res) => {
       await redis.ping();
       checks.redis = {
         status: 'connected',
-        responseTime: Date.now() - redisStart
+        responseTime: Date.now() - redisStart,
       };
     } catch (error) {
       checks.redis = {
         status: 'error',
-        error: error instanceof Error ? error.message : 'Unknown error'
+        error: error instanceof Error ? error.message : 'Unknown error',
       };
       overallStatus = 'degraded';
     }
@@ -58,12 +58,12 @@ healthRouter.get('/detailed', async (req, res) => {
       await access(dbPath);
       checks.database = {
         status: 'accessible',
-        path: dbPath
+        path: dbPath,
       };
     } catch (error) {
       checks.database = {
         status: 'inaccessible',
-        error: error instanceof Error ? error.message : 'Unknown error'
+        error: error instanceof Error ? error.message : 'Unknown error',
       };
       overallStatus = 'degraded';
     }
@@ -72,7 +72,7 @@ healthRouter.get('/detailed', async (req, res) => {
     const mcpRegistry = (global as any).mcpToolRegistry;
     checks.mcp = {
       status: mcpRegistry ? 'initialized' : 'not_initialized',
-      toolCount: mcpRegistry ? mcpRegistry.size : 0
+      toolCount: mcpRegistry ? mcpRegistry.size : 0,
     };
 
     // System metrics
@@ -80,7 +80,7 @@ healthRouter.get('/detailed', async (req, res) => {
     const systemMem = {
       total: os.totalmem(),
       free: os.freemem(),
-      used: os.totalmem() - os.freemem()
+      used: os.totalmem() - os.freemem(),
     };
 
     checks.system = {
@@ -94,22 +94,22 @@ healthRouter.get('/detailed', async (req, res) => {
           rss: Math.round(memUsage.rss / 1024 / 1024), // MB
           heapTotal: Math.round(memUsage.heapTotal / 1024 / 1024), // MB
           heapUsed: Math.round(memUsage.heapUsed / 1024 / 1024), // MB
-          external: Math.round(memUsage.external / 1024 / 1024) // MB
+          external: Math.round(memUsage.external / 1024 / 1024), // MB
         },
         system: {
           total: Math.round(systemMem.total / 1024 / 1024), // MB
           free: Math.round(systemMem.free / 1024 / 1024), // MB
           used: Math.round(systemMem.used / 1024 / 1024), // MB
-          usage: Math.round((systemMem.used / systemMem.total) * 100) // %
-        }
-      }
+          usage: Math.round((systemMem.used / systemMem.total) * 100), // %
+        },
+      },
     };
 
     // Environment info
     checks.environment = {
       nodeEnv: process.env.NODE_ENV || 'development',
       logLevel: process.env.LOG_LEVEL || 'info',
-      port: process.env.CAPABILITIES_PORT || '47324'
+      port: process.env.CAPABILITIES_PORT || '47324',
     };
 
     const responseTime = Date.now() - startTime;
@@ -120,9 +120,8 @@ healthRouter.get('/detailed', async (req, res) => {
       version: '1.0.0',
       timestamp: new Date().toISOString(),
       responseTime,
-      checks
+      checks,
     });
-
   } catch (error) {
     logger.error('Health check failed:', error);
     res.status(503).json({
@@ -130,7 +129,7 @@ healthRouter.get('/detailed', async (req, res) => {
       service: 'capabilities',
       timestamp: new Date().toISOString(),
       responseTime: Date.now() - startTime,
-      error: error instanceof Error ? error.message : 'Unknown error'
+      error: error instanceof Error ? error.message : 'Unknown error',
     });
   }
 });
@@ -141,20 +140,20 @@ healthRouter.get('/ready', async (req, res) => {
     // Check essential services are ready
     const redis = createRedisConnection();
     await redis.ping();
-    
+
     // Check if database is accessible
     const dbPath = process.env.DATABASE_PATH || '/app/data/coachartie.db';
     await access(dbPath);
 
     res.json({
       status: 'ready',
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
     });
   } catch (error) {
     res.status(503).json({
       status: 'not_ready',
       timestamp: new Date().toISOString(),
-      error: error instanceof Error ? error.message : 'Unknown error'
+      error: error instanceof Error ? error.message : 'Unknown error',
     });
   }
 });
@@ -165,6 +164,6 @@ healthRouter.get('/live', (req, res) => {
   res.json({
     status: 'alive',
     timestamp: new Date().toISOString(),
-    uptime: process.uptime()
+    uptime: process.uptime(),
   });
 });

@@ -50,7 +50,9 @@ export class ContextAlchemyDebugger {
   }
 
   startSession(userId: string, messageLength: number): void {
-    if (!this.debugMode) return;
+    if (!this.debugMode) {
+      return;
+    }
 
     this.sessionStartTime = Date.now();
     this.currentSession = {
@@ -60,7 +62,7 @@ export class ContextAlchemyDebugger {
       tokensAvailable: 0,
       sourcesIncluded: [],
       messageChain: [],
-      timings: { total: 0 }
+      timings: { total: 0 },
     };
 
     logger.info('╔══════════════════════════════════════════════════════════════════╗');
@@ -69,7 +71,9 @@ export class ContextAlchemyDebugger {
   }
 
   logTokenBudget(used: number, available: number): void {
-    if (!this.debugMode || !this.currentSession) return;
+    if (!this.debugMode || !this.currentSession) {
+      return;
+    }
 
     this.currentSession.tokensUsed = used;
     this.currentSession.tokensAvailable = available;
@@ -82,27 +86,42 @@ export class ContextAlchemyDebugger {
     logger.info('└───────────────────────────────────────────────────────────────────┘');
   }
 
-  logMemorySearchResults(keyword: number, semantic: number, temporal: number, fusionPattern: string): void {
-    if (!this.debugMode || !this.currentSession) return;
+  logMemorySearchResults(
+    keyword: number,
+    semantic: number,
+    temporal: number,
+    fusionPattern: string
+  ): void {
+    if (!this.debugMode || !this.currentSession) {
+      return;
+    }
 
     this.currentSession.memoryLayerResults = { keyword, semantic, temporal };
     this.currentSession.fusionPattern = fusionPattern;
 
     logger.info('┌─ MEMORY SEARCH RESULTS ───────────────────────────────────────────┐');
-    logger.info(`│ 🔍 Keyword:  ${this.padNumber(keyword)} memories found                          │`);
-    logger.info(`│ 🧠 Semantic: ${this.padNumber(semantic)} memories found (${vectorEmbeddingService.isReady() ? 'OpenAI' : 'TF-IDF'})        │`);
-    logger.info(`│ 📅 Temporal: ${this.padNumber(temporal)} memories found                          │`);
+    logger.info(
+      `│ 🔍 Keyword:  ${this.padNumber(keyword)} memories found                          │`
+    );
+    logger.info(
+      `│ 🧠 Semantic: ${this.padNumber(semantic)} memories found (${vectorEmbeddingService.isReady() ? 'OpenAI' : 'TF-IDF'})        │`
+    );
+    logger.info(
+      `│ 📅 Temporal: ${this.padNumber(temporal)} memories found                          │`
+    );
     logger.info(`│ 🎲 Fusion:   "${fusionPattern}" pattern selected                     │`);
     logger.info('└───────────────────────────────────────────────────────────────────┘');
   }
 
   logFinalMessageChain(messages: Array<{ role: string; content: string }>): void {
-    if (!this.debugMode || !this.currentSession) return;
+    if (!this.debugMode || !this.currentSession) {
+      return;
+    }
 
-    this.currentSession.messageChain = messages.map(msg => ({
+    this.currentSession.messageChain = messages.map((msg) => ({
       role: msg.role,
       contentPreview: msg.content.substring(0, 50).replace(/\n/g, ' '),
-      length: msg.content.length
+      length: msg.content.length,
     }));
 
     logger.info('┌─ FINAL MESSAGE CHAIN TO LLM ──────────────────────────────────────┐');
@@ -120,7 +139,9 @@ export class ContextAlchemyDebugger {
   }
 
   endSession(response?: string): void {
-    if (!this.debugMode || !this.currentSession) return;
+    if (!this.debugMode || !this.currentSession) {
+      return;
+    }
 
     const totalTime = Date.now() - this.sessionStartTime;
     this.currentSession.timings.total = totalTime;
@@ -129,10 +150,16 @@ export class ContextAlchemyDebugger {
     logger.info('║                    📋 SESSION SUMMARY 📋                          ║');
     logger.info('╟────────────────────────────────────────────────────────────────────╢');
     logger.info(`║ User:           ${this.currentSession.userId.padEnd(50)} ║`);
-    logger.info(`║ Input Length:   ${this.padNumber(this.currentSession.messageLength)} characters                                 ║`);
-    logger.info(`║ Tokens Used:    ${this.padNumber(this.currentSession.tokensUsed)}/${this.padNumber(this.currentSession.tokensAvailable)} (${Math.round((this.currentSession.tokensUsed/this.currentSession.tokensAvailable)*100)}%)                              ║`);
+    logger.info(
+      `║ Input Length:   ${this.padNumber(this.currentSession.messageLength)} characters                                 ║`
+    );
+    logger.info(
+      `║ Tokens Used:    ${this.padNumber(this.currentSession.tokensUsed)}/${this.padNumber(this.currentSession.tokensAvailable)} (${Math.round((this.currentSession.tokensUsed / this.currentSession.tokensAvailable) * 100)}%)                              ║`
+    );
     logger.info(`║ Sources:        ${this.currentSession.sourcesIncluded.join(', ').padEnd(50)} ║`);
-    logger.info(`║ Total Time:     ${this.padNumber(totalTime)}ms                                          ║`);
+    logger.info(
+      `║ Total Time:     ${this.padNumber(totalTime)}ms                                          ║`
+    );
 
     if (response) {
       logger.info('╟────────────────────────────────────────────────────────────────────╢');

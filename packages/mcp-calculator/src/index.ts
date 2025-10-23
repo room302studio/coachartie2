@@ -33,7 +33,7 @@ class McpCalculatorServer {
   private setupToolHandlers(): void {
     this.server.setRequestHandler(ListToolsRequestSchema, async () => {
       return {
-        tools: calculatorTools.map(tool => ({
+        tools: calculatorTools.map((tool) => ({
           name: tool.name,
           description: tool.description,
           inputSchema: tool.inputSchema,
@@ -43,13 +43,10 @@ class McpCalculatorServer {
 
     this.server.setRequestHandler(CallToolRequestSchema, async (request) => {
       const { name, arguments: args } = request.params;
-      
-      const tool = calculatorTools.find(t => t.name === name);
+
+      const tool = calculatorTools.find((t) => t.name === name);
       if (!tool) {
-        throw new McpError(
-          ErrorCode.MethodNotFound,
-          `Tool "${name}" not found`
-        );
+        throw new McpError(ErrorCode.MethodNotFound, `Tool "${name}" not found`);
       }
 
       try {

@@ -12,10 +12,10 @@ export class ApiServer {
   constructor(port: number = 47321) {
     this.port = port;
     this.app = express();
-    
+
     // Middleware
     this.app.use(express.json());
-    
+
     // CORS
     this.app.use((req, res, next) => {
       res.setHeader('Access-Control-Allow-Origin', '*');
@@ -27,7 +27,7 @@ export class ApiServer {
 
   setDiscordClient(client: Client): void {
     this.discordClient = client;
-    
+
     // Set up API routes now that we have the client
     if (this.discordClient) {
       this.app.use('/api', createApiRouter(this.discordClient));

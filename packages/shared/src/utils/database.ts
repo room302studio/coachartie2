@@ -13,7 +13,7 @@ export async function getDatabase(): Promise<Database<sqlite3.Database, sqlite3.
   try {
     // Use environment variable for database path, with fallback
     const dbPath = process.env.DATABASE_PATH || '/app/data/coachartie.db';
-    
+
     // Ensure the directory exists
     const fs = await import('fs');
     const dbDir = path.dirname(dbPath);
@@ -23,7 +23,7 @@ export async function getDatabase(): Promise<Database<sqlite3.Database, sqlite3.
 
     db = await open({
       filename: dbPath,
-      driver: sqlite3.Database
+      driver: sqlite3.Database,
     });
 
     // CONCURRENCY FIXES: Enable WAL mode and set timeouts
@@ -37,13 +37,13 @@ export async function getDatabase(): Promise<Database<sqlite3.Database, sqlite3.
     await db.run('PRAGMA busy_timeout = 30000');
 
     logger.info(`🗄️ SQLite database connected: ${dbPath} (WAL mode enabled)`);
-    
+
     // Initialize database schema
     await initializeDatabase(db);
-    
+
     // Run migrations
     await runMigrations(db);
-    
+
     return db;
   } catch (error) {
     logger.error('❌ Failed to connect to database:', error);
@@ -247,7 +247,7 @@ async function initializeDatabase(database: Database): Promise<void> {
 
     // Insert default capability instructions if not exists
     await insertDefaultPrompts(database);
-    
+
     logger.info('✅ Database schema initialized successfully');
   } catch (error) {
     logger.error('❌ Failed to initialize database schema:', error);
@@ -282,10 +282,9 @@ User's message: {{USER_MESSAGE}}`;
 
   try {
     // Check if default prompt exists
-    const existing = await database.get(
-      'SELECT id FROM prompts WHERE name = ?',
-      ['capability_instructions']
-    );
+    const existing = await database.get('SELECT id FROM prompts WHERE name = ?', [
+      'capability_instructions',
+    ]);
 
     if (!existing) {
       await database.run(
@@ -299,11 +298,11 @@ User's message: {{USER_MESSAGE}}`;
           JSON.stringify({
             variables: ['USER_MESSAGE'],
             version: '1.0.0',
-            author: 'system'
-          })
+            author: 'system',
+          }),
         ]
       );
-      
+
       logger.info('✅ Default capability instructions prompt created');
     }
   } catch (error) {
@@ -316,7 +315,7 @@ async function runMigrations(database: Database): Promise<void> {
     logger.info('🔄 Running database migrations...');
 
     // Check if metadata column exists in memories table
-    const columns = await database.all("PRAGMA table_info(memories)");
+    const columns = await database.all('PRAGMA table_info(memories)');
     const hasMetadata = columns.some((col: any) => col.name === 'metadata');
 
     if (!hasMetadata) {

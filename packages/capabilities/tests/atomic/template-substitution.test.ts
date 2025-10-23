@@ -9,7 +9,7 @@ function substituteVariables(template: string, variables: Record<string, unknown
   return template.replace(/\{\{([^}]+)\}\}/g, (match, varName) => {
     const trimmedVarName = varName.trim();
     const value = variables[trimmedVarName];
-    
+
     if (value !== undefined) {
       return typeof value === 'object' ? JSON.stringify(value) : String(value);
     } else {
@@ -25,9 +25,9 @@ describe('Template Variable Substitution (Atomic Unit)', () => {
   });
 
   it('should substitute multiple variables', () => {
-    const result = substituteVariables('{{greeting}} {{name}}!', { 
-      greeting: 'Hello', 
-      name: 'Coach Artie' 
+    const result = substituteVariables('{{greeting}} {{name}}!', {
+      greeting: 'Hello',
+      name: 'Coach Artie',
     });
     expect(result).toBe('Hello Coach Artie!');
   });
@@ -38,16 +38,16 @@ describe('Template Variable Substitution (Atomic Unit)', () => {
   });
 
   it('should handle whitespace in variable names', () => {
-    const result = substituteVariables('{{ name }} and {{  title  }}', { 
-      name: 'Coach Artie', 
-      title: 'AI Assistant' 
+    const result = substituteVariables('{{ name }} and {{  title  }}', {
+      name: 'Coach Artie',
+      title: 'AI Assistant',
     });
     expect(result).toBe('Coach Artie and AI Assistant');
   });
 
   it('should stringify objects', () => {
-    const result = substituteVariables('Data: {{data}}', { 
-      data: { key: 'value', count: 42 } 
+    const result = substituteVariables('Data: {{data}}', {
+      data: { key: 'value', count: 42 },
     });
     expect(result).toBe('Data: {"key":"value","count":42}');
   });

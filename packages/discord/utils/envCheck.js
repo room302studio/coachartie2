@@ -38,7 +38,7 @@ export function checkEnvVars() {
 
   if (missing.length > 0) {
     console.error('❌ Missing required environment variables:');
-    missing.forEach(v => console.error(`   - ${v}`));
+    missing.forEach((v) => console.error(`   - ${v}`));
     process.exit(1);
   }
 
@@ -52,9 +52,7 @@ export function checkEnvVars() {
   console.log(`   - Loki Environment: ${process.env.LOKI_ENVIRONMENT}`);
   console.log(`   - Loki Host: ${process.env.LOKI_HOST}`);
   console.log(
-    `   - Local Logs: ${
-      process.env.DISABLE_LOCAL_LOGS === 'true' ? 'Disabled' : 'Enabled'
-    }`
+    `   - Local Logs: ${process.env.DISABLE_LOCAL_LOGS === 'true' ? 'Disabled' : 'Enabled'}`
   );
   if (process.env.PAPERTRAIL_HOST && process.env.PAPERTRAIL_PORT) {
     console.log(`   - Papertrail Integration: Configured`);

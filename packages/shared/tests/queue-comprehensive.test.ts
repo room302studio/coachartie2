@@ -1,13 +1,13 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
-import { 
-  createQueue, 
-  createWorker, 
-  createRedisConnection, 
+import {
+  createQueue,
+  createWorker,
+  createRedisConnection,
   closeRedisConnection,
   QUEUES,
   IncomingMessage,
   OutgoingMessage,
-  logger
+  logger,
 } from '../src/index.js';
 import type { Queue, Worker } from 'bullmq';
 
@@ -42,7 +42,7 @@ describe('Comprehensive Redis Queue Tests', () => {
       const incomingQueue = createQueue<IncomingMessage>('test-incoming-multi');
       const outgoingQueue = createQueue<OutgoingMessage>('test-outgoing-multi');
       const stringQueue = createQueue<string>('test-string-multi');
-      
+
       testQueues.push(incomingQueue, outgoingQueue, stringQueue);
 
       // Test adding different types of jobs
@@ -53,7 +53,7 @@ describe('Comprehensive Redis Queue Tests', () => {
         source: 'discord',
         userId: 'user-1',
         message: 'test message',
-        respondTo: { type: 'discord', channelId: 'channel-1' }
+        respondTo: { type: 'discord', channelId: 'channel-1' },
       });
 
       await outgoingQueue.add('outgoing-job', {
@@ -63,7 +63,7 @@ describe('Comprehensive Redis Queue Tests', () => {
         source: 'capabilities',
         userId: 'user-1',
         message: 'response message',
-        inReplyTo: 'test-1'
+        inReplyTo: 'test-1',
       });
 
       await stringQueue.add('string-job', 'simple string message');
@@ -83,7 +83,7 @@ describe('Comprehensive Redis Queue Tests', () => {
       testQueues.push(priorityQueue);
 
       const processedOrder: number[] = [];
-      
+
       const worker = createWorker<{ message: string; priority: number }, void>(
         'test-priority',
         async (job) => {
@@ -95,10 +95,14 @@ describe('Comprehensive Redis Queue Tests', () => {
       // Add jobs with different priorities (higher number = higher priority)
       await priorityQueue.add('low', { message: 'low priority', priority: 1 }, { priority: 1 });
       await priorityQueue.add('high', { message: 'high priority', priority: 3 }, { priority: 3 });
-      await priorityQueue.add('medium', { message: 'medium priority', priority: 2 }, { priority: 2 });
+      await priorityQueue.add(
+        'medium',
+        { message: 'medium priority', priority: 2 },
+        { priority: 2 }
+      );
 
       // Wait for processing
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      await new Promise((resolve) => setTimeout(resolve, 1000));
 
       // Should process all 3 jobs (order may vary due to timing)
       expect(processedOrder).toHaveLength(3);
@@ -120,7 +124,7 @@ describe('Comprehensive Redis Queue Tests', () => {
         'test-retry',
         async (job) => {
           attempts.push(job.attemptsMade);
-          
+
           // Fail first 2 attempts, succeed on 3rd
           if (job.attemptsMade < 3 && job.data.shouldFail) {
             throw new Error(`Attempt ${job.attemptsMade} failed`);
@@ -133,7 +137,7 @@ describe('Comprehensive Redis Queue Tests', () => {
       await retryQueue.add('retry-job', { shouldFail: true, attempt: 1 });
 
       // Wait for all retries to complete (more time for exponential backoff)
-      await new Promise(resolve => setTimeout(resolve, 5000));
+      await new Promise((resolve) => setTimeout(resolve, 5000));
 
       // At least one attempt should have been made
       expect(attempts.length).toBeGreaterThanOrEqual(1);
@@ -148,14 +152,11 @@ describe('Comprehensive Redis Queue Tests', () => {
       let jobCompleted = false;
       let jobFailed = false;
 
-      const worker = createWorker<{ delay: number }, void>(
-        'test-timeout',
-        async (job) => {
-          // Simulate processing
-          await new Promise(resolve => setTimeout(resolve, job.data.delay));
-          jobCompleted = true;
-        }
-      );
+      const worker = createWorker<{ delay: number }, void>('test-timeout', async (job) => {
+        // Simulate processing
+        await new Promise((resolve) => setTimeout(resolve, job.data.delay));
+        jobCompleted = true;
+      });
       testWorkers.push(worker);
 
       worker.on('failed', () => {
@@ -165,7 +166,7 @@ describe('Comprehensive Redis Queue Tests', () => {
       // Add a job with reasonable delay
       await timeoutQueue.add('timeout-job', { delay: 100 });
 
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      await new Promise((resolve) => setTimeout(resolve, 1000));
 
       // Should either complete successfully or fail gracefully
       expect(jobCompleted || jobFailed).toBe(true);
@@ -202,14 +203,18 @@ describe('Comprehensive Redis Queue Tests', () => {
             metadata: {
               channelId: message.respondTo.channelId,
               phoneNumber: message.respondTo.phoneNumber,
-              emailAddress: message.respondTo.emailAddress
-            }
+              emailAddress: message.respondTo.emailAddress,
+            },
           };
 
           // Route to appropriate queue
-          const targetQueue = message.respondTo.type === 'discord' ? discordQueue :
-                            message.respondTo.type === 'sms' ? smsQueue : emailQueue;
-          
+          const targetQueue =
+            message.respondTo.type === 'discord'
+              ? discordQueue
+              : message.respondTo.type === 'sms'
+                ? smsQueue
+                : emailQueue;
+
           await targetQueue.add('response', response);
         }
       );
@@ -224,12 +229,9 @@ describe('Comprehensive Redis Queue Tests', () => {
       );
       testWorkers.push(discordWorker);
 
-      const smsWorker = createWorker<OutgoingMessage, void>(
-        QUEUES.OUTGOING_SMS,
-        async (job) => {
-          sentResponses.push({ type: 'sms', message: job.data.message });
-        }
-      );
+      const smsWorker = createWorker<OutgoingMessage, void>(QUEUES.OUTGOING_SMS, async (job) => {
+        sentResponses.push({ type: 'sms', message: job.data.message });
+      });
       testWorkers.push(smsWorker);
 
       const emailWorker = createWorker<OutgoingMessage, void>(
@@ -249,7 +251,7 @@ describe('Comprehensive Redis Queue Tests', () => {
           source: 'discord',
           userId: 'user-discord',
           message: 'Discord test message',
-          respondTo: { type: 'discord', channelId: 'test-channel' }
+          respondTo: { type: 'discord', channelId: 'test-channel' },
         },
         {
           id: 'sms-flow-test',
@@ -258,7 +260,7 @@ describe('Comprehensive Redis Queue Tests', () => {
           source: 'sms',
           userId: 'user-sms',
           message: 'SMS test message',
-          respondTo: { type: 'sms', phoneNumber: '+1234567890' }
+          respondTo: { type: 'sms', phoneNumber: '+1234567890' },
         },
         {
           id: 'email-flow-test',
@@ -267,28 +269,28 @@ describe('Comprehensive Redis Queue Tests', () => {
           source: 'email',
           userId: 'user-email',
           message: 'Email test message',
-          respondTo: { type: 'email', emailAddress: 'test@example.com' }
-        }
+          respondTo: { type: 'email', emailAddress: 'test@example.com' },
+        },
       ];
 
       for (const message of testMessages) {
         await incomingQueue.add('process', message);
         // Small delay between messages to ensure proper processing order
-        await new Promise(resolve => setTimeout(resolve, 50));
+        await new Promise((resolve) => setTimeout(resolve, 50));
       }
 
       // Wait for processing with longer timeout
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      await new Promise((resolve) => setTimeout(resolve, 2000));
 
       // Verify messages were processed (at least some)
       expect(processedMessages.length).toBeGreaterThanOrEqual(1);
-      
+
       // Verify responses were sent (at least some)
       expect(sentResponses.length).toBeGreaterThanOrEqual(1);
-      
+
       // Check if we got at least one response of each type (if any were processed)
       if (sentResponses.length > 0) {
-        expect(sentResponses.some(r => r.message.includes('Processed:'))).toBe(true);
+        expect(sentResponses.some((r) => r.message.includes('Processed:'))).toBe(true);
       }
     });
   });
@@ -300,14 +302,11 @@ describe('Comprehensive Redis Queue Tests', () => {
 
       const processedIds: number[] = [];
 
-      const worker = createWorker<{ messageId: number }, void>(
-        'test-high-volume',
-        async (job) => {
-          // Simulate some processing time
-          await new Promise(resolve => setTimeout(resolve, Math.random() * 10));
-          processedIds.push(job.data.messageId);
-        }
-      );
+      const worker = createWorker<{ messageId: number }, void>('test-high-volume', async (job) => {
+        // Simulate some processing time
+        await new Promise((resolve) => setTimeout(resolve, Math.random() * 10));
+        processedIds.push(job.data.messageId);
+      });
       testWorkers.push(worker);
 
       // Add 100 jobs quickly
@@ -318,11 +317,11 @@ describe('Comprehensive Redis Queue Tests', () => {
       await Promise.all(jobPromises);
 
       // Wait for all jobs to process
-      await new Promise(resolve => setTimeout(resolve, 3000));
+      await new Promise((resolve) => setTimeout(resolve, 3000));
 
       // Should process all 100 messages
       expect(processedIds).toHaveLength(100);
-      
+
       // Should have all message IDs from 1 to 100
       const sortedIds = processedIds.sort((a, b) => a - b);
       expect(sortedIds[0]).toBe(1);
@@ -340,7 +339,7 @@ describe('Comprehensive Redis Queue Tests', () => {
         const worker = createWorker<{ workerId: string; delay: number }, void>(
           'test-concurrent',
           async (job) => {
-            await new Promise(resolve => setTimeout(resolve, job.data.delay));
+            await new Promise((resolve) => setTimeout(resolve, job.data.delay));
             results.push({ workerId: `worker-${i}`, jobId: job.id! });
           }
         );
@@ -349,20 +348,20 @@ describe('Comprehensive Redis Queue Tests', () => {
 
       // Add 10 jobs
       for (let i = 1; i <= 10; i++) {
-        await concurrentQueue.add(`concurrent-job-${i}`, { 
-          workerId: `job-${i}`, 
-          delay: Math.random() * 100 
+        await concurrentQueue.add(`concurrent-job-${i}`, {
+          workerId: `job-${i}`,
+          delay: Math.random() * 100,
         });
       }
 
       // Wait for processing
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      await new Promise((resolve) => setTimeout(resolve, 2000));
 
       // Should process all 10 jobs
       expect(results).toHaveLength(10);
-      
+
       // Should have jobs processed by different workers
-      const workerIds = [...new Set(results.map(r => r.workerId))];
+      const workerIds = [...new Set(results.map((r) => r.workerId))];
       expect(workerIds.length).toBeGreaterThan(1);
     });
   });
@@ -375,16 +374,13 @@ describe('Comprehensive Redis Queue Tests', () => {
       let processedCount = 0;
       let failedCount = 0;
 
-      const worker = createWorker<{ status: string }, void>(
-        'test-stats',
-        async (job) => {
-          if (job.data.status === 'fail') {
-            failedCount++;
-            throw new Error('Intentional failure');
-          }
-          processedCount++;
+      const worker = createWorker<{ status: string }, void>('test-stats', async (job) => {
+        if (job.data.status === 'fail') {
+          failedCount++;
+          throw new Error('Intentional failure');
         }
-      );
+        processedCount++;
+      });
       testWorkers.push(worker);
 
       // Add mix of successful and failing jobs
@@ -394,10 +390,10 @@ describe('Comprehensive Redis Queue Tests', () => {
       await statsQueue.add('success-3', { status: 'success' });
 
       // Wait for processing
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      await new Promise((resolve) => setTimeout(resolve, 2000));
 
       const jobCounts = await statsQueue.getJobCounts();
-      
+
       expect(processedCount).toBeGreaterThanOrEqual(1); // At least 1 successful job
       expect(processedCount + failedCount).toBeGreaterThanOrEqual(1); // Some jobs processed
       expect(jobCounts.completed + jobCounts.failed).toBeGreaterThanOrEqual(1);
@@ -420,31 +416,28 @@ describe('Comprehensive Redis Queue Tests', () => {
 
       let receivedData: ComplexData | null = null;
 
-      const worker = createWorker<ComplexData, void>(
-        'test-complex-data',
-        async (job) => {
-          receivedData = job.data;
-        }
-      );
+      const worker = createWorker<ComplexData, void>('test-complex-data', async (job) => {
+        receivedData = job.data;
+      });
       testWorkers.push(worker);
 
       const originalData: ComplexData = {
         timestamp: new Date('2023-01-01T12:00:00Z'),
         nested: {
           array: [1, 2, 3, 4, 5],
-          object: { key: 'test-key', value: true }
+          object: { key: 'test-key', value: true },
         },
         metadata: {
           source: 'test',
           tags: ['tag1', 'tag2'],
-          config: { enabled: true, retries: 3 }
-        }
+          config: { enabled: true, retries: 3 },
+        },
       };
 
       await complexQueue.add('complex-job', originalData);
 
       // Wait for processing
-      await new Promise(resolve => setTimeout(resolve, 500));
+      await new Promise((resolve) => setTimeout(resolve, 500));
 
       expect(receivedData).toBeTruthy();
       expect(receivedData!.nested.array).toEqual([1, 2, 3, 4, 5]);

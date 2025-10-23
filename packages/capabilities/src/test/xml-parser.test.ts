@@ -58,7 +58,7 @@ describe('CapabilityXMLParser', () => {
       expect(capabilities).toHaveLength(1);
       expect(capabilities[0].params).toEqual({
         query: 'test search',
-        limit: 10
+        limit: 10,
       });
       expect(capabilities[0].params).not.toHaveProperty('data');
     });
@@ -71,7 +71,7 @@ describe('CapabilityXMLParser', () => {
       expect(capabilities[0].params).toHaveProperty('config');
       expect(capabilities[0].params.config).toEqual({
         nested: true,
-        value: 42
+        value: 42,
       });
     });
   });

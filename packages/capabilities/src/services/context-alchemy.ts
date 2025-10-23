@@ -25,23 +25,27 @@ interface ContextBudget {
 
 /**
  * Context Alchemy System - Intelligent context window management
- * 
+ *
  * Instead of hardcoded string replacements, this system:
  * 1. Gathers context from multiple sources
- * 2. Prioritizes based on relevance and importance  
+ * 2. Prioritizes based on relevance and importance
  * 3. Manages token budget intelligently
  * 4. Assembles optimal context for the LLM
  */
 export class ContextAlchemy {
   private static instance: ContextAlchemy;
   private memoryEntourage: MemoryEntourageInterface;
-  
+
   constructor() {
     // Initialize with CombinedMemoryEntourage for multi-layered memory integration
     this.memoryEntourage = new CombinedMemoryEntourage();
-    if (DEBUG) logger.info('🧠 Context Alchemy: Initialized with CombinedMemoryEntourage (keyword + semantic)');
+    if (DEBUG) {
+      logger.info(
+        '🧠 Context Alchemy: Initialized with CombinedMemoryEntourage (keyword + semantic)'
+      );
+    }
   }
-  
+
   static getInstance(): ContextAlchemy {
     if (!ContextAlchemy.instance) {
       ContextAlchemy.instance = new ContextAlchemy();
@@ -54,7 +58,9 @@ export class ContextAlchemy {
    */
   setMemoryEntourage(memoryEntourage: MemoryEntourageInterface): void {
     this.memoryEntourage = memoryEntourage;
-    if (DEBUG) logger.info('🧠 Context Alchemy: Memory entourage implementation upgraded');
+    if (DEBUG) {
+      logger.info('🧠 Context Alchemy: Memory entourage implementation upgraded');
+    }
   }
 
   /**
@@ -73,30 +79,40 @@ export class ContextAlchemy {
     // Always log if Context Alchemy is called and debug status
     logger.info(`🧪 Context Alchemy called (DEBUG=${DEBUG})`);
 
-    if (DEBUG) logger.info('╔═══════════════════════════════════════════════════════════════╗');
-    if (DEBUG) logger.info('║              🧪 CONTEXT ALCHEMY ASSEMBLY START 🧪              ║');
-    if (DEBUG) logger.info('╚═══════════════════════════════════════════════════════════════╝');
-    if (DEBUG) logger.info(`📥 User: ${userId} | Message length: ${userMessage.length} chars`);
-    if (DEBUG) logger.info(`⚙️  Mode: ${options.minimal ? 'MINIMAL' : 'FULL INTELLIGENCE'}`);
-    
+    if (DEBUG) {
+      logger.info('╔═══════════════════════════════════════════════════════════════╗');
+    }
+    if (DEBUG) {
+      logger.info('║              🧪 CONTEXT ALCHEMY ASSEMBLY START 🧪              ║');
+    }
+    if (DEBUG) {
+      logger.info('╚═══════════════════════════════════════════════════════════════╝');
+    }
+    if (DEBUG) {
+      logger.info(`📥 User: ${userId} | Message length: ${userMessage.length} chars`);
+    }
+    if (DEBUG) {
+      logger.info(`⚙️  Mode: ${options.minimal ? 'MINIMAL' : 'FULL INTELLIGENCE'}`);
+    }
+
     let selectedContext: ContextSource[] = [];
-    
+
     if (!options.minimal) {
       // 1. Calculate token budget
       const budget = this.calculateTokenBudget(userMessage, baseSystemPrompt);
-      
+
       // 2. Assemble message context (beautiful, readable pattern)
-      const mockMessage: IncomingMessage = { 
-        message: userMessage, 
-        userId, 
-        id: 'context-gen', 
+      const mockMessage: IncomingMessage = {
+        message: userMessage,
+        userId,
+        id: 'context-gen',
         source: 'capabilities',
         respondTo: { type: 'api' },
         timestamp: new Date(),
-        retryCount: 0
+        retryCount: 0,
       };
       const contextSources = await this.assembleMessageContext(mockMessage);
-      
+
       // 3. Prioritize and select context within budget
       selectedContext = this.selectOptimalContext(contextSources, budget);
     } else {
@@ -105,33 +121,55 @@ export class ContextAlchemy {
       await this.addCurrentDateTime(minimalSources);
       selectedContext = minimalSources;
     }
-    
+
     // 4. Build message chain
     const messageChain = this.assembleMessageChain(
-      baseSystemPrompt, 
-      userMessage, 
-      selectedContext, 
+      baseSystemPrompt,
+      userMessage,
+      selectedContext,
       existingMessages
     );
-    
+
     // Final assembly summary
-    if (DEBUG) logger.info('┌─ FINAL MESSAGE CHAIN ───────────────────────────────────────────┐');
+    if (DEBUG) {
+      logger.info('┌─ FINAL MESSAGE CHAIN ───────────────────────────────────────────┐');
+    }
     messageChain.forEach((msg, i) => {
       const preview = msg.content.substring(0, 60).replace(/\n/g, ' ');
       const suffix = msg.content.length > 60 ? '...' : '';
-      if (DEBUG) logger.info(`│ [${i}] ${msg.role.padEnd(9)}: ${preview}${suffix}`);
+      if (DEBUG) {
+        logger.info(`│ [${i}] ${msg.role.padEnd(9)}: ${preview}${suffix}`);
+      }
     });
-    if (DEBUG) logger.info('└─────────────────────────────────────────────────────────────────┘');
+    if (DEBUG) {
+      logger.info('└─────────────────────────────────────────────────────────────────┘');
+    }
 
-    if (DEBUG) logger.info('┌─ CONTEXT SOURCES INCLUDED ──────────────────────────────────────┐');
-    selectedContext.forEach(ctx => {
-      if (DEBUG) logger.info(`│ ${ctx.category.padEnd(12)} | Pri:${ctx.priority.toString().padStart(3)} | ~${ctx.tokenWeight.toString().padStart(4)} tokens | ${ctx.name}`);
+    if (DEBUG) {
+      logger.info('┌─ CONTEXT SOURCES INCLUDED ──────────────────────────────────────┐');
+    }
+    selectedContext.forEach((ctx) => {
+      if (DEBUG) {
+        logger.info(
+          `│ ${ctx.category.padEnd(12)} | Pri:${ctx.priority.toString().padStart(3)} | ~${ctx.tokenWeight.toString().padStart(4)} tokens | ${ctx.name}`
+        );
+      }
     });
-    if (DEBUG) logger.info('└─────────────────────────────────────────────────────────────────┘');
+    if (DEBUG) {
+      logger.info('└─────────────────────────────────────────────────────────────────┘');
+    }
 
-    if (DEBUG) logger.info('╔═══════════════════════════════════════════════════════════════╗');
-    if (DEBUG) logger.info(`║ ✅ CONTEXT ASSEMBLY COMPLETE: ${messageChain.length} messages, ${selectedContext.length} sources ║`);
-    if (DEBUG) logger.info('╚═══════════════════════════════════════════════════════════════╝\n');
+    if (DEBUG) {
+      logger.info('╔═══════════════════════════════════════════════════════════════╗');
+    }
+    if (DEBUG) {
+      logger.info(
+        `║ ✅ CONTEXT ASSEMBLY COMPLETE: ${messageChain.length} messages, ${selectedContext.length} sources ║`
+      );
+    }
+    if (DEBUG) {
+      logger.info('╚═══════════════════════════════════════════════════════════════╝\n');
+    }
 
     return { messages: messageChain, contextSources: selectedContext };
   }
@@ -145,7 +183,9 @@ export class ContextAlchemy {
     originalMessage: string,
     capabilityResults: string
   ): Promise<string> {
-    if (DEBUG) logger.info('🧪 Context Alchemy: Generating capability synthesis prompt');
+    if (DEBUG) {
+      logger.info('🧪 Context Alchemy: Generating capability synthesis prompt');
+    }
 
     // TODO: Use prompt database for these templates once available
     const synthesisPrompt = `Assistant response synthesis. User asked: "${originalMessage}"
@@ -182,17 +222,35 @@ Important:
       totalTokens,
       reservedForUser: userTokens,
       reservedForSystem: systemTokens,
-      availableForContext: Math.max(0, availableForContext)
+      availableForContext: Math.max(0, availableForContext),
     };
 
-    if (DEBUG) logger.info('┌─ TOKEN BUDGET CALCULATION ─────────────────────────────────────┐');
-    if (DEBUG) logger.info(`│ Total Window:     ${totalTokens} tokens`);
-    if (DEBUG) logger.info(`│ User Message:     ${userTokens} tokens (${userMessage.length} chars)`);
-    if (DEBUG) logger.info(`│ System Prompt:    ${systemTokens} tokens`);
-    if (DEBUG) logger.info(`│ Reserved Reply:   ${reservedForResponse} tokens`);
-    if (DEBUG) logger.info(`│ ═══════════════════════════════════════════════════════════════ │`);
-    if (DEBUG) logger.info(`│ 💰 Available:     ${budget.availableForContext} tokens for context enrichment`);
-    if (DEBUG) logger.info('└─────────────────────────────────────────────────────────────────┘');
+    if (DEBUG) {
+      logger.info('┌─ TOKEN BUDGET CALCULATION ─────────────────────────────────────┐');
+    }
+    if (DEBUG) {
+      logger.info(`│ Total Window:     ${totalTokens} tokens`);
+    }
+    if (DEBUG) {
+      logger.info(`│ User Message:     ${userTokens} tokens (${userMessage.length} chars)`);
+    }
+    if (DEBUG) {
+      logger.info(`│ System Prompt:    ${systemTokens} tokens`);
+    }
+    if (DEBUG) {
+      logger.info(`│ Reserved Reply:   ${reservedForResponse} tokens`);
+    }
+    if (DEBUG) {
+      logger.info(`│ ═══════════════════════════════════════════════════════════════ │`);
+    }
+    if (DEBUG) {
+      logger.info(
+        `│ 💰 Available:     ${budget.availableForContext} tokens for context enrichment`
+      );
+    }
+    if (DEBUG) {
+      logger.info('└─────────────────────────────────────────────────────────────────┘');
+    }
 
     return budget;
   }
@@ -202,20 +260,22 @@ Important:
    * Each step is crystal clear, single responsibility, easy to debug
    */
   private async assembleMessageContext(message: IncomingMessage): Promise<ContextSource[]> {
-    if (DEBUG) logger.info(`📝 Assembling message context for <${message.userId}> message`);
+    if (DEBUG) {
+      logger.info(`📝 Assembling message context for <${message.userId}> message`);
+    }
     const sources: ContextSource[] = [];
 
     await this.addCurrentDateTime(sources);
     await this.addGoalWhisper(message, sources);
-    await this.addRecentChannelMessages(message, sources);  // Add immediate channel context
-    await this.addRecentGuildMessages(message, sources);    // Add broader guild context
+    await this.addRecentChannelMessages(message, sources); // Add immediate channel context
+    await this.addRecentGuildMessages(message, sources); // Add broader guild context
     await this.addRelevantMemories(message, sources);
     await this.addCapabilityManifest(sources);
-    await this.addDiscordEnvironment(sources);              // Add Discord server context
+    await this.addDiscordEnvironment(sources); // Add Discord server context
     // Future: await this.addUserPreferences(message, sources);
     // Future: await this.addConversationHistory(message, sources);
 
-    return sources.filter(source => source.content.length > 0);
+    return sources.filter((source) => source.content.length > 0);
   }
 
   /**
@@ -223,24 +283,24 @@ Important:
    */
   private async addCurrentDateTime(sources: ContextSource[]): Promise<void> {
     const now = new Date();
-    const formatted = now.toLocaleDateString('en-US', { 
-      weekday: 'long', 
-      year: 'numeric', 
-      month: 'long', 
+    const formatted = now.toLocaleDateString('en-US', {
+      weekday: 'long',
+      year: 'numeric',
+      month: 'long',
       day: 'numeric',
       hour: '2-digit',
       minute: '2-digit',
-      timeZoneName: 'short'
+      timeZoneName: 'short',
     });
-    
+
     const content = `Current date and time: ${formatted}\nISO timestamp: ${now.toISOString()}`;
-    
+
     sources.push({
       name: 'temporal_context',
       priority: 100, // Always highest priority
       tokenWeight: Math.ceil(content.length / 4),
       content,
-      category: 'temporal'
+      category: 'temporal',
     });
   }
 
@@ -250,16 +310,16 @@ Important:
   private async addGoalWhisper(message: IncomingMessage, sources: ContextSource[]): Promise<void> {
     try {
       const goalWhisper = await conscienceLLM.getGoalWhisper(message.message, message.userId);
-      
+
       if (goalWhisper) {
         const content = `[Conscience: ${goalWhisper}]`;
-        
+
         sources.push({
-          name: 'goal_context', 
+          name: 'goal_context',
           priority: 90, // High priority when available
           tokenWeight: Math.ceil(content.length / 4),
           content,
-          category: 'goals'
+          category: 'goals',
         });
       }
     } catch (error) {
@@ -271,26 +331,36 @@ Important:
   /**
    * Add recent messages from guild (Discord server)
    */
-  private async addRecentGuildMessages(message: IncomingMessage, sources: ContextSource[]): Promise<void> {
+  private async addRecentGuildMessages(
+    message: IncomingMessage,
+    sources: ContextSource[]
+  ): Promise<void> {
     try {
       // Only process if we have Discord context with guildId
-      if (!message.context?.guildId) return;
+      if (!message.context?.guildId) {
+        return;
+      }
 
       const guildId = message.context.guildId;
-      if (DEBUG) logger.info(`📨 Fetching recent guild messages for guild: ${guildId}`);
+      if (DEBUG) {
+        logger.info(`📨 Fetching recent guild messages for guild: ${guildId}`);
+      }
 
       // Import database dynamically
       const { database } = await import('./database.js');
 
       // Fetch recent messages from this guild (deduplicated)
-      const recentGuildMessages = await database.all(`
+      const recentGuildMessages = await database.all(
+        `
         SELECT DISTINCT value, user_id, created_at
         FROM messages
         WHERE guild_id = ?
           AND user_id != ?
         ORDER BY created_at DESC
         LIMIT 5
-      `, [guildId, message.userId]);
+      `,
+        [guildId, message.userId]
+      );
 
       if (recentGuildMessages && recentGuildMessages.length > 0) {
         const content = `Recent guild activity:\n${recentGuildMessages
@@ -302,10 +372,12 @@ Important:
           priority: 60, // Lower than direct memories but still relevant
           tokenWeight: Math.ceil(content.length / 4),
           content,
-          category: 'memory'
+          category: 'memory',
         });
 
-        if (DEBUG) logger.info(`│ ✅ Found ${recentGuildMessages.length} recent guild messages`);
+        if (DEBUG) {
+          logger.info(`│ ✅ Found ${recentGuildMessages.length} recent guild messages`);
+        }
       }
     } catch (error) {
       logger.warn('Failed to add recent guild messages:', error);
@@ -316,26 +388,36 @@ Important:
   /**
    * Add recent messages from channel
    */
-  private async addRecentChannelMessages(message: IncomingMessage, sources: ContextSource[]): Promise<void> {
+  private async addRecentChannelMessages(
+    message: IncomingMessage,
+    sources: ContextSource[]
+  ): Promise<void> {
     try {
       // Only process if we have Discord context with channelId
       const channelId = message.context?.channelId || message.respondTo?.channelId;
-      if (!channelId) return;
+      if (!channelId) {
+        return;
+      }
 
-      if (DEBUG) logger.info(`📨 Fetching recent channel messages for channel: ${channelId}`);
+      if (DEBUG) {
+        logger.info(`📨 Fetching recent channel messages for channel: ${channelId}`);
+      }
 
       // Import database dynamically
       const { database } = await import('./database.js');
 
       // Fetch recent messages from this channel (deduplicated)
-      const recentChannelMessages = await database.all(`
+      const recentChannelMessages = await database.all(
+        `
         SELECT DISTINCT value, user_id, created_at
         FROM messages
         WHERE channel_id = ?
           AND user_id != ?
         ORDER BY created_at DESC
         LIMIT 10
-      `, [channelId, message.userId]);
+      `,
+        [channelId, message.userId]
+      );
 
       if (recentChannelMessages && recentChannelMessages.length > 0) {
         const content = `Recent channel conversation:\n${recentChannelMessages
@@ -347,10 +429,12 @@ Important:
           priority: 80, // Higher priority as it's more immediate context
           tokenWeight: Math.ceil(content.length / 4),
           content,
-          category: 'memory'
+          category: 'memory',
         });
 
-        if (DEBUG) logger.info(`│ ✅ Found ${recentChannelMessages.length} recent channel messages`);
+        if (DEBUG) {
+          logger.info(`│ ✅ Found ${recentChannelMessages.length} recent channel messages`);
+        }
       }
     } catch (error) {
       logger.warn('Failed to add recent channel messages:', error);
@@ -361,9 +445,14 @@ Important:
   /**
    * Add relevant memories to message context (matches assembleMessagePreamble pattern)
    */
-  private async addRelevantMemories(message: IncomingMessage, sources: ContextSource[]): Promise<void> {
+  private async addRelevantMemories(
+    message: IncomingMessage,
+    sources: ContextSource[]
+  ): Promise<void> {
     try {
-      if (DEBUG) logger.info('┌─ MEMORY SEARCH (3-Layer Entourage) ────────────────────────────┐');
+      if (DEBUG) {
+        logger.info('┌─ MEMORY SEARCH (3-Layer Entourage) ────────────────────────────┐');
+      }
 
       // Calculate available token budget for memory context
       const estimatedOtherTokens = 500; // Conservative estimate for other context
@@ -376,11 +465,11 @@ Important:
         {
           maxTokens: maxTokensForMemory,
           priority: 'speed', // Default to speed for responsive interactions
-          minimal: false
+          minimal: false,
         }
       );
       const searchTime = Date.now() - startTime;
-      
+
       // Only add memory context if we actually have useful content
       if (memoryResult.content && memoryResult.content.trim().length > 0) {
         sources.push({
@@ -388,25 +477,39 @@ Important:
           priority: 70,
           tokenWeight: Math.ceil(memoryResult.content.length / 4),
           content: memoryResult.content,
-          category: 'memory'
+          category: 'memory',
         });
 
-        if (DEBUG) logger.info(`│ ✅ Found ${memoryResult.memoryCount} memories in ${searchTime}ms`);
-        if (DEBUG) logger.info(`│ Confidence: ${(memoryResult.confidence * 100).toFixed(1)}%`);
-        if (DEBUG) logger.info(`│ Categories: ${memoryResult.categories.join(', ')}`);
+        if (DEBUG) {
+          logger.info(`│ ✅ Found ${memoryResult.memoryCount} memories in ${searchTime}ms`);
+        }
+        if (DEBUG) {
+          logger.info(`│ Confidence: ${(memoryResult.confidence * 100).toFixed(1)}%`);
+        }
+        if (DEBUG) {
+          logger.info(`│ Categories: ${memoryResult.categories.join(', ')}`);
+        }
 
         // 🔍 DEBUG: Log memory IDs for backward debugging
         if (memoryResult.memoryIds && memoryResult.memoryIds.length > 0) {
-          if (DEBUG) logger.info(`│ Memory IDs: [${memoryResult.memoryIds.join(', ')}]`);
+          if (DEBUG) {
+            logger.info(`│ Memory IDs: [${memoryResult.memoryIds.join(', ')}]`);
+          }
         }
 
         // Show preview of memory content
         const preview = memoryResult.content.substring(0, 100).replace(/\n/g, ' ');
-        if (DEBUG) logger.info(`│ Preview: "${preview}${memoryResult.content.length > 100 ? '...' : ''}"`);
+        if (DEBUG) {
+          logger.info(`│ Preview: "${preview}${memoryResult.content.length > 100 ? '...' : ''}"`);
+        }
       } else {
-        if (DEBUG) logger.info('│ ⚠️  No relevant memories found');
+        if (DEBUG) {
+          logger.info('│ ⚠️  No relevant memories found');
+        }
       }
-      if (DEBUG) logger.info('└─────────────────────────────────────────────────────────────────┘');
+      if (DEBUG) {
+        logger.info('└─────────────────────────────────────────────────────────────────┘');
+      }
     } catch (error) {
       logger.warn('Failed to add relevant memories:', error);
       // Graceful degradation - continue without memory context
@@ -428,11 +531,15 @@ Important:
         priority: 30, // Lower priority - capabilities can be learned
         tokenWeight: Math.ceil(content.length / 4),
         content,
-        category: 'capabilities'
+        category: 'capabilities',
       });
 
       const capCount = capabilityRegistry.size();
-      if (DEBUG) logger.info(`│ ✅ Added capability instructions (${capCount} capabilities, ${content.length} chars)`);
+      if (DEBUG) {
+        logger.info(
+          `│ ✅ Added capability instructions (${capCount} capabilities, ${content.length} chars)`
+        );
+      }
     } catch (error) {
       logger.warn('Failed to add capability manifest:', error);
       // Graceful fallback to minimal instructions
@@ -443,7 +550,7 @@ Available: web, calculator, memory`;
         priority: 30,
         tokenWeight: Math.ceil(content.length / 4),
         content,
-        category: 'capabilities'
+        category: 'capabilities',
       });
     }
   }
@@ -457,13 +564,17 @@ Available: web, calculator, memory`;
       // Fetch Discord health info from the health server
       const response = await fetch('http://localhost:47319/health');
       if (!response.ok) {
-        if (DEBUG) logger.info('│ ⚠️  Discord health endpoint not available');
+        if (DEBUG) {
+          logger.info('│ ⚠️  Discord health endpoint not available');
+        }
         return;
       }
 
-      const health = await response.json() as any; // Type as any for flexible health response
+      const health = (await response.json()) as any; // Type as any for flexible health response
       if (!health?.discord?.guildDetails || health.discord.guildDetails.length === 0) {
-        if (DEBUG) logger.info('│ ⚠️  No Discord guild details available');
+        if (DEBUG) {
+          logger.info('│ ⚠️  No Discord guild details available');
+        }
         return;
       }
 
@@ -479,10 +590,14 @@ Available: web, calculator, memory`;
         priority: 50, // Between capabilities and memories
         tokenWeight: Math.ceil(content.length / 4),
         content,
-        category: 'user_state'
+        category: 'user_state',
       });
 
-      if (DEBUG) logger.info(`│ ✅ Added Discord environment: ${health.discord.guildDetails.length} servers`);
+      if (DEBUG) {
+        logger.info(
+          `│ ✅ Added Discord environment: ${health.discord.guildDetails.length} servers`
+        );
+      }
     } catch (error) {
       logger.warn('Failed to add Discord environment:', error);
       // Graceful degradation - continue without Discord environment
@@ -493,7 +608,9 @@ Available: web, calculator, memory`;
    * Select optimal context sources within token budget
    */
   private selectOptimalContext(sources: ContextSource[], budget: ContextBudget): ContextSource[] {
-    if (DEBUG) logger.info('┌─ CONTEXT SELECTION (Priority & Budget) ────────────────────────┐');
+    if (DEBUG) {
+      logger.info('┌─ CONTEXT SELECTION (Priority & Budget) ────────────────────────┐');
+    }
 
     // Sort by priority (highest first)
     const sortedSources = [...sources].sort((a, b) => b.priority - a.priority);
@@ -505,15 +622,31 @@ Available: web, calculator, memory`;
       if (usedTokens + source.tokenWeight <= budget.availableForContext) {
         selected.push(source);
         usedTokens += source.tokenWeight;
-        if (DEBUG) logger.info(`│ ✅ SELECTED: ${source.name.padEnd(20)} (${source.tokenWeight} tokens, pri: ${source.priority})`);
+        if (DEBUG) {
+          logger.info(
+            `│ ✅ SELECTED: ${source.name.padEnd(20)} (${source.tokenWeight} tokens, pri: ${source.priority})`
+          );
+        }
       } else {
-        if (DEBUG) logger.info(`│ ❌ SKIPPED:  ${source.name.padEnd(20)} (${source.tokenWeight} tokens would exceed budget)`);
+        if (DEBUG) {
+          logger.info(
+            `│ ❌ SKIPPED:  ${source.name.padEnd(20)} (${source.tokenWeight} tokens would exceed budget)`
+          );
+        }
       }
     }
 
-    if (DEBUG) logger.info(`│ ═══════════════════════════════════════════════════════════════ │`);
-    if (DEBUG) logger.info(`│ Token usage: ${usedTokens}/${budget.availableForContext} (${Math.round((usedTokens/budget.availableForContext)*100)}% of budget)`);
-    if (DEBUG) logger.info('└─────────────────────────────────────────────────────────────────┘');
+    if (DEBUG) {
+      logger.info(`│ ═══════════════════════════════════════════════════════════════ │`);
+    }
+    if (DEBUG) {
+      logger.info(
+        `│ Token usage: ${usedTokens}/${budget.availableForContext} (${Math.round((usedTokens / budget.availableForContext) * 100)}% of budget)`
+      );
+    }
+    if (DEBUG) {
+      logger.info('└─────────────────────────────────────────────────────────────────┘');
+    }
 
     return selected;
   }
@@ -527,11 +660,13 @@ Available: web, calculator, memory`;
     contextSources: ContextSource[],
     existingMessages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = []
   ): Array<{ role: 'system' | 'user' | 'assistant'; content: string }> {
-    if (DEBUG) logger.info('┌─ MESSAGE CHAIN ASSEMBLY ────────────────────────────────────────┐');
+    if (DEBUG) {
+      logger.info('┌─ MESSAGE CHAIN ASSEMBLY ────────────────────────────────────────┐');
+    }
 
     const contextByCategory = this.groupContextByCategory(contextSources);
     const messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [];
-    
+
     // 1. System message with temporal context
     let systemContent = baseSystemPrompt;
     if (contextByCategory.temporal.length > 0) {
@@ -540,34 +675,36 @@ Available: web, calculator, memory`;
     if (contextByCategory.capabilities.length > 0) {
       systemContent += `\n\n${contextByCategory.capabilities[0].content}`;
     }
-    
+
     messages.push({ role: 'system', content: systemContent.trim() });
-    
+
     // 2. Add any existing conversation history
     messages.push(...existingMessages);
-    
+
     // 3. Add context messages (some randomization for variety)
     if (contextByCategory.memory.length > 0) {
       // Randomly decide if memory goes as assistant context or user context
       const role = Math.random() > 0.5 ? 'assistant' : 'user';
-      if (DEBUG) logger.info(`│ 🎲 Memory context role: ${role} (random selection for variety)`);
+      if (DEBUG) {
+        logger.info(`│ 🎲 Memory context role: ${role} (random selection for variety)`);
+      }
       messages.push({
         role,
-        content: `Context: ${contextByCategory.memory[0].content}`
+        content: `Context: ${contextByCategory.memory[0].content}`,
       });
     }
-    
+
     // 4. Add goal whisper as system-level context if available
     if (contextByCategory.goals.length > 0) {
       messages.push({
         role: 'system',
-        content: contextByCategory.goals[0].content
+        content: contextByCategory.goals[0].content,
       });
     }
-    
+
     // 5. User message ALWAYS comes last
     messages.push({ role: 'user', content: userMessage });
-    
+
     return messages;
   }
 
@@ -580,13 +717,13 @@ Available: web, calculator, memory`;
       goals: [],
       memory: [],
       capabilities: [],
-      user_state: []
+      user_state: [],
     };
-    
+
     for (const source of sources) {
       grouped[source.category].push(source);
     }
-    
+
     return grouped;
   }
 }

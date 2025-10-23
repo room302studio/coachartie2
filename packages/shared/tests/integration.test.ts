@@ -1,12 +1,12 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { 
-  createQueue, 
-  createWorker, 
-  createRedisConnection, 
+import {
+  createQueue,
+  createWorker,
+  createRedisConnection,
   closeRedisConnection,
   QUEUES,
   IncomingMessage,
-  OutgoingMessage
+  OutgoingMessage,
 } from '../src/index.js';
 
 describe('Redis Queue Integration Tests', () => {
@@ -22,7 +22,7 @@ describe('Redis Queue Integration Tests', () => {
   it('should process a message through the queue system', async () => {
     const incomingQueue = createQueue<IncomingMessage>(QUEUES.INCOMING_MESSAGES);
     const outgoingQueue = createQueue<OutgoingMessage>(QUEUES.OUTGOING_DISCORD);
-    
+
     let receivedMessage: IncomingMessage | null = null;
     let processedResponse: OutgoingMessage | null = null;
 
@@ -31,7 +31,7 @@ describe('Redis Queue Integration Tests', () => {
       QUEUES.INCOMING_MESSAGES,
       async (job) => {
         receivedMessage = job.data;
-        
+
         // Simulate processing and send response
         const response: OutgoingMessage = {
           id: `response-${Date.now()}`,
@@ -42,8 +42,8 @@ describe('Redis Queue Integration Tests', () => {
           message: `Echo: ${job.data.message}`,
           inReplyTo: job.data.id,
           metadata: {
-            channelId: job.data.respondTo.channelId
-          }
+            channelId: job.data.respondTo.channelId,
+          },
         };
 
         await outgoingQueue.add('response', response);
@@ -68,14 +68,14 @@ describe('Redis Queue Integration Tests', () => {
       message: 'Hello, Coach Artie!',
       respondTo: {
         type: 'discord',
-        channelId: 'channel-123'
-      }
+        channelId: 'channel-123',
+      },
     };
 
     await incomingQueue.add('test', testMessage);
 
     // Wait for processing
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    await new Promise((resolve) => setTimeout(resolve, 1000));
 
     // Verify the message was processed
     expect(receivedMessage).toBeTruthy();
@@ -98,15 +98,12 @@ describe('Redis Queue Integration Tests', () => {
     const testQueue = createQueue<{ shouldFail: boolean }>('test-failures');
     let failureCount = 0;
 
-    const worker = createWorker<{ shouldFail: boolean }, void>(
-      'test-failures',
-      async (job) => {
-        if (job.data.shouldFail) {
-          failureCount++;
-          throw new Error('Intentional test failure');
-        }
+    const worker = createWorker<{ shouldFail: boolean }, void>('test-failures', async (job) => {
+      if (job.data.shouldFail) {
+        failureCount++;
+        throw new Error('Intentional test failure');
       }
-    );
+    });
 
     worker.on('failed', (job, err) => {
       expect(err.message).toBe('Intentional test failure');
@@ -116,7 +113,7 @@ describe('Redis Queue Integration Tests', () => {
     await testQueue.add('fail-test', { shouldFail: true });
 
     // Wait for processing
-    await new Promise(resolve => setTimeout(resolve, 500));
+    await new Promise((resolve) => setTimeout(resolve, 500));
 
     expect(failureCount).toBeGreaterThan(0);
 

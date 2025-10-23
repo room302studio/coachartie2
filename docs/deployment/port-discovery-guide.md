@@ -23,8 +23,9 @@ const port = await PortDiscovery.getServicePort('capabilities');
 ```
 
 **Default Ports** (used as starting points):
+
 - **Capabilities**: 18239
-- **SMS**: 27461  
+- **SMS**: 27461
 - **Email**: 35892
 - **Brain**: 3000
 
@@ -48,21 +49,25 @@ const allServices = await serviceDiscovery.getAllServices();
 ## Updated Services
 
 ### ✅ Capabilities Service
+
 - Auto-discovers port starting from 18239
 - Registers with service discovery
 - Exposes `/services` endpoint for service lookup
 
-### ✅ SMS Service  
+### ✅ SMS Service
+
 - Auto-discovers port starting from 27461
 - Registers with service discovery
 - Webhook URL adapts to discovered port
 
 ### ✅ Email Service
-- Auto-discovers port starting from 35892  
+
+- Auto-discovers port starting from 35892
 - Registers with service discovery
 - Webhook URL adapts to discovered port
 
 ### ✅ Brain Frontend
+
 - Uses custom dev server (`dev-server.mjs`)
 - Auto-discovers port starting from 3000
 - Registers with service discovery
@@ -83,6 +88,7 @@ const allServices = await serviceDiscovery.getAllServices();
 ## Usage Examples
 
 ### Starting Services
+
 ```bash
 # All services automatically find available ports
 pnpm run dev
@@ -94,12 +100,14 @@ cd packages/brain && pnpm run dev-manual  # Traditional Nuxt dev
 ```
 
 ### Testing Port Discovery
+
 ```bash
 # Run comprehensive test suite
 node test-port-discovery.mjs
 ```
 
 ### Service Discovery API
+
 ```bash
 # Get all running services
 curl http://localhost:[auto-discovered-port]/services
@@ -118,7 +126,7 @@ Services still respect environment variables as overrides:
 ```bash
 # Force specific ports (bypasses auto-discovery)
 CAPABILITIES_PORT=8000
-SMS_PORT=8001  
+SMS_PORT=8001
 EMAIL_SERVICE_PORT=8002
 PORT=8003  # For brain frontend
 
@@ -130,6 +138,7 @@ PORT_RANGE_END=9000
 ## Redis Integration
 
 Service discovery uses Redis for inter-service communication:
+
 - Services register themselves with 90-second TTL
 - Automatic ping system keeps registrations alive
 - Graceful cleanup on service shutdown
@@ -138,11 +147,13 @@ Service discovery uses Redis for inter-service communication:
 ## Error Handling
 
 **Before**: Port conflicts caused immediate failures
+
 ```
 ❌ EADDRINUSE: address already in use :::18239
 ```
 
 **After**: Automatic conflict resolution
+
 ```
 ⚠️  Default port 18239 for capabilities service was busy, using port 18240
 ✅ Capabilities service successfully started on port 18240
@@ -151,7 +162,7 @@ Service discovery uses Redis for inter-service communication:
 ## Migration Notes
 
 - **Environment variables still work** - they override auto-discovery
-- **Existing scripts unchanged** - services just find different ports automatically  
+- **Existing scripts unchanged** - services just find different ports automatically
 - **Service URLs adapt** - check logs or `/services` endpoint for actual URLs
 - **Webhook configuration** - External services (Twilio) may need URL updates
 
@@ -164,7 +175,7 @@ packages/shared/src/utils/
 └── index.ts             # Exports
 
 packages/capabilities/src/
-├── index.ts             # Updated with auto-discovery  
+├── index.ts             # Updated with auto-discovery
 └── routes/services.ts   # Service discovery API
 
 packages/sms/src/index.ts        # Updated with auto-discovery

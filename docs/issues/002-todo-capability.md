@@ -1,12 +1,15 @@
 # Issue #002: Implement Todo Capability
 
 ## User Story
+
 As Coach Artie, I need to manage todo lists for complex multi-step tasks so that I can break down goals into actionable items and track progress systematically.
 
 ## Background
+
 Goals are high-level objectives, but we need a way to break them into specific, actionable tasks. The todo capability will allow creating lists of tasks, checking them off, and tracking progress. This enables Coach Artie to work autonomously through complex workflows.
 
 ## Acceptance Criteria
+
 - [ ] Can create a new todo list with a name
 - [ ] Can add items to a todo list
 - [ ] Can mark items as complete/incomplete
@@ -20,6 +23,7 @@ Goals are high-level objectives, but we need a way to break them into specific, 
 ## Technical Requirements
 
 ### Database Schema
+
 ```sql
 CREATE TABLE todo_lists (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -45,6 +49,7 @@ CREATE TABLE todo_items (
 ```
 
 ### Capability Interface
+
 ```xml
 <!-- Create a todo list -->
 <capability name="todo" action="create" list="build_resume">
@@ -73,54 +78,75 @@ CREATE TABLE todo_items (
 ## Test Cases
 
 ### Test 1: Create List and Add Items
+
 ```javascript
 // Create todo list with items
-const result = await todoCapability.handler({
-  action: 'create',
-  list: 'test_list'
-}, '- Task 1\n- Task 2\n- Task 3');
+const result = await todoCapability.handler(
+  {
+    action: 'create',
+    list: 'test_list',
+  },
+  '- Task 1\n- Task 2\n- Task 3'
+);
 // Should create list with 3 items
 
 // Check status
-const status = await todoCapability.handler({
-  action: 'status',
-  list: 'test_list'
-}, null);
+const status = await todoCapability.handler(
+  {
+    action: 'status',
+    list: 'test_list',
+  },
+  null
+);
 // Should return "0/3 completed"
 ```
 
 ### Test 2: Complete Items and Track Progress
+
 ```javascript
 // Get next item
-const next = await todoCapability.handler({
-  action: 'next',
-  list: 'test_list'
-}, null);
+const next = await todoCapability.handler(
+  {
+    action: 'next',
+    list: 'test_list',
+  },
+  null
+);
 // Should return "Task 1"
 
 // Complete first item
-await todoCapability.handler({
-  action: 'complete',
-  list: 'test_list',
-  item: '1'
-}, null);
+await todoCapability.handler(
+  {
+    action: 'complete',
+    list: 'test_list',
+    item: '1',
+  },
+  null
+);
 
 // Check status again
-const newStatus = await todoCapability.handler({
-  action: 'status',
-  list: 'test_list'
-}, null);
+const newStatus = await todoCapability.handler(
+  {
+    action: 'status',
+    list: 'test_list',
+  },
+  null
+);
 // Should return "1/3 completed"
 ```
 
 ### Test 3: Link to Goal
+
 ```javascript
 // Create todo list linked to goal
-await todoCapability.handler({
-  action: 'create',
-  list: 'pr_tasks',
-  goal_id: '123'
-}, '- Review code\n- Run tests\n- Submit PR');
+await todoCapability.handler(
+  {
+    action: 'create',
+    list: 'pr_tasks',
+    goal_id: '123',
+  },
+  '- Review code\n- Run tests\n- Submit PR'
+);
 
 // When goal is checked, should show linked todos
 ```
@@ -133,7 +159,7 @@ await todoCapability.handler({
 4. **Progress tracking**: Include percentage and time estimates if possible
 5. **Bulk operations**: Allow completing multiple items at once
 6. **User ID**: Always use `user_id` (snake_case) in params
-7. **Error handling**: 
+7. **Error handling**:
    - Invalid list name: "Todo list not found"
    - Invalid item number: "Item not found in list"
    - Database locked: Retry 3x with backoff
@@ -144,6 +170,7 @@ await todoCapability.handler({
    ```
 
 ## Definition of Done
+
 - [ ] All acceptance criteria met
 - [ ] All test cases pass
 - [ ] Registered in capability-orchestrator.ts
@@ -152,6 +179,7 @@ await todoCapability.handler({
 - [ ] Handles edge cases (empty lists, invalid items)
 
 ## Example Response Formats
+
 ```
 // Status check
 "📋 build_resume: 2/4 completed (50%)
@@ -168,4 +196,5 @@ await todoCapability.handler({
 ```
 
 ## Dependencies
+
 - Requires Issue #001 (Goal Capability) to be completed first for goal linking functionality

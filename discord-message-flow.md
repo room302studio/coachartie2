@@ -60,6 +60,7 @@ USER MESSAGE: "@coachartie calculate 25 * 4"
 ## The Problem We Found
 
 **Step 7 was failing** - the `onComplete` callback wasn't being triggered because:
+
 1. The job status API was sometimes returning malformed responses
 2. The Discord bot polling logic wasn't properly handling edge cases
 3. Responses were getting stuck in the completion handler
@@ -73,10 +74,11 @@ USER MESSAGE: "@coachartie calculate 25 * 4"
 
 ## Current State
 
-- ✅ Steps 1-6 working perfectly  
+- ✅ Steps 1-6 working perfectly
 - ❓ Step 7 should now work (needs testing)
 - 🚀 Ready for Discord message test
 
 The flow shows **two separate LLM calls**:
+
 - **First**: Determine what to do
 - **Second**: Generate human-readable response from capability results

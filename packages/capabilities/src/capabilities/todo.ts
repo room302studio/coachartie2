@@ -42,11 +42,13 @@ export class TodoService {
   }
 
   async initializeDatabase(): Promise<void> {
-    if (this.dbReady) {return;}
+    if (this.dbReady) {
+      return;
+    }
 
     try {
       const db = await getDatabase();
-      
+
       // Create todo_lists table
       await db.exec(`
         CREATE TABLE IF NOT EXISTS todo_lists (
@@ -89,32 +91,43 @@ export class TodoService {
     }
   }
 
-  async createTodoList(userId: string, listName: string, content: string, goalId?: number): Promise<string> {
+  async createTodoList(
+    userId: string,
+    listName: string,
+    content: string,
+    goalId?: number
+  ): Promise<string> {
     await this.initializeDatabase();
 
     try {
       const db = await getDatabase();
-      
+
       // Check if list already exists
-      const existingList = await db.get(`
+      const existingList = await db.get(
+        `
         SELECT id FROM todo_lists WHERE user_id = ? AND name = ?
-      `, [userId, listName]);
+      `,
+        [userId, listName]
+      );
 
       if (existingList) {
         return `❌ Todo list "${listName}" already exists. Use action="add" to add more items.`;
       }
 
       // Create the todo list
-      const result = await db.run(`
+      const result = await db.run(
+        `
         INSERT INTO todo_lists (user_id, name, goal_id)
         VALUES (?, ?, ?)
-      `, [userId, listName, goalId || null]);
+      `,
+        [userId, listName, goalId || null]
+      );
 
       const listId = result.lastID!;
 
       // Parse content into todo items
       const items = this.parseContentIntoItems(content);
-      
+
       if (items.length === 0) {
         return `❌ No todo items found in content. Use format like:
 - Task 1
@@ -124,14 +137,19 @@ export class TodoService {
 
       // Insert todo items
       for (let i = 0; i < items.length; i++) {
-        await db.run(`
+        await db.run(
+          `
           INSERT INTO todo_items (list_id, content, position)
           VALUES (?, ?, ?)
-        `, [listId, items[i], i + 1]);
+        `,
+          [listId, items[i], i + 1]
+        );
       }
 
-      logger.info(`📋 Created todo list "${listName}" for user ${userId} with ${items.length} items`);
-      
+      logger.info(
+        `📋 Created todo list "${listName}" for user ${userId} with ${items.length} items`
+      );
+
       const goalText = goalId ? ` (linked to goal ${goalId})` : '';
       return `✅ Created todo list "${listName}" with ${items.length} items${goalText}:\n${items.map((item, i) => `${i + 1}. ${item}`).join('\n')}`;
     } catch (error) {
@@ -145,26 +163,32 @@ export class TodoService {
 
     try {
       const db = await getDatabase();
-      
+
       // Find the list
-      const list = await db.get(`
+      const list = await db.get(
+        `
         SELECT id FROM todo_lists WHERE user_id = ? AND name = ?
-      `, [userId, listName]);
+      `,
+        [userId, listName]
+      );
 
       if (!list) {
         return `❌ Todo list "${listName}" not found. Create it first with action="create".`;
       }
 
       // Get current highest position
-      const maxPos = await db.get(`
+      const maxPos = await db.get(
+        `
         SELECT MAX(position) as max_pos FROM todo_items WHERE list_id = ?
-      `, [list.id]);
+      `,
+        [list.id]
+      );
 
       const startPosition = (maxPos?.max_pos || 0) + 1;
 
       // Parse new items
       const items = this.parseContentIntoItems(content);
-      
+
       if (items.length === 0) {
         return `❌ No todo items found in content. Use format like:
 - New task 1
@@ -173,14 +197,17 @@ export class TodoService {
 
       // Insert new items
       for (let i = 0; i < items.length; i++) {
-        await db.run(`
+        await db.run(
+          `
           INSERT INTO todo_items (list_id, content, position)
           VALUES (?, ?, ?)
-        `, [list.id, items[i], startPosition + i]);
+        `,
+          [list.id, items[i], startPosition + i]
+        );
       }
 
       logger.info(`📋 Added ${items.length} items to todo list "${listName}" for user ${userId}`);
-      
+
       return `✅ Added ${items.length} items to "${listName}":\n${items.map((item, i) => `${startPosition + i}. ${item}`).join('\n')}`;
     } catch (error) {
       logger.error('❌ Failed to add items to todo list:', error);
@@ -193,16 +220,19 @@ export class TodoService {
 
     try {
       const db = await getDatabase();
-      
+
       // Find the list and get next pending item
-      const nextItem = await db.get(`
+      const nextItem = await db.get(
+        `
         SELECT ti.id, ti.content, ti.position
         FROM todo_items ti
         JOIN todo_lists tl ON ti.list_id = tl.id
         WHERE tl.user_id = ? AND tl.name = ? AND ti.status = 'pending'
         ORDER BY ti.position ASC
         LIMIT 1
-      `, [userId, listName]);
+      `,
+        [userId, listName]
+      );
 
       if (!nextItem) {
         return `📋 No pending items in "${listName}". All tasks completed! 🎉`;
@@ -220,14 +250,17 @@ export class TodoService {
 
     try {
       const db = await getDatabase();
-      
+
       // Find the specific item
-      const item = await db.get(`
+      const item = await db.get(
+        `
         SELECT ti.id, ti.content, ti.status
         FROM todo_items ti
         JOIN todo_lists tl ON ti.list_id = tl.id
         WHERE tl.user_id = ? AND tl.name = ? AND ti.position = ?
-      `, [userId, listName, itemPosition]);
+      `,
+        [userId, listName, itemPosition]
+      );
 
       if (!item) {
         return `❌ Item ${itemPosition} not found in "${listName}"`;
@@ -238,17 +271,22 @@ export class TodoService {
       }
 
       // Mark as completed
-      await db.run(`
+      await db.run(
+        `
         UPDATE todo_items 
         SET status = 'completed', completed_at = CURRENT_TIMESTAMP
         WHERE id = ?
-      `, [item.id]);
+      `,
+        [item.id]
+      );
 
       // Get progress
       const progress = await this.getListProgress(userId, listName);
-      
-      logger.info(`✅ Completed item ${itemPosition} in todo list "${listName}" for user ${userId}`);
-      
+
+      logger.info(
+        `✅ Completed item ${itemPosition} in todo list "${listName}" for user ${userId}`
+      );
+
       return `✅ Marked "${item.content}" as complete! Progress: ${progress}`;
     } catch (error) {
       logger.error('❌ Failed to complete item:', error);
@@ -261,23 +299,29 @@ export class TodoService {
 
     try {
       const db = await getDatabase();
-      
+
       // Check if list exists
-      const list = await db.get(`
+      const list = await db.get(
+        `
         SELECT id, goal_id FROM todo_lists WHERE user_id = ? AND name = ?
-      `, [userId, listName]);
+      `,
+        [userId, listName]
+      );
 
       if (!list) {
         return `❌ Todo list "${listName}" not found`;
       }
 
       // Get all items with status
-      const items = await db.all(`
+      const items = await db.all(
+        `
         SELECT content, status, position, completed_at
         FROM todo_items 
         WHERE list_id = ?
         ORDER BY position ASC
-      `, [list.id]);
+      `,
+        [list.id]
+      );
 
       if (items.length === 0) {
         return `📋 "${listName}" is empty. Add some tasks!`;
@@ -287,13 +331,15 @@ export class TodoService {
       const total = items.length;
       const percentage = Math.round((completed / total) * 100);
 
-      const statusList = items.map((item: TodoItemRow) => {
-        const icon = item.status === 'completed' ? '✅' : '⏳';
-        return `${icon} ${item.content}`;
-      }).join('\n');
+      const statusList = items
+        .map((item: TodoItemRow) => {
+          const icon = item.status === 'completed' ? '✅' : '⏳';
+          return `${icon} ${item.content}`;
+        })
+        .join('\n');
 
       const goalText = list.goal_id ? ` (linked to goal ${list.goal_id})` : '';
-      
+
       return `📋 ${listName}: ${completed}/${total} completed (${percentage}%)${goalText}\n${statusList}`;
     } catch (error) {
       logger.error('❌ Failed to get list status:', error);
@@ -306,8 +352,9 @@ export class TodoService {
 
     try {
       const db = await getDatabase();
-      
-      const lists = await db.all(`
+
+      const lists = await db.all(
+        `
         SELECT tl.name, tl.goal_id, tl.created_at,
                COUNT(ti.id) as total_items,
                SUM(CASE WHEN ti.status = 'completed' THEN 1 ELSE 0 END) as completed_items
@@ -316,20 +363,24 @@ export class TodoService {
         WHERE tl.user_id = ?
         GROUP BY tl.id, tl.name, tl.goal_id, tl.created_at
         ORDER BY tl.updated_at DESC
-      `, [userId]);
+      `,
+        [userId]
+      );
 
       if (lists.length === 0) {
         return '📋 No todo lists found. Create one with: <capability name="todo" action="create" list="my_list">- Task 1\\n- Task 2</capability>';
       }
 
-      const listSummary = lists.map((list: any) => {
-        const completed = list.completed_items || 0;
-        const total = list.total_items || 0;
-        const percentage = total > 0 ? Math.round((completed / total) * 100) : 0;
-        const goalText = list.goal_id ? ` (goal: ${list.goal_id})` : '';
-        
-        return `📋 **${list.name}**: ${completed}/${total} (${percentage}%)${goalText}`;
-      }).join('\n');
+      const listSummary = lists
+        .map((list: any) => {
+          const completed = list.completed_items || 0;
+          const total = list.total_items || 0;
+          const percentage = total > 0 ? Math.round((completed / total) * 100) : 0;
+          const goalText = list.goal_id ? ` (goal: ${list.goal_id})` : '';
+
+          return `📋 **${list.name}**: ${completed}/${total} (${percentage}%)${goalText}`;
+        })
+        .join('\n');
 
       return `📚 Your todo lists (${lists.length}):\n\n${listSummary}`;
     } catch (error) {
@@ -341,20 +392,23 @@ export class TodoService {
   private async getListProgress(userId: string, listName: string): Promise<string> {
     try {
       const db = await getDatabase();
-      
-      const progress = await db.get(`
+
+      const progress = await db.get(
+        `
         SELECT 
           COUNT(*) as total,
           SUM(CASE WHEN ti.status = 'completed' THEN 1 ELSE 0 END) as completed
         FROM todo_items ti
         JOIN todo_lists tl ON ti.list_id = tl.id
         WHERE tl.user_id = ? AND tl.name = ?
-      `, [userId, listName]);
+      `,
+        [userId, listName]
+      );
 
       const completed = progress?.completed || 0;
       const total = progress?.total || 0;
       const percentage = total > 0 ? Math.round((completed / total) * 100) : 0;
-      
+
       return `${completed}/${total} (${percentage}%)`;
     } catch (error) {
       logger.error('❌ Failed to get progress:', error);
@@ -363,7 +417,10 @@ export class TodoService {
   }
 
   private parseContentIntoItems(content: string): string[] {
-    const lines = content.split('\n').map(line => line.trim()).filter(line => line.length > 0);
+    const lines = content
+      .split('\n')
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0);
     const items: string[] = [];
 
     for (const line of lines) {
@@ -399,64 +456,68 @@ async function handleTodoAction(params: TodoParams, content?: string): Promise<s
       case 'create': {
         const listName = params.list;
         const goalId = params.goal_id ? parseInt(String(params.goal_id)) : undefined;
-        
+
         if (!listName) {
           return '❌ Please provide a list name. Example: <capability name="todo" action="create" list="my_tasks">- Task 1\\n- Task 2</capability>';
         }
-        
+
         if (!content) {
           return '❌ Please provide todo items. Example: <capability name="todo" action="create" list="my_tasks">- Task 1\\n- Task 2</capability>';
         }
-        
+
         return await todoService.createTodoList(String(user_id), String(listName), content, goalId);
       }
 
       case 'add': {
         const listName = params.list;
-        
+
         if (!listName) {
           return '❌ Please provide a list name. Example: <capability name="todo" action="add" list="my_tasks">- New task</capability>';
         }
-        
+
         if (!content) {
           return '❌ Please provide items to add. Example: <capability name="todo" action="add" list="my_tasks">- New task</capability>';
         }
-        
+
         return await todoService.addItemsToList(String(user_id), String(listName), content);
       }
 
       case 'next': {
         const listName = params.list;
-        
+
         if (!listName) {
           return '❌ Please provide a list name. Example: <capability name="todo" action="next" list="my_tasks" />';
         }
-        
+
         return await todoService.getNextItem(String(user_id), String(listName));
       }
 
       case 'complete': {
         const listName = params.list;
         const itemPosition = params.item;
-        
+
         if (!listName) {
           return '❌ Please provide a list name. Example: <capability name="todo" action="complete" list="my_tasks" item="1" />';
         }
-        
+
         if (!itemPosition) {
           return '❌ Please provide item position. Example: <capability name="todo" action="complete" list="my_tasks" item="1" />';
         }
-        
-        return await todoService.completeItem(String(user_id), String(listName), parseInt(String(itemPosition)));
+
+        return await todoService.completeItem(
+          String(user_id),
+          String(listName),
+          parseInt(String(itemPosition))
+        );
       }
 
       case 'status': {
         const listName = params.list;
-        
+
         if (!listName) {
           return '❌ Please provide a list name. Example: <capability name="todo" action="status" list="my_tasks" />';
         }
-        
+
         return await todoService.getListStatus(String(user_id), String(listName));
       }
 
@@ -486,6 +547,6 @@ export const todoCapability: RegisteredCapability = {
     '<capability name="todo" action="next" list="build_resume" />',
     '<capability name="todo" action="complete" list="build_resume" item="1" />',
     '<capability name="todo" action="status" list="build_resume" />',
-    '<capability name="todo" action="list" />'
-  ]
+    '<capability name="todo" action="list" />',
+  ],
 };

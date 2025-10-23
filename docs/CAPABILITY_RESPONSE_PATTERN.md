@@ -45,15 +45,18 @@ Every capability response should follow this structure:
 ## Core Principles
 
 ### 1. **Always Include IDs**
+
 Every entity mentioned must include its ID for precise next-calls.
 
 ❌ Bad: "Found 5 forums"
 ✅ Good: "Found 5 forums: Bugs (ID: 123), Features (ID: 456), Support (ID: 789)..."
 
 ### 2. **Include Counts & Metrics**
+
 Provide aggregate statistics that help the LLM make decisions.
 
 Required metrics:
+
 - Total count
 - Active vs archived/locked
 - Message/thread counts
@@ -61,23 +64,28 @@ Required metrics:
 - Time ranges (created, last activity)
 
 ### 3. **Provide Preview Data**
+
 Include sample content (first 200 chars) so the LLM can assess relevance without additional calls.
 
 ### 4. **Include Exact Next-Call Syntax**
+
 Don't make the LLM guess parameter formats - provide exact XML capability tags.
 
 ❌ Bad: "Use the forum ID to list threads"
 ✅ Good: `<capability name="discord-forums" action="list-threads" data='{"forumId":"123456"}' />`
 
 ### 5. **Structure as Both Human & Machine Readable**
+
 - Human-readable summary at top with emojis
 - Detailed structured data in middle
 - Raw JSON at bottom for programmatic parsing
 
 ### 6. **Include State Information**
+
 Always indicate current state so LLM knows what actions are valid.
 
 Examples:
+
 - `Status: 🔒 Locked` (can't post)
 - `Status: ✅ Active` (can post)
 - `Status: 📦 Archived` (read-only)
@@ -214,27 +222,35 @@ Examples:
 ## Anti-Patterns to Avoid
 
 ### ❌ Minimal Response
+
 ```
 "Found 3 forums"
 ```
+
 **Problem**: No IDs, no counts, no next-call guidance
 
 ### ❌ Raw JSON Dump
+
 ```json
-{"forums": [{"id": 123, "name": "Bugs"}]}
+{ "forums": [{ "id": 123, "name": "Bugs" }] }
 ```
+
 **Problem**: Not human-readable, no guidance on next steps
 
 ### ❌ Ambiguous References
+
 ```
 "Use the forum ID from the previous call to list threads"
 ```
+
 **Problem**: Requires LLM to track state across multiple calls
 
 ### ❌ Missing Context
+
 ```
 "Created 5 issues"
 ```
+
 **Problem**: No URLs, no success/failure breakdown, no way to verify
 
 ## Capability Checklist

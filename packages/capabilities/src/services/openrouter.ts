@@ -21,19 +21,18 @@ class OpenRouterService {
   constructor() {
     const apiKey = process.env.OPENROUTER_API_KEY;
     const baseURL = process.env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1';
-    
+
     // Primary configuration: comma-separated OPENROUTER_MODELS env var
     if (process.env.OPENROUTER_MODELS) {
-      const rawModels = process.env.OPENROUTER_MODELS
-        .split(',')
-        .map(m => m.trim())
-        .filter(m => m.length > 0); // Remove empty strings
-      
+      const rawModels = process.env.OPENROUTER_MODELS.split(',')
+        .map((m) => m.trim())
+        .filter((m) => m.length > 0); // Remove empty strings
+
       // Validate model format (should be provider/model or provider/model:variant)
       const validModels: string[] = [];
       const invalidModels: string[] = [];
-      
-      rawModels.forEach(model => {
+
+      rawModels.forEach((model) => {
         // Basic validation: should contain a slash and reasonable format
         if (model.includes('/') && model.length > 3 && !model.includes(' ')) {
           validModels.push(model);
@@ -41,43 +40,49 @@ class OpenRouterService {
           invalidModels.push(model);
         }
       });
-      
+
       if (invalidModels.length > 0) {
         logger.error(`❌ Invalid model names detected in OPENROUTER_MODELS:`, invalidModels);
-        logger.error('💡 Model format should be: provider/model-name or provider/model-name:variant');
+        logger.error(
+          '💡 Model format should be: provider/model-name or provider/model-name:variant'
+        );
         logger.error('🔗 Find valid models at: https://openrouter.ai/models');
-        
+
         if (validModels.length === 0) {
           logger.error('🚨 No valid models found! Using fallback models to prevent crash');
         } else {
-          logger.warn(`⚠️ Continuing with ${validModels.length} valid models, ignoring ${invalidModels.length} invalid ones`);
+          logger.warn(
+            `⚠️ Continuing with ${validModels.length} valid models, ignoring ${invalidModels.length} invalid ones`
+          );
         }
       }
-      
-      this.models = validModels.length > 0 ? validModels : [
-        // Emergency fallback if all models are invalid (no openai/gpt-oss-20b:free - outputs internal reasoning)
-        'z-ai/glm-4.5-air:free',
-        'qwen/qwen3-coder:free',
-        'mistralai/mistral-7b-instruct:free'
-      ];
-      
+
+      this.models =
+        validModels.length > 0
+          ? validModels
+          : [
+              // Emergency fallback if all models are invalid (no openai/gpt-oss-20b:free - outputs internal reasoning)
+              'z-ai/glm-4.5-air:free',
+              'qwen/qwen3-coder:free',
+              'mistralai/mistral-7b-instruct:free',
+            ];
+
       logger.info(`🎯 Using ${this.models.length} models:`, this.models);
-      
+
       if (validModels.length !== rawModels.length) {
         logger.warn(`⚠️ ${rawModels.length - validModels.length} invalid models were ignored`);
       }
-      
     } else {
       // Fallback to current free models for development (removed openai/gpt-oss-20b:free - outputs internal reasoning)
       this.models = [
         'z-ai/glm-4.5-air:free',
-        'qwen/qwen3-coder:free', 
+        'qwen/qwen3-coder:free',
         'mistralai/mistral-7b-instruct:free',
         'microsoft/phi-3-mini-128k-instruct:free',
         'meta-llama/llama-3.2-3b-instruct:free',
-        'google/gemma-2-9b-it:free'
+        'google/gemma-2-9b-it:free',
       ];
-      
+
       logger.warn('⚠️ OPENROUTER_MODELS not set, using fallback free models');
       logger.info('💡 Set OPENROUTER_MODELS="model1,model2,model3" for full control');
     }
@@ -107,15 +112,19 @@ class OpenRouterService {
   }
 
   async generateResponse(
-    userMessage: string, 
-    userId: string, 
+    userMessage: string,
+    userId: string,
     context?: string,
     messageId?: string
   ): Promise<string> {
     // DEPRECATED: This method should NOT exist - OpenRouter should be PURE
     // All message building should happen in Context Alchemy
-    logger.error('🚨 generateResponse should NOT be used - OpenRouter must be PURE. Use Context Alchemy!');
-    throw new Error('DEPRECATED: Use Context Alchemy to build messages, then call generateFromMessageChain directly');
+    logger.error(
+      '🚨 generateResponse should NOT be used - OpenRouter must be PURE. Use Context Alchemy!'
+    );
+    throw new Error(
+      'DEPRECATED: Use Context Alchemy to build messages, then call generateFromMessageChain directly'
+    );
   }
 
   async generateFromMessageChain(
@@ -124,17 +133,19 @@ class OpenRouterService {
     messageId?: string
   ): Promise<string> {
     const startTime = Date.now();
-    
+
     // Rotate through models for testing different tool usage performance
     const startIndex = this.currentModelIndex;
-    
+
     // Try each model starting from current rotation position
     for (let i = 0; i < this.models.length; i++) {
       const modelIndex = (startIndex + i) % this.models.length;
       const model = this.models[modelIndex];
-      
+
       try {
-        logger.info(`🤖 MODEL SELECTION: Using ${model} (${i+1}/${this.models.length}) for ${messages.length} messages`);
+        logger.info(
+          `🤖 MODEL SELECTION: Using ${model} (${i + 1}/${this.models.length}) for ${messages.length} messages`
+        );
 
         const completion = await this.client.chat.completions.create({
           model,
@@ -145,19 +156,21 @@ class OpenRouterService {
 
         const response = completion.choices[0]?.message?.content;
 
-        logger.info(`✅ MODEL RESPONSE: ${model} generated ${response?.length || 0} chars successfully`);
-        
+        logger.info(
+          `✅ MODEL RESPONSE: ${model} generated ${response?.length || 0} chars successfully`
+        );
+
         if (!response) {
           throw new Error('No response generated');
         }
 
         const responseTime = Date.now() - startTime;
-        
+
         // Extract token usage from API response
         const usage: TokenUsage = {
           prompt_tokens: completion.usage?.prompt_tokens || 0,
           completion_tokens: completion.usage?.completion_tokens || 0,
-          total_tokens: completion.usage?.total_tokens || 0
+          total_tokens: completion.usage?.total_tokens || 0,
         };
 
         // Check for credit/billing info in OpenRouter response
@@ -171,11 +184,11 @@ class OpenRouterService {
           credits_used: (completion as any).credits_used,
           credits_remaining: (completion as any).credits_remaining,
           generation_time: (completion as any).generation_time,
-          provider: (completion as any).provider
+          provider: (completion as any).provider,
         };
-        
+
         logger.info('💳 OpenRouter Credit Info:', creditInfo);
-        
+
         // Record credit info if available
         if (creditInfo.credits_remaining !== undefined || creditInfo.credits_used !== undefined) {
           await creditMonitor.recordCreditInfo(creditInfo);
@@ -185,7 +198,11 @@ class OpenRouterService {
         const estimatedCost = UsageTracker.calculateCost(model, usage);
 
         // Track costs in real-time cost monitor
-        const { shouldCheckCredits, warnings } = costMonitor.trackCall(usage.prompt_tokens, usage.completion_tokens, model);
+        const { shouldCheckCredits, warnings } = costMonitor.trackCall(
+          usage.prompt_tokens,
+          usage.completion_tokens,
+          model
+        );
 
         // Log warnings if any
         if (warnings.length > 0) {
@@ -203,42 +220,51 @@ class OpenRouterService {
             response_time_ms: responseTime,
             capabilities_detected: 0, // Will be updated by orchestrator
             capabilities_executed: 0, // Will be updated by orchestrator
-            capability_types: '',     // Will be updated by orchestrator
+            capability_types: '', // Will be updated by orchestrator
             success: true,
             prompt_tokens: usage.prompt_tokens,
             completion_tokens: usage.completion_tokens,
             total_tokens: usage.total_tokens,
-            estimated_cost: estimatedCost
-          }).catch(error => {
+            estimated_cost: estimatedCost,
+          }).catch((error) => {
             logger.error('Failed to record usage stats:', error);
           });
         }
 
         // Rotate to next model for testing different models' tool usage
         this.currentModelIndex = (this.currentModelIndex + 1) % this.models.length;
-        
-        logger.info(`✅ Generated response for user ${userId} using ${model} (${usage.total_tokens} tokens, $${estimatedCost.toFixed(4)})`);
+
+        logger.info(
+          `✅ Generated response for user ${userId} using ${model} (${usage.total_tokens} tokens, $${estimatedCost.toFixed(4)})`
+        );
         logger.info(`🔄 Rotated to next model: ${this.getCurrentModel()}`);
         return response.trim();
-
       } catch (error: unknown) {
         const errorMessage = error instanceof Error ? error.message : String(error);
         const errorStatus = (error as { status?: number }).status;
-        
+
         logger.warn(`❌ Model ${model} failed:`, {
           error: errorMessage,
           status: errorStatus,
           modelIndex: i + 1,
-          totalModels: this.models.length
+          totalModels: this.models.length,
         });
-        
+
         // Detect specific error types
-        if (errorStatus === 404 || errorMessage.includes('not found') || errorMessage.includes('does not exist')) {
-          logger.error(`🚨 Model "${model}" does not exist on OpenRouter! Check https://openrouter.ai/models`);
-        } else if (errorMessage.includes('credit') || 
-                   errorMessage.includes('billing') || 
-                   errorMessage.includes('quota') ||
-                   errorStatus === 402) {
+        if (
+          errorStatus === 404 ||
+          errorMessage.includes('not found') ||
+          errorMessage.includes('does not exist')
+        ) {
+          logger.error(
+            `🚨 Model "${model}" does not exist on OpenRouter! Check https://openrouter.ai/models`
+          );
+        } else if (
+          errorMessage.includes('credit') ||
+          errorMessage.includes('billing') ||
+          errorMessage.includes('quota') ||
+          errorStatus === 402
+        ) {
           logger.info('💳 Billing/credit error detected, trying next model...');
         } else if (errorStatus === 429) {
           logger.warn('🚦 Rate limit hit, trying next model...');
@@ -247,17 +273,17 @@ class OpenRouterService {
         } else {
           logger.warn('🔄 Unknown error, trying next model...');
         }
-        
+
         // For other errors, try next model
         if (i < this.models.length - 1) {
           continue;
         }
-        
+
         // Last model failed
         logger.error('💥 All models failed. Last error:', error);
       }
     }
-    
+
     // All models failed
     logger.error('🚨 All OpenRouter models failed, using fallback response');
     return "I'm Coach Artie! I'm having some technical difficulties right now, but I'm here to help. What can I assist you with today?";
@@ -294,7 +320,7 @@ class OpenRouterService {
           max_tokens: 4000,
           temperature: 0.7,
           stream: true, // Enable streaming
-          stream_options: { include_usage: true } // Request usage data in stream
+          stream_options: { include_usage: true }, // Request usage data in stream
         });
 
         let fullResponse = '';
@@ -332,7 +358,7 @@ class OpenRouterService {
             usage = {
               prompt_tokens: chunk.usage.prompt_tokens || 0,
               completion_tokens: chunk.usage.completion_tokens || 0,
-              total_tokens: chunk.usage.total_tokens || 0
+              total_tokens: chunk.usage.total_tokens || 0,
             };
           }
         }
@@ -342,12 +368,14 @@ class OpenRouterService {
         // If we didn't get usage data from stream, estimate it
         if (!usage) {
           logger.warn('⚠️ No usage data received from streaming API, estimating tokens');
-          const estimatedPromptTokens = Math.ceil(messages.reduce((total, msg) => total + msg.content.length, 0) / 4);
+          const estimatedPromptTokens = Math.ceil(
+            messages.reduce((total, msg) => total + msg.content.length, 0) / 4
+          );
           const estimatedCompletionTokens = Math.ceil(fullResponse.length / 4);
           usage = {
             prompt_tokens: estimatedPromptTokens,
             completion_tokens: estimatedCompletionTokens,
-            total_tokens: estimatedPromptTokens + estimatedCompletionTokens
+            total_tokens: estimatedPromptTokens + estimatedCompletionTokens,
           };
         }
 
@@ -355,7 +383,11 @@ class OpenRouterService {
         const estimatedCost = UsageTracker.calculateCost(model, usage);
 
         // Track costs in real-time cost monitor
-        const { shouldCheckCredits, warnings } = costMonitor.trackCall(usage.prompt_tokens, usage.completion_tokens, model);
+        const { shouldCheckCredits, warnings } = costMonitor.trackCall(
+          usage.prompt_tokens,
+          usage.completion_tokens,
+          model
+        );
 
         // Log warnings if any
         if (warnings.length > 0) {
@@ -378,8 +410,8 @@ class OpenRouterService {
             prompt_tokens: usage.prompt_tokens,
             completion_tokens: usage.completion_tokens,
             total_tokens: usage.total_tokens,
-            estimated_cost: estimatedCost
-          }).catch(error => {
+            estimated_cost: estimatedCost,
+          }).catch((error) => {
             logger.error('Failed to record streaming usage stats:', error);
           });
         }
@@ -387,32 +419,33 @@ class OpenRouterService {
         // Rotate to next model for testing different models' tool usage
         this.currentModelIndex = (this.currentModelIndex + 1) % this.models.length;
 
-        logger.info(`✅ Streaming completed for user ${userId} using ${model} (${usage.total_tokens} tokens, $${estimatedCost.toFixed(4)})`);
+        logger.info(
+          `✅ Streaming completed for user ${userId} using ${model} (${usage.total_tokens} tokens, $${estimatedCost.toFixed(4)})`
+        );
         logger.info(`🔄 Rotated to next model: ${this.getCurrentModel()}`);
         return fullResponse.trim();
-
       } catch (error: unknown) {
         const errorMessage = error instanceof Error ? error.message : String(error);
         const errorStatus = (error as { status?: number }).status;
-        
+
         logger.warn(`❌ Streaming with model ${model} failed:`, {
           error: errorMessage,
           status: errorStatus,
           modelIndex: i + 1,
-          totalModels: this.models.length
+          totalModels: this.models.length,
         });
-        
+
         // Try next model on failure
         if (i < this.models.length - 1) {
           continue;
         }
-        
+
         // Last model failed - fallback to regular generation
         logger.warn('📡 Streaming failed, falling back to regular generation');
         return await this.generateFromMessageChain(messages, userId);
       }
     }
-    
+
     // Fallback response
     logger.error('🚨 All streaming attempts failed');
     return "I'm Coach Artie! I'm having some technical difficulties with streaming, but I'm here to help. What can I assist you with today?";

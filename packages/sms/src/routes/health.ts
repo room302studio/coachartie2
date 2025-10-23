@@ -25,14 +25,14 @@ healthRouter.get('/', async (req, res) => {
     res.json({
       status: 'healthy',
       timestamp: new Date().toISOString(),
-      twilioConfigured: hasValidAuth
+      twilioConfigured: hasValidAuth,
     });
   } catch (error) {
     res.status(503).json({
       status: 'unhealthy',
       service: 'sms',
       timestamp: new Date().toISOString(),
-      error: error instanceof Error ? error.message : 'Unknown error'
+      error: error instanceof Error ? error.message : 'Unknown error',
     });
   }
 });

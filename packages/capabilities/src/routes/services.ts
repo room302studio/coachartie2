@@ -13,14 +13,14 @@ servicesRouter.get('/', async (req, res) => {
     res.json({
       success: true,
       services,
-      count: services.length
+      count: services.length,
     });
   } catch (error) {
     logger.error('Failed to get services:', error);
     res.status(500).json({
       success: false,
       error: 'Failed to get services',
-      details: error instanceof Error ? error.message : 'Unknown error'
+      details: error instanceof Error ? error.message : 'Unknown error',
     });
   }
 });
@@ -32,24 +32,24 @@ servicesRouter.get('/:serviceName', async (req, res) => {
   try {
     const { serviceName } = req.params;
     const service = await serviceDiscovery.findService(serviceName);
-    
+
     if (!service) {
       return res.status(404).json({
         success: false,
-        error: `Service '${serviceName}' not found`
+        error: `Service '${serviceName}' not found`,
       });
     }
-    
+
     res.json({
       success: true,
-      service
+      service,
     });
   } catch (error) {
     logger.error('Failed to get service:', error);
     res.status(500).json({
       success: false,
       error: 'Failed to get service',
-      details: error instanceof Error ? error.message : 'Unknown error'
+      details: error instanceof Error ? error.message : 'Unknown error',
     });
   }
 });
@@ -61,24 +61,24 @@ servicesRouter.get('/:serviceName/url', async (req, res) => {
   try {
     const { serviceName } = req.params;
     const url = await serviceDiscovery.getServiceUrl(serviceName);
-    
+
     if (!url) {
       return res.status(404).json({
         success: false,
-        error: `Service '${serviceName}' not found`
+        error: `Service '${serviceName}' not found`,
       });
     }
-    
+
     res.json({
       success: true,
-      url
+      url,
     });
   } catch (error) {
     logger.error('Failed to get service URL:', error);
     res.status(500).json({
       success: false,
       error: 'Failed to get service URL',
-      details: error instanceof Error ? error.message : 'Unknown error'
+      details: error instanceof Error ? error.message : 'Unknown error',
     });
   }
 });

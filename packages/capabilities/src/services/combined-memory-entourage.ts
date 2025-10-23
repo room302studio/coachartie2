@@ -6,15 +6,15 @@ import { TemporalMemoryEntourage } from './temporal-memory-entourage.js';
 
 /**
  * CombinedMemoryEntourage - Multi-layered memory recall with entourage pattern
- * 
+ *
  * Implements the "entourage of auto-insertion" philosophy by running multiple
  * memory search strategies in parallel and combining results intelligently.
- * 
+ *
  * Layers:
  * 1. Keyword-based search (fast, direct matches)
  * 2. Semantic similarity (contextual, conceptual matches)
  * 3. Temporal patterns (time-based relevance)
- * 
+ *
  * Future layers to add:
  * 4. Relationship mapping (connected memories)
  * 5. Pattern matching (behavioral insights)
@@ -23,17 +23,19 @@ export class CombinedMemoryEntourage implements MemoryEntourageInterface {
   private keywordEntourage: BasicKeywordMemoryEntourage;
   private semanticEntourage: SemanticMemoryEntourage;
   private temporalEntourage: TemporalMemoryEntourage;
-  
+
   constructor() {
     this.keywordEntourage = new BasicKeywordMemoryEntourage();
     this.semanticEntourage = new SemanticMemoryEntourage();
     this.temporalEntourage = new TemporalMemoryEntourage();
-    logger.info('🧠 CombinedMemoryEntourage: Initialized with keyword + semantic + temporal layers');
+    logger.info(
+      '🧠 CombinedMemoryEntourage: Initialized with keyword + semantic + temporal layers'
+    );
   }
 
   async getMemoryContext(
-    userMessage: string, 
-    userId: string, 
+    userMessage: string,
+    userId: string,
     options: {
       maxTokens?: number;
       priority?: 'speed' | 'accuracy' | 'comprehensive';
@@ -47,42 +49,52 @@ export class CombinedMemoryEntourage implements MemoryEntourageInterface {
         confidence: 1.0,
         memoryCount: 0,
         categories: ['minimal'],
-        memoryIds: []
+        memoryIds: [],
       };
     }
 
     try {
       logger.info('│ 🧠 Running 3-LAYER PARALLEL SEARCH:');
-      logger.info(`│ Priority Mode: ${options.priority || 'speed'} | Max Tokens: ${options.maxTokens || 800}`);
+      logger.info(
+        `│ Priority Mode: ${options.priority || 'speed'} | Max Tokens: ${options.maxTokens || 800}`
+      );
 
       // Calculate token budget for each layer
       const tokenBudget = this.calculateLayerTokenBudgets(options.maxTokens);
-      logger.info(`│ Token Split: Keyword=${tokenBudget.keyword}, Semantic=${tokenBudget.semantic}, Temporal=${tokenBudget.temporal}`);
+      logger.info(
+        `│ Token Split: Keyword=${tokenBudget.keyword}, Semantic=${tokenBudget.semantic}, Temporal=${tokenBudget.temporal}`
+      );
 
       // Run memory searches in parallel (entourage pattern)
       const startTime = Date.now();
       const [keywordResult, semanticResult, temporalResult] = await Promise.all([
         this.keywordEntourage.getMemoryContext(userMessage, userId, {
           ...options,
-          maxTokens: tokenBudget.keyword
+          maxTokens: tokenBudget.keyword,
         }),
         this.semanticEntourage.getMemoryContext(userMessage, userId, {
           ...options,
-          maxTokens: tokenBudget.semantic
+          maxTokens: tokenBudget.semantic,
         }),
         this.temporalEntourage.getMemoryContext(userMessage, userId, {
           ...options,
-          maxTokens: tokenBudget.temporal
-        })
+          maxTokens: tokenBudget.temporal,
+        }),
       ]);
       const parallelTime = Date.now() - startTime;
       logger.info(`│ ⚡ Parallel search completed in ${parallelTime}ms`);
 
       // Log individual layer results
       logger.info('│ ┌─ LAYER RESULTS ─────────────────────────────────────────┐');
-      logger.info(`│ │ 🔍 Keyword:  ${keywordResult.memoryCount} memories, ${(keywordResult.confidence * 100).toFixed(1)}% confidence`);
-      logger.info(`│ │ 🧠 Semantic: ${semanticResult.memoryCount} memories, ${(semanticResult.confidence * 100).toFixed(1)}% confidence`);
-      logger.info(`│ │ 📅 Temporal: ${temporalResult.memoryCount} memories, ${(temporalResult.confidence * 100).toFixed(1)}% confidence`);
+      logger.info(
+        `│ │ 🔍 Keyword:  ${keywordResult.memoryCount} memories, ${(keywordResult.confidence * 100).toFixed(1)}% confidence`
+      );
+      logger.info(
+        `│ │ 🧠 Semantic: ${semanticResult.memoryCount} memories, ${(semanticResult.confidence * 100).toFixed(1)}% confidence`
+      );
+      logger.info(
+        `│ │ 📅 Temporal: ${temporalResult.memoryCount} memories, ${(temporalResult.confidence * 100).toFixed(1)}% confidence`
+      );
       logger.info('│ └───────────────────────────────────────────────────────────┘');
 
       // Combine results intelligently
@@ -95,13 +107,14 @@ export class CombinedMemoryEntourage implements MemoryEntourageInterface {
       );
 
       logger.info(`│ 🎯 FUSION COMPLETE: ${combinedResult.memoryCount} total memories`);
-      logger.info(`│ Confidence: ${(combinedResult.confidence * 100).toFixed(1)}% | Categories: ${combinedResult.categories.join(', ')}`);
+      logger.info(
+        `│ Confidence: ${(combinedResult.confidence * 100).toFixed(1)}% | Categories: ${combinedResult.categories.join(', ')}`
+      );
 
       return combinedResult;
-
     } catch (error) {
       logger.error('❌ CombinedMemoryEntourage failed:', error);
-      
+
       // Graceful degradation: try keyword-only fallback
       try {
         logger.info('🔄 CombinedMemoryEntourage: Falling back to keyword-only search');
@@ -113,7 +126,7 @@ export class CombinedMemoryEntourage implements MemoryEntourageInterface {
           confidence: 0.0,
           memoryCount: 0,
           categories: ['error'],
-          memoryIds: []
+          memoryIds: [],
         };
       }
     }
@@ -122,9 +135,13 @@ export class CombinedMemoryEntourage implements MemoryEntourageInterface {
   /**
    * Calculate token budgets for each memory layer
    */
-  private calculateLayerTokenBudgets(maxTokens?: number): {keyword: number, semantic: number, temporal: number} {
+  private calculateLayerTokenBudgets(maxTokens?: number): {
+    keyword: number;
+    semantic: number;
+    temporal: number;
+  } {
     const totalBudget = maxTokens || 800;
-    
+
     // Allocate tokens based on search strategy strengths
     // Keyword: faster, more reliable for direct matches (50%)
     // Semantic: slower, better for conceptual matches (30%)
@@ -132,11 +149,11 @@ export class CombinedMemoryEntourage implements MemoryEntourageInterface {
     const keywordBudget = Math.floor(totalBudget * 0.5);
     const semanticBudget = Math.floor(totalBudget * 0.3);
     const temporalBudget = Math.floor(totalBudget * 0.2);
-    
+
     return {
       keyword: keywordBudget,
       semantic: semanticBudget,
-      temporal: temporalBudget
+      temporal: temporalBudget,
     };
   }
 
@@ -150,44 +167,63 @@ export class CombinedMemoryEntourage implements MemoryEntourageInterface {
     userMessage: string,
     options: any
   ): MemoryEntourageResult {
-    
     // Handle case where no layer found memories
-    if (keywordResult.memoryCount === 0 && semanticResult.memoryCount === 0 && temporalResult.memoryCount === 0) {
+    if (
+      keywordResult.memoryCount === 0 &&
+      semanticResult.memoryCount === 0 &&
+      temporalResult.memoryCount === 0
+    ) {
       return {
         content: '',
         confidence: 0.0,
         memoryCount: 0,
         categories: ['no_matches'],
-        memoryIds: []
+        memoryIds: [],
       };
     }
 
     // Handle cases where only one or two layers found memories
     const activeLayers = [];
-    if (keywordResult.memoryCount > 0) {activeLayers.push({name: 'keyword', result: keywordResult});}
-    if (semanticResult.memoryCount > 0) {activeLayers.push({name: 'semantic', result: semanticResult});}
-    if (temporalResult.memoryCount > 0) {activeLayers.push({name: 'temporal', result: temporalResult});}
+    if (keywordResult.memoryCount > 0) {
+      activeLayers.push({ name: 'keyword', result: keywordResult });
+    }
+    if (semanticResult.memoryCount > 0) {
+      activeLayers.push({ name: 'semantic', result: semanticResult });
+    }
+    if (temporalResult.memoryCount > 0) {
+      activeLayers.push({ name: 'temporal', result: temporalResult });
+    }
 
     if (activeLayers.length === 1) {
       return {
         ...activeLayers[0].result,
-        categories: [...activeLayers[0].result.categories, `${activeLayers[0].name}_only`]
+        categories: [...activeLayers[0].result.categories, `${activeLayers[0].name}_only`],
       };
     }
 
     // Multiple layers found memories - intelligent fusion
-    const fusedContent = this.fuseMemoryContent(keywordResult, semanticResult, temporalResult, options);
-    const fusedConfidence = this.fuseConfidenceScores(keywordResult, semanticResult, temporalResult);
+    const fusedContent = this.fuseMemoryContent(
+      keywordResult,
+      semanticResult,
+      temporalResult,
+      options
+    );
+    const fusedConfidence = this.fuseConfidenceScores(
+      keywordResult,
+      semanticResult,
+      temporalResult
+    );
     const fusedCategories = this.fuseCategories(keywordResult, semanticResult, temporalResult);
     const fusedMemoryIds = this.fuseMemoryIds(keywordResult, semanticResult, temporalResult);
-    const totalMemoryCount = keywordResult.memoryCount + semanticResult.memoryCount + temporalResult.memoryCount;
+    const totalMemoryCount =
+      keywordResult.memoryCount + semanticResult.memoryCount + temporalResult.memoryCount;
 
     return {
       content: fusedContent,
       confidence: fusedConfidence,
       memoryCount: totalMemoryCount,
       categories: fusedCategories,
-      memoryIds: fusedMemoryIds
+      memoryIds: fusedMemoryIds,
     };
   }
 
@@ -204,17 +240,21 @@ export class CombinedMemoryEntourage implements MemoryEntourageInterface {
     const semanticContent = semanticResult.content.trim();
     const temporalContent = temporalResult.content.trim();
 
-    const contents = [keywordContent, semanticContent, temporalContent].filter(c => c.length > 0);
-    if (contents.length === 0) {return '';}
-    if (contents.length === 1) {return contents[0];}
+    const contents = [keywordContent, semanticContent, temporalContent].filter((c) => c.length > 0);
+    if (contents.length === 0) {
+      return '';
+    }
+    if (contents.length === 1) {
+      return contents[0];
+    }
 
     // Apply stochastic fusion patterns for variety
     const fusionPatterns = [
-      'layered',        // Layer content by type
-      'interleaved',    // Mix content naturally
-      'comparative',    // Present as different perspectives
-      'synthesized',    // Combine into unified narrative
-      'temporal_flow'   // Organize by temporal context
+      'layered', // Layer content by type
+      'interleaved', // Mix content naturally
+      'comparative', // Present as different perspectives
+      'synthesized', // Combine into unified narrative
+      'temporal_flow', // Organize by temporal context
     ];
 
     const pattern = fusionPatterns[Math.floor(Math.random() * fusionPatterns.length)];
@@ -223,31 +263,49 @@ export class CombinedMemoryEntourage implements MemoryEntourageInterface {
     switch (pattern) {
       case 'layered':
         let layered = '';
-        if (keywordContent) {layered += keywordContent;}
-        if (semanticContent) {layered += layered ? `\n\nRelated: ${semanticContent.toLowerCase()}` : semanticContent;}
-        if (temporalContent) {layered += layered ? `\n\nTiming: ${temporalContent.toLowerCase()}` : temporalContent;}
+        if (keywordContent) {
+          layered += keywordContent;
+        }
+        if (semanticContent) {
+          layered += layered ? `\n\nRelated: ${semanticContent.toLowerCase()}` : semanticContent;
+        }
+        if (temporalContent) {
+          layered += layered ? `\n\nTiming: ${temporalContent.toLowerCase()}` : temporalContent;
+        }
         return layered;
-        
+
       case 'interleaved':
         return contents.join(' ');
-        
+
       case 'comparative':
         let comparative = '';
-        if (keywordContent) {comparative += `Direct: ${keywordContent}`;}
-        if (semanticContent) {comparative += comparative ? `\nConceptual: ${semanticContent}` : `Conceptual: ${semanticContent}`;}
-        if (temporalContent) {comparative += comparative ? `\nTemporal: ${temporalContent}` : `Temporal: ${temporalContent}`;}
+        if (keywordContent) {
+          comparative += `Direct: ${keywordContent}`;
+        }
+        if (semanticContent) {
+          comparative += comparative
+            ? `\nConceptual: ${semanticContent}`
+            : `Conceptual: ${semanticContent}`;
+        }
+        if (temporalContent) {
+          comparative += comparative
+            ? `\nTemporal: ${temporalContent}`
+            : `Temporal: ${temporalContent}`;
+        }
         return comparative;
-        
+
       case 'synthesized':
         return `From what I remember: ${contents.join('. This connects to ')}.`;
-        
+
       case 'temporal_flow':
         if (temporalContent) {
-          const others = [keywordContent, semanticContent].filter(c => c.length > 0);
-          return others.length > 0 ? `${temporalContent} ${others.join('. Also, ')}.` : temporalContent;
+          const others = [keywordContent, semanticContent].filter((c) => c.length > 0);
+          return others.length > 0
+            ? `${temporalContent} ${others.join('. Also, ')}.`
+            : temporalContent;
         }
         return contents.join('. ');
-        
+
       default:
         return contents.join('\n');
     }
@@ -262,23 +320,26 @@ export class CombinedMemoryEntourage implements MemoryEntourageInterface {
     temporalResult: MemoryEntourageResult
   ): number {
     // Weight confidence scores based on reliability and complementarity
-    const keywordWeight = 0.5;  // Most reliable for direct matches
+    const keywordWeight = 0.5; // Most reliable for direct matches
     const semanticWeight = 0.3; // Good for conceptual connections
     const temporalWeight = 0.2; // Excellent for context timing
-    
-    const fusedConfidence = 
-      (keywordResult.confidence * keywordWeight) + 
-      (semanticResult.confidence * semanticWeight) +
-      (temporalResult.confidence * temporalWeight);
-    
+
+    const fusedConfidence =
+      keywordResult.confidence * keywordWeight +
+      semanticResult.confidence * semanticWeight +
+      temporalResult.confidence * temporalWeight;
+
     // Boost confidence based on convergent validation (multiple layers finding memories)
-    const activeLayers = [keywordResult, semanticResult, temporalResult].filter(r => r.memoryCount > 0).length;
-    const convergenceBoost = {
-      1: 0,     // Single layer
-      2: 0.1,   // Two layers agree
-      3: 0.15   // All three layers agree - highest confidence
-    }[activeLayers] || 0;
-    
+    const activeLayers = [keywordResult, semanticResult, temporalResult].filter(
+      (r) => r.memoryCount > 0
+    ).length;
+    const convergenceBoost =
+      {
+        1: 0, // Single layer
+        2: 0.1, // Two layers agree
+        3: 0.15, // All three layers agree - highest confidence
+      }[activeLayers] || 0;
+
     return Math.min(1.0, fusedConfidence + convergenceBoost);
   }
 
@@ -294,9 +355,9 @@ export class CombinedMemoryEntourage implements MemoryEntourageInterface {
     const allMemoryIds = new Set([
       ...(keywordResult.memoryIds || []),
       ...(semanticResult.memoryIds || []),
-      ...(temporalResult.memoryIds || [])
+      ...(temporalResult.memoryIds || []),
     ]);
-    
+
     return Array.from(allMemoryIds);
   }
 
@@ -311,25 +372,31 @@ export class CombinedMemoryEntourage implements MemoryEntourageInterface {
     const allCategories = new Set([
       ...keywordResult.categories,
       ...semanticResult.categories,
-      ...temporalResult.categories
+      ...temporalResult.categories,
     ]);
-    
+
     // Add fusion-specific categories
     allCategories.add('three_layer_combined');
-    
+
     // Add convergence categories based on which layers found memories
     const activeLayers = [];
-    if (keywordResult.memoryCount > 0) {activeLayers.push('keyword');}
-    if (semanticResult.memoryCount > 0) {activeLayers.push('semantic');}
-    if (temporalResult.memoryCount > 0) {activeLayers.push('temporal');}
-    
+    if (keywordResult.memoryCount > 0) {
+      activeLayers.push('keyword');
+    }
+    if (semanticResult.memoryCount > 0) {
+      activeLayers.push('semantic');
+    }
+    if (temporalResult.memoryCount > 0) {
+      activeLayers.push('temporal');
+    }
+
     if (activeLayers.length === 3) {
       allCategories.add('full_convergence'); // All three methods found memories
     } else if (activeLayers.length === 2) {
       allCategories.add('partial_convergence');
       allCategories.add(`${activeLayers.join('_')}_convergence`);
     }
-    
+
     return Array.from(allCategories);
   }
 

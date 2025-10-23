@@ -15,7 +15,7 @@ router.get('/status', (req: Request, res: Response) => {
   try {
     const stats = securityMonitor.getSecurityStats();
     const trends = securityMonitor.checkSecurityTrends();
-    
+
     res.json({
       status: 'monitoring_active',
       timestamp: new Date().toISOString(),
@@ -23,10 +23,14 @@ router.get('/status', (req: Request, res: Response) => {
       trends: trends,
       security_posture: {
         critical_incidents_24h: trends.criticalIncidents,
-        overall_threat_level: trends.criticalIncidents > 0 ? 'high' : 
-                              trends.highIncidentsRecent > 10 ? 'medium' : 'low',
-        pattern_trend_alert: trends.patternTrendAlert
-      }
+        overall_threat_level:
+          trends.criticalIncidents > 0
+            ? 'high'
+            : trends.highIncidentsRecent > 10
+              ? 'medium'
+              : 'low',
+        pattern_trend_alert: trends.patternTrendAlert,
+      },
     });
   } catch (error) {
     logger.error('Failed to get security status:', error);
@@ -40,9 +44,9 @@ router.get('/status', (req: Request, res: Response) => {
 router.get('/incidents', (req: Request, res: Response) => {
   try {
     const stats = securityMonitor.getSecurityStats();
-    
+
     // Return anonymized recent incidents
-    const incidents = stats.recentIncidents.map(incident => ({
+    const incidents = stats.recentIncidents.map((incident) => ({
       timestamp: incident.timestamp,
       incidentType: incident.incidentType,
       severity: incident.severity,
@@ -50,11 +54,11 @@ router.get('/incidents', (req: Request, res: Response) => {
       reductionPercent: incident.reductionPercent,
       // Don't include userId/messageId for privacy
     }));
-    
+
     res.json({
       incidents,
       total_incidents: stats.totalIncidents,
-      incident_summary: stats.incidentsByType
+      incident_summary: stats.incidentsByType,
     });
   } catch (error) {
     logger.error('Failed to get security incidents:', error);
@@ -68,7 +72,7 @@ router.get('/incidents', (req: Request, res: Response) => {
 router.get('/patterns', (req: Request, res: Response) => {
   try {
     const stats = securityMonitor.getSecurityStats();
-    
+
     res.json({
       top_patterns: stats.topPatterns,
       pattern_analysis: {
@@ -76,7 +80,7 @@ router.get('/patterns', (req: Request, res: Response) => {
         pattern_diversity: stats.topPatterns.length,
         detection_coverage: [
           'analysis_leak',
-          'assistant_commentary', 
+          'assistant_commentary',
           'assistant_final_marker',
           'thinking_tags',
           'debug_output',
@@ -84,9 +88,9 @@ router.get('/patterns', (req: Request, res: Response) => {
           'json_leak',
           'arrow_fragments',
           'colon_fragments',
-          'xml_debug_tags'
-        ].length
-      }
+          'xml_debug_tags',
+        ].length,
+      },
     });
   } catch (error) {
     logger.error('Failed to get security patterns:', error);

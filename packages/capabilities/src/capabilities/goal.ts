@@ -38,11 +38,13 @@ export class GoalService {
   }
 
   async initializeDatabase(): Promise<void> {
-    if (this.dbReady) {return;}
+    if (this.dbReady) {
+      return;
+    }
 
     try {
       const db = await getDatabase();
-      
+
       // Create goals table
       await db.exec(`
         CREATE TABLE IF NOT EXISTS goals (
@@ -73,19 +75,24 @@ export class GoalService {
     }
   }
 
-  async setGoal(userId: string, objective: string, deadline?: string, priority: number = 5): Promise<string> {
+  async setGoal(
+    userId: string,
+    objective: string,
+    deadline?: string,
+    priority: number = 5
+  ): Promise<string> {
     await this.initializeDatabase();
 
     try {
       const db = await getDatabase();
-      
+
       // Validate deadline if provided
       if (deadline) {
         const deadlineDate = new Date(deadline);
         if (isNaN(deadlineDate.getTime())) {
           return '❌ Invalid deadline format. Use ISO format like "2024-12-31T14:00:00Z" or "2024-12-31"';
         }
-        
+
         // Warn about past deadlines but still accept them
         if (deadlineDate < new Date()) {
           logger.warn(`Goal deadline is in the past: ${deadline}`);
@@ -95,17 +102,21 @@ export class GoalService {
       // Clamp priority to valid range
       const validPriority = Math.max(1, Math.min(10, priority));
 
-      const result = await db.run(`
+      const result = await db.run(
+        `
         INSERT INTO goals (user_id, objective, deadline, priority)
         VALUES (?, ?, ?, ?)
-      `, [userId, objective, deadline || null, validPriority]);
+      `,
+        [userId, objective, deadline || null, validPriority]
+      );
 
       const goalId = result.lastID!;
       logger.info(`🎯 Created goal for user ${userId}: ${objective}`);
 
       const deadlineText = deadline ? ` by ${new Date(deadline).toLocaleDateString()}` : '';
-      const pastWarning = deadline && new Date(deadline) < new Date() ? ' ⚠️ Note: deadline is in the past' : '';
-      
+      const pastWarning =
+        deadline && new Date(deadline) < new Date() ? ' ⚠️ Note: deadline is in the past' : '';
+
       return `✅ Goal set: "${objective}" (ID: ${goalId}, priority: ${validPriority}/10${deadlineText})${pastWarning}`;
     } catch (error) {
       logger.error('❌ Failed to set goal:', error);
@@ -118,8 +129,9 @@ export class GoalService {
 
     try {
       const db = await getDatabase();
-      
-      const goals = await db.all(`
+
+      const goals = await db.all(
+        `
         SELECT * FROM goals 
         WHERE user_id = ? AND status != 'completed' AND status != 'cancelled'
         ORDER BY 
@@ -127,38 +139,42 @@ export class GoalService {
           deadline ASC,
           priority DESC,
           created_at ASC
-      `, [userId]);
+      `,
+        [userId]
+      );
 
       if (goals.length === 0) {
         return '📝 No active goals found. Set a goal with: <capability name="goal" action="set" objective="Your goal here" />';
       }
 
-      const formattedGoals = goals.map((goal: GoalRow) => {
-        let deadlineText = '';
-        if (goal.deadline) {
-          const deadlineDate = new Date(goal.deadline);
-          const now = new Date();
-          const timeDiff = deadlineDate.getTime() - now.getTime();
-          const daysDiff = Math.ceil(timeDiff / (1000 * 60 * 60 * 24));
-          const hoursDiff = Math.ceil(timeDiff / (1000 * 60 * 60));
-          
-          if (daysDiff === 0) {
-            deadlineText = ` 📅 Due: Today (${hoursDiff > 0 ? `in ${hoursDiff}h` : 'overdue'})`;
-          } else if (daysDiff === 1) {
-            deadlineText = ` 📅 Due: Tomorrow`;
-          } else if (daysDiff > 0) {
-            deadlineText = ` 📅 Due: ${deadlineDate.toLocaleDateString()} (in ${daysDiff} days)`;
-          } else {
-            deadlineText = ` 📅 Due: ${deadlineDate.toLocaleDateString()} (${Math.abs(daysDiff)} days overdue)`;
+      const formattedGoals = goals
+        .map((goal: GoalRow) => {
+          let deadlineText = '';
+          if (goal.deadline) {
+            const deadlineDate = new Date(goal.deadline);
+            const now = new Date();
+            const timeDiff = deadlineDate.getTime() - now.getTime();
+            const daysDiff = Math.ceil(timeDiff / (1000 * 60 * 60 * 24));
+            const hoursDiff = Math.ceil(timeDiff / (1000 * 60 * 60));
+
+            if (daysDiff === 0) {
+              deadlineText = ` 📅 Due: Today (${hoursDiff > 0 ? `in ${hoursDiff}h` : 'overdue'})`;
+            } else if (daysDiff === 1) {
+              deadlineText = ` 📅 Due: Tomorrow`;
+            } else if (daysDiff > 0) {
+              deadlineText = ` 📅 Due: ${deadlineDate.toLocaleDateString()} (in ${daysDiff} days)`;
+            } else {
+              deadlineText = ` 📅 Due: ${deadlineDate.toLocaleDateString()} (${Math.abs(daysDiff)} days overdue)`;
+            }
           }
-        }
-        
-        const priority = '⭐'.repeat(Math.min(goal.priority, 5));
-        const statusIcon = goal.status === 'in_progress' ? '🔄' : 
-                          goal.status === 'blocked' ? '🚫' : '📋';
-        
-        return `${statusIcon} **${goal.objective}** ${priority} (ID: ${goal.id})${deadlineText}`;
-      }).join('\n');
+
+          const priority = '⭐'.repeat(Math.min(goal.priority, 5));
+          const statusIcon =
+            goal.status === 'in_progress' ? '🔄' : goal.status === 'blocked' ? '🚫' : '📋';
+
+          return `${statusIcon} **${goal.objective}** ${priority} (ID: ${goal.id})${deadlineText}`;
+        })
+        .join('\n');
 
       return `🎯 Your active goals:\n\n${formattedGoals}`;
     } catch (error) {
@@ -172,11 +188,14 @@ export class GoalService {
 
     try {
       const db = await getDatabase();
-      
+
       // First check if goal exists and belongs to user
-      const existingGoal = await db.get(`
+      const existingGoal = await db.get(
+        `
         SELECT * FROM goals WHERE id = ? AND user_id = ?
-      `, [goalId, userId]);
+      `,
+        [goalId, userId]
+      );
 
       if (!existingGoal) {
         return 'Goal not found';
@@ -194,7 +213,7 @@ export class GoalService {
       if (status) {
         updates.push('status = ?');
         values.push(status);
-        
+
         // Set completed_at if marking as completed
         if (status === 'completed') {
           updates.push('completed_at = CURRENT_TIMESTAMP');
@@ -204,13 +223,16 @@ export class GoalService {
       updates.push('updated_at = CURRENT_TIMESTAMP');
       values.push(goalId, userId);
 
-      await db.run(`
+      await db.run(
+        `
         UPDATE goals SET ${updates.join(', ')}
         WHERE id = ? AND user_id = ?
-      `, values);
+      `,
+        values
+      );
 
       logger.info(`🎯 Updated goal ${goalId} for user ${userId}`);
-      
+
       const statusText = status ? ` Status: ${status}` : '';
       return `✅ Goal "${existingGoal.objective}" updated.${statusText}`;
     } catch (error) {
@@ -224,24 +246,30 @@ export class GoalService {
 
     try {
       const db = await getDatabase();
-      
+
       // First check if goal exists and belongs to user
-      const existingGoal = await db.get(`
+      const existingGoal = await db.get(
+        `
         SELECT * FROM goals WHERE id = ? AND user_id = ?
-      `, [goalId, userId]);
+      `,
+        [goalId, userId]
+      );
 
       if (!existingGoal) {
         return 'Goal not found';
       }
 
-      await db.run(`
+      await db.run(
+        `
         UPDATE goals 
         SET status = 'completed', completed_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
         WHERE id = ? AND user_id = ?
-      `, [goalId, userId]);
+      `,
+        [goalId, userId]
+      );
 
       logger.info(`🎯 Completed goal ${goalId} for user ${userId}: ${existingGoal.objective}`);
-      
+
       return `🎉 Congratulations! Completed goal: "${existingGoal.objective}"`;
     } catch (error) {
       logger.error('❌ Failed to complete goal:', error);
@@ -254,8 +282,9 @@ export class GoalService {
 
     try {
       const db = await getDatabase();
-      
-      const goals = await db.all(`
+
+      const goals = await db.all(
+        `
         SELECT * FROM goals 
         WHERE user_id = ? 
         AND (
@@ -264,7 +293,9 @@ export class GoalService {
         )
         ORDER BY 
           CASE WHEN completed_at IS NOT NULL THEN completed_at ELSE updated_at END DESC
-      `, [userId]);
+      `,
+        [userId]
+      );
 
       if (goals.length === 0) {
         return `📈 No goal activity in the past ${days} days. Set some goals to build momentum!`;
@@ -273,16 +304,23 @@ export class GoalService {
       const completed = goals.filter((g: GoalRow) => g.status === 'completed').length;
       const total = goals.length;
 
-      const formattedGoals = goals.map((goal: GoalRow) => {
-        const date = goal.completed_at ? 
-          new Date(goal.completed_at).toLocaleDateString() :
-          new Date(goal.updated_at).toLocaleDateString();
-        const statusIcon = goal.status === 'completed' ? '✅' : 
-                          goal.status === 'in_progress' ? '🔄' : 
-                          goal.status === 'blocked' ? '🚫' : '📋';
-        
-        return `${statusIcon} **${goal.objective}** (${date})`;
-      }).join('\n');
+      const formattedGoals = goals
+        .map((goal: GoalRow) => {
+          const date = goal.completed_at
+            ? new Date(goal.completed_at).toLocaleDateString()
+            : new Date(goal.updated_at).toLocaleDateString();
+          const statusIcon =
+            goal.status === 'completed'
+              ? '✅'
+              : goal.status === 'in_progress'
+                ? '🔄'
+                : goal.status === 'blocked'
+                  ? '🚫'
+                  : '📋';
+
+          return `${statusIcon} **${goal.objective}** (${date})`;
+        })
+        .join('\n');
 
       return `📈 Goal activity (past ${days} days): ${completed}/${total} completed\n\n${formattedGoals}`;
     } catch (error) {
@@ -308,10 +346,10 @@ async function handleGoalAction(params: GoalParams, content?: string): Promise<s
         if (!objective) {
           return '❌ Please provide an objective. Example: <capability name="goal" action="set" objective="Complete project" />';
         }
-        
+
         const deadline = params.deadline ? String(params.deadline) : undefined;
         const priority = params.priority ? parseInt(String(params.priority)) || 5 : 5;
-        
+
         return await goalService.setGoal(String(user_id), String(objective), deadline, priority);
       }
 
@@ -324,7 +362,7 @@ async function handleGoalAction(params: GoalParams, content?: string): Promise<s
         if (!goalId) {
           return '❌ Please provide a goal_id. Example: <capability name="goal" action="update" goal_id="123" status="in_progress" />';
         }
-        
+
         const status = params.status ? String(params.status) : undefined;
         return await goalService.updateGoal(String(user_id), parseInt(String(goalId)), status);
       }
@@ -334,7 +372,7 @@ async function handleGoalAction(params: GoalParams, content?: string): Promise<s
         if (!goalId) {
           return '❌ Please provide a goal_id. Example: <capability name="goal" action="complete" goal_id="123" />';
         }
-        
+
         return await goalService.completeGoal(String(user_id), parseInt(String(goalId)));
       }
 
@@ -365,6 +403,6 @@ export const goalCapability: RegisteredCapability = {
     '<capability name="goal" action="check" />',
     '<capability name="goal" action="update" goal_id="123" status="in_progress" />',
     '<capability name="goal" action="complete" goal_id="123" />',
-    '<capability name="goal" action="history" days="7" />'
-  ]
+    '<capability name="goal" action="history" days="7" />',
+  ],
 };

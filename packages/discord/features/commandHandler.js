@@ -57,13 +57,11 @@ async function handleThreadCommand(interaction) {
           const embed = createResponseEmbed({
             title: '📝 Thread Summary',
             description: summary,
-            fields: shouldRename
-              ? [{ name: 'New Thread Title', value: suggestedTitle }]
-              : [],
+            fields: shouldRename ? [{ name: 'New Thread Title', value: suggestedTitle }] : [],
           });
           return interaction.editReply({ embeds: [embed] });
         },
-        error => {
+        (error) => {
           logger.error('Summary generation failed:', error);
           return interaction.editReply({
             content: `Failed to generate summary: ${error.message}`,
@@ -78,7 +76,7 @@ async function handleThreadCommand(interaction) {
       const result = await archiveThreadWithSummary(interaction.channel);
 
       result.match(
-        summary => {
+        (summary) => {
           const embed = createResponseEmbed({
             title: '🗄️ Thread Archived',
             description: 'Thread archived with summary:',
@@ -86,7 +84,7 @@ async function handleThreadCommand(interaction) {
           });
           return interaction.editReply({ embeds: [embed] });
         },
-        error => {
+        (error) => {
           logger.error('Archive failed:', error);
           return interaction.editReply({
             content: `Failed to archive thread: ${error.message}`,

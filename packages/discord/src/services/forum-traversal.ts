@@ -60,8 +60,8 @@ export class ForumTraversalService {
       const channels = await guild.channels.fetch();
 
       const forums = channels
-        .filter(channel => channel?.type === ChannelType.GuildForum)
-        .map(channel => channel as ForumChannel);
+        .filter((channel) => channel?.type === ChannelType.GuildForum)
+        .map((channel) => channel as ForumChannel);
 
       logger.info(`Found ${forums.length} forum channels in guild ${guild.name}`);
       return forums;
@@ -77,7 +77,7 @@ export class ForumTraversalService {
    */
   async getThreadsInForum(forumId: string): Promise<ThreadChannel[]> {
     try {
-      const forum = await this.client.channels.fetch(forumId) as ForumChannel;
+      const forum = (await this.client.channels.fetch(forumId)) as ForumChannel;
 
       if (forum.type !== ChannelType.GuildForum) {
         throw new Error(`Channel ${forumId} is not a forum channel`);
@@ -89,12 +89,11 @@ export class ForumTraversalService {
       // Fetch archived threads
       const archivedThreads = await forum.threads.fetchArchived();
 
-      const allThreads = [
-        ...activeThreads.threads.values(),
-        ...archivedThreads.threads.values()
-      ];
+      const allThreads = [...activeThreads.threads.values(), ...archivedThreads.threads.values()];
 
-      logger.info(`Found ${allThreads.length} threads in forum ${forum.name} (${activeThreads.threads.size} active, ${archivedThreads.threads.size} archived)`);
+      logger.info(
+        `Found ${allThreads.length} threads in forum ${forum.name} (${activeThreads.threads.size} active, ${archivedThreads.threads.size} archived)`
+      );
       return allThreads;
     } catch (error) {
       logger.error(`Failed to fetch threads in forum ${forumId}:`, error);
@@ -108,7 +107,7 @@ export class ForumTraversalService {
    */
   async getMessagesInThread(threadId: string, limit?: number): Promise<Message[]> {
     try {
-      const thread = await this.client.channels.fetch(threadId) as ThreadChannel;
+      const thread = (await this.client.channels.fetch(threadId)) as ThreadChannel;
 
       if (!thread.isThread()) {
         throw new Error(`Channel ${threadId} is not a thread`);
@@ -121,7 +120,7 @@ export class ForumTraversalService {
       while (true) {
         const batch = await thread.messages.fetch({
           limit: limit ? Math.min(batchSize, limit - messages.length) : batchSize,
-          before: lastMessageId
+          before: lastMessageId,
         });
 
         if (batch.size === 0) break;
@@ -149,7 +148,7 @@ export class ForumTraversalService {
    */
   async getThreadData(threadId: string): Promise<ForumThreadData> {
     try {
-      const thread = await this.client.channels.fetch(threadId) as ThreadChannel;
+      const thread = (await this.client.channels.fetch(threadId)) as ThreadChannel;
       const messages = await this.getMessagesInThread(threadId);
 
       // Get thread owner info
@@ -168,8 +167,8 @@ export class ForumTraversalService {
         messageCount: messages.length,
         isLocked: thread.locked || false,
         isArchived: thread.archived || false,
-        messages: messages.map(msg => this.formatMessage(msg)),
-        starterMessage: starterMessage ? this.formatMessage(starterMessage) : undefined
+        messages: messages.map((msg) => this.formatMessage(msg)),
+        starterMessage: starterMessage ? this.formatMessage(starterMessage) : undefined,
       };
 
       logger.info(`Compiled thread data for "${thread.name}" (${messages.length} messages)`);
@@ -185,28 +184,32 @@ export class ForumTraversalService {
    */
   async getForumSummary(forumId: string): Promise<ForumSummary> {
     try {
-      const forum = await this.client.channels.fetch(forumId) as ForumChannel;
+      const forum = (await this.client.channels.fetch(forumId)) as ForumChannel;
       const threads = await this.getThreadsInForum(forumId);
 
       logger.info(`Compiling data for ${threads.length} threads in forum ${forum.name}...`);
 
-      const threadDataPromises = threads.map(thread =>
-        this.getThreadData(thread.id).catch(error => {
+      const threadDataPromises = threads.map((thread) =>
+        this.getThreadData(thread.id).catch((error) => {
           logger.warn(`Failed to fetch data for thread ${thread.name}:`, error);
           return null;
         })
       );
 
-      const threadData = (await Promise.all(threadDataPromises)).filter((t): t is ForumThreadData => t !== null);
+      const threadData = (await Promise.all(threadDataPromises)).filter(
+        (t): t is ForumThreadData => t !== null
+      );
 
       const summary: ForumSummary = {
         forumId: forum.id,
         forumName: forum.name,
         threadCount: threadData.length,
-        threads: threadData
+        threads: threadData,
       };
 
-      logger.info(`Forum summary complete for ${forum.name}: ${threadData.length} threads processed`);
+      logger.info(
+        `Forum summary complete for ${forum.name}: ${threadData.length} threads processed`
+      );
       return summary;
     } catch (error) {
       logger.error(`Failed to create forum summary for ${forumId}:`, error);
@@ -224,11 +227,11 @@ export class ForumTraversalService {
       authorName: message.author.username,
       content: message.content,
       createdAt: message.createdAt,
-      attachments: message.attachments.map(att => att.url),
-      reactions: message.reactions.cache.map(reaction => ({
+      attachments: message.attachments.map((att) => att.url),
+      reactions: message.reactions.cache.map((reaction) => ({
         emoji: reaction.emoji.name || reaction.emoji.toString(),
-        count: reaction.count
-      }))
+        count: reaction.count,
+      })),
     };
   }
 }
@@ -247,7 +250,9 @@ export function initializeForumTraversal(client: Client): ForumTraversalService 
 
 export function getForumTraversal(): ForumTraversalService {
   if (!forumTraversalService) {
-    throw new Error('Forum traversal service not initialized. Call initializeForumTraversal first.');
+    throw new Error(
+      'Forum traversal service not initialized. Call initializeForumTraversal first.'
+    );
   }
   return forumTraversalService;
 }

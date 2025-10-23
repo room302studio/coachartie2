@@ -11,7 +11,9 @@ export function getEmailTransporter(): nodemailer.Transporter {
     const pass = process.env.EMAIL_PASS;
 
     if (!host || !user || !pass) {
-      throw new Error('Missing email configuration: EMAIL_HOST, EMAIL_USER, and EMAIL_PASS required');
+      throw new Error(
+        'Missing email configuration: EMAIL_HOST, EMAIL_USER, and EMAIL_PASS required'
+      );
     }
 
     emailTransporter = nodemailer.createTransport({
@@ -20,8 +22,8 @@ export function getEmailTransporter(): nodemailer.Transporter {
       secure: port === 465, // true for 465, false for other ports
       auth: {
         user,
-        pass
-      }
+        pass,
+      },
     });
 
     logger.info('Email transporter initialized', { host, port, user });
@@ -51,7 +53,7 @@ export async function sendEmail(options: EmailOptions): Promise<string> {
       to: options.to,
       subject: options.subject,
       text: options.text,
-      html: options.html
+      html: options.html,
     };
 
     const result = await transporter.sendMail(mailOptions);
@@ -59,11 +61,10 @@ export async function sendEmail(options: EmailOptions): Promise<string> {
     logger.info(`Email sent successfully`, {
       to: options.to,
       subject: options.subject,
-      messageId: result.messageId
+      messageId: result.messageId,
     });
 
     return result.messageId;
-
   } catch (error) {
     logger.error('Failed to send email:', error);
     throw error;

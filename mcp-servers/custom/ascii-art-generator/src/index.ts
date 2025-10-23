@@ -10,7 +10,7 @@ import {
 /**
  * ASCII Art Generator MCP Server 🎨
  * Generate ASCII art from text, create banners, draw shapes, and make fun text-based designs
- * 
+ *
  * This server provides tools for creating various types of ASCII art without any API dependencies
  */
 
@@ -53,8 +53,8 @@ class AsciiArtGeneratorMCPServer {
                   type: 'string',
                   enum: ['block', 'bubble', 'thin', 'thick'],
                   description: 'ASCII banner style',
-                  default: 'block'
-                }
+                  default: 'block',
+                },
               },
               required: ['text'],
             },
@@ -69,25 +69,25 @@ class AsciiArtGeneratorMCPServer {
                   type: 'number',
                   description: 'Width of the box',
                   minimum: 3,
-                  maximum: 100
+                  maximum: 100,
                 },
                 height: {
                   type: 'number',
                   description: 'Height of the box',
                   minimum: 3,
-                  maximum: 50
+                  maximum: 50,
                 },
                 style: {
                   type: 'string',
                   enum: ['single', 'double', 'thick', 'rounded', 'dashed'],
                   description: 'Box border style',
-                  default: 'single'
+                  default: 'single',
                 },
                 fill: {
                   type: 'string',
                   description: 'Text to put inside the box (optional)',
-                  maxLength: 200
-                }
+                  maxLength: 200,
+                },
               },
               required: ['width', 'height'],
             },
@@ -101,20 +101,20 @@ class AsciiArtGeneratorMCPServer {
                 shape: {
                   type: 'string',
                   enum: ['triangle', 'diamond', 'circle', 'star', 'heart', 'arrow'],
-                  description: 'Type of shape to draw'
+                  description: 'Type of shape to draw',
                 },
                 size: {
                   type: 'number',
                   description: 'Size of the shape',
                   minimum: 3,
                   maximum: 25,
-                  default: 5
+                  default: 5,
                 },
                 filled: {
                   type: 'boolean',
                   description: 'Whether the shape should be filled or outline only',
-                  default: false
-                }
+                  default: false,
+                },
               },
               required: ['shape'],
             },
@@ -128,13 +128,13 @@ class AsciiArtGeneratorMCPServer {
                 text: {
                   type: 'string',
                   description: 'Text to apply effects to',
-                  maxLength: 100
+                  maxLength: 100,
                 },
                 effect: {
                   type: 'string',
                   enum: ['mirror', 'reverse', 'upside_down', 'wave', 'stairs', 'zigzag'],
-                  description: 'Effect to apply to the text'
-                }
+                  description: 'Effect to apply to the text',
+                },
               },
               required: ['text', 'effect'],
             },
@@ -149,22 +149,22 @@ class AsciiArtGeneratorMCPServer {
                   type: 'string',
                   enum: ['pattern', 'mandala', 'maze', 'abstract', 'landscape'],
                   description: 'Type of random art to generate',
-                  default: 'pattern'
+                  default: 'pattern',
                 },
                 width: {
                   type: 'number',
                   description: 'Width of the generated art',
                   minimum: 10,
                   maximum: 80,
-                  default: 40
+                  default: 40,
                 },
                 height: {
                   type: 'number',
                   description: 'Height of the generated art',
                   minimum: 5,
                   maximum: 30,
-                  default: 15
-                }
+                  default: 15,
+                },
               },
             },
           },
@@ -189,10 +189,7 @@ class AsciiArtGeneratorMCPServer {
           case 'random_art':
             return await this.handleRandomArt(args);
           default:
-            throw new McpError(
-              ErrorCode.MethodNotFound,
-              `Unknown tool: ${name}`
-            );
+            throw new McpError(ErrorCode.MethodNotFound, `Unknown tool: ${name}`);
         }
       } catch (error) {
         if (error instanceof McpError) {
@@ -209,7 +206,7 @@ class AsciiArtGeneratorMCPServer {
   private async handleTextBanner(args: any): Promise<any> {
     const text = (args.text || '').toUpperCase();
     const style = args.style || 'block';
-    
+
     if (!text) {
       throw new McpError(ErrorCode.InvalidParams, 'Text is required for banner creation');
     }
@@ -219,32 +216,32 @@ class AsciiArtGeneratorMCPServer {
     if (style === 'block') {
       // Simple block letter implementation
       const blockLetters: Record<string, string[]> = {
-        'A': ['█████', '█   █', '█████', '█   █', '█   █'],
-        'B': ['████ ', '█   █', '████ ', '█   █', '████ '],
-        'C': ['█████', '█    ', '█    ', '█    ', '█████'],
-        'D': ['████ ', '█   █', '█   █', '█   █', '████ '],
-        'E': ['█████', '█    ', '███  ', '█    ', '█████'],
-        'F': ['█████', '█    ', '███  ', '█    ', '█    '],
-        'G': ['█████', '█    ', '█ ███', '█   █', '█████'],
-        'H': ['█   █', '█   █', '█████', '█   █', '█   █'],
-        'I': ['█████', '  █  ', '  █  ', '  █  ', '█████'],
-        'J': ['█████', '    █', '    █', '█   █', '█████'],
-        'K': ['█   █', '█  █ ', '███  ', '█  █ ', '█   █'],
-        'L': ['█    ', '█    ', '█    ', '█    ', '█████'],
-        'M': ['█   █', '██ ██', '█ █ █', '█   █', '█   █'],
-        'N': ['█   █', '██  █', '█ █ █', '█  ██', '█   █'],
-        'O': ['█████', '█   █', '█   █', '█   █', '█████'],
-        'P': ['████ ', '█   █', '████ ', '█    ', '█    '],
-        'Q': ['█████', '█   █', '█ █ █', '█  ██', '█████'],
-        'R': ['████ ', '█   █', '████ ', '█  █ ', '█   █'],
-        'S': ['█████', '█    ', '█████', '    █', '█████'],
-        'T': ['█████', '  █  ', '  █  ', '  █  ', '  █  '],
-        'U': ['█   █', '█   █', '█   █', '█   █', '█████'],
-        'V': ['█   █', '█   █', '█   █', ' █ █ ', '  █  '],
-        'W': ['█   █', '█   █', '█ █ █', '██ ██', '█   █'],
-        'X': ['█   █', ' █ █ ', '  █  ', ' █ █ ', '█   █'],
-        'Y': ['█   █', ' █ █ ', '  █  ', '  █  ', '  █  '],
-        'Z': ['█████', '   █ ', '  █  ', ' █   ', '█████'],
+        A: ['█████', '█   █', '█████', '█   █', '█   █'],
+        B: ['████ ', '█   █', '████ ', '█   █', '████ '],
+        C: ['█████', '█    ', '█    ', '█    ', '█████'],
+        D: ['████ ', '█   █', '█   █', '█   █', '████ '],
+        E: ['█████', '█    ', '███  ', '█    ', '█████'],
+        F: ['█████', '█    ', '███  ', '█    ', '█    '],
+        G: ['█████', '█    ', '█ ███', '█   █', '█████'],
+        H: ['█   █', '█   █', '█████', '█   █', '█   █'],
+        I: ['█████', '  █  ', '  █  ', '  █  ', '█████'],
+        J: ['█████', '    █', '    █', '█   █', '█████'],
+        K: ['█   █', '█  █ ', '███  ', '█  █ ', '█   █'],
+        L: ['█    ', '█    ', '█    ', '█    ', '█████'],
+        M: ['█   █', '██ ██', '█ █ █', '█   █', '█   █'],
+        N: ['█   █', '██  █', '█ █ █', '█  ██', '█   █'],
+        O: ['█████', '█   █', '█   █', '█   █', '█████'],
+        P: ['████ ', '█   █', '████ ', '█    ', '█    '],
+        Q: ['█████', '█   █', '█ █ █', '█  ██', '█████'],
+        R: ['████ ', '█   █', '████ ', '█  █ ', '█   █'],
+        S: ['█████', '█    ', '█████', '    █', '█████'],
+        T: ['█████', '  █  ', '  █  ', '  █  ', '  █  '],
+        U: ['█   █', '█   █', '█   █', '█   █', '█████'],
+        V: ['█   █', '█   █', '█   █', ' █ █ ', '  █  '],
+        W: ['█   █', '█   █', '█ █ █', '██ ██', '█   █'],
+        X: ['█   █', ' █ █ ', '  █  ', ' █ █ ', '█   █'],
+        Y: ['█   █', ' █ █ ', '  █  ', '  █  ', '  █  '],
+        Z: ['█████', '   █ ', '  █  ', ' █   ', '█████'],
         ' ': ['     ', '     ', '     ', '     ', '     '],
         '!': ['  █  ', '  █  ', '  █  ', '     ', '  █  '],
         '?': ['█████', '    █', '  ██ ', '     ', '  █  '],
@@ -260,16 +257,22 @@ class AsciiArtGeneratorMCPServer {
       result = lines.join('\n');
     } else if (style === 'bubble') {
       // Bubble letter style
-      result = text.split('').map((char: string) => {
-        if (char === ' ') return '   ';
-        return `(${char})`;
-      }).join(' ');
+      result = text
+        .split('')
+        .map((char: string) => {
+          if (char === ' ') return '   ';
+          return `(${char})`;
+        })
+        .join(' ');
     } else if (style === 'thin') {
       // Thin line style
       result = text.split('').join(' ');
     } else {
       // Default thick style
-      result = text.split('').map((char: string) => `█${char}█`).join(' ');
+      result = text
+        .split('')
+        .map((char: string) => `█${char}█`)
+        .join(' ');
     }
 
     return {
@@ -288,12 +291,15 @@ class AsciiArtGeneratorMCPServer {
     const style = args.style || 'single';
     const fill = args.fill || '';
 
-    const styles: Record<string, { tl: string, tr: string, bl: string, br: string, h: string, v: string }> = {
+    const styles: Record<
+      string,
+      { tl: string; tr: string; bl: string; br: string; h: string; v: string }
+    > = {
       single: { tl: '┌', tr: '┐', bl: '└', br: '┘', h: '─', v: '│' },
       double: { tl: '╔', tr: '╗', bl: '╚', br: '╝', h: '═', v: '║' },
       thick: { tl: '┏', tr: '┓', bl: '┗', br: '┛', h: '━', v: '┃' },
       rounded: { tl: '╭', tr: '╮', bl: '╰', br: '╯', h: '─', v: '│' },
-      dashed: { tl: '+', tr: '+', bl: '+', br: '+', h: '-', v: '|' }
+      dashed: { tl: '+', tr: '+', bl: '+', br: '+', h: '-', v: '|' },
     };
 
     const s = styles[style];
@@ -305,7 +311,7 @@ class AsciiArtGeneratorMCPServer {
     // Middle rows
     for (let i = 1; i < height - 1; i++) {
       let row = s.v;
-      
+
       if (fill && i === Math.floor(height / 2)) {
         // Center the text
         const padding = Math.max(0, width - 2 - fill.length);
@@ -315,7 +321,7 @@ class AsciiArtGeneratorMCPServer {
       } else {
         row += ' '.repeat(width - 2);
       }
-      
+
       row += s.v + '\n';
       result += row;
     }
@@ -400,7 +406,7 @@ class AsciiArtGeneratorMCPServer {
           '  █████  ',
           '   ███   ',
           '   ███   ',
-          '   ███   '
+          '   ███   ',
         ];
         result = star.slice(0, Math.min(size, star.length)).join('\n');
         break;
@@ -413,7 +419,7 @@ class AsciiArtGeneratorMCPServer {
           ' ███████ ',
           '  █████  ',
           '   ███   ',
-          '    █    '
+          '    █    ',
         ];
         result = heart.slice(0, Math.min(size, heart.length)).join('\n');
         break;
@@ -461,23 +467,57 @@ class AsciiArtGeneratorMCPServer {
 
       case 'upside_down':
         const upsideDownMap: Record<string, string> = {
-          'a': 'ɐ', 'b': 'q', 'c': 'ɔ', 'd': 'p', 'e': 'ǝ', 'f': 'ɟ', 'g': 'ƃ', 'h': 'ɥ',
-          'i': 'ı', 'j': 'ɾ', 'k': 'ʞ', 'l': 'l', 'm': 'ɯ', 'n': 'u', 'o': 'o', 'p': 'd',
-          'q': 'b', 'r': 'ɹ', 's': 's', 't': 'ʇ', 'u': 'n', 'v': 'ʌ', 'w': 'ʍ', 'x': 'x',
-          'y': 'ʎ', 'z': 'z', ' ': ' '
+          a: 'ɐ',
+          b: 'q',
+          c: 'ɔ',
+          d: 'p',
+          e: 'ǝ',
+          f: 'ɟ',
+          g: 'ƃ',
+          h: 'ɥ',
+          i: 'ı',
+          j: 'ɾ',
+          k: 'ʞ',
+          l: 'l',
+          m: 'ɯ',
+          n: 'u',
+          o: 'o',
+          p: 'd',
+          q: 'b',
+          r: 'ɹ',
+          s: 's',
+          t: 'ʇ',
+          u: 'n',
+          v: 'ʌ',
+          w: 'ʍ',
+          x: 'x',
+          y: 'ʎ',
+          z: 'z',
+          ' ': ' ',
         };
-        result = text.toLowerCase().split('').map((c: string) => upsideDownMap[c] || c).reverse().join('');
+        result = text
+          .toLowerCase()
+          .split('')
+          .map((c: string) => upsideDownMap[c] || c)
+          .reverse()
+          .join('');
         break;
 
       case 'wave':
-        result = text.split('').map((char: string, i: number) => {
-          if (i % 2 === 0) return char.toUpperCase();
-          return char.toLowerCase();
-        }).join('');
+        result = text
+          .split('')
+          .map((char: string, i: number) => {
+            if (i % 2 === 0) return char.toUpperCase();
+            return char.toLowerCase();
+          })
+          .join('');
         break;
 
       case 'stairs':
-        result = text.split('').map((char: string, i: number) => ' '.repeat(i) + char).join('\n');
+        result = text
+          .split('')
+          .map((char: string, i: number) => ' '.repeat(i) + char)
+          .join('\n');
         break;
 
       case 'zigzag':
@@ -558,7 +598,8 @@ class AsciiArtGeneratorMCPServer {
         for (let y = 0; y < height; y++) {
           for (let x = 0; x < width; x++) {
             const noise = Math.sin(x * 0.1) * Math.cos(y * 0.15) + Math.random() * 0.5;
-            const charIndex = Math.floor((noise + 1) * abstractChars.length / 2) % abstractChars.length;
+            const charIndex =
+              Math.floor(((noise + 1) * abstractChars.length) / 2) % abstractChars.length;
             result += abstractChars[charIndex];
           }
           result += '\n';
@@ -569,10 +610,12 @@ class AsciiArtGeneratorMCPServer {
         // Generate a simple mountain landscape
         const heights = [];
         for (let x = 0; x < width; x++) {
-          const mountainHeight = Math.floor(height * 0.7 * (1 + Math.sin(x * 0.1) * 0.3 + Math.sin(x * 0.05) * 0.5));
+          const mountainHeight = Math.floor(
+            height * 0.7 * (1 + Math.sin(x * 0.1) * 0.3 + Math.sin(x * 0.05) * 0.5)
+          );
           heights.push(Math.max(0, Math.min(height - 1, mountainHeight)));
         }
-        
+
         for (let y = 0; y < height; y++) {
           for (let x = 0; x < width; x++) {
             if (y < height - heights[x]) {

@@ -5,10 +5,10 @@ import { oauthManager } from '../services/oauth-manager.js';
 
 /**
  * LinkedIn integration capability for autonomous posting and profile management
- * 
+ *
  * Provides functionality to:
  * - Authenticate with LinkedIn OAuth
- * - Post content autonomously 
+ * - Post content autonomously
  * - Update profile information
  * - Generate professional content
  * - Schedule posts
@@ -86,16 +86,19 @@ class LinkedInService {
    */
   getAuthorizationUrl(): string {
     const clientId = process.env.LINKEDIN_CLIENT_ID;
-    const redirectUri = process.env.LINKEDIN_REDIRECT_URI || 'http://localhost:3000/auth/linkedin/callback';
+    const redirectUri =
+      process.env.LINKEDIN_REDIRECT_URI || 'http://localhost:3000/auth/linkedin/callback';
     const scope = 'openid profile w_member_social email';
     const state = Math.random().toString(36).substring(7);
-    
-    return `https://www.linkedin.com/oauth/v2/authorization?` +
+
+    return (
+      `https://www.linkedin.com/oauth/v2/authorization?` +
       `response_type=code&` +
       `client_id=${clientId}&` +
       `redirect_uri=${encodeURIComponent(redirectUri)}&` +
       `scope=${encodeURIComponent(scope)}&` +
-      `state=${state}`;
+      `state=${state}`
+    );
   }
 
   /**
@@ -104,20 +107,25 @@ class LinkedInService {
   async exchangeCodeForToken(code: string): Promise<void> {
     const clientId = process.env.LINKEDIN_CLIENT_ID;
     const clientSecret = process.env.LINKEDIN_CLIENT_SECRET;
-    const redirectUri = process.env.LINKEDIN_REDIRECT_URI || 'http://localhost:3000/auth/linkedin/callback';
-    
+    const redirectUri =
+      process.env.LINKEDIN_REDIRECT_URI || 'http://localhost:3000/auth/linkedin/callback';
+
     try {
-      const response = await axios.post('https://www.linkedin.com/oauth/v2/accessToken', {
-        grant_type: 'authorization_code',
-        code: code,
-        client_id: clientId,
-        client_secret: clientSecret,
-        redirect_uri: redirectUri,
-      }, {
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
+      const response = await axios.post(
+        'https://www.linkedin.com/oauth/v2/accessToken',
+        {
+          grant_type: 'authorization_code',
+          code: code,
+          client_id: clientId,
+          client_secret: clientSecret,
+          redirect_uri: redirectUri,
         },
-      });
+        {
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+          },
+        }
+      );
 
       this.accessToken = response.data.access_token;
       this.refreshToken = response.data.refresh_token;
@@ -139,8 +147,8 @@ class LinkedInService {
         scopes: ['openid', 'profile', 'w_member_social', 'email'],
         metadata: {
           tokenType: response.data.token_type,
-          scope: response.data.scope
-        }
+          scope: response.data.scope,
+        },
       });
 
       logger.info(`✅ LinkedIn OAuth tokens obtained and stored for user ${this.userId}`);
@@ -163,12 +171,15 @@ class LinkedInService {
     }
 
     try {
-      const response = await axios.get(`${this.baseUrl}/people/~:(id,localizedFirstName,localizedLastName,profilePicture(displayImage~digitalmediaAsset:playableStreams),localizedHeadline)`, {
-        headers: {
-          'Authorization': `Bearer ${this.accessToken}`,
-          'LinkedIn-Version': '202212',
-        },
-      });
+      const response = await axios.get(
+        `${this.baseUrl}/people/~:(id,localizedFirstName,localizedLastName,profilePicture(displayImage~digitalmediaAsset:playableStreams),localizedHeadline)`,
+        {
+          headers: {
+            Authorization: `Bearer ${this.accessToken}`,
+            'LinkedIn-Version': '202212',
+          },
+        }
+      );
 
       return response.data;
     } catch (error) {
@@ -213,7 +224,7 @@ class LinkedInService {
 
       const response = await axios.post(`${this.baseUrl}/ugcPosts`, postData, {
         headers: {
-          'Authorization': `Bearer ${this.accessToken}`,
+          Authorization: `Bearer ${this.accessToken}`,
           'Content-Type': 'application/json',
           'LinkedIn-Version': '202212',
           'X-Restli-Protocol-Version': '2.0.0',
@@ -231,31 +242,39 @@ class LinkedInService {
   /**
    * Generate professional LinkedIn content using AI
    */
-  async generateContent(topic: string, tone: 'professional' | 'casual' | 'thought-leadership' = 'professional'): Promise<string> {
+  async generateContent(
+    topic: string,
+    tone: 'professional' | 'casual' | 'thought-leadership' = 'professional'
+  ): Promise<string> {
     const startTime = Date.now();
     logger.info(`🔍 Starting LinkedIn content generation for topic: "${topic}", tone: ${tone}`);
-    
+
     try {
       const { openRouterService } = await import('../services/openrouter.js');
       const { contextAlchemy } = await import('../services/context-alchemy.js');
       const { promptManager } = await import('../services/prompt-manager.js');
-      
+
       // Quick health check with shorter timeout
       const healthTimeout = 5000; // 5 seconds for health check
       const healthPromise = new Promise<boolean>((resolve) => {
         setTimeout(() => resolve(false), healthTimeout);
-        openRouterService.isHealthy().then(resolve).catch(() => resolve(false));
+        openRouterService
+          .isHealthy()
+          .then(resolve)
+          .catch(() => resolve(false));
       });
-      
+
       const isHealthy = await healthPromise;
       if (!isHealthy) {
-        throw new Error('OpenRouter service is not available for content generation - health check failed');
+        throw new Error(
+          'OpenRouter service is not available for content generation - health check failed'
+        );
       }
-      
+
       const prompts = {
         professional: `Write a professional LinkedIn post about "${topic}". Keep it engaging, informative, and under 300 characters. Include 2-3 relevant hashtags at the end.`,
         casual: `Write a casual but professional LinkedIn post about "${topic}". Make it conversational and relatable. Under 250 characters with hashtags.`,
-        'thought-leadership': `Write a thought-leadership LinkedIn post about "${topic}". Share insights, ask an engaging question, and encourage discussion. Under 400 characters with hashtags.`
+        'thought-leadership': `Write a thought-leadership LinkedIn post about "${topic}". Share insights, ask an engaging question, and encourage discussion. Under 400 characters with hashtags.`,
       };
 
       const userMessage = `${prompts[tone]}
@@ -269,69 +288,78 @@ Write in an authentic, professional voice that is:
 Return only the post content, ready to publish on LinkedIn.`;
 
       logger.info(`🚀 Building message chain via Context Alchemy...`);
-      
-      // Get base system prompt from prompt database  
+
+      // Get base system prompt from prompt database
       const baseSystemPrompt = await promptManager.getCapabilityInstructions(userMessage);
-      
+
       // Build intelligent message chain via Context Alchemy
       const { messages } = await contextAlchemy.buildMessageChain(
         userMessage,
         'linkedin-content-generation',
         baseSystemPrompt
       );
-      
+
       logger.info(`🚀 Sending request to OpenRouter service with ${messages.length} messages...`);
-      
+
       // Add more aggressive timeout for content generation
       const timeoutMs = 25000; // 25 seconds (reduced from 30)
       const timeoutPromise = new Promise<never>((_, reject) => {
-        setTimeout(() => reject(new Error(`LinkedIn content generation timed out after ${timeoutMs}ms`)), timeoutMs);
+        setTimeout(
+          () => reject(new Error(`LinkedIn content generation timed out after ${timeoutMs}ms`)),
+          timeoutMs
+        );
       });
-      
+
       const response = await Promise.race([
         openRouterService.generateFromMessageChain(messages, 'linkedin-content-generation'),
-        timeoutPromise
+        timeoutPromise,
       ]);
-      
+
       const duration = Date.now() - startTime;
       logger.info(`✅ LinkedIn content generated successfully in ${duration}ms`);
-      
+
       // Validate response length and content
       const trimmedResponse = response.trim();
       if (trimmedResponse.length < 10) {
         throw new Error('Generated content too short, AI service returned invalid response');
       }
-      
-      if (trimmedResponse.toLowerCase().includes('technical difficulties') || 
-          trimmedResponse.toLowerCase().includes('i cannot') || 
-          trimmedResponse.toLowerCase().includes('i am unable')) {
+
+      if (
+        trimmedResponse.toLowerCase().includes('technical difficulties') ||
+        trimmedResponse.toLowerCase().includes('i cannot') ||
+        trimmedResponse.toLowerCase().includes('i am unable')
+      ) {
         throw new Error('AI service returned error message instead of content');
       }
-      
+
       return trimmedResponse;
-      
     } catch (error) {
       const duration = Date.now() - startTime;
       logger.error(`❌ Failed to generate LinkedIn content after ${duration}ms:`, error);
-      
+
       // Provide detailed error context
       const errorMessage = error instanceof Error ? error.message : String(error);
       logger.error(`❌ LinkedIn generation error details: ${errorMessage}`);
-      
+
       // Enhanced error context for debugging
       if (errorMessage.includes('timeout')) {
-        throw new Error(`LinkedIn content generation timeout after ${duration}ms - free models may be overloaded. Try again or consider upgrading to premium models.`);
+        throw new Error(
+          `LinkedIn content generation timeout after ${duration}ms - free models may be overloaded. Try again or consider upgrading to premium models.`
+        );
       }
-      
+
       if (errorMessage.includes('health check failed')) {
-        throw new Error(`LinkedIn content generation failed - OpenRouter service is currently unavailable. Please try again later.`);
+        throw new Error(
+          `LinkedIn content generation failed - OpenRouter service is currently unavailable. Please try again later.`
+        );
       }
-      
+
       // Re-throw the error with additional context
-      throw new Error(`Failed to generate LinkedIn content: ${errorMessage}. Duration: ${duration}ms`);
+      throw new Error(
+        `Failed to generate LinkedIn content: ${errorMessage}. Duration: ${duration}ms`
+      );
     }
   }
-
 
   /**
    * Update LinkedIn profile information
@@ -429,7 +457,7 @@ ID: ${profile.id}`;
         if (!linkedInService.isAuthenticated()) {
           return '❌ Not authenticated with LinkedIn. Please run get_auth_url first.';
         }
-        
+
         const postContent = content || params.content;
         if (!postContent) {
           return '❌ Post content is required';
@@ -438,11 +466,11 @@ ID: ${profile.id}`;
         const visibility = params.visibility || 'PUBLIC';
         const success = await linkedInService.createPost({
           content: postContent,
-          visibility: visibility as 'PUBLIC' | 'CONNECTIONS' | 'LOGGED_IN'
+          visibility: visibility as 'PUBLIC' | 'CONNECTIONS' | 'LOGGED_IN',
         });
 
-        return success 
-          ? '✅ LinkedIn post created successfully!' 
+        return success
+          ? '✅ LinkedIn post created successfully!'
           : '❌ Failed to create LinkedIn post';
 
       case 'generate_content':
@@ -451,13 +479,17 @@ ID: ${profile.id}`;
         if (!topic) {
           return '❌ Topic is required for content generation';
         }
-        
+
         const tone = params.tone || 'professional';
-        logger.info(`🎯 About to call linkedInService.generateContent with topic: "${topic}", tone: "${tone}"`);
-        
+        logger.info(
+          `🎯 About to call linkedInService.generateContent with topic: "${topic}", tone: "${tone}"`
+        );
+
         try {
           const generatedContent = await linkedInService.generateContent(topic, tone);
-          logger.info(`✅ LinkedIn content generated successfully: ${generatedContent.substring(0, 100)}...`);
+          logger.info(
+            `✅ LinkedIn content generated successfully: ${generatedContent.substring(0, 100)}...`
+          );
           return `📝 Generated LinkedIn content:\n\n${generatedContent}`;
         } catch (error) {
           logger.error(`❌ LinkedIn content generation failed:`, error);
@@ -468,15 +500,15 @@ ID: ${profile.id}`;
         if (!linkedInService.isAuthenticated()) {
           return '❌ Not authenticated with LinkedIn. Please run get_auth_url first.';
         }
-        
+
         const updates = {
           headline: params.headline,
-          summary: params.summary
+          summary: params.summary,
         };
-        
+
         const updateSuccess = await linkedInService.updateProfile(updates);
-        return updateSuccess 
-          ? '✅ LinkedIn profile updated successfully!' 
+        return updateSuccess
+          ? '✅ LinkedIn profile updated successfully!'
           : '⚠️ Profile updates require LinkedIn API partnership approval';
 
       case 'status':
@@ -501,12 +533,12 @@ export const linkedInCapability: RegisteredCapability = {
   name: 'linkedin',
   supportedActions: [
     'get_auth_url',
-    'exchange_code', 
+    'exchange_code',
     'get_profile',
     'create_post',
     'generate_content',
     'update_profile',
-    'status'
+    'status',
   ],
   handler: handleLinkedInCapability,
   description: 'LinkedIn integration for autonomous posting and profile management',
@@ -514,8 +546,8 @@ export const linkedInCapability: RegisteredCapability = {
     '<capability name="linkedin" action="get_auth_url" />',
     '<capability name="linkedin" action="create_post" visibility="PUBLIC">Excited to share my latest AI insights! #AI #Innovation</capability>',
     '<capability name="linkedin" action="generate_content" topic="AI trends" tone="thought-leadership" />',
-    '<capability name="linkedin" action="update_profile" headline="AI Assistant & Innovation Enthusiast" />'
-  ]
+    '<capability name="linkedin" action="update_profile" headline="AI Assistant & Innovation Enthusiast" />',
+  ],
 };
 
 export { LinkedInService, getLinkedInService };

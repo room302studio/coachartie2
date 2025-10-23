@@ -1,12 +1,15 @@
 # Issue #005: Implement Goal Tools for Main Thread
 
 ## User Story
+
 As Coach Artie's main LLM thread, I need simple tools to explicitly check and manage goals when appropriate so that I can proactively help users stay on track and make informed decisions about task prioritization.
 
 ## Background
+
 While the conscience whisper provides ambient goal awareness, the main LLM also needs explicit tools to check goals, update strictness, and manage goal state when the conversation naturally calls for it. These are simple, direct tools the LLM can call via XML.
 
 ## Acceptance Criteria
+
 - [ ] Main LLM can check current goals via XML capability
 - [ ] Can update "strictness" vibe qualitatively (not numbers)
 - [ ] Can update goal status with natural language
@@ -19,10 +22,11 @@ While the conscience whisper provides ambient goal awareness, the main LLM also 
 ## Technical Requirements
 
 ### Capability Interface
+
 ```xml
 <!-- Check current goals -->
 <capability name="goal" action="check" />
-<!-- Returns: "You have 2 active goals: 
+<!-- Returns: "You have 2 active goals:
              1. Complete PR review (due in 2 hours) - in_progress
              2. Learn React hooks (due Friday) - not_started" -->
 
@@ -46,6 +50,7 @@ While the conscience whisper provides ambient goal awareness, the main LLM also 
 ```
 
 ### Natural Language Processing
+
 ```typescript
 // The tool should understand fuzzy inputs
 function parseVibeUpdate(input: string): StrictnessLevel {
@@ -56,13 +61,13 @@ function parseVibeUpdate(input: string): StrictnessLevel {
     'balanced|normal|moderate': 'balanced',
     'chill|relaxed|easy': 'relaxed',
     'off|casual|free': 'minimal',
-    
+
     // Natural phrases
     'need.+focus|really.+concentrate': 'maximum_focus',
     'bit.+tired|taking.+easy': 'relaxed',
-    'burned.+out|need.+break': 'minimal'
+    'burned.+out|need.+break': 'minimal',
   };
-  
+
   // Use regex to match patterns
   // Return best match or ask for clarification
 }
@@ -71,36 +76,44 @@ function parseVibeUpdate(input: string): StrictnessLevel {
 ## Test Cases
 
 ### Test 1: Natural Language Understanding
+
 ```javascript
 // Various ways to express the same thing
 const inputs = [
   "I'm feeling burned out",
-  "exhausted and need a break",
+  'exhausted and need a break',
   "can't focus anymore",
-  "brain is fried"
+  'brain is fried',
 ];
 
 for (const input of inputs) {
-  const result = await goalCapability.handler({
-    action: 'update_strictness',
-    vibe: input
-  }, null);
+  const result = await goalCapability.handler(
+    {
+      action: 'update_strictness',
+      vibe: input,
+    },
+    null
+  );
   // All should result in relaxed/minimal strictness
   assert(result.includes('relaxed') || result.includes('easy'));
 }
 ```
 
 ### Test 2: Smart Status Updates
+
 ```javascript
 // Set up goals
 await createGoal('Complete PR review', 'today');
 await createGoal('Write documentation', 'tomorrow');
 
 // Natural language update
-const result = await goalCapability.handler({
-  action: 'update_status',
-  description: 'PR is waiting on Steve to review the API changes'
-}, null);
+const result = await goalCapability.handler(
+  {
+    action: 'update_status',
+    description: 'PR is waiting on Steve to review the API changes',
+  },
+  null
+);
 
 // Should identify the PR goal and update it
 assert(result.includes('PR review'));
@@ -108,6 +121,7 @@ assert(result.includes('waiting') || result.includes('blocked'));
 ```
 
 ### Test 3: Helpful Reflections
+
 ```javascript
 // Create some goal history
 await completeGoal('Morning standup');
@@ -139,6 +153,7 @@ assert(reflection.includes('good') || reflection.includes('progress') || reflect
 8. **Natural Language**: Parse vibe strings like "I'm exhausted" → relaxed mode
 
 ## Response Examples
+
 ```
 // Check command
 "📋 Active Goals:
@@ -149,13 +164,13 @@ assert(reflection.includes('good') || reflection.includes('progress') || reflect
 You're on track! Focus on the PR for now."
 
 // Vibe update
-"Setting vibe to 'chill mode' 🌊 
-I'll give you space to work at your own pace. 
+"Setting vibe to 'chill mode' 🌊
+I'll give you space to work at your own pace.
 The PR can wait if you need a break!"
 
 // Reflection
 "Weekly reflection 📊
-Crushed it: 12 goals completed! 
+Crushed it: 12 goals completed!
 Highlights: That complex bug fix on Tuesday
 Struggled with: Database migrations (totally normal)
 Pattern noticed: You're most productive after coffee breaks
@@ -163,11 +178,13 @@ Keep being awesome! 🎉"
 ```
 
 ## Dependencies
+
 - Requires Issue #43 (Goal Capability) as foundation
 - Benefits from Issue #46 (Conscience Whisper) for context
 - Should coordinate with conscience whisper to avoid redundancy
 
 ## Definition of Done
+
 - [ ] All acceptance criteria met
 - [ ] Natural language parsing works for common phrases
 - [ ] Responses are encouraging and helpful

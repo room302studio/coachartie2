@@ -10,10 +10,10 @@ interface EmbeddedMCPParams {
 
 /**
  * Embedded MCP Capability - Zero External Dependencies
- * 
+ *
  * This capability executes embedded MCP tools instantly without
  * external process spawning, network calls, or other failure points.
- * 
+ *
  * Supported actions:
  * - execute_tool: Execute an embedded tool with given arguments
  * - list_tools: List all available embedded tools
@@ -36,7 +36,7 @@ export const embeddedMCPCapability: RegisteredCapability = {
 
           // Parse arguments
           let args = {};
-          
+
           // Try content first (cleaner approach)
           if (content && content.trim()) {
             try {
@@ -55,7 +55,7 @@ export const embeddedMCPCapability: RegisteredCapability = {
               }
             }
           }
-          
+
           // Merge any additional params
           if (params.args && typeof params.args === 'object') {
             args = { ...args, ...params.args };
@@ -64,20 +64,20 @@ export const embeddedMCPCapability: RegisteredCapability = {
           // Execute the tool instantly
           logger.info(`🚀 Executing embedded tool: ${toolName} with args: ${JSON.stringify(args)}`);
           const result = await embeddedMCPRuntime.executeTool(toolName, args);
-          
+
           return result;
         }
 
         case 'list_tools': {
           const tools = embeddedMCPRuntime.listTools();
-          
+
           if (tools.length === 0) {
             return 'No embedded tools available';
           }
 
-          const toolsList = tools.map(tool => 
-            `• **${tool.name}**: ${tool.description}`
-          ).join('\n');
+          const toolsList = tools
+            .map((tool) => `• **${tool.name}**: ${tool.description}`)
+            .join('\n');
 
           return `Available Embedded Tools (${tools.length}):\n\n${toolsList}`;
         }
@@ -94,5 +94,5 @@ export const embeddedMCPCapability: RegisteredCapability = {
       logger.error(`Embedded MCP capability failed for action ${action}:`, error);
       throw error;
     }
-  }
+  },
 };

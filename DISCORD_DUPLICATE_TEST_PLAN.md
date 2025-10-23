@@ -3,16 +3,19 @@
 ## 🎯 CRITICAL FIXES IMPLEMENTED
 
 ### 1. Race Condition Fix
+
 - **Issue**: Job monitor called `onComplete` then immediately unregistered, but callback was async
 - **Fix**: Unregister job FIRST, then call callback (job-monitor.ts:181)
 - **Result**: Prevents multiple monitor polls from triggering same completion
 
-### 2. Duplicate Callback Guard  
+### 2. Duplicate Callback Guard
+
 - **Issue**: No protection against multiple `onComplete` calls on same job
 - **Fix**: Added `jobCompleted` flag checked at start of callback (message-handler.ts:507-514)
 - **Result**: Blocks any duplicate completion attempts with error logging
 
 ### 3. Enhanced Logging
+
 - **Added**: Comprehensive tracking with job IDs, timestamps, and correlation IDs
 - **Added**: Specific "DUPLICATE PREVENTION" warning logs
 - **Added**: Success confirmation logs after response delivery
@@ -20,13 +23,14 @@
 ## 🧪 TEST SCENARIOS
 
 ### Scenario 1: Simple Capability Request
+
 ```bash
 # Test input: Basic calculator request
 User: "Calculate 5 * 8 please"
 
 # Expected behavior:
 ✅ One job submitted
-✅ Job monitor polls periodically  
+✅ Job monitor polls periodically
 ✅ Job completes → onComplete fires ONCE
 ✅ Job unregistered immediately
 ✅ Exactly ONE Discord message sent
@@ -39,6 +43,7 @@ User: "Calculate 5 * 8 please"
 ```
 
 ### Scenario 2: Failed Capability Request
+
 ```bash
 # Test input: Invalid capability or error condition
 User: "Search the web for invalid-capability-test"
@@ -57,6 +62,7 @@ User: "Search the web for invalid-capability-test"
 ```
 
 ### Scenario 3: Long Response (Chunking Test)
+
 ```bash
 # Test input: Request that generates >2000 characters
 User: "Tell me a very detailed story about programming"
@@ -75,6 +81,7 @@ User: "Tell me a very detailed story about programming"
 ```
 
 ### Scenario 4: Streaming Response Test
+
 ```bash
 # Test input: Capability that supports streaming
 User: "Generate a step-by-step plan for learning React"
@@ -92,6 +99,7 @@ User: "Generate a step-by-step plan for learning React"
 ```
 
 ### Scenario 5: Rapid Fire Requests
+
 ```bash
 # Test input: Multiple requests from same user quickly
 User: "Calculate 1+1"
@@ -115,6 +123,7 @@ User: "Calculate 3+3" (sent immediately)
 ## 🔍 DEBUGGING COMMANDS
 
 ### Check for Duplicate Detection
+
 ```bash
 # Look for duplicate prevention logs
 docker logs capabilities-c1 2>&1 | grep -E "(DUPLICATE|already streamed|onComplete CALL BLOCKED)"
@@ -124,6 +133,7 @@ docker logs capabilities-c1 2>&1 | grep -E "(COMPLETED|unregister|onComplete)"
 ```
 
 ### Monitor Response Delivery
+
 ```bash
 # Track response sending
 docker logs capabilities-c1 2>&1 | grep -E "(📤|Response sent successfully|chunks delivered)"
@@ -133,6 +143,7 @@ docker logs capabilities-c1 2>&1 | grep -E "(📡|streaming chunk|streamedChunks
 ```
 
 ### Verify Job Lifecycle
+
 ```bash
 # Full job lifecycle trace
 docker logs capabilities-c1 2>&1 | grep -E "(Job submitted|COMPLETED|unregister)" | tail -20
@@ -141,19 +152,21 @@ docker logs capabilities-c1 2>&1 | grep -E "(Job submitted|COMPLETED|unregister)
 ## ⚡ PERFORMANCE EXPECTATIONS
 
 - **Single Response Time**: < 3 seconds for simple calculations
-- **Chunking Delay**: 200ms between chunks (rate limit protection)  
+- **Chunking Delay**: 200ms between chunks (rate limit protection)
 - **Memory Usage**: No job accumulation (proper unregistration)
 - **Duplicate Rate**: 0% (complete prevention)
 
 ## 🚨 FAILURE INDICATORS
 
 ### Critical Issues
+
 - Multiple identical Discord messages for same request
 - "DUPLICATE onComplete CALL BLOCKED" errors in logs
 - Jobs continuing to poll after completion
 - Response chunks sent out of order
 
-### Performance Issues  
+### Performance Issues
+
 - Jobs timing out due to failed unregistration
 - Memory leaks from accumulated pending jobs
 - Discord API rate limiting from duplicate requests
@@ -161,7 +174,7 @@ docker logs capabilities-c1 2>&1 | grep -E "(Job submitted|COMPLETED|unregister)
 ## ✅ SUCCESS CRITERIA
 
 1. **Zero Duplicate Messages**: Never send same response twice
-2. **Clean Job Lifecycle**: Submit → Poll → Complete → Unregister  
+2. **Clean Job Lifecycle**: Submit → Poll → Complete → Unregister
 3. **Robust Error Handling**: Graceful failure without cascading issues
 4. **Performance**: No memory leaks, proper cleanup
 5. **Logging**: Clear audit trail for debugging

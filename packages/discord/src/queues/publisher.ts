@@ -19,7 +19,7 @@ export async function publishMessage(
     context: {
       userTag,
       platform: 'discord',
-      shouldRespond
+      shouldRespond,
     },
     respondTo: {
       type: 'discord',

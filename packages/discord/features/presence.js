@@ -32,7 +32,7 @@ export class PresenceManager {
           queue_stats: this.stats.queueStats,
         });
 
-        const normalizeUrl = url => {
+        const normalizeUrl = (url) => {
           const cleanUrl = url.replace(/^(https?:\/\/)/, '');
           return `http://${cleanUrl}`;
         };
@@ -42,16 +42,11 @@ export class PresenceManager {
         const healthUrl = `${normalizedUrl}/health`;
 
         const response = await fetch(healthUrl);
-        if (!response.ok)
-          throw new Error(`Health check failed: ${response.status}`);
+        if (!response.ok) throw new Error(`Health check failed: ${response.status}`);
 
         const data = await response.json();
         this.stats.capabilitiesStatus =
-          data.status === 'healthy'
-            ? '🟢'
-            : data.status === 'degraded'
-            ? '🟡'
-            : '🔴';
+          data.status === 'healthy' ? '🟢' : data.status === 'degraded' ? '🟡' : '🔴';
         this.stats.capabilitiesVersion = data.version;
 
         // Update queue stats if available

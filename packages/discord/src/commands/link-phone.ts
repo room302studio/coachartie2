@@ -9,8 +9,9 @@ export const linkPhoneCommand = {
   data: new SlashCommandBuilder()
     .setName('link-phone')
     .setDescription('Link your phone number for SMS notifications')
-    .addStringOption(option =>
-      option.setName('phone')
+    .addStringOption((option) =>
+      option
+        .setName('phone')
         .setDescription('Your phone number (e.g., +1234567890)')
         .setRequired(true)
     ),
@@ -24,22 +25,27 @@ export const linkPhoneCommand = {
       const phoneRegex = /^\+[1-9]\d{1,14}$/;
       if (!phoneRegex.test(phoneNumber)) {
         return await interaction.reply({
-          content: '❌ Invalid phone number format. Please use international format (e.g., +1234567890)',
-          ephemeral: true
+          content:
+            '❌ Invalid phone number format. Please use international format (e.g., +1234567890)',
+          ephemeral: true,
         });
       }
 
       // Generate verification code
       const verificationCode = crypto.randomInt(100000, 999999).toString();
-      
+
       // Store verification attempt (expires in 10 minutes)
       const verificationKey = `phone_verify:${userId}`;
-      await redis.setex(verificationKey, 600, JSON.stringify({
-        phoneNumber: phoneNumber,
-        code: verificationCode,
-        attempts: 0,
-        timestamp: Date.now()
-      }));
+      await redis.setex(
+        verificationKey,
+        600,
+        JSON.stringify({
+          phoneNumber: phoneNumber,
+          code: verificationCode,
+          attempts: 0,
+          timestamp: Date.now(),
+        })
+      );
 
       // Try to send SMS verification code
       let smsResult = null;
@@ -52,16 +58,24 @@ export const linkPhoneCommand = {
       }
 
       const embed = new EmbedBuilder()
-        .setColor(0x0099FF)
+        .setColor(0x0099ff)
         .setTitle('📱 Phone Verification')
         .setDescription(`To link your phone number ${phoneNumber}, please verify it.`);
 
       if (smsResult) {
         // SMS was sent successfully
         embed.addFields(
-          { name: '📲 SMS Sent', value: 'Check your phone for the verification code', inline: false },
+          {
+            name: '📲 SMS Sent',
+            value: 'Check your phone for the verification code',
+            inline: false,
+          },
           { name: '⏰ Expires', value: 'In 10 minutes', inline: true },
-          { name: '🔄 Next Step', value: 'Use `/verify-phone` with the code from SMS', inline: true }
+          {
+            name: '🔄 Next Step',
+            value: 'Use `/verify-phone` with the code from SMS',
+            inline: true,
+          }
         );
       } else {
         // SMS failed, show code in Discord
@@ -80,20 +94,19 @@ export const linkPhoneCommand = {
         userId,
         phoneHash: crypto.createHash('sha256').update(phoneNumber).digest('hex').substring(0, 8),
         smsResult: smsResult ? 'sent' : 'failed',
-        service: 'discord'
+        service: 'discord',
       });
 
       await interaction.reply({
         embeds: [embed],
-        ephemeral: true
+        ephemeral: true,
       });
-
     } catch (error) {
       logger.error('Error in link-phone command:', error);
       await interaction.reply({
         content: '❌ An error occurred while processing your request. Please try again.',
-        ephemeral: true
+        ephemeral: true,
       });
     }
-  }
+  },
 };

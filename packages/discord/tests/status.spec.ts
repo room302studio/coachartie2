@@ -18,15 +18,19 @@ describe('/status command', () => {
   it('should correctly format model names', () => {
     // Test that free models are formatted correctly
     const testCases = [
-      { input: 'mistralai/mistral-7b-instruct:free', expected: 'mistralai/mistral-7b-instruct (Free)' },
+      {
+        input: 'mistralai/mistral-7b-instruct:free',
+        expected: 'mistralai/mistral-7b-instruct (Free)',
+      },
       { input: 'anthropic/claude-3.5-sonnet', expected: 'anthropic/claude-3.5-sonnet' },
-      { input: 'microsoft/phi-3-mini-128k-instruct:free', expected: 'microsoft/phi-3-mini-128k-instruct (Free)' }
+      {
+        input: 'microsoft/phi-3-mini-128k-instruct:free',
+        expected: 'microsoft/phi-3-mini-128k-instruct (Free)',
+      },
     ];
-    
+
     testCases.forEach(({ input, expected }) => {
-      const formatted = input.includes(':free') 
-        ? input.replace(':free', '') + ' (Free)'
-        : input;
+      const formatted = input.includes(':free') ? input.replace(':free', '') + ' (Free)' : input;
       expect(formatted).toBe(expected);
     });
   });

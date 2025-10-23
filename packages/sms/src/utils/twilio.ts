@@ -9,7 +9,9 @@ export function getTwilioClient(): twilio.Twilio {
   const authToken = process.env.TWILIO_AUTH_TOKEN;
 
   if (!accountSid || !authToken) {
-    throw new Error('Missing Twilio credentials: TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN required');
+    throw new Error(
+      'Missing Twilio credentials: TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN required'
+    );
   }
 
   twilioClient = twilio(accountSid, authToken);
@@ -30,17 +32,16 @@ export async function sendSMS(to: string, message: string): Promise<string> {
     const result = await client.messages.create({
       body: message,
       from: fromNumber,
-      to: to
+      to: to,
     });
 
     logger.info(`SMS sent successfully`, {
       to: to.replace(/(\+\d{1,3})\d{6}(\d{4})/, '$1******$2'), // Mask phone number in logs
       messageSid: result.sid,
-      status: result.status
+      status: result.status,
     });
 
     return result.sid;
-
   } catch (error) {
     logger.error('Failed to send SMS:', error);
     throw error;

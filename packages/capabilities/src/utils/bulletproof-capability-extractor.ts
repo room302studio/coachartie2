@@ -16,7 +16,7 @@ export class BulletproofCapabilityExtractor {
       parseTagValue: false,
       parseAttributeValue: false,
       trimValues: true,
-      cdataPropName: false
+      cdataPropName: false,
     });
     this.capabilityParser = new CapabilityXMLParser();
   }
@@ -27,16 +27,16 @@ export class BulletproofCapabilityExtractor {
    */
   extractCapabilities(text: string, modelName?: string): ParsedCapability[] {
     const capabilities: ParsedCapability[] = [];
-    
+
     logger.info(`🔍 XML EXTRACTION: Parsing "${text.substring(0, 100)}..."`);
-    
+
     // First try the existing capability parser
     const existingCapabilities = this.capabilityParser.extractCapabilities(text);
     if (existingCapabilities.length > 0) {
       logger.info(`✅ CAPABILITY PARSER: Found ${existingCapabilities.length} capabilities`);
       capabilities.push(...existingCapabilities);
     }
-    
+
     // Try simple XML patterns for MCP-specific tags
     if (capabilities.length === 0) {
       const simpleXMLCapabilities = this.trySimpleXMLDetection(text);
@@ -45,57 +45,56 @@ export class BulletproofCapabilityExtractor {
         capabilities.push(...simpleXMLCapabilities);
       }
     }
-    
+
     return capabilities;
   }
-  
+
   /**
    * Simple XML Detection using proper XML parser
    */
   private trySimpleXMLDetection(text: string): ParsedCapability[] {
     const capabilities: ParsedCapability[] = [];
-    
+
     try {
       // Parse as XML and look for our specific tags
       const wrappedText = `<root>${text}</root>`;
       const parsed = this.xmlParser.parse(wrappedText);
-      
+
       if (parsed.root) {
         // MCP installation tags are handled by xml-parser.ts to avoid duplicates
-        
+
         // Check for calculator tags
         this.checkForTag(parsed.root, 'calculate', capabilities, 'calculator', 'calculate');
         this.checkForTag(parsed.root, 'calc', capabilities, 'calculator', 'calculate');
-        
+
         // Check for memory tags
         this.checkForTag(parsed.root, 'remember', capabilities, 'memory', 'remember');
         this.checkForTag(parsed.root, 'memory', capabilities, 'memory', 'remember');
       }
-    } catch (error) {
-    }
-    
+    } catch (error) {}
+
     return capabilities;
   }
-  
+
   /**
    * Helper to check for a specific tag in parsed XML
    */
   private checkForTag(
-    obj: any, 
-    tagName: string, 
-    capabilities: ParsedCapability[], 
-    capabilityName: string, 
+    obj: any,
+    tagName: string,
+    capabilities: ParsedCapability[],
+    capabilityName: string,
     action: string
   ): void {
     if (obj[tagName]) {
       const content = typeof obj[tagName] === 'string' ? obj[tagName] : obj[tagName]['#text'] || '';
       const params = capabilityName === 'mcp_auto_installer' ? { package: content } : {};
-      
+
       capabilities.push({
         name: capabilityName,
         action,
         content: capabilityName === 'mcp_auto_installer' ? '' : content,
-        params
+        params,
       });
       logger.info(`📦 XML: Detected ${tagName}: "${content}"`);
     }
@@ -106,27 +105,27 @@ export class BulletproofCapabilityExtractor {
    */
   detectAutoInjectCapabilities(userMessage: string, llmResponse: string): ParsedCapability[] {
     const capabilities: ParsedCapability[] = [];
-    
+
     // Look for math expressions in user message
     if (/\d+\s*[+\-*/]\s*\d+/.test(userMessage)) {
       capabilities.push({
         name: 'calculator',
-        action: 'calculate', 
+        action: 'calculate',
         content: userMessage.match(/\d+\s*[+\-*/]\s*\d+[^.]*/)![0],
-        params: {}
+        params: {},
       });
     }
-    
+
     // Look for memory-related keywords
     if (/remember|memorize|note|save/.test(userMessage.toLowerCase())) {
       capabilities.push({
         name: 'memory',
         action: 'remember',
         content: userMessage,
-        params: {}
+        params: {},
       });
     }
-    
+
     return capabilities;
   }
 }

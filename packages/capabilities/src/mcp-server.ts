@@ -20,7 +20,7 @@ import cors from 'cors';
 
 /**
  * MCP Server for Coach Artie Capabilities
- * 
+ *
  * This server exposes the capabilities as MCP tools that can be used by
  * other applications through the Model Context Protocol.
  */
@@ -61,11 +61,11 @@ class CapabilitiesMCPServer {
                 ...this.getToolInputSchema(capability, action),
                 content: {
                   type: 'string',
-                  description: 'Optional content to pass to the capability'
-                }
+                  description: 'Optional content to pass to the capability',
+                },
               },
-              required: capability.requiredParams || []
-            }
+              required: capability.requiredParams || [],
+            },
           };
           tools.push(tool);
         }
@@ -78,13 +78,13 @@ class CapabilitiesMCPServer {
     // Call tool handler
     this.server.setRequestHandler(CallToolRequestSchema, async (request) => {
       const { name, arguments: args } = request.params;
-      
+
       logger.info(`🔧 MCP tool call: ${name}`);
 
       try {
         // Parse tool name to get capability and action
         const [capabilityName, action] = this.parseToolName(name);
-        
+
         if (!capabilityRegistry.has(capabilityName)) {
           throw new Error(`Capability '${capabilityName}' not found`);
         }
@@ -93,34 +93,29 @@ class CapabilitiesMCPServer {
         const { content, ...params } = args as any;
 
         // Execute the capability
-        const result = await capabilityRegistry.execute(
-          capabilityName,
-          action,
-          params,
-          content
-        );
+        const result = await capabilityRegistry.execute(capabilityName, action, params, content);
 
         logger.info(`✅ MCP tool '${name}' executed successfully`);
-        
+
         return {
           content: [
             {
               type: 'text',
-              text: result
-            }
-          ]
+              text: result,
+            },
+          ],
         };
       } catch (error) {
         logger.error(`❌ MCP tool '${name}' failed:`, error);
-        
+
         return {
           content: [
             {
               type: 'text',
-              text: `Error: ${error instanceof Error ? error.message : 'Unknown error'}`
-            }
+              text: `Error: ${error instanceof Error ? error.message : 'Unknown error'}`,
+            },
           ],
-          isError: true
+          isError: true,
         };
       }
     });
@@ -131,10 +126,10 @@ class CapabilitiesMCPServer {
     if (lastUnderscoreIndex === -1) {
       throw new Error(`Invalid tool name format: ${toolName}`);
     }
-    
+
     const capabilityName = toolName.substring(0, lastUnderscoreIndex);
     const action = toolName.substring(lastUnderscoreIndex + 1);
-    
+
     return [capabilityName, action];
   }
 
@@ -146,80 +141,80 @@ class CapabilitiesMCPServer {
       case 'calculator':
         schema.expression = {
           type: 'string',
-          description: 'Mathematical expression to evaluate'
+          description: 'Mathematical expression to evaluate',
         };
         break;
-        
+
       case 'web':
         if (action === 'search') {
           schema.query = {
             type: 'string',
-            description: 'Search query'
+            description: 'Search query',
           };
         } else if (action === 'fetch') {
           schema.url = {
             type: 'string',
-            description: 'URL to fetch content from'
+            description: 'URL to fetch content from',
           };
         }
         break;
-        
+
       case 'memory':
         if (action === 'remember') {
           schema.content = {
             type: 'string',
-            description: 'Content to remember'
+            description: 'Content to remember',
           };
         } else if (action === 'recall') {
           schema.query = {
             type: 'string',
-            description: 'Query to recall memories'
+            description: 'Query to recall memories',
           };
         }
         break;
-        
+
       case 'wolfram':
         schema.input = {
           type: 'string',
-          description: 'Input query for Wolfram Alpha'
+          description: 'Input query for Wolfram Alpha',
         };
         break;
-        
+
       case 'scheduler':
         if (action === 'remind') {
           schema.message = {
             type: 'string',
-            description: 'Reminder message'
+            description: 'Reminder message',
           };
           schema.delay = {
             type: 'string',
-            description: 'Delay in milliseconds (default: 60000)'
+            description: 'Delay in milliseconds (default: 60000)',
           };
           schema.userId = {
             type: 'string',
-            description: 'User ID for the reminder'
+            description: 'User ID for the reminder',
           };
         } else if (action === 'schedule') {
           schema.name = {
             type: 'string',
-            description: 'Task name'
+            description: 'Task name',
           };
           schema.cron = {
             type: 'string',
-            description: 'Cron expression for scheduling'
+            description: 'Cron expression for scheduling',
           };
           schema.message = {
             type: 'string',
-            description: 'Task message (optional)'
+            description: 'Task message (optional)',
           };
           schema.userId = {
             type: 'string',
-            description: 'User ID for the task'
+            description: 'User ID for the task',
           };
         } else if (action === 'cancel') {
           schema.taskId = {
             type: 'string',
-            description: 'Task ID to cancel'
+            description: 'Task ID to cancel',
           };
         }
         break;
@@ -234,13 +229,13 @@ class CapabilitiesMCPServer {
    */
   private async registerCapabilities() {
     logger.info('🔧 Registering capabilities for MCP server...');
-    
+
     // Register calculator capability
     capabilityRegistry.register(calculatorCapability);
-    
+
     // Register web capability
     capabilityRegistry.register(webCapability);
-    
+
     // Register memory capability
     capabilityRegistry.register({
       name: 'memory',
@@ -255,7 +250,9 @@ class CapabilitiesMCPServer {
             throw new Error('No content provided to remember');
           }
           // CANCER REMOVED: Use real memory system
-          throw new Error('Use real memory capability: <capability name="memory" action="remember" content="..." />');
+          throw new Error(
+            'Use real memory capability: <capability name="memory" action="remember" content="..." />'
+          );
         }
 
         if (action === 'recall') {
@@ -264,18 +261,20 @@ class CapabilitiesMCPServer {
             throw new Error('No query provided for recall');
           }
           // CANCER REMOVED: Use real memory system
-          throw new Error('Use real memory capability: <capability name="memory" action="recall" query="..." />');
+          throw new Error(
+            'Use real memory capability: <capability name="memory" action="recall" query="..." />'
+          );
         }
 
         throw new Error(`Unknown memory action: ${action}`);
-      }
+      },
     });
 
     // Register wolfram capability (optional - requires WOLFRAM_APP_ID)
     try {
       // Import wolfram service dynamically to avoid initialization errors
       const { wolframService } = await import('./services/wolfram.js');
-      
+
       capabilityRegistry.register({
         name: 'wolfram',
         supportedActions: ['query', 'search'],
@@ -294,7 +293,7 @@ class CapabilitiesMCPServer {
             logger.error('Wolfram Alpha capability failed:', error);
             throw error;
           }
-        }
+        },
       });
     } catch {
       logger.warn('⚠️  Wolfram Alpha capability not available (missing WOLFRAM_APP_ID)');
@@ -382,11 +381,13 @@ class CapabilitiesMCPServer {
           default:
             throw new Error(`Unknown scheduler action: ${action}`);
         }
-      }
+      },
     });
-    
+
     const stats = capabilityRegistry.getStats();
-    logger.info(`✅ Registered ${stats.totalCapabilities} capabilities with ${stats.totalActions} total actions`);
+    logger.info(
+      `✅ Registered ${stats.totalCapabilities} capabilities with ${stats.totalActions} total actions`
+    );
   }
 
   /**
@@ -398,7 +399,7 @@ class CapabilitiesMCPServer {
 
     const transport = new StdioServerTransport();
     await this.server.connect(transport);
-    
+
     logger.info('🚀 MCP server started with STDIO transport');
     logger.info('📡 Server is ready to receive MCP requests');
   }
@@ -412,14 +413,21 @@ class CapabilitiesMCPServer {
 
     // Create Express app for HTTP transport
     const app = express();
-    
+
     // Enable CORS for local development
-    app.use(cors({
-      origin: ['http://localhost:3000', 'http://localhost:3001', 'http://127.0.0.1:3000', 'http://127.0.0.1:3001'],
-      credentials: true,
-      methods: ['GET', 'POST', 'OPTIONS'],
-      allowedHeaders: ['Content-Type', 'Authorization', 'Accept']
-    }));
+    app.use(
+      cors({
+        origin: [
+          'http://localhost:3000',
+          'http://localhost:3001',
+          'http://127.0.0.1:3000',
+          'http://127.0.0.1:3001',
+        ],
+        credentials: true,
+        methods: ['GET', 'POST', 'OPTIONS'],
+        allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
+      })
+    );
 
     // Middleware for parsing JSON
     app.use(express.json());
@@ -429,12 +437,12 @@ class CapabilitiesMCPServer {
 
     // Health check endpoint
     app.get('/health', (req, res) => {
-      res.json({ 
-        status: 'ok', 
+      res.json({
+        status: 'ok',
         service: 'coachartie-capabilities-mcp',
         version: '1.0.0',
         activeConnections: mcpConnections.size,
-        capabilities: capabilityRegistry.getStats()
+        capabilities: capabilityRegistry.getStats(),
       });
     });
 
@@ -442,32 +450,31 @@ class CapabilitiesMCPServer {
     app.get('/mcp', async (req, res) => {
       try {
         logger.info('📡 New MCP SSE connection request');
-        
+
         // Create SSE transport
         const transport = new SSEServerTransport('/mcp/message', res);
-        
+
         // Connect server to transport
         await this.server.connect(transport);
-        
+
         // Store connection
         mcpConnections.set(transport.sessionId, transport);
-        
+
         // Handle transport events
         transport.onclose = () => {
           logger.info(`🔌 MCP connection closed: ${transport.sessionId}`);
           mcpConnections.delete(transport.sessionId);
         };
-        
+
         transport.onerror = (error) => {
           logger.error(`❌ MCP connection error: ${transport.sessionId}`, error);
           mcpConnections.delete(transport.sessionId);
         };
-        
+
         // Start the SSE connection
         await transport.start();
-        
+
         logger.info(`✅ MCP SSE connection established: ${transport.sessionId}`);
-        
       } catch (error) {
         logger.error('❌ Failed to establish MCP SSE connection:', error);
         res.status(500).json({ error: 'Failed to establish MCP connection' });
@@ -478,19 +485,18 @@ class CapabilitiesMCPServer {
     app.post('/mcp/message', async (req, res) => {
       try {
         const sessionId = req.body.sessionId || req.headers['x-session-id'];
-        
+
         if (!sessionId) {
           return res.status(400).json({ error: 'Session ID required' });
         }
-        
+
         const transport = mcpConnections.get(sessionId);
         if (!transport) {
           return res.status(404).json({ error: 'Session not found' });
         }
-        
+
         // Handle the message through the transport
         await transport.handlePostMessage(req as IncomingMessage, res as ServerResponse);
-        
       } catch (error) {
         logger.error('❌ Failed to handle MCP message:', error);
         res.status(500).json({ error: 'Failed to handle message' });
@@ -508,7 +514,7 @@ class CapabilitiesMCPServer {
     // Graceful shutdown handling
     const shutdown = async () => {
       logger.info('🛑 Shutting down MCP HTTP server...');
-      
+
       // Close all MCP connections
       for (const [sessionId, transport] of mcpConnections) {
         try {
@@ -519,12 +525,12 @@ class CapabilitiesMCPServer {
         }
       }
       mcpConnections.clear();
-      
+
       // Close HTTP server
       server.close(() => {
         logger.info('✅ MCP HTTP server shutdown complete');
       });
-      
+
       // Close MCP server
       await this.server.close();
     };

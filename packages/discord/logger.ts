@@ -21,7 +21,7 @@ import { randomUUID } from 'crypto';
 
 const { combine, timestamp, json, errors } = winston.format;
 
-const addRequestId = winston.format(info => {
+const addRequestId = winston.format((info) => {
   info.request_id = randomUUID();
   return info;
 });
@@ -163,11 +163,7 @@ interface ExtendedLogger extends winston.Logger {
   apiError(endpoint: string, error: Error): void;
   messageProcessed(message: Message, result: ProcessingResult): void;
   messageProcessingStart(messageId: string, options?: ProcessingOptions): void;
-  userActivity(
-    userId: string,
-    guildId: string,
-    metrics: UserActivityMetrics
-  ): void;
+  userActivity(userId: string, guildId: string, metrics: UserActivityMetrics): void;
   systemMetrics(): void;
 }
 
@@ -197,7 +193,7 @@ extendedLogger.messageReceived = (message: Message, metadata = {}) => {
     isBot: message.author.bot,
     joinedAt: message.member?.joinedTimestamp || undefined,
     guildId: message.guild?.id,
-    roles: message.member?.roles.cache.map(role => role.name),
+    roles: message.member?.roles.cache.map((role) => role.name),
   };
 
   // Calculate message metrics
@@ -205,9 +201,7 @@ extendedLogger.messageReceived = (message: Message, metadata = {}) => {
     characterCount: message.content.length,
     wordCount: message.content.trim().split(/\s+/).length,
     containsCode: /```[\s\S]*?```/.test(message.content),
-    containsImage: message.attachments.some(att =>
-      att.contentType?.startsWith('image/')
-    ),
+    containsImage: message.attachments.some((att) => att.contentType?.startsWith('image/')),
     containsLink: /https?:\/\/\S+/.test(message.content),
   };
 
@@ -219,9 +213,7 @@ extendedLogger.messageReceived = (message: Message, metadata = {}) => {
       type: message.channel.type,
       name: 'name' in message.channel ? message.channel.name : undefined,
       isThread: message.channel.isThread(),
-      parentId: message.channel.isThread()
-        ? message.channel.parentId
-        : undefined,
+      parentId: message.channel.isThread() ? message.channel.parentId : undefined,
     },
     guild: message.guild
       ? {
@@ -231,7 +223,7 @@ extendedLogger.messageReceived = (message: Message, metadata = {}) => {
         }
       : undefined,
     timestamp: message.createdTimestamp,
-    attachments: Array.from(message.attachments.values()).map(att => ({
+    attachments: Array.from(message.attachments.values()).map((att) => ({
       id: att.id,
       url: att.url,
       contentType: att.contentType,
@@ -286,11 +278,7 @@ extendedLogger.systemEvent = (
  *   messageId: '123456789'
  * });
  */
-extendedLogger.apiRequest = (
-  endpoint: string,
-  method: string,
-  payload: unknown
-) => {
+extendedLogger.apiRequest = (endpoint: string, method: string, payload: unknown) => {
   logger.info('API request initiated', {
     event: 'api.request',
     endpoint,
@@ -308,11 +296,7 @@ extendedLogger.apiRequest = (
  *   queuePosition: 1
  * });
  */
-extendedLogger.apiResponse = (
-  endpoint: string,
-  status: number,
-  data: unknown
-) => {
+extendedLogger.apiResponse = (endpoint: string, status: number, data: unknown) => {
   logger.info('API response received', {
     event: 'api.response',
     endpoint,
@@ -373,12 +357,8 @@ extendedLogger.apiError = (endpoint: string, error: Error) => {
  *   processingTime: 1234
  * });
  */
-extendedLogger.messageProcessed = (
-  message: Message,
-  result: ProcessingResult
-) => {
-  const responseTime =
-    result.processingTime || Date.now() - message.createdTimestamp;
+extendedLogger.messageProcessed = (message: Message, result: ProcessingResult) => {
+  const responseTime = result.processingTime || Date.now() - message.createdTimestamp;
 
   // Structure metrics in a standardized way
   const metrics: MetricsData = {
@@ -434,10 +414,7 @@ extendedLogger.messageProcessed = (
  *   authorId: '456789123'
  * });
  */
-extendedLogger.messageProcessingStart = (
-  messageId: string,
-  options: ProcessingOptions = {}
-) => {
+extendedLogger.messageProcessingStart = (messageId: string, options: ProcessingOptions = {}) => {
   logger.info('Message processing started', {
     event: 'message.processing.start',
     metadata: {
@@ -456,11 +433,7 @@ interface UserActivityMetrics {
   lastActive: number;
 }
 
-extendedLogger.userActivity = (
-  userId: string,
-  guildId: string,
-  metrics: UserActivityMetrics
-) => {
+extendedLogger.userActivity = (userId: string, guildId: string, metrics: UserActivityMetrics) => {
   logger.info('User activity updated', {
     event: 'user.activity',
     user: {

@@ -5,24 +5,25 @@ import { capabilityRegistry } from '../services/capability-registry.js';
 
 /**
  * Web capability - performs web searches and fetches content from URLs
- * 
+ *
  * Supported actions:
  * - search: Searches the web for a given query
  * - fetch: Fetches content from a specific URL
- * 
+ *
  * Parameters:
  * - query: The search query (for search action)
  * - url: The URL to fetch (for fetch action)
- * 
+ *
  * Content: Can also provide the query/URL as content instead of a parameter
  */
 export const webCapability: RegisteredCapability = {
   name: 'web',
   supportedActions: ['search', 'fetch'],
-  description: 'Performs web searches and fetches content from URLs with comprehensive results and links',
+  description:
+    'Performs web searches and fetches content from URLs with comprehensive results and links',
   examples: [
     '<capability name="web" action="search" query="React onboarding libraries 2024" />',
-    '<capability name="web" action="fetch" url="https://example.com/article" />'
+    '<capability name="web" action="fetch" url="https://example.com/article" />',
   ],
   handler: async (params, content) => {
     const { action } = params;
@@ -32,9 +33,9 @@ export const webCapability: RegisteredCapability = {
       if (!query) {
         throw new Error('No search query provided');
       }
-      
+
       logger.info(`🔍 Performing web search for: ${query}`);
-      
+
       try {
         // Try MCP Brave Search first if available
         try {
@@ -50,9 +51,9 @@ export const webCapability: RegisteredCapability = {
                 action: 'call_tool',
                 connection_id: 'brave_search',
                 tool_name: 'brave_web_search',
-                args: { query }
+                args: { query },
               });
-              
+
               if (typeof mcpResult === 'string' && mcpResult.length > 0) {
                 return mcpResult;
               }
@@ -82,9 +83,9 @@ export const webCapability: RegisteredCapability = {
       if (!url) {
         throw new Error('No URL provided for fetch');
       }
-      
+
       logger.info(`🌐 Fetching web content from: ${url}`);
-      
+
       try {
         const result = await fetchWebContent(url, {
           extractText: true,
@@ -93,9 +94,15 @@ export const webCapability: RegisteredCapability = {
 
         if (result.success) {
           let content = '';
-          if (result.title) {content += `Title: ${result.title}\n`;}
-          if (result.description) {content += `Description: ${result.description}\n`;}
-          if (result.content) {content += `Content: ${result.content}`;}
+          if (result.title) {
+            content += `Title: ${result.title}\n`;
+          }
+          if (result.description) {
+            content += `Description: ${result.description}\n`;
+          }
+          if (result.content) {
+            content += `Content: ${result.content}`;
+          }
           return content || `No content extracted from ${url}`;
         } else {
           return `Failed to fetch ${url}: ${result.error}`;
@@ -107,5 +114,5 @@ export const webCapability: RegisteredCapability = {
     }
 
     throw new Error(`Unknown web action: ${action}`);
-  }
+  },
 };

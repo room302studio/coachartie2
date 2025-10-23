@@ -1,7 +1,9 @@
 # Calculator Capability - Infinite Retry Loop Bug Fix
 
 ## Problem Summary
+
 The calculator capability was getting stuck in an infinite retry loop with the error:
+
 ```
 ❌ Attempt 1 failed for calculator:calculate: Missing required parameters for capability 'calculator': expression
 ❌ Attempt 2 failed for calculator:calculate: Missing required parameters for capability 'calculator': expression
@@ -10,6 +12,7 @@ The calculator capability was getting stuck in an infinite retry loop with the e
 ```
 
 The LLM was calling calculator like this:
+
 ```xml
 <capability name="calculator" action="calculate" data='{"expression":"2+2"}' />
 ```
@@ -19,18 +22,23 @@ But it kept failing saying "Missing required parameters: expression" even though
 ## Root Causes
 
 ### 1. Parameter Validation Too Strict
+
 **File**: `/packages/capabilities/src/services/capability-registry.ts`
 **Line**: 241-248
 
 The capability registry validates required parameters BEFORE calling the handler:
+
 ```typescript
-const missingParams = capability.requiredParams.filter(param => !(param in params));
+const missingParams = capability.requiredParams.filter((param) => !(param in params));
 if (missingParams.length > 0) {
-  throw new Error(`Missing required parameters for capability '${name}': ${missingParams.join(', ')}`);
+  throw new Error(
+    `Missing required parameters for capability '${name}': ${missingParams.join(', ')}`
+  );
 }
 ```
 
 But the calculator handler accepts parameters from EITHER `params.expression` OR `content`:
+
 ```typescript
 const expression = params.expression || content;
 ```
@@ -38,15 +46,18 @@ const expression = params.expression || content;
 This meant validation would fail even when `content` had the expression, because the validator doesn't know about the handler's fallback logic.
 
 ### 2. LLM Format Mismatch
+
 **File**: `/packages/capabilities/src/services/capability-registry.ts`
 **Line**: 358-373
 
 The capability registry instructions tell the LLM to use:
+
 ```xml
 <capability name="calculator" action="calculate" data='{"expression":"2+2"}' />
 ```
 
 But the calculator capability examples show:
+
 ```xml
 <capability name="calculator" action="calculate" expression="5+5" />
 ```
@@ -54,10 +65,12 @@ But the calculator capability examples show:
 The XML parser DOES handle the `data` attribute by parsing the JSON and merging into params, but if parsing fails or params is empty, the expression ends up in `content` instead.
 
 ### 3. Infinite Retry Loop
+
 **File**: `/packages/capabilities/src/utils/robust-capability-executor.ts`
 **Lines**: 22-85
 
 The execution flow was:
+
 1. Validation fails → Robust executor retries 3x
 2. All retries fail → Tries fallback
 3. Fallback throws error → Returns failure result
@@ -67,38 +80,50 @@ The execution flow was:
 ## Fixes Applied
 
 ### Fix 1: Smarter Parameter Validation
+
 **File**: `/packages/capabilities/src/services/capability-registry.ts`
 
 **Before**:
+
 ```typescript
-const missingParams = capability.requiredParams.filter(param => !(param in params));
+const missingParams = capability.requiredParams.filter((param) => !(param in params));
 if (missingParams.length > 0) {
-  throw new Error(`Missing required parameters for capability '${name}': ${missingParams.join(', ')}`);
+  throw new Error(
+    `Missing required parameters for capability '${name}': ${missingParams.join(', ')}`
+  );
 }
 ```
 
 **After**:
+
 ```typescript
-const missingParams = capability.requiredParams.filter(param => !(param in params));
+const missingParams = capability.requiredParams.filter((param) => !(param in params));
 if (missingParams.length > 0) {
   // Special case: If only one param is required and content is provided, allow it
   // This handles cases where params.expression is missing but content has "2+2"
-  const canUseContentAsFallback = missingParams.length === 1 && content && content.trim().length > 0;
+  const canUseContentAsFallback =
+    missingParams.length === 1 && content && content.trim().length > 0;
 
   if (!canUseContentAsFallback) {
-    throw new Error(`Missing required parameters for capability '${name}': ${missingParams.join(', ')}`);
+    throw new Error(
+      `Missing required parameters for capability '${name}': ${missingParams.join(', ')}`
+    );
   }
 
-  logger.info(`✅ Using content as fallback for required param '${missingParams[0]}' in ${name}:${action}`);
+  logger.info(
+    `✅ Using content as fallback for required param '${missingParams[0]}' in ${name}:${action}`
+  );
 }
 ```
 
 This allows single-parameter capabilities to use `content` as a fallback when the param is missing.
 
 ### Fix 2: More Defensive Calculator Handler
+
 **File**: `/packages/capabilities/src/capabilities/calculator.ts`
 
 Added multiple fallback sources for the expression:
+
 ```typescript
 // Extract expression from multiple possible sources
 let expression = params.expression || params.query || content;
@@ -121,6 +146,7 @@ if (expression) {
 ```
 
 Now handles:
+
 - Direct attribute: `expression="2+2"`
 - Data JSON: `data='{"expression":"2+2"}'`
 - Content: `<capability>2+2</capability>`
@@ -128,9 +154,11 @@ Now handles:
 - Stringified params
 
 ### Fix 3: Fallback Never Throws
+
 **File**: `/packages/capabilities/src/utils/robust-capability-executor.ts`
 
 **Before**:
+
 ```typescript
 private fallbackCalculation(expression: string): string {
   try {
@@ -144,6 +172,7 @@ private fallbackCalculation(expression: string): string {
 ```
 
 **After**:
+
 ```typescript
 private fallbackCalculation(expression: string): string {
   try {
@@ -165,15 +194,18 @@ private fallbackCalculation(expression: string): string {
 ```
 
 Added:
+
 - Empty expression check
 - Better logging
 - Always returns a user-friendly message (never throws)
 - This breaks the infinite retry loop
 
 ### Fix 4: Better XML Parser Logging
+
 **File**: `/packages/capabilities/src/utils/xml-parser.ts`
 
 Added detailed logging for data attribute parsing:
+
 ```typescript
 try {
   const dataStr = String(params.data);
@@ -189,13 +221,17 @@ try {
     // Merge parsed JSON data into params
     Object.assign(params, parsedData);
     delete params.data;
-    logger.info(`✅ XML PARSER: Successfully parsed and merged data attribute: ${JSON.stringify(parsedData)}`);
+    logger.info(
+      `✅ XML PARSER: Successfully parsed and merged data attribute: ${JSON.stringify(parsedData)}`
+    );
     logger.info(`🔍 XML PARSER: Final params after merge: ${JSON.stringify(params)}`);
   }
 } catch (error) {
   content = String(params.data);
   delete params.data;
-  logger.warn(`⚠️ XML PARSER: Failed to parse data attribute as JSON, using as content. Error: ${error.message}`);
+  logger.warn(
+    `⚠️ XML PARSER: Failed to parse data attribute as JSON, using as content. Error: ${error.message}`
+  );
 }
 ```
 
@@ -206,16 +242,19 @@ This makes it easier to diagnose data parsing issues in the future.
 To test the fix, try these calculator formats:
 
 ### Format 1: Data attribute (was broken, now fixed)
+
 ```xml
 <capability name="calculator" action="calculate" data='{"expression":"2+2"}' />
 ```
 
 ### Format 2: Direct attribute (always worked)
+
 ```xml
 <capability name="calculator" action="calculate" expression="5*5" />
 ```
 
 ### Format 3: Content-based (always worked)
+
 ```xml
 <capability name="calculator" action="calculate">10 + 15</capability>
 ```
@@ -241,6 +280,7 @@ To prevent this bug from happening again:
 ## Impact
 
 This fix resolves:
+
 - ✅ Infinite retry loops for calculator capability
 - ✅ "Missing required parameters" errors when expression is provided
 - ✅ BullMQ job queue getting stuck on calculator jobs

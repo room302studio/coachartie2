@@ -56,7 +56,7 @@ export class SchedulerService {
 
   constructor() {
     const connection = createRedisConnection();
-    
+
     // Create scheduler queue for cron jobs
     this.schedulerQueue = new Queue('coachartie-scheduler', {
       connection,
@@ -105,14 +105,11 @@ export class SchedulerService {
 
       // Run immediately if requested
       if (task.options?.immediate) {
-        await this.schedulerQueue.add(
-          `${task.name}-immediate`,
-          {
-            taskId: task.id,
-            immediate: true,
-            ...task.data,
-          }
-        );
+        await this.schedulerQueue.add(`${task.name}-immediate`, {
+          taskId: task.id,
+          immediate: true,
+          ...task.data,
+        });
       }
     } catch (error) {
       logger.error(`Failed to schedule task '${task.name}':`, error);
@@ -123,20 +120,12 @@ export class SchedulerService {
   /**
    * Schedule a one-time job with delay
    */
-  async scheduleOnce(
-    name: string,
-    data: Record<string, unknown>,
-    delay: number
-  ): Promise<void> {
+  async scheduleOnce(name: string, data: Record<string, unknown>, delay: number): Promise<void> {
     try {
-      await this.schedulerQueue.add(
-        name,
-        data,
-        {
-          delay,
-          jobId: `once-${name}-${Date.now()}`,
-        }
-      );
+      await this.schedulerQueue.add(name, data, {
+        delay,
+        jobId: `once-${name}-${Date.now()}`,
+      });
 
       logger.info(`Scheduled one-time job '${name}' with ${delay}ms delay`);
     } catch (error) {
@@ -204,7 +193,7 @@ export class SchedulerService {
    */
   private async executeScheduledJob(job: BullJob): Promise<void> {
     const { taskId } = job.data;
-    
+
     try {
       // Silent execution - no logs
 
@@ -213,19 +202,19 @@ export class SchedulerService {
         case 'health-check':
           await this.executeHealthCheck(job.data);
           break;
-          
+
         case 'daily-summary':
           await this.executeDailySummary(job.data);
           break;
-          
+
         case 'user-reminder':
           await this.executeUserReminder(job.data as ReminderJobData);
           break;
-          
+
         case 'cleanup-old-data':
           await this.executeCleanup(job.data);
           break;
-          
+
         default:
           logger.warn(`Unknown scheduled job type: ${job.name}`);
       }
@@ -242,12 +231,12 @@ export class SchedulerService {
    */
   private async executeHealthCheck(_data: Record<string, unknown>): Promise<void> {
     // Health check
-    
+
     // - Check Redis connectivity
     // - Check queue status
     // - Check service availability
     // - Report to monitoring systems
-    
+
     logger.info('✅ Health check completed');
   }
 
@@ -256,11 +245,11 @@ export class SchedulerService {
    */
   private async executeDailySummary(_data: Record<string, unknown>): Promise<void> {
     logger.info('📊 Executing daily summary generation');
-    
+
     // - Aggregate daily statistics
     // - Generate summary reports
     // - Send to configured channels
-    
+
     logger.info('✅ Daily summary completed');
   }
 
@@ -269,13 +258,13 @@ export class SchedulerService {
    */
   private async executeUserReminder(data: ReminderJobData): Promise<void> {
     const { userId, reminderType } = data;
-    
+
     logger.info(`💭 Executing user reminder for ${userId}: ${reminderType}`);
-    
+
     // - Send reminder messages
     // - Update user interaction logs
     // - Handle reminder responses
-    
+
     logger.info('✅ User reminder completed');
   }
 
@@ -284,11 +273,11 @@ export class SchedulerService {
    */
   private async executeCleanup(_data: Record<string, unknown>): Promise<void> {
     logger.info('🧹 Executing data cleanup');
-    
+
     // - Remove old completed jobs
     // - Clean up expired sessions
     // - Archive old logs
-    
+
     logger.info('✅ Data cleanup completed');
   }
 

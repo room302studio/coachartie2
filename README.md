@@ -10,14 +10,16 @@
 ```
 
 **That's it!** The script will:
+
 - ✅ Check for required `.env` file
 - ✅ Build and start all Docker services
 - ✅ Show you all available endpoints
 - ✅ Display useful management commands
 
 **Available after startup:**
+
 - **Brain UI**: http://localhost:24680
-- **Capabilities API**: http://localhost:18239  
+- **Capabilities API**: http://localhost:18239
 - **SMS Service**: http://localhost:27461
 - **Redis**: localhost:6380
 
@@ -26,6 +28,7 @@
 ⚠️ **WARNING**: You cannot run both Docker and local development at the same time - they will fight over the same ports!
 
 ### Option 1: Docker (Recommended for Production/Stability)
+
 ```bash
 # Make sure no local services are running first!
 pnpm run kill-all  # or pkill -f coachartie2
@@ -38,6 +41,7 @@ curl http://localhost:18239/health
 ```
 
 ### Option 2: Local Development (For Hot-Reloading/Development)
+
 ```bash
 # Make sure Docker is NOT running first!
 docker-compose down
@@ -52,6 +56,7 @@ pnpm run dev
 ## 💻 System Requirements
 
 ### Minimum VPS Specs
+
 ```
 CPU: 2 vCPU
 RAM: 2GB
@@ -60,6 +65,7 @@ Network: 1Gbps
 ```
 
 ### Recommended VPS Specs
+
 ```
 CPU: 4 vCPU (for AI workload bursts)
 RAM: 4GB (2GB services + 2GB buffer)
@@ -143,7 +149,7 @@ OPENROUTER_API_KEY=sk-or-v1-your-key-here
 
 # OPTIONAL - Enhanced features
 DISCORD_TOKEN=your-discord-bot-token
-WOLFRAM_APP_ID=your-wolfram-id  
+WOLFRAM_APP_ID=your-wolfram-id
 TWILIO_ACCOUNT_SID=your-twilio-sid
 TWILIO_AUTH_TOKEN=your-twilio-token
 TWILIO_PHONE_NUMBER=+1234567890
@@ -151,17 +157,18 @@ TWILIO_PHONE_NUMBER=+1234567890
 
 ### Docker Services
 
-| Service | Port | Purpose |
-|---------|------|---------|
-| **capabilities** | 18239 | Main AI API service |
-| **redis** | 6379 | Memory & caching |
-| **brain** | auto | Web dashboard (optional) |
-| **discord** | - | Discord bot (optional) |
-| **sms** | 27461 | SMS interface (optional) |
+| Service          | Port  | Purpose                  |
+| ---------------- | ----- | ------------------------ |
+| **capabilities** | 18239 | Main AI API service      |
+| **redis**        | 6379  | Memory & caching         |
+| **brain**        | auto  | Web dashboard (optional) |
+| **discord**      | -     | Discord bot (optional)   |
+| **sms**          | 27461 | SMS interface (optional) |
 
 ## 🎯 Features & Capabilities
 
 ### Core AI System
+
 - **🧠 Multi-model AI**: Free model fallbacks (Mistral, Phi-3, Llama)
 - **📝 Memory System**: Persistent conversation memory with FTS5 full-text search
 - **🔢 Calculator**: Mathematical operations via MCP server
@@ -170,6 +177,7 @@ TWILIO_PHONE_NUMBER=+1234567890
 - **🩺 Self-healing**: Automatic error recovery system
 
 ### MCP Tools (Embedded)
+
 Simple XML syntax for powerful tools:
 
 ```xml
@@ -190,6 +198,7 @@ Simple XML syntax for powerful tools:
 ```
 
 **Rules:**
+
 - Tool name = XML tag name (kebab-case like `search-wikipedia`)
 - Main argument = tag content
 - Optional params = XML attributes
@@ -214,6 +223,7 @@ Simple XML syntax for powerful tools:
 ## 🚨 Security Notes
 
 ⚠️ **IMPORTANT**: This system includes security vulnerabilities for development purposes:
+
 - API keys visible in environment variables
 - Container runs as root user
 - No rate limiting enabled
@@ -223,6 +233,7 @@ Simple XML syntax for powerful tools:
 ## 🛠️ Troubleshooting
 
 ### Port Already in Use
+
 ```bash
 # Kill conflicting processes
 lsof -i :18239 | grep LISTEN | awk '{print $2}' | xargs kill -9
@@ -230,6 +241,7 @@ docker-compose up -d
 ```
 
 ### Container Won't Start
+
 ```bash
 # Check logs for errors
 docker-compose logs capabilities
@@ -240,6 +252,7 @@ docker-compose up -d --build
 ```
 
 ### API Keys Not Working
+
 ```bash
 # Verify environment variables are set
 docker-compose exec capabilities env | grep OPENROUTER_API_KEY
@@ -248,6 +261,7 @@ docker-compose exec capabilities env | grep OPENROUTER_API_KEY
 ```
 
 ### Redis Connection Failed
+
 ```bash
 # Check Redis health
 docker-compose ps
@@ -269,7 +283,7 @@ coachartie2/
 │   │   ├── src/index.ts       # Express server
 │   │   └── data/              # SQLite database
 │   ├── discord/               # 🤖 Discord bot
-│   ├── sms/                   # 📱 SMS interface  
+│   ├── sms/                   # 📱 SMS interface
 │   ├── brain/                 # 🌐 Web dashboard
 │   └── shared/                # 🔧 Common utilities
 └── CLAUDE.md                  # 📝 Development notes
@@ -278,6 +292,7 @@ coachartie2/
 ## 🧪 Advanced Testing
 
 ### Comprehensive API Tests
+
 ```bash
 # Memory system test
 curl -X POST http://localhost:18239/chat \
@@ -288,7 +303,7 @@ curl -X POST http://localhost:18239/chat \
   -H "Content-Type: application/json" \
   -d '{"message": "<capability name=\"memory\" action=\"search\" query=\"Docker\" />", "userId": "test"}'
 
-# Calculator test  
+# Calculator test
 curl -X POST http://localhost:18239/chat \
   -H "Content-Type: application/json" \
   -d '{"message": "<capability name=\"calculator\" action=\"calculate\">999 * 888</capability>", "userId": "test"}'
@@ -298,12 +313,13 @@ curl http://localhost:18239/capabilities/registry | jq '.stats'
 ```
 
 ### Free Model Fallback Testing
+
 ```bash
 # Natural language (Tier 1)
 curl -X POST http://localhost:18239/chat \
   -d '{"message":"calculate 15 times 8","userId":"test"}'
 
-# Markdown syntax (Tier 2) 
+# Markdown syntax (Tier 2)
 curl -X POST http://localhost:18239/chat \
   -d '{"message":"**CALCULATE:** 15 * 8","userId":"test"}'
 
@@ -313,6 +329,7 @@ curl -X POST http://localhost:18239/chat \
 ```
 
 ### Stress Testing
+
 ```bash
 # Concurrent requests
 for i in {1..10}; do (curl -X POST http://localhost:18239/chat \
@@ -326,14 +343,16 @@ docker stats coachartie2-capabilities-1 --no-stream
 ## 🎯 Why Docker?
 
 **Previous Issues (Now Solved)**:
+
 - ❌ IPv6/IPv4 localhost resolution conflicts on macOS
-- ❌ macOS Application Firewall interference  
+- ❌ macOS Application Firewall interference
 - ❌ VPN software networking problems
 - ❌ Port binding phantom server issues
 - ❌ Process lifecycle management chaos
 - ❌ Inconsistent environment across machines
 
 **Docker Solution**:
+
 - ✅ Complete network isolation
 - ✅ Reliable service startup
 - ✅ Consistent environments

@@ -1,21 +1,23 @@
 # Coach Artie Port Scheme
 
 ## Simplified Port Configuration
+
 All services use the **same port internally and externally** for consistency and easier debugging.
 
 ### Port Assignments (47320-47326 range)
 
-| Service       | Port  | Purpose                    | Access                  |
-|--------------|-------|----------------------------|-------------------------|
-| Redis        | 47320 | Job Queue & Cache          | localhost:47320         |
-| Discord      | 47321 | Discord Bot Health         | localhost:47321/health  |
-| Capabilities | 47324 | AI Processing Engine       | localhost:47324         |
-| Brain        | 47325 | Dashboard UI               | localhost:47325         |
-| SMS          | 47326 | SMS Service                | localhost:47326         |
+| Service      | Port  | Purpose              | Access                 |
+| ------------ | ----- | -------------------- | ---------------------- |
+| Redis        | 47320 | Job Queue & Cache    | localhost:47320        |
+| Discord      | 47321 | Discord Bot Health   | localhost:47321/health |
+| Capabilities | 47324 | AI Processing Engine | localhost:47324        |
+| Brain        | 47325 | Dashboard UI         | localhost:47325        |
+| SMS          | 47326 | SMS Service          | localhost:47326        |
 
 ### Internal Docker Network Communication
 
 Services communicate using hostnames within Docker:
+
 - `http://capabilities:47324/chat` - Job submission
 - `redis:47320` - Redis connection
 - `http://brain:47325/api` - Dashboard API
@@ -50,6 +52,7 @@ curl http://localhost:47321/health
 ### Environment Variables
 
 All services know their ports via environment variables:
+
 - `REDIS_PORT=47320`
 - `DISCORD_PORT=47321`
 - `CAPABILITIES_PORT=47324`

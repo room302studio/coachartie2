@@ -1,13 +1,13 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
-import { 
-  createQueue, 
-  createWorker, 
-  createRedisConnection, 
+import {
+  createQueue,
+  createWorker,
+  createRedisConnection,
   closeRedisConnection,
   QUEUES,
   IncomingMessage,
   OutgoingMessage,
-  logger
+  logger,
 } from '../src/index.js';
 import type { Queue, Worker } from 'bullmq';
 
@@ -70,8 +70,8 @@ describe('Service Integration Tests', () => {
             inReplyTo: message.id,
             metadata: {
               channelId: message.respondTo.channelId,
-              responseType: 'discord'
-            }
+              responseType: 'discord',
+            },
           };
 
           await discordQueue.add('send-response', response);
@@ -98,7 +98,7 @@ describe('Service Integration Tests', () => {
           userId: 'user123',
           message: '@coachartie help',
           context: { userTag: 'TestUser#1234', mention: true },
-          respondTo: { type: 'discord', channelId: 'general' }
+          respondTo: { type: 'discord', channelId: 'general' },
         },
         {
           id: 'discord-dm-1',
@@ -108,7 +108,7 @@ describe('Service Integration Tests', () => {
           userId: 'user456',
           message: 'ping',
           context: { userTag: 'DMUser#5678', isDM: true },
-          respondTo: { type: 'discord', channelId: 'dm-channel' }
+          respondTo: { type: 'discord', channelId: 'dm-channel' },
         },
         {
           id: 'discord-status-1',
@@ -118,26 +118,27 @@ describe('Service Integration Tests', () => {
           userId: 'user789',
           message: 'status check please',
           context: { userTag: 'AdminUser#9999', isAdmin: true },
-          respondTo: { type: 'discord', channelId: 'admin-channel' }
-        }
+          respondTo: { type: 'discord', channelId: 'admin-channel' },
+        },
       ];
 
       for (const message of discordMessages) {
         await incomingQueue.add('process', message);
-        await new Promise(resolve => setTimeout(resolve, 100)); // Small delay between messages
+        await new Promise((resolve) => setTimeout(resolve, 100)); // Small delay between messages
       }
 
-      await new Promise(resolve => setTimeout(resolve, 2000)); // Longer wait time
+      await new Promise((resolve) => setTimeout(resolve, 2000)); // Longer wait time
 
       expect(processedMessages.length).toBeGreaterThanOrEqual(1);
       expect(discordResponses.length).toBeGreaterThanOrEqual(1);
 
       // Check that we got some responses with expected content
       if (discordResponses.length > 0) {
-        const hasExpectedResponse = discordResponses.some(r => 
-          r.message.includes('available commands') || 
-          r.message.includes('Pong!') || 
-          r.message.includes('operational')
+        const hasExpectedResponse = discordResponses.some(
+          (r) =>
+            r.message.includes('available commands') ||
+            r.message.includes('Pong!') ||
+            r.message.includes('operational')
         );
         expect(hasExpectedResponse).toBe(true);
       }
@@ -161,9 +162,10 @@ describe('Service Integration Tests', () => {
             processedSMS.push(message);
 
             // SMS responses should be shorter
-            let responseText = message.message.length > 50 
-              ? 'Message received! (long message truncated for SMS)'
-              : `Got it: ${message.message}`;
+            let responseText =
+              message.message.length > 50
+                ? 'Message received! (long message truncated for SMS)'
+                : `Got it: ${message.message}`;
 
             const response: OutgoingMessage = {
               id: `sms-response-${Date.now()}`,
@@ -175,8 +177,8 @@ describe('Service Integration Tests', () => {
               inReplyTo: message.id,
               metadata: {
                 phoneNumber: message.respondTo.phoneNumber,
-                responseType: 'sms'
-              }
+                responseType: 'sms',
+              },
             };
 
             await smsQueue.add('send-sms', response);
@@ -185,12 +187,9 @@ describe('Service Integration Tests', () => {
       );
       testWorkers.push(capabilitiesWorker);
 
-      const smsWorker = createWorker<OutgoingMessage, void>(
-        QUEUES.OUTGOING_SMS,
-        async (job) => {
-          smsResponses.push(job.data);
-        }
-      );
+      const smsWorker = createWorker<OutgoingMessage, void>(QUEUES.OUTGOING_SMS, async (job) => {
+        smsResponses.push(job.data);
+      });
       testWorkers.push(smsWorker);
 
       // Test different SMS scenarios
@@ -203,7 +202,7 @@ describe('Service Integration Tests', () => {
           userId: '5551234567',
           message: 'Hello',
           context: { phoneNumber: '+15551234567' },
-          respondTo: { type: 'sms', phoneNumber: '+15551234567' }
+          respondTo: { type: 'sms', phoneNumber: '+15551234567' },
         },
         {
           id: 'sms-long-1',
@@ -211,23 +210,24 @@ describe('Service Integration Tests', () => {
           retryCount: 0,
           source: 'sms',
           userId: '5559876543',
-          message: 'This is a very long SMS message that exceeds the typical character limit and should be handled appropriately by the system',
+          message:
+            'This is a very long SMS message that exceeds the typical character limit and should be handled appropriately by the system',
           context: { phoneNumber: '+15559876543' },
-          respondTo: { type: 'sms', phoneNumber: '+15559876543' }
-        }
+          respondTo: { type: 'sms', phoneNumber: '+15559876543' },
+        },
       ];
 
       for (const message of smsMessages) {
         await incomingQueue.add('process', message);
       }
 
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      await new Promise((resolve) => setTimeout(resolve, 1000));
 
       expect(processedSMS).toHaveLength(2);
       expect(smsResponses).toHaveLength(2);
 
-      const shortResponse = smsResponses.find(r => r.inReplyTo === 'sms-short-1');
-      const longResponse = smsResponses.find(r => r.inReplyTo === 'sms-long-1');
+      const shortResponse = smsResponses.find((r) => r.inReplyTo === 'sms-short-1');
+      const longResponse = smsResponses.find((r) => r.inReplyTo === 'sms-long-1');
 
       expect(shortResponse?.message).toContain('Got it: Hello');
       expect(longResponse?.message).toContain('long message truncated');
@@ -269,8 +269,8 @@ Coach Artie`;
               metadata: {
                 emailAddress: message.respondTo.emailAddress,
                 subject: message.context?.subject,
-                responseType: 'email'
-              }
+                responseType: 'email',
+              },
             };
 
             await emailQueue.add('send-email', response);
@@ -296,12 +296,12 @@ Coach Artie`;
           source: 'email',
           userId: 'user@example.com',
           message: 'I need help with setting up my account',
-          context: { 
+          context: {
             emailAddress: 'user@example.com',
             subject: 'Account Setup Help',
-            hasHtml: false
+            hasHtml: false,
           },
-          respondTo: { type: 'email', emailAddress: 'user@example.com' }
+          respondTo: { type: 'email', emailAddress: 'user@example.com' },
         },
         {
           id: 'email-reply-1',
@@ -310,31 +310,32 @@ Coach Artie`;
           source: 'email',
           userId: 'customer@domain.com',
           message: 'Thanks for the previous help, I have another question',
-          context: { 
+          context: {
             emailAddress: 'customer@domain.com',
             subject: 'Re: Previous Support Ticket',
-            hasHtml: true
+            hasHtml: true,
           },
-          respondTo: { type: 'email', emailAddress: 'customer@domain.com' }
-        }
+          respondTo: { type: 'email', emailAddress: 'customer@domain.com' },
+        },
       ];
 
       for (const message of emailMessages) {
         await incomingQueue.add('process', message);
-        await new Promise(resolve => setTimeout(resolve, 100));
+        await new Promise((resolve) => setTimeout(resolve, 100));
       }
 
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      await new Promise((resolve) => setTimeout(resolve, 2000));
 
       expect(processedEmails.length).toBeGreaterThanOrEqual(1);
       expect(emailResponses.length).toBeGreaterThanOrEqual(1);
 
       // Check that we got some email responses
       if (emailResponses.length > 0) {
-        const hasEmailContent = emailResponses.some(r => 
-          r.message.includes('Account Setup Help') || 
-          r.message.includes('Previous Support Ticket') ||
-          r.message.includes('Thank you for your email')
+        const hasEmailContent = emailResponses.some(
+          (r) =>
+            r.message.includes('Account Setup Help') ||
+            r.message.includes('Previous Support Ticket') ||
+            r.message.includes('Thank you for your email')
         );
         expect(hasEmailContent).toBe(true);
       }
@@ -347,7 +348,7 @@ Coach Artie`;
       const discordQueue = createQueue<OutgoingMessage>(QUEUES.OUTGOING_DISCORD);
       const smsQueue = createQueue<OutgoingMessage>(QUEUES.OUTGOING_SMS);
       const emailQueue = createQueue<OutgoingMessage>(QUEUES.OUTGOING_EMAIL);
-      
+
       testQueues.push(incomingQueue, discordQueue, smsQueue, emailQueue);
 
       // Track user interactions across channels
@@ -358,7 +359,7 @@ Coach Artie`;
         QUEUES.INCOMING_MESSAGES,
         async (job) => {
           const message = job.data;
-          
+
           // Track user across channels (in real app, you'd have user identity mapping)
           const userId = message.userId;
           if (!userInteractions[userId]) {
@@ -369,7 +370,7 @@ Coach Artie`;
           // Personalized response based on interaction history
           const interactionCount = userInteractions[userId].length;
           let responseText = '';
-          
+
           if (interactionCount === 1) {
             responseText = `Welcome! This is your first message via ${message.source}.`;
           } else {
@@ -388,14 +389,18 @@ Coach Artie`;
               channelId: message.respondTo.channelId,
               phoneNumber: message.respondTo.phoneNumber,
               emailAddress: message.respondTo.emailAddress,
-              responseType: message.respondTo.type
-            }
+              responseType: message.respondTo.type,
+            },
           };
 
           // Route to appropriate queue
-          const targetQueue = message.respondTo.type === 'discord' ? discordQueue :
-                            message.respondTo.type === 'sms' ? smsQueue : emailQueue;
-          
+          const targetQueue =
+            message.respondTo.type === 'discord'
+              ? discordQueue
+              : message.respondTo.type === 'sms'
+                ? smsQueue
+                : emailQueue;
+
           await targetQueue.add('response', response);
         }
       );
@@ -405,14 +410,11 @@ Coach Artie`;
       [
         { queue: discordQueue, type: 'discord' },
         { queue: smsQueue, type: 'sms' },
-        { queue: emailQueue, type: 'email' }
+        { queue: emailQueue, type: 'email' },
       ].forEach(({ queue, type }) => {
-        const worker = createWorker<OutgoingMessage, void>(
-          queue.name,
-          async (job) => {
-            allResponses.push({ ...job.data, metadata: { ...job.data.metadata, actualType: type } });
-          }
-        );
+        const worker = createWorker<OutgoingMessage, void>(queue.name, async (job) => {
+          allResponses.push({ ...job.data, metadata: { ...job.data.metadata, actualType: type } });
+        });
         testWorkers.push(worker);
       });
 
@@ -425,35 +427,35 @@ Coach Artie`;
           source: 'discord',
           userId: 'multi-channel-user',
           message: 'Hello from Discord',
-          respondTo: { type: 'discord', channelId: 'general' }
+          respondTo: { type: 'discord', channelId: 'general' },
         },
         {
-          id: 'cross-2', 
+          id: 'cross-2',
           timestamp: new Date(),
           retryCount: 0,
           source: 'sms',
           userId: 'multi-channel-user',
           message: 'Hello from SMS',
-          respondTo: { type: 'sms', phoneNumber: '+15551234567' }
+          respondTo: { type: 'sms', phoneNumber: '+15551234567' },
         },
         {
           id: 'cross-3',
           timestamp: new Date(),
           retryCount: 0,
-          source: 'email', 
+          source: 'email',
           userId: 'multi-channel-user',
           message: 'Hello from Email',
-          respondTo: { type: 'email', emailAddress: 'user@example.com' }
-        }
+          respondTo: { type: 'email', emailAddress: 'user@example.com' },
+        },
       ];
 
       // Send messages with slight delays to ensure ordering
       for (let i = 0; i < crossChannelMessages.length; i++) {
         await incomingQueue.add('process', crossChannelMessages[i]);
-        await new Promise(resolve => setTimeout(resolve, 200));
+        await new Promise((resolve) => setTimeout(resolve, 200));
       }
 
-      await new Promise(resolve => setTimeout(resolve, 3000));
+      await new Promise((resolve) => setTimeout(resolve, 3000));
 
       expect(Object.keys(userInteractions)).toHaveLength(1);
       expect(userInteractions['multi-channel-user'].length).toBeGreaterThanOrEqual(1);
@@ -461,10 +463,11 @@ Coach Artie`;
 
       // Check that responses have expected patterns
       if (allResponses.length > 0) {
-        const hasWelcomeMessages = allResponses.some(r => 
-          r.message.includes('Welcome') || 
-          r.message.includes('first message') ||
-          r.message.includes('interaction')
+        const hasWelcomeMessages = allResponses.some(
+          (r) =>
+            r.message.includes('Welcome') ||
+            r.message.includes('first message') ||
+            r.message.includes('interaction')
         );
         expect(hasWelcomeMessages).toBe(true);
       }
@@ -473,7 +476,9 @@ Coach Artie`;
 
   describe('Error Recovery and Dead Letter Queue', () => {
     it('should handle poison messages and implement circuit breaker pattern', async () => {
-      const poisonQueue = createQueue<{ shouldPoison: boolean; messageContent: string }>('test-poison-messages');
+      const poisonQueue = createQueue<{ shouldPoison: boolean; messageContent: string }>(
+        'test-poison-messages'
+      );
       testQueues.push(poisonQueue);
 
       const processedMessages: string[] = [];
@@ -523,10 +528,10 @@ Coach Artie`;
 
       for (const message of messages) {
         await poisonQueue.add('test-message', message);
-        await new Promise(resolve => setTimeout(resolve, 100));
+        await new Promise((resolve) => setTimeout(resolve, 100));
       }
 
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      await new Promise((resolve) => setTimeout(resolve, 2000));
 
       expect(processedMessages).toContain('good-1');
       expect(processedMessages).toContain('good-2');

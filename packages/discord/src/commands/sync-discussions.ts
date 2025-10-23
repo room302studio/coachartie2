@@ -18,13 +18,13 @@ import { getConversationState } from '../services/conversation-state.js';
 export const data = new SlashCommandBuilder()
   .setName('sync-discussions')
   .setDescription('Sync Discord forum discussions to GitHub issues')
-  .addStringOption(option =>
+  .addStringOption((option) =>
     option
       .setName('repo')
       .setDescription('GitHub repository (owner/repo or URL)')
       .setRequired(false)
   )
-  .addStringOption(option =>
+  .addStringOption((option) =>
     option
       .setName('forum')
       .setDescription('Specific forum channel to sync (leave empty for current channel)')
@@ -43,8 +43,9 @@ export async function execute(interaction: ChatInputCommandInteraction) {
       githubService = getGitHubIntegration();
     } catch (error) {
       await interaction.reply({
-        content: '❌ GitHub integration is not configured. Please set GITHUB_TOKEN environment variable.',
-        ephemeral: true
+        content:
+          '❌ GitHub integration is not configured. Please set GITHUB_TOKEN environment variable.',
+        ephemeral: true,
       });
       return;
     }
@@ -60,7 +61,7 @@ export async function execute(interaction: ChatInputCommandInteraction) {
       if (!forum || forum.type !== ChannelType.GuildForum) {
         await interaction.reply({
           content: '❌ Invalid forum channel specified.',
-          ephemeral: true
+          ephemeral: true,
         });
         return;
       }
@@ -78,10 +79,15 @@ export async function execute(interaction: ChatInputCommandInteraction) {
         channel?.type === ChannelType.PrivateThread
       ) {
         // Get parent forum
-        if (!('parent' in channel) || !channel.parent || channel.parent.type !== ChannelType.GuildForum) {
+        if (
+          !('parent' in channel) ||
+          !channel.parent ||
+          channel.parent.type !== ChannelType.GuildForum
+        ) {
           await interaction.reply({
-            content: '❌ This thread is not in a forum channel. Please run this command in a forum or specify a forum.',
-            ephemeral: true
+            content:
+              '❌ This thread is not in a forum channel. Please run this command in a forum or specify a forum.',
+            ephemeral: true,
           });
           return;
         }
@@ -89,8 +95,9 @@ export async function execute(interaction: ChatInputCommandInteraction) {
         forumName = channel.parent.name;
       } else {
         await interaction.reply({
-          content: '❌ Please run this command in a forum channel or specify a forum using the `forum` option.',
-          ephemeral: true
+          content:
+            '❌ Please run this command in a forum channel or specify a forum using the `forum` option.',
+          ephemeral: true,
         });
         return;
       }
@@ -105,11 +112,11 @@ export async function execute(interaction: ChatInputCommandInteraction) {
       conversationState.startConversation(userId, 'sync-discussions', {
         forumId,
         forumName,
-        step: 'awaiting_repo'
+        step: 'awaiting_repo',
       });
 
       await interaction.editReply({
-        content: `📋 Ready to sync discussions from **${forumName}**\n\nWhich GitHub repository should I create issues in? (Format: \`owner/repo\` or full URL)`
+        content: `📋 Ready to sync discussions from **${forumName}**\n\nWhich GitHub repository should I create issues in? (Format: \`owner/repo\` or full URL)`,
       });
       return;
     }
@@ -118,27 +125,27 @@ export async function execute(interaction: ChatInputCommandInteraction) {
     const repoInfo = githubService.parseRepoReference(repo);
     if (!repoInfo) {
       await interaction.editReply({
-        content: `❌ Invalid repository format. Please use \`owner/repo\` format (e.g., \`facebook/react\`) or a full GitHub URL.`
+        content: `❌ Invalid repository format. Please use \`owner/repo\` format (e.g., \`facebook/react\`) or a full GitHub URL.`,
       });
       return;
     }
 
     // Verify repository access
     await interaction.editReply({
-      content: `🔍 Verifying access to **${repoInfo.owner}/${repoInfo.repo}**...`
+      content: `🔍 Verifying access to **${repoInfo.owner}/${repoInfo.repo}**...`,
     });
 
     const hasAccess = await githubService.verifyRepository(repoInfo.owner, repoInfo.repo);
     if (!hasAccess) {
       await interaction.editReply({
-        content: `❌ Cannot access repository **${repoInfo.owner}/${repoInfo.repo}**. Please check:\n- Repository exists\n- GitHub token has access\n- Repository name is correct`
+        content: `❌ Cannot access repository **${repoInfo.owner}/${repoInfo.repo}**. Please check:\n- Repository exists\n- GitHub token has access\n- Repository name is correct`,
       });
       return;
     }
 
     // Start sync process
     await interaction.editReply({
-      content: `✅ Repository verified!\n\n🔄 Fetching discussions from **${forumName}**...`
+      content: `✅ Repository verified!\n\n🔄 Fetching discussions from **${forumName}**...`,
     });
 
     const forumTraversal = getForumTraversal();
@@ -146,13 +153,13 @@ export async function execute(interaction: ChatInputCommandInteraction) {
 
     if (forumSummary.threads.length === 0) {
       await interaction.editReply({
-        content: `ℹ️ No discussions found in **${forumName}** to sync.`
+        content: `ℹ️ No discussions found in **${forumName}** to sync.`,
       });
       return;
     }
 
     await interaction.editReply({
-      content: `📊 Found **${forumSummary.threads.length}** discussions\n\n🚀 Creating GitHub issues in **${repoInfo.owner}/${repoInfo.repo}**...\n\n_This may take a minute..._`
+      content: `📊 Found **${forumSummary.threads.length}** discussions\n\n🚀 Creating GitHub issues in **${repoInfo.owner}/${repoInfo.repo}**...\n\n_This may take a minute..._`,
     });
 
     // Sync threads to GitHub
@@ -164,15 +171,19 @@ export async function execute(interaction: ChatInputCommandInteraction) {
       async (current, total, result) => {
         // Update progress every 5 issues
         if (current % 5 === 0 || current === total) {
-          await interaction.editReply({
-            content: `🚀 Creating GitHub issues... (${current}/${total})\n\n${result.success ? '✅' : '❌'} ${result.issueUrl || 'Processing...'}`
-          }).catch(() => { /* Ignore rate limit errors on edits */ });
+          await interaction
+            .editReply({
+              content: `🚀 Creating GitHub issues... (${current}/${total})\n\n${result.success ? '✅' : '❌'} ${result.issueUrl || 'Processing...'}`,
+            })
+            .catch(() => {
+              /* Ignore rate limit errors on edits */
+            });
         }
       }
     );
 
     // Report results
-    const successCount = results.filter(r => r.success).length;
+    const successCount = results.filter((r) => r.success).length;
     const failureCount = results.length - successCount;
 
     let resultMessage = `## ✅ Sync Complete!\n\n`;
@@ -186,8 +197,8 @@ export async function execute(interaction: ChatInputCommandInteraction) {
     }
 
     resultMessage += `\n**Created Issues:**\n`;
-    const successfulIssues = results.filter(r => r.success && r.issueUrl);
-    successfulIssues.slice(0, 10).forEach(result => {
+    const successfulIssues = results.filter((r) => r.success && r.issueUrl);
+    successfulIssues.slice(0, 10).forEach((result) => {
       resultMessage += `- ${result.issueUrl}\n`;
     });
 
@@ -197,8 +208,9 @@ export async function execute(interaction: ChatInputCommandInteraction) {
 
     await interaction.editReply({ content: resultMessage });
 
-    logger.info(`Sync completed for user ${userId}: ${successCount}/${results.length} issues created`);
-
+    logger.info(
+      `Sync completed for user ${userId}: ${successCount}/${results.length} issues created`
+    );
   } catch (error) {
     logger.error(`Failed to execute sync-discussions command:`, error);
 
@@ -206,12 +218,12 @@ export async function execute(interaction: ChatInputCommandInteraction) {
 
     if (interaction.deferred) {
       await interaction.editReply({
-        content: `❌ Sync failed: ${errorMessage}`
+        content: `❌ Sync failed: ${errorMessage}`,
       });
     } else {
       await interaction.reply({
         content: `❌ Sync failed: ${errorMessage}`,
-        ephemeral: true
+        ephemeral: true,
       });
     }
   }

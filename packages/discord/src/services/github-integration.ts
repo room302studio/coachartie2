@@ -90,7 +90,7 @@ export class GitHubIntegrationService {
 
       if (starterMessage.attachments.length > 0) {
         body += `**Attachments:**\n`;
-        starterMessage.attachments.forEach(url => {
+        starterMessage.attachments.forEach((url) => {
           body += `- ${url}\n`;
         });
         body += `\n`;
@@ -109,9 +109,8 @@ export class GitHubIntegrationService {
         body += `**Top Responses:**\n\n`;
         responses.forEach((msg, index) => {
           body += `${index + 1}. **@${msg.authorName}** (${msg.createdAt.toISOString().split('T')[0]}):\n`;
-          const preview = msg.content.length > 200
-            ? msg.content.substring(0, 200) + '...'
-            : msg.content;
+          const preview =
+            msg.content.length > 200 ? msg.content.substring(0, 200) + '...' : msg.content;
           body += `   > ${preview}\n\n`;
         });
       }
@@ -127,7 +126,7 @@ export class GitHubIntegrationService {
     return {
       title,
       body,
-      labels: this.suggestLabels(thread)
+      labels: this.suggestLabels(thread),
     };
   }
 
@@ -142,15 +141,15 @@ export class GitHubIntegrationService {
 
     // Check thread tags and map to common GitHub labels
     const tagMappings: Record<string, string> = {
-      'bug': 'bug',
-      'feature': 'enhancement',
-      'question': 'question',
-      'help': 'help wanted',
-      'documentation': 'documentation',
-      'feedback': 'feedback'
+      bug: 'bug',
+      feature: 'enhancement',
+      question: 'question',
+      help: 'help wanted',
+      documentation: 'documentation',
+      feedback: 'feedback',
     };
 
-    thread.threadTags.forEach(tag => {
+    thread.threadTags.forEach((tag) => {
       const normalizedTag = tag.toLowerCase();
       if (tagMappings[normalizedTag]) {
         labels.push(tagMappings[normalizedTag]);
@@ -163,10 +162,18 @@ export class GitHubIntegrationService {
     if (content.includes('bug') || content.includes('error') || content.includes('broken')) {
       labels.push('bug');
     }
-    if (content.includes('feature') || content.includes('enhancement') || content.includes('suggestion')) {
+    if (
+      content.includes('feature') ||
+      content.includes('enhancement') ||
+      content.includes('suggestion')
+    ) {
       labels.push('enhancement');
     }
-    if (content.includes('documentation') || content.includes('docs') || content.includes('readme')) {
+    if (
+      content.includes('documentation') ||
+      content.includes('docs') ||
+      content.includes('readme')
+    ) {
       labels.push('documentation');
     }
     if (content.includes('help') || content.includes('how to') || content.includes('question')) {
@@ -196,7 +203,7 @@ export class GitHubIntegrationService {
         repo,
         title: issueData.title,
         body: issueData.body,
-        labels: issueData.labels
+        labels: issueData.labels,
       });
 
       logger.info(`Created issue #${response.data.number}: ${response.data.html_url}`);
@@ -204,13 +211,13 @@ export class GitHubIntegrationService {
       return {
         success: true,
         issueNumber: response.data.number,
-        issueUrl: response.data.html_url
+        issueUrl: response.data.html_url,
       };
     } catch (error) {
       logger.error(`Failed to create GitHub issue for thread "${thread.threadName}":`, error);
       return {
         success: false,
-        error: error instanceof Error ? error.message : String(error)
+        error: error instanceof Error ? error.message : String(error),
       };
     }
   }
@@ -240,11 +247,11 @@ export class GitHubIntegrationService {
 
       // Rate limiting: wait 1 second between issue creations
       if (i < threads.length - 1) {
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        await new Promise((resolve) => setTimeout(resolve, 1000));
       }
     }
 
-    const successCount = results.filter(r => r.success).length;
+    const successCount = results.filter((r) => r.success).length;
     logger.info(`Sync complete: ${successCount}/${threads.length} issues created`);
 
     return results;
@@ -271,10 +278,10 @@ export class GitHubIntegrationService {
       const response = await this.octokit.issues.listLabelsForRepo({
         owner,
         repo,
-        per_page: 100
+        per_page: 100,
       });
 
-      return response.data.map(label => label.name);
+      return response.data.map((label) => label.name);
     } catch (error) {
       logger.error(`Failed to fetch labels for ${owner}/${repo}:`, error);
       return [];
@@ -302,7 +309,9 @@ export function initializeGitHubIntegration(token?: string): GitHubIntegrationSe
 
 export function getGitHubIntegration(): GitHubIntegrationService {
   if (!githubService) {
-    throw new Error('GitHub integration service not initialized. Call initializeGitHubIntegration first.');
+    throw new Error(
+      'GitHub integration service not initialized. Call initializeGitHubIntegration first.'
+    );
   }
   return githubService;
 }

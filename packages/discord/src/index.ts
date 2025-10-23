@@ -54,22 +54,28 @@ const client = new Client({
 // Write status to shared file
 function writeStatus(status: 'starting' | 'ready' | 'error' | 'shutdown', data?: any) {
   try {
-    let guildInfo: Array<{name: string, memberCount: number, channels: number, id: string}> = [];
+    let guildInfo: Array<{ name: string; memberCount: number; channels: number; id: string }> = [];
     let totalChannels = 0;
     let totalMembers = 0;
-    
+
     if (client.guilds && client.isReady()) {
-      guildInfo = client.guilds.cache.map(guild => ({
+      guildInfo = client.guilds.cache.map((guild) => ({
         name: guild.name,
         memberCount: guild.memberCount,
         channels: guild.channels.cache.size,
-        id: guild.id
+        id: guild.id,
       }));
-      
-      totalChannels = client.guilds.cache.reduce((total, guild) => total + guild.channels.cache.size, 0);
-      totalMembers = client.guilds.cache.reduce((total, guild) => total + (guild.memberCount || 0), 0);
+
+      totalChannels = client.guilds.cache.reduce(
+        (total, guild) => total + guild.channels.cache.size,
+        0
+      );
+      totalMembers = client.guilds.cache.reduce(
+        (total, guild) => total + (guild.memberCount || 0),
+        0
+      );
     }
-    
+
     const statusData = {
       status,
       timestamp: new Date().toISOString(),
@@ -79,9 +85,9 @@ function writeStatus(status: 'starting' | 'ready' | 'error' | 'shutdown', data?:
       totalChannels,
       totalMembers,
       uptime: process.uptime(),
-      ...data
+      ...data,
     };
-    
+
     // Silently write status file using environment-aware path resolution
     const statusFile = pathResolver.getStatusFilePath();
     writeFileSync(statusFile, JSON.stringify(statusData, null, 2));
@@ -101,17 +107,20 @@ async function start() {
     client.on(Events.ClientReady, () => {
       console.log('✨ CLIENT READY EVENT FIRED - FLUCKED AND BUCKED!');
       logger.info(`✅ discord: ${client.user?.tag} [${client.guilds.cache.size} guilds]`);
-      
+
       // Update telemetry with connection info
       const guildCount = client.guilds.cache.size;
-      const channelCount = client.guilds.cache.reduce((total, guild) => total + guild.channels.cache.size, 0);
+      const channelCount = client.guilds.cache.reduce(
+        (total, guild) => total + guild.channels.cache.size,
+        0
+      );
       telemetry.updateConnectionMetrics(guildCount, channelCount);
       telemetry.logEvent('discord_ready', {
         username: client.user?.tag,
         guilds: guildCount,
-        channels: channelCount
+        channels: channelCount,
       });
-      
+
       // Start health server
       healthServer.setDiscordClient(client);
       healthServer.start();
@@ -160,14 +169,21 @@ async function start() {
       writeStatus('ready', {
         username: client.user?.tag,
         guilds: client.guilds.cache.size,
-        permissions: client.user?.flags?.bitfield || 'none'
+        permissions: client.user?.flags?.bitfield || 'none',
       });
     });
 
     client.on(Events.Error, (error) => {
       logger.error('Discord client error:', error);
       telemetry.incrementApiErrors(error.message);
-      telemetry.logEvent('discord_error', { error: error.message }, undefined, undefined, undefined, false);
+      telemetry.logEvent(
+        'discord_error',
+        { error: error.message },
+        undefined,
+        undefined,
+        undefined,
+        false
+      );
       writeStatus('error', { error: error.message });
     });
 
@@ -198,7 +214,6 @@ async function start() {
 
     // Status updates disabled - only update on actual state changes
     // This reduces log spam and Clickhouse costs
-
   } catch (error) {
     logger.error('Failed to start Discord bot:', error);
     const errorMessage = error instanceof Error ? error.message : String(error);
@@ -234,7 +249,7 @@ process.on('SIGINT', async () => {
 
 // Start the bot
 console.log('🏁 CALLING START FUNCTION - JUCKS ARE SNUCKED!');
-start().catch(err => {
+start().catch((err) => {
   console.error('💥 START FUNCTION FAILED - SHUCKS ARE JUCKED!', err);
   process.exit(1);
 });

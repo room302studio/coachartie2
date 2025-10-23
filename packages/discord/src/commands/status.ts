@@ -1,4 +1,9 @@
-import { SlashCommandBuilder, ChatInputCommandInteraction, EmbedBuilder, InteractionResponse } from 'discord.js';
+import {
+  SlashCommandBuilder,
+  ChatInputCommandInteraction,
+  EmbedBuilder,
+  InteractionResponse,
+} from 'discord.js';
 import { getDatabase } from '@coachartie/shared';
 import { logger } from '@coachartie/shared';
 
@@ -7,13 +12,16 @@ export const statusCommand = {
     .setName('status')
     .setDescription('Show the LLM model used for your most recent message'),
 
-  async execute(interaction: ChatInputCommandInteraction): Promise<InteractionResponse<boolean> | undefined> {
+  async execute(
+    interaction: ChatInputCommandInteraction
+  ): Promise<InteractionResponse<boolean> | undefined> {
     try {
       const userId = interaction.user.id;
       const db = await getDatabase();
-      
+
       // Query for the most recent model usage by this user
-      const recentUsage = await db.get(`
+      const recentUsage = await db.get(
+        `
         SELECT 
           model_name,
           message_id,
@@ -28,11 +36,13 @@ export const statusCommand = {
         WHERE user_id = ? 
         ORDER BY timestamp DESC 
         LIMIT 1
-      `, [userId]);
+      `,
+        [userId]
+      );
 
       if (!recentUsage) {
         const embed = new EmbedBuilder()
-          .setColor(0xFF9900)
+          .setColor(0xff9900)
           .setTitle('🤖 Model Status')
           .setDescription('No recent activity found')
           .setFooter({ text: 'Send a message to start tracking!' })
@@ -40,7 +50,7 @@ export const statusCommand = {
 
         return await interaction.reply({
           embeds: [embed],
-          ephemeral: true
+          ephemeral: true,
         });
       }
 
@@ -52,10 +62,10 @@ export const statusCommand = {
       // Determine model type
       const isFreeModel = recentUsage.model_name.includes(':free');
       const modelType = isFreeModel ? '(Free)' : '(Paid)';
-      
+
       // Create embed with actual data
       const embed = new EmbedBuilder()
-        .setColor(recentUsage.success ? 0x00FF00 : 0xFF0000)
+        .setColor(recentUsage.success ? 0x00ff00 : 0xff0000)
         .setTitle('🤖 Model Status')
         .setDescription(`**Current Model:** ${recentUsage.model_name} ${modelType}`)
         .addFields(
@@ -70,7 +80,7 @@ export const statusCommand = {
         embed.addFields({
           name: '🛠️ Capabilities',
           value: `Detected: ${recentUsage.capabilities_detected}, Executed: ${recentUsage.capabilities_executed}`,
-          inline: false
+          inline: false,
         });
       }
 
@@ -79,30 +89,29 @@ export const statusCommand = {
         embed.addFields({
           name: '⚡ Response Time',
           value: `${recentUsage.response_time_ms}ms`,
-          inline: true
+          inline: true,
         });
       }
 
       return await interaction.reply({
         embeds: [embed],
-        ephemeral: true
+        ephemeral: true,
       });
-
     } catch (error) {
       logger.error('Failed to fetch model status:', error);
-      
+
       const errorEmbed = new EmbedBuilder()
-        .setColor(0xFF0000)
+        .setColor(0xff0000)
         .setTitle('❌ Error')
         .setDescription('Failed to fetch model status. Please try again later.')
         .setTimestamp();
 
       return await interaction.reply({
         embeds: [errorEmbed],
-        ephemeral: true
+        ephemeral: true,
       });
     }
-  }
+  },
 };
 
 // Helper function to format relative time

@@ -24,7 +24,13 @@ console.log('  - REDIS_PORT:', process.env.REDIS_PORT || 'not set');
 
 import express from 'express';
 import helmet from 'helmet';
-import { logger, createRequestLogger, parsePortWithFallback, registerServiceWithDiscovery, serviceDiscovery } from '@coachartie/shared';
+import {
+  logger,
+  createRequestLogger,
+  parsePortWithFallback,
+  registerServiceWithDiscovery,
+  serviceDiscovery,
+} from '@coachartie/shared';
 import { startMessageConsumer } from './queues/consumer.js';
 import { healthRouter } from './routes/health.js';
 import { chatRouter } from './routes/chat.js';
@@ -50,19 +56,24 @@ const app = express();
 app.use((req, res, next) => {
   res.header('Access-Control-Allow-Origin', '*');
   res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
-  
+  res.header(
+    'Access-Control-Allow-Headers',
+    'Origin, X-Requested-With, Content-Type, Accept, Authorization'
+  );
+
   if (req.method === 'OPTIONS') {
     return res.sendStatus(200);
   }
-  
+
   next();
 });
 
 // Middleware
-app.use(helmet({
-  crossOriginResourcePolicy: false,
-}));
+app.use(
+  helmet({
+    crossOriginResourcePolicy: false,
+  })
+);
 app.use(express.json());
 app.use(createRequestLogger('capabilities'));
 
@@ -97,7 +108,7 @@ async function startQueueWorkers() {
 async function startScheduler() {
   try {
     // Setup scheduler
-    
+
     // Setup default tasks if enabled
     if (process.env.ENABLE_SCHEDULING !== 'false') {
       await schedulerService.setupDefaultTasks();
@@ -137,7 +148,9 @@ async function start() {
     console.log(`🌐 Starting HTTP server on 0.0.0.0:${PORT}...`);
     const server = app.listen(PORT, '0.0.0.0', async () => {
       console.log(`✅ HTTP SERVER LISTENING - SNUCKS ARE JUCKED!`);
-      logger.info(`✅ capabilities: ${PORT} [${stats.totalCapabilities} caps, ${stats.totalActions} actions]`);
+      logger.info(
+        `✅ capabilities: ${PORT} [${stats.totalCapabilities} caps, ${stats.totalActions} actions]`
+      );
       await registerServiceWithDiscovery('capabilities', PORT);
     });
 
@@ -148,26 +161,26 @@ async function start() {
         console.error('❌ PORT CONFLICT DETECTED!');
         console.error('='.repeat(60));
         console.error(`Port ${PORT} is already in use!\n`);
-        
+
         console.error('This usually means one of the following:');
         console.error('1. Docker is running Coach Artie (check: docker ps)');
         console.error('2. A previous instance is still running');
         console.error('3. Another service is using this port\n');
-        
+
         console.error('TO FIX THIS:');
         console.error('------------');
         console.error('Option 1: If Docker is running Coach Artie:');
         console.error('  $ docker-compose down');
         console.error('  $ pnpm run dev\n');
-        
+
         console.error('Option 2: Kill the process using this port:');
         console.error(`  $ lsof -ti :${PORT} | xargs kill -9`);
         console.error('  $ pnpm run dev\n');
-        
+
         console.error('Option 3: Use the built-in port checker:');
         console.error('  $ pnpm run check-ports');
-        console.error('  (This will show you exactly what\'s using each port)\n');
-        
+        console.error("  (This will show you exactly what's using each port)\n");
+
         console.error('='.repeat(60) + '\n');
       } else {
         logger.error(`❌ Server failed to start on port ${PORT}:`, error);

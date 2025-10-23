@@ -2,6 +2,7 @@ import js from '@eslint/js';
 import globals from 'globals';
 import tseslint from '@typescript-eslint/eslint-plugin';
 import tsparser from '@typescript-eslint/parser';
+import prettierConfig from 'eslint-config-prettier';
 
 export default [
   js.configs.recommended,
@@ -22,17 +23,27 @@ export default [
       '@typescript-eslint': tseslint,
     },
     rules: {
-      // TypeScript rules
-      '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
-      '@typescript-eslint/no-explicit-any': 'warn',
-      
+      // TypeScript rules - relaxed for practical development
+      '@typescript-eslint/no-unused-vars': ['warn', {
+        argsIgnorePattern: '^_',
+        varsIgnorePattern: '^_',
+        caughtErrorsIgnorePattern: '^_'
+      }],
+      '@typescript-eslint/no-explicit-any': 'off', // Allow any - we're practical here
+
       // General rules
       'no-console': 'off', // Allow console.log for server applications
       'no-unused-vars': 'off', // Use TypeScript version instead
-      'prefer-const': 'error',
+      'prefer-const': 'warn',
       'no-var': 'error',
-      'eqeqeq': 'error',
-      'curly': 'error',
+      'eqeqeq': ['error', 'allow-null'],
+      'curly': ['error', 'all'],
+
+      // Relaxed rules for practical development
+      'no-empty': ['error', { allowEmptyCatch: true }], // Allow empty catch blocks
+      'no-case-declarations': 'warn', // Warn instead of error
+      'no-useless-escape': 'warn', // Warn instead of error
+      'no-prototype-builtins': 'warn', // Warn instead of error
     },
   },
   {
@@ -45,6 +56,7 @@ export default [
     },
     rules: {
       '@typescript-eslint/no-explicit-any': 'off', // Allow any in tests
+      '@typescript-eslint/no-unused-vars': 'off', // Allow unused vars in tests
     },
   },
   {
@@ -54,8 +66,11 @@ export default [
       '**/build/**',
       '**/.turbo/**',
       '**/coverage/**',
+      '**/test-*.ts', // Ignore test scripts
       'mcp-servers/**/node_modules/**',
       'mcp-servers/**/dist/**',
+      'packages/brain/**', // Brain has its own config
     ],
   },
+  prettierConfig, // Must be last to override conflicting rules
 ];

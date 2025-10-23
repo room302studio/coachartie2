@@ -11,7 +11,10 @@ export class CapabilitiesError extends Error {
 }
 
 export class DiscordError extends Error {
-  constructor(message: string, public context?: Record<string, unknown>) {
+  constructor(
+    message: string,
+    public context?: Record<string, unknown>
+  ) {
     super(message);
     this.name = 'DiscordError';
   }

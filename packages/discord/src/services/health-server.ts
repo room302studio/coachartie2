@@ -80,10 +80,12 @@ export class HealthServer {
       } catch (error) {
         logger.error('Health server error:', error);
         res.writeHead(500);
-        res.end(JSON.stringify({ 
-          error: 'Internal server error',
-          message: error instanceof Error ? error.message : String(error)
-        }));
+        res.end(
+          JSON.stringify({
+            error: 'Internal server error',
+            message: error instanceof Error ? error.message : String(error),
+          })
+        );
       }
     });
 
@@ -106,7 +108,7 @@ export class HealthServer {
   private handleHealthCheck(res: ServerResponse): void {
     const healthSummary = telemetry.getHealthSummary();
     const discordStatus = this.getDiscordStatus();
-    
+
     // Determine overall health based on Discord connection and telemetry
     let overallStatus: 'healthy' | 'degraded' | 'unhealthy' = healthSummary.status;
     const issues = [...healthSummary.issues];
@@ -124,11 +126,10 @@ export class HealthServer {
       uptime: process.uptime(),
       discord: discordStatus,
       telemetry: healthSummary.metrics,
-      issues: issues.length > 0 ? issues : undefined
+      issues: issues.length > 0 ? issues : undefined,
     };
 
-    const statusCode = overallStatus === 'healthy' ? 200 : 
-                      overallStatus === 'degraded' ? 200 : 503;
+    const statusCode = overallStatus === 'healthy' ? 200 : overallStatus === 'degraded' ? 200 : 503;
 
     res.writeHead(statusCode);
     res.end(JSON.stringify(response, null, 2));
@@ -137,15 +138,15 @@ export class HealthServer {
   private handleMetrics(res: ServerResponse): void {
     const metrics = telemetry.getMetrics();
     const discordStatus = this.getDiscordStatus();
-    
+
     const response = {
       timestamp: new Date().toISOString(),
       discord: discordStatus,
       metrics: {
         ...metrics,
-        uniqueUsers: metrics.uniqueUserCount // Convert for API response
+        uniqueUsers: metrics.uniqueUserCount, // Convert for API response
       },
-      events: telemetry.getRecentEvents(20)
+      events: telemetry.getRecentEvents(20),
     };
 
     res.writeHead(200);
@@ -155,10 +156,10 @@ export class HealthServer {
   private handleReadiness(res: ServerResponse): void {
     const discordConnected = this.discordClient?.isReady() || false;
     const capabilitiesReachable = true; // TODO: Add actual capabilities service check
-    
+
     const ready = discordConnected && capabilitiesReachable;
     const issues: string[] = [];
-    
+
     if (!discordConnected) issues.push('Discord client not ready');
     if (!capabilitiesReachable) issues.push('Capabilities service unreachable');
 
@@ -167,9 +168,9 @@ export class HealthServer {
       timestamp: new Date().toISOString(),
       checks: {
         discord: discordConnected,
-        capabilities: capabilitiesReachable
+        capabilities: capabilitiesReachable,
       },
-      issues: issues.length > 0 ? issues : undefined
+      issues: issues.length > 0 ? issues : undefined,
     };
 
     res.writeHead(ready ? 200 : 503);
@@ -182,7 +183,7 @@ export class HealthServer {
       alive: true,
       timestamp: new Date().toISOString(),
       uptime: process.uptime(),
-      pid: process.pid
+      pid: process.pid,
     };
 
     res.writeHead(200);
@@ -194,32 +195,35 @@ export class HealthServer {
       return {
         connected: false,
         guilds: 0,
-        users: 0
+        users: 0,
       };
     }
 
     try {
       const connected = this.discordClient.isReady();
       const guilds = this.discordClient.guilds?.cache.size || 0;
-      const users = this.discordClient.guilds?.cache.reduce(
-        (total: number, guild: any) => total + (guild.memberCount || 0), 0
-      ) || 0;
+      const users =
+        this.discordClient.guilds?.cache.reduce(
+          (total: number, guild: any) => total + (guild.memberCount || 0),
+          0
+        ) || 0;
       const latency = this.discordClient.ws?.ping;
 
       // Extract guild details for environment context
-      const guildDetails = this.discordClient.guilds?.cache.map((guild: any) => ({
-        id: guild.id,
-        name: guild.name,
-        memberCount: guild.memberCount || 0,
-        channels: guild.channels?.cache.size || 0
-      })) || [];
+      const guildDetails =
+        this.discordClient.guilds?.cache.map((guild: any) => ({
+          id: guild.id,
+          name: guild.name,
+          memberCount: guild.memberCount || 0,
+          channels: guild.channels?.cache.size || 0,
+        })) || [];
 
       return {
         connected,
         guilds,
         users,
         latency: latency >= 0 ? latency : undefined,
-        guildDetails
+        guildDetails,
       };
     } catch (error) {
       logger.error('Failed to get Discord status:', error);
@@ -227,7 +231,7 @@ export class HealthServer {
         connected: false,
         guilds: 0,
         users: 0,
-        error: error instanceof Error ? error.message : String(error)
+        error: error instanceof Error ? error.message : String(error),
       };
     }
   }
@@ -249,6 +253,4 @@ export class HealthServer {
 }
 
 // Export singleton instance
-export const healthServer = new HealthServer(
-  parseInt(process.env.HEALTH_PORT || '47319')
-);
+export const healthServer = new HealthServer(parseInt(process.env.HEALTH_PORT || '47319'));

@@ -9,27 +9,27 @@ export interface DiscordMetrics {
   messagesProcessed: number;
   messagesFailed: number;
   responsesDelivered: number;
-  
+
   // Job metrics
   jobsSubmitted: number;
   jobsCompleted: number;
   jobsFailed: number;
   jobsTimedOut: number;
-  
+
   // Performance metrics
   averageResponseTime: number;
   maxResponseTime: number;
   minResponseTime: number;
-  
+
   // Discord API metrics
   typingIndicatorsSent: number;
   messageChunksSent: number;
   apiErrors: number;
-  
+
   // Connection metrics
   reconnections: number;
   uptime: number;
-  
+
   // User metrics
   uniqueUsers: Set<string>;
   guildCount: number;
@@ -59,7 +59,7 @@ export class DiscordTelemetry {
     this.startTime = Date.now();
     this.metricsFile = pathResolver.getMetricsFilePath();
     this.eventsFile = pathResolver.getEventsFilePath();
-    
+
     // Initialize metrics
     this.metrics = {
       messagesReceived: 0,
@@ -80,15 +80,22 @@ export class DiscordTelemetry {
       uptime: 0,
       uniqueUsers: new Set<string>(),
       guildCount: 0,
-      channelCount: 0
+      channelCount: 0,
     };
-    
+
     // Auto-persist metrics every 30 seconds
     setInterval(() => this.persistMetrics(), 30000);
   }
 
   // Event logging
-  logEvent(event: string, data?: any, correlationId?: string, userId?: string, duration?: number, success?: boolean): void {
+  logEvent(
+    event: string,
+    data?: any,
+    correlationId?: string,
+    userId?: string,
+    duration?: number,
+    success?: boolean
+  ): void {
     const telemetryEvent: TelemetryEvent = {
       timestamp: new Date().toISOString(),
       correlationId,
@@ -96,11 +103,11 @@ export class DiscordTelemetry {
       event,
       data,
       duration,
-      success
+      success,
     };
 
     this.events.push(telemetryEvent);
-    
+
     // Keep only recent events in memory
     if (this.events.length > this.maxEvents) {
       this.events = this.events.slice(-this.maxEvents);
@@ -180,7 +187,7 @@ export class DiscordTelemetry {
   // Performance tracking
   private recordResponseTime(duration: number): void {
     this.responseTimes.push(duration);
-    
+
     // Keep only recent response times for calculating averages
     if (this.responseTimes.length > 100) {
       this.responseTimes = this.responseTimes.slice(-100);
@@ -188,11 +195,13 @@ export class DiscordTelemetry {
 
     // Update performance metrics
     this.metrics.maxResponseTime = Math.max(this.metrics.maxResponseTime, duration);
-    this.metrics.minResponseTime = this.metrics.minResponseTime === 0 
-      ? duration 
-      : Math.min(this.metrics.minResponseTime, duration);
-    
-    this.metrics.averageResponseTime = this.responseTimes.reduce((a, b) => a + b, 0) / this.responseTimes.length;
+    this.metrics.minResponseTime =
+      this.metrics.minResponseTime === 0
+        ? duration
+        : Math.min(this.metrics.minResponseTime, duration);
+
+    this.metrics.averageResponseTime =
+      this.responseTimes.reduce((a, b) => a + b, 0) / this.responseTimes.length;
   }
 
   // Discord connection metrics
@@ -205,11 +214,11 @@ export class DiscordTelemetry {
   // Get current metrics snapshot
   getMetrics(): DiscordMetrics & { uniqueUserCount: number } {
     this.updateConnectionMetrics(this.metrics.guildCount, this.metrics.channelCount);
-    
+
     return {
       ...this.metrics,
       uniqueUserCount: this.metrics.uniqueUsers.size,
-      uniqueUsers: this.metrics.uniqueUsers // Keep for internal use
+      uniqueUsers: this.metrics.uniqueUsers, // Keep for internal use
     };
   }
 
@@ -222,20 +231,19 @@ export class DiscordTelemetry {
   persistMetrics(): void {
     try {
       const metricsSnapshot = this.getMetrics();
-      
+
       // Convert Set to array for JSON serialization
       const serializableMetrics = {
         ...metricsSnapshot,
         uniqueUsers: Array.from(metricsSnapshot.uniqueUsers),
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
       };
-      
+
       writeFileSync(this.metricsFile, JSON.stringify(serializableMetrics, null, 2));
-      
+
       // Also persist recent events
       const recentEvents = this.getRecentEvents();
       writeFileSync(this.eventsFile, JSON.stringify(recentEvents, null, 2));
-      
     } catch (error) {
       logger.error('Failed to persist telemetry data:', error);
     }
@@ -254,22 +262,22 @@ export class DiscordTelemetry {
     // Check for issues
     const errorRate = metrics.messagesFailed / Math.max(metrics.messagesReceived, 1);
     const jobFailureRate = metrics.jobsFailed / Math.max(metrics.jobsSubmitted, 1);
-    
+
     if (errorRate > 0.1) {
       issues.push(`High message error rate: ${(errorRate * 100).toFixed(1)}%`);
       status = 'degraded';
     }
-    
+
     if (jobFailureRate > 0.2) {
       issues.push(`High job failure rate: ${(jobFailureRate * 100).toFixed(1)}%`);
       status = 'degraded';
     }
-    
+
     if (metrics.averageResponseTime > 30000) {
       issues.push(`Slow response times: ${(metrics.averageResponseTime / 1000).toFixed(1)}s avg`);
       status = 'degraded';
     }
-    
+
     if (metrics.apiErrors > 10) {
       issues.push(`Multiple Discord API errors: ${metrics.apiErrors}`);
       status = 'unhealthy';
@@ -283,13 +291,15 @@ export class DiscordTelemetry {
       status,
       metrics: {
         messagesReceived: metrics.messagesReceived,
-        successRate: ((metrics.messagesProcessed / Math.max(metrics.messagesReceived, 1)) * 100).toFixed(1) + '%',
+        successRate:
+          ((metrics.messagesProcessed / Math.max(metrics.messagesReceived, 1)) * 100).toFixed(1) +
+          '%',
         averageResponseTime: `${(metrics.averageResponseTime / 1000).toFixed(1)}s`,
         uniqueUsers: metrics.uniqueUserCount,
         uptime: `${Math.floor(metrics.uptime / 1000 / 60)}min`,
-        guilds: metrics.guildCount
+        guilds: metrics.guildCount,
       },
-      issues
+      issues,
     };
   }
 }

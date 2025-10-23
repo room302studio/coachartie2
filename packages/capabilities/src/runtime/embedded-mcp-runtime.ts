@@ -19,9 +19,9 @@ class WikipediaSearchTool implements EmbeddedMCPTool {
   inputSchema = {
     type: 'object',
     properties: {
-      query: { type: 'string', description: 'Search query' }
+      query: { type: 'string', description: 'Search query' },
     },
-    required: ['query']
+    required: ['query'],
   };
 
   async execute(args: Record<string, unknown>): Promise<string> {
@@ -34,23 +34,27 @@ class WikipediaSearchTool implements EmbeddedMCPTool {
       // Use Wikipedia API directly
       const searchUrl = `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(query)}`;
       const response = await fetch(searchUrl);
-      
+
       if (response.ok) {
-        const data = await response.json() as { title?: string; extract?: string };
+        const data = (await response.json()) as { title?: string; extract?: string };
         return `**${data.title || 'Unknown'}**\n\n${data.extract || 'No summary available.'}`;
       } else {
         // Fallback to search API
         const searchApiUrl = `https://en.wikipedia.org/w/api.php?action=opensearch&search=${encodeURIComponent(query)}&limit=3&format=json&origin=*`;
         const searchResponse = await fetch(searchApiUrl);
-        const searchData = await searchResponse.json() as [string, string[], string[], string[]];
-        
+        const searchData = (await searchResponse.json()) as [string, string[], string[], string[]];
+
         if (searchData[1] && searchData[1].length > 0) {
-          const results = searchData[1].slice(0, 3).map((title: string, index: number) => 
-            `• ${title}: ${searchData[3][index] || 'No URL available'}`
-          ).join('\n');
+          const results = searchData[1]
+            .slice(0, 3)
+            .map(
+              (title: string, index: number) =>
+                `• ${title}: ${searchData[3][index] || 'No URL available'}`
+            )
+            .join('\n');
           return `Wikipedia search results for "${query}":\n\n${results}`;
         }
-        
+
         return `No Wikipedia results found for "${query}"`;
       }
     } catch (error) {
@@ -69,13 +73,13 @@ class TimeProviderTool implements EmbeddedMCPTool {
   inputSchema = {
     type: 'object',
     properties: {
-      timezone: { type: 'string', description: 'Timezone (optional)' }
-    }
+      timezone: { type: 'string', description: 'Timezone (optional)' },
+    },
   };
 
   async execute(args: Record<string, unknown>): Promise<string> {
-    const timezone = args.timezone as string || 'UTC';
-    
+    const timezone = (args.timezone as string) || 'UTC';
+
     try {
       const now = new Date();
       const options: Intl.DateTimeFormatOptions = {
@@ -87,9 +91,9 @@ class TimeProviderTool implements EmbeddedMCPTool {
         minute: '2-digit',
         second: '2-digit',
         timeZoneName: 'short',
-        timeZone: timezone
+        timeZone: timezone,
       };
-      
+
       const formattedTime = now.toLocaleString('en-US', options);
       return `Current time: ${formattedTime}`;
     } catch (error) {
@@ -108,9 +112,9 @@ class CalculatorTool implements EmbeddedMCPTool {
   inputSchema = {
     type: 'object',
     properties: {
-      expression: { type: 'string', description: 'Mathematical expression to evaluate' }
+      expression: { type: 'string', description: 'Mathematical expression to evaluate' },
     },
-    required: ['expression']
+    required: ['expression'],
   };
 
   async execute(args: Record<string, unknown>): Promise<string> {
@@ -128,7 +132,7 @@ class CalculatorTool implements EmbeddedMCPTool {
 
       // Use Function constructor for safe evaluation
       const result = new Function('return ' + cleanExpression)();
-      
+
       if (typeof result !== 'number' || !isFinite(result)) {
         throw new Error('Invalid mathematical result');
       }
@@ -136,20 +140,22 @@ class CalculatorTool implements EmbeddedMCPTool {
       return `${expression} = ${result}`;
     } catch (error) {
       logger.error('Calculation failed:', error);
-      throw new Error(`Calculation failed: ${error instanceof Error ? error.message : 'Invalid expression'}`);
+      throw new Error(
+        `Calculation failed: ${error instanceof Error ? error.message : 'Invalid expression'}`
+      );
     }
   }
 }
 
 /**
  * Embedded MCP Runtime - Zero External Dependencies
- * 
+ *
  * This replaces the fragile external process spawning system with
  * embedded, instant-activation tools that never fail.
  */
 export class EmbeddedMCPRuntime {
   private tools = new Map<string, EmbeddedMCPTool>();
-  
+
   constructor() {
     this.initializeBuiltinTools();
   }
@@ -158,11 +164,7 @@ export class EmbeddedMCPRuntime {
    * Initialize built-in tools that are always available
    */
   private initializeBuiltinTools(): void {
-    const builtinTools = [
-      new WikipediaSearchTool(),
-      new TimeProviderTool(),
-      new CalculatorTool()
-    ];
+    const builtinTools = [new WikipediaSearchTool(), new TimeProviderTool(), new CalculatorTool()];
 
     for (const tool of builtinTools) {
       this.tools.set(tool.name, tool);
@@ -236,10 +238,10 @@ export class EmbeddedMCPRuntime {
    * List all available tools with descriptions
    */
   listTools(): Array<{ name: string; description: string; schema: Record<string, unknown> }> {
-    return Array.from(this.tools.values()).map(tool => ({
+    return Array.from(this.tools.values()).map((tool) => ({
       name: tool.name,
       description: tool.description,
-      schema: tool.inputSchema
+      schema: tool.inputSchema,
     }));
   }
 
@@ -249,7 +251,7 @@ export class EmbeddedMCPRuntime {
   async healthCheck(): Promise<{ healthy: number; total: number }> {
     return {
       healthy: this.tools.size,
-      total: this.tools.size
+      total: this.tools.size,
     };
   }
 }

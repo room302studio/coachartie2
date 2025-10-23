@@ -17,21 +17,25 @@ interface DiscordForumsParams {
   guildId?: string;
   forumId?: string;
   threadId?: string;
-  repo?: string;  // For sync-to-github: owner/repo format or URL
+  repo?: string; // For sync-to-github: owner/repo format or URL
 }
 
 const DISCORD_BASE_URL = process.env.DISCORD_SERVICE_URL || 'http://localhost:47321';
 const FETCH_TIMEOUT = 30000; // 30 second timeout
 
 // Helper function for fetch with timeout
-async function fetchWithTimeout(url: string, options: any = {}, timeout = FETCH_TIMEOUT): Promise<any> {
+async function fetchWithTimeout(
+  url: string,
+  options: any = {},
+  timeout = FETCH_TIMEOUT
+): Promise<any> {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeout);
 
   try {
     const response = await fetch(url, {
       ...options,
-      signal: controller.signal
+      signal: controller.signal,
     });
     clearTimeout(timeoutId);
     return response;
@@ -67,15 +71,16 @@ const handler = async (params: DiscordForumsParams, content?: string): Promise<s
       default:
         throw new Error(`Unsupported action: ${action}`);
     }
-
   } catch (error) {
     logger.error('Discord forums capability error:', {
       action,
       error: error instanceof Error ? error.message : String(error),
       params,
-      content
+      content,
     });
-    throw new Error(`Failed to execute Discord forums action: ${error instanceof Error ? error.message : String(error)}`);
+    throw new Error(
+      `Failed to execute Discord forums action: ${error instanceof Error ? error.message : String(error)}`
+    );
   }
 };
 
@@ -87,12 +92,14 @@ async function listForums(params: DiscordForumsParams): Promise<string> {
     try {
       const healthResponse = await fetchWithTimeout('http://localhost:47319/health');
       if (healthResponse.ok) {
-        const health = await healthResponse.json() as any;
+        const health = (await healthResponse.json()) as any;
         if (health.discord?.guildDetails && health.discord.guildDetails.length > 0) {
           const guildList = health.discord.guildDetails
             .map((g: any) => `- ${g.name} (ID: ${g.id})`)
             .join('\n');
-          throw new Error(`No guildId provided. Available Discord servers:\n${guildList}\n\nExample: <capability name="discord-forums" action="list-forums" data='{"guildId":"${health.discord.guildDetails[0].id}"}' />`);
+          throw new Error(
+            `No guildId provided. Available Discord servers:\n${guildList}\n\nExample: <capability name="discord-forums" action="list-forums" data='{"guildId":"${health.discord.guildDetails[0].id}"}' />`
+          );
         }
       }
     } catch (error) {
@@ -111,7 +118,7 @@ async function listForums(params: DiscordForumsParams): Promise<string> {
     throw new Error(`Failed to fetch forums: ${response.statusText}`);
   }
 
-  const data = await response.json() as any;
+  const data = (await response.json()) as any;
   const forums = data.forums || data;
 
   logger.info(`📋 Listed ${forums.length} forums in guild ${guildId}`);
@@ -129,8 +136,8 @@ async function listForums(params: DiscordForumsParams): Promise<string> {
       nextActions: {
         listThreads: `<capability name="discord-forums" action="list-threads" data='{"forumId":"${f.id}"}' />`,
         getSummary: `<capability name="discord-forums" action="get-forum-summary" data='{"forumId":"${f.id}"}' />`,
-        syncToGithub: `<capability name="discord-forums" action="sync-to-github" data='{"forumId":"${f.id}","repo":"owner/repo"}' />`
-      }
+        syncToGithub: `<capability name="discord-forums" action="sync-to-github" data='{"forumId":"${f.id}","repo":"owner/repo"}' />`,
+      },
     };
   });
 
@@ -142,7 +149,9 @@ async function listForums(params: DiscordForumsParams): Promise<string> {
 - Forum Types: ${[...new Set(forums.map((f: any) => f.type || 'GUILD_FORUM'))].join(', ')}
 
 📋 Available Forums:
-${forumSummaries.map((f: any, i: number) => `
+${forumSummaries
+  .map(
+    (f: any, i: number) => `
 ${i + 1}. ${f.name}
    ID: ${f.id}
    Description: ${f.description}
@@ -153,7 +162,9 @@ ${i + 1}. ${f.name}
    - List threads: ${f.nextActions.listThreads}
    - Get summary: ${f.nextActions.getSummary}
    - Sync to GitHub: ${f.nextActions.syncToGithub}
-`).join('\n')}
+`
+  )
+  .join('\n')}
 
 💡 Recommended Next Steps:
 1. To see all discussions in a specific forum:
@@ -173,7 +184,8 @@ async function listThreads(params: DiscordForumsParams): Promise<string> {
 
   if (!forumId) {
     // Provide helpful guidance
-    const helpMessage = `No forumId provided. To list threads, you first need to get a forum ID.\n\n` +
+    const helpMessage =
+      `No forumId provided. To list threads, you first need to get a forum ID.\n\n` +
       `Step 1: List forums in a guild using:\n` +
       `<capability name="discord-forums" action="list-forums" data='{"guildId":"YOUR_GUILD_ID"}' />\n\n` +
       `Step 2: Use the returned forum ID to list threads:\n` +
@@ -182,14 +194,18 @@ async function listThreads(params: DiscordForumsParams): Promise<string> {
     // If guildId was provided, try to help by listing forums
     if (guildId) {
       try {
-        const forumsResponse = await fetchWithTimeout(`${DISCORD_BASE_URL}/api/guilds/${guildId}/forums`);
+        const forumsResponse = await fetchWithTimeout(
+          `${DISCORD_BASE_URL}/api/guilds/${guildId}/forums`
+        );
         if (forumsResponse.ok) {
-          const forumsData = await forumsResponse.json() as any;
+          const forumsData = (await forumsResponse.json()) as any;
           if (forumsData.forums && forumsData.forums.length > 0) {
             const forumList = forumsData.forums
               .map((f: any) => `- ${f.name} (ID: ${f.id})`)
               .join('\n');
-            throw new Error(`No forumId provided. Available forums in guild ${guildId}:\n${forumList}\n\nExample: <capability name="discord-forums" action="list-threads" data='{"forumId":"${forumsData.forums[0].id}"}' />`);
+            throw new Error(
+              `No forumId provided. Available forums in guild ${guildId}:\n${forumList}\n\nExample: <capability name="discord-forums" action="list-threads" data='{"forumId":"${forumsData.forums[0].id}"}' />`
+            );
           }
         }
       } catch (error) {
@@ -208,7 +224,7 @@ async function listThreads(params: DiscordForumsParams): Promise<string> {
     throw new Error(`Failed to fetch threads: ${response.statusText}`);
   }
 
-  const data = await response.json() as any;
+  const data = (await response.json()) as any;
   const threads = data.threads || data;
 
   logger.info(`📝 Listed ${threads.length} threads in forum ${forumId}`);
@@ -223,7 +239,7 @@ async function listThreads(params: DiscordForumsParams): Promise<string> {
       title: t.name || 'Untitled Thread',
       author: {
         username: author.username || author.user?.username || 'Unknown',
-        id: author.id || author.user?.id || 'unknown'
+        id: author.id || author.user?.id || 'unknown',
       },
       messageCount: t.message_count || t.messageCount || 0,
       created: t.created_timestamp || t.createdAt || new Date().toISOString(),
@@ -235,8 +251,8 @@ async function listThreads(params: DiscordForumsParams): Promise<string> {
       // Provide exact next-call syntax
       nextActions: {
         getFullThread: `<capability name="discord-forums" action="get-thread" data='{"threadId":"${t.id}"}' />`,
-        syncToGithub: `<capability name="discord-forums" action="sync-to-github" data='{"forumId":"${forumId}","repo":"owner/repo"}' />`
-      }
+        syncToGithub: `<capability name="discord-forums" action="sync-to-github" data='{"forumId":"${forumId}","repo":"owner/repo"}' />`,
+      },
     };
   });
 
@@ -256,7 +272,9 @@ async function listThreads(params: DiscordForumsParams): Promise<string> {
 - Total Messages: ${totalMessages}
 
 📝 Thread List (sorted by activity):
-${threadSummaries.map((t: any, i: number) => `
+${threadSummaries
+  .map(
+    (t: any, i: number) => `
 ${i + 1}. ${t.title}
    Thread ID: ${t.id}
    Author: ${t.author.username} (${t.author.id})
@@ -270,7 +288,9 @@ ${i + 1}. ${t.title}
 
    Next Actions:
    - View full thread: ${t.nextActions.getFullThread}
-`).join('\n')}
+`
+  )
+  .join('\n')}
 
 💡 Recommended Next Steps:
 1. To read a specific thread in detail:
@@ -298,9 +318,11 @@ async function getThread(params: DiscordForumsParams): Promise<string> {
     throw new Error(`Failed to fetch thread: ${response.statusText}`);
   }
 
-  const thread = await response.json() as any;
+  const thread = (await response.json()) as any;
 
-  logger.info(`💬 Fetched thread ${threadId} with ${thread.messageCount || thread.messages?.length || 0} messages`);
+  logger.info(
+    `💬 Fetched thread ${threadId} with ${thread.messageCount || thread.messages?.length || 0} messages`
+  );
 
   // Extract messages with rich context
   const messages = (thread.messages || []).map((m: any, i: number) => ({
@@ -309,7 +331,7 @@ async function getThread(params: DiscordForumsParams): Promise<string> {
     author: {
       username: m.author?.username || 'Unknown',
       id: m.author?.id || 'unknown',
-      bot: m.author?.bot || false
+      bot: m.author?.bot || false,
     },
     content: m.content || '',
     timestamp: m.timestamp || m.created_timestamp || new Date().toISOString(),
@@ -318,19 +340,21 @@ async function getThread(params: DiscordForumsParams): Promise<string> {
       filename: a.filename,
       url: a.url,
       contentType: a.content_type,
-      size: a.size
+      size: a.size,
     })),
     reactions: (m.reactions || []).map((r: any) => ({
       emoji: r.emoji?.name || r.emoji,
-      count: r.count || 0
+      count: r.count || 0,
     })),
-    mentions: (m.mentions || []).map((u: any) => u.username || u.id)
+    mentions: (m.mentions || []).map((u: any) => u.username || u.id),
   }));
 
   // Calculate thread analytics
   const uniqueAuthors = new Set(messages.map((m: any) => m.author.id)).size;
-  const totalReactions = messages.reduce((sum: number, m: any) =>
-    sum + m.reactions.reduce((rSum: number, r: any) => rSum + r.count, 0), 0);
+  const totalReactions = messages.reduce(
+    (sum: number, m: any) => sum + m.reactions.reduce((rSum: number, r: any) => rSum + r.count, 0),
+    0
+  );
   const hasAttachments = messages.some((m: any) => m.attachments.length > 0);
 
   const response_text = `💬 THREAD DETAILS RETRIEVED
@@ -351,7 +375,9 @@ async function getThread(params: DiscordForumsParams): Promise<string> {
 - Average Message Length: ${messages.length > 0 ? Math.round(messages.reduce((sum: number, m: any) => sum + m.content.length, 0) / messages.length) : 0} chars
 
 💬 Message Timeline:
-${messages.map((m: any) => `
+${messages
+  .map(
+    (m: any) => `
 Message #${m.position} by ${m.author.username} (${m.author.id})${m.author.bot ? ' 🤖' : ''}
 Posted: ${new Date(m.timestamp).toLocaleString()}${m.edited ? ` (Edited: ${new Date(m.edited).toLocaleString()})` : ''}
 ${m.reactions.length > 0 ? `Reactions: ${m.reactions.map((r: any) => `${r.emoji} (${r.count})`).join(', ')}` : ''}
@@ -362,7 +388,9 @@ Content:
 ${m.content || '(No text content)'}
 
 ${'-'.repeat(80)}
-`).join('\n')}
+`
+  )
+  .join('\n')}
 
 💡 This thread is ready for analysis or GitHub sync.
 To sync this thread to GitHub:
@@ -387,7 +415,7 @@ async function getForumSummary(params: DiscordForumsParams): Promise<string> {
     throw new Error(`Failed to fetch forum summary: ${response.statusText}`);
   }
 
-  const summary = await response.json() as any;
+  const summary = (await response.json()) as any;
 
   logger.info(`📊 Fetched summary for forum ${forumId}: ${summary.totalThreads} threads`);
 
@@ -406,21 +434,27 @@ async function syncToGitHub(params: DiscordForumsParams, content?: string): Prom
   }
 
   // Call Discord service to trigger GitHub sync
-  const response = await fetchWithTimeout(`${DISCORD_BASE_URL}/api/forums/${forumId}/sync-to-github`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json'
+  const response = await fetchWithTimeout(
+    `${DISCORD_BASE_URL}/api/forums/${forumId}/sync-to-github`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ repo }),
     },
-    body: JSON.stringify({ repo })
-  }, 60000); // 60 second timeout for GitHub sync (can be slow)
+    60000
+  ); // 60 second timeout for GitHub sync (can be slow)
 
   if (!response.ok) {
     throw new Error(`Failed to sync to GitHub: ${response.statusText}`);
   }
 
-  const result = await response.json() as any;
+  const result = (await response.json()) as any;
 
-  logger.info(`🔄 Synced forum ${forumId} to GitHub repo ${repo}: ${result.successCount || result.issues?.length || 0} issues created`);
+  logger.info(
+    `🔄 Synced forum ${forumId} to GitHub repo ${repo}: ${result.successCount || result.issues?.length || 0} issues created`
+  );
 
   // Extract detailed results
   const issues = result.issues || [];
@@ -439,33 +473,55 @@ async function syncToGitHub(params: DiscordForumsParams, content?: string): Prom
 - ⏭️  Skipped (duplicates): ${skippedCount}
 - Sync Duration: ${(result as any).duration || 'N/A'}
 
-${successCount > 0 ? `
+${
+  successCount > 0
+    ? `
 ✅ Successfully Created Issues:
-${issues.filter((i: any) => i.success).map((issue: any, idx: number) => `
+${issues
+  .filter((i: any) => i.success)
+  .map(
+    (issue: any, idx: number) => `
 ${idx + 1}. ${issue.title || issue.threadTitle || 'Untitled'}
    Issue URL: ${issue.url || issue.issueUrl || 'N/A'}
    Issue Number: #${issue.number || issue.issueNumber || 'N/A'}
    Thread ID: ${issue.threadId || 'N/A'}
    Labels: ${issue.labels?.join(', ') || 'None'}
    State: ${issue.state || 'open'}
-`).join('\n')}
-` : ''}
+`
+  )
+  .join('\n')}
+`
+    : ''
+}
 
-${failureCount > 0 ? `
+${
+  failureCount > 0
+    ? `
 ❌ Failed Issues:
-${issues.filter((i: any) => !i.success).map((issue: any, idx: number) => `
+${issues
+  .filter((i: any) => !i.success)
+  .map(
+    (issue: any, idx: number) => `
 ${idx + 1}. ${issue.title || issue.threadTitle || 'Untitled'}
    Thread ID: ${issue.threadId || 'N/A'}
    Error: ${issue.error || 'Unknown error'}
-`).join('\n')}
-` : ''}
+`
+  )
+  .join('\n')}
+`
+    : ''
+}
 
-${(result as any).rateLimitInfo ? `
+${
+  (result as any).rateLimitInfo
+    ? `
 ⚠️  Rate Limit Information:
 - Remaining: ${(result as any).rateLimitInfo.remaining}
 - Limit: ${(result as any).rateLimitInfo.limit}
 - Reset Time: ${new Date((result as any).rateLimitInfo.reset * 1000).toLocaleString()}
-` : ''}
+`
+    : ''
+}
 
 💡 Next Steps:
 ${successCount > 0 ? `- View created issues at: https://github.com/${repo}/issues` : ''}
@@ -473,39 +529,50 @@ ${failureCount > 0 ? `- Review and retry failed syncs` : ''}
 ${skippedCount > 0 ? `- ${skippedCount} threads were skipped (likely already synced)` : ''}
 
 📦 Raw Data (for programmatic access):
-${JSON.stringify({
-  summary: {
-    forumId,
-    repo,
-    successCount,
-    failureCount,
-    skippedCount,
-    totalProcessed: issues.length
+${JSON.stringify(
+  {
+    summary: {
+      forumId,
+      repo,
+      successCount,
+      failureCount,
+      skippedCount,
+      totalProcessed: issues.length,
+    },
+    issues: issues.map((i: any) => ({
+      threadId: i.threadId,
+      issueNumber: i.number || i.issueNumber,
+      issueUrl: i.url || i.issueUrl,
+      title: i.title || i.threadTitle,
+      success: i.success,
+      error: i.error,
+    })),
   },
-  issues: issues.map((i: any) => ({
-    threadId: i.threadId,
-    issueNumber: i.number || i.issueNumber,
-    issueUrl: i.url || i.issueUrl,
-    title: i.title || i.threadTitle,
-    success: i.success,
-    error: i.error
-  }))
-}, null, 2)}`;
+  null,
+  2
+)}`;
 
   return response_text;
 }
 
 export const discordForumsCapability: RegisteredCapability = {
   name: 'discord-forums',
-  supportedActions: ['list-forums', 'list-threads', 'get-thread', 'get-forum-summary', 'sync-to-github'],
-  description: 'Traverse Discord forum channels, read discussions, and sync them to GitHub issues. Use list-forums to discover available forums, list-threads to see discussions, get-thread for full thread details, get-forum-summary for overview, and sync-to-github to create GitHub issues from forum threads.',
+  supportedActions: [
+    'list-forums',
+    'list-threads',
+    'get-thread',
+    'get-forum-summary',
+    'sync-to-github',
+  ],
+  description:
+    'Traverse Discord forum channels, read discussions, and sync them to GitHub issues. Use list-forums to discover available forums, list-threads to see discussions, get-thread for full thread details, get-forum-summary for overview, and sync-to-github to create GitHub issues from forum threads.',
   requiredParams: [],
   examples: [
     '<capability name="discord-forums" action="list-forums" data=\'{"guildId":"1420846272545296470"}\' />',
     '<capability name="discord-forums" action="list-threads" data=\'{"forumId":"123456789"}\' />',
     '<capability name="discord-forums" action="get-thread" data=\'{"threadId":"987654321"}\' />',
     '<capability name="discord-forums" action="get-forum-summary" data=\'{"forumId":"123456789"}\' />',
-    '<capability name="discord-forums" action="sync-to-github" data=\'{"forumId":"123456789","repo":"owner/repo"}\' />'
+    '<capability name="discord-forums" action="sync-to-github" data=\'{"forumId":"123456789","repo":"owner/repo"}\' />',
   ],
-  handler
+  handler,
 };

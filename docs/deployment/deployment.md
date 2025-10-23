@@ -3,6 +3,7 @@
 ## 🚀 Quick Start
 
 ### Local Testing
+
 ```bash
 # Test locally first
 ./scripts/deploy.sh local
@@ -12,6 +13,7 @@ curl http://localhost:18239/health
 ```
 
 ### VPS Deployment
+
 ```bash
 # 1. Set environment variables
 export DEPLOY_HOST="your-vps-ip"
@@ -25,11 +27,13 @@ export OPENROUTER_API_KEY="your-key"
 ## 📋 Prerequisites
 
 ### Local Development
+
 - Docker and Docker Compose
 - Node.js 20+ and pnpm
 - Environment variables configured
 
 ### VPS Requirements
+
 - Debian 11+ or Ubuntu 20.04+ VPS
 - 2GB+ RAM (4GB recommended)
 - 20GB+ disk space
@@ -55,6 +59,7 @@ ssh root@your-vps "chmod +x /tmp/vps-setup.sh && /tmp/vps-setup.sh"
 ```
 
 The setup script will:
+
 - ✅ Install Docker and Docker Compose
 - ✅ Create `coachartie` user account
 - ✅ Configure firewall (UFW)
@@ -135,6 +140,7 @@ export DEPLOY_USER="coachartie"
 - `docker-compose.prod.yml` - Production environment
 
 Key differences:
+
 - Production uses optimized Dockerfile.prod
 - Resource limits and reservations
 - Persistent volumes for data
@@ -144,9 +150,9 @@ Key differences:
 ### Resource Requirements
 
 | Service      | Memory Limit | Memory Reserved | CPU |
-|--------------|-------------|-----------------|-----|
-| Redis        | 256MB       | 128MB          | 0.5 |
-| Capabilities | 1GB         | 512MB          | 1.0 |
+| ------------ | ------------ | --------------- | --- |
+| Redis        | 256MB        | 128MB           | 0.5 |
+| Capabilities | 1GB          | 512MB           | 1.0 |
 
 ## 🔍 Monitoring & Health Checks
 
@@ -159,7 +165,7 @@ curl http://your-vps:18239/health
 # Expected response
 {
   "status": "healthy",
-  "service": "capabilities", 
+  "service": "capabilities",
   "timestamp": "2025-07-20T14:00:00.000Z",
   "checks": {
     "redis": "connected"
@@ -172,7 +178,7 @@ curl http://your-vps:18239/health
 ```bash
 # Using systemd (recommended)
 sudo systemctl start coachartie     # Start services
-sudo systemctl stop coachartie      # Stop services  
+sudo systemctl stop coachartie      # Stop services
 sudo systemctl restart coachartie   # Restart services
 sudo systemctl status coachartie    # Check status
 
@@ -201,7 +207,7 @@ docker system df
 # System resources
 htop                    # CPU/Memory usage
 iotop                   # Disk I/O
-nethogs                 # Network usage  
+nethogs                 # Network usage
 ncdu /home/coachartie   # Disk usage analysis
 
 # Docker resources
@@ -214,6 +220,7 @@ docker system prune -af # Clean up unused resources
 ### Common Issues
 
 #### 1. Service Won't Start
+
 ```bash
 # Check Docker daemon
 sudo systemctl status docker
@@ -226,6 +233,7 @@ docker-compose -f docker-compose.prod.yml up --build -d
 ```
 
 #### 2. Health Check Failures
+
 ```bash
 # Test connectivity
 curl -v http://localhost:18239/health
@@ -238,6 +246,7 @@ docker ps
 ```
 
 #### 3. Database Issues
+
 ```bash
 # Check database file permissions
 ls -la /home/coachartie/coachartie2/packages/capabilities/data/
@@ -248,6 +257,7 @@ tar -czf /home/coachartie/backups/db-backup-$(date +%Y%m%d).tar.gz \
 ```
 
 #### 4. Memory Issues
+
 ```bash
 # Check memory usage
 free -h
@@ -273,6 +283,7 @@ journalctl -u docker.service -f
 ## 🔒 Security
 
 ### Firewall Configuration
+
 ```bash
 # Check firewall status
 sudo ufw status
@@ -280,7 +291,7 @@ sudo ufw status
 # Allowed ports:
 # - 22 (SSH)
 # - 80 (HTTP)
-# - 443 (HTTPS) 
+# - 443 (HTTPS)
 # - 18239 (Coach Artie)
 ```
 
@@ -300,11 +311,12 @@ sudo certbot --nginx -d your-domain.com
 ```
 
 Sample nginx config:
+
 ```nginx
 server {
     listen 80;
     server_name your-domain.com;
-    
+
     location / {
         proxy_pass http://localhost:18239;
         proxy_set_header Host $host;
@@ -318,6 +330,7 @@ server {
 ## 📊 Performance Optimization
 
 ### Database Optimization
+
 ```bash
 # Run VACUUM on SQLite database (monthly)
 docker exec coachartie2-capabilities-1 \
@@ -329,6 +342,7 @@ docker exec coachartie2-capabilities-1 \
 ```
 
 ### Resource Monitoring
+
 ```bash
 # Set up monitoring alerts (optional)
 # Install htop, iotop, and other monitoring tools via setup script
@@ -339,6 +353,7 @@ docker exec coachartie2-capabilities-1 \
 ## 🔄 Backup & Recovery
 
 ### Automated Backups
+
 ```bash
 # Database backup script (add to cron)
 #!/bin/bash
@@ -356,6 +371,7 @@ find $BACKUP_DIR -name "coachartie-*.db" -mtime +7 -delete
 ```
 
 ### Recovery
+
 ```bash
 # Stop services
 sudo systemctl stop coachartie
@@ -371,6 +387,7 @@ sudo systemctl start coachartie
 ## 📞 Support
 
 ### Integration Testing
+
 ```bash
 # Test MCP auto-installation
 curl -X POST http://your-vps:18239/chat \
@@ -400,12 +417,14 @@ curl -X POST http://your-vps:18239/chat \
 ## 🎯 Deployment Checklist
 
 ### Pre-deployment
+
 - [ ] VPS provisioned with adequate resources
 - [ ] Domain name configured (if using SSL)
 - [ ] Environment variables gathered
 - [ ] SSH access to VPS confirmed
 
 ### Setup
+
 - [ ] Run VPS setup script
 - [ ] Configure environment variables
 - [ ] Test deployment locally first
@@ -413,6 +432,7 @@ curl -X POST http://your-vps:18239/chat \
 - [ ] Verify health checks pass
 
 ### Post-deployment
+
 - [ ] Set up monitoring alerts
 - [ ] Configure automated backups
 - [ ] Test all MCP functionality

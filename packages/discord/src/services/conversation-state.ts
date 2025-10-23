@@ -53,7 +53,7 @@ export class ConversationStateManager {
       state: initialState,
       createdAt: now,
       lastUpdatedAt: now,
-      expiresAt: new Date(now.getTime() + CONVERSATION_TTL)
+      expiresAt: new Date(now.getTime() + CONVERSATION_TTL),
     };
 
     this.conversations.set(userId, context);
@@ -176,7 +176,9 @@ export function initializeConversationState(): ConversationStateManager {
 
 export function getConversationState(): ConversationStateManager {
   if (!conversationManager) {
-    throw new Error('Conversation state manager not initialized. Call initializeConversationState first.');
+    throw new Error(
+      'Conversation state manager not initialized. Call initializeConversationState first.'
+    );
   }
   return conversationManager;
 }

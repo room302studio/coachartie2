@@ -50,7 +50,7 @@ export class UsageTracker {
 
     const inputCost = (usage.prompt_tokens / 1000) * pricing.input;
     const outputCost = (usage.completion_tokens / 1000) * pricing.output;
-    
+
     return inputCost + outputCost;
   }
 
@@ -60,7 +60,7 @@ export class UsageTracker {
   static async recordUsage(stats: UsageStats): Promise<void> {
     try {
       const db = await getDatabase();
-      
+
       await db.run(
         `INSERT INTO model_usage_stats (
           model_name, user_id, message_id, input_length, output_length,
@@ -83,11 +83,13 @@ export class UsageTracker {
           stats.prompt_tokens,
           stats.completion_tokens,
           stats.total_tokens,
-          stats.estimated_cost
+          stats.estimated_cost,
         ]
       );
 
-      logger.info(`📊 Usage recorded: ${stats.model_name} - ${stats.total_tokens} tokens - $${stats.estimated_cost.toFixed(4)}`);
+      logger.info(
+        `📊 Usage recorded: ${stats.model_name} - ${stats.total_tokens} tokens - $${stats.estimated_cost.toFixed(4)}`
+      );
     } catch (error) {
       logger.error('❌ Failed to record usage stats:', error);
       // Don't throw - usage tracking failure shouldn't break the main flow
@@ -97,7 +99,10 @@ export class UsageTracker {
   /**
    * Get usage statistics for a user or model
    */
-  static async getUserUsage(userId: string, days: number = 30): Promise<{
+  static async getUserUsage(
+    userId: string,
+    days: number = 30
+  ): Promise<{
     total_tokens: number;
     total_cost: number;
     requests: number;
@@ -105,8 +110,9 @@ export class UsageTracker {
   }> {
     try {
       const db = await getDatabase();
-      
-      const result = await db.get(`
+
+      const result = await db.get(
+        `
         SELECT 
           SUM(total_tokens) as total_tokens,
           SUM(estimated_cost) as total_cost,
@@ -117,13 +123,15 @@ export class UsageTracker {
         FROM model_usage_stats 
         WHERE user_id = ? 
         AND timestamp >= datetime('now', '-${days} days')
-      `, [userId, userId]);
+      `,
+        [userId, userId]
+      );
 
       return {
         total_tokens: result?.total_tokens || 0,
         total_cost: result?.total_cost || 0,
         requests: result?.requests || 0,
-        most_used_model: result?.most_used_model || 'none'
+        most_used_model: result?.most_used_model || 'none',
       };
     } catch (error) {
       logger.error('❌ Failed to get user usage:', error);
@@ -134,7 +142,10 @@ export class UsageTracker {
   /**
    * Get model usage statistics
    */
-  static async getModelUsage(modelName: string, days: number = 30): Promise<{
+  static async getModelUsage(
+    modelName: string,
+    days: number = 30
+  ): Promise<{
     total_tokens: number;
     total_cost: number;
     requests: number;
@@ -142,8 +153,9 @@ export class UsageTracker {
   }> {
     try {
       const db = await getDatabase();
-      
-      const result = await db.get(`
+
+      const result = await db.get(
+        `
         SELECT 
           SUM(total_tokens) as total_tokens,
           SUM(estimated_cost) as total_cost,
@@ -152,13 +164,15 @@ export class UsageTracker {
         FROM model_usage_stats 
         WHERE model_name = ? 
         AND timestamp >= datetime('now', '-${days} days')
-      `, [modelName]);
+      `,
+        [modelName]
+      );
 
       return {
         total_tokens: result?.total_tokens || 0,
         total_cost: result?.total_cost || 0,
         requests: result?.requests || 0,
-        avg_tokens_per_request: result?.avg_tokens_per_request || 0
+        avg_tokens_per_request: result?.avg_tokens_per_request || 0,
       };
     } catch (error) {
       logger.error('❌ Failed to get model usage:', error);
@@ -169,18 +183,20 @@ export class UsageTracker {
   /**
    * Get tool usage performance by model
    */
-  static async getToolUsagePerformance(days: number = 30): Promise<Array<{
-    model_name: string;
-    total_requests: number;
-    capabilities_detected: number;
-    capabilities_executed: number;
-    tool_success_rate: number;
-    xml_format_success_rate: number;
-    avg_response_time: number;
-  }>> {
+  static async getToolUsagePerformance(days: number = 30): Promise<
+    Array<{
+      model_name: string;
+      total_requests: number;
+      capabilities_detected: number;
+      capabilities_executed: number;
+      tool_success_rate: number;
+      xml_format_success_rate: number;
+      avg_response_time: number;
+    }>
+  > {
     try {
       const db = await getDatabase();
-      
+
       const results = await db.all(`
         SELECT 
           model_name,
@@ -208,14 +224,14 @@ export class UsageTracker {
         ORDER BY tool_success_rate DESC, xml_format_success_rate DESC
       `);
 
-      return results.map(row => ({
+      return results.map((row) => ({
         model_name: row.model_name,
         total_requests: row.total_requests,
         capabilities_detected: row.capabilities_detected,
         capabilities_executed: row.capabilities_executed,
         tool_success_rate: row.tool_success_rate,
         xml_format_success_rate: row.xml_format_success_rate,
-        avg_response_time: row.avg_response_time
+        avg_response_time: row.avg_response_time,
       }));
     } catch (error) {
       logger.error('❌ Failed to get tool usage performance:', error);
@@ -226,15 +242,17 @@ export class UsageTracker {
   /**
    * Get daily usage summary
    */
-  static async getDailyUsage(days: number = 7): Promise<Array<{
-    date: string;
-    total_tokens: number;
-    total_cost: number;
-    requests: number;
-  }>> {
+  static async getDailyUsage(days: number = 7): Promise<
+    Array<{
+      date: string;
+      total_tokens: number;
+      total_cost: number;
+      requests: number;
+    }>
+  > {
     try {
       const db = await getDatabase();
-      
+
       const results = await db.all(`
         SELECT 
           DATE(timestamp) as date,
@@ -247,11 +265,11 @@ export class UsageTracker {
         ORDER BY date DESC
       `);
 
-      return results.map(row => ({
+      return results.map((row) => ({
         date: row.date,
         total_tokens: row.total_tokens || 0,
         total_cost: row.total_cost || 0,
-        requests: row.requests || 0
+        requests: row.requests || 0,
       }));
     } catch (error) {
       logger.error('❌ Failed to get daily usage:', error);

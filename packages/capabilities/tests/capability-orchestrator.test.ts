@@ -8,7 +8,8 @@ describe('CapabilityOrchestrator', () => {
     const extractCapabilities = (orchestrator as any).extractCapabilities.bind(orchestrator);
 
     it('should extract self-closing capability tags with attributes', () => {
-      const response = 'Here is a calculation: <capability name="calculator" action="calculate" expression="2+2" />';
+      const response =
+        'Here is a calculation: <capability name="calculator" action="calculate" expression="2+2" />';
       const capabilities = extractCapabilities(response);
 
       expect(capabilities).toHaveLength(1);
@@ -22,7 +23,8 @@ describe('CapabilityOrchestrator', () => {
     });
 
     it('should extract capability tags with content', () => {
-      const response = 'Let me search: <capability name="web" action="search">JavaScript tutorials</capability>';
+      const response =
+        'Let me search: <capability name="web" action="search">JavaScript tutorials</capability>';
       const capabilities = extractCapabilities(response);
 
       expect(capabilities).toHaveLength(1);
@@ -50,7 +52,8 @@ describe('CapabilityOrchestrator', () => {
     });
 
     it('should extract capability with mixed attributes and content', () => {
-      const response = '<capability name="memory" action="remember" category="facts">The sky is blue</capability>';
+      const response =
+        '<capability name="memory" action="remember" category="facts">The sky is blue</capability>';
       const capabilities = extractCapabilities(response);
 
       expect(capabilities).toHaveLength(1);
@@ -98,7 +101,8 @@ describe('CapabilityOrchestrator', () => {
     });
 
     it('should parse numeric and boolean attributes correctly', () => {
-      const response = '<capability name="scheduler" action="remind" delay="5000" important="true" />';
+      const response =
+        '<capability name="scheduler" action="remind" delay="5000" important="true" />';
       const capabilities = extractCapabilities(response);
 
       expect(capabilities).toHaveLength(1);
@@ -107,7 +111,8 @@ describe('CapabilityOrchestrator', () => {
     });
 
     it('should handle complex content with nested tags', () => {
-      const response = '<capability name="web" action="fetch" url="https://example.com">Get the <strong>main content</strong> from this page</capability>';
+      const response =
+        '<capability name="web" action="fetch" url="https://example.com">Get the <strong>main content</strong> from this page</capability>';
       const capabilities = extractCapabilities(response);
 
       expect(capabilities).toHaveLength(1);

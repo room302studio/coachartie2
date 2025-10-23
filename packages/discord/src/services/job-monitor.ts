@@ -56,7 +56,7 @@ export class JobMonitor {
 
     logger.info('🎯 Starting persistent job monitor (single wheel for all jobs)');
     this.isRunning = true;
-    
+
     // Single wheel that turns every 3 seconds
     this.monitorInterval = setInterval(async () => {
       await this.checkAllJobs();
@@ -81,7 +81,7 @@ export class JobMonitor {
    * Register a job to be monitored
    */
   public monitorJob(
-    jobId: string, 
+    jobId: string,
     callbacks: {
       onComplete: (result: string) => void;
       onError?: (error: string) => void;
@@ -90,12 +90,12 @@ export class JobMonitor {
     }
   ): void {
     logger.info(`📋 Registering job ${jobId.slice(-8)} for monitoring`);
-    
+
     this.pendingJobs.set(jobId, {
       ...callbacks,
       maxAttempts: callbacks.maxAttempts || 60,
       attemptCount: 0,
-      createdAt: Date.now()
+      createdAt: Date.now(),
     });
 
     logger.info(`📊 Job monitor status: ${this.pendingJobs.size} jobs being monitored`);
@@ -121,26 +121,28 @@ export class JobMonitor {
     }
 
     logger.info(`🔄 Checking ${this.pendingJobs.size} pending jobs...`);
-    
+
     const jobEntries = Array.from(this.pendingJobs.entries());
-    
+
     for (const [jobId, callback] of jobEntries) {
       try {
         await this.checkSingleJob(jobId, callback);
       } catch (error) {
         logger.error(`❌ Error checking job ${jobId.slice(-8)}:`, error);
-        
+
         // Increment attempt count
         callback.attemptCount = (callback.attemptCount || 0) + 1;
-        
+
         // If max attempts reached, fail the job
         if (callback.attemptCount >= callback.maxAttempts!) {
-          logger.error(`💀 Job ${jobId.slice(-8)} exceeded max attempts (${callback.maxAttempts}), failing`);
-          
+          logger.error(
+            `💀 Job ${jobId.slice(-8)} exceeded max attempts (${callback.maxAttempts}), failing`
+          );
+
           if (callback.onError) {
             callback.onError(`Job exceeded max attempts: ${error}`);
           }
-          
+
           this.unmonitorJob(jobId);
         }
       }
@@ -152,12 +154,12 @@ export class JobMonitor {
    */
   private async checkSingleJob(jobId: string, callback: JobCallback): Promise<void> {
     const shortId = jobId.slice(-8);
-    
+
     try {
       logger.info(`🔍 Checking job ${shortId}...`);
-      
+
       const response = await fetch(`${this.baseUrl}/chat/${jobId}`);
-      
+
       if (!response.ok) {
         if (response.status === 404) {
           throw new Error('Job not found or expired');
@@ -165,9 +167,11 @@ export class JobMonitor {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
 
-      const status = await response.json() as JobStatusResponse;
+      const status = (await response.json()) as JobStatusResponse;
       const actualResponse = status.partialResponse || status.response;
-      logger.info(`🔍 Job ${shortId} status: "${status.status}", hasResponse: ${!!actualResponse}, responseLength: ${actualResponse?.length || 0}`);
+      logger.info(
+        `🔍 Job ${shortId} status: "${status.status}", hasResponse: ${!!actualResponse}, responseLength: ${actualResponse?.length || 0}`
+      );
 
       // Call progress callback if status changed
       if (callback.onProgress) {
@@ -177,14 +181,16 @@ export class JobMonitor {
       // Handle completion
       if (status.status === 'completed') {
         logger.info(`🎉 Job ${shortId} COMPLETED!`);
-        
+
         // CRITICAL: Unregister job FIRST to prevent duplicate callbacks
         this.unmonitorJob(jobId);
-        
+
         if (actualResponse && callback.onComplete) {
-          logger.info(`🚀 Calling onComplete for job ${shortId} with ${actualResponse.length} chars`);
+          logger.info(
+            `🚀 Calling onComplete for job ${shortId} with ${actualResponse.length} chars`
+          );
           logger.info(`📝 Response preview: "${actualResponse.substring(0, 100)}..."`);
-          
+
           try {
             // Fire and forget - job is already unregistered
             callback.onComplete(actualResponse);
@@ -193,44 +199,47 @@ export class JobMonitor {
             logger.error(`❌ onComplete callback failed for job ${shortId}:`, callbackError);
           }
         } else {
-          logger.warn(`⚠️ Job ${shortId} completed but missing response (${!!actualResponse}) or callback (${!!callback.onComplete})`);
+          logger.warn(
+            `⚠️ Job ${shortId} completed but missing response (${!!actualResponse}) or callback (${!!callback.onComplete})`
+          );
         }
-        
+
         return;
       }
 
       // Handle failure
       if (status.status === 'failed') {
         logger.error(`💥 Job ${shortId} FAILED: ${status.error}`);
-        
+
         if (callback.onError) {
           callback.onError(status.error || 'Job failed without error message');
         }
-        
+
         this.unmonitorJob(jobId);
         return;
       }
 
       // Job still pending/processing, increment attempt count
       callback.attemptCount = (callback.attemptCount || 0) + 1;
-      
+
       // Check if we've exceeded max attempts
       if (callback.attemptCount >= callback.maxAttempts!) {
         const elapsed = Date.now() - callback.createdAt;
         const timeoutError = `Job ${shortId} timed out after ${callback.maxAttempts} attempts (${elapsed}ms)`;
-        
+
         logger.error(`⏰ ${timeoutError}`);
-        
+
         if (callback.onError) {
           callback.onError(timeoutError);
         }
-        
+
         this.unmonitorJob(jobId);
         return;
       }
 
-      logger.info(`⏳ Job ${shortId} still ${status.status} (attempt ${callback.attemptCount}/${callback.maxAttempts})`);
-
+      logger.info(
+        `⏳ Job ${shortId} still ${status.status} (attempt ${callback.attemptCount}/${callback.maxAttempts})`
+      );
     } catch (error) {
       throw error; // Let the caller handle the error and retry logic
     }
@@ -242,7 +251,7 @@ export class JobMonitor {
   public getStats(): { pendingJobs: number; isRunning: boolean } {
     return {
       pendingJobs: this.pendingJobs.size,
-      isRunning: this.isRunning
+      isRunning: this.isRunning,
     };
   }
 
@@ -250,7 +259,7 @@ export class JobMonitor {
    * Get list of pending job IDs (for debugging)
    */
   public getPendingJobIds(): string[] {
-    return Array.from(this.pendingJobs.keys()).map(id => id.slice(-8));
+    return Array.from(this.pendingJobs.keys()).map((id) => id.slice(-8));
   }
 }
 
