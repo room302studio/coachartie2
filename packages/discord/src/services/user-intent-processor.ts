@@ -393,6 +393,18 @@ export async function processUserIntent(
 
       // Job completion
       onComplete: async (result) => {
+        logger.info(`🎉 ONCOMPLETE CALLBACK FIRED [${shortId}]:`, {
+          correlationId,
+          jobId: jobInfo.messageId,
+          jobIdType: typeof jobInfo.messageId,
+          hasResult: !!result,
+          resultType: typeof result,
+          resultLength: result?.length || 0,
+          resultPreview: result?.substring(0, 100),
+          alreadyCompleted: jobCompleted,
+          streamedChunks,
+        });
+
         if (jobCompleted) {
           logger.warn(`Duplicate completion blocked [${shortId}]`);
           return;
@@ -429,39 +441,63 @@ export async function processUserIntent(
           // Clean the response of capability tags
           const cleanResult = cleanCapabilityTags(result || 'No response received');
 
+          logger.info(`📝 FINAL RESPONSE DELIVERY [${shortId}]:`, {
+            cleanResultLength: cleanResult.length,
+            cleanResultPreview: cleanResult.substring(0, 100),
+            enableEditing,
+            hasStreamingMessage: !!streamingMessage,
+            lastSentContentLength: lastSentContent.length,
+            streamedChunks,
+          });
+
           // ENHANCED: Handle final response with edit-based streaming
           if (enableEditing && streamingMessage && lastSentContent) {
             // For edit-based streaming, ensure final content is properly set
             const trimmedResult = cleanResult.trim();
             const trimmedSent = lastSentContent.trim();
 
+            logger.info(`📝 EDIT-BASED DELIVERY [${shortId}]:`, {
+              trimmedResultLength: trimmedResult.length,
+              trimmedSentLength: trimmedSent.length,
+              needsEdit: trimmedResult !== trimmedSent && trimmedResult.length > trimmedSent.length,
+            });
+
             if (trimmedResult !== trimmedSent && trimmedResult.length > trimmedSent.length) {
               try {
                 if (intent.editResponse) {
+                  logger.info(`📝 Calling editResponse with ${cleanResult.length} chars [${shortId}]`);
                   await intent.editResponse(cleanResult);
-                  logger.info(`Final edit completed [${shortId}]: ${cleanResult.length} chars`);
+                  logger.info(`✅ Final edit completed [${shortId}]: ${cleanResult.length} chars`);
                 }
               } catch (error) {
-                logger.warn(`Failed final edit [${shortId}]:`, error);
+                logger.error(`❌ Failed final edit [${shortId}]:`, error);
               }
             } else {
               logger.info(`No final edit needed [${shortId}] (content complete)`);
             }
           } else if (streamedChunks === 0) {
             // No streaming happened, send complete response
+            logger.info(`📝 Sending complete response [${shortId}]: ${cleanResult.length} chars`);
             await intent.respond(cleanResult);
-            logger.info(`Sent final response [${shortId}] (no streaming)`);
+            logger.info(`✅ Sent final response [${shortId}] (no streaming)`);
           } else {
             // Traditional streaming - check for additional content
             const trimmedResult = cleanResult.trim();
             const trimmedSent = lastSentContent.trim();
 
+            logger.info(`📝 STREAMING DELIVERY [${shortId}]:`, {
+              trimmedResultLength: trimmedResult.length,
+              trimmedSentLength: trimmedSent.length,
+              difference: trimmedResult.length - trimmedSent.length,
+            });
+
             if (trimmedResult.length > trimmedSent.length + 20) {
               const additionalContent = trimmedResult.slice(trimmedSent.length).trim();
               if (additionalContent && !additionalContent.startsWith(trimmedSent.slice(-10))) {
+                logger.info(`📝 Sending additional content [${shortId}]: ${additionalContent.length} chars`);
                 await intent.respond(additionalContent);
                 logger.info(
-                  `Sent additional final content [${shortId}]: ${additionalContent.slice(0, 50)}...`
+                  `✅ Sent additional final content [${shortId}]: ${additionalContent.slice(0, 50)}...`
                 );
               } else {
                 logger.info(`Skipped final response [${shortId}] (redundant with stream)`);

@@ -918,8 +918,22 @@ async function handleMessageAsIntent(
 
         // Response handlers
         respond: async (content: string): Promise<void> => {
+          logger.info(`📨 DISCORD RESPOND [${shortId}]:`, {
+            correlationId,
+            contentLength: content.length,
+            contentPreview: content.substring(0, 100),
+            messageId: message.id,
+            channelId: message.channelId,
+          });
+
           const chunks = chunkMessage(content);
+          logger.info(`📨 DISCORD: Sending ${chunks.length} chunks [${shortId}]`);
+
           const responseMessage = await message.reply(chunks[0]);
+          logger.info(`✅ DISCORD: Sent first chunk (reply) [${shortId}]`, {
+            responseMessageId: responseMessage.id,
+            chunkLength: chunks[0].length,
+          });
 
           // Store reference for potential editing
           if (!streamingMessage) {
@@ -929,16 +943,26 @@ async function handleMessageAsIntent(
           // Send additional chunks
           for (let i = 1; i < chunks.length; i++) {
             if ('send' in message.channel) {
+              logger.info(`📨 DISCORD: Sending chunk ${i + 1}/${chunks.length} [${shortId}]`);
               await (message.channel as any).send(chunks[i]);
               await new Promise((resolve) => setTimeout(resolve, CHUNK_RATE_LIMIT_DELAY));
             }
           }
 
           telemetry.incrementResponsesDelivered(message.author.id, chunks.length);
+          logger.info(`✅ DISCORD: All ${chunks.length} chunks delivered [${shortId}]`);
         },
 
         // ENHANCED: Edit response capability for cleaner streaming
         editResponse: async (content: string) => {
+          logger.info(`✏️ DISCORD EDIT RESPONSE [${shortId}]:`, {
+            correlationId,
+            contentLength: content.length,
+            contentPreview: content.substring(0, 100),
+            hasStreamingMessage: !!streamingMessage,
+            streamingMessageId: streamingMessage?.id,
+          });
+
           if (!streamingMessage) {
             logger.warn(`No streaming message to edit [${shortId}]`);
             return;
@@ -949,7 +973,10 @@ async function handleMessageAsIntent(
             const truncatedContent =
               content.length > 2000 ? content.slice(0, 1997) + '...' : content;
 
+            logger.info(`✏️ DISCORD: Editing message ${streamingMessage.id} [${shortId}]`);
             await streamingMessage.edit(truncatedContent);
+            logger.info(`✅ DISCORD: Message edited successfully [${shortId}]`);
+
             telemetry.logEvent(
               'message_edited',
               {
@@ -960,7 +987,7 @@ async function handleMessageAsIntent(
               message.author.id
             );
           } catch (error) {
-            logger.warn(`Failed to edit message [${shortId}]:`, error);
+            logger.error(`❌ DISCORD: Failed to edit message [${shortId}]:`, error);
             throw error;
           }
         },

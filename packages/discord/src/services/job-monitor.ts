@@ -204,27 +204,55 @@ export class JobMonitor {
 
       // Handle completion
       if (status.status === 'completed') {
-        logger.info(`🎉 Job ${shortId} COMPLETED!`);
+        logger.info(`🎉 JOB MONITOR: Job ${shortId} COMPLETED!`, {
+          fullJobId: jobId,
+          hasResponse: !!status.response,
+          hasPartialResponse: !!status.partialResponse,
+          actualResponse: !!actualResponse,
+          actualResponseLength: actualResponse?.length,
+          actualResponsePreview: actualResponse?.substring(0, 100),
+          statusObject: {
+            status: status.status,
+            messageId: status.messageId,
+            success: status.success,
+          },
+        });
 
         // CRITICAL: Unregister job FIRST to prevent duplicate callbacks
         this.unmonitorJob(jobId);
 
         if (actualResponse && callback.onComplete) {
           logger.info(
-            `🚀 Calling onComplete for job ${shortId} with ${actualResponse.length} chars`
+            `🚀 JOB MONITOR: Calling onComplete for job ${shortId}:`,
+            {
+              jobId,
+              responseLength: actualResponse.length,
+              responseType: typeof actualResponse,
+              responsePreview: actualResponse.substring(0, 100),
+              hasCallback: !!callback.onComplete,
+            }
           );
-          logger.info(`📝 Response preview: "${actualResponse.substring(0, 100)}..."`);
 
           try {
             // Fire and forget - job is already unregistered
+            logger.info(`🎯 JOB MONITOR: Executing callback.onComplete(actualResponse)...`);
             callback.onComplete(actualResponse);
-            logger.info(`✅ onComplete callback executed successfully for job ${shortId}`);
+            logger.info(`✅ JOB MONITOR: onComplete callback executed successfully for job ${shortId}`);
           } catch (callbackError) {
-            logger.error(`❌ onComplete callback failed for job ${shortId}:`, callbackError);
+            logger.error(`❌ JOB MONITOR: onComplete callback failed for job ${shortId}:`, callbackError);
           }
         } else {
-          logger.warn(
-            `⚠️ Job ${shortId} completed but missing response (${!!actualResponse}) or callback (${!!callback.onComplete})`
+          logger.error(
+            `⚠️ JOB MONITOR: Job ${shortId} completed but cannot deliver:`,
+            {
+              hasActualResponse: !!actualResponse,
+              actualResponseType: typeof actualResponse,
+              actualResponseValue: actualResponse,
+              hasOnComplete: !!callback.onComplete,
+              onCompleteType: typeof callback.onComplete,
+              statusResponse: status.response,
+              statusPartialResponse: status.partialResponse,
+            }
           );
         }
 

@@ -81,17 +81,45 @@ export class JobTracker {
    * Complete a job with success result
    */
   completeJob(messageId: string, result: string): void {
-    const job = this.jobs.get(messageId);
-    if (job) {
-      job.status = 'completed';
-      job.result = result;
-      job.endTime = new Date();
-      // Clear partial response when complete
-      job.partialResponse = undefined;
+    logger.info(`✅ JOB TRACKER: Completing job ${messageId}:`, {
+      messageId,
+      messageIdType: typeof messageId,
+      messageIdLength: messageId?.length,
+      hasResult: !!result,
+      resultLength: result?.length,
+      resultPreview: result?.substring(0, 100),
+    });
 
-      const duration = job.endTime.getTime() - job.startTime.getTime();
-      logger.info(`✅ Job ${messageId} completed successfully in ${duration}ms`);
+    const job = this.jobs.get(messageId);
+
+    if (!job) {
+      logger.error(`❌ JOB TRACKER: Cannot complete job ${messageId} - not found in tracker`, {
+        messageId,
+        totalJobsInTracker: this.jobs.size,
+        allJobIds: Array.from(this.jobs.keys()).map(id => id.slice(-8)),
+      });
+      return;
     }
+
+    logger.info(`✅ JOB TRACKER: Found job ${messageId}, marking complete:`, {
+      previousStatus: job.status,
+      userId: job.userId,
+      originalMessage: job.originalMessage.substring(0, 100),
+    });
+
+    job.status = 'completed';
+    job.result = result;
+    job.endTime = new Date();
+    // Clear partial response when complete
+    job.partialResponse = undefined;
+
+    const duration = job.endTime.getTime() - job.startTime.getTime();
+    logger.info(`✅ Job ${messageId} completed successfully in ${duration}ms`, {
+      messageId,
+      duration,
+      resultLength: result.length,
+      status: job.status,
+    });
   }
 
   /**
