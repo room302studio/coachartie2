@@ -32,6 +32,86 @@ async function handleUserProfileAction(
 
   try {
     switch (action) {
+      case 'link-email': {
+        const email = value || content;
+        if (!email) {
+          return '❌ Missing email. Usage: <capability name="user-profile" action="link-email" value="user@example.com" />';
+        }
+
+        // Validate email format
+        const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+        if (!emailRegex.test(email)) {
+          return '❌ Invalid email format';
+        }
+
+        await UserProfileService.setAttribute(userId, 'email', email);
+        logger.info(`📧 LLM linked email for user ${userId}`);
+        return `✅ Email linked: ${email}. I can now email you when you ask!`;
+      }
+
+      case 'link-phone': {
+        const phone = value || content;
+        if (!phone) {
+          return '❌ Missing phone. Usage: <capability name="user-profile" action="link-phone" value="+1234567890" />';
+        }
+
+        // Validate phone format (international)
+        const phoneRegex = /^\+[1-9]\d{1,14}$/;
+        if (!phoneRegex.test(phone)) {
+          return '❌ Invalid phone format. Use international format: +1234567890';
+        }
+
+        await UserProfileService.setAttribute(userId, 'phone', phone);
+        logger.info(`📱 LLM linked phone for user ${userId}`);
+        return `✅ Phone linked: ${phone}`;
+      }
+
+      case 'link-github': {
+        const github = value || content;
+        if (!github) {
+          return '❌ Missing GitHub username. Usage: <capability name="user-profile" action="link-github" value="ejfox" />';
+        }
+
+        await UserProfileService.setAttribute(userId, 'github', github);
+        logger.info(`🐙 LLM linked GitHub for user ${userId}: ${github}`);
+        return `✅ GitHub linked: ${github}`;
+      }
+
+      case 'link-reddit': {
+        const reddit = value || content;
+        if (!reddit) {
+          return '❌ Missing Reddit username. Usage: <capability name="user-profile" action="link-reddit" value="ejfox" />';
+        }
+
+        await UserProfileService.setAttribute(userId, 'reddit', reddit);
+        logger.info(`🔗 LLM linked Reddit for user ${userId}: ${reddit}`);
+        return `✅ Reddit linked: ${reddit}`;
+      }
+
+      case 'link-twitter': {
+        const twitter = value || content;
+        if (!twitter) {
+          return '❌ Missing Twitter handle. Usage: <capability name="user-profile" action="link-twitter" value="ejfox" />';
+        }
+
+        // Strip @ if provided
+        const cleanTwitter = twitter.replace(/^@/, '');
+        await UserProfileService.setAttribute(userId, 'twitter', cleanTwitter);
+        logger.info(`🐦 LLM linked Twitter for user ${userId}: ${cleanTwitter}`);
+        return `✅ Twitter linked: @${cleanTwitter}`;
+      }
+
+      case 'link-linkedin': {
+        const linkedin = value || content;
+        if (!linkedin) {
+          return '❌ Missing LinkedIn username/URL. Usage: <capability name="user-profile" action="link-linkedin" value="ejfox" />';
+        }
+
+        await UserProfileService.setAttribute(userId, 'linkedin', linkedin);
+        logger.info(`💼 LLM linked LinkedIn for user ${userId}: ${linkedin}`);
+        return `✅ LinkedIn linked: ${linkedin}`;
+      }
+
       case 'set': {
         if (!attribute || !value) {
           return '❌ Missing attribute or value. Usage: <capability name="user-profile" action="set" attribute="github" value="ejfox" />';
@@ -115,15 +195,30 @@ async function handleUserProfileAction(
  */
 export const userProfileCapability: RegisteredCapability = {
   name: 'user-profile',
-  supportedActions: ['set', 'set-many', 'get', 'get-all', 'delete', 'has'],
-  description: 'Store and retrieve structured user information (contact, preferences, metadata)',
+  supportedActions: [
+    'link-email',
+    'link-phone',
+    'link-github',
+    'link-reddit',
+    'link-twitter',
+    'link-linkedin',
+    'set',
+    'set-many',
+    'get',
+    'get-all',
+    'delete',
+    'has',
+  ],
+  description:
+    'Store and retrieve user contact info and metadata. Use link-* actions when user shares contact info.',
   handler: handleUserProfileAction,
   examples: [
-    '<capability name="user-profile" action="set" attribute="github" value="ejfox" />',
+    '<capability name="user-profile" action="link-email" value="user@example.com" />',
+    '<capability name="user-profile" action="link-github" value="ejfox" />',
+    '<capability name="user-profile" action="link-reddit" value="ejfox" />',
+    '<capability name="user-profile" action="link-twitter" value="@ejfox" />',
     '<capability name="user-profile" action="set" attribute="timezone" value="America/New_York" />',
-    '<capability name="user-profile" action="set-many">{"github":"ejfox","reddit":"ejfox","twitter":"@ejfox"}</capability>',
     '<capability name="user-profile" action="get" attribute="email" />',
     '<capability name="user-profile" action="get-all" />',
-    '<capability name="user-profile" action="delete" attribute="old_phone" />',
   ],
 };
