@@ -420,6 +420,29 @@ Available capabilities:
 
     return instructions;
   }
+
+  /**
+   * Generate COMPRESSED capability instructions - saves ~800 tokens!
+   * Only show format once, list capabilities concisely
+   */
+  generateCompressedInstructions(): string {
+    const capabilities = Array.from(this.capabilities.values());
+
+    // Format rule shown ONCE
+    let instructions = `Use XML format: <capability name="X" action="Y" data='{"param":"value"}' />
+
+Available: `;
+
+    // Compressed list: "calculator(calculate), web(search|fetch), ..."
+    const capList = capabilities.map(cap => {
+      const actions = cap.supportedActions.join('|');
+      return `${cap.name}(${actions})`;
+    }).join(', ');
+
+    instructions += capList;
+
+    return instructions;
+  }
 }
 
 // Export singleton instance

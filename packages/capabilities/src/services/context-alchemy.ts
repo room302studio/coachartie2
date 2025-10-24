@@ -70,7 +70,7 @@ export class ContextAlchemy {
     userId: string,
     baseSystemPrompt: string,
     existingMessages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [],
-    options: { minimal?: boolean; capabilityContext?: string[] } = {}
+    options: { minimal?: boolean; capabilityContext?: string[]; channelId?: string } = {}
   ): Promise<{
     messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>;
     contextSources: ContextSource[];
@@ -95,12 +95,16 @@ export class ContextAlchemy {
     }
 
     let selectedContext: ContextSource[] = [];
+    let conversationHistory: Array<{ role: 'user' | 'assistant'; content: string }> = [];
 
     if (!options.minimal) {
       // 1. Calculate token budget
       const budget = this.calculateTokenBudget(userMessage, baseSystemPrompt);
 
-      // 2. Assemble message context (beautiful, readable pattern)
+      // 2. Load conversation history (if available)
+      conversationHistory = await this.getConversationHistory(userId, options.channelId, 3);
+
+      // 3. Assemble message context (beautiful, readable pattern)
       const mockMessage: IncomingMessage = {
         message: userMessage,
         userId,
@@ -109,10 +113,11 @@ export class ContextAlchemy {
         respondTo: { type: 'api' },
         timestamp: new Date(),
         retryCount: 0,
+        context: options.channelId ? { channelId: options.channelId } : undefined,
       };
       const contextSources = await this.assembleMessageContext(mockMessage, options.capabilityContext);
 
-      // 3. Prioritize and select context within budget
+      // 4. Prioritize and select context within budget
       selectedContext = this.selectOptimalContext(contextSources, budget);
     } else {
       // Minimal mode: only add temporal context for date/time awareness
@@ -121,12 +126,13 @@ export class ContextAlchemy {
       selectedContext = minimalSources;
     }
 
-    // 4. Build message chain
+    // 5. Build message chain with conversation history
     const messageChain = this.assembleMessageChain(
       baseSystemPrompt,
       userMessage,
       selectedContext,
-      existingMessages
+      existingMessages,
+      conversationHistory
     );
 
     // Final assembly summary
@@ -211,9 +217,10 @@ Important:
     const userTokens = Math.ceil(userMessage.length / 4);
     const systemTokens = Math.ceil(baseInstructions.length / 4);
 
-    // Free models typically have 4k-8k context windows
-    const totalTokens = 4000; // Conservative for free models
-    const reservedForResponse = 500; // Reserve tokens for response
+    // Modern models (Claude 3.5, GPT-4) have 128k-200k context windows
+    // Use 8k intelligently - enough for rich context without waste
+    const totalTokens = 8000; // Increased from 4000 for better conversations
+    const reservedForResponse = 1000; // Reserve more tokens for detailed responses
 
     const availableForContext = totalTokens - userTokens - systemTokens - reservedForResponse;
 
@@ -278,27 +285,89 @@ Important:
     await this.addCapabilityManifest(sources);
     await this.addDiscordEnvironment(sources); // Add Discord server context
     // Future: await this.addUserPreferences(message, sources);
-    // Future: await this.addConversationHistory(message, sources);
 
     return sources.filter((source) => source.content.length > 0);
   }
 
   /**
-   * Add current date/time to message context (matches assembleMessagePreamble pattern)
+   * Get conversation history from database
+   * Returns last N message pairs for continuity
+   */
+  private async getConversationHistory(
+    userId: string,
+    channelId?: string,
+    limit: number = 3
+  ): Promise<Array<{ role: 'user' | 'assistant'; content: string }>> {
+    try {
+      const { database } = await import('./database.js');
+
+      // Build query to get recent messages
+      let query = `
+        SELECT value, user_id, created_at
+        FROM messages
+        WHERE user_id = ?
+      `;
+      const params: any[] = [userId];
+
+      // Filter by channel if available (for Discord context)
+      if (channelId) {
+        query += ` AND channel_id = ?`;
+        params.push(channelId);
+      }
+
+      query += `
+        ORDER BY created_at DESC
+        LIMIT ?
+      `;
+      params.push(limit * 2); // Get pairs (user + assistant)
+
+      const messages = await database.all(query, params);
+
+      if (!messages || messages.length === 0) {
+        return [];
+      }
+
+      // Convert to message format
+      const history: Array<{ role: 'user' | 'assistant'; content: string }> = [];
+
+      for (const msg of messages.reverse()) {
+        // Determine if this is user or assistant message
+        // Messages from the user have their userId, bot messages might have different logic
+        const isUser = msg.user_id === userId;
+        history.push({
+          role: isUser ? 'user' : 'assistant',
+          content: msg.value,
+        });
+      }
+
+      if (DEBUG && history.length > 0) {
+        logger.info(`│ ✅ Loaded ${history.length} messages from conversation history`);
+      }
+
+      return history.slice(0, limit * 2); // Return up to N pairs
+    } catch (error) {
+      logger.warn('Failed to load conversation history:', error);
+      return []; // Graceful degradation
+    }
+  }
+
+  /**
+   * Add current date/time to message context (compressed format to save tokens)
    */
   private async addCurrentDateTime(sources: ContextSource[]): Promise<void> {
     const now = new Date();
-    const formatted = now.toLocaleDateString('en-US', {
-      weekday: 'long',
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric',
+    // Compressed format: saves ~14 tokens vs verbose format
+    const dayName = now.toLocaleDateString('en-US', { weekday: 'short' });
+    const timeStr = now.toLocaleTimeString('en-US', {
       hour: '2-digit',
       minute: '2-digit',
-      timeZoneName: 'short',
+      hour12: false
     });
+    const tzMatch = now.toLocaleTimeString('en-US', { timeZoneName: 'short' }).match(/\b[A-Z]{3,4}\b/);
+    const tz = tzMatch ? tzMatch[0] : 'UTC';
 
-    const content = `Current date and time: ${formatted}\nISO timestamp: ${now.toISOString()}`;
+    // Format: "Date: 2025-10-24 13:40 EST (Fri)"
+    const content = `Date: ${now.toISOString().split('T')[0]} ${timeStr} ${tz} (${dayName})`;
 
     sources.push({
       name: 'temporal_context',
@@ -471,8 +540,9 @@ Important:
       }
 
       // Calculate available token budget for memory context
+      // With 8k total budget, we can afford much richer memory context
       const estimatedOtherTokens = 500; // Conservative estimate for other context
-      const maxTokensForMemory = 800; // Max tokens for memory content
+      const maxTokensForMemory = 1200; // Increased from 800 - rich memory context!
 
       const startTime = Date.now();
       const memoryResult = await this.memoryEntourage.getMemoryContext(
@@ -533,14 +603,14 @@ Important:
   }
 
   /**
-   * Add capability manifest to message context (matches assembleMessagePreamble pattern)
+   * Add capability manifest to message context (COMPRESSED format - saves ~800 tokens!)
    */
   private async addCapabilityManifest(sources: ContextSource[]): Promise<void> {
     try {
-      // Use the comprehensive format instructions from the capability registry
-      // This includes explicit format rules and examples that the LLM actually follows
+      // Use COMPRESSED format: saves ~800 tokens vs full instructions
+      // Lists capabilities concisely with format shown once
       const { capabilityRegistry } = await import('./capability-registry.js');
-      const content = capabilityRegistry.generateInstructions();
+      const content = capabilityRegistry.generateCompressedInstructions();
 
       sources.push({
         name: 'capability_context',
@@ -553,7 +623,7 @@ Important:
       const capCount = capabilityRegistry.size();
       if (DEBUG) {
         logger.info(
-          `│ ✅ Added capability instructions (${capCount} capabilities, ${content.length} chars)`
+          `│ ✅ Added COMPRESSED capability instructions (${capCount} capabilities, ${content.length} chars, saved ~800 tokens)`
         );
       }
     } catch (error) {
@@ -669,12 +739,14 @@ Available: web, calculator, memory`;
 
   /**
    * Assemble message chain with intelligent context placement
+   * Now includes conversation history for natural dialogue!
    */
   private assembleMessageChain(
     baseSystemPrompt: string,
     userMessage: string,
     contextSources: ContextSource[],
-    existingMessages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = []
+    existingMessages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [],
+    conversationHistory: Array<{ role: 'user' | 'assistant'; content: string }> = []
   ): Array<{ role: 'system' | 'user' | 'assistant'; content: string }> {
     if (DEBUG) {
       logger.info('┌─ MESSAGE CHAIN ASSEMBLY ────────────────────────────────────────┐');
@@ -683,7 +755,7 @@ Available: web, calculator, memory`;
     const contextByCategory = this.groupContextByCategory(contextSources);
     const messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [];
 
-    // 1. System message with temporal context
+    // 1. System message with temporal context + capabilities
     let systemContent = baseSystemPrompt;
     if (contextByCategory.temporal.length > 0) {
       systemContent = `${contextByCategory.temporal[0].content}\n\n${systemContent}`;
@@ -694,29 +766,33 @@ Available: web, calculator, memory`;
 
     messages.push({ role: 'system', content: systemContent.trim() });
 
-    // 2. Add any existing conversation history
-    messages.push(...existingMessages);
+    // 2. Add contextual information as system message (cleaner than fake user messages!)
+    if (contextByCategory.memory.length > 0 || contextByCategory.goals.length > 0 || contextByCategory.user_state.length > 0) {
+      let contextContent = 'Relevant context:\n';
 
-    // 3. Add context messages (some randomization for variety)
-    if (contextByCategory.memory.length > 0) {
-      // Randomly decide if memory goes as assistant context or user context
-      const role = Math.random() > 0.5 ? 'assistant' : 'user';
-      if (DEBUG) {
-        logger.info(`│ 🎲 Memory context role: ${role} (random selection for variety)`);
+      if (contextByCategory.memory.length > 0) {
+        contextContent += `${contextByCategory.memory[0].content}\n`;
       }
-      messages.push({
-        role,
-        content: `Context: ${contextByCategory.memory[0].content}`,
-      });
+      if (contextByCategory.goals.length > 0) {
+        contextContent += `${contextByCategory.goals[0].content}\n`;
+      }
+      if (contextByCategory.user_state.length > 0) {
+        contextContent += `${contextByCategory.user_state[0].content}`;
+      }
+
+      messages.push({ role: 'system', content: contextContent.trim() });
     }
 
-    // 4. Add goal whisper as system-level context if available
-    if (contextByCategory.goals.length > 0) {
-      messages.push({
-        role: 'system',
-        content: contextByCategory.goals[0].content,
-      });
+    // 3. Add conversation history (this is the game-changer!)
+    if (conversationHistory.length > 0) {
+      if (DEBUG) {
+        logger.info(`│ 💬 Adding ${conversationHistory.length} messages from conversation history`);
+      }
+      messages.push(...conversationHistory);
     }
+
+    // 4. Add any existing conversation history from the caller
+    messages.push(...existingMessages);
 
     // 5. User message ALWAYS comes last
     messages.push({ role: 'user', content: userMessage });
