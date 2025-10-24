@@ -52,7 +52,7 @@ services:
       - TWILIO_PHONE_NUMBER=${TWILIO_PHONE_NUMBER}
     volumes:
       - ./packages/capabilities/data:/app/data:rw
-      - ./packages/capabilities/src:/app/src
+      - ./packages/capabilities/src:/app/packages/capabilities/src
       - ./logs:/app/logs:rw
       - /app/node_modules
     depends_on:

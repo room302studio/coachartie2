@@ -70,7 +70,7 @@ export class ContextAlchemy {
     userId: string,
     baseSystemPrompt: string,
     existingMessages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [],
-    options: { minimal?: boolean; capabilityContext?: string[]; channelId?: string } = {}
+    options: { minimal?: boolean; capabilityContext?: string[]; channelId?: string; includeCapabilities?: boolean } = {}
   ): Promise<{
     messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>;
     contextSources: ContextSource[];
@@ -115,7 +115,11 @@ export class ContextAlchemy {
         retryCount: 0,
         context: options.channelId ? { channelId: options.channelId } : undefined,
       };
-      const contextSources = await this.assembleMessageContext(mockMessage, options.capabilityContext);
+      const contextSources = await this.assembleMessageContext(
+        mockMessage,
+        options.capabilityContext,
+        options.includeCapabilities ?? true // Default to true for backwards compatibility
+      );
 
       // 4. Prioritize and select context within budget
       selectedContext = this.selectOptimalContext(contextSources, budget);
@@ -267,7 +271,8 @@ Important:
    */
   private async assembleMessageContext(
     message: IncomingMessage,
-    capabilityContext?: string[]
+    capabilityContext?: string[],
+    includeCapabilities: boolean = true
   ): Promise<ContextSource[]> {
     if (DEBUG) {
       logger.info(`📝 Assembling message context for <${message.userId}> message`);
@@ -282,7 +287,9 @@ Important:
     await this.addRecentChannelMessages(message, sources); // Add immediate channel context
     await this.addRecentGuildMessages(message, sources); // Add broader guild context
     await this.addRelevantMemories(message, sources, capabilityContext);
-    await this.addCapabilityManifest(sources);
+    if (includeCapabilities) {
+      await this.addCapabilityManifest(sources);
+    }
     await this.addDiscordEnvironment(sources); // Add Discord server context
     // Future: await this.addUserPreferences(message, sources);
 

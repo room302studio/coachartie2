@@ -2081,7 +2081,9 @@ Provide a concise, friendly summary (1-2 sentences) of what was accomplished ove
       const { messages } = await contextAlchemy.buildMessageChain(
         summaryPrompt,
         context.userId,
-        'You are Coach Artie providing a final summary after completing multiple tasks.'
+        'You are Coach Artie providing a final summary after completing multiple tasks.',
+        [],
+        { includeCapabilities: false } // No capability instructions for summary - just plain text response
       );
 
       const finalSummary = await openRouterService.generateFromMessageChain(
