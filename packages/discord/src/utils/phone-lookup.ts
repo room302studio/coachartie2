@@ -1,7 +1,5 @@
-import { createRedisConnection } from '@coachartie/shared';
+import { UserProfileService } from '@coachartie/shared';
 import { logger } from '@coachartie/shared';
-
-const redis = createRedisConnection();
 
 export interface LinkedPhone {
   phoneNumber: string;
@@ -10,16 +8,25 @@ export interface LinkedPhone {
   userId: string;
 }
 
+/**
+ * Get user phone (uses unified profile system)
+ */
 export async function getUserPhone(userId: string): Promise<LinkedPhone | null> {
   try {
-    const userPhoneKey = `user_phone:${userId}`;
-    const phoneData = await redis.get(userPhoneKey);
+    const phone = await UserProfileService.getAttribute(userId, 'phone');
+    const phoneHash = await UserProfileService.getAttribute(userId, 'phoneHash');
 
-    if (!phoneData) {
+    if (!phone) {
       return null;
     }
 
-    return JSON.parse(phoneData) as LinkedPhone;
+    // Return legacy format for compatibility
+    return {
+      phoneNumber: phone,
+      phoneHash: phoneHash || '',
+      verifiedAt: Date.now(), // We don't track this anymore, but kept for compatibility
+      userId,
+    };
   } catch (error) {
     logger.error('Error getting user phone:', error);
     return null;

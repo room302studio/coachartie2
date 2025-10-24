@@ -1,7 +1,5 @@
-import { createRedisConnection } from '@coachartie/shared';
+import { UserProfileService } from '@coachartie/shared';
 import { logger } from '@coachartie/shared';
-
-const redis = createRedisConnection();
 
 export interface LinkedEmail {
   email: string;
@@ -9,16 +7,23 @@ export interface LinkedEmail {
   userId: string;
 }
 
+/**
+ * Get user email (uses unified profile system)
+ */
 export async function getUserEmail(userId: string): Promise<LinkedEmail | null> {
   try {
-    const userEmailKey = `user_email:${userId}`;
-    const emailData = await redis.get(userEmailKey);
+    const email = await UserProfileService.getAttribute(userId, 'email');
 
-    if (!emailData) {
+    if (!email) {
       return null;
     }
 
-    return JSON.parse(emailData) as LinkedEmail;
+    // Return legacy format for compatibility
+    return {
+      email,
+      linkedAt: Date.now(), // We don't track this anymore, but kept for compatibility
+      userId,
+    };
   } catch (error) {
     logger.error('Error getting user email:', error);
     return null;
@@ -30,16 +35,12 @@ export async function isEmailLinked(userId: string): Promise<boolean> {
   return email !== null;
 }
 
+/**
+ * Link user email (uses unified profile system)
+ */
 export async function linkUserEmail(userId: string, email: string): Promise<void> {
   try {
-    const userEmailKey = `user_email:${userId}`;
-    const linkedEmail: LinkedEmail = {
-      email,
-      linkedAt: Date.now(),
-      userId,
-    };
-
-    await redis.set(userEmailKey, JSON.stringify(linkedEmail));
+    await UserProfileService.setAttribute(userId, 'email', email);
     logger.info('Email linked successfully', { userId, email: email.substring(0, 3) + '***' });
   } catch (error) {
     logger.error('Error linking user email:', error);
@@ -47,10 +48,12 @@ export async function linkUserEmail(userId: string, email: string): Promise<void
   }
 }
 
+/**
+ * Unlink user email (uses unified profile system)
+ */
 export async function unlinkUserEmail(userId: string): Promise<void> {
   try {
-    const userEmailKey = `user_email:${userId}`;
-    await redis.del(userEmailKey);
+    await UserProfileService.deleteAttribute(userId, 'email');
     logger.info('Email unlinked successfully', { userId });
   } catch (error) {
     logger.error('Error unlinking user email:', error);

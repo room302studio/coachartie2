@@ -2407,20 +2407,17 @@ Provide a concise, friendly summary (1-2 sentences) of what was accomplished ove
     // Pattern 1: "email me" - lookup user's linked email
     if (/\b(email|send)\s+(me|myself)\b/.test(lowerMessage) && userId) {
       try {
-        // Dynamically import to avoid circular dependency
-        const { createRedisConnection } = await import('@coachartie/shared');
-        const redis = createRedisConnection();
-        const userEmailKey = `user_email:${userId}`;
-        const emailData = await redis.get(userEmailKey);
+        // Use unified profile system
+        const { UserProfileService } = await import('@coachartie/shared');
+        const email = await UserProfileService.getAttribute(userId, 'email');
 
-        if (emailData) {
-          const linkedEmail = JSON.parse(emailData);
+        if (email) {
           // Extract topic from "email me this later" or "email me about X"
           const aboutMatch = message.match(/about (.+?)(?:\.|$)/i);
           const thisMatch = message.match(/me\s+(this|that)\s+(.+?)(?:\.|$)/i);
 
           return {
-            to: linkedEmail.email,
+            to: email,
             about: aboutMatch?.[1] || thisMatch?.[2]
           };
         } else {
