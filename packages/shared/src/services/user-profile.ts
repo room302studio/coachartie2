@@ -1,4 +1,4 @@
-import { createRedisConnection } from '../database/redis.js';
+import { createRedisConnection } from '../utils/redis.js';
 import { logger } from '../utils/logger.js';
 
 const redis = createRedisConnection();
@@ -47,7 +47,7 @@ export class UserProfileService {
   static async getProfile(userId: string): Promise<UserProfile> {
     try {
       const key = `${this.KEY_PREFIX}:${userId}`;
-      const data = await redis.hGetAll(key);
+      const data = await redis.hgetall(key);
 
       // Return empty object if no profile exists
       if (Object.keys(data).length === 0) {
@@ -67,7 +67,7 @@ export class UserProfileService {
   static async getAttribute(userId: string, attribute: string): Promise<string | null> {
     try {
       const key = `${this.KEY_PREFIX}:${userId}`;
-      return await redis.hGet(key, attribute);
+      return await redis.hget(key, attribute);
     } catch (error) {
       logger.error('Failed to get user attribute:', { userId, attribute, error });
       return null;
@@ -82,15 +82,15 @@ export class UserProfileService {
       const key = `${this.KEY_PREFIX}:${userId}`;
 
       // Update attribute
-      await redis.hSet(key, attribute, value);
+      await redis.hset(key, attribute, value);
 
       // Update timestamp
-      await redis.hSet(key, 'updated_at', new Date().toISOString());
+      await redis.hset(key, 'updated_at', new Date().toISOString());
 
       // Set created_at if this is the first attribute
       const exists = await redis.exists(key);
       if (!exists) {
-        await redis.hSet(key, 'created_at', new Date().toISOString());
+        await redis.hset(key, 'created_at', new Date().toISOString());
       }
 
       logger.info('User attribute set', { userId, attribute, service: 'user-profile' });
@@ -113,7 +113,7 @@ export class UserProfileService {
         updated_at: new Date().toISOString(),
       };
 
-      await redis.hSet(key, updates);
+      await redis.hset(key, updates);
 
       logger.info('User attributes set', { userId, count: Object.keys(attributes).length });
     } catch (error) {
@@ -128,8 +128,8 @@ export class UserProfileService {
   static async deleteAttribute(userId: string, attribute: string): Promise<void> {
     try {
       const key = `${this.KEY_PREFIX}:${userId}`;
-      await redis.hDel(key, attribute);
-      await redis.hSet(key, 'updated_at', new Date().toISOString());
+      await redis.hdel(key, attribute);
+      await redis.hset(key, 'updated_at', new Date().toISOString());
 
       logger.info('User attribute deleted', { userId, attribute });
     } catch (error) {

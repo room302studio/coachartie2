@@ -29,9 +29,26 @@ interface ChatResponse {
 // POST /chat - Process message and return AI response immediately
 router.post('/', rateLimiter(50, 60000), async (req: Request, res: Response) => {
   try {
+    logger.info(`🎯 POST /chat - Request received:`, {
+      bodyKeys: Object.keys(req.body),
+      hasMessage: !!req.body.message,
+      hasUserId: !!req.body.userId,
+      hasContext: !!req.body.context,
+    });
+
     const { message, userId = 'api-user', context }: ChatRequest = req.body;
 
+    logger.info(`🎯 POST /chat - Extracted params:`, {
+      message: message?.substring(0, 100),
+      userId,
+      contextKeys: context ? Object.keys(context) : [],
+    });
+
     if (!message || typeof message !== 'string') {
+      logger.warn(`❌ POST /chat - Invalid message:`, {
+        hasMessage: !!message,
+        messageType: typeof message,
+      });
       return res.status(400).json({
         success: false,
         messageId: '',
@@ -57,6 +74,7 @@ router.post('/', rateLimiter(50, 60000), async (req: Request, res: Response) => 
     }
 
     const messageId = uuidv4();
+    logger.info(`🆔 Generated messageId: ${messageId}`);
 
     logger.info(`Processing chat message from ${userId}: ${message.substring(0, 100)}...`);
 
@@ -75,22 +93,42 @@ router.post('/', rateLimiter(50, 60000), async (req: Request, res: Response) => 
       },
     };
 
+    logger.info(`📦 Created incomingMessage object:`, {
+      id: incomingMessage.id,
+      userId: incomingMessage.userId,
+      source: incomingMessage.source,
+      respondToType: incomingMessage.respondTo.type,
+    });
+
     // Start tracking the job
     jobTracker.startJob(messageId, userId, message);
     logger.info(`📊 Started tracking job ${messageId} for user ${userId}`);
 
     // Add message to queue for processing
     try {
+      logger.info(`➕ Adding message ${messageId} to queue...`);
       const job = await messageQueue.add('process', incomingMessage);
       logger.info(`✅ Message ${messageId} added to queue with job ID: ${job.id}`);
 
-      // Return job info immediately
-      res.json({
+      // Construct response
+      const response: ChatResponse = {
         success: true,
         messageId,
         status: 'pending',
         jobUrl: `/chat/${messageId}`,
-      } as ChatResponse);
+      };
+
+      logger.info(`📤 Sending response to client:`, {
+        success: response.success,
+        messageId: response.messageId,
+        messageIdExists: !!response.messageId,
+        messageIdType: typeof response.messageId,
+        status: response.status,
+        jobUrl: response.jobUrl,
+      });
+
+      // Return job info immediately
+      res.json(response);
     } catch (queueError) {
       logger.error(`Failed to queue message ${messageId}:`, queueError);
       // Mark job as failed if queuing fails
@@ -233,16 +271,33 @@ router.patch('/:messageId', (req: Request, res: Response) => {
 // GET /chat/:messageId - Check job status and get result (MUST BE LAST)
 router.get('/:messageId', (req: Request, res: Response) => {
   try {
+    logger.info(`🔍 GET /chat/:messageId - Request received:`, {
+      messageId: req.params.messageId,
+      messageIdLength: req.params.messageId?.length,
+      messageIdType: typeof req.params.messageId,
+      fullUrl: req.url,
+      method: req.method,
+    });
+
     const { messageId } = req.params;
 
     if (!messageId) {
+      logger.warn(`❌ GET /chat/:messageId - Missing messageId`);
       return res.status(400).json({
         success: false,
         error: 'Message ID is required',
       });
     }
 
+    logger.info(`🔍 Looking up job ${messageId} in tracker...`);
     const job = jobTracker.getJob(messageId);
+
+    logger.info(`🔍 Job lookup result for ${messageId}:`, {
+      found: !!job,
+      status: job?.status,
+      hasResult: !!job?.result,
+      hasError: !!job?.error,
+    });
 
     if (!job) {
       return res.status(404).json({

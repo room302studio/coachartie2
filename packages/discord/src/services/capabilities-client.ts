@@ -52,11 +52,30 @@ export class CapabilitiesClient {
       });
 
       if (!response.ok) {
+        const errorBody = await response.text();
+        logger.error(`❌ Job submission failed:`, {
+          status: response.status,
+          statusText: response.statusText,
+          body: errorBody,
+        });
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
 
       const result = (await response.json()) as JobSubmissionResponse;
-      logger.info(`📤 Submitted job ${result.messageId} for user ${userId}`);
+
+      // DEFENSIVE: Log the raw response for debugging
+      logger.info(`📤 Submitted job for user ${userId}:`, {
+        messageId: result.messageId,
+        hasMessageId: !!result.messageId,
+        resultKeys: Object.keys(result),
+        fullResult: result,
+      });
+
+      // DEFENSIVE: Validate response structure
+      if (!result.messageId) {
+        logger.error(`❌ INVALID RESPONSE FROM /chat - missing messageId:`, result);
+        throw new Error(`Invalid response from capabilities service: missing messageId`);
+      }
 
       return result;
     } catch (error) {

@@ -128,16 +128,37 @@ export class PromptManager {
       logger.warn(`⚠️ Failed to load DB prompts, falling back to registry:`, error);
     }
 
-    // Fallback: Generate instructions from capability registry manifest
-    const { capabilityRegistry } = await import('./capability-registry.js');
-    const instructions = capabilityRegistry
-      .generateInstructions()
-      .replace(/\{\{USER_MESSAGE\}\}/g, userMessage);
-    logger.info(
-      `🎯 Using fallback capability instructions from registry (${capabilityRegistry.size()} capabilities)`
-    );
+    // Fallback: Use two-tier capability selector to nominate relevant capabilities
+    logger.info('🎯 Using two-tier capability selector for intelligent triage');
+    const { capabilitySelector } = await import('./capability-selector.js');
 
-    return instructions;
+    try {
+      // TIER 1: Use FAST_MODEL to nominate 3-5 relevant capabilities
+      const nominated = await capabilitySelector.selectRelevantCapabilities(userMessage);
+
+      // TIER 2: Generate instructions for ONLY nominated capabilities
+      const instructions = capabilitySelector
+        .generateNominatedInstructions(nominated)
+        .replace(/\{\{USER_MESSAGE\}\}/g, userMessage);
+
+      logger.info(
+        `✅ Two-tier selector: Nominated ${nominated.length} capabilities (reduced from full registry)`
+      );
+
+      return instructions;
+    } catch (selectorError) {
+      // Fallback if selector fails: use ALL capabilities
+      logger.warn('⚠️ Capability selector failed, falling back to full registry:', selectorError);
+      const { capabilityRegistry } = await import('./capability-registry.js');
+      const instructions = capabilityRegistry
+        .generateInstructions()
+        .replace(/\{\{USER_MESSAGE\}\}/g, userMessage);
+      logger.info(
+        `🎯 Using fallback capability instructions from registry (${capabilityRegistry.size()} capabilities)`
+      );
+
+      return instructions;
+    }
   }
 
   /**

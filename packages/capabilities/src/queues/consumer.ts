@@ -20,6 +20,18 @@ export async function startMessageConsumer() {
   const worker = createWorker<IncomingMessage, void>(QUEUES.INCOMING_MESSAGES, async (job) => {
     console.log(`📬 Processing job ${job.id} - SNOOKITY LOOKITY!`);
     const message = job.data;
+
+    logger.info(`🔄 WORKER: Job ${job.id} pulled from queue:`, {
+      jobId: job.id,
+      messageId: message.id,
+      userId: message.userId,
+      source: message.source,
+      respondToType: message.respondTo.type,
+      messageLength: message.message.length,
+      hasContext: !!message.context,
+      contextKeys: message.context ? Object.keys(message.context) : [],
+    });
+
     const timer = performanceLogger.startTimer(`Process message ${message.id}`);
 
     queueLogger.jobStarted('process-message', job.id!.toString(), {

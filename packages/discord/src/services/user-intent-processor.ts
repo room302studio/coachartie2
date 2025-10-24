@@ -285,6 +285,18 @@ export async function processUserIntent(
       intent.userId,
       intent.context
     );
+
+    // DEFENSIVE: Validate jobInfo structure before using it
+    if (!jobInfo || !jobInfo.messageId) {
+      const errorDetails = {
+        hasJobInfo: !!jobInfo,
+        jobInfoKeys: jobInfo ? Object.keys(jobInfo) : [],
+        jobInfoValue: jobInfo,
+      };
+      logger.error(`❌ NULL JOB ID DETECTED [${shortId}]:`, errorDetails);
+      throw new Error(`Invalid job response: ${JSON.stringify(errorDetails)}`);
+    }
+
     const jobShortId = jobInfo.messageId.slice(-8);
 
     logger.info(`Job submitted [${shortId}]:`, {

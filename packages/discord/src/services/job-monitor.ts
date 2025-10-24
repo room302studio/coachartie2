@@ -89,7 +89,24 @@ export class JobMonitor {
       maxAttempts?: number;
     }
   ): void {
-    logger.info(`📋 Registering job ${jobId.slice(-8)} for monitoring`);
+    logger.info(`📋 Registering job for monitoring:`, {
+      jobId: jobId,
+      shortId: jobId.slice(-8),
+      jobIdLength: jobId.length,
+      jobIdType: typeof jobId,
+      isNull: jobId === null,
+      isUndefined: jobId === undefined,
+      isEmpty: jobId === '',
+      maxAttempts: callbacks.maxAttempts || 60,
+    });
+
+    if (!jobId || jobId === 'null' || jobId === 'undefined') {
+      logger.error(`❌ ATTEMPTED TO MONITOR INVALID JOB ID:`, {
+        jobId,
+        jobIdType: typeof jobId,
+      });
+      throw new Error(`Cannot monitor invalid job ID: ${jobId}`);
+    }
 
     this.pendingJobs.set(jobId, {
       ...callbacks,
@@ -156,7 +173,14 @@ export class JobMonitor {
     const shortId = jobId.slice(-8);
 
     try {
-      logger.info(`🔍 Checking job ${shortId}...`);
+      logger.info(`🔍 Checking job ${shortId}:`, {
+        fullJobId: jobId,
+        jobIdLength: jobId.length,
+        jobIdType: typeof jobId,
+        url: `${this.baseUrl}/chat/${jobId}`,
+        attempt: callback.attemptCount,
+        maxAttempts: callback.maxAttempts,
+      });
 
       const response = await fetch(`${this.baseUrl}/chat/${jobId}`);
 
