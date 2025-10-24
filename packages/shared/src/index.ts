@@ -4,6 +4,9 @@ export * from './types/queue.js';
 // Constants
 export * from './constants/queues.js';
 
+// Services
+export * from './services/index.js';
+
 // Utilities
 export * from './utils/redis.js';
 export * from './utils/logger.js';

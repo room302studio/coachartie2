@@ -19,7 +19,7 @@ import {
   getShortCorrelationId,
 } from '../utils/correlation.js';
 import { processUserIntent } from '../services/user-intent-processor.js';
-import { isGuildWhitelisted } from '../config/guild-whitelist.js';
+import { isGuildWhitelisted, isWorkingGuild } from '../config/guild-whitelist.js';
 import { getConversationState } from '../services/conversation-state.js';
 import { getGitHubIntegration } from '../services/github-integration.js';
 import { getForumTraversal } from '../services/forum-traversal.js';
@@ -224,6 +224,216 @@ async function sendCompleteResponse(message: Message, result: string): Promise<n
 }
 
 // =============================================================================
+// GITHUB AUTO-EXPANSION
+// =============================================================================
+
+/**
+ * Auto-expand GitHub URLs in messages (only in working guilds)
+ * Returns true if expansion was performed
+ */
+async function handleGitHubAutoExpansion(
+  message: Message,
+  githubService: ReturnType<typeof getGitHubIntegration>
+): Promise<boolean> {
+  try {
+    // Detect GitHub URLs in the message
+    const detectedUrls = githubService.detectGitHubUrls(message.content);
+
+    if (detectedUrls.length === 0) {
+      return false; // No GitHub URLs found
+    }
+
+    logger.info(
+      `🔍 Detected ${detectedUrls.length} GitHub URL(s) in message from ${message.author.tag}`
+    );
+
+    // Expand each detected URL
+    for (const detected of detectedUrls) {
+      try {
+        if (detected.type === 'repo') {
+          const repoInfo = await githubService.getRepositoryInfo(detected.owner, detected.repo);
+          if (repoInfo) {
+            const embed = new EmbedBuilder()
+              .setColor(0x2ea44f)
+              .setTitle(`📦 ${repoInfo.fullName}`)
+              .setURL(repoInfo.url)
+              .setDescription(repoInfo.description || 'No description provided');
+
+            const fields = [];
+
+            if (repoInfo.language) {
+              fields.push({
+                name: 'Language',
+                value: repoInfo.language,
+                inline: true,
+              });
+            }
+
+            fields.push({
+              name: 'Stars',
+              value: `⭐ ${repoInfo.stars.toLocaleString()}`,
+              inline: true,
+            });
+
+            fields.push({
+              name: 'Forks',
+              value: `🍴 ${repoInfo.forks.toLocaleString()}`,
+              inline: true,
+            });
+
+            if (repoInfo.license) {
+              fields.push({
+                name: 'License',
+                value: repoInfo.license,
+                inline: true,
+              });
+            }
+
+            fields.push({
+              name: 'Open Issues',
+              value: `🐛 ${repoInfo.openIssues.toLocaleString()}`,
+              inline: true,
+            });
+
+            if (repoInfo.topics.length > 0) {
+              fields.push({
+                name: 'Topics',
+                value: repoInfo.topics.slice(0, 5).join(', '),
+                inline: false,
+              });
+            }
+
+            embed.addFields(fields);
+            embed.setFooter({ text: `Updated ${new Date(repoInfo.updatedAt).toLocaleDateString()}` });
+
+            await message.reply({ embeds: [embed] });
+            logger.info(`✅ Auto-expanded repo: ${repoInfo.fullName}`);
+          }
+        } else if (detected.type === 'pr') {
+          const prInfo = await githubService.getPullRequestInfo(
+            detected.owner,
+            detected.repo,
+            detected.number!
+          );
+          if (prInfo) {
+            const stateEmoji = prInfo.state === 'open' ? '🟢' : prInfo.mergedAt ? '🟣' : '🔴';
+            const stateText = prInfo.state === 'open' ? 'Open' : prInfo.mergedAt ? 'Merged' : 'Closed';
+
+            const embed = new EmbedBuilder()
+              .setColor(prInfo.state === 'open' ? 0x2ea44f : prInfo.mergedAt ? 0x6f42c1 : 0xcb2431)
+              .setTitle(`${stateEmoji} PR #${prInfo.number}: ${prInfo.title}`)
+              .setURL(prInfo.url)
+              .setDescription(prInfo.body?.slice(0, 200) || 'No description provided');
+
+            const fields = [
+              {
+                name: 'Status',
+                value: `${stateText}${prInfo.isDraft ? ' (Draft)' : ''}`,
+                inline: true,
+              },
+              {
+                name: 'Author',
+                value: `@${prInfo.author}`,
+                inline: true,
+              },
+              {
+                name: 'Changes',
+                value: `+${prInfo.additions} -${prInfo.deletions}`,
+                inline: true,
+              },
+            ];
+
+            if (prInfo.labels.length > 0) {
+              fields.push({
+                name: 'Labels',
+                value: prInfo.labels.slice(0, 3).join(', '),
+                inline: false,
+              });
+            }
+
+            embed.addFields(fields);
+            embed.setFooter({
+              text: `${prInfo.commits} commit(s) • ${prInfo.changedFiles} file(s)`,
+            });
+
+            await message.reply({ embeds: [embed] });
+            logger.info(`✅ Auto-expanded PR #${prInfo.number} in ${detected.owner}/${detected.repo}`);
+          }
+        } else if (detected.type === 'issue') {
+          const issueInfo = await githubService.getIssueInfo(
+            detected.owner,
+            detected.repo,
+            detected.number!
+          );
+          if (issueInfo) {
+            const stateEmoji = issueInfo.state === 'open' ? '🟢' : '🔴';
+            const stateText = issueInfo.state === 'open' ? 'Open' : 'Closed';
+
+            const embed = new EmbedBuilder()
+              .setColor(issueInfo.state === 'open' ? 0x2ea44f : 0xcb2431)
+              .setTitle(`${stateEmoji} Issue #${issueInfo.number}: ${issueInfo.title}`)
+              .setURL(issueInfo.url)
+              .setDescription(issueInfo.body?.slice(0, 200) || 'No description provided');
+
+            const fields = [
+              {
+                name: 'Status',
+                value: stateText,
+                inline: true,
+              },
+              {
+                name: 'Author',
+                value: `@${issueInfo.author}`,
+                inline: true,
+              },
+              {
+                name: 'Comments',
+                value: `💬 ${issueInfo.comments}`,
+                inline: true,
+              },
+            ];
+
+            if (issueInfo.labels.length > 0) {
+              fields.push({
+                name: 'Labels',
+                value: issueInfo.labels.slice(0, 5).join(', '),
+                inline: false,
+              });
+            }
+
+            if (issueInfo.assignees.length > 0) {
+              fields.push({
+                name: 'Assignees',
+                value: issueInfo.assignees.slice(0, 3).map((a) => `@${a}`).join(', '),
+                inline: false,
+              });
+            }
+
+            embed.addFields(fields);
+            embed.setFooter({
+              text: `Created ${new Date(issueInfo.createdAt).toLocaleDateString()}`,
+            });
+
+            await message.reply({ embeds: [embed] });
+            logger.info(
+              `✅ Auto-expanded issue #${issueInfo.number} in ${detected.owner}/${detected.repo}`
+            );
+          }
+        }
+      } catch (error) {
+        logger.error(`Failed to expand GitHub URL ${detected.url}:`, error);
+        // Continue to next URL even if one fails
+      }
+    }
+
+    return true; // Expansion was performed
+  } catch (error) {
+    logger.error('GitHub auto-expansion failed:', error);
+    return false;
+  }
+}
+
+// =============================================================================
 // MAIN MESSAGE HANDLER SETUP
 // =============================================================================
 
@@ -285,6 +495,32 @@ export function setupMessageHandler(client: Client) {
         `🚫 Ignoring message from non-whitelisted guild: ${message.guildId} [${shortId}]`
       );
       return;
+    }
+
+    // -------------------------------------------------------------------------
+    // GITHUB AUTO-EXPANSION (Working Guilds Only)
+    // -------------------------------------------------------------------------
+
+    // Auto-expand GitHub URLs in working guilds
+    if (message.guildId && isWorkingGuild(message.guildId)) {
+      try {
+        const githubService = getGitHubIntegration();
+        const expanded = await handleGitHubAutoExpansion(message, githubService);
+
+        if (expanded) {
+          logger.info(`✅ GitHub auto-expansion completed [${shortId}]`);
+          telemetry.logEvent(
+            'github_auto_expansion',
+            { guildId: message.guildId },
+            correlationId,
+            message.author.id
+          );
+          return; // Don't process message further - auto-expansion handled it
+        }
+      } catch (error) {
+        // Log error but continue with normal message processing
+        logger.warn(`GitHub auto-expansion failed [${shortId}]:`, error);
+      }
     }
 
     // -------------------------------------------------------------------------

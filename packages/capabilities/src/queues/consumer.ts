@@ -64,7 +64,7 @@ export async function startMessageConsumer() {
 
       // CRITICAL: Global timeout to prevent infinite loops at ANY level
       // This catches hangs in capability retries, LLM loops, or any other processing
-      const GLOBAL_TIMEOUT_MS = 120000; // 2 minutes
+      const GLOBAL_TIMEOUT_MS = 300000; // 5 minutes - allow deep exploration to complete
       const timeoutPromise = new Promise<never>((_, reject) => {
         setTimeout(() => {
           const errorMsg = `Global job timeout after ${GLOBAL_TIMEOUT_MS / 1000}s - prevents infinite loops and resource exhaustion`;

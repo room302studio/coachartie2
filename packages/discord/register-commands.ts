@@ -9,6 +9,8 @@ import { REST, Routes } from 'discord.js';
 import { linkPhoneCommand } from './src/commands/link-phone.js';
 import { verifyPhoneCommand } from './src/commands/verify-phone.js';
 import { unlinkPhoneCommand } from './src/commands/unlink-phone.js';
+import { linkEmailCommand } from './src/commands/link-email.js';
+import { unlinkEmailCommand } from './src/commands/unlink-email.js';
 import { statusCommand } from './src/commands/status.js';
 import { botStatusCommand } from './src/commands/bot-status.js';
 import { modelsCommand } from './src/commands/models.js';
@@ -21,6 +23,8 @@ const commands = [
   linkPhoneCommand.data.toJSON(),
   verifyPhoneCommand.data.toJSON(),
   unlinkPhoneCommand.data.toJSON(),
+  linkEmailCommand.data.toJSON(),
+  unlinkEmailCommand.data.toJSON(),
   statusCommand.data.toJSON(),
   botStatusCommand.data.toJSON(),
   modelsCommand.data.toJSON(),
@@ -44,6 +48,8 @@ async function registerCommands() {
     console.log('  - /link-phone - Link phone number for SMS notifications');
     console.log('  - /verify-phone - Verify phone number with code');
     console.log('  - /unlink-phone - Remove linked phone number');
+    console.log('  - /link-email - Link email address for email features');
+    console.log('  - /unlink-email - Remove linked email address');
     console.log('  - /status - Show LLM model used for most recent message');
     console.log('  - /bot-status - Check bot health and system status');
     console.log('  - /models - List available AI models');

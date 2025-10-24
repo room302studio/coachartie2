@@ -111,6 +111,73 @@ class OpenRouterService {
     return [...this.models];
   }
 
+  // THREE-TIER MODEL STRATEGY: Speed + Cost Optimization
+  // Fast model extracts capabilities → Smart model responds → Manager plans complex tasks
+
+  /**
+   * Select FAST_MODEL for capability extraction (fast, cheap, simple pattern matching)
+   */
+  selectFastModel(): string {
+    const fastModel = process.env.FAST_MODEL;
+    if (fastModel && fastModel.trim().length > 0) {
+      logger.info(`🚀 FAST MODEL SELECTED: ${fastModel} (capability extraction)`);
+      return fastModel;
+    }
+    // Fallback to rotation if not configured
+    logger.warn('⚠️ FAST_MODEL not configured, using rotation');
+    return this.getCurrentModel();
+  }
+
+  /**
+   * Select SMART_MODEL for response synthesis (balanced, high quality)
+   */
+  selectSmartModel(): string {
+    const smartModel = process.env.SMART_MODEL;
+    if (smartModel && smartModel.trim().length > 0) {
+      logger.info(`🧠 SMART MODEL SELECTED: ${smartModel} (response synthesis)`);
+      return smartModel;
+    }
+    // Fallback to rotation if not configured
+    logger.warn('⚠️ SMART_MODEL not configured, using rotation');
+    return this.getCurrentModel();
+  }
+
+  /**
+   * Select MANAGER_MODEL for complex planning and reasoning (strongest model)
+   */
+  selectManagerModel(): string {
+    const managerModel = process.env.MANAGER_MODEL;
+    if (managerModel && managerModel.trim().length > 0) {
+      logger.info(`🎯 MANAGER MODEL SELECTED: ${managerModel} (complex planning)`);
+      return managerModel;
+    }
+    // Fallback to SMART_MODEL if not configured
+    const smartModel = process.env.SMART_MODEL;
+    if (smartModel && smartModel.trim().length > 0) {
+      logger.info(`🧠 MANAGER fallback to SMART_MODEL: ${smartModel}`);
+      return smartModel;
+    }
+    // Fallback to rotation if neither configured
+    logger.warn('⚠️ MANAGER_MODEL not configured, using rotation');
+    return this.getCurrentModel();
+  }
+
+  /**
+   * Task-aware model selection (convenience method)
+   */
+  selectModelForTask(taskType: 'extraction' | 'response' | 'planning'): string {
+    switch (taskType) {
+      case 'extraction':
+        return this.selectFastModel();
+      case 'response':
+        return this.selectSmartModel();
+      case 'planning':
+        return this.selectManagerModel();
+      default:
+        return this.getCurrentModel();
+    }
+  }
+
   async generateResponse(
     userMessage: string,
     userId: string,
@@ -130,21 +197,27 @@ class OpenRouterService {
   async generateFromMessageChain(
     messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>,
     userId: string,
-    messageId?: string
+    messageId?: string,
+    selectedModel?: string
   ): Promise<string> {
     const startTime = Date.now();
 
-    // Rotate through models for testing different tool usage performance
+    // If a specific model was selected (three-tier strategy), use it
+    // Otherwise rotate through models for testing different tool usage performance
+    const useSpecificModel = selectedModel && selectedModel.trim().length > 0;
     const startIndex = this.currentModelIndex;
 
-    // Try each model starting from current rotation position
-    for (let i = 0; i < this.models.length; i++) {
-      const modelIndex = (startIndex + i) % this.models.length;
-      const model = this.models[modelIndex];
+    // Try each model starting from current rotation position (or just the selected model)
+    const modelsToTry = useSpecificModel ? [selectedModel] : this.models;
+
+    for (let i = 0; i < modelsToTry.length; i++) {
+      const model = useSpecificModel
+        ? selectedModel
+        : this.models[(startIndex + i) % this.models.length];
 
       try {
         logger.info(
-          `🤖 MODEL SELECTION: Using ${model} (${i + 1}/${this.models.length}) for ${messages.length} messages`
+          `🤖 MODEL SELECTION: Using ${model} ${useSpecificModel ? '(SPECIFIC)' : `(${i + 1}/${modelsToTry.length})`} for ${messages.length} messages`
         );
 
         const completion = await this.client.chat.completions.create({
@@ -296,7 +369,8 @@ class OpenRouterService {
     messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>,
     userId: string,
     onPartialResponse?: (partial: string) => void,
-    messageId?: string
+    messageId?: string,
+    selectedModel?: string
   ): Promise<string> {
     if (messages.length === 0) {
       throw new Error('No messages provided');
@@ -304,15 +378,27 @@ class OpenRouterService {
 
     const startTime = Date.now();
 
-    // Start with first model
-    const currentModel = this.getCurrentModel();
-    logger.info(`🤖 Starting streaming generation for user ${userId} using model ${currentModel}`);
+    // If a specific model was selected (three-tier strategy), use it
+    // Otherwise rotate through models for testing different tool usage performance
+    const useSpecificModel = selectedModel && selectedModel.trim().length > 0;
+    const startIndex = this.currentModelIndex;
 
-    for (let i = 0; i < this.models.length; i++) {
-      const model = this.models[(this.currentModelIndex + i) % this.models.length];
+    // Try each model starting from current rotation position (or just the selected model)
+    const modelsToTry = useSpecificModel ? [selectedModel] : this.models;
+
+    logger.info(
+      `🤖 Starting streaming generation for user ${userId} ${useSpecificModel ? `using SPECIFIC model ${selectedModel}` : `using model rotation`}`
+    );
+
+    for (let i = 0; i < modelsToTry.length; i++) {
+      const model = useSpecificModel
+        ? selectedModel
+        : this.models[(startIndex + i) % this.models.length];
 
       try {
-        logger.info(`📡 Attempting streaming with model ${model} (${i + 1}/${this.models.length})`);
+        logger.info(
+          `📡 Attempting streaming with model ${model} ${useSpecificModel ? '(SPECIFIC)' : `(${i + 1}/${modelsToTry.length})`}`
+        );
 
         const completion = await this.client.chat.completions.create({
           model,
