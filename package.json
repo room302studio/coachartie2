@@ -23,7 +23,10 @@
     "clean": "turbo run clean && rm -rf node_modules",
     "prepare": "husky install",
     "test:queue": "tsx scripts/test-queue-flow.ts",
-    "test:all": "tsx scripts/test-all-services.ts"
+    "test:all": "tsx scripts/test-all-services.ts",
+    "prompt:tui": "DATABASE_PATH=./data/coachartie.db tsx tools/prompt-tui.ts",
+    "prompt:cli": "DATABASE_PATH=./data/coachartie.db tsx tools/prompt-cli.ts",
+    "prompts": "npm run prompt:tui"
   },
   "devDependencies": {
     "@eslint/js": "^9.29.0",
@@ -47,6 +50,7 @@
   },
   "packageManager": "pnpm@8.14.0",
   "dependencies": {
+    "blessed": "^0.1.81",
     "csv-parser": "^3.2.0"
   }
 }
