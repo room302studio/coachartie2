@@ -61,8 +61,22 @@ interface OrchestrationContext {
   capabilityFailureCount: Map<string, number>; // Circuit breaker: track failures per capability
 }
 
+interface EmailDraft {
+  id: string;
+  userId: string;
+  to: string;
+  subject: string;
+  body: string;
+  originalRequest: string;
+  version: number;
+  createdAt: Date;
+  updatedAt: Date;
+  status: 'draft' | 'approved' | 'sent' | 'cancelled';
+}
+
 export class CapabilityOrchestrator {
   private contexts = new Map<string, OrchestrationContext>();
+  private emailDrafts = new Map<string, EmailDraft>(); // userId -> current draft
   // private capabilitySuggester: CapabilitySuggester; // Removed during refactoring
 
   constructor() {
@@ -278,6 +292,23 @@ export class CapabilityOrchestrator {
     logger.info(
       '🔥 ORCHESTRATOR ENTRY - About to create context and call assembleMessageOrchestration'
     );
+
+    // Check if user has an active draft and is responding to it
+    const activeDraft = this.emailDrafts.get(message.userId);
+    if (activeDraft && activeDraft.status === 'draft') {
+      const draftResponse = this.detectDraftResponse(message.message);
+      if (draftResponse) {
+        logger.info(`📧 DRAFT RESPONSE DETECTED: ${draftResponse.action}`);
+        return await this.handleDraftResponse(message, activeDraft, draftResponse, onPartialResponse);
+      }
+    }
+
+    // Check if this is an email request
+    const emailIntent = this.detectEmailIntent(message.message);
+    if (emailIntent) {
+      logger.info('📧 EMAIL INTENT DETECTED - Routing to email writing mode');
+      return await this.handleEmailWritingMode(message, emailIntent, onPartialResponse);
+    }
 
     const context = this.createOrchestrationContext(message);
     this.contexts.set(message.id, context);
@@ -560,34 +591,38 @@ Timestamp: ${new Date().toISOString()}`;
         baseInstructions
       );
 
-      // Apply model-aware prompting to the system message
-      const currentModel = openRouterService.getCurrentModel();
+      // THREE-TIER STRATEGY: Use FAST_MODEL for capability extraction
+      // Capability extraction is pattern matching - fast model saves time & cost
+      const fastModel = openRouterService.selectFastModel();
       const modelAwareMessages = messages.map((msg) => {
         if (msg.role === 'system') {
           return {
             ...msg,
-            content: modelAwarePrompter.generateCapabilityPrompt(currentModel, msg.content),
+            content: modelAwarePrompter.generateCapabilityPrompt(fastModel, msg.content),
           };
         }
         return msg;
       });
 
       logger.info(
-        `🎯 Using Context Alchemy with model-aware prompting for ${currentModel} (${modelAwareMessages.length} messages)`
+        `🎯 Using Context Alchemy with FAST_MODEL for capability extraction: ${fastModel} (${modelAwareMessages.length} messages)`
       );
 
       // Use streaming if callback provided, otherwise regular generation
+      // Pass the fast model explicitly to ensure consistent model selection
       return onPartialResponse
         ? await openRouterService.generateFromMessageChainStreaming(
             modelAwareMessages,
             message.userId,
             onPartialResponse,
-            message.id
+            message.id,
+            fastModel
           )
         : await openRouterService.generateFromMessageChain(
             modelAwareMessages,
             message.userId,
-            message.id
+            message.id,
+            fastModel
           );
     } catch (_error) {
       logger.error('❌ Failed to get capability instructions from database', _error);
@@ -1415,6 +1450,15 @@ ${capabilityDetails}`;
         }
       }
 
+      // Add self-reflection context so LLM can see its own execution
+      const elapsed = ((Date.now() - startTime) / 1000).toFixed(0);
+      const recentOps = context.results
+        .slice(-6)
+        .map((r) => `${r.capability.name}:${r.capability.action}`)
+        .join(', ');
+      const selfReflection = `\n[SELF-REFLECTION]\nIteration: ${iterationCount}/${maxIterations}, Time: ${elapsed}s/${GLOBAL_TIMEOUT_MS / 1000}s\nRecent actions: ${recentOps || 'none yet'}\nUser asked: "${context.originalMessage}"\nTake a moment: Are you making progress toward the user's goal? Are you repeating yourself?\n`;
+      systemFeedback += selfReflection;
+
       // Add system feedback to conversation history
       if (systemFeedback) {
         conversationHistory.push(systemFeedback.trim());
@@ -1671,9 +1715,24 @@ ${!canStop ? 'Execute the next capability now.' : 'Execute next capability OR pr
         context.results.push(result);
         context.currentStep++;
 
-        // COST CONTROL: Intermediate responses enable natural chaining but cost 1 LLM call per capability
-        // Only generate if explicitly enabled (default: disabled to save costs)
-        const enableIntermediateResponses = process.env.ENABLE_INTERMEDIATE_RESPONSES === 'true';
+        // SMART COST CONTROL: Intermediate responses enable natural chaining but cost 1 LLM call per capability
+        // Skip intermediate responses when they won't add value:
+        const isLastCapability = (capabilityIndex + 1) === context.capabilities.length;
+        const capabilityType = capability.name.split(':')[0];
+        const isWriteOperation = ['memory', 'variable', 'goal', 'todo'].includes(capabilityType);
+        const isSingleCapability = context.capabilities.length === 1;
+
+        // Skip when: last in chain, write operation, or single capability (no chaining opportunity)
+        const skipIntermediate = isLastCapability || isWriteOperation || isSingleCapability;
+
+        const enableIntermediateResponses =
+          process.env.ENABLE_INTERMEDIATE_RESPONSES === 'true' && !skipIntermediate;
+
+        if (skipIntermediate && process.env.ENABLE_INTERMEDIATE_RESPONSES === 'true') {
+          logger.info(
+            `⚡ Skipping intermediate response for ${capability.name} (${isLastCapability ? 'last' : isWriteOperation ? 'write-op' : 'single'}) - cost savings`
+          );
+        }
 
         if (enableIntermediateResponses) {
           // Ask LLM to respond to this specific capability result
@@ -2287,10 +2346,16 @@ Provide a concise, friendly summary (1-2 sentences) of what was accomplished ove
         baseSystemPrompt
       );
 
+      // THREE-TIER STRATEGY: Use SMART_MODEL for response synthesis
+      // Quality matters most for user-facing final response
+      const smartModel = openRouterService.selectSmartModel();
+      logger.info(`🧠 Using SMART_MODEL for response synthesis: ${smartModel}`);
+
       const finalResponse = await openRouterService.generateFromMessageChain(
         messages,
         context.userId,
-        context.messageId
+        context.messageId,
+        smartModel
       );
 
       // SECURITY: Apply sanitization to prevent information disclosure
@@ -2331,6 +2396,351 @@ Provide a concise, friendly summary (1-2 sentences) of what was accomplished ove
    */
   getActiveOrchestrations(): string[] {
     return Array.from(this.contexts.keys());
+  }
+
+  /**
+   * Detect email intent from user message
+   */
+  private detectEmailIntent(message: string): { to: string; subject?: string; about?: string } | null {
+    const lowerMessage = message.toLowerCase();
+
+    // Match email address
+    const emailRegex = /\b[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}\b/;
+    const emailMatch = message.match(emailRegex);
+
+    if (!emailMatch) return null;
+
+    // Must have action verb BEFORE the email address (not just "is my email")
+    const emailAddress = emailMatch[0];
+    const emailIndex = message.indexOf(emailAddress);
+    const textBeforeEmail = message.substring(0, emailIndex).toLowerCase();
+
+    // Check for action verbs before the email
+    const hasActionVerb =
+      /\b(email|send|write|compose|draft)\b/.test(textBeforeEmail) ||
+      /\b(send|write).*(to|an email)/.test(textBeforeEmail);
+
+    // Exclude patterns like "my email is" or "email is"
+    const isDeclarative = /\b(my email|email)\s+(is|:)\s*$/.test(textBeforeEmail.trim());
+
+    if (hasActionVerb && !isDeclarative) {
+      const to = emailAddress;
+
+      // Try to extract subject/topic
+      const aboutMatch = message.match(/about (.+?)(?:\.|$)/i);
+      const askingMatch = message.match(/asking (?:about )?(.+?)(?:\.|$)/i);
+
+      return {
+        to,
+        about: aboutMatch?.[1] || askingMatch?.[1]
+      };
+    }
+
+    return null;
+  }
+
+  /**
+   * Handle email writing mode - creates initial draft
+   */
+  private async handleEmailWritingMode(
+    message: IncomingMessage,
+    emailIntent: { to: string; subject?: string; about?: string },
+    onPartialResponse?: (partial: string) => void
+  ): Promise<string> {
+    logger.info(`📧 EMAIL WRITING MODE: to=${emailIntent.to}, about="${emailIntent.about}"`);
+
+    try {
+      // 1. Draft the email using Claude Sonnet (SMART_MODEL)
+      if (onPartialResponse) {
+        onPartialResponse(`📧 Drafting email to ${emailIntent.to}...\n\n`);
+      }
+
+      const draftPrompt = `Write a professional email to ${emailIntent.to}${emailIntent.about ? ` about ${emailIntent.about}` : ''}.
+
+User's request: "${message.message}"
+
+Guidelines:
+- Professional but friendly tone
+- Clear subject line
+- Concise body (2-3 paragraphs max)
+- Include appropriate greeting and sign-off
+- Sign as "Coach Artie" or appropriate based on context
+
+Format your response using XML tags:
+<email>
+  <subject>Your subject line here</subject>
+  <body>Your email body here</body>
+</email>`;
+
+      const { messages } = await contextAlchemy.buildMessageChain(
+        draftPrompt,
+        message.userId,
+        'You are Coach Artie, an AI assistant helping draft professional emails.'
+      );
+
+      const smartModel = openRouterService.selectSmartModel();
+      const draft = await openRouterService.generateFromMessageChain(
+        messages,
+        message.userId,
+        `${message.id}_email_draft`,
+        smartModel
+      );
+
+      // 2. Parse the draft using XML parser
+      const { subject, body } = this.parseEmailDraft(draft, emailIntent.about || 'Follow-up');
+
+      // 3. Store draft
+      const emailDraft: EmailDraft = {
+        id: `draft_${message.userId}_${Date.now()}`,
+        userId: message.userId,
+        to: emailIntent.to,
+        subject,
+        body,
+        originalRequest: message.message,
+        version: 1,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        status: 'draft'
+      };
+
+      this.emailDrafts.set(message.userId, emailDraft);
+      logger.info(`📝 Stored draft ${emailDraft.id} for user ${message.userId}`);
+
+      // 4. Show draft and ask for approval
+      return this.formatDraftDisplay(emailDraft);
+
+    } catch (error) {
+      logger.error('❌ Email writing mode failed:', error);
+      return `❌ Failed to draft email: ${error instanceof Error ? error.message : 'Unknown error'}`;
+    }
+  }
+
+  /**
+   * Detect if user message is responding to a draft
+   */
+  private detectDraftResponse(message: string): { action: 'send' | 'edit' | 'cancel'; feedback?: string } | null {
+    const lowerMessage = message.toLowerCase().trim();
+
+    // Send actions
+    if (['send it', 'send', 'yes', 'approve', 'looks good', 'lgtm', 'perfect'].some(phrase => lowerMessage === phrase || lowerMessage.startsWith(phrase))) {
+      return { action: 'send' };
+    }
+
+    // Cancel actions
+    if (['cancel', 'discard', 'no', 'nevermind', 'never mind'].some(phrase => lowerMessage === phrase || lowerMessage.startsWith(phrase))) {
+      return { action: 'cancel' };
+    }
+
+    // Edit actions - capture feedback
+    const editMatch = message.match(/^(?:edit|revise|change|update|fix|make it)\s+(.+)/i);
+    if (editMatch) {
+      return { action: 'edit', feedback: editMatch[1] };
+    }
+
+    // General feedback without "edit" keyword
+    if (lowerMessage.includes('more') || lowerMessage.includes('less') ||
+        lowerMessage.includes('shorter') || lowerMessage.includes('longer') ||
+        lowerMessage.includes('formal') || lowerMessage.includes('casual')) {
+      return { action: 'edit', feedback: message };
+    }
+
+    return null;
+  }
+
+  /**
+   * Handle user response to draft (send, edit, cancel)
+   */
+  private async handleDraftResponse(
+    message: IncomingMessage,
+    draft: EmailDraft,
+    response: { action: 'send' | 'edit' | 'cancel'; feedback?: string },
+    onPartialResponse?: (partial: string) => void
+  ): Promise<string> {
+    logger.info(`📧 DRAFT RESPONSE: ${response.action} for draft ${draft.id}`);
+
+    switch (response.action) {
+      case 'send':
+        return await this.handleSendDraft(draft, message, onPartialResponse);
+
+      case 'edit':
+        return await this.handleEditDraft(draft, response.feedback!, message, onPartialResponse);
+
+      case 'cancel':
+        this.emailDrafts.delete(message.userId);
+        logger.info(`🗑️ Cancelled draft ${draft.id}`);
+        return '✅ Draft cancelled. No email will be sent.';
+
+      default:
+        return 'I didn\'t understand that. Please reply with "send", "edit [changes]", or "cancel".';
+    }
+  }
+
+  /**
+   * Handle sending a draft - final confirmation flow
+   */
+  private async handleSendDraft(
+    draft: EmailDraft,
+    message: IncomingMessage,
+    onPartialResponse?: (partial: string) => void
+  ): Promise<string> {
+    try {
+      // Final confirmation step
+      if (draft.status === 'draft') {
+        draft.status = 'approved';
+        draft.updatedAt = new Date();
+
+        if (onPartialResponse) {
+          onPartialResponse(`✅ Draft approved!\n\n📤 Sending email to ${draft.to}...\n\n`);
+        }
+
+        // Actually send the email using the email capability
+        const { emailCapability } = await import('../capabilities/email.js');
+        const result = await emailCapability.handler(
+          {
+            action: 'send',
+            to: draft.to,
+            subject: draft.subject,
+            from: 'artie@coachartiebot.com'
+          },
+          draft.body
+        );
+
+        // Mark as sent and clean up
+        draft.status = 'sent';
+        this.emailDrafts.delete(message.userId);
+
+        logger.info(`✅ Sent email ${draft.id} to ${draft.to}`);
+
+        return `${result}\n\n📧 **Email sent successfully!**`;
+      } else {
+        return '❌ This draft has already been processed.';
+      }
+
+    } catch (error) {
+      logger.error('❌ Failed to send email:', error);
+      draft.status = 'draft'; // Reset to draft on failure
+      return `❌ Failed to send email: ${error instanceof Error ? error.message : 'Unknown error'}\n\nDraft is still available. Reply "send" to try again or "edit" to revise.`;
+    }
+  }
+
+  /**
+   * Handle editing a draft with feedback
+   */
+  private async handleEditDraft(
+    draft: EmailDraft,
+    feedback: string,
+    message: IncomingMessage,
+    onPartialResponse?: (partial: string) => void
+  ): Promise<string> {
+    try {
+      if (onPartialResponse) {
+        onPartialResponse(`✏️ Revising draft based on your feedback...\n\n`);
+      }
+
+      // Re-draft with feedback
+      const revisionPrompt = `Revise this email draft based on the user's feedback.
+
+Original request: "${draft.originalRequest}"
+Current draft subject: ${draft.subject}
+Current draft body:
+${draft.body}
+
+User feedback: "${feedback}"
+
+Please revise the email accordingly. Maintain professional tone unless feedback specifically requests otherwise.
+
+Format your response using XML tags:
+<email>
+  <subject>Your revised subject line here</subject>
+  <body>Your revised email body here</body>
+</email>`;
+
+      const { messages } = await contextAlchemy.buildMessageChain(
+        revisionPrompt,
+        message.userId,
+        'You are Coach Artie, revising an email draft based on feedback.'
+      );
+
+      const smartModel = openRouterService.selectSmartModel();
+      const revisedDraft = await openRouterService.generateFromMessageChain(
+        messages,
+        message.userId,
+        `${draft.id}_revision_${draft.version + 1}`,
+        smartModel
+      );
+
+      // Parse the revised draft using XML parser
+      const { subject, body } = this.parseEmailDraft(revisedDraft, draft.subject);
+
+      draft.subject = subject;
+      draft.body = body;
+      draft.version += 1;
+      draft.updatedAt = new Date();
+
+      logger.info(`✏️ Revised draft ${draft.id} to version ${draft.version}`);
+
+      return this.formatDraftDisplay(draft, `✏️ **Draft revised** (version ${draft.version})\n\n`);
+
+    } catch (error) {
+      logger.error('❌ Failed to revise draft:', error);
+      return `❌ Failed to revise draft: ${error instanceof Error ? error.message : 'Unknown error'}\n\nOriginal draft is still available.`;
+    }
+  }
+
+  /**
+   * Parse email draft from XML response
+   */
+  private parseEmailDraft(response: string, fallbackSubject: string): { subject: string; body: string } {
+    try {
+      // Use fast-xml-parser for proper XML parsing
+      const { XMLParser } = require('fast-xml-parser');
+      const parser = new XMLParser({
+        ignoreAttributes: true,
+        trimValues: true,
+      });
+
+      const parsed = parser.parse(response);
+
+      if (parsed?.email?.subject && parsed?.email?.body) {
+        return {
+          subject: parsed.email.subject.trim(),
+          body: parsed.email.body.trim()
+        };
+      }
+
+      // Fallback: treat entire response as body
+      logger.warn('⚠️ No valid XML email structure found, using fallback');
+      return {
+        subject: fallbackSubject,
+        body: response.trim()
+      };
+    } catch (error) {
+      logger.error('❌ Failed to parse email draft:', error);
+      return {
+        subject: fallbackSubject,
+        body: response.trim()
+      };
+    }
+  }
+
+  /**
+   * Format draft for display to user
+   */
+  private formatDraftDisplay(draft: EmailDraft, prefix: string = ''): string {
+    return `${prefix}**📧 Draft Email** (v${draft.version})
+
+**To:** ${draft.to}
+**Subject:** ${draft.subject}
+
+${draft.body}
+
+---
+
+**What's next?** Reply with:
+- **"send"** → Send this email now
+- **"edit [feedback]"** → Revise based on your notes
+  Examples: "edit make it shorter", "edit more formal", "edit add meeting time"
+- **"cancel"** → Discard this draft`;
   }
 }
 

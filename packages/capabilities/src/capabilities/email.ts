@@ -9,6 +9,12 @@ import { RegisteredCapability } from '../services/capability-registry.js';
  * - Send emails via n8n webhook (production)
  * - Send emails via MailDev (local development)
  * - Send emails via VPS SMTP (direct, when IP has reputation)
+ *
+ * Email-writing mode is implemented in capability-orchestrator.ts:
+ * - Detects email intent from user messages
+ * - Drafts emails using Claude Sonnet
+ * - Shows drafts for approval/revision
+ * - Handles send/edit/cancel workflow
  */
 
 interface EmailPayload {
