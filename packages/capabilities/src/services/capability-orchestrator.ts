@@ -300,7 +300,7 @@ export class CapabilityOrchestrator {
     }
 
     // Check if this is an email request
-    const emailIntent = this.detectEmailIntent(message.message);
+    const emailIntent = await this.detectEmailIntent(message.message, message.userId);
     if (emailIntent) {
       logger.info('📧 EMAIL INTENT DETECTED - Routing to email writing mode');
       return await this.handleEmailWritingMode(message, emailIntent, onPartialResponse);
@@ -2396,11 +2396,45 @@ Provide a concise, friendly summary (1-2 sentences) of what was accomplished ove
 
   /**
    * Detect email intent from user message
+   * Handles both explicit email addresses and "email me" patterns
    */
-  private detectEmailIntent(message: string): { to: string; subject?: string; about?: string } | null {
+  private async detectEmailIntent(
+    message: string,
+    userId?: string
+  ): Promise<{ to: string; subject?: string; about?: string } | null> {
     const lowerMessage = message.toLowerCase();
 
-    // Match email address
+    // Pattern 1: "email me" - lookup user's linked email
+    if (/\b(email|send)\s+(me|myself)\b/.test(lowerMessage) && userId) {
+      try {
+        // Dynamically import to avoid circular dependency
+        const { createRedisConnection } = await import('@coachartie/shared');
+        const redis = createRedisConnection();
+        const userEmailKey = `user_email:${userId}`;
+        const emailData = await redis.get(userEmailKey);
+
+        if (emailData) {
+          const linkedEmail = JSON.parse(emailData);
+          // Extract topic from "email me this later" or "email me about X"
+          const aboutMatch = message.match(/about (.+?)(?:\.|$)/i);
+          const thisMatch = message.match(/me\s+(this|that)\s+(.+?)(?:\.|$)/i);
+
+          return {
+            to: linkedEmail.email,
+            about: aboutMatch?.[1] || thisMatch?.[2]
+          };
+        } else {
+          // User hasn't linked email - could prompt them
+          logger.info('User requested "email me" but has no linked email', { userId });
+          return null;
+        }
+      } catch (error) {
+        logger.error('Failed to lookup user email:', error);
+        return null;
+      }
+    }
+
+    // Pattern 2: Explicit email address
     const emailRegex = /\b[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}\b/;
     const emailMatch = message.match(emailRegex);
 
