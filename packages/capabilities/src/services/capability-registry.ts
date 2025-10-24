@@ -449,6 +449,10 @@ capabilityRegistry.register(discordForumsCapability);
 import { emailCapability } from '../capabilities/email.js';
 capabilityRegistry.register(emailCapability);
 
+// Auto-register User Profile capability
+import { userProfileCapability } from '../capabilities/user-profile.js';
+capabilityRegistry.register(userProfileCapability);
+
 // Log all successfully registered capabilities on startup
 logger.info(
   `🚀 Capability Registry initialized with ${capabilityRegistry.size()} capabilities:`,
