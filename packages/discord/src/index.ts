@@ -158,8 +158,10 @@ async function start() {
         if (process.env.GITHUB_TOKEN) {
           initializeGitHubIntegration();
           logger.info('✅ GitHub integration enabled');
+          console.log('✅ GitHub integration enabled');
         } else {
           logger.info('ℹ️  GitHub integration disabled (no GITHUB_TOKEN)');
+          console.log('ℹ️  GitHub integration disabled (no GITHUB_TOKEN)');
         }
       } catch (error) {
         logger.warn('Failed to initialize GitHub integration:', error);

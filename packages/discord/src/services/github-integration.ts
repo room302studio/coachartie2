@@ -287,6 +287,213 @@ export class GitHubIntegrationService {
       return [];
     }
   }
+
+  /**
+   * Detect GitHub URLs in a message
+   * Returns array of detected URLs with parsed info
+   */
+  detectGitHubUrls(message: string): Array<{
+    url: string;
+    type: 'repo' | 'pr' | 'issue';
+    owner: string;
+    repo: string;
+    number?: number;
+  }> {
+    const results: Array<{
+      url: string;
+      type: 'repo' | 'pr' | 'issue';
+      owner: string;
+      repo: string;
+      number?: number;
+    }> = [];
+
+    // Regex patterns for GitHub URLs
+    const patterns = {
+      pr: /https?:\/\/github\.com\/([^\/]+)\/([^\/]+)\/pull\/(\d+)/gi,
+      issue: /https?:\/\/github\.com\/([^\/]+)\/([^\/]+)\/issues\/(\d+)/gi,
+      repo: /https?:\/\/github\.com\/([^\/]+)\/([^\/\s?#]+)/gi,
+    };
+
+    // Check for PRs first (most specific)
+    let match;
+    while ((match = patterns.pr.exec(message)) !== null) {
+      results.push({
+        url: match[0],
+        type: 'pr',
+        owner: match[1],
+        repo: match[2],
+        number: parseInt(match[3]),
+      });
+    }
+
+    // Check for issues
+    while ((match = patterns.issue.exec(message)) !== null) {
+      results.push({
+        url: match[0],
+        type: 'issue',
+        owner: match[1],
+        repo: match[2],
+        number: parseInt(match[3]),
+      });
+    }
+
+    // Check for repos (least specific, do last)
+    while ((match = patterns.repo.exec(message)) !== null) {
+      // Skip if already found as PR or issue
+      const alreadyFound = results.some(
+        (r) => r.owner === match[1] && r.repo === match[2] && r.number
+      );
+      if (!alreadyFound) {
+        results.push({
+          url: match[0],
+          type: 'repo',
+          owner: match[1],
+          repo: match[2],
+        });
+      }
+    }
+
+    return results;
+  }
+
+  /**
+   * Fetch repository information
+   */
+  async getRepositoryInfo(owner: string, repo: string): Promise<{
+    name: string;
+    fullName: string;
+    description: string | null;
+    stars: number;
+    forks: number;
+    language: string | null;
+    openIssues: number;
+    createdAt: string;
+    updatedAt: string;
+    url: string;
+    homepage: string | null;
+    topics: string[];
+    license: string | null;
+    isPrivate: boolean;
+    defaultBranch: string;
+  } | null> {
+    try {
+      const response = await this.octokit.repos.get({ owner, repo });
+      const data = response.data;
+
+      return {
+        name: data.name,
+        fullName: data.full_name,
+        description: data.description,
+        stars: data.stargazers_count,
+        forks: data.forks_count,
+        language: data.language,
+        openIssues: data.open_issues_count,
+        createdAt: data.created_at,
+        updatedAt: data.updated_at,
+        url: data.html_url,
+        homepage: data.homepage,
+        topics: data.topics || [],
+        license: data.license?.name || null,
+        isPrivate: data.private,
+        defaultBranch: data.default_branch,
+      };
+    } catch (error) {
+      logger.error(`Failed to fetch repository info for ${owner}/${repo}:`, error);
+      return null;
+    }
+  }
+
+  /**
+   * Fetch pull request information
+   */
+  async getPullRequestInfo(owner: string, repo: string, prNumber: number): Promise<{
+    number: number;
+    title: string;
+    state: string;
+    author: string;
+    createdAt: string;
+    updatedAt: string;
+    mergedAt: string | null;
+    url: string;
+    body: string | null;
+    isDraft: boolean;
+    additions: number;
+    deletions: number;
+    changedFiles: number;
+    commits: number;
+    labels: string[];
+    reviewers: string[];
+    assignees: string[];
+  } | null> {
+    try {
+      const response = await this.octokit.pulls.get({ owner, repo, pull_number: prNumber });
+      const data = response.data;
+
+      return {
+        number: data.number,
+        title: data.title,
+        state: data.state,
+        author: data.user?.login || 'unknown',
+        createdAt: data.created_at,
+        updatedAt: data.updated_at,
+        mergedAt: data.merged_at,
+        url: data.html_url,
+        body: data.body,
+        isDraft: data.draft || false,
+        additions: data.additions || 0,
+        deletions: data.deletions || 0,
+        changedFiles: data.changed_files || 0,
+        commits: data.commits || 0,
+        labels: data.labels?.map((l: any) => l.name) || [],
+        reviewers: data.requested_reviewers?.map((r: any) => r.login) || [],
+        assignees: data.assignees?.map((a: any) => a.login) || [],
+      };
+    } catch (error) {
+      logger.error(`Failed to fetch PR #${prNumber} for ${owner}/${repo}:`, error);
+      return null;
+    }
+  }
+
+  /**
+   * Fetch issue information
+   */
+  async getIssueInfo(owner: string, repo: string, issueNumber: number): Promise<{
+    number: number;
+    title: string;
+    state: string;
+    author: string;
+    createdAt: string;
+    updatedAt: string;
+    closedAt: string | null;
+    url: string;
+    body: string | null;
+    labels: string[];
+    assignees: string[];
+    comments: number;
+  } | null> {
+    try {
+      const response = await this.octokit.issues.get({ owner, repo, issue_number: issueNumber });
+      const data = response.data;
+
+      return {
+        number: data.number,
+        title: data.title,
+        state: data.state,
+        author: data.user?.login || 'unknown',
+        createdAt: data.created_at,
+        updatedAt: data.updated_at,
+        closedAt: data.closed_at,
+        url: data.html_url,
+        body: data.body,
+        labels: data.labels?.map((l: any) => (typeof l === 'string' ? l : l.name)) || [],
+        assignees: data.assignees?.map((a: any) => a.login) || [],
+        comments: data.comments || 0,
+      };
+    } catch (error) {
+      logger.error(`Failed to fetch issue #${issueNumber} for ${owner}/${repo}:`, error);
+      return null;
+    }
+  }
 }
 
 /**
