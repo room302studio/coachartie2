@@ -112,6 +112,22 @@ async function handleUserProfileAction(
         return `✅ LinkedIn linked: ${linkedin}`;
       }
 
+      case 'link': {
+        // GENERIC LINK ACTION - handles ANY service, even ones that don't exist yet
+        // Usage: <capability name="user-profile" action="link" attribute="bluesky" value="ejfox.bsky.social" />
+        //        <capability name="user-profile" action="link" attribute="mastodon" value="@ejfox@mastodon.social" />
+        //        <capability name="user-profile" action="link" attribute="threads" value="@ejfox" />
+
+        if (!attribute || !value) {
+          return '❌ Missing service name or value. Usage: <capability name="user-profile" action="link" attribute="servicename" value="username" />';
+        }
+
+        const serviceName = attribute.toLowerCase().replace(/[^a-z0-9_-]/g, '_');
+        await UserProfileService.setAttribute(userId, serviceName, value);
+        logger.info(`🔗 LLM linked ${serviceName} for user ${userId}: ${value}`);
+        return `✅ ${attribute} linked: ${value}`;
+      }
+
       case 'set': {
         if (!attribute || !value) {
           return '❌ Missing attribute or value. Usage: <capability name="user-profile" action="set" attribute="github" value="ejfox" />';
@@ -196,8 +212,9 @@ async function handleUserProfileAction(
 export const userProfileCapability: RegisteredCapability = {
   name: 'user-profile',
   supportedActions: [
-    'link-email',
-    'link-phone',
+    'link',           // Generic - handles ANY service (bluesky, mastodon, threads, future services)
+    'link-email',     // Specific - validates email format
+    'link-phone',     // Specific - validates international phone format
     'link-github',
     'link-reddit',
     'link-twitter',
@@ -210,15 +227,21 @@ export const userProfileCapability: RegisteredCapability = {
     'has',
   ],
   description:
-    'Store and retrieve user contact info and metadata. Use link-* actions when user shares contact info.',
+    'EXTENSIBLE user profile system. Link ANY service with "link" action. Specific link-* actions provide validation for known services.',
   handler: handleUserProfileAction,
   examples: [
+    // Known services with validation
     '<capability name="user-profile" action="link-email" value="user@example.com" />',
     '<capability name="user-profile" action="link-github" value="ejfox" />',
-    '<capability name="user-profile" action="link-reddit" value="ejfox" />',
-    '<capability name="user-profile" action="link-twitter" value="@ejfox" />',
+
+    // Generic link - works for ANY service, even ones that don\'t exist yet
+    '<capability name="user-profile" action="link" attribute="bluesky" value="ejfox.bsky.social" />',
+    '<capability name="user-profile" action="link" attribute="mastodon" value="@ejfox@mastodon.social" />',
+    '<capability name="user-profile" action="link" attribute="threads" value="@ejfox" />',
+    '<capability name="user-profile" action="link" attribute="discord" value="ejfox#1234" />',
+
+    // Metadata
     '<capability name="user-profile" action="set" attribute="timezone" value="America/New_York" />',
-    '<capability name="user-profile" action="get" attribute="email" />',
     '<capability name="user-profile" action="get-all" />',
   ],
 };
