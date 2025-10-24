@@ -2,7 +2,6 @@ import { logger } from '@coachartie/shared';
 import { conscienceLLM } from './conscience.js';
 import { IncomingMessage } from '@coachartie/shared';
 import { MemoryEntourageInterface } from './memory-entourage-interface.js';
-import { BasicKeywordMemoryEntourage } from './basic-keyword-memory-entourage.js';
 import { CombinedMemoryEntourage } from './combined-memory-entourage.js';
 
 // Debug flag for detailed Context Alchemy logging
@@ -71,7 +70,7 @@ export class ContextAlchemy {
     userId: string,
     baseSystemPrompt: string,
     existingMessages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [],
-    options: { minimal?: boolean } = {}
+    options: { minimal?: boolean; capabilityContext?: string[] } = {}
   ): Promise<{
     messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>;
     contextSources: ContextSource[];
@@ -111,7 +110,7 @@ export class ContextAlchemy {
         timestamp: new Date(),
         retryCount: 0,
       };
-      const contextSources = await this.assembleMessageContext(mockMessage);
+      const contextSources = await this.assembleMessageContext(mockMessage, options.capabilityContext);
 
       // 3. Prioritize and select context within budget
       selectedContext = this.selectOptimalContext(contextSources, budget);
@@ -259,9 +258,15 @@ Important:
    * Assemble message context (inspired by the beautiful assembleMessagePreamble pattern)
    * Each step is crystal clear, single responsibility, easy to debug
    */
-  private async assembleMessageContext(message: IncomingMessage): Promise<ContextSource[]> {
+  private async assembleMessageContext(
+    message: IncomingMessage,
+    capabilityContext?: string[]
+  ): Promise<ContextSource[]> {
     if (DEBUG) {
       logger.info(`📝 Assembling message context for <${message.userId}> message`);
+    }
+    if (capabilityContext && capabilityContext.length > 0 && DEBUG) {
+      logger.info(`🔧 Capability context: ${capabilityContext.join(', ')}`);
     }
     const sources: ContextSource[] = [];
 
@@ -269,7 +274,7 @@ Important:
     await this.addGoalWhisper(message, sources);
     await this.addRecentChannelMessages(message, sources); // Add immediate channel context
     await this.addRecentGuildMessages(message, sources); // Add broader guild context
-    await this.addRelevantMemories(message, sources);
+    await this.addRelevantMemories(message, sources, capabilityContext);
     await this.addCapabilityManifest(sources);
     await this.addDiscordEnvironment(sources); // Add Discord server context
     // Future: await this.addUserPreferences(message, sources);
@@ -447,11 +452,22 @@ Important:
    */
   private async addRelevantMemories(
     message: IncomingMessage,
-    sources: ContextSource[]
+    sources: ContextSource[],
+    capabilityContext?: string[]
   ): Promise<void> {
     try {
       if (DEBUG) {
         logger.info('┌─ MEMORY SEARCH (3-Layer Entourage) ────────────────────────────┐');
+      }
+
+      // Enhance search query with capability context for tool-specific memories
+      let searchQuery = message.message;
+      if (capabilityContext && capabilityContext.length > 0) {
+        const capabilityHints = capabilityContext.join(' ');
+        searchQuery = `${message.message} [capabilities: ${capabilityHints}]`;
+        if (DEBUG) {
+          logger.info(`│ 🔧 Enhanced with capability context: ${capabilityHints}`);
+        }
       }
 
       // Calculate available token budget for memory context
@@ -460,7 +476,7 @@ Important:
 
       const startTime = Date.now();
       const memoryResult = await this.memoryEntourage.getMemoryContext(
-        message.message,
+        searchQuery,
         message.userId,
         {
           maxTokens: maxTokensForMemory,
