@@ -102,7 +102,10 @@ export class ContextAlchemy {
       const budget = this.calculateTokenBudget(userMessage, baseSystemPrompt);
 
       // 2. Load conversation history (if available)
-      conversationHistory = await this.getConversationHistory(userId, options.channelId, 3);
+      // Scale conversation history with context window size (minimum 2 pairs, scales up)
+      const contextSize = parseInt(process.env.CONTEXT_WINDOW_SIZE || '32000', 10);
+      const historyLimit = Math.max(2, Math.floor((contextSize / 8000) * 3));
+      conversationHistory = await this.getConversationHistory(userId, options.channelId, historyLimit);
 
       // 3. Assemble message context (beautiful, readable pattern)
       const mockMessage: IncomingMessage = {
@@ -223,8 +226,9 @@ Important:
 
     // Modern models (Claude 3.5, GPT-4) have 128k-200k context windows
     // Use 8k intelligently - enough for rich context without waste
-    const totalTokens = 8000; // Increased from 4000 for better conversations
-    const reservedForResponse = 1000; // Reserve more tokens for detailed responses
+    // Configurable context window size - defaults to 32k for modern models
+    const totalTokens = parseInt(process.env.CONTEXT_WINDOW_SIZE || '32000', 10);
+    const reservedForResponse = Math.floor(totalTokens * 0.25); // Reserve 25% for response
 
     const availableForContext = totalTokens - userTokens - systemTokens - reservedForResponse;
 
@@ -308,27 +312,44 @@ Important:
     try {
       const { database } = await import('./database.js');
 
-      // Build query to get recent messages
-      let query = `
-        SELECT value, user_id, created_at
-        FROM messages
-        WHERE user_id = ?
-      `;
-      const params: any[] = [userId];
+      // Human-like memory: blend channel-specific + global context
+      // 70% from current channel, 30% from anywhere (like human recollection)
+      const channelLimit = Math.ceil(limit * 0.7);
+      const globalLimit = Math.floor(limit * 0.3);
 
-      // Filter by channel if available (for Discord context)
+      const allMessages: any[] = [];
+
+      // Get recent messages from current channel (immediate context)
       if (channelId) {
-        query += ` AND channel_id = ?`;
-        params.push(channelId);
+        const channelQuery = `
+          SELECT value, user_id, created_at, 'channel' as source
+          FROM messages
+          WHERE user_id = ? AND channel_id = ?
+          ORDER BY created_at DESC
+          LIMIT ?
+        `;
+        const channelMessages = await database.all(channelQuery, [userId, channelId, channelLimit * 2]);
+        allMessages.push(...channelMessages);
       }
 
-      query += `
+      // Get some recent messages from ALL channels (cross-context awareness)
+      const globalQuery = `
+        SELECT value, user_id, created_at, 'global' as source
+        FROM messages
+        WHERE user_id = ?
+        ${channelId ? 'AND channel_id != ?' : ''}
         ORDER BY created_at DESC
         LIMIT ?
       `;
-      params.push(limit * 2); // Get pairs (user + assistant)
+      const globalParams = channelId ? [userId, channelId, globalLimit * 2] : [userId, globalLimit * 2];
+      const globalMessages = await database.all(globalQuery, globalParams);
+      allMessages.push(...globalMessages);
 
-      const messages = await database.all(query, params);
+      // Sort all messages by recency
+      allMessages.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+
+      // Take the limit
+      const messages = allMessages.slice(0, limit * 2);
 
       if (!messages || messages.length === 0) {
         return [];
@@ -549,7 +570,9 @@ Important:
       // Calculate available token budget for memory context
       // With 8k total budget, we can afford much richer memory context
       const estimatedOtherTokens = 500; // Conservative estimate for other context
-      const maxTokensForMemory = 1200; // Increased from 800 - rich memory context!
+      // Scale memory budget proportionally: 15% of total context window
+      const contextSize = parseInt(process.env.CONTEXT_WINDOW_SIZE || '32000', 10);
+      const maxTokensForMemory = Math.max(800, Math.floor(contextSize * 0.15)); // Minimum 800, scales with context
 
       const startTime = Date.now();
       const memoryResult = await this.memoryEntourage.getMemoryContext(
