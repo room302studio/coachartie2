@@ -69,3 +69,50 @@ After fix, messages should:
 ### Model Configuration
 
 - Locked to Claude 3.5 Sonnet: `OPENROUTER_MODELS=anthropic/claude-3.5-sonnet` in `.env`
+
+## Bloat Cleanup Spree (2025-01-24)
+
+### The Great Deletion: 3,896 Lines Removed 🔥
+
+We went on a cleanup rampage and deleted a ton of overengineered code and stale debugging artifacts. The system is now cleaner, faster, and more maintainable.
+
+**What Got Deleted:**
+
+1. **Regex-based overengineering** (1,253 lines)
+   - `passive-listener.ts` (551 lines) - Redundant entity extraction running AFTER LLM analysis
+   - `basic-keyword-memory-entourage.ts` (400+ lines) - Hardcoded food/place regex patterns like `/(pizza|burger|taco)/gi`
+   - Combined-memory-entourage simplifications (302 lines) - Went from 3-layer to 2-layer (semantic + temporal)
+
+2. **Stoned overengineering** (938 lines)
+   - `linkedin-content-generator.ts` (322 lines) - Never registered, never used
+   - `deployment-monitor.ts` (270 lines) - Unused scheduling wrapper
+   - `deployment-cheerleader.ts` (346 lines) - Non-functional skeleton with hardcoded emoji arrays 🚀🎉✨
+
+3. **Security hazard test files** (606 lines)
+   - `test-send-real.ts` - **CONTAINED HARDCODED SENDGRID API KEY** 🚨
+   - 8 other debug test scripts (test-calculator-fix.ts, test-todo-fix.ts, etc.)
+
+4. **Old debugging docs** (696 lines)
+   - `CALCULATOR_BUG_FIX.md`, `COST_MONITORING_FIX.md`, `TIMEOUT_FIX.md` - Post-mortems for fixed bugs
+
+5. **Stale Discord debugging docs** (403 lines)
+   - `DISCORD_DUPLICATE_TEST_PLAN.md` - Test plan for a fixed bug
+   - `discord-message-flow.md`, `discord-oncomplete-flow.md` - Debugging artifacts
+
+**What's Still Here (The Good Stuff):**
+
+- ✅ Main capability pipeline with LLM orchestration
+- ✅ Semantic memory with real OpenAI vector embeddings
+- ✅ Temporal memory entourage for time-based context
+- ✅ Context Alchemy for intelligent context assembly
+- ✅ All working capabilities and the main system
+
+**Philosophy:**
+
+We deleted code that was either:
+- Never used/registered
+- Doing inferior work compared to the LLM (regex patterns vs semantic understanding)
+- Debugging artifacts from fixed bugs
+- Security hazards (hardcoded credentials)
+
+Git history preserves everything if we ever need to reference the old approaches. The fixes are in commits, we don't need markdown detective work cluttering the repo.

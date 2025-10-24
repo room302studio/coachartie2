@@ -176,6 +176,33 @@ TWILIO_PHONE_NUMBER=+1234567890
 - **📊 Analytics**: Usage tracking and monitoring
 - **🩺 Self-healing**: Automatic error recovery system
 
+### Discord Bot Capabilities
+
+**What Coach Artie CAN do:**
+- ✅ Read and send messages in whitelisted guilds
+- ✅ Respond to DMs and mentions
+- ✅ Auto-expand GitHub URLs (repos, PRs, issues) with rich embeds
+- ✅ Slash commands: `/status`, `/debug`, `/models`, `/usage`, `/memory`
+- ✅ Forum thread sync to GitHub issues (`/sync-discussions`)
+- ✅ Phone linking and verification (`/link-phone`, `/verify-phone`)
+
+**What Coach Artie CANNOT do (yet):**
+- ❌ Ban/kick members
+- ❌ Timeout/mute users
+- ❌ Manage channels or roles
+- ❌ Delete or moderate messages
+- ❌ Create polls
+- ❌ View full member list
+
+**Discord Intents:**
+- Guilds, Messages, Message Content, DMs, Guild Integrations
+
+**Guild Whitelisting:**
+- "Working" guilds: Full features including auto-expansion (Room 302 Studio)
+- "Watching" guilds: Passive observation only
+
+To add moderation features, see `packages/discord/src/index.ts` for intent configuration and `packages/discord/src/commands/` for slash command examples.
+
 ### MCP Tools (Embedded)
 
 Simple XML syntax for powerful tools:

@@ -1,4 +1,44 @@
-# Coach Artie 2 - Diagnostic Scripts
+# Coach Artie 2 - Scripts
+
+## Database Backup
+
+Automated hourly backup system for the SQLite database.
+
+### Automatic Backups
+
+A LaunchAgent runs every hour to back up the database:
+
+```bash
+# Check backup status
+launchctl list | grep coachartie
+
+# View backup logs
+tail -f ~/code/coachartie2/logs/backup.log
+
+# List backups
+ls -lht ~/code/coachartie2/backups/
+```
+
+### Manual Backup
+
+```bash
+# Run backup immediately
+./scripts/backup-database.sh
+```
+
+### Configuration
+
+- **Location**: `~/code/coachartie2/backups/`
+- **Frequency**: Every hour
+- **Retention**: Last 48 backups (2 days)
+- **LaunchAgent**: `~/Library/LaunchAgents/com.coachartie.backup.plist`
+
+### Uninstall Automatic Backups
+
+```bash
+launchctl unload ~/Library/LaunchAgents/com.coachartie.backup.plist
+rm ~/Library/LaunchAgents/com.coachartie.backup.plist
+```
 
 ## Networking Doctor
 
