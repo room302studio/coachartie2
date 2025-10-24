@@ -15,7 +15,6 @@ import { mcpAutoInstallerCapability } from '../capabilities/mcp-auto-installer.j
 import { systemInstallerCapability } from '../capabilities/system-installer.js';
 import { memoryCapability } from '../capabilities/memory.js';
 import { githubCapability } from '../capabilities/github.js';
-import { deploymentCheerleaderCapability } from '../capabilities/deployment-cheerleader.js';
 import { creditStatusCapability } from '../capabilities/credit-status.js';
 import { linkedInCapability } from '../capabilities/linkedin.js';
 import { goalCapability } from '../capabilities/goal.js';
@@ -128,9 +127,6 @@ export class CapabilityOrchestrator {
 
       // Register GitHub capability for deployment celebrations
       capabilityRegistry.register(githubCapability);
-
-      // Register deployment cheerleader capability
-      capabilityRegistry.register(deploymentCheerleaderCapability);
 
       // Register credit status capability for monitoring API usage
       capabilityRegistry.register(creditStatusCapability);
