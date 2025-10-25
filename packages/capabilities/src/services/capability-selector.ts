@@ -277,13 +277,23 @@ RELEVANT CAPABILITIES FOR THIS REQUEST:
       'cron',
       'every',
       'each',
-      'at',
-      'in',
       'soon',
       'send me a reminder',
     ];
 
-    return capabilityKeywords.some((keyword) => message.includes(keyword));
+    // Check simple keywords
+    if (capabilityKeywords.some((keyword) => message.includes(keyword))) {
+      return true;
+    }
+
+    // Check temporal keywords with word boundaries to avoid false matches
+    // (e.g., "at" in "what", "in" in "doing")
+    const temporalPatterns = [
+      /\bat\s+\d+\s*(am|pm|o'clock)/i, // "at 9 AM", "at 2 PM"
+      /\bin\s+(\d+\s*(minutes?|hours?|days?|weeks?|seconds?|months?)|a\s+(few|couple))/i, // "in 5 minutes", "in a day"
+    ];
+
+    return temporalPatterns.some((pattern) => pattern.test(message));
   }
 }
 
