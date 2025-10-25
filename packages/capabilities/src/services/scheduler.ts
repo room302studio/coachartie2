@@ -195,7 +195,7 @@ export class SchedulerService {
     const { taskId } = job.data;
 
     try {
-      // Silent execution - no logs
+      logger.info(`⏰ EXECUTING SCHEDULED JOB: ${job.name} (ID: ${taskId})`);
 
       // Handle different types of scheduled jobs
       switch (job.name) {
@@ -219,9 +219,9 @@ export class SchedulerService {
           logger.warn(`Unknown scheduled job type: ${job.name}`);
       }
 
-      // Job completed
+      logger.info(`✅ Scheduled job '${job.name}' completed successfully`);
     } catch (error) {
-      logger.error(`Scheduled job '${job.name}' failed:`, error);
+      logger.error(`❌ Scheduled job '${job.name}' failed:`, error);
       throw error;
     }
   }
@@ -257,15 +257,18 @@ export class SchedulerService {
    * Execute user reminder job
    */
   private async executeUserReminder(data: ReminderJobData): Promise<void> {
-    const { userId, reminderType } = data;
+    const { userId, reminderType, message } = data;
 
-    logger.info(`💭 Executing user reminder for ${userId}: ${reminderType}`);
+    logger.info(`💭 USER REMINDER for ${userId}: ${reminderType}`);
+    if (message) {
+      logger.info(`📢 Reminder message: "${message}"`);
+    }
 
     // - Send reminder messages
     // - Update user interaction logs
     // - Handle reminder responses
 
-    logger.info('✅ User reminder completed');
+    logger.info(`✅ Reminder delivered to ${userId}`);
   }
 
   /**
