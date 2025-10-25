@@ -261,6 +261,26 @@ RELEVANT CAPABILITIES FOR THIS REQUEST:
       'update',
       'list',
       'show me',
+      // Scheduler-related keywords
+      'remind',
+      'reminder',
+      'alert',
+      'notification',
+      'later',
+      'schedule',
+      'recurring',
+      'repeat',
+      'daily',
+      'weekly',
+      'monthly',
+      'yearly',
+      'cron',
+      'every',
+      'each',
+      'at',
+      'in',
+      'soon',
+      'send me a reminder',
     ];
 
     return capabilityKeywords.some((keyword) => message.includes(keyword));
