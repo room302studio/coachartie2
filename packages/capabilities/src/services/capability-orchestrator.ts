@@ -178,7 +178,7 @@ export class CapabilityOrchestrator {
       capabilityRegistry.register({
         name: 'scheduler',
         supportedActions: ['remind', 'schedule', 'list', 'cancel'],
-        description: 'Manages scheduled tasks and reminders',
+        description: 'Set one-time reminders (e.g., "remind me in 5 minutes"), schedule recurring tasks with cron expressions, view scheduled tasks, or cancel scheduled reminders. Perfect for time-based automation and remembering things.',
         handler: async (params, _content) => {
           const { action } = params;
 
