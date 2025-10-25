@@ -427,7 +427,12 @@ async function handleLinkedInCapability(params: any, content?: string): Promise<
     switch (action) {
       case 'get_auth_url':
         if (!linkedInService.isConfigured()) {
-          return '❌ LinkedIn not configured. Please set LINKEDIN_CLIENT_ID and LINKEDIN_CLIENT_SECRET environment variables.';
+          throw new Error(
+            `LinkedIn not configured. Please set these environment variables:\n` +
+            `- LINKEDIN_CLIENT_ID\n` +
+            `- LINKEDIN_CLIENT_SECRET\n\n` +
+            `Get these from: https://www.linkedin.com/developers/apps`
+          );
         }
         const authUrl = linkedInService.getAuthorizationUrl();
         return `🔗 Please visit this URL to authorize LinkedIn access: ${authUrl}`;
@@ -435,14 +440,24 @@ async function handleLinkedInCapability(params: any, content?: string): Promise<
       case 'exchange_code':
         const { code } = params;
         if (!code) {
-          return '❌ Authorization code is required';
+          throw new Error(
+            `Authorization code is required for exchange_code action.\n\n` +
+            `Usage: <capability name="linkedin" action="exchange_code" code="YOUR_AUTH_CODE" />\n\n` +
+            `First call get_auth_url to get the authorization URL, then paste the code here.`
+          );
         }
         await linkedInService.exchangeCodeForToken(code);
         return '✅ LinkedIn authorization successful! You can now post and manage your LinkedIn profile.';
 
       case 'get_profile':
         if (!linkedInService.isAuthenticated()) {
-          return '❌ Not authenticated with LinkedIn. Please run get_auth_url first.';
+          throw new Error(
+            `Not authenticated with LinkedIn. You must authorize first.\n\n` +
+            `Steps:\n` +
+            `1. Call action="get_auth_url" to get the authorization link\n` +
+            `2. Visit the link and authorize the application\n` +
+            `3. Use the returned code with action="exchange_code" to authenticate`
+          );
         }
         const profile = await linkedInService.getProfile();
         if (profile) {
@@ -451,16 +466,25 @@ Name: ${profile.localizedFirstName} ${profile.localizedLastName}
 Headline: ${profile.localizedHeadline || 'No headline set'}
 ID: ${profile.id}`;
         }
-        return '❌ Could not retrieve LinkedIn profile';
+        throw new Error('Could not retrieve LinkedIn profile. Check your authentication or network connection.');
 
       case 'create_post':
         if (!linkedInService.isAuthenticated()) {
-          return '❌ Not authenticated with LinkedIn. Please run get_auth_url first.';
+          throw new Error(
+            `Not authenticated with LinkedIn. You must authorize first.\n\n` +
+            `Steps:\n` +
+            `1. Call action="get_auth_url"\n` +
+            `2. Authorize and get the code\n` +
+            `3. Use action="exchange_code" with the code`
+          );
         }
 
         const postContent = content || params.content;
         if (!postContent) {
-          return '❌ Post content is required';
+          throw new Error(
+            `Post content is required for create_post action.\n\n` +
+            `Usage: <capability name="linkedin" action="create_post" visibility="PUBLIC">Your post content here</capability>`
+          );
         }
 
         const visibility = params.visibility || 'PUBLIC';
@@ -469,15 +493,20 @@ ID: ${profile.id}`;
           visibility: visibility as 'PUBLIC' | 'CONNECTIONS' | 'LOGGED_IN',
         });
 
-        return success
-          ? '✅ LinkedIn post created successfully!'
-          : '❌ Failed to create LinkedIn post';
+        if (!success) {
+          throw new Error('Failed to create LinkedIn post. Check your authentication and try again.');
+        }
+        return '✅ LinkedIn post created successfully!';
 
       case 'generate_content':
         logger.info(`🚀 LinkedIn generate_content called with params:`, params);
         const topic = params.topic || content;
         if (!topic) {
-          return '❌ Topic is required for content generation';
+          throw new Error(
+            `Topic is required for content generation.\n\n` +
+            `Usage: <capability name="linkedin" action="generate_content" topic="AI trends" tone="professional" />\n\n` +
+            `Available tones: professional, casual, thought-leadership`
+          );
         }
 
         const tone = params.tone || 'professional';
@@ -498,7 +527,9 @@ ID: ${profile.id}`;
 
       case 'update_profile':
         if (!linkedInService.isAuthenticated()) {
-          return '❌ Not authenticated with LinkedIn. Please run get_auth_url first.';
+          throw new Error(
+            `Not authenticated with LinkedIn. Please run get_auth_url first.`
+          );
         }
 
         const updates = {
@@ -507,9 +538,12 @@ ID: ${profile.id}`;
         };
 
         const updateSuccess = await linkedInService.updateProfile(updates);
-        return updateSuccess
-          ? '✅ LinkedIn profile updated successfully!'
-          : '⚠️ Profile updates require LinkedIn API partnership approval';
+        if (!updateSuccess) {
+          throw new Error(
+            `Profile updates require LinkedIn API partnership approval. Contact LinkedIn for access to the profile writing APIs.`
+          );
+        }
+        return '✅ LinkedIn profile updated successfully!';
 
       case 'status':
         return `LinkedIn Integration Status:
@@ -518,11 +552,15 @@ ID: ${profile.id}`;
 📡 Ready to post: ${linkedInService.isConfigured() && linkedInService.isAuthenticated() ? '✅' : '❌'}`;
 
       default:
-        return `❌ Unknown LinkedIn action: ${action}. Available actions: get_auth_url, exchange_code, get_profile, create_post, generate_content, update_profile, status`;
+        throw new Error(
+          `Unknown LinkedIn action: ${action}\n\n` +
+          `Available actions: get_auth_url, exchange_code, get_profile, create_post, generate_content, update_profile, status\n\n` +
+          `Example: <capability name="linkedin" action="get_auth_url" />`
+        );
     }
   } catch (error) {
     logger.error(`❌ LinkedIn capability error:`, error);
-    return `❌ LinkedIn operation failed: ${error instanceof Error ? error.message : 'Unknown error'}`;
+    throw error;
   }
 }
 

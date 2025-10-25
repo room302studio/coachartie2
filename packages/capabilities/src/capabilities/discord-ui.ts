@@ -90,7 +90,14 @@ const handler = async (params: DiscordUIParams, content?: string): Promise<strin
         return await createContextMenu(mergedParams, content);
 
       default:
-        throw new Error(`Unsupported action: ${action}`);
+        throw new Error(
+          `Unsupported action: ${action}\n\n` +
+          `Available actions: modal, buttons, select, context-menu\n\n` +
+          `Examples:\n` +
+          `• <capability name="discord-ui" action="buttons" data='[{"label":"Yes"},{"label":"No"}]' />\n` +
+          `• <capability name="discord-ui" action="select" data='{"options":[{"label":"Option 1","value":"1"}]}' />\n` +
+          `• <capability name="discord-ui" action="modal" data='{"title":"Form","inputs":[{"label":"Name"}]}' />`
+        );
     }
   } catch (error) {
     logger.error('Discord UI capability error:', {

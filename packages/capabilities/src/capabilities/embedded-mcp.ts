@@ -88,7 +88,14 @@ export const embeddedMCPCapability: RegisteredCapability = {
         }
 
         default:
-          throw new Error(`Unknown embedded MCP action: ${action}`);
+          throw new Error(
+            `Unknown embedded MCP action: ${action}\n\n` +
+            `Available actions: execute_tool, list_tools, health_check\n\n` +
+            `Examples:\n` +
+            `• <capability name="embedded_mcp" action="list_tools" />\n` +
+            `• <capability name="embedded_mcp" action="execute_tool" tool_name="search-wikipedia">quantum computing</capability>\n` +
+            `• <capability name="embedded_mcp" action="health_check" />`
+          );
       }
     } catch (error) {
       logger.error(`Embedded MCP capability failed for action ${action}:`, error);

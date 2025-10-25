@@ -7,6 +7,28 @@ import { CombinedMemoryEntourage } from './combined-memory-entourage.js';
 // Debug flag for detailed Context Alchemy logging
 const DEBUG = process.env.CONTEXT_ALCHEMY_DEBUG === 'true';
 
+// UI Modality Rules - Directive guidance with examples for when to use interactive UI
+const UI_MODALITY_RULES = `
+🎮 DISCORD UI COMPONENT RULES - USE THESE WHEN APPROPRIATE:
+
+CHOICE SCENARIO → USE BUTTONS:
+When the user must pick ONE from 2-3 equally-valid options (e.g., "Yes/No/Maybe", "Morning/Afternoon/Evening")
+Use: <capability name="discord-ui" action="buttons" data='[{"label":"Option 1","style":"primary"},{"label":"Option 2","style":"secondary"}]' />
+
+COMPARISON SCENARIO → USE SELECT MENU:
+When comparing 3+ alternatives where user needs to evaluate tradeoffs (e.g., "Python vs JavaScript vs Go")
+Use: <capability name="discord-ui" action="select" data='{"placeholder":"Choose...","options":[{"label":"Python","value":"python"},{"label":"JavaScript","value":"js"}]}' />
+
+STRUCTURED INPUT → USE MODAL:
+When you need multiple fields from the user (name, email, preferences, settings)
+Use: <capability name="discord-ui" action="modal" data='{"title":"User Form","inputs":[{"label":"Name","customId":"name_field","required":true}]}' />
+
+INFORMATION DELIVERY → STAY IN CHAT:
+When explaining, answering questions, or providing information (no user choice needed)
+
+⚠️ IMPORTANT: When response structure requires UI, ALWAYS use the capability above. Don't ask for confirmation - just use it.
+`;
+
 interface ContextSource {
   name: string;
   priority: number;
@@ -70,7 +92,7 @@ export class ContextAlchemy {
     userId: string,
     baseSystemPrompt: string,
     existingMessages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [],
-    options: { minimal?: boolean; capabilityContext?: string[]; channelId?: string; includeCapabilities?: boolean } = {}
+    options: { minimal?: boolean; capabilityContext?: string[]; channelId?: string; includeCapabilities?: boolean; source?: string } = {}
   ): Promise<{
     messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>;
     contextSources: ContextSource[];
@@ -139,7 +161,8 @@ export class ContextAlchemy {
       userMessage,
       selectedContext,
       existingMessages,
-      conversationHistory
+      conversationHistory,
+      options.source
     );
 
     // Final assembly summary
@@ -770,13 +793,15 @@ Available: web, calculator, memory`;
   /**
    * Assemble message chain with intelligent context placement
    * Now includes conversation history for natural dialogue!
+   * Only includes Discord UI modality rules when message source is 'discord'
    */
   private assembleMessageChain(
     baseSystemPrompt: string,
     userMessage: string,
     contextSources: ContextSource[],
     existingMessages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [],
-    conversationHistory: Array<{ role: 'user' | 'assistant'; content: string }> = []
+    conversationHistory: Array<{ role: 'user' | 'assistant'; content: string }> = [],
+    source?: string
   ): Array<{ role: 'system' | 'user' | 'assistant'; content: string }> {
     if (DEBUG) {
       logger.info('┌─ MESSAGE CHAIN ASSEMBLY ────────────────────────────────────────┐');
@@ -792,6 +817,11 @@ Available: web, calculator, memory`;
     }
     if (contextByCategory.capabilities.length > 0) {
       systemContent += `\n\n${contextByCategory.capabilities[0].content}`;
+    }
+
+    // Add UI modality rules only for Discord messages
+    if (source === 'discord') {
+      systemContent += `\n\n${UI_MODALITY_RULES}`;
     }
 
     messages.push({ role: 'system', content: systemContent.trim() });

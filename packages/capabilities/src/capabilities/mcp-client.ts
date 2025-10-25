@@ -863,7 +863,14 @@ export const mcpClientCapability: RegisteredCapability = {
         }
 
         default:
-          throw new Error(`Unknown MCP client action: ${action}`);
+          throw new Error(
+            `Unknown MCP client action: ${action}\n\n` +
+            `Available actions: connect, disconnect, list_tools, call_tool, list_servers, health_check\n\n` +
+            `Examples:\n` +
+            `• <capability name="mcp_client" action="list_servers" />\n` +
+            `• <capability name="mcp_client" action="connect" url="http://localhost:3000" />\n` +
+            `• <capability name="mcp_client" action="health_check" />`
+          );
       }
     } catch (error) {
       logger.error(`MCP client capability failed for action ${action}:`, error);

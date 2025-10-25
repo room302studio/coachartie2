@@ -396,7 +396,15 @@ export const packageManagerCapability: RegisteredCapability = {
         }
 
         default:
-          throw new Error(`Unknown package_manager action: ${action}`);
+          throw new Error(
+            `Unknown package_manager action: ${action}\n\n` +
+            `Available actions: install_package, create_package, run_script, check_dependencies, update_package_json\n\n` +
+            `Examples:\n` +
+            `• <capability name="package_manager" action="install_package" package_name="express" working_dir="." />\n` +
+            `• <capability name="package_manager" action="run_script" script_name="build" working_dir="." />\n` +
+            `• <capability name="package_manager" action="check_dependencies" working_dir="." />\n` +
+            `• <capability name="package_manager" action="create_package" package_path="." />`
+          );
       }
     } catch (error) {
       logger.error(`❌ Package manager capability failed for action ${action}:`, error);

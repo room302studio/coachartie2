@@ -299,7 +299,16 @@ export const systemInstallerCapability: RegisteredCapability = {
         }
 
         default:
-          throw new Error(`Unknown system installer action: ${action}`);
+          throw new Error(
+            `Unknown system installer action: ${action}\n\n` +
+            `Available actions: install, check, system_info, install_multiple\n\n` +
+            `Supported packages: chrome, git, docker, nodejs\n\n` +
+            `Examples:\n` +
+            `• <capability name="system_installer" action="install" package="nodejs" />\n` +
+            `• <capability name="system_installer" action="check" package="docker" />\n` +
+            `• <capability name="system_installer" action="system_info" />\n` +
+            `• <capability name="system_installer" action="install_multiple" packages='["git","docker"]' />`
+          );
       }
     } catch (error) {
       logger.error(`System installer capability failed for action ${action}:`, error);

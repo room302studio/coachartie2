@@ -236,7 +236,15 @@ async function handleEnvironmentAction(params: any, content?: string): Promise<s
         return await handleValidateEnv(params, content);
 
       default:
-        throw new Error(`Unknown environment action: ${action}`);
+        throw new Error(
+          `Unknown environment action: ${action}\n\n` +
+          `Available actions: read_env, set_env, create_env_file, backup_env, validate_env\n\n` +
+          `Supported files: .env, .env.local, .env.development, .env.production, .env.test, .env.staging, .env.example\n\n` +
+          `Examples:\n` +
+          `• <capability name="environment" action="read_env" />\n` +
+          `• <capability name="environment" action="set_env" key="API_KEY" value="secret" />\n` +
+          `• <capability name="environment" action="validate_env" required="API_KEY,DATABASE_URL" />`
+        );
     }
   } catch (error) {
     logger.error(`Environment capability error for action '${action}':`, error);

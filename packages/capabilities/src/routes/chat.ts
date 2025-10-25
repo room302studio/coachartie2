@@ -13,6 +13,7 @@ interface ChatRequest {
   message: string;
   userId?: string;
   context?: Record<string, any>; // Discord context including guildId, channelId
+  source?: string; // Optional: specify 'discord' to enable Discord-specific features like UI modality rules
 }
 
 interface ChatResponse {
@@ -36,7 +37,7 @@ router.post('/', rateLimiter(50, 60000), async (req: Request, res: Response) => 
       hasContext: !!req.body.context,
     });
 
-    const { message, userId = 'api-user', context }: ChatRequest = req.body;
+    const { message, userId = 'api-user', context, source = 'api' }: ChatRequest = req.body;
 
     logger.info(`🎯 POST /chat - Extracted params:`, {
       message: message?.substring(0, 100),
@@ -83,7 +84,7 @@ router.post('/', rateLimiter(50, 60000), async (req: Request, res: Response) => 
       id: messageId,
       timestamp: new Date(),
       retryCount: 0,
-      source: 'api' as const,
+      source: (source === 'discord' ? 'discord' : 'api') as const,
       userId,
       message: message.trim(),
       context: context || {}, // Pass Discord context through

@@ -77,7 +77,8 @@ export async function processMessage(
         message.message,
         message.userId,
         baseSystemPrompt,
-        message.context?.conversationHistory || []
+        message.context?.conversationHistory || [],
+        { source: message.source }
       );
 
       // Use streaming if callback provided, otherwise regular generation
