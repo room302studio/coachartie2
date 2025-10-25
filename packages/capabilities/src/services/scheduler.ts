@@ -75,7 +75,24 @@ export class SchedulerService {
       { connection }
     );
 
-    logger.info('Scheduler service initialized');
+    // Add error handlers to prevent silent failures
+    this.worker.on('error', (error) => {
+      logger.error('❌ Scheduler worker ERROR:', error);
+    });
+
+    this.worker.on('failed', (job, error) => {
+      logger.error(`❌ Scheduler job FAILED: ${job.name}`, error);
+    });
+
+    this.worker.on('completed', (job) => {
+      logger.info(`✅ Scheduler job COMPLETED: ${job.name}`);
+    });
+
+    this.worker.on('ready', () => {
+      logger.info('🟢 Scheduler WORKER READY - listening for jobs');
+    });
+
+    logger.info('Scheduler service initialized with worker');
   }
 
   /**
