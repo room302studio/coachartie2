@@ -1,4 +1,4 @@
-import { Queue } from 'bullmq';
+import { Queue, Worker } from 'bullmq';
 import { logger, createRedisConnection } from '@coachartie/shared';
 
 export interface ScheduledTask {
@@ -51,7 +51,9 @@ interface ReminderJobData {
 
 export class SchedulerService {
   private schedulerQueue: Queue;
+  private worker: Worker;
   private tasks = new Map<string, ScheduledTask>();
+  private completedReminders: Array<{ timestamp: Date; message: string; data: Record<string, unknown> }> = [];
 
   constructor() {
     const connection = createRedisConnection();
@@ -65,10 +67,33 @@ export class SchedulerService {
       },
     });
 
-    // Note: BullMQ Worker disabled for MVP
-    // Job execution would require integrating with Discord/Email APIs
-    // For now, we support the scheduler API (create/list/cancel) but don't execute jobs
-    logger.info('Scheduler service initialized (job execution disabled)');
+    // Create worker to process scheduled jobs
+    this.worker = new Worker(
+      'coachartie-scheduler',
+      async (job) => {
+        await this.executeScheduledJob(job);
+      },
+      { connection }
+    );
+
+    // Handle worker events
+    this.worker.on('ready', () => {
+      logger.info('🟢 SCHEDULER WORKER READY - Listening for scheduled jobs');
+    });
+
+    this.worker.on('completed', (job) => {
+      logger.info(`✅ JOB COMPLETED: ${job.name} (ID: ${job.id})`);
+    });
+
+    this.worker.on('failed', (job, error) => {
+      logger.error(`❌ JOB FAILED: ${job?.name} (ID: ${job?.id}) - ${error?.message}`);
+    });
+
+    this.worker.on('error', (error) => {
+      logger.error('❌ SCHEDULER WORKER ERROR:', error);
+    });
+
+    logger.info('Scheduler service initialized with active job execution');
   }
 
   /**
@@ -251,17 +276,32 @@ export class SchedulerService {
    */
   private async executeUserReminder(data: ReminderJobData): Promise<void> {
     const { userId, reminderType, message } = data;
+    const reminderMessage = message || reminderType || 'Scheduled reminder';
 
-    logger.info(`💭 USER REMINDER for ${userId}: ${reminderType}`);
-    if (message) {
-      logger.info(`📢 Reminder message: "${message}"`);
+    // Log the reminder prominently
+    logger.info(`\n${'='.repeat(60)}`);
+    logger.info(`🔔 REMINDER TRIGGERED`);
+    logger.info(`${'='.repeat(60)}`);
+    logger.info(`⏰ Timestamp: ${new Date().toISOString()}`);
+    logger.info(`👤 User: ${userId}`);
+    logger.info(`📝 Type: ${reminderType}`);
+    logger.info(`💬 Message: "${reminderMessage}"`);
+    logger.info(`${'='.repeat(60)}\n`);
+
+    // Store the reminder in memory for tracking
+    this.completedReminders.push({
+      timestamp: new Date(),
+      message: reminderMessage,
+      data,
+    });
+
+    // Keep only last 100 reminders
+    if (this.completedReminders.length > 100) {
+      this.completedReminders.shift();
     }
 
-    // - Send reminder messages
-    // - Update user interaction logs
-    // - Handle reminder responses
-
-    logger.info(`✅ Reminder delivered to ${userId}`);
+    // TODO: Integrate with Discord/Email to send actual notifications
+    // For now, reminders are logged and stored internally
   }
 
   /**
@@ -346,6 +386,7 @@ export class SchedulerService {
    * Close scheduler service
    */
   async close(): Promise<void> {
+    await this.worker.close();
     await this.schedulerQueue.close();
     logger.info('Scheduler service closed');
   }
