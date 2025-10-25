@@ -563,7 +563,37 @@ export function setupMessageHandler(client: Client) {
           correlationId,
           targetUser: matchedRule.targetUsername,
           rule: matchedRule.id,
+          hasJudgment: matchedRule.useJudgment,
         });
+
+        // Judgment layer: Should we actually respond?
+        if (matchedRule.useJudgment) {
+          logger.info(`⚖️ Running judgment layer for proxy rule [${shortId}]`);
+
+          const shouldRespond = await proxyService.judgeIfShouldRespond(
+            message,
+            matchedRule,
+            client
+          );
+
+          if (!shouldRespond) {
+            logger.info(`⚖️ Judgment layer: SKIP - Active conversation detected [${shortId}]`);
+            telemetry.logEvent(
+              'mention_proxy_judgment_skip',
+              {
+                ruleId: matchedRule.id,
+                ruleName: matchedRule.name,
+                targetUserId: matchedRule.targetUserId,
+                guildId: message.guildId,
+              },
+              correlationId,
+              message.author.id
+            );
+            return; // Don't respond - user is in active conversation
+          }
+
+          logger.info(`⚖️ Judgment layer: PROCEED - Standalone mention [${shortId}]`);
+        }
 
         telemetry.logEvent(
           'mention_proxy_triggered',
@@ -572,6 +602,7 @@ export function setupMessageHandler(client: Client) {
             ruleName: matchedRule.name,
             targetUserId: matchedRule.targetUserId,
             guildId: message.guildId,
+            usedJudgment: matchedRule.useJudgment,
           },
           correlationId,
           message.author.id

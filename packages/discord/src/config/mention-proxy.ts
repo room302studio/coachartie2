@@ -39,6 +39,10 @@ export interface MentionProxyRule {
   triggerType: TriggerType;
   keywords?: string[];           // For keyword-based triggers
 
+  // Judgment layer
+  useJudgment?: boolean;         // Use LLM to judge if response is appropriate
+  judgmentPrompt?: string;       // Optional: custom judgment criteria
+
   // Control
   enabled: boolean;
 

@@ -316,6 +316,111 @@ class MentionProxyService {
         return baseContext;
     }
   }
+
+  /**
+   * Judge if we should respond based on conversation context
+   * Uses LLM to determine if the target user is actively in a conversation
+   */
+  async judgeIfShouldRespond(
+    message: any,
+    rule: MentionProxyRule,
+    client: any
+  ): Promise<boolean> {
+    try {
+      // Fetch recent messages from the channel (last 15 messages)
+      const channel = await client.channels.fetch(message.channelId);
+      if (!channel || !('messages' in channel)) {
+        logger.warn('Cannot fetch messages for judgment - not a text channel');
+        return true; // Default to responding
+      }
+
+      const recentMessages = await channel.messages.fetch({ limit: 15 });
+      const messageArray = Array.from(recentMessages.values()).reverse();
+
+      // Check if target user has sent messages recently (last 10 messages)
+      const last10Messages = messageArray.slice(-10);
+      const userHasRecentActivity = last10Messages.some(
+        (msg: any) => msg.author.id === rule.targetUserId
+      );
+
+      // If no recent activity from target user, definitely respond
+      if (!userHasRecentActivity) {
+        logger.info('⚖️ Judgment: No recent activity from target user - PROCEED');
+        return true;
+      }
+
+      // Build conversation context for LLM judgment
+      const conversationContext = messageArray
+        .map((msg: any) => {
+          const isTargetUser = msg.author.id === rule.targetUserId;
+          const author = isTargetUser ? rule.targetUsername : msg.author.username;
+          return `[${author}]: ${msg.content}`;
+        })
+        .join('\n');
+
+      // Use fast LLM to judge (haiku for speed)
+      const axios = (await import('axios')).default;
+      const CAPABILITIES_URL =
+        process.env.CAPABILITIES_URL || 'http://localhost:' + (process.env.CAPABILITIES_PORT || '47324');
+
+      const judgmentPrompt = rule.judgmentPrompt || `
+You are analyzing a Discord conversation to decide if a bot should respond on behalf of ${rule.targetUsername}.
+
+Recent conversation:
+${conversationContext}
+
+The latest message mentions @${rule.targetUsername}.
+
+Question: Is ${rule.targetUsername} actively participating in this conversation right now, or is this a standalone question/mention to them?
+
+Rules:
+- If ${rule.targetUsername} sent messages in the last 5-10 messages AND is clearly engaged in back-and-forth, respond: SKIP
+- If this is a standalone question, greeting, or request TO ${rule.targetUsername}, respond: RESPOND
+- If ${rule.targetUsername} hasn't been active recently, respond: RESPOND
+
+Answer with ONLY one word: either "SKIP" or "RESPOND"
+`;
+
+      const response = await axios.post(
+        `${CAPABILITIES_URL}/chat`,
+        {
+          message: judgmentPrompt,
+          userId: 'mention-proxy-judgment',
+          username: 'Judgment System',
+          source: 'mention-proxy',
+          preferredModel: 'anthropic/claude-3-haiku',
+        },
+        { timeout: 5000 }
+      );
+
+      if (!response.data?.jobId) {
+        logger.warn('⚖️ Judgment: No job ID returned - defaulting to RESPOND');
+        return true;
+      }
+
+      // Poll for result (max 3 seconds)
+      for (let i = 0; i < 6; i++) {
+        await new Promise((resolve) => setTimeout(resolve, 500));
+
+        const statusResponse = await axios.get(`${CAPABILITIES_URL}/chat/${response.data.jobId}`);
+
+        if (statusResponse.data?.status === 'completed' && statusResponse.data.response) {
+          const judgment = statusResponse.data.response.toUpperCase();
+          const shouldRespond = judgment.includes('RESPOND');
+
+          logger.info(`⚖️ Judgment result: ${judgment} -> ${shouldRespond ? 'PROCEED' : 'SKIP'}`);
+          return shouldRespond;
+        }
+      }
+
+      // Timeout - default to responding
+      logger.warn('⚖️ Judgment: Timeout - defaulting to RESPOND');
+      return true;
+    } catch (error) {
+      logger.error('⚖️ Judgment layer error:', error);
+      return true; // Default to responding on error
+    }
+  }
 }
 
 // Singleton instance
