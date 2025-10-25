@@ -206,11 +206,11 @@ async function handleVariableAction(params: VariableParams, content?: string): P
         const value = params.value || content;
 
         if (!key) {
-          return '❌ Please provide a key. Example: <capability name="variable" action="set" key="myvar" value="myvalue" />';
+          throw new Error('Please provide a key. Example: <capability name="variable" action="set" key="myvar" value="myvalue" />');
         }
 
         if (value === undefined) {
-          return '❌ Please provide a value. Example: <capability name="variable" action="set" key="myvar" value="myvalue" />';
+          throw new Error('Please provide a value. Example: <capability name="variable" action="set" key="myvar" value="myvalue" />');
         }
 
         // Try to parse JSON if it looks like JSON
@@ -230,21 +230,26 @@ async function handleVariableAction(params: VariableParams, content?: string): P
       case 'get': {
         const key = params.key;
         if (!key) {
-          return '❌ Please provide a key. Example: <capability name="variable" action="get" key="myvar" />';
+          throw new Error('Please provide a key. Example: <capability name="variable" action="get" key="myvar" />');
         }
 
         const value = variableStore.getVariable(sessionId, String(key));
         if (value !== undefined) {
           return typeof value === 'object' ? JSON.stringify(value) : String(value);
         } else {
-          return `Variable "${key}" not found`;
+          const availableVars = variableStore.listVariables(sessionId);
+          const availableKeys = Object.keys(availableVars);
+          const suggestions = availableKeys.length > 0
+            ? `\n\nAvailable variables: ${availableKeys.join(', ')}`
+            : '\n\nNo variables exist in this session. Use action="set" to create one.';
+          throw new Error(`Variable "${key}" not found.${suggestions}`);
         }
       }
 
       case 'interpolate': {
         const template = content || String(params.template || '');
         if (!template) {
-          return '❌ Please provide template content. Example: <capability name="variable" action="interpolate">Hello {{name}}</capability>';
+          throw new Error('Please provide template content. Example: <capability name="variable" action="interpolate">Hello {{name}}</capability>');
         }
 
         const interpolated = variableStore.interpolateString(sessionId, template);
@@ -276,11 +281,19 @@ async function handleVariableAction(params: VariableParams, content?: string): P
       case 'clear': {
         const key = params.key;
         if (!key) {
-          return '❌ Please provide a key. Example: <capability name="variable" action="clear" key="myvar" />';
+          throw new Error('Please provide a key. Example: <capability name="variable" action="clear" key="myvar" />');
         }
 
         const existed = variableStore.clearVariable(sessionId, String(key));
-        return existed ? `✅ Variable "${key}" cleared` : `Variable "${key}" not found`;
+        if (!existed) {
+          const availableVars = variableStore.listVariables(sessionId);
+          const availableKeys = Object.keys(availableVars);
+          const suggestions = availableKeys.length > 0
+            ? `\n\nAvailable variables: ${availableKeys.join(', ')}`
+            : '\n\nNo variables exist in this session.';
+          throw new Error(`Variable "${key}" not found.${suggestions}`);
+        }
+        return `✅ Variable "${key}" cleared`;
       }
 
       case 'clear_all': {
@@ -291,7 +304,7 @@ async function handleVariableAction(params: VariableParams, content?: string): P
       case 'stats': {
         const stats = variableStore.getSessionStats(sessionId);
         if (!stats) {
-          return '📊 Session not found or empty';
+          throw new Error('Session not found or empty. Create variables with action="set" first.');
         }
 
         return `📊 Session Stats:
@@ -301,11 +314,11 @@ async function handleVariableAction(params: VariableParams, content?: string): P
       }
 
       default:
-        return `❌ Unknown variable action: ${action}. Supported actions: set, get, interpolate, list, clear, clear_all, stats`;
+        throw new Error(`Unknown variable action: ${action}. Supported actions: set, get, interpolate, list, clear, clear_all, stats`);
     }
   } catch (error) {
     logger.error(`Variable capability error for action '${action}':`, error);
-    return 'Sorry, having trouble with variables right now. Please try again.';
+    throw error;
   }
 }
 

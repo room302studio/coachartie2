@@ -35,13 +35,13 @@ async function handleUserProfileAction(
       case 'link-email': {
         const email = value || content;
         if (!email) {
-          return '❌ Missing email. Usage: <capability name="user-profile" action="link-email" value="user@example.com" />';
+          throw new Error('Missing email. Example: <capability name="user-profile" action="link-email" value="user@example.com" />');
         }
 
         // Validate email format
         const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
         if (!emailRegex.test(email)) {
-          return '❌ Invalid email format';
+          throw new Error(`Invalid email format: "${email}"\n\nExample format: user@example.com`);
         }
 
         await UserProfileService.setAttribute(userId, 'email', email);
@@ -52,13 +52,13 @@ async function handleUserProfileAction(
       case 'link-phone': {
         const phone = value || content;
         if (!phone) {
-          return '❌ Missing phone. Usage: <capability name="user-profile" action="link-phone" value="+1234567890" />';
+          throw new Error('Missing phone. Example: <capability name="user-profile" action="link-phone" value="+1234567890" />');
         }
 
         // Validate phone format (international)
         const phoneRegex = /^\+[1-9]\d{1,14}$/;
         if (!phoneRegex.test(phone)) {
-          return '❌ Invalid phone format. Use international format: +1234567890';
+          throw new Error(`Invalid phone format: "${phone}"\n\nUse international format: +1234567890 (country code + up to 15 digits)`);
         }
 
         await UserProfileService.setAttribute(userId, 'phone', phone);
@@ -69,7 +69,7 @@ async function handleUserProfileAction(
       case 'link-github': {
         const github = value || content;
         if (!github) {
-          return '❌ Missing GitHub username. Usage: <capability name="user-profile" action="link-github" value="ejfox" />';
+          throw new Error('Missing GitHub username. Example: <capability name="user-profile" action="link-github" value="ejfox" />');
         }
 
         await UserProfileService.setAttribute(userId, 'github', github);
@@ -80,7 +80,7 @@ async function handleUserProfileAction(
       case 'link-reddit': {
         const reddit = value || content;
         if (!reddit) {
-          return '❌ Missing Reddit username. Usage: <capability name="user-profile" action="link-reddit" value="ejfox" />';
+          throw new Error('Missing Reddit username. Example: <capability name="user-profile" action="link-reddit" value="ejfox" />');
         }
 
         await UserProfileService.setAttribute(userId, 'reddit', reddit);
@@ -91,7 +91,7 @@ async function handleUserProfileAction(
       case 'link-twitter': {
         const twitter = value || content;
         if (!twitter) {
-          return '❌ Missing Twitter handle. Usage: <capability name="user-profile" action="link-twitter" value="ejfox" />';
+          throw new Error('Missing Twitter handle. Example: <capability name="user-profile" action="link-twitter" value="ejfox" />');
         }
 
         // Strip @ if provided
@@ -104,7 +104,7 @@ async function handleUserProfileAction(
       case 'link-linkedin': {
         const linkedin = value || content;
         if (!linkedin) {
-          return '❌ Missing LinkedIn username/URL. Usage: <capability name="user-profile" action="link-linkedin" value="ejfox" />';
+          throw new Error('Missing LinkedIn username/URL. Example: <capability name="user-profile" action="link-linkedin" value="ejfox" />');
         }
 
         await UserProfileService.setAttribute(userId, 'linkedin', linkedin);
@@ -119,7 +119,7 @@ async function handleUserProfileAction(
         //        <capability name="user-profile" action="link" attribute="threads" value="@ejfox" />
 
         if (!attribute || !value) {
-          return '❌ Missing service name or value. Usage: <capability name="user-profile" action="link" attribute="servicename" value="username" />';
+          throw new Error('Missing service name or value. Example: <capability name="user-profile" action="link" attribute="bluesky" value="ejfox.bsky.social" />');
         }
 
         const serviceName = attribute.toLowerCase().replace(/[^a-z0-9_-]/g, '_');
@@ -130,7 +130,7 @@ async function handleUserProfileAction(
 
       case 'set': {
         if (!attribute || !value) {
-          return '❌ Missing attribute or value. Usage: <capability name="user-profile" action="set" attribute="github" value="ejfox" />';
+          throw new Error('Missing attribute or value. Example: <capability name="user-profile" action="set" attribute="timezone" value="America/New_York" />');
         }
 
         await UserProfileService.setAttribute(userId, attribute, value);
@@ -140,7 +140,7 @@ async function handleUserProfileAction(
       case 'set-many': {
         const attributesJson = params.attributes || content;
         if (!attributesJson) {
-          return '❌ Missing attributes JSON. Usage: <capability name="user-profile" action="set-many">{"github":"ejfox","timezone":"PST"}</capability>';
+          throw new Error('Missing attributes JSON. Example: <capability name="user-profile" action="set-many">{"github":"ejfox","timezone":"America/New_York"}</capability>');
         }
 
         try {
@@ -148,20 +148,26 @@ async function handleUserProfileAction(
           await UserProfileService.setAttributes(userId, attributes);
           return `✅ Set ${Object.keys(attributes).length} attributes for user ${userId}`;
         } catch (error) {
-          return `❌ Invalid JSON: ${error instanceof Error ? error.message : 'Unknown error'}`;
+          const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+          throw new Error(`Invalid JSON: ${errorMsg}\n\nExample format: {"github":"ejfox","timezone":"America/New_York"}`);
         }
       }
 
       case 'get': {
         if (!attribute) {
-          return '❌ Missing attribute. Usage: <capability name="user-profile" action="get" attribute="github" />';
+          throw new Error('Missing attribute. Example: <capability name="user-profile" action="get" attribute="github" />');
         }
 
         const val = await UserProfileService.getAttribute(userId, attribute);
         if (val) {
           return `✅ ${attribute} = ${val}`;
         } else {
-          return `❌ No ${attribute} found for user ${userId}`;
+          const profile = await UserProfileService.getProfile(userId);
+          const keys = Object.keys(profile).filter((k) => !k.startsWith('_') && k !== 'created_at' && k !== 'updated_at');
+          const suggestions = keys.length > 0
+            ? `\n\nAvailable attributes: ${keys.join(', ')}`
+            : '\n\nNo profile data exists. Use action="set" to add information.';
+          throw new Error(`Attribute "${attribute}" not found for user ${userId}.${suggestions}`);
         }
       }
 
@@ -183,7 +189,7 @@ async function handleUserProfileAction(
 
       case 'delete': {
         if (!attribute) {
-          return '❌ Missing attribute. Usage: <capability name="user-profile" action="delete" attribute="github" />';
+          throw new Error('Missing attribute. Example: <capability name="user-profile" action="delete" attribute="github" />');
         }
 
         await UserProfileService.deleteAttribute(userId, attribute);
@@ -194,15 +200,15 @@ async function handleUserProfileAction(
         const hasProfile = await UserProfileService.hasProfile(userId);
         return hasProfile
           ? `✅ User ${userId} has a profile`
-          : `❌ User ${userId} has no profile data`;
+          : `User ${userId} has no profile data. Use action="set" to add information.`;
       }
 
       default:
-        return `❌ Unknown action: ${action}. Supported: set, set-many, get, get-all, delete, has`;
+        throw new Error(`Unknown action: ${action}. Supported actions: set, set-many, get, get-all, delete, has, link, link-email, link-phone, link-github, link-reddit, link-twitter, link-linkedin`);
     }
   } catch (error) {
     logger.error(`User profile capability error:`, error);
-    return `❌ Failed: ${error instanceof Error ? error.message : 'Unknown error'}`;
+    throw error;
   }
 }
 

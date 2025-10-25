@@ -179,7 +179,7 @@ export class MemoryService {
 • Recent (7 days): ${recentCount}
 • Storage: Hybrid layer (in-memory + SQLite)`;
     } catch (error) {
-      return `❌ Could not retrieve memory statistics: ${error instanceof Error ? error.message : String(error)}`;
+      throw new Error(`Could not retrieve memory statistics: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 

@@ -72,8 +72,12 @@ const githubActions = {
     try {
       logger.info(`📦 Fetching releases for ${params.repo}`);
 
+      if (!params.repo) {
+        throw new Error('Missing required parameter "repo". Example: <capability name="github" action="get_releases" repo="owner/repository" />');
+      }
+
       if (!process.env.GITHUB_TOKEN) {
-        throw new Error('GITHUB_TOKEN not configured');
+        throw new Error('GITHUB_TOKEN not configured. Set GITHUB_TOKEN environment variable.');
       }
 
       const response = await fetch(`https://api.github.com/repos/${params.repo}/releases`, {
@@ -109,10 +113,7 @@ const githubActions = {
       };
     } catch (error) {
       logger.error('❌ Failed to fetch GitHub releases:', error);
-      return {
-        success: false,
-        error: `Failed to fetch releases: ${error instanceof Error ? error.message : 'Unknown error'}`,
-      };
+      throw error;
     }
   },
 
@@ -157,10 +158,7 @@ const githubActions = {
       };
     } catch (error) {
       logger.error('❌ Failed to fetch GitHub commits:', error);
-      return {
-        success: false,
-        error: `Failed to fetch commits: ${error instanceof Error ? error.message : 'Unknown error'}`,
-      };
+      throw error;
     }
   },
 
@@ -168,11 +166,15 @@ const githubActions = {
     try {
       logger.info(`📊 Fetching deployment stats for ${params.repo}`);
 
+      if (!params.repo) {
+        throw new Error('Missing required parameter "repo". Example: <capability name="github" action="get_deployment_stats" repo="owner/repository" />');
+      }
+
       const days = params.days || 30;
       const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
 
       if (!process.env.GITHUB_TOKEN) {
-        throw new Error('GITHUB_TOKEN not configured');
+        throw new Error('GITHUB_TOKEN not configured. Set GITHUB_TOKEN environment variable.');
       }
 
       // Get commits in the time period
@@ -235,10 +237,7 @@ const githubActions = {
       };
     } catch (error) {
       logger.error('❌ Failed to fetch GitHub deployment stats:', error);
-      return {
-        success: false,
-        error: `Failed to fetch deployment stats: ${error instanceof Error ? error.message : 'Unknown error'}`,
-      };
+      throw error;
     }
   },
 
@@ -247,15 +246,11 @@ const githubActions = {
       logger.info(`🔍 Searching GitHub repositories for: ${params.query}`);
 
       if (!params.query) {
-        return {
-          success: false,
-          error:
-            'Missing required parameter "query". Usage: <capability name="github" action="search_repositories" query="subway builder" />',
-        };
+        throw new Error('Missing required parameter "query". Example: <capability name="github" action="search_repositories" query="subway builder" />');
       }
 
       if (!process.env.GITHUB_TOKEN) {
-        throw new Error('GITHUB_TOKEN not configured');
+        throw new Error('GITHUB_TOKEN not configured. Set GITHUB_TOKEN environment variable.');
       }
 
       const limit = params.limit || 10;
@@ -292,10 +287,7 @@ const githubActions = {
       };
     } catch (error) {
       logger.error('❌ Failed to search GitHub repositories:', error);
-      return {
-        success: false,
-        error: `Failed to search repositories: ${error instanceof Error ? error.message : 'Unknown error'}`,
-      };
+      throw error;
     }
   },
 
@@ -304,23 +296,16 @@ const githubActions = {
       logger.info(`📋 Fetching issues for ${params.repo}`);
 
       if (!params.repo) {
-        return {
-          success: false,
-          error:
-            'Missing required parameter "repo". Usage: <capability name="github" action="list_issues" repo="owner/repository" state="open" />\n\nThe repo must be in "owner/repository" format. If you don\'t know the full path, use search_repositories first.',
-        };
+        throw new Error('Missing required parameter "repo". Example: <capability name="github" action="list_issues" repo="owner/repository" state="open" />\n\nThe repo must be in "owner/repository" format. Use search_repositories first if you don\'t know the full path.');
       }
 
       // Validate repo format
       if (!params.repo.includes('/')) {
-        return {
-          success: false,
-          error: `Invalid repo format: "${params.repo}". The repo parameter must be in "owner/repository" format (e.g., "colindm/SubwayBuilderIssues").\n\nTip: Use search_repositories to find the full repository path first.\nExample: <capability name="github" action="search_repositories" query="subway builder" />`,
-        };
+        throw new Error(`Invalid repo format: "${params.repo}". The repo parameter must be in "owner/repository" format (e.g., "owner/SubwayBuilder").\n\nTip: Use search_repositories to find the correct repository path.\nExample: <capability name="github" action="search_repositories" query="subway builder" />`);
       }
 
       if (!process.env.GITHUB_TOKEN) {
-        throw new Error('GITHUB_TOKEN not configured');
+        throw new Error('GITHUB_TOKEN not configured. Set GITHUB_TOKEN environment variable.');
       }
 
       const state = params.state || 'open';
@@ -339,10 +324,7 @@ const githubActions = {
 
       if (!response.ok) {
         if (response.status === 404) {
-          return {
-            success: false,
-            error: `Repository "${params.repo}" not found. Make sure the repository path is correct and you have access to it.\n\nTip: Use search_repositories to find the correct repository path.\nExample: <capability name="github" action="search_repositories" query="subway builder" />`,
-          };
+          throw new Error(`Repository "${params.repo}" not found. Make sure the repository path is correct and you have access to it.\n\nTip: Use search_repositories to find the correct repository path.\nExample: <capability name="github" action="search_repositories" query="subway builder" />`);
         }
         throw new Error(`GitHub API error: ${response.status} ${response.statusText}`);
       }
@@ -371,10 +353,7 @@ const githubActions = {
       };
     } catch (error) {
       logger.error('❌ Failed to fetch GitHub issues:', error);
-      return {
-        success: false,
-        error: `Failed to fetch issues: ${error instanceof Error ? error.message : 'Unknown error'}`,
-      };
+      throw error;
     }
   },
 };

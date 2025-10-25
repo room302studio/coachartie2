@@ -19,10 +19,7 @@ export const creditStatusCapability: RegisteredCapability = {
 
           // Check if currentBalance is null
           if (!currentBalance) {
-            return JSON.stringify({
-              success: false,
-              error: 'Failed to retrieve current balance - API returned null',
-            });
+            throw new Error('Failed to retrieve current balance - API returned null. Check OpenRouter API credentials (OPENROUTER_API_KEY)');
           }
 
           // Get real-time cost monitor stats

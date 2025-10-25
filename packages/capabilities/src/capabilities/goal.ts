@@ -90,7 +90,16 @@ export class GoalService {
       if (deadline) {
         const deadlineDate = new Date(deadline);
         if (isNaN(deadlineDate.getTime())) {
-          return '❌ Invalid deadline format. Use ISO format like "2024-12-31T14:00:00Z" or "2024-12-31"';
+          const now = new Date();
+          const isoFullExample = now.toISOString();
+          const dateOnlyExample = now.toISOString().split('T')[0];
+          throw new Error(
+            `Invalid deadline format. Use ISO format.\n\n` +
+            `Examples with current time:\n` +
+            `- Full ISO: "${isoFullExample}"\n` +
+            `- Date only: "${dateOnlyExample}"\n\n` +
+            `Your input: "${deadline}"`
+          );
         }
 
         // Warn about past deadlines but still accept them

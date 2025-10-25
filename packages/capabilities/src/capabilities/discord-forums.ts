@@ -48,25 +48,43 @@ async function fetchWithTimeout(
   }
 }
 
-const handler = async (params: DiscordForumsParams, content?: string): Promise<string> => {
-  const { action } = params;
+const handler = async (params: any, content?: string): Promise<string> => {
+  // Normalize parameters: accept both snake_case and camelCase from LLM
+  const guildId = params.guildId || params.guild_id;
+  const forumId = params.forumId || params.forum_id;
+  const threadId = params.threadId || params.thread_id;
+  const action = params.action;
+
+  logger.info(`🔍 Discord-forums handler: Raw params: ${JSON.stringify(params)}`);
+  logger.info(`🔍 Discord-forums handler: Normalized guildId="${guildId}", forumId="${forumId}", threadId="${threadId}", action="${action}"`);
+
+  // Rebuild normalized params object
+  const normalizedParams: DiscordForumsParams = {
+    action,
+    guildId,
+    forumId,
+    threadId,
+    repo: params.repo,
+  };
+
+  logger.info(`🔍 Discord-forums handler: normalizedParams: ${JSON.stringify(normalizedParams)}`);
 
   try {
     switch (action) {
       case 'list-forums':
-        return await listForums(params);
+        return await listForums(normalizedParams);
 
       case 'list-threads':
-        return await listThreads(params);
+        return await listThreads(normalizedParams);
 
       case 'get-thread':
-        return await getThread(params);
+        return await getThread(normalizedParams);
 
       case 'get-forum-summary':
-        return await getForumSummary(params);
+        return await getForumSummary(normalizedParams);
 
       case 'sync-to-github':
-        return await syncToGitHub(params, content);
+        return await syncToGitHub(normalizedParams, content);
 
       default:
         throw new Error(`Unsupported action: ${action}`);
@@ -309,13 +327,13 @@ async function getThread(params: DiscordForumsParams): Promise<string> {
   const { threadId } = params;
 
   if (!threadId) {
-    throw new Error('threadId is required for get-thread action');
+    throw new Error('threadId is required for get-thread action. Example: <capability name="discord-forums" action="get-thread" data=\'{"threadId":"987654321"}\' />\n\nFirst, use list-threads to get available thread IDs.');
   }
 
   const response = await fetchWithTimeout(`${DISCORD_BASE_URL}/api/threads/${threadId}`);
 
   if (!response.ok) {
-    throw new Error(`Failed to fetch thread: ${response.statusText}`);
+    throw new Error(`Failed to fetch thread ${threadId}: ${response.statusText}`);
   }
 
   const thread = (await response.json()) as any;
@@ -406,13 +424,13 @@ async function getForumSummary(params: DiscordForumsParams): Promise<string> {
   const { forumId } = params;
 
   if (!forumId) {
-    throw new Error('forumId is required for get-forum-summary action');
+    throw new Error('forumId is required for get-forum-summary action. Example: <capability name="discord-forums" action="get-forum-summary" data=\'{"forumId":"123456789"}\' />\n\nFirst, use list-forums to get available forum IDs.');
   }
 
   const response = await fetchWithTimeout(`${DISCORD_BASE_URL}/api/forums/${forumId}/summary`);
 
   if (!response.ok) {
-    throw new Error(`Failed to fetch forum summary: ${response.statusText}`);
+    throw new Error(`Failed to fetch forum summary for ${forumId}: ${response.statusText}`);
   }
 
   const summary = (await response.json()) as any;

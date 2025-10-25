@@ -70,11 +70,11 @@ export const webCapability: RegisteredCapability = {
         if (result.success) {
           return result.content || `No results found for: "${query}"`;
         } else {
-          return `Search failed for "${query}": ${result.error}`;
+          throw new Error(`Search failed for "${query}": ${result.error}`);
         }
       } catch (error) {
         logger.error('Web search failed:', error);
-        return `Search temporarily unavailable for "${query}"`;
+        throw new Error(`Search temporarily unavailable for "${query}": ${error instanceof Error ? error.message : String(error)}`);
       }
     }
 
@@ -105,11 +105,11 @@ export const webCapability: RegisteredCapability = {
           }
           return content || `No content extracted from ${url}`;
         } else {
-          return `Failed to fetch ${url}: ${result.error}`;
+          throw new Error(`Failed to fetch ${url}: ${result.error}`);
         }
       } catch (error) {
         logger.error('Web fetch failed:', error);
-        return `Web fetch temporarily unavailable for ${url}`;
+        throw new Error(`Web fetch temporarily unavailable for ${url}: ${error instanceof Error ? error.message : String(error)}`);
       }
     }
 

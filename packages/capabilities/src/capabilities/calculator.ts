@@ -66,8 +66,15 @@ export const calculatorCapability: RegisteredCapability = {
       logger.info(`✅ Calculation result: ${resultString}`);
       return resultString;
     } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
       logger.error(`❌ Invalid mathematical expression: ${expression}`, error);
-      throw new Error(`Invalid mathematical expression: ${expression}`);
+      throw new Error(
+        `Invalid mathematical expression: "${expression}"\n` +
+        `Error: ${errorMessage}\n` +
+        `\n` +
+        `Supported operations: +, -, *, /, ^, sqrt(), sin(), cos(), tan(), log(), abs(), etc.\n` +
+        `Example: <capability name="calculator" action="calculate" expression="sqrt(16) + 2^3" />`
+      );
     }
   },
 };

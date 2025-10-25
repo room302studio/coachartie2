@@ -41,19 +41,13 @@ class EmailService {
     try {
       // Validate inputs
       if (!payload.to || !payload.subject || !payload.body) {
-        return {
-          success: false,
-          message: 'Missing required fields: to, subject, and body are required',
-        };
+        throw new Error('Missing required fields: to, subject, and body are required');
       }
 
       // Email validation
       const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
       if (!emailRegex.test(payload.to)) {
-        return {
-          success: false,
-          message: `Invalid email address: ${payload.to}`,
-        };
+        throw new Error(`Invalid email address: ${payload.to}\n\nExample: <capability name="email" action="send" to="user@example.com" subject="Test" body="Hello!" />`);
       }
 
       // Use n8n webhook if configured (production path)
@@ -104,17 +98,11 @@ class EmailService {
         };
       }
 
-      return {
-        success: false,
-        message: `Webhook returned unexpected status: ${response.status}`,
-      };
+      throw new Error(`Webhook returned unexpected status: ${response.status}`);
     } catch (error) {
       logger.error('❌ Webhook email send failed:', error);
       if (axios.isAxiosError(error)) {
-        return {
-          success: false,
-          message: `Webhook failed: ${error.response?.data?.message || error.message}`,
-        };
+        throw new Error(`Webhook failed: ${error.response?.data?.message || error.message}\n\nCheck email webhook configuration (EMAIL_WEBHOOK_URL and EMAIL_WEBHOOK_AUTH)`);
       }
       throw error;
     }
@@ -163,10 +151,11 @@ class EmailService {
       };
     } catch (error) {
       logger.error('❌ SMTP email send failed:', error);
-      return {
-        success: false,
-        message: `SMTP failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
-      };
+      const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+      const suggestion = isDev
+        ? 'Is MailDev running on localhost:1025?'
+        : `Check SMTP configuration: EMAIL_HOST=${process.env.EMAIL_HOST}, EMAIL_PORT=${process.env.EMAIL_PORT}`;
+      throw new Error(`SMTP failed: ${errorMsg}\n\n${suggestion}`);
     }
   }
 
@@ -219,18 +208,22 @@ async function handleEmailCapability(params: any, content?: string): Promise<str
   const service = getEmailService();
 
   try {
+    if (!action) {
+      throw new Error('action is required. Available actions: send, status');
+    }
+
     switch (action) {
       case 'send': {
         const body = content || params.body;
 
         if (!to) {
-          return '❌ Recipient email address (to) is required';
+          throw new Error('Recipient email address (to) is required');
         }
         if (!subject) {
-          return '❌ Email subject is required';
+          throw new Error('Email subject is required');
         }
         if (!body) {
-          return '❌ Email body is required';
+          throw new Error('Email body is required');
         }
 
         logger.info(`📧 Email capability invoked: to=${to}, subject="${subject}"`);
@@ -241,18 +234,18 @@ async function handleEmailCapability(params: any, content?: string): Promise<str
           return `✅ ${result.message}\n\n📝 Sent:\nTo: ${to}\nSubject: ${subject}\n\nBody:\n${body.substring(0, 200)}${body.length > 200 ? '...' : ''}`;
         }
 
-        return `❌ ${result.message}`;
+        throw new Error(result.message);
       }
 
       case 'status':
         return service.getStatus();
 
       default:
-        return `❌ Unknown email action: ${action}. Available actions: send, status`;
+        throw new Error(`Unknown email action: ${action}. Available actions: send, status`);
     }
   } catch (error) {
     logger.error(`❌ Email capability error:`, error);
-    return `❌ Email operation failed: ${error instanceof Error ? error.message : 'Unknown error'}`;
+    throw error;
   }
 }
 
