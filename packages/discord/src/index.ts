@@ -39,6 +39,7 @@ import { jobMonitor } from './services/job-monitor.js';
 import { initializeForumTraversal } from './services/forum-traversal.js';
 import { initializeGitHubIntegration } from './services/github-integration.js';
 import { initializeConversationState } from './services/conversation-state.js';
+import { initializeMentionProxyService } from './services/mention-proxy-service.js';
 
 const client = new Client({
   intents: [
@@ -150,6 +151,16 @@ async function start() {
       } catch (error) {
         logger.warn('Failed to initialize conversation state:', error);
         console.error('❌ Conversation state init failed:', error);
+      }
+
+      // Initialize mention proxy service
+      try {
+        console.log('🔧 Initializing mention proxy service...');
+        initializeMentionProxyService();
+        logger.info('✅ Mention proxy service enabled');
+      } catch (error) {
+        logger.warn('Failed to initialize mention proxy service:', error);
+        console.error('❌ Mention proxy service init failed:', error);
       }
 
       // Initialize GitHub integration (if token provided)

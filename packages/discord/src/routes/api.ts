@@ -3,11 +3,15 @@ import { logger } from '@coachartie/shared';
 import { ForumTraversalService } from '../services/forum-traversal.js';
 import { GitHubIntegrationService } from '../services/github-integration.js';
 import { Client } from 'discord.js';
+import { mentionProxyRouter } from './mention-proxy.js';
 
 export function createApiRouter(discordClient: Client): Router {
   const router = Router();
   const forumService = new ForumTraversalService(discordClient);
   const githubService = new GitHubIntegrationService(process.env.GITHUB_TOKEN || '');
+
+  // Mount mention proxy routes
+  router.use('/mention-proxy', mentionProxyRouter);
 
   // GET /api/guilds/:guildId/forums - List forums in a guild
   router.get('/guilds/:guildId/forums', async (req: Request, res: Response) => {

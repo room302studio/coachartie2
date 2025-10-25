@@ -23,6 +23,7 @@ import { isGuildWhitelisted, isWorkingGuild } from '../config/guild-whitelist.js
 import { getConversationState } from '../services/conversation-state.js';
 import { getGitHubIntegration } from '../services/github-integration.js';
 import { getForumTraversal } from '../services/forum-traversal.js';
+import { getMentionProxyService } from '../services/mention-proxy-service.js';
 
 // =============================================================================
 // CONSTANTS & CONFIGURATION
@@ -541,6 +542,65 @@ export function setupMessageHandler(client: Client) {
       // Continue with normal message processing
     }
 
+    // -------------------------------------------------------------------------
+    // MENTION PROXY DETECTION
+    // -------------------------------------------------------------------------
+
+    // Check if this message mentions someone we're representing
+    try {
+      const proxyService = getMentionProxyService();
+      const mentionedUserIds = Array.from(message.mentions.users.keys());
+
+      const matchedRule = proxyService.findMatchingRule(
+        message.content,
+        mentionedUserIds,
+        message.guildId,
+        message.channelId
+      );
+
+      if (matchedRule) {
+        logger.info(`🎭 Proxy rule matched: ${matchedRule.name} [${shortId}]`, {
+          correlationId,
+          targetUser: matchedRule.targetUsername,
+          rule: matchedRule.id,
+        });
+
+        telemetry.logEvent(
+          'mention_proxy_triggered',
+          {
+            ruleId: matchedRule.id,
+            ruleName: matchedRule.name,
+            targetUserId: matchedRule.targetUserId,
+            guildId: message.guildId,
+          },
+          correlationId,
+          message.author.id
+        );
+
+        // Get the clean message (remove mentions)
+        const cleanMessage = message.content
+          .replace(new RegExp(`<@!?${matchedRule.targetUserId}>`, 'g'), '')
+          .trim();
+
+        // Process using existing intent handler with proxy context
+        await handleMessageAsIntent(message, cleanMessage, correlationId, {
+          isProxyResponse: true,
+          proxyRule: matchedRule,
+          proxyContext: proxyService.getSystemContext(matchedRule),
+          proxyPrefix: proxyService.getResponsePrefix(matchedRule, matchedRule.targetUsername),
+        });
+
+        return; // Don't process as normal message
+      }
+    } catch (error) {
+      logger.warn(`Mention proxy detection failed [${shortId}]:`, error);
+      // Continue with normal message processing
+    }
+
+    // -------------------------------------------------------------------------
+    // NORMAL RESPONSE CONDITIONS
+    // -------------------------------------------------------------------------
+
     // Check various response triggers
     const isForum = await isForumThread(message);
     const responseConditions = {
@@ -835,7 +895,13 @@ async function handleSyncDiscussionsConversation(
 async function handleMessageAsIntent(
   message: Message,
   cleanMessage: string,
-  correlationId: string
+  correlationId: string,
+  proxyOptions?: {
+    isProxyResponse: boolean;
+    proxyRule: any;
+    proxyContext: string;
+    proxyPrefix: string;
+  }
 ): Promise<void> {
   const shortId = getShortCorrelationId(correlationId);
   let statusMessage: Message | null = null;
@@ -899,6 +965,15 @@ async function handleMessageAsIntent(
       hasAttachments: message.attachments.size > 0,
       mentionedUsers: message.mentions.users.size,
       replyingTo: message.reference?.messageId || null,
+      // Proxy context if this is a proxy response
+      ...(proxyOptions?.isProxyResponse
+        ? {
+            isProxyResponse: true,
+            proxyTargetUser: proxyOptions.proxyRule.targetUsername,
+            proxyRuleName: proxyOptions.proxyRule.name,
+            proxySystemContext: proxyOptions.proxyContext,
+          }
+        : {}),
     };
 
     // Create unified intent and delegate to shared processor
@@ -924,9 +999,15 @@ async function handleMessageAsIntent(
             contentPreview: content.substring(0, 100),
             messageId: message.id,
             channelId: message.channelId,
+            isProxy: proxyOptions?.isProxyResponse,
           });
 
-          const chunks = chunkMessage(content);
+          // Add proxy prefix if this is a proxy response
+          const fullContent = proxyOptions?.proxyPrefix
+            ? `${proxyOptions.proxyPrefix}${content}`
+            : content;
+
+          const chunks = chunkMessage(fullContent);
           logger.info(`📨 DISCORD: Sending ${chunks.length} chunks [${shortId}]`);
 
           const responseMessage = await message.reply(chunks[0]);
