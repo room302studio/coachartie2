@@ -9,6 +9,71 @@ const router: Router = Router();
 // In-memory log storage for this session
 const jobLogs = new Map<string, Array<{ timestamp: string; level: string; message: string }>>();
 
+// Track cleanup interval
+let cleanupInterval: NodeJS.Timeout | null = null;
+
+/**
+ * Cleanup old job logs to prevent memory leaks
+ * Removes jobs whose last log entry is older than 1 hour
+ */
+function cleanupOldJobLogs() {
+  const oneHourAgo = Date.now() - 3600000; // 1 hour in milliseconds
+  let cleanedCount = 0;
+
+  for (const [jobId, logs] of jobLogs.entries()) {
+    // Remove empty log arrays
+    if (logs.length === 0) {
+      jobLogs.delete(jobId);
+      cleanedCount++;
+      continue;
+    }
+
+    // Check the most recent log entry timestamp
+    const lastLog = logs[logs.length - 1];
+    const lastLogTime = new Date(lastLog.timestamp).getTime();
+
+    // Delete if the last log is older than 1 hour
+    if (lastLogTime < oneHourAgo) {
+      jobLogs.delete(jobId);
+      cleanedCount++;
+    }
+  }
+
+  if (cleanedCount > 0) {
+    logger.info(`🧹 Cleaned up logs for ${cleanedCount} old jobs (older than 1 hour)`);
+  }
+}
+
+/**
+ * Start the cleanup interval
+ * Runs cleanup every 5 minutes to prevent unbounded memory growth
+ */
+function startCleanupInterval() {
+  if (cleanupInterval) {
+    return; // Already running
+  }
+
+  cleanupInterval = setInterval(() => {
+    cleanupOldJobLogs();
+  }, 300000); // 5 minutes in milliseconds
+
+  logger.info('🧹 Started job logs cleanup interval (every 5 minutes)');
+}
+
+/**
+ * Stop the cleanup interval (for graceful shutdown)
+ */
+export function stopCleanupInterval() {
+  if (cleanupInterval) {
+    clearInterval(cleanupInterval);
+    cleanupInterval = null;
+    logger.info('🧹 Stopped job logs cleanup interval');
+  }
+}
+
+// Start cleanup when module loads
+startCleanupInterval();
+
 /**
  * Store a log entry for a specific job
  */

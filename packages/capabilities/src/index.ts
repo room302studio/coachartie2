@@ -39,7 +39,7 @@ import { githubRouter } from './routes/github.js';
 import { servicesRouter } from './routes/services.js';
 import { memoriesRouter } from './routes/memories.js';
 import modelsRouter from './routes/models.js';
-import { logsRouter } from './routes/logs.js';
+import { logsRouter, stopCleanupInterval } from './routes/logs.js';
 import { schedulerService } from './services/scheduler.js';
 import { jobTracker } from './services/job-tracker.js';
 import { costMonitor } from './services/cost-monitor.js';
@@ -49,6 +49,8 @@ import './services/capability-orchestrator.js';
 import { capabilityRegistry } from './services/capability-registry.js';
 import { capabilitiesRouter } from './routes/capabilities.js';
 import { simpleHealer } from './runtime/simple-healer.js';
+import { hybridDataLayer } from './runtime/hybrid-data-layer.js';
+import { mcpProcessManager } from './services/mcp-process-manager.js';
 
 // Export openRouterService for models endpoint
 export { openRouterService } from './services/openrouter.js';
@@ -216,8 +218,17 @@ async function gracefulShutdown() {
     logger.info('Shutting down cost monitor...');
     costMonitor.shutdown();
 
+    logger.info('Stopping job logs cleanup interval...');
+    stopCleanupInterval();
+
     logger.info('Shutting down variable store...');
     VariableStore.getInstance().shutdown();
+
+    logger.info('Cleaning up hybrid data layer...');
+    await hybridDataLayer.cleanup();
+
+    logger.info('Cleaning up MCP process manager...');
+    await mcpProcessManager.cleanup();
 
     logger.info('Shutting down service discovery...');
     await serviceDiscovery.shutdown();

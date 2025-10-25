@@ -941,17 +941,35 @@ async function startMCPServer(mcpName: string): Promise<string> {
 
         let errorOutput = '';
 
-        startProcess.stdout?.on('data', (_data: Buffer) => {
+        // Track listener functions for cleanup
+        const stdoutListener = (_data: Buffer) => {
           // Capture stdout but don't store it
-        });
+        };
 
-        startProcess.stderr?.on('data', (data: Buffer) => {
+        const stderrListener = (data: Buffer) => {
           errorOutput += data.toString();
-        });
+        };
+
+        const errorListener = (error: Error) => {
+          // Clean up listeners before rejecting
+          startProcess.stdout?.removeListener('data', stdoutListener);
+          startProcess.stderr?.removeListener('data', stderrListener);
+          startProcess.removeListener('error', errorListener);
+          reject(new Error(`Failed to start MCP server: ${error.message}`));
+        };
+
+        startProcess.stdout?.on('data', stdoutListener);
+        startProcess.stderr?.on('data', stderrListener);
+        startProcess.on('error', errorListener);
 
         // Don't wait for the process to end, just check if it starts successfully
         setTimeout(() => {
           if (startProcess.pid) {
+            // Clean up listeners before unref
+            startProcess.stdout?.removeListener('data', stdoutListener);
+            startProcess.stderr?.removeListener('data', stderrListener);
+            startProcess.removeListener('error', errorListener);
+
             startProcess.unref(); // Allow the process to run independently
             resolve(`🚀 Successfully started ${mcpName} MCP server!
 
@@ -962,13 +980,13 @@ async function startMCPServer(mcpName: string): Promise<string> {
 ✨ The server is now running in the background.
 💡 Use 'check_mcp_status' to monitor the server status.`);
           } else {
+            // Clean up listeners before rejecting
+            startProcess.stdout?.removeListener('data', stdoutListener);
+            startProcess.stderr?.removeListener('data', stderrListener);
+            startProcess.removeListener('error', errorListener);
             reject(new Error(`Failed to start MCP server: ${errorOutput || 'Unknown error'}`));
           }
         }, 2000);
-
-        startProcess.on('error', (error: Error) => {
-          reject(new Error(`Failed to start MCP server: ${error.message}`));
-        });
       });
     } else {
       // Use npm start
@@ -983,17 +1001,35 @@ async function startMCPServer(mcpName: string): Promise<string> {
 
         let errorOutput = '';
 
-        startProcess.stdout?.on('data', (_data: Buffer) => {
+        // Track listener functions for cleanup
+        const stdoutListener = (_data: Buffer) => {
           // Capture stdout but don't store it
-        });
+        };
 
-        startProcess.stderr?.on('data', (data: Buffer) => {
+        const stderrListener = (data: Buffer) => {
           errorOutput += data.toString();
-        });
+        };
+
+        const errorListener = (error: Error) => {
+          // Clean up listeners before rejecting
+          startProcess.stdout?.removeListener('data', stdoutListener);
+          startProcess.stderr?.removeListener('data', stderrListener);
+          startProcess.removeListener('error', errorListener);
+          reject(new Error(`Failed to start MCP server: ${error.message}`));
+        };
+
+        startProcess.stdout?.on('data', stdoutListener);
+        startProcess.stderr?.on('data', stderrListener);
+        startProcess.on('error', errorListener);
 
         // Don't wait for the process to end, just check if it starts successfully
         setTimeout(() => {
           if (startProcess.pid) {
+            // Clean up listeners before unref
+            startProcess.stdout?.removeListener('data', stdoutListener);
+            startProcess.stderr?.removeListener('data', stderrListener);
+            startProcess.removeListener('error', errorListener);
+
             startProcess.unref(); // Allow the process to run independently
             resolve(`🚀 Successfully started ${mcpName} MCP server!
 
@@ -1004,13 +1040,13 @@ async function startMCPServer(mcpName: string): Promise<string> {
 ✨ The server is now running in the background.
 💡 Use 'check_mcp_status' to monitor the server status.`);
           } else {
+            // Clean up listeners before rejecting
+            startProcess.stdout?.removeListener('data', stdoutListener);
+            startProcess.stderr?.removeListener('data', stderrListener);
+            startProcess.removeListener('error', errorListener);
             reject(new Error(`Failed to start MCP server: ${errorOutput || 'Unknown error'}`));
           }
         }, 3000);
-
-        startProcess.on('error', (error: Error) => {
-          reject(new Error(`Failed to start MCP server: ${error.message}`));
-        });
       });
     }
   } catch (error) {
@@ -1054,17 +1090,35 @@ async function startCustomMCPServer(mcpName: string, mcpPath: string): Promise<s
 
       let errorOutput = '';
 
-      startProcess.stdout?.on('data', (_data: Buffer) => {
+      // Track listener functions for cleanup
+      const stdoutListener = (_data: Buffer) => {
         // Capture stdout but don't store it
-      });
+      };
 
-      startProcess.stderr?.on('data', (data: Buffer) => {
+      const stderrListener = (data: Buffer) => {
         errorOutput += data.toString();
-      });
+      };
+
+      const errorListener = (error: Error) => {
+        // Clean up listeners before rejecting
+        startProcess.stdout?.removeListener('data', stdoutListener);
+        startProcess.stderr?.removeListener('data', stderrListener);
+        startProcess.removeListener('error', errorListener);
+        reject(new Error(`Failed to start custom MCP server: ${error.message}`));
+      };
+
+      startProcess.stdout?.on('data', stdoutListener);
+      startProcess.stderr?.on('data', stderrListener);
+      startProcess.on('error', errorListener);
 
       // Don't wait for the process to end, just check if it starts successfully
       setTimeout(() => {
         if (startProcess.pid) {
+          // Clean up listeners before unref
+          startProcess.stdout?.removeListener('data', stdoutListener);
+          startProcess.stderr?.removeListener('data', stderrListener);
+          startProcess.removeListener('error', errorListener);
+
           startProcess.unref(); // Allow the process to run independently
           resolve(`🚀 Successfully started custom ${mcpName} MCP server!
 
@@ -1076,13 +1130,13 @@ async function startCustomMCPServer(mcpName: string, mcpPath: string): Promise<s
 ✨ The server is now running in the background.
 💡 Use 'check_mcp_status' to monitor the server status.`);
         } else {
+          // Clean up listeners before rejecting
+          startProcess.stdout?.removeListener('data', stdoutListener);
+          startProcess.stderr?.removeListener('data', stderrListener);
+          startProcess.removeListener('error', errorListener);
           reject(new Error(`Failed to start custom MCP server: ${errorOutput || 'Unknown error'}`));
         }
       }, 3000);
-
-      startProcess.on('error', (error: Error) => {
-        reject(new Error(`Failed to start custom MCP server: ${error.message}`));
-      });
     });
   } catch (error) {
     logger.error(`❌ Failed to start custom MCP server ${mcpName}:`, error);
