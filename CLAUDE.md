@@ -24,6 +24,14 @@ Only do what is explicitly asked. Don't commit unless requested.
 npm run dev
 ```
 
+## Health Check
+
+```bash
+./scripts/health-check.sh
+```
+
+Quick check: All 6 services should be listening on their ports (47319-47326)
+
 ## Missing
 
 - Discord token in `.env`
