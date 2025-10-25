@@ -57,17 +57,49 @@ docker logs -f coachartie-prod --tail 100
 
 ## 🛡️ What's Protected
 
-### Memory Leaks Fixed
-- ✅ variable-store.ts: Cleanup interval properly tracked and cleared
-- ✅ All setInterval calls: Added shutdown handlers
-- ✅ Log files: Bounded rotation (max 100MB)
+### Memory Leaks Fixed (Jan 2025)
 
-### What Would Kill VPS
-- ❌ Unbounded setInterval (FIXED - now cleared on shutdown)
+**4 Critical Memory Leaks Eliminated:**
+
+1. **Unbounded jobLogs Map** (logs.ts)
+   - ✅ Cleanup runs every 5 minutes
+   - ✅ Removes job logs older than 1 hour
+   - ✅ Prevents unbounded growth during high concurrency
+
+2. **Missing gracefulShutdown cleanup** (index.ts)
+   - ✅ hybridDataLayer.cleanup() now called on shutdown
+   - ✅ mcpProcessManager.cleanup() now called on shutdown
+   - ✅ All intervals and resources properly released
+
+3. **Event listener leaks on MCP spawning** (mcp-installer.ts)
+   - ✅ 3 detached spawn() calls fixed
+   - ✅ Listeners removed before unref()
+   - ✅ Prevents accumulating listeners on process reuse
+
+4. **TypeScript safety** (discord/github-integration.ts)
+   - ✅ Resolved 3 strict type errors
+   - ✅ Build now passes all 8 packages
+
+**Verify the fixes:**
+```bash
+# Run the verification script (tests cleanup mechanisms)
+npx tsx tools/verify-memory-fixes.ts
+
+# Expected output:
+# ✅ Fresh logs NOT deleted
+# ✅ Old logs DELETED
+# ✅ Memory bounded (<50MB)
+# ✅ Log map pruned
+```
+
+### What Would Kill VPS (All Fixed)
+- ❌ Unbounded setInterval (FIXED - cleared on shutdown)
+- ❌ Unbounded jobLogs Map (FIXED - 5min cleanup, 1hr TTL)
 - ❌ Unrotated log files (FIXED - rotation at 10MB)
 - ❌ Debug logging spam (FIXED - log level=warn in prod)
 - ❌ Unbounded Redis memory (FIXED - maxmemory=512MB + LRU)
 - ❌ Unbounded Node heap (FIXED - --max-old-space-size=512)
+- ❌ Orphaned event listeners (FIXED - cleanup before detach)
 
 ## 📊 Expected Resource Usage
 
