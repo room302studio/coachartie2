@@ -10,6 +10,7 @@ class CostMonitor {
   private totalCalls = 0;
   private startTime = Date.now();
   private messageCount = 0;
+  private statsInterval: NodeJS.Timeout | null = null;
 
   // Approximate pricing for Claude 3.5 Sonnet (update these as needed)
   private readonly INPUT_COST_PER_MILLION = 3.0;  // $3 per 1M input tokens
@@ -30,6 +31,29 @@ class CostMonitor {
       maxTokensPerCall: this.maxTokensPerCall,
       autoCheckCreditsEvery: this.autoCheckCreditsEvery
     });
+
+    // Start periodic stats logging
+    this.startStatsInterval();
+  }
+
+  /**
+   * Start periodic stats logging interval
+   */
+  private startStatsInterval(): void {
+    if (process.env.NODE_ENV !== 'development') {
+      this.statsInterval = setInterval(() => this.logStats(), 5 * 60 * 1000);
+    }
+  }
+
+  /**
+   * Graceful shutdown - clears stats interval
+   */
+  shutdown(): void {
+    if (this.statsInterval) {
+      clearInterval(this.statsInterval);
+      this.statsInterval = null;
+      logger.info('💰 Cost Monitor shutdown: stats interval cleared');
+    }
   }
 
   /**
@@ -163,6 +187,3 @@ class CostMonitor {
 
 // Export singleton
 export const costMonitor = new CostMonitor();
-
-// Log stats every 5 minutes
-setInterval(() => costMonitor.logStats(), 5 * 60 * 1000);

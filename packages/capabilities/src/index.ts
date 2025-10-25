@@ -41,6 +41,9 @@ import { memoriesRouter } from './routes/memories.js';
 import modelsRouter from './routes/models.js';
 import { logsRouter } from './routes/logs.js';
 import { schedulerService } from './services/scheduler.js';
+import { jobTracker } from './services/job-tracker.js';
+import { costMonitor } from './services/cost-monitor.js';
+import { VariableStore } from './capabilities/variable-store.js';
 // Import orchestrator FIRST to trigger capability registration
 import './services/capability-orchestrator.js';
 import { capabilityRegistry } from './services/capability-registry.js';
@@ -196,17 +199,39 @@ async function start() {
 }
 
 // Handle graceful shutdown
-process.on('SIGTERM', async () => {
-  simpleHealer.stop();
-  await serviceDiscovery.shutdown();
-  process.exit(0);
-});
+async function gracefulShutdown() {
+  logger.info('🛑 Graceful shutdown initiated...');
 
-process.on('SIGINT', async () => {
-  simpleHealer.stop();
-  await serviceDiscovery.shutdown();
-  process.exit(0);
-});
+  try {
+    // Stop services in order
+    logger.info('Stopping simple healer...');
+    simpleHealer.stop();
+
+    logger.info('Shutting down scheduler...');
+    await schedulerService.close();
+
+    logger.info('Shutting down job tracker...');
+    jobTracker.shutdown();
+
+    logger.info('Shutting down cost monitor...');
+    costMonitor.shutdown();
+
+    logger.info('Shutting down variable store...');
+    VariableStore.getInstance().shutdown();
+
+    logger.info('Shutting down service discovery...');
+    await serviceDiscovery.shutdown();
+
+    logger.info('✅ Graceful shutdown complete');
+  } catch (error) {
+    logger.error('Error during graceful shutdown:', error);
+  } finally {
+    process.exit(0);
+  }
+}
+
+process.on('SIGTERM', gracefulShutdown);
+process.on('SIGINT', gracefulShutdown);
 
 // Catch unhandled errors
 process.on('uncaughtException', (error) => {
