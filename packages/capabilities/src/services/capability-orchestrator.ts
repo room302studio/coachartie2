@@ -1130,8 +1130,8 @@ ${capabilityDetails}`;
     ];
 
     let iterationCount = 0;
-    const maxIterations = 24; // Accommodate 9 capabilities + error recovery + discovery
-    const minIterations = 3; // Reduced from 5 to allow faster completion when appropriate
+    const maxIterations = parseInt(process.env.EXPLORATION_MAX_ITERATIONS || '8'); // Reduced from 24 to save costs
+    const minIterations = parseInt(process.env.EXPLORATION_MIN_ITERATIONS || '1'); // Reduced from 3 - simple messages don't need iteration
 
     while (iterationCount < maxIterations) {
       checkTimeout(); // Check timeout before each iteration
