@@ -46,6 +46,7 @@ interface SchedulerStats {
 interface ReminderJobData {
   userId: string;
   reminderType: string;
+  message?: string;
   [key: string]: unknown;
 }
 

@@ -1,5 +1,4 @@
-import { UserProfileService } from '@coachartie/shared';
-import { logger } from '@coachartie/shared';
+import { UserProfileService, logger } from '@coachartie/shared';
 
 export interface LinkedEmail {
   email: string;

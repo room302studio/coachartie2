@@ -112,12 +112,12 @@ class EmailService {
    * Send email via direct SMTP (MailDev for local, or VPS SMTP)
    */
   private async sendViaSMTP(payload: EmailPayload): Promise<{ success: boolean; message: string }> {
+    // Detect environment outside try block so it's accessible in catch
+    const isDev = process.env.NODE_ENV === 'development';
+
     try {
       // Import nodemailer dynamically
       const nodemailer = await import('nodemailer');
-
-      // Detect environment
-      const isDev = process.env.NODE_ENV === 'development';
       const host = isDev ? 'localhost' : (process.env.EMAIL_HOST || 'mail.coachartiebot.com');
       const port = isDev ? 1025 : parseInt(process.env.EMAIL_PORT || '587');
 

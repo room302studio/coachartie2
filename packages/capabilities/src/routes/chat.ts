@@ -80,11 +80,12 @@ router.post('/', rateLimiter(50, 60000), async (req: Request, res: Response) => 
     logger.info(`Processing chat message from ${userId}: ${message.substring(0, 100)}...`);
 
     // Create message object for processing
+    const messageSource = source === 'discord' ? 'discord' : 'api';
     const incomingMessage: IncomingMessage = {
       id: messageId,
       timestamp: new Date(),
       retryCount: 0,
-      source: (source === 'discord' ? 'discord' : 'api') as const,
+      source: messageSource,
       userId,
       message: message.trim(),
       context: context || {}, // Pass Discord context through
