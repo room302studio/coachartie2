@@ -315,7 +315,7 @@ export class GitHubIntegrationService {
     };
 
     // Check for PRs first (most specific)
-    let match;
+    let match: RegExpExecArray | null;
     while ((match = patterns.pr.exec(message)) !== null) {
       results.push({
         url: match[0],
@@ -341,7 +341,7 @@ export class GitHubIntegrationService {
     while ((match = patterns.repo.exec(message)) !== null) {
       // Skip if already found as PR or issue
       const alreadyFound = results.some(
-        (r) => r.owner === match[1] && r.repo === match[2] && r.number
+        (r) => r.owner === match![1] && r.repo === match![2] && r.number
       );
       if (!alreadyFound) {
         results.push({
@@ -484,7 +484,7 @@ export class GitHubIntegrationService {
         updatedAt: data.updated_at,
         closedAt: data.closed_at,
         url: data.html_url,
-        body: data.body,
+        body: data.body ?? null,
         labels: data.labels?.map((l: any) => (typeof l === 'string' ? l : l.name)) || [],
         assignees: data.assignees?.map((a: any) => a.login) || [],
         comments: data.comments || 0,
