@@ -1,4 +1,4 @@
-import { Queue, Worker } from 'bullmq';
+import { Queue } from 'bullmq';
 import { logger, createRedisConnection } from '@coachartie/shared';
 
 export interface ScheduledTask {
@@ -51,7 +51,6 @@ interface ReminderJobData {
 
 export class SchedulerService {
   private schedulerQueue: Queue;
-  private worker: Worker;
   private tasks = new Map<string, ScheduledTask>();
 
   constructor() {
@@ -66,33 +65,10 @@ export class SchedulerService {
       },
     });
 
-    // Create worker to process scheduled jobs
-    this.worker = new Worker(
-      'coachartie-scheduler',
-      async (job) => {
-        await this.executeScheduledJob(job);
-      },
-      { connection }
-    );
-
-    // Add error handlers to prevent silent failures
-    this.worker.on('error', (error) => {
-      logger.error('❌ Scheduler worker ERROR:', error);
-    });
-
-    this.worker.on('failed', (job, error) => {
-      logger.error(`❌ Scheduler job FAILED: ${job.name}`, error);
-    });
-
-    this.worker.on('completed', (job) => {
-      logger.info(`✅ Scheduler job COMPLETED: ${job.name}`);
-    });
-
-    this.worker.on('ready', () => {
-      logger.info('🟢 Scheduler WORKER READY - listening for jobs');
-    });
-
-    logger.info('Scheduler service initialized with worker');
+    // Note: BullMQ Worker disabled for MVP
+    // Job execution would require integrating with Discord/Email APIs
+    // For now, we support the scheduler API (create/list/cancel) but don't execute jobs
+    logger.info('Scheduler service initialized (job execution disabled)');
   }
 
   /**
@@ -370,7 +346,6 @@ export class SchedulerService {
    * Close scheduler service
    */
   async close(): Promise<void> {
-    await this.worker.close();
     await this.schedulerQueue.close();
     logger.info('Scheduler service closed');
   }
