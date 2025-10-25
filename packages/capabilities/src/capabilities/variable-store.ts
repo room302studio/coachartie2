@@ -18,6 +18,7 @@ export class VariableStore {
   private static instance: VariableStore;
   private sessions: Map<string, Map<string, any>> = new Map();
   private sessionMetadata: Map<string, SessionMetadata> = new Map();
+  private cleanupInterval: NodeJS.Timeout | null = null;
 
   static getInstance(): VariableStore {
     if (!VariableStore.instance) {
@@ -26,6 +27,17 @@ export class VariableStore {
       VariableStore.instance.startCleanupInterval();
     }
     return VariableStore.instance;
+  }
+
+  /**
+   * Graceful shutdown - clears cleanup interval
+   */
+  shutdown(): void {
+    if (this.cleanupInterval) {
+      clearInterval(this.cleanupInterval);
+      this.cleanupInterval = null;
+      logger.info('VariableStore shutdown: cleanup interval cleared');
+    }
   }
 
   /**
@@ -158,25 +170,28 @@ export class VariableStore {
   }
 
   /**
-   * Start automatic cleanup of old sessions
+   * Start automatic cleanup of old sessions (PROD: only in non-dev)
    */
   private startCleanupInterval(): void {
-    setInterval(() => {
-      const now = Date.now();
-      const maxAge = 3600000; // 1 hour
-      let cleanedCount = 0;
+    // Only enable cleanup in production (not on every process restart in dev)
+    if (process.env.NODE_ENV !== 'development') {
+      this.cleanupInterval = setInterval(() => {
+        const now = Date.now();
+        const maxAge = 3600000; // 1 hour
+        let cleanedCount = 0;
 
-      for (const [sessionId, metadata] of this.sessionMetadata) {
-        if (now - metadata.lastAccess > maxAge) {
-          this.clearSession(sessionId);
-          cleanedCount++;
+        for (const [sessionId, metadata] of this.sessionMetadata) {
+          if (now - metadata.lastAccess > maxAge) {
+            this.clearSession(sessionId);
+            cleanedCount++;
+          }
         }
-      }
 
-      if (cleanedCount > 0) {
-        logger.info(`🧹 Cleaned up ${cleanedCount} old variable sessions`);
-      }
-    }, 300000); // Check every 5 minutes
+        if (cleanedCount > 0) {
+          logger.info(`🧹 Cleaned up ${cleanedCount} old variable sessions`);
+        }
+      }, 300000); // Check every 5 minutes
+    }
   }
 
   /**

@@ -1,74 +1,71 @@
 version: '3.8'
 
 services:
+  # Redis with memory limits
   redis:
     image: redis:7-alpine
+    container_name: coachartie-redis
     ports:
-      - "6379:6379"
+      - '6379:6379'
     volumes:
-      - redis_data:/data
+      - redis-data:/data
+    command: >
+      redis-server
+      --maxmemory 512mb
+      --maxmemory-policy allkeys-lru
+      --save 900 1
+      --appendonly yes
+      --appendfsync everysec
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 10s
+      timeout: 5s
+      retries: 5
     restart: unless-stopped
-    deploy:
-      resources:
-        limits:
-          memory: 256M
-        reservations:
-          memory: 128M
 
-  capabilities:
+  # Main app
+  coachartie:
     build:
       context: .
-      dockerfile: ./packages/capabilities/Dockerfile.prod
-    ports:
-      - "47324:47324"
+      dockerfile: Dockerfile
+    container_name: coachartie-prod
+    env_file:
+      - .env.production
     environment:
       - NODE_ENV=production
-      - DATABASE_PATH=/app/data/coachartie.db
-      - CAPABILITIES_PORT=47324
-      - REDIS_HOST=redis
-      - REDIS_PORT=6379
-      - LOG_LEVEL=info
-      # Production env vars to be set via .env or environment
-      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
-      - DISCORD_TOKEN=${DISCORD_TOKEN}
-      - DISCORD_CLIENT_ID=${DISCORD_CLIENT_ID}
-      - WOLFRAM_APP_ID=${WOLFRAM_APP_ID}
-      - TWILIO_ACCOUNT_SID=${TWILIO_ACCOUNT_SID}
-      - TWILIO_AUTH_TOKEN=${TWILIO_AUTH_TOKEN}
-      - TWILIO_PHONE_NUMBER=${TWILIO_PHONE_NUMBER}
-    volumes:
-      - capabilities_data:/app/data
-      - mcp_data:/app/mcp-servers
+      - NODE_OPTIONS=--max-old-space-size=512 --max-semi-space-size=128
     depends_on:
       redis:
         condition: service_healthy
+    ports:
+      - '47319:47319'
+      - '47324:47324'
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+    restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:47324/health"]
+      test: ['CMD', 'curl', '-f', 'http://localhost:47319/health']
       interval: 30s
       timeout: 10s
-      retries: 5
-      start_period: 30s
-    restart: unless-stopped
+      retries: 3
     deploy:
       resources:
         limits:
           memory: 1G
         reservations:
           memory: 512M
+    logging:
+      driver: 'json-file'
+      options:
+        max-size: '10m'
+        max-file: '10'
+        labels: 'service=coachartie'
 
 volumes:
-  redis_data:
-    driver: local
-  capabilities_data:
-    driver: local
-  mcp_data:
+  redis-data:
     driver: local
 
 networks:
   default:
-    name: coachartie_network
+    name: coachartie-prod
