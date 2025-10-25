@@ -22,6 +22,7 @@ import { variableStoreCapability } from '../capabilities/variable-store.js';
 import { todoCapability } from '../capabilities/todo.js';
 import { discordUICapability } from '../capabilities/discord-ui.js';
 import { discordForumsCapability } from '../capabilities/discord-forums.js';
+import { mentionProxyCapability } from '../capabilities/mention-proxy.js';
 // import { CapabilitySuggester } from "../utils/capability-suggester.js"; // Removed during refactoring
 import { capabilityXMLParser } from '../utils/xml-parser.js';
 import { conscienceLLM } from './conscience.js';
@@ -151,6 +152,11 @@ export class CapabilityOrchestrator {
       logger.info('📦 Registering discord-forums...');
       capabilityRegistry.register(discordForumsCapability);
       logger.info('✅ discord-forums registered successfully');
+
+      // Register Mention Proxy capability for user representation
+      logger.info('📦 Registering mention-proxy...');
+      capabilityRegistry.register(mentionProxyCapability);
+      logger.info('✅ mention-proxy registered successfully');
 
       // Register wolfram capability
       capabilityRegistry.register({

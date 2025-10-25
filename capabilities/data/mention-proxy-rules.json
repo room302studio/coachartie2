@@ -1,0 +1,20 @@
+{
+  "rules": [
+    {
+      "id": "proxy-1761414811200-et5zyoi",
+      "targetUserId": "688448399879438340",
+      "targetUsername": "ejfox",
+      "guildId": "1420846272545296470",
+      "guildName": "Subway Builder",
+      "responseMode": "direct",
+      "triggerType": "any_mention",
+      "enabled": true,
+      "name": "EJs Subway Builder Representative",
+      "description": "Answer questions when @ejfox is mentioned in Subway Builder guild",
+      "createdAt": "2025-10-25T17:53:31.200Z",
+      "updatedAt": "2025-10-25T17:56:48.152Z",
+      "useJudgment": true
+    }
+  ],
+  "version": "1.0.0"
+}
