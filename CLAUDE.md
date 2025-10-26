@@ -32,6 +32,43 @@ npm run dev
 
 Quick check: All 6 services should be listening on their ports (47319-47326)
 
+## Version Management & Changelog
+
+**Generate Changelog:**
+```bash
+npm run changelog        # Generate for next unreleased version
+./scripts/generate-changelog.sh 1.2.0  # Generate for specific version
+```
+
+This script:
+1. Gets all commits since last git tag
+2. Parses semantic commits (feat/fix/docs/chore/etc)
+3. Groups them into changelog sections with emojis
+4. Sends commit list to Artie via `/chat` endpoint
+5. Artie writes a 2-3 sentence user-friendly summary
+6. Outputs formatted changelog ready to paste into CHANGELOG.md
+
+**Bump Version:**
+```bash
+npm run version:patch   # Bug fixes (1.1.0 → 1.1.1)
+npm run version:minor   # New features (1.1.0 → 1.2.0)
+npm run version:major   # Breaking changes (1.1.0 → 2.0.0)
+```
+
+These commands automatically:
+- Update version in package.json
+- Create git commit and tag
+- Push changes and tags to remote
+
+**Workflow:**
+1. Make changes and commit with semantic commit messages
+2. Run `npm run changelog` to generate changelog entry
+3. Paste Artie's output into CHANGELOG.md under new version section
+4. Run appropriate `npm run version:*` command
+5. Update CHANGELOG.md release date and commit
+
+See `VERSION_GUIDE.md` for detailed workflow and examples.
+
 ## Missing
 
 - Discord token in `.env`
