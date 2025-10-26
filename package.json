@@ -1,6 +1,6 @@
 {
   "name": "coachartie2",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
   "description": "Coach Artie monorepo - AI assistant with multiple communication interfaces",
   "author": "Room 302 Studio",
@@ -26,7 +26,10 @@
     "test:all": "tsx scripts/test-all-services.ts",
     "prompt:tui": "DATABASE_PATH=./data/coachartie.db tsx tools/prompt-tui.ts",
     "prompt:cli": "DATABASE_PATH=./data/coachartie.db tsx tools/prompt-cli.ts",
-    "prompts": "npm run prompt:tui"
+    "prompts": "npm run prompt:tui",
+    "version:patch": "npm version patch && git push --follow-tags",
+    "version:minor": "npm version minor && git push --follow-tags",
+    "version:major": "npm version major && git push --follow-tags"
   },
   "devDependencies": {
     "@eslint/js": "^9.29.0",
