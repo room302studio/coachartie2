@@ -33,99 +33,109 @@ COMMIT_COUNT=$(echo "$COMMITS" | wc -l | tr -d ' ')
 echo "📊 Found $COMMIT_COUNT commits"
 echo ""
 
-# Parse and group commits by type
-declare -A GROUPED
+# Group commits into separate temp files
+TMPDIR=$(mktemp -d)
+trap "rm -rf $TMPDIR" EXIT
+
 while IFS='|' read -r hash message; do
   # Extract type from semantic commit: type(scope): subject
-  if [[ $message =~ ^([a-z]+)(\([^)]+\))?(!)?:\ (.+)$ ]]; then
-    type="${BASH_REMATCH[1]}"
-    scope="${BASH_REMATCH[2]}"
-    breaking="${BASH_REMATCH[3]}"
-    subject="${BASH_REMATCH[4]}"
+  # Match pattern: type(scope)!: subject or type: subject
+  type=$(echo "$message" | sed -n 's/^\([a-z]*\).*/\1/p')
+  scope=$(echo "$message" | sed -n 's/^[a-z]*(\([^)]*\)).*/\1/p')
+  breaking=$(echo "$message" | sed -n 's/^[a-z]*([^)]*)!\?.*\(!\).*/\1/p')
+  subject=$(echo "$message" | sed -n 's/^[a-z]*[(:!]*[^:]*: \(.*\)/\1/p')
 
-    # Format: hash|scope|subject|breaking
-    GROUPED[$type]+="$hash|$scope|$subject|$breaking"$'\n'
+  if [ -n "$type" ] && [ -n "$subject" ]; then
+    # Write to type-specific file
+    echo "$hash|$scope|$subject|$breaking" >> "$TMPDIR/$type"
   else
-    echo "⚠️  Non-semantic commit: ${message:0:50}..."
+    echo "⚠️  Non-semantic commit: $(echo "$message" | cut -c1-50)..."
   fi
 done <<< "$COMMITS"
 
-# Generate markdown sections
+# Start building markdown
 MARKDOWN="## [$VERSION] - $(date +%Y-%m-%d)\n\n"
 
 # Breaking changes first
-if [ -n "${GROUPED[feat]}" ] || [ -n "${GROUPED[fix]}" ] || [ -n "${GROUPED[perf]}" ]; then
-  # Check for breaking changes
-  BREAKING=""
-  for type in "${!GROUPED[@]}"; do
-    while IFS='|' read -r hash scope subject breaking; do
-      if [ "$breaking" = "!" ]; then
-        BREAKING+="- **${scope#(}${scope:+: }$subject** (\`${hash:0:7}\`)\n"
-      fi
-    done <<< "${GROUPED[$type]}"
-  done
+BREAKING=""
+for file in "$TMPDIR"/*; do
+  [ -f "$file" ] || continue
+  while IFS='|' read -r hash scope subject breaking; do
+    if [ "$breaking" = "!" ]; then
+      BREAKING="${BREAKING}- **${scope#(}${scope:+: }$subject** (\`${hash:0:7}\`)\n"
+    fi
+  done < "$file"
+done
 
-  if [ -n "$BREAKING" ]; then
-    MARKDOWN+="### ⚠️ BREAKING CHANGES\n\n$BREAKING\n"
-  fi
+if [ -n "$BREAKING" ]; then
+  MARKDOWN="${MARKDOWN}### ⚠️ BREAKING CHANGES\n\n${BREAKING}\n"
 fi
 
 # Features
-if [ -n "${GROUPED[feat]}" ]; then
-  MARKDOWN+="### ✨ Added\n\n"
+if [ -f "$TMPDIR/feat" ]; then
+  MARKDOWN="${MARKDOWN}### ✨ Added\n\n"
   while IFS='|' read -r hash scope subject breaking; do
-    [ -n "$hash" ] && MARKDOWN+="- ${scope#(}${scope:+: }$subject (\`${hash:0:7}\`)\n"
-  done <<< "${GROUPED[feat]}"
-  MARKDOWN+="\n"
+    MARKDOWN="${MARKDOWN}- ${scope#(}${scope:+: }$subject (\`${hash:0:7}\`)\n"
+  done < "$TMPDIR/feat"
+  MARKDOWN="${MARKDOWN}\n"
 fi
 
 # Fixes
-if [ -n "${GROUPED[fix]}" ]; then
-  MARKDOWN+="### 🐛 Fixed\n\n"
+if [ -f "$TMPDIR/fix" ]; then
+  MARKDOWN="${MARKDOWN}### 🐛 Fixed\n\n"
   while IFS='|' read -r hash scope subject breaking; do
-    [ -n "$hash" ] && MARKDOWN+="- ${scope#(}${scope:+: }$subject (\`${hash:0:7}\`)\n"
-  done <<< "${GROUPED[fix]}"
-  MARKDOWN+="\n"
+    MARKDOWN="${MARKDOWN}- ${scope#(}${scope:+: }$subject (\`${hash:0:7}\`)\n"
+  done < "$TMPDIR/fix"
+  MARKDOWN="${MARKDOWN}\n"
 fi
 
 # Performance
-if [ -n "${GROUPED[perf]}" ]; then
-  MARKDOWN+="### ⚡ Performance\n\n"
+if [ -f "$TMPDIR/perf" ]; then
+  MARKDOWN="${MARKDOWN}### ⚡ Performance\n\n"
   while IFS='|' read -r hash scope subject breaking; do
-    [ -n "$hash" ] && MARKDOWN+="- ${scope#(}${scope:+: }$subject (\`${hash:0:7}\`)\n"
-  done <<< "${GROUPED[perf]}"
-  MARKDOWN+="\n"
+    MARKDOWN="${MARKDOWN}- ${scope#(}${scope:+: }$subject (\`${hash:0:7}\`)\n"
+  done < "$TMPDIR/perf"
+  MARKDOWN="${MARKDOWN}\n"
 fi
 
 # Refactoring
-if [ -n "${GROUPED[refactor]}" ]; then
-  MARKDOWN+="### ♻️ Refactored\n\n"
+if [ -f "$TMPDIR/refactor" ]; then
+  MARKDOWN="${MARKDOWN}### ♻️ Refactored\n\n"
   while IFS='|' read -r hash scope subject breaking; do
-    [ -n "$hash" ] && MARKDOWN+="- ${scope#(}${scope:+: }$subject (\`${hash:0:7}\`)\n"
-  done <<< "${GROUPED[refactor]}"
-  MARKDOWN+="\n"
+    MARKDOWN="${MARKDOWN}- ${scope#(}${scope:+: }$subject (\`${hash:0:7}\`)\n"
+  done < "$TMPDIR/refactor"
+  MARKDOWN="${MARKDOWN}\n"
 fi
 
 # Documentation
-if [ -n "${GROUPED[docs]}" ]; then
-  MARKDOWN+="### 📝 Documentation\n\n"
+if [ -f "$TMPDIR/docs" ]; then
+  MARKDOWN="${MARKDOWN}### 📝 Documentation\n\n"
   while IFS='|' read -r hash scope subject breaking; do
-    [ -n "$hash" ] && MARKDOWN+="- ${scope#(}${scope:+: }$subject (\`${hash:0:7}\`)\n"
-  done <<< "${GROUPED[docs]}"
-  MARKDOWN+="\n"
+    MARKDOWN="${MARKDOWN}- ${scope#(}${scope:+: }$subject (\`${hash:0:7}\`)\n"
+  done < "$TMPDIR/docs"
+  MARKDOWN="${MARKDOWN}\n"
 fi
 
 # Build & CI
-if [ -n "${GROUPED[build]}" ] || [ -n "${GROUPED[ci]}" ]; then
-  MARKDOWN+="### 🔧 Build & CI\n\n"
+if [ -f "$TMPDIR/build" ] || [ -f "$TMPDIR/ci" ]; then
+  MARKDOWN="${MARKDOWN}### 🔧 Build & CI\n\n"
   for type in build ci; do
-    if [ -n "${GROUPED[$type]}" ]; then
+    if [ -f "$TMPDIR/$type" ]; then
       while IFS='|' read -r hash scope subject breaking; do
-        [ -n "$hash" ] && MARKDOWN+="- ${scope#(}${scope:+: }$subject (\`${hash:0:7}\`)\n"
-      done <<< "${GROUPED[$type]}"
+        MARKDOWN="${MARKDOWN}- ${scope#(}${scope:+: }$subject (\`${hash:0:7}\`)\n"
+      done < "$TMPDIR/$type"
     fi
   done
-  MARKDOWN+="\n"
+  MARKDOWN="${MARKDOWN}\n"
+fi
+
+# Chores
+if [ -f "$TMPDIR/chore" ]; then
+  MARKDOWN="${MARKDOWN}### 🧹 Chores\n\n"
+  while IFS='|' read -r hash scope subject breaking; do
+    MARKDOWN="${MARKDOWN}- ${scope#(}${scope:+: }$subject (\`${hash:0:7}\`)\n"
+  done < "$TMPDIR/chore"
+  MARKDOWN="${MARKDOWN}\n"
 fi
 
 echo "📄 Generated changelog structure"
@@ -135,10 +145,7 @@ echo ""
 echo "🤖 Asking Artie to write a user-friendly summary..."
 
 # Prepare commit list for Artie
-COMMIT_LIST=""
-while IFS='|' read -r hash message; do
-  COMMIT_LIST+="$message\n"
-done <<< "$COMMITS"
+COMMIT_LIST=$(echo "$COMMITS" | cut -d'|' -f2)
 
 # Send to Artie
 PROMPT="You are a technical writer creating a user-friendly changelog summary.
