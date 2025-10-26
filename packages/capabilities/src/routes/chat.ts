@@ -53,7 +53,7 @@ router.post('/', rateLimiter(50, 60000), async (req: Request, res: Response) => 
       return res.status(400).json({
         success: false,
         messageId: '',
-        error: 'Message is required and must be a string',
+        error: 'Message is required and must be a string. Expected format: {"message": "your text here", "user_id": "optional-user-id"}',
       } as ChatResponse);
     }
 
@@ -70,7 +70,7 @@ router.post('/', rateLimiter(50, 60000), async (req: Request, res: Response) => 
       return res.status(400).json({
         success: false,
         messageId: '',
-        error: 'Invalid userId format',
+        error: 'Invalid userId format (must be a string, max 100 characters). Example: {"message": "hello", "user_id": "user-123"}',
       } as ChatResponse);
     }
 
