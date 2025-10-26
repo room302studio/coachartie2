@@ -27,6 +27,7 @@
     "prompt:tui": "DATABASE_PATH=./data/coachartie.db tsx tools/prompt-tui.ts",
     "prompt:cli": "DATABASE_PATH=./data/coachartie.db tsx tools/prompt-cli.ts",
     "prompts": "npm run prompt:tui",
+    "changelog": "./scripts/generate-changelog.sh",
     "version:patch": "npm version patch && git push --follow-tags",
     "version:minor": "npm version minor && git push --follow-tags",
     "version:major": "npm version major && git push --follow-tags"
