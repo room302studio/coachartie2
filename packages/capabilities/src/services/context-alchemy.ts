@@ -3,6 +3,7 @@ import { conscienceLLM } from './conscience.js';
 import { IncomingMessage } from '@coachartie/shared';
 import { MemoryEntourageInterface } from './memory-entourage-interface.js';
 import { CombinedMemoryEntourage } from './combined-memory-entourage.js';
+import { CreditMonitor } from './credit-monitor.js';
 
 // Debug flag for detailed Context Alchemy logging
 const DEBUG = process.env.CONTEXT_ALCHEMY_DEBUG === 'true';
@@ -154,6 +155,9 @@ export class ContextAlchemy {
       await this.addCurrentDateTime(minimalSources);
       selectedContext = minimalSources;
     }
+
+    // 4.5. Check credit status and add warnings if needed (both for Artie and user)
+    await this.addCreditWarnings(selectedContext);
 
     // 5. Build message chain with conversation history
     const messageChain = this.assembleMessageChain(
@@ -399,6 +403,72 @@ Important:
     } catch (error) {
       logger.warn('Failed to load conversation history:', error);
       return []; // Graceful degradation
+    }
+  }
+
+  /**
+   * Add credit warnings if balance is low (for both Artie's awareness and user notification)
+   */
+  private async addCreditWarnings(sources: ContextSource[]): Promise<void> {
+    try {
+      const creditMonitor = CreditMonitor.getInstance();
+      const [creditInfo, alerts] = await Promise.all([
+        creditMonitor.getCurrentBalance(),
+        creditMonitor.getActiveAlerts(),
+      ]);
+
+      // Build credit warning message if we have alerts or low balance
+      const warningParts: string[] = [];
+
+      // Add active alerts
+      if (alerts.length > 0) {
+        warningParts.push(...alerts.map((a) => a.message));
+      }
+
+      // Add balance info if available
+      if (creditInfo?.credits_remaining !== undefined) {
+        const balance = creditInfo.credits_remaining;
+
+        // Critical warning (<$5)
+        if (balance < 5) {
+          warningParts.push(`🤖💸 "I'm faddddingggg..." - Only $${balance.toFixed(2)} credits left!`);
+          warningParts.push('⚡ SWITCH TO CHEAPER MODELS IMMEDIATELY (use Haiku/Gemini Flash for non-critical tasks)');
+        }
+        // Warning (<$25)
+        else if (balance < 25) {
+          warningParts.push(`⚠️ Low credit balance: $${balance.toFixed(2)} remaining`);
+          warningParts.push('💡 Consider using cheaper models for simple tasks');
+        }
+        // Info (just show balance if we have it)
+        else {
+          warningParts.push(`💰 Current balance: $${balance.toFixed(2)}`);
+        }
+      }
+
+      // Add daily spend warning if high
+      if (creditInfo?.daily_spend !== undefined && creditInfo.daily_spend > 10) {
+        warningParts.push(`📊 Today's spend: $${creditInfo.daily_spend.toFixed(2)}`);
+      }
+
+      // Only add to context if we have warnings
+      if (warningParts.length > 0) {
+        const content = warningParts.join('\n');
+
+        sources.push({
+          name: 'credit_status',
+          priority: 95, // Very high priority - Artie needs to know this!
+          tokenWeight: Math.ceil(content.length / 4),
+          content,
+          category: 'user_state',
+        });
+
+        if (DEBUG || (creditInfo?.credits_remaining && creditInfo.credits_remaining < 25)) {
+          logger.warn(`💰 Credit warning added to context: ${warningParts[0]}`);
+        }
+      }
+    } catch (error) {
+      logger.warn('Failed to add credit warnings:', error);
+      // Graceful degradation - continue without credit warnings
     }
   }
 

@@ -16,6 +16,9 @@ import { systemInstallerCapability } from '../capabilities/system-installer.js';
 import { memoryCapability } from '../capabilities/memory.js';
 import { githubCapability } from '../capabilities/github.js';
 import { creditStatusCapability } from '../capabilities/credit-status.js';
+import { modelManagerCapability } from '../capabilities/model-manager.js';
+import { runtimeConfigCapability } from '../capabilities/runtime-config.js';
+import { systemMonitorCapability } from '../capabilities/system-monitor.js';
 // import { linkedInCapability } from '../capabilities/linkedin.js'; // DELETED: LinkedIn OAuth not configured
 import { goalCapability } from '../capabilities/goal.js';
 import { variableStoreCapability } from '../capabilities/variable-store.js';
@@ -131,6 +134,15 @@ export class CapabilityOrchestrator {
 
       // Register credit status capability for monitoring API usage
       capabilityRegistry.register(creditStatusCapability);
+
+      // Register model manager capability for querying models and pricing
+      capabilityRegistry.register(modelManagerCapability);
+
+      // Register runtime config capability for dynamic adaptation
+      capabilityRegistry.register(runtimeConfigCapability);
+
+      // Register system monitor capability for resource monitoring
+      capabilityRegistry.register(systemMonitorCapability);
 
       // Register LinkedIn capability - DELETED: OAuth not configured
       // capabilityRegistry.register(linkedInCapability);
