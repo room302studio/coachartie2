@@ -88,10 +88,12 @@ interface MeetingRow {
   user_id: string;
   title: string;
   description?: string;
-  meeting_time: string;
+  scheduled_time: string;
   duration_minutes: number;
-  location?: string;
+  timezone: string;
+  participants: string;
   status: string;
+  created_via: string;
   created_at: string;
   updated_at: string;
 }
@@ -112,14 +114,12 @@ interface MeetingParams {
   time?: string;
   participants?: string;
   duration?: string;
-  location?: string;
   meeting_id?: string;
   [key: string]: unknown;
 }
 
 class MeetingService {
   private static instance: MeetingService;
-  private dbReady = false;
 
   static getInstance(): MeetingService {
     if (!MeetingService.instance) {
@@ -128,73 +128,6 @@ class MeetingService {
     return MeetingService.instance;
   }
 
-  async initializeDatabase(): Promise<void> {
-    if (this.dbReady) {
-      return;
-    }
-
-    try {
-      const db = await getDatabase();
-
-      // Create meetings table
-      await db.exec(`
-        CREATE TABLE IF NOT EXISTS meetings (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          user_id TEXT NOT NULL,
-          title TEXT NOT NULL,
-          description TEXT,
-          meeting_time DATETIME NOT NULL,
-          duration_minutes INTEGER DEFAULT 60,
-          location TEXT,
-          status TEXT DEFAULT 'scheduled' CHECK (status IN ('scheduled', 'cancelled', 'completed')),
-          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-        )
-      `);
-
-      // Create meeting_participants table
-      await db.exec(`
-        CREATE TABLE IF NOT EXISTS meeting_participants (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          meeting_id INTEGER NOT NULL,
-          participant_id TEXT NOT NULL,
-          participant_type TEXT DEFAULT 'discord' CHECK (participant_type IN ('discord', 'email')),
-          status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'accepted', 'declined')),
-          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-          FOREIGN KEY (meeting_id) REFERENCES meetings(id),
-          UNIQUE(meeting_id, participant_id)
-        )
-      `);
-
-      // Create meeting_reminders table
-      await db.exec(`
-        CREATE TABLE IF NOT EXISTS meeting_reminders (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          meeting_id INTEGER NOT NULL,
-          reminder_time DATETIME NOT NULL,
-          reminder_type TEXT DEFAULT 'before_meeting',
-          scheduler_job_id TEXT,
-          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-          FOREIGN KEY (meeting_id) REFERENCES meetings(id)
-        )
-      `);
-
-      // Create indexes
-      await db.exec(`
-        CREATE INDEX IF NOT EXISTS idx_meetings_user_id ON meetings(user_id);
-        CREATE INDEX IF NOT EXISTS idx_meetings_time ON meetings(meeting_time);
-        CREATE INDEX IF NOT EXISTS idx_meetings_status ON meetings(status);
-        CREATE INDEX IF NOT EXISTS idx_participants_meeting_id ON meeting_participants(meeting_id);
-        CREATE INDEX IF NOT EXISTS idx_reminders_meeting_id ON meeting_reminders(meeting_id);
-      `);
-
-      this.dbReady = true;
-      logger.info('✅ Meeting database initialized successfully');
-    } catch (error) {
-      logger.error('❌ Failed to initialize meeting database:', error);
-      throw error;
-    }
-  }
 
   async createMeeting(
     userId: string,
@@ -204,11 +137,10 @@ class MeetingService {
     options: {
       description?: string;
       duration?: number;
-      location?: string;
+      timezone?: string;
+      created_via?: string;
     } = {}
   ): Promise<string> {
-    await this.initializeDatabase();
-
     try {
       const db = await getDatabase();
 
@@ -219,18 +151,21 @@ class MeetingService {
       }
 
       // Create the meeting
+      const participantsJson = JSON.stringify(participants);
       const result = await db.run(
         `
-        INSERT INTO meetings (user_id, title, description, meeting_time, duration_minutes, location)
-        VALUES (?, ?, ?, ?, ?, ?)
+        INSERT INTO meetings (user_id, title, description, scheduled_time, duration_minutes, timezone, participants, created_via)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
       `,
         [
           userId,
           title,
           options.description || null,
           parsedTime.toISOString(),
-          options.duration || 60,
-          options.location || null,
+          options.duration || 30,
+          options.timezone || 'UTC',
+          participantsJson,
+          options.created_via || 'api',
         ]
       );
 
@@ -286,9 +221,8 @@ class MeetingService {
       });
 
       const participantStr = participantNames.join(', ');
-      const locationStr = options.location ? ` at ${options.location}` : '';
 
-      return `✅ Meeting scheduled: "${title}" on ${timeStr}${locationStr} with ${participantStr}`;
+      return `✅ Meeting scheduled: "${title}" on ${timeStr} with ${participantStr}`;
     } catch (error) {
       logger.error('❌ Failed to create meeting:', error);
       throw new Error(`Failed to create meeting: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -296,8 +230,7 @@ class MeetingService {
   }
 
   async listMeetings(userId: string, includeCompleted = false): Promise<string> {
-    await this.initializeDatabase();
-
+    
     try {
       const db = await getDatabase();
 
@@ -307,10 +240,10 @@ class MeetingService {
 
       const meetings = await db.all(
         `
-        SELECT id, title, description, meeting_time, duration_minutes, location, status
+        SELECT id, title, description, scheduled_time, duration_minutes, status, timezone, participants, created_via
         FROM meetings
         WHERE user_id = ? AND ${statusFilter}
-        ORDER BY meeting_time ASC
+        ORDER BY scheduled_time ASC
       `,
         [userId]
       );
@@ -332,7 +265,7 @@ class MeetingService {
             )
             .join(', ');
 
-          const meetingTime = new Date(meeting.meeting_time);
+          const meetingTime = new Date(meeting.scheduled_time);
           const timeStr = meetingTime.toLocaleString('en-US', {
             weekday: 'short',
             month: 'short',
@@ -357,18 +290,17 @@ class MeetingService {
   }
 
   async suggestTime(userId: string, participants: string[]): Promise<string> {
-    await this.initializeDatabase();
-
+    
     try {
       const db = await getDatabase();
 
       // Query past meetings to find common meeting times
       const pastMeetings = await db.all(
         `
-        SELECT meeting_time, COUNT(*) as frequency
+        SELECT scheduled_time, COUNT(*) as frequency
         FROM meetings m
         WHERE m.user_id = ? AND m.status = 'completed'
-        GROUP BY strftime('%H', meeting_time)
+        GROUP BY strftime('%H', scheduled_time)
         ORDER BY frequency DESC
         LIMIT 3
       `,
@@ -378,10 +310,10 @@ class MeetingService {
       // Query upcoming meetings to avoid conflicts
       const upcomingMeetings = await db.all(
         `
-        SELECT meeting_time, duration_minutes
+        SELECT scheduled_time, duration_minutes
         FROM meetings
-        WHERE user_id = ? AND status = 'scheduled' AND meeting_time > datetime('now')
-        ORDER BY meeting_time ASC
+        WHERE user_id = ? AND status = 'scheduled' AND scheduled_time > datetime('now')
+        ORDER BY scheduled_time ASC
       `,
         [userId]
       );
@@ -390,7 +322,7 @@ class MeetingService {
 
       // Suggest times based on past patterns
       if (pastMeetings.length > 0) {
-        const topHour = new Date(pastMeetings[0].meeting_time).getHours();
+        const topHour = new Date(pastMeetings[0].scheduled_time).getHours();
         suggestions.push(`Based on your meeting history, you often meet around ${topHour}:00.`);
       }
 
@@ -416,8 +348,7 @@ class MeetingService {
   }
 
   async checkAvailability(userId: string, time: string): Promise<string> {
-    await this.initializeDatabase();
-
+    
     try {
       const db = await getDatabase();
       const checkTime = new Date(time);
@@ -432,11 +363,11 @@ class MeetingService {
 
       const conflicts = await db.all(
         `
-        SELECT title, meeting_time, duration_minutes
+        SELECT title, scheduled_time, duration_minutes
         FROM meetings
         WHERE user_id = ?
           AND status = 'scheduled'
-          AND meeting_time BETWEEN ? AND ?
+          AND scheduled_time BETWEEN ? AND ?
       `,
         [userId, startWindow.toISOString(), endWindow.toISOString()]
       );
@@ -454,7 +385,7 @@ class MeetingService {
         return `✅ You're available at ${timeStr}`;
       } else {
         const conflictList = conflicts.map((m: MeetingRow) =>
-          `- ${m.title} at ${new Date(m.meeting_time).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}`
+          `- ${m.title} at ${new Date(m.scheduled_time).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}`
         ).join('\n');
 
         return `⚠️ Potential conflicts around ${timeStr}:\n${conflictList}`;
@@ -466,8 +397,7 @@ class MeetingService {
   }
 
   async updateMeeting(userId: string, meetingId: number, updates: Partial<MeetingRow>): Promise<string> {
-    await this.initializeDatabase();
-
+    
     try {
       const db = await getDatabase();
 
@@ -492,17 +422,13 @@ class MeetingService {
         updateFields.push('description = ?');
         values.push(updates.description);
       }
-      if (updates.meeting_time) {
-        updateFields.push('meeting_time = ?');
-        values.push(updates.meeting_time);
+      if (updates.scheduled_time) {
+        updateFields.push('scheduled_time = ?');
+        values.push(updates.scheduled_time);
       }
       if (updates.duration_minutes) {
         updateFields.push('duration_minutes = ?');
         values.push(updates.duration_minutes);
-      }
-      if (updates.location !== undefined) {
-        updateFields.push('location = ?');
-        values.push(updates.location);
       }
 
       if (updateFields.length === 0) {
@@ -527,8 +453,7 @@ class MeetingService {
   }
 
   async cancelMeeting(userId: string, meetingId: number): Promise<string> {
-    await this.initializeDatabase();
-
+    
     try {
       const db = await getDatabase();
 
@@ -631,7 +556,8 @@ async function handleMeetingAction(params: MeetingParams, content?: string): Pro
           {
             description: params.description ? String(params.description) : undefined,
             duration,
-            location: params.location ? String(params.location) : undefined,
+            timezone: params.timezone ? String(params.timezone) : undefined,
+            created_via: params.created_via ? String(params.created_via) : 'api',
           }
         );
       }
@@ -672,9 +598,8 @@ async function handleMeetingAction(params: MeetingParams, content?: string): Pro
         const updates: Partial<MeetingRow> = {};
         if (params.title) updates.title = String(params.title);
         if (params.description !== undefined) updates.description = String(params.description);
-        if (params.time) updates.meeting_time = String(params.time);
+        if (params.time) updates.scheduled_time = String(params.time);
         if (params.duration) updates.duration_minutes = parseInt(String(params.duration));
-        if (params.location !== undefined) updates.location = String(params.location);
 
         return await meetingService.updateMeeting(String(user_id), parseInt(String(meetingId)), updates);
       }
