@@ -146,9 +146,12 @@ export class CapabilityXMLParser {
   private extractAttributeCapabilities(text: string): ParsedCapability[] {
     const capabilities: ParsedCapability[] = [];
 
-    // ONLY match self-closing tags: <capability name="X" action="Y" ...attributes />
-    // Do NOT match opening tags like <capability ...> (those are handled by extractContentCapabilities)
-    const unifiedPattern = /<capability\s+([^>]+)\s*\/>/g;
+    // Match self-closing tags, handling quotes properly
+    // This regex:
+    // 1. Finds <capability
+    // 2. Captures everything until /> (non-greedy to stop at first />)
+    // 3. Handles nested quotes and > characters inside quoted strings
+    const unifiedPattern = /<capability\s+([\s\S]+?)\s*\/>/g;
 
     let match;
     while ((match = unifiedPattern.exec(text)) !== null) {

@@ -174,14 +174,14 @@ class MeetingService {
       // Add participants
       const participantNames: string[] = [];
       for (const participant of participants) {
-        const { id, type, displayName } = this.parseParticipant(participant);
+        const { id, displayName } = this.parseParticipant(participant);
 
         await db.run(
           `
-          INSERT INTO meeting_participants (meeting_id, participant_id, participant_type)
-          VALUES (?, ?, ?)
+          INSERT INTO meeting_participants (meeting_id, participant_id)
+          VALUES (?, ?)
         `,
-          [meetingId, id, type]
+          [meetingId, id]
         );
 
         participantNames.push(displayName);
