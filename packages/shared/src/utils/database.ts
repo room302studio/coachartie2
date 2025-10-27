@@ -238,10 +238,68 @@ async function initializeDatabase(database: Database): Promise<void> {
       END;
 
       -- Update timestamps on memories
-      CREATE TRIGGER IF NOT EXISTS update_memories_timestamp 
+      CREATE TRIGGER IF NOT EXISTS update_memories_timestamp
         AFTER UPDATE ON memories
         BEGIN
           UPDATE memories SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
+        END;
+
+      -- Meetings table for scheduling
+      CREATE TABLE IF NOT EXISTS meetings (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id TEXT NOT NULL,
+        title TEXT NOT NULL,
+        description TEXT,
+        scheduled_time DATETIME NOT NULL,
+        duration_minutes INTEGER DEFAULT 30,
+        timezone TEXT DEFAULT 'UTC',
+        participants TEXT DEFAULT '[]', -- JSON array of Discord user IDs or emails
+        status TEXT DEFAULT 'scheduled', -- 'scheduled', 'completed', 'cancelled'
+        created_via TEXT DEFAULT 'api', -- 'discord-dm', 'channel', 'api'
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_meetings_user_id ON meetings(user_id);
+      CREATE INDEX IF NOT EXISTS idx_meetings_scheduled_time ON meetings(scheduled_time);
+      CREATE INDEX IF NOT EXISTS idx_meetings_status ON meetings(status);
+      CREATE INDEX IF NOT EXISTS idx_meetings_created_via ON meetings(created_via);
+
+      -- Meeting participants table for tracking responses
+      CREATE TABLE IF NOT EXISTS meeting_participants (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        meeting_id INTEGER NOT NULL,
+        participant_id TEXT NOT NULL, -- Discord user ID or email
+        status TEXT DEFAULT 'pending', -- 'pending', 'accepted', 'declined'
+        responded_at DATETIME,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (meeting_id) REFERENCES meetings(id) ON DELETE CASCADE
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_meeting_participants_meeting_id ON meeting_participants(meeting_id);
+      CREATE INDEX IF NOT EXISTS idx_meeting_participants_participant_id ON meeting_participants(participant_id);
+      CREATE INDEX IF NOT EXISTS idx_meeting_participants_status ON meeting_participants(status);
+
+      -- Meeting reminders table for scheduling notifications
+      CREATE TABLE IF NOT EXISTS meeting_reminders (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        meeting_id INTEGER NOT NULL,
+        reminder_time DATETIME NOT NULL,
+        sent BOOLEAN DEFAULT 0,
+        sent_at DATETIME,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (meeting_id) REFERENCES meetings(id) ON DELETE CASCADE
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_meeting_reminders_meeting_id ON meeting_reminders(meeting_id);
+      CREATE INDEX IF NOT EXISTS idx_meeting_reminders_reminder_time ON meeting_reminders(reminder_time);
+      CREATE INDEX IF NOT EXISTS idx_meeting_reminders_sent ON meeting_reminders(sent);
+
+      -- Update timestamps on meetings
+      CREATE TRIGGER IF NOT EXISTS update_meetings_timestamp
+        AFTER UPDATE ON meetings
+        BEGIN
+          UPDATE meetings SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
         END;
     `);
 
