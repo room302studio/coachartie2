@@ -31,7 +31,6 @@ import { userProfileCapability } from '../capabilities/user-profile.js';
 // import { CapabilitySuggester } from "../utils/capability-suggester.js"; // Removed during refactoring
 import { capabilityXMLParser } from '../utils/xml-parser.js';
 import { conscienceLLM } from './conscience.js';
-import { bulletproofExtractor } from '../utils/bulletproof-capability-extractor.js';
 import { robustExecutor } from '../utils/robust-capability-executor.js';
 import { modelAwarePrompter } from '../utils/model-aware-prompter.js';
 import { contextAlchemy } from './context-alchemy.js';
@@ -1637,31 +1636,7 @@ ${capabilityDetails}`;
    */
   private extractCapabilities(response: string, modelName?: string): ExtractedCapability[] {
     try {
-      // Try bulletproof extraction first (handles weak models)
-      logger.info(
-        `🔍 BULLETPROOF: Attempting extraction with model context: ${modelName || 'unknown'}`
-      );
-      const bulletproofCapabilities = bulletproofExtractor.extractCapabilities(response, modelName);
-
-      if (bulletproofCapabilities.length > 0) {
-        logger.info(
-          `🎯 BULLETPROOF: Found ${bulletproofCapabilities.length} capabilities via bulletproof extractor`
-        );
-
-        // Convert to ExtractedCapability format
-        const capabilities = bulletproofCapabilities.map((cap, index) => ({
-          name: cap.name,
-          action: cap.action,
-          params: cap.params,
-          content: cap.content,
-          priority: index,
-        }));
-
-        return capabilities;
-      }
-
-      // Fallback to original XML parser
-      logger.info(`🔧 FALLBACK: Trying original XML parser`);
+      // Parse capabilities via XML parser
       const parsedCapabilities = capabilityXMLParser.extractCapabilities(response);
 
       // Convert to ExtractedCapability format with priority
