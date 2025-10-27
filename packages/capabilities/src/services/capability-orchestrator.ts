@@ -528,23 +528,27 @@ async function handleMeetingAction(params: MeetingParams, content?: string): Pro
   try {
     switch (action) {
       case 'create': {
-        const title = params.title || content;
-        const time = params.time;
-        const participantsStr = params.participants;
+        // Normalize param names - LLMs use different variations
+        const title = params.title || (params as any).topic || (params as any).name || content;
+        const time = params.time || (params as any).when;
+        const participantsStr = params.participants || (params as any).attendees || (params as any).people;
 
         if (!title) {
+          logger.error('❌ Meeting creation failed: Missing title param', params);
           return '❌ Please provide a meeting title. Example: <capability name="meeting-scheduler" action="create" title="Team Sync" time="tomorrow at 2pm" participants="<@123>,alice@example.com" />';
         }
 
         if (!time) {
+          logger.error('❌ Meeting creation failed: Missing time param', params);
           return '❌ Please provide a meeting time. Example: <capability name="meeting-scheduler" action="create" title="Team Sync" time="tomorrow at 2pm" participants="<@123>" />';
         }
 
-        if (!participantsStr) {
-          return '❌ Please provide participants. Example: <capability name="meeting-scheduler" action="create" title="Team Sync" time="tomorrow at 2pm" participants="<@123>,alice@example.com" />';
-        }
+        // Participants are optional - if none provided, it's a solo meeting
+        const participants = participantsStr
+          ? String(participantsStr).split(',').map(p => p.trim())
+          : [];
 
-        const participants = String(participantsStr).split(',').map(p => p.trim());
+        logger.info(`✅ Meeting params validated - Title: ${title}, Time: ${time}, Participants: ${participants.length > 0 ? participantsStr : 'none (solo meeting)'}`);
         const duration = params.duration ? parseInt(String(params.duration)) : 60;
 
         return await meetingService.createMeeting(
