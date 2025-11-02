@@ -40,8 +40,9 @@ import { initializeForumTraversal } from './services/forum-traversal.js';
 import { initializeGitHubIntegration } from './services/github-integration.js';
 import { initializeConversationState } from './services/conversation-state.js';
 import { initializeMentionProxyService } from './services/mention-proxy-service.js';
+import './queues/outgoing-consumer.js';
 
-const client = new Client({
+export const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,

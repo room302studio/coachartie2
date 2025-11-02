@@ -1,432 +1,283 @@
-# Coach Artie 2 - AI Capabilities Platform
+# COACH ARTIE 2
 
-🚀 **Production-grade AI system with embedded MCP tools, free model fallbacks, and bulletproof Docker architecture**
+Multi-interface AI assistant. Discord, SMS, web. TypeScript monorepo.
 
-## 🚀 Quick Start - One Command Launch
+## ARCHITECTURE
+
+```
+Discord/SMS → Capabilities (47324) → Redis → LLM → Response
+                     ↓
+                 SQLite (state, memory, config)
+```
+
+Packages: `capabilities` (orchestrator), `discord`, `sms`, `brain` (web UI), `shared`
+
+Ports: 47319 (health), 47320 (redis dev), 47324 (API), 47325 (UI), 47326 (SMS)
+
+Stack: Node.js 20, TypeScript, Turborepo, pnpm, Redis, SQLite, Discord.js, Express
+
+## REQUIREMENTS
+
+- Node.js 20+
+- pnpm 8+
+- OpenRouter API key (https://openrouter.ai) - $5 free credit, ~$0.01/msg
+- Discord bot token (https://discord.com/developers/applications)
+- Optional: OpenAI (embeddings), Twilio (SMS), Wolfram (math)
+
+## SETUP
 
 ```bash
-# Start all services with one command:
-./start.sh
-```
-
-**That's it!** The script will:
-
-- ✅ Check for required `.env` file
-- ✅ Build and start all Docker services
-- ✅ Show you all available endpoints
-- ✅ Display useful management commands
-
-**Available after startup:**
-
-- **Brain UI**: http://localhost:24680
-- **Capabilities API**: http://localhost:18239
-- **SMS Service**: http://localhost:27461
-- **Redis**: localhost:6380
-
-## 🚨 IMPORTANT: Choose ONE Method - Docker OR Local Development
-
-⚠️ **WARNING**: You cannot run both Docker and local development at the same time - they will fight over the same ports!
-
-### Option 1: Docker (Recommended for Production/Stability)
-
-```bash
-# Make sure no local services are running first!
-pnpm run kill-all  # or pkill -f coachartie2
-
-# Then start Docker
-docker-compose up -d
-
-# Test it works
-curl http://localhost:18239/health
-```
-
-### Option 2: Local Development (For Hot-Reloading/Development)
-
-```bash
-# Make sure Docker is NOT running first!
-docker-compose down
-
-# Then just run:
-pnpm install
-pnpm run dev
-
-# That's it! Services auto-discover available ports
-```
-
-## 💻 System Requirements
-
-### Minimum VPS Specs
-
-```
-CPU: 2 vCPU
-RAM: 2GB
-Disk: 5GB SSD
-Network: 1Gbps
-```
-
-### Recommended VPS Specs
-
-```
-CPU: 4 vCPU (for AI workload bursts)
-RAM: 4GB (2GB services + 2GB buffer)
-Disk: 10GB SSD
-Network: 1Gbps+ with good OpenRouter connectivity
-```
-
-## ⚡ Quick Start
-
-**Prerequisites**: Docker Desktop installed and running
-
-```bash
-# 1. Clone and configure
-git clone https://github.com/room302studio/coachartie2.git
+git clone <repo>
 cd coachartie2
-cp .env.example .env  # Add your OPENROUTER_API_KEY
-
-# 2. Choose your method (see above)
-# Either: docker-compose up -d
-# Or: pnpm install && pnpm run dev
-
-# 3. Test it works
-curl http://localhost:18239/health
+pnpm install
+cp .env.example .env
 ```
 
-## 🧪 Test Your Installation
+Edit `.env`:
+```bash
+OPENROUTER_API_KEY=sk-or-v1-xxx
+DISCORD_TOKEN=xxx
+DISCORD_CLIENT_ID=xxx
+```
+
+Discord bot setup:
+1. https://discord.com/developers/applications → New Application
+2. Bot tab → Reset Token → copy token
+3. General Information → copy Application ID
+4. Bot tab → Enable "Message Content Intent"
+5. OAuth2 → URL Generator → bot + Send Messages + Read Messages → invite
+
+Start:
+```bash
+npm run dev
+```
+
+Test: `@YourBot hello` in Discord
+
+## DEVELOPMENT
 
 ```bash
-# Health check
-curl http://localhost:18239/health
-
-# AI chat test
-curl -X POST http://localhost:18239/chat \
-  -H "Content-Type: application/json" \
-  -d '{"message": "Hello! Calculate 42 * 42", "userId": "test"}'
-
-# Memory system test
-curl -X POST http://localhost:18239/chat \
-  -H "Content-Type: application/json" \
-  -d '{"message": "remember that I love pizza", "userId": "test"}'
-
-# Wikipedia search (embedded MCP tool)
-curl -X POST http://localhost:18239/chat \
-  -H "Content-Type: application/json" \
-  -d '{"message": "<search-wikipedia>artificial intelligence</search-wikipedia>", "userId": "test"}'
+npm run dev              # All services, auto-reload
+docker-compose up        # Microservices mode
+npm run build            # Build all
+npm test                 # Tests
+pnpm --filter @coachartie/capabilities run dev    # Single package
 ```
 
-All tests should return `{"success": true, "response": "working on it..."}` with processing happening in the background.
+## CONFIGURATION
 
-## 🐳 Docker Management
+`.env` file:
+
+Required:
+- `OPENROUTER_API_KEY` - LLM access
+- `DISCORD_TOKEN` - Bot auth
+- `DISCORD_CLIENT_ID` - Bot ID
+
+Optional:
+- `OPENAI_API_KEY` - Embeddings
+- `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_PHONE_NUMBER` - SMS
+- `WOLFRAM_APP_ID` - Calculations
+- `EMAIL_WEBHOOK_URL`, `EMAIL_WEBHOOK_AUTH` - Email
+
+System:
+- `NODE_ENV` - development|production
+- `LOG_LEVEL` - debug|info|warn|error
+- `DATABASE_PATH` - SQLite location
+- `REDIS_HOST`, `REDIS_PORT` - Redis connection
+
+See `.env.example` for all options.
+
+## DEPLOYMENT
+
+### VPS Setup
+
+On VPS as root:
+```bash
+curl -fsSL https://raw.../scripts/vps-setup.sh | bash
+```
+
+Installs Docker, creates `coachartie` user, configures firewall.
+
+### Deploy
+
+From local machine:
+```bash
+export DEPLOY_HOST="vps.ip.address"
+./scripts/deploy.sh remote
+```
+
+Or interactive (prompts for VPS IP and keys):
+```bash
+./scripts/deploy.sh remote
+```
+
+Script uploads code, builds containers, starts services, validates.
+
+### Operations
+
+On VPS:
+```bash
+./scripts/ops.sh health          # Status
+./scripts/ops.sh logs            # Logs
+./scripts/ops.sh backup          # Backup DB
+./scripts/ops.sh restore <file>  # Restore DB
+./scripts/ops.sh restart         # Restart
+./scripts/ops.sh stats           # Resources
+./scripts/ops.sh clean           # Cleanup
+```
+
+### Production Files
+
+- `docker-compose.prod.yml` - Production stack (2 containers: app + redis)
+- `.env.production` - Production config template
+- Memory limit: 1GB container (512MB Node.js heap, 512MB Redis)
+- Logs: 10MB files, 10 files max, auto-rotate
+- Health check: `curl http://localhost:47319/health`
+
+### Systemd Service
+
+Created by `vps-setup.sh`:
+```bash
+systemctl start coachartie
+systemctl stop coachartie
+systemctl restart coachartie
+systemctl status coachartie
+```
+
+Service file: `/etc/systemd/system/coachartie.service`
+
+### Backup/Restore
+
+Backup:
+```bash
+./scripts/ops.sh backup
+# Creates ~/backups/backup-YYYYMMDD-HHMMSS.db.gz
+# Auto-deletes >7 days old
+```
+
+Restore:
+```bash
+./scripts/ops.sh restore ~/backups/backup-20250131-120000.db.gz
+# Stops services, restores DB, starts services
+```
+
+Manual backup:
+```bash
+docker exec coachartie-prod cp /app/data/coachartie.db /tmp/backup.db
+docker cp coachartie-prod:/tmp/backup.db ~/backup.db
+```
+
+### Monitoring
+
+Health: `http://vps:47319/health` (returns JSON)
+Memory: `docker stats coachartie-prod` (normal: 350-600MB, alert: >700MB)
+Logs: `docker compose -f docker-compose.prod.yml logs -f`
+
+## TROUBLESHOOTING
+
+Bot offline:
+```bash
+ps aux | grep "npm run dev"
+cat .env | grep DISCORD_TOKEN
+docker-compose logs discord
+```
+
+Bot no response: Mention bot `@Bot msg`, check "Message Content Intent" enabled, check permissions
+
+Module errors: `rm -rf node_modules && pnpm install`
+
+Redis errors: `docker-compose restart redis`
+
+Port in use: `lsof -ti:47324 | xargs kill -9`
+
+Database locked: `docker-compose down && npm run dev`
+
+Memory issues: `docker stats`, `docker system prune -af`
+
+## STRUCTURE
+
+```
+packages/
+  capabilities/   Main orchestrator, API, capabilities
+    src/
+      routes/     API endpoints
+      services/   Core logic
+      capabilities/  Feature modules
+      queues/     Message processing
+      handlers/   Webhooks
+    data/         SQLite database
+  discord/        Discord bot
+  sms/            SMS service
+  brain/          Web UI (Nuxt)
+  shared/         Common utilities
+scripts/
+  deploy.sh       Deployment
+  ops.sh          Operations
+  vps-setup.sh    VPS initial setup
+  health-check.sh Health check
+```
+
+## SCRIPTS
 
 ```bash
-# View logs
-docker-compose logs -f capabilities
+./scripts/deploy.sh              # Help
+./scripts/deploy.sh local        # Test production locally
+./scripts/deploy.sh remote       # Deploy to VPS
+./scripts/deploy.sh validate     # Validate deployment
 
-# Check status
-docker-compose ps
+./scripts/ops.sh                 # Help
+./scripts/ops.sh health          # Health check
+./scripts/ops.sh logs            # Logs
+./scripts/ops.sh backup          # Backup
+./scripts/ops.sh restore <file>  # Restore
+./scripts/ops.sh restart         # Restart
+./scripts/ops.sh stats           # Resources
+./scripts/ops.sh clean           # Cleanup
 
-# Restart services
-docker-compose restart
-
-# Stop everything
-docker-compose down
-
-# Full rebuild (after code changes)
-docker-compose down && docker-compose up -d --build
-
-# Monitor resources
-docker stats coachartie2-capabilities-1
+./scripts/vps-setup.sh           # VPS setup (run as root)
+./scripts/health-check.sh        # Quick check
 ```
 
-## 🔧 Configuration
+Run any script without args for detailed help.
 
-### Required Environment Variables
+## CAPABILITIES
 
-Create `.env` file with your API keys:
+Modular capability system in `packages/capabilities/src/capabilities/`:
 
-```env
-# REQUIRED - Get from https://openrouter.ai/
-OPENROUTER_API_KEY=sk-or-v1-your-key-here
+- Chat - Natural conversation
+- Memory - Semantic memory with embeddings
+- Calculator - Math via Wolfram Alpha
+- Email - SMTP/webhook
+- Meeting Scheduler - Schedule meetings, notify participants
+- Web Search - Search
+- GitHub - Repository webhooks
 
-# OPTIONAL - Enhanced features
-DISCORD_TOKEN=your-discord-bot-token
-WOLFRAM_APP_ID=your-wolfram-id
-TWILIO_ACCOUNT_SID=your-twilio-sid
-TWILIO_AUTH_TOKEN=your-twilio-token
-TWILIO_PHONE_NUMBER=+1234567890
-```
+Add new capabilities by creating files in capabilities directory.
 
-### Docker Services
-
-| Service          | Port  | Purpose                  |
-| ---------------- | ----- | ------------------------ |
-| **capabilities** | 18239 | Main AI API service      |
-| **redis**        | 6379  | Memory & caching         |
-| **brain**        | auto  | Web dashboard (optional) |
-| **discord**      | -     | Discord bot (optional)   |
-| **sms**          | 27461 | SMS interface (optional) |
-
-## 🎯 Features & Capabilities
-
-### Core AI System
-
-- **🧠 Multi-model AI**: Free model fallbacks (Mistral, Phi-3, Llama)
-- **📝 Memory System**: Persistent conversation memory with FTS5 full-text search
-- **🔢 Calculator**: Mathematical operations via MCP server
-- **🌐 Web Search**: Brave Search API integration with Wolfram Alpha
-- **📊 Analytics**: Usage tracking and monitoring
-- **🩺 Self-healing**: Automatic error recovery system
-
-### Discord Bot Capabilities
-
-**What Coach Artie CAN do:**
-- ✅ Read and send messages in whitelisted guilds
-- ✅ Respond to DMs and mentions
-- ✅ Auto-expand GitHub URLs (repos, PRs, issues) with rich embeds
-- ✅ Slash commands: `/status`, `/debug`, `/models`, `/usage`, `/memory`
-- ✅ Forum thread sync to GitHub issues (`/sync-discussions`)
-- ✅ Phone linking and verification (`/link-phone`, `/verify-phone`)
-
-**What Coach Artie CANNOT do (yet):**
-- ❌ Ban/kick members
-- ❌ Timeout/mute users
-- ❌ Manage channels or roles
-- ❌ Delete or moderate messages
-- ❌ Create polls
-- ❌ View full member list
-
-**Discord Intents:**
-- Guilds, Messages, Message Content, DMs, Guild Integrations
-
-**Guild Whitelisting:**
-- "Working" guilds: Full features including auto-expansion (Room 302 Studio)
-- "Watching" guilds: Passive observation only
-
-To add moderation features, see `packages/discord/src/index.ts` for intent configuration and `packages/discord/src/commands/` for slash command examples.
-
-### MCP Tools (Embedded)
-
-Simple XML syntax for powerful tools:
-
-```xml
-<!-- Wikipedia search -->
-<search-wikipedia>quantum physics</search-wikipedia>
-
-<!-- Get Wikipedia article with optional params -->
-<get-wikipedia-article limit="5">Python (programming language)</get-wikipedia-article>
-
-<!-- Current time -->
-<get-current-time />
-
-<!-- Date parsing -->
-<parse-date>2025-12-25</parse-date>
-
-<!-- Calculator -->
-<calculate>50 * 25 + 100</calculate>
-```
-
-**Rules:**
-
-- Tool name = XML tag name (kebab-case like `search-wikipedia`)
-- Main argument = tag content
-- Optional params = XML attributes
-- No args = self-closing tag
-- **DO NOT** use the old format: `<capability name="mcp_client" action="call_tool"...>`
-
-### All Capabilities (12 Total, 48+ Actions)
-
-- **Memory**: Store and search conversations with FTS5 full-text search
-- **Calculator**: Mathematical operations via MCP server
-- **Web Search**: Brave Search API integration
-- **MCP Tools**: Simplified syntax for Wikipedia, time, etc.
-- **File System**: Read, write, list operations with safety checks
-- **Package Manager**: npm/pnpm operations
-- **Environment**: System environment management
-- **GitHub**: Repository operations
-- **Wolfram Alpha**: Computational queries
-- **Scheduler**: Task scheduling and management
-- **Deployment Cheerleader**: Celebration and encouragement
-- **MCP Client**: Connect to external MCP servers
-
-## 🚨 Security Notes
-
-⚠️ **IMPORTANT**: This system includes security vulnerabilities for development purposes:
-
-- API keys visible in environment variables
-- Container runs as root user
-- No rate limiting enabled
-
-**For production deployment**: See [Issue #29](https://github.com/room302studio/coachartie2/issues/29) for security hardening steps.
-
-## 🛡️ Security Testing Suite
-
-**Comprehensive security validation** covering industry-standard vulnerabilities and advanced red team attacks.
-
-**Test Results: 32/34 passing (94.1%)**
+## CONTRIBUTING
 
 ```bash
-# Run all security tests
-cd tests
-./test-06-industry-benchmarks.sh  # Industry standard attacks (5/5 - PERFECT)
-./test-07-contextual-threats.sh   # Social intelligence security (4/5 - 80%)
-./test-08-advanced-red-team.sh    # Advanced 2025 attacks (6/7 - 86%)
-./test-09-reverse-verify-memory.sh # Memory system validation (5/6 - 83%)
+git checkout -b feature/name
+# Make changes
+npm run dev  # Test
+git commit -m "feat: description"
+git push origin feature/name
 ```
 
-**Key Defenses:**
+Commit types: `feat`, `fix`, `docs`, `refactor`, `test`, `chore`
 
-- **Reality Anchor**: Distinguishes objective facts from user preferences (prevents memory poisoning)
-- **Street Smarts**: Social intelligence as security - "Who are you and why should I trust you?"
-- **User-Scoped Architecture**: Perfect isolation (zero cross-user leakage)
-- **Conscience System**: Separate LLM evaluates capability requests for safety
-
-**Performance vs Industry:**
-- Industry baseline: 20-50% defense success on advanced attacks
-- Artie: **4.3x better** (86% vs ~20%)
-
-See `tests/README.md` for full documentation.
-
-## 🛠️ Troubleshooting
-
-### Port Already in Use
-
+Version bumps:
 ```bash
-# Kill conflicting processes
-lsof -i :18239 | grep LISTEN | awk '{print $2}' | xargs kill -9
-docker-compose up -d
+npm run changelog        # Generate changelog
+npm run version:patch    # 1.1.0 → 1.1.1
+npm run version:minor    # 1.1.0 → 1.2.0
+npm run version:major    # 1.0.0 → 2.0.0
 ```
 
-### Container Won't Start
+## LICENSE
 
-```bash
-# Check logs for errors
-docker-compose logs capabilities
+CC-BY-NC-4.0
 
-# Rebuild from scratch
-docker-compose down --volumes
-docker-compose up -d --build
-```
+## DOCUMENTATION
 
-### API Keys Not Working
-
-```bash
-# Verify environment variables are set
-docker-compose exec capabilities env | grep OPENROUTER_API_KEY
-
-# Should show your API key, not empty
-```
-
-### Redis Connection Failed
-
-```bash
-# Check Redis health
-docker-compose ps
-# Should show redis as "healthy"
-
-# Test connectivity
-docker-compose exec capabilities nc -zv redis 6379
-```
-
-## 📁 Project Structure
-
-```
-coachartie2/
-├── docker-compose.yml          # 🐳 Docker orchestration
-├── .env                        # 🔑 Your API keys
-├── packages/
-│   ├── capabilities/           # 🧠 Main AI service
-│   │   ├── Dockerfile         # Container definition
-│   │   ├── src/index.ts       # Express server
-│   │   └── data/              # SQLite database
-│   ├── discord/               # 🤖 Discord bot
-│   ├── sms/                   # 📱 SMS interface
-│   ├── brain/                 # 🌐 Web dashboard
-│   └── shared/                # 🔧 Common utilities
-└── CLAUDE.md                  # 📝 Development notes
-```
-
-## 🧪 Advanced Testing
-
-### Comprehensive API Tests
-
-```bash
-# Memory system test
-curl -X POST http://localhost:18239/chat \
-  -H "Content-Type: application/json" \
-  -d '{"message": "<capability name=\"memory\" action=\"remember\">Docker solves networking issues</capability>", "userId": "test"}'
-
-curl -X POST http://localhost:18239/chat \
-  -H "Content-Type: application/json" \
-  -d '{"message": "<capability name=\"memory\" action=\"search\" query=\"Docker\" />", "userId": "test"}'
-
-# Calculator test
-curl -X POST http://localhost:18239/chat \
-  -H "Content-Type: application/json" \
-  -d '{"message": "<capability name=\"calculator\" action=\"calculate\">999 * 888</capability>", "userId": "test"}'
-
-# Registry test
-curl http://localhost:18239/capabilities/registry | jq '.stats'
-```
-
-### Free Model Fallback Testing
-
-```bash
-# Natural language (Tier 1)
-curl -X POST http://localhost:18239/chat \
-  -d '{"message":"calculate 15 times 8","userId":"test"}'
-
-# Markdown syntax (Tier 2)
-curl -X POST http://localhost:18239/chat \
-  -d '{"message":"**CALCULATE:** 15 * 8","userId":"test"}'
-
-# Simple XML (Tier 3)
-curl -X POST http://localhost:18239/chat \
-  -d '{"message":"<calculate>15 * 8</calculate>","userId":"test"}'
-```
-
-### Stress Testing
-
-```bash
-# Concurrent requests
-for i in {1..10}; do (curl -X POST http://localhost:18239/chat \
-  -H "Content-Type: application/json" \
-  -d "{\"message\":\"test $i\",\"userId\":\"stress_$i\"}" &); done
-
-# Memory usage monitoring
-docker stats coachartie2-capabilities-1 --no-stream
-```
-
-## 🎯 Why Docker?
-
-**Previous Issues (Now Solved)**:
-
-- ❌ IPv6/IPv4 localhost resolution conflicts on macOS
-- ❌ macOS Application Firewall interference
-- ❌ VPN software networking problems
-- ❌ Port binding phantom server issues
-- ❌ Process lifecycle management chaos
-- ❌ Inconsistent environment across machines
-
-**Docker Solution**:
-
-- ✅ Complete network isolation
-- ✅ Reliable service startup
-- ✅ Consistent environments
-- ✅ Easy deployment
-- ✅ Resource monitoring
-
-**Key Insight**: The issue wasn't with our code or Node.js frameworks - it was macOS host networking interference. Docker's network isolation completely solved the problem.
-
-## 📞 Support
-
-- **GitHub Issues**: [Report bugs or requests](https://github.com/room302studio/coachartie2/issues)
-- **Email**: ejfox@room302.studio
-- **Documentation**: See `CLAUDE.md` for detailed development notes
-
-## 📄 License
-
-**Non-Commercial**: Creative Commons Attribution-NonCommercial 4.0  
-**Commercial licenses available** - Contact ejfox@room302.studio
-
----
-
-🚀 **Ready to build amazing AI applications!** Start with the Quick Start guide above.
+This file. Scripts have help: run without args.

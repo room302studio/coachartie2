@@ -1,5 +1,7 @@
 import crypto from 'crypto';
 import { logger } from '@coachartie/shared';
+import { publishMessage } from '../queues/publisher.js';
+import { mediaWikiManager } from '../services/mediawiki-manager.js';
 
 interface GitHubWebhookPayload {
   action?: string;
@@ -55,7 +57,6 @@ interface GitHubWebhookPayload {
   }>;
   [key: string]: unknown;
 }
-import { publishMessage } from '../queues/publisher.js';
 
 interface GitHubWebhookHeaders {
   'x-github-event'?: string;
@@ -115,6 +116,45 @@ interface GitHubReleasePayload {
     name: string;
     full_name: string;
   };
+}
+
+// Wiki update configuration - can be extended via environment variables
+const WIKI_UPDATE_CONFIG: Record<string, WikiUpdateRule> = loadWikiUpdateRules();
+
+interface WikiUpdateRule {
+  wiki: string;  // Which wiki to update
+  page: string;  // Which page to update
+  format?: 'list' | 'table' | 'append';  // How to format the update
+}
+
+function loadWikiUpdateRules(): Record<string, WikiUpdateRule> {
+  const rules: Record<string, WikiUpdateRule> = {};
+
+  // Load from environment variables like WIKI_UPDATE_SUBWAYBUILDER=transit:Releases:list
+  for (const [key, value] of Object.entries(process.env)) {
+    const match = key.match(/^WIKI_UPDATE_(.+)$/);
+    if (match && value) {
+      const repoName = match[1].replace(/_/g, '/');  // WIKI_UPDATE_ejfox_SubwayBuilder
+      const [wiki, page, format] = value.split(':');
+      rules[repoName.toLowerCase()] = {
+        wiki,
+        page,
+        format: (format as any) || 'list'
+      };
+    }
+  }
+
+  // Default rules if none configured
+  if (Object.keys(rules).length === 0) {
+    // Smart defaults based on repo names
+    rules['ejfox/subwaybuilder'] = {
+      wiki: 'transit',  // Will try 'transit' wiki, fallback to any available
+      page: 'Subway_Builder_Releases',
+      format: 'list'
+    };
+  }
+
+  return rules;
 }
 
 export async function handleGitHubWebhook(
@@ -195,6 +235,134 @@ async function handleReleaseEvent(payload: GitHubReleasePayload): Promise<void> 
   const celebrationMessage = generateReleaseCelebration(payload);
 
   await publishMessage('github-bot', celebrationMessage, 'general', 'GitHub Bot', true);
+
+  // Smart wiki updates based on configuration
+  await updateWikiForRelease(repository.full_name, release);
+}
+
+async function updateWikiForRelease(repoName: string, release: any): Promise<void> {
+  try {
+    // Check if this repo has a wiki update rule
+    const rule = WIKI_UPDATE_CONFIG[repoName.toLowerCase()];
+
+    if (!rule) {
+      // No rule configured, try smart detection
+      const repoNameLower = repoName.toLowerCase();
+
+      // Smart wiki selection based on repo name
+      let wikiName: string | null = null;
+      let pageName = `${repoName.split('/')[1]}_Releases`;
+
+      if (repoNameLower.includes('transit') || repoNameLower.includes('subway')) {
+        wikiName = 'transit';
+      } else if (repoNameLower.includes('personal')) {
+        wikiName = 'personal';
+      } else {
+        // Try to find any wiki that's available
+        const availableWikis = mediaWikiManager.getAvailableWikis();
+        if (availableWikis.length > 0) {
+          wikiName = availableWikis[0].name;
+        }
+      }
+
+      if (!wikiName) {
+        logger.debug(`No wiki available for ${repoName} release`);
+        return;
+      }
+
+      await updateWikiPage(wikiName, pageName, release, 'list');
+    } else {
+      // Use configured rule
+      await updateWikiPage(rule.wiki, rule.page, release, rule.format || 'list');
+    }
+  } catch (error) {
+    // Silent fail - don't break webhooks for wiki errors
+    logger.debug(`Wiki update skipped for ${repoName}:`, error);
+  }
+}
+
+async function updateWikiPage(
+  wikiName: string,
+  pageName: string,
+  release: any,
+  format: 'list' | 'table' | 'append' = 'list'
+): Promise<void> {
+  const client = await mediaWikiManager.getClient(wikiName);
+
+  if (!client) {
+    logger.debug(`Wiki '${wikiName}' not available`);
+    return;
+  }
+
+  const page = await client.getPage(pageName);
+  let content = page?.content || createInitialReleasePage(pageName, release);
+
+  // Format the new release entry based on format preference
+  let newEntry: string;
+
+  switch (format) {
+    case 'table':
+      newEntry = formatReleaseAsTableRow(release);
+      content = appendToWikiTable(content, newEntry);
+      break;
+
+    case 'append':
+      newEntry = `\n\n== ${release.tag_name} ==\n${release.body || 'No release notes provided.'}`;
+      content += newEntry;
+      break;
+
+    case 'list':
+    default:
+      newEntry = `\n* '''${release.tag_name}''' - ${release.name || release.tag_name} (${new Date(release.published_at).toLocaleDateString()}) [${release.html_url} View on GitHub]`;
+
+      // Find the right place to insert (after header, before first entry)
+      const headerEnd = content.indexOf('\n\n');
+      if (headerEnd > -1) {
+        content = content.slice(0, headerEnd + 2) + newEntry + content.slice(headerEnd + 2);
+      } else {
+        content += newEntry;
+      }
+      break;
+  }
+
+  await client.editPage(
+    pageName,
+    content,
+    `Added ${release.tag_name} release`
+  );
+
+  logger.info(`✅ Updated ${pageName} on ${wikiName} wiki for ${release.tag_name}`);
+}
+
+function createInitialReleasePage(pageName: string, release: any): string {
+  const projectName = pageName.replace(/_/g, ' ').replace(' Releases', '');
+
+  return `= ${projectName} Releases =
+
+This page automatically tracks releases from GitHub.
+
+`;
+}
+
+function formatReleaseAsTableRow(release: any): string {
+  return `|-
+| ${release.tag_name} || ${release.name || '-'} || ${new Date(release.published_at).toLocaleDateString()} || [${release.html_url} View]
+`;
+}
+
+function appendToWikiTable(content: string, newRow: string): string {
+  // Find the table end marker |} and insert before it
+  const tableEnd = content.lastIndexOf('|}');
+  if (tableEnd > -1) {
+    return content.slice(0, tableEnd) + newRow + content.slice(tableEnd);
+  }
+
+  // No table found, create one
+  return content + `
+{| class="wikitable"
+! Version !! Name !! Date !! Link
+${newRow}|}
+`;
 }
 
 async function handlePullRequestEvent(payload: GitHubWebhookPayload): Promise<void> {

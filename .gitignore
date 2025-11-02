@@ -1,13 +1,14 @@
 # Dependencies
 node_modules/
-.pnpm-store/
+.pnp
+.pnp.js
 
-# Build outputs
+# Build
 dist/
 build/
 *.tsbuildinfo
 
-# Environment files
+# Env
 .env
 .env.local
 .env.*.local
@@ -20,11 +21,9 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 
-# Runtime data
-pids
-*.pid
-*.seed
-*.pid.lock
+# OS
+.DS_Store
+Thumbs.db
 
 # IDE
 .vscode/
@@ -33,35 +32,18 @@ pids
 *.swo
 *~
 
-# OS
-.DS_Store
-Thumbs.db
+# Data
+packages/capabilities/data/*.db
+packages/capabilities/data/*.db-*
+data/*.db
+data/*.db-*
 
-# Testing
+# Archives (internal docs, not for public)
+.archive/
+
+# Test
 coverage/
 .nyc_output/
 
-# Docker
-.docker/
-
-# Temporary files
-tmp/
-temp/.turbo/
-
-# Runtime telemetry data
-**/data/discord-events.json
-**/data/discord-metrics.json
-**/data/discord-status.json
-
-*.db
-*.db
-*.db-shm
-*.db-wal
-
-# Log files
-logs/
-*.log
-
-# Redis dumps
-dump.rdb
-**/dump.rdb
+# Misc
+.turbo/

@@ -24,6 +24,9 @@ import { getConversationState } from '../services/conversation-state.js';
 import { getGitHubIntegration } from '../services/github-integration.js';
 import { getForumTraversal } from '../services/forum-traversal.js';
 import { getMentionProxyService } from '../services/mention-proxy-service.js';
+import Chance from 'chance';
+
+const chance = new Chance();
 
 // =============================================================================
 // CONSTANTS & CONFIGURATION
@@ -46,6 +49,10 @@ const ID_SLICE_LENGTH = -8; // Last 8 characters for job short IDs
 
 // Channel detection constants
 const GUILD_CHANNEL_TYPE = 0; // Discord guild text channel type
+
+// Channel history fetching constants
+const MIN_CHANNEL_HISTORY = 10; // Minimum messages to fetch
+const MAX_CHANNEL_HISTORY = 25; // Maximum messages to fetch
 
 // Status emojis
 const STATUS_EMOJI_PROCESSING = '🔄';
@@ -920,6 +927,38 @@ async function handleSyncDiscussionsConversation(
 // =============================================================================
 
 /**
+ * Fetch recent channel history for context
+ * Randomly fetches 10-25 messages to give Artie conversational context
+ */
+async function fetchChannelHistory(message: Message): Promise<Array<{
+  author: string;
+  content: string;
+  timestamp: string;
+  isBot: boolean;
+}>> {
+  try {
+    // Randomize how many messages to fetch (10-25)
+    const limit = chance.integer({ min: MIN_CHANNEL_HISTORY, max: MAX_CHANNEL_HISTORY });
+
+    // Fetch messages before the current one
+    const messages = await message.channel.messages.fetch({ limit, before: message.id });
+
+    // Convert to simple format for context
+    return Array.from(messages.values())
+      .reverse() // Chronological order (oldest first)
+      .map(msg => ({
+        author: msg.author.displayName || msg.author.username,
+        content: msg.content,
+        timestamp: msg.createdAt.toISOString(),
+        isBot: msg.author.bot,
+      }));
+  } catch (error) {
+    logger.error('Failed to fetch channel history:', error);
+    return [];
+  }
+}
+
+/**
  * Simple adapter: Convert Discord message to UserIntent and delegate to unified processor
  * Replaces ~400 lines of duplicate logic with ~30 lines of adapter code
  */
@@ -940,6 +979,10 @@ async function handleMessageAsIntent(
 
   try {
     // MINIMAL: No status messages - just start working like a human
+
+    // ENHANCED: Fetch recent channel history for conversational context
+    const channelHistory = await fetchChannelHistory(message);
+    logger.info(`📜 Fetched ${channelHistory.length} recent messages for context [${shortId}]`);
 
     // ENHANCED: Gather Discord context for Context Alchemy
     const guildInfo = message.guild
@@ -995,6 +1038,11 @@ async function handleMessageAsIntent(
       timestamp: message.createdAt.toISOString(),
       hasAttachments: message.attachments.size > 0,
       mentionedUsers: message.mentions.users.size,
+      mentions: Array.from(message.mentions.users.entries()).map(([id, user]) => ({
+        id,
+        username: user.username,
+        displayName: user.displayName || user.username,
+      })),
       replyingTo: message.reference?.messageId || null,
       // Proxy context if this is a proxy response
       ...(proxyOptions?.isProxyResponse

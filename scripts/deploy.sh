@@ -13,10 +13,26 @@ NC='\033[0m' # No Color
 
 # Configuration
 DEPLOY_USER=${DEPLOY_USER:-"coachartie"}
-DEPLOY_HOST=${DEPLOY_HOST:-"your-vps-ip"}
+DEPLOY_HOST=${DEPLOY_HOST:-""}
 DEPLOY_PATH=${DEPLOY_PATH:-"/home/coachartie/coachartie2"}
 COMPOSE_FILE=${COMPOSE_FILE:-"docker-compose.prod.yml"}
 BACKUP_PATH=${BACKUP_PATH:-"/home/coachartie/backups"}
+
+# Interactive mode if DEPLOY_HOST not set
+if [ "$1" = "remote" ] && [ -z "$DEPLOY_HOST" ]; then
+    echo ""
+    echo "Remote deployment requires VPS connection info:"
+    echo ""
+    read -p "VPS IP or hostname: " DEPLOY_HOST
+    read -p "SSH user [coachartie]: " input
+    DEPLOY_USER=${input:-coachartie}
+    echo ""
+
+    if [ -z "$DEPLOY_HOST" ]; then
+        print_error "VPS hostname is required"
+        exit 1
+    fi
+fi
 
 # Function to print colored output
 print_status() {
@@ -34,60 +50,141 @@ print_error() {
 # Check if required environment variables are set
 check_environment() {
     print_status "Checking environment variables..."
-    
-    required_vars=(
+
+    # Critical vars (must have)
+    critical_vars=(
         "OPENROUTER_API_KEY"
-        "DISCORD_TOKEN" 
+        "DISCORD_TOKEN"
         "DISCORD_CLIENT_ID"
+    )
+
+    # Optional vars
+    optional_vars=(
+        "OPENAI_API_KEY"
         "WOLFRAM_APP_ID"
         "TWILIO_ACCOUNT_SID"
         "TWILIO_AUTH_TOKEN"
         "TWILIO_PHONE_NUMBER"
     )
-    
-    for var in "${required_vars[@]}"; do
+
+    # Interactive prompt for missing critical vars
+    for var in "${critical_vars[@]}"; do
         if [[ -z "${!var}" ]]; then
-            print_warning "Environment variable $var is not set"
+            echo ""
+            read -p "$var: " value
+            if [ -z "$value" ]; then
+                print_error "$var is required"
+                exit 1
+            fi
+            export "$var=$value"
+            print_status "✓ $var set"
         else
-            print_status "✓ $var is configured"
+            print_status "✓ $var already configured"
+        fi
+    done
+
+    # Optional vars - just note if missing
+    for var in "${optional_vars[@]}"; do
+        if [[ -z "${!var}" ]]; then
+            print_warning "Optional: $var not set (skipping)"
+        else
+            print_status "✓ $var configured"
         fi
     done
 }
 
-# Deploy to local environment
+# Deploy to local environment (for testing production setup)
 deploy_local() {
-    print_status "Deploying to local environment..."
-    
+    print_status "Testing PRODUCTION setup locally..."
+
+    # Check Docker is running
+    if ! docker ps &>/dev/null; then
+        print_error "Docker is not running"
+        exit 1
+    fi
+
+    # Check for .env file
+    if [ ! -f ".env" ]; then
+        print_warning "No .env file found, will use environment variables"
+    fi
+
     # Stop existing services
     print_status "Stopping existing services..."
-    docker-compose -f $COMPOSE_FILE down || true
-    
-    # Build and start services
-    print_status "Building and starting services..."
-    docker-compose -f $COMPOSE_FILE up --build -d
-    
+    docker compose -f $COMPOSE_FILE down 2>/dev/null || docker-compose -f $COMPOSE_FILE down 2>/dev/null || true
+
+    # Build and start production services
+    print_status "Building and starting PRODUCTION services..."
+    if ! docker compose -f $COMPOSE_FILE up --build -d 2>/dev/null; then
+        docker-compose -f $COMPOSE_FILE up --build -d || {
+            print_error "Failed to start services"
+            exit 1
+        }
+    fi
+
     # Wait for services to be healthy
-    print_status "Waiting for services to be healthy..."
-    timeout 120 bash -c 'until docker-compose -f docker-compose.prod.yml ps | grep -q "healthy"; do sleep 5; done'
-    
+    print_status "Waiting for services to start (up to 2 minutes)..."
+    COUNTER=0
+    MAX_WAIT=120
+    while [ $COUNTER -lt $MAX_WAIT ]; do
+        if docker ps | grep -q "coachartie-prod.*healthy"; then
+            break
+        fi
+        echo -n "."
+        sleep 5
+        COUNTER=$((COUNTER + 5))
+    done
+    echo ""
+
+    if [ $COUNTER -ge $MAX_WAIT ]; then
+        print_warning "Services did not become healthy within 2 minutes"
+        print_status "Checking logs..."
+        docker compose -f $COMPOSE_FILE logs --tail 50
+    fi
+
     # Test the deployment
     print_status "Testing deployment..."
-    curl -f http://localhost:18239/health || {
+    sleep 5
+
+    if curl -sf http://localhost:47319/health >/dev/null 2>&1; then
+        print_status "✅ Health check passed"
+    else
         print_error "Health check failed!"
-        docker-compose -f $COMPOSE_FILE logs
+        print_status "Container status:"
+        docker ps
+        print_status "Recent logs:"
+        docker compose -f $COMPOSE_FILE logs --tail 30
         exit 1
-    }
-    
+    fi
+
     print_status "✅ Local deployment successful!"
+    echo ""
+    echo "Services:"
+    docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+    echo ""
+
+    # Auto-validate
+    validate_deployment
 }
 
 # Deploy to remote VPS
 deploy_remote() {
     print_status "Deploying to remote VPS: $DEPLOY_USER@$DEPLOY_HOST"
-    
+
+    # Check SSH connectivity
+    print_status "Testing SSH connection..."
+    if ! ssh -o ConnectTimeout=10 -o BatchMode=yes $DEPLOY_USER@$DEPLOY_HOST echo "SSH OK" &>/dev/null; then
+        print_error "Cannot connect to $DEPLOY_USER@$DEPLOY_HOST via SSH"
+        print_error "Make sure:"
+        print_error "  1. VPS is reachable"
+        print_error "  2. SSH keys are set up"
+        print_error "  3. User '$DEPLOY_USER' exists"
+        exit 1
+    fi
+    print_status "✓ SSH connection successful"
+
     # Create .env file for production
     create_env_file
-    
+
     # Upload files to VPS
     print_status "Uploading files to VPS..."
     rsync -avz --delete \
@@ -96,37 +193,78 @@ deploy_remote() {
         --exclude='dist' \
         --exclude='*.log' \
         --exclude='.env' \
-        ./ $DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_PATH/
-    
+        ./ $DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_PATH/ || {
+        print_error "Failed to upload files"
+        exit 1
+    }
+
     # Upload .env file separately
-    scp .env.prod $DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_PATH/.env
-    
-    # Execute deployment on VPS
-    ssh $DEPLOY_USER@$DEPLOY_HOST << EOF
-        cd $DEPLOY_PATH
-        
+    print_status "Uploading configuration..."
+    scp .env.prod $DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_PATH/.env || {
+        print_error "Failed to upload .env file"
+        exit 1
+    }
+
+    # Upload and execute deployment script on VPS
+    print_status "Executing deployment on VPS..."
+    ssh $DEPLOY_USER@$DEPLOY_HOST << 'EOF' || {
+        print_error "Deployment failed on VPS"
+        exit 1
+    }
+        set -e
+        cd /home/coachartie/coachartie2
+
         # Create backup
-        mkdir -p $BACKUP_PATH
-        if [ -d "packages/capabilities/data" ]; then
-            tar -czf $BACKUP_PATH/data-backup-\$(date +%Y%m%d-%H%M%S).tar.gz packages/capabilities/data/
+        mkdir -p ~/backups
+        if [ -d "data" ] && [ -f "data/coachartie.db" ]; then
+            echo "Creating backup..."
+            tar -czf ~/backups/data-backup-$(date +%Y%m%d-%H%M%S).tar.gz data/
+            echo "✓ Backup created"
         fi
-        
+
         # Stop existing services
-        docker-compose -f $COMPOSE_FILE down || true
-        
+        echo "Stopping services..."
+        docker compose -f docker-compose.prod.yml down 2>/dev/null || docker-compose -f docker-compose.prod.yml down 2>/dev/null || true
+
         # Build and start services
-        docker-compose -f $COMPOSE_FILE up --build -d
-        
+        echo "Building and starting services..."
+        docker compose -f docker-compose.prod.yml up --build -d || docker-compose -f docker-compose.prod.yml up --build -d || exit 1
+
         # Wait for services
-        timeout 120 bash -c 'until docker-compose -f $COMPOSE_FILE ps | grep -q "healthy"; do sleep 5; done'
-        
+        echo "Waiting for services to start..."
+        sleep 10
+
+        COUNTER=0
+        MAX_WAIT=120
+        while [ $COUNTER -lt $MAX_WAIT ]; do
+            if docker ps | grep -q "coachartie-prod.*healthy"; then
+                echo "✓ Services are healthy"
+                break
+            fi
+            sleep 5
+            COUNTER=$((COUNTER + 5))
+        done
+
         # Test deployment
-        curl -f http://localhost:18239/health || exit 1
-        
+        echo "Testing health endpoint..."
+        if curl -sf http://localhost:47319/health >/dev/null 2>&1; then
+            echo "✅ Health check passed"
+        else
+            echo "⚠️  Health check failed, checking logs..."
+            docker compose -f docker-compose.prod.yml logs --tail 20
+            exit 1
+        fi
+
+        echo ""
         echo "✅ Remote deployment successful!"
+        echo ""
+        echo "Run validation: ./scripts/validate.sh"
 EOF
-    
+
     print_status "✅ Remote deployment completed!"
+    echo ""
+    echo "Testing deployment..."
+    ssh $DEPLOY_USER@$DEPLOY_HOST 'cd /home/coachartie/coachartie2 && bash scripts/deploy.sh validate'
 }
 
 # Create production environment file
@@ -157,20 +295,95 @@ EOF
     print_status "✓ Production environment file created"
 }
 
+# Validate deployment
+validate_deployment() {
+    echo ""
+    print_status "Validating deployment..."
+
+    PASSED=0
+    FAILED=0
+
+    # Health check
+    if curl -sf http://localhost:47319/health >/dev/null 2>&1; then
+        print_status "✓ Health endpoint"
+        ((PASSED++))
+    else
+        print_error "✗ Health endpoint"
+        ((FAILED++))
+    fi
+
+    # Containers running
+    if docker ps | grep -q "coachartie-prod"; then
+        print_status "✓ Containers running"
+        ((PASSED++))
+    else
+        print_error "✗ Containers not running"
+        ((FAILED++))
+    fi
+
+    # Memory check
+    MEM=$(docker stats --no-stream coachartie-prod --format "{{.MemUsage}}" 2>/dev/null | awk '{print $1}' | sed 's/MiB//')
+    if [ -n "$MEM" ] && (( $(echo "$MEM < 700" | bc -l 2>/dev/null || echo 1) )); then
+        print_status "✓ Memory normal (${MEM}MB)"
+        ((PASSED++))
+    else
+        print_warning "⚠ Memory: ${MEM}MB"
+    fi
+
+    echo ""
+    if [ $FAILED -eq 0 ]; then
+        print_status "✅ All checks passed ($PASSED/3)"
+    else
+        print_error "❌ Some checks failed ($FAILED failed)"
+        exit 1
+    fi
+}
+
 # Show usage
 usage() {
-    echo "Usage: $0 [local|remote|check]"
-    echo ""
-    echo "Commands:"
-    echo "  local   - Deploy to local Docker environment"
-    echo "  remote  - Deploy to remote VPS"
-    echo "  check   - Check environment variables"
-    echo ""
-    echo "Environment Variables:"
-    echo "  DEPLOY_USER     - SSH user for VPS deployment (default: coachartie)"
-    echo "  DEPLOY_HOST     - VPS hostname or IP"
-    echo "  DEPLOY_PATH     - Deployment path on VPS (default: /home/coachartie/coachartie2)"
-    echo ""
+    cat << 'EOF'
+Coach Artie Deployment
+
+FIRST TIME SETUP (see README.md):
+  cp .env.example .env
+  nano .env  # Add OPENROUTER_API_KEY, DISCORD_TOKEN, DISCORD_CLIENT_ID
+  npm run dev
+
+DAILY DEV:
+  npm run dev              Start development (auto-reload)
+  docker-compose up        Dev microservices
+  ./scripts/ops.sh health  Check health
+
+DEPLOY TO VPS:
+  ./scripts/deploy.sh remote
+    → Prompts for VPS IP, API keys (or reads from .env)
+    → Uploads code, builds, starts, validates
+    → Done.
+
+TEST PRODUCTION LOCALLY:
+  ./scripts/deploy.sh local
+    → Starts production Docker setup locally
+    → Good for testing before VPS deploy
+
+VALIDATE:
+  ./scripts/deploy.sh validate
+    → Checks health, containers, memory
+    → Run on VPS or locally
+
+CONFIG (3 ways to provide):
+  1. Create .env file (recommended for dev)
+  2. Export env vars (export OPENROUTER_API_KEY=...)
+  3. Let script prompt you (it will ask for missing vars)
+
+  Required: OPENROUTER_API_KEY, DISCORD_TOKEN, DISCORD_CLIENT_ID
+  Optional: TWILIO_*, OPENAI_API_KEY, WOLFRAM_APP_ID
+
+VPS SETUP (run once on fresh VPS as root):
+  curl https://raw.../scripts/vps-setup.sh | bash
+  → Installs Docker, creates user, configures firewall
+  → Then run './scripts/deploy.sh remote' from local machine
+
+EOF
 }
 
 # Main script logic
@@ -189,6 +402,9 @@ case "${1:-}" in
         ;;
     "check")
         check_environment
+        ;;
+    "validate")
+        validate_deployment
         ;;
     *)
         usage

@@ -33,7 +33,43 @@ print_error() {
 check_root() {
     if [[ $EUID -ne 0 ]]; then
         print_error "This script must be run as root"
+        print_error "Please run: sudo bash $0"
         exit 1
+    fi
+}
+
+# Check system requirements
+check_requirements() {
+    print_status "Checking system requirements..."
+
+    # Check OS
+    if [ -f /etc/os-release ]; then
+        . /etc/os-release
+        if [[ ! "$ID" =~ ^(debian|ubuntu)$ ]]; then
+            print_warning "This script is tested on Debian/Ubuntu. Your OS: $ID"
+            read -p "Continue anyway? (y/N): " -r
+            if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+                exit 1
+            fi
+        else
+            print_status "OS: $PRETTY_NAME"
+        fi
+    fi
+
+    # Check memory
+    TOTAL_MEM=$(free -m | awk '/^Mem:/{print $2}')
+    if [ "$TOTAL_MEM" -lt 1900 ]; then
+        print_warning "Low memory detected: ${TOTAL_MEM}MB (recommended: 2GB+)"
+    else
+        print_status "Memory: ${TOTAL_MEM}MB"
+    fi
+
+    # Check disk space
+    AVAILABLE_DISK=$(df -BG / | awk 'NR==2 {print $4}' | sed 's/G//')
+    if [ "$AVAILABLE_DISK" -lt 18 ]; then
+        print_warning "Low disk space: ${AVAILABLE_DISK}GB (recommended: 20GB+)"
+    else
+        print_status "Disk space: ${AVAILABLE_DISK}GB available"
     fi
 }
 
@@ -48,35 +84,73 @@ update_system() {
 # Install Docker
 install_docker() {
     print_status "Installing Docker..."
-    
+
+    # Check if Docker is already installed
+    if command -v docker &> /dev/null; then
+        DOCKER_VERSION=$(docker --version)
+        print_status "Docker already installed: $DOCKER_VERSION"
+        return 0
+    fi
+
     # Remove old versions
-    apt-get remove -y docker docker-engine docker.io containerd runc || true
-    
+    apt-get remove -y docker docker-engine docker.io containerd runc 2>/dev/null || true
+
     # Install dependencies
     apt-get install -y \
         ca-certificates \
         curl \
         gnupg \
-        lsb-release
-    
+        lsb-release || {
+        print_error "Failed to install dependencies"
+        exit 1
+    }
+
     # Add Docker's official GPG key
     mkdir -p /etc/apt/keyrings
-    curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
-    
+
+    # Detect OS for correct repo
+    if [ -f /etc/os-release ]; then
+        . /etc/os-release
+        OS_ID="$ID"
+    else
+        OS_ID="debian"
+    fi
+
+    curl -fsSL "https://download.docker.com/linux/${OS_ID}/gpg" | gpg --dearmor -o /etc/apt/keyrings/docker.gpg || {
+        print_error "Failed to add Docker GPG key"
+        exit 1
+    }
+
     # Set up repository
     echo \
-        "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/debian \
+        "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/${OS_ID} \
         $(lsb_release -cs) stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
-    
+
     # Install Docker Engine
-    apt-get update
-    apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
-    
+    apt-get update || {
+        print_error "Failed to update package list"
+        exit 1
+    }
+
+    apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin || {
+        print_error "Failed to install Docker"
+        exit 1
+    }
+
     # Start and enable Docker
-    systemctl start docker
+    systemctl start docker || {
+        print_error "Failed to start Docker"
+        exit 1
+    }
+
     systemctl enable docker
-    
-    print_status "✓ Docker installed successfully"
+
+    # Verify Docker is working
+    if docker run hello-world &>/dev/null; then
+        print_status "✓ Docker installed and verified"
+    else
+        print_warning "Docker installed but verification failed"
+    fi
 }
 
 # Install Docker Compose (standalone)
@@ -279,8 +353,15 @@ show_final_instructions() {
 # Main setup function
 main() {
     print_status "Starting Coach Artie 2 VPS setup..."
-    
+    echo ""
+
     check_root
+    check_requirements
+
+    echo ""
+    print_status "Proceeding with installation..."
+    echo ""
+
     update_system
     install_docker
     install_docker_compose
@@ -291,6 +372,13 @@ main() {
     setup_logging
     create_systemd_service
     optimize_system
+
+    echo ""
+    print_status "═══════════════════════════════════════════"
+    print_status "  VPS Setup Complete!"
+    print_status "═══════════════════════════════════════════"
+    echo ""
+
     show_final_instructions
 }
 

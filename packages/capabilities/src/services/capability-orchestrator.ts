@@ -28,6 +28,7 @@ import { discordForumsCapability } from '../capabilities/discord-forums.js';
 import { mentionProxyCapability } from '../capabilities/mention-proxy.js';
 import { emailCapability } from '../capabilities/email.js';
 import { userProfileCapability } from '../capabilities/user-profile.js';
+import { mediaWikiCapability } from '../capabilities/mediawiki.js';
 // import { CapabilitySuggester } from "../utils/capability-suggester.js"; // Removed during refactoring
 import { capabilityXMLParser } from '../utils/xml-parser.js';
 import { conscienceLLM } from './conscience.js';
@@ -35,6 +36,8 @@ import { robustExecutor } from '../utils/robust-capability-executor.js';
 import { modelAwarePrompter } from '../utils/model-aware-prompter.js';
 import { contextAlchemy } from './context-alchemy.js';
 import { securityMonitor } from './security-monitor.js';
+import { parse, parseISO, isValid, addDays, addHours } from 'date-fns';
+import { toZonedTime, fromZonedTime, format } from 'date-fns-tz';
 
 // Define capability extraction types
 interface ExtractedCapability {
@@ -63,6 +66,7 @@ interface OrchestrationContext {
   currentStep: number;
   respondTo: IncomingMessage['respondTo'];
   capabilityFailureCount: Map<string, number>; // Circuit breaker: track failures per capability
+  discord_context?: any; // Discord-specific context for mention resolution, etc.
 }
 
 interface EmailDraft {
@@ -114,6 +118,11 @@ interface MeetingParams {
   participants?: string;
   duration?: string;
   meeting_id?: string;
+  discord_context?: {
+    guildId?: string;
+    channelId?: string;
+    mentions?: Array<{ id: string; username: string; displayName: string }>;
+  };
   [key: string]: unknown;
 }
 
@@ -127,6 +136,31 @@ class MeetingService {
     return MeetingService.instance;
   }
 
+  private async parseFlexibleDate(input: string, userTimezone: string): Promise<Date> {
+    // Try 1: ISO format (LLM sends this)
+    let date = parseISO(input);
+    if (isValid(date)) return fromZonedTime(date, userTimezone);
+
+    // Try 2: Common patterns with date-fns
+    const patterns = [
+      'yyyy-MM-dd HH:mm',
+      'MM/dd/yyyy HH:mm',
+      'MMMM d, yyyy h:mm a',
+    ];
+
+    for (const pattern of patterns) {
+      date = parse(input, pattern, new Date());
+      if (isValid(date)) return fromZonedTime(date, userTimezone);
+    }
+
+    // Try 3: Relative dates (tomorrow, next Tuesday)
+    if (input.toLowerCase().includes('tomorrow')) {
+      const tomorrow = addDays(new Date(), 1);
+      return fromZonedTime(tomorrow, userTimezone);
+    }
+
+    throw new Error(`Cannot parse date: ${input}`);
+  }
 
   async createMeeting(
     userId: string,
@@ -138,16 +172,15 @@ class MeetingService {
       duration?: number;
       timezone?: string;
       created_via?: string;
+      discord_context?: any;
     } = {}
   ): Promise<string> {
     try {
       const db = await getDatabase();
 
-      // Parse meeting time
-      const parsedTime = new Date(meetingTime);
-      if (isNaN(parsedTime.getTime())) {
-        throw new Error(`Invalid meeting time: ${meetingTime}. Use ISO format or natural language like "tomorrow at 3pm"`);
-      }
+      // Parse meeting time with timezone support
+      const userTimezone = options.timezone || 'America/New_York'; // Default EST
+      const parsedTime = await this.parseFlexibleDate(meetingTime, userTimezone);
 
       // Create the meeting
       const participantsJson = JSON.stringify(participants);
@@ -173,14 +206,14 @@ class MeetingService {
       // Add participants
       const participantNames: string[] = [];
       for (const participant of participants) {
-        const { id, displayName } = this.parseParticipant(participant);
+        const { id, type, displayName } = this.parseParticipant(participant, options.discord_context);
 
         await db.run(
           `
-          INSERT INTO meeting_participants (meeting_id, participant_id)
-          VALUES (?, ?)
+          INSERT INTO meeting_participants (meeting_id, participant_id, participant_type)
+          VALUES (?, ?, ?)
         `,
-          [meetingId, id]
+          [meetingId, id, type]
         );
 
         participantNames.push(displayName);
@@ -288,8 +321,8 @@ class MeetingService {
     }
   }
 
-  async suggestTime(userId: string, participants: string[]): Promise<string> {
-    
+  async suggestTime(userId: string, participants: string[], discordContext?: any): Promise<string> {
+
     try {
       const db = await getDatabase();
 
@@ -336,7 +369,7 @@ class MeetingService {
 
       suggestions.push(`\n📅 Available slots:\n- Tomorrow at 9:00 AM\n- Tomorrow at 2:00 PM`);
 
-      const participantStr = participants.map(p => this.parseParticipant(p).displayName).join(', ');
+      const participantStr = participants.map(p => this.parseParticipant(p, discordContext).displayName).join(', ');
       suggestions.push(`\nParticipants: ${participantStr}`);
 
       return suggestions.join('\n');
@@ -480,8 +513,22 @@ class MeetingService {
     }
   }
 
-  private parseParticipant(participant: string): { id: string; type: 'discord' | 'email'; displayName: string } {
-    // Discord mention format: <@123456789>
+  private parseParticipant(participant: string, discordContext?: any): { id: string; type: 'discord' | 'email'; displayName: string } {
+    // Resolve Discord mentions using context
+    const mentionMatch = participant.match(/^<@!?(\d+)>$/);
+    if (mentionMatch && discordContext?.mentions) {
+      const mentionId = mentionMatch[1];
+      const mention = discordContext.mentions.find((m: any) => m.id === mentionId);
+      if (mention) {
+        return {
+          id: mention.id,
+          type: 'discord',
+          displayName: mention.displayName,
+        };
+      }
+    }
+
+    // Discord mention format: <@123456789> (fallback if no context)
     const discordMatch = participant.match(/^<@!?(\d+)>$/);
     if (discordMatch) {
       return {
@@ -561,6 +608,7 @@ async function handleMeetingAction(params: MeetingParams, content?: string): Pro
             duration,
             timezone: params.timezone ? String(params.timezone) : undefined,
             created_via: params.created_via ? String(params.created_via) : 'api',
+            discord_context: params.discord_context,
           }
         );
       }
@@ -573,7 +621,7 @@ async function handleMeetingAction(params: MeetingParams, content?: string): Pro
         }
 
         const participants = String(participantsStr).split(',').map(p => p.trim());
-        return await meetingService.suggestTime(String(user_id), participants);
+        return await meetingService.suggestTime(String(user_id), participants, params.discord_context);
       }
 
       case 'check-availability': {
@@ -752,6 +800,11 @@ export class CapabilityOrchestrator {
       logger.info('📦 Registering user-profile...');
       capabilityRegistry.register(userProfileCapability);
       logger.info('✅ user-profile registered successfully');
+
+      // Register MediaWiki capability for editing multiple wikis
+      logger.info('📦 Registering mediawiki...');
+      capabilityRegistry.register(mediaWikiCapability);
+      logger.info('✅ mediawiki registered successfully');
 
       // Register wolfram capability
       capabilityRegistry.register({
@@ -999,6 +1052,7 @@ export class CapabilityOrchestrator {
       currentStep: 0,
       respondTo: message.respondTo,
       capabilityFailureCount: new Map(), // Circuit breaker
+      discord_context: message.context, // Pass through Discord context for mention resolution
     };
   }
 
@@ -2368,6 +2422,11 @@ ${!canStop ? 'Execute the next capability now.' : 'Execute next capability OR pr
             ...capability.params,
             userId,
             messageId: context?.messageId,
+          }
+        : capability.name === 'meeting-scheduler'
+        ? {
+            ...capability.params,
+            discord_context: context?.discord_context,
           }
         : capability.params;
 

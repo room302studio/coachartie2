@@ -1,5 +1,5 @@
 import { Queue, Worker } from 'bullmq';
-import { logger, createRedisConnection } from '@coachartie/shared';
+import { logger, createRedisConnection, getDatabase } from '@coachartie/shared';
 
 export interface ScheduledTask {
   id: string;
@@ -52,6 +52,7 @@ interface ReminderJobData {
 
 export class SchedulerService {
   private schedulerQueue: Queue;
+  private discordQueue: Queue;
   private worker: Worker;
   private tasks = new Map<string, ScheduledTask>();
   private completedReminders: Array<{ timestamp: Date; message: string; data: Record<string, unknown> }> = [];
@@ -66,6 +67,11 @@ export class SchedulerService {
         removeOnComplete: 10,
         removeOnFail: 5,
       },
+    });
+
+    // Create Discord outgoing queue for sending reminders
+    this.discordQueue = new Queue('coachartie-discord-outgoing', {
+      connection,
     });
 
     // Create worker to process scheduled jobs
@@ -276,7 +282,7 @@ export class SchedulerService {
    * Execute user reminder job
    */
   private async executeUserReminder(data: ReminderJobData): Promise<void> {
-    const { userId, reminderType, message } = data;
+    const { userId, reminderType, message, meetingId } = data;
     const reminderMessage = message || reminderType || 'Scheduled reminder';
 
     // Log the reminder prominently
@@ -301,8 +307,31 @@ export class SchedulerService {
       this.completedReminders.shift();
     }
 
-    // TODO: Integrate with Discord/Email to send actual notifications
-    // For now, reminders are logged and stored internally
+    // Get meeting details if meetingId is provided
+    if (meetingId) {
+      try {
+        const db = await getDatabase();
+        const meeting = await db.get('SELECT * FROM meetings WHERE id = ?', [meetingId]);
+
+        if (!meeting) {
+          logger.error(`Meeting ${meetingId} not found for reminder`);
+          return;
+        }
+
+        // Send to Discord via queue
+        await this.discordQueue.add('send-message', {
+          userId,
+          content: `🔔 Reminder: **${meeting.title}** starts in 15 minutes!`,
+          source: 'meeting-reminder',
+          meetingId,
+        });
+
+        logger.info(`✅ Reminder queued for Discord: ${userId} - ${message}`);
+      } catch (error) {
+        logger.error('Failed to queue Discord reminder:', error);
+        throw error;
+      }
+    }
   }
 
   /**
@@ -389,6 +418,7 @@ export class SchedulerService {
   async close(): Promise<void> {
     await this.worker.close();
     await this.schedulerQueue.close();
+    await this.discordQueue.close();
     logger.info('Scheduler service closed');
   }
 }

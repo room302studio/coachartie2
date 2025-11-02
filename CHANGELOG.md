@@ -29,10 +29,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Multi-turn conversation support
   - Improved mention proxy with LLM judgment
 - **Meeting Scheduler Enhancements** - Discord reminder system
-  - Database schema: Added `participant_type` field
+  - Database schema: Added `participant_type` field (Discord or email)
   - 15-minute advance Discord DM reminders
   - Reliable delivery via Bull queue
   - Timezone-aware scheduling with `date-fns-tz`
+  - **Flexible date parsing** - Supports ISO format, MM/dd/yyyy, and natural language ("tomorrow", "next Tuesday")
 - **Discord Outgoing Message Queue** - Reliable async messaging
   - Channel and DM support with automatic retries
   - Used for reminders and notifications
@@ -41,11 +42,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Semantic commit parsing
   - Artie writes user-friendly summaries
   - Integrated into `npm run changelog`
+- **Discord Context Tracking** - Enhanced capability execution
+  - Tracks guild, channel, and mention context
+  - Enables context-aware capability responses
+  - Better mention resolution in multi-user conversations
 
 ### 🐛 Fixed
 
 - Handle LLM parameter variations and make participants optional (`e497489`)
 - **Critical**: Fix two breaking bugs discovered through skeptical testing (`accc38c`)
+  - XML parser regex failed on Discord mentions (stopped at `>` characters)
+  - Schema mismatch in participant insert attempted to use non-existent column
+  - Both caused silent failures in production - now working correctly
 - Align meeting scheduler with official database schema (`20faf6a`)
 - Make changelog generator compatible with macOS bash (`7d6fd00`)
 
@@ -80,12 +88,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### 📝 Documentation
 
 - Add version management to CLAUDE.md and create website showcase guide (`4b80df8`)
-- Major README overhaul (432 → 283 lines)
+- **Complete README rewrite** (432 → 283 lines)
+  - Clearer architecture overview with ASCII diagram
+  - Streamlined setup instructions
+  - Better quick-start guide
+  - Port reference guide (47300+ range)
 - Consolidated 15 internal docs into main docs
+- Cleaned up `.gitignore` with essential patterns only
 
 ### Changed
 
-- Total capabilities increased from 28 to 29 (added MediaWiki)
+- Total capabilities: 27 (added MediaWiki, previously 26)
 - Enhanced GitHub webhook handler (+172 lines of functionality)
 
 ## [1.1.0] - 2025-10-26

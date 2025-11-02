@@ -270,6 +270,7 @@ async function initializeDatabase(database: Database): Promise<void> {
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         meeting_id INTEGER NOT NULL,
         participant_id TEXT NOT NULL, -- Discord user ID or email
+        participant_type TEXT DEFAULT 'email', -- 'discord' or 'email'
         status TEXT DEFAULT 'pending', -- 'pending', 'accepted', 'declined'
         responded_at DATETIME,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
