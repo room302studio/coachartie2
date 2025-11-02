@@ -140,6 +140,34 @@ export async function startMessageConsumer() {
 
         await outgoingQueue.add('send-response', outgoingMessage);
         logger.info(`Response queued for ${message.respondTo.type} (${message.id})`);
+
+        // Store Artie's response in the messages table (for Discord messages)
+        if (
+          message.source === 'discord' ||
+          (message.source === 'api' && message.context?.platform === 'discord')
+        ) {
+          try {
+            const { database } = await import('../services/database.js');
+            await database.run(
+              `
+                INSERT INTO messages (value, user_id, message_type, channel_id, guild_id, role, related_message_id, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
+              `,
+              [
+                response,
+                'artie', // Artie is the author of this message
+                'discord',
+                message.context?.channelId || message.respondTo?.channelId || null,
+                message.context?.guildId || null,
+                'assistant', // Mark as assistant role
+                message.id, // Links back to the user's message
+              ]
+            );
+            logger.info(`Stored Artie's response in messages table (related to ${message.id})`);
+          } catch (dbError) {
+            logger.error('Failed to store Artie response in messages table:', dbError);
+          }
+        }
       }
 
       const duration = timer.end({

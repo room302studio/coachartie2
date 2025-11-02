@@ -204,6 +204,7 @@ async function initializeDatabase(database: Database): Promise<void> {
         importance INTEGER DEFAULT 5,
         metadata TEXT DEFAULT '{}',
         embedding TEXT, -- JSON array of embedding vectors
+        related_message_id TEXT, -- Links memory to the message that created it
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
       );
@@ -404,6 +405,7 @@ async function runMigrations(database: Database): Promise<void> {
           conversation_id TEXT,
           role TEXT,
           memory_id INTEGER,
+          related_message_id TEXT, -- Links Artie's response to the user's message
           metadata TEXT DEFAULT '{}',
           created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
           updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
