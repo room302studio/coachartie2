@@ -6,6 +6,7 @@ import { promptManager } from './prompt-manager.js';
 import { capabilityRegistry, RegisteredCapability } from './capability-registry.js';
 import { calculatorCapability } from '../capabilities/calculator.js';
 import { webCapability } from '../capabilities/web.js';
+import { httpCapability } from '../capabilities/http.js';
 import { packageManagerCapability } from '../capabilities/package-manager.js';
 import { filesystemCapability } from '../capabilities/filesystem.js';
 import { environmentCapability } from '../capabilities/environment.js';
@@ -720,6 +721,9 @@ export class CapabilityOrchestrator {
 
       // Register web capability from external file
       capabilityRegistry.register(webCapability);
+
+      // Register HTTP capability - general purpose curl/fetch
+      capabilityRegistry.register(httpCapability);
 
       // Register package manager capability from external file
       capabilityRegistry.register(packageManagerCapability);
