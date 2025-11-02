@@ -33,10 +33,13 @@ Thumbs.db
 *~
 
 # Data
-packages/capabilities/data/*.db
-packages/capabilities/data/*.db-*
-data/*.db
-data/*.db-*
+*.db
+*.db-*
+packages/capabilities/data/
+data/
+capabilities/data/
+dump.rdb
+backups/
 
 # Archives (internal docs, not for public)
 .archive/
