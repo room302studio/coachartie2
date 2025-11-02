@@ -5,6 +5,89 @@ All notable changes to Coach Artie will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0] - 2025-11-02
+
+**Summer of development release! MediaWiki integration, GitHub automation, enhanced Discord capabilities, and major infrastructure improvements.**
+
+### ✨ Added
+
+- **MediaWiki Integration** - New `mediawiki` capability for reading, writing, and searching wiki pages
+  - Auto-discovery from environment variables
+  - Smart wiki selection with fuzzy matching
+  - Full CRUD operations for wiki content
+- **GitHub Release Auto-Updates** - Automatically updates wiki pages when releases are published
+  - Configurable per-repository via `WIKI_UPDATE_*` env vars
+  - Supports list/table/append formatting
+  - Graceful failure handling
+- **GitHub URL Auto-Expansion** - Rich embeds for GitHub URLs in Discord
+  - Auto-expands repo metadata, PR status, and issue details
+  - Only active in whitelisted guilds
+  - Enhanced with PR/issue metadata
+- **Enhanced Discord Message Handler** - Smarter context gathering
+  - Channel history context (10-25 recent messages)
+  - Forum thread awareness with metadata
+  - Multi-turn conversation support
+  - Improved mention proxy with LLM judgment
+- **Meeting Scheduler Enhancements** - Discord reminder system
+  - Database schema: Added `participant_type` field
+  - 15-minute advance Discord DM reminders
+  - Reliable delivery via Bull queue
+  - Timezone-aware scheduling with `date-fns-tz`
+- **Discord Outgoing Message Queue** - Reliable async messaging
+  - Channel and DM support with automatic retries
+  - Used for reminders and notifications
+  - Prevents message delivery failures
+- **Automated Changelog Generator** - LLM-powered release notes
+  - Semantic commit parsing
+  - Artie writes user-friendly summaries
+  - Integrated into `npm run changelog`
+
+### 🐛 Fixed
+
+- Handle LLM parameter variations and make participants optional (`e497489`)
+- **Critical**: Fix two breaking bugs discovered through skeptical testing (`accc38c`)
+- Align meeting scheduler with official database schema (`20faf6a`)
+- Make changelog generator compatible with macOS bash (`7d6fd00`)
+
+### ♻️ Refactored
+
+- DELETE duplicate bulletproof-capability-extractor (157 lines) (`ed24920`)
+- Documentation cleanup: Removed 15 internal-only markdown files (design specs, testing schemes, runbooks)
+- Simplified README from 432 to 283 lines (focused, actionable)
+
+### 🔧 Infrastructure
+
+- **Improved Deployment Scripts** - Production-ready deployment
+  - Interactive mode for VPS deployment
+  - Critical vs optional environment variable checking
+  - Better Docker health checks
+  - Local production testing: `./scripts/deploy.sh local`
+- **Enhanced VPS Setup Script** - System validation
+  - System requirements validation (OS, memory, disk)
+  - Docker auto-detection and verification
+  - Better error handling throughout
+- **Environment Configuration** - Cleaner `.env.example`
+  - REQUIRED vs OPTIONAL sections
+  - Better documentation and examples
+
+### 📦 Dependencies
+
+- Added `date-fns` + `date-fns-tz` - Timezone-aware scheduling
+- Added `form-data` - MediaWiki authentication
+- Added `chance` - Random context window sizing
+- Added `@types/chance` - TypeScript support
+
+### 📝 Documentation
+
+- Add version management to CLAUDE.md and create website showcase guide (`4b80df8`)
+- Major README overhaul (432 → 283 lines)
+- Consolidated 15 internal docs into main docs
+
+### Changed
+
+- Total capabilities increased from 28 to 29 (added MediaWiki)
+- Enhanced GitHub webhook handler (+172 lines of functionality)
+
 ## [1.1.0] - 2025-10-26
 
 ### Added
