@@ -5,6 +5,45 @@ All notable changes to Coach Artie will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.1] - 2025-11-02
+
+**Testing & debugging improvements! Enhanced HTTP logging and Brain memory analytics.**
+
+### ✨ Added
+
+- **HTTP Capability Detailed Logging** - Comprehensive request/response logging
+  - Logs HTTP response status codes and sizes
+  - Shows data preview for JSON responses
+  - Makes debugging API calls significantly easier
+  - Reveals exactly what data Artie receives from HTTP requests
+- **Brain Memory Users Endpoint** - New `/api/stats/memory-users` endpoint
+  - Queries memories table (3,577 imported memories) instead of empty messages table
+  - Returns top users by memory count with timestamps
+  - Supports time range filtering (7d, 24h, 30d, etc.)
+  - Enables Artie to introspect his own memory statistics
+- **Testing Scripts** - Tools for development and debugging
+  - `inject-message.js` for direct Redis queue message injection
+  - `import-memories-v2.sh` for CSV memory data import
+  - Proper test message formatting with valid API endpoints
+
+### 🐛 Fixed
+
+- **HTTP Capability URL Handling** - Fixed malformed test URLs
+  - Corrected concatenated URLs that caused SQL errors
+  - Updated test messages to use proper single endpoint format
+  - Fixed query parameter formatting for FTS searches
+- **Brain API Endpoint References** - Point to correct data tables
+  - Memory queries now use dedicated memory-users endpoint
+  - Resolves empty data returns from message table queries
+
+### 🧪 Testing
+
+- Systematic testing revealed and fixed three critical issues:
+  1. Empty data returns (wrong table) → Created new endpoint
+  2. Malformed URLs (concatenation) → Fixed test format
+  3. No debugging visibility → Added comprehensive logging
+- **This is why we test!** All issues discovered and resolved through end-to-end testing
+
 ## [1.3.0] - 2025-11-02
 
 **Summer of development release! MediaWiki integration, GitHub automation, enhanced Discord capabilities, and major infrastructure improvements.**
