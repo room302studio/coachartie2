@@ -13,7 +13,7 @@ import { RegisteredCapability } from '../services/capability-registry.js';
 import axios from 'axios';
 
 const DISCORD_API_BASE =
-  process.env.DISCORD_SERVICE_URL || 'http://localhost:' + (process.env.DISCORD_PORT || '47326');
+  process.env.DISCORD_SERVICE_URL || 'http://localhost:' + (process.env.DISCORD_API_PORT || '47321');
 
 interface MentionProxyParams {
   action:
