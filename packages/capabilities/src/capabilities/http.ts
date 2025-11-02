@@ -66,25 +66,36 @@ export const httpCapability: RegisteredCapability = {
         body,
       });
 
+      logger.info(`📡 HTTP Response: ${response.status} ${response.statusText}`);
+
       if (!response.ok) {
+        const errorText = await response.text();
+        logger.error(`❌ HTTP Error Response: ${errorText}`);
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
 
       // Parse response
+      let result: string;
       if (parseJson) {
         try {
           const data = await response.json();
           // Format JSON nicely for LLM
-          return JSON.stringify(data, null, 2);
+          result = JSON.stringify(data, null, 2);
+          logger.info(`✅ HTTP Success: Returned ${result.length} chars of JSON data`);
+          logger.debug(`📦 HTTP Data preview: ${result.substring(0, 200)}...`);
         } catch (e) {
           // If JSON parse fails, fall back to text
-          return await response.text();
+          result = await response.text();
+          logger.info(`✅ HTTP Success: Returned ${result.length} chars of text data`);
         }
       } else {
-        return await response.text();
+        result = await response.text();
+        logger.info(`✅ HTTP Success: Returned ${result.length} chars of text data`);
       }
+
+      return result;
     } catch (error) {
-      logger.error(`HTTP request failed:`, error);
+      logger.error(`❌ HTTP request failed:`, error);
       throw new Error(
         `HTTP request to ${url} failed: ${error instanceof Error ? error.message : String(error)}`
       );
