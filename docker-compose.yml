@@ -192,13 +192,15 @@ services:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
     command: >
       /bin/bash -c "
+      rm -rf /var/cache/apt/archives/* &&
+      apt-get clean &&
       apt-get update -qq &&
-      apt-get install -y -qq curl wget git jq python3 sqlite3 &&
+      apt-get install -y -qq --fix-missing curl wget git jq python3 sqlite3 tmux &&
       curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg -o /usr/share/keyrings/githubcli-archive-keyring.gpg &&
       chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg &&
       echo \"deb [arch=\$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main\" > /etc/apt/sources.list.d/github-cli.list &&
       apt-get update -qq &&
-      apt-get install -y -qq gh &&
+      apt-get install -y -qq --fix-missing gh &&
       if [ -n \"\$GITHUB_TOKEN\" ]; then
         echo '✅ GitHub CLI ready (using GITHUB_TOKEN)';
       else
@@ -207,10 +209,14 @@ services:
       echo '═══════════════════════════════════════════' &&
       echo '🖥️  Artie Laptop Ready' &&
       echo '═══════════════════════════════════════════' &&
-      echo 'Tools: git, gh, jq, curl, python3, sqlite3' &&
+      echo 'Tools: git, gh, jq, curl, python3, sqlite3, tmux' &&
       echo 'Workspace: /workspace' &&
+      echo 'Tmux session: artie-main' &&
       echo '═══════════════════════════════════════════' &&
-      tail -f /dev/null
+      tmux new-session -d -s artie-main -c /workspace &&
+      echo '✅ Tmux session artie-main started' &&
+      tmux wait-for -S artie-main-ready &&
+      sleep infinity
       "
     healthcheck:
       test: ["CMD", "which", "gh"]
