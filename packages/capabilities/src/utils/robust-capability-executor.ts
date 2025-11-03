@@ -224,6 +224,24 @@ export class RobustCapabilityExecutor {
     // Interpolate variables in params
     paramsWithContext = this.interpolateParams(paramsWithContext, context.userId);
 
+    // Interpolate variables in content as well
+    let interpolatedContent = capability.content;
+    if (typeof capability.content === 'string') {
+      try {
+        const normalizedTemplate = capability.content.replace(/\$\{([^}]+)\}/g, '{{$1}}');
+        const template = Handlebars.compile(normalizedTemplate, { noEscape: true });
+        const userVariables = this.getUserVariablesForHandlebars(context.userId);
+        interpolatedContent = template(userVariables);
+
+        if (interpolatedContent !== capability.content) {
+          logger.info(`🔗 Interpolated content: "${capability.content}" → "${interpolatedContent}"`);
+        }
+      } catch (error) {
+        logger.warn(`⚠️ Content interpolation failed: ${error}`);
+        interpolatedContent = capability.content; // Keep original on error
+      }
+    }
+
     logger.info(
       `🎯 REGISTRY: Executing ${capability.name}:${capability.action} with params: ${JSON.stringify(paramsWithContext)}`
     );
@@ -232,7 +250,7 @@ export class RobustCapabilityExecutor {
       capability.name,
       capability.action,
       paramsWithContext,
-      capability.content
+      interpolatedContent
     );
   }
 
