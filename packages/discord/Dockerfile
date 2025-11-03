@@ -9,18 +9,15 @@ RUN npm install -g pnpm && apk add --no-cache curl
 # Copy package files and install dependencies
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.json ./
 COPY packages/shared ./packages/shared
-COPY packages/capabilities/package.json ./packages/capabilities/
-COPY packages/discord/package.json ./packages/discord/
-COPY packages/sms/package.json ./packages/sms/
+COPY packages/capabilities ./packages/capabilities
+COPY packages/discord ./packages/discord
+COPY packages/sms ./packages/sms
 
 # Install all workspace dependencies
 RUN pnpm install --filter "@coachartie/discord" --filter "@coachartie/shared"
 
 # Build shared package first
 RUN pnpm --filter "@coachartie/shared" run build
-
-# Copy discord source
-COPY packages/discord ./packages/discord
 
 # Build discord
 RUN pnpm --filter "@coachartie/discord" run build
