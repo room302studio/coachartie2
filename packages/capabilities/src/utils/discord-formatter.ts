@@ -202,7 +202,7 @@ export class DiscordFormatter {
     };
 
     services.forEach((service) => {
-      const emoji = statusEmoji[service.status] || '⚪';
+      const emoji = statusEmoji[service.status as keyof typeof statusEmoji] || '⚪';
       grid += `${emoji} **${service.name.padEnd(15)}** │ ${service.status.toUpperCase()}`;
       if (service.details) {
         grid += ` │ ${service.details}`;

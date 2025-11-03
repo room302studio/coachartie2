@@ -137,7 +137,7 @@ export class MediaWikiManager {
     // Use first available wiki
     const firstWiki = this.clients.values().next().value;
     if (firstWiki) {
-      this.lastUsedWiki = this.clients.keys().next().value;
+      this.lastUsedWiki = this.clients.keys().next().value || null;
       if (!firstWiki.authenticated && firstWiki.config.username) {
         await firstWiki.authenticate();
       }

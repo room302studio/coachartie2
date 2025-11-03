@@ -58,9 +58,11 @@ services:
       - CONSOLE_LOG_LEVEL=info
       - SERVICE_NAME=capabilities
       - LOGS_DIR=/app/logs
+      - SANDBOX_CONTAINER_NAME=coachartie-sandbox-prod
     volumes:
       - ./data:/app/data:rw
       - ./logs:/app/logs:rw
+      - /var/run/docker.sock:/var/run/docker.sock
     depends_on:
       redis:
         condition: service_healthy
@@ -243,8 +245,78 @@ services:
         max-size: "10m"
         max-file: "5"
 
+  # Sandbox - Isolated shell environment with tmux for Artie's CLI operations
+  sandbox:
+    image: debian:bookworm-slim
+    container_name: coachartie-sandbox-prod
+    hostname: artie-laptop
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '1.0'
+        reservations:
+          memory: 128M
+    volumes:
+      - sandbox-workspace:/workspace
+      - sandbox-home:/root
+    env_file:
+      - .env.production
+    environment:
+      - GITHUB_TOKEN=${GITHUB_TOKEN}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+    command:
+      - /bin/bash
+      - -c
+      - |
+        rm -rf /var/cache/apt/archives/* &&
+        apt-get clean &&
+        apt-get update -qq &&
+        apt-get install -y -qq --fix-missing curl wget git jq python3 sqlite3 tmux &&
+        curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg -o /usr/share/keyrings/githubcli-archive-keyring.gpg &&
+        chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg &&
+        echo "deb [arch=$$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" > /etc/apt/sources.list.d/github-cli.list &&
+        apt-get update -qq &&
+        apt-get install -y -qq --fix-missing gh &&
+        if [ -n "$$GITHUB_TOKEN" ]; then
+          echo '✅ GitHub CLI ready (using GITHUB_TOKEN)';
+        else
+          echo '⚠️  GITHUB_TOKEN not set - gh CLI will have limited access';
+        fi &&
+        echo '═══════════════════════════════════════════' &&
+        echo '🖥️  Artie Laptop Ready (Production)' &&
+        echo '═══════════════════════════════════════════' &&
+        echo 'Tools: git, gh, jq, curl, python3, sqlite3, tmux' &&
+        echo 'Workspace: /workspace' &&
+        echo 'Tmux session: artie-main' &&
+        echo '═══════════════════════════════════════════' &&
+        tmux new-session -d -s artie-main -c /workspace &&
+        echo '✅ Tmux session artie-main started' &&
+        tmux wait-for -S artie-main-ready &&
+        sleep infinity
+    healthcheck:
+      test: ["CMD", "which", "gh"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    networks:
+      - coachartie-prod
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
+
 volumes:
   redis-data:
+    driver: local
+  sandbox-workspace:
+    driver: local
+  sandbox-home:
     driver: local
 
 networks:

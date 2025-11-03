@@ -1269,11 +1269,13 @@ export class CapabilityOrchestrator {
     const currentModel = openRouterService.getCurrentModel();
     logger.info(`🎯 AUTO-INJECT: Using bulletproof auto-injection for model: ${currentModel}`);
 
-    const bulletproofAutoCapabilities = bulletproofExtractor.detectAutoInjectCapabilities(
-      message.message,
-      llmResponse
-    );
-    const autoInjectedCapabilities = bulletproofAutoCapabilities.map((cap, index) => ({
+    // TODO: bulletproofExtractor was removed - this code needs to be refactored
+    // const bulletproofAutoCapabilities = bulletproofExtractor.detectAutoInjectCapabilities(
+    //   message.message,
+    //   llmResponse
+    // );
+    const bulletproofAutoCapabilities: any[] = []; // Temporary fix
+    const autoInjectedCapabilities = bulletproofAutoCapabilities.map((cap: any, index: number) => ({
       name: cap.name,
       action: cap.action,
       params: cap.params,
@@ -1283,7 +1285,7 @@ export class CapabilityOrchestrator {
 
     if (autoInjectedCapabilities.length > 0) {
       logger.info(
-        `🎯 Auto-injected ${autoInjectedCapabilities.length} capabilities: ${autoInjectedCapabilities.map((c) => `${c.name}:${c.action}`).join(', ')}`
+        `🎯 Auto-injected ${autoInjectedCapabilities.length} capabilities: ${autoInjectedCapabilities.map((c: any) => `${c.name}:${c.action}`).join(', ')}`
       );
       context.capabilities = autoInjectedCapabilities;
 

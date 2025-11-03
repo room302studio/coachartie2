@@ -140,11 +140,11 @@ export class ConsensusEngine {
     const startTime = Date.now();
 
     try {
-      // Import capability extractor
-      const { bulletproofExtractor } = await import('../utils/bulletproof-capability-extractor.js');
+      // TODO: bulletproof-capability-extractor was deleted - this code needs to be refactored
+      // const { bulletproofExtractor } = await import('../utils/bulletproof-capability-extractor.js');
+      // const capabilities = await bulletproofExtractor.extractCapabilities(message, model.name);
 
-      // Extract capabilities using the bulletproof extractor
-      const capabilities = await bulletproofExtractor.extractCapabilities(message, model.name);
+      const capabilities: any[] = []; // Temporary fix until extractor is implemented
 
       const responseTime = Date.now() - startTime;
       const confidence = this.scoreModelResponse(capabilities, responseTime, model);
