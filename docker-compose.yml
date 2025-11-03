@@ -200,6 +200,13 @@ services:
       apt-get update -qq &&
       apt-get install -y -qq gh &&
       npm install -g @anthropic/claude-code-cli 2>/dev/null || echo 'Claude Code install skipped' &&
+      if [ -n \"$GITHUB_TOKEN\" ]; then
+        echo \"$GITHUB_TOKEN\" | gh auth login --with-token &&
+        gh auth status &&
+        echo '✅ GitHub CLI authenticated';
+      else
+        echo '⚠️  GITHUB_TOKEN not set - gh CLI will be unauthenticated';
+      fi &&
       echo '═══════════════════════════════════════════' &&
       echo '🖥️  Artie Laptop Ready' &&
       echo '═══════════════════════════════════════════' &&

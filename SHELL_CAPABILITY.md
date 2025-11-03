@@ -33,7 +33,7 @@ Artie now has access to a **persistent sandboxed Debian environment** - basicall
 ## Pre-installed Tools
 
 - **git** - Version control
-- **gh** - GitHub CLI
+- **gh** - GitHub CLI (auto-authenticated with GITHUB_TOKEN)
 - **jq** - JSON processing
 - **curl/wget** - HTTP requests
 - **npm/node** - JavaScript runtime
@@ -41,6 +41,46 @@ Artie now has access to a **persistent sandboxed Debian environment** - basicall
 - **sqlite3** - Database
 - **claude-code** - Meta! Artie can use Claude Code
 - **vim/nano** - Text editors
+
+## GitHub CLI Authentication
+
+The `gh` CLI is **automatically authenticated** on sandbox startup if you set `GITHUB_TOKEN` in your `.env` file.
+
+### Setup (One-Time)
+
+1. **Create a GitHub Personal Access Token (classic)**:
+   - Go to https://github.com/settings/tokens
+   - Click "Generate new token (classic)"
+   - Required scopes:
+     - `repo` (full control of private repositories)
+     - `admin:org` (for org-level operations)
+     - `admin:repo_hook` (for webhook management)
+     - `workflow` (for GitHub Actions)
+   - Copy the token (starts with `ghp_`)
+
+2. **Add to your .env file**:
+   ```bash
+   GITHUB_TOKEN=ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+   ```
+
+3. **Restart sandbox**:
+   ```bash
+   docker-compose restart sandbox
+   ```
+
+The sandbox will automatically run `gh auth login --with-token` on startup and show ✅ confirmation in logs.
+
+### Verify Authentication
+
+```bash
+docker-compose logs sandbox | grep "GitHub CLI"
+# Should show: ✅ GitHub CLI authenticated
+```
+
+Or test directly:
+```bash
+docker exec coachartie-sandbox gh auth status
+```
 
 ## Usage Examples
 
