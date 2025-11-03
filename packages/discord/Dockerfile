@@ -41,7 +41,7 @@ EXPOSE 47321
 
 # Health check - Discord gateway is the health indicator
 HEALTHCHECK --interval=30s --timeout=10s --start-period=20s --retries=3 \
-  CMD test -f /app/data/discord-status.json && grep -q '"ready":true' /app/data/discord-status.json || exit 1
+  CMD test -f /app/data/discord-status.json && grep -q '"status":"ready"' /app/data/discord-status.json || exit 1
 
 # Start the application with built code
 CMD ["pnpm", "start"]
