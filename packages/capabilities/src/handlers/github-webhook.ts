@@ -121,6 +121,9 @@ interface GitHubReleasePayload {
 // Wiki update configuration - can be extended via environment variables
 const WIKI_UPDATE_CONFIG: Record<string, WikiUpdateRule> = loadWikiUpdateRules();
 
+// Discord channel configuration for release announcements
+const DISCORD_CHANNEL_CONFIG: Record<string, string> = loadDiscordChannelRules();
+
 interface WikiUpdateRule {
   wiki: string;  // Which wiki to update
   page: string;  // Which page to update
@@ -152,6 +155,24 @@ function loadWikiUpdateRules(): Record<string, WikiUpdateRule> {
       page: 'Subway_Builder_Releases',
       format: 'list'
     };
+  }
+
+  return rules;
+}
+
+function loadDiscordChannelRules(): Record<string, string> {
+  const rules: Record<string, string> = {};
+
+  // Load from environment variables like GITHUB_RELEASE_CHANNEL_colindm_metro_maker4=beta
+  for (const [key, value] of Object.entries(process.env)) {
+    if (key.startsWith('GITHUB_RELEASE_CHANNEL_') && value) {
+      const repoName = key.slice('GITHUB_RELEASE_CHANNEL_'.length).replace(/_/g, '/');
+      rules[repoName.toLowerCase()] = value;
+    }
+  }
+
+  if (Object.keys(rules).length > 0) {
+    logger.info(`📢 Discord channel rules loaded:`, rules);
   }
 
   return rules;
@@ -232,9 +253,17 @@ async function handleReleaseEvent(payload: GitHubReleasePayload): Promise<void> 
     author: release.author.login,
   });
 
+  // Determine which Discord channel to post to
+  const discordChannel = DISCORD_CHANNEL_CONFIG[repository.full_name.toLowerCase()] || 'general';
+
+  logger.info(`📢 Posting release announcement to #${discordChannel}`, {
+    repo: repository.full_name,
+    channel: discordChannel,
+  });
+
   const celebrationMessage = generateReleaseCelebration(payload);
 
-  await publishMessage('github-bot', celebrationMessage, 'general', 'GitHub Bot', true);
+  await publishMessage('github-bot', celebrationMessage, discordChannel, 'GitHub Bot', true);
 
   // Smart wiki updates based on configuration
   await updateWikiForRelease(repository.full_name, release);
