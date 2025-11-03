@@ -1,5 +1,11 @@
 import { Queue, Worker } from 'bullmq';
-import { logger, createRedisConnection, getDatabase } from '@coachartie/shared';
+import {
+  logger,
+  createRedisConnection,
+  getDatabase,
+  IncomingMessage,
+  QUEUES,
+} from '@coachartie/shared';
 
 export interface ScheduledTask {
   id: string;
@@ -53,6 +59,7 @@ interface ReminderJobData {
 export class SchedulerService {
   private schedulerQueue: Queue;
   private discordQueue: Queue;
+  private incomingQueue: Queue;
   private worker: Worker;
   private tasks = new Map<string, ScheduledTask>();
   private completedReminders: Array<{ timestamp: Date; message: string; data: Record<string, unknown> }> = [];
@@ -71,6 +78,11 @@ export class SchedulerService {
 
     // Create Discord outgoing queue for sending reminders
     this.discordQueue = new Queue('coachartie-discord-outgoing', {
+      connection,
+    });
+
+    // Create incoming messages queue for processing reminder messages
+    this.incomingQueue = new Queue(QUEUES.INCOMING_MESSAGES, {
       connection,
     });
 
@@ -310,6 +322,32 @@ export class SchedulerService {
       this.completedReminders.shift();
     }
 
+    // Send reminder message through normal processing pipeline
+    // This will trigger capability extraction and execution
+    try {
+      const incomingMessage: IncomingMessage = {
+        id: `reminder-processed-${Date.now()}`,
+        userId,
+        message: reminderMessage,
+        timestamp: new Date(),
+        retryCount: 0,
+        source: 'capabilities',
+        respondTo: {
+          type: 'api', // Use API type so it doesn't try to send to Discord automatically
+        },
+        context: {
+          reminderTriggered: true,
+          originalReminderType: reminderType,
+          meetingId,
+        },
+      };
+
+      await this.incomingQueue.add('process-reminder', incomingMessage);
+      logger.info(`📤 Reminder message queued for processing: "${reminderMessage}"`);
+    } catch (error) {
+      logger.error('Failed to queue reminder message for processing:', error);
+    }
+
     // Get meeting details if meetingId is provided
     if (meetingId) {
       try {
@@ -422,6 +460,7 @@ export class SchedulerService {
     await this.worker.close();
     await this.schedulerQueue.close();
     await this.discordQueue.close();
+    await this.incomingQueue.close();
     logger.info('Scheduler service closed');
   }
 }
