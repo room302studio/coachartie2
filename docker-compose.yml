@@ -47,15 +47,18 @@ services:
       - CONTEXT_WINDOW_SIZE=${CONTEXT_WINDOW_SIZE}
       - DISCORD_TOKEN=${DISCORD_TOKEN}
       - DISCORD_CLIENT_ID=${DISCORD_CLIENT_ID}
+      - GITHUB_TOKEN=${GITHUB_TOKEN}
       - WOLFRAM_APP_ID=${WOLFRAM_APP_ID}
       - TWILIO_ACCOUNT_SID=${TWILIO_ACCOUNT_SID}
       - TWILIO_AUTH_TOKEN=${TWILIO_AUTH_TOKEN}
       - TWILIO_PHONE_NUMBER=${TWILIO_PHONE_NUMBER}
       - ENABLE_AUTO_REFLECTION=${ENABLE_AUTO_REFLECTION}
+      - SANDBOX_CONTAINER_NAME=coachartie-sandbox
     volumes:
       - ./packages/capabilities/data:/app/data:rw
       - ./packages/capabilities/src:/app/packages/capabilities/src
       - ./logs:/app/logs:rw
+      - /var/run/docker.sock:/var/run/docker.sock  # Allow docker exec to sandbox
       - /app/node_modules
     depends_on:
       redis:
@@ -166,8 +169,59 @@ services:
       start_period: 15s
     restart: unless-stopped
 
+  sandbox:
+    image: debian:bookworm-slim
+    container_name: coachartie-sandbox
+    hostname: artie-laptop
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '1.0'
+        reservations:
+          memory: 128M
+    volumes:
+      - sandbox-workspace:/workspace
+      - sandbox-home:/root
+    environment:
+      - GITHUB_TOKEN=${GITHUB_TOKEN}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+    command: >
+      /bin/bash -c "
+      apt-get update -qq &&
+      apt-get install -y -qq curl wget git jq nodejs npm python3 python3-pip build-essential vim nano sqlite3 &&
+      curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg &&
+      chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg &&
+      echo 'deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main' | tee /etc/apt/sources.list.d/github-cli.list &&
+      apt-get update -qq &&
+      apt-get install -y -qq gh &&
+      npm install -g @anthropic/claude-code-cli 2>/dev/null || echo 'Claude Code install skipped' &&
+      echo '═══════════════════════════════════════════' &&
+      echo '🖥️  Artie Laptop Ready' &&
+      echo '═══════════════════════════════════════════' &&
+      echo 'Tools: git, gh, jq, curl, npm, python3, claude-code' &&
+      echo 'Workspace: /workspace' &&
+      echo '═══════════════════════════════════════════' &&
+      tail -f /dev/null
+      "
+    healthcheck:
+      test: ["CMD", "which", "gh"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
 volumes:
   redis_data:
+  sandbox-workspace:
+  sandbox-home:
 
 networks:
   default:

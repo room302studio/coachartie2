@@ -476,6 +476,10 @@ capabilityRegistry.register(emailCapability);
 import { userProfileCapability } from '../capabilities/user-profile.js';
 capabilityRegistry.register(userProfileCapability);
 
+// Auto-register Shell capability
+import { shellCapability } from '../capabilities/shell.js';
+capabilityRegistry.register(shellCapability);
+
 // Log all successfully registered capabilities on startup
 logger.info(
   `🚀 Capability Registry initialized with ${capabilityRegistry.size()} capabilities:`,
