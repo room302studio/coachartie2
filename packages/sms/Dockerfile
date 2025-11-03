@@ -7,7 +7,7 @@ WORKDIR /app
 RUN npm install -g pnpm && apk add --no-cache curl
 
 # Copy package files and install dependencies
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.json ./
 COPY packages/shared ./packages/shared
 COPY packages/sms/package.json ./packages/sms/
 
