@@ -13,6 +13,7 @@
     "sourceMap": true,
     "resolveJsonModule": true,
     "allowSyntheticDefaultImports": true,
+    "downlevelIteration": true,
     "incremental": true,
     "composite": true
   },
