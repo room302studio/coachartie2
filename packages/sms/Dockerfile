@@ -20,19 +20,26 @@ RUN pnpm --filter "@coachartie/shared" run build
 # Copy sms source
 COPY packages/sms ./packages/sms
 
+# Build sms
+RUN pnpm --filter "@coachartie/sms" run build
+
 # Set working directory to sms package
 WORKDIR /app/packages/sms
+
+# Create logs directory
+RUN mkdir -p /app/logs
 
 # Expose the port
 EXPOSE 47326
 
 # Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
   CMD curl -f http://localhost:47326/health || exit 1
 
 # Set environment variables
-ENV NODE_ENV=development
+ENV NODE_ENV=production
 ENV SMS_PORT=47326
+ENV LOGS_DIR=/app/logs
 
-# Start the application
-CMD ["pnpm", "dev"]
+# Start the application with built code
+CMD ["pnpm", "start"]

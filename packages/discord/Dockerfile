@@ -3,8 +3,8 @@ FROM node:20-alpine
 # Set working directory
 WORKDIR /app
 
-# Install pnpm
-RUN npm install -g pnpm
+# Install pnpm and curl for health checks
+RUN npm install -g pnpm && apk add --no-cache curl
 
 # Copy package files and install dependencies
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
@@ -20,21 +20,29 @@ RUN pnpm --filter "@coachartie/shared" run build
 # Copy discord source
 COPY packages/discord ./packages/discord
 
-# Create data directory for status file and telemetry
-RUN mkdir -p /app/data
+# Build discord
+RUN pnpm --filter "@coachartie/discord" run build
+
+# Create data and logs directories
+RUN mkdir -p /app/data /app/logs
 
 # Set working directory to discord package
 WORKDIR /app/packages/discord
 
 # Set environment variables
-ENV NODE_ENV=development
+ENV NODE_ENV=production
 ENV DISCORD_STATUS_FILE=/app/data/discord-status.json
 ENV DISCORD_METRICS_FILE=/app/data/discord-metrics.json
 ENV DISCORD_EVENTS_FILE=/app/data/discord-events.json
-ENV HEALTH_PORT=3001
+ENV DISCORD_PORT=47321
+ENV LOGS_DIR=/app/logs
 
-# Expose health check port
-EXPOSE 3001
+# Expose discord port
+EXPOSE 47321
 
-# Start the application
-CMD ["pnpm", "dev"]
+# Health check - Discord gateway is the health indicator
+HEALTHCHECK --interval=30s --timeout=10s --start-period=20s --retries=3 \
+  CMD test -f /app/data/discord-status.json && grep -q '"ready":true' /app/data/discord-status.json || exit 1
+
+# Start the application with built code
+CMD ["pnpm", "start"]

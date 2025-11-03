@@ -20,23 +20,27 @@ RUN pnpm --filter "@coachartie/shared" run build
 # Copy capabilities source
 COPY packages/capabilities ./packages/capabilities
 
+# Build capabilities
+RUN pnpm --filter "@coachartie/capabilities" run build
+
 # Set working directory to capabilities package
 WORKDIR /app/packages/capabilities
 
-# Create data directory
-RUN mkdir -p /app/data
+# Create data and logs directories
+RUN mkdir -p /app/data /app/logs
 
 # Expose the port
-EXPOSE 18239
+EXPOSE 47324
 
 # Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-  CMD curl -f http://localhost:18239/health || exit 1
+HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
+  CMD curl -f http://localhost:47324/health || exit 1
 
 # Set environment variables
-ENV NODE_ENV=development
+ENV NODE_ENV=production
 ENV DATABASE_PATH=/app/data/coachartie.db
-ENV CAPABILITIES_PORT=18239
+ENV CAPABILITIES_PORT=47324
+ENV LOGS_DIR=/app/logs
 
-# Start the application
-CMD ["pnpm", "dev:tsx"]
+# Start the application with built code
+CMD ["pnpm", "start"]

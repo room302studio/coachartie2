@@ -1,71 +1,252 @@
 version: '3.8'
 
 services:
-  # Redis with memory limits
+  # Redis - Message queue and cache
   redis:
     image: redis:7-alpine
-    container_name: coachartie-redis
-    ports:
-      - '6379:6379'
-    volumes:
-      - redis-data:/data
+    container_name: coachartie-redis-prod
     command: >
       redis-server
+      --port 47320
+      --appendonly yes
       --maxmemory 512mb
       --maxmemory-policy allkeys-lru
       --save 900 1
-      --appendonly yes
       --appendfsync everysec
+    ports:
+      - "0.0.0.0:47320:47320"
+    volumes:
+      - redis-data:/data
     healthcheck:
-      test: ['CMD', 'redis-cli', 'ping']
-      interval: 10s
-      timeout: 5s
-      retries: 5
+      test: ["CMD", "redis-cli", "-p", "47320", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 128M
     restart: unless-stopped
+    networks:
+      - coachartie-prod
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
 
-  # Main app
-  coachartie:
+  # Capabilities - Core AI processing and capability orchestration
+  capabilities:
     build:
       context: .
-      dockerfile: Dockerfile
-    container_name: coachartie-prod
+      dockerfile: ./packages/capabilities/Dockerfile
+    container_name: coachartie-capabilities-prod
+    ports:
+      - "0.0.0.0:47324:47324"
     env_file:
       - .env.production
     environment:
       - NODE_ENV=production
-      - NODE_OPTIONS=--max-old-space-size=512 --max-semi-space-size=128
+      - DATABASE_PATH=/app/data/coachartie.db
+      - CAPABILITIES_PORT=47324
+      - REDIS_HOST=redis
+      - REDIS_PORT=47320
+      - LOG_LEVEL=info
+      - CONSOLE_LOG_LEVEL=info
+      - SERVICE_NAME=capabilities
+      - LOGS_DIR=/app/logs
+    volumes:
+      - ./data:/app/data:rw
+      - ./logs:/app/logs:rw
     depends_on:
       redis:
         condition: service_healthy
-    ports:
-      - '47319:47319'
-      - '47324:47324'
-    volumes:
-      - ./data:/app/data
-      - ./logs:/app/logs
-    restart: unless-stopped
     healthcheck:
-      test: ['CMD', 'curl', '-f', 'http://localhost:47319/health']
+      test: ["CMD", "curl", "-f", "http://localhost:47324/health"]
       interval: 30s
       timeout: 10s
       retries: 3
+      start_period: 15s
     deploy:
       resources:
         limits:
           memory: 1G
+          cpus: '1.0'
         reservations:
           memory: 512M
+    restart: unless-stopped
+    networks:
+      - coachartie-prod
     logging:
-      driver: 'json-file'
+      driver: "json-file"
       options:
-        max-size: '10m'
-        max-file: '10'
-        labels: 'service=coachartie'
+        max-size: "10m"
+        max-file: "5"
+
+  # Discord - Discord bot integration
+  discord:
+    build:
+      context: .
+      dockerfile: ./packages/discord/Dockerfile
+    container_name: coachartie-discord-prod
+    ports:
+      - "0.0.0.0:47321:47321"
+    env_file:
+      - .env.production
+    environment:
+      - NODE_ENV=production
+      - CAPABILITIES_URL=http://capabilities:47324
+      - REDIS_HOST=redis
+      - REDIS_PORT=47320
+      - DISCORD_PORT=47321
+      - DATABASE_PATH=/app/data/coachartie.db
+      - LOG_LEVEL=info
+      - CONSOLE_LOG_LEVEL=warn
+      - SERVICE_NAME=discord
+      - LOGS_DIR=/app/logs
+      - DISCORD_STATUS_FILE=/app/data/discord-status.json
+      - DISCORD_METRICS_FILE=/app/data/discord-metrics.json
+      - DISCORD_EVENTS_FILE=/app/data/discord-events.json
+    volumes:
+      - ./data:/app/data:rw
+      - ./logs:/app/logs:rw
+    depends_on:
+      redis:
+        condition: service_healthy
+      capabilities:
+        condition: service_healthy
+    healthcheck:
+      test: test -f /app/data/discord-status.json && grep -q '"ready":true' /app/data/discord-status.json || exit 1
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+        reservations:
+          memory: 256M
+    restart: unless-stopped
+    networks:
+      - coachartie-prod
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  # SMS - Twilio SMS integration
+  sms:
+    build:
+      context: .
+      dockerfile: ./packages/sms/Dockerfile
+    container_name: coachartie-sms-prod
+    ports:
+      - "0.0.0.0:47326:47326"
+    env_file:
+      - .env.production
+    environment:
+      - NODE_ENV=production
+      - CAPABILITIES_URL=http://capabilities:47324
+      - REDIS_HOST=redis
+      - REDIS_PORT=47320
+      - SMS_PORT=47326
+      - LOG_LEVEL=info
+      - CONSOLE_LOG_LEVEL=warn
+      - SERVICE_NAME=sms
+      - LOGS_DIR=/app/logs
+    volumes:
+      - ./logs:/app/logs:rw
+    depends_on:
+      redis:
+        condition: service_healthy
+      capabilities:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:47326/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.25'
+        reservations:
+          memory: 128M
+    restart: unless-stopped
+    networks:
+      - coachartie-prod
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  # Brain - Web UI and monitoring dashboard
+  brain:
+    build:
+      context: .
+      dockerfile: ./packages/brain/Dockerfile
+    container_name: coachartie-brain-prod
+    ports:
+      - "0.0.0.0:47325:47325"
+    env_file:
+      - .env.production
+    environment:
+      - NODE_ENV=production
+      - BRAIN_PORT=47325
+      - CAPABILITIES_URL=http://capabilities:47324
+      - API_BASE_URL=http://localhost:47324
+      - REDIS_HOST=redis
+      - REDIS_PORT=47320
+      - DATABASE_PATH=/app/data/coachartie.db
+      - LOG_LEVEL=info
+      - CONSOLE_LOG_LEVEL=warn
+      - SERVICE_NAME=brain
+      - LOGS_DIR=/app/logs
+      - HOST=0.0.0.0
+      - PORT=47325
+    volumes:
+      - ./data:/app/data:rw
+      - ./logs:/app/logs:rw
+    depends_on:
+      redis:
+        condition: service_healthy
+      capabilities:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:47325/api/status"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+        reservations:
+          memory: 256M
+    restart: unless-stopped
+    networks:
+      - coachartie-prod
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
 
 volumes:
   redis-data:
     driver: local
 
 networks:
-  default:
-    name: coachartie-prod
+  coachartie-prod:
+    driver: bridge
