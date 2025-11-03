@@ -193,24 +193,22 @@ services:
     command: >
       /bin/bash -c "
       apt-get update -qq &&
-      apt-get install -y -qq curl wget git jq nodejs npm python3 python3-pip build-essential vim nano sqlite3 &&
-      curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg &&
+      apt-get install -y -qq curl wget git jq python3 sqlite3 &&
+      curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg -o /usr/share/keyrings/githubcli-archive-keyring.gpg &&
       chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg &&
-      echo 'deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main' | tee /etc/apt/sources.list.d/github-cli.list &&
+      echo \"deb [arch=\$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main\" > /etc/apt/sources.list.d/github-cli.list &&
       apt-get update -qq &&
       apt-get install -y -qq gh &&
-      npm install -g @anthropic/claude-code-cli 2>/dev/null || echo 'Claude Code install skipped' &&
-      if [ -n \"$GITHUB_TOKEN\" ]; then
-        echo \"$GITHUB_TOKEN\" | gh auth login --with-token &&
-        gh auth status &&
+      if [ -n \"\$GITHUB_TOKEN\" ]; then
+        echo \"\$GITHUB_TOKEN\" | gh auth login --with-token &&
         echo '✅ GitHub CLI authenticated';
       else
-        echo '⚠️  GITHUB_TOKEN not set - gh CLI will be unauthenticated';
+        echo '⚠️  GITHUB_TOKEN not set';
       fi &&
       echo '═══════════════════════════════════════════' &&
       echo '🖥️  Artie Laptop Ready' &&
       echo '═══════════════════════════════════════════' &&
-      echo 'Tools: git, gh, jq, curl, npm, python3, claude-code' &&
+      echo 'Tools: git, gh, jq, curl, python3, sqlite3' &&
       echo 'Workspace: /workspace' &&
       echo '═══════════════════════════════════════════' &&
       tail -f /dev/null
