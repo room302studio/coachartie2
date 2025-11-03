@@ -200,10 +200,9 @@ services:
       apt-get update -qq &&
       apt-get install -y -qq gh &&
       if [ -n \"\$GITHUB_TOKEN\" ]; then
-        echo \"\$GITHUB_TOKEN\" | gh auth login --with-token &&
-        echo '✅ GitHub CLI authenticated';
+        echo '✅ GitHub CLI ready (using GITHUB_TOKEN)';
       else
-        echo '⚠️  GITHUB_TOKEN not set';
+        echo '⚠️  GITHUB_TOKEN not set - gh CLI will have limited access';
       fi &&
       echo '═══════════════════════════════════════════' &&
       echo '🖥️  Artie Laptop Ready' &&
