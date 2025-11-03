@@ -98,23 +98,8 @@ export class ContextAlchemy {
     messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>;
     contextSources: ContextSource[];
   }> {
-    // Always log if Context Alchemy is called and debug status
-    logger.info(`🧪 Context Alchemy called (DEBUG=${DEBUG})`);
-
     if (DEBUG) {
-      logger.info('╔═══════════════════════════════════════════════════════════════╗');
-    }
-    if (DEBUG) {
-      logger.info('║              🧪 CONTEXT ALCHEMY ASSEMBLY START 🧪              ║');
-    }
-    if (DEBUG) {
-      logger.info('╚═══════════════════════════════════════════════════════════════╝');
-    }
-    if (DEBUG) {
-      logger.info(`📥 User: ${userId} | Message length: ${userMessage.length} chars`);
-    }
-    if (DEBUG) {
-      logger.info(`⚙️  Mode: ${options.minimal ? 'MINIMAL' : 'FULL INTELLIGENCE'}`);
+      logger.info(`🧪 Context Alchemy: user=${userId}, mode=${options.minimal ? 'minimal' : 'full'}, msg_len=${userMessage.length}`);
     }
 
     let selectedContext: ContextSource[] = [];
@@ -169,45 +154,25 @@ export class ContextAlchemy {
       options.source
     );
 
-    // Final assembly summary
     if (DEBUG) {
-      logger.info('┌─ FINAL MESSAGE CHAIN ───────────────────────────────────────────┐');
-    }
-    messageChain.forEach((msg, i) => {
-      const preview = msg.content.substring(0, 60).replace(/\n/g, ' ');
-      const suffix = msg.content.length > 60 ? '...' : '';
-      if (DEBUG) {
-        logger.info(`│ [${i}] ${msg.role.padEnd(9)}: ${preview}${suffix}`);
-      }
-    });
-    if (DEBUG) {
-      logger.info('└─────────────────────────────────────────────────────────────────┘');
+      logger.info(`📝 Message chain: ${messageChain.length} messages (${messageChain.filter(m => m.role === 'system').length} system, ${messageChain.filter(m => m.role === 'user').length} user, ${messageChain.filter(m => m.role === 'assistant').length} assistant)`);
     }
 
+    // Calculate total tokens for percentage display
+    const totalContextTokens = selectedContext.reduce((sum, ctx) => sum + ctx.tokenWeight, 0);
+
     if (DEBUG) {
-      logger.info('┌─ CONTEXT SOURCES INCLUDED ──────────────────────────────────────┐');
-    }
-    selectedContext.forEach((ctx) => {
-      if (DEBUG) {
+      logger.info('🧪 CONTEXT SOURCES:');
+      selectedContext.forEach((ctx) => {
+        const percentage = totalContextTokens > 0
+          ? ((ctx.tokenWeight / totalContextTokens) * 100).toFixed(1)
+          : '0.0';
         logger.info(
-          `│ ${ctx.category.padEnd(12)} | Pri:${ctx.priority.toString().padStart(3)} | ~${ctx.tokenWeight.toString().padStart(4)} tokens | ${ctx.name}`
+          `  ${ctx.name.padEnd(22)}: ${percentage.padStart(5)}% (${ctx.tokenWeight.toString().padStart(4)} tokens, pri:${ctx.priority})`
         );
-      }
-    });
-    if (DEBUG) {
-      logger.info('└─────────────────────────────────────────────────────────────────┘');
-    }
-
-    if (DEBUG) {
-      logger.info('╔═══════════════════════════════════════════════════════════════╗');
-    }
-    if (DEBUG) {
-      logger.info(
-        `║ ✅ CONTEXT ASSEMBLY COMPLETE: ${messageChain.length} messages, ${selectedContext.length} sources ║`
-      );
-    }
-    if (DEBUG) {
-      logger.info('╚═══════════════════════════════════════════════════════════════╝\n');
+      });
+      logger.info(`  ${'TOTAL'.padEnd(22)}: 100.0% (${totalContextTokens.toString().padStart(4)} tokens)`);
+      logger.info(`✅ Context ready: ${messageChain.length} messages, ${selectedContext.length} sources\n`);
     }
 
     return { messages: messageChain, contextSources: selectedContext };
@@ -267,30 +232,7 @@ Important:
     };
 
     if (DEBUG) {
-      logger.info('┌─ TOKEN BUDGET CALCULATION ─────────────────────────────────────┐');
-    }
-    if (DEBUG) {
-      logger.info(`│ Total Window:     ${totalTokens} tokens`);
-    }
-    if (DEBUG) {
-      logger.info(`│ User Message:     ${userTokens} tokens (${userMessage.length} chars)`);
-    }
-    if (DEBUG) {
-      logger.info(`│ System Prompt:    ${systemTokens} tokens`);
-    }
-    if (DEBUG) {
-      logger.info(`│ Reserved Reply:   ${reservedForResponse} tokens`);
-    }
-    if (DEBUG) {
-      logger.info(`│ ═══════════════════════════════════════════════════════════════ │`);
-    }
-    if (DEBUG) {
-      logger.info(
-        `│ 💰 Available:     ${budget.availableForContext} tokens for context enrichment`
-      );
-    }
-    if (DEBUG) {
-      logger.info('└─────────────────────────────────────────────────────────────────┘');
+      logger.info(`💰 Token budget: ${totalTokens} total, ${budget.availableForContext} available for context (user:${userTokens}, system:${systemTokens}, reply:${reservedForResponse})`);
     }
 
     return budget;
@@ -318,6 +260,7 @@ Important:
     await this.addRecentChannelMessages(message, sources); // Add immediate channel context
     await this.addRecentGuildMessages(message, sources); // Add broader guild context
     await this.addRelevantMemories(message, sources, capabilityContext);
+    await this.addCapabilityLearnings(message, sources, capabilityContext); // Add capability-specific learnings
     if (includeCapabilities) {
       await this.addCapabilityManifest(sources);
     }
@@ -646,24 +589,17 @@ Important:
     capabilityContext?: string[]
   ): Promise<void> {
     try {
-      if (DEBUG) {
-        logger.info('┌─ MEMORY SEARCH (3-Layer Entourage) ────────────────────────────┐');
-      }
-
       // Enhance search query with capability context for tool-specific memories
       let searchQuery = message.message;
       if (capabilityContext && capabilityContext.length > 0) {
         const capabilityHints = capabilityContext.join(' ');
         searchQuery = `${message.message} [capabilities: ${capabilityHints}]`;
         if (DEBUG) {
-          logger.info(`│ 🔧 Enhanced with capability context: ${capabilityHints}`);
+          logger.info(`🔧 Enhanced memory search with capability context: ${capabilityHints}`);
         }
       }
 
       // Calculate available token budget for memory context
-      // With 8k total budget, we can afford much richer memory context
-      const estimatedOtherTokens = 500; // Conservative estimate for other context
-      // Scale memory budget proportionally: 15% of total context window
       const contextSize = parseInt(process.env.CONTEXT_WINDOW_SIZE || '32000', 10);
       const maxTokensForMemory = Math.max(800, Math.floor(contextSize * 0.15)); // Minimum 800, scales with context
 
@@ -690,38 +626,73 @@ Important:
         });
 
         if (DEBUG) {
-          logger.info(`│ ✅ Found ${memoryResult.memoryCount} memories in ${searchTime}ms`);
-        }
-        if (DEBUG) {
-          logger.info(`│ Confidence: ${(memoryResult.confidence * 100).toFixed(1)}%`);
-        }
-        if (DEBUG) {
-          logger.info(`│ Categories: ${memoryResult.categories.join(', ')}`);
-        }
-
-        // 🔍 DEBUG: Log memory IDs for backward debugging
-        if (memoryResult.memoryIds && memoryResult.memoryIds.length > 0) {
-          if (DEBUG) {
-            logger.info(`│ Memory IDs: [${memoryResult.memoryIds.join(', ')}]`);
-          }
-        }
-
-        // Show preview of memory content
-        const preview = memoryResult.content.substring(0, 100).replace(/\n/g, ' ');
-        if (DEBUG) {
-          logger.info(`│ Preview: "${preview}${memoryResult.content.length > 100 ? '...' : ''}"`);
+          logger.info(`🧠 Memory search: ${memoryResult.memoryCount} memories found in ${searchTime}ms (confidence:${(memoryResult.confidence * 100).toFixed(1)}%, categories:${memoryResult.categories.join(',')})`);
         }
       } else {
         if (DEBUG) {
-          logger.info('│ ⚠️  No relevant memories found');
+          logger.info('🧠 Memory search: no relevant memories found');
         }
-      }
-      if (DEBUG) {
-        logger.info('└─────────────────────────────────────────────────────────────────┘');
       }
     } catch (error) {
       logger.warn('Failed to add relevant memories:', error);
       // Graceful degradation - continue without memory context
+    }
+  }
+
+  /**
+   * Add capability-specific learnings when using capabilities
+   * Retrieves reflections from past tool usage to improve execution
+   */
+  private async addCapabilityLearnings(
+    message: IncomingMessage,
+    sources: ContextSource[],
+    capabilityNames?: string[]
+  ): Promise<void> {
+    try {
+      // Only fetch capability learnings if we know which capabilities are being used
+      if (!capabilityNames || capabilityNames.length === 0) {
+        return;
+      }
+
+      const { MemoryService } = await import('../capabilities/memory.js');
+      const memoryService = MemoryService.getInstance();
+
+      // Retrieve memories tagged with capability names
+      const tags = [...capabilityNames, 'capability-reflection'];
+      const capabilityMemories = await memoryService.recallByTags(message.userId, tags, 5);
+
+      if (capabilityMemories.length > 0) {
+        // Format capability learnings for context
+        const learningsContent = `📚 Capability Learnings (from past usage):
+
+${capabilityMemories
+  .map(
+    (memory, i) =>
+      `${i + 1}. [${memory.tags.filter(t => t !== 'capability-reflection').join(', ')}] ${memory.content}`
+  )
+  .join('\n\n')}
+
+💡 Use these learnings to improve your capability usage. Remember what worked, what didn't, and apply those lessons!`;
+
+        sources.push({
+          name: 'capability_learnings',
+          priority: 85, // High priority - directly relevant to task execution
+          tokenWeight: Math.ceil(learningsContent.length / 4),
+          content: learningsContent,
+          category: 'memory',
+        });
+
+        if (DEBUG) {
+          logger.info(`🔧 Capability learnings: ${capabilityMemories.length} found for ${capabilityNames.join(',')}`);
+        }
+      } else {
+        if (DEBUG) {
+          logger.info(`🔧 Capability learnings: none found for ${capabilityNames.join(',')} (first time?)`);
+        }
+      }
+    } catch (error) {
+      logger.warn('Failed to add capability learnings:', error);
+      // Graceful degradation - continue without capability learnings
     }
   }
 

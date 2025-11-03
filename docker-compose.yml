@@ -51,6 +51,7 @@ services:
       - TWILIO_ACCOUNT_SID=${TWILIO_ACCOUNT_SID}
       - TWILIO_AUTH_TOKEN=${TWILIO_AUTH_TOKEN}
       - TWILIO_PHONE_NUMBER=${TWILIO_PHONE_NUMBER}
+      - ENABLE_AUTO_REFLECTION=${ENABLE_AUTO_REFLECTION}
     volumes:
       - ./packages/capabilities/data:/app/data:rw
       - ./packages/capabilities/src:/app/packages/capabilities/src

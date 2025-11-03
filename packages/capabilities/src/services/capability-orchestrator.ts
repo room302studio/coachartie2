@@ -992,7 +992,16 @@ export class CapabilityOrchestrator {
     logger.info(`⚡ ASSEMBLING MESSAGE ORCHESTRATION - ENTRY POINT REACHED!`);
     logger.info(`⚡ Assembling message orchestration for <${message.userId}> message`);
 
-    const llmResponse = await this.getLLMResponseWithCapabilities(message, onPartialResponse);
+    // Extract capabilities from user message BEFORE LLM call to enable capability learnings
+    const currentModel = openRouterService.getCurrentModel();
+    const userCapabilities = this.extractCapabilities(message.message, currentModel);
+    const userCapabilityNames = userCapabilities.map(cap => cap.name);
+
+    if (userCapabilityNames.length > 0) {
+      logger.info(`🔧 Pre-extracted ${userCapabilityNames.length} user capabilities for learnings: ${userCapabilityNames.join(', ')}`);
+    }
+
+    const llmResponse = await this.getLLMResponseWithCapabilities(message, onPartialResponse, userCapabilityNames);
     await this.extractCapabilitiesFromUserAndLLM(context, message, llmResponse);
     await this.reviewCapabilitiesWithConscience(context, message);
 
@@ -1238,7 +1247,8 @@ Timestamp: ${new Date().toISOString()}`;
    */
   private async getLLMResponseWithCapabilities(
     message: IncomingMessage,
-    onPartialResponse?: (partial: string) => void
+    onPartialResponse?: (partial: string) => void,
+    capabilityNames?: string[]
   ): Promise<string> {
     try {
       logger.info(`🚀 getLLMResponseWithCapabilities called for message: "${message.message}"`);
@@ -1252,8 +1262,11 @@ Timestamp: ${new Date().toISOString()}`;
         message.message,
         message.userId,
         baseInstructions,
-        undefined,
-        { source: message.source }
+        undefined,  // existingMessages
+        {
+          source: message.source,
+          capabilityContext: capabilityNames  // Pass capability names to enable capability learnings
+        }
       );
 
       // THREE-TIER STRATEGY: Use FAST_MODEL for capability extraction
@@ -1452,9 +1465,20 @@ Timestamp: ${new Date().toISOString()}`;
         );
 
         if (capabilityReflection && capabilityReflection !== '✨') {
-          await service.remember(context.userId, capabilityReflection, 'capability-reflection', 4);
+          // Extract capability names and add them as explicit tags for retrieval
+          const capabilityNames = [...new Set(context.capabilities.map(cap => cap.name))];
+          const tags = ['capability-reflection', ...capabilityNames];
+
+          await service.remember(
+            context.userId,
+            capabilityReflection,
+            'capability-reflection',
+            4,
+            undefined, // relatedMessageId
+            tags
+          );
           logger.info(
-            `🔧 Stored capability reflection memory for user ${context.userId} (${context.capabilities.length} capabilities)`
+            `🔧 Stored capability reflection memory for user ${context.userId} (${context.capabilities.length} capabilities) with tags: ${tags.join(', ')}`
           );
         }
       }
