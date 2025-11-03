@@ -5,6 +5,39 @@ All notable changes to Coach Artie will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.0] - 2025-11-03
+
+**Artie gets a persistent terminal! Shell capability now supports tmux sessions for stateful, long-running workflows.**
+
+### ✨ Added
+
+- **Persistent tmux Sessions** - Shell capability transformed with tmux support
+  - Commands maintain state between executions (directory, environment variables persist)
+  - No more 30-second timeout limits - commands run as long as needed
+  - Multiple panes for true parallel execution
+  - Asynchronous workflows - start tasks, check progress later
+  - Full command history (2000-line scrollback buffer)
+  - 5 action modes: `exec` (one-shot), `send` (run in tmux), `read` (capture output), `split` (create pane), `list` (show all panes)
+- **Sandboxed Development Environment** - Artie now has his own "laptop"
+  - Persistent /workspace volume for file storage
+  - Pre-installed tools: git, gh (GitHub CLI), jq, curl, python3, sqlite3, tmux
+  - Auto-authenticated GitHub CLI via GITHUB_TOKEN
+  - Resource limits (512MB RAM, 1 CPU) for safety
+- **Comprehensive tmux Documentation** - 6 detailed documentation files (3,795 lines)
+  - TMUX_README.md - Overview and quick start
+  - TMUX_ARCHITECTURE.md - Complete design specification
+  - TMUX_QUICK_REFERENCE.md - LLM usage guide
+  - TMUX_IMPLEMENTATION.md - Technical implementation
+  - SHELL_VS_TMUX.md - When to use each mode
+  - TMUX_VISUAL_ARCHITECTURE.md - Diagrams and flows
+
+### 🐛 Fixed
+
+- **Sandbox Installation Issues** - Resolved multiple startup bugs
+  - Fixed infinite loop in GitHub CLI authentication
+  - Corrected malformed apt sources.list for gh CLI
+  - Simplified security model (container isolation sufficient)
+
 ## [1.3.1] - 2025-11-02
 
 **Testing & debugging improvements! Enhanced HTTP logging and Brain memory analytics.**
