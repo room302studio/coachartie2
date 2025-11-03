@@ -121,9 +121,6 @@ interface GitHubReleasePayload {
 // Wiki update configuration - can be extended via environment variables
 const WIKI_UPDATE_CONFIG: Record<string, WikiUpdateRule> = loadWikiUpdateRules();
 
-// Discord channel configuration for release announcements
-const DISCORD_CHANNEL_CONFIG: Record<string, string> = loadDiscordChannelRules();
-
 interface WikiUpdateRule {
   wiki: string;  // Which wiki to update
   page: string;  // Which page to update
@@ -155,24 +152,6 @@ function loadWikiUpdateRules(): Record<string, WikiUpdateRule> {
       page: 'Subway_Builder_Releases',
       format: 'list'
     };
-  }
-
-  return rules;
-}
-
-function loadDiscordChannelRules(): Record<string, string> {
-  const rules: Record<string, string> = {};
-
-  // Load from environment variables like GITHUB_RELEASE_CHANNEL_colindm_metro_maker4=beta
-  for (const [key, value] of Object.entries(process.env)) {
-    if (key.startsWith('GITHUB_RELEASE_CHANNEL_') && value) {
-      const repoName = key.slice('GITHUB_RELEASE_CHANNEL_'.length).replace(/_/g, '/');
-      rules[repoName.toLowerCase()] = value;
-    }
-  }
-
-  if (Object.keys(rules).length > 0) {
-    logger.info(`📢 Discord channel rules loaded:`, rules);
   }
 
   return rules;
@@ -253,10 +232,7 @@ async function handleReleaseEvent(payload: GitHubReleasePayload): Promise<void> 
     author: release.author.login,
   });
 
-  // Get configured Discord channel for this repo
-  const discordChannel = DISCORD_CHANNEL_CONFIG[repository.full_name.toLowerCase()] || 'general';
-
-  // Queue message for Artie to process - let him handle it through capabilities
+  // Queue message for Artie to process - let him decide where to announce based on his memory
   const artieMessage = `A new release was just published for ${repository.full_name}:
 
 Version: ${release.tag_name}
@@ -269,12 +245,12 @@ ${release.body || 'No release notes provided'}
 
 URL: ${release.html_url}
 
-Please announce this release in the #${discordChannel} Discord channel with a nice formatted message.`;
+Please announce this release in the appropriate Discord channel.`;
 
   await publishMessage(
     'github-webhook-release',
     artieMessage,
-    discordChannel,
+    'general', // Default channel, but Artie can override via capabilities
     'GitHub Webhook',
     false // Don't skip capability extraction
   );
