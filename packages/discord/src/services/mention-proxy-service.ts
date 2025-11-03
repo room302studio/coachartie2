@@ -359,6 +359,7 @@ class MentionProxyService {
         .join('\n');
 
       // Use fast LLM to judge (haiku for speed)
+      // @ts-ignore - axios types may not be available
       const axios = (await import('axios')).default;
       const CAPABILITIES_URL =
         process.env.CAPABILITIES_URL || 'http://localhost:' + (process.env.CAPABILITIES_PORT || '47324');

@@ -14,7 +14,7 @@ const worker = new Worker(
       if (channelId) {
         // Send to channel
         const channel = await client.channels.fetch(channelId);
-        if (channel?.isTextBased()) {
+        if (channel?.isTextBased() && 'send' in channel) {
           await channel.send(content);
         }
       } else {

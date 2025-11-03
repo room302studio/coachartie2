@@ -51,6 +51,7 @@ export const linkPhoneCommand = {
       let smsResult = null;
       try {
         // Import dynamically to avoid issues if SMS service is down
+        // @ts-ignore - SMS package may not be available
         const { sendVerificationSMS } = await import('@coachartie/sms/utils');
         smsResult = await sendVerificationSMS(phoneNumber, verificationCode);
       } catch (error) {
