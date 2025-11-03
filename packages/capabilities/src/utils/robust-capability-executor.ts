@@ -1,6 +1,8 @@
 import { logger } from '@coachartie/shared';
 import { ParsedCapability } from './xml-parser.js';
 import { capabilityRegistry } from '../services/capability-registry.js';
+import { VariableStore } from '../capabilities/variable-store.js';
+import Handlebars from 'handlebars';
 
 export interface CapabilityResult {
   capability: ParsedCapability;
@@ -142,18 +144,85 @@ export class RobustCapabilityExecutor {
   /**
    * Try executing via capability registry
    */
+  /**
+   * Interpolate variables in parameters using Handlebars template engine
+   * Supports both ${var} and {{var}} syntax
+   */
+  private interpolateParams(
+    params: Record<string, any>,
+    userId: string
+  ): Record<string, any> {
+    const variableStore = VariableStore.getInstance();
+    const interpolated: Record<string, any> = {};
+
+    // Get all variables for this user as a flat object for Handlebars
+    const userVariables = this.getUserVariablesForHandlebars(userId);
+
+    for (const [key, value] of Object.entries(params)) {
+      if (typeof value === 'string') {
+        try {
+          // Convert ${var} syntax to {{var}} for Handlebars compatibility
+          const normalizedTemplate = value.replace(/\$\{([^}]+)\}/g, '{{$1}}');
+
+          // Compile and execute the template with Handlebars
+          const template = Handlebars.compile(normalizedTemplate, { noEscape: true });
+          const interpolatedValue = template(userVariables);
+
+          if (interpolatedValue !== value) {
+            logger.info(`🔗 Interpolated ${key}: "${value}" → "${interpolatedValue}"`);
+          }
+
+          interpolated[key] = interpolatedValue;
+        } catch (error) {
+          logger.warn(`⚠️ Template interpolation failed for ${key}: ${error}`);
+          interpolated[key] = value; // Keep original on error
+        }
+      } else if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
+        // Recursively interpolate nested objects
+        interpolated[key] = this.interpolateParams(value, userId);
+      } else {
+        interpolated[key] = value;
+      }
+    }
+
+    return interpolated;
+  }
+
+  /**
+   * Get all user variables as a flat object for Handlebars
+   */
+  private getUserVariablesForHandlebars(userId: string): Record<string, any> {
+    const variableStore = VariableStore.getInstance();
+    const session = variableStore['sessions'].get(userId);
+
+    if (!session) {
+      return {};
+    }
+
+    // Convert Map to plain object for Handlebars
+    const variables: Record<string, any> = {};
+    for (const [key, value] of session.entries()) {
+      variables[key] = value;
+    }
+
+    return variables;
+  }
+
   private async tryRegistryExecution(
     capability: ParsedCapability,
     context: { userId: string; messageId: string }
   ): Promise<unknown> {
     // Inject userId and messageId into params for capabilities that need context
-    const paramsWithContext = ['scheduler', 'memory'].includes(capability.name)
+    let paramsWithContext = ['scheduler', 'memory'].includes(capability.name)
       ? {
           ...capability.params,
           userId: context.userId,
           messageId: context.messageId,
         }
       : capability.params;
+
+    // Interpolate variables in params
+    paramsWithContext = this.interpolateParams(paramsWithContext, context.userId);
 
     logger.info(
       `🎯 REGISTRY: Executing ${capability.name}:${capability.action} with params: ${JSON.stringify(paramsWithContext)}`
