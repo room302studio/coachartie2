@@ -222,8 +222,11 @@ export class SchedulerService {
     try {
       logger.info(`⏰ EXECUTING SCHEDULED JOB: ${job.name} (ID: ${taskId})`);
 
+      // Determine job type: use job.name first, fall back to job.data.type for dynamic names
+      const jobType = job.data.type || job.name;
+
       // Handle different types of scheduled jobs
-      switch (job.name) {
+      switch (jobType) {
         case 'health-check':
           await this.executeHealthCheck(job.data);
           break;
@@ -241,7 +244,7 @@ export class SchedulerService {
           break;
 
         default:
-          logger.warn(`Unknown scheduled job type: ${job.name}`);
+          logger.warn(`Unknown scheduled job type: ${jobType} (job name: ${job.name})`);
       }
 
       logger.info(`✅ Scheduled job '${job.name}' completed successfully`);
