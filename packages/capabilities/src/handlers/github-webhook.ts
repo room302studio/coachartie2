@@ -241,7 +241,7 @@ async function handlePushEvent(payload: GitHubPushPayload): Promise<void> {
 async function handleReleaseEvent(payload: GitHubReleasePayload): Promise<void> {
   const { action, release, repository } = payload;
 
-  // Only celebrate published releases (not drafts)
+  // Only handle published releases (not drafts)
   if (action !== 'published' || release.draft) {
     logger.info(`📝 Skipping ${action} release (not published)`);
     return;
@@ -253,17 +253,31 @@ async function handleReleaseEvent(payload: GitHubReleasePayload): Promise<void> 
     author: release.author.login,
   });
 
-  // Determine which Discord channel to post to
+  // Get configured Discord channel for this repo
   const discordChannel = DISCORD_CHANNEL_CONFIG[repository.full_name.toLowerCase()] || 'general';
 
-  logger.info(`📢 Posting release announcement to #${discordChannel}`, {
-    repo: repository.full_name,
-    channel: discordChannel,
-  });
+  // Queue message for Artie to process - let him handle it through capabilities
+  const artieMessage = `A new release was just published for ${repository.full_name}:
 
-  const celebrationMessage = generateReleaseCelebration(payload);
+Version: ${release.tag_name}
+Name: ${release.name || release.tag_name}
+Author: ${release.author.login}
+${release.prerelease ? 'Type: Pre-release' : ''}
 
-  await publishMessage('github-bot', celebrationMessage, discordChannel, 'GitHub Bot', true);
+Release Notes:
+${release.body || 'No release notes provided'}
+
+URL: ${release.html_url}
+
+Please announce this release in the #${discordChannel} Discord channel with a nice formatted message.`;
+
+  await publishMessage(
+    'github-webhook-release',
+    artieMessage,
+    discordChannel,
+    'GitHub Webhook',
+    false // Don't skip capability extraction
+  );
 
   // Smart wiki updates based on configuration
   await updateWikiForRelease(repository.full_name, release);
@@ -445,24 +459,6 @@ function generatePushCelebration(payload: GitHubPushPayload): string {
   return message;
 }
 
-function generateReleaseCelebration(payload: GitHubReleasePayload): string {
-  const { release, repository } = payload;
-
-  const isPrerelease = release.prerelease;
-  const emoji = isPrerelease ? '🧪' : '🎉';
-  const releaseType = isPrerelease ? 'pre-release' : 'release';
-
-  let message = `${emoji} **New ${releaseType}**: ${release.name || release.tag_name} is live!\n\n`;
-  message += `📦 **${repository.name}** ${release.tag_name}\n`;
-  message += `👤 Released by **${release.author.login}**\n`;
-  message += `🔗 [View release](${release.html_url})\n\n`;
-
-  if (release.body && release.body.length < 300) {
-    message += `📝 **What's new:**\n${release.body.substring(0, 300)}${release.body.length > 300 ? '...' : ''}`;
-  }
-
-  return message;
-}
 
 function generatePRCelebration(payload: GitHubWebhookPayload): string {
   const { pull_request, repository } = payload;
