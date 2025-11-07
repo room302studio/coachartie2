@@ -32,7 +32,11 @@ export async function startResponseConsumer(client: Client): Promise<Worker<Outg
       } else {
         // Send regular text message (only if channel supports it)
         if ('send' in channel) {
-          await channel.send(response.message);
+          // Add debug instance identifier if enabled
+          const debugInfo = process.env.ENABLE_INSTANCE_DEBUG === 'true'
+            ? `\n\n_[${process.env.INSTANCE_NAME || 'unknown'}]_`
+            : '';
+          await channel.send(response.message + debugInfo);
         } else {
           throw new Error(`Channel type does not support sending messages: ${channel.type}`);
         }

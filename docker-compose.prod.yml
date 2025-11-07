@@ -112,6 +112,7 @@ services:
       - DISCORD_STATUS_FILE=/app/data/discord-status.json
       - DISCORD_METRICS_FILE=/app/data/discord-metrics.json
       - DISCORD_EVENTS_FILE=/app/data/discord-events.json
+      - INSTANCE_NAME=vps-prod
     volumes:
       - ./data:/app/data:rw
       - ./logs:/app/logs:rw
