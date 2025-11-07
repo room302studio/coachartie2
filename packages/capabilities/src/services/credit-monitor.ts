@@ -1,4 +1,4 @@
-import { getDatabase } from '@coachartie/shared';
+import { getDatabase, createQueue } from '@coachartie/shared';
 import { logger } from '@coachartie/shared';
 
 export interface CreditInfo {
@@ -194,7 +194,7 @@ export class CreditMonitor {
       // Check if we already have a recent alert of this type
       const recentAlert = await db.get(
         `
-        SELECT id FROM credit_alerts 
+        SELECT id FROM credit_alerts
         WHERE alert_type = ? AND severity = ?
         AND created_at > datetime('now', '-1 hour')
         AND acknowledged = 0
@@ -225,8 +225,52 @@ export class CreditMonitor {
       // Log the alert
       const emoji = alert.severity === 'critical' ? '🚨' : '⚠️';
       logger.warn(`${emoji} Credit Alert: ${alert.message}`);
+
+      // Send Discord notification for critical alerts
+      if (alert.severity === 'critical') {
+        await this.sendDiscordNotification(alert);
+      }
     } catch (error) {
       logger.error('❌ Failed to create alert:', error);
+    }
+  }
+
+  /**
+   * Send Discord notification for critical alerts
+   */
+  private async sendDiscordNotification(alert: CreditAlert): Promise<void> {
+    try {
+      // Get admin Discord ID from environment
+      const adminDiscordId = process.env.ADMIN_DISCORD_ID;
+      const adminChannelId = process.env.ADMIN_CHANNEL_ID;
+
+      if (!adminDiscordId && !adminChannelId) {
+        logger.warn(
+          '⚠️ No ADMIN_DISCORD_ID or ADMIN_CHANNEL_ID configured - skipping Discord notification'
+        );
+        return;
+      }
+
+      const notificationMessage = `${alert.message}
+
+**Add credits here:** https://openrouter.ai/settings/credits
+
+This is an automated alert from the credit monitoring system.`;
+
+      // Send directly to Discord outgoing queue (bypass processing)
+      const outgoingQueue = createQueue('coachartie-discord-outgoing');
+
+      await outgoingQueue.add('send-message', {
+        userId: adminDiscordId,
+        channelId: adminChannelId,
+        content: notificationMessage,
+        source: 'credit-monitor',
+      });
+
+      logger.info(`💳 Critical credit alert sent to Discord (${adminDiscordId || adminChannelId})`);
+    } catch (error) {
+      logger.error('❌ Failed to send Discord notification:', error);
+      // Don't throw - notification failure shouldn't break credit monitoring
     }
   }
 
