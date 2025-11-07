@@ -323,6 +323,13 @@ class OpenRouterService {
           totalModels: this.models.length,
         });
 
+        // Track if this is a credit/billing error
+        const isCreditError =
+          errorMessage.includes('credit') ||
+          errorMessage.includes('billing') ||
+          errorMessage.includes('quota') ||
+          errorStatus === 402;
+
         // Detect specific error types
         if (
           errorStatus === 404 ||
@@ -332,13 +339,14 @@ class OpenRouterService {
           logger.error(
             `🚨 Model "${model}" does not exist on OpenRouter! Check https://openrouter.ai/models`
           );
-        } else if (
-          errorMessage.includes('credit') ||
-          errorMessage.includes('billing') ||
-          errorMessage.includes('quota') ||
-          errorStatus === 402
-        ) {
+        } else if (isCreditError) {
           logger.info('💳 Billing/credit error detected, trying next model...');
+          // If this is the last model and it's a credit error, throw it
+          if (i === this.models.length - 1) {
+            throw new Error(
+              '💳 OpenRouter credits exhausted. Please add more credits at https://openrouter.ai/settings/credits'
+            );
+          }
         } else if (errorStatus === 429) {
           logger.warn('🚦 Rate limit hit, trying next model...');
         } else if (errorStatus === 500 || errorStatus === 502 || errorStatus === 503) {
@@ -354,12 +362,15 @@ class OpenRouterService {
 
         // Last model failed
         logger.error('💥 All models failed. Last error:', error);
+        throw error;
       }
     }
 
     // All models failed
-    logger.error('🚨 All OpenRouter models failed, using fallback response');
-    return "I'm Coach Artie! I'm having some technical difficulties right now, but I'm here to help. What can I assist you with today?";
+    logger.error('🚨 All OpenRouter models failed');
+    throw new Error(
+      'All OpenRouter models failed. This may be due to service issues or configuration problems.'
+    );
   }
 
   /**
@@ -521,6 +532,20 @@ class OpenRouterService {
           totalModels: this.models.length,
         });
 
+        // Track if this is a credit/billing error
+        const isCreditError =
+          errorMessage.includes('credit') ||
+          errorMessage.includes('billing') ||
+          errorMessage.includes('quota') ||
+          errorStatus === 402;
+
+        // If last model and credit error, throw immediately
+        if (i === this.models.length - 1 && isCreditError) {
+          throw new Error(
+            '💳 OpenRouter credits exhausted. Please add more credits at https://openrouter.ai/settings/credits'
+          );
+        }
+
         // Try next model on failure
         if (i < this.models.length - 1) {
           continue;
@@ -528,13 +553,15 @@ class OpenRouterService {
 
         // Last model failed - fallback to regular generation
         logger.warn('📡 Streaming failed, falling back to regular generation');
-        return await this.generateFromMessageChain(messages, userId);
+        return await this.generateFromMessageChain(messages, userId, messageId, selectedModel);
       }
     }
 
-    // Fallback response
+    // Fallback response - should not reach here
     logger.error('🚨 All streaming attempts failed');
-    return "I'm Coach Artie! I'm having some technical difficulties with streaming, but I'm here to help. What can I assist you with today?";
+    throw new Error(
+      'All OpenRouter models failed for streaming. This may be due to service issues or configuration problems.'
+    );
   }
 
   async isHealthy(): Promise<boolean> {

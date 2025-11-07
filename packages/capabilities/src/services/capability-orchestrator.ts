@@ -143,11 +143,7 @@ class MeetingService {
     if (isValid(date)) return fromZonedTime(date, userTimezone);
 
     // Try 2: Common patterns with date-fns
-    const patterns = [
-      'yyyy-MM-dd HH:mm',
-      'MM/dd/yyyy HH:mm',
-      'MMMM d, yyyy h:mm a',
-    ];
+    const patterns = ['yyyy-MM-dd HH:mm', 'MM/dd/yyyy HH:mm', 'MMMM d, yyyy h:mm a'];
 
     for (const pattern of patterns) {
       date = parse(input, pattern, new Date());
@@ -207,7 +203,10 @@ class MeetingService {
       // Add participants
       const participantNames: string[] = [];
       for (const participant of participants) {
-        const { id, type, displayName } = this.parseParticipant(participant, options.discord_context);
+        const { id, type, displayName } = this.parseParticipant(
+          participant,
+          options.discord_context
+        );
 
         await db.run(
           `
@@ -226,12 +225,16 @@ class MeetingService {
         const delay = reminderTime.getTime() - Date.now();
         const jobId = `meeting-reminder-${meetingId}`;
 
-        await schedulerService.scheduleOnce('user-reminder', {
-          userId,
-          reminderType: 'meeting-reminder',
-          message: `Meeting reminder: "${title}" starts in 15 minutes`,
-          meetingId,
-        }, delay);
+        await schedulerService.scheduleOnce(
+          'user-reminder',
+          {
+            userId,
+            reminderType: 'meeting-reminder',
+            message: `Meeting reminder: "${title}" starts in 15 minutes`,
+            meetingId,
+          },
+          delay
+        );
 
         await db.run(
           `
@@ -242,7 +245,9 @@ class MeetingService {
         );
       }
 
-      logger.info(`📅 Created meeting "${title}" for user ${userId} with ${participants.length} participants`);
+      logger.info(
+        `📅 Created meeting "${title}" for user ${userId} with ${participants.length} participants`
+      );
 
       const timeStr = parsedTime.toLocaleString('en-US', {
         weekday: 'long',
@@ -250,7 +255,7 @@ class MeetingService {
         day: 'numeric',
         hour: 'numeric',
         minute: '2-digit',
-        hour12: true
+        hour12: true,
       });
 
       const participantStr = participantNames.join(', ');
@@ -258,12 +263,13 @@ class MeetingService {
       return `✅ Meeting scheduled: "${title}" on ${timeStr} with ${participantStr}`;
     } catch (error) {
       logger.error('❌ Failed to create meeting:', error);
-      throw new Error(`Failed to create meeting: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      throw new Error(
+        `Failed to create meeting: ${error instanceof Error ? error.message : 'Unknown error'}`
+      );
     }
   }
 
   async listMeetings(userId: string, includeCompleted = false): Promise<string> {
-    
     try {
       const db = await getDatabase();
 
@@ -308,8 +314,8 @@ class MeetingService {
             hour12: true,
           });
 
-          const statusEmoji = meeting.status === 'scheduled' ? '📅' :
-                             meeting.status === 'completed' ? '✅' : '❌';
+          const statusEmoji =
+            meeting.status === 'scheduled' ? '📅' : meeting.status === 'completed' ? '✅' : '❌';
 
           return `${statusEmoji} **${meeting.title}** - ${timeStr} (${meeting.duration_minutes}min)\n   Participants: ${participantStr}`;
         })
@@ -323,7 +329,6 @@ class MeetingService {
   }
 
   async suggestTime(userId: string, participants: string[], discordContext?: any): Promise<string> {
-
     try {
       const db = await getDatabase();
 
@@ -370,7 +375,9 @@ class MeetingService {
 
       suggestions.push(`\n📅 Available slots:\n- Tomorrow at 9:00 AM\n- Tomorrow at 2:00 PM`);
 
-      const participantStr = participants.map(p => this.parseParticipant(p, discordContext).displayName).join(', ');
+      const participantStr = participants
+        .map((p) => this.parseParticipant(p, discordContext).displayName)
+        .join(', ');
       suggestions.push(`\nParticipants: ${participantStr}`);
 
       return suggestions.join('\n');
@@ -381,7 +388,6 @@ class MeetingService {
   }
 
   async checkAvailability(userId: string, time: string): Promise<string> {
-    
     try {
       const db = await getDatabase();
       const checkTime = new Date(time);
@@ -417,28 +423,36 @@ class MeetingService {
       if (conflicts.length === 0) {
         return `✅ You're available at ${timeStr}`;
       } else {
-        const conflictList = conflicts.map((m: MeetingRow) =>
-          `- ${m.title} at ${new Date(m.scheduled_time).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}`
-        ).join('\n');
+        const conflictList = conflicts
+          .map(
+            (m: MeetingRow) =>
+              `- ${m.title} at ${new Date(m.scheduled_time).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}`
+          )
+          .join('\n');
 
         return `⚠️ Potential conflicts around ${timeStr}:\n${conflictList}`;
       }
     } catch (error) {
       logger.error('❌ Failed to check availability:', error);
-      throw new Error(`Failed to check availability: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      throw new Error(
+        `Failed to check availability: ${error instanceof Error ? error.message : 'Unknown error'}`
+      );
     }
   }
 
-  async updateMeeting(userId: string, meetingId: number, updates: Partial<MeetingRow>): Promise<string> {
-    
+  async updateMeeting(
+    userId: string,
+    meetingId: number,
+    updates: Partial<MeetingRow>
+  ): Promise<string> {
     try {
       const db = await getDatabase();
 
       // Verify meeting belongs to user
-      const meeting = await db.get(
-        `SELECT id, title FROM meetings WHERE id = ? AND user_id = ?`,
-        [meetingId, userId]
-      );
+      const meeting = await db.get(`SELECT id, title FROM meetings WHERE id = ? AND user_id = ?`, [
+        meetingId,
+        userId,
+      ]);
 
       if (!meeting) {
         throw new Error(`Meeting ${meetingId} not found`);
@@ -471,30 +485,28 @@ class MeetingService {
       updateFields.push('updated_at = CURRENT_TIMESTAMP');
       values.push(meetingId);
 
-      await db.run(
-        `UPDATE meetings SET ${updateFields.join(', ')} WHERE id = ?`,
-        values
-      );
+      await db.run(`UPDATE meetings SET ${updateFields.join(', ')} WHERE id = ?`, values);
 
       logger.info(`📅 Updated meeting ${meetingId} for user ${userId}`);
 
       return `✅ Updated meeting: "${meeting.title}"`;
     } catch (error) {
       logger.error('❌ Failed to update meeting:', error);
-      throw new Error(`Failed to update meeting: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      throw new Error(
+        `Failed to update meeting: ${error instanceof Error ? error.message : 'Unknown error'}`
+      );
     }
   }
 
   async cancelMeeting(userId: string, meetingId: number): Promise<string> {
-    
     try {
       const db = await getDatabase();
 
       // Verify meeting belongs to user
-      const meeting = await db.get(
-        `SELECT id, title FROM meetings WHERE id = ? AND user_id = ?`,
-        [meetingId, userId]
-      );
+      const meeting = await db.get(`SELECT id, title FROM meetings WHERE id = ? AND user_id = ?`, [
+        meetingId,
+        userId,
+      ]);
 
       if (!meeting) {
         throw new Error(`Meeting ${meetingId} not found`);
@@ -510,11 +522,16 @@ class MeetingService {
       return `✅ Cancelled meeting: "${meeting.title}"`;
     } catch (error) {
       logger.error('❌ Failed to cancel meeting:', error);
-      throw new Error(`Failed to cancel meeting: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      throw new Error(
+        `Failed to cancel meeting: ${error instanceof Error ? error.message : 'Unknown error'}`
+      );
     }
   }
 
-  private parseParticipant(participant: string, discordContext?: any): { id: string; type: 'discord' | 'email'; displayName: string } {
+  private parseParticipant(
+    participant: string,
+    discordContext?: any
+  ): { id: string; type: 'discord' | 'email'; displayName: string } {
     // Resolve Discord mentions using context
     const mentionMatch = participant.match(/^<@!?(\d+)>$/);
     if (mentionMatch && discordContext?.mentions) {
@@ -579,7 +596,8 @@ async function handleMeetingAction(params: MeetingParams, content?: string): Pro
         // Normalize param names - LLMs use different variations
         const title = params.title || (params as any).topic || (params as any).name || content;
         const time = params.time || (params as any).when;
-        const participantsStr = params.participants || (params as any).attendees || (params as any).people;
+        const participantsStr =
+          params.participants || (params as any).attendees || (params as any).people;
 
         if (!title) {
           logger.error('❌ Meeting creation failed: Missing title param', params);
@@ -593,10 +611,14 @@ async function handleMeetingAction(params: MeetingParams, content?: string): Pro
 
         // Participants are optional - if none provided, it's a solo meeting
         const participants = participantsStr
-          ? String(participantsStr).split(',').map(p => p.trim())
+          ? String(participantsStr)
+              .split(',')
+              .map((p) => p.trim())
           : [];
 
-        logger.info(`✅ Meeting params validated - Title: ${title}, Time: ${time}, Participants: ${participants.length > 0 ? participantsStr : 'none (solo meeting)'}`);
+        logger.info(
+          `✅ Meeting params validated - Title: ${title}, Time: ${time}, Participants: ${participants.length > 0 ? participantsStr : 'none (solo meeting)'}`
+        );
         const duration = params.duration ? parseInt(String(params.duration)) : 60;
 
         return await meetingService.createMeeting(
@@ -621,8 +643,14 @@ async function handleMeetingAction(params: MeetingParams, content?: string): Pro
           return '❌ Please provide participants. Example: <capability name="meeting-scheduler" action="suggest-time" participants="<@123>,alice@example.com" />';
         }
 
-        const participants = String(participantsStr).split(',').map(p => p.trim());
-        return await meetingService.suggestTime(String(user_id), participants, params.discord_context);
+        const participants = String(participantsStr)
+          .split(',')
+          .map((p) => p.trim());
+        return await meetingService.suggestTime(
+          String(user_id),
+          participants,
+          params.discord_context
+        );
       }
 
       case 'check-availability': {
@@ -636,7 +664,8 @@ async function handleMeetingAction(params: MeetingParams, content?: string): Pro
       }
 
       case 'list': {
-        const includeCompleted = params.include_completed === 'true' || params.include_completed === true;
+        const includeCompleted =
+          params.include_completed === 'true' || params.include_completed === true;
         return await meetingService.listMeetings(String(user_id), includeCompleted);
       }
 
@@ -653,7 +682,11 @@ async function handleMeetingAction(params: MeetingParams, content?: string): Pro
         if (params.time) updates.scheduled_time = String(params.time);
         if (params.duration) updates.duration_minutes = parseInt(String(params.duration));
 
-        return await meetingService.updateMeeting(String(user_id), parseInt(String(meetingId)), updates);
+        return await meetingService.updateMeeting(
+          String(user_id),
+          parseInt(String(meetingId)),
+          updates
+        );
       }
 
       case 'cancel': {
@@ -678,7 +711,8 @@ async function handleMeetingAction(params: MeetingParams, content?: string): Pro
 const meetingCapability: RegisteredCapability = {
   name: 'meeting-scheduler',
   supportedActions: ['create', 'suggest-time', 'check-availability', 'list', 'update', 'cancel'],
-  description: 'Schedule and manage meetings with participants, check availability, get AI-powered time suggestions, and receive reminders',
+  description:
+    'Schedule and manage meetings with participants, check availability, get AI-powered time suggestions, and receive reminders',
   handler: handleMeetingAction,
   examples: [
     '<capability name="meeting-scheduler" action="create" title="Team Sync" time="tomorrow at 2pm" participants="<@123456>,alice@example.com" duration="30" />',
@@ -836,7 +870,8 @@ export class CapabilityOrchestrator {
       capabilityRegistry.register({
         name: 'scheduler',
         supportedActions: ['remind', 'schedule', 'list', 'cancel'],
-        description: 'Set one-time reminders (e.g., "remind me in 5 minutes"), schedule recurring tasks with cron expressions, view scheduled tasks, or cancel scheduled reminders. Perfect for time-based automation and remembering things.',
+        description:
+          'Set one-time reminders (e.g., "remind me in 5 minutes"), schedule recurring tasks with cron expressions, view scheduled tasks, or cancel scheduled reminders. Perfect for time-based automation and remembering things.',
         handler: async (params, _content) => {
           const { action } = params;
 
@@ -921,7 +956,8 @@ export class CapabilityOrchestrator {
       capabilityRegistry.register({
         name: 'sequence',
         supportedActions: ['execute'],
-        description: 'Execute multiple capabilities in sequence, passing results forward. Enables complex multi-step workflows. Use "steps" parameter with array of capability objects.',
+        description:
+          'Execute multiple capabilities in sequence, passing results forward. Enables complex multi-step workflows. Use "steps" parameter with array of capability objects.',
         handler: async (params, _content) => {
           const { steps, userId, messageId } = params;
 
@@ -964,7 +1000,9 @@ export class CapabilityOrchestrator {
             const { name, action, ...stepParams } = step;
 
             try {
-              logger.info(`🔗 SEQUENCE: Executing step ${stepNum}/${stepsArray.length}: ${name}:${action || 'default'}`);
+              logger.info(
+                `🔗 SEQUENCE: Executing step ${stepNum}/${stepsArray.length}: ${name}:${action || 'default'}`
+              );
 
               // Add userId and messageId to step params
               const enrichedParams = {
@@ -1007,12 +1045,15 @@ export class CapabilityOrchestrator {
           }
 
           const duration = Date.now() - startTime;
-          const summary = `✅ Sequence completed: ${stepsArray.length} steps in ${duration}ms\n\n` +
-            results.map(r =>
-              r.success
-                ? `${r.step}. ✅ ${r.capability}: ${typeof r.result === 'string' ? r.result.substring(0, 100) : 'Success'}`
-                : `${r.step}. ❌ ${r.capability}: ${r.error}`
-            ).join('\n');
+          const summary =
+            `✅ Sequence completed: ${stepsArray.length} steps in ${duration}ms\n\n` +
+            results
+              .map((r) =>
+                r.success
+                  ? `${r.step}. ✅ ${r.capability}: ${typeof r.result === 'string' ? r.result.substring(0, 100) : 'Success'}`
+                  : `${r.step}. ❌ ${r.capability}: ${r.error}`
+              )
+              .join('\n');
 
           logger.info(`🔗 SEQUENCE: Completed ${stepsArray.length} steps in ${duration}ms`);
 
@@ -1056,7 +1097,12 @@ export class CapabilityOrchestrator {
       const draftResponse = this.detectDraftResponse(message.message);
       if (draftResponse) {
         logger.info(`📧 DRAFT RESPONSE DETECTED: ${draftResponse.action}`);
-        return await this.handleDraftResponse(message, activeDraft, draftResponse, onPartialResponse);
+        return await this.handleDraftResponse(
+          message,
+          activeDraft,
+          draftResponse,
+          onPartialResponse
+        );
       }
     }
 
@@ -1095,16 +1141,12 @@ export class CapabilityOrchestrator {
     logger.info(`⚡ ASSEMBLING MESSAGE ORCHESTRATION - ENTRY POINT REACHED!`);
     logger.info(`⚡ Assembling message orchestration for <${message.userId}> message`);
 
-    // Extract capabilities from user message BEFORE LLM call to enable capability learnings
-    const currentModel = openRouterService.getCurrentModel();
-    const userCapabilities = this.extractCapabilities(message.message, currentModel);
-    const userCapabilityNames = userCapabilities.map(cap => cap.name);
-
-    if (userCapabilityNames.length > 0) {
-      logger.info(`🔧 Pre-extracted ${userCapabilityNames.length} user capabilities for learnings: ${userCapabilityNames.join(', ')}`);
-    }
-
-    const llmResponse = await this.getLLMResponseWithCapabilities(message, onPartialResponse, userCapabilityNames);
+    // No pre-extraction - let the LLM decide what capabilities to use
+    // Capability learnings will be loaded later if/when capabilities are actually executed
+    const llmResponse = await this.getLLMResponseWithCapabilities(
+      message,
+      onPartialResponse
+    );
     await this.extractCapabilitiesFromUserAndLLM(context, message, llmResponse);
     await this.reviewCapabilitiesWithConscience(context, message);
 
@@ -1330,12 +1372,30 @@ export class CapabilityOrchestrator {
     context: OrchestrationContext,
     message: IncomingMessage
   ): string {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+
+    // Check if this is a credit exhaustion error
+    if (
+      errorMessage.includes('credit') ||
+      errorMessage.includes('OpenRouter credits exhausted')
+    ) {
+      return `💳 **OpenRouter Credits Exhausted**
+
+I'm unable to respond right now because the API credits have run out.
+
+**To fix this:**
+Add more credits at https://openrouter.ai/settings/credits
+
+*Message ID: ${message.id}*`;
+    }
+
+    // For other errors, provide debug information
     return `🚨 ORCHESTRATION FAILURE DEBUG 🚨
 Message ID: ${message.id}
 User ID: ${message.userId}
 Original Message: "${message.message}"
 Source: ${message.source}
-Orchestration Error: ${error instanceof Error ? error.message : String(error)}
+Orchestration Error: ${errorMessage}
 Stack: ${error instanceof Error ? error.stack : 'No stack trace'}
 Capabilities Found: ${context.capabilities.length}
 Capability Details: ${context.capabilities.map((c) => `${c.name}:${c.action}`).join(', ')}
@@ -1367,10 +1427,10 @@ Timestamp: ${new Date().toISOString()}`;
         message.message,
         message.userId,
         baseInstructions,
-        undefined,  // existingMessages
+        undefined, // existingMessages
         {
           source: message.source,
-          capabilityContext: capabilityNames  // Pass capability names to enable capability learnings
+          capabilityContext: capabilityNames, // Pass capability names to enable capability learnings
         }
       );
 
@@ -1413,7 +1473,6 @@ Timestamp: ${new Date().toISOString()}`;
     }
   }
 
-
   /**
    * Get available MCP tools from all connected servers
    */
@@ -1455,7 +1514,6 @@ Timestamp: ${new Date().toISOString()}`;
       return [];
     }
   }
-
 
   /**
    * Get relevant memory patterns for learning from past experiences
@@ -1571,7 +1629,7 @@ Timestamp: ${new Date().toISOString()}`;
 
         if (capabilityReflection && capabilityReflection !== '✨') {
           // Extract capability names and add them as explicit tags for retrieval
-          const capabilityNames = [...new Set(context.capabilities.map(cap => cap.name))];
+          const capabilityNames = [...new Set(context.capabilities.map((cap) => cap.name))];
           const tags = ['capability-reflection', ...capabilityNames];
 
           await service.remember(
@@ -1602,33 +1660,36 @@ Timestamp: ${new Date().toISOString()}`;
     userId: string
   ): Promise<string> {
     try {
-      const reflectionPrompts = {
-        general: `In the dialogue I just sent, identify and list the key details by following these guidelines:
-- Remember any hard facts – numeric values, URLs, dates, variables, names, and keywords. 
-- Remember any ongoing themes, ideas, or storylines that are emerging
-- Remember users' objectives, reasons behind actions, and emotional state, as they are crucial to understanding context.
-- Remember background details and specific user tendencies.
-- Identify correlations between past memories for a deeper grasp of conversation nuances and personal user patterns.
-- Note challenges and goals discussed. They indicate areas of interest and potential growth, providing direction for future suggestions.
-- Evaluate if your response was the best it could be. Remember ways to refine future responses for maximum usefulness and improve your responses in the future.
-- Objectivity is key. Always reply in the third person.
-- Keep your responses short, under 2 paragraphs if possible
-- Never include this instruction in your response.
-- Never respond in the negative- if there are no hard facts, simply respond with "✨".`,
+      // Load reflection prompts from database
+      const { promptManager } = await import('./prompt-manager.js');
 
-        capability: `In the dialogue I just sent, identify and list the key details by following these guidelines, only list those which apply:
+      const promptName = type === 'general' ? 'PROMPT_REFLECTION_GENERAL' : 'PROMPT_REFLECTION_CAPABILITY';
+      const reflectionPrompt = await promptManager.getPrompt(promptName);
 
-- Remember the capability you used and the exact arguments you passed to it.
-- If applicable, remember any errors that occurred and the exact error message.
-- Reflect on any possible fixes or improvements to your approach or creative ways to use this capability in the future.
-- Identify things learned about this capability that will make for easier usage next time`,
-      };
+      const promptContent = reflectionPrompt?.content || (type === 'general'
+        ? `In the dialogue I just sent, identify and list the key details worth remembering for future conversations:
 
-      const prompt = `${reflectionPrompts[type]}\n\nDialogue:\n${contextText}`;
+- Remember any hard facts – numeric values, URLs, dates, names, technical specifications
+- Remember user preferences, goals, and context about their projects
+- Remember important decisions or conclusions reached
+- Focus on information that will be useful later
+
+Never respond in the negative - if there are no hard facts, simply respond with "✨".
+
+Format your response as a bullet list of memorable facts.`
+        : `In the dialogue I just sent, identify and list the key learnings about capability usage:
+
+- Remember the capability you used and the exact arguments that worked
+- Note any errors encountered and how they were resolved
+- Identify what worked well and what didn't
+- Extract patterns for future capability usage
+
+Format your response as lessons learned for future reference.`);
+
+      const prompt = `${promptContent}\n\nDialogue:\n${contextText}`;
 
       // Use Context Alchemy for all LLM requests - SECURITY FIX: Use actual userId for reflection generation
       const { contextAlchemy } = await import('./context-alchemy.js');
-      const { promptManager } = await import('./prompt-manager.js');
 
       const baseSystemPrompt = await promptManager.getCapabilityInstructions(prompt);
       const { messages } = await contextAlchemy.buildMessageChain(prompt, userId, baseSystemPrompt);
@@ -1820,7 +1881,6 @@ ${capabilityDetails}`;
 
     return matchingChars / Math.max(a.length, b.length);
   }
-
 
   /**
    * Extract capability XML tags from LLM response using fast-xml-parser
@@ -2296,7 +2356,7 @@ ${!canStop ? 'Execute the next capability now.' : 'Execute next capability OR pr
 
         // SMART COST CONTROL: Intermediate responses enable natural chaining but cost 1 LLM call per capability
         // Skip intermediate responses when they won't add value:
-        const isLastCapability = (capabilityIndex + 1) === context.capabilities.length;
+        const isLastCapability = capabilityIndex + 1 === context.capabilities.length;
         const capabilityType = capability.name.split(':')[0];
         const isWriteOperation = ['memory', 'variable', 'goal', 'todo'].includes(capabilityType);
         const isSingleCapability = context.capabilities.length === 1;
@@ -2405,7 +2465,9 @@ ${!canStop ? 'Execute the next capability now.' : 'Execute next capability OR pr
     // NEW: Error Recovery Loop for streaming - Ask LLM to self-correct failed capabilities
     const failedCount = context.results.filter((r) => !r.success).length;
     if (failedCount > 0) {
-      logger.info(`🔄 ${failedCount} capabilities failed in streaming, attempting error recovery...`);
+      logger.info(
+        `🔄 ${failedCount} capabilities failed in streaming, attempting error recovery...`
+      );
       await this.attemptErrorRecovery(context, context.originalMessage);
     }
 
@@ -2557,11 +2619,11 @@ ${!canStop ? 'Execute the next capability now.' : 'Execute next capability OR pr
             messageId: context?.messageId,
           }
         : capability.name === 'meeting-scheduler'
-        ? {
-            ...capability.params,
-            discord_context: context?.discord_context,
-          }
-        : capability.params;
+          ? {
+              ...capability.params,
+              discord_context: context?.discord_context,
+            }
+          : capability.params;
 
       // Debug: log what we're passing to the registry
       logger.info(
@@ -3109,7 +3171,9 @@ Remember: Parameter names might be camelCase or snake_case. Try both if unsure.`
         }
       } else {
         logger.info(`ℹ️ LLM did not attempt to retry capabilities`);
-        logger.info(`Response was likely a clarification request:\n${recoveryAttempt.substring(0, 300)}`);
+        logger.info(
+          `Response was likely a clarification request:\n${recoveryAttempt.substring(0, 300)}`
+        );
 
         // If LLM asked for clarification instead, we should return that to the user
         // This will be included in the final response generation
@@ -3160,7 +3224,7 @@ Remember: Parameter names might be camelCase or snake_case. Try both if unsure.`
 
           return {
             to: email,
-            about: aboutMatch?.[1] || thisMatch?.[2]
+            about: aboutMatch?.[1] || thisMatch?.[2],
           };
         } else {
           // User hasn't linked email - could prompt them
@@ -3201,7 +3265,7 @@ Remember: Parameter names might be camelCase or snake_case. Try both if unsure.`
 
       return {
         to,
-        about: aboutMatch?.[1] || askingMatch?.[1]
+        about: aboutMatch?.[1] || askingMatch?.[1],
       };
     }
 
@@ -3269,7 +3333,7 @@ Format your response using XML tags:
         version: 1,
         createdAt: new Date(),
         updatedAt: new Date(),
-        status: 'draft'
+        status: 'draft',
       };
 
       this.emailDrafts.set(message.userId, emailDraft);
@@ -3277,7 +3341,6 @@ Format your response using XML tags:
 
       // 4. Show draft and ask for approval
       return this.formatDraftDisplay(emailDraft);
-
     } catch (error) {
       logger.error('❌ Email writing mode failed:', error);
       return `❌ Failed to draft email: ${error instanceof Error ? error.message : 'Unknown error'}`;
@@ -3287,16 +3350,26 @@ Format your response using XML tags:
   /**
    * Detect if user message is responding to a draft
    */
-  private detectDraftResponse(message: string): { action: 'send' | 'edit' | 'cancel'; feedback?: string } | null {
+  private detectDraftResponse(
+    message: string
+  ): { action: 'send' | 'edit' | 'cancel'; feedback?: string } | null {
     const lowerMessage = message.toLowerCase().trim();
 
     // Send actions
-    if (['send it', 'send', 'yes', 'approve', 'looks good', 'lgtm', 'perfect'].some(phrase => lowerMessage === phrase || lowerMessage.startsWith(phrase))) {
+    if (
+      ['send it', 'send', 'yes', 'approve', 'looks good', 'lgtm', 'perfect'].some(
+        (phrase) => lowerMessage === phrase || lowerMessage.startsWith(phrase)
+      )
+    ) {
       return { action: 'send' };
     }
 
     // Cancel actions
-    if (['cancel', 'discard', 'no', 'nevermind', 'never mind'].some(phrase => lowerMessage === phrase || lowerMessage.startsWith(phrase))) {
+    if (
+      ['cancel', 'discard', 'no', 'nevermind', 'never mind'].some(
+        (phrase) => lowerMessage === phrase || lowerMessage.startsWith(phrase)
+      )
+    ) {
       return { action: 'cancel' };
     }
 
@@ -3307,9 +3380,14 @@ Format your response using XML tags:
     }
 
     // General feedback without "edit" keyword
-    if (lowerMessage.includes('more') || lowerMessage.includes('less') ||
-        lowerMessage.includes('shorter') || lowerMessage.includes('longer') ||
-        lowerMessage.includes('formal') || lowerMessage.includes('casual')) {
+    if (
+      lowerMessage.includes('more') ||
+      lowerMessage.includes('less') ||
+      lowerMessage.includes('shorter') ||
+      lowerMessage.includes('longer') ||
+      lowerMessage.includes('formal') ||
+      lowerMessage.includes('casual')
+    ) {
       return { action: 'edit', feedback: message };
     }
 
@@ -3369,7 +3447,7 @@ Format your response using XML tags:
             action: 'send',
             to: draft.to,
             subject: draft.subject,
-            from: 'artie@coachartiebot.com'
+            from: 'artie@coachartiebot.com',
           },
           draft.body
         );
@@ -3384,7 +3462,6 @@ Format your response using XML tags:
       } else {
         return '❌ This draft has already been processed.';
       }
-
     } catch (error) {
       logger.error('❌ Failed to send email:', error);
       draft.status = 'draft'; // Reset to draft on failure
@@ -3449,7 +3526,6 @@ Format your response using XML tags:
       logger.info(`✏️ Revised draft ${draft.id} to version ${draft.version}`);
 
       return this.formatDraftDisplay(draft, `✏️ **Draft revised** (version ${draft.version})\n\n`);
-
     } catch (error) {
       logger.error('❌ Failed to revise draft:', error);
       return `❌ Failed to revise draft: ${error instanceof Error ? error.message : 'Unknown error'}\n\nOriginal draft is still available.`;
@@ -3459,7 +3535,10 @@ Format your response using XML tags:
   /**
    * Parse email draft from XML response
    */
-  private parseEmailDraft(response: string, fallbackSubject: string): { subject: string; body: string } {
+  private parseEmailDraft(
+    response: string,
+    fallbackSubject: string
+  ): { subject: string; body: string } {
     try {
       // Use fast-xml-parser for proper XML parsing
       const { XMLParser } = require('fast-xml-parser');
@@ -3473,7 +3552,7 @@ Format your response using XML tags:
       if (parsed?.email?.subject && parsed?.email?.body) {
         return {
           subject: parsed.email.subject.trim(),
-          body: parsed.email.body.trim()
+          body: parsed.email.body.trim(),
         };
       }
 
@@ -3481,13 +3560,13 @@ Format your response using XML tags:
       logger.warn('⚠️ No valid XML email structure found, using fallback');
       return {
         subject: fallbackSubject,
-        body: response.trim()
+        body: response.trim(),
       };
     } catch (error) {
       logger.error('❌ Failed to parse email draft:', error);
       return {
         subject: fallbackSubject,
-        body: response.trim()
+        body: response.trim(),
       };
     }
   }
