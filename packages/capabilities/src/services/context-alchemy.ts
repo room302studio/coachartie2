@@ -295,6 +295,9 @@ Important:
     // Current date/time - temporal awareness
     await this.addCurrentDateTime(sources);
 
+    // Discord situational awareness - explicit "where am I" context
+    await this.addDiscordSituationalAwareness(message, sources);
+
     // Goal whisper from Conscience - high-level intent/guidance
     await this.addGoalWhisper(message, sources);
 
@@ -512,6 +515,64 @@ Important:
       content,
       category: 'temporal',
     });
+  }
+
+  /**
+   * Add explicit Discord situational awareness - tells the LLM WHERE it is
+   * "You are in Discord server X, channel #Y, talking to @user"
+   */
+  private async addDiscordSituationalAwareness(
+    message: IncomingMessage,
+    sources: ContextSource[]
+  ): Promise<void> {
+    // Only for Discord messages with context
+    const ctx = message.context;
+    if (!ctx || message.source !== 'discord') {
+      return;
+    }
+
+    const parts: string[] = [];
+
+    // Location: Server + Channel
+    if (ctx.guildName && ctx.channelName) {
+      parts.push(`📍 Discord server "${ctx.guildName}" in #${ctx.channelName}`);
+    } else if (ctx.channelName) {
+      parts.push(`📍 Discord DM or channel: #${ctx.channelName}`);
+    }
+
+    // User info
+    if (ctx.displayName || ctx.username) {
+      const displayName = ctx.displayName || ctx.username;
+      parts.push(`👤 Talking to: @${displayName}`);
+    }
+
+    // Forum thread context (if applicable)
+    if (ctx.isForumThread && ctx.threadName) {
+      parts.push(`💬 Forum thread: "${ctx.threadName}"`);
+    }
+
+    // Mentions (if any)
+    if (ctx.mentions && ctx.mentions.length > 0) {
+      const mentionNames = ctx.mentions.map((m: any) => `@${m.displayName || m.username}`).join(', ');
+      parts.push(`🏷️  Mentions: ${mentionNames}`);
+    }
+
+    // Build final content
+    if (parts.length > 0) {
+      const content = parts.join('\n');
+
+      sources.push({
+        name: 'discord_situational',
+        priority: 98, // Very high - right after temporal
+        tokenWeight: Math.ceil(content.length / 4),
+        content,
+        category: 'user_state',
+      });
+
+      if (DEBUG) {
+        logger.info(`│ ✅ Added Discord situational awareness: ${ctx.guildName || 'DM'}/#${ctx.channelName}`);
+      }
+    }
   }
 
   /**

@@ -39,6 +39,9 @@ export class CapabilitiesClient {
     context?: Record<string, any>
   ): Promise<JobSubmissionResponse> {
     try {
+      // AUTO-DETECT: Set source to 'discord' if context contains Discord metadata
+      const source = context?.platform === 'discord' ? 'discord' : undefined;
+
       const response = await fetch(`${this.baseUrl}/chat`, {
         method: 'POST',
         headers: {
@@ -48,6 +51,7 @@ export class CapabilitiesClient {
           message,
           userId,
           context,
+          source, // Pass source to trigger Discord-specific handling
         }),
       });
 
