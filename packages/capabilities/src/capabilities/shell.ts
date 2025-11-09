@@ -76,6 +76,13 @@ function extractCodeFromMarkdown(content: string): { code: string; lang?: string
   return null;
 }
 
+// Helper to detect nested heredoc (edge case that needs special handling)
+function hasNestedHeredoc(code: string): boolean {
+  // Look for heredoc pattern: << 'DELIMITER' or << "DELIMITER" or <<DELIMITER
+  const heredocPattern = /<<\s*['"']?\w+['"']?/;
+  return heredocPattern.test(code);
+}
+
 export const shellCapability: RegisteredCapability = {
   name: 'shell',
   supportedActions: ['exec', 'send', 'read', 'split', 'list'],
@@ -292,8 +299,17 @@ NODESCRIPT"></capability>`,
           if (_content && _content.includes('```')) {
             const extracted = extractCodeFromMarkdown(_content);
             if (extracted) {
-              // If command looks like a file path, write the extracted code to it
-              // Otherwise, expect command to be the target path
+              // Check for nested heredoc edge case
+              if (hasNestedHeredoc(extracted.code)) {
+                throw new Error(
+                  'Cannot use markdown fence for code that contains heredoc syntax (<<).\n\n' +
+                    'The markdown fence auto-generates a heredoc, but your code already contains ' +
+                    'a heredoc (<<DELIMITER), which would create nested heredocs that conflict.\n\n' +
+                    'Use action="exec" with an explicit heredoc command instead. ' +
+                    'Check the shell capability examples for heredoc patterns.'
+                );
+              }
+
               const targetPath = command || '/workspace/generated-file';
               logger.info(`📝 Detected markdown code block, writing to: ${targetPath}`);
 
