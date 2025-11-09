@@ -2,6 +2,7 @@ import { logger } from '@coachartie/shared';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import { RegisteredCapability } from '../services/capability-registry.js';
+import { marked } from 'marked';
 
 const execAsync = promisify(exec);
 
@@ -50,6 +51,29 @@ async function ensureSession(session: string, cwd: string = '/workspace') {
     logger.info(`Creating new tmux session: ${session}`);
     await execInContainer(`tmux new-session -d -s ${session} -c ${cwd}`);
   }
+}
+
+// Helper to extract code from markdown fence (proper parsing, no regex)
+function extractCodeFromMarkdown(content: string): { code: string; lang?: string } | null {
+  if (!content || !content.includes('```')) {
+    return null;
+  }
+
+  try {
+    const tokens = marked.lexer(content);
+    const codeToken = tokens.find((t) => t.type === 'code');
+
+    if (codeToken && 'text' in codeToken) {
+      return {
+        code: codeToken.text,
+        lang: 'lang' in codeToken ? codeToken.lang : undefined,
+      };
+    }
+  } catch (error) {
+    logger.warn('Failed to parse markdown code block:', error);
+  }
+
+  return null;
 }
 
 export const shellCapability: RegisteredCapability = {
@@ -125,6 +149,32 @@ ENDOFFILE"></capability>`,
 
     // Change port number
     "<capability name=\"shell\" action=\"exec\" command=\"sed -i 's/PORT=3000/PORT=8080/g' /workspace/.env\"></capability>",
+
+    // === MARKDOWN CODE BLOCK MAGIC ===
+
+    // Write file using markdown fence (content goes inside XML tags)
+    // The command parameter specifies the target file path
+    `<capability name=\"shell\" action=\"exec\" command=\"/workspace/server.js\">\`\`\`javascript
+const http = require('http');
+
+const server = http.createServer((req, res) => {
+  res.writeHead(200, { 'Content-Type': 'text/plain' });
+  res.end('Hello World');
+});
+
+server.listen(3000);
+\`\`\`</capability>`,
+
+    // Markdown fence with language detection
+    `<capability name=\"shell\" action=\"exec\" command=\"/workspace/script.py\">\`\`\`python
+import sys
+
+def main():
+    print(f"Python {sys.version}")
+
+if __name__ == "__main__":
+    main()
+\`\`\`</capability>`,
 
     // === ADVANCED: Read-Modify-Write Pattern ===
 
@@ -206,11 +256,28 @@ NODESCRIPT"></capability>`,
       switch (action) {
         case 'exec': {
           // One-shot execution (original behavior)
-          if (!command) {
+          let execCommand = command;
+
+          // Magic: If content contains markdown code block, extract and write to file
+          if (_content && _content.includes('```')) {
+            const extracted = extractCodeFromMarkdown(_content);
+            if (extracted) {
+              // If command looks like a file path, write the extracted code to it
+              // Otherwise, expect command to be the target path
+              const targetPath = command || '/workspace/generated-file';
+              logger.info(`📝 Detected markdown code block, writing to: ${targetPath}`);
+
+              // Generate heredoc command to write the file
+              const delimiter = 'MARKDOWN_EOF_' + Date.now();
+              execCommand = `cat > ${targetPath} << '${delimiter}'\n${extracted.code}\n${delimiter}`;
+            }
+          }
+
+          if (!execCommand) {
             throw new Error('Missing required parameter "command" for action=exec');
           }
 
-          logger.info(`🖥️  Executing one-shot: ${command}`);
+          logger.info(`🖥️  Executing one-shot: ${execCommand}`);
 
           const dockerCommand = [
             'docker',

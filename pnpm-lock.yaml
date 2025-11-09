@@ -234,6 +234,9 @@ importers:
       html-entities:
         specifier: ^2.6.0
         version: 2.6.0
+      marked:
+        specifier: ^17.0.0
+        version: 17.0.0
       mathjs:
         specifier: ^14.0.0
         version: 14.5.3
@@ -10169,6 +10172,12 @@ packages:
       - bluebird
       - supports-color
     optional: true
+
+  /marked@17.0.0:
+    resolution: {integrity: sha512-KkDYEWEEiYJw/KC+DVm1zzlpMQSMIu6YRltkcCvwheCp8HWPXCk9JwOmHJKBlGfzcpzcIt6x3sMnTsRm/51oDg==}
+    engines: {node: '>= 20'}
+    hasBin: true
+    dev: false
 
   /math-intrinsics@1.1.0:
     resolution: {integrity: sha512-/IXtbwEk5HTPyEwyKX6hGkYXxM9nbj64B+ilVJnC/R6B0pH5G4V3b0pVbL7DBj4tkhBAppbQUlf6F6Xl9LHu1g==}
