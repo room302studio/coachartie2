@@ -105,9 +105,50 @@ ENDOFFILE"></capability>`,
     // Append to a file
     '<capability name="shell" action="exec" command="echo \\\"# New section\\\" >> /workspace/README.md"></capability>',
 
-    // Edit file in place with sed
+    // === FILE EDITING (sed for in-place edits) ===
+
+    // Simple find/replace
     '<capability name="shell" action="exec" command="sed -i \\\"s/old-text/new-text/g\\\" /workspace/config.js"></capability>',
+
+    // Replace on specific line
+    '<capability name="shell" action="exec" command="sed -i \\\"10s/const/let/\\\" /workspace/app.js"></capability>',
+
+    // Delete lines matching pattern
     '<capability name="shell" action="exec" command="sed -i \\\"/TODO/d\\\" /workspace/notes.txt"></capability>',
+    '<capability name="shell" action="exec" command="sed -i \\\"/console.log/d\\\" /workspace/debug.js"></capability>',
+
+    // Insert line after pattern
+    '<capability name="shell" action="exec" command="sed -i \\\"/const express/a const cors = require(\\\\\\\"cors\\\\\\\");\\\" /workspace/server.js"></capability>',
+
+    // Comment out lines
+    '<capability name="shell" action="exec" command="sed -i \\\"s/^/\\\\/\\\\/ /\\\" /workspace/temp.js"></capability>',
+
+    // Change port number
+    '<capability name="shell" action="exec" command="sed -i \\\"s/PORT=3000/PORT=8080/g\\\" /workspace/.env"></capability>',
+
+    // === ADVANCED: Read-Modify-Write Pattern ===
+
+    // Use Python for complex edits
+    `<capability name="shell" action="exec" command="python3 << 'PYSCRIPT'
+with open('/workspace/package.json', 'r') as f:
+    import json
+    pkg = json.load(f)
+    pkg['version'] = '2.0.0'
+    pkg['scripts']['start'] = 'node index.js'
+with open('/workspace/package.json', 'w') as f:
+    json.dump(pkg, f, indent=2)
+print('Updated package.json')
+PYSCRIPT"></capability>`,
+
+    // Use Node.js for JSON editing
+    `<capability name="shell" action="exec" command="node << 'NODESCRIPT'
+const fs = require('fs');
+const config = JSON.parse(fs.readFileSync('/workspace/config.json'));
+config.apiUrl = 'https://api.example.com';
+config.timeout = 5000;
+fs.writeFileSync('/workspace/config.json', JSON.stringify(config, null, 2));
+console.log('Updated config.json');
+NODESCRIPT"></capability>`,
 
     // List directory contents
     '<capability name="shell" action="exec" command="ls -lah /workspace/my-project/"></capability>',
