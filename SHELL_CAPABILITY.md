@@ -59,6 +59,7 @@ The `gh` CLI is **automatically authenticated** on sandbox startup if you set `G
    - Copy the token (starts with `ghp_`)
 
 2. **Add to your .env file**:
+
    ```bash
    GITHUB_TOKEN=ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
    ```
@@ -78,6 +79,7 @@ docker-compose logs sandbox | grep "GitHub CLI"
 ```
 
 Or test directly:
+
 ```bash
 docker exec coachartie-sandbox gh auth status
 ```
@@ -85,16 +87,19 @@ docker exec coachartie-sandbox gh auth status
 ## Usage Examples
 
 ### Check GitHub Issues
+
 ```xml
 <capability name="shell" command="gh issue list -R owner/repo --limit 10" />
 ```
 
 ### Parse JSON with jq
+
 ```xml
 <capability name="shell" command="curl -s https://api.github.com/repos/owner/repo | jq '.stargazers_count'" />
 ```
 
 ### Clone and Analyze a Repo
+
 ```xml
 <capability name="shell" cwd="/workspace" command="
 git clone https://github.com/owner/repo &&
@@ -104,11 +109,13 @@ find . -name '*.js' | wc -l
 ```
 
 ### Install and Use New Tools
+
 ```xml
 <capability name="shell" command="apt-get update && apt-get install -y ripgrep && rg 'TODO' /workspace" />
 ```
 
 ### Use Claude Code (Meta!)
+
 ```xml
 <capability name="shell" command="claude-code --help" />
 ```
@@ -143,15 +150,17 @@ docker-compose up -d sandbox
 ## Philosophy: Primitives over Wrappers
 
 **Old Way (Wrong):**
+
 ```typescript
 // Build wrapper for every tool
-githubActions.list_issues()
-githubActions.create_webhook()
-githubActions.delete_webhook()
+githubActions.list_issues();
+githubActions.create_webhook();
+githubActions.delete_webhook();
 // ... endless wrappers
 ```
 
 **New Way (Right):**
+
 ```xml
 <!-- Give Artie the raw tool -->
 <capability name="shell" command="gh issue list -R owner/repo" />

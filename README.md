@@ -34,6 +34,7 @@ cp .env.example .env
 ```
 
 Edit `.env`:
+
 ```bash
 OPENROUTER_API_KEY=sk-or-v1-xxx
 DISCORD_TOKEN=xxx
@@ -41,6 +42,7 @@ DISCORD_CLIENT_ID=xxx
 ```
 
 Discord bot setup:
+
 1. https://discord.com/developers/applications → New Application
 2. Bot tab → Reset Token → copy token
 3. General Information → copy Application ID
@@ -48,6 +50,7 @@ Discord bot setup:
 5. OAuth2 → URL Generator → bot + Send Messages + Read Messages → invite
 
 Start:
+
 ```bash
 npm run dev
 ```
@@ -69,17 +72,20 @@ pnpm --filter @coachartie/capabilities run dev    # Single package
 `.env` file:
 
 Required:
+
 - `OPENROUTER_API_KEY` - LLM access
 - `DISCORD_TOKEN` - Bot auth
 - `DISCORD_CLIENT_ID` - Bot ID
 
 Optional:
+
 - `OPENAI_API_KEY` - Embeddings
 - `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_PHONE_NUMBER` - SMS
 - `WOLFRAM_APP_ID` - Calculations
 - `EMAIL_WEBHOOK_URL`, `EMAIL_WEBHOOK_AUTH` - Email
 
 System:
+
 - `NODE_ENV` - development|production
 - `LOG_LEVEL` - debug|info|warn|error
 - `DATABASE_PATH` - SQLite location
@@ -92,6 +98,7 @@ See `.env.example` for all options.
 ### VPS Setup
 
 On VPS as root:
+
 ```bash
 curl -fsSL https://raw.../scripts/vps-setup.sh | bash
 ```
@@ -101,12 +108,14 @@ Installs Docker, creates `coachartie` user, configures firewall.
 ### Deploy
 
 From local machine:
+
 ```bash
 export DEPLOY_HOST="vps.ip.address"
 ./scripts/deploy.sh remote
 ```
 
 Or interactive (prompts for VPS IP and keys):
+
 ```bash
 ./scripts/deploy.sh remote
 ```
@@ -116,6 +125,7 @@ Script uploads code, builds containers, starts services, validates.
 ### Operations
 
 On VPS:
+
 ```bash
 ./scripts/ops.sh health          # Status
 ./scripts/ops.sh logs            # Logs
@@ -137,6 +147,7 @@ On VPS:
 ### Systemd Service
 
 Created by `vps-setup.sh`:
+
 ```bash
 systemctl start coachartie
 systemctl stop coachartie
@@ -149,6 +160,7 @@ Service file: `/etc/systemd/system/coachartie.service`
 ### Backup/Restore
 
 Backup:
+
 ```bash
 ./scripts/ops.sh backup
 # Creates ~/backups/backup-YYYYMMDD-HHMMSS.db.gz
@@ -156,12 +168,14 @@ Backup:
 ```
 
 Restore:
+
 ```bash
 ./scripts/ops.sh restore ~/backups/backup-20250131-120000.db.gz
 # Stops services, restores DB, starts services
 ```
 
 Manual backup:
+
 ```bash
 docker exec coachartie-prod cp /app/data/coachartie.db /tmp/backup.db
 docker cp coachartie-prod:/tmp/backup.db ~/backup.db
@@ -176,6 +190,7 @@ Logs: `docker compose -f docker-compose.prod.yml logs -f`
 ## TROUBLESHOOTING
 
 Bot offline:
+
 ```bash
 ps aux | grep "npm run dev"
 cat .env | grep DISCORD_TOKEN
@@ -267,6 +282,7 @@ git push origin feature/name
 Commit types: `feat`, `fix`, `docs`, `refactor`, `test`, `chore`
 
 Version bumps:
+
 ```bash
 npm run changelog        # Generate changelog
 npm run version:patch    # 1.1.0 → 1.1.1

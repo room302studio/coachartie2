@@ -3,23 +3,26 @@
 ## Quick Reference for Integration
 
 ### Core Service File
+
 **`/packages/capabilities/src/services/openrouter.ts`**
 
 Current structure:
+
 ```typescript
 class OpenRouterService {
   private models: string[];
   private currentModelIndex: number = 0;
-  
+
   // Current methods (keep these)
-  getCurrentModel(): string
-  getAvailableModels(): string[]
-  generateFromMessageChain(messages, userId, messageId)
-  generateFromMessageChainStreaming(messages, userId, onPartialResponse, messageId)
+  getCurrentModel(): string;
+  getAvailableModels(): string[];
+  generateFromMessageChain(messages, userId, messageId);
+  generateFromMessageChainStreaming(messages, userId, onPartialResponse, messageId);
 }
 ```
 
 Methods to ADD:
+
 ```typescript
 selectFastModel(): string           // FAST_MODEL for capability extraction
 selectSmartModel(): string          // SMART_MODEL for response synthesis
@@ -36,20 +39,22 @@ selectModelForTask(taskType: 'extraction' | 'response' | 'planning'): string
 **Method:** `getLLMResponseWithCapabilities()` (lines 545-596)
 
 **Current Code:**
+
 ```typescript
 private async getLLMResponseWithCapabilities(
   message: IncomingMessage,
   onPartialResponse?: (partial: string) => void
 ): Promise<string> {
   // ... setup code ...
-  
+
   const currentModel = openRouterService.getCurrentModel();  // ← CHANGE THIS LINE
-  
+
   // ... more code ...
 }
 ```
 
 **Change Required:**
+
 ```typescript
 // BEFORE:
 const currentModel = openRouterService.getCurrentModel();
@@ -59,6 +64,7 @@ const currentModel = openRouterService.selectFastModel();
 ```
 
 **Context:** This is where the LLM first reads the user message and extracts what capabilities (calculator, memory, web search, etc.) are needed. A FAST_MODEL is appropriate because:
+
 - Capability detection is mostly pattern matching
 - Smaller/faster models can handle this well
 - Saves on tokens and latency
@@ -73,19 +79,20 @@ const currentModel = openRouterService.selectFastModel();
 **Method:** `generateFinalResponse()` (lines 2273-2344)
 
 **Current Code (lines 2314-2318):**
+
 ```typescript
 private async generateFinalResponse(
   context: OrchestrationContext,
   originalLLMResponse: string
 ): Promise<string> {
   // ... setup code ...
-  
+
   const finalResponse = await openRouterService.generateFromMessageChain(
     messages,
     context.userId,
     context.messageId
   );  // ← NEED TO SELECT MODEL BEFORE THIS CALL
-  
+
   // ... rest of method ...
 }
 ```
@@ -93,6 +100,7 @@ private async generateFinalResponse(
 **Change Required:**
 
 Method 1 - Inject selected model into generateFromMessageChain:
+
 ```typescript
 // Add optional parameter to generateFromMessageChain signature:
 async generateFromMessageChain(
@@ -115,6 +123,7 @@ const finalResponse = await openRouterService.generateFromMessageChain(
 ```
 
 Method 2 - Extend method signatures:
+
 ```typescript
 async generateFromMessageChainWithModel(
   messages: Array<...>,
@@ -125,6 +134,7 @@ async generateFromMessageChainWithModel(
 ```
 
 **Context:** After capabilities execute (calculator results, web searches, etc.), the LLM synthesizes these results into a coherent response. A SMART_MODEL is appropriate because:
+
 - Needs nuanced language understanding
 - Must convert technical data to conversational output
 - Quality of final response matters most to user
@@ -137,18 +147,21 @@ async generateFromMessageChainWithModel(
 **File:** `/packages/capabilities/src/services/conscience.ts`
 
 **Current Implementation (line 19):**
+
 ```typescript
 private conscienceModel = 'microsoft/phi-3-mini-128k-instruct:free';
 ```
 
 **Option A - Keep Current (Recommended)**
 The conscience model is intentionally hardcoded because:
+
 - Safety verification should be lightweight
 - Separate from main model rotation (good isolation)
 - Timeout mechanism prevents blocking (200ms default)
 - Works well with free model
 
 **Option B - Make It Configurable**
+
 ```typescript
 private conscienceModel: string;
 
@@ -158,6 +171,7 @@ constructor() {
 ```
 
 **Option C - Use MANAGER_MODEL**
+
 ```typescript
 // In getGoalWhisper() method, around line 77:
 // BEFORE:
@@ -239,17 +253,17 @@ CONSCIENCE_MODEL="microsoft/phi-3-mini-128k-instruct:free"
 
 ## Code Locations Quick Index
 
-| Task | File | Lines | Method |
-|------|------|-------|--------|
-| Load models | openrouter.ts | 21-104 | constructor() |
-| Rotate models | openrouter.ts | 106-112 | getCurrentModel(), getAvailableModels() |
-| Call LLM | openrouter.ts | 130-290 | generateFromMessageChain() |
-| Stream LLM | openrouter.ts | 295-452 | generateFromMessageChainStreaming() |
-| Extract capabilities | capability-orchestrator.ts | 545-596 | getLLMResponseWithCapabilities() |
-| Review capabilities | conscience.ts | 18-151 | review(), getGoalWhisper() |
-| Synthesize response | capability-orchestrator.ts | 2273-2344 | generateFinalResponse() |
-| Model awareness | model-aware-prompter.ts | 11-194 | getModelCapabilities(), generateCapabilityPrompt() |
-| Process message | process-message.ts | 6-114 | processMessage() |
+| Task                 | File                       | Lines     | Method                                             |
+| -------------------- | -------------------------- | --------- | -------------------------------------------------- |
+| Load models          | openrouter.ts              | 21-104    | constructor()                                      |
+| Rotate models        | openrouter.ts              | 106-112   | getCurrentModel(), getAvailableModels()            |
+| Call LLM             | openrouter.ts              | 130-290   | generateFromMessageChain()                         |
+| Stream LLM           | openrouter.ts              | 295-452   | generateFromMessageChainStreaming()                |
+| Extract capabilities | capability-orchestrator.ts | 545-596   | getLLMResponseWithCapabilities()                   |
+| Review capabilities  | conscience.ts              | 18-151    | review(), getGoalWhisper()                         |
+| Synthesize response  | capability-orchestrator.ts | 2273-2344 | generateFinalResponse()                            |
+| Model awareness      | model-aware-prompter.ts    | 11-194    | getModelCapabilities(), generateCapabilityPrompt() |
+| Process message      | process-message.ts         | 6-114     | processMessage()                                   |
 
 ---
 
@@ -275,4 +289,3 @@ Estimated Impact:
 - Quality improvement: +20-30% (SMART for final output)
 - User experience: +30-50% (consistent, fast initial response)
 ```
-

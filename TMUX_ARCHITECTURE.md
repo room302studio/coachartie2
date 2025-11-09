@@ -21,6 +21,7 @@ This document defines the tmux architecture for Coach Artie's sandbox environmen
 **Decision:** Use ONE main session called `artie` that's always available.
 
 **Rationale:**
+
 - Simpler mental model for the LLM
 - No need to track multiple session names
 - Can still have multiple windows/panes within the session
@@ -42,6 +43,7 @@ Session: artie
 ```
 
 **Window Types:**
+
 - **0 (workspace)**: Default working environment, general tasks
 - **1 (projects)**: Long-running project work
 - **2+ (custom)**: User-defined or specialized tasks
@@ -57,6 +59,7 @@ Panes are identified by **window.pane** notation:
 - Default target if unspecified: `0.0`
 
 **Why this approach:**
+
 - Simple and predictable
 - Window.Pane maps to tmux's native targeting
 - Easy for LLM to remember and use
@@ -65,6 +68,7 @@ Panes are identified by **window.pane** notation:
 ### Pane Metadata
 
 Each pane maintains metadata via tmux environment variables:
+
 - `PANE_TITLE` - Human-readable description
 - `PANE_CWD` - Working directory
 - `PANE_CREATED` - Timestamp
@@ -80,20 +84,20 @@ Initialize the tmux session (idempotent).
 ```
 
 **Behavior:**
+
 - Creates session `artie` if it doesn't exist
 - Creates default window 0 with pane 0.0
 - Sets up working directory `/workspace`
 - Returns session info
 
 **Response:**
+
 ```json
 {
   "success": true,
   "data": {
     "session": "artie",
-    "windows": [
-      {"id": 0, "name": "workspace", "panes": 1}
-    ],
+    "windows": [{ "id": 0, "name": "workspace", "panes": 1 }],
     "active_pane": "0.0"
   }
 }
@@ -110,16 +114,19 @@ Send a command to a specific pane.
 ```
 
 **Parameters:**
+
 - `pane` (optional) - Target pane, defaults to `0.0`
 - `command` (required) - Command to execute
 - `clear` (optional) - Clear pane before sending (default: false)
 
 **Behavior:**
+
 - Sends command + Enter key to pane
 - Does NOT wait for completion
 - Command runs in pane's current working directory
 
 **Response:**
+
 ```json
 {
   "success": true,
@@ -142,17 +149,20 @@ Capture output from a pane.
 ```
 
 **Parameters:**
+
 - `pane` (optional) - Target pane, defaults to `0.0`
 - `lines` (optional) - Number of lines to capture (default: 100)
 - `all` (optional) - Capture entire scrollback (default: false)
 - `since` (optional) - Only new output since last read (default: false)
 
 **Behavior:**
+
 - Captures visible + scrollback content
 - Returns trimmed output
 - Can track position for incremental reads
 
 **Response:**
+
 ```json
 {
   "success": true,
@@ -177,17 +187,20 @@ Create a new pane by splitting an existing one.
 ```
 
 **Parameters:**
+
 - `window` (optional) - Target window, defaults to 0
 - `direction` (required) - `horizontal` or `vertical`
 - `title` (optional) - Human-readable pane title
 - `cwd` (optional) - Working directory for new pane
 
 **Behavior:**
+
 - Splits the currently active pane in the window
 - New pane gets next index number
 - Inherits working directory unless `cwd` specified
 
 **Response:**
+
 ```json
 {
   "success": true,
@@ -209,6 +222,7 @@ List all windows and panes.
 ```
 
 **Response:**
+
 ```json
 {
   "success": true,
@@ -250,15 +264,18 @@ Destroy a pane or window.
 ```
 
 **Parameters:**
+
 - `pane` (optional) - Target pane to kill
 - `window` (optional) - Target window to kill (kills all panes)
 
 **Behavior:**
+
 - Terminates any running processes
 - Removes pane/window from session
 - Cannot kill the last pane (would destroy session)
 
 **Response:**
+
 ```json
 {
   "success": true,
@@ -279,10 +296,12 @@ Create a new window.
 ```
 
 **Parameters:**
+
 - `name` (optional) - Window name
 - `cwd` (optional) - Working directory
 
 **Response:**
+
 ```json
 {
   "success": true,
@@ -309,6 +328,7 @@ interface ReadState {
 ```
 
 **Implementation:**
+
 1. First read: Capture all visible content
 2. Store cursor position (line number)
 3. Subsequent reads: Use `-S <last_line>` to get only new content
@@ -359,6 +379,7 @@ docker exec coachartie-sandbox tmux <command>
 ### Common Patterns
 
 **Initialize session:**
+
 ```bash
 docker exec coachartie-sandbox bash -c "
   tmux has-session -t artie 2>/dev/null || \
@@ -367,27 +388,32 @@ docker exec coachartie-sandbox bash -c "
 ```
 
 **Send command:**
+
 ```bash
 docker exec coachartie-sandbox tmux send-keys -t artie:0.0 'ls -la' Enter
 ```
 
 **Capture output:**
+
 ```bash
 docker exec coachartie-sandbox tmux capture-pane -t artie:0.0 -p -S -100
 ```
 
 **Split pane:**
+
 ```bash
 docker exec coachartie-sandbox tmux split-window -t artie:0 -v -c /workspace
 ```
 
 **List panes:**
+
 ```bash
 docker exec coachartie-sandbox tmux list-panes -s -t artie \
   -F '#{window_index}.#{pane_index}|#{pane_current_path}|#{pane_current_command}'
 ```
 
 **Kill pane:**
+
 ```bash
 docker exec coachartie-sandbox tmux kill-pane -t artie:0.1
 ```
@@ -399,6 +425,7 @@ docker exec coachartie-sandbox tmux kill-pane -t artie:0.1
 **Error:** `tmux: can't find session: artie`
 
 **Recovery:** Auto-initialize session on any action
+
 ```typescript
 try {
   await execTmuxCommand(cmd);
@@ -415,6 +442,7 @@ try {
 **Error:** `tmux: can't find pane: 0.5`
 
 **Recovery:** Return clear error, suggest listing panes
+
 ```json
 {
   "success": false,
@@ -428,6 +456,7 @@ try {
 **Error:** `docker exec: container not running`
 
 **Recovery:** Cannot auto-recover, return error
+
 ```json
 {
   "success": false,
@@ -439,6 +468,7 @@ try {
 ### Command Timeout
 
 For long-running commands, don't wait:
+
 - `send` action returns immediately
 - Use `read` action to check output later
 - Track command state in pane metadata
@@ -534,6 +564,7 @@ For long-running commands, don't wait:
 ### Pane Recording
 
 Continuously pipe output to file:
+
 ```bash
 tmux pipe-pane -t 0.0 'cat >> /workspace/logs/pane-0.0.log'
 ```
@@ -541,6 +572,7 @@ tmux pipe-pane -t 0.0 'cat >> /workspace/logs/pane-0.0.log'
 ### Synchronized Panes
 
 Execute same command in multiple panes:
+
 ```bash
 tmux setw synchronize-panes on
 ```
@@ -548,6 +580,7 @@ tmux setw synchronize-panes on
 ### Pane Layouts
 
 Save/restore pane arrangements:
+
 ```bash
 tmux list-windows -F '#{window_layout}'
 tmux select-layout <layout-string>
@@ -556,6 +589,7 @@ tmux select-layout <layout-string>
 ### Session Snapshots
 
 Save entire session state:
+
 ```bash
 tmux run-shell "tmux showenv -s > /workspace/.tmux-session"
 ```
@@ -565,12 +599,14 @@ tmux run-shell "tmux showenv -s > /workspace/.tmux-session"
 ### When to Use Tmux
 
 **Good Use Cases:**
+
 - Long-running processes (dev servers, builds, tests)
 - Monitoring multiple streams (logs, metrics)
 - Concurrent tasks (compile + run + monitor)
 - Interactive sessions (REPL, shell navigation)
 
 **Bad Use Cases:**
+
 - Quick one-off commands (use shell capability)
 - Commands that complete in <5 seconds
 - Non-interactive scripts
@@ -586,6 +622,7 @@ tmux run-shell "tmux showenv -s > /workspace/.tmux-session"
 ### Common Patterns
 
 **Pattern: Run and Monitor**
+
 ```
 1. init
 2. send command
@@ -595,6 +632,7 @@ tmux run-shell "tmux showenv -s > /workspace/.tmux-session"
 ```
 
 **Pattern: Parallel Tasks**
+
 ```
 1. init
 2. split multiple times
@@ -603,6 +641,7 @@ tmux run-shell "tmux showenv -s > /workspace/.tmux-session"
 ```
 
 **Pattern: Project Setup**
+
 ```
 1. window (create new)
 2. send (clone repo)
@@ -628,6 +667,7 @@ tmux run-shell "tmux showenv -s > /workspace/.tmux-session"
 ### Manual Tests
 
 1. **Basic workflow:**
+
    ```bash
    # Init session
    docker exec coachartie-sandbox tmux new -d -s artie -n workspace
@@ -640,6 +680,7 @@ tmux run-shell "tmux showenv -s > /workspace/.tmux-session"
    ```
 
 2. **Pane management:**
+
    ```bash
    # Split
    docker exec coachartie-sandbox tmux split-window -t artie:0 -v
@@ -659,6 +700,7 @@ tmux run-shell "tmux showenv -s > /workspace/.tmux-session"
 ### Integration Tests
 
 Test through the capability API:
+
 ```xml
 <capability name="tmux" action="init" />
 <capability name="tmux" action="send" command="echo test" />
@@ -670,19 +712,23 @@ Verify response structure matches spec.
 ## Migration Path
 
 ### Phase 1: Implement Core Actions
+
 - `init`, `send`, `read`
 - Get basic workflow working
 
 ### Phase 2: Add Pane Management
+
 - `split`, `list`, `kill`
 - Test multi-pane scenarios
 
 ### Phase 3: Polish
+
 - Window management (`window` action)
 - Incremental reading (`since` parameter)
 - Error handling improvements
 
 ### Phase 4: Advanced
+
 - Pane recording
 - Synchronized panes
 - Session snapshots
@@ -692,6 +738,7 @@ Verify response structure matches spec.
 This architecture provides Artie with persistent, observable shell environments through tmux. The design prioritizes simplicity and LLM-friendliness while enabling powerful concurrent workflows.
 
 Key benefits:
+
 - **Stateful execution** - No more losing context between commands
 - **Concurrent workflows** - Run multiple tasks in parallel
 - **Observable processes** - Inspect running tasks anytime

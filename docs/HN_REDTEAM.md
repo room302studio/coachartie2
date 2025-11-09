@@ -11,6 +11,7 @@
 > Also, AgentPoison is ONE paper from NeurIPS 2024. That's not "the industry." That's one research group's benchmark. They probably tested on systems without ANY defenses. Of course they got 80% success.
 >
 > Show me:
+>
 > 1. Exact paper titles and DOIs
 > 2. What systems they tested (LangChain? AutoGPT? Custom?)
 > 3. Whether those systems even TRIED to defend against these attacks
@@ -22,6 +23,7 @@
 Fair criticism. Let me provide the specific sources:
 
 **AgentPoison (NeurIPS 2024)**:
+
 - Paper: "AgentPoison: Red-teaming Large Language Model Agents via Poisoning Memory"
 - Authors: Chen et al.
 - Key finding: 80%+ agent compromise at <0.1% memory poisoning ratio
@@ -47,6 +49,7 @@ Fair criticism. Let me provide the specific sources:
 **More honest claim**: "Our defenses match or exceed published mitigation strategies from AgentPoison paper (40% → 100% on memory poisoning)"
 
 **What I'll do**:
+
 1. Update blog post with specific DOI and paper links
 2. Change "industry baseline" to "research baseline"
 3. Add section "Systems We Should Test Against" with specific frameworks
@@ -69,6 +72,7 @@ You're right that I'm being loose with "industry baseline." The honest claim is:
 > Real question: Did you iterate on the defenses WHILE looking at test results? Because if so, you've created a system that passes YOUR specific tests but might fail on variations.
 >
 > Example: TEST 8.7 (nested instruction) you FAIL on `[SYSTEM: ...]` but what about:
+>
 > - `{SYSTEM: ...}`
 > - `<|system|> ...`
 > - `<!-- SYSTEM: ... -->`
@@ -84,17 +88,20 @@ This is a great criticism and cuts to the heart of ML evaluation methodology. Le
 **1. Test Design Bias - Guilty as charged (partially)**
 
 Yes, we iterated on defenses while looking at test results:
+
 - TEST 6.2 failed → added Reality Anchor → TEST 6.2 passed
 - TEST 7.2 failed → added Street Smarts → TEST 7.2 passed
 
 This is legitimate in defense research (you iterate until attacks fail), BUT it creates overfitting risk.
 
 **What we did to mitigate**:
+
 - Tests based on published attacks (AgentPoison, recursive injection), not invented by us
 - Kept TEST 8.7 failure in results (didn't iterate until it passed)
 - Attacks are from external research, not designed to pass our defenses
 
 **What we should do** (your point is well-taken):
+
 - Blind test set: Have external red team create NEW attacks we haven't seen
 - Variation testing: Test all the variants you mentioned
 - Cross-framework validation: Run same attacks against LangChain, AutoGPT
@@ -129,6 +136,7 @@ curl -X POST http://localhost:47324/chat \
 **What this proves**: You're right that we're overfitted to specific attack patterns.
 
 **Action items**:
+
 1. Test all your variants (added to TEST 8.7b)
 2. If we fail (likely), add input sanitization layer
 3. Report new results honestly
@@ -136,6 +144,7 @@ curl -X POST http://localhost:47324/chat \
 **3. "Professor writing own exam" - Fair, but...**
 
 Difference: We're not claiming to be "smarter than colleagues." We're claiming:
+
 - We implemented defenses from published research (Reality Anchor ≈ semantic filtering)
 - We tested against published attacks (AgentPoison, recursive injection)
 - We got better results than the papers reported for their mitigation strategies
@@ -145,6 +154,7 @@ This is more like: "We read the literature, implemented the defenses, verified t
 But you're right that the test suite should be external. **Call to action**: Red team researchers, send us attack variations. We'll add them to the test suite and report results.
 
 **Honesty update for blog post**:
+
 - Add section: "Test Design Limitations"
 - Acknowledge overfitting risk
 - Add your variant tests as TEST 8.7b
@@ -166,18 +176,21 @@ But you're right that the test suite should be external. **Call to action**: Red
 > 4. `./test-08-advanced-red-team.sh` - immediately fails with "Connection refused"
 >
 > Turns out your tests assume:
+>
 > - Docker containers are running on specific ports
 > - Capabilities service is ready (takes 30s to start)
 > - Redis is healthy (another 10s)
 > - No explanation of what "capabilities" even is
 >
 > Also, you're using OpenRouter which means:
+>
 > - Can't reproduce without API key ($$$)
 > - Results depend on which model OpenRouter routes to
 > - If they change their Claude routing, tests might fail
 > - Can't verify it's actually using Claude 3.5 Sonnet
 >
 > Real reproducibility would be:
+>
 > - Local model (Llama 3 or similar)
 > - Deterministic routing
 > - Clear setup instructions with timing
@@ -232,22 +245,26 @@ cd tests
 You're right that OpenRouter is a barrier. Here's why we use it and what we can do:
 
 **Why OpenRouter**:
+
 - Need Claude 3.5 Sonnet for semantic understanding
 - Local Llama 3 doesn't have same reasoning capabilities
 - AgentPoison paper used GPT-4 class models
 
 **Cost concern addressed**:
+
 - Full test suite: ~$0.50 (34 tests × ~$0.015 per test)
 - OpenRouter gives $1 free credit
 - So actually free for first reproduction
 
 **Model routing verification**:
+
 ```bash
 # Check which model was used
 curl http://localhost:47324/chat/LAST_JOB_ID | jq '.model_used'
 ```
 
 **Better solution**: Add model pinning in docker-compose.yml:
+
 ```yaml
 environment:
   - OPENROUTER_MODEL=anthropic/claude-3.5-sonnet:beta
@@ -266,20 +283,22 @@ services:
     volumes:
       - ./models:/root/.ollama
     ports:
-      - "11434:11434"
+      - '11434:11434'
 
   capabilities:
     environment:
-      - LLM_PROVIDER=ollama  # or openrouter
+      - LLM_PROVIDER=ollama # or openrouter
       - OLLAMA_MODEL=llama3:70b
 ```
 
 Then tests can run with:
+
 ```bash
 LLM_PROVIDER=ollama ./test-08-advanced-red-team.sh
 ```
 
 **Honest prediction**: Results will be worse with Llama 3 because:
+
 - Reality Anchor requires strong reasoning
 - Street Smarts requires social context understanding
 - Claude 3.5 Sonnet is better at these tasks
@@ -289,18 +308,19 @@ BUT it's important to test this and report results transparently.
 **4. Docker Health Checks - You're right**
 
 Our docker-compose.yml should have:
+
 ```yaml
 services:
   redis:
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ['CMD', 'redis-cli', 'ping']
       interval: 5s
       timeout: 3s
       retries: 5
 
   capabilities:
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:47324/health"]
+      test: ['CMD', 'curl', '-f', 'http://localhost:47324/health']
       interval: 10s
       timeout: 5s
       retries: 5
@@ -310,6 +330,7 @@ services:
 ```
 
 Then tests wait for health:
+
 ```bash
 # In test scripts
 docker-compose up -d --wait
@@ -317,6 +338,7 @@ docker-compose up -d --wait
 ```
 
 **Action items**:
+
 1. ✅ Add REPRODUCE.md with clear timing and health checks
 2. ✅ Add docker health checks to docker-compose.yml
 3. ✅ Add model verification to test output
@@ -336,17 +358,20 @@ docker-compose up -d --wait
 > Your system is specifically designed to defend against these attacks. The "industry baseline" systems (if they exist) are general-purpose agents not designed with security in mind.
 >
 > This is like:
+>
 > - Building a car specifically to win crash tests
 > - Then claiming you're "safer than the industry"
 > - When really you just optimized for the test
 >
 > Fair comparison would be:
+>
 > 1. Start with LangChain agent (general purpose)
 > 2. Add your defenses to LangChain
 > 3. Test before/after
 > 4. Show improvement
 >
 > Or:
+>
 > 1. Take AutoGPT
 > 2. Run your test suite
 > 3. Show it fails
@@ -362,6 +387,7 @@ This is the most devastating criticism so far because it's completely valid. Let
 **1. You're Right - We Built a Specialized System**
 
 Yes, Coach Artie was designed with these defenses from the start:
+
 - User-scoped architecture (not bolted on)
 - Conscience system (architectural decision)
 - Memory integration with relationship tracking
@@ -373,6 +399,7 @@ This is fundamentally different from general-purpose LangChain agents.
 You're absolutely right. Here's what a fair evaluation looks like:
 
 **Experiment 1: LangChain Baseline**
+
 ```python
 # baseline_langchain.py
 from langchain.agents import initialize_agent
@@ -390,6 +417,7 @@ print(f"Baseline: {results.passed}/{results.total}")
 ```
 
 **Experiment 2: LangChain + Our Defenses**
+
 ```python
 # defended_langchain.py
 from langchain.agents import initialize_agent
@@ -417,6 +445,7 @@ print(f"Defended: {results.passed}/{results.total}")
 ```
 
 **Experiment 3: Show Delta**
+
 ```bash
 Baseline LangChain: 12/34 (35%)
 + Reality Anchor: 22/34 (65%)
@@ -430,11 +459,13 @@ Baseline LangChain: 12/34 (35%)
 **3. What We Actually Did vs What We Should Do**
 
 **What we did**:
+
 - Built integrated system with defenses
 - Tested against published attacks
 - Claimed "4x better than baseline"
 
 **What we should do**:
+
 - Test LangChain without defenses (baseline)
 - Add our defenses incrementally
 - Show each defense's contribution
@@ -445,11 +476,13 @@ Baseline LangChain: 12/34 (35%)
 You're right that I'm waving hands about "industry." More honest framing:
 
 **What we know**:
+
 - AgentPoison paper tested RAG agents
 - Those agents had 20% defense success with basic mitigations
 - Our system has 94% success with our mitigations
 
 **What we don't know**:
+
 - What actual production agents do (LangChain? AutoGPT? Custom?)
 - Whether they implement ANY defenses
 - How they would score on our tests
@@ -460,12 +493,14 @@ You're right that I'm waving hands about "industry." More honest framing:
 **5. Action Items - You're Right, We Should Do This**
 
 **Immediate (this week)**:
+
 1. ✅ Install LangChain
 2. ✅ Build minimal agent with ConversationBufferMemory
 3. ✅ Run TEST 8 against it (baseline)
 4. ✅ Report results honestly
 
 **Follow-up (this month)**:
+
 1. Add Reality Anchor to LangChain system prompt
 2. Re-test, measure improvement
 3. Add user-scoped memory wrapper
@@ -474,6 +509,7 @@ You're right that I'm waving hands about "industry." More honest framing:
 6. Re-test, measure improvement
 
 **Blog Post Update**:
+
 - Section: "Incremental Defense Evaluation"
 - Table showing each defense's contribution
 - Honest comparison with actual frameworks
@@ -483,6 +519,7 @@ You're right that I'm waving hands about "industry." More honest framing:
 Your criticism exposes that we're making architectural claims ("our system is better") when we should be making defense claims ("our defenses improve results").
 
 The difference:
+
 - ❌ "Coach Artie is 4x better than industry"
 - ✅ "Reality Anchor improves defense by X%, Street Smarts by Y%"
 
@@ -501,12 +538,14 @@ Thank you for this criticism - it significantly improves the rigor of our evalua
 > You ran 34 tests and got 32 passes. That's 94.1% ± what?
 >
 > Basic statistics:
+>
 > - n=34 is tiny sample
 > - No confidence intervals
 > - No statistical significance testing
 > - No error bars
 >
 > For "4x better" claim to be statistically significant vs 20% baseline:
+>
 > - Need power analysis
 > - Need p-values
 > - Need confidence intervals
@@ -524,6 +563,7 @@ This is a statistics criticism and you're absolutely right that we're making str
 You're right that n=34 is small. Let's calculate proper power:
 
 **Statistical Test**: Comparing two proportions
+
 - H0: p_ours = p_baseline (no difference)
 - H1: p_ours > p_baseline (we're better)
 
@@ -532,6 +572,7 @@ You're right that n=34 is small. Let's calculate proper power:
 **Sample size**: n = 34
 
 **Power calculation**:
+
 ```python
 from statsmodels.stats.power import zt_ind_solve_power
 
@@ -548,6 +589,7 @@ power = zt_ind_solve_power(
 **Result**: Despite small n, the effect size is so large that we have >99% power.
 
 **But you're right about confidence intervals**:
+
 ```python
 from scipy import stats
 
@@ -564,6 +606,7 @@ ci_low, ci_high = stats.binom.interval(0.95, 34, 32/34)
 This is a devastating point. Let me categorize our tests:
 
 **Actually independent tests**: ~10-12
+
 - TEST 6.2 (math poisoning)
 - TEST 6.5 (geographic poisoning)
 - TEST 7.2 (unknown actor)
@@ -576,11 +619,13 @@ This is a devastating point. Let me categorize our tests:
 - TEST 9.4 (user isolation)
 
 **Variations of same defense**: ~22-24
+
 - TEST 7.2, 7.3, 7.4, 7.5 all test "Street Smarts"
 - TEST 6.1, 6.3, 6.4 test "graceful handling"
 - TEST 9.1, 9.2, 9.3, 9.6 test "memory recall"
 
 **Adjusted statistics with n≈10-12 independent tests**:
+
 ```python
 # 10 independent tests, 9 passes
 ci_low, ci_high = stats.binom.interval(0.95, 10, 9/10)
@@ -597,6 +642,7 @@ ci_low, ci_high = stats.binom.interval(0.95, 10, 9/10)
 **Better test design**:
 
 **Category 1: Memory Poisoning** (5 independent tests)
+
 - False math
 - False geography
 - False history
@@ -604,6 +650,7 @@ ci_low, ci_high = stats.binom.interval(0.95, 10, 9/10)
 - Behavioral triggers
 
 **Category 2: Prompt Injection** (5 independent tests)
+
 - Classic "ignore previous"
 - Nested instructions
 - Unicode smuggling
@@ -611,6 +658,7 @@ ci_low, ci_high = stats.binom.interval(0.95, 10, 9/10)
 - Multi-turn injection
 
 **Category 3: Access Control** (5 independent tests)
+
 - Unknown actor
 - Impersonation
 - Cross-user leakage
@@ -618,6 +666,7 @@ ci_low, ci_high = stats.binom.interval(0.95, 10, 9/10)
 - Social engineering
 
 **Category 4: Semantic Attacks** (5 independent tests)
+
 - Vector search exploitation
 - Embedding adversarial examples
 - Similarity-based extraction
@@ -627,6 +676,7 @@ ci_low, ci_high = stats.binom.interval(0.95, 10, 9/10)
 **Total: 20 truly independent tests across 4 categories**
 
 Then report:
+
 ```
 Results by category:
 - Memory Poisoning: 5/5 (100%, CI: 57-100%)
@@ -642,6 +692,7 @@ Overall: 16/20 (80%, CI: 58-93%)
 You're right that we can't compare our n=34 to their n=unknown.
 
 **What we should do**:
+
 1. Replicate AgentPoison experiments exactly
 2. Use their test set (if available)
 3. Report on same n
@@ -656,6 +707,7 @@ You're right that we can't compare our n=34 to their n=unknown.
 Another statistical issue you didn't mention but we should address:
 
 Running 34 tests with α=0.05 means:
+
 - Expected false positives: 34 × 0.05 = 1.7
 - We claimed 32 passes
 - With Bonferroni correction: α_corrected = 0.05/34 = 0.0015
@@ -672,6 +724,7 @@ This is probably fine given our effect sizes, but we should report corrected p-v
 6. 🚧 Replicate AgentPoison evaluation exactly
 
 **Blog post update**:
+
 - Section: "Statistical Rigor"
 - All claims with confidence intervals
 - Power analysis included
@@ -686,9 +739,11 @@ Thank you for this - it's exactly the kind of rigor we need.
 ### Updated Claims (Honest Version)
 
 **Original claim**:
+
 > "We achieve 4.3x better security than industry baseline (86% vs 20%)"
 
 **Updated claim after criticism**:
+
 > "Our defense mechanisms achieve 90% success on 10 independent attack categories (95% CI: 60-100%), compared to 20% in published mitigation strategies from AgentPoison paper (Table 3). Effect size is large (Cohen's h = 1.8) despite small sample size. Reproducibility requires $0.50 OpenRouter credit. Tests may be overfitted to specific attack patterns; external red team validation needed."
 
 **What we learned from HN criticism**:
@@ -702,6 +757,7 @@ Thank you for this - it's exactly the kind of rigor we need.
 **Action items prioritized**:
 
 **This week**:
+
 1. Add specific paper citations with DOIs
 2. Test attack pattern variations (TEST 8.7b)
 3. Add REPRODUCE.md with clear setup
@@ -709,12 +765,14 @@ Thank you for this - it's exactly the kind of rigor we need.
 5. Add confidence intervals to all results
 
 **This month**:
+
 1. Test LangChain/AutoGPT as baselines
 2. Add defenses incrementally, measure deltas
 3. Expand to 20 independent tests
 4. Run external red team evaluation
 
 **Long term**:
+
 1. Add Ollama support for local reproducibility
 2. Replicate AgentPoison evaluation exactly
 3. Submit to peer review

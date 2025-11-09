@@ -68,6 +68,7 @@ Date: 2025-10-24 13:40 EST (Fri)
 ### 4. ✅ Compressed Capability Instructions (~1000 → ~200 tokens)
 
 **Files:**
+
 - `packages/capabilities/src/services/capability-registry.ts:424-445` (new method)
 - `packages/capabilities/src/services/context-alchemy.ts:541-575` (updated to use compressed format)
 
@@ -107,6 +108,7 @@ Available: embedded-mcp(execute), linkedin(search|get-profile|get-company), sema
 **File:** `packages/capabilities/src/services/context-alchemy.ts`
 
 **New method added (290-346):**
+
 ```typescript
 private async getConversationHistory(
   userId: string,
@@ -116,28 +118,33 @@ private async getConversationHistory(
 ```
 
 **Updated buildMessageChain (68-136):**
+
 - Added `channelId` parameter to options
 - Loads conversation history before building message chain
 - Passes history to assembleMessageChain
 
 **Updated assembleMessageChain (744-801):**
+
 - Now accepts `conversationHistory` parameter
 - Inserts conversation history into message chain
 - Enables natural back-and-forth dialogue
 
 **Impact:** TRANSFORMATIVE! Enables:
+
 - "What about the other one?" - AI knows what "the other one" refers to
 - Building on previous responses
 - Natural conversation flow
 - Reference to past exchanges
 
 **Example Message Chain Before:**
+
 ```
 [0] system: Current date: ... + system prompt + capabilities
 [1] user: What's 2+2?
 ```
 
 **Example Message Chain After:**
+
 ```
 [0] system: Date: 2025-10-24 13:40 EST (Fri) + system prompt
 [1] system: Relevant context: (memories, goals, discord servers)
@@ -169,6 +176,7 @@ Now the AI can reference "That's 4!" when answering the current question!
 ```
 
 **Impact:**
+
 - Clearer separation of roles
 - No more confusion about what the user actually said
 - More natural message flow
@@ -180,6 +188,7 @@ Now the AI can reference "That's 4!" when answering the current question!
 ## Token Budget Comparison
 
 ### Before (4k total)
+
 ```
 Total Window:     4000 tokens
 User Message:      200 tokens
@@ -201,6 +210,7 @@ Wasted:           2039 tokens (not actually usable)
 ```
 
 ### After (8k total)
+
 ```
 Total Window:     8000 tokens
 User Message:      200 tokens
@@ -223,6 +233,7 @@ Available:        5368 tokens for response!
 ```
 
 **Net Improvement:**
+
 - Memory: 10 → 400 tokens (40x improvement!)
 - Capabilities: 1005 → 200 tokens (80% reduction!)
 - Conversation: 0 → 600 tokens (NEW!)
@@ -235,6 +246,7 @@ Available:        5368 tokens for response!
 ### Scenario: User asks follow-up question
 
 **Before:**
+
 ```
 User: "Can you send me wikimedia syntax for a city template?"
 AI: [generates template]
@@ -242,9 +254,11 @@ AI: [generates template]
 User: "What about the other one?"
 AI: "I'm not sure what 'the other one' refers to. Could you clarify?"
 ```
+
 ❌ AI has amnesia - no conversation memory
 
 **After:**
+
 ```
 User: "Can you send me wikimedia syntax for a city template?"
 AI: [generates template with name, description, population]
@@ -252,6 +266,7 @@ AI: [generates template with name, description, population]
 User: "What about the other one?"
 AI: "Do you mean a template for a different type of location, or did you want to see an alternative city template structure? In my previous response, I provided a basic city template with name, description, and population fields."
 ```
+
 ✅ AI remembers previous exchange and can reference it!
 
 ### Scenario: Complex multi-turn conversation
@@ -261,6 +276,7 @@ Every message is isolated. User must re-explain context constantly.
 
 **After:**
 Natural conversation builds on previous exchanges. User can say:
+
 - "Like you suggested before..."
 - "Change that to..."
 - "What about the other approach?"
@@ -272,11 +288,13 @@ And the AI understands the referents!
 ## Performance Considerations
 
 ### Token Cost
+
 - **Before:** ~1200 input tokens per message
 - **After:** ~1500-2000 input tokens per message
 - **Cost increase:** ~$0.001 per message for Claude 3.5 Sonnet
 
 ### Response Quality
+
 - **Before:** Robotic, disconnected, repetitive
 - **After:** Natural, contextual, builds on previous
 
@@ -287,14 +305,18 @@ And the AI understands the referents!
 ## Migration Notes
 
 ### Breaking Changes
+
 None! All changes are backward compatible.
 
 ### New Optional Parameters
+
 - `buildMessageChain` now accepts `channelId` in options object
 - Use this to enable conversation history per channel
 
 ### Testing
+
 Set `CONTEXT_ALCHEMY_DEBUG=true` to see detailed logging of:
+
 - Token budget calculations
 - Memory allocation
 - Conversation history loading
@@ -305,13 +327,16 @@ Set `CONTEXT_ALCHEMY_DEBUG=true` to see detailed logging of:
 ## Next Steps
 
 ### Recommended Follow-ups
+
 1. **Add Discord formatting guidelines to system prompt** (user-requested)
 2. **Smart capability filtering** - only show relevant capabilities based on message content
 3. **User mental model tracking** - understand what the user is trying to accomplish
 4. **Adaptive budget allocation** - adjust memory/history balance based on message type
 
 ### Monitoring
+
 Watch for:
+
 - Context budget overruns (should be rare with 8k budget)
 - Conversation history loading errors
 - Memory search timeouts
@@ -332,6 +357,7 @@ Watch for:
 Improvements designed by Claude Code based on analysis of actual Context Alchemy logs and understanding of LLM context window utilization patterns.
 
 **Design Philosophy:**
+
 - "Give me conversation history over capability examples"
 - "Compressed formats save tokens for what matters"
 - "Modern models deserve modern context budgets"

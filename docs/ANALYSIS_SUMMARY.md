@@ -13,6 +13,7 @@ Three comprehensive analysis documents have been created:
 ## Key Findings
 
 ### Current State
+
 - **Model Selection:** Simple round-robin rotation (no intelligence)
 - **Configuration:** Single `OPENROUTER_MODELS` env var (comma-separated)
 - **LLM Calls:** 5 different locations throughout codebase
@@ -20,6 +21,7 @@ Three comprehensive analysis documents have been created:
 - **Architecture:** Well-structured, ready for enhancement
 
 ### What Works
+
 - Context Alchemy builds comprehensive prompts
 - Model capability detection exists but unused
 - Error handling with fallbacks is in place
@@ -27,6 +29,7 @@ Three comprehensive analysis documents have been created:
 - Cost monitoring infrastructure exists
 
 ### What's Missing
+
 - Task-aware model selection
 - Environment variables for FAST/SMART/MANAGER
 - Router to dispatch tasks to appropriate models
@@ -36,13 +39,13 @@ Three comprehensive analysis documents have been created:
 
 ## Where LLM Calls Happen
 
-| # | Location | Task | Current Model | Suggested Tier |
-|---|----------|------|---------------|----------------|
-| 1 | capability-orchestrator.ts:545 | Capability Extraction | Random (rotation) | **FAST** |
-| 2 | conscience.ts:77 | Goal Context Generation | Random (rotation) | SMART/MANAGER |
-| 3 | conscience.ts:19 | Safety Review | Hardcoded phi-3-mini | Keep (good) |
-| 4 | capability-orchestrator.ts:2314 | Response Synthesis | Random (rotation) | **SMART** |
-| 5 | process-message.ts:91 | Direct Response | Random (rotation) | SMART |
+| #   | Location                        | Task                    | Current Model        | Suggested Tier |
+| --- | ------------------------------- | ----------------------- | -------------------- | -------------- |
+| 1   | capability-orchestrator.ts:545  | Capability Extraction   | Random (rotation)    | **FAST**       |
+| 2   | conscience.ts:77                | Goal Context Generation | Random (rotation)    | SMART/MANAGER  |
+| 3   | conscience.ts:19                | Safety Review           | Hardcoded phi-3-mini | Keep (good)    |
+| 4   | capability-orchestrator.ts:2314 | Response Synthesis      | Random (rotation)    | **SMART**      |
+| 5   | process-message.ts:91           | Direct Response         | Random (rotation)    | SMART          |
 
 **Critical Integration Points:** #1 and #4 (extraction and synthesis)
 
@@ -51,6 +54,7 @@ Three comprehensive analysis documents have been created:
 ## Implementation Roadmap
 
 ### Minimum Viable Implementation (1-2 hours)
+
 1. Add 3 properties to OpenRouter service
 2. Add 4 selection methods to OpenRouter service
 3. Change 2 lines in capability-orchestrator.ts (use selectFastModel, selectSmartModel)
@@ -60,6 +64,7 @@ Three comprehensive analysis documents have been created:
 **Estimated Code Changes:** ~50 lines of new code
 
 ### Extended Implementation (3-4 hours)
+
 - Add optional `selectedModel` parameter to generateFromMessageChain()
 - Add optional `selectedModel` parameter to generateFromMessageChainStreaming()
 - Make conscience model configurable
@@ -69,6 +74,7 @@ Three comprehensive analysis documents have been created:
 **Estimated Code Changes:** ~200 lines total
 
 ### Advanced Features (optional)
+
 - Detect task complexity and route to MANAGER when needed
 - Implement A/B testing of model combinations
 - Cost optimization with cost/quality tradeoff
@@ -81,12 +87,12 @@ Three comprehensive analysis documents have been created:
 ```
 PRIORITY 1: FAST_MODEL for Extraction
 [ ] File: capability-orchestrator.ts, Line 564
-[ ] Change: openRouterService.getCurrentModel() 
+[ ] Change: openRouterService.getCurrentModel()
     → openRouterService.selectFastModel()
 [ ] Impact: Capability extraction ~2-3s, lower cost
 [ ] Risk: Very low (extraction is simple pattern matching)
 
-PRIORITY 2: SMART_MODEL for Synthesis  
+PRIORITY 2: SMART_MODEL for Synthesis
 [ ] File: capability-orchestrator.ts, Line 2314
 [ ] Change: openRouterService.generateFromMessageChain()
     → pass selectSmartModel() as parameter
@@ -111,18 +117,21 @@ PRIORITY 4: Optional Enhancements
 ## Expected Outcomes
 
 ### Cost Impact
+
 - **Current:** All calls use configured models (average cost ~$0.01-0.10 per call)
-- **After:** 
+- **After:**
   - Extraction with free model: ~$0.0001 per call (100x cheaper)
   - Synthesis with Claude 3.5: ~$0.05 per call (current cost)
   - **Overall:** 40-60% cost reduction if FAST_MODEL is free
 
 ### Speed Impact
+
 - **Extraction:** Slightly faster (free models often faster than premium)
 - **Synthesis:** No change or slightly slower (depends on model choice)
 - **User experience:** Better (fast response followed by quality synthesis)
 
 ### Quality Impact
+
 - **Capability detection:** Same or better (simpler task, focused model)
 - **Final response:** Better (premium model for user-facing content)
 - **Overall:** 15-25% quality improvement from specialized models
@@ -153,22 +162,26 @@ PRIORITY 4: Optional Enhancements
 ## Risk Assessment
 
 ### Very Low Risk
+
 - Adding env vars (backward compatible)
 - Adding new methods to OpenRouter service
 - Changing which model is used for extraction (simpler task)
 - Testing with different model combinations
 
 ### Low Risk
+
 - Changing which model is used for synthesis (better quality)
 - Optional parameter additions (fallback to old behavior)
 - Making conscience model configurable
 - Adding logging/metrics
 
 ### Medium Risk (None identified)
+
 - Streaming parameter changes (could test thoroughly)
 - Changing conscience model to premium (increases costs)
 
 ### Mitigation Strategy
+
 1. All changes are backward compatible
 2. Environment variables have sensible defaults
 3. Fallback to rotation if model not configured
@@ -180,16 +193,19 @@ PRIORITY 4: Optional Enhancements
 ## Implementation Timeline
 
 **Day 1 - Core Implementation (2 hours)**
+
 - Implement steps 1-4 from IMPLEMENTATION_CODE_EXAMPLES.md
 - Add env vars to .env
 - Test basic functionality
 
 **Day 2 - Enhancement (1 hour)**
+
 - Implement optional parameter for model selection
 - Add metrics/logging
 - Update .env.example
 
 **Day 3 - Testing & Validation (2 hours)**
+
 - End-to-end testing
 - Performance validation
 - Cost analysis
@@ -246,6 +262,7 @@ A: Start with extraction and synthesis (priorities 1-2), optional stuff can wait
 
 **Q: How do I know if it's working?**
 A: Watch the logs. You'll see clear messages like:
+
 - "🚀 FAST MODEL SELECTED: ..." for extraction
 - "🧠 SMART MODEL SELECTED: ..." for synthesis
 
@@ -266,6 +283,7 @@ Implementation is successful when:
 ## Resources
 
 **Related Files in Codebase:**
+
 - `/packages/capabilities/src/services/openrouter.ts` - Main service
 - `/packages/capabilities/src/services/capability-orchestrator.ts` - Orchestrator
 - `/packages/capabilities/src/utils/model-aware-prompter.ts` - Prompt adaptation
@@ -273,14 +291,15 @@ Implementation is successful when:
 - `/packages/capabilities/src/handlers/process-message.ts` - Entry point
 
 **OpenRouter Documentation:**
+
 - https://openrouter.ai/models - Model catalog
 - https://openrouter.ai/docs - API documentation
 - Model pricing available in OpenRouter dashboard
 
 **Related Codebase Concepts:**
+
 - Model rotation (existing)
 - Error handling with fallbacks (existing)
 - Context Alchemy (separate system)
 - Conscience safety review (hardcoded, separate)
 - Capability extraction (simple XML parsing)
-

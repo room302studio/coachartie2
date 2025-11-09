@@ -192,7 +192,7 @@ async function ensureSession(): Promise<void> {
  * Parse window.pane notation
  */
 function parseTarget(target: string): { window: number; pane: number } {
-  const [w, p] = target.split('.').map(n => parseInt(n, 10));
+  const [w, p] = target.split('.').map((n) => parseInt(n, 10));
   return { window: w, pane: p };
 }
 
@@ -215,7 +215,7 @@ async function handleInit() {
     `list-windows -t ${SESSION_NAME} -F '#{window_index}|#{window_name}|#{window_panes}'`
   );
 
-  const windowList = windows.split('\n').map(line => {
+  const windowList = windows.split('\n').map((line) => {
     const [id, name, panes] = line.split('|');
     return {
       id: parseInt(id, 10),
@@ -265,12 +265,7 @@ async function handleSend(pane: string, command: string, clear: boolean) {
 /**
  * ACTION: read
  */
-async function handleRead(
-  pane: string,
-  lines: number,
-  all: boolean,
-  since: boolean
-) {
+async function handleRead(pane: string, lines: number, all: boolean, since: boolean) {
   await ensureSession();
 
   const target = formatTarget(pane);
@@ -302,10 +297,7 @@ async function handleRead(
   const outputLines = output.split('\n');
 
   // Update read state
-  const totalLines = parseInt(
-    await tmux(`display-message -t ${target} -p '#{history_size}'`),
-    10
-  );
+  const totalLines = parseInt(await tmux(`display-message -t ${target} -p '#{history_size}'`), 10);
 
   readStates.set(pane, {
     last_line: totalLines,
@@ -313,9 +305,7 @@ async function handleRead(
   });
 
   // Get running command
-  const currentCmd = await tmux(
-    `display-message -t ${target} -p '#{pane_current_command}'`
-  );
+  const currentCmd = await tmux(`display-message -t ${target} -p '#{pane_current_command}'`);
 
   return formatSuccess({
     pane,
@@ -345,10 +335,8 @@ async function handleSplit(
   await tmux(`split-window -t ${SESSION_NAME}:${window} ${dirFlag} ${cwdFlag}`);
 
   // Get new pane index
-  const panes = await tmux(
-    `list-panes -t ${SESSION_NAME}:${window} -F '#{pane_index}'`
-  );
-  const paneList = panes.split('\n').map(p => parseInt(p, 10));
+  const panes = await tmux(`list-panes -t ${SESSION_NAME}:${window} -F '#{pane_index}'`);
+  const paneList = panes.split('\n').map((p) => parseInt(p, 10));
   const newPaneIndex = Math.max(...paneList);
   const newPane = `${window}.${newPaneIndex}`;
 
@@ -374,9 +362,7 @@ async function handleSplit(
 async function handleList() {
   await ensureSession();
 
-  const windows = await tmux(
-    `list-windows -t ${SESSION_NAME} -F '#{window_index}|#{window_name}'`
-  );
+  const windows = await tmux(`list-windows -t ${SESSION_NAME} -F '#{window_index}|#{window_name}'`);
 
   const windowList = [];
 
@@ -388,7 +374,7 @@ async function handleList() {
       `list-panes -t ${SESSION_NAME}:${winId} -F '#{pane_index}|#{pane_title}|#{pane_current_path}|#{pane_current_command}|#{pane_active}'`
     );
 
-    const paneList = panes.split('\n').map(pline => {
+    const paneList = panes.split('\n').map((pline) => {
       const [idx, title, cwd, cmd, active] = pline.split('|');
       return {
         id: `${winId}.${idx}`,
@@ -444,10 +430,8 @@ async function handleWindow(name?: string, cwd?: string) {
   await tmux(`new-window -t ${SESSION_NAME} ${nameFlag} ${cwdFlag}`);
 
   // Get new window index
-  const windows = await tmux(
-    `list-windows -t ${SESSION_NAME} -F '#{window_index}'`
-  );
-  const windowList = windows.split('\n').map(w => parseInt(w, 10));
+  const windows = await tmux(`list-windows -t ${SESSION_NAME} -F '#{window_index}'`);
+  const windowList = windows.split('\n').map((w) => parseInt(w, 10));
   const newWindow = Math.max(...windowList);
 
   logger.info(`✅ Created window ${newWindow}: ${name || 'unnamed'}`);
@@ -525,10 +509,7 @@ describe('Tmux Capability', () => {
 
   afterAll(async () => {
     // Cleanup
-    await tmuxCapability.handler(
-      { action: 'kill', window: '0' },
-      undefined
-    );
+    await tmuxCapability.handler({ action: 'kill', window: '0' }, undefined);
   });
 
   it('should initialize session', async () => {
@@ -553,19 +534,13 @@ describe('Tmux Capability', () => {
 
   it('should read pane output', async () => {
     // Send command
-    await tmuxCapability.handler(
-      { action: 'send', command: 'echo "hello world"' },
-      undefined
-    );
+    await tmuxCapability.handler({ action: 'send', command: 'echo "hello world"' }, undefined);
 
     // Wait a bit
-    await new Promise(resolve => setTimeout(resolve, 100));
+    await new Promise((resolve) => setTimeout(resolve, 100));
 
     // Read output
-    const result = await tmuxCapability.handler(
-      { action: 'read', pane: '0.0' },
-      undefined
-    );
+    const result = await tmuxCapability.handler({ action: 'read', pane: '0.0' }, undefined);
     const parsed = JSON.parse(result);
 
     expect(parsed.success).toBe(true);
@@ -600,10 +575,7 @@ describe('Tmux Capability', () => {
     );
 
     // Kill it
-    const result = await tmuxCapability.handler(
-      { action: 'kill', pane: '0.1' },
-      undefined
-    );
+    const result = await tmuxCapability.handler({ action: 'kill', pane: '0.1' }, undefined);
     const parsed = JSON.parse(result);
 
     expect(parsed.success).toBe(true);
@@ -674,9 +646,7 @@ try {
   await tmux(cmd);
 } catch (error: any) {
   if (error.message.includes('container not running')) {
-    throw new Error(
-      'Sandbox container not running. Start it with: docker-compose up -d sandbox'
-    );
+    throw new Error('Sandbox container not running. Start it with: docker-compose up -d sandbox');
   }
   throw error;
 }
@@ -689,9 +659,7 @@ try {
   await tmux(`capture-pane -t ${target} -p`);
 } catch (error: any) {
   if (error.message.includes("can't find pane")) {
-    throw new Error(
-      `Pane ${pane} not found. Use action="list" to see available panes.`
-    );
+    throw new Error(`Pane ${pane} not found. Use action="list" to see available panes.`);
   }
   throw error;
 }
@@ -736,7 +704,8 @@ const readStates = new Map<string, ReadState>();
 setInterval(() => {
   const now = Date.now();
   for (const [key, state] of readStates.entries()) {
-    if (now - state.timestamp.getTime() > 3600000) { // 1 hour
+    if (now - state.timestamp.getTime() > 3600000) {
+      // 1 hour
       readStates.delete(key);
     }
   }
@@ -780,7 +749,7 @@ Add tmux session check to sandbox health:
 ```yaml
 sandbox:
   healthcheck:
-    test: ["CMD", "tmux", "has-session", "-t", "artie"]
+    test: ['CMD', 'tmux', 'has-session', '-t', 'artie']
     interval: 60s
     timeout: 5s
     retries: 2
@@ -881,7 +850,7 @@ Pre-defined session layouts:
 
 ```typescript
 const templates = {
-  'dev': {
+  dev: {
     windows: [
       { name: 'code', panes: 1 },
       { name: 'server', panes: 2 },

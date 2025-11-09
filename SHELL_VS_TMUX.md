@@ -37,11 +37,13 @@ Is the command:
 ### Examples
 
 #### List files
+
 ```xml
 <capability name="shell" command="ls -la /workspace" />
 ```
 
 **Returns:**
+
 ```json
 {
   "success": true,
@@ -54,16 +56,19 @@ Is the command:
 ```
 
 #### Check git status
+
 ```xml
 <capability name="shell" command="git status" cwd="/workspace/myproject" />
 ```
 
 #### Quick calculation
+
 ```xml
 <capability name="shell" command="echo $((2 + 2))" />
 ```
 
 #### Get API data
+
 ```xml
 <capability name="shell" command="curl -s https://api.github.com/repos/owner/repo | jq '.stars'" />
 ```
@@ -87,6 +92,7 @@ Is the command:
 ### Examples
 
 #### Run dev server
+
 ```xml
 <!-- Start server -->
 <capability name="tmux" action="send"
@@ -99,6 +105,7 @@ Is the command:
 ```
 
 #### Long-running build
+
 ```xml
 <!-- Start build -->
 <capability name="tmux" action="send"
@@ -114,6 +121,7 @@ Is the command:
 ```
 
 #### Monitor logs
+
 ```xml
 <!-- Create monitoring pane -->
 <capability name="tmux" action="split" direction="vertical" />
@@ -132,16 +140,20 @@ Is the command:
 ### Scenario 1: Check Node Version
 
 **Shell (Better):**
+
 ```xml
 <capability name="shell" command="node --version" />
 ```
+
 ✅ Simple, immediate result
 
 **Tmux (Overkill):**
+
 ```xml
 <capability name="tmux" action="send" command="node --version" />
 <capability name="tmux" action="read" pane="0.0" />
 ```
+
 ❌ Unnecessarily complex
 
 **Winner:** Shell
@@ -151,15 +163,18 @@ Is the command:
 ### Scenario 2: Run Test Suite
 
 **Shell (Limited):**
+
 ```xml
 <capability name="shell" command="npm test" timeout="60000" />
 ```
+
 - ✅ Gets full output
 - ❌ Must wait for completion (blocks)
 - ❌ Times out if tests take >60s
 - ❌ Cannot check progress
 
 **Tmux (Better):**
+
 ```xml
 <capability name="tmux" action="send" command="npm test" />
 <!-- Do other work -->
@@ -167,6 +182,7 @@ Is the command:
 <!-- Check again later -->
 <capability name="tmux" action="read" since="true" />
 ```
+
 - ✅ Doesn't block
 - ✅ No timeout (or very long)
 - ✅ Can check progress
@@ -179,14 +195,17 @@ Is the command:
 ### Scenario 3: Git Clone
 
 **Shell (Better for small repos):**
+
 ```xml
 <capability name="shell"
   command="git clone https://github.com/user/small-repo"
   timeout="30000" />
 ```
+
 ✅ Simple, waits for completion
 
 **Tmux (Better for large repos):**
+
 ```xml
 <capability name="tmux" action="send"
   command="git clone https://github.com/user/huge-repo" />
@@ -194,6 +213,7 @@ Is the command:
 <!-- Check progress -->
 <capability name="tmux" action="read" />
 ```
+
 ✅ Won't timeout, can monitor progress
 
 **Winner:** Depends on repo size
@@ -203,15 +223,18 @@ Is the command:
 ### Scenario 4: Run Multiple Services
 
 **Shell (Impossible):**
+
 ```xml
 <!-- Can only run one at a time -->
 <capability name="shell" command="npm run api" />
 <!-- Blocks here, never gets to next -->
 <capability name="shell" command="npm run worker" />
 ```
+
 ❌ Second command never runs
 
 **Tmux (Perfect):**
+
 ```xml
 <capability name="tmux" action="split" direction="vertical" />
 
@@ -227,6 +250,7 @@ Is the command:
 <capability name="tmux" action="read" pane="0.0" />
 <capability name="tmux" action="read" pane="0.1" />
 ```
+
 ✅ Both services run simultaneously
 
 **Winner:** Tmux (shell can't do this)
@@ -236,18 +260,22 @@ Is the command:
 ### Scenario 5: File Search
 
 **Shell (Better):**
+
 ```xml
 <capability name="shell"
   command="find /workspace -name '*.js' | head -20" />
 ```
+
 ✅ Fast, complete result
 
 **Tmux (Overkill):**
+
 ```xml
 <capability name="tmux" action="send"
   command="find /workspace -name '*.js'" />
 <capability name="tmux" action="read" />
 ```
+
 ❌ Unnecessary complexity
 
 **Winner:** Shell
@@ -257,13 +285,16 @@ Is the command:
 ### Scenario 6: Interactive Node REPL
 
 **Shell (Won't work):**
+
 ```xml
 <capability name="shell" command="node" />
 <!-- Can't interact, command never finishes -->
 ```
+
 ❌ Blocks forever
 
 **Tmux (Perfect):**
+
 ```xml
 <capability name="tmux" action="send" command="node" />
 
@@ -278,6 +309,7 @@ Is the command:
 
 <capability name="tmux" action="send" command=".exit" />
 ```
+
 ✅ Can interact with REPL
 
 **Winner:** Tmux (shell can't do this)
@@ -287,18 +319,22 @@ Is the command:
 ### Scenario 7: Database Query
 
 **Shell (Better):**
+
 ```xml
 <capability name="shell"
   command="sqlite3 /workspace/db.sqlite 'SELECT * FROM users LIMIT 10'" />
 ```
+
 ✅ Simple, immediate result
 
 **Tmux (Overkill):**
+
 ```xml
 <capability name="tmux" action="send"
   command="sqlite3 /workspace/db.sqlite 'SELECT * FROM users LIMIT 10'" />
 <capability name="tmux" action="read" />
 ```
+
 ❌ Unnecessarily complex
 
 **Winner:** Shell
@@ -308,13 +344,16 @@ Is the command:
 ### Scenario 8: Watch File Changes
 
 **Shell (Won't work):**
+
 ```xml
 <capability name="shell" command="watch -n 1 ls -la" />
 <!-- Never returns, times out -->
 ```
+
 ❌ Command runs forever
 
 **Tmux (Perfect):**
+
 ```xml
 <capability name="tmux" action="send"
   command="watch -n 1 ls -la" />
@@ -325,6 +364,7 @@ Is the command:
 <!-- Stop it when done -->
 <capability name="tmux" action="send" command="^C" />
 ```
+
 ✅ Runs in background, can check anytime
 
 **Winner:** Tmux (shell can't do this)
@@ -334,6 +374,7 @@ Is the command:
 ### When Migrating from Shell to Tmux
 
 If you find yourself:
+
 - Increasing timeout values
 - Wanting to run multiple commands concurrently
 - Needing to check on command progress
@@ -345,6 +386,7 @@ Then migrate to tmux.
 ### Pattern Migration
 
 **Before (Shell):**
+
 ```xml
 <capability name="shell"
   command="npm run build"
@@ -353,6 +395,7 @@ Then migrate to tmux.
 ```
 
 **After (Tmux):**
+
 ```xml
 <capability name="tmux" action="send"
   command="npm run build" />
@@ -396,12 +439,14 @@ You can use both together effectively.
 ## Performance Comparison
 
 ### Shell
+
 - **Startup:** ~50ms
 - **Overhead:** Minimal
 - **Blocking:** Yes
 - **Concurrent:** No
 
 ### Tmux
+
 - **Startup:** ~100ms (first time), ~20ms (session exists)
 - **Overhead:** Slight (session management)
 - **Blocking:** No
@@ -410,20 +455,25 @@ You can use both together effectively.
 ## Cost-Benefit Analysis
 
 ### Shell
+
 **Use when:**
+
 - Command completes in <5 seconds
 - You need output immediately
 - One command at a time is fine
 - No interaction needed
 
 **Benefits:**
+
 - Simple
 - Fast
 - Less cognitive overhead
 - Synchronous flow
 
 ### Tmux
+
 **Use when:**
+
 - Command takes >5 seconds
 - Need to run multiple things
 - Want to check progress
@@ -431,6 +481,7 @@ You can use both together effectively.
 - Want persistence
 
 **Benefits:**
+
 - Concurrent execution
 - No timeouts
 - Can monitor progress
@@ -438,6 +489,7 @@ You can use both together effectively.
 - Session persistence
 
 **Costs:**
+
 - More complex
 - Session management
 - Asynchronous flow (need separate read)
@@ -469,6 +521,7 @@ You can use both together effectively.
 ### Context-Dependent
 
 **Small operation → Shell, Large operation → Tmux:**
+
 - Git clone (small repo vs large repo)
 - Database operations (single query vs migration)
 - File operations (one file vs batch)

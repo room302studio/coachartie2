@@ -23,15 +23,18 @@ Redis Hash: user_profile:{userId}
 ## Usage Patterns
 
 ### Known Services (with validation)
+
 ```xml
 <capability name="user-profile" action="link-email" value="user@example.com" />
 <capability name="user-profile" action="link-phone" value="+1234567890" />
 ```
+
 - Email: regex validation
 - Phone: international format validation
 - Specific error messages
 
 ### Unknown Services (generic link)
+
 ```xml
 <capability name="user-profile" action="link" attribute="bluesky" value="ejfox.bsky.social" />
 <capability name="user-profile" action="link" attribute="mastodon" value="@ejfox@mastodon.social" />
@@ -40,6 +43,7 @@ Redis Hash: user_profile:{userId}
 <capability name="user-profile" action="link" attribute="signal" value="+1234567890" />
 <capability name="user-profile" action="link" attribute="telegram" value="@ejfox" />
 ```
+
 - No validation (trust the LLM)
 - Service name sanitized: lowercase, alphanumeric + underscore/dash
 - Works for ANY service, present or future
@@ -83,18 +87,22 @@ Artie: "✅ supersocial linked: ejfox2026"
 ## Implementation
 
 ### Specific Actions (validated)
+
 - `link-email`: Email regex validation
 - `link-phone`: International phone format
 - `link-github`, `link-reddit`, etc.: Basic validation
 
 ### Generic Action (extensible)
+
 - `link`: Accepts ANY attribute name
 - Sanitizes service name (lowercase, safe chars)
 - No validation (trust LLM judgment)
 - Stores in same unified Redis Hash
 
 ### Storage
+
 All stored identically in Redis Hash:
+
 ```
 user_profile:{userId}
   → {service_name}: {value}
@@ -107,6 +115,7 @@ Just works.
 ## Comparison to Traditional Systems
 
 **Traditional (rigid):**
+
 ```sql
 CREATE TABLE user_profiles (
   id INTEGER,
@@ -118,6 +127,7 @@ CREATE TABLE user_profiles (
 ```
 
 **Ours (flexible):**
+
 ```
 Redis Hash - any key-value pair
 No schema

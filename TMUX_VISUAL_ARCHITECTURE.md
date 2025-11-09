@@ -437,14 +437,14 @@ Action Request
 
 ## Summary Metrics
 
-| Aspect | Shell | Tmux |
-|--------|-------|------|
-| **Latency** | 50ms | 100ms (init), 50ms (send) |
-| **Concurrency** | No | Yes (unlimited panes) |
-| **Persistence** | No | Yes (session survives) |
-| **Monitoring** | No | Yes (read anytime) |
-| **Complexity** | Low | Medium |
-| **Use Cases** | Quick commands | Long workflows |
+| Aspect          | Shell          | Tmux                      |
+| --------------- | -------------- | ------------------------- |
+| **Latency**     | 50ms           | 100ms (init), 50ms (send) |
+| **Concurrency** | No             | Yes (unlimited panes)     |
+| **Persistence** | No             | Yes (session survives)    |
+| **Monitoring**  | No             | Yes (read anytime)        |
+| **Complexity**  | Low            | Medium                    |
+| **Use Cases**   | Quick commands | Long workflows            |
 
 ## Visual Command Reference
 

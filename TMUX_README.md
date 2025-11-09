@@ -7,6 +7,7 @@ This directory contains comprehensive documentation for implementing tmux capabi
 ## Documentation Structure
 
 ### 1. 📋 [TMUX_ARCHITECTURE.md](./TMUX_ARCHITECTURE.md)
+
 **Complete architectural design specification**
 
 - Design principles and rationale
@@ -22,6 +23,7 @@ This directory contains comprehensive documentation for implementing tmux capabi
 ---
 
 ### 2. ⚡ [TMUX_QUICK_REFERENCE.md](./TMUX_QUICK_REFERENCE.md)
+
 **Quick reference guide for using tmux capability**
 
 - TL;DR of core concepts
@@ -37,6 +39,7 @@ This directory contains comprehensive documentation for implementing tmux capabi
 ---
 
 ### 3. 🔧 [TMUX_IMPLEMENTATION.md](./TMUX_IMPLEMENTATION.md)
+
 **Technical implementation guide**
 
 - Complete TypeScript implementation
@@ -53,6 +56,7 @@ This directory contains comprehensive documentation for implementing tmux capabi
 ---
 
 ### 4. ⚖️ [SHELL_VS_TMUX.md](./SHELL_VS_TMUX.md)
+
 **Comparison and decision guide**
 
 - When to use shell vs tmux
@@ -123,6 +127,7 @@ Session: artie (persistent)
 ## Design Highlights
 
 ### 1. Simple for LLMs
+
 ```xml
 <capability name="tmux" action="send" command="npm test" />
 <capability name="tmux" action="read" pane="0.0" />
@@ -137,6 +142,7 @@ Commands keep running even after Artie moves to other tasks. Can check back anyt
 ### 3. Concurrent Execution
 
 Run multiple processes simultaneously:
+
 - Dev server in pane 0.0
 - Test watcher in pane 0.1
 - Log monitor in pane 0.2
@@ -144,6 +150,7 @@ Run multiple processes simultaneously:
 ### 4. Observable
 
 Always know what's running:
+
 ```xml
 <capability name="tmux" action="list" />
 ```
@@ -153,6 +160,7 @@ Shows all panes with their current commands.
 ### 5. Incremental Reading
 
 Read only new output since last check:
+
 ```xml
 <capability name="tmux" action="read" since="true" />
 ```
@@ -256,6 +264,7 @@ Efficient for monitoring long-running processes.
 **Decision:** Use single session `artie` with multiple windows/panes.
 
 **Rationale:**
+
 - Simpler mental model for LLM
 - Easier to manage and list
 - Windows provide sufficient organization
@@ -266,6 +275,7 @@ Efficient for monitoring long-running processes.
 **Decision:** Use `0.0` notation (window.pane).
 
 **Rationale:**
+
 - Simple and predictable
 - Maps to tmux native targeting
 - Easy for LLM to remember
@@ -276,6 +286,7 @@ Efficient for monitoring long-running processes.
 **Decision:** `send` action doesn't wait for completion.
 
 **Rationale:**
+
 - Enables concurrent workflows
 - No blocking on long operations
 - Matches tmux's natural model
@@ -286,6 +297,7 @@ Efficient for monitoring long-running processes.
 **Decision:** Track read position per pane.
 
 **Rationale:**
+
 - Avoid re-processing old output
 - Efficient for long-running processes
 - Reduces token usage in LLM context
@@ -293,15 +305,15 @@ Efficient for monitoring long-running processes.
 
 ## Performance Characteristics
 
-| Operation | Latency | Notes |
-|-----------|---------|-------|
-| init (new session) | ~100ms | First time only |
-| init (existing) | ~20ms | Session already exists |
-| send | ~50ms | Command execution is async |
-| read (100 lines) | ~100ms | Depends on output size |
-| split | ~80ms | Creates new pane |
-| list | ~150ms | Gathers all pane info |
-| kill | ~60ms | Destroys pane |
+| Operation          | Latency | Notes                      |
+| ------------------ | ------- | -------------------------- |
+| init (new session) | ~100ms  | First time only            |
+| init (existing)    | ~20ms   | Session already exists     |
+| send               | ~50ms   | Command execution is async |
+| read (100 lines)   | ~100ms  | Depends on output size     |
+| split              | ~80ms   | Creates new pane           |
+| list               | ~150ms  | Gathers all pane info      |
+| kill               | ~60ms   | Destroys pane              |
 
 All operations complete quickly enough for interactive LLM use.
 
@@ -310,6 +322,7 @@ All operations complete quickly enough for interactive LLM use.
 ### Container Isolation
 
 Tmux sessions run inside sandboxed container:
+
 - ✅ Isolated from host OS
 - ✅ Resource limits (512MB RAM, 1 CPU)
 - ✅ No privileged mode
@@ -318,6 +331,7 @@ Tmux sessions run inside sandboxed container:
 ### Pane Isolation
 
 Panes within session share container:
+
 - ⚠️ No isolation between panes
 - ⚠️ Same user/permissions
 - ✅ Acceptable - entire sandbox is isolated
@@ -325,6 +339,7 @@ Panes within session share container:
 ### Command Injection
 
 All commands are properly escaped:
+
 ```typescript
 const escapedCmd = command.replace(/'/g, "'\\''");
 ```
@@ -336,6 +351,7 @@ const escapedCmd = command.replace(/'/g, "'\\''");
 **Problem:** Container restart destroys session
 
 **Recovery:** Auto-initialize on any action
+
 ```typescript
 await ensureSession(); // Creates if not exists
 ```
@@ -345,6 +361,7 @@ await ensureSession(); // Creates if not exists
 **Problem:** Invalid pane reference
 
 **Recovery:** Clear error message with suggestion
+
 ```json
 {
   "error": "Pane 0.5 not found",
@@ -357,6 +374,7 @@ await ensureSession(); // Creates if not exists
 **Problem:** Docker exec fails
 
 **Recovery:** Return actionable error
+
 ```json
 {
   "error": "Sandbox container not running",
@@ -367,6 +385,7 @@ await ensureSession(); // Creates if not exists
 ## Future Enhancements
 
 ### Phase 1 (Current)
+
 - [x] Architecture design
 - [x] API specification
 - [x] Documentation
@@ -374,12 +393,14 @@ await ensureSession(); // Creates if not exists
 - [ ] Basic testing
 
 ### Phase 2 (Next)
+
 - [ ] Pane recording (continuous logging)
 - [ ] Layout management (save/restore)
 - [ ] Session templates
 - [ ] Enhanced monitoring
 
 ### Phase 3 (Future)
+
 - [ ] Synchronized panes
 - [ ] Pattern-based notifications
 - [ ] Session snapshots

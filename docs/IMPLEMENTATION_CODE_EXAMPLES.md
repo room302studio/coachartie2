@@ -5,6 +5,7 @@
 **File:** `/packages/capabilities/src/services/openrouter.ts`
 
 ### Add to Constructor (after line 103)
+
 ```typescript
 // Load model tier configurations from environment
 this.fastModel = process.env.FAST_MODEL || 'qwen/qwen3-coder:free';
@@ -18,6 +19,7 @@ logger.info(`  MANAGER: ${this.managerModel}`);
 ```
 
 ### Add Class Properties (after line 18)
+
 ```typescript
 private fastModel: string;
 private smartModel: string;
@@ -25,6 +27,7 @@ private managerModel: string;
 ```
 
 ### Add Methods (after line 112)
+
 ```typescript
 selectFastModel(): string {
   logger.info(`🚀 FAST MODEL SELECTED: ${this.fastModel} (for extraction)`);
@@ -56,7 +59,9 @@ selectModelForTask(taskType: 'extraction' | 'response' | 'planning'): string {
 ```
 
 ### Modify generateFromMessageChain (line 130)
+
 **Add optional selectedModel parameter:**
+
 ```typescript
 async generateFromMessageChain(
   messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>,
@@ -67,10 +72,10 @@ async generateFromMessageChain(
   const startTime = Date.now();
 
   // Use selected model if provided, otherwise use rotation
-  const startIndex = selectedModel 
+  const startIndex = selectedModel
     ? this.models.indexOf(selectedModel)
     : this.currentModelIndex;
-  
+
   // Fallback to current model if selection not found
   const actualStartIndex = startIndex >= 0 ? startIndex : this.currentModelIndex;
 
@@ -95,6 +100,7 @@ async generateFromMessageChain(
 ### Change Method at Line 564 in getLLMResponseWithCapabilities()
 
 **Before:**
+
 ```typescript
 // Apply model-aware prompting to the system message
 const currentModel = openRouterService.getCurrentModel();
@@ -128,9 +134,10 @@ return onPartialResponse
 ```
 
 **After:**
+
 ```typescript
 // Apply model-aware prompting to the system message
-const fastModel = openRouterService.selectFastModel();  // ← USE FAST MODEL
+const fastModel = openRouterService.selectFastModel(); // ← USE FAST MODEL
 const modelAwareMessages = messages.map((msg) => {
   if (msg.role === 'system') {
     return {
@@ -152,13 +159,13 @@ return onPartialResponse
       message.userId,
       onPartialResponse,
       message.id,
-      fastModel  // ← PASS FAST MODEL (if you add this parameter)
+      fastModel // ← PASS FAST MODEL (if you add this parameter)
     )
   : await openRouterService.generateFromMessageChain(
       modelAwareMessages,
       message.userId,
       message.id,
-      fastModel  // ← PASS FAST MODEL
+      fastModel // ← PASS FAST MODEL
     );
 ```
 
@@ -171,6 +178,7 @@ return onPartialResponse
 ### Change generateFinalResponse() at Line 2314
 
 **Before:**
+
 ```typescript
 private async generateFinalResponse(
   context: OrchestrationContext,
@@ -221,6 +229,7 @@ private async generateFinalResponse(
 ```
 
 **After:**
+
 ```typescript
 private async generateFinalResponse(
   context: OrchestrationContext,
@@ -266,7 +275,7 @@ private async generateFinalResponse(
     // ← NEW: Select SMART MODEL for final response synthesis
     const smartModel = openRouterService.selectSmartModel();
     logger.info(`🧠 SYNTHESIS: Using SMART MODEL for final response generation`);
-    
+
     const finalResponse = await openRouterService.generateFromMessageChain(
       messages,
       context.userId,
@@ -282,6 +291,7 @@ private async generateFinalResponse(
 **File:** `.env`
 
 **Add these new variables:**
+
 ```bash
 # Three-tier model configuration for intelligent task routing
 # FAST_MODEL: Quick capability extraction (small/cheap model)
@@ -297,6 +307,7 @@ MANAGER_MODEL="anthropic/claude-3.5-sonnet"
 **File:** `.env.example`
 
 **Add documentation:**
+
 ```bash
 # ============================================================
 # OPENROUTER - Three-Tier Model Configuration
@@ -338,6 +349,7 @@ MANAGER_MODEL="anthropic/claude-3.5-sonnet"
 ### Modify generateFromMessageChainStreaming (line 295)
 
 **Add optional parameter:**
+
 ```typescript
 async generateFromMessageChainStreaming(
   messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>,
@@ -383,11 +395,13 @@ async generateFromMessageChainStreaming(
 ### Make Conscience Model Configurable (line 19)
 
 **Before:**
+
 ```typescript
 private conscienceModel = 'microsoft/phi-3-mini-128k-instruct:free';
 ```
 
 **After:**
+
 ```typescript
 private conscienceModel: string;
 
@@ -398,6 +412,7 @@ constructor() {
 ```
 
 ### Update .env
+
 ```bash
 # Optional: Upgrade conscience safety model if desired
 # Default: microsoft/phi-3-mini-128k-instruct:free
@@ -457,6 +472,7 @@ If something goes wrong, you can quickly revert:
 3. Everything continues working with simple rotation
 
 The changes are backwards compatible because:
+
 - New parameters are optional
 - Fallback to rotation if not specified
 - Conscience remains independent
@@ -471,7 +487,7 @@ After implementation, track these in logs:
 ```
 Model Tier Usage:
 - Count of FAST model calls
-- Count of SMART model calls  
+- Count of SMART model calls
 - Count of MANAGER model calls
 - Success rate per tier
 
@@ -491,4 +507,3 @@ Quality Metrics:
 - Final response quality scores
 - User satisfaction with response quality
 ```
-

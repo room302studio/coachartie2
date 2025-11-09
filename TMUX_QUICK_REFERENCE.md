@@ -166,27 +166,32 @@ Default is always `0.0` if you don't specify.
 ## Parameters Cheatsheet
 
 ### send
+
 - `pane` - Which pane (default: 0.0)
 - `command` - What to run (required)
 - `clear` - Clear pane first (default: false)
 
 ### read
+
 - `pane` - Which pane (default: 0.0)
 - `lines` - How many lines (default: 100)
 - `all` - Get entire scrollback (default: false)
 - `since` - Only new output (default: false)
 
 ### split
+
 - `window` - Which window (default: 0)
 - `direction` - "horizontal" or "vertical" (required)
 - `title` - Name for pane (optional)
 - `cwd` - Working directory (optional)
 
 ### kill
+
 - `pane` - Which pane to kill (e.g., "0.1")
 - `window` - Or kill whole window (e.g., "1")
 
 ### window
+
 - `name` - Window name (optional)
 - `cwd` - Working directory (optional)
 
@@ -218,6 +223,7 @@ Need to run a command?
 ```
 
 Response shows:
+
 - All windows
 - All panes in each window
 - What command is running in each pane
@@ -232,6 +238,7 @@ Read the pane. If output stopped, command likely finished.
 ```
 
 Look for:
+
 - Exit codes
 - Error messages
 - Prompts (means command finished)

@@ -9,6 +9,7 @@ Meta-tooling for viewing, accessing, and editing the prompt database.
 Interactive terminal UI for browsing and editing prompts. Perfect for humans!
 
 **Features:**
+
 - 📋 Browse all prompts with filtering
 - 🔍 View prompt details and history
 - ✏️ Edit prompts in-place
@@ -17,6 +18,7 @@ Interactive terminal UI for browsing and editing prompts. Perfect for humans!
 - ⚡ Keyboard shortcuts (vim-style!)
 
 **Usage:**
+
 ```bash
 npm run prompt:tui
 # or
@@ -43,6 +45,7 @@ npm run prompt:tui
 Command-line interface for programmatic access. Perfect for AI and scripting!
 
 **Features:**
+
 - 🤖 AI-friendly programmatic interface
 - 📝 Export/import prompts as JSON
 - 🔄 Version control integration
@@ -50,6 +53,7 @@ Command-line interface for programmatic access. Perfect for AI and scripting!
 - 📊 Machine-readable output
 
 **Usage:**
+
 ```bash
 npm run prompt:cli -- <command> [args]
 # or
@@ -57,6 +61,7 @@ npm run prompt:cli -- <command> [args]
 ```
 
 **Commands:**
+
 ```bash
 # List all prompts
 prompt-cli list
@@ -112,6 +117,7 @@ await Bash({ command: 'EDITOR=vim ./tools/prompt-cli.ts edit PROMPT_SYSTEM' });
 ### For Humans:
 
 Just run the TUI for the best experience:
+
 ```bash
 npm run prompt:tui
 ```
@@ -206,23 +212,28 @@ cat current-prompt.txt | ./tools/prompt-cli.ts edit PROMPT_SYSTEM
 ## Troubleshooting
 
 **TUI not rendering correctly?**
+
 - Make sure your terminal supports 256 colors
 - Try a different terminal (iTerm2, Alacritty, etc.)
 
 **CLI can't find database?**
+
 - Make sure you're running from the repo root
 - Check that SQLite database exists at `data/coachartie.db`
 
 **Permission denied?**
+
 - Run `chmod +x tools/prompt-*.ts`
 
 **Import fails?**
+
 - Validate JSON format
 - Check that prompt names don't conflict
 
 ## Development
 
 The tools use:
+
 - `blessed` - Terminal UI library
 - `prompt-manager` - Database abstraction
 - `tsx` - TypeScript execution

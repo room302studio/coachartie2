@@ -176,6 +176,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.1.0] - 2025-10-26
 
 ### Added
+
 - **Runtime Adaptation Capabilities** - Three new capabilities for self-monitoring and optimization:
   - `model_manager` - Query available models, pricing, and get credit-aware recommendations (4 actions)
   - `runtime_config` - Dynamically adjust configuration at runtime including auto-optimization modes (7 actions)
@@ -189,16 +190,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - FULL POWER (>$50): 12 iterations, 64k context
 
 ### Fixed
+
 - Database schema: Added missing `related_message_id` column to memories table
 - Improved `/chat` endpoint error messages with JSON syntax examples
 
 ### Changed
+
 - Total capabilities increased from 25 to 28
 - OpenRouter API key updated to pay-as-you-go billing model
 
 ## [1.0.0] - 2025-01-24
 
 ### Added
+
 - **Mention Proxy System** with LLM judgment layer for intelligent @ mention handling
 - **GitHub PR Auto-Expansion** for Subway Builder guild
 - **Cost Control Mechanisms** after $40 burn incident:
@@ -210,6 +214,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Memory leak verification script
 
 ### Fixed
+
 - **Critical Security Patches** applied to dependency tree:
   - static-eval, minimist, esbuild, @nuxtjs/mdc, form-data
   - @eslint/plugin-kit, vite, axios, tar-fs, nodemailer, koa
@@ -219,6 +224,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - BullMQ worker restored for scheduler job execution
 
 ### Changed
+
 - Simplified scheduler service architecture
 - Disabled LinkedIn capability (OAuth not configured)
 - Enhanced worker error handlers for better visibility
@@ -226,6 +232,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.9.0] - Earlier Development
 
 ### Foundation
+
 - Initial Coach Artie 2 architecture
 - Multi-service monorepo with Discord, Capabilities, Brain UI, SMS, Email
 - Three-tier model strategy (FAST/SMART/MANAGER)
@@ -247,6 +254,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **PATCH** (0.0.x): Bug fixes, security patches, minor improvements
 
 **When to Bump:**
+
 - Add new capability → MINOR bump
 - Fix bugs/security → PATCH bump
 - Major architecture change → MAJOR bump
