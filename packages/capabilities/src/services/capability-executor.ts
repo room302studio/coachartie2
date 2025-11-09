@@ -4,6 +4,9 @@ import { wolframService } from './wolfram.js';
 import { schedulerService } from './scheduler.js';
 import { robustExecutor } from '../utils/robust-capability-executor.js';
 import { getErrorMessage } from '../utils/error-utils.js';
+import { openRouterService } from './openrouter.js';
+import { contextAlchemy } from './context-alchemy.js';
+import { capabilityParser } from './capability-parser.js';
 import {
   ExtractedCapability,
   CapabilityResult,
@@ -396,6 +399,157 @@ export class CapabilityExecutor {
     }
 
     return result;
+  }
+
+  /**
+   * CRITICAL FIX: Error Recovery Loop - Ask LLM to self-correct failed capabilities
+   * This implements the architecture improvement the user requested:
+   * "send better errors back to the LLM so it could have fixed it itself"
+   */
+  async attemptErrorRecovery(
+    context: OrchestrationContext,
+    originalMessage: string,
+    maxRetries: number = 2
+  ): Promise<boolean> {
+    // Check if there are any failed capabilities
+    const failedResults = context.results.filter((r) => !r.success);
+    if (failedResults.length === 0) {
+      logger.info(`✅ No failed capabilities - error recovery not needed`);
+      return true;
+    }
+
+    // Check retry count to prevent infinite loops
+    if (!context.capabilityFailureCount.has('error_recovery_attempts')) {
+      context.capabilityFailureCount.set('error_recovery_attempts', 0);
+    }
+    const recoveryAttempts = context.capabilityFailureCount.get('error_recovery_attempts') || 0;
+    if (recoveryAttempts >= maxRetries) {
+      logger.warn(
+        `⚠️ Error recovery max retries (${maxRetries}) reached, giving up on error recovery`
+      );
+      return false;
+    }
+
+    logger.info(
+      `🔄 ATTEMPTING ERROR RECOVERY (Attempt ${recoveryAttempts + 1}/${maxRetries}) for ${failedResults.length} failed capabilities`
+    );
+
+    // Build error summary for LLM
+    const errorSummary = failedResults
+      .map(
+        (result) =>
+          `❌ ${result.capability.name}:${result.capability.action}\n` +
+          `   Parameters: ${JSON.stringify(result.capability.params)}\n` +
+          `   Error: ${result.error}`
+      )
+      .join('\n\n');
+
+    const recoveryPrompt = `🔧 ERROR RECOVERY MODE
+
+You attempted to execute capabilities but ${failedResults.length} failed:
+
+${errorSummary}
+
+ORIGINAL USER REQUEST: "${originalMessage}"
+
+WHAT TO DO:
+1. Analyze why each capability failed (likely parameter issues, missing context, or format errors)
+2. Consider what the user actually wanted to accomplish
+3. Either:
+   a) RETRY with corrected parameters (if you see how to fix it)
+   b) ASK FOR CLARIFICATION (if you need more info from the user)
+
+If you retry, use the exact XML capability format with corrected parameters:
+<capability name="..." action="..." data='...' />
+
+If asking for clarification, respond naturally without capability tags.
+
+Remember: Parameter names might be camelCase or snake_case. Try both if unsure.`;
+
+    try {
+      // Use FAST_MODEL for quick error analysis
+      const fastModel = openRouterService.selectFastModel();
+      logger.info(`🧠 Using FAST_MODEL for error recovery: ${fastModel}`);
+
+      // Build message chain for error recovery
+      const { messages } = await contextAlchemy.buildMessageChain(
+        recoveryPrompt,
+        context.userId,
+        'You are an intelligent error recovery system. Analyze capability failures and attempt to fix them or request clarification.'
+      );
+
+      // Get LLM's attempt to fix the errors
+      const recoveryAttempt = await openRouterService.generateFromMessageChain(
+        messages,
+        context.userId,
+        `${context.messageId}_recovery_${recoveryAttempts + 1}`,
+        fastModel
+      );
+
+      logger.info(`🔍 LLM Recovery Attempt:\n${recoveryAttempt.substring(0, 500)}...`);
+
+      // Check if LLM found corrected capabilities
+      const recoveredCapabilities = capabilityParser.extractCapabilities(recoveryAttempt, fastModel);
+      if (recoveredCapabilities.length > 0) {
+        logger.info(
+          `✅ LLM identified ${recoveredCapabilities.length} corrected capabilities to retry`
+        );
+
+        // Clear the failed capabilities and try again with corrected ones
+        const newResults: CapabilityResult[] = [];
+        for (const capability of recoveredCapabilities) {
+          logger.info(`🔄 Retrying: ${capability.name}:${capability.action}`);
+          const result = await this.executeCapability(
+            capability,
+            context,
+            (cap, error) => capabilityParser.generateHelpfulErrorMessage(cap, error)
+          );
+          newResults.push(result);
+
+          if (!result.success) {
+            logger.warn(`⚠️ Retry still failed: ${capability.name}:${capability.action}`);
+          } else {
+            logger.info(`✅ Retry succeeded: ${capability.name}:${capability.action}`);
+          }
+        }
+
+        // Replace failed results with retry results
+        context.results = context.results.filter((r) => r.success).concat(newResults);
+
+        // Track recovery attempt
+        context.capabilityFailureCount.set('error_recovery_attempts', recoveryAttempts + 1);
+
+        // Check if all issues are now resolved
+        const stillFailed = context.results.filter((r) => !r.success);
+        if (stillFailed.length === 0) {
+          logger.info(`🎉 ERROR RECOVERY SUCCESSFUL - All capabilities now working!`);
+          return true;
+        } else if (stillFailed.length < failedResults.length) {
+          logger.info(
+            `⚠️ Partial recovery: ${failedResults.length - stillFailed.length} fixed, ${stillFailed.length} still failing`
+          );
+          // Recursively attempt recovery again for remaining failures
+          return await this.attemptErrorRecovery(context, originalMessage, maxRetries);
+        } else {
+          logger.warn(`❌ Error recovery did not improve the situation, attempting one more time`);
+          // Try one more time with fresh perspective
+          return await this.attemptErrorRecovery(context, originalMessage, maxRetries);
+        }
+      } else {
+        logger.info(`ℹ️ LLM did not attempt to retry capabilities`);
+        logger.info(
+          `Response was likely a clarification request:\n${recoveryAttempt.substring(0, 300)}`
+        );
+
+        // If LLM asked for clarification instead, we should return that to the user
+        // This will be included in the final response generation
+        return false;
+      }
+    } catch (error) {
+      logger.error('❌ Error recovery attempt failed:', error);
+      context.capabilityFailureCount.set('error_recovery_attempts', recoveryAttempts + 1);
+      return false;
+    }
   }
 
 }
