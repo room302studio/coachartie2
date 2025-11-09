@@ -134,8 +134,35 @@ ENDOFFILE"></capability>`,
     // Simple find/replace
     "<capability name=\"shell\" action=\"exec\" command=\"sed -i 's/old-text/new-text/g' /workspace/config.js\"></capability>",
 
-    // Replace on specific line
+    // Replace on specific line (substitute within line 10)
     "<capability name=\"shell\" action=\"exec\" command=\"sed -i '10s/const/let/' /workspace/app.js\"></capability>",
+
+    // Replace entire line by number
+    "<capability name=\"shell\" action=\"exec\" command=\"sed -i '5c\\\\const newValue = 42;' /workspace/config.js\"></capability>",
+
+    // Delete specific line number
+    "<capability name=\"shell\" action=\"exec\" command=\"sed -i '15d' /workspace/test.js\"></capability>",
+
+    // Delete range of lines (lines 10-20)
+    "<capability name=\"shell\" action=\"exec\" command=\"sed -i '10,20d' /workspace/old-code.js\"></capability>",
+
+    // Insert line BEFORE specific line number
+    "<capability name=\"shell\" action=\"exec\" command=\"sed -i '7i\\\\// New import' /workspace/index.js\"></capability>",
+
+    // Insert line AFTER specific line number
+    "<capability name=\"shell\" action=\"exec\" command=\"sed -i '12a\\\\console.log(&quot;debug&quot;);' /workspace/app.js\"></capability>",
+
+    // Replace lines in range (lines 5-8)
+    "<capability name=\"shell\" action=\"exec\" command=\"sed -i '5,8s/var/const/g' /workspace/legacy.js\"></capability>",
+
+    // Read specific lines first, then edit (safe pattern)
+    "<capability name=\"shell\" action=\"exec\" command=\"sed -n '10,15p' /workspace/app.js && sed -i '12s/old/new/' /workspace/app.js\"></capability>",
+
+    // Comment out specific line
+    "<capability name=\"shell\" action=\"exec\" command=\"sed -i '25s/^/\\\\/\\\\/ /' /workspace/debug.js\"></capability>",
+
+    // Comment out range of lines
+    "<capability name=\"shell\" action=\"exec\" command=\"sed -i '10,20s/^/\\\\/\\\\/ /' /workspace/temp.js\"></capability>",
 
     // Delete lines matching pattern
     "<capability name=\"shell\" action=\"exec\" command=\"sed -i '/TODO/d' /workspace/notes.txt\"></capability>",
@@ -144,11 +171,14 @@ ENDOFFILE"></capability>`,
     // Insert line after pattern (escape the inner quotes)
     '<capability name="shell" action="exec" command="sed -i \'/const express/a const cors = require(&quot;cors&quot;);\' /workspace/server.js"></capability>',
 
-    // Comment out lines
+    // Comment out all lines (entire file)
     "<capability name=\"shell\" action=\"exec\" command=\"sed -i 's|^|// |' /workspace/temp.js\"></capability>",
 
-    // Change port number
+    // Change port number (global replace)
     "<capability name=\"shell\" action=\"exec\" command=\"sed -i 's/PORT=3000/PORT=8080/g' /workspace/.env\"></capability>",
+
+    // Multi-line edit: read line, modify, write back
+    "<capability name=\"shell\" action=\"exec\" command=\"LINE=$(sed -n '5p' /workspace/config.js) && sed -i '5c\\\\// Modified: '$LINE /workspace/config.js\"></capability>",
 
     // === MARKDOWN CODE BLOCK MAGIC ===
 
