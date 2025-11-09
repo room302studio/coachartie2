@@ -58,6 +58,36 @@ export const shellCapability: RegisteredCapability = {
   description:
     'Execute shell commands in a sandboxed Debian container. Artie has full access to a persistent Linux environment with git, gh, jq, curl, npm, python, and more. Supports both one-shot execution (action=exec) and persistent tmux sessions (action=send/read/split/list) for stateful workflows where directory changes and environment persist between commands.',
   requiredParams: [],
+  examples: [
+    // One-shot execution (simple commands)
+    '<capability name="shell" action="exec" command="curl -s https://api.github.com/repos/anthropics/claude-code | jq \'.stargazers_count\'"></capability>',
+
+    // Run a Python script
+    '<capability name="shell" action="exec" command="python3 -c \'import sys; print(f\\\"Python {sys.version}\\\")\'"></capability>',
+
+    // Git operations
+    '<capability name="shell" action="exec" command="cd /workspace && git clone https://github.com/user/repo.git && cd repo && ls -la"></capability>',
+
+    // GitHub CLI (gh is authenticated)
+    '<capability name="shell" action="exec" command="gh repo list anthropics --limit 5"></capability>',
+
+    // Persistent session - send command
+    '<capability name="shell" action="send" session="artie-main" command="cd /workspace && mkdir my-project && cd my-project"></capability>',
+
+    // Read output from persistent session
+    '<capability name="shell" action="read" session="artie-main" lines="50"></capability>',
+
+    // List all sessions and panes
+    '<capability name="shell" action="list"></capability>',
+
+    // Split pane to run parallel command
+    '<capability name="shell" action="split" session="artie-main" direction="vertical" command="htop"></capability>',
+
+    // Multi-step workflow example
+    `<capability name="shell" action="send" session="artie-main" command="cd /workspace && echo 'Hello from Artie!' > test.txt"></capability>
+<capability name="shell" action="send" session="artie-main" command="cat test.txt"></capability>
+<capability name="shell" action="read" session="artie-main" lines="20"></capability>`,
+  ],
 
   handler: async (params: any, _content: string | undefined) => {
     const {
