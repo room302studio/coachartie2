@@ -260,7 +260,11 @@ services:
           memory: 512M
           cpus: '1.0'
         reservations:
-          memory: 128M
+          memory: 256M  # Increased from 128M for better performance
+    # Limit /tmp to prevent disk exhaustion
+    tmpfs:
+      - /tmp:size=512M
+
     volumes:
       - sandbox-workspace:/workspace
       - sandbox-home:/root
@@ -269,19 +273,22 @@ services:
     environment:
       - GITHUB_TOKEN=${GITHUB_TOKEN}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - HOME=/root
     command:
       - /bin/bash
       - -c
       - |
+        # Install tools
         rm -rf /var/cache/apt/archives/* &&
         apt-get clean &&
         apt-get update -qq &&
-        apt-get install -y -qq --fix-missing curl wget git jq python3 sqlite3 tmux &&
+        apt-get install -y -qq --fix-missing curl wget git jq python3 sqlite3 tmux procps &&
         curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg -o /usr/share/keyrings/githubcli-archive-keyring.gpg &&
         chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg &&
         echo "deb [arch=$$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" > /etc/apt/sources.list.d/github-cli.list &&
         apt-get update -qq &&
         apt-get install -y -qq --fix-missing gh &&
+
         if [ -n "$$GITHUB_TOKEN" ]; then
           echo '✅ GitHub CLI ready (using GITHUB_TOKEN)';
         else
@@ -290,16 +297,42 @@ services:
         echo '═══════════════════════════════════════════' &&
         echo '🖥️  Artie Laptop Ready (Production)' &&
         echo '═══════════════════════════════════════════' &&
+        echo 'User: root (trusted chaos agent)' &&
         echo 'Tools: git, gh, jq, curl, python3, sqlite3, tmux' &&
         echo 'Workspace: /workspace' &&
         echo 'Tmux session: artie-main' &&
+        echo 'Limits: 512M RAM, 1 CPU, 100 PIDs, 24h timeout' &&
         echo '═══════════════════════════════════════════' &&
+
+        # Start tmux and keep running
         tmux new-session -d -s artie-main -c /workspace &&
         echo '✅ Tmux session artie-main started' &&
-        tmux wait-for -S artie-main-ready &&
-        sleep infinity
+
+        # Kill container after 24 hours (prevents zombie containers)
+        (sleep 86400 && echo "⏰ 24h timeout reached, shutting down..." && kill 1) &
+
+        # Keep container running
+        exec sleep infinity
+    # Enhanced healthcheck - monitors system health + 24h timeout
     healthcheck:
-      test: ["CMD", "which", "gh"]
+      test: |
+        # Check critical tools exist
+        which gh tmux python3 git || exit 1
+
+        # Check tmux session is alive
+        tmux has-session -t artie-main || exit 1
+
+        # Check uptime < 24h (auto-restart after)
+        UPTIME=$$(awk '{print int($$1)}' /proc/uptime)
+        [ $$UPTIME -lt 86400 ] || exit 1
+
+        # Check process count (fork bomb detection)
+        PROCS=$$(ps aux | wc -l)
+        [ $$PROCS -lt 90 ] || exit 1
+
+        # Check memory usage < 90%
+        MEM_PERCENT=$$(free | grep Mem | awk '{print int($$3/$$2 * 100)}')
+        [ $$MEM_PERCENT -lt 90 ] || exit 1
       interval: 30s
       timeout: 10s
       retries: 3
