@@ -81,11 +81,11 @@ export const shellCapability: RegisteredCapability = {
     '<capability name="shell" action="exec" command="tail -n 50 /workspace/my-project/server.log"></capability>',
 
     // Search in files (grep)
-    '<capability name="shell" action="exec" command="grep -r \\\"TODO\\\" /workspace/my-project/src/"></capability>',
-    '<capability name="shell" action="exec" command="grep -n \\\"function\\\" /workspace/my-project/index.js"></capability>',
+    '<capability name="shell" action="exec" command="grep -r TODO /workspace/my-project/src/"></capability>',
+    '<capability name="shell" action="exec" command="grep -n function /workspace/my-project/index.js"></capability>',
 
     // Write a simple file (one-liner)
-    '<capability name="shell" action="exec" command="echo \\\"console.log(\'hello\');\\\" > /workspace/test.js"></capability>',
+    "<capability name=\"shell\" action=\"exec\" command=\"echo 'console.log(&quot;hello&quot;);' > /workspace/test.js\"></capability>",
 
     // Write multi-line file with heredoc (for code files)
     // NOTE: Use action=exec so command/content doesn\'t get sent to Discord
@@ -103,28 +103,28 @@ app.listen(3000, () => {
 ENDOFFILE"></capability>`,
 
     // Append to a file
-    '<capability name="shell" action="exec" command="echo \\\"# New section\\\" >> /workspace/README.md"></capability>',
+    "<capability name=\"shell\" action=\"exec\" command=\"echo '# New section' >> /workspace/README.md\"></capability>",
 
     // === FILE EDITING (sed for in-place edits) ===
 
     // Simple find/replace
-    '<capability name="shell" action="exec" command="sed -i \\\"s/old-text/new-text/g\\\" /workspace/config.js"></capability>',
+    "<capability name=\"shell\" action=\"exec\" command=\"sed -i 's/old-text/new-text/g' /workspace/config.js\"></capability>",
 
     // Replace on specific line
-    '<capability name="shell" action="exec" command="sed -i \\\"10s/const/let/\\\" /workspace/app.js"></capability>',
+    "<capability name=\"shell\" action=\"exec\" command=\"sed -i '10s/const/let/' /workspace/app.js\"></capability>",
 
     // Delete lines matching pattern
-    '<capability name="shell" action="exec" command="sed -i \\\"/TODO/d\\\" /workspace/notes.txt"></capability>',
-    '<capability name="shell" action="exec" command="sed -i \\\"/console.log/d\\\" /workspace/debug.js"></capability>',
+    "<capability name=\"shell\" action=\"exec\" command=\"sed -i '/TODO/d' /workspace/notes.txt\"></capability>",
+    "<capability name=\"shell\" action=\"exec\" command=\"sed -i '/console.log/d' /workspace/debug.js\"></capability>",
 
-    // Insert line after pattern
-    '<capability name="shell" action="exec" command="sed -i \\\"/const express/a const cors = require(\\\\\\\"cors\\\\\\\");\\\" /workspace/server.js"></capability>',
+    // Insert line after pattern (escape the inner quotes)
+    '<capability name="shell" action="exec" command="sed -i \'/const express/a const cors = require(&quot;cors&quot;);\' /workspace/server.js"></capability>',
 
     // Comment out lines
-    '<capability name="shell" action="exec" command="sed -i \\\"s/^/\\\\/\\\\/ /\\\" /workspace/temp.js"></capability>',
+    "<capability name=\"shell\" action=\"exec\" command=\"sed -i 's|^|// |' /workspace/temp.js\"></capability>",
 
     // Change port number
-    '<capability name="shell" action="exec" command="sed -i \\\"s/PORT=3000/PORT=8080/g\\\" /workspace/.env"></capability>',
+    "<capability name=\"shell\" action=\"exec\" command=\"sed -i 's/PORT=3000/PORT=8080/g' /workspace/.env\"></capability>",
 
     // === ADVANCED: Read-Modify-Write Pattern ===
 
@@ -155,7 +155,7 @@ NODESCRIPT"></capability>`,
     '<capability name="shell" action="exec" command="find /workspace/my-project -name \'*.js\' -type f"></capability>',
 
     // Check if file exists
-    '<capability name="shell" action="exec" command="test -f /workspace/package.json && echo \\\"exists\\\" || echo \\\"not found\\\""></capability>',
+    '<capability name="shell" action="exec" command="test -f /workspace/package.json && echo exists || echo not found"></capability>',
 
     // Create directory
     '<capability name="shell" action="exec" command="mkdir -p /workspace/my-project/src/components"></capability>',
