@@ -109,7 +109,15 @@ export class PromptManager {
       logger.info(`🔍 Attempting to load rich system prompt from database`);
       const systemPrompt = await this.getPrompt('PROMPT_SYSTEM');
       if (systemPrompt) {
-        const instructions = systemPrompt.content.replace(/\{\{USER_MESSAGE\}\}/g, userMessage);
+        let instructions = systemPrompt.content.replace(/\{\{USER_MESSAGE\}\}/g, userMessage);
+
+        // Append capability format instructions
+        const capabilityIntro = await this.getPrompt('CAPABILITY_PROMPT_INTRO');
+        if (capabilityIntro) {
+          instructions += '\n\n' + capabilityIntro.content;
+          logger.info(`📝 Appended CAPABILITY_PROMPT_INTRO to PROMPT_SYSTEM`);
+        }
+
         logger.info(`🎯 Using rich PROMPT_SYSTEM from database (v${systemPrompt.version})`);
         return instructions;
       } else {

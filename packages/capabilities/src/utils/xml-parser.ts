@@ -86,6 +86,20 @@ export class CapabilityXMLParser {
         }
       });
 
+      // Special handling for 'data' attribute: parse as JSON and merge into params
+      if (params.data && typeof params.data === 'string') {
+        try {
+          const parsedData = JSON.parse(params.data);
+          logger.info(`🔍 XML PARSER: Parsed data attribute as JSON: ${JSON.stringify(parsedData)}`);
+          // Merge parsed data into params (parsed data takes precedence)
+          Object.assign(params, parsedData);
+          // Remove the raw data string
+          delete params.data;
+        } catch (error) {
+          logger.warn(`⚠️ XML PARSER: Failed to parse data attribute as JSON, keeping as string: ${params.data}`);
+        }
+      }
+
       // Extract content (text between opening and closing tags)
       let content = '';
       if (typeof cap === 'string') {
