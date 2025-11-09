@@ -27,14 +27,17 @@ interface ChatResponse {
   additionalContext?: string[];
 }
 
-// POST /chat - Process message and return AI response immediately
+// POST /chat - Process message and return AI response immediately (or wait with ?wait=true)
 router.post('/', rateLimiter(50, 60000), async (req: Request, res: Response) => {
   try {
+    const waitForResult = req.query.wait === 'true';
+
     logger.info(`🎯 POST /chat - Request received:`, {
       bodyKeys: Object.keys(req.body),
       hasMessage: !!req.body.message,
       hasUserId: !!req.body.userId,
       hasContext: !!req.body.context,
+      waitForResult,
     });
 
     const { message, userId = 'api-user', context, source = 'api' }: ChatRequest = req.body;
@@ -113,6 +116,51 @@ router.post('/', rateLimiter(50, 60000), async (req: Request, res: Response) => 
       logger.info(`➕ Adding message ${messageId} to queue...`);
       const job = await messageQueue.add('process', incomingMessage);
       logger.info(`✅ Message ${messageId} added to queue with job ID: ${job.id}`);
+
+      // If wait=true, poll for result before responding
+      if (waitForResult) {
+        logger.info(`⏳ Waiting for job ${messageId} to complete...`);
+        const maxWaitTime = 120000; // 2 minutes max
+        const pollInterval = 100; // Poll every 100ms
+        const startTime = Date.now();
+
+        while (Date.now() - startTime < maxWaitTime) {
+          const jobStatus = jobTracker.getJob(messageId);
+
+          if (jobStatus?.status === 'completed') {
+            logger.info(`✅ Job ${messageId} completed in ${Date.now() - startTime}ms`);
+            return res.json({
+              success: true,
+              messageId,
+              status: 'completed',
+              jobUrl: `/chat/${messageId}`,
+              response: jobStatus.result,
+            } as ChatResponse);
+          } else if (jobStatus?.status === 'failed') {
+            logger.error(`❌ Job ${messageId} failed: ${jobStatus.error}`);
+            return res.json({
+              success: false,
+              messageId,
+              status: 'failed',
+              jobUrl: `/chat/${messageId}`,
+              error: jobStatus.error,
+            } as ChatResponse);
+          }
+
+          // Wait before next poll
+          await new Promise(resolve => setTimeout(resolve, pollInterval));
+        }
+
+        // Timeout - return pending status
+        logger.warn(`⏰ Job ${messageId} timed out after ${maxWaitTime}ms`);
+        return res.json({
+          success: true,
+          messageId,
+          status: 'pending',
+          jobUrl: `/chat/${messageId}`,
+          error: 'Request timeout - job still processing',
+        } as ChatResponse);
+      }
 
       // Construct response
       const response: ChatResponse = {
