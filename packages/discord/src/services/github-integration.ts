@@ -359,7 +359,10 @@ export class GitHubIntegrationService {
   /**
    * Fetch repository information
    */
-  async getRepositoryInfo(owner: string, repo: string): Promise<{
+  async getRepositoryInfo(
+    owner: string,
+    repo: string
+  ): Promise<{
     name: string;
     fullName: string;
     description: string | null;
@@ -406,7 +409,11 @@ export class GitHubIntegrationService {
   /**
    * Fetch pull request information
    */
-  async getPullRequestInfo(owner: string, repo: string, prNumber: number): Promise<{
+  async getPullRequestInfo(
+    owner: string,
+    repo: string,
+    prNumber: number
+  ): Promise<{
     number: number;
     title: string;
     state: string;
@@ -457,7 +464,11 @@ export class GitHubIntegrationService {
   /**
    * Fetch issue information
    */
-  async getIssueInfo(owner: string, repo: string, issueNumber: number): Promise<{
+  async getIssueInfo(
+    owner: string,
+    repo: string,
+    issueNumber: number
+  ): Promise<{
     number: number;
     title: string;
     state: string;

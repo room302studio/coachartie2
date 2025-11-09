@@ -190,7 +190,9 @@ export class DiscordFormatter {
   /**
    * Create a service status grid
    */
-  static createServiceGrid(services: Array<{ name: string; status: string; details?: string }>): string {
+  static createServiceGrid(
+    services: Array<{ name: string; status: string; details?: string }>
+  ): string {
     let grid = '🏥 **Service Status**\n\n';
 
     const statusEmoji = {

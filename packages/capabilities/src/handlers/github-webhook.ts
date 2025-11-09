@@ -122,9 +122,9 @@ interface GitHubReleasePayload {
 const WIKI_UPDATE_CONFIG: Record<string, WikiUpdateRule> = loadWikiUpdateRules();
 
 interface WikiUpdateRule {
-  wiki: string;  // Which wiki to update
-  page: string;  // Which page to update
-  format?: 'list' | 'table' | 'append';  // How to format the update
+  wiki: string; // Which wiki to update
+  page: string; // Which page to update
+  format?: 'list' | 'table' | 'append'; // How to format the update
 }
 
 function loadWikiUpdateRules(): Record<string, WikiUpdateRule> {
@@ -134,12 +134,12 @@ function loadWikiUpdateRules(): Record<string, WikiUpdateRule> {
   for (const [key, value] of Object.entries(process.env)) {
     const match = key.match(/^WIKI_UPDATE_(.+)$/);
     if (match && value) {
-      const repoName = match[1].replace(/_/g, '/');  // WIKI_UPDATE_ejfox_SubwayBuilder
+      const repoName = match[1].replace(/_/g, '/'); // WIKI_UPDATE_ejfox_SubwayBuilder
       const [wiki, page, format] = value.split(':');
       rules[repoName.toLowerCase()] = {
         wiki,
         page,
-        format: (format as any) || 'list'
+        format: (format as any) || 'list',
       };
     }
   }
@@ -148,9 +148,9 @@ function loadWikiUpdateRules(): Record<string, WikiUpdateRule> {
   if (Object.keys(rules).length === 0) {
     // Smart defaults based on repo names
     rules['ejfox/subwaybuilder'] = {
-      wiki: 'transit',  // Will try 'transit' wiki, fallback to any available
+      wiki: 'transit', // Will try 'transit' wiki, fallback to any available
       page: 'Subway_Builder_Releases',
-      format: 'list'
+      format: 'list',
     };
   }
 
@@ -344,11 +344,7 @@ async function updateWikiPage(
       break;
   }
 
-  await client.editPage(
-    pageName,
-    content,
-    `Added ${release.tag_name} release`
-  );
+  await client.editPage(pageName, content, `Added ${release.tag_name} release`);
 
   logger.info(`✅ Updated ${pageName} on ${wikiName} wiki for ${release.tag_name}`);
 }
@@ -377,11 +373,14 @@ function appendToWikiTable(content: string, newRow: string): string {
   }
 
   // No table found, create one
-  return content + `
+  return (
+    content +
+    `
 {| class="wikitable"
 ! Version !! Name !! Date !! Link
 ${newRow}|}
-`;
+`
+  );
 }
 
 async function handlePullRequestEvent(payload: GitHubWebhookPayload): Promise<void> {
@@ -434,7 +433,6 @@ function generatePushCelebration(payload: GitHubPushPayload): string {
 
   return message;
 }
-
 
 function generatePRCelebration(payload: GitHubWebhookPayload): string {
   const { pull_request, repository } = payload;

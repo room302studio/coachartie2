@@ -23,9 +23,7 @@ const DivideSchema = z.object({
 interface CalculatorTool {
   name: string;
   description: string;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   inputSchema: any;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   handler: (args: any) => Promise<string>;
 }
 
@@ -65,7 +63,6 @@ export const calculatorTools: CalculatorTool[] = [
       },
       required: ['expression'],
     },
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     handler: async (args: any): Promise<string> => {
       const { expression } = CalculateSchema.parse(args);
 
@@ -91,7 +88,6 @@ export const calculatorTools: CalculatorTool[] = [
       },
       required: ['a', 'b'],
     },
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     handler: async (args: any): Promise<string> => {
       const { a, b } = BinaryOperationSchema.parse(args);
       const result = a + b;
@@ -116,7 +112,6 @@ export const calculatorTools: CalculatorTool[] = [
       },
       required: ['a', 'b'],
     },
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     handler: async (args: any): Promise<string> => {
       const { a, b } = BinaryOperationSchema.parse(args);
       const result = a - b;
@@ -141,7 +136,6 @@ export const calculatorTools: CalculatorTool[] = [
       },
       required: ['a', 'b'],
     },
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     handler: async (args: any): Promise<string> => {
       const { a, b } = BinaryOperationSchema.parse(args);
       const result = a * b;
@@ -166,7 +160,6 @@ export const calculatorTools: CalculatorTool[] = [
       },
       required: ['a', 'b'],
     },
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     handler: async (args: any): Promise<string> => {
       const { a, b } = DivideSchema.parse(args);
       const result = a / b;

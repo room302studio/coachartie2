@@ -58,11 +58,7 @@ export class CapabilitySelector {
       .join('\n');
 
     // Build triage prompt
-    const triagePrompt = this.buildTriagePrompt(
-      userMessage,
-      capabilityList,
-      conversationContext
-    );
+    const triagePrompt = this.buildTriagePrompt(userMessage, capabilityList, conversationContext);
 
     try {
       // Use FAST_MODEL for cheap triage
@@ -93,7 +89,9 @@ export class CapabilitySelector {
 
       logger.info(
         `✅ Capability Selector: Nominated ${nominations.length} capabilities in ${duration}ms:`,
-        nominations.map((n) => `${n.capability.name} (score: ${n.relevanceScore.toFixed(2)})`).join(', ')
+        nominations
+          .map((n) => `${n.capability.name} (score: ${n.relevanceScore.toFixed(2)})`)
+          .join(', ')
       );
 
       // Return top capabilities
@@ -116,9 +114,10 @@ export class CapabilitySelector {
     capabilityList: string,
     conversationContext?: string[]
   ): string {
-    const contextSection = conversationContext && conversationContext.length > 0
-      ? `\nRecent conversation:\n${conversationContext.slice(-3).join('\n')}\n`
-      : '';
+    const contextSection =
+      conversationContext && conversationContext.length > 0
+        ? `\nRecent conversation:\n${conversationContext.slice(-3).join('\n')}\n`
+        : '';
 
     return `You are a capability triage system. Your job is to quickly identify which capabilities (if any) are relevant to the user's request.
 

@@ -46,14 +46,14 @@ async function importMemories() {
         }
 
         stmt.run(
-          record.value,                    // content
-          record.user_id,                  // user_id
-          record.created_at,               // created_at
-          record.created_at,               // timestamp (use same as created_at)
+          record.value, // content
+          record.user_id, // user_id
+          record.created_at, // created_at
+          record.created_at, // timestamp (use same as created_at)
           record.related_message_id || null, // related_message_id
-          '[]',                            // tags (default empty array)
-          '',                              // context (default empty)
-          5                                // importance (default 5)
+          '[]', // tags (default empty array)
+          '', // context (default empty)
+          5 // importance (default 5)
         );
         imported++;
 

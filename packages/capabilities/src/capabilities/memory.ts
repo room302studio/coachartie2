@@ -72,9 +72,7 @@ export class MemoryService {
       try {
         const basicTags = this.extractBasicTags(content, context);
         // Merge explicit tags with extracted tags (explicit tags first for priority)
-        const allTags = explicitTags
-          ? [...new Set([...explicitTags, ...basicTags])]
-          : basicTags;
+        const allTags = explicitTags ? [...new Set([...explicitTags, ...basicTags])] : basicTags;
         const memoryId = uuidv4();
 
         const memory: MemoryRecord = {
@@ -153,14 +151,16 @@ export class MemoryService {
   async recallByTags(userId: string, tags: string[], limit: number = 5): Promise<MemoryEntry[]> {
     if (this.useHybridLayer) {
       try {
-        logger.info(`🏷️ [HYBRID] Recalling memories with tags: ${tags.join(', ')} for user ${userId}`);
+        logger.info(
+          `🏷️ [HYBRID] Recalling memories with tags: ${tags.join(', ')} for user ${userId}`
+        );
 
         const allMemories = await hybridDataLayer.getRecentMemories(userId, 1000);
 
         // Filter memories that have ANY of the requested tags
         const matchingMemories = allMemories.filter((memory) => {
           const memoryTags = (memory.metadata?.tags as string[]) || [];
-          return tags.some(tag => memoryTags.includes(tag));
+          return tags.some((tag) => memoryTags.includes(tag));
         });
 
         logger.info(`📊 [HYBRID] Found ${matchingMemories.length} memories with matching tags`);
@@ -271,7 +271,9 @@ export class MemoryService {
 • Recent (7 days): ${recentCount}
 • Storage: Hybrid layer (in-memory + SQLite)`;
     } catch (error) {
-      throw new Error(`Could not retrieve memory statistics: ${error instanceof Error ? error.message : String(error)}`);
+      throw new Error(
+        `Could not retrieve memory statistics: ${error instanceof Error ? error.message : String(error)}`
+      );
     }
   }
 

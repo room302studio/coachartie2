@@ -14,7 +14,10 @@
  *   prompt-cli import <file>
  */
 
-import { promptManager, PromptTemplate } from '../packages/capabilities/src/services/prompt-manager.js';
+import {
+  promptManager,
+  PromptTemplate,
+} from '../packages/capabilities/src/services/prompt-manager.js';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 
@@ -60,8 +63,13 @@ async function listPrompts(category?: string) {
     return;
   }
 
-  log(`\n${colors.bright}${colors.cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${colors.reset}`);
-  log(`${colors.bright}PROMPTS${category ? ` (Category: ${category})` : ''}${colors.reset}`, 'cyan');
+  log(
+    `\n${colors.bright}${colors.cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${colors.reset}`
+  );
+  log(
+    `${colors.bright}PROMPTS${category ? ` (Category: ${category})` : ''}${colors.reset}`,
+    'cyan'
+  );
   log(`${colors.cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${colors.reset}\n`);
 
   for (const prompt of prompts) {
@@ -89,7 +97,9 @@ async function viewPrompt(name: string) {
     return;
   }
 
-  log(`\n${colors.bright}${colors.cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${colors.reset}`);
+  log(
+    `\n${colors.bright}${colors.cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${colors.reset}`
+  );
   log(`${colors.bright}PROMPT: ${prompt.name}${colors.reset}`, 'cyan');
   log(`${colors.cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${colors.reset}\n`);
 
@@ -167,7 +177,9 @@ async function viewHistory(name: string) {
     return;
   }
 
-  log(`\n${colors.bright}${colors.cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${colors.reset}`);
+  log(
+    `\n${colors.bright}${colors.cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${colors.reset}`
+  );
   log(`${colors.bright}HISTORY: ${name}${colors.reset}`, 'cyan');
   log(`${colors.cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${colors.reset}\n`);
 
@@ -202,9 +214,7 @@ async function toggleActive(name: string) {
 
 // Export prompts
 async function exportPrompts(name?: string) {
-  const prompts = name
-    ? [await promptManager.getPrompt(name)]
-    : await promptManager.listPrompts();
+  const prompts = name ? [await promptManager.getPrompt(name)] : await promptManager.listPrompts();
 
   const filtered = prompts.filter((p): p is PromptTemplate => p !== null);
 
@@ -214,9 +224,7 @@ async function exportPrompts(name?: string) {
   }
 
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-  const filename = name
-    ? `prompt-${name}-${timestamp}.json`
-    : `prompts-export-${timestamp}.json`;
+  const filename = name ? `prompt-${name}-${timestamp}.json` : `prompts-export-${timestamp}.json`;
 
   await fs.writeFile(filename, JSON.stringify(filtered, null, 2), 'utf-8');
 
@@ -329,7 +337,8 @@ Your prompt content here...
 
 // Show usage
 function showUsage() {
-  log(`
+  log(
+    `
 ${colors.bright}${colors.cyan}🤖 Coach Artie - Prompt Database CLI${colors.reset}
 
 ${colors.bright}Usage:${colors.reset}
@@ -358,7 +367,9 @@ ${colors.bright}Examples:${colors.reset}
 ${colors.bright}AI Usage:${colors.reset}
   The CLI can be used programmatically for automated prompt management.
   All commands return proper exit codes and JSON-friendly output.
-`, 'white');
+`,
+    'white'
+  );
 }
 
 // Main execution

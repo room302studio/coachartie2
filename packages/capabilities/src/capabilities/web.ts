@@ -74,7 +74,9 @@ export const webCapability: RegisteredCapability = {
         }
       } catch (error) {
         logger.error('Web search failed:', error);
-        throw new Error(`Search temporarily unavailable for "${query}": ${error instanceof Error ? error.message : String(error)}`);
+        throw new Error(
+          `Search temporarily unavailable for "${query}": ${error instanceof Error ? error.message : String(error)}`
+        );
       }
     }
 
@@ -109,7 +111,9 @@ export const webCapability: RegisteredCapability = {
         }
       } catch (error) {
         logger.error('Web fetch failed:', error);
-        throw new Error(`Web fetch temporarily unavailable for ${url}: ${error instanceof Error ? error.message : String(error)}`);
+        throw new Error(
+          `Web fetch temporarily unavailable for ${url}: ${error instanceof Error ? error.message : String(error)}`
+        );
       }
     }
 

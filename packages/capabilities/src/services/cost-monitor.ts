@@ -13,7 +13,7 @@ class CostMonitor {
   private statsInterval: NodeJS.Timeout | null = null;
 
   // Approximate pricing for Claude 3.5 Sonnet (update these as needed)
-  private readonly INPUT_COST_PER_MILLION = 3.0;  // $3 per 1M input tokens
+  private readonly INPUT_COST_PER_MILLION = 3.0; // $3 per 1M input tokens
   private readonly OUTPUT_COST_PER_MILLION = 15.0; // $15 per 1M output tokens
 
   // Tunable limits from env vars
@@ -29,7 +29,7 @@ class CostMonitor {
     logger.info('💰 Cost Monitor initialized with limits:', {
       maxCostPerHour: `$${this.maxCostPerHour}/hr`,
       maxTokensPerCall: this.maxTokensPerCall,
-      autoCheckCreditsEvery: this.autoCheckCreditsEvery
+      autoCheckCreditsEvery: this.autoCheckCreditsEvery,
     });
 
     // Start periodic stats logging
@@ -59,7 +59,11 @@ class CostMonitor {
   /**
    * Track an API call
    */
-  trackCall(inputTokens: number, outputTokens: number, model: string): { shouldCheckCredits: boolean; warnings: string[] } {
+  trackCall(
+    inputTokens: number,
+    outputTokens: number,
+    model: string
+  ): { shouldCheckCredits: boolean; warnings: string[] } {
     this.totalInputTokens += inputTokens;
     this.totalOutputTokens += outputTokens;
     this.totalCalls++;
@@ -69,14 +73,17 @@ class CostMonitor {
     const callTokens = inputTokens + outputTokens;
     const warnings: string[] = [];
 
-    logger.info(`💰 API Call: ${inputTokens} in + ${outputTokens} out tokens (~$${estimatedCost.toFixed(4)}) | Total: $${totalCost.toFixed(2)} (${this.totalCalls} calls)`, {
-      model,
-      inputTokens,
-      outputTokens,
-      estimatedCost,
-      totalCost,
-      totalCalls: this.totalCalls
-    });
+    logger.info(
+      `💰 API Call: ${inputTokens} in + ${outputTokens} out tokens (~$${estimatedCost.toFixed(4)}) | Total: $${totalCost.toFixed(2)} (${this.totalCalls} calls)`,
+      {
+        model,
+        inputTokens,
+        outputTokens,
+        estimatedCost,
+        totalCost,
+        totalCalls: this.totalCalls,
+      }
+    );
 
     // Check tokens per call limit
     if (callTokens > this.maxTokensPerCall) {
@@ -95,17 +102,22 @@ class CostMonitor {
 
     // Legacy hard-coded alerts
     if (totalCost > 5.0 && this.totalCalls % 10 === 0) {
-      logger.warn(`⚠️ High API costs detected: $${totalCost.toFixed(2)} across ${this.totalCalls} calls`);
+      logger.warn(
+        `⚠️ High API costs detected: $${totalCost.toFixed(2)} across ${this.totalCalls} calls`
+      );
     }
 
     if (totalCost > 20.0 && this.totalCalls % 5 === 0) {
-      logger.error(`🚨 VERY HIGH API COSTS: $${totalCost.toFixed(2)} - Consider adding rate limits!`);
+      logger.error(
+        `🚨 VERY HIGH API COSTS: $${totalCost.toFixed(2)} - Consider adding rate limits!`
+      );
     }
 
     // Check if we should auto-check credits
-    const shouldCheckCredits = this.autoCheckCreditsEvery > 0 &&
-                                this.messageCount % this.autoCheckCreditsEvery === 0 &&
-                                this.messageCount > 0;
+    const shouldCheckCredits =
+      this.autoCheckCreditsEvery > 0 &&
+      this.messageCount % this.autoCheckCreditsEvery === 0 &&
+      this.messageCount > 0;
 
     return { shouldCheckCredits, warnings };
   }
@@ -162,7 +174,9 @@ class CostMonitor {
    * Reset counters (useful for testing or daily resets)
    */
   reset() {
-    logger.info(`📊 Cost Monitor Reset - Final Stats: $${this.getTotalEstimatedCost().toFixed(2)}, ${this.totalCalls} calls, ${this.messageCount} messages`);
+    logger.info(
+      `📊 Cost Monitor Reset - Final Stats: $${this.getTotalEstimatedCost().toFixed(2)}, ${this.totalCalls} calls, ${this.messageCount} messages`
+    );
     this.totalInputTokens = 0;
     this.totalOutputTokens = 0;
     this.totalCalls = 0;
@@ -180,7 +194,7 @@ class CostMonitor {
       tokens: stats.totalTokens,
       cost: `$${stats.estimatedCost.toFixed(2)}`,
       costPerHour: `$${stats.costPerHour.toFixed(2)}/hr`,
-      uptimeHours: (stats.uptime / (1000 * 60 * 60)).toFixed(1)
+      uptimeHours: (stats.uptime / (1000 * 60 * 60)).toFixed(1),
     });
   }
 }

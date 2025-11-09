@@ -95,10 +95,10 @@ export class GoalService {
           const dateOnlyExample = now.toISOString().split('T')[0];
           throw new Error(
             `Invalid deadline format. Use ISO format.\n\n` +
-            `Examples with current time:\n` +
-            `- Full ISO: "${isoFullExample}"\n` +
-            `- Date only: "${dateOnlyExample}"\n\n` +
-            `Your input: "${deadline}"`
+              `Examples with current time:\n` +
+              `- Full ISO: "${isoFullExample}"\n` +
+              `- Date only: "${dateOnlyExample}"\n\n` +
+              `Your input: "${deadline}"`
           );
         }
 

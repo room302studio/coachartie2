@@ -30,7 +30,7 @@ export const systemMonitorCapability: RegisteredCapability = {
           const totalMem = os.totalmem();
           const freeMem = os.freemem();
           const usedMem = totalMem - freeMem;
-          const memPercentNum = ((usedMem / totalMem) * 100);
+          const memPercentNum = (usedMem / totalMem) * 100;
           const memPercent = memPercentNum.toFixed(1);
 
           const cpus = os.cpus();
@@ -61,11 +61,7 @@ export const systemMonitorCapability: RegisteredCapability = {
 
           // Add visual indicator for memory pressure
           const memStatus =
-            memPercentNum > 90
-              ? '🔴 CRITICAL'
-              : memPercentNum > 75
-                ? '🟡 WARNING'
-                : '🟢 HEALTHY';
+            memPercentNum > 90 ? '🔴 CRITICAL' : memPercentNum > 75 ? '🟡 WARNING' : '🟢 HEALTHY';
 
           return JSON.stringify({
             success: true,
@@ -288,11 +284,7 @@ export const systemMonitorCapability: RegisteredCapability = {
           let response = '';
 
           if (overallHealth) {
-            response = DiscordFormatter.createAlert(
-              'success',
-              'ALL SYSTEMS NOMINAL',
-              []
-            );
+            response = DiscordFormatter.createAlert('success', 'ALL SYSTEMS NOMINAL', []);
           } else {
             const actions = [];
             if (!memHealth) actions.push('Memory high - consider restart or optimization');

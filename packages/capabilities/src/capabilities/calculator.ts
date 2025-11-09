@@ -70,10 +70,10 @@ export const calculatorCapability: RegisteredCapability = {
       logger.error(`❌ Invalid mathematical expression: ${expression}`, error);
       throw new Error(
         `Invalid mathematical expression: "${expression}"\n` +
-        `Error: ${errorMessage}\n` +
-        `\n` +
-        `Supported operations: +, -, *, /, ^, sqrt(), sin(), cos(), tan(), log(), abs(), etc.\n` +
-        `Example: <capability name="calculator" action="calculate" expression="sqrt(16) + 2^3" />`
+          `Error: ${errorMessage}\n` +
+          `\n` +
+          `Supported operations: +, -, *, /, ^, sqrt(), sin(), cos(), tan(), log(), abs(), etc.\n` +
+          `Example: <capability name="calculator" action="calculate" expression="sqrt(16) + 2^3" />`
       );
     }
   },

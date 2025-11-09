@@ -139,10 +139,8 @@ Examples:
   // Get conscience prompt from database
   private async getConsciencePrompt(): Promise<string> {
     try {
-      const db = await getDatabase();
-      const prompt = await db.get('SELECT content FROM prompts WHERE name = ? AND is_active = 1', [
-        'conscience_system',
-      ]);
+      const { promptManager } = await import('./prompt-manager.js');
+      const prompt = await promptManager.getPrompt('PROMPT_CONSCIENCE_SYSTEM');
       if (prompt?.content) {
         return prompt.content;
       }

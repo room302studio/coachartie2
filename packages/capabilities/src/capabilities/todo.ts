@@ -154,7 +154,9 @@ export class TodoService {
       return `✅ Created todo list "${listName}" with ${items.length} items${goalText}:\n${items.map((item, i) => `${i + 1}. ${item}`).join('\n')}`;
     } catch (error) {
       logger.error('❌ Failed to create todo list:', error);
-      throw new Error(`Failed to create todo list "${listName}": ${error instanceof Error ? error.message : 'Unknown error'}`);
+      throw new Error(
+        `Failed to create todo list "${listName}": ${error instanceof Error ? error.message : 'Unknown error'}`
+      );
     }
   }
 
@@ -210,7 +212,9 @@ export class TodoService {
       const items = this.parseContentIntoItems(content);
 
       if (items.length === 0) {
-        throw new Error(`No todo items found in content. Use format like:\n- New task 1\n- New task 2`);
+        throw new Error(
+          `No todo items found in content. Use format like:\n- New task 1\n- New task 2`
+        );
       }
 
       // Insert new items
@@ -229,7 +233,9 @@ export class TodoService {
       return `✅ Added ${items.length} items to "${listName}":\n${items.map((item, i) => `${startPosition + i}. ${item}`).join('\n')}`;
     } catch (error) {
       logger.error('❌ Failed to add items to todo list:', error);
-      throw new Error(`Failed to add items to "${listName}": ${error instanceof Error ? error.message : 'Unknown error'}`);
+      throw new Error(
+        `Failed to add items to "${listName}": ${error instanceof Error ? error.message : 'Unknown error'}`
+      );
     }
   }
 
@@ -259,7 +265,9 @@ export class TodoService {
       return `📌 Next task: ${nextItem.content} (item ${nextItem.position})`;
     } catch (error) {
       logger.error('❌ Failed to get next item:', error);
-      throw new Error(`Failed to get next item from "${listName}": ${error instanceof Error ? error.message : 'Unknown error'}`);
+      throw new Error(
+        `Failed to get next item from "${listName}": ${error instanceof Error ? error.message : 'Unknown error'}`
+      );
     }
   }
 
@@ -308,7 +316,9 @@ export class TodoService {
       return `✅ Marked "${item.content}" as complete! Progress: ${progress}`;
     } catch (error) {
       logger.error('❌ Failed to complete item:', error);
-      throw new Error(`Failed to complete item ${itemPosition} in "${listName}": ${error instanceof Error ? error.message : 'Unknown error'}`);
+      throw new Error(
+        `Failed to complete item ${itemPosition} in "${listName}": ${error instanceof Error ? error.message : 'Unknown error'}`
+      );
     }
   }
 

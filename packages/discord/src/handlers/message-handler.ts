@@ -93,54 +93,68 @@ async function isForumThread(message: Message): Promise<boolean> {
 
 /**
  * Split long messages into Discord-compatible chunks
- * Preserves formatting by splitting on lines first, then words if needed
+ * First splits on intentional breaks (double line breaks), then handles Discord's 2000 char limit
  *
  * @param text - The text to chunk
  * @param maxLength - Maximum chunk size (default: 2000)
  * @returns Array of message chunks
  */
 function chunkMessage(text: string, maxLength: number = DISCORD_MESSAGE_LIMIT): string[] {
-  if (text.length <= maxLength) return [text];
+  // First, split on intentional message breaks (double line breaks)
+  // This allows the LLM to control message chunking naturally
+  const segments = text.split(/\n\n+/);
 
   const chunks: string[] = [];
-  let currentChunk = '';
 
-  // Split by lines first to preserve formatting
-  const lines = text.split('\n');
+  // Process each segment
+  for (const segment of segments) {
+    const trimmedSegment = segment.trim();
+    if (!trimmedSegment) continue;
 
-  for (const line of lines) {
-    // If adding this line would exceed the limit, start a new chunk
-    if (currentChunk.length + line.length + 1 > maxLength) {
-      if (currentChunk.trim()) {
-        chunks.push(currentChunk.trim());
-        currentChunk = '';
-      }
+    // If segment fits in Discord limit, use it as-is
+    if (trimmedSegment.length <= maxLength) {
+      chunks.push(trimmedSegment);
+      continue;
+    }
 
-      // If a single line is too long, split it further
-      if (line.length > maxLength) {
-        const words = line.split(' ');
-        for (const word of words) {
-          if (currentChunk.length + word.length + 1 > maxLength) {
-            if (currentChunk.trim()) {
-              chunks.push(currentChunk.trim());
-              currentChunk = '';
+    // Segment is too long - split it further by lines, then words if needed
+    let currentChunk = '';
+    const lines = trimmedSegment.split('\n');
+
+    for (const line of lines) {
+      // If adding this line would exceed the limit, start a new chunk
+      if (currentChunk.length + line.length + 1 > maxLength) {
+        if (currentChunk.trim()) {
+          chunks.push(currentChunk.trim());
+          currentChunk = '';
+        }
+
+        // If a single line is too long, split it by words
+        if (line.length > maxLength) {
+          const words = line.split(' ');
+          for (const word of words) {
+            if (currentChunk.length + word.length + 1 > maxLength) {
+              if (currentChunk.trim()) {
+                chunks.push(currentChunk.trim());
+                currentChunk = '';
+              }
             }
+            currentChunk += (currentChunk ? ' ' : '') + word;
           }
-          currentChunk += (currentChunk ? ' ' : '') + word;
+        } else {
+          currentChunk += (currentChunk ? '\n' : '') + line;
         }
       } else {
         currentChunk += (currentChunk ? '\n' : '') + line;
       }
-    } else {
-      currentChunk += (currentChunk ? '\n' : '') + line;
+    }
+
+    if (currentChunk.trim()) {
+      chunks.push(currentChunk.trim());
     }
   }
 
-  if (currentChunk.trim()) {
-    chunks.push(currentChunk.trim());
-  }
-
-  return chunks;
+  return chunks.length > 0 ? chunks : [text];
 }
 
 /**
@@ -312,7 +326,9 @@ async function handleGitHubAutoExpansion(
             }
 
             embed.addFields(fields);
-            embed.setFooter({ text: `Updated ${new Date(repoInfo.updatedAt).toLocaleDateString()}` });
+            embed.setFooter({
+              text: `Updated ${new Date(repoInfo.updatedAt).toLocaleDateString()}`,
+            });
 
             await message.reply({ embeds: [embed] });
             logger.info(`✅ Auto-expanded repo: ${repoInfo.fullName}`);
@@ -325,7 +341,8 @@ async function handleGitHubAutoExpansion(
           );
           if (prInfo) {
             const stateEmoji = prInfo.state === 'open' ? '🟢' : prInfo.mergedAt ? '🟣' : '🔴';
-            const stateText = prInfo.state === 'open' ? 'Open' : prInfo.mergedAt ? 'Merged' : 'Closed';
+            const stateText =
+              prInfo.state === 'open' ? 'Open' : prInfo.mergedAt ? 'Merged' : 'Closed';
 
             const embed = new EmbedBuilder()
               .setColor(prInfo.state === 'open' ? 0x2ea44f : prInfo.mergedAt ? 0x6f42c1 : 0xcb2431)
@@ -365,7 +382,9 @@ async function handleGitHubAutoExpansion(
             });
 
             await message.reply({ embeds: [embed] });
-            logger.info(`✅ Auto-expanded PR #${prInfo.number} in ${detected.owner}/${detected.repo}`);
+            logger.info(
+              `✅ Auto-expanded PR #${prInfo.number} in ${detected.owner}/${detected.repo}`
+            );
           }
         } else if (detected.type === 'issue') {
           const issueInfo = await githubService.getIssueInfo(
@@ -412,7 +431,10 @@ async function handleGitHubAutoExpansion(
             if (issueInfo.assignees.length > 0) {
               fields.push({
                 name: 'Assignees',
-                value: issueInfo.assignees.slice(0, 3).map((a) => `@${a}`).join(', '),
+                value: issueInfo.assignees
+                  .slice(0, 3)
+                  .map((a) => `@${a}`)
+                  .join(', '),
                 inline: false,
               });
             }
@@ -930,12 +952,14 @@ async function handleSyncDiscussionsConversation(
  * Fetch recent channel history for context
  * Randomly fetches 10-25 messages to give Artie conversational context
  */
-async function fetchChannelHistory(message: Message): Promise<Array<{
-  author: string;
-  content: string;
-  timestamp: string;
-  isBot: boolean;
-}>> {
+async function fetchChannelHistory(message: Message): Promise<
+  Array<{
+    author: string;
+    content: string;
+    timestamp: string;
+    isBot: boolean;
+  }>
+> {
   try {
     // Randomize how many messages to fetch (10-25)
     const limit = chance.integer({ min: MIN_CHANNEL_HISTORY, max: MAX_CHANNEL_HISTORY });
@@ -946,7 +970,7 @@ async function fetchChannelHistory(message: Message): Promise<Array<{
     // Convert to simple format for context
     return Array.from(messages.values())
       .reverse() // Chronological order (oldest first)
-      .map(msg => ({
+      .map((msg) => ({
         author: msg.author.displayName || msg.author.username,
         content: msg.content,
         timestamp: msg.createdAt.toISOString(),

@@ -86,7 +86,6 @@ async function updatePrompt() {
     console.log('📝 New version:', updated.version);
     console.log('📝 New length:', updated.content.length, 'chars');
     console.log('\n🎉 The prompt now has more heart and clearer guidance!');
-
   } catch (error) {
     console.error('❌ Failed to update prompt:', error);
     process.exit(1);

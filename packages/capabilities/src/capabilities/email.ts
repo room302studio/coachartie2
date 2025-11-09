@@ -47,7 +47,9 @@ class EmailService {
       // Email validation
       const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
       if (!emailRegex.test(payload.to)) {
-        throw new Error(`Invalid email address: ${payload.to}\n\nExample: <capability name="email" action="send" to="user@example.com" subject="Test" body="Hello!" />`);
+        throw new Error(
+          `Invalid email address: ${payload.to}\n\nExample: <capability name="email" action="send" to="user@example.com" subject="Test" body="Hello!" />`
+        );
       }
 
       // Use n8n webhook if configured (production path)
@@ -71,7 +73,9 @@ class EmailService {
   /**
    * Send email via n8n webhook
    */
-  private async sendViaWebhook(payload: EmailPayload): Promise<{ success: boolean; message: string }> {
+  private async sendViaWebhook(
+    payload: EmailPayload
+  ): Promise<{ success: boolean; message: string }> {
     try {
       const response = await axios.post(
         this.webhookUrl!,
@@ -102,7 +106,9 @@ class EmailService {
     } catch (error) {
       logger.error('❌ Webhook email send failed:', error);
       if (axios.isAxiosError(error)) {
-        throw new Error(`Webhook failed: ${error.response?.data?.message || error.message}\n\nCheck email webhook configuration (EMAIL_WEBHOOK_URL and EMAIL_WEBHOOK_AUTH)`);
+        throw new Error(
+          `Webhook failed: ${error.response?.data?.message || error.message}\n\nCheck email webhook configuration (EMAIL_WEBHOOK_URL and EMAIL_WEBHOOK_AUTH)`
+        );
       }
       throw error;
     }
@@ -118,7 +124,7 @@ class EmailService {
     try {
       // Import nodemailer dynamically
       const nodemailer = await import('nodemailer');
-      const host = isDev ? 'localhost' : (process.env.EMAIL_HOST || 'mail.coachartiebot.com');
+      const host = isDev ? 'localhost' : process.env.EMAIL_HOST || 'mail.coachartiebot.com';
       const port = isDev ? 1025 : parseInt(process.env.EMAIL_PORT || '587');
 
       // Create transporter
@@ -127,10 +133,12 @@ class EmailService {
         port,
         secure: port === 465,
         ignoreTLS: isDev, // MailDev doesn't need TLS
-        auth: isDev ? undefined : {
-          user: process.env.EMAIL_USER || 'artie@coachartiebot.com',
-          pass: process.env.EMAIL_PASS || '',
-        },
+        auth: isDev
+          ? undefined
+          : {
+              user: process.env.EMAIL_USER || 'artie@coachartiebot.com',
+              pass: process.env.EMAIL_PASS || '',
+            },
       });
 
       // Send email

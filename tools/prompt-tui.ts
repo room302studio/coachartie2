@@ -7,7 +7,10 @@
  */
 
 import blessed from 'blessed';
-import { promptManager, PromptTemplate } from '../packages/capabilities/src/services/prompt-manager.js';
+import {
+  promptManager,
+  PromptTemplate,
+} from '../packages/capabilities/src/services/prompt-manager.js';
 
 // Create screen
 const screen = blessed.screen({
@@ -33,7 +36,8 @@ const header = blessed.box({
   left: 0,
   width: '100%',
   height: 3,
-  content: '{bold}{cyan-fg}🤖 COACH ARTIE - PROMPT DATABASE{/cyan-fg}{/bold}\nPress {yellow-fg}?{/yellow-fg} for help, {yellow-fg}q{/yellow-fg} to quit',
+  content:
+    '{bold}{cyan-fg}🤖 COACH ARTIE - PROMPT DATABASE{/cyan-fg}{/bold}\nPress {yellow-fg}?{/yellow-fg} for help, {yellow-fg}q{/yellow-fg} to quit',
   tags: true,
   border: {
     type: 'line',
@@ -525,10 +529,10 @@ promptList.key(['t'], async () => {
       // Update via database
       const { getDatabase } = await import('../packages/shared/src/utils/database.js');
       const db = await getDatabase();
-      await db.run(
-        'UPDATE prompts SET is_active = ? WHERE name = ?',
-        [newActiveState ? 1 : 0, selectedPrompt.name]
-      );
+      await db.run('UPDATE prompts SET is_active = ? WHERE name = ?', [
+        newActiveState ? 1 : 0,
+        selectedPrompt.name,
+      ]);
 
       log(`${selectedPrompt.name} is now ${newActiveState ? 'active' : 'inactive'}`, 'success');
       await loadPrompts();

@@ -73,7 +73,9 @@ const githubActions = {
       logger.info(`📦 Fetching releases for ${params.repo}`);
 
       if (!params.repo) {
-        throw new Error('Missing required parameter "repo". Example: <capability name="github" action="get_releases" repo="owner/repository" />');
+        throw new Error(
+          'Missing required parameter "repo". Example: <capability name="github" action="get_releases" repo="owner/repository" />'
+        );
       }
 
       if (!process.env.GITHUB_TOKEN) {
@@ -167,7 +169,9 @@ const githubActions = {
       logger.info(`📊 Fetching deployment stats for ${params.repo}`);
 
       if (!params.repo) {
-        throw new Error('Missing required parameter "repo". Example: <capability name="github" action="get_deployment_stats" repo="owner/repository" />');
+        throw new Error(
+          'Missing required parameter "repo". Example: <capability name="github" action="get_deployment_stats" repo="owner/repository" />'
+        );
       }
 
       const days = params.days || 30;
@@ -246,7 +250,9 @@ const githubActions = {
       logger.info(`🔍 Searching GitHub repositories for: ${params.query}`);
 
       if (!params.query) {
-        throw new Error('Missing required parameter "query". Example: <capability name="github" action="search_repositories" query="subway builder" />');
+        throw new Error(
+          'Missing required parameter "query". Example: <capability name="github" action="search_repositories" query="subway builder" />'
+        );
       }
 
       if (!process.env.GITHUB_TOKEN) {
@@ -296,12 +302,16 @@ const githubActions = {
       logger.info(`📋 Fetching issues for ${params.repo}`);
 
       if (!params.repo) {
-        throw new Error('Missing required parameter "repo". Example: <capability name="github" action="list_issues" repo="owner/repository" state="open" />\n\nThe repo must be in "owner/repository" format. Use search_repositories first if you don\'t know the full path.');
+        throw new Error(
+          'Missing required parameter "repo". Example: <capability name="github" action="list_issues" repo="owner/repository" state="open" />\n\nThe repo must be in "owner/repository" format. Use search_repositories first if you don\'t know the full path.'
+        );
       }
 
       // Validate repo format
       if (!params.repo.includes('/')) {
-        throw new Error(`Invalid repo format: "${params.repo}". The repo parameter must be in "owner/repository" format (e.g., "owner/SubwayBuilder").\n\nTip: Use search_repositories to find the correct repository path.\nExample: <capability name="github" action="search_repositories" query="subway builder" />`);
+        throw new Error(
+          `Invalid repo format: "${params.repo}". The repo parameter must be in "owner/repository" format (e.g., "owner/SubwayBuilder").\n\nTip: Use search_repositories to find the correct repository path.\nExample: <capability name="github" action="search_repositories" query="subway builder" />`
+        );
       }
 
       if (!process.env.GITHUB_TOKEN) {
@@ -324,7 +334,9 @@ const githubActions = {
 
       if (!response.ok) {
         if (response.status === 404) {
-          throw new Error(`Repository "${params.repo}" not found. Make sure the repository path is correct and you have access to it.\n\nTip: Use search_repositories to find the correct repository path.\nExample: <capability name="github" action="search_repositories" query="subway builder" />`);
+          throw new Error(
+            `Repository "${params.repo}" not found. Make sure the repository path is correct and you have access to it.\n\nTip: Use search_repositories to find the correct repository path.\nExample: <capability name="github" action="search_repositories" query="subway builder" />`
+          );
         }
         throw new Error(`GitHub API error: ${response.status} ${response.statusText}`);
       }

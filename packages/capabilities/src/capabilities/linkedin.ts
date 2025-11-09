@@ -429,9 +429,9 @@ async function handleLinkedInCapability(params: any, content?: string): Promise<
         if (!linkedInService.isConfigured()) {
           throw new Error(
             `LinkedIn not configured. Please set these environment variables:\n` +
-            `- LINKEDIN_CLIENT_ID\n` +
-            `- LINKEDIN_CLIENT_SECRET\n\n` +
-            `Get these from: https://www.linkedin.com/developers/apps`
+              `- LINKEDIN_CLIENT_ID\n` +
+              `- LINKEDIN_CLIENT_SECRET\n\n` +
+              `Get these from: https://www.linkedin.com/developers/apps`
           );
         }
         const authUrl = linkedInService.getAuthorizationUrl();
@@ -442,8 +442,8 @@ async function handleLinkedInCapability(params: any, content?: string): Promise<
         if (!code) {
           throw new Error(
             `Authorization code is required for exchange_code action.\n\n` +
-            `Usage: <capability name="linkedin" action="exchange_code" code="YOUR_AUTH_CODE" />\n\n` +
-            `First call get_auth_url to get the authorization URL, then paste the code here.`
+              `Usage: <capability name="linkedin" action="exchange_code" code="YOUR_AUTH_CODE" />\n\n` +
+              `First call get_auth_url to get the authorization URL, then paste the code here.`
           );
         }
         await linkedInService.exchangeCodeForToken(code);
@@ -453,10 +453,10 @@ async function handleLinkedInCapability(params: any, content?: string): Promise<
         if (!linkedInService.isAuthenticated()) {
           throw new Error(
             `Not authenticated with LinkedIn. You must authorize first.\n\n` +
-            `Steps:\n` +
-            `1. Call action="get_auth_url" to get the authorization link\n` +
-            `2. Visit the link and authorize the application\n` +
-            `3. Use the returned code with action="exchange_code" to authenticate`
+              `Steps:\n` +
+              `1. Call action="get_auth_url" to get the authorization link\n` +
+              `2. Visit the link and authorize the application\n` +
+              `3. Use the returned code with action="exchange_code" to authenticate`
           );
         }
         const profile = await linkedInService.getProfile();
@@ -466,16 +466,18 @@ Name: ${profile.localizedFirstName} ${profile.localizedLastName}
 Headline: ${profile.localizedHeadline || 'No headline set'}
 ID: ${profile.id}`;
         }
-        throw new Error('Could not retrieve LinkedIn profile. Check your authentication or network connection.');
+        throw new Error(
+          'Could not retrieve LinkedIn profile. Check your authentication or network connection.'
+        );
 
       case 'create_post':
         if (!linkedInService.isAuthenticated()) {
           throw new Error(
             `Not authenticated with LinkedIn. You must authorize first.\n\n` +
-            `Steps:\n` +
-            `1. Call action="get_auth_url"\n` +
-            `2. Authorize and get the code\n` +
-            `3. Use action="exchange_code" with the code`
+              `Steps:\n` +
+              `1. Call action="get_auth_url"\n` +
+              `2. Authorize and get the code\n` +
+              `3. Use action="exchange_code" with the code`
           );
         }
 
@@ -483,7 +485,7 @@ ID: ${profile.id}`;
         if (!postContent) {
           throw new Error(
             `Post content is required for create_post action.\n\n` +
-            `Usage: <capability name="linkedin" action="create_post" visibility="PUBLIC">Your post content here</capability>`
+              `Usage: <capability name="linkedin" action="create_post" visibility="PUBLIC">Your post content here</capability>`
           );
         }
 
@@ -494,7 +496,9 @@ ID: ${profile.id}`;
         });
 
         if (!success) {
-          throw new Error('Failed to create LinkedIn post. Check your authentication and try again.');
+          throw new Error(
+            'Failed to create LinkedIn post. Check your authentication and try again.'
+          );
         }
         return '✅ LinkedIn post created successfully!';
 
@@ -504,8 +508,8 @@ ID: ${profile.id}`;
         if (!topic) {
           throw new Error(
             `Topic is required for content generation.\n\n` +
-            `Usage: <capability name="linkedin" action="generate_content" topic="AI trends" tone="professional" />\n\n` +
-            `Available tones: professional, casual, thought-leadership`
+              `Usage: <capability name="linkedin" action="generate_content" topic="AI trends" tone="professional" />\n\n` +
+              `Available tones: professional, casual, thought-leadership`
           );
         }
 
@@ -527,9 +531,7 @@ ID: ${profile.id}`;
 
       case 'update_profile':
         if (!linkedInService.isAuthenticated()) {
-          throw new Error(
-            `Not authenticated with LinkedIn. Please run get_auth_url first.`
-          );
+          throw new Error(`Not authenticated with LinkedIn. Please run get_auth_url first.`);
         }
 
         const updates = {
@@ -554,8 +556,8 @@ ID: ${profile.id}`;
       default:
         throw new Error(
           `Unknown LinkedIn action: ${action}\n\n` +
-          `Available actions: get_auth_url, exchange_code, get_profile, create_post, generate_content, update_profile, status\n\n` +
-          `Example: <capability name="linkedin" action="get_auth_url" />`
+            `Available actions: get_auth_url, exchange_code, get_profile, create_post, generate_content, update_profile, status\n\n` +
+            `Example: <capability name="linkedin" action="get_auth_url" />`
         );
     }
   } catch (error) {

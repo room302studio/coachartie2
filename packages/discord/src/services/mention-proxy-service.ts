@@ -305,11 +305,14 @@ class MentionProxyService {
         return baseContext + `Respond naturally as if you are their representative.`;
 
       case 'announced':
-        return baseContext + `Make it clear you're answering for them, then provide a helpful response.`;
+        return (
+          baseContext + `Make it clear you're answering for them, then provide a helpful response.`
+        );
 
       case 'assistant':
         return (
-          baseContext + `Politely explain they're not available, but offer to help with their question.`
+          baseContext +
+          `Politely explain they're not available, but offer to help with their question.`
         );
 
       default:
@@ -321,11 +324,7 @@ class MentionProxyService {
    * Judge if we should respond based on conversation context
    * Uses LLM to determine if the target user is actively in a conversation
    */
-  async judgeIfShouldRespond(
-    message: any,
-    rule: MentionProxyRule,
-    client: any
-  ): Promise<boolean> {
+  async judgeIfShouldRespond(message: any, rule: MentionProxyRule, client: any): Promise<boolean> {
     try {
       // Fetch recent messages from the channel (last 15 messages)
       const channel = await client.channels.fetch(message.channelId);
@@ -362,9 +361,12 @@ class MentionProxyService {
       // @ts-ignore - axios types may not be available
       const axios = (await import('axios')).default;
       const CAPABILITIES_URL =
-        process.env.CAPABILITIES_URL || 'http://localhost:' + (process.env.CAPABILITIES_PORT || '47324');
+        process.env.CAPABILITIES_URL ||
+        'http://localhost:' + (process.env.CAPABILITIES_PORT || '47324');
 
-      const judgmentPrompt = rule.judgmentPrompt || `
+      const judgmentPrompt =
+        rule.judgmentPrompt ||
+        `
 You are analyzing a Discord conversation to decide if a bot should respond on behalf of ${rule.targetUsername}.
 
 Recent conversation:

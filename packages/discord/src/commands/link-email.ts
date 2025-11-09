@@ -54,7 +54,10 @@ export const linkEmailCommand = {
         ephemeral: true,
       });
 
-      logger.info('Email linked via Discord command', { userId, email: email.substring(0, 3) + '***' });
+      logger.info('Email linked via Discord command', {
+        userId,
+        email: email.substring(0, 3) + '***',
+      });
     } catch (error) {
       logger.error('Error in link-email command:', error);
       await interaction.reply({

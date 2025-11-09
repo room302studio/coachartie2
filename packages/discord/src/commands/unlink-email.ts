@@ -15,7 +15,7 @@ export const unlinkEmailCommand = {
       const linkedEmail = await getUserEmail(userId);
       if (!linkedEmail) {
         return await interaction.reply({
-          content: '❌ You don\'t have an email linked. Use `/link-email` to link one.',
+          content: "❌ You don't have an email linked. Use `/link-email` to link one.",
           ephemeral: true,
         });
       }

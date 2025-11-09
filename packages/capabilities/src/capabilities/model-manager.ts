@@ -10,12 +10,7 @@ import { RegisteredCapability } from '../services/capability-registry.js';
  */
 export const modelManagerCapability: RegisteredCapability = {
   name: 'model_manager',
-  supportedActions: [
-    'list_models',
-    'get_pricing',
-    'get_recommendation',
-    'compare_models',
-  ],
+  supportedActions: ['list_models', 'get_pricing', 'get_recommendation', 'compare_models'],
   description: 'Query available AI models, pricing, and get cost-aware recommendations',
   handler: async (params, content) => {
     const { action = 'list_models' } = params;
@@ -155,7 +150,8 @@ export const modelManagerCapability: RegisteredCapability = {
           if (balance < 5) {
             // CRITICAL - Use cheapest possible
             suggestedTier = 'fast';
-            recommendation = '🚨 **CRITICAL**: Credits extremely low ($' + balance.toFixed(2) + ')\n\n';
+            recommendation =
+              '🚨 **CRITICAL**: Credits extremely low ($' + balance.toFixed(2) + ')\n\n';
             recommendation += '**Recommendation:** Use FAST_MODEL for ALL tasks\n';
             recommendation += '  • Model: google/gemini-2.5-flash\n';
             recommendation += '  • Cost: ~$0.000075/1K tokens (100x cheaper than Sonnet)\n';
@@ -164,8 +160,10 @@ export const modelManagerCapability: RegisteredCapability = {
           } else if (balance < 25) {
             // WARNING - Be conservative
             suggestedTier = 'fast';
-            recommendation = '⚠️ **WARNING**: Credits running low ($' + balance.toFixed(2) + ')\n\n';
-            recommendation += '**Recommendation:** Prefer FAST_MODEL, use SMART_MODEL only when necessary\n\n';
+            recommendation =
+              '⚠️ **WARNING**: Credits running low ($' + balance.toFixed(2) + ')\n\n';
+            recommendation +=
+              '**Recommendation:** Prefer FAST_MODEL, use SMART_MODEL only when necessary\n\n';
             recommendation += '**Use FAST for:**\n';
             recommendation += '  • Simple questions\n';
             recommendation += '  • Capability extraction\n';

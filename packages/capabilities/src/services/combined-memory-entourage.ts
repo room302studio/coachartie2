@@ -143,10 +143,7 @@ export class CombinedMemoryEntourage implements MemoryEntourageInterface {
     options: any
   ): MemoryEntourageResult {
     // Handle case where no layer found memories
-    if (
-      semanticResult.memoryCount === 0 &&
-      temporalResult.memoryCount === 0
-    ) {
+    if (semanticResult.memoryCount === 0 && temporalResult.memoryCount === 0) {
       return {
         content: '',
         confidence: 0.0,
@@ -173,19 +170,11 @@ export class CombinedMemoryEntourage implements MemoryEntourageInterface {
     }
 
     // Multiple layers found memories - intelligent fusion
-    const fusedContent = this.fuseMemoryContent(
-      semanticResult,
-      temporalResult,
-      options
-    );
-    const fusedConfidence = this.fuseConfidenceScores(
-      semanticResult,
-      temporalResult
-    );
+    const fusedContent = this.fuseMemoryContent(semanticResult, temporalResult, options);
+    const fusedConfidence = this.fuseConfidenceScores(semanticResult, temporalResult);
     const fusedCategories = this.fuseCategories(semanticResult, temporalResult);
     const fusedMemoryIds = this.fuseMemoryIds(semanticResult, temporalResult);
-    const totalMemoryCount =
-      semanticResult.memoryCount + temporalResult.memoryCount;
+    const totalMemoryCount = semanticResult.memoryCount + temporalResult.memoryCount;
 
     return {
       content: fusedContent,
@@ -282,13 +271,10 @@ export class CombinedMemoryEntourage implements MemoryEntourageInterface {
     const temporalWeight = 0.4; // Excellent for context timing
 
     const fusedConfidence =
-      semanticResult.confidence * semanticWeight +
-      temporalResult.confidence * temporalWeight;
+      semanticResult.confidence * semanticWeight + temporalResult.confidence * temporalWeight;
 
     // Boost confidence based on convergent validation (both layers finding memories)
-    const activeLayers = [semanticResult, temporalResult].filter(
-      (r) => r.memoryCount > 0
-    ).length;
+    const activeLayers = [semanticResult, temporalResult].filter((r) => r.memoryCount > 0).length;
     const convergenceBoost =
       {
         1: 0, // Single layer
@@ -321,10 +307,7 @@ export class CombinedMemoryEntourage implements MemoryEntourageInterface {
     semanticResult: MemoryEntourageResult,
     temporalResult: MemoryEntourageResult
   ): string[] {
-    const allCategories = new Set([
-      ...semanticResult.categories,
-      ...temporalResult.categories,
-    ]);
+    const allCategories = new Set([...semanticResult.categories, ...temporalResult.categories]);
 
     // Add fusion-specific categories
     allCategories.add('two_layer_combined');

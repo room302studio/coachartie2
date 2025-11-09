@@ -62,7 +62,11 @@ export class SchedulerService {
   private incomingQueue: Queue;
   private worker: Worker;
   private tasks = new Map<string, ScheduledTask>();
-  private completedReminders: Array<{ timestamp: Date; message: string; data: Record<string, unknown> }> = [];
+  private completedReminders: Array<{
+    timestamp: Date;
+    message: string;
+    data: Record<string, unknown>;
+  }> = [];
 
   constructor() {
     const connection = createRedisConnection();

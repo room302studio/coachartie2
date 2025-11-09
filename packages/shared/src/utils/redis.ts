@@ -1,4 +1,4 @@
-import Redis from 'ioredis';
+import { Redis } from 'ioredis';
 import { Queue, Worker, QueueEvents, Job } from 'bullmq';
 import { logger } from './logger.js';
 
@@ -26,7 +26,7 @@ export const createRedisConnection = (): Redis => {
     enableReadyCheck: false,
   });
 
-  redisConnection.on('error', (err) => {
+  redisConnection.on('error', (err: Error) => {
     console.error('💥 REDIS CONNECTION ERROR - BOOKITY BROKEN!');
     console.error(`  - Error: ${err.message}`);
     console.error(`  - Code: ${(err as any).code}`);

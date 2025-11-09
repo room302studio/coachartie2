@@ -19,14 +19,17 @@ export const mediaWikiCapability: RegisteredCapability = {
         if (wikis.length === 0) {
           return JSON.stringify({
             success: true,
-            message: "No wikis configured. Add them with environment variables:\nMEDIAWIKI_ARCHIVE_URL=...\nMEDIAWIKI_ARCHIVE_USERNAME=...\nMEDIAWIKI_ARCHIVE_PASSWORD=..."
+            message:
+              'No wikis configured. Add them with environment variables:\nMEDIAWIKI_ARCHIVE_URL=...\nMEDIAWIKI_ARCHIVE_USERNAME=...\nMEDIAWIKI_ARCHIVE_PASSWORD=...',
           });
         }
 
         return JSON.stringify({
           success: true,
-          wikis: wikis.map(w => `${w.name}${w.isActive ? ' (active)' : ''}${w.hasAuth ? ' ✓' : ' (no auth)'}`),
-          message: `${wikis.length} wiki(s) available`
+          wikis: wikis.map(
+            (w) => `${w.name}${w.isActive ? ' (active)' : ''}${w.hasAuth ? ' ✓' : ' (no auth)'}`
+          ),
+          message: `${wikis.length} wiki(s) available`,
         });
       }
 
@@ -38,7 +41,7 @@ export const mediaWikiCapability: RegisteredCapability = {
         if (!name || !url) {
           return JSON.stringify({
             success: false,
-            message: "To add a wiki: action='add' name='mywiki' url='https://wiki.com'"
+            message: "To add a wiki: action='add' name='mywiki' url='https://wiki.com'",
           });
         }
 
@@ -51,7 +54,7 @@ export const mediaWikiCapability: RegisteredCapability = {
 
         return JSON.stringify({
           success: !!client,
-          message: client ? `Added wiki '${name}'` : `Failed to add wiki '${name}'`
+          message: client ? `Added wiki '${name}'` : `Failed to add wiki '${name}'`,
         });
       }
 
@@ -72,9 +75,10 @@ export const mediaWikiCapability: RegisteredCapability = {
 
         return JSON.stringify({
           success: false,
-          message: available.length > 0
-            ? `Wiki '${wikiName}' not found. Available: ${available.map(w => w.name).join(', ')}`
-            : "No wikis configured. Set environment variables or use action='add' to add one."
+          message:
+            available.length > 0
+              ? `Wiki '${wikiName}' not found. Available: ${available.map((w) => w.name).join(', ')}`
+              : "No wikis configured. Set environment variables or use action='add' to add one.",
         });
       }
 
@@ -86,7 +90,7 @@ export const mediaWikiCapability: RegisteredCapability = {
         if (!page) {
           return JSON.stringify({
             success: false,
-            message: `Page '${pageName}' not found on wiki '${wikiName || 'default'}'`
+            message: `Page '${pageName}' not found on wiki '${wikiName || 'default'}'`,
           });
         }
 
@@ -94,7 +98,7 @@ export const mediaWikiCapability: RegisteredCapability = {
           success: true,
           wiki: wikiName,
           title: page.title,
-          content: page.content
+          content: page.content,
         });
       }
 
@@ -106,14 +110,14 @@ export const mediaWikiCapability: RegisteredCapability = {
         if (!pageName) {
           return JSON.stringify({
             success: false,
-            message: "Need a page name (page='PageName')"
+            message: "Need a page name (page='PageName')",
           });
         }
 
         if (!pageContent) {
           return JSON.stringify({
             success: false,
-            message: "Need content to write"
+            message: 'Need content to write',
           });
         }
 
@@ -126,7 +130,7 @@ export const mediaWikiCapability: RegisteredCapability = {
         return JSON.stringify({
           success: result.success,
           wiki: wikiName,
-          message: result.success ? `Saved ${pageName}` : `Failed: ${result.error}`
+          message: result.success ? `Saved ${pageName}` : `Failed: ${result.error}`,
         });
       }
 
@@ -137,7 +141,7 @@ export const mediaWikiCapability: RegisteredCapability = {
         if (!query) {
           return JSON.stringify({
             success: false,
-            message: "What should I search for?"
+            message: 'What should I search for?',
           });
         }
 
@@ -148,22 +152,21 @@ export const mediaWikiCapability: RegisteredCapability = {
           wiki: wikiName,
           query: query,
           results,
-          count: results.length
+          count: results.length,
         });
       }
 
       // Unknown action
       return JSON.stringify({
         success: false,
-        message: `Unknown action '${action}'. I can: read, write, search, list, add`
+        message: `Unknown action '${action}'. I can: read, write, search, list, add`,
       });
-
     } catch (error) {
       logger.error('MediaWiki error:', error);
       return JSON.stringify({
         success: false,
-        error: error instanceof Error ? error.message : 'MediaWiki error'
+        error: error instanceof Error ? error.message : 'MediaWiki error',
       });
     }
-  }
+  },
 };

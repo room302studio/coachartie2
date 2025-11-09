@@ -434,10 +434,12 @@ Available capabilities:
 Available: `;
 
     // Compressed list: "calculator(calculate), web(search|fetch), ..."
-    const capList = capabilities.map(cap => {
-      const actions = cap.supportedActions.join('|');
-      return `${cap.name}(${actions})`;
-    }).join(', ');
+    const capList = capabilities
+      .map((cap) => {
+        const actions = cap.supportedActions.join('|');
+        return `${cap.name}(${actions})`;
+      })
+      .join(', ');
 
     instructions += capList;
 

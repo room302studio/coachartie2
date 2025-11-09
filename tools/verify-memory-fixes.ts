@@ -24,10 +24,10 @@ import { performance } from 'perf_hooks';
 function getMemoryUsage() {
   const usage = process.memoryUsage();
   return {
-    heapUsed: Math.round(usage.heapUsed / 1024 / 1024 * 100) / 100, // MB
-    heapTotal: Math.round(usage.heapTotal / 1024 / 1024 * 100) / 100,
-    external: Math.round(usage.external / 1024 / 1024 * 100) / 100,
-    rss: Math.round(usage.rss / 1024 / 1024 * 100) / 100,
+    heapUsed: Math.round((usage.heapUsed / 1024 / 1024) * 100) / 100, // MB
+    heapTotal: Math.round((usage.heapTotal / 1024 / 1024) * 100) / 100,
+    external: Math.round((usage.external / 1024 / 1024) * 100) / 100,
+    rss: Math.round((usage.rss / 1024 / 1024) * 100) / 100,
   };
 }
 
@@ -52,7 +52,7 @@ function logForJob(jobId: string, level: string, message: string) {
 }
 
 function cleanupOldJobLogs(hoursOld: number = 1) {
-  const oneHourAgo = Date.now() - (hoursOld * 60 * 60 * 1000);
+  const oneHourAgo = Date.now() - hoursOld * 60 * 60 * 1000;
   let cleanedCount = 0;
 
   for (const [jobId, logs] of jobLogs.entries()) {
@@ -76,7 +76,7 @@ function cleanupOldJobLogs(hoursOld: number = 1) {
 
 async function runTest() {
   console.log('🧪 Memory Leak Verification Test\n');
-  console.log('=' .repeat(60));
+  console.log('='.repeat(60));
 
   // Phase 1: Create many job logs
   console.log('\n📝 Phase 1: Creating 250 job logs (simulating concurrent jobs)\n');
@@ -92,7 +92,11 @@ async function runTest() {
   for (let i = 0; i < jobCount; i++) {
     const jobId = `job-${i}`;
     for (let j = 0; j < logsPerJob; j++) {
-      logForJob(jobId, 'info', `Job ${i} - Message ${j}: This is a test log entry with some content`);
+      logForJob(
+        jobId,
+        'info',
+        `Job ${i} - Message ${j}: This is a test log entry with some content`
+      );
     }
   }
 
@@ -102,11 +106,13 @@ async function runTest() {
   console.log(`  RSS: ${memAfter.rss}MB`);
   console.log(`  Delta: +${(memAfter.heapUsed - memBefore.heapUsed).toFixed(2)}MB`);
 
-  console.log(`\n✅ Created ${jobCount} jobs with ${logsPerJob} logs each (${jobCount * logsPerJob} total logs)`);
+  console.log(
+    `\n✅ Created ${jobCount} jobs with ${logsPerJob} logs each (${jobCount * logsPerJob} total logs)`
+  );
   console.log(`   Map size: ${jobLogs.size} entries\n`);
 
   // Phase 2: Test cleanup with fresh logs (should NOT delete)
-  console.log('=' .repeat(60));
+  console.log('='.repeat(60));
   console.log('\n🧹 Phase 2: Test cleanup (logs are fresh, should NOT be deleted)\n');
 
   const cleaned1 = cleanupOldJobLogs(1); // 1 hour old threshold
@@ -119,11 +125,11 @@ async function runTest() {
   }
 
   // Phase 3: Simulate old logs
-  console.log('=' .repeat(60));
+  console.log('='.repeat(60));
   console.log('\n📜 Phase 3: Simulating old logs (2 hours old)\n');
 
   // Manually set timestamps to 2+ hours ago for some jobs
-  const twoHoursAgo = Date.now() - (2 * 60 * 60 * 1000);
+  const twoHoursAgo = Date.now() - 2 * 60 * 60 * 1000;
   let oldLogsCreated = 0;
 
   for (let i = 0; i < jobCount / 2; i++) {
@@ -131,7 +137,7 @@ async function runTest() {
     if (jobLogs.has(jobId)) {
       const logs = jobLogs.get(jobId)!;
       // Replace timestamps to 2 hours ago
-      logs.forEach(log => {
+      logs.forEach((log) => {
         log.timestamp = new Date(twoHoursAgo).toISOString();
       });
       oldLogsCreated++;
@@ -141,7 +147,7 @@ async function runTest() {
   console.log(`✓ Marked ${oldLogsCreated * logsPerJob} logs as "old" (2 hours ago)\n`);
 
   // Phase 4: Run cleanup on old logs
-  console.log('=' .repeat(60));
+  console.log('='.repeat(60));
   console.log('\n🧹 Phase 4: Cleanup pass 2 (should DELETE old logs)\n');
 
   const memBeforeCleanup = getMemoryUsage();
@@ -158,7 +164,7 @@ async function runTest() {
   console.log(`  Freed:  ${(memBeforeCleanup.heapUsed - memAfterCleanup.heapUsed).toFixed(2)}MB`);
 
   // Phase 5: Verify bounded memory
-  console.log('\n' + '=' .repeat(60));
+  console.log('\n' + '='.repeat(60));
   console.log('\n📊 Phase 5: Memory Boundedness Check\n');
 
   const expectedMaxMB = 50; // Reasonable upper bound for 100+ job logs
@@ -174,7 +180,7 @@ async function runTest() {
   }
 
   // Final summary
-  console.log('\n' + '=' .repeat(60));
+  console.log('\n' + '='.repeat(60));
   console.log('\n📋 Test Summary\n');
 
   const successCriteria = [
@@ -190,7 +196,7 @@ async function runTest() {
     if (!pass) allPass = false;
   });
 
-  console.log('\n' + '=' .repeat(60));
+  console.log('\n' + '='.repeat(60));
   if (allPass) {
     console.log('\n✅ All tests PASSED! Memory cleanup is working correctly.\n');
     process.exit(0);
@@ -201,7 +207,7 @@ async function runTest() {
 }
 
 // Run the test
-runTest().catch(err => {
+runTest().catch((err) => {
   console.error('❌ Test error:', err);
   process.exit(1);
 });

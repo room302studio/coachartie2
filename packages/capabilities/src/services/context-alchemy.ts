@@ -8,8 +8,9 @@ import { CreditMonitor } from './credit-monitor.js';
 // Debug flag for detailed Context Alchemy logging
 const DEBUG = process.env.CONTEXT_ALCHEMY_DEBUG === 'true';
 
-// UI Modality Rules - Directive guidance with examples for when to use interactive UI
-const UI_MODALITY_RULES = `
+// UI Modality Rules - loaded from database at runtime
+// Legacy fallback for backward compatibility
+const UI_MODALITY_RULES_FALLBACK = `
 🎮 DISCORD UI COMPONENT RULES - USE THESE WHEN APPROPRIATE:
 
 CHOICE SCENARIO → USE BUTTONS:
@@ -93,13 +94,21 @@ export class ContextAlchemy {
     userId: string,
     baseSystemPrompt: string,
     existingMessages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [],
-    options: { minimal?: boolean; capabilityContext?: string[]; channelId?: string; includeCapabilities?: boolean; source?: string } = {}
+    options: {
+      minimal?: boolean;
+      capabilityContext?: string[];
+      channelId?: string;
+      includeCapabilities?: boolean;
+      source?: string;
+    } = {}
   ): Promise<{
     messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>;
     contextSources: ContextSource[];
   }> {
     if (DEBUG) {
-      logger.info(`🧪 Context Alchemy: user=${userId}, mode=${options.minimal ? 'minimal' : 'full'}, msg_len=${userMessage.length}`);
+      logger.info(
+        `🧪 Context Alchemy: user=${userId}, mode=${options.minimal ? 'minimal' : 'full'}, msg_len=${userMessage.length}`
+      );
     }
 
     let selectedContext: ContextSource[] = [];
@@ -113,7 +122,11 @@ export class ContextAlchemy {
       // Scale conversation history with context window size (minimum 2 pairs, scales up)
       const contextSize = parseInt(process.env.CONTEXT_WINDOW_SIZE || '32000', 10);
       const historyLimit = Math.max(2, Math.floor((contextSize / 8000) * 3));
-      conversationHistory = await this.getConversationHistory(userId, options.channelId, historyLimit);
+      conversationHistory = await this.getConversationHistory(
+        userId,
+        options.channelId,
+        historyLimit
+      );
 
       // 3. Assemble message context (beautiful, readable pattern)
       const mockMessage: IncomingMessage = {
@@ -145,7 +158,7 @@ export class ContextAlchemy {
     await this.addCreditWarnings(selectedContext);
 
     // 5. Build message chain with conversation history
-    const messageChain = this.assembleMessageChain(
+    const messageChain = await this.assembleMessageChain(
       baseSystemPrompt,
       userMessage,
       selectedContext,
@@ -155,7 +168,9 @@ export class ContextAlchemy {
     );
 
     if (DEBUG) {
-      logger.info(`📝 Message chain: ${messageChain.length} messages (${messageChain.filter(m => m.role === 'system').length} system, ${messageChain.filter(m => m.role === 'user').length} user, ${messageChain.filter(m => m.role === 'assistant').length} assistant)`);
+      logger.info(
+        `📝 Message chain: ${messageChain.length} messages (${messageChain.filter((m) => m.role === 'system').length} system, ${messageChain.filter((m) => m.role === 'user').length} user, ${messageChain.filter((m) => m.role === 'assistant').length} assistant)`
+      );
     }
 
     // Calculate total tokens for percentage display
@@ -164,15 +179,20 @@ export class ContextAlchemy {
     if (DEBUG) {
       logger.info('🧪 CONTEXT SOURCES:');
       selectedContext.forEach((ctx) => {
-        const percentage = totalContextTokens > 0
-          ? ((ctx.tokenWeight / totalContextTokens) * 100).toFixed(1)
-          : '0.0';
+        const percentage =
+          totalContextTokens > 0
+            ? ((ctx.tokenWeight / totalContextTokens) * 100).toFixed(1)
+            : '0.0';
         logger.info(
           `  ${ctx.name.padEnd(22)}: ${percentage.padStart(5)}% (${ctx.tokenWeight.toString().padStart(4)} tokens, pri:${ctx.priority})`
         );
       });
-      logger.info(`  ${'TOTAL'.padEnd(22)}: 100.0% (${totalContextTokens.toString().padStart(4)} tokens)`);
-      logger.info(`✅ Context ready: ${messageChain.length} messages, ${selectedContext.length} sources\n`);
+      logger.info(
+        `  ${'TOTAL'.padEnd(22)}: 100.0% (${totalContextTokens.toString().padStart(4)} tokens)`
+      );
+      logger.info(
+        `✅ Context ready: ${messageChain.length} messages, ${selectedContext.length} sources\n`
+      );
     }
 
     return { messages: messageChain, contextSources: selectedContext };
@@ -191,7 +211,22 @@ export class ContextAlchemy {
       logger.info('🧪 Context Alchemy: Generating capability synthesis prompt');
     }
 
-    // TODO: Use prompt database for these templates once available
+    // Load from database with fallback
+    try {
+      const { promptManager } = await import('./prompt-manager.js');
+      const synthesisTemplate = await promptManager.getPrompt('PROMPT_CAPABILITY_SYNTHESIS');
+
+      if (synthesisTemplate) {
+        // Replace template variables
+        return synthesisTemplate.content
+          .replace(/\{\{USER_MESSAGE\}\}/g, originalMessage)
+          .replace(/\{\{CAPABILITY_RESULTS\}\}/g, capabilityResults);
+      }
+    } catch (error) {
+      logger.warn('Failed to load synthesis prompt from database, using fallback');
+    }
+
+    // Fallback prompt
     const synthesisPrompt = `Assistant response synthesis. User asked: "${originalMessage}"
 
 Capability execution results:
@@ -232,7 +267,9 @@ Important:
     };
 
     if (DEBUG) {
-      logger.info(`💰 Token budget: ${totalTokens} total, ${budget.availableForContext} available for context (user:${userTokens}, system:${systemTokens}, reply:${reservedForResponse})`);
+      logger.info(
+        `💰 Token budget: ${totalTokens} total, ${budget.availableForContext} available for context (user:${userTokens}, system:${systemTokens}, reply:${reservedForResponse})`
+      );
     }
 
     return budget;
@@ -255,16 +292,37 @@ Important:
     }
     const sources: ContextSource[] = [];
 
+    // Current date/time - temporal awareness
     await this.addCurrentDateTime(sources);
+
+    // Goal whisper from Conscience - high-level intent/guidance
     await this.addGoalWhisper(message, sources);
-    await this.addRecentChannelMessages(message, sources); // Add immediate channel context
-    await this.addRecentGuildMessages(message, sources); // Add broader guild context
+
+    // Channel vibes - activity level, response style hints ("the vibes of the room")
+    await this.addChannelVibes(message, sources);
+
+    // Recent channel messages - immediate conversational context (what just happened)
+    await this.addRecentChannelMessages(message, sources);
+
+    // Recent guild messages - broader Discord server context (what's happening elsewhere)
+    await this.addRecentGuildMessages(message, sources);
+
+    // Relevant memories - long-term context from memory system (what we remember)
     await this.addRelevantMemories(message, sources, capabilityContext);
-    await this.addCapabilityLearnings(message, sources, capabilityContext); // Add capability-specific learnings
+
+    // Capability learnings - only loaded when we know which capabilities are actually being executed
+    // (not during initial context building - that's wasteful)
+    // These get loaded later in the orchestration flow after extraction + conscience review
+    // await this.addCapabilityLearnings(message, sources, capabilityContext);
+
+    // Capability manifest - available tools/actions (how to do things)
     if (includeCapabilities) {
       await this.addCapabilityManifest(sources);
     }
-    await this.addDiscordEnvironment(sources); // Add Discord server context
+
+    // Discord environment - connected servers (where we are)
+    await this.addDiscordEnvironment(sources);
+
     // Future: await this.addUserPreferences(message, sources);
 
     return sources.filter((source) => source.content.length > 0);
@@ -298,7 +356,11 @@ Important:
           ORDER BY created_at DESC
           LIMIT ?
         `;
-        const channelMessages = await database.all(channelQuery, [userId, channelId, channelLimit * 2]);
+        const channelMessages = await database.all(channelQuery, [
+          userId,
+          channelId,
+          channelLimit * 2,
+        ]);
         allMessages.push(...channelMessages);
       }
 
@@ -311,12 +373,16 @@ Important:
         ORDER BY created_at DESC
         LIMIT ?
       `;
-      const globalParams = channelId ? [userId, channelId, globalLimit * 2] : [userId, globalLimit * 2];
+      const globalParams = channelId
+        ? [userId, channelId, globalLimit * 2]
+        : [userId, globalLimit * 2];
       const globalMessages = await database.all(globalQuery, globalParams);
       allMessages.push(...globalMessages);
 
       // Sort all messages by recency
-      allMessages.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+      allMessages.sort(
+        (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+      );
 
       // Take the limit
       const messages = allMessages.slice(0, limit * 2);
@@ -374,8 +440,12 @@ Important:
 
         // Critical warning (<$5)
         if (balance < 5) {
-          warningParts.push(`🤖💸 "I'm faddddingggg..." - Only $${balance.toFixed(2)} credits left!`);
-          warningParts.push('⚡ SWITCH TO CHEAPER MODELS IMMEDIATELY (use Haiku/Gemini Flash for non-critical tasks)');
+          warningParts.push(
+            `🤖💸 "I'm faddddingggg..." - Only $${balance.toFixed(2)} credits left!`
+          );
+          warningParts.push(
+            '⚡ SWITCH TO CHEAPER MODELS IMMEDIATELY (use Haiku/Gemini Flash for non-critical tasks)'
+          );
         }
         // Warning (<$25)
         else if (balance < 25) {
@@ -425,9 +495,11 @@ Important:
     const timeStr = now.toLocaleTimeString('en-US', {
       hour: '2-digit',
       minute: '2-digit',
-      hour12: false
+      hour12: false,
     });
-    const tzMatch = now.toLocaleTimeString('en-US', { timeZoneName: 'short' }).match(/\b[A-Z]{3,4}\b/);
+    const tzMatch = now
+      .toLocaleTimeString('en-US', { timeZoneName: 'short' })
+      .match(/\b[A-Z]{3,4}\b/);
     const tz = tzMatch ? tzMatch[0] : 'UTC';
 
     // Format: "Date: 2025-10-24 13:40 EST (Fri)"
@@ -520,6 +592,82 @@ Important:
     } catch (error) {
       logger.warn('Failed to add recent guild messages:', error);
       // Graceful degradation - continue without guild context
+    }
+  }
+
+  /**
+   * Add channel vibes - the social context of the room
+   * Helps the LLM understand channel activity, type, and adjust response style
+   */
+  private async addChannelVibes(
+    message: IncomingMessage,
+    sources: ContextSource[]
+  ): Promise<void> {
+    try {
+      // Only for Discord messages with context
+      const discordContext = message.context;
+      if (!discordContext || message.source !== 'discord') {
+        return;
+      }
+
+      // Import database for recent activity check
+      const { database } = await import('./database.js');
+
+      const channelId = discordContext.channelId;
+      const channelName = discordContext.channelName || 'unknown';
+      const channelType = discordContext.channelType || 'text';
+
+      // Get recent activity in this channel (last 10 minutes)
+      const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+      const recentActivity = await database.all(
+        `SELECT COUNT(*) as count FROM messages
+         WHERE channel_id = ? AND created_at > ?`,
+        [channelId, tenMinutesAgo]
+      );
+
+      // Get Artie's recent usage in this channel (last hour)
+      const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+      const artieUsage = await database.all(
+        `SELECT COUNT(*) as count FROM messages
+         WHERE channel_id = ? AND created_at > ? AND user_id = 'artie'`,
+        [channelId, oneHourAgo]
+      );
+
+      const messageCount = recentActivity[0]?.count || 0;
+      const artieCount = artieUsage[0]?.count || 0;
+
+      // Determine channel activity level
+      let activityLevel = 'quiet';
+      if (messageCount > 20) activityLevel = 'very busy';
+      else if (messageCount > 10) activityLevel = 'busy';
+      else if (messageCount > 3) activityLevel = 'moderate';
+
+      // Build vibes context (ONLY dynamic channel-specific info)
+      // Static delivery instructions belong in PROMPT_SYSTEM database prompt
+      const vibes = [
+        `CHANNEL CONTEXT:`,
+        `- Name: ${channelName}`,
+        `- Type: ${channelType}`,
+        `- Activity: ${activityLevel} (${messageCount} msgs in last 10 min)`,
+        `- Your recent usage: ${artieCount} responses in last hour`
+      ];
+
+      const content = vibes.join('\n');
+
+      sources.push({
+        name: 'channel_vibes',
+        priority: 95, // High priority - affects response style
+        tokenWeight: Math.ceil(content.length / 4),
+        content,
+        category: 'user_state',
+      });
+
+      if (DEBUG) {
+        logger.info(`│ ✅ Channel vibes: ${channelName} (${activityLevel}, ${messageCount} recent msgs)`);
+      }
+    } catch (error) {
+      logger.warn('Failed to add channel vibes:', error);
+      // Graceful degradation - continue without vibes
     }
   }
 
@@ -626,7 +774,9 @@ Important:
         });
 
         if (DEBUG) {
-          logger.info(`🧠 Memory search: ${memoryResult.memoryCount} memories found in ${searchTime}ms (confidence:${(memoryResult.confidence * 100).toFixed(1)}%, categories:${memoryResult.categories.join(',')})`);
+          logger.info(
+            `🧠 Memory search: ${memoryResult.memoryCount} memories found in ${searchTime}ms (confidence:${(memoryResult.confidence * 100).toFixed(1)}%, categories:${memoryResult.categories.join(',')})`
+          );
         }
       } else {
         if (DEBUG) {
@@ -668,7 +818,7 @@ Important:
 ${capabilityMemories
   .map(
     (memory, i) =>
-      `${i + 1}. [${memory.tags.filter(t => t !== 'capability-reflection').join(', ')}] ${memory.content}`
+      `${i + 1}. [${memory.tags.filter((t) => t !== 'capability-reflection').join(', ')}] ${memory.content}`
   )
   .join('\n\n')}
 
@@ -683,11 +833,15 @@ ${capabilityMemories
         });
 
         if (DEBUG) {
-          logger.info(`🔧 Capability learnings: ${capabilityMemories.length} found for ${capabilityNames.join(',')}`);
+          logger.info(
+            `🔧 Capability learnings: ${capabilityMemories.length} found for ${capabilityNames.join(',')}`
+          );
         }
       } else {
         if (DEBUG) {
-          logger.info(`🔧 Capability learnings: none found for ${capabilityNames.join(',')} (first time?)`);
+          logger.info(
+            `🔧 Capability learnings: none found for ${capabilityNames.join(',')} (first time?)`
+          );
         }
       }
     } catch (error) {
@@ -836,14 +990,14 @@ Available: web, calculator, memory`;
    * Now includes conversation history for natural dialogue!
    * Only includes Discord UI modality rules when message source is 'discord'
    */
-  private assembleMessageChain(
+  private async assembleMessageChain(
     baseSystemPrompt: string,
     userMessage: string,
     contextSources: ContextSource[],
     existingMessages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [],
     conversationHistory: Array<{ role: 'user' | 'assistant'; content: string }> = [],
     source?: string
-  ): Array<{ role: 'system' | 'user' | 'assistant'; content: string }> {
+  ): Promise<Array<{ role: 'system' | 'user' | 'assistant'; content: string }>> {
     if (DEBUG) {
       logger.info('┌─ MESSAGE CHAIN ASSEMBLY ────────────────────────────────────────┐');
     }
@@ -860,15 +1014,27 @@ Available: web, calculator, memory`;
       systemContent += `\n\n${contextByCategory.capabilities[0].content}`;
     }
 
-    // Add UI modality rules only for Discord messages
+    // Add UI modality rules only for Discord messages (from database)
     if (source === 'discord') {
-      systemContent += `\n\n${UI_MODALITY_RULES}`;
+      try {
+        const { promptManager } = await import('./prompt-manager.js');
+        const uiPrompt = await promptManager.getPrompt('PROMPT_DISCORD_UI_MODALITY');
+        const uiRules = uiPrompt?.content || UI_MODALITY_RULES_FALLBACK;
+        systemContent += `\n\n${uiRules}`;
+      } catch (error) {
+        logger.warn('Failed to load Discord UI modality prompt, using fallback');
+        systemContent += `\n\n${UI_MODALITY_RULES_FALLBACK}`;
+      }
     }
 
     messages.push({ role: 'system', content: systemContent.trim() });
 
     // 2. Add contextual information as system message (cleaner than fake user messages!)
-    if (contextByCategory.memory.length > 0 || contextByCategory.goals.length > 0 || contextByCategory.user_state.length > 0) {
+    if (
+      contextByCategory.memory.length > 0 ||
+      contextByCategory.goals.length > 0 ||
+      contextByCategory.user_state.length > 0
+    ) {
       let contextContent = 'Relevant context:\n';
 
       if (contextByCategory.memory.length > 0) {

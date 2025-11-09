@@ -579,12 +579,12 @@ export const mcpAutoInstallerCapability: RegisteredCapability = {
         default:
           throw new Error(
             `Unknown MCP auto-installer action: ${action}\n\n` +
-            `Available actions: install, install_github, install_npm, install_docker, cleanup\n\n` +
-            `Examples:\n` +
-            `• <capability name="mcp_auto_installer" action="install" url="npm:@modelcontextprotocol/server-github" />\n` +
-            `• <capability name="mcp_auto_installer" action="install_github" url="https://github.com/anthropics/mcp-server-github" />\n` +
-            `• <capability name="mcp_auto_installer" action="install_npm" package="@modelcontextprotocol/server-weather" />\n` +
-            `• <capability name="mcp_auto_installer" action="install_docker" image="puppeteer/puppeteer" />`
+              `Available actions: install, install_github, install_npm, install_docker, cleanup\n\n` +
+              `Examples:\n` +
+              `• <capability name="mcp_auto_installer" action="install" url="npm:@modelcontextprotocol/server-github" />\n` +
+              `• <capability name="mcp_auto_installer" action="install_github" url="https://github.com/anthropics/mcp-server-github" />\n` +
+              `• <capability name="mcp_auto_installer" action="install_npm" package="@modelcontextprotocol/server-weather" />\n` +
+              `• <capability name="mcp_auto_installer" action="install_docker" image="puppeteer/puppeteer" />`
           );
       }
     } catch (error) {

@@ -19,17 +19,19 @@ async function testInterpolation() {
     timestamp: new Date(),
     retryCount: 0,
     source: 'test',
-    respondTo: { type: 'api' }
+    respondTo: { type: 'api' },
   });
 
-  console.log('✅ Message sent! LLM should extract memory capability with ${animal} in the content');
+  console.log(
+    '✅ Message sent! LLM should extract memory capability with ${animal} in the content'
+  );
   console.log('   The Handlebars interpolation should replace ${animal} with "cat"');
 
   await connection.quit();
   process.exit(0);
 }
 
-testInterpolation().catch(err => {
+testInterpolation().catch((err) => {
   console.error('❌ Error:', err);
   process.exit(1);
 });

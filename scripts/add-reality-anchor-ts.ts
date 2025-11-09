@@ -11,10 +11,9 @@ async function updatePrompt() {
   const db = await getDatabase();
 
   // Get current prompt
-  const current = await db.get(
-    'SELECT content FROM prompts WHERE name = ? AND is_active = 1',
-    ['PROMPT_SYSTEM']
-  );
+  const current = await db.get('SELECT content FROM prompts WHERE name = ? AND is_active = 1', [
+    'PROMPT_SYSTEM',
+  ]);
 
   if (!current) {
     console.log('❌ No PROMPT_SYSTEM found');

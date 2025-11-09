@@ -9,49 +9,49 @@
  */
 
 export type ResponseMode =
-  | 'direct'      // Answer directly without announcing proxy
-  | 'announced'   // "Answering for @user: ..."
-  | 'assistant';  // "I can help while @user is away..."
+  | 'direct' // Answer directly without announcing proxy
+  | 'announced' // "Answering for @user: ..."
+  | 'assistant'; // "I can help while @user is away..."
 
 export type TriggerType =
-  | 'any_mention'     // Respond to any mention
-  | 'questions_only'  // Only respond to questions
-  | 'keywords';       // Only respond if specific keywords present
+  | 'any_mention' // Respond to any mention
+  | 'questions_only' // Only respond to questions
+  | 'keywords'; // Only respond if specific keywords present
 
 export interface MentionProxyRule {
   // Unique identifier
   id: string;
 
   // Who to represent
-  targetUserId: string;          // Discord user ID to monitor
-  targetUsername: string;         // For display/logging
+  targetUserId: string; // Discord user ID to monitor
+  targetUsername: string; // For display/logging
 
   // Where to respond
-  guildId: string;               // Which guild this applies to
-  guildName?: string;            // Optional: for display
-  channelIds?: string[];         // Optional: specific channels only
+  guildId: string; // Which guild this applies to
+  guildName?: string; // Optional: for display
+  channelIds?: string[]; // Optional: specific channels only
 
   // How to respond
   responseMode: ResponseMode;
-  responseStyle?: string;        // Optional: custom system prompt context
+  responseStyle?: string; // Optional: custom system prompt context
 
   // When to respond
   triggerType: TriggerType;
-  keywords?: string[];           // For keyword-based triggers
+  keywords?: string[]; // For keyword-based triggers
 
   // Judgment layer
-  useJudgment?: boolean;         // Use LLM to judge if response is appropriate
-  judgmentPrompt?: string;       // Optional: custom judgment criteria
+  useJudgment?: boolean; // Use LLM to judge if response is appropriate
+  judgmentPrompt?: string; // Optional: custom judgment criteria
 
   // Control
   enabled: boolean;
 
   // Metadata
-  name: string;                  // Human-friendly name
-  description?: string;          // What this rule is for
-  createdAt: string;             // ISO timestamp
-  updatedAt: string;             // ISO timestamp
-  createdBy?: string;            // Discord user ID who created it
+  name: string; // Human-friendly name
+  description?: string; // What this rule is for
+  createdAt: string; // ISO timestamp
+  updatedAt: string; // ISO timestamp
+  createdBy?: string; // Discord user ID who created it
 }
 
 export interface MentionProxyConfig {

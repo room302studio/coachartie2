@@ -29,7 +29,9 @@ async function handleSemanticSearchCapability(
       case 'search':
         const query = params.query || content;
         if (!query) {
-          throw new Error('Please provide a search query. Example: <capability name="semantic-search" action="search" query="memories about deadlines" />');
+          throw new Error(
+            'Please provide a search query. Example: <capability name="semantic-search" action="search" query="memories about deadlines" />'
+          );
         }
 
         if (!vectorEmbeddingService.isReady()) {
@@ -52,7 +54,9 @@ async function handleSemanticSearchCapability(
       case 'similar':
         const memoryId = params.memory_id;
         if (!memoryId) {
-          throw new Error('Please provide a memory_id. Example: <capability name="semantic-search" action="similar" memory_id="123" />');
+          throw new Error(
+            'Please provide a memory_id. Example: <capability name="semantic-search" action="similar" memory_id="123" />'
+          );
         }
 
         if (!vectorEmbeddingService.isReady()) {
@@ -78,7 +82,9 @@ async function handleSemanticSearchCapability(
       case 'cluster':
         const userId = params.user_id as string;
         if (!userId) {
-          throw new Error('Please provide a user_id. Example: <capability name="semantic-search" action="cluster" user_id="ejfox" />');
+          throw new Error(
+            'Please provide a user_id. Example: <capability name="semantic-search" action="cluster" user_id="ejfox" />'
+          );
         }
         // Use the real vector service to find memory clusters
         const allResults = await vectorEmbeddingService.findSimilarMemories('', 50);
@@ -96,7 +102,9 @@ async function handleSemanticSearchCapability(
         return `🧠 Memory pattern analysis for ${analysisUserId}:\n${patternResults.length} memories analyzed.\nPatterns detected: Semantic clustering, Temporal patterns, Topic distributions`;
 
       default:
-        throw new Error(`Unknown semantic search action: ${params.action}. Available actions: status, search, similar, cluster, analyze`);
+        throw new Error(
+          `Unknown semantic search action: ${params.action}. Available actions: status, search, similar, cluster, analyze`
+        );
     }
   } catch (error) {
     logger.error(`❌ Semantic search capability error:`, error);

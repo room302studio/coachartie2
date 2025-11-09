@@ -96,7 +96,7 @@ export class JobTracker {
       logger.error(`❌ JOB TRACKER: Cannot complete job ${messageId} - not found in tracker`, {
         messageId,
         totalJobsInTracker: this.jobs.size,
-        allJobIds: Array.from(this.jobs.keys()).map(id => id.slice(-8)),
+        allJobIds: Array.from(this.jobs.keys()).map((id) => id.slice(-8)),
       });
       return;
     }

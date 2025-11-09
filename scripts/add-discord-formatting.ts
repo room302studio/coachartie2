@@ -65,13 +65,15 @@ User's message: {{USER_MESSAGE}}`;
     );
 
     console.log('✅ Successfully updated capability_instructions');
-    console.log('📝 New version:', (await promptManager.getPrompt('capability_instructions'))?.version);
+    console.log(
+      '📝 New version:',
+      (await promptManager.getPrompt('capability_instructions'))?.version
+    );
     console.log('\n🎉 Discord formatting guidelines added!');
     console.log('\nKey improvements:');
     console.log('  - Code block formatting rules');
     console.log('  - Common pitfalls to avoid');
     console.log('  - Proper markdown syntax');
-
   } catch (error) {
     console.error('❌ Failed to update prompt:', error);
     process.exit(1);

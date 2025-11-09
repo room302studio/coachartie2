@@ -21,11 +21,16 @@ async function execInContainer(command: string, timeout: number = 30000) {
   const containerName = process.env.SANDBOX_CONTAINER_NAME || 'coachartie-sandbox';
 
   const dockerCommand = [
-    'docker', 'exec',
-    '-e', `GITHUB_TOKEN=${process.env.GITHUB_TOKEN || ''}`,
-    '-e', `OPENAI_API_KEY=${process.env.OPENAI_API_KEY || ''}`,
+    'docker',
+    'exec',
+    '-e',
+    `GITHUB_TOKEN=${process.env.GITHUB_TOKEN || ''}`,
+    '-e',
+    `OPENAI_API_KEY=${process.env.OPENAI_API_KEY || ''}`,
     containerName,
-    '/bin/bash', '-c', command
+    '/bin/bash',
+    '-c',
+    command,
   ].join(' ');
 
   return await execAsync(dockerCommand, {
@@ -50,7 +55,8 @@ async function ensureSession(session: string, cwd: string = '/workspace') {
 export const shellCapability: RegisteredCapability = {
   name: 'shell',
   supportedActions: ['exec', 'send', 'read', 'split', 'list'],
-  description: 'Execute shell commands in a sandboxed Debian container. Artie has full access to a persistent Linux environment with git, gh, jq, curl, npm, python, and more. Supports both one-shot execution (action=exec) and persistent tmux sessions (action=send/read/split/list) for stateful workflows where directory changes and environment persist between commands.',
+  description:
+    'Execute shell commands in a sandboxed Debian container. Artie has full access to a persistent Linux environment with git, gh, jq, curl, npm, python, and more. Supports both one-shot execution (action=exec) and persistent tmux sessions (action=send/read/split/list) for stateful workflows where directory changes and environment persist between commands.',
   requiredParams: [],
 
   handler: async (params: any, _content: string | undefined) => {
@@ -78,12 +84,18 @@ export const shellCapability: RegisteredCapability = {
           logger.info(`🖥️  Executing one-shot: ${command}`);
 
           const dockerCommand = [
-            'docker', 'exec',
-            '-w', cwd,
-            '-e', `GITHUB_TOKEN=${process.env.GITHUB_TOKEN || ''}`,
-            '-e', `OPENAI_API_KEY=${process.env.OPENAI_API_KEY || ''}`,
+            'docker',
+            'exec',
+            '-w',
+            cwd,
+            '-e',
+            `GITHUB_TOKEN=${process.env.GITHUB_TOKEN || ''}`,
+            '-e',
+            `OPENAI_API_KEY=${process.env.OPENAI_API_KEY || ''}`,
             process.env.SANDBOX_CONTAINER_NAME || 'coachartie-sandbox',
-            '/bin/bash', '-c', command
+            '/bin/bash',
+            '-c',
+            command,
           ].join(' ');
 
           const { stdout, stderr } = await execAsync(dockerCommand, {
@@ -122,7 +134,7 @@ export const shellCapability: RegisteredCapability = {
           await execInContainer(`tmux send-keys -t ${target} "${escapedCommand}" Enter`, timeout);
 
           // Wait a brief moment for command to start
-          await new Promise(resolve => setTimeout(resolve, 100));
+          await new Promise((resolve) => setTimeout(resolve, 100));
 
           logger.info(`✅ Command sent to ${target}`);
 
@@ -167,7 +179,9 @@ export const shellCapability: RegisteredCapability = {
         case 'split': {
           // Split pane
           if (!command) {
-            throw new Error('Missing required parameter "command" for action=split. Specify the command to run in the new pane.');
+            throw new Error(
+              'Missing required parameter "command" for action=split. Specify the command to run in the new pane.'
+            );
           }
 
           logger.info(`✂️  Splitting ${target} ${direction}ly`);
@@ -210,10 +224,14 @@ export const shellCapability: RegisteredCapability = {
               timeout
             );
 
-            sessions = sessionList.trim().split('\n').filter(Boolean).map(line => {
-              const [name, windows, created] = line.split('|');
-              return { name, windows: parseInt(windows), created };
-            });
+            sessions = sessionList
+              .trim()
+              .split('\n')
+              .filter(Boolean)
+              .map((line) => {
+                const [name, windows, created] = line.split('|');
+                return { name, windows: parseInt(windows), created };
+              });
 
             // Get panes for each session
             for (const sess of sessions) {
@@ -222,10 +240,14 @@ export const shellCapability: RegisteredCapability = {
                 timeout
               );
 
-              sess.panes = paneList.trim().split('\n').filter(Boolean).map(line => {
-                const [index, path, size, title] = line.split('|');
-                return { index: parseInt(index), path, size, title };
-              });
+              sess.panes = paneList
+                .trim()
+                .split('\n')
+                .filter(Boolean)
+                .map((line) => {
+                  const [index, path, size, title] = line.split('|');
+                  return { index: parseInt(index), path, size, title };
+                });
             }
           } catch (error: any) {
             // No sessions exist
@@ -248,7 +270,9 @@ export const shellCapability: RegisteredCapability = {
         }
 
         default:
-          throw new Error(`Unknown action: ${action}. Supported actions: exec, send, read, split, list`);
+          throw new Error(
+            `Unknown action: ${action}. Supported actions: exec, send, read, split, list`
+          );
       }
     } catch (error: any) {
       const isTimeout = error.killed && error.signal === 'SIGTERM';
@@ -264,9 +288,7 @@ export const shellCapability: RegisteredCapability = {
 
       return JSON.stringify({
         success: false,
-        error: isTimeout
-          ? `Command timed out after ${timeout}ms`
-          : error.message,
+        error: isTimeout ? `Command timed out after ${timeout}ms` : error.message,
         data: {
           action,
           command,

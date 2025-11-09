@@ -25,6 +25,7 @@ import { goalCapability } from '../capabilities/goal.js';
 import { variableStoreCapability } from '../capabilities/variable-store.js';
 import { todoCapability } from '../capabilities/todo.js';
 import { discordUICapability } from '../capabilities/discord-ui.js';
+import { askQuestionCapability } from '../capabilities/ask-question.js';
 import { discordForumsCapability } from '../capabilities/discord-forums.js';
 import { mentionProxyCapability } from '../capabilities/mention-proxy.js';
 import { emailCapability } from '../capabilities/email.js';
@@ -818,6 +819,11 @@ export class CapabilityOrchestrator {
       // Register Discord UI capability for interactive components
       logger.info('📦 Registering discord-ui...');
       capabilityRegistry.register(discordUICapability);
+
+      // Register Ask Question capability - like Claude Code's AskUserQuestion tool
+      logger.info('📦 Registering ask-question...');
+      capabilityRegistry.register(askQuestionCapability);
+      logger.info('✅ ask-question registered successfully');
 
       // Register Discord Forums capability for forum traversal and GitHub sync
       logger.info('📦 Registering discord-forums...');

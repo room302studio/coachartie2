@@ -174,6 +174,12 @@ async function handleSlashCommand(interaction: ChatInputCommandInteraction) {
 async function handleButtonInteraction(interaction: ButtonInteraction) {
   const buttonText = (interaction.component as any)?.label || interaction.customId;
 
+  // Check if this is an ask-question response
+  if (interaction.customId.startsWith('ask_')) {
+    await handleAskQuestionResponse(interaction);
+    return;
+  }
+
   await interaction.deferReply();
 
   await processUserIntent({
@@ -202,6 +208,12 @@ async function handleSelectMenuInteraction(interaction: SelectMenuInteraction) {
   const selectedOption = interaction.component?.options?.find((opt) => opt.value === selectedValue);
   const selectedLabel = selectedOption?.label || selectedValue;
 
+  // Check if this is an ask-question response
+  if (interaction.customId.startsWith('ask_')) {
+    await handleAskQuestionResponse(interaction);
+    return;
+  }
+
   await interaction.deferReply();
 
   await processUserIntent({
@@ -223,4 +235,85 @@ async function handleSelectMenuInteraction(interaction: SelectMenuInteraction) {
       await interaction.editReply(`🔄 **${selectedLabel}**\n\n${status}`);
     },
   });
+}
+
+/**
+ * Handle ask-question capability responses
+ * When user clicks button or selects option from an ask-question prompt
+ */
+async function handleAskQuestionResponse(
+  interaction: ButtonInteraction | SelectMenuInteraction
+) {
+  const correlationId = generateCorrelationId();
+  const shortId = getShortCorrelationId(correlationId);
+
+  try {
+    // Extract the answer
+    let answer: string | string[];
+    let answerLabel: string;
+
+    if (interaction.isButton()) {
+      // Button: extract value from customId (format: ask_timestamp_value)
+      const parts = interaction.customId.split('_');
+      answer = parts.slice(2).join('_'); // Everything after "ask_timestamp"
+      answerLabel = (interaction.component as any)?.label || answer;
+    } else if (interaction.isStringSelectMenu()) {
+      // Select menu: can have multiple values
+      answer = interaction.values;
+      answerLabel = interaction.values
+        .map((val) => {
+          const opt = interaction.component?.options?.find((o) => o.value === val);
+          return opt?.label || val;
+        })
+        .join(', ');
+    } else {
+      throw new Error('Unsupported interaction type for ask-question');
+    }
+
+    logger.info(`Question answered [${shortId}]:`, {
+      correlationId,
+      userId: interaction.user.id,
+      customId: interaction.customId,
+      answer,
+      answerLabel,
+    });
+
+    // Acknowledge the interaction
+    await interaction.reply({
+      content: `✅ You selected: **${answerLabel}**`,
+      ephemeral: true,
+    });
+
+    telemetry.logEvent(
+      'ask_question_answered',
+      {
+        customId: interaction.customId,
+        answer: Array.isArray(answer) ? answer.join(',') : answer,
+      },
+      correlationId,
+      interaction.user.id
+    );
+
+    // TODO: Store the answer in a way that the capability orchestrator can retrieve it
+    // For now, this just acknowledges the response
+    // Future: Use Redis to store answer with customId as key
+
+  } catch (error) {
+    logger.error(`Failed to handle ask-question response [${shortId}]:`, {
+      correlationId,
+      error: error instanceof Error ? error.message : String(error),
+      customId: interaction.customId,
+    });
+
+    try {
+      if (!interaction.replied) {
+        await interaction.reply({
+          content: `❌ Failed to process your selection [${shortId}]`,
+          ephemeral: true,
+        });
+      }
+    } catch (replyError) {
+      logger.error('Failed to send error reply:', replyError);
+    }
+  }
 }

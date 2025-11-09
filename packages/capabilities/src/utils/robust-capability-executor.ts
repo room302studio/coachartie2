@@ -148,10 +148,7 @@ export class RobustCapabilityExecutor {
    * Interpolate variables in parameters using Handlebars template engine
    * Supports both ${var} and {{var}} syntax
    */
-  private interpolateParams(
-    params: Record<string, any>,
-    userId: string
-  ): Record<string, any> {
+  private interpolateParams(params: Record<string, any>, userId: string): Record<string, any> {
     const variableStore = VariableStore.getInstance();
     const interpolated: Record<string, any> = {};
 
@@ -234,7 +231,9 @@ export class RobustCapabilityExecutor {
         interpolatedContent = template(userVariables);
 
         if (interpolatedContent !== capability.content) {
-          logger.info(`🔗 Interpolated content: "${capability.content}" → "${interpolatedContent}"`);
+          logger.info(
+            `🔗 Interpolated content: "${capability.content}" → "${interpolatedContent}"`
+          );
         }
       } catch (error) {
         logger.warn(`⚠️ Content interpolation failed: ${error}`);

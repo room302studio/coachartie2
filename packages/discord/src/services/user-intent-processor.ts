@@ -465,7 +465,9 @@ export async function processUserIntent(
             if (trimmedResult !== trimmedSent && trimmedResult.length > trimmedSent.length) {
               try {
                 if (intent.editResponse) {
-                  logger.info(`📝 Calling editResponse with ${cleanResult.length} chars [${shortId}]`);
+                  logger.info(
+                    `📝 Calling editResponse with ${cleanResult.length} chars [${shortId}]`
+                  );
                   await intent.editResponse(cleanResult);
                   logger.info(`✅ Final edit completed [${shortId}]: ${cleanResult.length} chars`);
                 }
@@ -494,7 +496,9 @@ export async function processUserIntent(
             if (trimmedResult.length > trimmedSent.length + 20) {
               const additionalContent = trimmedResult.slice(trimmedSent.length).trim();
               if (additionalContent && !additionalContent.startsWith(trimmedSent.slice(-10))) {
-                logger.info(`📝 Sending additional content [${shortId}]: ${additionalContent.length} chars`);
+                logger.info(
+                  `📝 Sending additional content [${shortId}]: ${additionalContent.length} chars`
+                );
                 await intent.respond(additionalContent);
                 logger.info(
                   `✅ Sent additional final content [${shortId}]: ${additionalContent.slice(0, 50)}...`

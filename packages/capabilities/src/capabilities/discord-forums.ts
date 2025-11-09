@@ -56,7 +56,9 @@ const handler = async (params: any, content?: string): Promise<string> => {
   const action = params.action;
 
   logger.info(`🔍 Discord-forums handler: Raw params: ${JSON.stringify(params)}`);
-  logger.info(`🔍 Discord-forums handler: Normalized guildId="${guildId}", forumId="${forumId}", threadId="${threadId}", action="${action}"`);
+  logger.info(
+    `🔍 Discord-forums handler: Normalized guildId="${guildId}", forumId="${forumId}", threadId="${threadId}", action="${action}"`
+  );
 
   // Rebuild normalized params object
   const normalizedParams: DiscordForumsParams = {
@@ -327,7 +329,9 @@ async function getThread(params: DiscordForumsParams): Promise<string> {
   const { threadId } = params;
 
   if (!threadId) {
-    throw new Error('threadId is required for get-thread action. Example: <capability name="discord-forums" action="get-thread" data=\'{"threadId":"987654321"}\' />\n\nFirst, use list-threads to get available thread IDs.');
+    throw new Error(
+      'threadId is required for get-thread action. Example: <capability name="discord-forums" action="get-thread" data=\'{"threadId":"987654321"}\' />\n\nFirst, use list-threads to get available thread IDs.'
+    );
   }
 
   const response = await fetchWithTimeout(`${DISCORD_BASE_URL}/api/threads/${threadId}`);
@@ -424,7 +428,9 @@ async function getForumSummary(params: DiscordForumsParams): Promise<string> {
   const { forumId } = params;
 
   if (!forumId) {
-    throw new Error('forumId is required for get-forum-summary action. Example: <capability name="discord-forums" action="get-forum-summary" data=\'{"forumId":"123456789"}\' />\n\nFirst, use list-forums to get available forum IDs.');
+    throw new Error(
+      'forumId is required for get-forum-summary action. Example: <capability name="discord-forums" action="get-forum-summary" data=\'{"forumId":"123456789"}\' />\n\nFirst, use list-forums to get available forum IDs.'
+    );
   }
 
   const response = await fetchWithTimeout(`${DISCORD_BASE_URL}/api/forums/${forumId}/summary`);

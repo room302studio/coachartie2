@@ -13,7 +13,8 @@ import { RegisteredCapability } from '../services/capability-registry.js';
 import axios from 'axios';
 
 const DISCORD_API_BASE =
-  process.env.DISCORD_SERVICE_URL || 'http://localhost:' + (process.env.DISCORD_API_PORT || '47321');
+  process.env.DISCORD_SERVICE_URL ||
+  'http://localhost:' + (process.env.DISCORD_API_PORT || '47321');
 
 interface MentionProxyParams {
   action:
@@ -146,10 +147,9 @@ async function deleteProxyRule(ruleId: string) {
 }
 
 async function setProxyRuleEnabled(ruleId: string, enabled: boolean) {
-  const response = await axios.patch(
-    `${DISCORD_API_BASE}/api/mention-proxy/rules/${ruleId}`,
-    { enabled }
-  );
+  const response = await axios.patch(`${DISCORD_API_BASE}/api/mention-proxy/rules/${ruleId}`, {
+    enabled,
+  });
 
   return JSON.stringify(
     {

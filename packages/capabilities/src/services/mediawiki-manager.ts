@@ -61,7 +61,7 @@ export class MediaWikiManager {
           ? process.env.MEDIAWIKI_URL
           : `${process.env.MEDIAWIKI_URL}/api.php`,
         username: process.env.MEDIAWIKI_USERNAME,
-        botPassword: process.env.MEDIAWIKI_PASSWORD
+        botPassword: process.env.MEDIAWIKI_PASSWORD,
       };
 
       const client = new MediaWikiClient(defaultConfig);
@@ -96,8 +96,7 @@ export class MediaWikiManager {
       // Try fuzzy match
       if (!client) {
         for (const [name, wikiClient] of this.clients) {
-          if (name.includes(wikiHint.toLowerCase()) ||
-              wikiHint.toLowerCase().includes(name)) {
+          if (name.includes(wikiHint.toLowerCase()) || wikiHint.toLowerCase().includes(name)) {
             client = wikiClient;
             break;
           }
@@ -150,7 +149,12 @@ export class MediaWikiManager {
   /**
    * Get or add wiki dynamically
    */
-  async ensureWiki(name: string, url?: string, username?: string, password?: string): Promise<MediaWikiClient | null> {
+  async ensureWiki(
+    name: string,
+    url?: string,
+    username?: string,
+    password?: string
+  ): Promise<MediaWikiClient | null> {
     // Check if already exists
     let client = await this.getClient(name);
     if (client) return client;
@@ -162,7 +166,7 @@ export class MediaWikiManager {
         name: name,
         apiUrl: url.includes('/api.php') ? url : `${url}/api.php`,
         username: username,
-        botPassword: password
+        botPassword: password,
       };
 
       client = new MediaWikiClient(config);
@@ -195,7 +199,7 @@ export class MediaWikiManager {
       wikis.push({
         name,
         hasAuth: !!client.config.username,
-        isActive: name === this.lastUsedWiki
+        isActive: name === this.lastUsedWiki,
       });
     }
 
