@@ -56,7 +56,7 @@ export const shellCapability: RegisteredCapability = {
   name: 'shell',
   supportedActions: ['exec', 'send', 'read', 'split', 'list'],
   description:
-    'Execute shell commands in a sandboxed Debian container. Artie has full access to a persistent Linux environment with git, gh, jq, curl, npm, python, and more. Supports both one-shot execution (action=exec) and persistent tmux sessions (action=send/read/split/list) for stateful workflows where directory changes and environment persist between commands.',
+    'Execute shell commands in a sandboxed Debian container. Artie has full access to a persistent Linux environment with git, gh, jq, curl, npm, python, and more. Supports both one-shot execution (action=exec) and persistent tmux sessions (action=send/read/split/list) for stateful workflows where directory changes and environment persist between commands. Use Unix patterns (cat, heredoc, sed, grep) for file operations - results are returned but NOT echoed to Discord when using action=exec.',
   requiredParams: [],
   examples: [
     // One-shot execution (simple commands)
@@ -70,6 +70,64 @@ export const shellCapability: RegisteredCapability = {
 
     // GitHub CLI (gh is authenticated)
     '<capability name="shell" action="exec" command="gh repo list anthropics --limit 5"></capability>',
+
+    // === FILE OPERATIONS (Unix patterns) ===
+
+    // Read a file
+    '<capability name="shell" action="exec" command="cat /workspace/my-project/index.js"></capability>',
+
+    // Read specific lines from a file
+    '<capability name="shell" action="exec" command="head -n 20 /workspace/my-project/README.md"></capability>',
+    '<capability name="shell" action="exec" command="tail -n 50 /workspace/my-project/server.log"></capability>',
+
+    // Search in files (grep)
+    '<capability name="shell" action="exec" command="grep -r \\\"TODO\\\" /workspace/my-project/src/"></capability>',
+    '<capability name="shell" action="exec" command="grep -n \\\"function\\\" /workspace/my-project/index.js"></capability>',
+
+    // Write a simple file (one-liner)
+    '<capability name="shell" action="exec" command="echo \\\"console.log(\'hello\');\\\" > /workspace/test.js"></capability>',
+
+    // Write multi-line file with heredoc (for code files)
+    // NOTE: Use action=exec so command/content doesn\'t get sent to Discord
+    `<capability name="shell" action="exec" command="cat > /workspace/my-project/app.js << 'ENDOFFILE'
+const express = require('express');
+const app = express();
+
+app.get('/', (req, res) => {
+  res.json({ message: 'Hello World' });
+});
+
+app.listen(3000, () => {
+  console.log('Server running on port 3000');
+});
+ENDOFFILE"></capability>`,
+
+    // Append to a file
+    '<capability name="shell" action="exec" command="echo \\\"# New section\\\" >> /workspace/README.md"></capability>',
+
+    // Edit file in place with sed
+    '<capability name="shell" action="exec" command="sed -i \\\"s/old-text/new-text/g\\\" /workspace/config.js"></capability>',
+    '<capability name="shell" action="exec" command="sed -i \\\"/TODO/d\\\" /workspace/notes.txt"></capability>',
+
+    // List directory contents
+    '<capability name="shell" action="exec" command="ls -lah /workspace/my-project/"></capability>',
+    '<capability name="shell" action="exec" command="find /workspace/my-project -name \'*.js\' -type f"></capability>',
+
+    // Check if file exists
+    '<capability name="shell" action="exec" command="test -f /workspace/package.json && echo \\\"exists\\\" || echo \\\"not found\\\""></capability>',
+
+    // Create directory
+    '<capability name="shell" action="exec" command="mkdir -p /workspace/my-project/src/components"></capability>',
+
+    // Copy/move files
+    '<capability name="shell" action="exec" command="cp /workspace/template.js /workspace/my-project/index.js"></capability>',
+    '<capability name="shell" action="exec" command="mv /workspace/old-name.js /workspace/new-name.js"></capability>',
+
+    // Delete files (careful!)
+    '<capability name="shell" action="exec" command="rm /workspace/temp-file.txt"></capability>',
+    '<capability name="shell" action="exec" command="rm -rf /workspace/old-project/"></capability>',
+
+    // === PERSISTENT SESSION EXAMPLES ===
 
     // Persistent session - send command
     '<capability name="shell" action="send" session="artie-main" command="cd /workspace && mkdir my-project && cd my-project"></capability>',
