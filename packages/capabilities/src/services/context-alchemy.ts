@@ -957,7 +957,7 @@ Available: web, calculator, memory`;
   private async addDiscordEnvironment(sources: ContextSource[]): Promise<void> {
     try {
       // Fetch Discord health info from the health server
-      const response = await fetch('http://localhost:47319/health');
+      const response = await fetch('http://discord:47319/health');
       if (!response.ok) {
         if (DEBUG) {
           logger.info('│ ⚠️  Discord health endpoint not available');

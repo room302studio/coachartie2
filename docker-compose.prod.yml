@@ -95,6 +95,7 @@ services:
       dockerfile: ./packages/discord/Dockerfile
     container_name: coachartie-discord-prod
     ports:
+      - "0.0.0.0:47319:47319"
       - "0.0.0.0:47321:47321"
     env_file:
       - .env.production
