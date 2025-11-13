@@ -12,8 +12,8 @@ const router: Router = Router();
 interface ChatRequest {
   message: string;
   userId?: string;
-  context?: Record<string, any>; // Discord context including guildId, channelId
-  source?: string; // Optional: specify 'discord' to enable Discord-specific features like UI modality rules
+  context?: Record<string, any>; // Platform context including Discord (guildId, channelId) or Slack (channelId, channelType)
+  source?: string; // Optional: specify 'discord' or 'slack' to enable platform-specific features like UI modality rules
 }
 
 interface ChatResponse {
@@ -85,7 +85,7 @@ router.post('/', rateLimiter(50, 60000), async (req: Request, res: Response) => 
     logger.info(`Processing chat message from ${userId}: ${message.substring(0, 100)}...`);
 
     // Create message object for processing
-    const messageSource = source === 'discord' ? 'discord' : 'api';
+    const messageSource = source === 'discord' ? 'discord' : source === 'slack' ? 'slack' : 'api';
     const incomingMessage: IncomingMessage = {
       id: messageId,
       timestamp: new Date(),
@@ -93,7 +93,7 @@ router.post('/', rateLimiter(50, 60000), async (req: Request, res: Response) => 
       source: messageSource,
       userId,
       message: message.trim(),
-      context: context || {}, // Pass Discord context through
+      context: context || {}, // Pass platform context (Discord/Slack) through
       respondTo: {
         type: 'api' as const,
         apiResponseId: messageId,

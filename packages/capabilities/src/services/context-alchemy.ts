@@ -31,6 +31,35 @@ When explaining, answering questions, or providing information (no user choice n
 ⚠️ IMPORTANT: When response structure requires UI, ALWAYS use the capability above. Don't ask for confirmation - just use it.
 `;
 
+// Slack UI Modality Rules - loaded from database at runtime
+// Legacy fallback for backward compatibility
+const SLACK_UI_MODALITY_RULES_FALLBACK = `
+💬 SLACK INTERACTION GUIDELINES:
+
+SLACK CONTEXT AWARENESS:
+You are currently in a Slack workspace. Slack has different UI capabilities than Discord.
+
+FORMATTING FOR SLACK:
+- Use *bold* for emphasis
+- Use _italic_ for subtle emphasis
+- Use \`code\` for inline code
+- Use \`\`\`code blocks\`\`\` for multi-line code
+- Use > for quotes
+- Use • or - for bullet points
+
+MESSAGE THREADING:
+- Slack conversations often happen in threads
+- Keep responses concise and focused
+- Use threads to organize longer conversations
+
+SLACK-SPECIFIC FEATURES:
+- Reactions: Users can react with emoji
+- Mentions: Use @username to mention users
+- Channels: Messages in channels are visible to all members
+
+⚠️ IMPORTANT: Format your responses for optimal Slack readability. Be concise and use Slack markdown formatting.
+`;
+
 interface ContextSource {
   name: string;
   priority: number;
@@ -297,6 +326,9 @@ Important:
 
     // Discord situational awareness - explicit "where am I" context
     await this.addDiscordSituationalAwareness(message, sources);
+
+    // Slack situational awareness - explicit "where am I" context for Slack
+    await this.addSlackSituationalAwareness(message, sources);
 
     // Goal whisper from Conscience - high-level intent/guidance
     await this.addGoalWhisper(message, sources);
@@ -576,6 +608,62 @@ Important:
   }
 
   /**
+   * Add explicit Slack situational awareness - tells the LLM WHERE it is
+   * "You are in Slack channel #X, talking to @user"
+   */
+  private async addSlackSituationalAwareness(
+    message: IncomingMessage,
+    sources: ContextSource[]
+  ): Promise<void> {
+    // Only for Slack messages with context
+    const ctx = message.context;
+    if (!ctx || (message.source !== 'slack' && ctx.platform !== 'slack')) {
+      return;
+    }
+
+    const parts: string[] = [];
+
+    // Location: Channel ID and type
+    if (ctx.channelId) {
+      const channelType = ctx.channelType || 'channel';
+      if (channelType === 'im') {
+        parts.push(`📍 Slack direct message`);
+      } else if (channelType === 'mpim') {
+        parts.push(`📍 Slack group direct message`);
+      } else {
+        parts.push(`📍 Slack channel (${ctx.channelId})`);
+      }
+    }
+
+    // User info
+    if (ctx.username) {
+      parts.push(`👤 Talking to: @${ctx.username}`);
+    }
+
+    // Thread context (if applicable)
+    if (ctx.isThread && ctx.threadTs) {
+      parts.push(`💬 Thread conversation (ts: ${ctx.threadTs})`);
+    }
+
+    // Build final content
+    if (parts.length > 0) {
+      const content = parts.join('\n');
+
+      sources.push({
+        name: 'slack_situational',
+        priority: 98, // Very high - right after temporal
+        tokenWeight: Math.ceil(content.length / 4),
+        content,
+        category: 'user_state',
+      });
+
+      if (DEBUG) {
+        logger.info(`│ ✅ Added Slack situational awareness: ${ctx.channelType || 'channel'}/${ctx.channelId}`);
+      }
+    }
+  }
+
+  /**
    * Add goal whisper to message context (matches assembleMessagePreamble pattern)
    */
   private async addGoalWhisper(message: IncomingMessage, sources: ContextSource[]): Promise<void> {
@@ -659,24 +747,26 @@ Important:
   /**
    * Add channel vibes - the social context of the room
    * Helps the LLM understand channel activity, type, and adjust response style
+   * Works for both Discord and Slack
    */
   private async addChannelVibes(
     message: IncomingMessage,
     sources: ContextSource[]
   ): Promise<void> {
     try {
-      // Only for Discord messages with context
-      const discordContext = message.context;
-      if (!discordContext || message.source !== 'discord') {
+      // Only for Discord or Slack messages with context
+      const messageContext = message.context;
+      if (!messageContext || (message.source !== 'discord' && message.source !== 'slack' && messageContext.platform !== 'slack')) {
         return;
       }
 
       // Import database for recent activity check
       const { database } = await import('./database.js');
 
-      const channelId = discordContext.channelId;
-      const channelName = discordContext.channelName || 'unknown';
-      const channelType = discordContext.channelType || 'text';
+      const channelId = messageContext.channelId;
+      const channelName = messageContext.channelName || messageContext.channelId || 'unknown';
+      const channelType = messageContext.channelType || 'text';
+      const platform = message.source === 'slack' || messageContext.platform === 'slack' ? 'Slack' : 'Discord';
 
       // Get recent activity in this channel (last 10 minutes)
       const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();
@@ -707,6 +797,7 @@ Important:
       // Static delivery instructions belong in PROMPT_SYSTEM database prompt
       const vibes = [
         `CHANNEL CONTEXT:`,
+        `- Platform: ${platform}`,
         `- Name: ${channelName}`,
         `- Type: ${channelType}`,
         `- Activity: ${activityLevel} (${messageCount} msgs in last 10 min)`,
@@ -724,7 +815,7 @@ Important:
       });
 
       if (DEBUG) {
-        logger.info(`│ ✅ Channel vibes: ${channelName} (${activityLevel}, ${messageCount} recent msgs)`);
+        logger.info(`│ ✅ Channel vibes (${platform}): ${channelName} (${activityLevel}, ${messageCount} recent msgs)`);
       }
     } catch (error) {
       logger.warn('Failed to add channel vibes:', error);
@@ -1075,7 +1166,7 @@ Available: web, calculator, memory`;
       systemContent += `\n\n${contextByCategory.capabilities[0].content}`;
     }
 
-    // Add UI modality rules only for Discord messages (from database)
+    // Add UI modality rules for Discord messages (from database)
     if (source === 'discord') {
       try {
         const { promptManager } = await import('./prompt-manager.js');
@@ -1085,6 +1176,22 @@ Available: web, calculator, memory`;
       } catch (error) {
         logger.warn('Failed to load Discord UI modality prompt, using fallback');
         systemContent += `\n\n${UI_MODALITY_RULES_FALLBACK}`;
+      }
+    }
+
+    // Add UI modality rules for Slack messages (from database)
+    if (source === 'slack') {
+      try {
+        const { promptManager } = await import('./prompt-manager.js');
+        const slackPrompt = await promptManager.getPrompt('PROMPT_SLACK_UI_MODALITY');
+        const slackRules = slackPrompt?.content || SLACK_UI_MODALITY_RULES_FALLBACK;
+        systemContent += `\n\n${slackRules}`;
+        if (DEBUG) {
+          logger.info('│ ✅ Added Slack UI modality rules to system prompt');
+        }
+      } catch (error) {
+        logger.warn('Failed to load Slack UI modality prompt, using fallback');
+        systemContent += `\n\n${SLACK_UI_MODALITY_RULES_FALLBACK}`;
       }
     }
 

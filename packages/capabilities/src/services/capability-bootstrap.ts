@@ -20,6 +20,7 @@ import { goalCapability } from '../capabilities/goal.js';
 import { variableStoreCapability } from '../capabilities/variable-store.js';
 import { todoCapability } from '../capabilities/todo.js';
 import { discordUICapability } from '../capabilities/discord-ui.js';
+import { slackUICapability } from '../capabilities/slack-ui.js';
 import { askQuestionCapability } from '../capabilities/ask-question.js';
 import { discordForumsCapability } from '../capabilities/discord-forums.js';
 import { mentionProxyCapability } from '../capabilities/mention-proxy.js';
@@ -126,6 +127,11 @@ export class CapabilityBootstrap {
       // Register Discord UI capability for interactive components
       logger.info('📦 Registering discord-ui...');
       capabilityRegistry.register(discordUICapability);
+
+      // Register Slack UI capability for interactive Block Kit components
+      logger.info('📦 Registering slack-ui...');
+      capabilityRegistry.register(slackUICapability);
+      logger.info('✅ slack-ui registered successfully');
 
       // Register Ask Question capability - like Claude Code's AskUserQuestion tool
       logger.info('📦 Registering ask-question...');

@@ -211,10 +211,12 @@ export async function startMessageConsumer() {
   return worker;
 }
 
-function getOutgoingQueueName(type: 'discord' | 'sms' | 'email' | 'api'): string {
+function getOutgoingQueueName(type: 'discord' | 'slack' | 'sms' | 'email' | 'api'): string {
   switch (type) {
     case 'discord':
       return QUEUES.OUTGOING_DISCORD;
+    case 'slack':
+      return QUEUES.OUTGOING_SLACK;
     case 'sms':
       return QUEUES.OUTGOING_SMS;
     case 'email':
