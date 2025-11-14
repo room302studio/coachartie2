@@ -283,8 +283,10 @@ create_env_file() {
 
 OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-""}
 OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
-OPENROUTER_MODELS=anthropic/claude-3.5-sonnet
-FAST_MODEL=anthropic/claude-3-haiku
+OPENROUTER_MODELS=google/gemini-2.5-flash,anthropic/claude-3.5-sonnet
+FAST_MODEL=google/gemini-2.5-flash
+SMART_MODEL=anthropic/claude-3.5-sonnet
+MANAGER_MODEL=anthropic/claude-3-opus
 
 DISCORD_TOKEN=${DISCORD_TOKEN:-""}
 DISCORD_CLIENT_ID=${DISCORD_CLIENT_ID:-""}
@@ -324,9 +326,12 @@ SMS_PORT=47326
 BRAIN_PORT=47325
 
 # Learning & Memory
-ENABLE_AUTO_REFLECTION=true
+ENABLE_AUTO_REFLECTION=false
 CONTEXT_WINDOW_SIZE=8000
 CONTEXT_ALCHEMY_DEBUG=false
+
+# Guild Whitelist - Room 302 only (not Subway Builder)
+DISCORD_GUILD_WHITELIST=932719842522443928
 EOF
     print_status "✓ Production environment file created (.env.production)"
 }
