@@ -19,7 +19,7 @@ import {
   getShortCorrelationId,
 } from '../utils/correlation.js';
 import { processUserIntent } from '../services/user-intent-processor.js';
-import { isGuildWhitelisted, isWorkingGuild } from '../config/guild-whitelist.js';
+import { isGuildWhitelisted, isWorkingGuild, getGuildConfig } from '../config/guild-whitelist.js';
 import { getConversationState } from '../services/conversation-state.js';
 import { getGitHubIntegration } from '../services/github-integration.js';
 import { getForumTraversal } from '../services/forum-traversal.js';
@@ -521,9 +521,25 @@ export function setupMessageHandler(client: Client) {
 
     // Check guild whitelist - only process messages from whitelisted guilds
     if (message.guildId && !isGuildWhitelisted(message.guildId)) {
-      logger.debug(
-        `🚫 Ignoring message from non-whitelisted guild: ${message.guildId} [${shortId}]`
-      );
+      // Check if this is a "watching" guild for passive observation
+      const guildConfig = getGuildConfig(message.guildId);
+      if (guildConfig?.type === 'watching') {
+        logger.debug(
+          `👁️ Observing message from watching guild: ${guildConfig.name} [${shortId}]`
+        );
+
+        // Import and call observational learning service
+        try {
+          const { observationalLearning } = await import('../services/observational-learning.js');
+          await observationalLearning.observeMessage(message);
+        } catch (error) {
+          logger.warn(`Failed to observe message: ${error}`);
+        }
+      } else {
+        logger.debug(
+          `🚫 Ignoring message from non-whitelisted guild: ${message.guildId} [${shortId}]`
+        );
+      }
       return;
     }
 

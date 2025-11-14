@@ -98,6 +98,43 @@ app.use('/api/memories', memoriesRouter);
 app.use('/api/models', modelsRouter);
 app.use('/logs', logsRouter);
 
+// Observational learning endpoint
+app.post('/api/observe', async (req, res) => {
+  try {
+    const { prompt, guildId, channelId, messageCount, timeRange } = req.body;
+
+    if (!prompt) {
+      return res.status(400).json({ error: 'Prompt is required' });
+    }
+
+    // Import observation handler
+    const { observationHandler } = await import('./services/observation-handler.js');
+
+    // Generate summary
+    const result = await observationHandler.generateObservationSummary(
+      prompt,
+      { guildId, channelId, messageCount, timeRange }
+    );
+
+    res.json(result);
+  } catch (error) {
+    logger.error('Observation endpoint error:', error);
+    res.status(500).json({ error: 'Failed to process observation' });
+  }
+});
+
+// Observation stats endpoint
+app.get('/api/observe/stats', async (req, res) => {
+  try {
+    const { observationHandler } = await import('./services/observation-handler.js');
+    const stats = await observationHandler.getObservationStats();
+    res.json(stats);
+  } catch (error) {
+    logger.error('Observation stats error:', error);
+    res.status(500).json({ error: 'Failed to get observation stats' });
+  }
+});
+
 // Start queue consumers and scheduler
 async function startQueueWorkers() {
   try {
