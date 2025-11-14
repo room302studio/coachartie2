@@ -68,11 +68,14 @@ export const githubCapability: RegisteredCapability = {
 };
 
 const githubActions = {
-  get_releases: async (params: { repo: string; limit?: number }) => {
+  get_releases: async (params: { repo?: string; query?: string; limit?: number }) => {
     try {
-      logger.info(`📦 Fetching releases for ${params.repo}`);
+      // Support both 'repo' and 'query' parameters for flexibility
+      const repoName = params.repo || params.query;
 
-      if (!params.repo) {
+      logger.info(`📦 Fetching releases for ${repoName}`);
+
+      if (!repoName) {
         throw new Error(
           'Missing required parameter "repo". Example: <capability name="github" action="get_releases" repo="owner/repository" />'
         );
@@ -82,7 +85,7 @@ const githubActions = {
         throw new Error('GITHUB_TOKEN not configured. Set GITHUB_TOKEN environment variable.');
       }
 
-      const response = await fetch(`https://api.github.com/repos/${params.repo}/releases`, {
+      const response = await fetch(`https://api.github.com/repos/${repoName}/releases`, {
         headers: {
           Authorization: `Bearer ${process.env.GITHUB_TOKEN}`,
           Accept: 'application/vnd.github.v3+json',
@@ -100,7 +103,7 @@ const githubActions = {
       return {
         success: true,
         data: {
-          repository: params.repo,
+          repository: repoName,
           releases: limitedReleases.map((release: GitHubRelease) => ({
             tag_name: release.tag_name,
             name: release.name,
@@ -119,16 +122,25 @@ const githubActions = {
     }
   },
 
-  get_recent_commits: async (params: { repo: string; limit?: number }) => {
+  get_recent_commits: async (params: { repo?: string; query?: string; limit?: number }) => {
     try {
-      logger.info(`📝 Fetching recent commits for ${params.repo}`);
+      // Support both 'repo' and 'query' parameters for flexibility
+      const repoName = params.repo || params.query;
+
+      logger.info(`📝 Fetching recent commits for ${repoName}`);
+
+      if (!repoName) {
+        throw new Error(
+          'Missing required parameter "repo". Example: <capability name="github" action="get_recent_commits" repo="owner/repository" />'
+        );
+      }
 
       if (!process.env.GITHUB_TOKEN) {
         throw new Error('GITHUB_TOKEN not configured');
       }
 
       const response = await fetch(
-        `https://api.github.com/repos/${params.repo}/commits?sha=main&per_page=${params.limit || 10}`,
+        `https://api.github.com/repos/${repoName}/commits?sha=main&per_page=${params.limit || 10}`,
         {
           headers: {
             Authorization: `Bearer ${process.env.GITHUB_TOKEN}`,
@@ -147,7 +159,7 @@ const githubActions = {
       return {
         success: true,
         data: {
-          repository: params.repo,
+          repository: repoName,
           commits: commits.map((commit: GitHubCommit) => ({
             sha: commit.sha.substring(0, 7),
             message: commit.commit.message,
@@ -164,11 +176,14 @@ const githubActions = {
     }
   },
 
-  get_deployment_stats: async (params: { repo: string; days?: number }) => {
+  get_deployment_stats: async (params: { repo?: string; query?: string; days?: number }) => {
     try {
-      logger.info(`📊 Fetching deployment stats for ${params.repo}`);
+      // Support both 'repo' and 'query' parameters for flexibility
+      const repoName = params.repo || params.query;
 
-      if (!params.repo) {
+      logger.info(`📊 Fetching deployment stats for ${repoName}`);
+
+      if (!repoName) {
         throw new Error(
           'Missing required parameter "repo". Example: <capability name="github" action="get_deployment_stats" repo="owner/repository" />'
         );
@@ -183,7 +198,7 @@ const githubActions = {
 
       // Get commits in the time period
       const commitsResponse = await fetch(
-        `https://api.github.com/repos/${params.repo}/commits?sha=main&since=${since}`,
+        `https://api.github.com/repos/${repoName}/commits?sha=main&since=${since}`,
         {
           headers: {
             Authorization: `Bearer ${process.env.GITHUB_TOKEN}`,
@@ -194,7 +209,7 @@ const githubActions = {
       );
 
       // Get releases in the time period
-      const releasesResponse = await fetch(`https://api.github.com/repos/${params.repo}/releases`, {
+      const releasesResponse = await fetch(`https://api.github.com/repos/${repoName}/releases`, {
         headers: {
           Authorization: `Bearer ${process.env.GITHUB_TOKEN}`,
           Accept: 'application/vnd.github.v3+json',
@@ -222,7 +237,7 @@ const githubActions = {
       return {
         success: true,
         data: {
-          repository: params.repo,
+          repository: repoName,
           period_days: days,
           stats: {
             total_commits: commits.length,
@@ -297,20 +312,23 @@ const githubActions = {
     }
   },
 
-  list_issues: async (params: { repo: string; state?: string; limit?: number }) => {
+  list_issues: async (params: { repo?: string; query?: string; state?: string; limit?: number }) => {
     try {
-      logger.info(`📋 Fetching issues for ${params.repo}`);
+      // Support both 'repo' and 'query' parameters for flexibility
+      const repoName = params.repo || params.query;
 
-      if (!params.repo) {
+      logger.info(`📋 Fetching issues for ${repoName}`);
+
+      if (!repoName) {
         throw new Error(
           'Missing required parameter "repo". Example: <capability name="github" action="list_issues" repo="owner/repository" state="open" />\n\nThe repo must be in "owner/repository" format. Use search_repositories first if you don\'t know the full path.'
         );
       }
 
       // Validate repo format
-      if (!params.repo.includes('/')) {
+      if (!repoName.includes('/')) {
         throw new Error(
-          `Invalid repo format: "${params.repo}". The repo parameter must be in "owner/repository" format (e.g., "owner/SubwayBuilder").\n\nTip: Use search_repositories to find the correct repository path.\nExample: <capability name="github" action="search_repositories" query="subway builder" />`
+          `Invalid repo format: "${repoName}". The repo parameter must be in "owner/repository" format (e.g., "owner/SubwayBuilder").\n\nTip: Use search_repositories to find the correct repository path.\nExample: <capability name="github" action="search_repositories" query="subway builder" />`
         );
       }
 
@@ -322,7 +340,7 @@ const githubActions = {
       const limit = params.limit || 30;
 
       const response = await fetch(
-        `https://api.github.com/repos/${params.repo}/issues?state=${state}&per_page=${limit}`,
+        `https://api.github.com/repos/${repoName}/issues?state=${state}&per_page=${limit}`,
         {
           headers: {
             Authorization: `Bearer ${process.env.GITHUB_TOKEN}`,
@@ -335,7 +353,7 @@ const githubActions = {
       if (!response.ok) {
         if (response.status === 404) {
           throw new Error(
-            `Repository "${params.repo}" not found. Make sure the repository path is correct and you have access to it.\n\nTip: Use search_repositories to find the correct repository path.\nExample: <capability name="github" action="search_repositories" query="subway builder" />`
+            `Repository "${repoName}" not found. Make sure the repository path is correct and you have access to it.\n\nTip: Use search_repositories to find the correct repository path.\nExample: <capability name="github" action="search_repositories" query="subway builder" />`
           );
         }
         throw new Error(`GitHub API error: ${response.status} ${response.statusText}`);
@@ -346,7 +364,7 @@ const githubActions = {
       return {
         success: true,
         data: {
-          repository: params.repo,
+          repository: repoName,
           state: state,
           total_count: issues.length,
           issues: issues.map((issue: any) => ({
