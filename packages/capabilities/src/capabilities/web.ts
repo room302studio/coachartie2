@@ -20,12 +20,16 @@ export const webCapability: RegisteredCapability = {
   name: 'web',
   supportedActions: ['search', 'fetch'],
   description:
-    'Performs web searches for real-time information including stock prices, news, current events, product info, and general queries. Can also fetch content from specific URLs.',
+    'Real-time web search and content retrieval engine. Excels at finding: current stock prices and financial news, breaking news and current events, product reviews and comparisons, company announcements, technical documentation, restaurant/business information, and any time-sensitive or recently published information. Use for queries requiring the latest available data from across the internet. Can also fetch and extract content from specific URLs.',
   examples: [
     '<capability name="web" action="search" query="AAPL stock price today" />',
-    '<capability name="web" action="search" query="latest news about Tesla" />',
-    '<capability name="web" action="search" query="React onboarding libraries 2024" />',
-    '<capability name="web" action="search" query="best restaurants in Brooklyn" />',
+    '<capability name="web" action="search" query="NVIDIA earnings report Q4 2024" />',
+    '<capability name="web" action="search" query="latest Tesla news today" />',
+    '<capability name="web" action="search" query="Bitcoin price prediction 2024" />',
+    '<capability name="web" action="search" query="OpenAI GPT-5 release date" />',
+    '<capability name="web" action="search" query="React 19 new features" />',
+    '<capability name="web" action="search" query="best restaurants in Brooklyn 2024" />',
+    '<capability name="web" action="search" query="TypeScript 5.5 changelog" />',
     '<capability name="web" action="fetch" url="https://example.com/article" />',
   ],
   handler: async (params, content) => {
