@@ -25,6 +25,14 @@ RUN pnpm --filter "@coachartie/discord" run build
 # Create data and logs directories
 RUN mkdir -p /app/data /app/logs
 
+# Create non-root user and set ownership
+RUN addgroup -g 1000 artie && \
+    adduser -D -u 1000 -G artie artie && \
+    chown -R artie:artie /app
+
+# Switch to non-root user
+USER artie
+
 # Set working directory to discord package
 WORKDIR /app/packages/discord
 

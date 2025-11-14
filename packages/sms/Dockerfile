@@ -28,6 +28,14 @@ WORKDIR /app/packages/sms
 # Create logs directory
 RUN mkdir -p /app/logs
 
+# Create non-root user and set ownership
+RUN addgroup -g 1000 artie && \
+    adduser -D -u 1000 -G artie artie && \
+    chown -R artie:artie /app
+
+# Switch to non-root user
+USER artie
+
 # Expose the port
 EXPOSE 47326
 
