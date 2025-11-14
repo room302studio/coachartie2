@@ -75,6 +75,7 @@ services:
     build:
       context: .
       dockerfile: ./packages/discord/Dockerfile
+    user: "1000:1000"
     ports:
       - "127.0.0.1:47321:47321"  # Same port internally and externally
     environment:
@@ -104,6 +105,7 @@ services:
     build:
       context: .
       dockerfile: ./packages/sms/Dockerfile
+    user: "1000:1000"
     ports:
       - "127.0.0.1:47326:47326"  # Bind to localhost only
     environment:

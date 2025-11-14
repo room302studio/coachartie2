@@ -14,7 +14,7 @@ services:
       --save 900 1
       --appendfsync everysec
     ports:
-      - "0.0.0.0:47320:47320"
+      - "127.0.0.1:47320:47320"  # Localhost only - no public access
     volumes:
       - redis-data:/data
     healthcheck:
@@ -44,8 +44,9 @@ services:
       context: .
       dockerfile: ./packages/capabilities/Dockerfile
     container_name: coachartie-capabilities-prod
+    user: "1000:1000"
     ports:
-      - "0.0.0.0:47324:47324"
+      - "127.0.0.1:47324:47324"  # Localhost only - no public access
     env_file:
       - .env.production
     environment:
@@ -94,9 +95,10 @@ services:
       context: .
       dockerfile: ./packages/discord/Dockerfile
     container_name: coachartie-discord-prod
+    user: "1000:1000"
     ports:
-      - "0.0.0.0:47319:47319"
-      - "0.0.0.0:47321:47321"
+      - "127.0.0.1:47319:47319"  # Localhost only - no public access
+      - "127.0.0.1:47321:47321"  # Localhost only - no public access
     env_file:
       - .env.production
     environment:
@@ -150,8 +152,9 @@ services:
       context: .
       dockerfile: ./packages/sms/Dockerfile
     container_name: coachartie-sms-prod
+    user: "1000:1000"
     ports:
-      - "0.0.0.0:47326:47326"
+      - "127.0.0.1:47326:47326"  # Localhost only - no public access
     env_file:
       - .env.production
     environment:
@@ -199,8 +202,9 @@ services:
       context: .
       dockerfile: ./packages/brain/Dockerfile
     container_name: coachartie-brain-prod
+    user: "1000:1000"
     ports:
-      - "0.0.0.0:47325:47325"
+      - "127.0.0.1:47325:47325"  # Localhost only - no public access
     env_file:
       - .env.production
     environment:

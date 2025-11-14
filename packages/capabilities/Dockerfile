@@ -8,8 +8,10 @@ RUN npm install -g pnpm && apk add --no-cache curl
 
 # Copy package files and install dependencies
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.json ./
-COPY packages/shared ./packages/shared
-COPY packages/capabilities/package.json ./packages/capabilities/
+COPY packages/shared/tsconfig.json ./packages/shared/tsconfig.json
+COPY packages/shared/package.json ./packages/shared/package.json
+COPY packages/shared/src ./packages/shared/src
+COPY packages/capabilities ./packages/capabilities
 
 # Install all workspace dependencies
 RUN pnpm install --filter "@coachartie/capabilities" --filter "@coachartie/shared"
@@ -17,17 +19,18 @@ RUN pnpm install --filter "@coachartie/capabilities" --filter "@coachartie/share
 # Build shared package first
 RUN pnpm --filter "@coachartie/shared" run build
 
-# Copy capabilities source
-COPY packages/capabilities ./packages/capabilities
-
 # Build capabilities
 RUN pnpm --filter "@coachartie/capabilities" run build
 
 # Set working directory to capabilities package
 WORKDIR /app/packages/capabilities
 
-# Create data and logs directories
-RUN mkdir -p /app/data /app/logs
+# Create data and logs directories and set ownership for node user
+RUN mkdir -p /app/data /app/logs && \
+    chown -R node:node /app
+
+# Switch to non-root user (node user already exists in base image as UID 1000)
+USER node
 
 # Expose the port
 EXPOSE 47324
