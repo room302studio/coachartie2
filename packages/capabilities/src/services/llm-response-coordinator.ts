@@ -257,7 +257,7 @@ Please provide a helpful response to the user that:
           );
 
           const model = process.env.SMART_MODEL || 'openai/gpt-4o';
-          const response = await this.llmService.generateResponse(messages, context.userId, {
+          const response = await openRouterService.generateResponse(messages, context.userId, {
             specificModel: model,
           });
 
