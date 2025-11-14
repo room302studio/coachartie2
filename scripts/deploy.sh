@@ -283,10 +283,10 @@ create_env_file() {
 
 OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-""}
 OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
-OPENROUTER_MODELS=google/gemini-2.5-flash,anthropic/claude-3.5-sonnet
-FAST_MODEL=google/gemini-2.5-flash
-SMART_MODEL=anthropic/claude-3.5-sonnet
-MANAGER_MODEL=anthropic/claude-3-opus
+OPENROUTER_MODELS=openai/gpt-4o-mini,openai/gpt-4o,anthropic/claude-3.5-sonnet,google/gemini-2.0-flash-exp:free
+FAST_MODEL=openai/gpt-4o-mini
+SMART_MODEL=openai/gpt-4o
+MANAGER_MODEL=anthropic/claude-3.5-sonnet
 
 DISCORD_TOKEN=${DISCORD_TOKEN:-""}
 DISCORD_CLIENT_ID=${DISCORD_CLIENT_ID:-""}
@@ -326,7 +326,7 @@ SMS_PORT=47326
 BRAIN_PORT=47325
 
 # Learning & Memory
-ENABLE_AUTO_REFLECTION=false
+ENABLE_AUTO_REFLECTION=true
 CONTEXT_WINDOW_SIZE=8000
 CONTEXT_ALCHEMY_DEBUG=false
 
