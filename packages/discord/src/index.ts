@@ -40,6 +40,7 @@ import { initializeForumTraversal } from './services/forum-traversal.js';
 import { initializeGitHubIntegration } from './services/github-integration.js';
 import { initializeConversationState } from './services/conversation-state.js';
 import { initializeMentionProxyService } from './services/mention-proxy-service.js';
+import { observationalLearning } from './services/observational-learning.js';
 import './queues/outgoing-consumer.js';
 
 export const client = new Client({
@@ -180,6 +181,17 @@ async function start() {
         console.error('❌ GitHub integration init failed:', error);
       }
 
+      // Initialize observational learning
+      try {
+        console.log('🔧 Initializing observational learning...');
+        observationalLearning.initialize(client);
+        logger.info('✅ Observational learning enabled');
+        console.log('✅ Observational learning enabled');
+      } catch (error) {
+        logger.warn('Failed to initialize observational learning:', error);
+        console.error('❌ Observational learning init failed:', error);
+      }
+
       writeStatus('ready', {
         username: client.user?.tag,
         guilds: client.guilds.cache.size,
@@ -245,6 +257,7 @@ process.on('SIGTERM', async () => {
   healthServer.stop();
   apiServer.stop();
   jobMonitor.stopMonitoring();
+  observationalLearning.shutdown();
   client.destroy();
   process.exit(0);
 });
@@ -257,6 +270,7 @@ process.on('SIGINT', async () => {
   healthServer.stop();
   apiServer.stop();
   jobMonitor.stopMonitoring();
+  observationalLearning.shutdown();
   client.destroy();
   process.exit(0);
 });

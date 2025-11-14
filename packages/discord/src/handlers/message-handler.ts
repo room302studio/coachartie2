@@ -525,16 +525,8 @@ export function setupMessageHandler(client: Client) {
       const guildConfig = getGuildConfig(message.guildId);
       if (guildConfig?.type === 'watching') {
         logger.debug(
-          `👁️ Observing message from watching guild: ${guildConfig.name} [${shortId}]`
+          `👁️ Message from watching guild: ${guildConfig.name} [${shortId}] (observational learning handles these on schedule)`
         );
-
-        // Import and call observational learning service
-        try {
-          const { observationalLearning } = await import('../services/observational-learning.js');
-          await observationalLearning.observeMessage(message);
-        } catch (error) {
-          logger.warn(`Failed to observe message: ${error}`);
-        }
       } else {
         logger.debug(
           `🚫 Ignoring message from non-whitelisted guild: ${message.guildId} [${shortId}]`
