@@ -319,7 +319,11 @@ Please provide a helpful response to the user that:
 
       logger.info(`✅ Final coherent response generated and sanitized successfully`);
 
-      return sanitizedResponse;
+      // Add magical capability execution banner
+      const capabilityBanner = this.generateCapabilityBanner(context.results);
+      const responseWithBanner = capabilityBanner ? `${sanitizedResponse}\n\n${capabilityBanner}` : sanitizedResponse;
+
+      return responseWithBanner;
     } catch (_error) {
       logger.error('❌ Failed to generate final coherent response, using fallback', _error);
 
@@ -418,6 +422,50 @@ ${capabilityDetails}`;
   stripThinkingTags(content: string, userId?: string, messageId?: string): string {
     // Just remove actual <thinking> tags, nothing else
     return content.replace(/<thinking>[\s\S]*?<\/thinking>/gi, '').trim();
+  }
+
+  /**
+   * Convert text to small caps Unicode characters
+   * Creates stylized text like: ᴄᴀᴘᴀʙɪʟɪᴛʏ
+   */
+  toSmallCaps(text: string): string {
+    const smallCapsMap: Record<string, string> = {
+      a: 'ᴀ', b: 'ʙ', c: 'ᴄ', d: 'ᴅ', e: 'ᴇ', f: 'ғ', g: 'ɢ', h: 'ʜ', i: 'ɪ', j: 'ᴊ',
+      k: 'ᴋ', l: 'ʟ', m: 'ᴍ', n: 'ɴ', o: 'ᴏ', p: 'ᴘ', q: 'ǫ', r: 'ʀ', s: 's', t: 'ᴛ',
+      u: 'ᴜ', v: 'ᴠ', w: 'ᴡ', x: 'x', y: 'ʏ', z: 'ᴢ',
+    };
+
+    return text
+      .toLowerCase()
+      .split('')
+      .map((char) => smallCapsMap[char] || char)
+      .join('');
+  }
+
+  /**
+   * Generate magical capability execution banner
+   * Shows which capabilities were executed with special formatting
+   */
+  generateCapabilityBanner(results: CapabilityResult[]): string {
+    if (results.length === 0) {
+      return '';
+    }
+
+    const successfulCapabilities = results.filter((r) => r.success);
+    if (successfulCapabilities.length === 0) {
+      return '';
+    }
+
+    // Build capability list with stylized small caps text
+    const capabilityList = successfulCapabilities
+      .map((result) => {
+        const capName = result.capability.name.replace(/-/g, ' ');
+        return this.toSmallCaps(capName);
+      })
+      .join(' · ');
+
+    // Use Discord spoiler formatting for a magical reveal effect
+    return `||⟨ ${capabilityList} ⟩||`;
   }
 
   /**
