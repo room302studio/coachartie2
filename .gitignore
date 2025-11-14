@@ -14,6 +14,23 @@ build/
 .env.*.local
 .env.production
 
+# Security - Secret files
+*.pem
+*.key
+*_rsa
+*_rsa.pub
+*.p12
+*.pfx
+credentials.json
+service-account*.json
+*-key.json
+*.crt
+*.cer
+*.der
+auth.json
+secrets/
+.secrets/
+
 # Logs
 logs/
 *.log
