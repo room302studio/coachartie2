@@ -6,8 +6,6 @@
 export const WHITELISTED_GUILDS = {
   // Room 302 Studio Guild (primary)
   room_302_studio: '932719842522443928',
-  // Subway Builder Guild
-  subway_builder: '1420846272545296470',
 } as const;
 
 // Array of guild IDs for easy checking
@@ -38,11 +36,6 @@ export const GUILD_CONFIGS: Record<string, GuildConfig> = {
     id: '932719842522443928',
     type: 'working',
     name: 'Room 302 Studio',
-  },
-  subway_builder: {
-    id: '1420846272545296470',
-    type: 'working',
-    name: 'Subway Builder',
   },
 };
 
