@@ -299,6 +299,9 @@ For DANGEROUS operations: Explain why unsafe, no approval`;
         capability.name === 'memory' ||
         capability.name === 'calculator' ||
         capability.name === 'web' ||
+        capability.name === 'wolfram' ||
+        capability.name === 'briefing' ||
+        capability.name === 'scheduler' ||
         capability.name === 'mcp_client' ||
         capability.name === 'mcp_installer' ||
         capability.name === 'goal' ||

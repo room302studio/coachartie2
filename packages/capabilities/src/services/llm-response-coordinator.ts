@@ -225,8 +225,50 @@ Provide a concise, friendly summary (1-2 sentences) of what was accomplished ove
   ): Promise<string> {
     logger.info(`🎯 Generating final response with ${context.results.length} capability results`);
 
-    // If no capabilities were executed, return original response
+    // If no capabilities were executed, check if conscience blocked them
     if (context.results.length === 0) {
+      // Check if conscience blocked capabilities and has an explanation
+      const conscienceResponse = (context as any).conscienceResponse;
+      if (conscienceResponse && conscienceResponse.length > 0) {
+        // Conscience blocked capabilities - explain to user
+        logger.info('🚫 Capabilities were blocked by conscience, generating explanation');
+
+        const explanationPrompt = `The user asked: "${context.originalMessage}"
+
+I initially wanted to help with capabilities, but after considering it more carefully, I realized there might be some concerns.
+
+${conscienceResponse}
+
+Please provide a helpful response to the user that:
+1. Acknowledges their request
+2. Explains why I'm being cautious (in a friendly way)
+3. Offers alternative suggestions if possible
+4. Keeps the tone helpful and not overly restrictive`;
+
+        try {
+          const { contextAlchemy } = await import('./context-alchemy.js');
+          const { promptManager } = await import('./prompt-manager.js');
+
+          const baseSystemPrompt = await promptManager.getCapabilityInstructions(explanationPrompt);
+          const { messages } = await contextAlchemy.buildMessageChain(
+            explanationPrompt,
+            context.userId,
+            baseSystemPrompt
+          );
+
+          const model = process.env.SMART_MODEL || 'openai/gpt-4o';
+          const response = await this.llmService.generateResponse(messages, context.userId, {
+            specificModel: model,
+          });
+
+          return response || originalLLMResponse;
+        } catch (error) {
+          logger.error('Failed to generate conscience explanation:', error);
+          return originalLLMResponse;
+        }
+      }
+
+      // No conscience response, return original
       return originalLLMResponse;
     }
 
