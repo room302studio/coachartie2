@@ -8,17 +8,16 @@ RUN npm install -g pnpm && apk add --no-cache curl
 
 # Copy package files and install dependencies
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.json ./
-COPY packages/shared ./packages/shared
-COPY packages/capabilities/package.json ./packages/capabilities/
+COPY packages/shared/tsconfig.json ./packages/shared/tsconfig.json
+COPY packages/shared/package.json ./packages/shared/package.json
+COPY packages/shared/src ./packages/shared/src
+COPY packages/capabilities ./packages/capabilities
 
 # Install all workspace dependencies
 RUN pnpm install --filter "@coachartie/capabilities" --filter "@coachartie/shared"
 
 # Build shared package first
 RUN pnpm --filter "@coachartie/shared" run build
-
-# Copy capabilities source
-COPY packages/capabilities ./packages/capabilities
 
 # Build capabilities
 RUN pnpm --filter "@coachartie/capabilities" run build
