@@ -22,16 +22,12 @@ RUN pnpm --filter "@coachartie/shared" run build
 # Build discord
 RUN pnpm --filter "@coachartie/discord" run build
 
-# Create data and logs directories
-RUN mkdir -p /app/data /app/logs
+# Create data and logs directories and set ownership for node user
+RUN mkdir -p /app/data /app/logs && \
+    chown -R node:node /app
 
-# Create non-root user and set ownership
-RUN addgroup -g 1000 artie && \
-    adduser -D -u 1000 -G artie artie && \
-    chown -R artie:artie /app
-
-# Switch to non-root user
-USER artie
+# Switch to non-root user (node user already exists in base image as UID 1000)
+USER node
 
 # Set working directory to discord package
 WORKDIR /app/packages/discord

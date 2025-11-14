@@ -25,16 +25,12 @@ RUN pnpm --filter "@coachartie/sms" run build
 # Set working directory to sms package
 WORKDIR /app/packages/sms
 
-# Create logs directory
-RUN mkdir -p /app/logs
+# Create logs directory and set ownership for node user
+RUN mkdir -p /app/logs && \
+    chown -R node:node /app
 
-# Create non-root user and set ownership
-RUN addgroup -g 1000 artie && \
-    adduser -D -u 1000 -G artie artie && \
-    chown -R artie:artie /app
-
-# Switch to non-root user
-USER artie
+# Switch to non-root user (node user already exists in base image as UID 1000)
+USER node
 
 # Expose the port
 EXPOSE 47326
