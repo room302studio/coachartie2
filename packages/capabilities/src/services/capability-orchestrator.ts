@@ -96,19 +96,37 @@ export class CapabilityOrchestrator {
     logger.info(`⚡ ASSEMBLING MESSAGE ORCHESTRATION - ENTRY POINT REACHED!`);
     logger.info(`⚡ Assembling message orchestration for <${message.userId}> message`);
 
-    // INDUSTRY BEST PRACTICE: Always run the ReAct loop
-    // The LLM will autonomously decide whether to use tools, search memory, etc.
-    // This implements the agentic "reasoning + acting" pattern
-    logger.info(`🤖 SWITCHING TO AGENTIC REACT LOOP - Always execute for proactive tool use`);
+    // Get initial LLM response
+    logger.info(`🤖 Getting initial LLM response for loop decision`);
 
-    const llmResponse = await llmResponseCoordinator.getLLMResponseWithCapabilities(
+    const initialLLMResponse = await llmResponseCoordinator.getLLMResponseWithCapabilities(
       message,
       undefined // Don't stream initial response - we'll stream from the loop
     );
 
-    logger.info(`🎯 Initial LLM response ready, entering ReAct execution loop`);
+    // Extract the bot's loop decision from the response
+    const { response: llmResponse, wantsLoop } = llmResponseCoordinator.extractLoopDecision(
+      initialLLMResponse
+    );
 
-    // CRITICAL FIX: Always execute the LLM loop, don't conditionally check for extracted capabilities
+    logger.info(
+      `🎯 Bot loop decision: ${wantsLoop ? '✅ WANTS LOOP' : '❌ NO LOOP NEEDED'}`
+    );
+
+    // If the bot doesn't want to loop, return the response directly
+    if (!wantsLoop) {
+      logger.info(`🏁 Returning response directly - bot decided loop not needed`);
+      if (onPartialResponse) {
+        onPartialResponse(llmResponse);
+      }
+      await this.storeReflectionMemory(context, message, llmResponse);
+      this.contexts.delete(message.id);
+      return llmResponse;
+    }
+
+    // Bot wants to iterate - enter the ReAct loop
+    logger.info(`🎯 Entering ReAct execution loop - bot requested iteration`);
+
     // The llmLoopService.executeLLMDrivenLoop will:
     // 1. Let the LLM see the initial response
     // 2. Let the LLM decide what tools to use next
@@ -130,7 +148,7 @@ export class CapabilityOrchestrator {
       logger.warn(
         `⚠️ ReAct loop encountered error, falling back to direct LLM response: ${getErrorMessage(loopError)}`
       );
-      // Fallback: Return the initial LLM response if loop fails
+      // Fallback: Return the LLM response if loop fails
       await this.storeReflectionMemory(context, message, llmResponse);
       this.contexts.delete(message.id);
       return llmResponse;

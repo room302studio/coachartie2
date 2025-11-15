@@ -437,6 +437,32 @@ ${capabilityDetails}`;
   }
 
   /**
+   * Extract loop decision from LLM response
+   * Checks for <wants_loop>true</wants_loop> signal in the response
+   * Returns both the cleaned response and the loop decision flag
+   */
+  extractLoopDecision(
+    content: string
+  ): { response: string; wantsLoop: boolean } {
+    const wantsLoopMatch = content.match(/<wants_loop>(true|false)<\/wants_loop>/i);
+    const wantsLoop = wantsLoopMatch ? wantsLoopMatch[1].toLowerCase() === 'true' : false;
+
+    // Remove the wants_loop tag from the response
+    const cleanedResponse = content
+      .replace(/<wants_loop>(true|false)<\/wants_loop>/gi, '')
+      .trim();
+
+    logger.info(
+      `🎯 Loop decision extracted: wantsLoop=${wantsLoop} (${wantsLoopMatch ? 'explicit signal found' : 'defaulting to false'})`
+    );
+
+    return {
+      response: cleanedResponse,
+      wantsLoop,
+    };
+  }
+
+  /**
    * Convert text to small caps Unicode characters
    * Creates stylized text like: ᴄᴀᴘᴀʙɪʟɪᴛʏ
    */

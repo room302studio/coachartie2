@@ -141,7 +141,20 @@ You can also use simplified syntax:
 - <get-current-time/>
 
 Use capabilities when users need computation, memory, or external information.
-You can chain multiple capabilities in a single response.`;
+You can chain multiple capabilities in a single response.
+
+ITERATIVE REASONING CONTROL:
+
+You control whether you want to engage in iterative problem-solving:
+
+- For simple/direct questions: Just answer normally (no loop signal needed)
+- For complex questions requiring multiple steps/exploration: Include <wants_loop>true</wants_loop>
+
+Examples:
+- "What's 2+2?" → Just answer: 4
+- "Build me a complex algorithm and verify it works in different scenarios" → Add <wants_loop>true</wants_loop> so you can iterate and refine
+
+The system will respect your decision - if you don't signal wants_loop, you get a fast response. If you do, you enter an iterative loop where you can execute tools, see results, and refine your approach.`;
   }
 
   /**
