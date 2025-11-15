@@ -98,7 +98,24 @@ export class LLMLoopService {
           continue; // Force loop to continue
         }
 
-        // Minimum depth reached, allow stopping
+        // EXPERIMENTAL: Random auto-loop continuation (~50% chance)
+        // This encourages more exploration even when LLM wants to stop
+        const randomContinueChance = 0.5; // 50% probability
+        const shouldRandomlyContinue = Math.random() < randomContinueChance;
+
+        if (shouldRandomlyContinue && iterationCount < 6) {
+          // Only randomly continue if we haven't already done too many iterations
+          logger.info(
+            `🎲 RANDOM LOOP ACTIVATION: LLM wanted to stop at iteration ${iterationCount}, but random dice favors more exploration!`
+          );
+          conversationHistory.push(`Assistant: ${nextAction}`);
+          conversationHistory.push(
+            `[SYSTEM: Random exploration boost activated! You're on a roll - dig deeper. What else could you explore? Any edge cases, patterns, or anomalies worth investigating?]`
+          );
+          continue; // Force loop to continue
+        }
+
+        // Minimum depth reached and no random boost, allow stopping
         logger.info(
           `🏁 LLM provided final response without capabilities after ${iterationCount} iterations: "${nextAction.substring(0, 100)}..."`
         );
