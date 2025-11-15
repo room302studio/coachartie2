@@ -8,6 +8,7 @@ import {
   formatStructuredErrorCompact,
   formatStructuredErrorForLLM,
 } from '../types/structured-errors.js';
+import { errorPatternTracker } from '../services/llm-error-pattern-tracker.js';
 
 export interface CapabilityResult {
   capability: ParsedCapability;
@@ -88,11 +89,13 @@ export class RobustCapabilityExecutor {
         fallbackUsed: true,
       };
     } catch (_fallbackError) {
-      // Final failure
+      // Final failure - track the error
       return {
         capability,
         success: false,
-        error: this.getHelpfulErrorMessage(capability, lastError),
+        error: this.getHelpfulErrorMessage(capability, lastError, {
+          userId: context.userId,
+        }),
         timestamp: new Date().toISOString(),
         attempts: maxRetries,
       };
@@ -488,15 +491,36 @@ export class RobustCapabilityExecutor {
    * Generate helpful error messages for LLM
    * Detects structured errors and formats them for LLM self-correction
    */
-  private getHelpfulErrorMessage(capability: ParsedCapability, error: Error | null): string {
+  private getHelpfulErrorMessage(
+    capability: ParsedCapability,
+    error: Error | null,
+    context?: { userId: string }
+  ): string {
     const errorMsg = error?.message || 'Unknown error';
 
     // Check if this is a structured error from the registry
     if (this.isStructuredError(errorMsg)) {
       const structuredError = this.parseStructuredError(errorMsg);
-      if (structuredError) {
-        // Use compact format for structured errors - they're designed for LLM understanding
-        return formatStructuredErrorForLLM(structuredError);
+      if (structuredError && context?.userId) {
+        // Track this error in the pattern tracker
+        errorPatternTracker.recordError(context.userId, structuredError);
+
+        // Check if they're in a repeat loop
+        const isRepeat = errorPatternTracker.isInErrorLoop(context.userId, structuredError);
+        let message = formatStructuredErrorForLLM(structuredError);
+
+        if (isRepeat) {
+          // Add special guidance for repeat errors
+          const guidance = errorPatternTracker.getRepeatErrorGuidance(
+            context.userId,
+            structuredError
+          );
+          if (guidance) {
+            message = `${guidance}\n\n${message}`;
+          }
+        }
+
+        return message;
       }
     }
 

@@ -1,5 +1,6 @@
 import { FastifyPluginAsync } from 'fastify';
 import { logger } from '@coachartie/shared';
+import { errorPatternTracker } from '../services/llm-error-pattern-tracker.js';
 
 export const createApiRoutes: FastifyPluginAsync = async (fastify) => {
   // API namespace
@@ -99,6 +100,29 @@ export const createApiRoutes: FastifyPluginAsync = async (fastify) => {
             message: error instanceof Error ? error.message : 'Unknown error',
           });
         }
+      });
+
+      // GET /api/error-analytics/user/:userId - User error statistics
+      fastify.get('/error-analytics/user/:userId', async (request, reply) => {
+        const { userId } = request.params as { userId: string };
+        const stats = errorPatternTracker.getUserErrorStats(userId);
+        const preventionTips = errorPatternTracker.getPreventionTips(userId);
+
+        return {
+          userId,
+          stats,
+          preventionTips: preventionTips || 'No error patterns recorded yet',
+        };
+      });
+
+      // GET /api/error-analytics/global - Global error statistics
+      fastify.get('/error-analytics/global', async (request, reply) => {
+        const stats = errorPatternTracker.getGlobalErrorStats();
+
+        return {
+          timestamp: new Date().toISOString(),
+          ...stats,
+        };
       });
     },
     { prefix: '/api' }
