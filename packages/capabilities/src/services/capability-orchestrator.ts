@@ -96,63 +96,45 @@ export class CapabilityOrchestrator {
     logger.info(`⚡ ASSEMBLING MESSAGE ORCHESTRATION - ENTRY POINT REACHED!`);
     logger.info(`⚡ Assembling message orchestration for <${message.userId}> message`);
 
-    // No pre-extraction - let the LLM decide what capabilities to use
-    // Capability learnings will be loaded later if/when capabilities are actually executed
+    // INDUSTRY BEST PRACTICE: Always run the ReAct loop
+    // The LLM will autonomously decide whether to use tools, search memory, etc.
+    // This implements the agentic "reasoning + acting" pattern
+    logger.info(`🤖 SWITCHING TO AGENTIC REACT LOOP - Always execute for proactive tool use`);
+
     const llmResponse = await llmResponseCoordinator.getLLMResponseWithCapabilities(
       message,
-      onPartialResponse
+      undefined // Don't stream initial response - we'll stream from the loop
     );
-    await capabilityParser.extractCapabilitiesFromUserAndLLM(context, message, llmResponse);
-    await capabilityParser.reviewCapabilitiesWithConscience(context, message);
 
-    // Stream the initial LLM response
-    if (onPartialResponse) {
-      const cleanResponse = llmResponseCoordinator.stripThinkingTags(llmResponse, context.userId, context.messageId);
-      if (cleanResponse.trim()) {
-        onPartialResponse(cleanResponse);
-      }
-    }
+    logger.info(`🎯 Initial LLM response ready, entering ReAct execution loop`);
 
-    // EXECUTE CAPABILITIES WITH STREAMING - natural loop via LLM seeing results
-    if (context.capabilities.length > 0 && onPartialResponse) {
-      logger.info(
-        `🔄 STARTING STREAMING CAPABILITY CHAIN - LLM will naturally continue based on results`
-      );
-      const finalResponse = await capabilityExecutor.executeCapabilityChainWithStreaming(
+    // CRITICAL FIX: Always execute the LLM loop, don't conditionally check for extracted capabilities
+    // The llmLoopService.executeLLMDrivenLoop will:
+    // 1. Let the LLM see the initial response
+    // 2. Let the LLM decide what tools to use next
+    // 3. Execute tools autonomously
+    // 4. Re-reason about results
+    // 5. Continue until LLM decides it's done
+    try {
+      const finalResponse = await llmLoopService.executeLLMDrivenLoop(
         context,
-        onPartialResponse,
-        (response: string, modelName?: string) => capabilityParser.extractCapabilities(response, modelName),
-        (ctx, cap, result, currentStep, totalSteps) => llmResponseCoordinator.getLLMIntermediateResponse(ctx, cap, result, currentStep, totalSteps),
-        async (ctx, originalMsg) => { await capabilityExecutor.attemptErrorRecovery(ctx, originalMsg); },
-        (ctx) => llmResponseCoordinator.generateFinalSummaryResponse(ctx)
+        llmResponse,
+        onPartialResponse
       );
-      if (finalResponse) {
-        await this.storeReflectionMemory(context, message, finalResponse);
-        this.contexts.delete(message.id);
-        return finalResponse;
-      }
+
+      logger.info(`✅ ReAct loop completed successfully`);
+      await this.storeReflectionMemory(context, message, finalResponse);
+      this.contexts.delete(message.id);
+      return finalResponse;
+    } catch (loopError) {
+      logger.warn(
+        `⚠️ ReAct loop encountered error, falling back to direct LLM response: ${getErrorMessage(loopError)}`
+      );
+      // Fallback: Return the initial LLM response if loop fails
+      await this.storeReflectionMemory(context, message, llmResponse);
+      this.contexts.delete(message.id);
+      return llmResponse;
     }
-
-    // Fallback: execute capabilities without streaming (old path)
-    if (context.capabilities.length > 0) {
-      logger.info(`🔧 Executing ${context.capabilities.length} capabilities (non-streaming)`);
-      await capabilityExecutor.executeCapabilityChain(context);
-
-      // NEW: Error Recovery Loop - Ask LLM to self-correct failed capabilities
-      // This implements the user's feedback: "send better errors back to the LLM so it could have fixed it itself"
-      const failedCount = context.results.filter((r) => !r.success).length;
-      if (failedCount > 0) {
-        logger.info(`🔄 ${failedCount} capabilities failed, attempting error recovery...`);
-        await capabilityExecutor.attemptErrorRecovery(context, message.message);
-      }
-    }
-
-    // Generate final response from capability results
-    const finalResponse = await llmResponseCoordinator.generateFinalResponse(context, llmResponse);
-    await this.storeReflectionMemory(context, message, finalResponse);
-
-    this.contexts.delete(message.id);
-    return finalResponse;
   }
 
   /**
