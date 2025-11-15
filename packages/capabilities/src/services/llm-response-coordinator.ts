@@ -275,11 +275,21 @@ Please provide a helpful response to the user that:
       .map((result) => {
         const capability = result.capability;
         if (result.success && result.data) {
-          return `${capability.name}:${capability.action} → ${result.data}`;
+          return `✅ ${capability.name}:${capability.action} → ${result.data}`;
         } else if (result.error) {
-          return `${capability.name}:${capability.action} → Error: ${result.error}`;
+          // Check if error is a structured error (JSON format)
+          try {
+            const errorObj = JSON.parse(result.error);
+            if (errorObj.errorCode && errorObj.correctExample) {
+              // Structured error - format with key info
+              return `❌ ${capability.name}:${capability.action} [${errorObj.errorCode}]\n${result.error}`;
+            }
+          } catch {
+            // Not a structured error, format as plain error
+          }
+          return `❌ ${capability.name}:${capability.action} → Error: ${result.error}`;
         } else {
-          return `${capability.name}:${capability.action} → No result`;
+          return `⚠️ ${capability.name}:${capability.action} → No result`;
         }
       })
       .join('\n');
