@@ -421,7 +421,9 @@ ${capabilityDetails}`;
    */
   stripThinkingTags(content: string, userId?: string, messageId?: string): string {
     // Just remove actual <thinking> tags, nothing else
-    return content.replace(/<thinking>[\s\S]*?<\/thinking>/gi, '').trim();
+    // Use trimEnd() instead of trim() to preserve leading spaces needed for text concatenation
+    // LLMs naturally add leading spaces between sentences for proper formatting
+    return content.replace(/<thinking>[\s\S]*?<\/thinking>/gi, '').trimEnd();
   }
 
   /**
