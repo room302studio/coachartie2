@@ -1,4 +1,11 @@
 import { logger } from '@coachartie/shared';
+import {
+  StructuredCapabilityError,
+  createStructuredError,
+  formatStructuredErrorCompact,
+  ErrorCodeTaxonomy,
+  ParameterSchema,
+} from '../types/structured-errors.js';
 
 /**
  * Type definition for a capability handler function
@@ -231,25 +238,42 @@ export class CapabilityRegistry {
    * @param params - Parameters for the capability
    * @param content - Optional content string
    * @returns Promise resolving to the capability result
-   * @throws Error if capability not found, action not supported, or required params missing
+   * @throws StructuredCapabilityError if capability not found, action not supported, or required params missing
    */
   async execute(name: string, action: string, params: any = {}, content?: string): Promise<string> {
-    // Get and validate capability
-    const capability = this.get(name, action);
+    // Get capability (will throw if not found)
+    const capability = this.capabilities.get(name);
 
-    // Validate required parameters - BUT allow content as fallback for single-param capabilities
-    if (capability.requiredParams) {
+    if (!capability) {
+      throw new Error(`Capability '${name}' not found in registry`);
+    }
+
+    // Validate action is supported
+    if (!capability.supportedActions.includes(action)) {
+      const structuredError = this.createActionError(name, action, capability);
+      logger.warn(`⚠️ ${formatStructuredErrorCompact(structuredError)}`);
+      throw new Error(JSON.stringify(structuredError));
+    }
+
+    // Validate required parameters
+    if (capability.requiredParams && capability.requiredParams.length > 0) {
       const missingParams = capability.requiredParams.filter((param) => !(param in params));
+
       if (missingParams.length > 0) {
         // Special case: If only one param is required and content is provided, allow it
         // This handles cases where params.expression is missing but content has "2+2"
-        const canUsContentAsFallback =
+        const canUseContentAsFallback =
           missingParams.length === 1 && content && content.trim().length > 0;
 
-        if (!canUsContentAsFallback) {
-          throw new Error(
-            `Missing required parameters for capability '${name}': ${missingParams.join(', ')}`
+        if (!canUseContentAsFallback) {
+          const structuredError = this.createMissingParamsError(
+            name,
+            action,
+            missingParams,
+            capability
           );
+          logger.warn(`⚠️ ${formatStructuredErrorCompact(structuredError)}`);
+          throw new Error(JSON.stringify(structuredError));
         }
 
         logger.info(
@@ -331,6 +355,132 @@ export class CapabilityRegistry {
   clear(): void {
     this.capabilities.clear();
     this.mcpTools.clear();
+  }
+
+  /**
+   * Create structured error for missing required parameters
+   */
+  createMissingParamsError(
+    capabilityName: string,
+    action: string,
+    missingParams: string[],
+    capability: RegisteredCapability
+  ): StructuredCapabilityError {
+    // Build parameter schema
+    const paramSchema: ParameterSchema[] = missingParams.map((param) => ({
+      name: param,
+      type: 'string',
+      required: true,
+      description: `Required parameter for ${action}`,
+      example: `"example-${param}"`,
+    }));
+
+    // Build example - we need to know what params the capability typically needs
+    const correctExample = this.buildCapabilityExample(capabilityName, action, missingParams);
+
+    return createStructuredError(
+      capabilityName,
+      action,
+      'PARAM_MISSING_001',
+      `Missing required parameters: ${missingParams.join(', ')}`,
+      {
+        requiredParams: paramSchema,
+        correctExample,
+        recoveryTemplate: `<capability name="${capabilityName}" action="${action}" data='{"${missingParams[0]}":"YOUR_VALUE_HERE"}' />`,
+        suggestedAlternatives: this.findSimilarCapabilities(capabilityName),
+      }
+    );
+  }
+
+  /**
+   * Create structured error for unsupported action
+   */
+  createActionError(
+    capabilityName: string,
+    attemptedAction: string,
+    capability: RegisteredCapability
+  ): StructuredCapabilityError {
+    const available = capability.supportedActions;
+
+    // Find best match
+    const target = attemptedAction.toLowerCase();
+    const match = available.find((action) => {
+      const actionLower = action.toLowerCase();
+      return (
+        actionLower.includes(target) ||
+        target.includes(actionLower) ||
+        actionLower.startsWith(target.slice(0, 3)) ||
+        target.startsWith(actionLower.slice(0, 3))
+      );
+    });
+
+    const suggestedAction = match || available[0];
+    const correctExample = `<capability name="${capabilityName}" action="${suggestedAction}" data='{"param":"value"}' />`;
+
+    return createStructuredError(
+      capabilityName,
+      attemptedAction,
+      'ACTION_NOT_FOUND_005',
+      `Action "${attemptedAction}" is not supported. Did you mean "${suggestedAction}"?`,
+      {
+        correctExample,
+        recoveryTemplate: `<capability name="${capabilityName}" action="${suggestedAction}" data='{"param":"value"}' />`,
+        suggestedAlternatives: available.map((action) => ({
+          action,
+          reason: `Alternative action for ${capabilityName}`,
+          example: `<capability name="${capabilityName}" action="${action}" data='{"param":"value"}' />`,
+        })),
+      }
+    );
+  }
+
+  /**
+   * Build a proper capability example based on common patterns
+   */
+  private buildCapabilityExample(
+    capabilityName: string,
+    action: string,
+    paramNames: string[]
+  ): string {
+    // Build data object with all required params
+    const dataObj = paramNames
+      .map((param) => {
+        // Smart defaults based on parameter name patterns
+        if (param.includes('repo') || param.includes('repository')) {
+          return `"${param}":"owner/repository-name"`;
+        } else if (param.includes('query') || param.includes('search')) {
+          return `"${param}":"search-term"`;
+        } else if (param.includes('id')) {
+          return `"${param}":"123456"`;
+        } else if (param.includes('limit') || param.includes('count')) {
+          return `"${param}":10`;
+        }
+        return `"${param}":"value"`;
+      })
+      .join(',');
+
+    return `<capability name="${capabilityName}" action="${action}" data='{${dataObj}}' />`;
+  }
+
+  /**
+   * Find similar capabilities for suggestions
+   */
+  private findSimilarCapabilities(
+    capabilityName: string
+  ): Array<{ action: string; reason: string; example: string }> {
+    const similar = Array.from(this.capabilities.values())
+      .filter((cap) => cap.name !== capabilityName)
+      .filter((cap) =>
+        cap.name.toLowerCase().includes(capabilityName.toLowerCase().split(/[-_]/)[0]) ||
+        capabilityName.toLowerCase().includes(cap.name.toLowerCase().split(/[-_]/)[0])
+      )
+      .slice(0, 2);
+
+    return similar.map((cap) => ({
+      action: cap.supportedActions[0],
+      reason: `Use ${cap.name}:${cap.supportedActions[0]} for similar functionality`,
+      example: `<capability name="${cap.name}" action="${cap.supportedActions[0]}" data='{"param":"value"}' />`,
+    }));
   }
 
   /**

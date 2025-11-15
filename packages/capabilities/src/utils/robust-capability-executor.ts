@@ -3,6 +3,11 @@ import { ParsedCapability } from './xml-parser.js';
 import { capabilityRegistry } from '../services/capability-registry.js';
 import { VariableStore } from '../capabilities/variable-store.js';
 import Handlebars from 'handlebars';
+import {
+  StructuredCapabilityError,
+  formatStructuredErrorCompact,
+  formatStructuredErrorForLLM,
+} from '../types/structured-errors.js';
 
 export interface CapabilityResult {
   capability: ParsedCapability;
@@ -452,12 +457,52 @@ export class RobustCapabilityExecutor {
   }
 
   /**
-   * Generate helpful error messages for users
+   * Detect if error is a structured error from registry
+   */
+  private isStructuredError(errorMsg: string): errorMsg is string {
+    try {
+      const parsed = JSON.parse(errorMsg);
+      return (
+        typeof parsed === 'object' &&
+        parsed !== null &&
+        'errorCode' in parsed &&
+        'correctExample' in parsed
+      );
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Parse structured error from JSON string
+   */
+  private parseStructuredError(errorMsg: string): StructuredCapabilityError | null {
+    try {
+      return JSON.parse(errorMsg) as StructuredCapabilityError;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Generate helpful error messages for LLM
+   * Detects structured errors and formats them for LLM self-correction
    */
   private getHelpfulErrorMessage(capability: ParsedCapability, error: Error | null): string {
+    const errorMsg = error?.message || 'Unknown error';
+
+    // Check if this is a structured error from the registry
+    if (this.isStructuredError(errorMsg)) {
+      const structuredError = this.parseStructuredError(errorMsg);
+      if (structuredError) {
+        // Use compact format for structured errors - they're designed for LLM understanding
+        return formatStructuredErrorForLLM(structuredError);
+      }
+    }
+
+    // Fallback to human-friendly error messages
     const baseName = capability.name;
     const action = capability.action;
-    const errorMsg = error?.message || 'Unknown error';
 
     const suggestions = {
       calculator: 'Try using a simpler mathematical expression like "42 * 42" or "100 + 50"',
