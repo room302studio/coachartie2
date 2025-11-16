@@ -445,7 +445,25 @@ ${capabilityDetails}`;
     content: string
   ): { response: string; wantsLoop: boolean } {
     const wantsLoopMatch = content.match(/<wants_loop>(true|false)<\/wants_loop>/i);
-    const wantsLoop = wantsLoopMatch ? wantsLoopMatch[1].toLowerCase() === 'true' : false;
+    const hasCapabilities = content.includes('<capability');
+
+    // LOGIC:
+    // 1. If explicit wants_loop tag found, use that
+    // 2. If no explicit tag but capabilities are present, assume true (execute them!)
+    // 3. Otherwise default to false
+    let wantsLoop: boolean;
+    let decisionSource: string;
+
+    if (wantsLoopMatch) {
+      wantsLoop = wantsLoopMatch[1].toLowerCase() === 'true';
+      decisionSource = 'explicit wants_loop tag';
+    } else if (hasCapabilities) {
+      wantsLoop = true;
+      decisionSource = 'detected <capability> tags - auto-enabling loop';
+    } else {
+      wantsLoop = false;
+      decisionSource = 'no capabilities, no loop needed';
+    }
 
     // Remove the wants_loop tag from the response
     const cleanedResponse = content
@@ -453,7 +471,7 @@ ${capabilityDetails}`;
       .trim();
 
     logger.info(
-      `🎯 Loop decision extracted: wantsLoop=${wantsLoop} (${wantsLoopMatch ? 'explicit signal found' : 'defaulting to false'})`
+      `🎯 Loop decision extracted: wantsLoop=${wantsLoop} (${decisionSource})`
     );
 
     return {
