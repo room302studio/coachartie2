@@ -624,6 +624,18 @@ capabilityRegistry.register(discordForumsCapability);
 import { discordChannelsCapability } from '../capabilities/discord-channels.js';
 capabilityRegistry.register(discordChannelsCapability);
 
+// Auto-register Discord Threads capability
+import { discordThreadsCapability } from '../capabilities/discord-threads.js';
+capabilityRegistry.register(discordThreadsCapability);
+
+// Auto-register Discord User History capability
+import { discordUserHistoryCapability } from '../capabilities/discord-user-history.js';
+capabilityRegistry.register(discordUserHistoryCapability);
+
+// Auto-register Discord Issue Parser capability
+import { discordIssueParserCapability } from '../capabilities/discord-issue-parser.js';
+capabilityRegistry.register(discordIssueParserCapability);
+
 // Auto-register Email capability
 import { emailCapability } from '../capabilities/email.js';
 capabilityRegistry.register(emailCapability);

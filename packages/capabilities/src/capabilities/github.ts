@@ -43,6 +43,10 @@ export const githubCapability: RegisteredCapability = {
     'list_issues',
     'search_issues',
     'create_issue',
+    'update_issue',
+    'get_issues_by_label',
+    'get_issue_details',
+    'get_related_prs',
   ],
   description: 'GitHub integration for repository monitoring, issue tracking, and celebration',
   requiredParams: ['action'],
@@ -65,9 +69,17 @@ export const githubCapability: RegisteredCapability = {
         return JSON.stringify(await githubActions.search_issues(params));
       case 'create_issue':
         return JSON.stringify(await githubActions.create_issue(params));
+      case 'update_issue':
+        return JSON.stringify(await githubActions.update_issue(params));
+      case 'get_issues_by_label':
+        return JSON.stringify(await githubActions.get_issues_by_label(params));
+      case 'get_issue_details':
+        return JSON.stringify(await githubActions.get_issue_details(params));
+      case 'get_related_prs':
+        return JSON.stringify(await githubActions.get_related_prs(params));
       default:
         throw new Error(
-          `Unknown github action: ${action}. Available actions: get_releases, get_recent_commits, get_deployment_stats, search_repositories, list_issues, search_issues, create_issue`
+          `Unknown github action: ${action}. Available actions: get_releases, get_recent_commits, get_deployment_stats, search_repositories, list_issues, search_issues, create_issue, update_issue, get_issues_by_label, get_issue_details, get_related_prs`
         );
     }
   },
@@ -541,6 +553,479 @@ const githubActions = {
       };
     } catch (error) {
       logger.error('❌ Failed to create GitHub issue:', error);
+      throw error;
+    }
+  },
+
+  update_issue: async (params: {
+    repo?: string;
+    query?: string;
+    issueNumber?: number;
+    state?: string;
+    labels?: string[];
+    description?: string;
+    title?: string;
+  }) => {
+    try {
+      const repoName = params.repo || params.query;
+
+      logger.info(`✏️ Updating GitHub issue #${params.issueNumber} for ${repoName}`);
+
+      if (!repoName) {
+        throw new Error(
+          'Missing required parameter "repo". Example: <capability name="github" action="update_issue" repo="owner/repository" issueNumber="123" state="closed" />'
+        );
+      }
+
+      if (!params.issueNumber) {
+        throw new Error('Missing required parameter "issueNumber".');
+      }
+
+      if (!repoName.includes('/')) {
+        throw new Error(
+          `Invalid repo format: "${repoName}". The repo parameter must be in "owner/repository" format (e.g., "owner/SubwayBuilder").`
+        );
+      }
+
+      // Validate that at least one field to update is provided
+      if (!params.state && !params.labels && !params.description && !params.title) {
+        throw new Error(
+          'At least one field to update must be provided: state, labels, description, or title.'
+        );
+      }
+
+      // Validate state if provided
+      if (params.state && params.state !== 'open' && params.state !== 'closed') {
+        throw new Error('Invalid state. Must be either "open" or "closed".');
+      }
+
+      if (!process.env.GITHUB_TOKEN) {
+        throw new Error('GITHUB_TOKEN not configured. Set GITHUB_TOKEN environment variable.');
+      }
+
+      // Build the update payload
+      const updatePayload: {
+        state?: string;
+        labels?: string[];
+        body?: string;
+        title?: string;
+      } = {};
+
+      if (params.state) {
+        updatePayload.state = params.state;
+      }
+
+      if (params.labels && params.labels.length > 0) {
+        updatePayload.labels = params.labels;
+      }
+
+      if (params.description) {
+        updatePayload.body = params.description;
+      }
+
+      if (params.title) {
+        updatePayload.title = params.title;
+      }
+
+      const response = await fetch(
+        `https://api.github.com/repos/${repoName}/issues/${params.issueNumber}`,
+        {
+          method: 'PATCH',
+          headers: {
+            Authorization: `Bearer ${process.env.GITHUB_TOKEN}`,
+            Accept: 'application/vnd.github.v3+json',
+            'User-Agent': 'CoachArtie-Bot/1.0',
+          },
+          body: JSON.stringify(updatePayload),
+        }
+      );
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        const errorMessage = (errorData as any).message || response.statusText;
+        if (response.status === 404) {
+          throw new Error(
+            `Issue #${params.issueNumber} not found in repository "${repoName}". Make sure the issue number is correct and you have access to it.`
+          );
+        }
+        throw new Error(`GitHub API error: ${response.status} ${errorMessage}`);
+      }
+
+      const updatedIssue = (await response.json()) as any;
+
+      // Build a summary of what was updated
+      const updatedFields: string[] = [];
+      if (params.state) updatedFields.push(`state to "${params.state}"`);
+      if (params.title) updatedFields.push('title');
+      if (params.description) updatedFields.push('description');
+      if (params.labels) updatedFields.push(`labels to [${params.labels.join(', ')}]`);
+
+      return {
+        success: true,
+        data: {
+          issueNumber: updatedIssue.number,
+          issueTitle: updatedIssue.title,
+          issueState: updatedIssue.state,
+          issueUrl: updatedIssue.html_url,
+          updatedAt: updatedIssue.updated_at,
+          repository: repoName,
+          updatedFields: updatedFields,
+          message: `Successfully updated issue #${updatedIssue.number}: ${updatedFields.join(', ')}`,
+        },
+      };
+    } catch (error) {
+      logger.error('❌ Failed to update GitHub issue:', error);
+      throw error;
+    }
+  },
+
+  get_issues_by_label: async (params: {
+    repo?: string;
+    query?: string;
+    labels?: string | string[];
+    state?: string;
+    limit?: number;
+  }) => {
+    try {
+      const repoName = params.repo || params.query;
+
+      logger.info(`🏷️  Fetching issues by label for ${repoName}`);
+
+      if (!repoName) {
+        throw new Error(
+          'Missing required parameter "repo". Example: <capability name="github" action="get_issues_by_label" repo="owner/repository" labels="bug,enhancement" />'
+        );
+      }
+
+      if (!params.labels) {
+        throw new Error(
+          'Missing required parameter "labels". Example: <capability name="github" action="get_issues_by_label" repo="owner/repository" labels="bug,enhancement" />'
+        );
+      }
+
+      if (!repoName.includes('/')) {
+        throw new Error(
+          `Invalid repo format: "${repoName}". The repo parameter must be in "owner/repository" format (e.g., "owner/SubwayBuilder").`
+        );
+      }
+
+      if (!process.env.GITHUB_TOKEN) {
+        throw new Error('GITHUB_TOKEN not configured. Set GITHUB_TOKEN environment variable.');
+      }
+
+      const state = params.state || 'open';
+      const limit = params.limit || 30;
+
+      // Convert labels to array if it's a comma-separated string
+      const labelsArray = Array.isArray(params.labels)
+        ? params.labels
+        : params.labels.split(',').map((l) => l.trim());
+
+      // Fetch issues for each label and organize by label
+      const issuesByLabel: Record<string, any[]> = {};
+      let totalIssues = 0;
+
+      for (const label of labelsArray) {
+        const searchQuery = `repo:${repoName} label:"${label}" state:${state}`;
+
+        const response = await fetch(
+          `https://api.github.com/search/issues?q=${encodeURIComponent(searchQuery)}&per_page=${limit}&sort=updated&order=desc`,
+          {
+            headers: {
+              Authorization: `Bearer ${process.env.GITHUB_TOKEN}`,
+              Accept: 'application/vnd.github.v3+json',
+              'User-Agent': 'CoachArtie-Bot/1.0',
+            },
+          }
+        );
+
+        if (!response.ok) {
+          if (response.status === 404) {
+            throw new Error(
+              `Repository "${repoName}" not found. Make sure the repository path is correct and you have access to it.`
+            );
+          }
+          throw new Error(`GitHub API error: ${response.status} ${response.statusText}`);
+        }
+
+        const data = (await response.json()) as any;
+
+        issuesByLabel[label] = data.items.map((issue: any) => ({
+          number: issue.number,
+          title: issue.title,
+          state: issue.state,
+          labels: issue.labels.map((l: any) => l.name),
+          created_at: issue.created_at,
+          updated_at: issue.updated_at,
+          html_url: issue.html_url,
+          user: issue.user.login,
+          comments: issue.comments,
+        }));
+
+        totalIssues += data.items.length;
+      }
+
+      return {
+        success: true,
+        data: {
+          repository: repoName,
+          state: state,
+          labels: labelsArray,
+          total_count: totalIssues,
+          issues_by_label: issuesByLabel,
+        },
+      };
+    } catch (error) {
+      logger.error('❌ Failed to fetch GitHub issues by label:', error);
+      throw error;
+    }
+  },
+
+  get_related_prs: async (params: { repo?: string; query?: string; issueNumber?: number }) => {
+    try {
+      const repoName = params.repo || params.query;
+
+      logger.info(`🔗 Fetching related PRs for issue #${params.issueNumber} in ${repoName}`);
+
+      if (!repoName) {
+        throw new Error(
+          'Missing required parameter "repo". Example: <capability name="github" action="get_related_prs" repo="owner/repository" issueNumber="123" />'
+        );
+      }
+
+      if (!params.issueNumber) {
+        throw new Error(
+          'Missing required parameter "issueNumber". Example: <capability name="github" action="get_related_prs" repo="owner/repository" issueNumber="123" />'
+        );
+      }
+
+      if (!repoName.includes('/')) {
+        throw new Error(
+          `Invalid repo format: "${repoName}". The repo parameter must be in "owner/repository" format.`
+        );
+      }
+
+      if (!process.env.GITHUB_TOKEN) {
+        throw new Error('GITHUB_TOKEN not configured. Set GITHUB_TOKEN environment variable.');
+      }
+
+      const [owner, repo] = repoName.split('/');
+
+      // Search for PRs that reference this issue
+      const searchQuery = `repo:${repoName} type:pr #${params.issueNumber}`;
+      const searchResponse = await fetch(
+        `https://api.github.com/search/issues?q=${encodeURIComponent(searchQuery)}&per_page=100`,
+        {
+          headers: {
+            Authorization: `Bearer ${process.env.GITHUB_TOKEN}`,
+            Accept: 'application/vnd.github.v3+json',
+            'User-Agent': 'CoachArtie-Bot/1.0',
+          },
+        }
+      );
+
+      if (!searchResponse.ok) {
+        throw new Error(`GitHub API error: ${searchResponse.status} ${searchResponse.statusText}`);
+      }
+
+      const searchData = (await searchResponse.json()) as any;
+
+      // Get issue timeline to find linked PRs
+      const timelineResponse = await fetch(
+        `https://api.github.com/repos/${repoName}/issues/${params.issueNumber}/timeline`,
+        {
+          headers: {
+            Authorization: `Bearer ${process.env.GITHUB_TOKEN}`,
+            Accept: 'application/vnd.github.mockingbird-preview+json',
+            'User-Agent': 'CoachArtie-Bot/1.0',
+          },
+        }
+      );
+
+      let linkedPRs: any[] = [];
+      if (timelineResponse.ok) {
+        const timelineData = (await timelineResponse.json()) as any;
+        // Extract cross-referenced PRs from timeline
+        linkedPRs = timelineData
+          .filter((event: any) => event.source && event.source.issue && event.source.issue.pull_request)
+          .map((event: any) => event.source.issue);
+      }
+
+      // Combine search results and linked PRs, removing duplicates
+      const allPRs = [...searchData.items, ...linkedPRs];
+      const uniquePRs = Array.from(
+        new Map(allPRs.map((pr: any) => [pr.number, pr])).values()
+      );
+
+      // Determine PR status (open/merged/closed)
+      const prsWithStatus = await Promise.all(
+        uniquePRs.map(async (pr: any) => {
+          let status = pr.state;
+
+          // If PR is closed, check if it was merged
+          if (pr.state === 'closed' && pr.pull_request) {
+            const prDetailResponse = await fetch(pr.pull_request.url, {
+              headers: {
+                Authorization: `Bearer ${process.env.GITHUB_TOKEN}`,
+                Accept: 'application/vnd.github.v3+json',
+                'User-Agent': 'CoachArtie-Bot/1.0',
+              },
+            });
+
+            if (prDetailResponse.ok) {
+              const prDetail = (await prDetailResponse.json()) as any;
+              status = prDetail.merged ? 'merged' : 'closed';
+            }
+          }
+
+          return {
+            number: pr.number,
+            title: pr.title,
+            status: status,
+            author: pr.user.login,
+            link: pr.html_url,
+            created_at: pr.created_at,
+            updated_at: pr.updated_at,
+          };
+        })
+      );
+
+      return {
+        success: true,
+        data: {
+          repository: repoName,
+          issue_number: params.issueNumber,
+          total_count: prsWithStatus.length,
+          related_prs: prsWithStatus,
+        },
+      };
+    } catch (error) {
+      logger.error('❌ Failed to fetch related PRs:', error);
+      throw error;
+    }
+  },
+
+  get_issue_details: async (params: { repo?: string; issueNumber?: number | string }) => {
+    try {
+      const repoName = params.repo;
+      const issueNumber = params.issueNumber;
+
+      logger.info(`🔍 Fetching details for issue #${issueNumber} in ${repoName}`);
+
+      if (!repoName) {
+        throw new Error(
+          'Missing required parameter "repo". Example: <capability name="github" action="get_issue_details" repo="owner/repository" issueNumber="123" />'
+        );
+      }
+
+      if (!issueNumber) {
+        throw new Error(
+          'Missing required parameter "issueNumber". Example: <capability name="github" action="get_issue_details" repo="owner/repository" issueNumber="123" />'
+        );
+      }
+
+      // Validate repo format
+      if (!repoName.includes('/')) {
+        throw new Error(
+          `Invalid repo format: "${repoName}". The repo parameter must be in "owner/repository" format (e.g., "owner/SubwayBuilder").`
+        );
+      }
+
+      if (!process.env.GITHUB_TOKEN) {
+        throw new Error('GITHUB_TOKEN not configured. Set GITHUB_TOKEN environment variable.');
+      }
+
+      // Fetch the issue details
+      const issueResponse = await fetch(
+        `https://api.github.com/repos/${repoName}/issues/${issueNumber}`,
+        {
+          headers: {
+            Authorization: `Bearer ${process.env.GITHUB_TOKEN}`,
+            Accept: 'application/vnd.github.v3+json',
+            'User-Agent': 'CoachArtie-Bot/1.0',
+          },
+        }
+      );
+
+      if (!issueResponse.ok) {
+        if (issueResponse.status === 404) {
+          throw new Error(
+            `Issue #${issueNumber} not found in repository "${repoName}". Make sure the issue number is correct and you have access to it.`
+          );
+        }
+        throw new Error(`GitHub API error: ${issueResponse.status} ${issueResponse.statusText}`);
+      }
+
+      const issue = (await issueResponse.json()) as any;
+
+      // Fetch all comments for the issue
+      const commentsResponse = await fetch(
+        `https://api.github.com/repos/${repoName}/issues/${issueNumber}/comments`,
+        {
+          headers: {
+            Authorization: `Bearer ${process.env.GITHUB_TOKEN}`,
+            Accept: 'application/vnd.github.v3+json',
+            'User-Agent': 'CoachArtie-Bot/1.0',
+          },
+        }
+      );
+
+      if (!commentsResponse.ok) {
+        throw new Error(
+          `GitHub API error fetching comments: ${commentsResponse.status} ${commentsResponse.statusText}`
+        );
+      }
+
+      const comments = (await commentsResponse.json()) as any[];
+
+      return {
+        success: true,
+        data: {
+          repository: repoName,
+          issue: {
+            number: issue.number,
+            title: issue.title,
+            body: issue.body,
+            state: issue.state,
+            labels: issue.labels.map((l: any) => ({
+              name: l.name,
+              color: l.color,
+              description: l.description,
+            })),
+            assignees: issue.assignees.map((a: any) => a.login),
+            milestone: issue.milestone
+              ? {
+                  title: issue.milestone.title,
+                  state: issue.milestone.state,
+                  due_on: issue.milestone.due_on,
+                }
+              : null,
+            created_at: issue.created_at,
+            updated_at: issue.updated_at,
+            closed_at: issue.closed_at,
+            html_url: issue.html_url,
+            user: {
+              login: issue.user.login,
+              html_url: issue.user.html_url,
+            },
+            comments_count: issue.comments,
+          },
+          comments: comments.map((comment: any) => ({
+            id: comment.id,
+            body: comment.body,
+            user: {
+              login: comment.user.login,
+              html_url: comment.user.html_url,
+            },
+            created_at: comment.created_at,
+            updated_at: comment.updated_at,
+            html_url: comment.html_url,
+          })),
+          total_comments: comments.length,
+        },
+      };
+    } catch (error) {
+      logger.error('❌ Failed to fetch GitHub issue details:', error);
       throw error;
     }
   },
