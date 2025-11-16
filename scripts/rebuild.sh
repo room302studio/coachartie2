@@ -4,8 +4,6 @@
 # Usage: ./scripts/rebuild.sh [service]
 # Example: ./scripts/rebuild.sh capabilities
 
-set -e
-
 SERVICE=${1:-capabilities}
 COMPOSE_FILE=${COMPOSE_FILE:-"docker-compose.prod.yml"}
 
@@ -14,20 +12,33 @@ echo ""
 
 # Pull latest code
 echo "📦 Pulling latest code..."
-git pull origin main
+git pull origin main 2>&1 | tail -3
+
+# Stop and remove old container
+echo "🛑 Stopping $SERVICE..."
+docker-compose -f $COMPOSE_FILE stop $SERVICE 2>&1 || true
 
 # Rebuild and restart the service
-echo "🐳 Rebuilding and restarting $SERVICE..."
-docker-compose -f $COMPOSE_FILE up --build -d $SERVICE
+echo "🐳 Building $SERVICE (this may take a while)..."
+docker-compose -f $COMPOSE_FILE build --no-cache $SERVICE 2>&1 | tail -5
+
+echo "▶️  Starting $SERVICE..."
+docker-compose -f $COMPOSE_FILE up -d $SERVICE
 
 # Wait for it to be ready
 echo "⏳ Waiting for $SERVICE to start..."
-sleep 5
+for i in {1..30}; do
+  if docker-compose -f $COMPOSE_FILE ps $SERVICE | grep -q "Up"; then
+    echo "✅ $SERVICE is running"
+    break
+  fi
+  sleep 2
+done
 
-# Show logs
+# Show recent logs
 echo ""
 echo "📋 Recent logs:"
-docker-compose -f $COMPOSE_FILE logs --tail 20 $SERVICE
+docker-compose -f $COMPOSE_FILE logs --tail 15 $SERVICE
 
 echo ""
 echo "✅ Rebuild complete!"
