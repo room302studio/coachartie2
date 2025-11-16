@@ -41,6 +41,8 @@ export const githubCapability: RegisteredCapability = {
     'get_deployment_stats',
     'search_repositories',
     'list_issues',
+    'search_issues',
+    'create_issue',
   ],
   description: 'GitHub integration for repository monitoring, issue tracking, and celebration',
   requiredParams: ['action'],
@@ -59,9 +61,13 @@ export const githubCapability: RegisteredCapability = {
         return JSON.stringify(await githubActions.search_repositories(params));
       case 'list_issues':
         return JSON.stringify(await githubActions.list_issues(params));
+      case 'search_issues':
+        return JSON.stringify(await githubActions.search_issues(params));
+      case 'create_issue':
+        return JSON.stringify(await githubActions.create_issue(params));
       default:
         throw new Error(
-          `Unknown github action: ${action}. Available actions: get_releases, get_recent_commits, get_deployment_stats, search_repositories, list_issues`
+          `Unknown github action: ${action}. Available actions: get_releases, get_recent_commits, get_deployment_stats, search_repositories, list_issues, search_issues, create_issue`
         );
     }
   },
@@ -383,6 +389,158 @@ const githubActions = {
       };
     } catch (error) {
       logger.error('❌ Failed to fetch GitHub issues:', error);
+      throw error;
+    }
+  },
+
+  search_issues: async (params: { repo?: string; query?: string; keywords?: string; limit?: number; state?: string }) => {
+    try {
+      const repoName = params.repo || params.query;
+      const searchKeywords = params.keywords || params.query;
+
+      logger.info(`🔍 Searching issues in ${repoName} for: ${searchKeywords}`);
+
+      if (!repoName) {
+        throw new Error(
+          'Missing required parameter "repo". Example: <capability name="github" action="search_issues" repo="owner/repository" keywords="crash" />'
+        );
+      }
+
+      if (!searchKeywords) {
+        throw new Error(
+          'Missing required parameter "keywords". Example: <capability name="github" action="search_issues" repo="owner/repository" keywords="save error" />'
+        );
+      }
+
+      if (!repoName.includes('/')) {
+        throw new Error(
+          `Invalid repo format: "${repoName}". The repo parameter must be in "owner/repository" format (e.g., "owner/SubwayBuilder").`
+        );
+      }
+
+      if (!process.env.GITHUB_TOKEN) {
+        throw new Error('GITHUB_TOKEN not configured. Set GITHUB_TOKEN environment variable.');
+      }
+
+      const state = params.state || 'open';
+      const limit = params.limit || 10;
+      const searchQuery = `repo:${repoName} ${searchKeywords} state:${state}`;
+
+      const response = await fetch(
+        `https://api.github.com/search/issues?q=${encodeURIComponent(searchQuery)}&per_page=${limit}&sort=updated&order=desc`,
+        {
+          headers: {
+            Authorization: `Bearer ${process.env.GITHUB_TOKEN}`,
+            Accept: 'application/vnd.github.v3+json',
+            'User-Agent': 'CoachArtie-Bot/1.0',
+          },
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error(`GitHub API error: ${response.status} ${response.statusText}`);
+      }
+
+      const data = (await response.json()) as any;
+
+      return {
+        success: true,
+        data: {
+          query: searchKeywords,
+          repository: repoName,
+          total_count: data.total_count,
+          issues: data.items.map((issue: any) => ({
+            number: issue.number,
+            title: issue.title,
+            state: issue.state,
+            labels: issue.labels.map((l: any) => l.name),
+            created_at: issue.created_at,
+            updated_at: issue.updated_at,
+            html_url: issue.html_url,
+            user: issue.user.login,
+            comments: issue.comments,
+          })),
+        },
+      };
+    } catch (error) {
+      logger.error('❌ Failed to search GitHub issues:', error);
+      throw error;
+    }
+  },
+
+  create_issue: async (params: {
+    repo?: string;
+    query?: string;
+    title?: string;
+    body?: string;
+    labels?: string[];
+  }) => {
+    try {
+      const repoName = params.repo || params.query;
+
+      logger.info(`📝 Creating GitHub issue for ${repoName}`);
+
+      if (!repoName) {
+        throw new Error(
+          'Missing required parameter "repo". Example: <capability name="github" action="create_issue" repo="owner/repository" title="Bug report" body="Description here" />'
+        );
+      }
+
+      if (!params.title) {
+        throw new Error('Missing required parameter "title".');
+      }
+
+      if (!params.body) {
+        throw new Error('Missing required parameter "body".');
+      }
+
+      if (!process.env.GITHUB_TOKEN) {
+        throw new Error('GITHUB_TOKEN not configured. Set GITHUB_TOKEN environment variable.');
+      }
+
+      const issuePayload: {
+        title: string;
+        body: string;
+        labels?: string[];
+      } = {
+        title: params.title,
+        body: params.body,
+      };
+
+      if (params.labels && params.labels.length > 0) {
+        issuePayload.labels = params.labels;
+      }
+
+      const response = await fetch(`https://api.github.com/repos/${repoName}/issues`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${process.env.GITHUB_TOKEN}`,
+          Accept: 'application/vnd.github.v3+json',
+          'User-Agent': 'CoachArtie-Bot/1.0',
+        },
+        body: JSON.stringify(issuePayload),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        const errorMessage = (errorData as any).message || response.statusText;
+        throw new Error(`GitHub API error: ${response.status} ${errorMessage}`);
+      }
+
+      const createdIssue = (await response.json()) as any;
+
+      return {
+        success: true,
+        data: {
+          issueNumber: createdIssue.number,
+          issueTitle: createdIssue.title,
+          issueUrl: createdIssue.html_url,
+          createdAt: createdIssue.created_at,
+          repository: repoName,
+        },
+      };
+    } catch (error) {
+      logger.error('❌ Failed to create GitHub issue:', error);
       throw error;
     }
   },
