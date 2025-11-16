@@ -546,16 +546,23 @@ export class CapabilityRegistry {
 When you need to execute a capability, you MUST use this EXACT XML format:
 <capability name="capability-name" action="action-name" data='{"param":"value"}' />
 
+IMPORTANT: If you include capabilities in your response, you MUST also include:
+<wants_loop>true</wants_loop>
+
+This tells the system to execute your capabilities and return results. Without this tag, your capabilities will NOT be executed.
+
 CORRECT EXAMPLES:
 <capability name="discord-forums" action="list-forums" data='{"guildId":"123456"}' />
 <capability name="calculator" action="calculate" data='{"expression":"2+2"}' />
 <capability name="web" action="search" data='{"query":"machine learning"}' />
+<wants_loop>true</wants_loop>
 
 WRONG FORMATS (DO NOT USE):
 ❌ discord-forums.list-forums("123456")
 ❌ /discord-forums(list-forums, 123456)
 ❌ discord-forums(list-forums: 123456)
 ❌ /execute_tool discord-forums list-forums
+❌ <capability .../> without <wants_loop>true</wants_loop>
 
 Available capabilities:
 `;
@@ -580,6 +587,7 @@ Available capabilities:
 
     // Format rule shown ONCE
     let instructions = `Use XML format: <capability name="X" action="Y" data='{"param":"value"}' />
+IMPORTANT: Always include <wants_loop>true</wants_loop> after capabilities to execute them!
 
 Available: `;
 
