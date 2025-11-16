@@ -447,22 +447,15 @@ ${capabilityDetails}`;
     const wantsLoopMatch = content.match(/<wants_loop>(true|false)<\/wants_loop>/i);
     const hasCapabilities = content.includes('<capability');
 
-    // LOGIC:
-    // 1. If explicit wants_loop tag found, use that
-    // 2. If no explicit tag but capabilities are present, assume true (execute them!)
-    // 3. Otherwise default to false
-    let wantsLoop: boolean;
-    let decisionSource: string;
+    // SIMPLE LOGIC: If there are capabilities in the response, execute them.
+    // Don't care about explicit tags or defaults - just execute what's there.
+    let wantsLoop = hasCapabilities;
+    let decisionSource = hasCapabilities ? 'detected <capability> tags' : 'no capabilities found';
 
+    // If there's an explicit wants_loop tag, respect it
     if (wantsLoopMatch) {
       wantsLoop = wantsLoopMatch[1].toLowerCase() === 'true';
       decisionSource = 'explicit wants_loop tag';
-    } else if (hasCapabilities) {
-      wantsLoop = true;
-      decisionSource = 'detected <capability> tags - auto-enabling loop';
-    } else {
-      wantsLoop = false;
-      decisionSource = 'no capabilities, no loop needed';
     }
 
     // Remove the wants_loop tag from the response
@@ -471,7 +464,7 @@ ${capabilityDetails}`;
       .trim();
 
     logger.info(
-      `🎯 Loop decision extracted: wantsLoop=${wantsLoop} (${decisionSource})`
+      `🎯 Loop decision: wantsLoop=${wantsLoop} (${decisionSource})`
     );
 
     return {
