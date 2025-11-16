@@ -44,20 +44,22 @@ Focus on:
 
 Be concise (2-3 sentences) and factual. Don't make assumptions beyond what's directly observable.`;
 
+      // Build message chain for generateFromMessageChain
+      const messages = [
+        { role: 'system' as const, content: systemPrompt },
+        { role: 'user' as const, content: prompt }
+      ];
+
       // Use FAST_MODEL for cost efficiency
-      const response = await openRouterService.generateWithModel(
-        prompt,
+      const response = await openRouterService.generateFromMessageChain(
+        messages,
         'observational-system', // Special system user for observations
-        process.env.FAST_MODEL || 'openai/gpt-4o-mini',
-        {
-          systemPrompt,
-          maxTokens: 150, // Keep responses short
-          temperature: 0.3 // Lower temperature for more factual summaries
-        }
+        undefined, // messageId (optional)
+        process.env.FAST_MODEL || 'openai/gpt-4o-mini'
       );
 
       // Estimate cost (GPT-4o-mini: ~$0.15/1M input, $0.60/1M output)
-      const inputTokens = prompt.length / 4; // Rough estimate
+      const inputTokens = (systemPrompt.length + prompt.length) / 4; // Rough estimate
       const outputTokens = response.length / 4;
       const estimatedCost = (inputTokens * 0.00015 + outputTokens * 0.0006) / 1000;
 
