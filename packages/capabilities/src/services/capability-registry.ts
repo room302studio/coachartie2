@@ -620,6 +620,10 @@ capabilityRegistry.register(webCapability);
 import { discordForumsCapability } from '../capabilities/discord-forums.js';
 capabilityRegistry.register(discordForumsCapability);
 
+// Auto-register Discord Channels capability
+import { discordChannelsCapability } from '../capabilities/discord-channels.js';
+capabilityRegistry.register(discordChannelsCapability);
+
 // Auto-register Email capability
 import { emailCapability } from '../capabilities/email.js';
 capabilityRegistry.register(emailCapability);
