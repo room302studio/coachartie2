@@ -644,6 +644,10 @@ capabilityRegistry.register(discordUserHistoryCapability);
 import { discordIssueParserCapability } from '../capabilities/discord-issue-parser.js';
 capabilityRegistry.register(discordIssueParserCapability);
 
+// Auto-register Discord Send Message capability (with whitelist security)
+import { discordSendMessageCapability } from '../capabilities/discord-send-message.js';
+capabilityRegistry.register(discordSendMessageCapability);
+
 // Auto-register Email capability
 import { emailCapability } from '../capabilities/email.js';
 capabilityRegistry.register(emailCapability);
