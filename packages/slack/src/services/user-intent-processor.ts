@@ -220,6 +220,7 @@ export async function processUserIntent(
   let streamingMessage: any = null; // For edit-based streaming
   let lastUpdateTime = 0; // Track time between edits to prevent spam
   let lastEmoji: string | null = null; // Track dynamic emoji reactions
+  const reactedEmojis = new Set<string>(); // Track capability emojis already reacted with
 
   try {
     logger.info(`Processing user intent [${shortId}]:`, {
@@ -386,6 +387,16 @@ export async function processUserIntent(
           // MINIMAL: No emoji reactions - just pure human-like behavior
           lastStatus = status.status;
           updateCount++;
+
+          // Add capability emoji reactions to user's message
+          if (intent.addReaction && status.capabilityEmojis) {
+            for (const emoji of status.capabilityEmojis) {
+              if (!reactedEmojis.has(emoji)) {
+                reactedEmojis.add(emoji);
+                await intent.addReaction(emoji);
+              }
+            }
+          }
         } catch (error) {
           logger.warn(`Progress update failed [${shortId}]:`, error);
         }
