@@ -41,13 +41,16 @@ app.use(express.json());
 
 app.get('/health', (req, res) => {
   const isConnected = ircClient.connected;
-  const channels = Array.from(ircClient.network.channels.values()).map((c: any) => c.name);
+  const channels =
+    ircClient.network?.channels
+      ? Array.from(ircClient.network.channels.values()).map((c: any) => c.name)
+      : [];
 
   res.json({
     status: isConnected ? 'ok' : 'disconnected',
     connected: isConnected,
     server: IRC_SERVER,
-    nick: ircClient.user.nick,
+    nick: ircClient.user?.nick || IRC_NICK,
     channels,
     timestamp: new Date().toISOString(),
   });
@@ -56,13 +59,18 @@ app.get('/health', (req, res) => {
 // Write status file
 function writeStatus(status: 'starting' | 'connected' | 'error' | 'shutdown', data?: any) {
   try {
+    const channels =
+      ircClient.network?.channels
+        ? Array.from(ircClient.network.channels.values()).map((c: any) => c.name)
+        : [];
+
     const statusData = {
       status,
       timestamp: new Date().toISOString(),
       pid: process.pid,
       server: IRC_SERVER,
       nick: IRC_NICK,
-      channels: Array.from(ircClient.network.channels.values()).map((c: any) => c.name),
+      channels,
       uptime: process.uptime(),
       ...data,
     };
