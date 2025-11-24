@@ -41,7 +41,7 @@ app.use(express.json());
 
 app.get('/health', (req, res) => {
   const isConnected = ircClient.connected;
-  const channels = Array.from(ircClient.network.channels.values()).map((c) => c.name);
+  const channels = Array.from(ircClient.network.channels.values()).map((c: any) => c.name);
 
   res.json({
     status: isConnected ? 'ok' : 'disconnected',
@@ -62,7 +62,7 @@ function writeStatus(status: 'starting' | 'connected' | 'error' | 'shutdown', da
       pid: process.pid,
       server: IRC_SERVER,
       nick: IRC_NICK,
-      channels: Array.from(ircClient.network.channels.values()).map((c) => c.name),
+      channels: Array.from(ircClient.network.channels.values()).map((c: any) => c.name),
       uptime: process.uptime(),
       ...data,
     };
@@ -123,7 +123,7 @@ async function start() {
       logger.warn('IRC socket closed');
     });
 
-    ircClient.on('socket error', (error) => {
+    ircClient.on('socket error', (error: Error) => {
       logger.error('IRC socket error:', error);
       writeStatus('error', { error: error.message });
     });

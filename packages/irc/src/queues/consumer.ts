@@ -47,9 +47,7 @@ function chunkMessage(message: string, limit: number): string[] {
   return chunks;
 }
 
-export async function startResponseConsumer(
-  client: irc.Client
-): Promise<Worker<OutgoingMessage>> {
+export async function startResponseConsumer(client: irc.Client): Promise<any> {
   const worker = createWorker<OutgoingMessage, void>(QUEUES.OUTGOING_IRC, async (job) => {
     const response = job.data;
 
@@ -89,15 +87,15 @@ export async function startResponseConsumer(
     }
   });
 
-  worker.on('completed', (job) => {
+  worker.on('completed', (job: any) => {
     logger.info(`IRC response sent successfully for message ${job.data.inReplyTo}`);
   });
 
-  worker.on('failed', (job, err) => {
+  worker.on('failed', (job: any, err: Error) => {
     logger.error(`IRC response failed for message ${job?.data?.inReplyTo}:`, err);
   });
 
-  worker.on('error', (err) => {
+  worker.on('error', (err: Error) => {
     logger.error('IRC worker error:', err);
   });
 
