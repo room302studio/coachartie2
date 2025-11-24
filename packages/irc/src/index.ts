@@ -83,11 +83,19 @@ function writeStatus(status: 'starting' | 'connected' | 'error' | 'shutdown', da
 }
 
 async function start() {
+  console.log('🚀 start() function called!');
   try {
+    console.log('📋 About to log "Starting IRC bot..."');
     logger.info('Starting IRC bot...');
+    console.log('📄 About to write status...');
     writeStatus('starting');
+    console.log('✅ Status written, proceeding...');
 
     // Setup IRC client
+    console.log(`🔌 Connecting to IRC: ${IRC_SERVER}:${IRC_PORT}`);
+    console.log(`👤 Nick: ${IRC_NICK}, Username: ${IRC_USERNAME}`);
+    console.log(`🔐 TLS: ${IRC_USE_TLS}`);
+
     ircClient.connect({
       host: IRC_SERVER,
       port: IRC_PORT,
@@ -101,8 +109,16 @@ async function start() {
     });
 
     // Handle IRC events
+    logger.info(`Attempting to connect to ${IRC_SERVER}:${IRC_PORT} as ${IRC_NICK}`);
+    logger.info(`TLS: ${IRC_USE_TLS}, Auto-reconnect: true`);
+
+    // Log all IRC events for debugging
+    (ircClient as any).on('*', (event: string, ...args: any[]) => {
+      console.log(`🎭 IRC event: ${event}`, args);
+    });
+
     ircClient.on('registered', () => {
-      logger.info(`✅ irc: Connected to ${IRC_SERVER} as ${IRC_NICK}`);
+      logger.info(`✅ irc: Registered on ${IRC_SERVER} as ${IRC_NICK}`);
 
       // Identify with NickServ if password provided
       if (IRC_PASSWORD) {
@@ -124,6 +140,7 @@ async function start() {
 
     ircClient.on('close', () => {
       logger.warn('IRC connection closed');
+      logger.warn(`Will retry connection to ${IRC_SERVER}:${IRC_PORT} in 4 seconds...`);
       writeStatus('error', { error: 'Connection closed' });
     });
 
@@ -133,7 +150,12 @@ async function start() {
 
     ircClient.on('socket error', (error: Error) => {
       logger.error('IRC socket error:', error);
+      logger.error(`Failed to connect to ${IRC_SERVER}:${IRC_PORT}`);
       writeStatus('error', { error: error.message });
+    });
+
+    ircClient.on('error', (error: Error) => {
+      logger.error('IRC client error:', error);
     });
 
     // Setup message handler
@@ -174,4 +196,8 @@ process.on('SIGINT', async () => {
 });
 
 // Start the bot
-start();
+console.log('🎯 Module loaded, calling start()...');
+start().catch((err) => {
+  console.error('💥 FATAL: start() failed:', err);
+  process.exit(1);
+});
