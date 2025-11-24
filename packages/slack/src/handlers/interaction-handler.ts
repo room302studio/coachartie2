@@ -176,7 +176,8 @@ export function setupInteractionHandler(app: App) {
 
     try {
       // Handle button interactions through unified intent processor
-      const buttonContent = `[Button: ${action.action_id}] ${action.value || ''}`;
+      const actionValue = 'value' in action ? action.value : '';
+      const buttonContent = `[Button: ${action.action_id}] ${actionValue}`;
 
       await processUserIntent(
         {
@@ -186,7 +187,7 @@ export function setupInteractionHandler(app: App) {
           source: 'button',
           metadata: {
             actionId: action.action_id,
-            actionValue: action.value,
+            actionValue,
             channelId: body.channel?.id,
             messageTs: body.message?.ts,
             correlationId,

@@ -58,10 +58,38 @@ const STREAM_EMOJI = ':satellite:';
 // =============================================================================
 
 /**
+ * Type guard: Check if message has a user property
+ */
+function hasUser(message: MessageEvent): message is MessageEvent & { user: string } {
+  return 'user' in message && typeof message.user === 'string';
+}
+
+/**
+ * Type guard: Check if message has text property
+ */
+function hasText(message: MessageEvent): message is MessageEvent & { text: string } {
+  return 'text' in message && typeof message.text === 'string';
+}
+
+/**
  * Helper: Check if message is in a thread
  */
 function isThreadMessage(message: MessageEvent): boolean {
-  return !!message.thread_ts;
+  return 'thread_ts' in message && !!message.thread_ts;
+}
+
+/**
+ * Helper: Safely get thread_ts from message
+ */
+function getThreadTs(message: MessageEvent): string | undefined {
+  return 'thread_ts' in message ? message.thread_ts : undefined;
+}
+
+/**
+ * Helper: Safely get user from message
+ */
+function getUser(message: MessageEvent): string {
+  return hasUser(message) ? message.user : 'unknown';
 }
 
 /**
@@ -229,7 +257,8 @@ export function setupMessageHandler(app: App) {
       return;
     }
 
-    const msgEvent = message as MessageEvent;
+    // Type assertion: we've checked text and user exist above
+    const msgEvent = message as MessageEvent & { user: string; text: string };
 
     // -------------------------------------------------------------------------
     // CORRELATION & LOGGING SETUP
@@ -246,7 +275,7 @@ export function setupMessageHandler(app: App) {
       messageTs: msgEvent.ts,
       contentLength: msgEvent.text?.length || 0,
       isThread: isThreadMessage(msgEvent),
-      threadTs: msgEvent.thread_ts,
+      threadTs: getThreadTs(msgEvent),
     });
 
     // Track message received
@@ -396,7 +425,7 @@ export function setupMessageHandler(app: App) {
 
       await say({
         text: `❌ ${errorMsg}`,
-        thread_ts: msgEvent.thread_ts,
+        thread_ts: getThreadTs(msgEvent),
       });
     }
 
@@ -470,6 +499,12 @@ async function handleMessageAsIntent(
   const shortId = getShortCorrelationId(correlationId);
   let streamingMessageTs: string | null = null;
 
+  // Type guard: Only handle messages with user and text
+  if (!hasUser(message) || !hasText(message)) {
+    logger.warn(`Skipping message without user or text [${shortId}]`);
+    return;
+  }
+
   try {
     // MINIMAL: No status messages - just start working like a human
 
@@ -492,7 +527,7 @@ async function handleMessageAsIntent(
     const threadInfo = isThreadMessage(message)
       ? {
           isThread: true,
-          threadTs: message.thread_ts,
+          threadTs: getThreadTs(message),
         }
       : null;
 
@@ -516,7 +551,7 @@ async function handleMessageAsIntent(
         metadata: {
           messageTs: message.ts,
           channelId: message.channel,
-          threadTs: message.thread_ts,
+          threadTs: getThreadTs(message),
           correlationId,
         },
 
@@ -535,7 +570,7 @@ async function handleMessageAsIntent(
 
           const responseMessage = await say({
             text: chunks[0],
-            thread_ts: message.thread_ts,
+            thread_ts: getThreadTs(message),
           });
 
           // Store reference for potential editing
@@ -553,7 +588,7 @@ async function handleMessageAsIntent(
             logger.info(`📨 SLACK: Sending chunk ${i + 1}/${chunks.length} [${shortId}]`);
             await say({
               text: chunks[i],
-              thread_ts: message.thread_ts,
+              thread_ts: getThreadTs(message),
             });
             await new Promise((resolve) => setTimeout(resolve, CHUNK_RATE_LIMIT_DELAY));
           }
@@ -599,7 +634,7 @@ async function handleMessageAsIntent(
                 truncated: content.length > SLACK_MESSAGE_LIMIT,
               },
               correlationId,
-              message.user
+              'user' in message ? message.user : 'unknown'
             );
           } catch (error) {
             logger.error(`❌ SLACK: Failed to edit message [${shortId}]:`, error);
@@ -618,7 +653,12 @@ async function handleMessageAsIntent(
               timestamp: message.ts,
               name: emoji.replace(/:/g, ''), // Remove colons from emoji name
             });
-            telemetry.logEvent('reaction_added', { emoji }, correlationId, message.user);
+            telemetry.logEvent(
+              'reaction_added',
+              { emoji },
+              correlationId,
+              'user' in message ? message.user : 'unknown'
+            );
           } catch (error) {
             logger.warn(`Failed to add reaction ${emoji} [${shortId}]:`, error);
           }
@@ -631,7 +671,12 @@ async function handleMessageAsIntent(
               timestamp: message.ts,
               name: emoji.replace(/:/g, ''),
             });
-            telemetry.logEvent('reaction_removed', { emoji }, correlationId, message.user);
+            telemetry.logEvent(
+              'reaction_removed',
+              { emoji },
+              correlationId,
+              'user' in message ? message.user : 'unknown'
+            );
           } catch (error) {
             logger.warn(`Failed to remove reaction ${emoji} [${shortId}]:`, error);
           }
@@ -656,7 +701,7 @@ async function handleMessageAsIntent(
     try {
       await say({
         text: `❌ Sorry, I couldn't process your message`,
-        thread_ts: message.thread_ts,
+        thread_ts: 'thread_ts' in message ? message.thread_ts : undefined,
       });
     } catch (replyError) {
       logger.error(`Failed to send error reply [${shortId}]:`, replyError);

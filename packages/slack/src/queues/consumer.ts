@@ -2,7 +2,9 @@ import type { App } from '@slack/bolt';
 import { createWorker, QUEUES, OutgoingMessage, logger } from '@coachartie/shared';
 import type { Worker } from 'bullmq';
 
-export async function startResponseConsumer(app: App): Promise<Worker<OutgoingMessage>> {
+export async function startResponseConsumer(
+  app: App
+): Promise<ReturnType<typeof createWorker<OutgoingMessage, void>>> {
   const worker = createWorker<OutgoingMessage, void>(QUEUES.OUTGOING_SLACK, async (job) => {
     const response = job.data;
 
