@@ -167,7 +167,7 @@ export class LLMLoopService {
             `🔧 Executing LLM-requested capability: ${capability.name}:${capability.action} (failure count: ${failureCount}/${MAX_FAILURES_PER_CAPABILITY})`
           );
 
-          const processedCapability = capabilityExecutor.substituteTemplateVariables(capability, context.results);
+          const processedCapability = await capabilityExecutor.substituteTemplateVariables(capability, context.results);
           const capabilityForExecution = {
             name: processedCapability.name,
             action: processedCapability.action,
@@ -191,6 +191,15 @@ export class LLMLoopService {
 
           context.results.push(result);
           context.currentStep++;
+
+          // Auto-store result to global variable if 'output' param is specified
+          const outputVar = processedCapability.params.output;
+          if (outputVar && result.success && result.data) {
+            const { GlobalVariableStore } = await import('../capabilities/variable-store.js');
+            const globalStore = GlobalVariableStore.getInstance();
+            await globalStore.set(String(outputVar), result.data, `Auto-stored from ${capability.name}:${capability.action}`);
+            logger.info(`📦 Auto-stored result to global variable: ${outputVar}`);
+          }
 
           // Add system feedback about the capability execution
           if (result.success) {

@@ -1,5 +1,6 @@
 import { XMLParser } from 'fast-xml-parser';
 import { logger } from '@coachartie/shared';
+import { capabilityRegistry } from '../services/capability-registry.js';
 
 export interface ParsedCapability {
   name: string;
@@ -140,7 +141,10 @@ export class CapabilityXMLParser {
 
   /**
    * Extract ALL capability tags using HYBRID format support
-   * Handles both: <capability name="X" action="Y" param="value" /> AND <capability name="X" action="Y">content</capability>
+   * Handles:
+   * 1. <capability name="X" action="Y" param="value" />
+   * 2. <capability name="X" action="Y">content</capability>
+   * 3. <action>content</action> (simplified syntax - "dumdumeasytowns")
    */
   private extractUnifiedCapabilityTags(text: string): ParsedCapability[] {
     const capabilities: ParsedCapability[] = [];
@@ -150,6 +154,9 @@ export class CapabilityXMLParser {
 
     // Extract content-based format second
     capabilities.push(...this.extractContentCapabilities(text));
+
+    // Extract simplified action tags third (e.g., <recall> instead of <capability name="memory" action="recall">)
+    capabilities.push(...this.extractSimpleActionTags(text));
 
     return capabilities;
   }
@@ -296,6 +303,53 @@ export class CapabilityXMLParser {
         content,
         params,
       });
+    }
+
+    return capabilities;
+  }
+
+  /**
+   * Extract simplified action tags like <recall> instead of <capability name="memory" action="recall">
+   * This makes capability syntax "dumdumeasytowns"
+   */
+  private extractSimpleActionTags(text: string): ParsedCapability[] {
+    const capabilities: ParsedCapability[] = [];
+
+    // Match any XML tags that aren't "capability" (both self-closing and with content)
+    // Self-closing: <tagname attr="value" />
+    // With content: <tagname attr="value">content</tagname>
+    // Use [\s\S] instead of . to match newlines in content
+    const simpleTagPattern = /<(\w+)([^>]*)(?:\/>|>([\s\S]*?)<\/\1>)/g;
+
+    let match;
+    while ((match = simpleTagPattern.exec(text)) !== null) {
+      const tagName = match[1];
+      const attributeString = match[2];
+      const content = match[3] || '';
+
+      // Skip the main capability tag and special tags
+      if (tagName === 'capability' || tagName === 'wants_loop' || tagName === 'thinking') {
+        continue;
+      }
+
+      // Check if this tag name is a registered action
+      const capabilityName = capabilityRegistry.findCapabilityByAction(tagName);
+
+      if (capabilityName) {
+        // Parse attributes
+        const params = this.parseAttributes(attributeString);
+
+        logger.info(
+          `🎯 SIMPLE ACTION TAG: Found <${tagName}> → maps to ${capabilityName}:${tagName}`
+        );
+
+        capabilities.push({
+          name: capabilityName,
+          action: tagName,
+          content: content.trim(),
+          params,
+        });
+      }
     }
 
     return capabilities;
