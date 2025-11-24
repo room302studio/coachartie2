@@ -136,6 +136,47 @@ services:
       start_period: 10s
     restart: unless-stopped
 
+  irc:
+    build:
+      context: .
+      dockerfile: ./packages/irc/Dockerfile
+    user: "1000:1000"
+    ports:
+      - "127.0.0.1:47327:47327"  # Bind to localhost only
+    environment:
+      - NODE_ENV=development
+      - CAPABILITIES_URL=http://capabilities:47324
+      - REDIS_HOST=redis
+      - REDIS_PORT=47320
+      - IRC_PORT=47327
+      - LOG_LEVEL=info
+      - CONSOLE_LOG_LEVEL=warn
+      - SERVICE_NAME=irc
+      - LOGS_DIR=/app/logs
+      - IRC_SERVER=${IRC_SERVER:-irc.forestpunks.com}
+      - IRC_SERVER_PORT=${IRC_SERVER_PORT:-6667}
+      - IRC_NICK=${IRC_NICK:-coachartie}
+      - IRC_USERNAME=${IRC_USERNAME:-artie}
+      - IRC_REALNAME=${IRC_REALNAME:-Coach Artie Bot}
+      - IRC_CHANNELS=${IRC_CHANNELS:-#test}
+      - IRC_USE_TLS=${IRC_USE_TLS:-false}
+      - IRC_PASSWORD=${IRC_PASSWORD}
+    volumes:
+      - ./logs:/app/logs:rw
+      - ./data:/app/data:rw
+    depends_on:
+      redis:
+        condition: service_healthy
+      capabilities:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:47327/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+
   brain:
     build:
       context: .

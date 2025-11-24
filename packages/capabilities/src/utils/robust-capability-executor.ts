@@ -1,7 +1,7 @@
 import { logger } from '@coachartie/shared';
 import { ParsedCapability } from './xml-parser.js';
 import { capabilityRegistry } from '../services/capability-registry.js';
-import { VariableStore } from '../capabilities/variable-store.js';
+import { GlobalVariableStore } from '../capabilities/variable-store.js';
 import Handlebars from 'handlebars';
 import {
   StructuredCapabilityError,
@@ -156,12 +156,12 @@ export class RobustCapabilityExecutor {
    * Interpolate variables in parameters using Handlebars template engine
    * Supports both ${var} and {{var}} syntax
    */
-  private interpolateParams(params: Record<string, any>, userId: string): Record<string, any> {
-    const variableStore = VariableStore.getInstance();
+  private async interpolateParams(params: Record<string, any>, userId: string): Promise<Record<string, any>> {
+    const variableStore = GlobalVariableStore.getInstance();
     const interpolated: Record<string, any> = {};
 
-    // Get all variables for this user as a flat object for Handlebars
-    const userVariables = this.getUserVariablesForHandlebars(userId);
+    // Get all global variables as a flat object for Handlebars
+    const userVariables = await this.getUserVariablesForHandlebars(userId);
 
     for (const [key, value] of Object.entries(params)) {
       if (typeof value === 'string') {
@@ -184,7 +184,7 @@ export class RobustCapabilityExecutor {
         }
       } else if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
         // Recursively interpolate nested objects
-        interpolated[key] = this.interpolateParams(value, userId);
+        interpolated[key] = await this.interpolateParams(value, userId);
       } else {
         interpolated[key] = value;
       }
@@ -194,23 +194,12 @@ export class RobustCapabilityExecutor {
   }
 
   /**
-   * Get all user variables as a flat object for Handlebars
+   * Get all global variables as a flat object for Handlebars
    */
-  private getUserVariablesForHandlebars(userId: string): Record<string, any> {
-    const variableStore = VariableStore.getInstance();
-    const session = variableStore['sessions'].get(userId);
-
-    if (!session) {
-      return {};
-    }
-
-    // Convert Map to plain object for Handlebars
-    const variables: Record<string, any> = {};
-    for (const [key, value] of session.entries()) {
-      variables[key] = value;
-    }
-
-    return variables;
+  private async getUserVariablesForHandlebars(userId: string): Promise<Record<string, any>> {
+    const variableStore = GlobalVariableStore.getInstance();
+    // Global store - get all variables
+    return await variableStore.list();
   }
 
   private async tryRegistryExecution(
@@ -227,7 +216,7 @@ export class RobustCapabilityExecutor {
       : capability.params;
 
     // Interpolate variables in params
-    paramsWithContext = this.interpolateParams(paramsWithContext, context.userId);
+    paramsWithContext = await this.interpolateParams(paramsWithContext, context.userId);
 
     // Interpolate variables in content as well
     let interpolatedContent = capability.content;
@@ -235,7 +224,7 @@ export class RobustCapabilityExecutor {
       try {
         const normalizedTemplate = capability.content.replace(/\$\{([^}]+)\}/g, '{{$1}}');
         const template = Handlebars.compile(normalizedTemplate, { noEscape: true });
-        const userVariables = this.getUserVariablesForHandlebars(context.userId);
+        const userVariables = await this.getUserVariablesForHandlebars(context.userId);
         interpolatedContent = template(userVariables);
 
         if (interpolatedContent !== capability.content) {

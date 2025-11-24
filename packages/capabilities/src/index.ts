@@ -43,7 +43,7 @@ import { logsRouter, stopCleanupInterval } from './routes/logs.js';
 import { schedulerService } from './services/scheduler.js';
 import { jobTracker } from './services/job-tracker.js';
 import { costMonitor } from './services/cost-monitor.js';
-import { VariableStore } from './capabilities/variable-store.js';
+import { GlobalVariableStore } from './capabilities/variable-store.js';
 // Import orchestrator FIRST to trigger capability registration
 import './services/capability-orchestrator.js';
 import { capabilityRegistry } from './services/capability-registry.js';
@@ -259,7 +259,7 @@ async function gracefulShutdown() {
     stopCleanupInterval();
 
     logger.info('Shutting down variable store...');
-    VariableStore.getInstance().shutdown();
+    GlobalVariableStore.getInstance().shutdown();
 
     logger.info('Cleaning up hybrid data layer...');
     await hybridDataLayer.cleanup();

@@ -426,6 +426,60 @@ async function runMigrations(database: Database): Promise<void> {
       logger.info('✅ Created messages table for conversation history');
     }
 
+    // Check if global_variables table exists for mustache template substitution
+    const globalVarTables = await database.all(`
+      SELECT name FROM sqlite_master
+      WHERE type='table' AND name='global_variables'
+    `);
+
+    if (globalVarTables.length === 0) {
+      logger.info('📝 Creating global_variables table for LEGO-block orchestration');
+      await database.exec(`
+        CREATE TABLE IF NOT EXISTS global_variables (
+          key TEXT PRIMARY KEY,
+          value TEXT NOT NULL,
+          value_type TEXT DEFAULT 'string', -- 'string', 'number', 'boolean', 'json'
+          description TEXT,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_global_variables_updated ON global_variables(updated_at);
+
+        -- Variable history for tracking all changes
+        CREATE TABLE IF NOT EXISTS global_variables_history (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          key TEXT NOT NULL,
+          value TEXT NOT NULL,
+          value_type TEXT DEFAULT 'string',
+          changed_by TEXT DEFAULT 'system',
+          change_reason TEXT,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_global_variables_history_key ON global_variables_history(key);
+        CREATE INDEX IF NOT EXISTS idx_global_variables_history_created ON global_variables_history(created_at);
+
+        -- Trigger to auto-update timestamp and create history on variable changes
+        CREATE TRIGGER IF NOT EXISTS update_global_variables_timestamp
+          AFTER UPDATE ON global_variables
+          BEGIN
+            UPDATE global_variables SET updated_at = CURRENT_TIMESTAMP WHERE key = NEW.key;
+            INSERT INTO global_variables_history (key, value, value_type, changed_by, change_reason)
+            VALUES (NEW.key, NEW.value, NEW.value_type, 'system', 'Variable updated');
+          END;
+
+        -- Trigger to create history on insert
+        CREATE TRIGGER IF NOT EXISTS insert_global_variables_history
+          AFTER INSERT ON global_variables
+          BEGIN
+            INSERT INTO global_variables_history (key, value, value_type, changed_by, change_reason)
+            VALUES (NEW.key, NEW.value, NEW.value_type, 'system', 'Variable created');
+          END;
+      `);
+      logger.info('✅ Created global_variables table for mustache substitution');
+    }
+
     logger.info('✅ Database migrations completed');
   } catch (error) {
     logger.error('❌ Failed to run migrations:', error);

@@ -5,6 +5,7 @@ export const QUEUES = {
   OUTGOING_SLACK: 'coachartie-slack-outgoing',
   OUTGOING_SMS: 'coachartie-sms-outgoing',
   OUTGOING_EMAIL: 'coachartie-email-outgoing',
+  OUTGOING_IRC: 'coachartie-irc-outgoing',
   DEAD_LETTER: 'coachartie-dlq',
 } as const;
 

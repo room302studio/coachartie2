@@ -139,6 +139,22 @@ export class CapabilityRegistry {
   }
 
   /**
+   * Find the capability name that provides a given action
+   * This enables simplified syntax like <action> instead of <capability name="X" action="Y">
+   *
+   * @param action - The action to find
+   * @returns The capability name that provides this action, or null if not found
+   */
+  findCapabilityByAction(action: string): string | null {
+    for (const [name, capability] of this.capabilities) {
+      if (capability.supportedActions.includes(action)) {
+        return name;
+      }
+    }
+    return null;
+  }
+
+  /**
    * Remove a capability from the registry
    *
    * @param name - The capability name to remove
@@ -659,6 +675,14 @@ capabilityRegistry.register(userProfileCapability);
 // Auto-register Shell capability
 import { shellCapability } from '../capabilities/shell.js';
 capabilityRegistry.register(shellCapability);
+
+// Auto-register Memory capability
+import { memoryCapability } from '../capabilities/memory.js';
+capabilityRegistry.register(memoryCapability);
+
+// Auto-register Variable Store capability
+import { variableStoreCapability } from '../capabilities/variable-store.js';
+capabilityRegistry.register(variableStoreCapability);
 
 // Log all successfully registered capabilities on startup
 logger.info(

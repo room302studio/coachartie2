@@ -7,6 +7,7 @@ import { getErrorMessage } from '../utils/error-utils.js';
 import { openRouterService } from './openrouter.js';
 import { contextAlchemy } from './context-alchemy.js';
 import { capabilityParser } from './capability-parser.js';
+import { GlobalVariableStore } from '../capabilities/variable-store.js';
 import {
   ExtractedCapability,
   CapabilityResult,
@@ -75,7 +76,7 @@ export class CapabilityExecutor {
           `🔧 Executing capability ${capabilityIndex + 1}/${context.capabilities.length}: ${capability.name}:${capability.action}`
         );
 
-        const processedCapability = this.substituteTemplateVariables(capability, context.results);
+        const processedCapability = await this.substituteTemplateVariables(capability, context.results);
         const capabilityForExecution = {
           name: processedCapability.name,
           action: processedCapability.action,
@@ -99,6 +100,14 @@ export class CapabilityExecutor {
 
         context.results.push(result);
         context.currentStep++;
+
+        // Auto-store result to global variable if 'output' param is specified
+        const outputVar = processedCapability.params.output;
+        if (outputVar && result.success && result.data) {
+          const globalStore = GlobalVariableStore.getInstance();
+          await globalStore.set(String(outputVar), result.data, `Auto-stored from ${capability.name}:${capability.action}`);
+          logger.info(`📦 Auto-stored result to global variable: ${outputVar}`);
+        }
 
         // SMART COST CONTROL: Intermediate responses enable natural chaining but cost 1 LLM call per capability
         // Skip intermediate responses when they won't add value:
@@ -233,7 +242,7 @@ export class CapabilityExecutor {
   async executeCapabilityChain(context: OrchestrationContext): Promise<void> {
     for (const capability of context.capabilities) {
       // Apply template variable substitution using previous results
-      const processedCapability = this.substituteTemplateVariables(capability, context.results);
+      const processedCapability = await this.substituteTemplateVariables(capability, context.results);
 
       try {
         logger.info(`🔧 Executing capability ${capability.name}:${capability.action}`);
@@ -267,6 +276,14 @@ export class CapabilityExecutor {
         context.results.push(result);
         context.currentStep++;
 
+        // Auto-store result to global variable if 'output' param is specified
+        const outputVar = processedCapability.params.output;
+        if (outputVar && result.success && result.data) {
+          const globalStore = GlobalVariableStore.getInstance();
+          await globalStore.set(String(outputVar), result.data, `Auto-stored from ${capability.name}:${capability.action}`);
+          logger.info(`📦 Auto-stored result to global variable: ${outputVar}`);
+        }
+
         logger.info(
           `✅ Capability ${capability.name}:${capability.action} ${
             result.success ? 'succeeded' : 'failed'
@@ -289,11 +306,14 @@ export class CapabilityExecutor {
   /**
    * Perform template variable substitution on capability content and params
    * Enables capability chaining via {{result}}, {{result_1}}, etc.
+   * ALSO substitutes global variables from the database
    */
-  substituteTemplateVariables(
+  async substituteTemplateVariables(
     capability: ExtractedCapability,
     previousResults: CapabilityResult[]
-  ): ExtractedCapability {
+  ): Promise<ExtractedCapability> {
+    const globalStore = GlobalVariableStore.getInstance();
+
     // Create substitution map from previous results
     const substitutions = new Map<string, string>();
 
@@ -315,23 +335,30 @@ export class CapabilityExecutor {
       }
     }
 
-    // Substitute in content
+    // Substitute in content (both local results AND global variables)
     let processedContent = capability.content;
     if (processedContent) {
+      // First substitute local results
       for (const [key, value] of substitutions) {
         const pattern = new RegExp(`\\{\\{\\s*${key}\\s*\\}\\}`, 'g');
         processedContent = processedContent.replace(pattern, value);
       }
+      // Then substitute global variables from database
+      processedContent = await globalStore.substitute(processedContent);
     }
 
     // Substitute in params (deep copy to avoid mutation)
     const processedParams = JSON.parse(JSON.stringify(capability.params));
     for (const [paramKey, paramValue] of Object.entries(processedParams)) {
       if (typeof paramValue === 'string') {
+        // First substitute local results
+        let processed = paramValue;
         for (const [key, value] of substitutions) {
           const pattern = new RegExp(`\\{\\{\\s*${key}\\s*\\}\\}`, 'g');
-          processedParams[paramKey] = paramValue.replace(pattern, value);
+          processed = processed.replace(pattern, value);
         }
+        // Then substitute global variables
+        processedParams[paramKey] = await globalStore.substitute(processed);
       }
     }
 
