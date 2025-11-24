@@ -211,7 +211,9 @@ export async function startMessageConsumer() {
   return worker;
 }
 
-function getOutgoingQueueName(type: 'discord' | 'slack' | 'sms' | 'email' | 'api'): string {
+function getOutgoingQueueName(
+  type: 'discord' | 'slack' | 'sms' | 'email' | 'api' | 'irc'
+): string {
   switch (type) {
     case 'discord':
       return QUEUES.OUTGOING_DISCORD;
@@ -221,6 +223,8 @@ function getOutgoingQueueName(type: 'discord' | 'slack' | 'sms' | 'email' | 'api
       return QUEUES.OUTGOING_SMS;
     case 'email':
       return QUEUES.OUTGOING_EMAIL;
+    case 'irc':
+      return QUEUES.OUTGOING_IRC;
     default:
       throw new Error(`Unknown response type: ${type}`);
   }

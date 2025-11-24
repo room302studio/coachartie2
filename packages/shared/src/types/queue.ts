@@ -2,7 +2,7 @@ export interface BaseQueueMessage {
   id: string;
   timestamp: Date;
   retryCount: number;
-  source: 'discord' | 'slack' | 'sms' | 'email' | 'api' | 'capabilities';
+  source: 'discord' | 'slack' | 'sms' | 'email' | 'api' | 'capabilities' | 'irc';
 }
 
 export interface IncomingMessage extends BaseQueueMessage {
@@ -10,7 +10,7 @@ export interface IncomingMessage extends BaseQueueMessage {
   message: string;
   context?: Record<string, any>;
   respondTo: {
-    type: 'discord' | 'slack' | 'sms' | 'email' | 'api';
+    type: 'discord' | 'slack' | 'sms' | 'email' | 'api' | 'irc';
     channelId?: string;
     phoneNumber?: string;
     emailAddress?: string;
