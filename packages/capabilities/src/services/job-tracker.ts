@@ -1,12 +1,5 @@
 import { logger } from '@coachartie/shared';
 
-export interface CapabilityExecution {
-  name: string;
-  emoji?: string;
-  action?: string;
-  startedAt: Date;
-}
-
 export interface JobResult {
   messageId: string;
   status: 'pending' | 'processing' | 'completed' | 'failed' | 'cancelled';
@@ -20,7 +13,7 @@ export interface JobResult {
   cancellationReason?: string;
   partialResponse?: string; // For streaming responses
   lastStreamUpdate?: Date;
-  executingCapabilities?: CapabilityExecution[]; // Track which capabilities are executing
+  capabilityEmojis?: string[]; // Emoji signatures of executing capabilities for Discord reactions
 }
 
 export class JobTracker {
@@ -88,30 +81,16 @@ export class JobTracker {
   /**
    * Track capability execution for Discord reactions
    */
-  trackCapabilityExecution(
-    messageId: string,
-    capabilityName: string,
-    emoji?: string,
-    action?: string
-  ): void {
+  trackCapabilityExecution(messageId: string, emoji: string): void {
     const job = this.jobs.get(messageId);
-    if (job) {
-      if (!job.executingCapabilities) {
-        job.executingCapabilities = [];
+    if (job && emoji) {
+      if (!job.capabilityEmojis) {
+        job.capabilityEmojis = [];
       }
-
-      // Only add if not already tracking this capability
-      const alreadyTracking = job.executingCapabilities.some((c) => c.name === capabilityName);
-      if (!alreadyTracking) {
-        job.executingCapabilities.push({
-          name: capabilityName,
-          emoji,
-          action,
-          startedAt: new Date(),
-        });
-        logger.info(
-          `${emoji || '⚙️'} Tracking capability ${capabilityName}${action ? `:${action}` : ''} for job ${messageId}`
-        );
+      // Only add if not already present
+      if (!job.capabilityEmojis.includes(emoji)) {
+        job.capabilityEmojis.push(emoji);
+        logger.info(`${emoji} Tracking capability emoji for job ${messageId}`);
       }
     }
   }

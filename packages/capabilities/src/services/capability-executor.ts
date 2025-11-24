@@ -412,21 +412,11 @@ export class CapabilityExecutor {
       if (context?.messageId) {
         try {
           const capabilityInfo = capabilityRegistry.get(capability.name, capability.action);
-          const emoji = capabilityInfo?.emoji;
-          jobTracker.trackCapabilityExecution(
-            context.messageId,
-            capability.name,
-            emoji,
-            capability.action
-          );
+          if (capabilityInfo?.emoji) {
+            jobTracker.trackCapabilityExecution(context.messageId, capabilityInfo.emoji);
+          }
         } catch {
-          // Capability not found, track without emoji
-          jobTracker.trackCapabilityExecution(
-            context.messageId,
-            capability.name,
-            undefined,
-            capability.action
-          );
+          // Capability not found, skip tracking
         }
       }
 
