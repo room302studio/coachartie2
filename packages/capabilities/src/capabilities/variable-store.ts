@@ -316,6 +316,7 @@ async function handleVariableAction(params: VariableParams, content?: string): P
  */
 export const variableStoreCapability: RegisteredCapability = {
   name: 'variable',
+  emoji: '💾',
   supportedActions: ['set', 'get', 'substitute', 'list', 'delete', 'clear'],
   description: 'Global persistent variable store for mustache template substitution and LEGO-block orchestration',
   handler: handleVariableAction,

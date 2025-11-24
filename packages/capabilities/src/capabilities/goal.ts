@@ -404,6 +404,7 @@ async function handleGoalAction(params: GoalParams, content?: string): Promise<s
  */
 export const goalCapability: RegisteredCapability = {
   name: 'goal',
+  emoji: '🎯',
   supportedActions: ['set', 'check', 'update', 'complete', 'history'],
   description: 'Manage goals and long-term objectives',
   handler: handleGoalAction,

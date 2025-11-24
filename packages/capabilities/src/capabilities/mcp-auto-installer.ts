@@ -523,6 +523,7 @@ export { mcpAutoInstaller };
  */
 export const mcpAutoInstallerCapability: RegisteredCapability = {
   name: 'mcp_auto_installer',
+  emoji: '🤖',
   supportedActions: ['install', 'install_github', 'install_npm', 'install_docker', 'cleanup'],
   description: 'Automatically installs and connects to MCP servers from GitHub, npm, or Docker',
   handler: async (params: any, content?: string) => {

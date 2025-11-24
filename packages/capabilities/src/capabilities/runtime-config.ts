@@ -10,6 +10,7 @@ import { RegisteredCapability } from '../services/capability-registry.js';
  */
 export const runtimeConfigCapability: RegisteredCapability = {
   name: 'runtime_config',
+  emoji: '⚙️',
   supportedActions: [
     'get_active_model',
     'set_model_tier',

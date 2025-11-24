@@ -728,6 +728,7 @@ async function handleMemoryAction(params: MemoryParams, content?: string): Promi
  */
 export const memoryCapability: RegisteredCapability = {
   name: 'memory',
+  emoji: '🧠',
   supportedActions: ['remember', 'recall', 'search', 'stats', 'recent', 'pin'],
   description:
     'Persistent memory system for storing and retrieving information across conversations. Use "pin" action to mark important tool learnings (sets importance to 10).',

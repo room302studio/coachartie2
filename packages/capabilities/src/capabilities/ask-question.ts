@@ -247,6 +247,7 @@ async function createSelectMenu(question: Question): Promise<string> {
 
 export const askQuestionCapability: RegisteredCapability = {
   name: 'ask-question',
+  emoji: '❓',
   supportedActions: ['ask'], // Single action for simplicity
   description:
     'Ask user questions with multiple choice options during execution. Returns user selection. Supports 2-25 options per question with optional descriptions.',

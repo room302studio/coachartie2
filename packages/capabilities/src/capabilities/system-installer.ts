@@ -237,6 +237,7 @@ export { systemInstaller };
  */
 export const systemInstallerCapability: RegisteredCapability = {
   name: 'system_installer',
+  emoji: '🛠️',
   supportedActions: ['install', 'check', 'system_info', 'install_multiple'],
   description: 'Installs system packages and dependencies (Chrome, Git, Docker, Node.js)',
   handler: async (params: any, content?: string) => {

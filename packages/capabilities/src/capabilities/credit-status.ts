@@ -5,6 +5,7 @@ import { RegisteredCapability } from '../services/capability-registry.js';
 
 export const creditStatusCapability: RegisteredCapability = {
   name: 'credit_status',
+  emoji: '💳',
   supportedActions: ['check_balance', 'get_alerts', 'acknowledge_alerts', 'usage_summary'],
   description: 'Monitor API credit balance and usage statistics',
   handler: async (params, content) => {

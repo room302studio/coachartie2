@@ -22,6 +22,7 @@ export interface RegisteredCapability {
   description?: string;
   requiredParams?: string[];
   examples?: string[];
+  emoji?: string; // Visual signature for Discord reactions
 }
 
 /**

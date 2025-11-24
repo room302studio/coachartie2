@@ -39,6 +39,7 @@ async function fetchWithTimeout(
 
 export const discordThreadsCapability: RegisteredCapability = {
   name: 'discord-threads',
+  emoji: '🧵',
   supportedActions: ['create_thread', 'get_thread_messages'],
   description:
     'Manage Discord threads - create new threads in channels or retrieve messages from existing threads',

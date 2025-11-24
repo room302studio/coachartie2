@@ -271,6 +271,7 @@ async function deleteFileOrDirectory(
 
 export const filesystemCapability: RegisteredCapability = {
   name: 'filesystem',
+  emoji: '📁',
   supportedActions: [
     'read_file',
     'write_file',

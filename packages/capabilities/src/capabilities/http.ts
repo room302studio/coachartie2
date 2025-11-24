@@ -23,6 +23,7 @@ import { RegisteredCapability } from '../services/capability-registry.js';
  */
 export const httpCapability: RegisteredCapability = {
   name: 'http',
+  emoji: '🌐',
   supportedActions: ['get', 'post', 'put', 'delete'],
   description: 'Make HTTP requests to APIs and endpoints (like curl)',
   examples: [

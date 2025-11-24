@@ -21,6 +21,7 @@ interface EmbeddedMCPParams {
  */
 export const embeddedMCPCapability: RegisteredCapability = {
   name: 'embedded_mcp',
+  emoji: '🔌',
   supportedActions: ['execute_tool', 'list_tools', 'health_check'],
   description: 'Execute embedded MCP tools with zero external dependencies',
   handler: async (params: EmbeddedMCPParams, content?: string) => {

@@ -450,6 +450,7 @@ async function handleValidateEnv(params: EnvParams, _content?: string): Promise<
  */
 export const environmentCapability: RegisteredCapability = {
   name: 'environment',
+  emoji: '🌍',
   supportedActions: ['read_env', 'set_env', 'create_env_file', 'backup_env', 'validate_env'],
   description: 'Manages environment variables and .env files securely within the project directory',
   handler: handleEnvironmentAction,

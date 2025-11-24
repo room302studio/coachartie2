@@ -308,6 +308,7 @@ function getButtonStyle(style?: string): ButtonStyle {
 
 export const discordUICapability: RegisteredCapability = {
   name: 'discord-ui',
+  emoji: '🎨',
   supportedActions: ['modal', 'buttons', 'select', 'context-menu'],
   description:
     'Create interactive Discord UI components (modals, buttons, select menus, context menus)',

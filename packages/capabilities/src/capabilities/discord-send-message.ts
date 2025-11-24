@@ -9,6 +9,7 @@ const DISCORD_SERVICE_URL = process.env.DISCORD_SERVICE_URL || 'http://localhost
 
 export const discordSendMessageCapability: RegisteredCapability = {
   name: 'discord-send-message',
+  emoji: '💬',
   supportedActions: ['send_message'],
   description:
     'Send a message to a whitelisted Discord channel. Requires explicit guildId and channelId - prevents sneaky hidden messages.',

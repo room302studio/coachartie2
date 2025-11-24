@@ -18,6 +18,7 @@ import { capabilityRegistry } from '../services/capability-registry.js';
  */
 export const webCapability: RegisteredCapability = {
   name: 'web',
+  emoji: '🌐',
   supportedActions: ['search', 'fetch'],
   description:
     'Real-time web search and content retrieval engine. Excels at finding: current stock prices and financial news, breaking news and current events, product reviews and comparisons, company announcements, technical documentation, restaurant/business information, and any time-sensitive or recently published information. Use for queries requiring the latest available data from across the internet. Can also fetch and extract content from specific URLs.',

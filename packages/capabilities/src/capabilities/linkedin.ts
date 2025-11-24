@@ -571,6 +571,7 @@ ID: ${profile.id}`;
  */
 export const linkedInCapability: RegisteredCapability = {
   name: 'linkedin',
+  emoji: '💼',
   supportedActions: [
     'get_auth_url',
     'exchange_code',

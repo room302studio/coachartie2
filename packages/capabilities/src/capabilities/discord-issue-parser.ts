@@ -15,6 +15,7 @@ interface IssueReference {
 
 export const discordIssueParserCapability: RegisteredCapability = {
   name: 'discord-issue-parser',
+  emoji: '🐛',
   supportedActions: ['parse_issue_links'],
   description:
     'Parse GitHub issue references from Discord message text - extracts #123 patterns and github.com issue URLs',

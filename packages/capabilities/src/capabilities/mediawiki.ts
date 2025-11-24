@@ -4,6 +4,7 @@ import { mediaWikiManager } from '../services/mediawiki-manager.js';
 
 export const mediaWikiCapability: RegisteredCapability = {
   name: 'mediawiki',
+  emoji: '📚',
   supportedActions: ['read', 'write', 'search', 'list', 'add'],
   description: 'Read and write to MediaWiki instances',
   requiredParams: [],

@@ -85,6 +85,7 @@ const PROJECT_ROOT = resolve(process.cwd(), '../..');
 const MCP_TEMPLATES = {
   filesystem: {
     name: '@modelcontextprotocol/server-filesystem',
+    emoji: '🔧',
     version: 'latest',
     description: 'Official Filesystem MCP Server for file operations',
     envVars: [],

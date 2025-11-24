@@ -9,6 +9,7 @@ import { RegisteredCapability } from '../services/capability-registry.js';
 
 export const schedulerCapability: RegisteredCapability = {
   name: 'scheduler',
+  emoji: '⏰',
   supportedActions: ['remind', 'schedule', 'list', 'cancel'],
   description:
     'Set one-time reminders (e.g., "remind me in 5 minutes"), schedule recurring tasks with cron expressions, view scheduled tasks, or cancel scheduled reminders. Perfect for time-based automation and remembering things.',

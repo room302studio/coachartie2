@@ -8,6 +8,7 @@ import { capabilityRegistry, RegisteredCapability } from '../services/capability
 
 export const sequenceCapability: RegisteredCapability = {
   name: 'sequence',
+  emoji: '🔄',
   supportedActions: ['execute'],
   description:
     'Execute multiple capabilities in sequence, passing results forward. Enables complex multi-step workflows. Use "steps" parameter with array of capability objects.',

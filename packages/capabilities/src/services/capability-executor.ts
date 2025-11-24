@@ -8,6 +8,7 @@ import { openRouterService } from './openrouter.js';
 import { contextAlchemy } from './context-alchemy.js';
 import { capabilityParser } from './capability-parser.js';
 import { GlobalVariableStore } from '../capabilities/variable-store.js';
+import { jobTracker } from './job-tracker.js';
 import {
   ExtractedCapability,
   CapabilityResult,
@@ -406,6 +407,28 @@ export class CapabilityExecutor {
       logger.info(
         `🔍 Executor executing: name=${capability.name}, action=${capability.action}, params=${JSON.stringify(paramsWithContext)}, content="${capability.content}"`
       );
+
+      // Track capability execution for Discord reactions
+      if (context?.messageId) {
+        try {
+          const capabilityInfo = capabilityRegistry.get(capability.name, capability.action);
+          const emoji = capabilityInfo?.emoji;
+          jobTracker.trackCapabilityExecution(
+            context.messageId,
+            capability.name,
+            emoji,
+            capability.action
+          );
+        } catch {
+          // Capability not found, track without emoji
+          jobTracker.trackCapabilityExecution(
+            context.messageId,
+            capability.name,
+            undefined,
+            capability.action
+          );
+        }
+      }
 
       // Use the capability registry to execute the capability
       result.data = await capabilityRegistry.execute(

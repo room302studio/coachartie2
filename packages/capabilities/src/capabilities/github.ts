@@ -35,6 +35,7 @@ interface GitHubCommit {
 
 export const githubCapability: RegisteredCapability = {
   name: 'github',
+  emoji: '🐙',
   supportedActions: [
     'get_releases',
     'get_recent_commits',

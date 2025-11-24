@@ -309,6 +309,7 @@ class MCPClientService {
         },
         clientInfo: {
           name: 'CoachArtie',
+          emoji: '🔧',
           version: '1.0.0',
         },
       });

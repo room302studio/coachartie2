@@ -39,6 +39,7 @@ async function fetchWithTimeout(
 
 export const discordChannelsCapability: RegisteredCapability = {
   name: 'discord-channels',
+  emoji: '💬',
   supportedActions: ['get_messages', 'get_pinned_messages', 'search_messages'],
   description:
     'Query Discord channel messages - fetch recent messages, pinned messages, or search channel history',

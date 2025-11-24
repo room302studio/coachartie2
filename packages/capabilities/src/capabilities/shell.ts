@@ -85,6 +85,7 @@ function hasNestedHeredoc(code: string): boolean {
 
 export const shellCapability: RegisteredCapability = {
   name: 'shell',
+  emoji: '💻',
   supportedActions: ['exec', 'send', 'read', 'split', 'list'],
   description:
     'Execute shell commands in a sandboxed Debian container. Artie has full access to a persistent Linux environment with git, gh, jq, curl, npm, python, and more. Supports both one-shot execution (action=exec) and persistent tmux sessions (action=send/read/split/list) for stateful workflows where directory changes and environment persist between commands. Use Unix patterns (cat, heredoc, sed, grep) for file operations - results are returned but NOT echoed to Discord when using action=exec.',

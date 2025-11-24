@@ -264,6 +264,7 @@ const handler = async (params: any, content?: string): Promise<string> => {
 
 export const mentionProxyCapability: RegisteredCapability = {
   name: 'mention_proxy',
+  emoji: '🎭',
   supportedActions: [
     'create',
     'list',

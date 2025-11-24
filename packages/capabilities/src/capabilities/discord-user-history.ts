@@ -37,6 +37,7 @@ async function fetchWithTimeout(
 
 export const discordUserHistoryCapability: RegisteredCapability = {
   name: 'discord-user-history',
+  emoji: '📜',
   supportedActions: ['get_user_messages'],
   description:
     'Query Discord user message history - fetch all messages from a specific user in a channel. Useful for duplicate detection and checking if a user has reported before.',

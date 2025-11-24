@@ -262,6 +262,7 @@ async function handleEmailCapability(params: any, content?: string): Promise<str
  */
 export const emailCapability: RegisteredCapability = {
   name: 'email',
+  emoji: '📧',
   supportedActions: ['send', 'status'],
   handler: handleEmailCapability,
   description: 'Send emails via self-hosted infrastructure or n8n webhook bridge',

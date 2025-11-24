@@ -117,6 +117,7 @@ async function handleSemanticSearchCapability(
  */
 export const semanticSearchCapability: RegisteredCapability = {
   name: 'semantic-search',
+  emoji: '🔍',
   supportedActions: ['status', 'search', 'similar', 'cluster', 'analyze'],
   description: 'Vector-based semantic memory search and analysis (foundation)',
   handler: handleSemanticSearchCapability,

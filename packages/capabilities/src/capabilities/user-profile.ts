@@ -248,6 +248,7 @@ async function handleUserProfileAction(
  */
 export const userProfileCapability: RegisteredCapability = {
   name: 'user-profile',
+  emoji: '👤',
   supportedActions: [
     'link', // Generic - handles ANY service (bluesky, mastodon, threads, future services)
     'link-email', // Specific - validates email format

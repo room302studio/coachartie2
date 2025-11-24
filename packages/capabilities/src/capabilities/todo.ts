@@ -567,6 +567,7 @@ async function handleTodoAction(params: TodoParams, content?: string): Promise<s
  */
 export const todoCapability: RegisteredCapability = {
   name: 'todo',
+  emoji: '✅',
   supportedActions: ['create', 'add', 'next', 'complete', 'status', 'list'],
   description: 'Manage todo lists and track task progress',
   handler: handleTodoAction,

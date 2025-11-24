@@ -348,6 +348,7 @@ async function updatePackageJson(
 
 export const packageManagerCapability: RegisteredCapability = {
   name: 'package_manager',
+  emoji: '📦',
   supportedActions: [
     'install_package',
     'create_package',

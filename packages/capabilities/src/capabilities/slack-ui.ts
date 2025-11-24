@@ -506,6 +506,7 @@ function getButtonStyle(style?: string): string | undefined {
 
 export const slackUICapability: RegisteredCapability = {
   name: 'slack-ui',
+  emoji: '💼',
   supportedActions: ['modal', 'buttons', 'select', 'rich-text'],
   description:
     'Create interactive Slack UI components using Block Kit (modals, buttons, select menus, rich text blocks)',

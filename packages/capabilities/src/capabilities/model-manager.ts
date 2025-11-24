@@ -10,6 +10,7 @@ import { RegisteredCapability } from '../services/capability-registry.js';
  */
 export const modelManagerCapability: RegisteredCapability = {
   name: 'model_manager',
+  emoji: '🤖',
   supportedActions: ['list_models', 'get_pricing', 'get_recommendation', 'compare_models'],
   description: 'Query available AI models, pricing, and get cost-aware recommendations',
   handler: async (params, content) => {
