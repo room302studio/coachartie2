@@ -28,6 +28,7 @@ import { Client, GatewayIntentBits, Events, Partials } from 'discord.js';
 import { logger } from '@coachartie/shared';
 import { setupMessageHandler } from './handlers/message-handler.js';
 import { setupInteractionHandler } from './handlers/interaction-handler.js';
+import { setupReactionHandler } from './handlers/reaction-handler.js';
 import { startResponseConsumer } from './queues/consumer.js';
 import { writeFileSync } from 'fs';
 import { join } from 'path';
@@ -50,8 +51,9 @@ export const client = new Client({
     GatewayIntentBits.MessageContent,
     GatewayIntentBits.DirectMessages,
     GatewayIntentBits.GuildIntegrations,
+    GatewayIntentBits.GuildMessageReactions,
   ],
-  partials: [Partials.Message, Partials.Channel, Partials.User],
+  partials: [Partials.Message, Partials.Channel, Partials.User, Partials.Reaction],
 });
 
 // Write status to shared file
@@ -226,6 +228,10 @@ async function start() {
     // Setup interaction handler for slash commands
     console.log('🎯 Setting up interaction handler...');
     setupInteractionHandler(client);
+
+    // Setup reaction handler for two-way reactions
+    console.log('⚡ Setting up reaction handler...');
+    setupReactionHandler(client);
 
     // Start queue consumer for responses
     console.log('🚀 Starting queue consumer...');

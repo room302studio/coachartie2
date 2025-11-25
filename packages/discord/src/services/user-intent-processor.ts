@@ -43,6 +43,111 @@ export interface ProcessorOptions {
 }
 
 /**
+ * Detect programming language from code content using simple heuristics
+ */
+function detectCodeLanguage(code: string): string {
+  const trimmed = code.trim();
+
+  // JSON detection - must be valid structure
+  if ((trimmed.startsWith('{') && trimmed.endsWith('}')) ||
+      (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
+    // Check for JSON-like patterns
+    if (/["']?\w+["']?\s*:\s*/.test(trimmed) || /^\[[\s\S]*\]$/.test(trimmed)) {
+      return 'json';
+    }
+  }
+
+  // SQL detection - common SQL keywords
+  const sqlPattern = /\b(SELECT|INSERT|UPDATE|DELETE|CREATE|DROP|ALTER|FROM|WHERE|JOIN|GROUP BY|ORDER BY)\b/i;
+  if (sqlPattern.test(code)) {
+    return 'sql';
+  }
+
+  // Python detection
+  const pythonPatterns = [
+    /^def\s+\w+\s*\(/m,           // function definition
+    /^class\s+\w+/m,              // class definition
+    /^import\s+\w+/m,             // import statement
+    /^from\s+\w+\s+import/m,      // from import
+    /:\s*\n\s{4}/,                // colon followed by 4-space indent
+    /@\w+/,                       // decorators
+    /\bprint\s*\(/,               // print function
+  ];
+  if (pythonPatterns.some(pattern => pattern.test(code))) {
+    return 'python';
+  }
+
+  // TypeScript detection (check before JavaScript)
+  const tsPatterns = [
+    /:\s*(string|number|boolean|any|void|unknown|never)\b/,  // type annotations
+    /interface\s+\w+/,                                        // interface
+    /type\s+\w+\s*=/,                                        // type alias
+    /<\w+>/,                                                 // generics
+    /as\s+(string|number|boolean|any)\b/,                   // type assertion
+  ];
+  if (tsPatterns.some(pattern => pattern.test(code))) {
+    return 'typescript';
+  }
+
+  // JavaScript detection
+  const jsPatterns = [
+    /\b(const|let|var)\s+\w+/,         // variable declarations
+    /function\s+\w+\s*\(/,              // function declaration
+    /\w+\s*=>\s*/,                      // arrow function
+    /console\.(log|error|warn)/,       // console methods
+    /\b(async|await)\b/,                // async/await
+    /require\s*\(/,                     // require
+    /module\.exports/,                  // module.exports
+    /import\s+.*\s+from\s+['"`]/,      // ES6 import
+  ];
+  if (jsPatterns.some(pattern => pattern.test(code))) {
+    return 'javascript';
+  }
+
+  // Bash/Shell detection
+  const bashPatterns = [
+    /^#!\/bin\/(ba)?sh/m,               // shebang
+    /\$\{?\w+\}?/,                      // variables
+    /\b(echo|cd|ls|pwd|mkdir|rm|cp|mv|grep|sed|awk|cat|chmod|chown)\b/, // common commands
+    /\|\s*\w+/,                         // pipes
+    /&&|\|\|/,                          // shell operators
+    /if\s+\[.*\]\s*;?\s*then/,         // if statements
+  ];
+  if (bashPatterns.some(pattern => pattern.test(code))) {
+    return 'bash';
+  }
+
+  // Default to no language tag if uncertain
+  return '';
+}
+
+/**
+ * Find unlabeled code blocks and add language tags
+ */
+function addLanguageToCodeBlocks(text: string): string {
+  // Match code blocks without language tags: ```\n...```
+  // But not those that already have a language: ```javascript
+  const codeBlockPattern = /```(?![\w-])([\s\S]*?)```/g;
+
+  return text.replace(codeBlockPattern, (match, codeContent) => {
+    // Skip if it's just whitespace or very short
+    if (!codeContent.trim() || codeContent.trim().length < 10) {
+      return match;
+    }
+
+    const language = detectCodeLanguage(codeContent);
+
+    // If we detected a language, add it
+    if (language) {
+      return '```' + language + '\n' + codeContent + '```';
+    }
+
+    // Otherwise, keep the original
+    return match;
+  });
+}
+
+/**
  * Clean capability tags and technical syntax from user-facing text
  * ENHANCED: Catches chain-of-thought leakage and internal reasoning
  */
@@ -85,10 +190,19 @@ function cleanCapabilityTags(text: string): string {
   text = text.replace(/^I'll use the \w+ (tool|function) to\s+.*?\.\s*/gim, '');
   text = text.replace(/^Using the \w+ (tool|function)\s+.*?\.\s*/gim, '');
 
-  // Clean up multiple line breaks and extra whitespace
-  text = text.replace(/\n\s*\n\s*\n+/g, '\n\n');
+  // Clean up whitespace and normalize newlines for Discord
   text = text.replace(/^\s+|\s+$/gm, ''); // Trim each line
+
+  // Discord needs \n\n for visible line breaks
+  // Step 1: Normalize all newlines to single
+  text = text.replace(/\n+/g, '\n');
+  // Step 2: Convert to double newlines
+  text = text.replace(/\n/g, '\n\n');
+
   text = text.trim();
+
+  // Add language tags to unlabeled code blocks
+  text = addLanguageToCodeBlocks(text);
 
   return text;
 }

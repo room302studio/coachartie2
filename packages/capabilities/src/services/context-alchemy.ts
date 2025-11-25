@@ -11,7 +11,20 @@ const DEBUG = process.env.CONTEXT_ALCHEMY_DEBUG === 'true';
 // UI Modality Rules - loaded from database at runtime
 // Legacy fallback for backward compatibility
 const UI_MODALITY_RULES_FALLBACK = `
-🎮 DISCORD UI COMPONENT RULES - USE THESE WHEN APPROPRIATE:
+🎮 DISCORD FORMATTING & UI RULES:
+
+FORMATTING FOR DISCORD:
+- Use **bold** for emphasis and headings (NOT ### headers - they don't render in Discord!)
+- Use *italic* for subtle emphasis
+- Use \`code\` for inline code, commands, or file paths
+- Use \`\`\`language for code blocks with syntax highlighting
+- Use > for quotes (single line only)
+- Use bullet points (- or •) for lists
+- Keep responses conversational and scannable
+- Break long responses into short paragraphs
+- AVOID: ### headers, long paragraphs, walls of text
+
+DISCORD UI COMPONENTS - USE WHEN APPROPRIATE:
 
 CHOICE SCENARIO → USE BUTTONS:
 When the user must pick ONE from 2-3 equally-valid options (e.g., "Yes/No/Maybe", "Morning/Afternoon/Evening")
@@ -28,7 +41,7 @@ Use: <capability name="discord-ui" action="modal" data='{"title":"User Form","in
 INFORMATION DELIVERY → STAY IN CHAT:
 When explaining, answering questions, or providing information (no user choice needed)
 
-⚠️ IMPORTANT: When response structure requires UI, ALWAYS use the capability above. Don't ask for confirmation - just use it.
+⚠️ IMPORTANT: Format responses for Discord readability. Use **bold** instead of ### headers. Keep it concise.
 `;
 
 // Slack UI Modality Rules - loaded from database at runtime
@@ -327,6 +340,9 @@ Important:
     // Discord situational awareness - explicit "where am I" context
     await this.addDiscordSituationalAwareness(message, sources);
 
+    // Reply context - the message being replied to (if any)
+    await this.addReplyContext(message, sources);
+
     // Slack situational awareness - explicit "where am I" context for Slack
     await this.addSlackSituationalAwareness(message, sources);
 
@@ -604,6 +620,37 @@ Important:
       if (DEBUG) {
         logger.info(`│ ✅ Added Discord situational awareness: ${ctx.guildName || 'DM'}/#${ctx.channelName}`);
       }
+    }
+  }
+
+  /**
+   * Add reply context - the message being replied to
+   * Helps the LLM understand what the user is responding to
+   */
+  private async addReplyContext(
+    message: IncomingMessage,
+    sources: ContextSource[]
+  ): Promise<void> {
+    const ctx = message.context;
+    if (!ctx || !ctx.replyContext) {
+      return;
+    }
+
+    const reply = ctx.replyContext;
+    const content = `💬 Replying to @${reply.author}: "${reply.content}"`;
+
+    sources.push({
+      name: 'reply_context',
+      priority: 97, // Very high priority - directly relevant to understanding the conversation
+      tokenWeight: Math.ceil(content.length / 4),
+      content,
+      category: 'user_state',
+    });
+
+    if (DEBUG) {
+      logger.info(
+        `│ ✅ Added reply context: @${reply.author} - "${reply.content.substring(0, 50)}..."`
+      );
     }
   }
 

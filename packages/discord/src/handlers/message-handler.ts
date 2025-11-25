@@ -92,66 +92,248 @@ async function isForumThread(message: Message): Promise<boolean> {
 }
 
 /**
- * Split long messages into Discord-compatible chunks
- * First splits on intentional breaks (double line breaks), then handles Discord's 2000 char limit
+ * Split long messages into Discord-compatible chunks with smart code block handling
+ *
+ * Features:
+ * - NEVER splits inside code blocks (``` ... ```)
+ * - Prefers splitting at paragraph boundaries (\n\n)
+ * - Falls back to line boundaries, then word boundaries
+ * - Keeps the 2000 char limit for Discord
+ * - Handles edge cases like oversized code blocks
  *
  * @param text - The text to chunk
  * @param maxLength - Maximum chunk size (default: 2000)
  * @returns Array of message chunks
  */
 function chunkMessage(text: string, maxLength: number = DISCORD_MESSAGE_LIMIT): string[] {
-  // First, split on intentional message breaks (double line breaks)
-  // This allows the LLM to control message chunking naturally
-  const segments = text.split(/\n\n+/);
+  if (!text || text.length === 0) return [];
+  if (text.length <= maxLength) return [text];
 
   const chunks: string[] = [];
 
-  // Process each segment
-  for (const segment of segments) {
-    const trimmedSegment = segment.trim();
-    if (!trimmedSegment) continue;
+  // Step 1: Identify all code blocks and their positions
+  interface CodeBlock {
+    start: number;
+    end: number;
+    content: string;
+    language?: string;
+  }
 
-    // If segment fits in Discord limit, use it as-is
-    if (trimmedSegment.length <= maxLength) {
-      chunks.push(trimmedSegment);
-      continue;
+  const codeBlocks: CodeBlock[] = [];
+  const codeBlockRegex = /```(\w+)?\n([\s\S]*?)```/g;
+  let match: RegExpExecArray | null;
+
+  while ((match = codeBlockRegex.exec(text)) !== null) {
+    codeBlocks.push({
+      start: match.index,
+      end: match.index + match[0].length,
+      content: match[0],
+      language: match[1],
+    });
+  }
+
+  // Step 2: Split text into segments (code blocks and text between them)
+  interface Segment {
+    content: string;
+    isCodeBlock: boolean;
+    start: number;
+    end: number;
+  }
+
+  const segments: Segment[] = [];
+  let lastIndex = 0;
+
+  for (const block of codeBlocks) {
+    // Add text before code block
+    if (block.start > lastIndex) {
+      segments.push({
+        content: text.slice(lastIndex, block.start),
+        isCodeBlock: false,
+        start: lastIndex,
+        end: block.start,
+      });
     }
 
-    // Segment is too long - split it further by lines, then words if needed
-    let currentChunk = '';
-    const lines = trimmedSegment.split('\n');
+    // Add code block
+    segments.push({
+      content: block.content,
+      isCodeBlock: true,
+      start: block.start,
+      end: block.end,
+    });
 
-    for (const line of lines) {
-      // If adding this line would exceed the limit, start a new chunk
-      if (currentChunk.length + line.length + 1 > maxLength) {
+    lastIndex = block.end;
+  }
+
+  // Add remaining text after last code block
+  if (lastIndex < text.length) {
+    segments.push({
+      content: text.slice(lastIndex),
+      isCodeBlock: false,
+      start: lastIndex,
+      end: text.length,
+    });
+  }
+
+  // Step 3: Build chunks respecting code block boundaries
+  let currentChunk = '';
+
+  for (const segment of segments) {
+    if (segment.isCodeBlock) {
+      // Code block - must be kept intact
+      const segmentLength = segment.content.length;
+
+      // If adding this code block would exceed limit, flush current chunk first
+      if (currentChunk.length > 0 && currentChunk.length + segmentLength + 1 > maxLength) {
+        chunks.push(currentChunk.trim());
+        currentChunk = '';
+      }
+
+      // If code block itself is too large, handle specially
+      if (segmentLength > maxLength) {
+        // Flush any pending content first
         if (currentChunk.trim()) {
           chunks.push(currentChunk.trim());
           currentChunk = '';
         }
 
-        // If a single line is too long, split it by words
-        if (line.length > maxLength) {
-          const words = line.split(' ');
+        // Split large code block while maintaining syntax
+        // Extract language and content
+        const codeMatch = segment.content.match(/```(\w+)?\n([\s\S]*?)```/);
+        if (codeMatch) {
+          const language = codeMatch[1] || '';
+          const codeContent = codeMatch[2];
+          const codeLines = codeContent.split('\n');
+
+          let codeChunk = '';
+          const opener = `\`\`\`${language}\n`;
+          const closer = '\n```';
+          const overhead = opener.length + closer.length;
+
+          for (const line of codeLines) {
+            const testChunk = codeChunk + (codeChunk ? '\n' : '') + line;
+
+            if (testChunk.length + overhead > maxLength) {
+              // Flush current code chunk
+              if (codeChunk) {
+                chunks.push(opener + codeChunk + closer);
+                codeChunk = '';
+              }
+
+              // If single line is too long, split it (rare but possible)
+              if (line.length + overhead > maxLength) {
+                // Split line into smaller pieces
+                const safeLength = maxLength - overhead;
+                for (let i = 0; i < line.length; i += safeLength) {
+                  const piece = line.slice(i, i + safeLength);
+                  chunks.push(opener + piece + closer);
+                }
+              } else {
+                codeChunk = line;
+              }
+            } else {
+              codeChunk = testChunk;
+            }
+          }
+
+          // Flush remaining code
+          if (codeChunk) {
+            chunks.push(opener + codeChunk + closer);
+          }
+        } else {
+          // Fallback: just truncate with warning
+          chunks.push(segment.content.slice(0, maxLength - 20) + '\n... (truncated)');
+        }
+
+        continue;
+      }
+
+      // Normal-sized code block - add to current chunk
+      currentChunk += (currentChunk ? '\n' : '') + segment.content;
+    } else {
+      // Regular text - can split on paragraph, line, or word boundaries
+      const textContent = segment.content;
+
+      // First try splitting on paragraph boundaries
+      const paragraphs = textContent.split(/\n\n+/);
+
+      for (const paragraph of paragraphs) {
+        const trimmedParagraph = paragraph.trim();
+        if (!trimmedParagraph) continue;
+
+        // If paragraph fits, add it
+        if (currentChunk.length + trimmedParagraph.length + 2 <= maxLength) {
+          currentChunk += (currentChunk ? '\n\n' : '') + trimmedParagraph;
+          continue;
+        }
+
+        // Paragraph won't fit - flush current chunk
+        if (currentChunk.trim()) {
+          chunks.push(currentChunk.trim());
+          currentChunk = '';
+        }
+
+        // If paragraph fits on its own, use it
+        if (trimmedParagraph.length <= maxLength) {
+          currentChunk = trimmedParagraph;
+          continue;
+        }
+
+        // Paragraph is too long - split by lines
+        const lines = trimmedParagraph.split('\n');
+
+        for (const line of lines) {
+          const trimmedLine = line.trim();
+          if (!trimmedLine) continue;
+
+          // If line fits, add it
+          if (currentChunk.length + trimmedLine.length + 1 <= maxLength) {
+            currentChunk += (currentChunk ? '\n' : '') + trimmedLine;
+            continue;
+          }
+
+          // Line won't fit - flush current chunk
+          if (currentChunk.trim()) {
+            chunks.push(currentChunk.trim());
+            currentChunk = '';
+          }
+
+          // If line fits on its own, use it
+          if (trimmedLine.length <= maxLength) {
+            currentChunk = trimmedLine;
+            continue;
+          }
+
+          // Line is too long - split by words
+          const words = trimmedLine.split(' ');
+
           for (const word of words) {
             if (currentChunk.length + word.length + 1 > maxLength) {
               if (currentChunk.trim()) {
                 chunks.push(currentChunk.trim());
                 currentChunk = '';
               }
+
+              // If single word is too long, split it (rare but possible)
+              if (word.length > maxLength) {
+                for (let i = 0; i < word.length; i += maxLength) {
+                  chunks.push(word.slice(i, i + maxLength));
+                }
+              } else {
+                currentChunk = word;
+              }
+            } else {
+              currentChunk += (currentChunk ? ' ' : '') + word;
             }
-            currentChunk += (currentChunk ? ' ' : '') + word;
           }
-        } else {
-          currentChunk += (currentChunk ? '\n' : '') + line;
         }
-      } else {
-        currentChunk += (currentChunk ? '\n' : '') + line;
       }
     }
+  }
 
-    if (currentChunk.trim()) {
-      chunks.push(currentChunk.trim());
-    }
+  // Flush any remaining content
+  if (currentChunk.trim()) {
+    chunks.push(currentChunk.trim());
   }
 
   return chunks.length > 0 ? chunks : [text];
@@ -957,6 +1139,43 @@ async function handleSyncDiscussionsConversation(
 // =============================================================================
 
 /**
+ * Fetch the message being replied to (if any)
+ * Returns the message content or null if unavailable
+ */
+async function fetchReplyContext(message: Message): Promise<{
+  messageId: string;
+  author: string;
+  content: string;
+  timestamp: string;
+} | null> {
+  try {
+    // Check if this message is a reply
+    if (!message.reference?.messageId) {
+      return null;
+    }
+
+    // Fetch the referenced message
+    const referencedMessage = await message.channel.messages.fetch(message.reference.messageId);
+
+    if (!referencedMessage) {
+      return null;
+    }
+
+    // Return formatted reply context
+    return {
+      messageId: referencedMessage.id,
+      author: referencedMessage.author.displayName || referencedMessage.author.username,
+      content: referencedMessage.content,
+      timestamp: referencedMessage.createdAt.toISOString(),
+    };
+  } catch (error) {
+    // Handle gracefully - message might be deleted, or we might lack permissions
+    logger.debug(`Could not fetch reply context for message ${message.id}:`, error);
+    return null;
+  }
+}
+
+/**
  * Fetch recent channel history for context
  * Randomly fetches 10-25 messages to give Artie conversational context
  */
@@ -1015,6 +1234,14 @@ async function handleMessageAsIntent(
     // ENHANCED: Fetch recent channel history for conversational context
     const channelHistory = await fetchChannelHistory(message);
     logger.info(`📜 Fetched ${channelHistory.length} recent messages for context [${shortId}]`);
+
+    // ENHANCED: Fetch reply context if this is a reply
+    const replyContext = await fetchReplyContext(message);
+    if (replyContext) {
+      logger.info(
+        `💬 Fetched reply context from @${replyContext.author} [${shortId}]: "${replyContext.content.substring(0, 50)}..."`
+      );
+    }
 
     // ENHANCED: Gather Discord context for Context Alchemy
     const guildInfo = message.guild
@@ -1076,6 +1303,17 @@ async function handleMessageAsIntent(
         displayName: user.displayName || user.username,
       })),
       replyingTo: message.reference?.messageId || null,
+      // Reply context - the message being replied to
+      ...(replyContext
+        ? {
+            replyContext: {
+              messageId: replyContext.messageId,
+              author: replyContext.author,
+              content: replyContext.content,
+              timestamp: replyContext.timestamp,
+            },
+          }
+        : {}),
       // Proxy context if this is a proxy response
       ...(proxyOptions?.isProxyResponse
         ? {
