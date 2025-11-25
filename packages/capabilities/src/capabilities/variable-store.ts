@@ -108,7 +108,7 @@ export class GlobalVariableStore {
     // Get all variables in one query
     const keys = matches.map(m => m.replace(/\{\{|\}\}/g, ''));
     const placeholders = keys.map(() => '?').join(',');
-    const rows = await db.all<{ key: string; value: string; value_type: string }[]>(
+    const rows = await db.all<{ key: string; value: string; value_type: string }>(
       `SELECT key, value, value_type FROM global_variables WHERE key IN (${placeholders})`,
       keys
     );
@@ -146,7 +146,7 @@ export class GlobalVariableStore {
    */
   async list(): Promise<Record<string, any>> {
     const db = await getDatabase();
-    const rows = await db.all<{ key: string; value: string; value_type: string; description: string }[]>(
+    const rows = await db.all<{ key: string; value: string; value_type: string; description: string }>(
       'SELECT key, value, value_type, description FROM global_variables ORDER BY key'
     );
 

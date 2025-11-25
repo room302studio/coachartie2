@@ -1,57 +1,142 @@
-import sqlite3 from 'sqlite3';
-import { open, Database } from 'sqlite';
+import initSqlJs, { Database as SqlJsDatabase } from 'sql.js';
 import { logger } from './logger.js';
 import path from 'path';
+import fs from 'fs';
 
-let db: Database<sqlite3.Database, sqlite3.Statement> | null = null;
+let db: SqlJsDatabase | null = null;
+let SQL: Awaited<ReturnType<typeof initSqlJs>> | null = null;
+let dbPath: string = '';
 
-export async function getDatabase(): Promise<Database<sqlite3.Database, sqlite3.Statement>> {
+// Wrapper to provide async-like interface matching old sqlite API
+interface RunResult {
+  lastID: number;
+  changes: number;
+}
+
+interface DatabaseWrapper {
+  run(sql: string, params?: any[]): Promise<RunResult>;
+  get<T = any>(sql: string, params?: any[]): Promise<T | undefined>;
+  all<T = any>(sql: string, params?: any[]): Promise<T[]>;
+  exec(sql: string): Promise<void>;
+  close(): Promise<void>;
+}
+
+let saveInterval: ReturnType<typeof setInterval> | null = null;
+
+function createWrapper(database: SqlJsDatabase, filePath: string): DatabaseWrapper {
+  const save = () => {
+    try {
+      const data = database.export();
+      const buffer = Buffer.from(data);
+      fs.writeFileSync(filePath, buffer);
+    } catch (e) {
+      // Ignore save errors during shutdown
+    }
+  };
+
+  // Auto-save every 30 seconds (only set once)
+  if (!saveInterval) {
+    saveInterval = setInterval(save, 30000);
+  }
+
+  return {
+    async run(sql: string, params: any[] = []): Promise<RunResult> {
+      database.run(sql, params);
+      save();
+      // sql.js doesn't directly expose lastID, so we query it
+      const lastIdResult = database.exec('SELECT last_insert_rowid() as lastID');
+      const changesResult = database.exec('SELECT changes() as changes');
+      return {
+        lastID: lastIdResult[0]?.values[0]?.[0] as number || 0,
+        changes: changesResult[0]?.values[0]?.[0] as number || 0,
+      };
+    },
+
+    async get<T = any>(sql: string, params: any[] = []): Promise<T | undefined> {
+      const stmt = database.prepare(sql);
+      stmt.bind(params);
+      if (stmt.step()) {
+        const row = stmt.getAsObject() as T;
+        stmt.free();
+        return row;
+      }
+      stmt.free();
+      return undefined;
+    },
+
+    async all<T = any>(sql: string, params: any[] = []): Promise<T[]> {
+      const results: T[] = [];
+      const stmt = database.prepare(sql);
+      stmt.bind(params);
+      while (stmt.step()) {
+        results.push(stmt.getAsObject() as T);
+      }
+      stmt.free();
+      return results;
+    },
+
+    async exec(sql: string): Promise<void> {
+      database.exec(sql);
+      save();
+    },
+
+    async close(): Promise<void> {
+      if (saveInterval) {
+        clearInterval(saveInterval);
+        saveInterval = null;
+      }
+      save();
+      database.close();
+    },
+  };
+}
+
+export async function getDatabase(): Promise<DatabaseWrapper> {
   if (db) {
-    return db;
+    return createWrapper(db, dbPath);
   }
 
   try {
+    // Initialize sql.js
+    if (!SQL) {
+      SQL = await initSqlJs();
+    }
+
     // Use environment variable for database path, with fallback
-    const dbPath = process.env.DATABASE_PATH || '/app/data/coachartie.db';
+    dbPath = process.env.DATABASE_PATH || '/app/data/coachartie.db';
 
     // Ensure the directory exists
-    const fs = await import('fs');
     const dbDir = path.dirname(dbPath);
     if (!fs.existsSync(dbDir)) {
       fs.mkdirSync(dbDir, { recursive: true });
     }
 
-    db = await open({
-      filename: dbPath,
-      driver: sqlite3.Database,
-    });
+    // Load existing database or create new one
+    if (fs.existsSync(dbPath)) {
+      const fileBuffer = fs.readFileSync(dbPath);
+      db = new SQL.Database(fileBuffer);
+      logger.info(`🗄️ SQLite database loaded: ${dbPath} (sql.js WASM)`);
+    } else {
+      db = new SQL.Database();
+      logger.info(`🗄️ SQLite database created: ${dbPath} (sql.js WASM)`);
+    }
 
-    // CONCURRENCY FIXES: Enable WAL mode and set timeouts
-    await db.exec(`
-      PRAGMA journal_mode = WAL;
-      PRAGMA synchronous = NORMAL;
-      PRAGMA cache_size = 10000;
-      PRAGMA temp_store = MEMORY;
-      PRAGMA mmap_size = 268435456;
-    `);
-    await db.run('PRAGMA busy_timeout = 30000');
-
-    logger.info(`🗄️ SQLite database connected: ${dbPath} (WAL mode enabled)`);
+    const wrapper = createWrapper(db, dbPath);
 
     // Initialize database schema
-    await initializeDatabase(db);
+    await initializeDatabase(wrapper);
 
     // Run migrations
-    await runMigrations(db);
+    await runMigrations(wrapper);
 
-    return db;
+    return wrapper;
   } catch (error) {
     logger.error('❌ Failed to connect to database:', error);
     throw error;
   }
 }
 
-async function initializeDatabase(database: Database): Promise<void> {
+async function initializeDatabase(database: DatabaseWrapper): Promise<void> {
   try {
     // Create prompts table with versioning and metadata
     await database.exec(`
@@ -63,23 +148,23 @@ async function initializeDatabase(database: Database): Promise<void> {
         description TEXT,
         category TEXT DEFAULT 'general',
         is_active BOOLEAN DEFAULT 1,
-        metadata JSONB DEFAULT '{}',
+        metadata TEXT DEFAULT '{}',
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
       );
 
       CREATE INDEX IF NOT EXISTS idx_prompts_name_active ON prompts(name, is_active);
       CREATE INDEX IF NOT EXISTS idx_prompts_category ON prompts(category);
-      
+
       -- Capabilities configuration table
       CREATE TABLE IF NOT EXISTS capabilities_config (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT NOT NULL UNIQUE,
         version INTEGER NOT NULL DEFAULT 1,
-        config JSONB NOT NULL,
+        config TEXT NOT NULL,
         description TEXT,
         is_enabled BOOLEAN DEFAULT 1,
-        metadata JSONB DEFAULT '{}',
+        metadata TEXT DEFAULT '{}',
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
       );
@@ -97,28 +182,6 @@ async function initializeDatabase(database: Database): Promise<void> {
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (prompt_id) REFERENCES prompts(id)
       );
-
-      -- Triggers to auto-update timestamps and create history
-      CREATE TRIGGER IF NOT EXISTS update_prompts_timestamp 
-        AFTER UPDATE ON prompts
-        BEGIN
-          UPDATE prompts SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
-        END;
-
-      CREATE TRIGGER IF NOT EXISTS update_capabilities_timestamp 
-        AFTER UPDATE ON capabilities_config
-        BEGIN
-          UPDATE capabilities_config SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
-        END;
-
-      CREATE TRIGGER IF NOT EXISTS create_prompt_history 
-        AFTER UPDATE OF content ON prompts
-        BEGIN
-          INSERT INTO prompt_history (prompt_id, version, content, changed_by, change_reason)
-          VALUES (NEW.id, OLD.version, OLD.content, 'system', 'Content updated');
-          
-          UPDATE prompts SET version = version + 1 WHERE id = NEW.id;
-        END;
 
       -- Model usage statistics table
       CREATE TABLE IF NOT EXISTS model_usage_stats (
@@ -156,7 +219,7 @@ async function initializeDatabase(database: Database): Promise<void> {
         rate_limit_remaining INTEGER,
         rate_limit_reset DATETIME,
         last_updated DATETIME DEFAULT CURRENT_TIMESTAMP,
-        raw_response TEXT -- Store the full credit response for debugging
+        raw_response TEXT
       );
 
       CREATE INDEX IF NOT EXISTS idx_credit_provider_time ON credit_balance(provider, last_updated);
@@ -164,11 +227,11 @@ async function initializeDatabase(database: Database): Promise<void> {
       -- Credit usage alerts table
       CREATE TABLE IF NOT EXISTS credit_alerts (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        alert_type TEXT NOT NULL, -- 'low_balance', 'rate_limit', 'daily_limit', etc.
+        alert_type TEXT NOT NULL,
         threshold_value REAL,
         current_value REAL,
         message TEXT,
-        severity TEXT DEFAULT 'info', -- 'info', 'warning', 'critical'
+        severity TEXT DEFAULT 'info',
         acknowledged BOOLEAN DEFAULT 0,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
       );
@@ -179,12 +242,12 @@ async function initializeDatabase(database: Database): Promise<void> {
       CREATE TABLE IF NOT EXISTS oauth_tokens (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         user_id TEXT NOT NULL,
-        provider TEXT NOT NULL, -- 'linkedin', 'github', 'google', etc.
+        provider TEXT NOT NULL,
         access_token TEXT NOT NULL,
         refresh_token TEXT,
         expires_at DATETIME,
-        scopes TEXT, -- JSON array of scopes
-        metadata TEXT, -- JSON object for provider-specific data
+        scopes TEXT,
+        metadata TEXT,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         UNIQUE(user_id, provider)
@@ -203,8 +266,8 @@ async function initializeDatabase(database: Database): Promise<void> {
         timestamp TEXT NOT NULL,
         importance INTEGER DEFAULT 5,
         metadata TEXT DEFAULT '{}',
-        embedding TEXT, -- JSON array of embedding vectors
-        related_message_id TEXT, -- Links memory to the message that created it
+        embedding TEXT,
+        related_message_id TEXT,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
       );
@@ -212,38 +275,6 @@ async function initializeDatabase(database: Database): Promise<void> {
       CREATE INDEX IF NOT EXISTS idx_memories_user_id ON memories(user_id);
       CREATE INDEX IF NOT EXISTS idx_memories_timestamp ON memories(timestamp);
       CREATE INDEX IF NOT EXISTS idx_memories_importance ON memories(importance);
-
-      -- Full-text search for memories
-      CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts USING fts5(
-        content, tags, context,
-        content='memories',
-        content_rowid='id'
-      );
-
-      -- Triggers to keep FTS in sync
-      CREATE TRIGGER IF NOT EXISTS memories_fts_insert AFTER INSERT ON memories BEGIN
-        INSERT INTO memories_fts(rowid, content, tags, context) 
-        VALUES (new.id, new.content, new.tags, new.context);
-      END;
-
-      CREATE TRIGGER IF NOT EXISTS memories_fts_delete AFTER DELETE ON memories BEGIN
-        INSERT INTO memories_fts(memories_fts, rowid, content, tags, context) 
-        VALUES ('delete', old.id, old.content, old.tags, old.context);
-      END;
-
-      CREATE TRIGGER IF NOT EXISTS memories_fts_update AFTER UPDATE ON memories BEGIN
-        INSERT INTO memories_fts(memories_fts, rowid, content, tags, context) 
-        VALUES ('delete', old.id, old.content, old.tags, old.context);
-        INSERT INTO memories_fts(rowid, content, tags, context) 
-        VALUES (new.id, new.content, new.tags, new.context);
-      END;
-
-      -- Update timestamps on memories
-      CREATE TRIGGER IF NOT EXISTS update_memories_timestamp
-        AFTER UPDATE ON memories
-        BEGIN
-          UPDATE memories SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
-        END;
 
       -- Meetings table for scheduling
       CREATE TABLE IF NOT EXISTS meetings (
@@ -254,9 +285,9 @@ async function initializeDatabase(database: Database): Promise<void> {
         scheduled_time DATETIME NOT NULL,
         duration_minutes INTEGER DEFAULT 30,
         timezone TEXT DEFAULT 'UTC',
-        participants TEXT DEFAULT '[]', -- JSON array of Discord user IDs or emails
-        status TEXT DEFAULT 'scheduled', -- 'scheduled', 'completed', 'cancelled'
-        created_via TEXT DEFAULT 'api', -- 'discord-dm', 'channel', 'api'
+        participants TEXT DEFAULT '[]',
+        status TEXT DEFAULT 'scheduled',
+        created_via TEXT DEFAULT 'api',
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
       );
@@ -264,25 +295,22 @@ async function initializeDatabase(database: Database): Promise<void> {
       CREATE INDEX IF NOT EXISTS idx_meetings_user_id ON meetings(user_id);
       CREATE INDEX IF NOT EXISTS idx_meetings_scheduled_time ON meetings(scheduled_time);
       CREATE INDEX IF NOT EXISTS idx_meetings_status ON meetings(status);
-      CREATE INDEX IF NOT EXISTS idx_meetings_created_via ON meetings(created_via);
 
-      -- Meeting participants table for tracking responses
+      -- Meeting participants table
       CREATE TABLE IF NOT EXISTS meeting_participants (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         meeting_id INTEGER NOT NULL,
-        participant_id TEXT NOT NULL, -- Discord user ID or email
-        participant_type TEXT DEFAULT 'email', -- 'discord' or 'email'
-        status TEXT DEFAULT 'pending', -- 'pending', 'accepted', 'declined'
+        participant_id TEXT NOT NULL,
+        participant_type TEXT DEFAULT 'email',
+        status TEXT DEFAULT 'pending',
         responded_at DATETIME,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (meeting_id) REFERENCES meetings(id) ON DELETE CASCADE
       );
 
       CREATE INDEX IF NOT EXISTS idx_meeting_participants_meeting_id ON meeting_participants(meeting_id);
-      CREATE INDEX IF NOT EXISTS idx_meeting_participants_participant_id ON meeting_participants(participant_id);
-      CREATE INDEX IF NOT EXISTS idx_meeting_participants_status ON meeting_participants(status);
 
-      -- Meeting reminders table for scheduling notifications
+      -- Meeting reminders table
       CREATE TABLE IF NOT EXISTS meeting_reminders (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         meeting_id INTEGER NOT NULL,
@@ -293,16 +321,7 @@ async function initializeDatabase(database: Database): Promise<void> {
         FOREIGN KEY (meeting_id) REFERENCES meetings(id) ON DELETE CASCADE
       );
 
-      CREATE INDEX IF NOT EXISTS idx_meeting_reminders_meeting_id ON meeting_reminders(meeting_id);
       CREATE INDEX IF NOT EXISTS idx_meeting_reminders_reminder_time ON meeting_reminders(reminder_time);
-      CREATE INDEX IF NOT EXISTS idx_meeting_reminders_sent ON meeting_reminders(sent);
-
-      -- Update timestamps on meetings
-      CREATE TRIGGER IF NOT EXISTS update_meetings_timestamp
-        AFTER UPDATE ON meetings
-        BEGIN
-          UPDATE meetings SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
-        END;
     `);
 
     // Insert default capability instructions if not exists
@@ -315,51 +334,24 @@ async function initializeDatabase(database: Database): Promise<void> {
   }
 }
 
-async function insertDefaultPrompts(database: Database): Promise<void> {
-  const defaultPrompt = `You are Coach Artie, a helpful AI assistant with access to various capabilities. You can use XML tags to execute capabilities when needed.
-
-Available capabilities:
-- <capability name="calculator" action="calculate" expression="2+2" /> - Perform calculations
-- <capability name="web" action="search" query="search terms" /> - Search the web
-- <capability name="web" action="fetch" url="https://example.com" /> - Fetch web content
-- <capability name="memory" action="remember" content="information to store" /> - Store information
-- <capability name="memory" action="recall" query="what to remember" /> - Recall stored information
-- <capability name="wolfram" action="query" input="moon phase today" /> - Query Wolfram Alpha for data
-- <capability name="github" action="search" query="search repos" /> - Search GitHub
-- <capability name="briefing" action="create" topic="topic" /> - Create briefings
-- <capability name="scheduler" action="remind" message="reminder text" delay="60000" /> - Set reminder (delay in ms)
-- <capability name="scheduler" action="schedule" name="task name" cron="0 9 * * *" message="task description" /> - Schedule recurring task
-- <capability name="scheduler" action="list" /> - List scheduled tasks
-- <capability name="scheduler" action="cancel" taskId="task-id" /> - Cancel scheduled task
-
-Instructions:
-1. Respond naturally to the user's message
-2. If you need to perform calculations, searches, or other actions, include the appropriate capability tags
-3. You can use multiple capabilities in one response
-4. Place capability tags where you want the results to appear in your response
-
-User's message: {{USER_MESSAGE}}`;
+async function insertDefaultPrompts(database: DatabaseWrapper): Promise<void> {
+  const defaultPrompt = `You are Coach Artie, a helpful AI assistant with access to various capabilities.`;
 
   try {
-    // Check if default prompt exists
     const existing = await database.get('SELECT id FROM prompts WHERE name = ?', [
       'capability_instructions',
     ]);
 
     if (!existing) {
       await database.run(
-        `INSERT INTO prompts (name, content, description, category, metadata) 
+        `INSERT INTO prompts (name, content, description, category, metadata)
          VALUES (?, ?, ?, ?, ?)`,
         [
           'capability_instructions',
           defaultPrompt,
           'Main capability instruction prompt for Coach Artie',
           'capabilities',
-          JSON.stringify({
-            variables: ['USER_MESSAGE'],
-            version: '1.0.0',
-            author: 'system',
-          }),
+          JSON.stringify({ variables: ['USER_MESSAGE'], version: '1.0.0', author: 'system' }),
         ]
       );
 
@@ -370,7 +362,7 @@ User's message: {{USER_MESSAGE}}`;
   }
 }
 
-async function runMigrations(database: Database): Promise<void> {
+async function runMigrations(database: DatabaseWrapper): Promise<void> {
   try {
     logger.info('🔄 Running database migrations...');
 
@@ -380,20 +372,17 @@ async function runMigrations(database: Database): Promise<void> {
 
     if (!hasMetadata) {
       logger.info('📝 Adding metadata column to memories table');
-      await database.exec(`
-        ALTER TABLE memories ADD COLUMN metadata TEXT DEFAULT '{}';
-      `);
-      logger.info('✅ Added metadata column to memories table');
+      await database.exec(`ALTER TABLE memories ADD COLUMN metadata TEXT DEFAULT '{}'`);
     }
 
-    // Check if messages table exists for Discord/SMS message history
+    // Check if messages table exists
     const tables = await database.all(`
       SELECT name FROM sqlite_master
       WHERE type='table' AND name='messages'
     `);
 
     if (tables.length === 0) {
-      logger.info('📝 Creating messages table for conversation history');
+      logger.info('📝 Creating messages table');
       await database.exec(`
         CREATE TABLE IF NOT EXISTS messages (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -405,7 +394,7 @@ async function runMigrations(database: Database): Promise<void> {
           conversation_id TEXT,
           role TEXT,
           memory_id INTEGER,
-          related_message_id TEXT, -- Links Artie's response to the user's message
+          related_message_id TEXT,
           metadata TEXT DEFAULT '{}',
           created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
           updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -413,40 +402,27 @@ async function runMigrations(database: Database): Promise<void> {
 
         CREATE INDEX IF NOT EXISTS idx_messages_user_id ON messages(user_id);
         CREATE INDEX IF NOT EXISTS idx_messages_created_at ON messages(created_at);
-        CREATE INDEX IF NOT EXISTS idx_messages_channel_id ON messages(channel_id);
-        CREATE INDEX IF NOT EXISTS idx_messages_guild_id ON messages(guild_id);
-        CREATE INDEX IF NOT EXISTS idx_messages_conversation_id ON messages(conversation_id);
-
-        CREATE TRIGGER IF NOT EXISTS update_messages_timestamp
-          AFTER UPDATE ON messages
-          BEGIN
-            UPDATE messages SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
-          END;
       `);
-      logger.info('✅ Created messages table for conversation history');
     }
 
-    // Check if global_variables table exists for mustache template substitution
+    // Check if global_variables table exists
     const globalVarTables = await database.all(`
       SELECT name FROM sqlite_master
       WHERE type='table' AND name='global_variables'
     `);
 
     if (globalVarTables.length === 0) {
-      logger.info('📝 Creating global_variables table for LEGO-block orchestration');
+      logger.info('📝 Creating global_variables table');
       await database.exec(`
         CREATE TABLE IF NOT EXISTS global_variables (
           key TEXT PRIMARY KEY,
           value TEXT NOT NULL,
-          value_type TEXT DEFAULT 'string', -- 'string', 'number', 'boolean', 'json'
+          value_type TEXT DEFAULT 'string',
           description TEXT,
           created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
           updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
         );
 
-        CREATE INDEX IF NOT EXISTS idx_global_variables_updated ON global_variables(updated_at);
-
-        -- Variable history for tracking all changes
         CREATE TABLE IF NOT EXISTS global_variables_history (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           key TEXT NOT NULL,
@@ -456,40 +432,19 @@ async function runMigrations(database: Database): Promise<void> {
           change_reason TEXT,
           created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         );
-
-        CREATE INDEX IF NOT EXISTS idx_global_variables_history_key ON global_variables_history(key);
-        CREATE INDEX IF NOT EXISTS idx_global_variables_history_created ON global_variables_history(created_at);
-
-        -- Trigger to auto-update timestamp and create history on variable changes
-        CREATE TRIGGER IF NOT EXISTS update_global_variables_timestamp
-          AFTER UPDATE ON global_variables
-          BEGIN
-            UPDATE global_variables SET updated_at = CURRENT_TIMESTAMP WHERE key = NEW.key;
-            INSERT INTO global_variables_history (key, value, value_type, changed_by, change_reason)
-            VALUES (NEW.key, NEW.value, NEW.value_type, 'system', 'Variable updated');
-          END;
-
-        -- Trigger to create history on insert
-        CREATE TRIGGER IF NOT EXISTS insert_global_variables_history
-          AFTER INSERT ON global_variables
-          BEGIN
-            INSERT INTO global_variables_history (key, value, value_type, changed_by, change_reason)
-            VALUES (NEW.key, NEW.value, NEW.value_type, 'system', 'Variable created');
-          END;
       `);
-      logger.info('✅ Created global_variables table for mustache substitution');
     }
 
     logger.info('✅ Database migrations completed');
   } catch (error) {
     logger.error('❌ Failed to run migrations:', error);
-    // Don't throw - migrations should be non-fatal
   }
 }
 
 export async function closeDatabase(): Promise<void> {
   if (db) {
-    await db.close();
+    const wrapper = createWrapper(db, dbPath);
+    await wrapper.close();
     db = null;
     logger.info('🗄️ Database connection closed');
   }
