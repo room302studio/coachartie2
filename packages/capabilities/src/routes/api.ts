@@ -1,5 +1,5 @@
 import { FastifyPluginAsync } from 'fastify';
-import { logger } from '@coachartie/shared';
+import { logger, getDatabase } from '@coachartie/shared';
 import { errorPatternTracker } from '../services/llm-error-pattern-tracker.js';
 
 export const createApiRoutes: FastifyPluginAsync = async (fastify) => {
@@ -9,22 +9,13 @@ export const createApiRoutes: FastifyPluginAsync = async (fastify) => {
       // GET /api/memories - Browse memories
       fastify.get('/memories', async (request, reply) => {
         try {
-          const Database = require('better-sqlite3');
-          const dbPath = process.env.DATABASE_PATH || '/app/data/coachartie.db';
-          const db = new Database(dbPath, { readonly: true });
-
-          const memories = db
-            .prepare(
-              `
-          SELECT id, user_id, content, metadata, created_at, updated_at 
-          FROM memories 
-          ORDER BY created_at DESC 
-          LIMIT 50
-        `
-            )
-            .all();
-
-          db.close();
+          const db = await getDatabase();
+          const memories = await db.all(`
+            SELECT id, user_id, content, metadata, created_at, updated_at
+            FROM memories
+            ORDER BY created_at DESC
+            LIMIT 50
+          `);
 
           return {
             memories,
@@ -43,22 +34,13 @@ export const createApiRoutes: FastifyPluginAsync = async (fastify) => {
       // GET /api/messages - Browse messages
       fastify.get('/messages', async (request, reply) => {
         try {
-          const Database = require('better-sqlite3');
-          const dbPath = process.env.DATABASE_PATH || '/app/data/coachartie.db';
-          const db = new Database(dbPath, { readonly: true });
-
-          const messages = db
-            .prepare(
-              `
-          SELECT id, user_id, platform, message, response, created_at 
-          FROM messages 
-          ORDER BY created_at DESC 
-          LIMIT 50
-        `
-            )
-            .all();
-
-          db.close();
+          const db = await getDatabase();
+          const messages = await db.all(`
+            SELECT id, user_id, value as message, role, created_at
+            FROM messages
+            ORDER BY created_at DESC
+            LIMIT 50
+          `);
 
           return {
             messages,
@@ -77,20 +59,18 @@ export const createApiRoutes: FastifyPluginAsync = async (fastify) => {
       // GET /api/stats - General statistics
       fastify.get('/stats', async (request, reply) => {
         try {
-          const Database = require('better-sqlite3');
-          const dbPath = process.env.DATABASE_PATH || '/app/data/coachartie.db';
-          const db = new Database(dbPath, { readonly: true });
+          const db = await getDatabase();
+          const memoriesCount = await db.get('SELECT COUNT(*) as count FROM memories');
+          const messagesCount = await db.get('SELECT COUNT(*) as count FROM messages');
+          const usersCount = await db.get('SELECT COUNT(DISTINCT user_id) as count FROM messages');
 
           const stats = {
-            memories: db.prepare('SELECT COUNT(*) as count FROM memories').get()?.count || 0,
-            messages: db.prepare('SELECT COUNT(*) as count FROM messages').get()?.count || 0,
-            users:
-              db.prepare('SELECT COUNT(DISTINCT user_id) as count FROM messages').get()?.count || 0,
+            memories: memoriesCount?.count || 0,
+            messages: messagesCount?.count || 0,
+            users: usersCount?.count || 0,
             uptime: Math.floor(process.uptime()),
             timestamp: new Date().toISOString(),
           };
-
-          db.close();
 
           return { stats };
         } catch (error) {
