@@ -13,6 +13,8 @@ export * from './db/index.js';
 // Utilities
 export * from './utils/redis.js';
 export * from './utils/logger.js';
-export * from './utils/database.js'; // Legacy - use db/client.ts for new code
+// DEPRECATED: Use db/client.ts instead (Drizzle ORM)
+// This module uses sql.js which is being phased out
+export * from './utils/database.js';
 export * from './utils/port-discovery.js';
 export * from './utils/service-discovery.js';

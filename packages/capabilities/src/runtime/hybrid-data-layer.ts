@@ -1,15 +1,26 @@
-import { logger, getDatabase } from '@coachartie/shared';
+import { logger, getDatabase, type Memory } from '@coachartie/shared';
 
 /**
- * Memory Record interface
+ * Memory Record interface - Aligned with shared schema
+ * Uses snake_case for SQL compatibility since we use raw SQL with sql.js
+ *
+ * Note: This extends the shared Memory type but uses snake_case field names
+ * for direct SQL compatibility. The shared Memory type uses camelCase (TypeScript)
+ * which maps to snake_case (database) via Drizzle, but we're using raw SQL here.
  */
 export interface MemoryRecord {
-  id: string;
+  id: number; // Auto-increment ID (matches shared schema)
   user_id: string;
   content: string;
-  timestamp: Date;
-  metadata?: Record<string, unknown>;
-  related_message_id?: number; // Link to the message that triggered this memory
+  tags: string; // JSON array as string
+  context: string;
+  timestamp: string; // ISO timestamp string
+  importance: number;
+  metadata: string; // JSON object as string
+  embedding?: string | null; // JSON array as string
+  related_message_id?: string | null; // Changed to string to match shared schema
+  created_at?: string;
+  updated_at?: string;
 }
 
 /**
@@ -65,8 +76,8 @@ class AsyncQueue {
  * 3. Background persistence without blocking user requests
  */
 export class HybridDataLayer {
-  private hotData = new Map<string, MemoryRecord>(); // In-memory for active data
-  private userIndex = new Map<string, Set<string>>(); // User ID -> Memory IDs
+  private hotData = new Map<number, MemoryRecord>(); // In-memory for active data
+  private userIndex = new Map<string, Set<number>>(); // User ID -> Memory IDs
   private writeQueue = new AsyncQueue(); // Serialize writes
   private coldStorage?: any; // SQLite for persistence
   private maxHotMemories = 10000; // Keep most recent 10k in memory
@@ -116,38 +127,23 @@ export class HybridDataLayer {
     try {
       const rows = (await this.coldStorage.all(
         `
-        SELECT id, user_id, content, timestamp, metadata, related_message_id
+        SELECT id, user_id, content, tags, context, timestamp, importance,
+               metadata, embedding, related_message_id, created_at, updated_at
         FROM memories
         ORDER BY timestamp DESC
         LIMIT ?
       `,
         this.maxHotMemories
-      )) as Array<{
-        id: string;
-        user_id: string;
-        content: string;
-        timestamp: string;
-        metadata: string | null;
-        related_message_id: number | null;
-      }>;
+      )) as MemoryRecord[];
 
       for (const row of rows) {
-        const memory: MemoryRecord = {
-          id: row.id,
-          user_id: row.user_id,
-          content: row.content,
-          timestamp: new Date(row.timestamp),
-          metadata: row.metadata ? JSON.parse(row.metadata) : undefined,
-          related_message_id: row.related_message_id || undefined,
-        };
-
-        this.hotData.set(memory.id, memory);
+        this.hotData.set(row.id, row);
 
         // Update user index
-        if (!this.userIndex.has(memory.user_id)) {
-          this.userIndex.set(memory.user_id, new Set());
+        if (!this.userIndex.has(row.user_id)) {
+          this.userIndex.set(row.user_id, new Set());
         }
-        this.userIndex.get(memory.user_id)!.add(memory.id);
+        this.userIndex.get(row.user_id)!.add(row.id);
       }
 
       logger.info(`✅ Loaded ${rows.length} recent memories into hot cache`);
@@ -158,36 +154,49 @@ export class HybridDataLayer {
 
   /**
    * Store memory - instant hot cache write, async persistence
+   * Accepts a partial memory (without id) and returns the assigned id
    */
-  async storeMemory(memory: MemoryRecord): Promise<void> {
-    // Immediate hot cache storage
-    this.hotData.set(memory.id, memory);
+  async storeMemory(memory: Omit<MemoryRecord, 'id' | 'created_at' | 'updated_at'>): Promise<number> {
+    // Generate a temporary negative ID for immediate hot cache storage
+    // This will be replaced with the real auto-increment ID after persistence
+    const tempId = -Date.now();
+
+    const tempMemory: MemoryRecord = {
+      ...memory,
+      id: tempId,
+    };
+
+    // Immediate hot cache storage with temp ID
+    this.hotData.set(tempId, tempMemory);
 
     // Update user index
     if (!this.userIndex.has(memory.user_id)) {
       this.userIndex.set(memory.user_id, new Set());
     }
-    this.userIndex.get(memory.user_id)!.add(memory.id);
+    this.userIndex.get(memory.user_id)!.add(tempId);
 
     // Maintain hot cache size limit
     if (this.hotData.size > this.maxHotMemories) {
       this.evictOldestMemories();
     }
 
-    // Async persistence (non-blocking)
+    // Async persistence (non-blocking) - will update with real ID
     this.writeQueue
       .add(async () => {
-        await this.persistMemory(memory);
+        const realId = await this.persistMemory(memory, tempId);
+        return realId;
       })
       .catch((error) => {
         logger.error('Failed to persist memory:', error);
       });
+
+    return tempId; // Return temp ID immediately for fast response
   }
 
   /**
    * Get memory by ID - instant hot cache lookup
    */
-  async getMemory(id: string): Promise<MemoryRecord | null> {
+  async getMemory(id: number): Promise<MemoryRecord | null> {
     const memory = this.hotData.get(id);
     if (memory) {
       return memory;
@@ -198,25 +207,17 @@ export class HybridDataLayer {
       try {
         const row = (await this.coldStorage.get(
           `
-          SELECT id, user_id, content, timestamp, metadata, related_message_id
+          SELECT id, user_id, content, tags, context, timestamp, importance,
+                 metadata, embedding, related_message_id, created_at, updated_at
           FROM memories WHERE id = ?
         `,
           id
-        )) as any;
+        )) as MemoryRecord | undefined;
 
         if (row) {
-          const memory: MemoryRecord = {
-            id: row.id,
-            user_id: row.user_id,
-            content: row.content,
-            timestamp: new Date(row.timestamp),
-            metadata: row.metadata ? JSON.parse(row.metadata) : undefined,
-            related_message_id: row.related_message_id || undefined,
-          };
-
           // Promote to hot cache
-          this.hotData.set(id, memory);
-          return memory;
+          this.hotData.set(row.id, row);
+          return row;
         }
       } catch (error) {
         logger.error('Failed to get memory from cold storage:', error);
@@ -239,7 +240,7 @@ export class HybridDataLayer {
     const memories = Array.from(userMemoryIds)
       .map((id) => this.hotData.get(id))
       .filter((memory): memory is MemoryRecord => memory !== undefined)
-      .sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime())
+      .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
       .slice(0, limit);
 
     // If we don't have enough in hot cache, check cold storage
@@ -247,7 +248,8 @@ export class HybridDataLayer {
       try {
         const rows = (await this.coldStorage.all(
           `
-          SELECT id, user_id, content, timestamp, metadata, related_message_id
+          SELECT id, user_id, content, tags, context, timestamp, importance,
+                 metadata, embedding, related_message_id, created_at, updated_at
           FROM memories
           WHERE user_id = ?
           ORDER BY timestamp DESC
@@ -255,25 +257,9 @@ export class HybridDataLayer {
         `,
           userId,
           limit
-        )) as Array<{
-          id: string;
-          user_id: string;
-          content: string;
-          timestamp: string;
-          metadata: string | null;
-          related_message_id: number | null;
-        }>;
+        )) as MemoryRecord[];
 
-        const coldMemories = rows.map((row) => ({
-          id: row.id,
-          user_id: row.user_id,
-          content: row.content,
-          timestamp: new Date(row.timestamp),
-          metadata: row.metadata ? JSON.parse(row.metadata) : undefined,
-          related_message_id: row.related_message_id || undefined,
-        }));
-
-        return coldMemories.slice(0, limit);
+        return rows.slice(0, limit);
       } catch (error) {
         logger.error('Failed to get recent memories from cold storage:', error);
       }
@@ -294,7 +280,7 @@ export class HybridDataLayer {
         (memory): memory is MemoryRecord =>
           memory !== undefined && memory.content.toLowerCase().includes(query.toLowerCase())
       )
-      .sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime())
+      .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
       .slice(0, limit);
 
     if (hotResults.length >= limit || !this.coldStorage) {
@@ -306,7 +292,8 @@ export class HybridDataLayer {
       try {
         const rows = (await this.coldStorage.all(
           `
-          SELECT m.id, m.user_id, m.content, m.timestamp, m.metadata, m.related_message_id
+          SELECT m.id, m.user_id, m.content, m.tags, m.context, m.timestamp, m.importance,
+                 m.metadata, m.embedding, m.related_message_id, m.created_at, m.updated_at
           FROM memories_fts f
           JOIN memories m ON m.rowid = f.rowid
           WHERE f.content MATCH ? AND m.user_id = ?
@@ -316,23 +303,9 @@ export class HybridDataLayer {
           query.trim(),
           userId,
           limit
-        )) as Array<{
-          id: string;
-          user_id: string;
-          content: string;
-          timestamp: string;
-          metadata: string | null;
-          related_message_id: number | null;
-        }>;
+        )) as MemoryRecord[];
 
-        return rows.map((row) => ({
-          id: row.id,
-          user_id: row.user_id,
-          content: row.content,
-          timestamp: new Date(row.timestamp),
-          metadata: row.metadata ? JSON.parse(row.metadata) : undefined,
-          related_message_id: row.related_message_id || undefined,
-        }));
+        return rows;
       } catch (error) {
         logger.error('FTS search failed, falling back to hot cache results:', error);
       }
@@ -342,37 +315,60 @@ export class HybridDataLayer {
   }
 
   /**
-   * Persist memory to cold storage
+   * Persist memory to cold storage and update hot cache with real ID
    */
-  private async persistMemory(memory: MemoryRecord): Promise<void> {
+  private async persistMemory(
+    memory: Omit<MemoryRecord, 'id' | 'created_at' | 'updated_at'>,
+    tempId: number
+  ): Promise<number> {
     if (!this.coldStorage) {
-      return;
+      return tempId;
     }
 
     try {
       const result = await this.coldStorage.run(
         `
         INSERT INTO memories
-        (user_id, content, tags, context, timestamp, importance, metadata, related_message_id)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        (user_id, content, tags, context, timestamp, importance, metadata, embedding, related_message_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
         memory.user_id,
         memory.content,
-        JSON.stringify([]), // empty tags array as string
-        '', // empty context
-        memory.timestamp.toISOString(),
-        5, // default importance
-        memory.metadata ? JSON.stringify(memory.metadata) : '{}',
+        memory.tags,
+        memory.context,
+        memory.timestamp,
+        memory.importance,
+        memory.metadata,
+        memory.embedding || null,
         memory.related_message_id || null
       );
 
-      // Generate and store embedding asynchronously (non-blocking)
-      if (result && result.lastInsertRowid) {
-        this.generateEmbeddingForMemory(result.lastInsertRowid as number, memory.content).catch(
-          (err) =>
-            logger.warn(`Failed to generate embedding for memory ${result.lastInsertRowid}:`, err)
-        );
+      const realId = result.lastID as number;
+
+      // Replace temp entry with real ID in hot cache
+      const tempMemory = this.hotData.get(tempId);
+      if (tempMemory) {
+        this.hotData.delete(tempId);
+        const realMemory: MemoryRecord = {
+          ...tempMemory,
+          id: realId,
+        };
+        this.hotData.set(realId, realMemory);
+
+        // Update user index
+        const userSet = this.userIndex.get(memory.user_id);
+        if (userSet) {
+          userSet.delete(tempId);
+          userSet.add(realId);
+        }
       }
+
+      // Generate and store embedding asynchronously (non-blocking)
+      this.generateEmbeddingForMemory(realId, memory.content).catch((err) =>
+        logger.warn(`Failed to generate embedding for memory ${realId}:`, err)
+      );
+
+      return realId;
     } catch (error) {
       logger.error('Failed to persist memory to cold storage:', error);
       throw error;
@@ -408,7 +404,7 @@ export class HybridDataLayer {
    */
   private evictOldestMemories(): void {
     const memories = Array.from(this.hotData.values()).sort(
-      (a, b) => a.timestamp.getTime() - b.timestamp.getTime()
+      (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
     );
 
     const toEvict = memories.slice(0, Math.floor(this.maxHotMemories * 0.1)); // Evict 10%

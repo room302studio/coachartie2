@@ -95,6 +95,130 @@ export const promptHistory = sqliteTable('prompt_history', {
 });
 
 // ============================================================================
+// TASK MANAGEMENT & QUEUE
+// ============================================================================
+
+/**
+ * Queue - Job queue for async task processing
+ */
+export const queue = sqliteTable('queue', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  status: text('status').default('pending'), // pending, processing, completed, failed, cancelled
+  taskType: text('task_type').notNull(),
+  priority: integer('priority').default(0),
+  payload: text('payload').default('{}'), // JSON
+  result: text('result'), // JSON
+  errorMessage: text('error_message'),
+  retryCount: integer('retry_count').default(0),
+  maxRetries: integer('max_retries').default(3),
+  assignedTo: text('assigned_to'), // Worker ID
+  createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
+  startedAt: text('started_at'),
+  completedAt: text('completed_at'),
+  updatedAt: text('updated_at').default(sql`CURRENT_TIMESTAMP`),
+}, (table) => ({
+  statusIdx: index('idx_queue_status').on(table.status),
+  createdAtIdx: index('idx_queue_created_at').on(table.createdAt),
+  priorityIdx: index('idx_queue_priority').on(table.priority),
+  taskTypeIdx: index('idx_queue_task_type').on(table.taskType),
+}));
+
+/**
+ * Todos - Simple todo task tracking
+ */
+export const todos = sqliteTable('todos', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  userId: text('user_id'),
+  name: text('name').notNull(),
+  description: text('description'),
+  status: text('status').default('pending'), // pending, in_progress, completed, cancelled
+  priority: integer('priority').default(0),
+  dueDate: text('due_date'),
+  completedAt: text('completed_at'),
+  data: text('data').default('{}'), // JSON
+  createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: text('updated_at').default(sql`CURRENT_TIMESTAMP`),
+}, (table) => ({
+  userStatusIdx: index('idx_todos_user_status').on(table.userId, table.status),
+}));
+
+/**
+ * Todo Lists - Collections of todo items
+ */
+export const todoLists = sqliteTable('todo_lists', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  userId: text('user_id').notNull(),
+  name: text('name').notNull(),
+  goalId: integer('goal_id'),
+  createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: text('updated_at').default(sql`CURRENT_TIMESTAMP`),
+}, (table) => ({
+  userIdIdx: index('idx_todo_lists_user_id').on(table.userId),
+  userNameUnique: index('idx_todo_lists_user_name').on(table.userId, table.name),
+}));
+
+/**
+ * Todo Items - Individual items within a todo list
+ */
+export const todoItems = sqliteTable('todo_items', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  listId: integer('list_id').notNull().references(() => todoLists.id),
+  content: text('content').notNull(),
+  status: text('status').default('pending'),
+  position: integer('position').notNull(),
+  createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
+  completedAt: text('completed_at'),
+}, (table) => ({
+  listIdIdx: index('idx_todo_items_list_id').on(table.listId),
+  statusIdx: index('idx_todo_items_status').on(table.status),
+}));
+
+/**
+ * Goals - Long-term objectives and goal tracking
+ */
+export const goals = sqliteTable('goals', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  userId: text('user_id'),
+  title: text('title').notNull(),
+  objective: text('objective'),
+  description: text('description'),
+  targetDate: text('target_date'),
+  deadline: text('deadline'),
+  status: text('status').default('active'), // active, paused, completed, abandoned, not_started
+  priority: integer('priority').default(5),
+  progress: integer('progress').default(0), // 0-100
+  milestones: text('milestones').default('[]'), // JSON array
+  metadata: text('metadata').default('{}'),
+  createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: text('updated_at').default(sql`CURRENT_TIMESTAMP`),
+  completedAt: text('completed_at'),
+}, (table) => ({
+  userIdIdx: index('idx_goals_user_id').on(table.userId),
+  statusIdx: index('idx_goals_status').on(table.status),
+  deadlineIdx: index('idx_goals_deadline').on(table.deadline),
+  userStatusIdx: index('idx_goals_user_status').on(table.userId, table.status),
+}));
+
+/**
+ * User Identities - Cross-platform user identification
+ */
+export const userIdentities = sqliteTable('user_identities', {
+  id: text('id').primaryKey(),
+  discordId: text('discord_id').unique(),
+  phoneNumber: text('phone_number').unique(),
+  email: text('email').unique(),
+  displayName: text('display_name').notNull(),
+  preferredChannel: text('preferred_channel').default('discord'),
+  metadata: text('metadata').default('{}'),
+  createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: text('updated_at').default(sql`CURRENT_TIMESTAMP`),
+}, (table) => ({
+  discordIdIdx: index('idx_user_identities_discord_id').on(table.discordId),
+  phoneNumberIdx: index('idx_user_identities_phone_number').on(table.phoneNumber),
+  emailIdx: index('idx_user_identities_email').on(table.email),
+}));
+
+// ============================================================================
 // CAPABILITIES & CONFIG
 // ============================================================================
 
@@ -139,6 +263,33 @@ export const globalVariablesHistory = sqliteTable('global_variables_history', {
   changeReason: text('change_reason'),
   createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
 });
+
+/**
+ * Config - Generic key-value configuration store
+ */
+export const config = sqliteTable('config', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  configKey: text('config_key').notNull().unique(),
+  configValue: text('config_value').notNull(),
+  createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
+  history: text('history').default('{}'), // JSON
+  notes: text('notes'),
+});
+
+/**
+ * Logs - Application logs
+ */
+export const logs = sqliteTable('logs', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  level: text('level'), // info, warn, error, debug
+  message: text('message'),
+  service: text('service'),
+  timestamp: text('timestamp').default(sql`CURRENT_TIMESTAMP`),
+}, (table) => ({
+  timestampIdx: index('idx_logs_timestamp').on(table.timestamp),
+  levelIdx: index('idx_logs_level').on(table.level),
+  serviceIdx: index('idx_logs_service').on(table.service),
+}));
 
 // ============================================================================
 // USAGE & BILLING
@@ -310,3 +461,27 @@ export type NewCreditBalance = typeof creditBalance.$inferInsert;
 
 export type Meeting = typeof meetings.$inferSelect;
 export type NewMeeting = typeof meetings.$inferInsert;
+
+export type QueueItem = typeof queue.$inferSelect;
+export type NewQueueItem = typeof queue.$inferInsert;
+
+export type Todo = typeof todos.$inferSelect;
+export type NewTodo = typeof todos.$inferInsert;
+
+export type TodoList = typeof todoLists.$inferSelect;
+export type NewTodoList = typeof todoLists.$inferInsert;
+
+export type TodoItem = typeof todoItems.$inferSelect;
+export type NewTodoItem = typeof todoItems.$inferInsert;
+
+export type Goal = typeof goals.$inferSelect;
+export type NewGoal = typeof goals.$inferInsert;
+
+export type UserIdentity = typeof userIdentities.$inferSelect;
+export type NewUserIdentity = typeof userIdentities.$inferInsert;
+
+export type Config = typeof config.$inferSelect;
+export type NewConfig = typeof config.$inferInsert;
+
+export type Log = typeof logs.$inferSelect;
+export type NewLog = typeof logs.$inferInsert;

@@ -1,6 +1,6 @@
 import { ChatInputCommandInteraction, SlashCommandBuilder, EmbedBuilder } from 'discord.js';
-import { logger } from '@coachartie/shared';
-import { getDatabase } from '@coachartie/shared';
+import { logger, getDb, modelUsageStats } from '@coachartie/shared';
+import { desc, eq, gte, count, sum, avg, sql } from 'drizzle-orm';
 
 export const usageCommand = {
   data: new SlashCommandBuilder()
@@ -39,7 +39,7 @@ export const usageCommand = {
 
 async function createUsageEmbed(userId: string, period: string): Promise<EmbedBuilder> {
   try {
-    const db = await getDatabase();
+    const db = getDb();
 
     // Calculate date range based on period
     const now = new Date();
@@ -61,57 +61,56 @@ async function createUsageEmbed(userId: string, period: string): Promise<EmbedBu
         break;
     }
 
-    // Query usage statistics from the database
-    const usage = await db.get(
-      `
-      SELECT 
-        COUNT(*) as total_requests,
-        SUM(total_tokens) as total_tokens,
-        SUM(estimated_cost) as total_cost,
-        AVG(response_time_ms) as avg_response_time,
-        COUNT(CASE WHEN success = 1 THEN 1 END) as successful_requests,
-        COUNT(CASE WHEN success = 0 THEN 1 END) as failed_requests,
-        SUM(capabilities_detected) as total_capabilities_detected,
-        SUM(capabilities_executed) as total_capabilities_executed
-      FROM model_usage_stats 
-      WHERE user_id = ? AND timestamp >= ?
-    `,
-      [userId, startDate.toISOString()]
-    );
+    // Query usage statistics from the database using Drizzle
+    const usageResults = await db
+      .select({
+        total_requests: count(),
+        total_tokens: sum(modelUsageStats.totalTokens),
+        total_cost: sum(modelUsageStats.estimatedCost),
+        avg_response_time: avg(modelUsageStats.responseTimeMs),
+        successful_requests: sql<number>`COUNT(CASE WHEN ${modelUsageStats.success} = 1 THEN 1 END)`,
+        failed_requests: sql<number>`COUNT(CASE WHEN ${modelUsageStats.success} = 0 THEN 1 END)`,
+        total_capabilities_detected: sum(modelUsageStats.capabilitiesDetected),
+        total_capabilities_executed: sum(modelUsageStats.capabilitiesExecuted),
+      })
+      .from(modelUsageStats)
+      .where(
+        sql`${modelUsageStats.userId} = ${userId} AND ${modelUsageStats.timestamp} >= ${startDate.toISOString()}`
+      );
+
+    const usage = usageResults[0];
 
     // Get model breakdown
-    const modelBreakdown = await db.all(
-      `
-      SELECT 
-        model_name,
-        COUNT(*) as requests,
-        SUM(total_tokens) as tokens,
-        SUM(estimated_cost) as cost
-      FROM model_usage_stats 
-      WHERE user_id = ? AND timestamp >= ?
-      GROUP BY model_name
-      ORDER BY requests DESC
-      LIMIT 5
-    `,
-      [userId, startDate.toISOString()]
-    );
+    const modelBreakdown = await db
+      .select({
+        model_name: modelUsageStats.modelName,
+        requests: count(),
+        tokens: sum(modelUsageStats.totalTokens),
+        cost: sum(modelUsageStats.estimatedCost),
+      })
+      .from(modelUsageStats)
+      .where(
+        sql`${modelUsageStats.userId} = ${userId} AND ${modelUsageStats.timestamp} >= ${startDate.toISOString()}`
+      )
+      .groupBy(modelUsageStats.modelName)
+      .orderBy(desc(count()))
+      .limit(5);
 
     // Get recent activity
-    const recentActivity = await db.get(
-      `
-      SELECT 
-        model_name,
-        timestamp,
-        total_tokens,
-        estimated_cost,
-        success
-      FROM model_usage_stats 
-      WHERE user_id = ? 
-      ORDER BY timestamp DESC 
-      LIMIT 1
-    `,
-      [userId]
-    );
+    const recentActivityResults = await db
+      .select({
+        model_name: modelUsageStats.modelName,
+        timestamp: modelUsageStats.timestamp,
+        total_tokens: modelUsageStats.totalTokens,
+        estimated_cost: modelUsageStats.estimatedCost,
+        success: modelUsageStats.success,
+      })
+      .from(modelUsageStats)
+      .where(eq(modelUsageStats.userId, userId))
+      .orderBy(desc(modelUsageStats.timestamp))
+      .limit(1);
+
+    const recentActivity = recentActivityResults[0];
 
     const periodLabels = {
       today: '📅 Today',
@@ -134,33 +133,34 @@ async function createUsageEmbed(userId: string, period: string): Promise<EmbedBu
     }
 
     // Calculate success rate
-    const successRate =
-      usage.total_requests > 0
-        ? ((usage.successful_requests / usage.total_requests) * 100).toFixed(1)
-        : '0';
+    const totalReqs = Number(usage.total_requests || 0);
+    const successReqs = Number(usage.successful_requests || 0);
+    const successRate = totalReqs > 0 ? ((successReqs / totalReqs) * 100).toFixed(1) : '0';
 
     // Calculate cost efficiency
-    const costPerMessage =
-      usage.total_cost > 0 ? (usage.total_cost / usage.total_requests).toFixed(4) : '0.0000';
+    const totalCost = Number(usage.total_cost || 0);
+    const costPerMessage = totalReqs > 0 ? (totalCost / totalReqs).toFixed(4) : '0.0000';
 
     embed.addFields(
-      { name: '📊 Total Requests', value: usage.total_requests.toString(), inline: true },
+      { name: '📊 Total Requests', value: (usage.total_requests || 0).toString(), inline: true },
       { name: '✅ Success Rate', value: `${successRate}%`, inline: true },
-      { name: '🎯 Tokens Used', value: usage.total_tokens?.toLocaleString() || '0', inline: true },
-      { name: '💰 Total Cost', value: `$${(usage.total_cost || 0).toFixed(4)}`, inline: true },
+      { name: '🎯 Tokens Used', value: Number(usage.total_tokens || 0).toLocaleString(), inline: true },
+      { name: '💰 Total Cost', value: `$${Number(usage.total_cost || 0).toFixed(4)}`, inline: true },
       { name: '📈 Cost/Message', value: `$${costPerMessage}`, inline: true },
       {
         name: '⚡ Avg Response',
-        value: `${Math.round(usage.avg_response_time || 0)}ms`,
+        value: `${Math.round(Number(usage.avg_response_time || 0))}ms`,
         inline: true,
       }
     );
 
     // Add capabilities usage if available
-    if (usage.total_capabilities_detected > 0) {
+    const capDetected = Number(usage.total_capabilities_detected || 0);
+    const capExecuted = Number(usage.total_capabilities_executed || 0);
+    if (capDetected > 0) {
       embed.addFields({
         name: '🛠️ Capabilities Usage',
-        value: `Detected: ${usage.total_capabilities_detected}\nExecuted: ${usage.total_capabilities_executed}`,
+        value: `Detected: ${capDetected}\nExecuted: ${capExecuted}`,
         inline: true,
       });
     }
@@ -168,9 +168,11 @@ async function createUsageEmbed(userId: string, period: string): Promise<EmbedBu
     // Add model breakdown
     if (modelBreakdown && modelBreakdown.length > 0) {
       const modelStats = modelBreakdown
-        .map((model: any) => {
+        .map((model) => {
           const modelName = model.model_name.split('/')[1]?.split(':')[0] || model.model_name;
-          return `**${modelName}**: ${model.requests} requests ($${model.cost.toFixed(4)})`;
+          const modelRequests = Number(model.requests || 0);
+          const modelCost = Number(model.cost || 0);
+          return `**${modelName}**: ${modelRequests} requests ($${modelCost.toFixed(4)})`;
         })
         .join('\n');
 
@@ -183,24 +185,25 @@ async function createUsageEmbed(userId: string, period: string): Promise<EmbedBu
 
     // Add recent activity if available
     if (recentActivity) {
-      const lastUsed = new Date(recentActivity.timestamp);
+      const lastUsed = new Date(recentActivity.timestamp || Date.now());
       const timeDiff = Date.now() - lastUsed.getTime();
       const timeAgo = formatTimeAgo(timeDiff);
 
       const recentModel =
         recentActivity.model_name.split('/')[1]?.split(':')[0] || recentActivity.model_name;
       const recentStatus = recentActivity.success ? '✅' : '❌';
+      const recentTokens = Number(recentActivity.total_tokens || 0);
+      const recentCost = Number(recentActivity.estimated_cost || 0);
 
       embed.addFields({
         name: '🕐 Last Activity',
-        value: `${recentStatus} ${recentModel} - ${timeAgo}\n${recentActivity.total_tokens} tokens ($${recentActivity.estimated_cost.toFixed(4)})`,
+        value: `${recentStatus} ${recentModel} - ${timeAgo}\n${recentTokens} tokens ($${recentCost.toFixed(4)})`,
         inline: false,
       });
     }
 
     // Add cost context
     let costContext = '';
-    const totalCost = usage.total_cost || 0;
     if (totalCost < 0.01) {
       costContext = '🎉 All your usage is on free models!';
     } else if (totalCost < 0.1) {

@@ -1,3 +1,17 @@
+/**
+ * DEPRECATED: This module uses sql.js and is being phased out.
+ *
+ * For new code, use the Drizzle ORM client instead:
+ * @see {@link ../db/client.ts} for the new database client
+ *
+ * Migration guide:
+ * - Replace `getDatabase()` with `getDb()` from '@coachartie/shared'
+ * - Replace `closeDatabase()` with `closeDb()` from '@coachartie/shared'
+ * - Use Drizzle ORM queries instead of raw SQL where possible
+ *
+ * @deprecated This module will be removed in a future version
+ */
+
 import initSqlJs, { Database as SqlJsDatabase } from 'sql.js';
 import { logger } from './logger.js';
 import path from 'path';
@@ -91,7 +105,29 @@ function createWrapper(database: SqlJsDatabase, filePath: string): DatabaseWrapp
   };
 }
 
+/**
+ * Get the legacy sql.js database instance.
+ *
+ * @deprecated Use `getDb()` from '@coachartie/shared' instead.
+ * This function uses sql.js which is being phased out in favor of Drizzle ORM with better-sqlite3.
+ *
+ * @example
+ * ```typescript
+ * // OLD (deprecated):
+ * import { getDatabase } from '@coachartie/shared';
+ * const db = await getDatabase();
+ *
+ * // NEW (recommended):
+ * import { getDb } from '@coachartie/shared';
+ * const db = getDb();
+ * ```
+ *
+ * @returns Promise resolving to a DatabaseWrapper instance
+ */
 export async function getDatabase(): Promise<DatabaseWrapper> {
+  console.warn('DEPRECATED: getDatabase() is deprecated. Use getDb() from @coachartie/shared instead.');
+  console.warn('This function uses sql.js which is being phased out in favor of Drizzle ORM.');
+
   if (db) {
     return createWrapper(db, dbPath);
   }
@@ -441,7 +477,26 @@ async function runMigrations(database: DatabaseWrapper): Promise<void> {
   }
 }
 
+/**
+ * Close the legacy sql.js database connection.
+ *
+ * @deprecated Use `closeDb()` from '@coachartie/shared' instead.
+ * This function uses sql.js which is being phased out in favor of Drizzle ORM with better-sqlite3.
+ *
+ * @example
+ * ```typescript
+ * // OLD (deprecated):
+ * import { closeDatabase } from '@coachartie/shared';
+ * await closeDatabase();
+ *
+ * // NEW (recommended):
+ * import { closeDb } from '@coachartie/shared';
+ * closeDb();
+ * ```
+ */
 export async function closeDatabase(): Promise<void> {
+  console.warn('DEPRECATED: closeDatabase() is deprecated. Use closeDb() from @coachartie/shared instead.');
+
   if (db) {
     const wrapper = createWrapper(db, dbPath);
     await wrapper.close();

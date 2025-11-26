@@ -4,8 +4,8 @@ import {
   EmbedBuilder,
   InteractionResponse,
 } from 'discord.js';
-import { getDatabase } from '@coachartie/shared';
-import { logger } from '@coachartie/shared';
+import { getDb, modelUsageStats, logger } from '@coachartie/shared';
+import { eq, desc } from 'drizzle-orm';
 
 export const statusCommand = {
   data: new SlashCommandBuilder()
@@ -17,28 +17,27 @@ export const statusCommand = {
   ): Promise<InteractionResponse<boolean> | undefined> {
     try {
       const userId = interaction.user.id;
-      const db = await getDatabase();
+      const db = getDb();
 
-      // Query for the most recent model usage by this user
-      const recentUsage = await db.get(
-        `
-        SELECT 
-          model_name,
-          message_id,
-          timestamp,
-          total_tokens,
-          estimated_cost,
-          response_time_ms,
-          capabilities_detected,
-          capabilities_executed,
-          success
-        FROM model_usage_stats 
-        WHERE user_id = ? 
-        ORDER BY timestamp DESC 
-        LIMIT 1
-      `,
-        [userId]
-      );
+      // Query for the most recent model usage by this user using Drizzle
+      const recentUsageResults = await db
+        .select({
+          model_name: modelUsageStats.modelName,
+          message_id: modelUsageStats.messageId,
+          timestamp: modelUsageStats.timestamp,
+          total_tokens: modelUsageStats.totalTokens,
+          estimated_cost: modelUsageStats.estimatedCost,
+          response_time_ms: modelUsageStats.responseTimeMs,
+          capabilities_detected: modelUsageStats.capabilitiesDetected,
+          capabilities_executed: modelUsageStats.capabilitiesExecuted,
+          success: modelUsageStats.success,
+        })
+        .from(modelUsageStats)
+        .where(eq(modelUsageStats.userId, userId))
+        .orderBy(desc(modelUsageStats.timestamp))
+        .limit(1);
+
+      const recentUsage = recentUsageResults[0];
 
       if (!recentUsage) {
         const embed = new EmbedBuilder()
@@ -55,7 +54,7 @@ export const statusCommand = {
       }
 
       // Format timestamp
-      const timestamp = new Date(recentUsage.timestamp);
+      const timestamp = new Date(recentUsage.timestamp || Date.now());
       const timeDiff = Date.now() - timestamp.getTime();
       const timeAgo = formatTimeAgo(timeDiff);
 
@@ -64,31 +63,37 @@ export const statusCommand = {
       const modelType = isFreeModel ? '(Free)' : '(Paid)';
 
       // Create embed with actual data
+      const totalTokens = Number(recentUsage.total_tokens || 0);
+      const estimatedCost = Number(recentUsage.estimated_cost || 0);
+      const capDetected = Number(recentUsage.capabilities_detected || 0);
+      const capExecuted = Number(recentUsage.capabilities_executed || 0);
+      const responseTime = Number(recentUsage.response_time_ms || 0);
+
       const embed = new EmbedBuilder()
         .setColor(recentUsage.success ? 0x00ff00 : 0xff0000)
         .setTitle('🤖 Model Status')
         .setDescription(`**Current Model:** ${recentUsage.model_name} ${modelType}`)
         .addFields(
           { name: '⏰ When', value: timeAgo, inline: true },
-          { name: '🎯 Tokens', value: recentUsage.total_tokens.toString(), inline: true },
-          { name: '💰 Cost', value: `$${recentUsage.estimated_cost.toFixed(4)}`, inline: true }
+          { name: '🎯 Tokens', value: totalTokens.toString(), inline: true },
+          { name: '💰 Cost', value: `$${estimatedCost.toFixed(4)}`, inline: true }
         )
         .setTimestamp(timestamp);
 
       // Add additional fields if capabilities were used
-      if (recentUsage.capabilities_detected > 0) {
+      if (capDetected > 0) {
         embed.addFields({
           name: '🛠️ Capabilities',
-          value: `Detected: ${recentUsage.capabilities_detected}, Executed: ${recentUsage.capabilities_executed}`,
+          value: `Detected: ${capDetected}, Executed: ${capExecuted}`,
           inline: false,
         });
       }
 
       // Add response time if available
-      if (recentUsage.response_time_ms) {
+      if (responseTime > 0) {
         embed.addFields({
           name: '⚡ Response Time',
-          value: `${recentUsage.response_time_ms}ms`,
+          value: `${responseTime}ms`,
           inline: true,
         });
       }

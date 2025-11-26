@@ -48,7 +48,7 @@ export class MemoryService {
   private static instance: MemoryService;
   private dbReady = false;
   private useHybridLayer = true; // FLAG: Use high-performance hybrid layer
-  public lastRecallMemoryIds: string[] = []; // 🔍 For debugging memory ID tracking
+  public lastRecallMemoryIds: number[] = []; // 🔍 For debugging memory ID tracking
 
   static getInstance(): MemoryService {
     if (!MemoryService.instance) {
@@ -73,23 +73,20 @@ export class MemoryService {
         const basicTags = this.extractBasicTags(content, context);
         // Merge explicit tags with extracted tags (explicit tags first for priority)
         const allTags = explicitTags ? [...new Set([...explicitTags, ...basicTags])] : basicTags;
-        const memoryId = uuidv4();
 
-        const memory: MemoryRecord = {
-          id: memoryId,
+        const memory = {
           user_id: userId,
           content,
-          timestamp: new Date(),
-          metadata: {
-            tags: allTags,
-            context,
-            importance,
-          },
-          related_message_id: relatedMessageId,
+          tags: JSON.stringify(allTags),
+          context,
+          timestamp: new Date().toISOString(),
+          importance,
+          metadata: JSON.stringify({}),
+          related_message_id: relatedMessageId ? String(relatedMessageId) : null,
         };
 
         // Instant hot cache storage + async SQLite persistence
-        await hybridDataLayer.storeMemory(memory);
+        const memoryId = await hybridDataLayer.storeMemory(memory);
 
         logger.info(`💾 [HYBRID] Stored memory for user ${userId}: ${content.substring(0, 50)}...`);
         if (explicitTags && explicitTags.length > 0) {
@@ -102,7 +99,7 @@ export class MemoryService {
         });
 
         const relationshipNote = relatedMessageId ? ` linked to message ${relatedMessageId}` : '';
-        return `✅ Remembered: "${content}" (ID: ${memoryId.substring(0, 8)}, importance: ${importance}/10, tags: ${allTags.join(', ')}${relationshipNote})`;
+        return `✅ Remembered: "${content}" (ID: ${memoryId}, importance: ${importance}/10, tags: ${allTags.join(', ')}${relationshipNote})`;
       } catch (error) {
         logger.error('❌ [HYBRID] Failed to store memory, falling back to legacy:', error);
         this.useHybridLayer = false; // Fallback to legacy
@@ -159,7 +156,7 @@ export class MemoryService {
 
         // Filter memories that have ANY of the requested tags
         const matchingMemories = allMemories.filter((memory) => {
-          const memoryTags = (memory.metadata?.tags as string[]) || [];
+          const memoryTags = memory.tags ? JSON.parse(memory.tags) : [];
           return tags.some((tag) => memoryTags.includes(tag));
         });
 
@@ -168,20 +165,20 @@ export class MemoryService {
         // Sort by importance (descending) and take the limit
         const sortedMemories = matchingMemories
           .sort((a, b) => {
-            const importanceA = (a.metadata?.importance as number) || 5;
-            const importanceB = (b.metadata?.importance as number) || 5;
+            const importanceA = a.importance || 5;
+            const importanceB = b.importance || 5;
             return importanceB - importanceA;
           })
           .slice(0, limit);
 
         return sortedMemories.map((memory) => ({
-          id: parseInt(memory.id) || 0,
+          id: memory.id,
           userId: memory.user_id,
           content: memory.content,
-          tags: (memory.metadata?.tags as string[]) || [],
-          context: (memory.metadata?.context as string) || '',
-          timestamp: memory.timestamp.toISOString(),
-          importance: (memory.metadata?.importance as number) || 5,
+          tags: memory.tags ? JSON.parse(memory.tags) : [],
+          context: memory.context || '',
+          timestamp: memory.timestamp,
+          importance: memory.importance || 5,
         }));
       } catch (error) {
         logger.error('❌ [HYBRID] Failed to recall memories by tags:', error);
@@ -196,7 +193,7 @@ export class MemoryService {
    * Pin a memory by setting its importance to 10 (maximum)
    * Pinned memories are prioritized in retrieval
    */
-  async pinMemory(userId: string, memoryId: string): Promise<string> {
+  async pinMemory(userId: string, memoryId: number): Promise<string> {
     if (this.useHybridLayer) {
       try {
         logger.info(`📌 [HYBRID] Pinning memory ${memoryId} for user ${userId}`);
@@ -213,12 +210,12 @@ export class MemoryService {
         }
 
         // Update importance to 10 (pinned)
-        memory.metadata = {
-          ...memory.metadata,
+        const updatedMemory = {
+          ...memory,
           importance: 10,
         };
 
-        await hybridDataLayer.storeMemory(memory);
+        await hybridDataLayer.storeMemory(updatedMemory);
 
         logger.info(`📌 [HYBRID] Successfully pinned memory ${memoryId}`);
         return `📌 Pinned memory: "${memory.content.substring(0, 50)}..." (now importance 10/10)`;
@@ -238,13 +235,13 @@ export class MemoryService {
         const memories = await hybridDataLayer.getRecentMemories(userId, limit);
 
         return memories.map((memory) => ({
-          id: parseInt(memory.id) || 0,
+          id: memory.id,
           userId: memory.user_id,
           content: memory.content,
-          tags: (memory.metadata?.tags as string[]) || [],
-          context: (memory.metadata?.context as string) || '',
-          timestamp: memory.timestamp.toISOString(),
-          importance: (memory.metadata?.importance as number) || 5,
+          tags: memory.tags ? JSON.parse(memory.tags) : [],
+          context: memory.context || '',
+          timestamp: memory.timestamp,
+          importance: memory.importance || 5,
         }));
       } catch (error) {
         logger.error('❌ [HYBRID] Failed to get recent memories:', error);
@@ -262,7 +259,7 @@ export class MemoryService {
       const recentMemories = await hybridDataLayer.getRecentMemories(userId, 1000);
       const totalCount = recentMemories.length;
       const recentCount = recentMemories.filter((m) => {
-        const daysDiff = (Date.now() - m.timestamp.getTime()) / (1000 * 60 * 60 * 24);
+        const daysDiff = (Date.now() - new Date(m.timestamp).getTime()) / (1000 * 60 * 60 * 24);
         return daysDiff <= 7;
       }).length;
 
@@ -409,11 +406,11 @@ export class MemoryService {
   private formatHybridRecallResults(memories: MemoryRecord[], query: string): string {
     const formatted = memories
       .map((memory, index) => {
-        const tags = (memory.metadata?.tags as string[]) || [];
-        const context = (memory.metadata?.context as string) || '';
-        const importance = (memory.metadata?.importance as number) || 5;
+        const tags = memory.tags ? JSON.parse(memory.tags) : [];
+        const context = memory.context || '';
+        const importance = memory.importance || 5;
 
-        const date = memory.timestamp.toLocaleDateString();
+        const date = new Date(memory.timestamp).toLocaleDateString();
         const stars = '⭐'.repeat(Math.min(importance, 5));
 
         return `${index + 1}. **${memory.content}** ${stars}
@@ -429,7 +426,7 @@ ${formatted}
   }
 
   private async generateSemanticTagsHybrid(
-    memoryId: string,
+    memoryId: number,
     content: string,
     context: string
   ): Promise<void> {
@@ -445,7 +442,7 @@ Context: "${context}"
 
 Generate tags that capture:
 - DOMAIN (food, music, work, travel, etc.)
-- EMOTION (like, love, hate, prefer, etc.) 
+- EMOTION (like, love, hate, prefer, etc.)
 - CATEGORY (specific type, genre, style, etc.)
 - RELATIONS (family, friend, colleague, etc.)
 
@@ -473,15 +470,15 @@ Example: ["food", "pizza", "italian", "preference", "like"]`;
         // Update memory in hybrid layer
         const memory = await hybridDataLayer.getMemory(memoryId);
         if (memory) {
-          const existingTags = (memory.metadata?.tags as string[]) || [];
+          const existingTags = memory.tags ? JSON.parse(memory.tags) : [];
           const allTags = [...new Set([...existingTags, ...tags])];
 
-          memory.metadata = {
-            ...memory.metadata,
-            tags: allTags,
+          const updatedMemory = {
+            ...memory,
+            tags: JSON.stringify(allTags),
           };
 
-          await hybridDataLayer.storeMemory(memory); // Update with new tags
+          await hybridDataLayer.storeMemory(updatedMemory); // Update with new tags
           logger.info(
             `🏷️ [HYBRID] Added ${tags.length} semantic tags to memory ${memoryId}: ${tags.join(', ')}`
           );
@@ -707,7 +704,7 @@ async function handleMemoryAction(params: MemoryParams, content?: string): Promi
         }
 
         logger.info(`📌 Pinning memory ${memoryId} for user ${userId}`);
-        const result = await memoryService.pinMemory(String(userId), String(memoryId));
+        const result = await memoryService.pinMemory(String(userId), parseInt(String(memoryId)));
         logger.info(`📌 Pin result: ${result}`);
         return result;
       }
