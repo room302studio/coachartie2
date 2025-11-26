@@ -6,6 +6,10 @@ import { marked } from 'marked';
 
 const execAsync = promisify(exec);
 
+// Output limits for LLM-friendly truncation
+const MAX_OUTPUT_LINES = 500;
+const MAX_OUTPUT_BYTES = 50000;
+
 interface ShellParams {
   command?: string;
   action?: 'exec' | 'send' | 'read' | 'split' | 'list';
@@ -14,7 +18,7 @@ interface ShellParams {
   cwd?: string;
   timeout?: number;
   direction?: 'horizontal' | 'vertical';
-  lines?: number; // For read action
+  lines?: number;
 }
 
 // Helper to execute command in sandbox container
@@ -36,7 +40,7 @@ async function execInContainer(command: string, timeout: number = 30000) {
 
   return await execAsync(dockerCommand, {
     timeout,
-    maxBuffer: 1024 * 1024 * 5, // 5MB buffer
+    maxBuffer: 1024 * 1024 * 5,
     env: process.env,
   });
 }
@@ -44,16 +48,14 @@ async function execInContainer(command: string, timeout: number = 30000) {
 // Helper to ensure tmux session exists
 async function ensureSession(session: string, cwd: string = '/workspace') {
   try {
-    // Check if session exists
     await execInContainer(`tmux has-session -t ${session} 2>/dev/null`);
   } catch {
-    // Session doesn't exist, create it
     logger.info(`Creating new tmux session: ${session}`);
     await execInContainer(`tmux new-session -d -s ${session} -c ${cwd}`);
   }
 }
 
-// Helper to extract code from markdown fence (proper parsing, no regex)
+// Helper to extract code from markdown fence
 function extractCodeFromMarkdown(content: string): { code: string; lang?: string } | null {
   if (!content || !content.includes('```')) {
     return null;
@@ -76,204 +78,117 @@ function extractCodeFromMarkdown(content: string): { code: string; lang?: string
   return null;
 }
 
-// Helper to detect nested heredoc (edge case that needs special handling)
+// Helper to detect nested heredoc
 function hasNestedHeredoc(code: string): boolean {
-  // Look for heredoc pattern: << 'DELIMITER' or << "DELIMITER" or <<DELIMITER
   const heredocPattern = /<<\s*['"']?\w+['"']?/;
   return heredocPattern.test(code);
+}
+
+// Format output like a terminal transcript - this is the key insight
+// LLMs reason about text, not JSON schemas
+function formatTerminalOutput(opts: {
+  command: string;
+  stdout: string;
+  stderr: string;
+  exitCode: number;
+  cwd: string;
+  truncated?: boolean;
+  truncatedLines?: number;
+}): string {
+  const lines: string[] = [];
+
+  // Show the command with prompt (like a real terminal)
+  lines.push(`$ ${opts.command}`);
+
+  // Combine stdout and stderr naturally
+  const output = [opts.stdout, opts.stderr].filter(Boolean).join('\n');
+
+  if (output) {
+    lines.push(output);
+  }
+
+  // Truncation notice if needed
+  if (opts.truncated) {
+    lines.push(`[...truncated ${opts.truncatedLines} lines...]`);
+  }
+
+  // Exit code only shown on failure (like a real terminal experience)
+  if (opts.exitCode !== 0) {
+    lines.push(`[exit ${opts.exitCode}]`);
+  }
+
+  // Show current directory context
+  lines.push(`[${opts.cwd}]`);
+
+  return lines.join('\n');
+}
+
+// Truncate output intelligently for LLM consumption
+function truncateOutput(output: string): { text: string; truncated: boolean; linesRemoved: number } {
+  const lines = output.split('\n');
+
+  if (lines.length <= MAX_OUTPUT_LINES && output.length <= MAX_OUTPUT_BYTES) {
+    return { text: output, truncated: false, linesRemoved: 0 };
+  }
+
+  // Keep first 100 and last 400 lines (show beginning for context, end for results)
+  const headLines = 100;
+  const tailLines = 400;
+
+  if (lines.length > MAX_OUTPUT_LINES) {
+    const head = lines.slice(0, headLines);
+    const tail = lines.slice(-tailLines);
+    const removed = lines.length - headLines - tailLines;
+
+    return {
+      text: [...head, `\n... ${removed} lines omitted ...\n`, ...tail].join('\n'),
+      truncated: true,
+      linesRemoved: removed,
+    };
+  }
+
+  // Byte limit hit - truncate and note it
+  return {
+    text: output.slice(0, MAX_OUTPUT_BYTES),
+    truncated: true,
+    linesRemoved: 0,
+  };
 }
 
 export const shellCapability: RegisteredCapability = {
   name: 'shell',
   emoji: '💻',
   supportedActions: ['exec', 'send', 'read', 'split', 'list'],
-  description:
-    'Execute shell commands in a sandboxed Debian container. Artie has full access to a persistent Linux environment with git, gh, jq, curl, npm, python, and more. Supports both one-shot execution (action=exec) and persistent tmux sessions (action=send/read/split/list) for stateful workflows where directory changes and environment persist between commands. Use Unix patterns (cat, heredoc, sed, grep) for file operations - results are returned but NOT echoed to Discord when using action=exec.',
+  description: `Your Linux laptop. A persistent Debian environment where you can do real work.
+
+You have: git, gh (authenticated), node, npm, python3, pip, curl, jq, ripgrep, and standard Unix tools.
+Your workspace is /workspace - files persist between sessions.
+
+Output comes back as terminal text, not JSON. Read it like you're looking at a screen.
+
+Quick patterns:
+- Run anything: action="exec" command="your command"
+- Pipe freely: command="curl -s url | jq '.field' | head -5"
+- Write files: Use heredoc or markdown code blocks
+- Background work: Use tmux sessions (action="send/read")
+
+You can build tools, write scripts, clone repos, and experiment. This is your space to be creative.`,
   requiredParams: [],
   examples: [
-    // One-shot execution (simple commands)
-    '<capability name="shell" action="exec" command="curl -s https://api.github.com/repos/anthropics/claude-code | jq \'.stargazers_count\'"></capability>',
+    // Simple and clear examples that show the terminal-native output
+    '<capability name="shell" action="exec" command="echo hello world" />',
+    '<capability name="shell" action="exec" command="ls -la /workspace" />',
+    '<capability name="shell" action="exec" command="cat package.json | jq .name" />',
+    '<capability name="shell" action="exec" command="gh repo view --json name,description" />',
 
-    // Run a Python script
-    '<capability name="shell" action="exec" command="python3 -c \'import sys; print(f\\\"Python {sys.version}\\\")\'"></capability>',
+    // File writing with heredoc
+    `<capability name="shell" action="exec" command="cat > /workspace/hello.py << 'EOF'
+print('Hello from Python!')
+EOF" />`,
 
-    // Git operations
-    '<capability name="shell" action="exec" command="cd /workspace && git clone https://github.com/user/repo.git && cd repo && ls -la"></capability>',
-
-    // GitHub CLI (gh is authenticated)
-    '<capability name="shell" action="exec" command="gh repo list anthropics --limit 5"></capability>',
-
-    // === FILE OPERATIONS (Unix patterns) ===
-
-    // Read a file
-    '<capability name="shell" action="exec" command="cat /workspace/my-project/index.js"></capability>',
-
-    // Read specific lines from a file
-    '<capability name="shell" action="exec" command="head -n 20 /workspace/my-project/README.md"></capability>',
-    '<capability name="shell" action="exec" command="tail -n 50 /workspace/my-project/server.log"></capability>',
-
-    // Search in files (grep)
-    '<capability name="shell" action="exec" command="grep -r TODO /workspace/my-project/src/"></capability>',
-    '<capability name="shell" action="exec" command="grep -n function /workspace/my-project/index.js"></capability>',
-
-    // Write a simple file (one-liner)
-    "<capability name=\"shell\" action=\"exec\" command=\"echo 'console.log(&quot;hello&quot;);' > /workspace/test.js\"></capability>",
-
-    // Write multi-line file with heredoc (for code files)
-    // NOTE: Use action=exec so command/content doesn\'t get sent to Discord
-    `<capability name="shell" action="exec" command="cat > /workspace/my-project/app.js << 'ENDOFFILE'
-const express = require('express');
-const app = express();
-
-app.get('/', (req, res) => {
-  res.json({ message: 'Hello World' });
-});
-
-app.listen(3000, () => {
-  console.log('Server running on port 3000');
-});
-ENDOFFILE"></capability>`,
-
-    // Append to a file
-    "<capability name=\"shell\" action=\"exec\" command=\"echo '# New section' >> /workspace/README.md\"></capability>",
-
-    // === FILE EDITING (sed for in-place edits) ===
-
-    // Simple find/replace
-    "<capability name=\"shell\" action=\"exec\" command=\"sed -i 's/old-text/new-text/g' /workspace/config.js\"></capability>",
-
-    // Replace on specific line (substitute within line 10)
-    "<capability name=\"shell\" action=\"exec\" command=\"sed -i '10s/const/let/' /workspace/app.js\"></capability>",
-
-    // Replace entire line by number
-    "<capability name=\"shell\" action=\"exec\" command=\"sed -i '5c\\\\const newValue = 42;' /workspace/config.js\"></capability>",
-
-    // Delete specific line number
-    "<capability name=\"shell\" action=\"exec\" command=\"sed -i '15d' /workspace/test.js\"></capability>",
-
-    // Delete range of lines (lines 10-20)
-    "<capability name=\"shell\" action=\"exec\" command=\"sed -i '10,20d' /workspace/old-code.js\"></capability>",
-
-    // Insert line BEFORE specific line number
-    "<capability name=\"shell\" action=\"exec\" command=\"sed -i '7i\\\\// New import' /workspace/index.js\"></capability>",
-
-    // Insert line AFTER specific line number
-    "<capability name=\"shell\" action=\"exec\" command=\"sed -i '12a\\\\console.log(&quot;debug&quot;);' /workspace/app.js\"></capability>",
-
-    // Replace lines in range (lines 5-8)
-    "<capability name=\"shell\" action=\"exec\" command=\"sed -i '5,8s/var/const/g' /workspace/legacy.js\"></capability>",
-
-    // Read specific lines first, then edit (safe pattern)
-    "<capability name=\"shell\" action=\"exec\" command=\"sed -n '10,15p' /workspace/app.js && sed -i '12s/old/new/' /workspace/app.js\"></capability>",
-
-    // Comment out specific line
-    "<capability name=\"shell\" action=\"exec\" command=\"sed -i '25s/^/\\\\/\\\\/ /' /workspace/debug.js\"></capability>",
-
-    // Comment out range of lines
-    "<capability name=\"shell\" action=\"exec\" command=\"sed -i '10,20s/^/\\\\/\\\\/ /' /workspace/temp.js\"></capability>",
-
-    // Delete lines matching pattern
-    "<capability name=\"shell\" action=\"exec\" command=\"sed -i '/TODO/d' /workspace/notes.txt\"></capability>",
-    "<capability name=\"shell\" action=\"exec\" command=\"sed -i '/console.log/d' /workspace/debug.js\"></capability>",
-
-    // Insert line after pattern (escape the inner quotes)
-    '<capability name="shell" action="exec" command="sed -i \'/const express/a const cors = require(&quot;cors&quot;);\' /workspace/server.js"></capability>',
-
-    // Comment out all lines (entire file)
-    "<capability name=\"shell\" action=\"exec\" command=\"sed -i 's|^|// |' /workspace/temp.js\"></capability>",
-
-    // Change port number (global replace)
-    "<capability name=\"shell\" action=\"exec\" command=\"sed -i 's/PORT=3000/PORT=8080/g' /workspace/.env\"></capability>",
-
-    // Multi-line edit: read line, modify, write back
-    "<capability name=\"shell\" action=\"exec\" command=\"LINE=$(sed -n '5p' /workspace/config.js) && sed -i '5c\\\\// Modified: '$LINE /workspace/config.js\"></capability>",
-
-    // === MARKDOWN CODE BLOCK MAGIC ===
-
-    // Write file using markdown fence (content goes inside XML tags)
-    // The command parameter specifies the target file path
-    `<capability name=\"shell\" action=\"exec\" command=\"/workspace/server.js\">\`\`\`javascript
-const http = require('http');
-
-const server = http.createServer((req, res) => {
-  res.writeHead(200, { 'Content-Type': 'text/plain' });
-  res.end('Hello World');
-});
-
-server.listen(3000);
-\`\`\`</capability>`,
-
-    // Markdown fence with language detection
-    `<capability name=\"shell\" action=\"exec\" command=\"/workspace/script.py\">\`\`\`python
-import sys
-
-def main():
-    print(f"Python {sys.version}")
-
-if __name__ == "__main__":
-    main()
-\`\`\`</capability>`,
-
-    // === ADVANCED: Read-Modify-Write Pattern ===
-
-    // Use Python for complex edits
-    `<capability name="shell" action="exec" command="python3 << 'PYSCRIPT'
-with open('/workspace/package.json', 'r') as f:
-    import json
-    pkg = json.load(f)
-    pkg['version'] = '2.0.0'
-    pkg['scripts']['start'] = 'node index.js'
-with open('/workspace/package.json', 'w') as f:
-    json.dump(pkg, f, indent=2)
-print('Updated package.json')
-PYSCRIPT"></capability>`,
-
-    // Use Node.js for JSON editing
-    `<capability name="shell" action="exec" command="node << 'NODESCRIPT'
-const fs = require('fs');
-const config = JSON.parse(fs.readFileSync('/workspace/config.json'));
-config.apiUrl = 'https://api.example.com';
-config.timeout = 5000;
-fs.writeFileSync('/workspace/config.json', JSON.stringify(config, null, 2));
-console.log('Updated config.json');
-NODESCRIPT"></capability>`,
-
-    // List directory contents
-    '<capability name="shell" action="exec" command="ls -lah /workspace/my-project/"></capability>',
-    '<capability name="shell" action="exec" command="find /workspace/my-project -name \'*.js\' -type f"></capability>',
-
-    // Check if file exists
-    '<capability name="shell" action="exec" command="test -f /workspace/package.json && echo exists || echo not found"></capability>',
-
-    // Create directory
-    '<capability name="shell" action="exec" command="mkdir -p /workspace/my-project/src/components"></capability>',
-
-    // Copy/move files
-    '<capability name="shell" action="exec" command="cp /workspace/template.js /workspace/my-project/index.js"></capability>',
-    '<capability name="shell" action="exec" command="mv /workspace/old-name.js /workspace/new-name.js"></capability>',
-
-    // Delete files (careful!)
-    '<capability name="shell" action="exec" command="rm /workspace/temp-file.txt"></capability>',
-    '<capability name="shell" action="exec" command="rm -rf /workspace/old-project/"></capability>',
-
-    // === PERSISTENT SESSION EXAMPLES ===
-
-    // Persistent session - send command
-    '<capability name="shell" action="send" session="artie-main" command="cd /workspace && mkdir my-project && cd my-project"></capability>',
-
-    // Read output from persistent session
-    '<capability name="shell" action="read" session="artie-main" lines="50"></capability>',
-
-    // List all sessions and panes
-    '<capability name="shell" action="list"></capability>',
-
-    // Split pane to run parallel command
-    '<capability name="shell" action="split" session="artie-main" direction="vertical" command="htop"></capability>',
-
-    // Multi-step workflow example
-    `<capability name="shell" action="send" session="artie-main" command="cd /workspace && echo 'Hello from Artie!' > test.txt"></capability>
-<capability name="shell" action="send" session="artie-main" command="cat test.txt"></capability>
-<capability name="shell" action="read" session="artie-main" lines="20"></capability>`,
+    // Persistent session for stateful work
+    '<capability name="shell" action="send" session="dev" command="cd /workspace && npm init -y" />',
+    '<capability name="shell" action="read" session="dev" />',
   ],
 
   handler: async (params: any, _content: string | undefined) => {
@@ -293,53 +208,41 @@ NODESCRIPT"></capability>`,
     try {
       switch (action) {
         case 'exec': {
-          // One-shot execution (original behavior)
           let execCommand = command;
 
-          // Magic: If content contains markdown code block, extract and write to file
+          // Markdown code block magic - write file from fenced code
           if (_content && _content.includes('```')) {
             const extracted = extractCodeFromMarkdown(_content);
             if (extracted) {
-              // Check for nested heredoc edge case
               if (hasNestedHeredoc(extracted.code)) {
-                throw new Error(
-                  'Cannot use markdown fence for code that contains heredoc syntax (<<).\n\n' +
-                    'The markdown fence auto-generates a heredoc, but your code already contains ' +
-                    'a heredoc (<<DELIMITER), which would create nested heredocs that conflict.\n\n' +
-                    'Use action="exec" with an explicit heredoc command instead. ' +
-                    'Check the shell capability examples for heredoc patterns.'
-                );
+                return `Error: Can't use markdown fence for code containing heredoc (<<).
+Use an explicit heredoc in your command instead.`;
               }
 
               const targetPath = command || '/workspace/generated-file';
-              logger.info(`📝 Detected markdown code block, writing to: ${targetPath}`);
-
-              // Generate heredoc command to write the file
               const delimiter = 'MARKDOWN_EOF_' + Date.now();
               execCommand = `cat > ${targetPath} << '${delimiter}'\n${extracted.code}\n${delimiter}`;
+              logger.info(`Writing markdown block to: ${targetPath}`);
             }
           }
 
           if (!execCommand) {
-            throw new Error('Missing required parameter "command" for action=exec');
+            return `Error: Missing command. Usage: action="exec" command="your command here"`;
           }
 
-          logger.info(`🖥️  Executing one-shot: ${execCommand}`);
+          logger.info(`Executing: ${execCommand.slice(0, 100)}...`);
 
-          const dockerCommand = [
-            'docker',
-            'exec',
-            '-w',
-            cwd,
-            '-e',
-            `GITHUB_TOKEN=${process.env.GITHUB_TOKEN || ''}`,
-            '-e',
-            `OPENAI_API_KEY=${process.env.OPENAI_API_KEY || ''}`,
-            process.env.SANDBOX_CONTAINER_NAME || 'coachartie-sandbox',
-            '/bin/bash',
-            '-c',
-            command,
-          ].join(' ');
+          // Get pwd first so we can show context
+          let actualCwd = cwd;
+          try {
+            const { stdout: pwdOut } = await execInContainer('pwd');
+            actualCwd = pwdOut.trim() || cwd;
+          } catch {
+            // Use default cwd
+          }
+
+          const containerName = process.env.SANDBOX_CONTAINER_NAME || 'coachartie-sandbox';
+          const dockerCommand = `docker exec -w ${cwd} -e GITHUB_TOKEN=${process.env.GITHUB_TOKEN || ''} -e OPENAI_API_KEY=${process.env.OPENAI_API_KEY || ''} ${containerName} /bin/bash -c ${JSON.stringify(execCommand)}`;
 
           const { stdout, stderr } = await execAsync(dockerCommand, {
             timeout,
@@ -347,201 +250,160 @@ NODESCRIPT"></capability>`,
             env: process.env,
           });
 
-          logger.info(`✅ Command completed (${stdout.length + stderr.length} bytes)`);
+          // Truncate if needed
+          const truncatedStdout = truncateOutput(stdout.trim());
+          const truncatedStderr = truncateOutput(stderr.trim());
 
-          return JSON.stringify({
-            success: true,
-            data: {
-              action: 'exec',
-              command,
-              cwd,
-              stdout: stdout.trim(),
-              stderr: stderr.trim(),
-              exit_code: 0,
-            },
+          logger.info(`Command completed (${stdout.length + stderr.length} bytes)`);
+
+          // Return terminal-native output
+          return formatTerminalOutput({
+            command: execCommand,
+            stdout: truncatedStdout.text,
+            stderr: truncatedStderr.text,
+            exitCode: 0,
+            cwd: actualCwd,
+            truncated: truncatedStdout.truncated || truncatedStderr.truncated,
+            truncatedLines: truncatedStdout.linesRemoved + truncatedStderr.linesRemoved,
           });
         }
 
         case 'send': {
-          // Send command to tmux session (persistent)
           if (!command) {
-            throw new Error('Missing required parameter "command" for action=send');
+            return `Error: Missing command for tmux send. Usage: action="send" session="name" command="..."`;
           }
 
-          logger.info(`📤 Sending to ${target}: ${command}`);
-
+          logger.info(`Sending to ${target}: ${command}`);
           await ensureSession(session, cwd);
 
-          // Send the command to the tmux pane
           const escapedCommand = command.replace(/"/g, '\\"');
           await execInContainer(`tmux send-keys -t ${target} "${escapedCommand}" Enter`, timeout);
-
-          // Wait a brief moment for command to start
           await new Promise((resolve) => setTimeout(resolve, 100));
 
-          logger.info(`✅ Command sent to ${target}`);
-
-          return JSON.stringify({
-            success: true,
-            data: {
-              action: 'send',
-              command,
-              session,
-              pane,
-              message: `Command sent to ${target}. Use action=read to see output.`,
-            },
-          });
+          // Return simple confirmation
+          return `Sent to ${target}: ${command}
+Use action="read" session="${session}" to see output.`;
         }
 
         case 'read': {
-          // Read output from tmux pane
-          logger.info(`📖 Reading from ${target} (last ${lines} lines)`);
-
+          logger.info(`Reading from ${target}`);
           await ensureSession(session, cwd);
 
-          // Capture pane output
           const { stdout } = await execInContainer(
             `tmux capture-pane -t ${target} -p -S -${lines}`,
             timeout
           );
 
-          logger.info(`✅ Read ${stdout.length} bytes from ${target}`);
+          // Get current directory in the pane
+          let paneCwd = '/workspace';
+          try {
+            const { stdout: cwdOut } = await execInContainer(
+              `tmux display-message -t ${target} -p '#{pane_current_path}'`
+            );
+            paneCwd = cwdOut.trim() || '/workspace';
+          } catch {
+            // Use default
+          }
 
-          return JSON.stringify({
-            success: true,
-            data: {
-              action: 'read',
-              session,
-              pane,
-              output: stdout.trim(),
-              lines_requested: lines,
-            },
-          });
+          const output = stdout.trim();
+          const truncated = truncateOutput(output);
+
+          // Return like looking at a terminal screen
+          return `--- ${target} ---
+${truncated.text}
+${truncated.truncated ? `[...truncated...]` : ''}
+[${paneCwd}]`;
         }
 
         case 'split': {
-          // Split pane
           if (!command) {
-            throw new Error(
-              'Missing required parameter "command" for action=split. Specify the command to run in the new pane.'
-            );
+            return `Error: Missing command for split. Usage: action="split" session="name" command="..."`;
           }
 
-          logger.info(`✂️  Splitting ${target} ${direction}ly`);
-
+          logger.info(`Splitting ${target} ${direction}`);
           await ensureSession(session, cwd);
 
           const splitFlag = direction === 'horizontal' ? '-h' : '-v';
           const escapedCommand = command.replace(/"/g, '\\"');
 
-          // Split and run command in new pane
           const { stdout } = await execInContainer(
             `tmux split-window ${splitFlag} -t ${target} -c ${cwd} -P -F '#{pane_index}' "${escapedCommand}"`,
             timeout
           );
 
           const newPane = stdout.trim();
-          logger.info(`✅ Created new pane: ${session}:${newPane}`);
-
-          return JSON.stringify({
-            success: true,
-            data: {
-              action: 'split',
-              session,
-              original_pane: pane,
-              new_pane: parseInt(newPane),
-              direction,
-              command,
-            },
-          });
+          return `Split ${target} -> new pane ${session}:${newPane}
+Running: ${command}`;
         }
 
         case 'list': {
-          // List sessions and panes
-          logger.info(`📋 Listing tmux sessions and panes`);
+          logger.info(`Listing tmux sessions`);
 
-          let sessions: any[] = [];
           try {
             const { stdout: sessionList } = await execInContainer(
-              `tmux list-sessions -F '#{session_name}|#{session_windows}|#{session_created}'`,
+              `tmux list-sessions -F '#{session_name}: #{session_windows} window(s)'`,
               timeout
             );
 
-            sessions = sessionList
-              .trim()
-              .split('\n')
-              .filter(Boolean)
-              .map((line) => {
-                const [name, windows, created] = line.split('|');
-                return { name, windows: parseInt(windows), created };
-              });
+            if (!sessionList.trim()) {
+              return `No active tmux sessions.
+Start one with: action="send" session="mywork" command="..."`;
+            }
 
-            // Get panes for each session
+            // Get pane details for each session
+            const sessions = sessionList.trim().split('\n');
+            const details: string[] = ['Active sessions:'];
+
             for (const sess of sessions) {
-              const { stdout: paneList } = await execInContainer(
-                `tmux list-panes -t ${sess.name} -F '#{pane_index}|#{pane_current_path}|#{pane_width}x#{pane_height}|#{pane_title}'`,
-                timeout
-              );
+              const sessionName = sess.split(':')[0];
+              details.push(`\n${sess}`);
 
-              sess.panes = paneList
-                .trim()
-                .split('\n')
-                .filter(Boolean)
-                .map((line) => {
-                  const [index, path, size, title] = line.split('|');
-                  return { index: parseInt(index), path, size, title };
-                });
+              try {
+                const { stdout: paneList } = await execInContainer(
+                  `tmux list-panes -t ${sessionName} -F '  pane #{pane_index}: #{pane_current_path}'`
+                );
+                details.push(paneList.trim());
+              } catch {
+                // Skip pane details on error
+              }
             }
+
+            return details.join('\n');
           } catch (error: any) {
-            // No sessions exist
             if (error.message.includes('no server running')) {
-              sessions = [];
-            } else {
-              throw error;
+              return `No active tmux sessions.
+Start one with: action="send" session="mywork" command="..."`;
             }
+            throw error;
           }
-
-          logger.info(`✅ Found ${sessions.length} session(s)`);
-
-          return JSON.stringify({
-            success: true,
-            data: {
-              action: 'list',
-              sessions,
-            },
-          });
         }
 
         default:
-          throw new Error(
-            `Unknown action: ${action}. Supported actions: exec, send, read, split, list`
-          );
+          return `Unknown action: ${action}
+Available: exec, send, read, split, list`;
       }
     } catch (error: any) {
       const isTimeout = error.killed && error.signal === 'SIGTERM';
 
-      logger.error(`❌ Shell command failed:`, {
-        action,
-        command,
-        session,
-        pane,
-        error: error.message,
-        timeout: isTimeout,
-      });
+      logger.error(`Shell failed:`, { action, command, error: error.message });
 
-      return JSON.stringify({
-        success: false,
-        error: isTimeout ? `Command timed out after ${timeout}ms` : error.message,
-        data: {
-          action,
-          command,
-          session,
-          pane,
-          stdout: error.stdout?.trim() || '',
-          stderr: error.stderr?.trim() || '',
-          exit_code: error.code || 1,
-        },
-      });
+      // Return errors as terminal output too
+      if (isTimeout) {
+        return `$ ${command || '(no command)'}
+[timed out after ${timeout}ms]
+[${cwd}]`;
+      }
+
+      // Include any partial output on failure
+      const stdout = error.stdout?.trim() || '';
+      const stderr = error.stderr?.trim() || '';
+      const output = [stdout, stderr].filter(Boolean).join('\n');
+
+      return `$ ${command || '(no command)'}
+${output}
+${error.message}
+[exit ${error.code || 1}]
+[${cwd}]`;
     }
   },
 };

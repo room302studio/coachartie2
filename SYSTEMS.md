@@ -22,9 +22,9 @@ Artie thinks, acts, reflects, and keeps going until the job's done.
 
 | Category | Count | Examples |
 |----------|-------|----------|
-| **Core Tools** | 6 | Shell (Docker sandbox), Memory, Filesystem, HTTP, Web Search, Calculator |
+| **Core Tools** | 8 | Shell (terminal-native), Edit (surgical), Search (glob+grep), Memory, Filesystem, HTTP, Web Search, Calculator |
 | **Discord Native** | 7 | Channels, Forums, Threads, User History, UI Components, Send Message, Issue Parser |
-| **External Services** | 7 | GitHub (full API), MCP Client, MediaWiki, LinkedIn, Wolfram Alpha, Email |
+| **External Services** | 4 | GitHub (full API), MediaWiki, Wolfram Alpha, Email |
 | **User Management** | 6 | Profiles, Goals, Todos, Mention Proxy, Credit Status, Model Manager |
 | **System** | 8 | Environment, Runtime Config, Scheduler, System Monitor, Package Manager |
 | **Communication** | 3 | Ask Question (multi-platform), Slack UI, Discord UI |
@@ -90,7 +90,7 @@ Smart token budgeting. Assembles the optimal prompt from multiple sources:
 | **Observational Learning** | Passively learns from "watching" guilds |
 | **GitHub URL Auto-Expand** | Pastes repo/issue info when GitHub links shared |
 | **Phone/Email Linking** | Unified profile system, verify via SMS |
-| **MCP Protocol Support** | Connect to Claude Desktop tools |
+| **Docker Sandbox** | Isolated Linux environment for code execution |
 
 ### Developer Experience
 
@@ -183,6 +183,62 @@ Third, reflection beats regex. Instead of pattern-matching against known injecti
 
 The industry's prompt injection obsession assumes two things: you're protecting something valuable, and your LLM blindly executes input. Artie has neither problem. We'd rather serve real users well than cripple the experience defending against theoretical attackers with nothing to gain.
 
+### The Laptop: Claude Code-Inspired Affordances
+
+Artie has a "laptop" - a persistent Debian Linux environment in a Docker container where he can do real software engineering work. The key insight: reflect on what makes Claude Code effective, then give Artie those same affordances.
+
+**Terminal-Native Output**
+
+The shell capability returns output as terminal text, not JSON. LLMs reason about text, not schemas:
+
+```
+$ ls -la
+drwxr-xr-x 4 artie artie 4096 Nov 26 10:30 src
+-rw-r--r-- 1 artie artie  234 Nov 26 10:15 package.json
+[/workspace]
+```
+
+Exit codes only shown on failure. Truncation notices when output is cut. The LLM reads it like looking at a screen.
+
+**Surgical File Editing**
+
+The edit capability lets Artie make precise changes without rewriting entire files:
+
+```xml
+<capability name="edit" action="replace" file="/workspace/config.js"
+  old_string="port: 3000" new_string="port: 8080" />
+```
+
+Key features:
+- `read` action shows files with line numbers (crucial for knowing WHERE to edit)
+- `replace` fails if old_string not found or not unique (forces precision)
+- `insert` adds at specific line numbers
+- `delete` removes lines or ranges
+- Returns diffs showing exactly what changed
+
+This mirrors how developers actually work: read to understand context, edit surgically, verify the change.
+
+**Fast File Finding and Content Search**
+
+The search capability combines glob-style file finding with ripgrep content search:
+
+```xml
+<capability name="search" action="files" pattern="*.ts" />
+<capability name="search" action="content" pattern="TODO" type="js" context="3" />
+```
+
+Results come back as readable text, not JSON structures. Files sorted by modification time. Context lines around matches.
+
+**The Workflow**
+
+These three capabilities work together like Claude Code's tools:
+1. **search** to find relevant files
+2. **edit:read** to understand context with line numbers
+3. **edit:replace** to make surgical changes
+4. **shell** to verify (run tests, check build, etc.)
+
+The laptop gives Artie everything a developer needs: persistent filesystem, git, npm, python, curl, ripgrep, tmux sessions for long-running work. All sandboxed in Docker where creative experimentation can't harm the host.
+
 ### Additional Systems Found During Audit
 
 The original documentation missed about 50 systems. Here's what's actually in the codebase:
@@ -209,8 +265,6 @@ Core Services
 
 `*-memory-entourage.ts` provides three retrieval strategies: keyword (fast text match), semantic (vector similarity), and combined. Retrieved memories get injected into context with configurable limits and relevance thresholds.
 
-`mcp-process-manager.ts` spawns and manages Model Context Protocol server processes. Start, stop, restart, health monitoring. Enables external tool servers like Wikipedia and calculator MCPs.
-
 `service-discovery.ts` lets services register their ports/hosts in Redis on startup. Other services query to find each other dynamically. Heartbeat pings every 30s, status tracking (starting/running/stopping). Enables the microservice architecture.
 
 `user-profile.ts` stores profiles as Redis Hashes for fast read/write. Contact info (email, phone, github, reddit, linkedin, twitter), preferences (timezone, locale), plus any key-value pairs Artie discovers about users.
@@ -235,9 +289,7 @@ Runtime Systems
 
 `hybrid-data-layer.ts` uses an in-memory Map for zero-latency reads with async SQLite persistence. AsyncQueue serializes writes, 10k record cap with LRU eviction. Eliminates SQLite concurrency issues.
 
-`simple-healer.ts` is a self-healing daemon that runs every 30 seconds. Forces garbage collection if heap exceeds 200MB, can restart dead MCP processes. Keeps the system healthy without manual intervention.
-
-`embedded-mcp-runtime.ts` provides built-in Wikipedia search without needing an external MCP server. Direct REST API calls, serves as fallback when MCP processes fail.
+`simple-healer.ts` is a self-healing daemon that runs every 30 seconds. Forces garbage collection if heap exceeds 200MB. Keeps the system healthy without manual intervention.
 
 `robust-capability-executor.ts` adds retry logic with exponential backoff, param cleaning/validation, structured error formatting for the LLM, and integration with the error pattern tracker.
 
@@ -979,7 +1031,9 @@ executeLLMDrivenLoop()
 ### Core Tools
 | Capability | Actions | Description |
 |------------|---------|-------------|
-| `shell` | exec, send, read, split, list | Bash in Docker sandbox. Tmux sessions. |
+| `shell` | exec, send, read, split, list | Terminal-native output. LLM reads like a screen. Tmux sessions. |
+| `edit` | read, replace, insert, delete | Surgical file editing with line numbers. Fails if old_string not unique. |
+| `search` | files, content, both | Glob-style file finding + ripgrep content search. |
 | `memory` | remember, recall, forget, list, update | Persistent storage with semantic tags. |
 | `filesystem` | read, write, create, list, delete, copy, move | File CRUD with permission checks. |
 | `http` | GET, POST, PUT, DELETE | HTTP client for APIs. |
@@ -1001,10 +1055,7 @@ executeLLMDrivenLoop()
 | Capability | Actions | Description |
 |------------|---------|-------------|
 | `github` | get_releases, get_commits, list_issues, create_issue, etc. | Full GitHub API. |
-| `mcp-client` | list_tools, call_tool | Connect to MCP servers. |
-| `embedded-mcp` | wikipedia, time, calculator | Built-in MCP tools. |
 | `mediawiki` | get_page, edit_page, search | MediaWiki API. |
-| `linkedin` | post, get_profile | LinkedIn integration. |
 | `wolfram` | query | Wolfram Alpha API. |
 | `email` | send, draft | Email via n8n/SMTP. |
 

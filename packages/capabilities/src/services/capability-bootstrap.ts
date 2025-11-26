@@ -27,6 +27,9 @@ import { mediaWikiCapability } from '../capabilities/mediawiki.js';
 import { wolframCapability } from '../capabilities/wolfram.js';
 import { schedulerCapability } from '../capabilities/scheduler.js';
 import { sequenceCapability } from '../capabilities/sequence.js';
+import { shellCapability } from '../capabilities/shell.js';
+import { editCapability } from '../capabilities/edit.js';
+import { searchCapability } from '../capabilities/search.js';
 import { meetingCapability } from './meeting-service.js';
 
 // =====================================================
@@ -159,6 +162,21 @@ export class CapabilityBootstrap {
 
       // Register sequence capability from external file
       capabilityRegistry.register(sequenceCapability);
+
+      // Register shell capability - the laptop (terminal-native output)
+      logger.info('📦 Registering shell (the laptop)...');
+      capabilityRegistry.register(shellCapability);
+      logger.info('✅ shell registered successfully');
+
+      // Register edit capability - surgical file editing like Claude Code
+      logger.info('📦 Registering edit (surgical editing)...');
+      capabilityRegistry.register(editCapability);
+      logger.info('✅ edit registered successfully');
+
+      // Register search capability - fast file finding and content search
+      logger.info('📦 Registering search (glob + grep)...');
+      capabilityRegistry.register(searchCapability);
+      logger.info('✅ search registered successfully');
 
       const totalCaps = capabilityRegistry.list().length;
       logger.info(
