@@ -8,11 +8,17 @@
     "build": "tsc",
     "dev": "tsc --watch",
     "test": "vitest --config ../../vitest.config.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate",
+    "db:push": "drizzle-kit push",
+    "db:studio": "drizzle-kit studio"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.39.0",
+    "better-sqlite3": "^12.4.6",
     "bullmq": "^5.1.0",
+    "drizzle-orm": "^0.44.7",
     "ioredis": "^5.3.2",
     "sql.js": "^1.13.0",
     "winston": "^3.11.0",
@@ -20,8 +26,10 @@
     "winston-transport": "^4.9.0"
   },
   "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^20.11.0",
     "@types/sql.js": "^1.4.9",
+    "drizzle-kit": "^0.31.7",
     "typescript": "^5.3.0",
     "vitest": "^1.2.0"
   }
