@@ -30,6 +30,10 @@ import { sequenceCapability } from '../capabilities/sequence.js';
 import { shellCapability } from '../capabilities/shell.js';
 import { editCapability } from '../capabilities/edit.js';
 import { searchCapability } from '../capabilities/search.js';
+import { gitCapability } from '../capabilities/git.js';
+import { scratchpadCapability } from '../capabilities/scratchpad.js';
+import { contextCapability } from '../capabilities/context.js';
+import { diagnoseCapability } from '../capabilities/diagnose.js';
 import { meetingCapability } from './meeting-service.js';
 
 // =====================================================
@@ -177,6 +181,26 @@ export class CapabilityBootstrap {
       logger.info('📦 Registering search (glob + grep)...');
       capabilityRegistry.register(searchCapability);
       logger.info('✅ search registered successfully');
+
+      // Register git capability - version control awareness
+      logger.info('📦 Registering git (version control)...');
+      capabilityRegistry.register(gitCapability);
+      logger.info('✅ git registered successfully');
+
+      // Register scratchpad capability - externalized thinking
+      logger.info('📦 Registering scratchpad (thinking space)...');
+      capabilityRegistry.register(scratchpadCapability);
+      logger.info('✅ scratchpad registered successfully');
+
+      // Register context capability - situational awareness
+      logger.info('📦 Registering context (situational awareness)...');
+      capabilityRegistry.register(contextCapability);
+      logger.info('✅ context registered successfully');
+
+      // Register diagnose capability - understand what went wrong
+      logger.info('📦 Registering diagnose (error analysis)...');
+      capabilityRegistry.register(diagnoseCapability);
+      logger.info('✅ diagnose registered successfully');
 
       const totalCaps = capabilityRegistry.list().length;
       logger.info(

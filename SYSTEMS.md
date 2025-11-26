@@ -22,7 +22,7 @@ Artie thinks, acts, reflects, and keeps going until the job's done.
 
 | Category | Count | Examples |
 |----------|-------|----------|
-| **Core Tools** | 8 | Shell (terminal-native), Edit (surgical), Search (glob+grep), Memory, Filesystem, HTTP, Web Search, Calculator |
+| **Core Tools** | 12 | Shell, Edit, Search, Git, Context, Scratchpad, Diagnose, Memory, Filesystem, HTTP, Web Search, Calculator |
 | **Discord Native** | 7 | Channels, Forums, Threads, User History, UI Components, Send Message, Issue Parser |
 | **External Services** | 4 | GitHub (full API), MediaWiki, Wolfram Alpha, Email |
 | **User Management** | 6 | Profiles, Goals, Todos, Mention Proxy, Credit Status, Model Manager |
@@ -238,6 +238,54 @@ These three capabilities work together like Claude Code's tools:
 4. **shell** to verify (run tests, check build, etc.)
 
 The laptop gives Artie everything a developer needs: persistent filesystem, git, npm, python, curl, ripgrep, tmux sessions for long-running work. All sandboxed in Docker where creative experimentation can't harm the host.
+
+**Git Awareness**
+
+The git capability gives Artie version control understanding without constructing shell commands:
+
+```xml
+<capability name="git" action="status" />
+<capability name="git" action="diff" file="src/app.js" />
+<capability name="git" action="log" count="5" />
+```
+
+Status, diff, log, branch, show, blame - all returning terminal-native output. Know what changed before making more changes.
+
+**Scratchpad for Thinking**
+
+Externalized reasoning. Like my thinking blocks, but persistent:
+
+```xml
+<capability name="scratchpad" action="write" content="## Plan
+1. Find where the bug originates
+2. Understand the data flow
+3. Write a fix
+4. Test it" />
+```
+
+Write down reasoning, append observations, add labeled sections. Think out loud - it leads to better decisions.
+
+**Context Awareness**
+
+Know where you are before acting:
+
+```xml
+<capability name="context" action="full" />
+```
+
+Returns: current directory, git branch, what files are here, what changed recently, what's running. Start complex tasks with context.
+
+**Diagnose Errors**
+
+When things break, understand why:
+
+```xml
+<capability name="diagnose" action="error" error="ENOENT: no such file..." />
+<capability name="diagnose" action="logs" />
+<capability name="diagnose" action="process" service="node" />
+```
+
+Analyzes error messages, checks logs, diagnoses process/network/disk issues. Understand before fixing.
 
 ### Additional Systems Found During Audit
 
@@ -1034,6 +1082,10 @@ executeLLMDrivenLoop()
 | `shell` | exec, send, read, split, list | Terminal-native output. LLM reads like a screen. Tmux sessions. |
 | `edit` | read, replace, insert, delete | Surgical file editing with line numbers. Fails if old_string not unique. |
 | `search` | files, content, both | Glob-style file finding + ripgrep content search. |
+| `git` | status, diff, log, branch, show, blame | Version control awareness. Terminal-native output. |
+| `context` | where, what, recent, running, full | Situational awareness. Know where you are. |
+| `scratchpad` | write, read, append, section, clear | Externalized thinking. Plan before acting. |
+| `diagnose` | error, logs, process, network, disk | Error analysis. Understand what went wrong. |
 | `memory` | remember, recall, forget, list, update | Persistent storage with semantic tags. |
 | `filesystem` | read, write, create, list, delete, copy, move | File CRUD with permission checks. |
 | `http` | GET, POST, PUT, DELETE | HTTP client for APIs. |
