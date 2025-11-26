@@ -1095,7 +1095,10 @@ Available: web, calculator, memory`;
   private async addDiscordEnvironment(sources: ContextSource[]): Promise<void> {
     try {
       // Fetch Discord health info from the health server
-      const response = await fetch('http://discord:47319/health');
+      // Use DISCORD_HEALTH_URL env var, fallback to localhost for local dev, docker hostname for containers
+      const discordHealthUrl = process.env.DISCORD_HEALTH_URL ||
+        (process.env.DOCKER_ENV ? 'http://discord:47319/health' : 'http://localhost:47319/health');
+      const response = await fetch(discordHealthUrl);
       if (!response.ok) {
         if (DEBUG) {
           logger.info('│ ⚠️  Discord health endpoint not available');
