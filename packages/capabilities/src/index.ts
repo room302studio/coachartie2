@@ -139,17 +139,26 @@ app.get('/api/observe/stats', async (req, res) => {
 async function startQueueWorkers() {
   try {
     logger.info('Starting queue consumers...');
-    await startMessageConsumer();
-    logger.info('Queue consumers started successfully');
+    const worker = await startMessageConsumer();
+    if (worker) {
+      logger.info('Queue consumers started successfully');
+    } else {
+      logger.warn('Queue consumers not started (Redis unavailable)');
+    }
   } catch (error) {
     logger.error('Failed to start queue consumers:', error);
-    process.exit(1);
+    // Don't exit - continue without queues
   }
 }
 
 async function startScheduler() {
   try {
-    // Setup scheduler
+    // Initialize scheduler (checks Redis availability)
+    const initialized = await schedulerService.initialize();
+    if (!initialized) {
+      logger.warn('Scheduler not initialized (Redis unavailable)');
+      return;
+    }
 
     // Setup default tasks if enabled
     if (process.env.ENABLE_SCHEDULING !== 'false') {

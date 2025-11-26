@@ -5,10 +5,19 @@ import {
   SelectMenuBuilder,
   ModalBuilder,
 } from 'discord.js';
-import { createWorker, QUEUES, OutgoingMessage, logger } from '@coachartie/shared';
+import { createWorker, QUEUES, OutgoingMessage, logger, testRedisConnection } from '@coachartie/shared';
 import type { Worker } from 'bullmq';
 
-export async function startResponseConsumer(client: Client): Promise<Worker<OutgoingMessage>> {
+export async function startResponseConsumer(client: Client): Promise<Worker<OutgoingMessage> | null> {
+  // Check Redis availability first
+  const redisOk = await testRedisConnection();
+  if (!redisOk) {
+    logger.warn('⚠️ Discord response consumer: Redis unavailable - queue disabled');
+    return null;
+  }
+
+  logger.info('✅ Discord response consumer: Redis available - starting worker');
+
   const worker = createWorker<OutgoingMessage, void>(QUEUES.OUTGOING_DISCORD, async (job) => {
     const response = job.data;
 

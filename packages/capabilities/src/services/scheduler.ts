@@ -5,6 +5,8 @@ import {
   getDatabase,
   IncomingMessage,
   QUEUES,
+  testRedisConnection,
+  isRedisAvailable,
 } from '@coachartie/shared';
 
 export interface ScheduledTask {
@@ -57,11 +59,13 @@ interface ReminderJobData {
 }
 
 export class SchedulerService {
-  private schedulerQueue: Queue;
-  private discordQueue: Queue;
-  private incomingQueue: Queue;
-  private worker: Worker;
+  private schedulerQueue: Queue | null = null;
+  private discordQueue: Queue | null = null;
+  private incomingQueue: Queue | null = null;
+  private worker: Worker | null = null;
   private tasks = new Map<string, ScheduledTask>();
+  private initialized = false;
+  private initializationFailed = false;
   private completedReminders: Array<{
     timestamp: Date;
     message: string;
@@ -69,60 +73,99 @@ export class SchedulerService {
   }> = [];
 
   constructor() {
-    const connection = createRedisConnection();
+    // Don't initialize in constructor - call initialize() explicitly
+  }
 
-    // Create scheduler queue for cron jobs
-    this.schedulerQueue = new Queue('coachartie-scheduler', {
-      connection,
-      defaultJobOptions: {
-        removeOnComplete: 10,
-        removeOnFail: 5,
-      },
-    });
+  /**
+   * Initialize the scheduler with Redis connection
+   * Returns true if successful, false if Redis unavailable
+   */
+  async initialize(): Promise<boolean> {
+    if (this.initialized) return true;
+    if (this.initializationFailed) return false;
 
-    // Create Discord outgoing queue for sending reminders
-    this.discordQueue = new Queue('coachartie-discord-outgoing', {
-      connection,
-    });
+    // Check Redis availability first
+    const redisOk = await testRedisConnection();
+    if (!redisOk) {
+      logger.warn('⚠️ Scheduler: Redis unavailable - scheduler disabled');
+      this.initializationFailed = true;
+      return false;
+    }
 
-    // Create incoming messages queue for processing reminder messages
-    this.incomingQueue = new Queue(QUEUES.INCOMING_MESSAGES, {
-      connection,
-    });
+    try {
+      const connection = createRedisConnection();
 
-    // Create worker to process scheduled jobs
-    this.worker = new Worker(
-      'coachartie-scheduler',
-      async (job) => {
-        await this.executeScheduledJob(job);
-      },
-      { connection }
-    );
+      // Create scheduler queue for cron jobs
+      this.schedulerQueue = new Queue('coachartie-scheduler', {
+        connection,
+        defaultJobOptions: {
+          removeOnComplete: 10,
+          removeOnFail: 5,
+        },
+      });
 
-    // Handle worker events
-    this.worker.on('ready', () => {
-      logger.info('🟢 SCHEDULER WORKER READY - Listening for scheduled jobs');
-    });
+      // Create Discord outgoing queue for sending reminders
+      this.discordQueue = new Queue('coachartie-discord-outgoing', {
+        connection,
+      });
 
-    this.worker.on('completed', (job) => {
-      logger.info(`✅ JOB COMPLETED: ${job.name} (ID: ${job.id})`);
-    });
+      // Create incoming messages queue for processing reminder messages
+      this.incomingQueue = new Queue(QUEUES.INCOMING_MESSAGES, {
+        connection,
+      });
 
-    this.worker.on('failed', (job, error) => {
-      logger.error(`❌ JOB FAILED: ${job?.name} (ID: ${job?.id}) - ${error?.message}`);
-    });
+      // Create worker to process scheduled jobs
+      this.worker = new Worker(
+        'coachartie-scheduler',
+        async (job) => {
+          await this.executeScheduledJob(job);
+        },
+        { connection }
+      );
 
-    this.worker.on('error', (error) => {
-      logger.error('❌ SCHEDULER WORKER ERROR:', error);
-    });
+      // Handle worker events
+      this.worker.on('ready', () => {
+        logger.info('🟢 SCHEDULER WORKER READY - Listening for scheduled jobs');
+      });
 
-    logger.info('Scheduler service initialized with active job execution');
+      this.worker.on('completed', (job) => {
+        logger.info(`✅ JOB COMPLETED: ${job.name} (ID: ${job.id})`);
+      });
+
+      this.worker.on('failed', (job, error) => {
+        logger.error(`❌ JOB FAILED: ${job?.name} (ID: ${job?.id}) - ${error?.message}`);
+      });
+
+      this.worker.on('error', (error) => {
+        logger.error('❌ SCHEDULER WORKER ERROR:', error);
+      });
+
+      this.initialized = true;
+      logger.info('✅ Scheduler service initialized');
+      return true;
+    } catch (error) {
+      logger.error('Failed to initialize scheduler:', error);
+      this.initializationFailed = true;
+      return false;
+    }
+  }
+
+  /**
+   * Check if scheduler is ready
+   */
+  isReady(): boolean {
+    return this.initialized && !this.initializationFailed;
   }
 
   /**
    * Schedule a recurring task using cron expression
    */
   async scheduleTask(task: ScheduledTask): Promise<void> {
+    if (!this.initialized || !this.schedulerQueue) {
+      logger.warn(`Cannot schedule task '${task.name}' - scheduler not initialized`);
+      return;
+    }
+
     try {
       const jobOptions = {
         repeat: {
@@ -162,6 +205,11 @@ export class SchedulerService {
    * Schedule a one-time job with delay
    */
   async scheduleOnce(name: string, data: Record<string, unknown>, delay: number): Promise<void> {
+    if (!this.initialized || !this.schedulerQueue) {
+      logger.warn(`Cannot schedule one-time job '${name}' - scheduler not initialized`);
+      return;
+    }
+
     try {
       await this.schedulerQueue.add(name, data, {
         delay,
@@ -179,6 +227,11 @@ export class SchedulerService {
    * Remove a scheduled task
    */
   async removeTask(taskId: string): Promise<void> {
+    if (!this.initialized || !this.schedulerQueue) {
+      logger.warn(`Cannot remove task '${taskId}' - scheduler not initialized`);
+      return;
+    }
+
     try {
       const task = this.tasks.get(taskId);
       if (!task) {
@@ -205,6 +258,10 @@ export class SchedulerService {
    * List all scheduled tasks
    */
   async getScheduledTasks(): Promise<ScheduledJob[]> {
+    if (!this.initialized || !this.schedulerQueue) {
+      return [];
+    }
+
     try {
       const repeatableJobs = await this.schedulerQueue.getRepeatableJobs();
       const jobs: ScheduledJob[] = [];
@@ -346,14 +403,16 @@ export class SchedulerService {
         },
       };
 
-      await this.incomingQueue.add('process-reminder', incomingMessage);
-      logger.info(`📤 Reminder message queued for processing: "${reminderMessage}"`);
+      if (this.incomingQueue) {
+        await this.incomingQueue.add('process-reminder', incomingMessage);
+        logger.info(`📤 Reminder message queued for processing: "${reminderMessage}"`);
+      }
     } catch (error) {
       logger.error('Failed to queue reminder message for processing:', error);
     }
 
     // Get meeting details if meetingId is provided
-    if (meetingId) {
+    if (meetingId && this.discordQueue) {
       try {
         const db = await getDatabase();
         const meeting = await db.get('SELECT * FROM meetings WHERE id = ?', [meetingId]);
@@ -432,6 +491,14 @@ export class SchedulerService {
    * Get scheduler statistics
    */
   async getStats(): Promise<SchedulerStats> {
+    if (!this.initialized || !this.schedulerQueue) {
+      return {
+        jobs: { waiting: 0, active: 0, completed: 0, failed: 0, delayed: 0 },
+        repeatable: 0,
+        tasks: 0,
+      };
+    }
+
     try {
       const waiting = await this.schedulerQueue.getWaiting();
       const active = await this.schedulerQueue.getActive();
@@ -461,11 +528,17 @@ export class SchedulerService {
    * Close scheduler service
    */
   async close(): Promise<void> {
-    await this.worker.close();
-    await this.schedulerQueue.close();
-    await this.discordQueue.close();
-    await this.incomingQueue.close();
-    logger.info('Scheduler service closed');
+    if (!this.initialized) return;
+
+    try {
+      if (this.worker) await this.worker.close();
+      if (this.schedulerQueue) await this.schedulerQueue.close();
+      if (this.discordQueue) await this.discordQueue.close();
+      if (this.incomingQueue) await this.incomingQueue.close();
+      logger.info('Scheduler service closed');
+    } catch (error) {
+      logger.error('Error closing scheduler:', error);
+    }
   }
 }
 

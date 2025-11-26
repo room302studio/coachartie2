@@ -1,10 +1,19 @@
 import type { App } from '@slack/bolt';
-import { createWorker, QUEUES, OutgoingMessage, logger } from '@coachartie/shared';
+import { createWorker, QUEUES, OutgoingMessage, logger, testRedisConnection } from '@coachartie/shared';
 import type { Worker } from 'bullmq';
 
 export async function startResponseConsumer(
   app: App
-): Promise<ReturnType<typeof createWorker<OutgoingMessage, void>>> {
+): Promise<ReturnType<typeof createWorker<OutgoingMessage, void>> | null> {
+  // Check Redis availability first
+  const redisOk = await testRedisConnection();
+  if (!redisOk) {
+    logger.warn('⚠️ Slack response consumer: Redis unavailable - queue disabled');
+    return null;
+  }
+
+  logger.info('✅ Slack response consumer: Redis available - starting worker');
+
   const worker = createWorker<OutgoingMessage, void>(QUEUES.OUTGOING_SLACK, async (job) => {
     const response = job.data;
 

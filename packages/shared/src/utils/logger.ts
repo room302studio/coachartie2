@@ -54,10 +54,9 @@ const transports: winston.transport[] = [
         // Super compact format
         const metaStr = hasUsefulMeta ? ` ${JSON.stringify(cleanMeta)}` : '';
 
-        // Short service names
+        // Clean service names
         const shortService = String(service || 'unknown')
-          .replace('@coachartie/', '')
-          .substring(0, 8);
+          .replace('@coachartie/', '');
 
         return `${timestamp} ${shortService}: ${cleanMessage}${metaStr}`;
       })

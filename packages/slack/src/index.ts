@@ -28,7 +28,8 @@ console.log('  - REDIS_PORT:', process.env.REDIS_PORT || 'not set');
 console.log('  - CAPABILITIES_URL:', process.env.CAPABILITIES_URL || 'not set');
 console.log('  - SLACK_PORT:', process.env.SLACK_PORT || 'not set');
 
-import { App, LogLevel } from '@slack/bolt';
+import pkg from '@slack/bolt';
+const { App, LogLevel } = pkg;
 import { logger } from '@coachartie/shared';
 import { setupMessageHandler } from './handlers/message-handler.js';
 import { setupInteractionHandler } from './handlers/interaction-handler.js';

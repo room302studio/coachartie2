@@ -7,15 +7,27 @@ import {
   logger,
   queueLogger,
   performanceLogger,
+  testRedisConnection,
 } from '@coachartie/shared';
 import { processMessage } from '../handlers/process-message.js';
 import { jobTracker } from '../services/job-tracker.js';
+import type { Worker } from 'bullmq';
 
-export async function startMessageConsumer() {
-  console.log('🚀 Starting message consumer - BOOKITY BOOKITY!');
-  console.log('  - REDIS_HOST:', process.env.REDIS_HOST || 'not set');
-  console.log('  - REDIS_PORT:', process.env.REDIS_PORT || 'not set');
-  console.log('  - Queue name:', QUEUES.INCOMING_MESSAGES);
+export async function startMessageConsumer(): Promise<Worker<IncomingMessage, void> | null> {
+  const redisHost = process.env.REDIS_HOST || 'localhost';
+  const redisPort = process.env.REDIS_PORT || '47320';
+
+  logger.info(`🔌 Checking Redis connection at ${redisHost}:${redisPort}...`);
+
+  const redisOk = await testRedisConnection();
+
+  if (!redisOk) {
+    logger.warn(`⚠️ Redis unavailable at ${redisHost}:${redisPort} - queue processing disabled`);
+    logger.warn('   Service will run in API-only mode (no queue workers)');
+    return null;
+  }
+
+  logger.info('✅ Redis available - starting queue workers');
 
   const worker = createWorker<IncomingMessage, void>(QUEUES.INCOMING_MESSAGES, async (job) => {
     console.log(`📬 Processing job ${job.id} - SNOOKITY LOOKITY!`);

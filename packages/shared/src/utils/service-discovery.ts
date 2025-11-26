@@ -1,5 +1,5 @@
 import { logger } from './logger.js';
-import { redis } from './redis.js';
+import { redis, isRedisAvailable, hasRedisBeenChecked } from './redis.js';
 
 /**
  * Service Discovery System
@@ -52,18 +52,24 @@ export class ServiceDiscovery {
     // Store in local map
     this.registeredServices.set(serviceName, serviceInfo);
 
-    // Store in Redis for inter-service discovery
-    try {
-      await redis.setex(
-        `${ServiceDiscovery.REDIS_PREFIX}${serviceName}`,
-        90, // TTL of 90 seconds (must be refreshed by pings)
-        JSON.stringify(serviceInfo)
-      );
+    // Store in Redis for inter-service discovery (only if Redis is available)
+    if (hasRedisBeenChecked() && !isRedisAvailable()) {
+      logger.info(`📡 Registered ${serviceName} service locally at ${serviceInfo.url} (Redis unavailable)`);
+    } else {
+      try {
+        await redis.setex(
+          `${ServiceDiscovery.REDIS_PREFIX}${serviceName}`,
+          90, // TTL of 90 seconds (must be refreshed by pings)
+          JSON.stringify(serviceInfo)
+        );
 
-      logger.info(`📡 Registered ${serviceName} service at ${serviceInfo.url}`);
-    } catch (error) {
-      logger.warn(`Failed to register service ${serviceName} in Redis:`, error);
-      // Continue without Redis - services can still work locally
+        logger.info(`📡 Registered ${serviceName} service at ${serviceInfo.url}`);
+      } catch (error) {
+        // Only log once, don't spam with full stack trace
+        const errMsg = error instanceof Error ? error.message : String(error);
+        logger.warn(`Failed to register service ${serviceName} in Redis: ${errMsg}`);
+        // Continue without Redis - services can still work locally
+      }
     }
 
     // Start ping system if not already running
@@ -79,6 +85,12 @@ export class ServiceDiscovery {
       service.status = 'running';
       service.lastPing = Date.now();
 
+      // Skip Redis if unavailable
+      if (hasRedisBeenChecked() && !isRedisAvailable()) {
+        logger.info(`✅ ${serviceName} service is now running at ${service.url} (local only)`);
+        return;
+      }
+
       try {
         await redis.setex(
           `${ServiceDiscovery.REDIS_PREFIX}${serviceName}`,
@@ -87,7 +99,8 @@ export class ServiceDiscovery {
         );
         logger.info(`✅ ${serviceName} service is now running at ${service.url}`);
       } catch (error) {
-        logger.warn(`Failed to update service status for ${serviceName}:`, error);
+        const errMsg = error instanceof Error ? error.message : String(error);
+        logger.warn(`Failed to update service status for ${serviceName}: ${errMsg}`);
       }
     }
   }
@@ -100,6 +113,11 @@ export class ServiceDiscovery {
     const localService = this.registeredServices.get(serviceName);
     if (localService && localService.status === 'running') {
       return localService;
+    }
+
+    // Skip Redis lookup if unavailable
+    if (hasRedisBeenChecked() && !isRedisAvailable()) {
+      return null;
     }
 
     // Try Redis for remote services
@@ -115,7 +133,7 @@ export class ServiceDiscovery {
         }
       }
     } catch (error) {
-      logger.warn(`Failed to find service ${serviceName} in Redis:`, error);
+      // Silently fail - Redis unavailable
     }
 
     return null;
@@ -134,6 +152,11 @@ export class ServiceDiscovery {
       }
     }
 
+    // Skip Redis lookup if unavailable
+    if (hasRedisBeenChecked() && !isRedisAvailable()) {
+      return Array.from(services.values());
+    }
+
     // Add Redis services
     try {
       const keys = await redis.keys(`${ServiceDiscovery.REDIS_PREFIX}*`);
@@ -150,7 +173,7 @@ export class ServiceDiscovery {
         }
       }
     } catch (error) {
-      logger.warn('Failed to get services from Redis:', error);
+      // Silently fail - Redis unavailable
     }
 
     return Array.from(services.values());
@@ -173,11 +196,17 @@ export class ServiceDiscovery {
       service.status = 'stopping';
       this.registeredServices.delete(serviceName);
 
+      // Skip Redis if unavailable
+      if (hasRedisBeenChecked() && !isRedisAvailable()) {
+        logger.info(`📡 Unregistered ${serviceName} service (local)`);
+        return;
+      }
+
       try {
         await redis.del(`${ServiceDiscovery.REDIS_PREFIX}${serviceName}`);
         logger.info(`📡 Unregistered ${serviceName} service`);
       } catch (error) {
-        logger.warn(`Failed to unregister service ${serviceName}:`, error);
+        // Silently fail on shutdown - don't log errors
       }
     }
   }
@@ -189,6 +218,11 @@ export class ServiceDiscovery {
     if (this.pingInterval) return; // Already running
 
     this.pingInterval = setInterval(async () => {
+      // Skip pinging if Redis is unavailable
+      if (hasRedisBeenChecked() && !isRedisAvailable()) {
+        return;
+      }
+
       for (const [serviceName, service] of this.registeredServices) {
         if (service.status === 'running') {
           service.lastPing = Date.now();
@@ -200,7 +234,7 @@ export class ServiceDiscovery {
               JSON.stringify(service)
             );
           } catch (error) {
-            logger.warn(`Failed to ping service ${serviceName}:`, error);
+            // Silently fail - don't spam logs for ping failures
           }
         }
       }
