@@ -241,9 +241,7 @@ async function handleSelectMenuInteraction(interaction: SelectMenuInteraction) {
  * Handle ask-question capability responses
  * When user clicks button or selects option from an ask-question prompt
  */
-async function handleAskQuestionResponse(
-  interaction: ButtonInteraction | SelectMenuInteraction
-) {
+async function handleAskQuestionResponse(interaction: ButtonInteraction | SelectMenuInteraction) {
   const correlationId = generateCorrelationId();
   const shortId = getShortCorrelationId(correlationId);
 
@@ -297,7 +295,6 @@ async function handleAskQuestionResponse(
     // TODO: Store the answer in a way that the capability orchestrator can retrieve it
     // For now, this just acknowledges the response
     // Future: Use Redis to store answer with customId as key
-
   } catch (error) {
     logger.error(`Failed to handle ask-question response [${shortId}]:`, {
       correlationId,

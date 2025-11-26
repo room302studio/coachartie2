@@ -20,7 +20,6 @@ import {
 } from '../utils/correlation.js';
 import { processUserIntent } from '../services/user-intent-processor.js';
 import { isGuildWhitelisted, isWorkingGuild, getGuildConfig } from '../config/guild-whitelist.js';
-import { getConversationState } from '../services/conversation-state.js';
 import { getGitHubIntegration } from '../services/github-integration.js';
 import { getForumTraversal } from '../services/forum-traversal.js';
 import { getMentionProxyService } from '../services/mention-proxy-service.js';
@@ -744,24 +743,6 @@ export function setupMessageHandler(client: Client) {
     }
 
     // -------------------------------------------------------------------------
-    // CONVERSATION FLOW HANDLING
-    // -------------------------------------------------------------------------
-
-    // Check if user has an active conversation (multi-turn interaction)
-    try {
-      const conversationState = getConversationState();
-      const activeConversation = conversationState.getConversation(message.author.id);
-
-      if (activeConversation && activeConversation.conversationType === 'sync-discussions') {
-        await handleSyncDiscussionsConversation(message, activeConversation, conversationState);
-        return; // Don't process as normal message
-      }
-    } catch (error) {
-      logger.warn(`Conversation handling failed [${shortId}]:`, error);
-      // Continue with normal message processing
-    }
-
-    // -------------------------------------------------------------------------
     // MENTION PROXY DETECTION
     // -------------------------------------------------------------------------
 
@@ -996,142 +977,6 @@ export function setupMessageHandler(client: Client) {
       CorrelationContext.cleanup();
     }
   });
-}
-
-// =============================================================================
-// CONVERSATION HANDLERS
-// =============================================================================
-
-/**
- * Handle multi-turn conversation for sync-discussions command
- */
-async function handleSyncDiscussionsConversation(
-  message: Message,
-  conversation: any,
-  conversationState: any
-): Promise<void> {
-  const { forumId, forumName, step } = conversation.state;
-
-  if (step !== 'awaiting_repo') {
-    // Unknown step, end conversation
-    conversationState.endConversation(message.author.id);
-    return;
-  }
-
-  const repo = message.content.trim();
-
-  try {
-    // Get services
-    const githubService = getGitHubIntegration();
-    const forumTraversal = getForumTraversal();
-
-    // Parse repo reference
-    const repoInfo = githubService.parseRepoReference(repo);
-    if (!repoInfo) {
-      await message.reply({
-        content: `❌ Invalid repository format. Please use \`owner/repo\` format (e.g., \`facebook/react\`) or a full GitHub URL.\n\nTry again, or say "cancel" to stop.`,
-      });
-      return;
-    }
-
-    // Check for cancel
-    if (repo.toLowerCase() === 'cancel') {
-      conversationState.endConversation(message.author.id);
-      await message.reply('❌ Sync cancelled.');
-      return;
-    }
-
-    // Verify repository
-    const statusMsg = await message.reply(
-      `🔍 Verifying access to **${repoInfo.owner}/${repoInfo.repo}**...`
-    );
-
-    const hasAccess = await githubService.verifyRepository(repoInfo.owner, repoInfo.repo);
-    if (!hasAccess) {
-      await statusMsg.edit({
-        content: `❌ Cannot access repository **${repoInfo.owner}/${repoInfo.repo}**. Please check:\n- Repository exists\n- GitHub token has access\n- Repository name is correct\n\nTry again with a different repo, or say "cancel" to stop.`,
-      });
-      return;
-    }
-
-    // Start sync
-    await statusMsg.edit({
-      content: `✅ Repository verified!\n\n🔄 Fetching discussions from **${forumName}**...`,
-    });
-
-    const forumSummary = await forumTraversal.getForumSummary(forumId);
-
-    if (forumSummary.threads.length === 0) {
-      conversationState.endConversation(message.author.id);
-      await statusMsg.edit({
-        content: `ℹ️ No discussions found in **${forumName}** to sync.`,
-      });
-      return;
-    }
-
-    await statusMsg.edit({
-      content: `📊 Found **${forumSummary.threads.length}** discussions\n\n🚀 Creating GitHub issues in **${repoInfo.owner}/${repoInfo.repo}**...\n\n_This may take a minute..._`,
-    });
-
-    // Sync threads
-    const results = await githubService.syncThreadsToGitHub(
-      repoInfo.owner,
-      repoInfo.repo,
-      forumSummary.threads,
-      forumName,
-      async (current, total, result) => {
-        if (current % 5 === 0 || current === total) {
-          await statusMsg
-            .edit({
-              content: `🚀 Creating GitHub issues... (${current}/${total})\n\n${result.success ? '✅' : '❌'} ${result.issueUrl || 'Processing...'}`,
-            })
-            .catch(() => {
-              /* Ignore rate limit errors */
-            });
-        }
-      }
-    );
-
-    // Report results
-    const successCount = results.filter((r) => r.success).length;
-    const failureCount = results.length - successCount;
-
-    let resultMessage = `## ✅ Sync Complete!\n\n`;
-    resultMessage += `**Forum:** ${forumName}\n`;
-    resultMessage += `**Repository:** ${repoInfo.owner}/${repoInfo.repo}\n\n`;
-    resultMessage += `**Results:**\n`;
-    resultMessage += `✅ ${successCount} issues created successfully\n`;
-
-    if (failureCount > 0) {
-      resultMessage += `❌ ${failureCount} failed\n`;
-    }
-
-    resultMessage += `\n**Created Issues:**\n`;
-    const successfulIssues = results.filter((r) => r.success && r.issueUrl);
-    successfulIssues.slice(0, 10).forEach((result) => {
-      resultMessage += `- ${result.issueUrl}\n`;
-    });
-
-    if (successfulIssues.length > 10) {
-      resultMessage += `_...and ${successfulIssues.length - 10} more_\n`;
-    }
-
-    await statusMsg.edit({ content: resultMessage });
-
-    // End conversation
-    conversationState.endConversation(message.author.id);
-
-    logger.info(
-      `Conversational sync completed for user ${message.author.id}: ${successCount}/${results.length} issues created`
-    );
-  } catch (error) {
-    logger.error('Error in sync-discussions conversation:', error);
-    conversationState.endConversation(message.author.id);
-
-    await message.reply({
-      content: `❌ Sync failed: ${error instanceof Error ? error.message : String(error)}`,
-    });
-  }
 }
 
 // =============================================================================

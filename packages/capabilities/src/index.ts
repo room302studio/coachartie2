@@ -50,7 +50,6 @@ import { capabilityRegistry } from './services/capability-registry.js';
 import { capabilitiesRouter } from './routes/capabilities.js';
 import { simpleHealer } from './runtime/simple-healer.js';
 import { hybridDataLayer } from './runtime/hybrid-data-layer.js';
-import { mcpProcessManager } from './services/mcp-process-manager.js';
 
 // Export openRouterService for models endpoint
 export { openRouterService } from './services/openrouter.js';
@@ -272,9 +271,6 @@ async function gracefulShutdown() {
 
     logger.info('Cleaning up hybrid data layer...');
     await hybridDataLayer.cleanup();
-
-    logger.info('Cleaning up MCP process manager...');
-    await mcpProcessManager.cleanup();
 
     logger.info('Shutting down service discovery...');
     await serviceDiscovery.shutdown();

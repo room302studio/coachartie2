@@ -149,8 +149,7 @@ PRIORITY 4: Optional Enhancements
 │   ├── context-alchemy.ts (1000+ lines) ← NO CHANGES NEEDED
 │   └── openrouter-models.ts (214 lines) ← READ-ONLY, NO CHANGES
 ├── utils/
-│   ├── model-aware-prompter.ts (300 lines) ← READY BUT DISABLED
-│   └── bulletproof-capability-extractor.ts (135 lines) ← NO CHANGES NEEDED
+│   └── model-aware-prompter.ts (300 lines) ← READY BUT DISABLED
 ├── handlers/
 │   └── process-message.ts (115 lines) ← ENTRY POINT
 └── routes/

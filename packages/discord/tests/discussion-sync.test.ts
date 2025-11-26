@@ -10,7 +10,6 @@
 
 import { describe, it, expect, beforeEach } from 'vitest';
 import { GitHubIntegrationService } from '../src/services/github-integration.js';
-import { ConversationStateManager } from '../src/services/conversation-state.js';
 
 describe('GitHub Integration Service', () => {
   let service: GitHubIntegrationService;
@@ -203,82 +202,6 @@ describe('GitHub Integration Service', () => {
 
       const result = service.formatThreadAsIssue(mockThread, 'Forum');
       expect(result.labels).toContain('enhancement');
-    });
-  });
-});
-
-describe('Conversation State Manager', () => {
-  let manager: ConversationStateManager;
-
-  beforeEach(() => {
-    manager = new ConversationStateManager();
-  });
-
-  afterEach(() => {
-    manager.destroy();
-  });
-
-  describe('conversation lifecycle', () => {
-    it('should start a new conversation', () => {
-      const context = manager.startConversation('user123', 'sync-discussions', {
-        forumId: 'forum1',
-        step: 'awaiting_repo',
-      });
-
-      expect(context.userId).toBe('user123');
-      expect(context.conversationType).toBe('sync-discussions');
-      expect(context.state.forumId).toBe('forum1');
-    });
-
-    it('should retrieve an active conversation', () => {
-      manager.startConversation('user123', 'sync-discussions', { test: 'data' });
-
-      const retrieved = manager.getConversation('user123');
-      expect(retrieved).not.toBeNull();
-      expect(retrieved?.state.test).toBe('data');
-    });
-
-    it('should update conversation state', () => {
-      manager.startConversation('user123', 'sync-discussions', { step: 1 });
-
-      const updated = manager.updateConversation('user123', { step: 2 });
-      expect(updated).toBe(true);
-
-      const retrieved = manager.getConversation('user123');
-      expect(retrieved?.state.step).toBe(2);
-    });
-
-    it('should end a conversation', () => {
-      manager.startConversation('user123', 'sync-discussions', {});
-
-      const ended = manager.endConversation('user123');
-      expect(ended).toBe(true);
-
-      const retrieved = manager.getConversation('user123');
-      expect(retrieved).toBeNull();
-    });
-
-    it('should detect active conversations', () => {
-      expect(manager.hasActiveConversation('user123')).toBe(false);
-
-      manager.startConversation('user123', 'sync-discussions', {});
-      expect(manager.hasActiveConversation('user123')).toBe(true);
-
-      manager.endConversation('user123');
-      expect(manager.hasActiveConversation('user123')).toBe(false);
-    });
-  });
-
-  describe('conversation isolation', () => {
-    it('should keep conversations separate per user', () => {
-      manager.startConversation('user1', 'sync-discussions', { data: 'user1' });
-      manager.startConversation('user2', 'sync-discussions', { data: 'user2' });
-
-      const conv1 = manager.getConversation('user1');
-      const conv2 = manager.getConversation('user2');
-
-      expect(conv1?.state.data).toBe('user1');
-      expect(conv2?.state.data).toBe('user2');
     });
   });
 });

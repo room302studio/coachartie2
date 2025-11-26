@@ -1,19 +1,13 @@
 /**
  * /sync-discussions - Sync Discord forum discussions to GitHub issues
  *
- * Conversational flow:
- * 1. User runs /sync-discussions
- * 2. Bot asks which repo
- * 3. User provides repo (owner/repo format or URL)
- * 4. Bot confirms and syncs all discussions
- * 5. Bot reports results
+ * Usage: /sync-discussions repo:owner/repo [forum:channel_id]
  */
 
 import { SlashCommandBuilder, ChatInputCommandInteraction, ChannelType } from 'discord.js';
 import { logger } from '@coachartie/shared';
 import { getForumTraversal } from '../services/forum-traversal.js';
 import { getGitHubIntegration } from '../services/github-integration.js';
-import { getConversationState } from '../services/conversation-state.js';
 
 export const data = new SlashCommandBuilder()
   .setName('sync-discussions')
@@ -22,7 +16,7 @@ export const data = new SlashCommandBuilder()
     option
       .setName('repo')
       .setDescription('GitHub repository (owner/repo or URL)')
-      .setRequired(false)
+      .setRequired(true)
   )
   .addStringOption((option) =>
     option
@@ -33,7 +27,7 @@ export const data = new SlashCommandBuilder()
 
 export async function execute(interaction: ChatInputCommandInteraction) {
   const userId = interaction.user.id;
-  const repo = interaction.options.getString('repo');
+  const repo = interaction.options.getString('repo', true);
   const forumOption = interaction.options.getString('forum');
 
   try {
@@ -106,22 +100,7 @@ export async function execute(interaction: ChatInputCommandInteraction) {
     // Defer reply for long operation
     await interaction.deferReply();
 
-    // If repo not provided, start conversational flow
-    if (!repo) {
-      const conversationState = getConversationState();
-      conversationState.startConversation(userId, 'sync-discussions', {
-        forumId,
-        forumName,
-        step: 'awaiting_repo',
-      });
-
-      await interaction.editReply({
-        content: `📋 Ready to sync discussions from **${forumName}**\n\nWhich GitHub repository should I create issues in? (Format: \`owner/repo\` or full URL)`,
-      });
-      return;
-    }
-
-    // Parse and validate repo
+    // Parse and validate repo (repo is required)
     const repoInfo = githubService.parseRepoReference(repo);
     if (!repoInfo) {
       await interaction.editReply({

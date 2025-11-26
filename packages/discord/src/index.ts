@@ -39,7 +39,6 @@ import { pathResolver } from './utils/path-resolver.js';
 import { jobMonitor } from './services/job-monitor.js';
 import { initializeForumTraversal } from './services/forum-traversal.js';
 import { initializeGitHubIntegration } from './services/github-integration.js';
-import { initializeConversationState } from './services/conversation-state.js';
 import { initializeMentionProxyService } from './services/mention-proxy-service.js';
 import { observationalLearning } from './services/observational-learning.js';
 import './queues/outgoing-consumer.js';
@@ -145,16 +144,6 @@ async function start() {
       } catch (error) {
         logger.warn('Failed to initialize forum traversal:', error);
         console.error('❌ Forum traversal init failed:', error);
-      }
-
-      // Initialize conversation state manager
-      try {
-        console.log('🔧 Initializing conversation state...');
-        initializeConversationState();
-        logger.info('✅ Conversation state tracking enabled');
-      } catch (error) {
-        logger.warn('Failed to initialize conversation state:', error);
-        console.error('❌ Conversation state init failed:', error);
       }
 
       // Initialize mention proxy service

@@ -629,10 +629,6 @@ export const capabilityRegistry = new CapabilityRegistry();
 import { embeddedMCPCapability } from '../capabilities/embedded-mcp.js';
 capabilityRegistry.register(embeddedMCPCapability);
 
-// Auto-register LinkedIn capability
-import { linkedInCapability } from '../capabilities/linkedin.js';
-capabilityRegistry.register(linkedInCapability);
-
 // Auto-register Semantic Search capability
 import { semanticSearchCapability } from '../capabilities/semantic-search.js';
 capabilityRegistry.register(semanticSearchCapability);
