@@ -45,6 +45,8 @@ services:
       dockerfile: ./packages/capabilities/Dockerfile
     container_name: coachartie-capabilities-prod
     user: "1000:1000"
+    group_add:
+      - "111"  # Docker group GID on VPS for docker.sock access
     ports:
       - "127.0.0.1:47324:47324"  # Localhost only - no public access
     env_file:

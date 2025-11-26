@@ -3,8 +3,8 @@ FROM node:20-alpine
 # Set working directory
 WORKDIR /app
 
-# Install pnpm and curl
-RUN npm install -g pnpm && apk add --no-cache curl
+# Install pnpm, curl, and docker-cli (for executing commands in sandbox container)
+RUN npm install -g pnpm && apk add --no-cache curl docker-cli
 
 # Copy package files and install dependencies
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.json ./
