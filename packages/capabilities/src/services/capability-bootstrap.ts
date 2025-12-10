@@ -35,6 +35,7 @@ import { scratchpadCapability } from '../capabilities/scratchpad.js';
 import { contextCapability } from '../capabilities/context.js';
 import { diagnoseCapability } from '../capabilities/diagnose.js';
 import { meetingCapability } from './meeting-service.js';
+import { redditCapability } from '../capabilities/reddit.js';
 
 // =====================================================
 // CAPABILITY BOOTSTRAP SERVICE
@@ -201,6 +202,11 @@ export class CapabilityBootstrap {
       logger.info('📦 Registering diagnose (error analysis)...');
       capabilityRegistry.register(diagnoseCapability);
       logger.info('✅ diagnose registered successfully');
+
+      // Register Reddit capability for reading/writing subreddits
+      logger.info('📦 Registering reddit...');
+      capabilityRegistry.register(redditCapability);
+      logger.info('✅ reddit registered successfully');
 
       const totalCaps = capabilityRegistry.list().length;
       logger.info(
