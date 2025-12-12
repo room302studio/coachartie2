@@ -250,66 +250,67 @@ function chunkMessage(text: string, maxLength: number = DISCORD_MESSAGE_LIMIT): 
       // Normal-sized code block - add to current chunk
       currentChunk += (currentChunk ? '\n' : '') + segment.content;
     } else {
-      // Regular text - can split on paragraph, line, or word boundaries
+      // Regular text - preserve newlines while respecting Discord's char limit
+      // This is CRITICAL for markdown formatting (headers, lists, paragraphs)
       const textContent = segment.content;
 
-      // First try splitting on paragraph boundaries
-      const paragraphs = textContent.split(/\n\n+/);
+      // Split on double newlines to find paragraphs, but keep the delimiters
+      const paragraphParts = textContent.split(/(\n\n+)/);
 
-      for (const paragraph of paragraphs) {
-        const trimmedParagraph = paragraph.trim();
-        if (!trimmedParagraph) continue;
+      for (const part of paragraphParts) {
+        // Check if this is a paragraph delimiter (double+ newlines)
+        const isDelimiter = /^\n\n+$/.test(part);
 
-        // If paragraph fits, add it
-        if (currentChunk.length + trimmedParagraph.length + 2 <= maxLength) {
-          currentChunk += (currentChunk ? '\n\n' : '') + trimmedParagraph;
+        if (isDelimiter) {
+          // Preserve paragraph breaks - normalize to double newline
+          if (currentChunk.length + 2 <= maxLength) {
+            currentChunk += '\n\n';
+          } else {
+            // Flush and start fresh with the delimiter
+            if (currentChunk.trim()) {
+              chunks.push(currentChunk.trimEnd());
+              currentChunk = '';
+            }
+          }
           continue;
         }
 
-        // Paragraph won't fit - flush current chunk
-        if (currentChunk.trim()) {
-          chunks.push(currentChunk.trim());
-          currentChunk = '';
-        }
+        // Regular paragraph content - preserve single newlines within it
+        const lines = part.split('\n');
 
-        // If paragraph fits on its own, use it
-        if (trimmedParagraph.length <= maxLength) {
-          currentChunk = trimmedParagraph;
-          continue;
-        }
+        for (let lineIdx = 0; lineIdx < lines.length; lineIdx++) {
+          const line = lines[lineIdx];
+          // Don't trim - preserve leading whitespace for indentation
 
-        // Paragraph is too long - split by lines
-        const lines = trimmedParagraph.split('\n');
+          // Calculate what we need to add
+          const needsNewline = currentChunk.length > 0 && lineIdx > 0;
+          const addition = (needsNewline ? '\n' : '') + line;
 
-        for (const line of lines) {
-          const trimmedLine = line.trim();
-          if (!trimmedLine) continue;
-
-          // If line fits, add it
-          if (currentChunk.length + trimmedLine.length + 1 <= maxLength) {
-            currentChunk += (currentChunk ? '\n' : '') + trimmedLine;
+          // If adding this line fits, add it
+          if (currentChunk.length + addition.length <= maxLength) {
+            currentChunk += addition;
             continue;
           }
 
-          // Line won't fit - flush current chunk
+          // Line won't fit - flush current chunk first
           if (currentChunk.trim()) {
-            chunks.push(currentChunk.trim());
+            chunks.push(currentChunk.trimEnd());
             currentChunk = '';
           }
 
-          // If line fits on its own, use it
-          if (trimmedLine.length <= maxLength) {
-            currentChunk = trimmedLine;
+          // If line itself fits, use it
+          if (line.length <= maxLength) {
+            currentChunk = line;
             continue;
           }
 
-          // Line is too long - split by words
-          const words = trimmedLine.split(' ');
+          // Line is too long - must split by words
+          const words = line.split(' ');
 
           for (const word of words) {
             if (currentChunk.length + word.length + 1 > maxLength) {
               if (currentChunk.trim()) {
-                chunks.push(currentChunk.trim());
+                chunks.push(currentChunk.trimEnd());
                 currentChunk = '';
               }
 
@@ -1055,6 +1056,114 @@ async function fetchChannelHistory(message: Message): Promise<
 }
 
 /**
+ * Fetch recent attachments from the channel (last ~10 messages)
+ */
+async function fetchRecentAttachments(
+  message: Message
+): Promise<
+  Array<{
+    id: string;
+    name: string | null;
+    url: string;
+    contentType: string | null;
+    size: number;
+    proxyUrl: string | null;
+    author: string;
+    messageId: string;
+    timestamp: string;
+  }>
+> {
+  try {
+    const messages = await message.channel.messages.fetch({ limit: 12, before: message.id });
+
+    const attachments: Array<{
+      id: string;
+      name: string | null;
+      url: string;
+      contentType: string | null;
+      size: number;
+      proxyUrl: string | null;
+      author: string;
+      messageId: string;
+      timestamp: string;
+    }> = [];
+
+    for (const msg of messages.values()) {
+      if (!msg.attachments || msg.attachments.size === 0) continue;
+
+      msg.attachments.forEach((att) => {
+        attachments.push({
+          id: att.id,
+          name: att.name,
+          url: att.url,
+          contentType: att.contentType ?? null,
+          size: att.size,
+          proxyUrl: att.proxyURL ?? null,
+          author: msg.author.displayName || msg.author.username,
+          messageId: msg.id,
+          timestamp: msg.createdAt.toISOString(),
+        });
+      });
+
+      if (attachments.length >= 10) break; // cap to keep context small
+    }
+
+    return attachments.slice(0, 10);
+  } catch (error) {
+    logger.error('Failed to fetch recent attachments:', error);
+    return [];
+  }
+}
+
+/**
+ * Extract up to a few recent URLs from recent messages (excluding bot).
+ */
+async function fetchRecentUrls(message: Message): Promise<string[]> {
+  try {
+    const messages = await message.channel.messages.fetch({ limit: 12, before: message.id });
+    const urls: string[] = [];
+
+    for (const msg of messages.values()) {
+      if (msg.author.bot) continue;
+      const tokens = msg.content.split(/\s+/);
+
+      // Collect URLs from message content
+      for (const token of tokens) {
+        try {
+          const parsed = new URL(token);
+          if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+            const normalized = parsed.toString();
+            if (!urls.includes(normalized)) {
+              urls.push(normalized);
+            }
+          }
+        } catch {
+          // not a URL, skip
+        }
+        if (urls.length >= 5) break;
+      }
+
+      // Also include URLs from embeds if present
+      if (msg.embeds && msg.embeds.length > 0) {
+        for (const embed of msg.embeds) {
+          if (embed.url && !urls.includes(embed.url)) {
+            urls.push(embed.url);
+          }
+          if (urls.length >= 5) break;
+        }
+      }
+
+      if (urls.length >= 5) break; // cap before later trim
+    }
+
+    return urls.slice(0, 5);
+  } catch (error) {
+    logger.error('Failed to fetch recent URLs:', error);
+    return [];
+  }
+}
+
+/**
  * Simple adapter: Convert Discord message to UserIntent and delegate to unified processor
  * Replaces ~400 lines of duplicate logic with ~30 lines of adapter code
  */
@@ -1079,6 +1188,16 @@ async function handleMessageAsIntent(
     // ENHANCED: Fetch recent channel history for conversational context
     const channelHistory = await fetchChannelHistory(message);
     logger.info(`📜 Fetched ${channelHistory.length} recent messages for context [${shortId}]`);
+
+    const recentAttachments = await fetchRecentAttachments(message);
+    if (recentAttachments.length > 0) {
+      logger.info(`📎 Found ${recentAttachments.length} recent attachments [${shortId}]`);
+    }
+
+    const recentUrls = await fetchRecentUrls(message);
+    if (recentUrls.length > 0) {
+      logger.info(`🔗 Found ${recentUrls.length} recent URLs [${shortId}]`);
+    }
 
     // ENHANCED: Fetch reply context if this is a reply
     const replyContext = await fetchReplyContext(message);
@@ -1141,12 +1260,25 @@ async function handleMessageAsIntent(
       messageId: message.id,
       timestamp: message.createdAt.toISOString(),
       hasAttachments: message.attachments.size > 0,
+      recentAttachments,
+      recentUrls,
       mentionedUsers: message.mentions.users.size,
       mentions: Array.from(message.mentions.users.entries()).map(([id, user]) => ({
         id,
         username: user.username,
         displayName: user.displayName || user.username,
       })),
+      attachments:
+        message.attachments.size > 0
+          ? Array.from(message.attachments.values()).map((att) => ({
+              id: att.id,
+              name: att.name,
+              url: att.url,
+              contentType: att.contentType,
+              size: att.size,
+              proxyUrl: att.proxyURL,
+            }))
+          : [],
       replyingTo: message.reference?.messageId || null,
       // Reply context - the message being replied to
       ...(replyContext

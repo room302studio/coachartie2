@@ -424,53 +424,93 @@ async function handleFeedbackReaction(
 
 /**
  * Split long messages into Discord-compatible chunks
- * (Copied from message-handler for standalone usage)
+ * Preserves newlines and markdown formatting
  */
 function chunkMessage(text: string, maxLength: number = 2000): string[] {
-  const segments = text.split(/\n\n+/);
+  if (!text || text.length === 0) return [];
+  if (text.length <= maxLength) return [text];
+
   const chunks: string[] = [];
+  let currentChunk = '';
 
-  for (const segment of segments) {
-    const trimmedSegment = segment.trim();
-    if (!trimmedSegment) continue;
+  // Split on double newlines to find paragraphs, but keep the delimiters
+  const paragraphParts = text.split(/(\n\n+)/);
 
-    if (trimmedSegment.length <= maxLength) {
-      chunks.push(trimmedSegment);
+  for (const part of paragraphParts) {
+    // Check if this is a paragraph delimiter (double+ newlines)
+    const isDelimiter = /^\n\n+$/.test(part);
+
+    if (isDelimiter) {
+      // Preserve paragraph breaks - normalize to double newline
+      if (currentChunk.length + 2 <= maxLength) {
+        currentChunk += '\n\n';
+      } else {
+        // Flush and start fresh
+        if (currentChunk.trim()) {
+          chunks.push(currentChunk.trimEnd());
+          currentChunk = '';
+        }
+      }
       continue;
     }
 
-    let currentChunk = '';
-    const lines = trimmedSegment.split('\n');
+    // Regular paragraph content - preserve single newlines within it
+    const lines = part.split('\n');
 
-    for (const line of lines) {
-      if (currentChunk.length + line.length + 1 > maxLength) {
-        if (currentChunk.trim()) {
-          chunks.push(currentChunk.trim());
-          currentChunk = '';
-        }
+    for (let lineIdx = 0; lineIdx < lines.length; lineIdx++) {
+      const line = lines[lineIdx];
+      // Don't trim - preserve leading whitespace for indentation
 
-        if (line.length > maxLength) {
-          const words = line.split(' ');
-          for (const word of words) {
-            if (currentChunk.length + word.length + 1 > maxLength) {
-              if (currentChunk.trim()) {
-                chunks.push(currentChunk.trim());
-                currentChunk = '';
-              }
+      // Calculate what we need to add
+      const needsNewline = currentChunk.length > 0 && lineIdx > 0;
+      const addition = (needsNewline ? '\n' : '') + line;
+
+      // If adding this line fits, add it
+      if (currentChunk.length + addition.length <= maxLength) {
+        currentChunk += addition;
+        continue;
+      }
+
+      // Line won't fit - flush current chunk first
+      if (currentChunk.trim()) {
+        chunks.push(currentChunk.trimEnd());
+        currentChunk = '';
+      }
+
+      // If line itself fits, use it
+      if (line.length <= maxLength) {
+        currentChunk = line;
+        continue;
+      }
+
+      // Line is too long - must split by words
+      const words = line.split(' ');
+
+      for (const word of words) {
+        if (currentChunk.length + word.length + 1 > maxLength) {
+          if (currentChunk.trim()) {
+            chunks.push(currentChunk.trimEnd());
+            currentChunk = '';
+          }
+
+          // If single word is too long, split it
+          if (word.length > maxLength) {
+            for (let i = 0; i < word.length; i += maxLength) {
+              chunks.push(word.slice(i, i + maxLength));
             }
-            currentChunk += (currentChunk ? ' ' : '') + word;
+          } else {
+            currentChunk = word;
           }
         } else {
-          currentChunk += (currentChunk ? '\n' : '') + line;
+          currentChunk += (currentChunk ? ' ' : '') + word;
         }
-      } else {
-        currentChunk += (currentChunk ? '\n' : '') + line;
       }
     }
+  }
 
-    if (currentChunk.trim()) {
-      chunks.push(currentChunk.trim());
-    }
+  // Flush any remaining content
+  if (currentChunk.trim()) {
+    chunks.push(currentChunk.trimEnd());
   }
 
   return chunks.length > 0 ? chunks : [text];
