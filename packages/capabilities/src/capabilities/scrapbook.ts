@@ -325,11 +325,11 @@ export const scrapbookCapability: RegisteredCapability = {
   description: "Query EJ's scrapbook - a personal knowledge base of bookmarks, articles, notes, and web content with rich metadata",
   requiredParams: [],
   examples: [
-    '<capability name="scrapbook" action="search" data=\'{"query":"machine learning"}\' />',
-    '<capability name="scrapbook" action="recent" data=\'{"limit":5}\' />',
-    '<capability name="scrapbook" action="get" data=\'{"id":"abc123"}\' />',
-    '<capability name="scrapbook" action="entity" data=\'{"entity":"OpenAI"}\' />',
-    '<capability name="scrapbook" action="stats" />',
+    '<scrapbook-search>machine learning</scrapbook-search>',
+    '<scrapbook-recent limit="5" />',
+    '<scrapbook-get>abc123</scrapbook-get>',
+    '<scrapbook-entity>OpenAI</scrapbook-entity>',
+    '<scrapbook-stats />',
   ],
 
   handler: async (params, content) => {

@@ -309,8 +309,14 @@ export class CapabilityXMLParser {
   }
 
   /**
-   * Extract simplified action tags like <recall> instead of <capability name="memory" action="recall">
-   * This makes capability syntax "dumdumeasytowns"
+   * Extract simplified action tags in two formats:
+   * 1. <action>content</action> - looks up capability by action name
+   * 2. <capability-action>content</capability-action> - explicit capability-action format (preferred)
+   *
+   * Examples:
+   *   <scrapbook-search>AI stuff</scrapbook-search>
+   *   <scrapbook-recent limit="5" />
+   *   <memory-recall>user preferences</memory-recall>
    */
   private extractSimpleActionTags(text: string): ParsedCapability[] {
     const capabilities: ParsedCapability[] = [];
@@ -319,7 +325,8 @@ export class CapabilityXMLParser {
     // Self-closing: <tagname attr="value" />
     // With content: <tagname attr="value">content</tagname>
     // Use [\s\S] instead of . to match newlines in content
-    const simpleTagPattern = /<(\w+)([^>]*)(?:\/>|>([\s\S]*?)<\/\1>)/g;
+    // Updated pattern to match hyphenated tag names: [\w-]+
+    const simpleTagPattern = /<([\w-]+)([^>]*)(?:\/>|>([\s\S]*?)<\/\1>)/g;
 
     let match;
     while ((match = simpleTagPattern.exec(text)) !== null) {
@@ -332,13 +339,35 @@ export class CapabilityXMLParser {
         continue;
       }
 
-      // Check if this tag name is a registered action
+      // Parse attributes
+      const params = this.parseAttributes(attributeString);
+
+      // Try hyphenated format first: <capability-action>
+      if (tagName.includes('-')) {
+        const hyphenIndex = tagName.indexOf('-');
+        const capName = tagName.substring(0, hyphenIndex);
+        const actionName = tagName.substring(hyphenIndex + 1);
+
+        // Validate this capability-action pair exists
+        if (capabilityRegistry.supportsAction(capName, actionName)) {
+          logger.info(
+            `🎯 HYPHENATED TAG: Found <${tagName}> → ${capName}:${actionName}`
+          );
+
+          capabilities.push({
+            name: capName,
+            action: actionName,
+            content: content.trim(),
+            params,
+          });
+          continue;
+        }
+      }
+
+      // Fallback: check if tag name is a registered action (old behavior)
       const capabilityName = capabilityRegistry.findCapabilityByAction(tagName);
 
       if (capabilityName) {
-        // Parse attributes
-        const params = this.parseAttributes(attributeString);
-
         logger.info(
           `🎯 SIMPLE ACTION TAG: Found <${tagName}> → maps to ${capabilityName}:${tagName}`
         );
