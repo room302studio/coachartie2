@@ -681,6 +681,10 @@ capabilityRegistry.register(memoryCapability);
 import { variableStoreCapability } from '../capabilities/variable-store.js';
 capabilityRegistry.register(variableStoreCapability);
 
+// Auto-register Scrapbook capability
+import { scrapbookCapability } from '../capabilities/scrapbook.js';
+capabilityRegistry.register(scrapbookCapability);
+
 // Log all successfully registered capabilities on startup
 logger.info(
   `🚀 Capability Registry initialized with ${capabilityRegistry.size()} capabilities:`,
