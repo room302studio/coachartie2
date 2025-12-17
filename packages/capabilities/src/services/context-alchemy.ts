@@ -4,6 +4,8 @@ import { IncomingMessage } from '@coachartie/shared';
 import { MemoryEntourageInterface } from './memory-entourage-interface.js';
 import { CombinedMemoryEntourage } from './combined-memory-entourage.js';
 import { CreditMonitor } from './credit-monitor.js';
+import { visionCapability } from '../capabilities/vision.js';
+import { processMetroAttachment } from './metro-doctor.js';
 
 // Debug flag for detailed Context Alchemy logging
 const DEBUG = process.env.CONTEXT_ALCHEMY_DEBUG === 'true';
@@ -142,6 +144,13 @@ export class ContextAlchemy {
       channelId?: string;
       includeCapabilities?: boolean;
       source?: string;
+      // Discord channel history - source of truth for DMs (includes webhook/n8n messages)
+      discordChannelHistory?: Array<{
+        author: string;
+        content: string;
+        timestamp: string;
+        isBot: boolean;
+      }>;
     } = {}
   ): Promise<{
     messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>;
@@ -164,11 +173,25 @@ export class ContextAlchemy {
       // Scale conversation history with context window size (minimum 2 pairs, scales up)
       const contextSize = parseInt(process.env.CONTEXT_WINDOW_SIZE || '32000', 10);
       const historyLimit = Math.max(2, Math.floor((contextSize / 8000) * 3));
-      conversationHistory = await this.getConversationHistory(
-        userId,
-        options.channelId,
-        historyLimit
-      );
+
+      // Prefer Discord channel history when available (source of truth - includes webhook/n8n messages)
+      if (options.discordChannelHistory && options.discordChannelHistory.length > 0) {
+        conversationHistory = this.convertDiscordHistoryToMessages(
+          options.discordChannelHistory,
+          historyLimit
+        );
+        if (DEBUG) {
+          logger.info(
+            `│ 📜 Using Discord channel history (${conversationHistory.length} messages)`
+          );
+        }
+      } else {
+        conversationHistory = await this.getConversationHistory(
+          userId,
+          options.channelId,
+          historyLimit
+        );
+      }
 
       // 3. Assemble message context (beautiful, readable pattern)
       const mockMessage: IncomingMessage = {
@@ -343,6 +366,9 @@ Important:
     // Reply context - the message being replied to (if any)
     await this.addReplyContext(message, sources);
 
+    // Attachment context (includes URLs for vision/OCR or user follow-up)
+    await this.addAttachmentContext(message, sources);
+
     // Slack situational awareness - explicit "where am I" context for Slack
     await this.addSlackSituationalAwareness(message, sources);
 
@@ -464,6 +490,32 @@ Important:
       logger.warn('Failed to load conversation history:', error);
       return []; // Graceful degradation
     }
+  }
+
+  /**
+   * Convert Discord channel history to message format
+   * Discord history is the source of truth - includes webhook/n8n messages
+   */
+  private convertDiscordHistoryToMessages(
+    discordHistory: Array<{
+      author: string;
+      content: string;
+      timestamp: string;
+      isBot: boolean;
+    }>,
+    limit: number
+  ): Array<{ role: 'user' | 'assistant'; content: string }> {
+    // Discord history comes in chronological order (oldest first)
+    // Take the most recent messages up to limit * 2 (pairs)
+    const recentHistory = discordHistory.slice(-(limit * 2));
+
+    return recentHistory
+      .filter((msg) => msg.content && msg.content.trim().length > 0)
+      .map((msg) => ({
+        // Bot messages (including webhook/n8n) are assistant, human messages are user
+        role: msg.isBot ? ('assistant' as const) : ('user' as const),
+        content: msg.content,
+      }));
   }
 
   /**
@@ -706,6 +758,231 @@ Important:
 
       if (DEBUG) {
         logger.info(`│ ✅ Added Slack situational awareness: ${ctx.channelType || 'channel'}/${ctx.channelId}`);
+      }
+    }
+  }
+
+  /**
+   * Attachment context (URLs and metadata). Encourages vision/OCR or user-provided text.
+   */
+  private async addAttachmentContext(
+    message: IncomingMessage,
+    sources: ContextSource[]
+  ): Promise<void> {
+    const currentAttachments = Array.isArray(message.context?.attachments)
+      ? message.context.attachments
+      : [];
+    const recentAttachments = Array.isArray(message.context?.recentAttachments)
+      ? message.context.recentAttachments
+      : [];
+    const recentUrls = Array.isArray(message.context?.recentUrls)
+      ? message.context.recentUrls
+      : [];
+
+    const attachments = [...currentAttachments, ...recentAttachments].filter((att) => !!att?.url);
+
+    if (attachments.length > 0) {
+      const lines: string[] = [];
+      lines.push(`📎 Attachments detected (${attachments.length})`);
+
+      const seen = new Set<string>();
+      attachments.slice(0, 8).forEach((att: any, idx: number) => {
+        const url = att.url || att.proxyUrl;
+        if (!url || seen.has(url)) return;
+        seen.add(url);
+
+        const label = att.name || att.id || `attachment-${idx + 1}`;
+        const type = att.contentType ? ` (${att.contentType})` : '';
+        const from = att.author ? ` by ${att.author}` : '';
+        lines.push(`- ${label}${type}${from}: ${url}`);
+      });
+
+      if (attachments.length > 8) {
+        lines.push(`…and ${attachments.length - 8} more (see context)`);
+      }
+
+      lines.push(
+        'Vision/OCR recommended: call the vision capability with these URLs to extract text/entities, or ask the user to paste the text if vision is unavailable.'
+      );
+
+      const content = lines.join('\n');
+
+      sources.push({
+        name: 'attachments',
+        priority: 95, // High, near reply context
+        tokenWeight: Math.ceil(content.length / 4),
+        content,
+        category: 'user_state',
+      });
+    }
+
+    // Optional: auto vision extraction
+    const autoVision =
+      (process.env.AUTO_VISION_EXTRACT || 'true').toLowerCase() !== 'false' &&
+      !!process.env.OPENROUTER_API_KEY;
+
+    if (autoVision && attachments.length > 0) {
+      const urls = attachments
+        .map((att: any) => att.url || att.proxyUrl)
+        .filter((u: any) => typeof u === 'string')
+        .slice(0, 3); // cap auto-processing
+
+      if (urls.length > 0) {
+        try {
+          const visionResult = await visionCapability.execute({
+            action: 'extract',
+            urls,
+            objective: 'Extract text and key entities (names, emails, links) from recent attachments.',
+          } as any);
+
+          // Trim if very long to avoid context bloat
+          const MAX_VISION_CHARS = 2000;
+          const truncated =
+            visionResult.length > MAX_VISION_CHARS
+              ? visionResult.slice(0, MAX_VISION_CHARS) + '\n…[truncated]'
+              : visionResult;
+
+          sources.push({
+            name: 'attachments_vision',
+            priority: 90, // slightly below attachment listing, above memories
+            tokenWeight: Math.ceil(truncated.length / 4),
+            content: truncated,
+            category: 'evidence',
+          });
+        } catch (error: any) {
+          const msg = `Vision auto-extract failed: ${error?.message || String(error)}`;
+          sources.push({
+            name: 'attachments_vision_error',
+            priority: 60,
+            tokenWeight: Math.ceil(msg.length / 4),
+            content: msg,
+            category: 'system',
+          });
+          logger.warn(msg);
+        }
+      }
+    }
+
+    // Optional: auto metro doctor for .metro files
+    const metroAttachments = attachments.filter((att: any) =>
+      typeof att.name === 'string' ? att.name.toLowerCase().endsWith('.metro') : false
+    );
+    const autoMetro =
+      (process.env.AUTO_METRO_DOCTOR || 'true').toLowerCase() !== 'false';
+
+    if (autoMetro && metroAttachments.length > 0) {
+      const first = metroAttachments[0];
+      const url = first.url || first.proxyUrl;
+      if (url) {
+        try {
+          const result = await processMetroAttachment(url);
+
+          const MAX_METRO_CHARS = 2000;
+          const trimmed =
+            result.stdout.length > MAX_METRO_CHARS
+              ? result.stdout.slice(0, MAX_METRO_CHARS) + '\n…[truncated]'
+              : result.stdout;
+
+          const content = [
+            '🩺 Metro savefile doctor (auto)',
+            `File: ${first.name || first.id || url}`,
+            trimmed,
+            result.stderr ? `Stderr: ${result.stderr.slice(0, 500)}` : '',
+          ]
+            .filter(Boolean)
+            .join('\n');
+
+          sources.push({
+            name: 'metro_doctor',
+            priority: 88, // below vision/link previews, above memory
+            tokenWeight: Math.ceil(content.length / 4),
+            content,
+            category: 'evidence',
+          });
+        } catch (error: any) {
+          const msg = `Metro doctor failed: ${error?.message || String(error)}`;
+          sources.push({
+            name: 'metro_doctor_error',
+            priority: 60,
+            tokenWeight: Math.ceil(msg.length / 4),
+            content: msg,
+            category: 'system',
+          });
+          logger.warn(msg);
+        }
+      }
+    }
+
+    // URLs from recent Discord context (non-attachments)
+    if (recentUrls.length > 0) {
+      const urlList = recentUrls.slice(0, 3);
+      const lines = ['🔗 Recent URLs:', ...urlList.map((u: any) => `- ${u}`)];
+      const content = lines.join('\n');
+      sources.push({
+        name: 'recent_urls',
+        priority: 85,
+        tokenWeight: Math.ceil(content.length / 4),
+        content,
+        category: 'evidence',
+      });
+
+      const autoLinkFetch =
+        (process.env.AUTO_LINK_FETCH || 'true').toLowerCase() !== 'false';
+
+      if (autoLinkFetch) {
+        const previews: string[] = [];
+        for (const url of urlList) {
+          try {
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), 4000);
+            const resp = await fetch(url, { signal: controller.signal });
+            clearTimeout(timeout);
+
+            const contentType = resp.headers.get('content-type') || '';
+            if (!resp.ok) {
+              previews.push(`🔗 ${url}\n⚠️ Fetch failed: ${resp.status} ${resp.statusText}`);
+              continue;
+            }
+            if (!contentType.includes('text/html') && !contentType.includes('text/plain')) {
+              previews.push(`🔗 ${url}\n(ignored non-text content-type: ${contentType})`);
+              continue;
+            }
+
+            const text = await resp.text();
+            const MAX_CHARS = 2000;
+            const trimmed = text.slice(0, MAX_CHARS);
+
+            const titleMatch = trimmed.match(/<title>([^<]{0,200})<\/title>/i);
+            const title = titleMatch ? titleMatch[1].trim() : '';
+
+            const plain = trimmed
+              .replace(/<script[\s\S]*?<\/script>/gi, '')
+              .replace(/<style[\s\S]*?<\/style>/gi, '')
+              .replace(/<[^>]+>/g, ' ')
+              .replace(/\s+/g, ' ')
+              .trim()
+              .slice(0, 600);
+
+            const summary = title
+              ? `Title: ${title}\nPreview: ${plain || '(empty)'}`
+              : `Preview: ${plain || '(empty)'}`;
+
+            previews.push(`🔗 ${url}\n${summary}`);
+          } catch (error: any) {
+            previews.push(`🔗 ${url}\n⚠️ Fetch failed: ${error?.message || String(error)}`);
+          }
+        }
+
+        if (previews.length > 0) {
+          const content = ['🔎 Auto link previews (recent URLs):', ...previews].join('\n\n');
+          sources.push({
+            name: 'recent_urls_auto',
+            priority: 84, // just below the URL list
+            tokenWeight: Math.ceil(content.length / 4),
+            content,
+            category: 'evidence',
+          });
+        }
       }
     }
   }

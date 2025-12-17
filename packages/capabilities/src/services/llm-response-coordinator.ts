@@ -49,6 +49,9 @@ export class LLMResponseCoordinator {
         {
           source: message.source,
           capabilityContext: capabilityNames, // Pass capability names to enable capability learnings
+          channelId: message.context?.channelId,
+          // Pass Discord channel history - source of truth for DMs (includes webhook/n8n messages)
+          discordChannelHistory: message.context?.channelHistory,
         }
       );
 

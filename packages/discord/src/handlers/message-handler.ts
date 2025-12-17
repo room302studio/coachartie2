@@ -1262,6 +1262,8 @@ async function handleMessageAsIntent(
       hasAttachments: message.attachments.size > 0,
       recentAttachments,
       recentUrls,
+      // Pass Discord channel history - source of truth for DMs (includes webhook/n8n messages)
+      channelHistory,
       mentionedUsers: message.mentions.users.size,
       mentions: Array.from(message.mentions.users.entries()).map(([id, user]) => ({
         id,
