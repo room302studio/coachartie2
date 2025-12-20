@@ -1,6 +1,5 @@
-import { logger } from '@coachartie/shared';
+import { logger, initializeDb, getSyncDb } from '@coachartie/shared';
 import { RegisteredCapability } from '../services/capability-registry.js';
-import { getDatabase } from '@coachartie/shared';
 
 interface TodoListRow {
   id: number;
@@ -47,42 +46,8 @@ export class TodoService {
     }
 
     try {
-      const db = await getDatabase();
-
-      // Create todo_lists table
-      await db.exec(`
-        CREATE TABLE IF NOT EXISTS todo_lists (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          user_id TEXT NOT NULL,
-          name TEXT NOT NULL,
-          goal_id INTEGER,
-          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-          UNIQUE(user_id, name)
-        )
-      `);
-
-      // Create todo_items table
-      await db.exec(`
-        CREATE TABLE IF NOT EXISTS todo_items (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          list_id INTEGER NOT NULL,
-          content TEXT NOT NULL,
-          status TEXT DEFAULT 'pending',
-          position INTEGER NOT NULL,
-          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-          completed_at DATETIME,
-          FOREIGN KEY (list_id) REFERENCES todo_lists(id)
-        )
-      `);
-
-      // Create indexes
-      await db.exec(`
-        CREATE INDEX IF NOT EXISTS idx_todo_lists_user_id ON todo_lists(user_id);
-        CREATE INDEX IF NOT EXISTS idx_todo_items_list_id ON todo_items(list_id);
-        CREATE INDEX IF NOT EXISTS idx_todo_items_status ON todo_items(status);
-      `);
-
+      // Initialize the database with Drizzle - tables are created by initializeDb
+      initializeDb();
       this.dbReady = true;
       logger.info('✅ Todo database initialized successfully');
     } catch (error) {
@@ -100,10 +65,10 @@ export class TodoService {
     await this.initializeDatabase();
 
     try {
-      const db = await getDatabase();
+      const db = getSyncDb();
 
       // Check if list already exists
-      const existingList = await db.get(
+      const existingList = db.get(
         `
         SELECT id FROM todo_lists WHERE user_id = ? AND name = ?
       `,
@@ -115,7 +80,7 @@ export class TodoService {
       }
 
       // Create the todo list
-      const result = await db.run(
+      const result = db.run(
         `
         INSERT INTO todo_lists (user_id, name, goal_id)
         VALUES (?, ?, ?)
@@ -123,7 +88,7 @@ export class TodoService {
         [userId, listName, goalId || null]
       );
 
-      const listId = result.lastID!;
+      const listId = result.lastInsertRowid!;
 
       // Parse content into todo items
       const items = this.parseContentIntoItems(content);
@@ -137,7 +102,7 @@ export class TodoService {
 
       // Insert todo items
       for (let i = 0; i < items.length; i++) {
-        await db.run(
+        db.run(
           `
           INSERT INTO todo_items (list_id, content, position)
           VALUES (?, ?, ?)
@@ -164,10 +129,10 @@ export class TodoService {
     await this.initializeDatabase();
 
     try {
-      const db = await getDatabase();
+      const db = getSyncDb();
 
       // Find the list
-      const list = await db.get(
+      const list = db.get(
         `
         SELECT id FROM todo_lists WHERE user_id = ? AND name = ?
       `,
@@ -176,7 +141,7 @@ export class TodoService {
 
       if (!list) {
         // Query actual lists that exist for this user
-        const existingLists = await db.all(
+        const existingLists = db.all(
           `SELECT name,
                   (SELECT COUNT(*) FROM todo_items WHERE list_id = todo_lists.id AND status = 'pending') as pending_count,
                   (SELECT COUNT(*) FROM todo_items WHERE list_id = todo_lists.id) as total_count
@@ -199,7 +164,7 @@ export class TodoService {
       }
 
       // Get current highest position
-      const maxPos = await db.get(
+      const maxPos = db.get(
         `
         SELECT MAX(position) as max_pos FROM todo_items WHERE list_id = ?
       `,
@@ -219,7 +184,7 @@ export class TodoService {
 
       // Insert new items
       for (let i = 0; i < items.length; i++) {
-        await db.run(
+        db.run(
           `
           INSERT INTO todo_items (list_id, content, position)
           VALUES (?, ?, ?)
@@ -243,10 +208,10 @@ export class TodoService {
     await this.initializeDatabase();
 
     try {
-      const db = await getDatabase();
+      const db = getSyncDb();
 
       // Find the list and get next pending item
-      const nextItem = await db.get(
+      const nextItem = db.get(
         `
         SELECT ti.id, ti.content, ti.position
         FROM todo_items ti
@@ -275,10 +240,10 @@ export class TodoService {
     await this.initializeDatabase();
 
     try {
-      const db = await getDatabase();
+      const db = getSyncDb();
 
       // Find the specific item
-      const item = await db.get(
+      const item = db.get(
         `
         SELECT ti.id, ti.content, ti.status
         FROM todo_items ti
@@ -297,7 +262,7 @@ export class TodoService {
       }
 
       // Mark as completed
-      await db.run(
+      db.run(
         `
         UPDATE todo_items 
         SET status = 'completed', completed_at = CURRENT_TIMESTAMP
@@ -326,10 +291,10 @@ export class TodoService {
     await this.initializeDatabase();
 
     try {
-      const db = await getDatabase();
+      const db = getSyncDb();
 
       // Check if list exists
-      const list = await db.get(
+      const list = db.get(
         `
         SELECT id, goal_id FROM todo_lists WHERE user_id = ? AND name = ?
       `,
@@ -341,7 +306,7 @@ export class TodoService {
       }
 
       // Get all items with status
-      const items = await db.all(
+      const items = db.all(
         `
         SELECT content, status, position, completed_at
         FROM todo_items 
@@ -379,9 +344,9 @@ export class TodoService {
     await this.initializeDatabase();
 
     try {
-      const db = await getDatabase();
+      const db = getSyncDb();
 
-      const lists = await db.all(
+      const lists = db.all(
         `
         SELECT tl.name, tl.goal_id, tl.created_at,
                COUNT(ti.id) as total_items,
@@ -419,9 +384,9 @@ export class TodoService {
 
   private async getListProgress(userId: string, listName: string): Promise<string> {
     try {
-      const db = await getDatabase();
+      const db = getSyncDb();
 
-      const progress = await db.get(
+      const progress = db.get(
         `
         SELECT 
           COUNT(*) as total,

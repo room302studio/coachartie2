@@ -334,3 +334,42 @@ export function requiresSqlJs(): boolean {
 
 // Export the drizzle instance type for use in other packages
 export type DbClient = BetterSQLite3Database<typeof schema>;
+
+/**
+ * Sync database wrapper - provides a synchronous API compatible with legacy code
+ * This wraps better-sqlite3 with methods that look like the old async API
+ * but actually execute synchronously.
+ */
+export interface SyncDbWrapper {
+  get<T = any>(sql: string, params?: any[]): T | undefined;
+  all<T = any>(sql: string, params?: any[]): T[];
+  run(sql: string, params?: any[]): { changes: number; lastInsertRowid: number | bigint };
+  exec(sql: string): void;
+}
+
+/**
+ * Get a sync database wrapper that provides a simple API for raw SQL queries
+ * This is useful for migrating from sql.js while still using raw SQL
+ */
+export function getSyncDb(): SyncDbWrapper {
+  const raw = getRawDb();
+
+  return {
+    get<T = any>(sql: string, params: any[] = []): T | undefined {
+      return raw.prepare(sql).get(...params) as T | undefined;
+    },
+
+    all<T = any>(sql: string, params: any[] = []): T[] {
+      return raw.prepare(sql).all(...params) as T[];
+    },
+
+    run(sql: string, params: any[] = []): { changes: number; lastInsertRowid: number | bigint } {
+      const result = raw.prepare(sql).run(...params);
+      return { changes: result.changes, lastInsertRowid: result.lastInsertRowid };
+    },
+
+    exec(sql: string): void {
+      raw.exec(sql);
+    },
+  };
+}

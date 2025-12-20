@@ -1,5 +1,6 @@
 import { FastifyPluginAsync } from 'fastify';
-import { logger, getDatabase } from '@coachartie/shared';
+import { logger, getDb, memories, messages } from '@coachartie/shared';
+import { desc, sql, countDistinct } from 'drizzle-orm';
 import { errorPatternTracker } from '../services/llm-error-pattern-tracker.js';
 
 export const createApiRoutes: FastifyPluginAsync = async (fastify) => {
@@ -9,17 +10,22 @@ export const createApiRoutes: FastifyPluginAsync = async (fastify) => {
       // GET /api/memories - Browse memories
       fastify.get('/memories', async (request, reply) => {
         try {
-          const db = await getDatabase();
-          const memories = await db.all(`
-            SELECT id, user_id, content, metadata, created_at, updated_at
-            FROM memories
-            ORDER BY created_at DESC
-            LIMIT 50
-          `);
+          const db = getDb();
+          const result = await db.select({
+            id: memories.id,
+            user_id: memories.userId,
+            content: memories.content,
+            metadata: memories.metadata,
+            created_at: memories.createdAt,
+            updated_at: memories.updatedAt,
+          })
+            .from(memories)
+            .orderBy(desc(memories.createdAt))
+            .limit(50);
 
           return {
-            memories,
-            total: memories.length,
+            memories: result,
+            total: result.length,
             timestamp: new Date().toISOString(),
           };
         } catch (error) {
@@ -34,17 +40,21 @@ export const createApiRoutes: FastifyPluginAsync = async (fastify) => {
       // GET /api/messages - Browse messages
       fastify.get('/messages', async (request, reply) => {
         try {
-          const db = await getDatabase();
-          const messages = await db.all(`
-            SELECT id, user_id, value as message, role, created_at
-            FROM messages
-            ORDER BY created_at DESC
-            LIMIT 50
-          `);
+          const db = getDb();
+          const result = await db.select({
+            id: messages.id,
+            user_id: messages.userId,
+            message: messages.value,
+            role: messages.role,
+            created_at: messages.createdAt,
+          })
+            .from(messages)
+            .orderBy(desc(messages.createdAt))
+            .limit(50);
 
           return {
-            messages,
-            total: messages.length,
+            messages: result,
+            total: result.length,
             timestamp: new Date().toISOString(),
           };
         } catch (error) {
@@ -59,10 +69,11 @@ export const createApiRoutes: FastifyPluginAsync = async (fastify) => {
       // GET /api/stats - General statistics
       fastify.get('/stats', async (request, reply) => {
         try {
-          const db = await getDatabase();
-          const memoriesCount = await db.get('SELECT COUNT(*) as count FROM memories');
-          const messagesCount = await db.get('SELECT COUNT(*) as count FROM messages');
-          const usersCount = await db.get('SELECT COUNT(DISTINCT user_id) as count FROM messages');
+          const db = getDb();
+
+          const [memoriesCount] = await db.select({ count: sql<number>`COUNT(*)` }).from(memories);
+          const [messagesCount] = await db.select({ count: sql<number>`COUNT(*)` }).from(messages);
+          const [usersCount] = await db.select({ count: countDistinct(messages.userId) }).from(messages);
 
           const stats = {
             memories: memoriesCount?.count || 0,

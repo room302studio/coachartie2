@@ -1,4 +1,5 @@
-import { logger, getDatabase } from '@coachartie/shared';
+import { logger, getDb, globalVariables, getRawDb } from '@coachartie/shared';
+import { eq, inArray, asc } from 'drizzle-orm';
 import { RegisteredCapability } from '../services/capability-registry.js';
 
 interface VariableParams {
@@ -33,7 +34,7 @@ export class GlobalVariableStore {
    * Set a variable in the database
    */
   async set(key: string, value: any, description?: string): Promise<void> {
-    const db = await getDatabase();
+    const db = getDb();
 
     // Determine value type and serialize if needed
     let valueType = 'string';
@@ -52,16 +53,17 @@ export class GlobalVariableStore {
       serialized = String(value);
     }
 
-    await db.run(
-      `INSERT INTO global_variables (key, value, value_type, description)
-       VALUES (?, ?, ?, ?)
-       ON CONFLICT(key) DO UPDATE SET
-         value = excluded.value,
-         value_type = excluded.value_type,
-         description = excluded.description,
-         updated_at = CURRENT_TIMESTAMP`,
-      [key, serialized, valueType, description || null]
-    );
+    // Use raw db for upsert since Drizzle SQLite doesn't have native onConflictDoUpdate for all cases
+    const rawDb = getRawDb();
+    rawDb.prepare(`
+      INSERT INTO global_variables (key, value, value_type, description)
+      VALUES (?, ?, ?, ?)
+      ON CONFLICT(key) DO UPDATE SET
+        value = excluded.value,
+        value_type = excluded.value_type,
+        description = excluded.description,
+        updated_at = CURRENT_TIMESTAMP
+    `).run(key, serialized, valueType, description || null);
 
     logger.info(`📦 Set global variable: ${key} = ${serialized.substring(0, 100)}`);
   }
@@ -70,18 +72,21 @@ export class GlobalVariableStore {
    * Get a variable from the database
    */
   async get(key: string): Promise<any> {
-    const db = await getDatabase();
-    const row = await db.get<{ value: string; value_type: string }>(
-      'SELECT value, value_type FROM global_variables WHERE key = ?',
-      [key]
-    );
+    const db = getDb();
+    const [row] = await db.select({
+      value: globalVariables.value,
+      valueType: globalVariables.valueType,
+    })
+      .from(globalVariables)
+      .where(eq(globalVariables.key, key))
+      .limit(1);
 
     if (!row) {
       return undefined;
     }
 
     // Deserialize based on type
-    switch (row.value_type) {
+    switch (row.valueType) {
       case 'json':
         return JSON.parse(row.value);
       case 'number':
@@ -97,7 +102,7 @@ export class GlobalVariableStore {
    * Substitute {{mustache}} variables in text
    */
   async substitute(text: string): Promise<string> {
-    const db = await getDatabase();
+    const db = getDb();
 
     // Find all {{variables}} in the text
     const matches = text.match(/\{\{(\w+)\}\}/g);
@@ -107,17 +112,19 @@ export class GlobalVariableStore {
 
     // Get all variables in one query
     const keys = matches.map(m => m.replace(/\{\{|\}\}/g, ''));
-    const placeholders = keys.map(() => '?').join(',');
-    const rows = await db.all<{ key: string; value: string; value_type: string }>(
-      `SELECT key, value, value_type FROM global_variables WHERE key IN (${placeholders})`,
-      keys
-    );
+    const rows = await db.select({
+      key: globalVariables.key,
+      value: globalVariables.value,
+      valueType: globalVariables.valueType,
+    })
+      .from(globalVariables)
+      .where(inArray(globalVariables.key, keys));
 
     // Create lookup map
     const values = new Map<string, any>();
     for (const row of rows) {
       let value: any = row.value;
-      switch (row.value_type) {
+      switch (row.valueType) {
         case 'json':
           value = JSON.parse(row.value);
           break;
@@ -145,15 +152,20 @@ export class GlobalVariableStore {
    * List all variables
    */
   async list(): Promise<Record<string, any>> {
-    const db = await getDatabase();
-    const rows = await db.all<{ key: string; value: string; value_type: string; description: string }>(
-      'SELECT key, value, value_type, description FROM global_variables ORDER BY key'
-    );
+    const db = getDb();
+    const rows = await db.select({
+      key: globalVariables.key,
+      value: globalVariables.value,
+      valueType: globalVariables.valueType,
+      description: globalVariables.description,
+    })
+      .from(globalVariables)
+      .orderBy(asc(globalVariables.key));
 
     const variables: Record<string, any> = {};
     for (const row of rows) {
       let value: any = row.value;
-      switch (row.value_type) {
+      switch (row.valueType) {
         case 'json':
           value = JSON.parse(row.value);
           break;
@@ -174,18 +186,18 @@ export class GlobalVariableStore {
    * Delete a variable
    */
   async delete(key: string): Promise<boolean> {
-    const db = await getDatabase();
-    const result = await db.run('DELETE FROM global_variables WHERE key = ?', [key]);
-    return (result.changes ?? 0) > 0;
+    const db = getDb();
+    const result = await db.delete(globalVariables).where(eq(globalVariables.key, key));
+    return result.changes > 0;
   }
 
   /**
    * Clear all variables
    */
   async clear(): Promise<number> {
-    const db = await getDatabase();
-    const result = await db.run('DELETE FROM global_variables');
-    return result.changes ?? 0;
+    const db = getDb();
+    const result = await db.delete(globalVariables);
+    return result.changes;
   }
 }
 

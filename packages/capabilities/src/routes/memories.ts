@@ -1,5 +1,6 @@
 import express from 'express';
-import { capabilityOrchestrator } from '../services/capability-orchestrator.js';
+import { getDb, memories } from '@coachartie/shared';
+import { desc } from 'drizzle-orm';
 
 const router: express.Router = express.Router();
 
@@ -25,31 +26,35 @@ router.get('/', async (req, res) => {
     } else {
       // Get recent memories directly
       const memoryService = new (await import('../capabilities/memory.js')).MemoryService();
-      let memories;
+      let memoriesList;
 
       if (userId) {
-        memories = await memoryService.getRecentMemories(
+        memoriesList = await memoryService.getRecentMemories(
           userId as string,
           parseInt(limit as string)
         );
       } else {
-        // Get all recent memories across all users
-        const db = await (await import('@coachartie/shared')).getDatabase();
-        memories = await db.all(
-          `
-          SELECT id, user_id as userId, content, tags, context, timestamp, importance, related_message_id
-          FROM memories
-          ORDER BY created_at DESC
-          LIMIT ?
-        `,
-          [parseInt(limit as string)]
-        );
+        // Get all recent memories across all users using Drizzle
+        const db = getDb();
+        memoriesList = await db.select({
+          id: memories.id,
+          userId: memories.userId,
+          content: memories.content,
+          tags: memories.tags,
+          context: memories.context,
+          timestamp: memories.timestamp,
+          importance: memories.importance,
+          related_message_id: memories.relatedMessageId,
+        })
+          .from(memories)
+          .orderBy(desc(memories.createdAt))
+          .limit(parseInt(limit as string));
       }
 
       return res.json({
         success: true,
-        data: memories,
-        count: memories.length,
+        data: memoriesList,
+        count: memoriesList.length,
       });
     }
   } catch (error) {
