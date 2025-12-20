@@ -2,7 +2,7 @@ import { Queue, Worker } from 'bullmq';
 import {
   logger,
   createRedisConnection,
-  getDatabase,
+  getSyncDb,
   IncomingMessage,
   QUEUES,
   testRedisConnection,
@@ -414,8 +414,8 @@ export class SchedulerService {
     // Get meeting details if meetingId is provided
     if (meetingId && this.discordQueue) {
       try {
-        const db = await getDatabase();
-        const meeting = await db.get('SELECT * FROM meetings WHERE id = ?', [meetingId]);
+        const db = getSyncDb();
+        const meeting = db.get<{ id: number; title: string }>('SELECT * FROM meetings WHERE id = ?', [meetingId]);
 
         if (!meeting) {
           logger.error(`Meeting ${meetingId} not found for reminder`);

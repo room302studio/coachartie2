@@ -1,5 +1,6 @@
-import { logger, getDatabase } from '@coachartie/shared';
+import { logger, getRawDb, initializeDb } from '@coachartie/shared';
 import { join } from 'path';
+import type Database from 'better-sqlite3';
 
 interface OAuthToken {
   id?: number;
@@ -17,20 +18,23 @@ interface OAuthToken {
  * Handles secure storage and retrieval of OAuth tokens
  */
 export class OAuthManager {
-  private db: any; // SQLite database instance
-  private dbPromise: Promise<any>;
+  private db: Database.Database | null = null;
 
   constructor() {
-    this.dbPromise = getDatabase();
-    this.dbPromise.then((db) => {
-      this.db = db;
+    // Initialize synchronously
+    try {
+      initializeDb();
+      this.db = getRawDb();
       logger.info('🔐 OAuth Manager initialized');
-    });
+    } catch (error) {
+      logger.error('Failed to initialize OAuth Manager:', error);
+    }
   }
 
-  private async ensureDb() {
+  private ensureDb(): void {
     if (!this.db) {
-      this.db = await this.dbPromise;
+      initializeDb();
+      this.db = getRawDb();
     }
   }
 
@@ -39,7 +43,7 @@ export class OAuthManager {
    */
   async storeTokens(token: OAuthToken): Promise<void> {
     try {
-      await this.ensureDb();
+      this.ensureDb();
       const stmt = this.db.prepare(`
         INSERT INTO oauth_tokens (
           user_id, provider, access_token, refresh_token,
@@ -76,7 +80,7 @@ export class OAuthManager {
    */
   async getTokens(userId: string, provider: string): Promise<OAuthToken | null> {
     try {
-      await this.ensureDb();
+      this.ensureDb();
       const stmt = this.db.prepare(`
         SELECT * FROM oauth_tokens
         WHERE user_id = ? AND provider = ?
@@ -120,7 +124,7 @@ export class OAuthManager {
    */
   async deleteTokens(userId: string, provider: string): Promise<void> {
     try {
-      await this.ensureDb();
+      this.ensureDb();
       const stmt = this.db.prepare(`
         DELETE FROM oauth_tokens
         WHERE user_id = ? AND provider = ?
@@ -139,7 +143,7 @@ export class OAuthManager {
    */
   async getUserProviders(userId: string): Promise<string[]> {
     try {
-      await this.ensureDb();
+      this.ensureDb();
       const stmt = this.db.prepare(`
         SELECT provider FROM oauth_tokens
         WHERE user_id = ?

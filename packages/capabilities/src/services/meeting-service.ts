@@ -1,4 +1,4 @@
-import { logger, getDatabase } from '@coachartie/shared';
+import { logger, getSyncDb } from '@coachartie/shared';
 import { schedulerService } from './scheduler.js';
 import { RegisteredCapability } from './capability-registry.js';
 import { parse, parseISO, isValid, addDays } from 'date-fns';
@@ -94,7 +94,7 @@ class MeetingService {
     } = {}
   ): Promise<string> {
     try {
-      const db = await getDatabase();
+      const db = getSyncDb();
 
       // Parse meeting time with timezone support
       const userTimezone = options.timezone || 'America/New_York'; // Default EST
@@ -102,7 +102,7 @@ class MeetingService {
 
       // Create the meeting
       const participantsJson = JSON.stringify(participants);
-      const result = await db.run(
+      const result = db.run(
         `
         INSERT INTO meetings (user_id, title, description, scheduled_time, duration_minutes, timezone, participants, created_via)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
@@ -129,7 +129,7 @@ class MeetingService {
           options.discord_context
         );
 
-        await db.run(
+        db.run(
           `
           INSERT INTO meeting_participants (meeting_id, participant_id, participant_type)
           VALUES (?, ?, ?)
@@ -157,7 +157,7 @@ class MeetingService {
           delay
         );
 
-        await db.run(
+        db.run(
           `
           INSERT INTO meeting_reminders (meeting_id, reminder_time, scheduler_job_id)
           VALUES (?, ?, ?)
@@ -192,13 +192,13 @@ class MeetingService {
 
   async listMeetings(userId: string, includeCompleted = false): Promise<string> {
     try {
-      const db = await getDatabase();
+      const db = getSyncDb();
 
       const statusFilter = includeCompleted
         ? "status IN ('scheduled', 'completed', 'cancelled')"
         : "status = 'scheduled'";
 
-      const meetings = await db.all(
+      const meetings = db.all(
         `
         SELECT id, title, description, scheduled_time, duration_minutes, status, timezone, participants, created_via
         FROM meetings
@@ -214,7 +214,7 @@ class MeetingService {
 
       const meetingList = await Promise.all(
         meetings.map(async (meeting: MeetingRow) => {
-          const participants = await db.all(
+          const participants = db.all(
             `SELECT participant_id, participant_type FROM meeting_participants WHERE meeting_id = ?`,
             [meeting.id]
           );
@@ -251,10 +251,10 @@ class MeetingService {
 
   async suggestTime(userId: string, participants: string[], discordContext?: any): Promise<string> {
     try {
-      const db = await getDatabase();
+      const db = getSyncDb();
 
       // Query past meetings to find common meeting times
-      const pastMeetings = await db.all(
+      const pastMeetings = db.all(
         `
         SELECT scheduled_time, COUNT(*) as frequency
         FROM meetings m
@@ -267,7 +267,7 @@ class MeetingService {
       );
 
       // Query upcoming meetings to avoid conflicts
-      const upcomingMeetings = await db.all(
+      const upcomingMeetings = db.all(
         `
         SELECT scheduled_time, duration_minutes
         FROM meetings
@@ -310,7 +310,7 @@ class MeetingService {
 
   async checkAvailability(userId: string, time: string): Promise<string> {
     try {
-      const db = await getDatabase();
+      const db = getSyncDb();
       const checkTime = new Date(time);
 
       if (isNaN(checkTime.getTime())) {
@@ -321,7 +321,7 @@ class MeetingService {
       const startWindow = new Date(checkTime.getTime() - 2 * 60 * 60 * 1000);
       const endWindow = new Date(checkTime.getTime() + 2 * 60 * 60 * 1000);
 
-      const conflicts = await db.all(
+      const conflicts = db.all(
         `
         SELECT title, scheduled_time, duration_minutes
         FROM meetings
@@ -367,10 +367,10 @@ class MeetingService {
     updates: Partial<MeetingRow>
   ): Promise<string> {
     try {
-      const db = await getDatabase();
+      const db = getSyncDb();
 
       // Verify meeting belongs to user
-      const meeting = await db.get(`SELECT id, title FROM meetings WHERE id = ? AND user_id = ?`, [
+      const meeting = db.get(`SELECT id, title FROM meetings WHERE id = ? AND user_id = ?`, [
         meetingId,
         userId,
       ]);
@@ -406,7 +406,7 @@ class MeetingService {
       updateFields.push('updated_at = CURRENT_TIMESTAMP');
       values.push(meetingId);
 
-      await db.run(`UPDATE meetings SET ${updateFields.join(', ')} WHERE id = ?`, values);
+      db.run(`UPDATE meetings SET ${updateFields.join(', ')} WHERE id = ?`, values);
 
       logger.info(`📅 Updated meeting ${meetingId} for user ${userId}`);
 
@@ -421,10 +421,10 @@ class MeetingService {
 
   async cancelMeeting(userId: string, meetingId: number): Promise<string> {
     try {
-      const db = await getDatabase();
+      const db = getSyncDb();
 
       // Verify meeting belongs to user
-      const meeting = await db.get(`SELECT id, title FROM meetings WHERE id = ? AND user_id = ?`, [
+      const meeting = db.get(`SELECT id, title FROM meetings WHERE id = ? AND user_id = ?`, [
         meetingId,
         userId,
       ]);
@@ -433,7 +433,7 @@ class MeetingService {
         throw new Error(`Meeting ${meetingId} not found`);
       }
 
-      await db.run(
+      db.run(
         `UPDATE meetings SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
         [meetingId]
       );

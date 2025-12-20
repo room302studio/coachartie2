@@ -85,10 +85,10 @@ Be concise (2-3 sentences) and factual. Don't make assumptions beyond what's dir
   }> {
     try {
       // This would query the database for stored observational memories
-      const { getDatabase } = await import('@coachartie/shared');
-      const db = await getDatabase();
+      const { getSyncDb } = await import('@coachartie/shared');
+      const db = getSyncDb();
 
-      const stats = await db.get(`
+      const stats = db.get<{ totalObservations: number; totalCost: number }>(`
         SELECT
           COUNT(*) as totalObservations,
           SUM(CASE WHEN metadata LIKE '%"cost":%'
@@ -98,7 +98,7 @@ Be concise (2-3 sentences) and factual. Don't make assumptions beyond what's dir
         WHERE user_id = 'observational-system'
       `);
 
-      const byGuild = await db.all(`
+      const byGuild = db.all<{ guildName: string; count: number }>(`
         SELECT
           json_extract(metadata, '$.guildName') as guildName,
           COUNT(*) as count

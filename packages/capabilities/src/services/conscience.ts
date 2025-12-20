@@ -1,5 +1,5 @@
 import { openRouterService } from './openrouter.js';
-import { logger, getDatabase } from '@coachartie/shared';
+import { logger, getSyncDb } from '@coachartie/shared';
 
 export interface CapabilityRequest {
   name: string;
@@ -84,16 +84,16 @@ Examples:
 
   private async getQuickContext(userId: string): Promise<{ goals: string; recentTopics: string }> {
     try {
-      const db = await getDatabase();
+      const db = getSyncDb();
 
       // Get active goals
-      const goals = await db.all(
+      const goals = db.all(
         'SELECT objective, deadline FROM goals WHERE user_id = ? AND status != "completed" ORDER BY priority DESC LIMIT 3',
         [userId]
       );
 
       // Get recent conversation topics
-      const recentMemories = await db.all(
+      const recentMemories = db.all(
         'SELECT content FROM memories WHERE user_id = ? ORDER BY created_at DESC LIMIT 5',
         [userId]
       );

@@ -1,4 +1,4 @@
-import { logger, getDatabase } from '@coachartie/shared';
+import { logger, getSyncDb } from '@coachartie/shared';
 import OpenAI from 'openai';
 
 /**
@@ -50,7 +50,7 @@ export class VectorEmbeddingService {
     }
 
     this.openai = new OpenAI({ apiKey });
-    this.db = await getDatabase();
+    this.db = getSyncDb();
     logger.info('🧠 Vector Embedding Service: OpenAI + Local SQLite initialized');
     this.initialized = true;
   }
@@ -121,7 +121,7 @@ export class VectorEmbeddingService {
       const queryEmbedding = await this.generateEmbedding(queryText);
 
       // Get all memories with embeddings from SQLite
-      const memories = await this.db.all(`
+      const memories = this.db.all(`
         SELECT id AS memory_id, content, embedding
         FROM memories
         WHERE embedding IS NOT NULL
@@ -173,7 +173,7 @@ export class VectorEmbeddingService {
       const embedding = await this.generateEmbedding(text);
 
       // Store in SQLite memories table
-      const result = await this.db.run(
+      const result = this.db.run(
         `
         UPDATE memories
         SET embedding = ?
@@ -211,7 +211,7 @@ export class VectorEmbeddingService {
 
     try {
       // Get the memory and its embedding
-      const memory = await this.db.get(
+      const memory = this.db.get(
         `
         SELECT content, embedding
         FROM memories
@@ -228,7 +228,7 @@ export class VectorEmbeddingService {
       const baseEmbedding = JSON.parse(memory.embedding);
 
       // Get all other memories with embeddings
-      const otherMemories = await this.db.all(
+      const otherMemories = this.db.all(
         `
         SELECT id AS memory_id, content, embedding
         FROM memories

@@ -1,4 +1,4 @@
-import { logger, IncomingMessage, getDatabase } from '@coachartie/shared';
+import { logger, IncomingMessage } from '@coachartie/shared';
 import { openRouterService } from './openrouter.js';
 import { promptManager } from './prompt-manager.js';
 import { capabilityRegistry } from './capability-registry.js';

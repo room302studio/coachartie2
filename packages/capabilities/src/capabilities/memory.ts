@@ -1,6 +1,5 @@
-import { logger } from '@coachartie/shared';
+import { logger, getSyncDb } from '@coachartie/shared';
 import { RegisteredCapability } from '../services/capability-registry.js';
-import { getDatabase } from '@coachartie/shared';
 import { hybridDataLayer, MemoryRecord } from '../runtime/hybrid-data-layer.js';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -567,10 +566,10 @@ Example: ["food", "pizza", "italian", "preference", "like"]`;
 
   private async updateMemoryTags(memoryId: number, semanticTags: string[]): Promise<void> {
     try {
-      const db = await getDatabase();
+      const db = getSyncDb();
 
       // Get current tags
-      const result = await db.get(`SELECT tags FROM memories WHERE id = ?`, [memoryId]);
+      const result = db.get<{ tags: string }>(`SELECT tags FROM memories WHERE id = ?`, [memoryId]);
       if (!result) {
         return;
       }
@@ -579,7 +578,7 @@ Example: ["food", "pizza", "italian", "preference", "like"]`;
       const allTags = [...new Set([...currentTags, ...semanticTags])]; // Merge and dedupe
 
       // Update memory with combined tags
-      await db.run(`UPDATE memories SET tags = ? WHERE id = ?`, [
+      db.run(`UPDATE memories SET tags = ? WHERE id = ?`, [
         JSON.stringify(allTags),
         memoryId,
       ]);

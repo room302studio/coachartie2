@@ -1,6 +1,5 @@
-import { logger } from '@coachartie/shared';
+import { logger, initializeDb, getSyncDb } from '@coachartie/shared';
 import { RegisteredCapability } from '../services/capability-registry.js';
-import { getDatabase } from '@coachartie/shared';
 
 interface GoalRow {
   id: number;
@@ -43,30 +42,8 @@ export class GoalService {
     }
 
     try {
-      const db = await getDatabase();
-
-      // Create goals table
-      await db.exec(`
-        CREATE TABLE IF NOT EXISTS goals (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          user_id TEXT NOT NULL,
-          objective TEXT NOT NULL,
-          status TEXT DEFAULT 'not_started',
-          priority INTEGER DEFAULT 5,
-          deadline TEXT,
-          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-          completed_at DATETIME
-        )
-      `);
-
-      // Create indexes for fast searching
-      await db.exec(`
-        CREATE INDEX IF NOT EXISTS idx_goals_user_id ON goals(user_id);
-        CREATE INDEX IF NOT EXISTS idx_goals_status ON goals(status);
-        CREATE INDEX IF NOT EXISTS idx_goals_deadline ON goals(deadline);
-      `);
-
+      // Initialize the database with Drizzle - tables are created by initializeDb
+      initializeDb();
       this.dbReady = true;
       logger.info('✅ Goal database initialized successfully');
     } catch (error) {
@@ -84,7 +61,7 @@ export class GoalService {
     await this.initializeDatabase();
 
     try {
-      const db = await getDatabase();
+      const db = getSyncDb();
 
       // Validate deadline if provided
       if (deadline) {
@@ -111,7 +88,7 @@ export class GoalService {
       // Clamp priority to valid range
       const validPriority = Math.max(1, Math.min(10, priority));
 
-      const result = await db.run(
+      const result = db.run(
         `
         INSERT INTO goals (user_id, objective, deadline, priority)
         VALUES (?, ?, ?, ?)
@@ -119,7 +96,7 @@ export class GoalService {
         [userId, objective, deadline || null, validPriority]
       );
 
-      const goalId = result.lastID!;
+      const goalId = result.lastInsertRowid!;
       logger.info(`🎯 Created goal for user ${userId}: ${objective}`);
 
       const deadlineText = deadline ? ` by ${new Date(deadline).toLocaleDateString()}` : '';
@@ -137,13 +114,13 @@ export class GoalService {
     await this.initializeDatabase();
 
     try {
-      const db = await getDatabase();
+      const db = getSyncDb();
 
-      const goals = await db.all(
+      const goals = db.all<GoalRow>(
         `
-        SELECT * FROM goals 
+        SELECT * FROM goals
         WHERE user_id = ? AND status != 'completed' AND status != 'cancelled'
-        ORDER BY 
+        ORDER BY
           CASE WHEN deadline IS NOT NULL THEN 0 ELSE 1 END,
           deadline ASC,
           priority DESC,
@@ -196,10 +173,10 @@ export class GoalService {
     await this.initializeDatabase();
 
     try {
-      const db = await getDatabase();
+      const db = getSyncDb();
 
       // First check if goal exists and belongs to user
-      const existingGoal = await db.get(
+      const existingGoal = db.get<GoalRow>(
         `
         SELECT * FROM goals WHERE id = ? AND user_id = ?
       `,
@@ -232,7 +209,7 @@ export class GoalService {
       updates.push('updated_at = CURRENT_TIMESTAMP');
       values.push(goalId, userId);
 
-      await db.run(
+      db.run(
         `
         UPDATE goals SET ${updates.join(', ')}
         WHERE id = ? AND user_id = ?
@@ -254,10 +231,10 @@ export class GoalService {
     await this.initializeDatabase();
 
     try {
-      const db = await getDatabase();
+      const db = getSyncDb();
 
       // First check if goal exists and belongs to user
-      const existingGoal = await db.get(
+      const existingGoal = db.get<GoalRow>(
         `
         SELECT * FROM goals WHERE id = ? AND user_id = ?
       `,
@@ -268,9 +245,9 @@ export class GoalService {
         return 'Goal not found';
       }
 
-      await db.run(
+      db.run(
         `
-        UPDATE goals 
+        UPDATE goals
         SET status = 'completed', completed_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
         WHERE id = ? AND user_id = ?
       `,
@@ -290,20 +267,20 @@ export class GoalService {
     await this.initializeDatabase();
 
     try {
-      const db = await getDatabase();
+      const db = getSyncDb();
 
-      const goals = await db.all(
+      const goals = db.all<GoalRow>(
         `
-        SELECT * FROM goals 
-        WHERE user_id = ? 
+        SELECT * FROM goals
+        WHERE user_id = ?
         AND (
-          completed_at > datetime('now', '-${days} days')
-          OR updated_at > datetime('now', '-${days} days')
+          completed_at > datetime('now', '-' || ? || ' days')
+          OR updated_at > datetime('now', '-' || ? || ' days')
         )
-        ORDER BY 
+        ORDER BY
           CASE WHEN completed_at IS NOT NULL THEN completed_at ELSE updated_at END DESC
       `,
-        [userId]
+        [userId, days, days]
       );
 
       if (goals.length === 0) {

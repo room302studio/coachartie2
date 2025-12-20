@@ -1,4 +1,4 @@
-import { getDatabase } from '@coachartie/shared';
+import { getSyncDb } from '@coachartie/shared';
 import { logger } from '@coachartie/shared';
 
 export interface PromptTemplate {
@@ -63,8 +63,8 @@ export class PromptManager {
     }
 
     try {
-      const db = await getDatabase();
-      const row = await db.get(
+      const db = getSyncDb();
+      const row = db.get(
         `SELECT * FROM prompts 
          WHERE name = ? AND is_active = 1 
          ORDER BY version DESC LIMIT 1`,
@@ -179,10 +179,10 @@ export class PromptManager {
     _changeReason = 'Content updated'
   ): Promise<PromptTemplate> {
     try {
-      const db = await getDatabase();
+      const db = getSyncDb();
 
       // Update the prompt (trigger will handle versioning)
-      await db.run(
+      db.run(
         `UPDATE prompts 
          SET content = ?, updated_at = CURRENT_TIMESTAMP 
          WHERE name = ? AND is_active = 1`,
@@ -216,9 +216,9 @@ export class PromptManager {
     prompt: Omit<PromptTemplate, 'id' | 'version' | 'createdAt' | 'updatedAt'>
   ): Promise<PromptTemplate> {
     try {
-      const db = await getDatabase();
+      const db = getSyncDb();
 
-      const result = await db.run(
+      const result = db.run(
         `INSERT INTO prompts (name, content, description, category, is_active, metadata)
          VALUES (?, ?, ?, ?, ?, ?)`,
         [
@@ -251,7 +251,7 @@ export class PromptManager {
    */
   async listPrompts(category?: string, activeOnly = true): Promise<PromptTemplate[]> {
     try {
-      const db = await getDatabase();
+      const db = getSyncDb();
 
       let query = 'SELECT * FROM prompts WHERE 1=1';
       const params: (string | number)[] = [];
@@ -267,7 +267,7 @@ export class PromptManager {
 
       query += ' ORDER BY category, name, version DESC';
 
-      const rows = await db.all(query, params);
+      const rows = db.all(query, params);
 
       return rows.map((row: DatabaseRow) => ({
         id: row.id,
@@ -292,9 +292,9 @@ export class PromptManager {
    */
   async getPromptHistory(name: string): Promise<PromptTemplate[]> {
     try {
-      const db = await getDatabase();
+      const db = getSyncDb();
 
-      const rows = await db.all(
+      const rows = db.all(
         `
         SELECT ph.*, p.name
         FROM prompt_history ph

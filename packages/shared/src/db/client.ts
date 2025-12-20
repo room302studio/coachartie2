@@ -315,6 +315,55 @@ export function initializeDb(dbPath?: string): BetterSQLite3Database<typeof sche
   `);
   raw.exec(`CREATE INDEX IF NOT EXISTS idx_meeting_reminders_reminder_time ON meeting_reminders(reminder_time)`);
 
+  // Todo lists table
+  raw.exec(`
+    CREATE TABLE IF NOT EXISTS todo_lists (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      goal_id INTEGER,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(user_id, name)
+    )
+  `);
+  raw.exec(`CREATE INDEX IF NOT EXISTS idx_todo_lists_user_id ON todo_lists(user_id)`);
+
+  // Todo items table
+  raw.exec(`
+    CREATE TABLE IF NOT EXISTS todo_items (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      list_id INTEGER NOT NULL,
+      content TEXT NOT NULL,
+      status TEXT DEFAULT 'pending',
+      position INTEGER NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      completed_at DATETIME,
+      FOREIGN KEY (list_id) REFERENCES todo_lists(id) ON DELETE CASCADE
+    )
+  `);
+  raw.exec(`CREATE INDEX IF NOT EXISTS idx_todo_items_list_id ON todo_items(list_id)`);
+  raw.exec(`CREATE INDEX IF NOT EXISTS idx_todo_items_status ON todo_items(status)`);
+
+  // Goals table
+  raw.exec(`
+    CREATE TABLE IF NOT EXISTS goals (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id TEXT NOT NULL,
+      title TEXT NOT NULL,
+      description TEXT,
+      status TEXT DEFAULT 'active',
+      priority INTEGER DEFAULT 5,
+      target_date DATETIME,
+      progress INTEGER DEFAULT 0,
+      metadata TEXT DEFAULT '{}',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+  raw.exec(`CREATE INDEX IF NOT EXISTS idx_goals_user_id ON goals(user_id)`);
+  raw.exec(`CREATE INDEX IF NOT EXISTS idx_goals_status ON goals(status)`);
+
   return database;
 }
 

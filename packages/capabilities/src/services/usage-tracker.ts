@@ -1,4 +1,4 @@
-import { getDatabase } from '@coachartie/shared';
+import { getSyncDb } from '@coachartie/shared';
 import { logger } from '@coachartie/shared';
 
 export interface TokenUsage {
@@ -59,9 +59,9 @@ export class UsageTracker {
    */
   static async recordUsage(stats: UsageStats): Promise<void> {
     try {
-      const db = await getDatabase();
+      const db = getSyncDb();
 
-      await db.run(
+      db.run(
         `INSERT INTO model_usage_stats (
           model_name, user_id, message_id, input_length, output_length,
           response_time_ms, capabilities_detected, capabilities_executed,
@@ -109,9 +109,9 @@ export class UsageTracker {
     most_used_model: string;
   }> {
     try {
-      const db = await getDatabase();
+      const db = getSyncDb();
 
-      const result = await db.get(
+      const result = db.get(
         `
         SELECT 
           SUM(total_tokens) as total_tokens,
@@ -152,9 +152,9 @@ export class UsageTracker {
     avg_tokens_per_request: number;
   }> {
     try {
-      const db = await getDatabase();
+      const db = getSyncDb();
 
-      const result = await db.get(
+      const result = db.get(
         `
         SELECT 
           SUM(total_tokens) as total_tokens,
@@ -195,9 +195,9 @@ export class UsageTracker {
     }>
   > {
     try {
-      const db = await getDatabase();
+      const db = getSyncDb();
 
-      const results = await db.all(`
+      const results = db.all(`
         SELECT 
           model_name,
           COUNT(*) as total_requests,
@@ -251,9 +251,9 @@ export class UsageTracker {
     }>
   > {
     try {
-      const db = await getDatabase();
+      const db = getSyncDb();
 
-      const results = await db.all(`
+      const results = db.all(`
         SELECT 
           DATE(timestamp) as date,
           SUM(total_tokens) as total_tokens,

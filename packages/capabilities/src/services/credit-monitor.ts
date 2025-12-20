@@ -1,4 +1,4 @@
-import { getDatabase, createQueue } from '@coachartie/shared';
+import { getSyncDb, createQueue } from '@coachartie/shared';
 import { logger } from '@coachartie/shared';
 
 export interface CreditInfo {
@@ -43,7 +43,7 @@ export class CreditMonitor {
    */
   async recordCreditInfo(creditData: any): Promise<void> {
     try {
-      const db = await getDatabase();
+      const db = getSyncDb();
 
       // Extract credit info from the response
       const creditInfo: CreditInfo = {
@@ -60,7 +60,7 @@ export class CreditMonitor {
       };
 
       // Insert or update credit balance
-      await db.run(
+      db.run(
         `
         INSERT OR REPLACE INTO credit_balance (
           provider, credits_remaining, credits_used, daily_spend, monthly_spend,
@@ -95,9 +95,9 @@ export class CreditMonitor {
    */
   async getCurrentBalance(): Promise<CreditInfo | null> {
     try {
-      const db = await getDatabase();
+      const db = getSyncDb();
 
-      const result = await db.get(`
+      const result = db.get(`
         SELECT * FROM credit_balance 
         WHERE provider = 'openrouter' 
         ORDER BY last_updated DESC 
@@ -189,10 +189,10 @@ export class CreditMonitor {
    */
   private async createAlert(alert: CreditAlert): Promise<void> {
     try {
-      const db = await getDatabase();
+      const db = getSyncDb();
 
       // Check if we already have a recent alert of this type
-      const recentAlert = await db.get(
+      const recentAlert = db.get(
         `
         SELECT id FROM credit_alerts
         WHERE alert_type = ? AND severity = ?
@@ -207,7 +207,7 @@ export class CreditMonitor {
         return;
       }
 
-      await db.run(
+      db.run(
         `
         INSERT INTO credit_alerts (
           alert_type, threshold_value, current_value, message, severity
@@ -279,9 +279,9 @@ This is an automated alert from the credit monitoring system.`;
    */
   async getActiveAlerts(): Promise<CreditAlert[]> {
     try {
-      const db = await getDatabase();
+      const db = getSyncDb();
 
-      const results = await db.all(`
+      const results = db.all(`
         SELECT alert_type, threshold_value, current_value, message, severity
         FROM credit_alerts 
         WHERE acknowledged = 0 
@@ -307,9 +307,9 @@ This is an automated alert from the credit monitoring system.`;
    */
   async acknowledgeAlerts(alertType: string): Promise<void> {
     try {
-      const db = await getDatabase();
+      const db = getSyncDb();
 
-      await db.run(
+      db.run(
         `
         UPDATE credit_alerts 
         SET acknowledged = 1 
@@ -334,9 +334,9 @@ This is an automated alert from the credit monitoring system.`;
     estimated_days_remaining: number;
   }> {
     try {
-      const db = await getDatabase();
+      const db = getSyncDb();
 
-      const result = await db.get(`
+      const result = db.get(`
         SELECT 
           SUM(estimated_cost) as total_spend,
           COUNT(*) as requests_count,
