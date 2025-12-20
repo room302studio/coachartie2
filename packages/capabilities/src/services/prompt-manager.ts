@@ -231,7 +231,7 @@ export class PromptManager {
         ]
       );
 
-      logger.info(`✅ Created new prompt '${prompt.name}' with ID ${result.lastID}`);
+      logger.info(`✅ Created new prompt '${prompt.name}' with ID ${result.lastInsertRowid}`);
 
       // Return the created prompt
       const created = await this.getPrompt(prompt.name, true);

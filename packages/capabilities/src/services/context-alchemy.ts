@@ -4,8 +4,11 @@ import { IncomingMessage } from '@coachartie/shared';
 import { MemoryEntourageInterface } from './memory-entourage-interface.js';
 import { CombinedMemoryEntourage } from './combined-memory-entourage.js';
 import { CreditMonitor } from './credit-monitor.js';
-import { visionCapability } from '../capabilities/vision.js';
-import { processMetroAttachment } from './metro-doctor.js';
+
+// Vision and metro-doctor capabilities - these are optional/WIP features
+// Disabled until files are implemented
+const visionCapability: { execute: (opts: any) => Promise<string> } | null = null;
+const processMetroAttachment: ((url: string) => Promise<{ stdout: string; stderr?: string }>) | null = null;
 
 // Debug flag for detailed Context Alchemy logging
 const DEBUG = process.env.CONTEXT_ALCHEMY_DEBUG === 'true';
@@ -80,7 +83,7 @@ interface ContextSource {
   priority: number;
   tokenWeight: number;
   content: string;
-  category: 'temporal' | 'goals' | 'memory' | 'capabilities' | 'user_state';
+  category: 'temporal' | 'goals' | 'memory' | 'capabilities' | 'user_state' | 'evidence' | 'system';
 }
 
 interface ContextBudget {
@@ -819,7 +822,8 @@ Important:
     // Optional: auto vision extraction
     const autoVision =
       (process.env.AUTO_VISION_EXTRACT || 'true').toLowerCase() !== 'false' &&
-      !!process.env.OPENROUTER_API_KEY;
+      !!process.env.OPENROUTER_API_KEY &&
+      visionCapability !== null;
 
     if (autoVision && attachments.length > 0) {
       const urls = attachments
@@ -829,7 +833,7 @@ Important:
 
       if (urls.length > 0) {
         try {
-          const visionResult = await visionCapability.execute({
+          const visionResult = await visionCapability!.execute({
             action: 'extract',
             urls,
             objective: 'Extract text and key entities (names, emails, links) from recent attachments.',
@@ -868,14 +872,15 @@ Important:
       typeof att.name === 'string' ? att.name.toLowerCase().endsWith('.metro') : false
     );
     const autoMetro =
-      (process.env.AUTO_METRO_DOCTOR || 'true').toLowerCase() !== 'false';
+      (process.env.AUTO_METRO_DOCTOR || 'true').toLowerCase() !== 'false' &&
+      processMetroAttachment !== null;
 
     if (autoMetro && metroAttachments.length > 0) {
       const first = metroAttachments[0];
       const url = first.url || first.proxyUrl;
       if (url) {
         try {
-          const result = await processMetroAttachment(url);
+          const result = await processMetroAttachment!(url);
 
           const MAX_METRO_CHARS = 2000;
           const trimmed =

@@ -394,6 +394,7 @@ export interface SyncDbWrapper {
   all<T = any>(sql: string, params?: any[]): T[];
   run(sql: string, params?: any[]): { changes: number; lastInsertRowid: number | bigint };
   exec(sql: string): void;
+  close(): void;
 }
 
 /**
@@ -419,6 +420,10 @@ export function getSyncDb(): SyncDbWrapper {
 
     exec(sql: string): void {
       raw.exec(sql);
+    },
+
+    close(): void {
+      raw.close();
     },
   };
 }

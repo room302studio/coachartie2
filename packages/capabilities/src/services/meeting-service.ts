@@ -119,7 +119,7 @@ class MeetingService {
         ]
       );
 
-      const meetingId = result.lastID!;
+      const meetingId = result.lastInsertRowid!;
 
       // Add participants
       const participantNames: string[] = [];
