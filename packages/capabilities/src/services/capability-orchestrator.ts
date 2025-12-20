@@ -207,10 +207,11 @@ export class CapabilityOrchestrator {
   ): string {
     const errorMessage = getErrorMessage(error);
 
-    // Check if this is a credit exhaustion error
+    // Check for credit/billing errors
     if (
+      errorMessage.includes('OUT OF CREDITS') ||
       errorMessage.includes('credit') ||
-      errorMessage.includes('OpenRouter credits exhausted')
+      errorMessage.includes('402')
     ) {
       return `💳 **OpenRouter Credits Exhausted**
 
@@ -218,6 +219,33 @@ I'm unable to respond right now because the API credits have run out.
 
 **To fix this:**
 Add more credits at https://openrouter.ai/settings/credits
+
+*Message ID: ${message.id}*`;
+    }
+
+    // Check for rate limiting
+    if (errorMessage.includes('RATE LIMITED') || errorMessage.includes('429')) {
+      return `⏱️ **Rate Limited**
+
+Too many requests - please wait a moment and try again.
+
+*Message ID: ${message.id}*`;
+    }
+
+    // Check for server errors
+    if (errorMessage.includes('SERVER ERROR') || errorMessage.includes('50')) {
+      return `🔧 **Service Temporarily Unavailable**
+
+The AI service is experiencing issues. Please try again in a few minutes.
+
+*Message ID: ${message.id}*`;
+    }
+
+    // Check for auth errors
+    if (errorMessage.includes('AUTH ERROR') || errorMessage.includes('401') || errorMessage.includes('403')) {
+      return `🔑 **Authentication Error**
+
+There's an issue with the API configuration. Please check the API keys.
 
 *Message ID: ${message.id}*`;
     }
