@@ -88,9 +88,42 @@ export class LLMResponseCoordinator {
             message.id,
             fastModel
           );
-    } catch (_error) {
-      logger.error('❌ Failed to get capability instructions from database', _error);
-      throw new Error('System configuration error: capability instructions not available');
+    } catch (error: any) {
+      const errorMessage = error?.message || String(error);
+
+      // Check for billing/credit errors (402)
+      if (errorMessage.includes('402') || errorMessage.includes('credits') || errorMessage.includes('billing')) {
+        logger.error('💳 OpenRouter billing error - out of credits', error);
+        throw new Error(`💳 OUT OF CREDITS: OpenRouter account needs more credits. Visit https://openrouter.ai/settings/credits to add funds.`);
+      }
+
+      // Check for rate limiting (429)
+      if (errorMessage.includes('429') || errorMessage.includes('rate limit')) {
+        logger.error('⏱️ Rate limited by OpenRouter', error);
+        throw new Error(`⏱️ RATE LIMITED: Too many requests. Please wait a moment and try again.`);
+      }
+
+      // Check for auth errors (401/403)
+      if (errorMessage.includes('401') || errorMessage.includes('403') || errorMessage.includes('unauthorized') || errorMessage.includes('invalid.*key')) {
+        logger.error('🔑 OpenRouter authentication error', error);
+        throw new Error(`🔑 AUTH ERROR: OpenRouter API key is invalid or missing. Check OPENROUTER_API_KEY environment variable.`);
+      }
+
+      // Check for network errors
+      if (errorMessage.includes('ECONNREFUSED') || errorMessage.includes('ETIMEDOUT') || errorMessage.includes('fetch failed')) {
+        logger.error('🌐 Network error connecting to OpenRouter', error);
+        throw new Error(`🌐 NETWORK ERROR: Could not connect to OpenRouter API. Check internet connection.`);
+      }
+
+      // Check for model errors
+      if (errorMessage.includes('All OpenRouter models failed')) {
+        logger.error('🤖 All LLM models failed', error);
+        throw new Error(`🤖 ALL MODELS FAILED: ${errorMessage}`);
+      }
+
+      // Unknown error - log full details and throw with context
+      logger.error('❌ LLM request failed with unknown error', { error: errorMessage, stack: error?.stack });
+      throw new Error(`❌ LLM ERROR: ${errorMessage.substring(0, 200)}`);
     }
   }
 

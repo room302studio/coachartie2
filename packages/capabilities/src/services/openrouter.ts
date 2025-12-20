@@ -320,7 +320,7 @@ class OpenRouterService {
           error: errorMessage,
           status: errorStatus,
           modelIndex: i + 1,
-          totalModels: this.models.length,
+          totalModels: modelsToTry.length,
         });
 
         // Track if this is a credit/billing error
@@ -330,7 +330,9 @@ class OpenRouterService {
           errorMessage.includes('quota') ||
           errorStatus === 402;
 
-        // Detect specific error types
+        const isLastModel = i === modelsToTry.length - 1;
+
+        // Detect specific error types and throw clear errors on last model
         if (
           errorStatus === 404 ||
           errorMessage.includes('not found') ||
@@ -339,28 +341,39 @@ class OpenRouterService {
           logger.error(
             `🚨 Model "${model}" does not exist on OpenRouter! Check https://openrouter.ai/models`
           );
+          if (isLastModel) {
+            throw new Error(`🚨 MODEL NOT FOUND: "${model}" does not exist. Check https://openrouter.ai/models`);
+          }
         } else if (isCreditError) {
-          logger.info('💳 Billing/credit error detected, trying next model...');
-          // If this is the last model and it's a credit error, throw it
-          if (i === this.models.length - 1) {
+          logger.info('💳 Billing/credit error detected' + (isLastModel ? '' : ', trying next model...'));
+          if (isLastModel) {
             throw new Error(
-              '💳 OpenRouter credits exhausted. Please add more credits at https://openrouter.ai/settings/credits'
+              '💳 OUT OF CREDITS: OpenRouter account needs more credits. Visit https://openrouter.ai/settings/credits to add funds.'
             );
           }
         } else if (errorStatus === 429) {
-          logger.warn('🚦 Rate limit hit, trying next model...');
+          logger.warn('🚦 Rate limit hit' + (isLastModel ? '' : ', trying next model...'));
+          if (isLastModel) {
+            throw new Error('⏱️ RATE LIMITED: Too many requests to OpenRouter. Please wait and try again.');
+          }
         } else if (errorStatus === 500 || errorStatus === 502 || errorStatus === 503) {
-          logger.warn('🔧 Server error, trying next model...');
+          logger.warn('🔧 Server error' + (isLastModel ? '' : ', trying next model...'));
+          if (isLastModel) {
+            throw new Error(`🔧 SERVER ERROR: OpenRouter returned ${errorStatus}. The service may be temporarily unavailable.`);
+          }
         } else {
-          logger.warn('🔄 Unknown error, trying next model...');
+          logger.warn('🔄 Unknown error' + (isLastModel ? '' : ', trying next model...'));
+          if (isLastModel) {
+            throw new Error(`❌ LLM ERROR: ${errorMessage.substring(0, 200)}`);
+          }
         }
 
-        // For other errors, try next model
-        if (i < this.models.length - 1) {
+        // Try next model
+        if (!isLastModel) {
           continue;
         }
 
-        // Last model failed
+        // Last model failed - should have thrown above, but fallback just in case
         logger.error('💥 All models failed. Last error:', error);
         throw error;
       }
@@ -529,7 +542,7 @@ class OpenRouterService {
           error: errorMessage,
           status: errorStatus,
           modelIndex: i + 1,
-          totalModels: this.models.length,
+          totalModels: modelsToTry.length,
         });
 
         // Track if this is a credit/billing error
@@ -539,28 +552,32 @@ class OpenRouterService {
           errorMessage.includes('quota') ||
           errorStatus === 402;
 
-        // If last model and credit error, throw immediately
-        if (i === this.models.length - 1 && isCreditError) {
-          throw new Error(
-            '💳 OpenRouter credits exhausted. Please add more credits at https://openrouter.ai/settings/credits'
-          );
+        const isLastModel = i === modelsToTry.length - 1;
+
+        // Throw clear errors on last model failure
+        if (isLastModel) {
+          if (isCreditError) {
+            throw new Error(
+              '💳 OUT OF CREDITS: OpenRouter account needs more credits. Visit https://openrouter.ai/settings/credits to add funds.'
+            );
+          } else if (errorStatus === 429) {
+            throw new Error('⏱️ RATE LIMITED: Too many requests to OpenRouter. Please wait and try again.');
+          } else if (errorStatus === 500 || errorStatus === 502 || errorStatus === 503) {
+            throw new Error(`🔧 SERVER ERROR: OpenRouter returned ${errorStatus}. The service may be temporarily unavailable.`);
+          } else {
+            throw new Error(`❌ LLM ERROR: ${errorMessage.substring(0, 200)}`);
+          }
         }
 
         // Try next model on failure
-        if (i < this.models.length - 1) {
-          continue;
-        }
-
-        // Last model failed - fallback to regular generation
-        logger.warn('📡 Streaming failed, falling back to regular generation');
-        return await this.generateFromMessageChain(messages, userId, messageId, selectedModel);
+        continue;
       }
     }
 
     // Fallback response - should not reach here
     logger.error('🚨 All streaming attempts failed');
     throw new Error(
-      'All OpenRouter models failed for streaming. This may be due to service issues or configuration problems.'
+      '❌ All LLM models failed. Check OpenRouter status and credits.'
     );
   }
 
