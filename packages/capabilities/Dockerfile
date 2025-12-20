@@ -26,8 +26,9 @@ RUN pnpm --filter "@coachartie/capabilities" run build
 WORKDIR /app/packages/capabilities
 
 # Create data and logs directories and set ownership for node user
+# Only chown specific directories that need write access, not all of /app (which includes huge node_modules)
 RUN mkdir -p /app/data /app/logs && \
-    chown -R node:node /app
+    chown -R node:node /app/data /app/logs
 
 # Switch to non-root user (node user already exists in base image as UID 1000)
 USER node
