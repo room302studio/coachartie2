@@ -10,7 +10,7 @@ services:
       --port 47320
       --appendonly yes
       --maxmemory 512mb
-      --maxmemory-policy allkeys-lru
+      --maxmemory-policy noeviction
       --save 900 1
       --appendfsync everysec
     ports:
@@ -127,7 +127,7 @@ services:
       capabilities:
         condition: service_healthy
     healthcheck:
-      test: test -f /app/data/discord-status.json && grep -q '"ready":true' /app/data/discord-status.json || exit 1
+      test: test -f /app/data/discord-status.json && grep -q '"status".*"ready"' /app/data/discord-status.json || exit 1
       interval: 30s
       timeout: 10s
       retries: 3
