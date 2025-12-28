@@ -95,9 +95,7 @@ export async function startResponseConsumer(client: irc.Client): Promise<any> {
     logger.error(`IRC response failed for message ${job?.data?.inReplyTo}:`, err);
   });
 
-  worker.on('error', (err: Error) => {
-    logger.error('IRC worker error:', err);
-  });
+  // Note: error handler is already set up by createWorker with rate-limiting
 
   logger.info('IRC response consumer started');
 

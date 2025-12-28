@@ -52,6 +52,7 @@ export class PortDiscovery {
   private static readonly DEFAULT_PORTS = {
     redis: 47320,
     discord: 47321,
+    irc: 47322,
     capabilities: 47324,
     brain: 47325,
     sms: 47326,

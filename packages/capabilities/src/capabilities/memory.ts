@@ -214,7 +214,7 @@ export class MemoryService {
           importance: 10,
         };
 
-        await hybridDataLayer.storeMemory(updatedMemory);
+        await hybridDataLayer.updateMemory(updatedMemory);
 
         logger.info(`📌 [HYBRID] Successfully pinned memory ${memoryId}`);
         return `📌 Pinned memory: "${memory.content.substring(0, 50)}..." (now importance 10/10)`;
@@ -477,7 +477,7 @@ Example: ["food", "pizza", "italian", "preference", "like"]`;
             tags: JSON.stringify(allTags),
           };
 
-          await hybridDataLayer.storeMemory(updatedMemory); // Update with new tags
+          await hybridDataLayer.updateMemory(updatedMemory); // Update with new tags
           logger.info(
             `🏷️ [HYBRID] Added ${tags.length} semantic tags to memory ${memoryId}: ${tags.join(', ')}`
           );

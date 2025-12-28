@@ -660,6 +660,14 @@ Important:
       parts.push(`🏷️  Mentions: ${mentionNames}`);
     }
 
+    // Guild-specific knowledge (for proactive answering)
+    if (ctx.guildKnowledge) {
+      parts.push(`\n📚 COMMUNITY KNOWLEDGE:\n${ctx.guildKnowledge}`);
+      if (ctx.isProactiveAnswer) {
+        parts.push(`\n⚡ PROACTIVE RESPONSE: You are answering this question because you have relevant knowledge. Be helpful and direct.`);
+      }
+    }
+
     // Build final content
     if (parts.length > 0) {
       const content = parts.join('\n');

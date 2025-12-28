@@ -34,6 +34,7 @@ import { gitCapability } from '../capabilities/git.js';
 import { scratchpadCapability } from '../capabilities/scratchpad.js';
 import { contextCapability } from '../capabilities/context.js';
 import { diagnoseCapability } from '../capabilities/diagnose.js';
+import { visionCapability } from '../capabilities/vision.js';
 import { meetingCapability } from './meeting-service.js';
 
 // =====================================================
@@ -196,6 +197,11 @@ export class CapabilityBootstrap {
       logger.info('📦 Registering context (situational awareness)...');
       capabilityRegistry.register(contextCapability);
       logger.info('✅ context registered successfully');
+
+      // Register vision capability - image/text extraction helper
+      logger.info('📦 Registering vision (image/text extraction helper)...');
+      capabilityRegistry.register(visionCapability);
+      logger.info('✅ vision registered successfully');
 
       // Register diagnose capability - understand what went wrong
       logger.info('📦 Registering diagnose (error analysis)...');

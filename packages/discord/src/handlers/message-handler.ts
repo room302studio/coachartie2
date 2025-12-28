@@ -91,6 +91,109 @@ async function isForumThread(message: Message): Promise<boolean> {
 }
 
 /**
+ * Helper: Check if message looks like a question that might warrant a proactive answer
+ * This is a lightweight heuristic check - the actual decision to answer uses LLM judgment
+ */
+function looksLikeQuestion(content: string): boolean {
+  const lowerContent = content.toLowerCase().trim();
+
+  // Direct question (ends with ?)
+  if (lowerContent.endsWith('?')) return true;
+
+  // Question starters
+  const questionStarters = [
+    'how do i',
+    'how can i',
+    'how to',
+    'what is',
+    'what are',
+    'where is',
+    'where can',
+    'when is',
+    'when do',
+    'why is',
+    'why do',
+    'can i',
+    'can you',
+    'is there',
+    'are there',
+    'does anyone',
+    'does anybody',
+    'has anyone',
+    'anyone know',
+    'anybody know',
+    'help with',
+    'need help',
+    'trying to',
+    "i can't",
+    "i cant",
+    "doesn't work",
+    "doesnt work",
+    "not working",
+    "how come",
+  ];
+
+  return questionStarters.some((starter) => lowerContent.includes(starter));
+}
+
+/**
+ * Use LLM to judge if Artie should proactively answer a question
+ * Based on the guild context and message content
+ */
+async function shouldProactivelyAnswer(
+  message: Message,
+  guildContext: string,
+  correlationId: string
+): Promise<boolean> {
+  try {
+    // Use fetch directly to call the capabilities service
+    const capabilitiesUrl = process.env.CAPABILITIES_URL || 'http://localhost:47324';
+
+    const prompt = `You are an AI assistant helping in a Discord server. Based on the context about this community and the message, decide if you should proactively answer.
+
+COMMUNITY CONTEXT:
+${guildContext}
+
+MESSAGE FROM USER "${message.author.username}":
+${message.content}
+
+Should you proactively answer this message? Consider:
+1. Is this a question you have knowledge about from the context?
+2. Is the user clearly asking for help with something you know about?
+3. Would your answer actually be helpful (not just generic)?
+
+If the question is outside your knowledge (from the context above), do NOT answer.
+If the question is clearly about something you know from the context, answer.
+
+Respond with ONLY "yes" or "no" - nothing else.`;
+
+    const response = await fetch(`${capabilitiesUrl}/chat?wait=true`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        message: prompt,
+        userId: 'proactive-judgment-system',
+        source: 'api',
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Capabilities service returned ${response.status}`);
+    }
+
+    const result = await response.json() as { response?: string };
+    const decision = (result.response || '').toLowerCase().trim();
+
+    logger.info(`🤔 Proactive answer judgment for "${message.content.substring(0, 50)}...": ${decision}`);
+
+    return decision.includes('yes');
+  } catch (error) {
+    logger.warn(`Failed proactive answer judgment, defaulting to no:`, error);
+    return false; // Default to not answering if judgment fails
+  }
+}
+
+/**
  * Split long messages into Discord-compatible chunks with smart code block handling
  *
  * Features:
@@ -835,19 +938,50 @@ export function setupMessageHandler(client: Client) {
 
     // Check various response triggers
     const isForum = await isForumThread(message);
+    const guildConfig = getGuildConfig(message.guildId);
     const responseConditions = {
       botMentioned: message.mentions.has(client.user!.id),
       isDM: message.channel.isDMBased(),
       isRobotChannel: isRobotChannelName(message.channel),
       isForumThread: isForum,
+      isProactiveAnswer: false, // Will be set below if applicable
     };
+
+    // Check for proactive answering (guild has it enabled + message looks like a question)
+    let proactiveAnswerContext: string | undefined;
+    if (
+      guildConfig?.proactiveAnswering &&
+      guildConfig.context &&
+      !responseConditions.botMentioned && // Don't need proactive check if already mentioned
+      !responseConditions.isDM &&
+      looksLikeQuestion(message.content)
+    ) {
+      logger.info(`🤔 Checking proactive answer for question in ${guildConfig.name} [${shortId}]`);
+      const shouldAnswer = await shouldProactivelyAnswer(
+        message,
+        guildConfig.context,
+        correlationId
+      );
+      if (shouldAnswer) {
+        responseConditions.isProactiveAnswer = true;
+        proactiveAnswerContext = guildConfig.context;
+        logger.info(`✅ Proactive answer approved for ${guildConfig.name} [${shortId}]`);
+        telemetry.logEvent(
+          'proactive_answer_approved',
+          { guildId: message.guildId, guildName: guildConfig.name },
+          correlationId,
+          message.author.id
+        );
+      }
+    }
 
     // Determine response mode: active response vs passive observation
     // In forums, only respond when mentioned (too noisy otherwise)
     const shouldRespond =
       responseConditions.botMentioned ||
       responseConditions.isDM ||
-      responseConditions.isRobotChannel;
+      responseConditions.isRobotChannel ||
+      responseConditions.isProactiveAnswer;
 
     try {
       // -------------------------------------------------------------------------
@@ -887,7 +1021,15 @@ export function setupMessageHandler(client: Client) {
 
       if (shouldRespond) {
         // ACTIVE RESPONSE: Bot will generate and send a response
-        logger.info(`🤖 Will respond to message [${shortId}]`, {
+        const triggerType = responseConditions.botMentioned
+          ? 'mention'
+          : responseConditions.isDM
+            ? 'dm'
+            : responseConditions.isProactiveAnswer
+              ? 'proactive_answer'
+              : 'robot_channel';
+
+        logger.info(`🤖 Will respond to message [${shortId}] (trigger: ${triggerType})`, {
           correlationId,
           author: message.author.tag,
           cleanMessage: cleanMessage.substring(0, 100) + (cleanMessage.length > 100 ? '...' : ''),
@@ -897,18 +1039,14 @@ export function setupMessageHandler(client: Client) {
           'message_will_respond',
           {
             messageLength: cleanMessage.length,
-            triggerType: responseConditions.botMentioned
-              ? 'mention'
-              : responseConditions.isDM
-                ? 'dm'
-                : 'robot_channel',
+            triggerType,
           },
           correlationId,
           message.author.id
         );
 
         // Process with unified intent processor
-        await handleMessageAsIntent(message, cleanMessage, correlationId);
+        await handleMessageAsIntent(message, cleanMessage, correlationId, undefined, proactiveAnswerContext);
       } else {
         // PASSIVE OBSERVATION: Just process for learning, no response
         const channelName =
@@ -1176,7 +1314,8 @@ async function handleMessageAsIntent(
     proxyRule: any;
     proxyContext: string;
     proxyPrefix: string;
-  }
+  },
+  guildContext?: string
 ): Promise<void> {
   const shortId = getShortCorrelationId(correlationId);
   let statusMessage: Message | null = null;
@@ -1300,6 +1439,13 @@ async function handleMessageAsIntent(
             proxyTargetUser: proxyOptions.proxyRule.targetUsername,
             proxyRuleName: proxyOptions.proxyRule.name,
             proxySystemContext: proxyOptions.proxyContext,
+          }
+        : {}),
+      // Guild-specific context for proactive answering
+      ...(guildContext
+        ? {
+            isProactiveAnswer: true,
+            guildKnowledge: guildContext,
           }
         : {}),
     };

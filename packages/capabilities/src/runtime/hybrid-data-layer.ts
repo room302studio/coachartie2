@@ -1,4 +1,4 @@
-import { logger, initializeDb, getSyncDb, type SyncDbWrapper } from '@coachartie/shared';
+import { logger, getDatabase, type Memory } from '@coachartie/shared';
 
 /**
  * Memory Record interface - Aligned with shared schema
@@ -79,7 +79,7 @@ export class HybridDataLayer {
   private hotData = new Map<number, MemoryRecord>(); // In-memory for active data
   private userIndex = new Map<string, Set<number>>(); // User ID -> Memory IDs
   private writeQueue = new AsyncQueue(); // Serialize writes
-  private coldStorage?: SyncDbWrapper; // SQLite for persistence
+  private coldStorage?: any; // SQLite for persistence
   private maxHotMemories = 10000; // Keep most recent 10k in memory
   private syncInterval: NodeJS.Timeout;
 
@@ -105,10 +105,9 @@ export class HybridDataLayer {
    */
   private async initializeAsync(): Promise<void> {
     try {
-      initializeDb();
-      this.coldStorage = getSyncDb();
-      // Database schema already initialized by initializeDb
-      this.loadRecentMemories();
+      this.coldStorage = await getDatabase();
+      // Database schema already initialized
+      await this.loadRecentMemories();
     } catch (error) {
       logger.error('Failed to initialize database:', error);
       throw error;
@@ -120,22 +119,22 @@ export class HybridDataLayer {
   /**
    * Load recent memories into hot cache
    */
-  private loadRecentMemories(): void {
+  private async loadRecentMemories(): Promise<void> {
     if (!this.coldStorage) {
       return;
     }
 
     try {
-      const rows = this.coldStorage.all<MemoryRecord>(
+      // Use inline limit to avoid sql.js parameter binding issues with LIMIT
+      const rows = (await this.coldStorage.all(
         `
         SELECT id, user_id, content, tags, context, timestamp, importance,
                metadata, embedding, related_message_id, created_at, updated_at
         FROM memories
         ORDER BY timestamp DESC
-        LIMIT ?
-      `,
-        [this.maxHotMemories]
-      );
+        LIMIT ${this.maxHotMemories}
+      `
+      )) as MemoryRecord[];
 
       for (const row of rows) {
         this.hotData.set(row.id, row);
@@ -206,14 +205,14 @@ export class HybridDataLayer {
     // If not in hot cache, try cold storage
     if (this.coldStorage) {
       try {
-        const row = this.coldStorage.get<MemoryRecord>(
+        const row = (await this.coldStorage.get(
           `
           SELECT id, user_id, content, tags, context, timestamp, importance,
                  metadata, embedding, related_message_id, created_at, updated_at
           FROM memories WHERE id = ?
         `,
           [id]
-        );
+        )) as MemoryRecord | undefined;
 
         if (row) {
           // Promote to hot cache
@@ -247,17 +246,17 @@ export class HybridDataLayer {
     // If we don't have enough in hot cache, check cold storage
     if (memories.length < limit && this.coldStorage) {
       try {
-        const rows = this.coldStorage.all<MemoryRecord>(
+        const rows = (await this.coldStorage.all(
           `
           SELECT id, user_id, content, tags, context, timestamp, importance,
                  metadata, embedding, related_message_id, created_at, updated_at
           FROM memories
           WHERE user_id = ?
           ORDER BY timestamp DESC
-          LIMIT ?
+          LIMIT ${limit}
         `,
-          [userId, limit]
-        );
+          [userId]
+        )) as MemoryRecord[];
 
         return rows.slice(0, limit);
       } catch (error) {
@@ -290,7 +289,7 @@ export class HybridDataLayer {
     // Try FTS search in cold storage (only if query is not empty)
     if (query && query.trim().length > 0) {
       try {
-        const rows = this.coldStorage.all<MemoryRecord>(
+        const rows = (await this.coldStorage.all(
           `
           SELECT m.id, m.user_id, m.content, m.tags, m.context, m.timestamp, m.importance,
                  m.metadata, m.embedding, m.related_message_id, m.created_at, m.updated_at
@@ -298,10 +297,10 @@ export class HybridDataLayer {
           JOIN memories m ON m.rowid = f.rowid
           WHERE f.content MATCH ? AND m.user_id = ?
           ORDER BY m.timestamp DESC
-          LIMIT ?
+          LIMIT ${limit}
         `,
-          [query.trim(), userId, limit]
-        );
+          [query.trim(), userId]
+        )) as MemoryRecord[];
 
         return rows;
       } catch (error) {
@@ -324,7 +323,7 @@ export class HybridDataLayer {
     }
 
     try {
-      const result = this.coldStorage.run(
+      const result = await this.coldStorage.run(
         `
         INSERT INTO memories
         (user_id, content, tags, context, timestamp, importance, metadata, embedding, related_message_id)
@@ -343,7 +342,7 @@ export class HybridDataLayer {
         ]
       );
 
-      const realId = Number(result.lastInsertRowid);
+      const realId = result.lastID as number;
 
       // Replace temp entry with real ID in hot cache
       const tempMemory = this.hotData.get(tempId);
@@ -373,6 +372,47 @@ export class HybridDataLayer {
       logger.error('Failed to persist memory to cold storage:', error);
       throw error;
     }
+  }
+
+  /**
+   * Update an existing memory in both hot cache and cold storage
+   */
+  async updateMemory(memory: MemoryRecord): Promise<void> {
+    // Update hot cache immediately
+    this.hotData.set(memory.id, memory);
+
+    // Queue async persistence
+    this.writeQueue
+      .add(async () => {
+        if (!this.coldStorage) return;
+
+        try {
+          await this.coldStorage.run(
+            `
+            UPDATE memories
+            SET content = ?, tags = ?, context = ?, timestamp = ?, importance = ?,
+                metadata = ?, embedding = ?, related_message_id = ?, updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+          `,
+            [
+              memory.content,
+              memory.tags,
+              memory.context,
+              memory.timestamp,
+              memory.importance,
+              memory.metadata,
+              memory.embedding || null,
+              memory.related_message_id || null,
+              memory.id,
+            ]
+          );
+        } catch (error) {
+          logger.error(`Failed to update memory ${memory.id} in cold storage:`, error);
+        }
+      })
+      .catch((error) => {
+        logger.error('Failed to queue memory update:', error);
+      });
   }
 
   /**

@@ -1,9 +1,16 @@
 import { SlashCommandBuilder, ChatInputCommandInteraction, EmbedBuilder } from 'discord.js';
-import { logger } from '@coachartie/shared';
-import { createRedisConnection } from '@coachartie/shared';
+import { logger, isRedisAvailable, hasRedisBeenChecked } from '@coachartie/shared';
 import crypto from 'crypto';
 
-const redis = createRedisConnection();
+// Lazy-load Redis connection to avoid errors at startup
+let redis: any = null;
+function getRedis() {
+  if (!redis) {
+    const { createRedisConnection } = require('@coachartie/shared');
+    redis = createRedisConnection();
+  }
+  return redis;
+}
 
 export const verifyPhoneCommand = {
   data: new SlashCommandBuilder()
@@ -19,8 +26,16 @@ export const verifyPhoneCommand = {
       const userId = interaction.user.id;
       const verificationKey = `phone_verify:${userId}`;
 
+      // Check Redis availability
+      if (hasRedisBeenChecked() && !isRedisAvailable()) {
+        return await interaction.reply({
+          content: '❌ Service temporarily unavailable. Please try again later.',
+          ephemeral: true,
+        });
+      }
+
       // Get verification data
-      const verificationData = await redis.get(verificationKey);
+      const verificationData = await getRedis().get(verificationKey);
       if (!verificationData) {
         return await interaction.reply({
           content: '❌ No verification pending. Please use `/link-phone` first.',
@@ -36,7 +51,7 @@ export const verifyPhoneCommand = {
 
         // Lock out after 3 failed attempts
         if (verification.attempts >= 3) {
-          await redis.del(verificationKey);
+          await getRedis().del(verificationKey);
           return await interaction.reply({
             content: '❌ Too many failed attempts. Please start over with `/link-phone`.',
             ephemeral: true,
@@ -44,7 +59,7 @@ export const verifyPhoneCommand = {
         }
 
         // Update attempts
-        await redis.setex(verificationKey, 600, JSON.stringify(verification));
+        await getRedis().setex(verificationKey, 600, JSON.stringify(verification));
 
         return await interaction.reply({
           content: `❌ Invalid code. ${3 - verification.attempts} attempts remaining.`,
@@ -56,7 +71,7 @@ export const verifyPhoneCommand = {
       const phoneHash = crypto.createHash('sha256').update(verification.phoneNumber).digest('hex');
       const userPhoneKey = `user_phone:${userId}`;
 
-      await redis.setex(
+      await getRedis().setex(
         userPhoneKey,
         86400 * 365,
         JSON.stringify({
@@ -68,7 +83,7 @@ export const verifyPhoneCommand = {
       );
 
       // Clean up verification
-      await redis.del(verificationKey);
+      await getRedis().del(verificationKey);
 
       const embed = new EmbedBuilder()
         .setColor(0x00ff00)

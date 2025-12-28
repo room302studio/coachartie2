@@ -17,9 +17,10 @@ export const isRedisAvailable = (): boolean => redisAvailable;
 export const hasRedisBeenChecked = (): boolean => redisChecked;
 
 // Get Redis config
+// Default to standard Redis port 6379 - Docker containers override via REDIS_PORT env var
 const getRedisConfig = () => ({
   host: process.env.REDIS_HOST || 'localhost',
-  port: parseInt(process.env.REDIS_PORT || '47320'),
+  port: parseInt(process.env.REDIS_PORT || '6379'),
 });
 
 // Test Redis connectivity before creating workers
@@ -166,6 +167,7 @@ export const createQueue = <T = any>(name: string): Queue<T> => {
 
   // Suppress error events on the queue's connection
   queue.on('error', (err) => {
+    errorCount++;
     // Only log if we haven't exhausted our error quota
     if (errorCount <= MAX_ERRORS_BEFORE_SILENCE) {
       const now = Date.now();
@@ -173,6 +175,8 @@ export const createQueue = <T = any>(name: string): Queue<T> => {
         logger.warn(`Queue ${name} error: ${(err as any).code || err.message}`);
         lastErrorTime = now;
       }
+    } else if (errorCount === MAX_ERRORS_BEFORE_SILENCE + 1) {
+      logger.warn('Redis unavailable - suppressing further queue/worker error logs');
     }
   });
 
@@ -190,6 +194,7 @@ export const createWorker = <T = any, R = any>(
 
   // Suppress error events on the worker's connection
   worker.on('error', (err) => {
+    errorCount++;
     // Only log if we haven't exhausted our error quota
     if (errorCount <= MAX_ERRORS_BEFORE_SILENCE) {
       const now = Date.now();
@@ -197,6 +202,8 @@ export const createWorker = <T = any, R = any>(
         logger.warn(`Worker ${name} error: ${(err as any).code || err.message}`);
         lastErrorTime = now;
       }
+    } else if (errorCount === MAX_ERRORS_BEFORE_SILENCE + 1) {
+      logger.warn('Redis unavailable - suppressing further queue/worker error logs');
     }
   });
 

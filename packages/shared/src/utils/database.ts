@@ -20,6 +20,7 @@ import fs from 'fs';
 let db: SqlJsDatabase | null = null;
 let SQL: Awaited<ReturnType<typeof initSqlJs>> | null = null;
 let dbPath: string = '';
+let deprecationWarningShown = false;
 
 // Wrapper to provide async-like interface matching old sqlite API
 interface RunResult {
@@ -125,8 +126,10 @@ function createWrapper(database: SqlJsDatabase, filePath: string): DatabaseWrapp
  * @returns Promise resolving to a DatabaseWrapper instance
  */
 export async function getDatabase(): Promise<DatabaseWrapper> {
-  console.warn('DEPRECATED: getDatabase() is deprecated. Use getDb() from @coachartie/shared instead.');
-  console.warn('This function uses sql.js which is being phased out in favor of Drizzle ORM.');
+  if (!deprecationWarningShown) {
+    console.warn('DEPRECATED: getDatabase() is deprecated. Use getDb() from @coachartie/shared instead.');
+    deprecationWarningShown = true;
+  }
 
   if (db) {
     return createWrapper(db, dbPath);
@@ -149,9 +152,28 @@ export async function getDatabase(): Promise<DatabaseWrapper> {
 
     // Load existing database or create new one
     if (fs.existsSync(dbPath)) {
-      const fileBuffer = fs.readFileSync(dbPath);
-      db = new SQL.Database(fileBuffer);
-      logger.info(`🗄️ SQLite database loaded: ${dbPath} (sql.js WASM)`);
+      try {
+        const fileBuffer = fs.readFileSync(dbPath);
+        db = new SQL.Database(fileBuffer);
+        logger.info(`🗄️ SQLite database loaded: ${dbPath} (sql.js WASM)`);
+      } catch (loadError) {
+        const errorMsg = loadError instanceof Error ? loadError.message : String(loadError);
+        if (errorMsg.includes('file is not a database') || errorMsg.includes('malformed')) {
+          // Database file is corrupted - back it up and create fresh
+          const backupPath = `${dbPath}.corrupted.${Date.now()}`;
+          logger.warn(`⚠️ Database file corrupted, backing up to ${backupPath} and creating fresh database`);
+          try {
+            fs.renameSync(dbPath, backupPath);
+          } catch {
+            // If rename fails, just delete
+            fs.unlinkSync(dbPath);
+          }
+          db = new SQL.Database();
+          logger.info(`🗄️ SQLite database created fresh: ${dbPath} (sql.js WASM)`);
+        } else {
+          throw loadError;
+        }
+      }
     } else {
       db = new SQL.Database();
       logger.info(`🗄️ SQLite database created: ${dbPath} (sql.js WASM)`);
@@ -495,7 +517,7 @@ async function runMigrations(database: DatabaseWrapper): Promise<void> {
  * ```
  */
 export async function closeDatabase(): Promise<void> {
-  console.warn('DEPRECATED: closeDatabase() is deprecated. Use closeDb() from @coachartie/shared instead.');
+  // Silently deprecated - warning shown by getDatabase() already
 
   if (db) {
     const wrapper = createWrapper(db, dbPath);

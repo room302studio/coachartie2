@@ -1,8 +1,15 @@
 import { SlashCommandBuilder, CommandInteraction, EmbedBuilder } from 'discord.js';
-import { logger } from '@coachartie/shared';
-import { createRedisConnection } from '@coachartie/shared';
+import { logger, isRedisAvailable, hasRedisBeenChecked } from '@coachartie/shared';
 
-const redis = createRedisConnection();
+// Lazy-load Redis connection to avoid errors at startup
+let redis: any = null;
+function getRedis() {
+  if (!redis) {
+    const { createRedisConnection } = require('@coachartie/shared');
+    redis = createRedisConnection();
+  }
+  return redis;
+}
 
 export const unlinkPhoneCommand = {
   data: new SlashCommandBuilder()
@@ -11,11 +18,19 @@ export const unlinkPhoneCommand = {
 
   async execute(interaction: CommandInteraction) {
     try {
+      // Check Redis availability
+      if (hasRedisBeenChecked() && !isRedisAvailable()) {
+        return await interaction.reply({
+          content: '❌ Service temporarily unavailable. Please try again later.',
+          ephemeral: true,
+        });
+      }
+
       const userId = interaction.user.id;
       const userPhoneKey = `user_phone:${userId}`;
 
       // Check if user has a phone linked
-      const phoneData = await redis.get(userPhoneKey);
+      const phoneData = await getRedis().get(userPhoneKey);
       if (!phoneData) {
         return await interaction.reply({
           content: '❌ No phone number is currently linked to your account.',
@@ -27,7 +42,7 @@ export const unlinkPhoneCommand = {
       const maskedNumber = phone.phoneNumber.replace(/(\+\d{1,3})\d{6}(\d{4})/, '$1******$2');
 
       // Remove the phone number
-      await redis.del(userPhoneKey);
+      await getRedis().del(userPhoneKey);
 
       const embed = new EmbedBuilder()
         .setColor(0xff9900)

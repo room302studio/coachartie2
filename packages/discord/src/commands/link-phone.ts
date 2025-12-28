@@ -1,9 +1,16 @@
 import { SlashCommandBuilder, ChatInputCommandInteraction, EmbedBuilder } from 'discord.js';
-import { logger } from '@coachartie/shared';
-import { createRedisConnection } from '@coachartie/shared';
+import { logger, isRedisAvailable, hasRedisBeenChecked } from '@coachartie/shared';
 import crypto from 'crypto';
 
-const redis = createRedisConnection();
+// Lazy-load Redis connection to avoid errors at startup
+let redis: any = null;
+function getRedis() {
+  if (!redis) {
+    const { createRedisConnection } = require('@coachartie/shared');
+    redis = createRedisConnection();
+  }
+  return redis;
+}
 
 export const linkPhoneCommand = {
   data: new SlashCommandBuilder()
@@ -34,9 +41,17 @@ export const linkPhoneCommand = {
       // Generate verification code
       const verificationCode = crypto.randomInt(100000, 999999).toString();
 
+      // Check Redis availability
+      if (hasRedisBeenChecked() && !isRedisAvailable()) {
+        return await interaction.reply({
+          content: '❌ Service temporarily unavailable. Please try again later.',
+          ephemeral: true,
+        });
+      }
+
       // Store verification attempt (expires in 10 minutes)
       const verificationKey = `phone_verify:${userId}`;
-      await redis.setex(
+      await getRedis().setex(
         verificationKey,
         600,
         JSON.stringify({

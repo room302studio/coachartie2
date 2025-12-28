@@ -36,9 +36,7 @@ export async function startResponseConsumer(): Promise<Worker<OutgoingMessage>> 
     logger.error(`SMS response failed for message ${job?.data?.inReplyTo}:`, err);
   });
 
-  worker.on('error', (err) => {
-    logger.error('SMS worker error:', err);
-  });
+  // Note: error handler is already set up by createWorker with rate-limiting
 
   return worker;
 }

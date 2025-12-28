@@ -52,8 +52,8 @@ export class ServiceDiscovery {
     // Store in local map
     this.registeredServices.set(serviceName, serviceInfo);
 
-    // Store in Redis for inter-service discovery (only if Redis is available)
-    if (hasRedisBeenChecked() && !isRedisAvailable()) {
+    // Store in Redis for inter-service discovery (only if Redis is available and checked)
+    if (!hasRedisBeenChecked() || !isRedisAvailable()) {
       logger.info(`📡 Registered ${serviceName} service locally at ${serviceInfo.url} (Redis unavailable)`);
     } else {
       try {
@@ -85,8 +85,8 @@ export class ServiceDiscovery {
       service.status = 'running';
       service.lastPing = Date.now();
 
-      // Skip Redis if unavailable
-      if (hasRedisBeenChecked() && !isRedisAvailable()) {
+      // Skip Redis if unavailable or not checked yet
+      if (!hasRedisBeenChecked() || !isRedisAvailable()) {
         logger.info(`✅ ${serviceName} service is now running at ${service.url} (local only)`);
         return;
       }
@@ -115,8 +115,8 @@ export class ServiceDiscovery {
       return localService;
     }
 
-    // Skip Redis lookup if unavailable
-    if (hasRedisBeenChecked() && !isRedisAvailable()) {
+    // Skip Redis lookup if unavailable or not checked yet
+    if (!hasRedisBeenChecked() || !isRedisAvailable()) {
       return null;
     }
 
@@ -152,8 +152,8 @@ export class ServiceDiscovery {
       }
     }
 
-    // Skip Redis lookup if unavailable
-    if (hasRedisBeenChecked() && !isRedisAvailable()) {
+    // Skip Redis lookup if unavailable or not checked yet
+    if (!hasRedisBeenChecked() || !isRedisAvailable()) {
       return Array.from(services.values());
     }
 
@@ -196,8 +196,8 @@ export class ServiceDiscovery {
       service.status = 'stopping';
       this.registeredServices.delete(serviceName);
 
-      // Skip Redis if unavailable
-      if (hasRedisBeenChecked() && !isRedisAvailable()) {
+      // Skip Redis if unavailable or not checked yet
+      if (!hasRedisBeenChecked() || !isRedisAvailable()) {
         logger.info(`📡 Unregistered ${serviceName} service (local)`);
         return;
       }
@@ -218,8 +218,8 @@ export class ServiceDiscovery {
     if (this.pingInterval) return; // Already running
 
     this.pingInterval = setInterval(async () => {
-      // Skip pinging if Redis is unavailable
-      if (hasRedisBeenChecked() && !isRedisAvailable()) {
+      // Skip pinging if Redis is unavailable or not checked yet
+      if (!hasRedisBeenChecked() || !isRedisAvailable()) {
         return;
       }
 

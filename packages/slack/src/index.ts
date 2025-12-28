@@ -43,6 +43,13 @@ import { jobMonitor } from './services/job-monitor.js';
 import { initializeConversationState } from './services/conversation-state.js';
 import './queues/outgoing-consumer.js';
 
+// Check for required environment variables before initializing the app
+if (!process.env.SLACK_BOT_TOKEN || !process.env.SLACK_SIGNING_SECRET) {
+  console.log('⚠️  Slack service disabled: Missing SLACK_BOT_TOKEN or SLACK_SIGNING_SECRET');
+  console.log('   Set these environment variables to enable the Slack service.');
+  process.exit(0);
+}
+
 export const app = new App({
   token: process.env.SLACK_BOT_TOKEN,
   signingSecret: process.env.SLACK_SIGNING_SECRET,

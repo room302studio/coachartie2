@@ -47,9 +47,7 @@ export async function startResponseConsumer(): Promise<Worker<OutgoingMessage>> 
     logger.error(`Email response failed for message ${job?.data?.inReplyTo}:`, err);
   });
 
-  worker.on('error', (err) => {
-    logger.error('Email worker error:', err);
-  });
+  // Note: error handler is already set up by createWorker with rate-limiting
 
   return worker;
 }
