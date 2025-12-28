@@ -1022,6 +1022,11 @@ export function setupMessageHandler(client: Client) {
 
       if (!isAllowedChannel) {
         logger.info(`🚫 Proactive answer skipped - channel #${channelName} not in whitelist [${shortId}]`);
+      } else if (message.reference && !message.mentions.has(client.user?.id || '')) {
+        // Check: Don't interrupt user-to-user conversations
+        // If this is a reply to another message and doesn't mention us, skip proactive answering
+        // We still observe and learn from these conversations, but don't butt in
+        logger.info(`🚫 Proactive answer skipped - user is replying to another user, not interrupting [${shortId}]`);
       } else {
         // Check 2: Cooldown - don't spam the server
         const cooldownSeconds = guildConfig.proactiveCooldownSeconds || 60;
