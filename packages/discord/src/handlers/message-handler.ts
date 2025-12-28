@@ -103,8 +103,11 @@ function looksLikeQuestion(content: string): boolean {
   // Direct question (ends with ?)
   if (lowerContent.endsWith('?')) return true;
 
-  // Question starters
-  const questionStarters = [
+  // Starts with "help" (like "Help my route is broken")
+  if (lowerContent.startsWith('help ') || lowerContent === 'help') return true;
+
+  // Question/help patterns
+  const questionPatterns = [
     'how do i',
     'how can i',
     'how to',
@@ -126,17 +129,32 @@ function looksLikeQuestion(content: string): boolean {
     'anyone know',
     'anybody know',
     'help with',
+    'help me',
     'need help',
+    'please help',
+    'someone help',
     'trying to',
     "i can't",
     "i cant",
+    "don't know how",
+    "dont know how",
     "doesn't work",
     "doesnt work",
     "not working",
+    "is broken",
+    "is messed up",
+    "is stuck",
+    "won't work",
+    "wont work",
     "how come",
+    "i want to",
+    "i need to",
+    "having trouble",
+    "having issues",
+    "having a problem",
   ];
 
-  return questionStarters.some((starter) => lowerContent.includes(starter));
+  return questionPatterns.some((pattern) => lowerContent.includes(pattern));
 }
 
 /**
@@ -152,31 +170,34 @@ async function shouldProactivelyAnswer(
     // Use fetch directly to call the capabilities service
     const capabilitiesUrl = process.env.CAPABILITIES_URL || 'http://localhost:47324';
 
-    const prompt = `You are an AI assistant in a busy Discord server with thousands of users. You must be VERY selective about when to jump in uninvited.
+    // Debug: log what context we have
+    logger.info(`🔍 Proactive judgment context length: ${guildContext?.length || 0} chars`);
 
-COMMUNITY CONTEXT:
+    const prompt = `You are a helper bot deciding whether to engage with a message.
+
+YOUR KNOWLEDGE BASE:
 ${guildContext}
 
-MESSAGE FROM USER "${message.author.username}":
-${message.content}
+USER MESSAGE:
+"${message.content}"
 
-Should you proactively answer this? BE CONSERVATIVE. Only say "yes" if ALL of these are true:
-1. This is clearly a question (not venting, not rhetorical, not a statement)
-2. You have SPECIFIC knowledge from the context above that directly answers it
-3. Your answer would save them time vs. waiting for a human or searching
-4. The question is simple/factual (not complex troubleshooting that needs back-and-forth)
-5. Nobody else has already answered or is likely typing a response
+Respond with JSON only:
+{"answer": true/false, "confidence": 0.0-1.0, "reason": "brief explanation"}
 
-Say "no" if:
-- The question is vague or needs clarification first
-- You'd just be saying "I don't know" or pointing to general resources
-- It's a complex issue that needs human judgment or debugging
-- Someone is frustrated/venting (they need empathy, not a bot)
-- The question is about something not in your context
+Set answer=true if:
+- They're asking for help (even if vague - you can ask for details)
+- They have a bug/issue (you can ask for their save file)
+- Your knowledge base covers the topic they're asking about
+- You can engage helpfully (answer, ask clarifying question, or request save file)
 
-When in doubt, stay silent. Humans can always @mention you if they want help.
+Set answer=false if:
+- Just chatting/joking, not asking for help
+- Completely off-topic (not about the game at all)
+- Someone else already answered their question
 
-Respond with ONLY "yes" or "no" - nothing else.`;
+IMPORTANT: If someone asks for help but is vague, you should STILL engage and ask for more details or their save file. Don't ignore them just because the question isn't specific enough.
+
+JSON response:`;
 
     const response = await fetch(`${capabilitiesUrl}/chat?wait=true`, {
       method: 'POST',
@@ -193,10 +214,28 @@ Respond with ONLY "yes" or "no" - nothing else.`;
     }
 
     const result = await response.json() as { response?: string };
-    const decision = (result.response || '').toLowerCase().trim();
+    const rawResponse = result.response || '';
 
-    logger.info(`🤔 Proactive answer judgment for "${message.content.substring(0, 50)}...": ${decision}`);
+    // Parse JSON response
+    try {
+      // Extract JSON from response (in case there's extra text)
+      const jsonMatch = rawResponse.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        const judgment = JSON.parse(jsonMatch[0]) as { answer: boolean; confidence: number; reason: string };
+        logger.info(`🤔 Proactive judgment: answer=${judgment.answer}, confidence=${judgment.confidence}, reason="${judgment.reason}"`);
 
+        // Require confidence > 0.6 to answer
+        const shouldAnswer = judgment.answer && judgment.confidence > 0.6;
+        logger.info(`🤔 Final decision for "${message.content.substring(0, 50)}...": ${shouldAnswer ? 'YES' : 'NO'}`);
+        return shouldAnswer;
+      }
+    } catch (parseError) {
+      logger.warn(`Failed to parse judgment JSON: ${rawResponse}`);
+    }
+
+    // Fallback: check for yes/no in response
+    const decision = rawResponse.toLowerCase().trim();
+    logger.info(`🤔 Fallback judgment for "${message.content.substring(0, 50)}...": "${rawResponse}" -> ${decision.includes('yes') ? 'YES' : 'NO'}`);
     return decision.includes('yes');
   } catch (error) {
     logger.warn(`Failed proactive answer judgment, defaulting to no:`, error);
@@ -963,12 +1002,16 @@ export function setupMessageHandler(client: Client) {
 
     // Check for proactive answering (guild has it enabled + message looks like a question)
     let proactiveAnswerContext: string | undefined;
+    const channelNameDebug = ('name' in message.channel ? message.channel.name : 'DM') || 'unknown';
+    const isQuestion = looksLikeQuestion(message.content);
+    logger.info(`🔍 Proactive check: guild=${guildConfig?.name || 'none'}, channel=#${channelNameDebug}, proactive=${guildConfig?.proactiveAnswering}, looksLikeQuestion=${isQuestion}, mentioned=${responseConditions.botMentioned} [${shortId}]`);
+
     if (
       guildConfig?.proactiveAnswering &&
       guildConfig.context &&
       !responseConditions.botMentioned && // Don't need proactive check if already mentioned
       !responseConditions.isDM &&
-      looksLikeQuestion(message.content)
+      isQuestion
     ) {
       // Check 1: Channel whitelist - only answer in designated help channels
       const channelName = ('name' in message.channel ? message.channel.name : '') || '';

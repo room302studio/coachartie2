@@ -163,6 +163,8 @@ export class ContextAlchemy {
         timestamp: string;
         isBot: boolean;
       }>;
+      // Full Discord context (for guild knowledge, proactive answering, etc.)
+      discordContext?: Record<string, any>;
     } = {}
   ): Promise<{
     messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>;
@@ -214,7 +216,7 @@ export class ContextAlchemy {
         respondTo: { type: 'api' },
         timestamp: new Date(),
         retryCount: 0,
-        context: options.channelId ? { channelId: options.channelId } : undefined,
+        context: options.discordContext || (options.channelId ? { channelId: options.channelId } : undefined),
       };
       const contextSources = await this.assembleMessageContext(
         mockMessage,
@@ -639,7 +641,9 @@ Important:
   ): Promise<void> {
     // Only for Discord messages with context
     const ctx = message.context;
-    if (!ctx || message.source !== 'discord') {
+    // Check for Discord context via platform field or guildKnowledge presence
+    const isDiscord = ctx?.platform === 'discord' || ctx?.guildKnowledge || ctx?.guildName;
+    if (!ctx || !isDiscord) {
       return;
     }
 
@@ -671,9 +675,14 @@ Important:
 
     // Guild-specific knowledge (for proactive answering)
     if (ctx.guildKnowledge) {
-      parts.push(`\n📚 COMMUNITY KNOWLEDGE:\n${ctx.guildKnowledge}`);
+      parts.push(`\n📚 COMMUNITY KNOWLEDGE (USE THIS):\n${ctx.guildKnowledge}`);
       if (ctx.isProactiveAnswer) {
-        parts.push(`\n⚡ PROACTIVE RESPONSE: You are answering this question because you have relevant knowledge. Be helpful and direct.`);
+        parts.push(`\n⚡ PROACTIVE RESPONSE RULES:
+- You chose to answer because the COMMUNITY KNOWLEDGE above covers this topic
+- ONLY use information from the COMMUNITY KNOWLEDGE section above
+- Do NOT give generic advice - if it's not in your knowledge, don't say it
+- Be CONCISE: 1-3 sentences max unless more detail is explicitly needed
+- If unsure, say so and point them to the right channel/resource`);
       }
     }
 

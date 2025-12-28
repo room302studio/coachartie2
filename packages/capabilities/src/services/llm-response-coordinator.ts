@@ -52,6 +52,8 @@ export class LLMResponseCoordinator {
           channelId: message.context?.channelId,
           // Pass Discord channel history - source of truth for DMs (includes webhook/n8n messages)
           discordChannelHistory: message.context?.channelHistory,
+          // Pass full Discord context for guild knowledge, proactive answering, etc.
+          discordContext: (message.context?.platform === 'discord' || message.context?.guildKnowledge) ? message.context : undefined,
         }
       );
 

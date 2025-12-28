@@ -45,7 +45,11 @@ router.post('/', rateLimiter(50, 60000), async (req: Request, res: Response) => 
     logger.info(`🎯 POST /chat - Extracted params:`, {
       message: message?.substring(0, 100),
       userId,
+      source,
       contextKeys: context ? Object.keys(context) : [],
+      contextPlatform: context?.platform,
+      hasGuildKnowledge: !!context?.guildKnowledge,
+      isProactiveAnswer: context?.isProactiveAnswer,
     });
 
     if (!message || typeof message !== 'string') {
