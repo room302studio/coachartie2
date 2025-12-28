@@ -23,6 +23,7 @@ import { isGuildWhitelisted, isWorkingGuild, getGuildConfig } from '../config/gu
 import { getGitHubIntegration } from '../services/github-integration.js';
 import { getForumTraversal } from '../services/forum-traversal.js';
 import { getMentionProxyService } from '../services/mention-proxy-service.js';
+import { quizSessionManager } from '../services/quiz-session-manager.js';
 import Chance from 'chance';
 
 const chance = new Chance();
@@ -862,6 +863,66 @@ export function setupMessageHandler(client: Client) {
 
     // Ignore our own messages to prevent loops
     if (message.author.id === client.user!.id) return;
+
+    // -------------------------------------------------------------------------
+    // QUIZ ANSWER DETECTION
+    // -------------------------------------------------------------------------
+
+    // Check if this channel has an active quiz and if this message is an answer
+    if (quizSessionManager.hasActiveQuiz(message.channelId)) {
+      const result = quizSessionManager.checkAnswer(
+        message.channelId,
+        message.author.id,
+        message.content
+      );
+
+      if (result && result.correct) {
+        // User got the answer right!
+        logger.info(`✅ Quiz answer correct! User: ${message.author.tag}, Channel: ${message.channelId}`);
+
+        // React to the winning message
+        try {
+          await message.react('✅');
+        } catch (e) {
+          logger.warn('Failed to add reaction to quiz answer:', e);
+        }
+
+        // Build response
+        let response = `✅ **${message.author}** got it! (+1 point)\n`;
+        response += `Answer: **${result.correctAnswer}**\n\n`;
+        response += `📊 ${quizSessionManager.formatScores(result.currentScores)}\n`;
+
+        if (result.quizEnded) {
+          // Quiz is over
+          const scores = quizSessionManager.endQuiz(message.channelId);
+          if (scores) {
+            response += `\n🏁 **Quiz Complete!**\n`;
+            const winners = quizSessionManager.getWinners(scores);
+            if (winners.length === 1) {
+              response += `🎉 **Winner: <@${winners[0]}>!**`;
+            } else if (winners.length > 1) {
+              response += `🎉 **It's a tie! Winners: ${winners.map((w: string) => `<@${w}>`).join(', ')}**`;
+            }
+          }
+        } else {
+          // Move to next question
+          const nextSession = await quizSessionManager.nextQuestion(message.channelId);
+          if (nextSession && nextSession.currentCard) {
+            response += `\n---\n\n`;
+            response += `**Question ${nextSession.questionNumber}/${nextSession.totalQuestions}**\n`;
+            response += nextSession.currentCard.front;
+            if (nextSession.currentCard.hints.length > 0) {
+              response += `\n\n_💡 Hints available: ${nextSession.currentCard.hints.length}_`;
+            }
+          }
+        }
+
+        if ('send' in message.channel) {
+          await message.channel.send(response);
+        }
+        return; // Don't process this message further
+      }
+    }
 
     // Check guild whitelist - only process messages from whitelisted guilds
     if (message.guildId && !isGuildWhitelisted(message.guildId)) {

@@ -37,6 +37,8 @@ import { diagnoseCapability } from '../capabilities/diagnose.js';
 import { visionCapability } from '../capabilities/vision.js';
 import { meetingCapability } from './meeting-service.js';
 import { n8nBrowserCapability } from '../capabilities/n8n-browser.js';
+import { flashcardCapability } from '../capabilities/flashcard.js';
+import { quizGameCapability } from '../capabilities/quiz-game.js';
 
 // =====================================================
 // CAPABILITY BOOTSTRAP SERVICE
@@ -213,6 +215,16 @@ export class CapabilityBootstrap {
       logger.info('📦 Registering n8n-browser (web fetching)...');
       capabilityRegistry.register(n8nBrowserCapability);
       logger.info('✅ n8n-browser registered successfully');
+
+      // Register flashcard capability - quiz and study with flashcards
+      logger.info('📦 Registering flashcard (quiz/study)...');
+      capabilityRegistry.register(flashcardCapability);
+      logger.info('✅ flashcard registered successfully');
+
+      // Register quiz-game capability - channel-wide quiz competitions
+      logger.info('📦 Registering quiz-game (multiplayer quizzes)...');
+      capabilityRegistry.register(quizGameCapability);
+      logger.info('✅ quiz-game registered successfully');
 
       const totalCaps = capabilityRegistry.list().length;
       logger.info(

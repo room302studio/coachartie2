@@ -19,6 +19,7 @@ import { memoryCommand } from '../commands/memory.js';
 import { usageCommand } from '../commands/usage.js';
 import { debugCommand } from '../commands/debug.js';
 import * as syncDiscussionsCommand from '../commands/sync-discussions.js';
+import { quizCommand } from '../commands/quiz.js';
 import { telemetry } from '../services/telemetry.js';
 import {
   CorrelationContext,
@@ -40,6 +41,7 @@ const commands = new Map([
   ['usage', usageCommand],
   ['debug', debugCommand],
   ['sync-discussions', syncDiscussionsCommand],
+  ['quiz', quizCommand],
 ] as any);
 
 export function setupInteractionHandler(client: Client) {
