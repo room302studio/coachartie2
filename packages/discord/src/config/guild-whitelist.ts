@@ -52,7 +52,7 @@ export const GUILD_CONFIGS: Record<string, GuildConfig> = {
     type: 'working',
     name: 'Subwaybuilder',
     proactiveAnswering: true,
-    proactiveChannels: ['help', 'support', 'questions', 'faq', 'general-help'],
+    proactiveChannels: ['subway-builder-help', 'mods', 'general-mod-discussion', 'modders'],
     proactiveCooldownSeconds: 120, // 2 minutes between proactive answers
     context: `Subwaybuilder is a hyperrealistic transit simulation game created by Colin, with EJ Fox as a developer.
 
