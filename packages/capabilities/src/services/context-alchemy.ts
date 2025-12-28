@@ -868,10 +868,27 @@ Important:
 
       if (urls.length > 0) {
         try {
+          // Build context-aware vision objective based on guild
+          const guildId = message.context?.guildId;
+          const guildName = message.context?.guildName;
+
+          let visionObjective = 'Describe what you see in these images. Include any text, objects, people, scenes, UI elements, or other notable content. Be specific and detailed.';
+
+          // Subway Builder guild - images are usually game screenshots
+          if (guildId === '1420846272545296470' || guildName?.toLowerCase().includes('subway')) {
+            visionObjective = `These are likely screenshots from "Subway Builder", a hyperrealistic transit simulation game.
+IMPORTANT: Read ALL text and numbers EXACTLY as shown - do not approximate or guess. Pay special attention to:
+- Statistics panels (ridership numbers, percentages, costs)
+- Map elements (station names, line colors, route layouts)
+- UI elements (menus, tooltips, status indicators)
+- Any error messages or notifications
+Be precise with numbers - if it says 1.5%, report 1.5% not 1.1%. If you can't read something clearly, say so rather than guessing.`;
+          }
+
           const visionResult = await visionCapability!.execute({
             action: 'extract',
             urls,
-            objective: 'Describe what you see in these images. Include any text, objects, people, scenes, UI elements, or other notable content. Be specific and detailed.',
+            objective: visionObjective,
           } as any);
 
           // Trim if very long to avoid context bloat
