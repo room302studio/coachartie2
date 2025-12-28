@@ -173,7 +173,7 @@ async function shouldProactivelyAnswer(
     // Debug: log what context we have
     logger.info(`🔍 Proactive judgment context length: ${guildContext?.length || 0} chars`);
 
-    const prompt = `You are a helper bot deciding whether to engage with a message.
+    const prompt = `You are a helper bot deciding whether to engage with a message. Be CONSERVATIVE - only answer clear help requests.
 
 YOUR KNOWLEDGE BASE:
 ${guildContext}
@@ -184,18 +184,24 @@ USER MESSAGE:
 Respond with JSON only:
 {"answer": true/false, "confidence": 0.0-1.0, "reason": "brief explanation"}
 
-Set answer=true if:
-- They're asking for help (even if vague - you can ask for details)
-- They have a bug/issue (you can ask for their save file)
-- Your knowledge base covers the topic they're asking about
-- You can engage helpfully (answer, ask clarifying question, or request save file)
+Set answer=true ONLY if:
+- They're clearly asking a SPECIFIC question about the game
+- They have a bug/issue AND are asking for help
+- Your knowledge base EXPLICITLY covers what they're asking about
+- The message is at least 10 words and contains a clear question
 
 Set answer=false if:
-- Just chatting/joking, not asking for help
-- Completely off-topic (not about the game at all)
-- Someone else already answered their question
+- Short messages (under 10 words) - these are usually banter
+- Just chatting/joking between users
+- Rhetorical questions or sarcasm ("askers?", "who asked?", etc.)
+- Off-topic discussion (not about the game)
+- Meta-discussion about the bot itself ("the bot should...", "limit when bot...")
+- Someone else already answered
+- They're responding to someone else (not asking the room)
+- One-word or two-word messages
+- Messages that are reactions/commentary ("lmao", "bro", "oh my god", etc.)
 
-IMPORTANT: If someone asks for help but is vague, you should STILL engage and ask for more details or their save file. Don't ignore them just because the question isn't specific enough.
+CRITICAL: When in doubt, answer FALSE. It's better to miss a question than to interrupt conversations. Only engage when someone is CLEARLY asking for help with the game.
 
 JSON response:`;
 
@@ -224,8 +230,8 @@ JSON response:`;
         const judgment = JSON.parse(jsonMatch[0]) as { answer: boolean; confidence: number; reason: string };
         logger.info(`🤔 Proactive judgment: answer=${judgment.answer}, confidence=${judgment.confidence}, reason="${judgment.reason}"`);
 
-        // Require confidence > 0.6 to answer
-        const shouldAnswer = judgment.answer && judgment.confidence > 0.6;
+        // Require confidence > 0.7 to answer (be conservative)
+        const shouldAnswer = judgment.answer && judgment.confidence > 0.7;
         logger.info(`🤔 Final decision for "${message.content.substring(0, 50)}...": ${shouldAnswer ? 'YES' : 'NO'}`);
         return shouldAnswer;
       }
@@ -1003,8 +1009,13 @@ export function setupMessageHandler(client: Client) {
     // Check for proactive answering (guild has it enabled + message looks like a question)
     let proactiveAnswerContext: string | undefined;
     const channelNameDebug = ('name' in message.channel ? message.channel.name : 'DM') || 'unknown';
-    const isQuestion = looksLikeQuestion(message.content);
-    logger.info(`🔍 Proactive check: guild=${guildConfig?.name || 'none'}, channel=#${channelNameDebug}, proactive=${guildConfig?.proactiveAnswering}, looksLikeQuestion=${isQuestion}, mentioned=${responseConditions.botMentioned} [${shortId}]`);
+
+    // Hard minimum: message must have at least 5 words to even consider proactive answering
+    const wordCount = message.content.trim().split(/\s+/).length;
+    const meetsMinimumLength = wordCount >= 5;
+    const isQuestion = meetsMinimumLength && looksLikeQuestion(message.content);
+
+    logger.info(`🔍 Proactive check: guild=${guildConfig?.name || 'none'}, channel=#${channelNameDebug}, proactive=${guildConfig?.proactiveAnswering}, wordCount=${wordCount}, looksLikeQuestion=${isQuestion}, mentioned=${responseConditions.botMentioned} [${shortId}]`);
 
     if (
       guildConfig?.proactiveAnswering &&
