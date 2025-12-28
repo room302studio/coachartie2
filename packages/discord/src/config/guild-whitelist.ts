@@ -55,7 +55,7 @@ export const GUILD_CONFIGS: Record<string, GuildConfig> = {
     name: 'Subwaybuilder',
     proactiveAnswering: true,
     proactiveChannels: ['subway-builder-help', 'mods', 'general-mod-discussion', 'modders'],
-    proactiveCooldownSeconds: 120,
+    proactiveCooldownSeconds: 10,
     // Only observe/learn from these channels (saves API costs)
     observationChannels: ['subway-builder-help', 'mods', 'general-mod-discussion', 'modders', 'bug-reports'],
     context: `You are helping in the Subwaybuilder Discord - a hyperrealistic transit simulation game by Colin, with EJ Fox as a developer.
