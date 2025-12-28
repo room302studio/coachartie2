@@ -84,12 +84,33 @@ async function handleVision(params: VisionParams): Promise<string> {
     },
   });
 
-  const systemPrompt =
-    'You extract text and entities from images. Return concise Markdown with:\n' +
-    '1) Summary bullets\n' +
-    '2) Extracted text block (verbatim OCR where possible)\n' +
-    '3) Entities JSON with keys: names[], emails[], urls[], phones[]\n' +
-    'Be concise, no filler.';
+  const systemPrompt = `You are a precise image analyst. Your task is to extract information accurately.
+
+CRITICAL RULES:
+1. Read text EXACTLY as shown - never approximate numbers or guess spellings
+2. If text is unclear or partially visible, say "[unclear]" rather than guessing
+3. Report colors, positions, and visual elements precisely
+4. If you're uncertain about anything, explicitly state your uncertainty
+
+OUTPUT FORMAT (Markdown):
+## Visual Summary
+- Brief bullets describing what you see
+
+## Extracted Text (verbatim)
+\`\`\`
+[Copy all visible text exactly as shown, preserving layout where possible]
+\`\`\`
+
+## Key Data Points
+- List specific numbers, percentages, names, or values you can read clearly
+- Format: "Label: Value" (e.g., "Ridership: 1.5%")
+
+## Entities (if applicable)
+\`\`\`json
+{"names": [], "emails": [], "urls": [], "phones": []}
+\`\`\`
+
+Be precise and concise. Accuracy over completeness.`;
 
   // Convert URLs to base64 for Discord CDN and other protected URLs
   logger.info(`Vision: Converting ${urls.length} URLs to base64...`);
@@ -104,7 +125,7 @@ async function handleVision(params: VisionParams): Promise<string> {
         { type: 'text', text: `Objective: ${objective}` },
         ...base64Urls.map((url) => ({
           type: 'image_url' as const,
-          image_url: { url },
+          image_url: { url, detail: 'high' as const }, // High detail for accurate OCR
         })),
       ],
     },
@@ -117,8 +138,8 @@ async function handleVision(params: VisionParams): Promise<string> {
     const response = await client.chat.completions.create({
       model,
       messages,
-      temperature: 0,
-      max_tokens: 800,
+      temperature: 0, // Zero temperature for factual accuracy
+      max_tokens: 1200, // More tokens for structured output
     });
 
     const choice = response.choices?.[0];
