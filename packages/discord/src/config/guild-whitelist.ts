@@ -32,6 +32,12 @@ export interface GuildConfig {
   context?: string;
   /** If true, Artie proactively answers questions he knows the answer to (without being mentioned) */
   proactiveAnswering?: boolean;
+  /** Channels where proactive answering is allowed */
+  proactiveChannels?: string[];
+  /** Cooldown in seconds between proactive answers */
+  proactiveCooldownSeconds?: number;
+  /** Channels to observe and form memories from (if empty, no passive observation) */
+  observationChannels?: string[];
 }
 
 /**
@@ -48,6 +54,10 @@ export const GUILD_CONFIGS: Record<string, GuildConfig> = {
     type: 'working',
     name: 'Subwaybuilder',
     proactiveAnswering: true,
+    proactiveChannels: ['subway-builder-help', 'mods', 'general-mod-discussion', 'modders'],
+    proactiveCooldownSeconds: 120,
+    // Only observe/learn from these channels (saves API costs)
+    observationChannels: ['subway-builder-help', 'mods', 'general-mod-discussion', 'modders', 'bug-reports'],
     context: `You are helping in the Subwaybuilder Discord - a hyperrealistic transit simulation game by Colin, with EJ Fox as a developer.
 
 RESPONSE STYLE:

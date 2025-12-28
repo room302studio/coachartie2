@@ -1088,35 +1088,49 @@ export function setupMessageHandler(client: Client) {
         const guildContextToPass = proactiveAnswerContext || guildConfig?.context;
         await handleMessageAsIntent(message, cleanMessage, correlationId, undefined, guildContextToPass);
       } else {
-        // PASSIVE OBSERVATION: Just process for learning, no response
+        // PASSIVE OBSERVATION: Only process for learning if channel is whitelisted
         const channelName =
           message.channel.type === GUILD_CHANNEL_TYPE && 'name' in message.channel
             ? message.channel.name
             : 'DM';
-        logger.info(`👁️ Passive observation [${shortId}]`, {
-          correlationId,
-          author: message.author.tag,
-          channel: channelName,
-        });
 
-        telemetry.logEvent(
-          'message_observed',
-          {
-            channelName,
-            messageLength: fullMessage.length,
-          },
-          correlationId,
-          message.author.id
-        );
+        // Check if this channel is in the observation whitelist
+        const observationChannels = guildConfig?.observationChannels || [];
+        const shouldObserve = observationChannels.length === 0 ||
+          observationChannels.some(c => channelName.toLowerCase().includes(c.toLowerCase()));
 
-        // Still process for passive observation using queue system
-        await publishMessage(
-          message.author.id,
-          fullMessage,
-          message.channelId,
-          message.author.tag,
-          false // Don't respond, just observe
-        );
+        if (shouldObserve) {
+          logger.info(`👁️ Passive observation [${shortId}]`, {
+            correlationId,
+            author: message.author.tag,
+            channel: channelName,
+          });
+
+          telemetry.logEvent(
+            'message_observed',
+            {
+              channelName,
+              messageLength: fullMessage.length,
+            },
+            correlationId,
+            message.author.id
+          );
+
+          // Process for passive observation using queue system
+          await publishMessage(
+            message.author.id,
+            fullMessage,
+            message.channelId,
+            message.author.tag,
+            false // Don't respond, just observe
+          );
+        } else {
+          logger.debug(`👁️ Skipping observation (channel not whitelisted) [${shortId}]`, {
+            correlationId,
+            author: message.author.tag,
+            channel: channelName,
+          });
+        }
       }
     } catch (error) {
       logger.error(`❌ Error handling Discord message [${shortId}]:`, {

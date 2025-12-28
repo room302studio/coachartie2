@@ -107,7 +107,20 @@ export class ObservationalLearning {
           channel => channel.type === 0 && channel.viewable
         ) as Collection<string, TextChannel>;
 
+        // Filter to only observation channels if configured
+        const observationChannels = guildConfig.observationChannels || [];
+
         for (const [channelId, channel] of textChannels) {
+          // If observationChannels is configured, only process those channels
+          if (observationChannels.length > 0) {
+            const isWhitelisted = observationChannels.some(
+              c => channel.name.toLowerCase().includes(c.toLowerCase())
+            );
+            if (!isWhitelisted) {
+              logger.debug(`👁️ Skipping #${channel.name} (not in observationChannels whitelist)`);
+              continue;
+            }
+          }
           await this.processChannel(guild.id, guild.name, channel);
         }
       } catch (error) {
