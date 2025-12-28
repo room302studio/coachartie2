@@ -309,14 +309,72 @@ export class CapabilityXMLParser {
   }
 
   /**
-   * Extract simplified action tags in two formats:
+   * Shorthand tag aliases for common operations
+   * Maps simple tags to capability-action pairs
+   * DESIGN PRINCIPLE: Make these easy for LLMs to use!
+   *
+   * Syntax examples:
+   *   <readfile>path/to/file.txt</readfile>
+   *   <search>query string</search>
+   *   <remember>important fact to store</remember>
+   */
+  private static readonly TAG_ALIASES: Record<string, { name: string; action: string; pathParam?: string }> = {
+    // === FILE OPERATIONS ===
+    'readfile': { name: 'filesystem', action: 'read_file', pathParam: 'path' },
+    'read': { name: 'filesystem', action: 'read_file', pathParam: 'path' },
+    'writefile': { name: 'filesystem', action: 'write_file', pathParam: 'path' },
+    'write': { name: 'filesystem', action: 'write_file', pathParam: 'path' },
+    'listdir': { name: 'filesystem', action: 'list_directory', pathParam: 'path' },
+    'ls': { name: 'filesystem', action: 'list_directory', pathParam: 'path' },
+    'exists': { name: 'filesystem', action: 'exists', pathParam: 'path' },
+    'mkdir': { name: 'filesystem', action: 'create_directory', pathParam: 'path' },
+
+    // === MEMORY OPERATIONS ===
+    'remember': { name: 'memory', action: 'store' },
+    'store': { name: 'memory', action: 'store' },
+    'recall': { name: 'memory', action: 'recall' },
+    'forget': { name: 'memory', action: 'delete' },
+
+    // === SEARCH OPERATIONS ===
+    'search': { name: 'scrapbook', action: 'search' },
+    'websearch': { name: 'web', action: 'search' },
+    'google': { name: 'web', action: 'search' },
+
+    // === VISION ===
+    'see': { name: 'vision', action: 'extract' },
+    'ocr': { name: 'vision', action: 'extract' },
+    'lookatimage': { name: 'vision', action: 'extract' },
+
+    // === GITHUB ===
+    'github': { name: 'github', action: 'search' },
+    'ghissue': { name: 'github', action: 'issue' },
+    'ghpr': { name: 'github', action: 'pr' },
+
+    // === EMAIL ===
+    'email': { name: 'email', action: 'send' },
+    'sendemail': { name: 'email', action: 'send' },
+
+    // === CALCULATOR ===
+    'calc': { name: 'calculator', action: 'evaluate' },
+    'math': { name: 'calculator', action: 'evaluate' },
+
+    // === BROWSER ===
+    'browse': { name: 'web', action: 'fetch' },
+    'fetch': { name: 'web', action: 'fetch' },
+    'scrape': { name: 'web', action: 'scrape' },
+  };
+
+  /**
+   * Extract simplified action tags in three formats:
    * 1. <action>content</action> - looks up capability by action name
    * 2. <capability-action>content</capability-action> - explicit capability-action format (preferred)
+   * 3. Shorthand aliases: <readfile>path</readfile>, <recall>query</recall>, etc.
    *
    * Examples:
    *   <scrapbook-search>AI stuff</scrapbook-search>
    *   <scrapbook-recent limit="5" />
    *   <memory-recall>user preferences</memory-recall>
+   *   <readfile>reference-docs/subwaybuilder/trains.md</readfile> (shorthand!)
    */
   private extractSimpleActionTags(text: string): ParsedCapability[] {
     const capabilities: ParsedCapability[] = [];
@@ -336,6 +394,27 @@ export class CapabilityXMLParser {
 
       // Skip the main capability tag and special tags
       if (tagName === 'capability' || tagName === 'wants_loop' || tagName === 'thinking') {
+        continue;
+      }
+
+      // Check for shorthand aliases first (e.g., <readfile>, <recall>)
+      const alias = CapabilityXMLParser.TAG_ALIASES[tagName.toLowerCase()];
+      if (alias) {
+        const params = this.parseAttributes(attributeString);
+
+        // If the alias has a pathParam, use content as that param value
+        if (alias.pathParam && content.trim() && !params[alias.pathParam]) {
+          params[alias.pathParam] = content.trim();
+        }
+
+        logger.info(`🎯 SHORTHAND TAG: <${tagName}> → ${alias.name}:${alias.action}`);
+
+        capabilities.push({
+          name: alias.name,
+          action: alias.action,
+          content: alias.pathParam ? '' : content.trim(), // Don't duplicate content if it's a path
+          params,
+        });
         continue;
       }
 
