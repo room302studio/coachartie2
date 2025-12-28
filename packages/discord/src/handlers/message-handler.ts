@@ -35,6 +35,9 @@ const chance = new Chance();
 const messageCache = new Map<string, number>();
 const MESSAGE_CACHE_TTL = 10000; // 10 seconds TTL
 
+// Proactive answering cooldown cache (guildId -> lastProactiveAnswerTimestamp)
+const proactiveCooldownCache = new Map<string, number>();
+
 // Discord API limits and timeouts
 const TYPING_REFRESH_INTERVAL = 8000; // Refresh typing every 8s (Discord typing lasts 10s)
 const CHUNK_RATE_LIMIT_DELAY = 200; // 200ms delay between message chunks
@@ -149,7 +152,7 @@ async function shouldProactivelyAnswer(
     // Use fetch directly to call the capabilities service
     const capabilitiesUrl = process.env.CAPABILITIES_URL || 'http://localhost:47324';
 
-    const prompt = `You are an AI assistant helping in a Discord server. Based on the context about this community and the message, decide if you should proactively answer.
+    const prompt = `You are an AI assistant in a busy Discord server with thousands of users. You must be VERY selective about when to jump in uninvited.
 
 COMMUNITY CONTEXT:
 ${guildContext}
@@ -157,13 +160,21 @@ ${guildContext}
 MESSAGE FROM USER "${message.author.username}":
 ${message.content}
 
-Should you proactively answer this message? Consider:
-1. Is this a question you have knowledge about from the context?
-2. Is the user clearly asking for help with something you know about?
-3. Would your answer actually be helpful (not just generic)?
+Should you proactively answer this? BE CONSERVATIVE. Only say "yes" if ALL of these are true:
+1. This is clearly a question (not venting, not rhetorical, not a statement)
+2. You have SPECIFIC knowledge from the context above that directly answers it
+3. Your answer would save them time vs. waiting for a human or searching
+4. The question is simple/factual (not complex troubleshooting that needs back-and-forth)
+5. Nobody else has already answered or is likely typing a response
 
-If the question is outside your knowledge (from the context above), do NOT answer.
-If the question is clearly about something you know from the context, answer.
+Say "no" if:
+- The question is vague or needs clarification first
+- You'd just be saying "I don't know" or pointing to general resources
+- It's a complex issue that needs human judgment or debugging
+- Someone is frustrated/venting (they need empathy, not a bot)
+- The question is about something not in your context
+
+When in doubt, stay silent. Humans can always @mention you if they want help.
 
 Respond with ONLY "yes" or "no" - nothing else.`;
 
@@ -956,22 +967,46 @@ export function setupMessageHandler(client: Client) {
       !responseConditions.isDM &&
       looksLikeQuestion(message.content)
     ) {
-      logger.info(`🤔 Checking proactive answer for question in ${guildConfig.name} [${shortId}]`);
-      const shouldAnswer = await shouldProactivelyAnswer(
-        message,
-        guildConfig.context,
-        correlationId
-      );
-      if (shouldAnswer) {
-        responseConditions.isProactiveAnswer = true;
-        proactiveAnswerContext = guildConfig.context;
-        logger.info(`✅ Proactive answer approved for ${guildConfig.name} [${shortId}]`);
-        telemetry.logEvent(
-          'proactive_answer_approved',
-          { guildId: message.guildId, guildName: guildConfig.name },
-          correlationId,
-          message.author.id
-        );
+      // Check 1: Channel whitelist - only answer in designated help channels
+      const channelName = ('name' in message.channel ? message.channel.name : '') || '';
+      const channelNameLower = channelName.toLowerCase();
+      const allowedChannels = guildConfig.proactiveChannels || [];
+      const isAllowedChannel = allowedChannels.length === 0 ||
+        allowedChannels.some(ch => channelNameLower.includes(ch.toLowerCase()));
+
+      if (!isAllowedChannel) {
+        logger.info(`🚫 Proactive answer skipped - channel #${channelName} not in whitelist [${shortId}]`);
+      } else {
+        // Check 2: Cooldown - don't spam the server
+        const cooldownSeconds = guildConfig.proactiveCooldownSeconds || 60;
+        const lastProactive = proactiveCooldownCache.get(message.guildId || '') || 0;
+        const timeSinceLast = (Date.now() - lastProactive) / 1000;
+
+        if (timeSinceLast < cooldownSeconds) {
+          logger.info(`⏳ Proactive answer skipped - cooldown (${Math.round(cooldownSeconds - timeSinceLast)}s remaining) [${shortId}]`);
+        } else {
+          // Check 3: Conscience/reflection - thoughtful judgment about whether to help
+          logger.info(`🤔 Checking proactive answer for question in ${guildConfig.name} #${channelName} [${shortId}]`);
+          const shouldAnswer = await shouldProactivelyAnswer(
+            message,
+            guildConfig.context,
+            correlationId
+          );
+
+          if (shouldAnswer) {
+            responseConditions.isProactiveAnswer = true;
+            proactiveAnswerContext = guildConfig.context;
+            // Update cooldown
+            proactiveCooldownCache.set(message.guildId || '', Date.now());
+            logger.info(`✅ Proactive answer approved for ${guildConfig.name} #${channelName} [${shortId}]`);
+            telemetry.logEvent(
+              'proactive_answer_approved',
+              { guildId: message.guildId, guildName: guildConfig.name, channel: channelName },
+              correlationId,
+              message.author.id
+            );
+          }
+        }
       }
     }
 

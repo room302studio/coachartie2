@@ -32,6 +32,10 @@ export interface GuildConfig {
   context?: string;
   /** If true, Artie proactively answers questions he knows the answer to (without being mentioned) */
   proactiveAnswering?: boolean;
+  /** Channel names where proactive answering is allowed (e.g., ['help', 'support', 'questions']) */
+  proactiveChannels?: string[];
+  /** Cooldown in seconds between proactive answers (default: 60) */
+  proactiveCooldownSeconds?: number;
 }
 
 /**
@@ -48,6 +52,8 @@ export const GUILD_CONFIGS: Record<string, GuildConfig> = {
     type: 'working',
     name: 'Subwaybuilder',
     proactiveAnswering: true,
+    proactiveChannels: ['help', 'support', 'questions', 'faq', 'general-help'],
+    proactiveCooldownSeconds: 120, // 2 minutes between proactive answers
     context: `Subwaybuilder is a hyperrealistic transit simulation game created by Colin, with EJ Fox as a developer.
 
 GAME OVERVIEW:
