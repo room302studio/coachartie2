@@ -44,12 +44,16 @@ export class ObservationalLearning {
   initialize(client: Client): void {
     this.client = client;
 
-    // Check if we have any watching guilds configured
-    const watchingGuilds = Object.values(GUILD_CONFIGS).filter(g => g.type === 'watching');
+    // Check for guilds that should be observed:
+    // - All 'watching' type guilds
+    // - 'working' guilds with proactiveAnswering enabled (learn from communities we help)
+    const learningGuilds = Object.values(GUILD_CONFIGS).filter(
+      g => g.type === 'watching' || (g.type === 'working' && g.proactiveAnswering)
+    );
 
-    if (watchingGuilds.length > 0) {
+    if (learningGuilds.length > 0) {
       logger.info('👁️ Observational learning initialized', {
-        watchingGuilds: watchingGuilds.map(g => g.name),
+        learningGuilds: learningGuilds.map(g => g.name),
         messagesPerFetch: this.MESSAGES_PER_FETCH,
         intervalMs: this.PROCESS_INTERVAL_MS
       });
@@ -58,9 +62,9 @@ export class ObservationalLearning {
       this.startProcessingTimer();
 
       // Do initial processing after a short delay
-      setTimeout(() => this.processWatchingGuilds(), 10000);
+      setTimeout(() => this.processLearningGuilds(), 10000);
     } else {
-      logger.info('👁️ No watching guilds configured, observational learning disabled');
+      logger.info('👁️ No learning guilds configured, observational learning disabled');
     }
   }
 
@@ -73,22 +77,24 @@ export class ObservationalLearning {
     }
 
     this.processingTimer = setInterval(async () => {
-      await this.processWatchingGuilds();
+      await this.processLearningGuilds();
     }, this.PROCESS_INTERVAL_MS);
   }
 
   /**
-   * Process all watching guilds
+   * Process all learning guilds (watching + working with proactiveAnswering)
    */
-  private async processWatchingGuilds(): Promise<void> {
+  private async processLearningGuilds(): Promise<void> {
     if (!this.client) {
-      logger.warn('👁️ Cannot process watching guilds: Discord client not initialized');
+      logger.warn('👁️ Cannot process learning guilds: Discord client not initialized');
       return;
     }
 
-    const watchingGuilds = Object.values(GUILD_CONFIGS).filter(g => g.type === 'watching');
+    const learningGuilds = Object.values(GUILD_CONFIGS).filter(
+      g => g.type === 'watching' || (g.type === 'working' && g.proactiveAnswering)
+    );
 
-    for (const guildConfig of watchingGuilds) {
+    for (const guildConfig of learningGuilds) {
       try {
         const guild = this.client.guilds.cache.get(guildConfig.id);
         if (!guild) {
@@ -316,14 +322,16 @@ Focus on patterns that would help understand this community's needs and interest
    */
   getStats(): {
     processedChannels: number;
-    watchingGuilds: number;
+    learningGuilds: number;
     lastProcessedTimes: Array<{
       guild: string;
       channel: string;
       lastProcessed: Date;
     }>;
   } {
-    const watchingGuilds = Object.values(GUILD_CONFIGS).filter(g => g.type === 'watching');
+    const learningGuilds = Object.values(GUILD_CONFIGS).filter(
+      g => g.type === 'watching' || (g.type === 'working' && g.proactiveAnswering)
+    );
 
     const lastProcessedTimes = Array.from(this.processedChannels.values()).map(p => {
       const guildConfig = getGuildConfig(p.guildId);
@@ -337,7 +345,7 @@ Focus on patterns that would help understand this community's needs and interest
 
     return {
       processedChannels: this.processedChannels.size,
-      watchingGuilds: watchingGuilds.length,
+      learningGuilds: learningGuilds.length,
       lastProcessedTimes
     };
   }

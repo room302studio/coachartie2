@@ -55,6 +55,11 @@ export const client = new Client({
   partials: [Partials.Message, Partials.Channel, Partials.User, Partials.Reaction],
 });
 
+// DEBUG: Raw message listener to verify events are coming through
+client.on(Events.MessageCreate, (msg) => {
+  console.log(`🔔 RAW MESSAGE: ${msg.author.tag} in ${msg.guild?.name || 'DM'}: "${msg.content.slice(0, 50)}..."`);
+});
+
 // Write status to shared file
 function writeStatus(status: 'starting' | 'ready' | 'error' | 'shutdown', data?: any) {
   try {

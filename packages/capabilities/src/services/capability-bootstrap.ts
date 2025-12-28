@@ -36,6 +36,7 @@ import { contextCapability } from '../capabilities/context.js';
 import { diagnoseCapability } from '../capabilities/diagnose.js';
 import { visionCapability } from '../capabilities/vision.js';
 import { meetingCapability } from './meeting-service.js';
+import { n8nBrowserCapability } from '../capabilities/n8n-browser.js';
 
 // =====================================================
 // CAPABILITY BOOTSTRAP SERVICE
@@ -207,6 +208,11 @@ export class CapabilityBootstrap {
       logger.info('📦 Registering diagnose (error analysis)...');
       capabilityRegistry.register(diagnoseCapability);
       logger.info('✅ diagnose registered successfully');
+
+      // Register n8n browser capability - fetch web pages via n8n
+      logger.info('📦 Registering n8n-browser (web fetching)...');
+      capabilityRegistry.register(n8nBrowserCapability);
+      logger.info('✅ n8n-browser registered successfully');
 
       const totalCaps = capabilityRegistry.list().length;
       logger.info(

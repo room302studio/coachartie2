@@ -776,6 +776,9 @@ async function handleGitHubAutoExpansion(
  */
 export function setupMessageHandler(client: Client) {
   client.on(Events.MessageCreate, async (message: Message) => {
+    // DEBUG: Verify handler is receiving messages
+    console.log(`🎯 HANDLER GOT MESSAGE: ${message.author.tag} in ${message.guild?.name || 'DM'}`);
+
     // -------------------------------------------------------------------------
     // CORRELATION & LOGGING SETUP
     // -------------------------------------------------------------------------
@@ -1081,7 +1084,9 @@ export function setupMessageHandler(client: Client) {
         );
 
         // Process with unified intent processor
-        await handleMessageAsIntent(message, cleanMessage, correlationId, undefined, proactiveAnswerContext);
+        // Always pass guild context if available (not just for proactive answers)
+        const guildContextToPass = proactiveAnswerContext || guildConfig?.context;
+        await handleMessageAsIntent(message, cleanMessage, correlationId, undefined, guildContextToPass);
       } else {
         // PASSIVE OBSERVATION: Just process for learning, no response
         const channelName =

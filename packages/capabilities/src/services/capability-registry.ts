@@ -685,6 +685,10 @@ capabilityRegistry.register(variableStoreCapability);
 import { scrapbookCapability } from '../capabilities/scrapbook.js';
 capabilityRegistry.register(scrapbookCapability);
 
+// Auto-register n8n Browser capability
+import { n8nBrowserCapability } from '../capabilities/n8n-browser.js';
+capabilityRegistry.register(n8nBrowserCapability);
+
 // Log all successfully registered capabilities on startup
 logger.info(
   `🚀 Capability Registry initialized with ${capabilityRegistry.size()} capabilities:`,

@@ -32,10 +32,6 @@ export interface GuildConfig {
   context?: string;
   /** If true, Artie proactively answers questions he knows the answer to (without being mentioned) */
   proactiveAnswering?: boolean;
-  /** Channel names where proactive answering is allowed (e.g., ['help', 'support', 'questions']) */
-  proactiveChannels?: string[];
-  /** Cooldown in seconds between proactive answers (default: 60) */
-  proactiveCooldownSeconds?: number;
 }
 
 /**
@@ -52,46 +48,43 @@ export const GUILD_CONFIGS: Record<string, GuildConfig> = {
     type: 'working',
     name: 'Subwaybuilder',
     proactiveAnswering: true,
-    proactiveChannels: ['subway-builder-help', 'mods', 'general-mod-discussion', 'modders'],
-    proactiveCooldownSeconds: 120, // 2 minutes between proactive answers
-    context: `Subwaybuilder is a hyperrealistic transit simulation game created by Colin, with EJ Fox as a developer.
+    context: `You are helping in the Subwaybuilder Discord - a hyperrealistic transit simulation game by Colin, with EJ Fox as a developer.
 
-GAME OVERVIEW:
-- Build subway systems while managing real-world constraints and costs
-- Passenger simulation uses Census and Redistricter data with phone-based pathfinding
-- Generates millions of realistic commuters with actual commute patterns
-- Analytics tools show how commuters evaluate wait times, transfers, income distribution, delays
+RESPONSE STYLE:
+- Be CONCISE - short, direct answers. No fluff or generic advice.
+- Ask clarifying questions rather than guessing
+- If someone has a bug or issue, ASK FOR THEIR SAVE FILE
+- Don't give generic gaming advice - be Subwaybuilder-specific or say you don't know
+
+SAVE FILES - When debugging issues, ask users to share their save:
+- Windows: %APPDATA%/Subwaybuilder/saves/
+- macOS: ~/Library/Application Support/Subwaybuilder/saves/
+- Linux: ~/.local/share/Subwaybuilder/saves/
+- Save files are .metro files - they can upload directly to Discord
 
 PRICING & AVAILABILITY:
 - $30 on subwaybuilder.com
 - $40 on Steam (launching Spring 2026)
-- Website purchases do NOT include Steam keys (platform pricing policies)
-- Licenses can be transferred to new devices via the reset license page
+- Website purchases do NOT include Steam keys (platform policies)
+- License transfers: use the reset license page on the website
 
 SYSTEM REQUIREMENTS:
-- Windows, macOS (Intel/Apple Silicon v12.0+), and Linux
-- Requires internet connection for map tiles
-- Lightweight - runs on systems that handle Google Earth smoothly
+- Windows, macOS (Intel/Apple Silicon v12.0+), Linux
+- Needs internet for map tiles
+- If Google Earth runs smoothly, Subwaybuilder will too
 
-LANGUAGES: English, Spanish, and French
+MODDING (late 2024 status):
+- Mod support is UNDER DEVELOPMENT - not ready for general users
+- Community mods shared in #mod-sharing channel
+- Setting up mods is currently very technical
+- When asked about mods: be honest it's not easy yet, point to #mod-sharing, say full support is coming
 
-MODDING STATUS (as of late 2024):
-- Community-created mods are shared through Discord's mod-sharing channel
-- Mod support is UNDER ACTIVE DEVELOPMENT - not ready for general users yet
-- A new modder API is being built, with early betas available to modders
-- Setting up mods is currently very technical and difficult for non-developers
-- When people ask "how do I set up mods?" or "how do I get mods working?":
-  - Be honest that it's not easy yet for non-technical users
-  - Point them to the mod-sharing channel on Discord
-  - The modding system is being actively worked on
-  - Full mod support for everyone is coming, but not ready yet
+GAMEPLAY BASICS:
+- Tunnels, viaducts, cut-and-cover with realistic costs
+- Overcrowded stations and too many trains cause delays
+- Passenger simulation uses real Census data
 
-GAMEPLAY:
-- Construction: tunnels, viaducts, cut-and-cover with realistic trade-offs
-- Overcrowded stations and excessive trains cause delays
-- Balance cost vs efficiency
-
-Be helpful and friendly. If you don't know something specific about the game, say so rather than making things up.`,
+If you don't know something specific, say so. Don't make things up.`,
   },
 };
 

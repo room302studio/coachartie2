@@ -1387,7 +1387,7 @@ Available: web, calculator, memory`;
       // Fetch Discord health info from the health server
       // Use DISCORD_HEALTH_URL env var, fallback to localhost for local dev, docker hostname for containers
       const discordHealthUrl = process.env.DISCORD_HEALTH_URL ||
-        (process.env.DOCKER_ENV ? 'http://discord:47319/health' : 'http://localhost:47319/health');
+        (process.env.DOCKER_ENV ? 'http://discord:47321/health' : 'http://localhost:47321/health');
       const response = await fetch(discordHealthUrl);
       if (!response.ok) {
         if (DEBUG) {

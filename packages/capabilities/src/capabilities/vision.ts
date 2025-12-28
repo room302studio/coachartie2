@@ -137,30 +137,29 @@ async function handleVision(params: VisionParams): Promise<string> {
 
 export const visionCapability: RegisteredCapability = {
   name: 'vision',
+  emoji: '👁️',
+  supportedActions: ['extract'],
   description:
     'Extract text/entities from images/files using a vision model (OpenRouter). Pass URLs to extract.',
-  parameters: {
-    type: 'object',
-    properties: {
-      action: { type: 'string', const: 'extract' },
-      urls: {
-        anyOf: [
-          { type: 'array', items: { type: 'string' } },
-          { type: 'string' }, // allow JSON string or single URL
-        ],
-        description: 'Image/file URLs to extract text/entities from.',
-      },
-      objective: { type: 'string', description: 'What to extract (default: text + names/emails/links).' },
-    },
-    required: ['action', 'urls'],
-  },
-  async execute(params: VisionParams): Promise<string> {
-    switch (params.action) {
+  requiredParams: ['urls'],
+  examples: [
+    '<vision-extract urls="https://example.com/image.png" />',
+    '<vision-extract urls=\'["https://example.com/img1.png", "https://example.com/img2.png"]\' objective="Extract all text" />',
+  ],
+  handler: async (params, content) => {
+    const { action, urls, objective } = params;
+    const visionParams: VisionParams = {
+      action: action as 'extract',
+      urls: urls || content,
+      objective,
+    };
+
+    switch (action) {
       case 'extract':
-        return handleVision(params);
+        return handleVision(visionParams);
       default:
         throw new Error(
-          `Unsupported action: ${params.action}. Use action="extract" with urls:[...]. Example: <capability name="vision" action="extract" data='{"urls":["https://..."]}' />`
+          `Unsupported action: ${action}. Use action="extract" with urls:[...]. Example: <vision-extract urls="https://..." />`
         );
     }
   },
