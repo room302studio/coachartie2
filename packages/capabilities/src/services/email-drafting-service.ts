@@ -1,6 +1,7 @@
 import { logger, IncomingMessage } from '@coachartie/shared';
 import { openRouterService } from './openrouter.js';
 import { contextAlchemy } from './context-alchemy.js';
+import { promptManager } from './prompt-manager.js';
 
 // =====================================================
 // EMAIL DRAFTING SERVICE
@@ -148,10 +149,12 @@ Format your response using XML tags:
   <body>Your email body here</body>
 </email>`;
 
+      const emailDraftSystemPrompt = (await promptManager.getPrompt('PROMPT_EMAIL_DRAFT'))?.content ||
+        'You are Coach Artie, an AI assistant helping draft professional emails.';
       const { messages } = await contextAlchemy.buildMessageChain(
         draftPrompt,
         message.userId,
-        'You are Coach Artie, an AI assistant helping draft professional emails.'
+        emailDraftSystemPrompt
       );
 
       const smartModel = openRouterService.selectSmartModel();
@@ -344,10 +347,12 @@ Format your response using XML tags:
   <body>Your revised email body here</body>
 </email>`;
 
+      const emailRevisionSystemPrompt = (await promptManager.getPrompt('PROMPT_EMAIL_REVISION'))?.content ||
+        'You are Coach Artie, revising an email draft based on feedback.';
       const { messages } = await contextAlchemy.buildMessageChain(
         revisionPrompt,
         message.userId,
-        'You are Coach Artie, revising an email draft based on feedback.'
+        emailRevisionSystemPrompt
       );
 
       const smartModel = openRouterService.selectSmartModel();

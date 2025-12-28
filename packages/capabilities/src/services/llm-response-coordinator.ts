@@ -165,10 +165,12 @@ Progress: Step ${currentStep} of ${totalSteps}
 If the error contains an example capability tag, extract it and use it immediately in your next response. If no example is provided, explain the error briefly and suggest what to try next.`;
 
       // Use Context Alchemy for intermediate response
+      const errorRecoveryPrompt = (await promptManager.getPrompt('PROMPT_ERROR_RECOVERY'))?.content ||
+        "You are Coach Artie. When you see errors with examples, extract and use those examples immediately - don't just say there was an error.";
       const { messages } = await contextAlchemy.buildMessageChain(
         intermediatePrompt,
         context.userId,
-        "You are Coach Artie. When you see errors with examples, extract and use those examples immediately - don't just say there was an error."
+        errorRecoveryPrompt
       );
 
       const intermediateResponse = await openRouterService.generateFromMessageChain(
@@ -220,10 +222,12 @@ ${context.results
 
 Provide a concise, friendly summary (1-2 sentences) of what was accomplished overall.`;
 
+      const finalSummarySystemPrompt = (await promptManager.getPrompt('PROMPT_FINAL_SUMMARY'))?.content ||
+        'You are Coach Artie providing a final summary after completing multiple tasks.';
       const { messages } = await contextAlchemy.buildMessageChain(
         summaryPrompt,
         context.userId,
-        'You are Coach Artie providing a final summary after completing multiple tasks.',
+        finalSummarySystemPrompt,
         [],
         { includeCapabilities: false } // No capability instructions for summary - just plain text response
       );

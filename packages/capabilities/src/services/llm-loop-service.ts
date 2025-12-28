@@ -297,7 +297,11 @@ Previous capability FAILED. To fix this:
 `
         : '';
 
-      const nextActionPrompt = `${progressIndicator} You are Coach Artie in AUTONOMOUS DEEP EXPLORATION MODE.
+      // Fetch autonomous mode base prompt from DB (with fallback)
+      const autonomousModeBase = (await promptManager.getPrompt('PROMPT_AUTONOMOUS_MODE'))?.content ||
+        'You are Coach Artie in AUTONOMOUS DEEP EXPLORATION MODE.\n\nYour goal is to thoroughly explore and research the user\'s request using available capabilities.\n\nIMPORTANT RULES:\n- Think step-by-step about what information you need\n- Use capabilities to gather information systematically\n- If you encounter errors, learn from them and adjust your approach\n- Build on what you\'ve learned in previous steps\n- When you have enough information, synthesize it into a comprehensive response\n\nBe thorough, curious, and persistent in your research.';
+
+      const nextActionPrompt = `${progressIndicator} ${autonomousModeBase}
 
 CONVERSATION HISTORY:
 ${contextSummary}
