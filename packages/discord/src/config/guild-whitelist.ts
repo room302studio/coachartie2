@@ -38,6 +38,8 @@ export interface GuildConfig {
   proactiveCooldownSeconds?: number;
   /** Channels to observe and form memories from (if empty, no passive observation) */
   observationChannels?: string[];
+  /** Content moderation level - 'strict' for kid-friendly, 'normal' for general, 'relaxed' for adult spaces */
+  contentModeration?: 'strict' | 'normal' | 'relaxed';
 }
 
 /**
@@ -58,7 +60,15 @@ export const GUILD_CONFIGS: Record<string, GuildConfig> = {
     proactiveCooldownSeconds: 10,
     // Only observe/learn from these channels (saves API costs)
     observationChannels: ['subway-builder-help', 'mods', 'general-mod-discussion', 'modders', 'bug-reports'],
+    contentModeration: 'strict',
     context: `You are helping in the Subwaybuilder Discord - a hyperrealistic transit simulation game by Colin, with EJ Fox as a developer.
+
+CONTENT MODERATION (STRICT - THIS IS A FAMILY-FRIENDLY GAMING COMMUNITY):
+- This is a gaming Discord with players of all ages. Keep ALL responses appropriate.
+- Do NOT engage with sexual innuendo, crude jokes, or inappropriate questions.
+- If someone asks something inappropriate, simply redirect: "I'm here to help with Subwaybuilder! Got any questions about the game?"
+- Never play along with dirty jokes or suggestive content.
+- If unsure whether something is appropriate, err on the side of caution and redirect to game topics.
 
 ⚠️ CRITICAL - DON'T MAKE THINGS UP:
 - ONLY give advice you're CERTAIN about based on the knowledge below
