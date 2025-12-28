@@ -871,7 +871,7 @@ Important:
           const visionResult = await visionCapability!.execute({
             action: 'extract',
             urls,
-            objective: 'Extract text and key entities (names, emails, links) from recent attachments.',
+            objective: 'Describe what you see in these images. Include any text, objects, people, scenes, UI elements, or other notable content. Be specific and detailed.',
           } as any);
 
           // Trim if very long to avoid context bloat
@@ -881,11 +881,14 @@ Important:
               ? visionResult.slice(0, MAX_VISION_CHARS) + '\n…[truncated]'
               : visionResult;
 
+          // Frame the vision output clearly so the LLM knows the images were already analyzed
+          const framedContent = `🖼️ IMAGE ANALYSIS COMPLETE - The following images were analyzed using vision AI:\n\n${truncated}\n\n(Use this analysis to answer questions about the images - do NOT say you cannot view images.)`;
+
           sources.push({
             name: 'attachments_vision',
             priority: 90, // slightly below attachment listing, above memories
-            tokenWeight: Math.ceil(truncated.length / 4),
-            content: truncated,
+            tokenWeight: Math.ceil(framedContent.length / 4),
+            content: framedContent,
             category: 'evidence',
           });
         } catch (error: any) {
