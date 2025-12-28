@@ -1567,21 +1567,13 @@ Available: web, calculator, memory`;
 
     messages.push({ role: 'system', content: systemContent.trim() });
 
-    // 2. Add contextual information as system message (cleaner than fake user messages!)
+    // 2. Add contextual information (memory, goals, user_state) as system message
     if (
       contextByCategory.memory.length > 0 ||
       contextByCategory.goals.length > 0 ||
-      contextByCategory.user_state.length > 0 ||
-      contextByCategory.evidence.length > 0
+      contextByCategory.user_state.length > 0
     ) {
       let contextContent = 'Relevant context:\n';
-
-      // Add evidence first (attachments, vision analysis) - highest priority context
-      if (contextByCategory.evidence.length > 0) {
-        for (const evidence of contextByCategory.evidence) {
-          contextContent += `${evidence.content}\n\n`;
-        }
-      }
 
       if (contextByCategory.memory.length > 0) {
         contextContent += `${contextByCategory.memory[0].content}\n`;
@@ -1596,7 +1588,7 @@ Available: web, calculator, memory`;
       messages.push({ role: 'system', content: contextContent.trim() });
     }
 
-    // 3. Add conversation history (this is the game-changer!)
+    // 3. Add conversation history
     if (conversationHistory.length > 0) {
       if (DEBUG) {
         logger.info(`│ 💬 Adding ${conversationHistory.length} messages from conversation history`);
@@ -1607,7 +1599,20 @@ Available: web, calculator, memory`;
     // 4. Add any existing conversation history from the caller
     messages.push(...existingMessages);
 
-    // 5. User message ALWAYS comes last
+    // 5. CRITICAL: Add evidence (vision analysis) RIGHT BEFORE user message
+    // This ensures the model sees the image analysis immediately before the question
+    if (contextByCategory.evidence.length > 0) {
+      logger.info(`│ 🖼️ Adding ${contextByCategory.evidence.length} evidence sources RIGHT BEFORE user message`);
+      let evidenceContent = '📷 CURRENT IMAGE ANALYSIS (just analyzed these images):\n\n';
+      for (const evidence of contextByCategory.evidence) {
+        logger.info(`│   - ${evidence.name}: ${evidence.content.length} chars`);
+        evidenceContent += `${evidence.content}\n\n`;
+      }
+      evidenceContent += '\n⚠️ IMPORTANT: The images above were just analyzed. Use this analysis to answer the user\'s question about the image(s). Do NOT say you cannot see images.';
+      messages.push({ role: 'system', content: evidenceContent.trim() });
+    }
+
+    // 6. User message ALWAYS comes last
     messages.push({ role: 'user', content: userMessage });
 
     return messages;

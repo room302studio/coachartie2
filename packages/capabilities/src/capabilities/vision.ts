@@ -123,6 +123,12 @@ async function handleVision(params: VisionParams): Promise<string> {
 
     const choice = response.choices?.[0];
     const content = choice?.message?.content;
+    logger.info(`Vision API response received`, {
+      hasChoices: !!response.choices?.length,
+      hasContent: !!content,
+      contentLength: content?.length || 0,
+      contentPreview: content?.substring(0, 200) || 'NO CONTENT'
+    });
     if (!content) {
       throw new Error('Vision model returned no content.');
     }
