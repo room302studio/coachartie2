@@ -1134,7 +1134,7 @@ export function setupMessageHandler(client: Client) {
         // Process with unified intent processor
         // Always pass guild context if available (not just for proactive answers)
         const guildContextToPass = proactiveAnswerContext || guildConfig?.context;
-        await handleMessageAsIntent(message, cleanMessage, correlationId, undefined, guildContextToPass);
+        await handleMessageAsIntent(message, cleanMessage, correlationId, undefined, guildContextToPass, responseConditions.isProactiveAnswer);
       } else {
         // PASSIVE OBSERVATION: Only process for learning if channel is whitelisted
         const channelName =
@@ -1417,7 +1417,8 @@ async function handleMessageAsIntent(
     proxyContext: string;
     proxyPrefix: string;
   },
-  guildContext?: string
+  guildContext?: string,
+  isProactiveAnswer: boolean = false
 ): Promise<void> {
   const shortId = getShortCorrelationId(correlationId);
   let statusMessage: Message | null = null;
@@ -1557,10 +1558,10 @@ async function handleMessageAsIntent(
             proxySystemContext: proxyOptions.proxyContext,
           }
         : {}),
-      // Guild-specific context for proactive answering
+      // Guild-specific context (always pass if available, not just for proactive answers)
       ...(guildContext
         ? {
-            isProactiveAnswer: true,
+            isProactiveAnswer,
             guildKnowledge: guildContext,
           }
         : {}),
