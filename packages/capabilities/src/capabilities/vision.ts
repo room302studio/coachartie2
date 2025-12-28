@@ -23,6 +23,34 @@ function normalizeUrls(urls?: string[] | string): string[] {
 }
 
 /**
+ * Download image and convert to base64 data URL
+ * Required for Discord CDN URLs which need authentication
+ */
+async function urlToBase64(url: string): Promise<string> {
+  try {
+    const response = await fetch(url, {
+      headers: {
+        'User-Agent': 'CoachArtie/1.0 (Discord Bot)',
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to fetch image: ${response.status} ${response.statusText}`);
+    }
+
+    const contentType = response.headers.get('content-type') || 'image/png';
+    const arrayBuffer = await response.arrayBuffer();
+    const base64 = Buffer.from(arrayBuffer).toString('base64');
+
+    return `data:${contentType};base64,${base64}`;
+  } catch (error: any) {
+    logger.warn(`Failed to convert URL to base64: ${url}`, { error: error.message });
+    // Return original URL as fallback - might work for public URLs
+    return url;
+  }
+}
+
+/**
  * Vision capability - orchestrates OCR/vision via OpenRouter vision models.
  */
 async function handleVision(params: VisionParams): Promise<string> {
@@ -63,13 +91,18 @@ async function handleVision(params: VisionParams): Promise<string> {
     '3) Entities JSON with keys: names[], emails[], urls[], phones[]\n' +
     'Be concise, no filler.';
 
+  // Convert URLs to base64 for Discord CDN and other protected URLs
+  logger.info(`Vision: Converting ${urls.length} URLs to base64...`);
+  const base64Urls = await Promise.all(urls.map(urlToBase64));
+  logger.info(`Vision: Converted ${base64Urls.filter(u => u.startsWith('data:')).length}/${urls.length} URLs to base64`);
+
   const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
     { role: 'system', content: systemPrompt },
     {
       role: 'user',
       content: [
         { type: 'text', text: `Objective: ${objective}` },
-        ...urls.map((url) => ({
+        ...base64Urls.map((url) => ({
           type: 'image_url' as const,
           image_url: { url },
         })),

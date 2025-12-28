@@ -808,7 +808,10 @@ Important:
       ? message.context.recentUrls
       : [];
 
+    logger.info(`📎 ATTACHMENT DEBUG: current=${currentAttachments.length}, recent=${recentAttachments.length}, urls=${recentUrls.length}`);
+
     const attachments = [...currentAttachments, ...recentAttachments].filter((att) => !!att?.url);
+    logger.info(`📎 ATTACHMENT DEBUG: combined after filter=${attachments.length}`);
 
     if (attachments.length > 0) {
       const lines: string[] = [];
