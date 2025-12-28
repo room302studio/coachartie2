@@ -808,7 +808,13 @@ Important:
       ? message.context.recentUrls
       : [];
 
-    logger.info(`📎 ATTACHMENT DEBUG: current=${currentAttachments.length}, recent=${recentAttachments.length}, urls=${recentUrls.length}`);
+    logger.info(`📎 ATTACHMENT DEBUG: current=${currentAttachments.length}, recent=${recentAttachments.length}, urls=${recentUrls.length}`, {
+      contextKeys: message.context ? Object.keys(message.context) : [],
+      hasAttachmentsField: !!message.context?.attachments,
+      hasRecentAttachmentsField: !!message.context?.recentAttachments,
+      debugCurrent: message.context?._debug_currentAttachmentCount,
+      debugRecent: message.context?._debug_recentAttachmentCount,
+    });
 
     const attachments = [...currentAttachments, ...recentAttachments].filter((att) => !!att?.url);
     logger.info(`📎 ATTACHMENT DEBUG: combined after filter=${attachments.length}`);

@@ -1435,6 +1435,17 @@ async function handleMessageAsIntent(
       logger.info(`📎 Found ${recentAttachments.length} recent attachments [${shortId}]`);
     }
 
+    // DEBUG: Log current message attachments
+    if (message.attachments.size > 0) {
+      logger.info(`📎 Current message has ${message.attachments.size} attachments [${shortId}]`, {
+        attachments: Array.from(message.attachments.values()).map((att) => ({
+          name: att.name,
+          url: att.url?.substring(0, 50) + '...',
+          contentType: att.contentType,
+        })),
+      });
+    }
+
     const recentUrls = await fetchRecentUrls(message);
     if (recentUrls.length > 0) {
       logger.info(`🔗 Found ${recentUrls.length} recent URLs [${shortId}]`);
@@ -1503,6 +1514,9 @@ async function handleMessageAsIntent(
       hasAttachments: message.attachments.size > 0,
       recentAttachments,
       recentUrls,
+      // DEBUG: Log attachment counts for troubleshooting
+      _debug_currentAttachmentCount: message.attachments.size,
+      _debug_recentAttachmentCount: recentAttachments.length,
       // Pass Discord channel history - source of truth for DMs (includes webhook/n8n messages)
       channelHistory,
       mentionedUsers: message.mentions.users.size,
