@@ -1603,9 +1603,15 @@ Available: web, calculator, memory`;
       memory: [],
       capabilities: [],
       user_state: [],
+      evidence: [],
+      system: [],
     };
 
     for (const source of sources) {
+      // Safely handle unknown categories by creating the array if needed
+      if (!grouped[source.category]) {
+        grouped[source.category] = [];
+      }
       grouped[source.category].push(source);
     }
 
