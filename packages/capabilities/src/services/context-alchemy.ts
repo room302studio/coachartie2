@@ -1571,9 +1571,17 @@ Available: web, calculator, memory`;
     if (
       contextByCategory.memory.length > 0 ||
       contextByCategory.goals.length > 0 ||
-      contextByCategory.user_state.length > 0
+      contextByCategory.user_state.length > 0 ||
+      contextByCategory.evidence.length > 0
     ) {
       let contextContent = 'Relevant context:\n';
+
+      // Add evidence first (attachments, vision analysis) - highest priority context
+      if (contextByCategory.evidence.length > 0) {
+        for (const evidence of contextByCategory.evidence) {
+          contextContent += `${evidence.content}\n\n`;
+        }
+      }
 
       if (contextByCategory.memory.length > 0) {
         contextContent += `${contextByCategory.memory[0].content}\n`;
