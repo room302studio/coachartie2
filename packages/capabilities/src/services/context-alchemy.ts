@@ -4,10 +4,19 @@ import { IncomingMessage } from '@coachartie/shared';
 import { MemoryEntourageInterface } from './memory-entourage-interface.js';
 import { CombinedMemoryEntourage } from './combined-memory-entourage.js';
 import { CreditMonitor } from './credit-monitor.js';
+import { visionCapability as visionCap } from '../capabilities/vision.js';
 
-// Vision and metro-doctor capabilities - these are optional/WIP features
-// Disabled until files are implemented
-const visionCapability: { execute: (opts: any) => Promise<string> } | null = null;
+// Vision capability wrapper for auto-extraction
+const visionCapability: { execute: (opts: any) => Promise<string> } | null = {
+  execute: async (opts: { action: string; urls: string[]; objective?: string }) => {
+    return visionCap.handler(
+      { action: opts.action, urls: opts.urls, objective: opts.objective },
+      ''
+    );
+  },
+};
+
+// Metro-doctor is still WIP
 const processMetroAttachment: ((url: string) => Promise<{ stdout: string; stderr?: string }>) | null = null;
 
 // Debug flag for detailed Context Alchemy logging
