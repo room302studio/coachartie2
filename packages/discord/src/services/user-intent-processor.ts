@@ -271,15 +271,24 @@ export async function processUserIntent(
 
       // Recovery: resubmit if job is orphaned (e.g., capabilities restarted)
       onOrphaned: async () => {
-        logger.info(`🔄 Attempting to recover orphaned job [${shortId}]...`);
+        const downtimeMs = Date.now() - startTime;
+        const downtimeSeconds = (downtimeMs / 1000).toFixed(1);
+        logger.info(`🔄 Attempting to recover orphaned job [${shortId}] after ${downtimeSeconds}s downtime...`);
+
         try {
+          // Inject recovery context so Artie knows he went down
+          const recoveryContext = {
+            ...intent.context,
+            systemNote: `[SYSTEM: You experienced a brief service interruption. You were processing this message for ${downtimeSeconds} seconds before your backend restarted. Acknowledge this briefly and naturally (e.g., "Whoa, sorry about that - I went down for a moment there. Anyway...") then continue helping with their request.]`,
+          };
+
           const newJobInfo = await capabilitiesClient.submitJob(
             intent.content,
             intent.userId,
-            intent.context
+            recoveryContext
           );
           if (newJobInfo?.messageId) {
-            logger.info(`✅ Recovered job [${shortId}] → new job ${newJobInfo.messageId.slice(-8)}`);
+            logger.info(`✅ Recovered job [${shortId}] → new job ${newJobInfo.messageId.slice(-8)} (after ${downtimeSeconds}s)`);
             return newJobInfo.messageId;
           }
           return null;

@@ -673,6 +673,11 @@ Important:
       parts.push(`🏷️  Mentions: ${mentionNames}`);
     }
 
+    // System notes (e.g., recovery from downtime)
+    if (ctx.systemNote) {
+      parts.push(`\n⚠️ ${ctx.systemNote}`);
+    }
+
     // Guild-specific knowledge (for proactive answering)
     if (ctx.guildKnowledge) {
       parts.push(`\n📚 COMMUNITY KNOWLEDGE (USE THIS):\n${ctx.guildKnowledge}`);
