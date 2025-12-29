@@ -4,8 +4,10 @@ export interface JobCallback {
   onComplete: (result: string) => void;
   onError?: (error: string) => void;
   onProgress?: (status: any) => void;
+  onOrphaned?: () => Promise<string | null>; // Returns new job ID if resubmitted, null to give up
   maxAttempts?: number;
   attemptCount?: number;
+  orphanRetries?: number; // Track how many times we've tried to recover
   createdAt: number;
 }
 
@@ -86,6 +88,7 @@ export class JobMonitor {
       onComplete: (result: string) => void;
       onError?: (error: string) => void;
       onProgress?: (status: any) => void;
+      onOrphaned?: () => Promise<string | null>;
       maxAttempts?: number;
     }
   ): void {
@@ -112,6 +115,7 @@ export class JobMonitor {
       ...callbacks,
       maxAttempts: callbacks.maxAttempts || 60,
       attemptCount: 0,
+      orphanRetries: 0,
       createdAt: Date.now(),
     });
 
@@ -186,6 +190,47 @@ export class JobMonitor {
 
       if (!response.ok) {
         if (response.status === 404) {
+          // Job orphaned - try to recover!
+          const maxOrphanRetries = 2;
+          callback.orphanRetries = (callback.orphanRetries || 0) + 1;
+
+          if (callback.onOrphaned && callback.orphanRetries <= maxOrphanRetries) {
+            logger.info(`🔄 Job ${shortId} orphaned (attempt ${callback.orphanRetries}/${maxOrphanRetries}) - attempting recovery...`);
+
+            try {
+              const newJobId = await callback.onOrphaned();
+
+              if (newJobId) {
+                logger.info(`✅ Job recovered! Old: ${shortId} → New: ${newJobId.slice(-8)}`);
+
+                // Remove old job, register new one with same callbacks
+                this.unmonitorJob(jobId);
+                this.pendingJobs.set(newJobId, {
+                  ...callback,
+                  attemptCount: 0, // Reset attempt count for new job
+                  orphanRetries: callback.orphanRetries, // Keep orphan retry count
+                  createdAt: Date.now(),
+                });
+
+                return; // Successfully recovered
+              } else {
+                logger.warn(`⚠️ Job ${shortId} recovery returned no new job ID`);
+              }
+            } catch (recoveryError) {
+              logger.error(`❌ Job ${shortId} recovery failed:`, recoveryError);
+            }
+          }
+
+          // If we get here, recovery failed or wasn't possible
+          if (callback.orphanRetries > maxOrphanRetries) {
+            logger.error(`💀 Job ${shortId} orphan recovery exhausted (${maxOrphanRetries} attempts)`);
+            if (callback.onError) {
+              callback.onError(`Job lost after ${maxOrphanRetries} recovery attempts - capabilities service may have restarted`);
+            }
+            this.unmonitorJob(jobId);
+            return;
+          }
+
           throw new Error('Job not found or expired');
         }
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);

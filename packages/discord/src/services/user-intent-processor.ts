@@ -269,6 +269,26 @@ export async function processUserIntent(
     jobMonitor.monitorJob(jobInfo.messageId, {
       maxAttempts,
 
+      // Recovery: resubmit if job is orphaned (e.g., capabilities restarted)
+      onOrphaned: async () => {
+        logger.info(`🔄 Attempting to recover orphaned job [${shortId}]...`);
+        try {
+          const newJobInfo = await capabilitiesClient.submitJob(
+            intent.content,
+            intent.userId,
+            intent.context
+          );
+          if (newJobInfo?.messageId) {
+            logger.info(`✅ Recovered job [${shortId}] → new job ${newJobInfo.messageId.slice(-8)}`);
+            return newJobInfo.messageId;
+          }
+          return null;
+        } catch (error) {
+          logger.error(`❌ Failed to recover job [${shortId}]:`, error);
+          return null;
+        }
+      },
+
       // Progress updates
       onProgress: async (status) => {
         try {
