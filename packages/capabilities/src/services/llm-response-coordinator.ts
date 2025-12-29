@@ -489,10 +489,35 @@ ${capabilityDetails}`;
     const wantsLoopMatch = content.match(/<wants_loop>(true|false)<\/wants_loop>/i);
     const hasCapabilities = content.includes('<capability');
 
+    // CRITICAL: Also detect shorthand capability tags like <read>, <recall>, <websearch> etc.
+    // These are aliases defined in xml-parser.ts that expand to full capability calls
+    const shorthandTags = [
+      // File operations
+      'read', 'readfile', 'write', 'writefile', 'append', 'listdir', 'ls', 'exists', 'mkdir', 'rm', 'delete',
+      // Memory
+      'remember', 'store', 'recall', 'forget',
+      // Search
+      'search', 'websearch', 'google',
+      // Vision
+      'see', 'ocr', 'lookatimage',
+      // GitHub
+      'github-search_issues', 'github-get_issue', 'github-list_issues', 'github-create_issue',
+      'github-search_code', 'github-get_file', 'github-list_repo_files', 'github-get_pr',
+      // Calculator
+      'calc', 'calculate', 'math',
+    ];
+    const shorthandPattern = new RegExp(`<(${shorthandTags.join('|')})[^>]*>`, 'i');
+    const hasShorthandCapabilities = shorthandPattern.test(content);
+
     // SIMPLE LOGIC: If there are capabilities in the response, execute them.
     // Don't care about explicit tags or defaults - just execute what's there.
-    let wantsLoop = hasCapabilities;
-    let decisionSource = hasCapabilities ? 'detected <capability> tags' : 'no capabilities found';
+    const hasAnyCapabilities = hasCapabilities || hasShorthandCapabilities;
+    let wantsLoop = hasAnyCapabilities;
+    let decisionSource = hasCapabilities
+      ? 'detected <capability> tags'
+      : hasShorthandCapabilities
+        ? 'detected shorthand capability tags (e.g., <read>, <recall>)'
+        : 'no capabilities found';
 
     // If there's an explicit wants_loop tag, respect it
     if (wantsLoopMatch) {

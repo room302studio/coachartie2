@@ -63,6 +63,73 @@ export class LLMLoopService {
       `Assistant: ${initialResponse}`,
     ];
 
+    // CRITICAL: Extract and execute capabilities from the INITIAL response first
+    // This ensures <read>, <recall>, etc. tags in the first response actually get executed
+    const initialCapabilities = capabilityParser.extractCapabilities(initialResponse);
+    if (initialCapabilities.length > 0) {
+      logger.info(`📦 Found ${initialCapabilities.length} capabilities in initial response - executing first`);
+
+      let systemFeedback = '';
+      for (const capability of initialCapabilities) {
+        const capabilityKey = `${capability.name}:${capability.action}`;
+        try {
+          logger.info(`🔧 Executing initial capability: ${capabilityKey}`);
+
+          const processedCapability = await capabilityExecutor.substituteTemplateVariables(capability, context.results);
+          const capabilityForExecution = {
+            name: processedCapability.name,
+            action: processedCapability.action,
+            content: processedCapability.content || '',
+            params: processedCapability.params,
+          };
+
+          const robustResult = await robustExecutor.executeWithRetry(
+            capabilityForExecution,
+            { userId: context.userId, messageId: context.messageId },
+            3
+          );
+
+          const result: CapabilityResult = {
+            capability: processedCapability,
+            success: robustResult.success,
+            data: robustResult.data,
+            error: robustResult.error,
+            timestamp: robustResult.timestamp,
+          };
+
+          context.results.push(result);
+          context.currentStep++;
+
+          if (result.success) {
+            systemFeedback += `[SYSTEM: ${capabilityKey} succeeded → ${result.data}]\n`;
+            logger.info(`✅ Initial capability ${capabilityKey} succeeded`);
+          } else {
+            context.capabilityFailureCount.set(capabilityKey, 1);
+            systemFeedback += `[SYSTEM: ${capabilityKey} failed → ${result.error}]\n`;
+            logger.error(`❌ Initial capability ${capabilityKey} failed: ${result.error}`);
+          }
+        } catch (_error) {
+          context.capabilityFailureCount.set(capabilityKey, 1);
+          logger.error(`❌ Failed to execute initial capability ${capability.name}:`, _error);
+          systemFeedback += `[SYSTEM: ${capabilityKey} threw error → ${_error}]\n`;
+
+          context.results.push({
+            capability,
+            success: false,
+            error: getErrorMessage(_error),
+            timestamp: new Date().toISOString(),
+          });
+          context.currentStep++;
+        }
+      }
+
+      // Add initial capability results to conversation history
+      if (systemFeedback) {
+        conversationHistory.push(systemFeedback.trim());
+        logger.info(`🔄 Added initial capability results to conversation: ${systemFeedback.length} chars`);
+      }
+    }
+
     let iterationCount = 0;
     const maxIterations = parseInt(process.env.EXPLORATION_MAX_ITERATIONS || '8'); // Reduced from 24 to save costs
     const minIterations = parseInt(process.env.EXPLORATION_MIN_ITERATIONS || '1'); // Reduced from 3 - simple messages don't need iteration
