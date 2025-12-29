@@ -324,10 +324,13 @@ export class CapabilityXMLParser {
     'read': { name: 'filesystem', action: 'read_file', pathParam: 'path' },
     'writefile': { name: 'filesystem', action: 'write_file', pathParam: 'path' },
     'write': { name: 'filesystem', action: 'write_file', pathParam: 'path' },
+    'append': { name: 'filesystem', action: 'append_file', pathParam: 'path' },
     'listdir': { name: 'filesystem', action: 'list_directory', pathParam: 'path' },
     'ls': { name: 'filesystem', action: 'list_directory', pathParam: 'path' },
     'exists': { name: 'filesystem', action: 'exists', pathParam: 'path' },
     'mkdir': { name: 'filesystem', action: 'create_directory', pathParam: 'path' },
+    'rm': { name: 'filesystem', action: 'delete', pathParam: 'path' },
+    'delete': { name: 'filesystem', action: 'delete', pathParam: 'path' },
 
     // === MEMORY OPERATIONS ===
     'remember': { name: 'memory', action: 'store' },

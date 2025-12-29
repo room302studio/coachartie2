@@ -50,8 +50,13 @@ function getEnhancedGuildContext(guildConfig: GuildConfig | null | undefined): s
 📝 YOUR SCRATCHPAD (your personal notes for this guild):
 ${scratchpadContent}
 
-To add notes, use: <write path="${guildConfig.scratchpadPath}">new content here</write>
-Remember to include your existing notes when writing, or they'll be overwritten!`;
+To add notes: <append path="${guildConfig.scratchpadPath}">
+## New Note (include date/username)
+Your observation here
+</append>
+
+To rewrite entirely: <write path="${guildConfig.scratchpadPath}">full new content</write>
+To delete: <rm path="${guildConfig.scratchpadPath}" />`;
       }
     } catch (error) {
       logger.warn(`Failed to load scratchpad for ${guildConfig.name}:`, error);

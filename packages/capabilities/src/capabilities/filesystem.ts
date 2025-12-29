@@ -148,6 +148,28 @@ async function writeFile(filePath: string, content: string): Promise<string> {
 }
 
 /**
+ * Appends content to a file (creates if doesn't exist)
+ */
+async function appendFile(filePath: string, content: string): Promise<string> {
+  const validPath = validateAndSanitizePath(filePath);
+
+  try {
+    // Ensure parent directory exists
+    const parentDir = path.dirname(validPath);
+    await fs.mkdir(parentDir, { recursive: true });
+
+    await fs.appendFile(validPath, content, 'utf-8');
+    const relativePath = path.relative(PROJECT_ROOT, validPath);
+
+    logger.info(`📝 Appended to file: ${relativePath} (${content.length} characters)`);
+    return `Successfully appended ${content.length} characters to ${relativePath}`;
+  } catch (error) {
+    const relativePath = path.relative(PROJECT_ROOT, validPath);
+    throw new Error(`Failed to append to file ${relativePath}: ${(error as Error).message}`);
+  }
+}
+
+/**
  * Creates a directory (and parent directories if needed)
  */
 async function createDirectory(dirPath: string, recursive: boolean = true): Promise<string> {
@@ -275,6 +297,7 @@ export const filesystemCapability: RegisteredCapability = {
   supportedActions: [
     'read_file',
     'write_file',
+    'append_file',
     'create_directory',
     'list_directory',
     'exists',
@@ -302,6 +325,14 @@ export const filesystemCapability: RegisteredCapability = {
             throw new Error('Content is required for write_file operation');
           }
           return await writeFile(filePath, writeContent);
+        }
+
+        case 'append_file': {
+          const appendContent = params.content || content;
+          if (!appendContent) {
+            throw new Error('Content is required for append_file operation');
+          }
+          return await appendFile(filePath, appendContent);
         }
 
         case 'create_directory':
