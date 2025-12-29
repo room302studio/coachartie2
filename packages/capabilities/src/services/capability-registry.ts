@@ -602,9 +602,17 @@ Available capabilities:
   generateCompressedInstructions(): string {
     const capabilities = Array.from(this.capabilities.values());
 
-    // Format rule shown ONCE
-    let instructions = `Use XML format: <capability name="X" action="Y" data='{"param":"value"}' />
-IMPORTANT: Always include <wants_loop>true</wants_loop> after capabilities to execute them!
+    // SIMPLE SYNTAX FIRST - this is what we want the LLM to use
+    let instructions = `SIMPLE SHORTCUTS (preferred):
+<read>path/to/file</read> → read a file
+<recall>query</recall> → search memories
+<search>query</search> → search scrapbook
+<websearch>query</websearch> → search the web
+<calc>2+2</calc> → calculate
+<remember>fact to store</remember> → store memory
+
+Or full format: <capability name="X" action="Y" data='{"param":"value"}' />
+Include <wants_loop>true</wants_loop> after capabilities.
 
 Available: `;
 
