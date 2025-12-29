@@ -1412,9 +1412,8 @@ ${capabilityMemories
       }
     } catch (error) {
       logger.warn('Failed to add capability manifest:', error);
-      // Graceful fallback to minimal instructions
-      const content = `Use XML format: <capability name="X" action="Y" data='{"param":"value"}' />
-Available: web, calculator, memory`;
+      // Graceful fallback to minimal instructions - use SIMPLE syntax
+      const content = `Simple shortcuts: <read>path</read>, <recall>query</recall>, <websearch>query</websearch>, <calc>2+2</calc>`;
       sources.push({
         name: 'capability_context',
         priority: 30,

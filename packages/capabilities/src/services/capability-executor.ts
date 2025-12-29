@@ -499,12 +499,12 @@ WHAT TO DO:
    a) RETRY with corrected parameters (if you see how to fix it)
    b) ASK FOR CLARIFICATION (if you need more info from the user)
 
-If you retry, use the exact XML capability format with corrected parameters:
-<capability name="..." action="..." data='...' />
+If you retry, prefer simple shortcuts:
+<read>path</read>, <recall>query</recall>, <websearch>query</websearch>, <calc>2+2</calc>, <remember>fact</remember>
 
-If asking for clarification, respond naturally without capability tags.
+Or use full format if needed: <capability name="..." action="..." data='...' />
 
-Remember: Parameter names might be camelCase or snake_case. Try both if unsure.`;
+If asking for clarification, respond naturally without capability tags.`;
 
     try {
       // Use FAST_MODEL for quick error analysis
