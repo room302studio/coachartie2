@@ -19,14 +19,47 @@ import {
   getShortCorrelationId,
 } from '../utils/correlation.js';
 import { processUserIntent } from '../services/user-intent-processor.js';
-import { isGuildWhitelisted, isWorkingGuild, getGuildConfig } from '../config/guild-whitelist.js';
+import { isGuildWhitelisted, isWorkingGuild, getGuildConfig, GuildConfig } from '../config/guild-whitelist.js';
 import { getGitHubIntegration } from '../services/github-integration.js';
 import { getForumTraversal } from '../services/forum-traversal.js';
 import { getMentionProxyService } from '../services/mention-proxy-service.js';
 import { quizSessionManager } from '../services/quiz-session-manager.js';
 import Chance from 'chance';
+import { readFileSync, existsSync } from 'fs';
+import { join } from 'path';
 
 const chance = new Chance();
+
+/**
+ * Load guild context with scratchpad notes
+ * Returns the base context plus any notes from the guild's scratchpad file
+ */
+function getEnhancedGuildContext(guildConfig: GuildConfig | null | undefined): string | undefined {
+  if (!guildConfig?.context) return undefined;
+
+  let fullContext = guildConfig.context;
+
+  // Load scratchpad if configured
+  if (guildConfig.scratchpadPath) {
+    try {
+      const scratchpadFullPath = join(process.cwd(), guildConfig.scratchpadPath);
+      if (existsSync(scratchpadFullPath)) {
+        const scratchpadContent = readFileSync(scratchpadFullPath, 'utf-8');
+        fullContext += `
+
+📝 YOUR SCRATCHPAD (your personal notes for this guild):
+${scratchpadContent}
+
+To add notes, use: <write path="${guildConfig.scratchpadPath}">new content here</write>
+Remember to include your existing notes when writing, or they'll be overwritten!`;
+      }
+    } catch (error) {
+      logger.warn(`Failed to load scratchpad for ${guildConfig.name}:`, error);
+    }
+  }
+
+  return fullContext;
+}
 
 // =============================================================================
 // CONSTANTS & CONFIGURATION
@@ -1118,7 +1151,7 @@ export function setupMessageHandler(client: Client) {
 
           if (shouldAnswer) {
             responseConditions.isProactiveAnswer = true;
-            proactiveAnswerContext = guildConfig.context;
+            proactiveAnswerContext = getEnhancedGuildContext(guildConfig);
             // Update cooldown
             proactiveCooldownCache.set(message.guildId || '', Date.now());
             logger.info(`✅ Proactive answer approved for ${guildConfig.name} #${channelName} [${shortId}]`);
@@ -1205,7 +1238,7 @@ export function setupMessageHandler(client: Client) {
 
         // Process with unified intent processor
         // Always pass guild context if available (not just for proactive answers)
-        const guildContextToPass = proactiveAnswerContext || guildConfig?.context;
+        const guildContextToPass = proactiveAnswerContext || getEnhancedGuildContext(guildConfig);
         await handleMessageAsIntent(message, cleanMessage, correlationId, undefined, guildContextToPass, responseConditions.isProactiveAnswer);
       } else {
         // PASSIVE OBSERVATION: Only process for learning if channel is whitelisted

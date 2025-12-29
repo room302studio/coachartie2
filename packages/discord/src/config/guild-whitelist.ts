@@ -40,6 +40,8 @@ export interface GuildConfig {
   observationChannels?: string[];
   /** Content moderation level - 'strict' for kid-friendly, 'normal' for general, 'relaxed' for adult spaces */
   contentModeration?: 'strict' | 'normal' | 'relaxed';
+  /** Path to Artie's scratchpad/notes file for this guild */
+  scratchpadPath?: string;
 }
 
 /**
@@ -50,6 +52,7 @@ export const GUILD_CONFIGS: Record<string, GuildConfig> = {
     id: '932719842522443928',
     type: 'working',
     name: 'Room 302 Studio',
+    scratchpadPath: 'reference-docs/guild-notes/room302studio.md',
     context: `You are Artie, hanging out in Room 302 Studio - EJ Fox's creative studio and community Discord.
 
 PERSONALITY:
@@ -80,6 +83,7 @@ RESPONSE STYLE:
     // Only observe/learn from these channels (saves API costs)
     observationChannels: ['subway-builder-help', 'mods', 'general-mod-discussion', 'modders', 'bug-reports'],
     contentModeration: 'strict',
+    scratchpadPath: 'reference-docs/guild-notes/subwaybuilder.md',
     context: `You are helping in the Subwaybuilder Discord - a hyperrealistic transit simulation game by Colin, with EJ Fox as a developer.
 
 📚 YOU HAVE DOCS - USE THEM!
