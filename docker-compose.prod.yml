@@ -1,43 +1,9 @@
 version: '3.8'
 
-services:
-  # Redis - Message queue and cache
-  redis:
-    image: redis:7-alpine
-    container_name: coachartie-redis-prod
-    command: >
-      redis-server
-      --port 47320
-      --appendonly yes
-      --maxmemory 512mb
-      --maxmemory-policy noeviction
-      --save 900 1
-      --appendfsync everysec
-    ports:
-      - "127.0.0.1:47320:47320"  # Localhost only - no public access
-    volumes:
-      - redis-data:/data
-    healthcheck:
-      test: ["CMD", "redis-cli", "-p", "47320", "ping"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 10s
-    deploy:
-      resources:
-        limits:
-          memory: 512M
-        reservations:
-          memory: 128M
-    restart: unless-stopped
-    networks:
-      - coachartie-prod
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "5"
+# NOTE: Redis runs as a system service on host port 47320
+# Containers connect via Docker gateway IP 172.18.0.1
 
+services:
   # Capabilities - Core AI processing and capability orchestration
   capabilities:
     build:
@@ -55,7 +21,7 @@ services:
       - NODE_ENV=production
       - DATABASE_PATH=/app/data/coachartie.db
       - CAPABILITIES_PORT=47324
-      - REDIS_HOST=redis
+      - REDIS_HOST=172.18.0.1
       - REDIS_PORT=47320
       - LOG_LEVEL=info
       - CONSOLE_LOG_LEVEL=info
@@ -66,9 +32,6 @@ services:
       - ./data:/app/data:rw
       - ./logs:/app/logs:rw
       - /var/run/docker.sock:/var/run/docker.sock
-    depends_on:
-      redis:
-        condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:47324/health"]
       interval: 30s
@@ -106,7 +69,7 @@ services:
     environment:
       - NODE_ENV=production
       - CAPABILITIES_URL=http://capabilities:47324
-      - REDIS_HOST=redis
+      - REDIS_HOST=172.18.0.1
       - REDIS_PORT=47320
       - DISCORD_PORT=47321
       - DATABASE_PATH=/app/data/coachartie.db
@@ -122,8 +85,6 @@ services:
       - ./data:/app/data:rw
       - ./logs:/app/logs:rw
     depends_on:
-      redis:
-        condition: service_healthy
       capabilities:
         condition: service_healthy
     healthcheck:
@@ -162,7 +123,7 @@ services:
     environment:
       - NODE_ENV=production
       - CAPABILITIES_URL=http://capabilities:47324
-      - REDIS_HOST=redis
+      - REDIS_HOST=172.18.0.1
       - REDIS_PORT=47320
       - SMS_PORT=47326
       - LOG_LEVEL=info
@@ -172,8 +133,6 @@ services:
     volumes:
       - ./logs:/app/logs:rw
     depends_on:
-      redis:
-        condition: service_healthy
       capabilities:
         condition: service_healthy
     healthcheck:
@@ -214,7 +173,7 @@ services:
       - BRAIN_PORT=47325
       - CAPABILITIES_URL=http://capabilities:47324
       - API_BASE_URL=http://localhost:47324
-      - REDIS_HOST=redis
+      - REDIS_HOST=172.18.0.1
       - REDIS_PORT=47320
       - DATABASE_PATH=/app/data/coachartie.db
       - LOG_LEVEL=info
@@ -227,8 +186,6 @@ services:
       - ./data:/app/data:rw
       - ./logs:/app/logs:rw
     depends_on:
-      redis:
-        condition: service_healthy
       capabilities:
         condition: service_healthy
     healthcheck:
@@ -298,8 +255,6 @@ services:
         max-file: "5"
 
 volumes:
-  redis-data:
-    driver: local
   sandbox-workspace:
     driver: local
   sandbox-home:
