@@ -33,8 +33,13 @@ export function getDb(dbPath?: string): BetterSQLite3Database<typeof schema> {
   const path = dbPath || getDefaultDbPath();
   rawDb = new Database(path);
 
-  // Enable WAL mode for better concurrent access
-  rawDb.pragma('journal_mode = WAL');
+  // Use DELETE journal mode - more crash-resistant than WAL
+  // WAL mode corrupts easily with frequent restarts (62+ restarts causing corruption)
+  rawDb.pragma('journal_mode = DELETE');
+  // Wait up to 30 seconds for locks (prevents SQLITE_BUSY errors)
+  rawDb.pragma('busy_timeout = 30000');
+  // Use FULL synchronous mode for maximum crash safety
+  rawDb.pragma('synchronous = FULL');
 
   db = drizzle(rawDb, { schema });
   return db;
@@ -398,28 +403,102 @@ export interface SyncDbWrapper {
 }
 
 /**
+ * Log database errors with structured data for monitoring
+ */
+function logDbError(operation: string, error: any, sql?: string): void {
+  const isCorruption = error?.code === 'SQLITE_CORRUPT' ||
+                       error?.message?.includes('database disk image is malformed');
+  const isBusy = error?.code === 'SQLITE_BUSY';
+  const isLocked = error?.code === 'SQLITE_LOCKED';
+
+  // Structured log for Loki/Grafana
+  const logData = {
+    event: isCorruption ? 'SQLITE_CORRUPT' : isBusy ? 'SQLITE_BUSY' : isLocked ? 'SQLITE_LOCKED' : 'SQLITE_ERROR',
+    operation,
+    code: error?.code,
+    message: error?.message,
+    sql: sql?.substring(0, 200), // Truncate for logging
+    timestamp: new Date().toISOString(),
+    severity: isCorruption ? 'CRITICAL' : 'ERROR',
+  };
+
+  if (isCorruption) {
+    console.error(`🚨🚨🚨 SQLITE_CORRUPT DETECTED 🚨🚨🚨`, JSON.stringify(logData));
+    console.error(`Database corruption in operation: ${operation}`);
+    console.error(`SQL: ${sql?.substring(0, 200)}`);
+    console.error(`Stack: ${error?.stack}`);
+  } else if (isBusy || isLocked) {
+    console.warn(`⚠️ Database contention: ${error?.code}`, JSON.stringify(logData));
+  } else {
+    console.error(`❌ Database error: ${operation}`, JSON.stringify(logData));
+  }
+}
+
+/**
+ * Check database integrity
+ */
+export function checkDbIntegrity(): { ok: boolean; result: string } {
+  try {
+    const raw = getRawDb();
+    const result = raw.pragma('integrity_check') as { integrity_check: string }[];
+    const status = result[0]?.integrity_check || 'unknown';
+    const ok = status === 'ok';
+
+    if (!ok) {
+      console.error(`🚨 Database integrity check FAILED: ${status}`);
+    }
+
+    return { ok, result: status };
+  } catch (error: any) {
+    logDbError('integrity_check', error);
+    return { ok: false, result: error?.message || 'check failed' };
+  }
+}
+
+/**
  * Get a sync database wrapper that provides a simple API for raw SQL queries
  * This is useful for migrating from sql.js while still using raw SQL
+ * Includes error handling and corruption detection
  */
 export function getSyncDb(): SyncDbWrapper {
   const raw = getRawDb();
 
   return {
     get<T = any>(sql: string, params: any[] = []): T | undefined {
-      return raw.prepare(sql).get(...params) as T | undefined;
+      try {
+        return raw.prepare(sql).get(...params) as T | undefined;
+      } catch (error: any) {
+        logDbError('get', error, sql);
+        throw error;
+      }
     },
 
     all<T = any>(sql: string, params: any[] = []): T[] {
-      return raw.prepare(sql).all(...params) as T[];
+      try {
+        return raw.prepare(sql).all(...params) as T[];
+      } catch (error: any) {
+        logDbError('all', error, sql);
+        throw error;
+      }
     },
 
     run(sql: string, params: any[] = []): { changes: number; lastInsertRowid: number | bigint } {
-      const result = raw.prepare(sql).run(...params);
-      return { changes: result.changes, lastInsertRowid: result.lastInsertRowid };
+      try {
+        const result = raw.prepare(sql).run(...params);
+        return { changes: result.changes, lastInsertRowid: result.lastInsertRowid };
+      } catch (error: any) {
+        logDbError('run', error, sql);
+        throw error;
+      }
     },
 
     exec(sql: string): void {
-      raw.exec(sql);
+      try {
+        raw.exec(sql);
+      } catch (error: any) {
+        logDbError('exec', error, sql);
+        throw error;
+      }
     },
 
     close(): void {

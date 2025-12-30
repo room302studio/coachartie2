@@ -173,14 +173,14 @@ export class VectorEmbeddingService {
       const embedding = await this.generateEmbedding(text);
 
       // Store in SQLite memories table
+      // Note: params must be passed as array for getSyncDb().run()
       const result = this.db.run(
         `
         UPDATE memories
         SET embedding = ?
         WHERE id = ?
       `,
-        JSON.stringify(embedding),
-        memoryId
+        [JSON.stringify(embedding), memoryId]
       );
 
       if (result.changes > 0) {

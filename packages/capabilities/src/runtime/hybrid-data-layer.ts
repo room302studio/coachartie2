@@ -1,4 +1,4 @@
-import { logger, getDatabase, type Memory } from '@coachartie/shared';
+import { logger, getSyncDb, type SyncDbWrapper, type Memory } from '@coachartie/shared';
 
 /**
  * Memory Record interface - Aligned with shared schema
@@ -79,15 +79,20 @@ export class HybridDataLayer {
   private hotData = new Map<number, MemoryRecord>(); // In-memory for active data
   private userIndex = new Map<string, Set<number>>(); // User ID -> Memory IDs
   private writeQueue = new AsyncQueue(); // Serialize writes
-  private coldStorage?: any; // SQLite for persistence
+  private coldStorage?: SyncDbWrapper; // SQLite for persistence (using better-sqlite3, not sql.js!)
   private maxHotMemories = 10000; // Keep most recent 10k in memory
   private syncInterval: NodeJS.Timeout;
 
   constructor(databasePath?: string) {
     if (databasePath) {
-      this.initializeAsync().catch((error) => {
+      try {
+        // Use synchronous better-sqlite3 instead of async sql.js
+        // This prevents database corruption from sql.js overwriting better-sqlite3 changes
+        this.coldStorage = getSyncDb();
+        this.loadRecentMemories();
+      } catch (error) {
         logger.warn('Failed to initialize SQLite, running in memory-only mode:', error);
-      });
+      }
     }
 
     // Periodic sync every 30 seconds
@@ -100,33 +105,19 @@ export class HybridDataLayer {
     logger.info(`✅ Hybrid Data Layer initialized (hot cache: ${this.hotData.size} memories)`);
   }
 
-  /**
-   * Async initialization helper
-   */
-  private async initializeAsync(): Promise<void> {
-    try {
-      this.coldStorage = await getDatabase();
-      // Database schema already initialized
-      await this.loadRecentMemories();
-    } catch (error) {
-      logger.error('Failed to initialize database:', error);
-      throw error;
-    }
-  }
-
   // Schema initialization deleted - use existing database schema
 
   /**
    * Load recent memories into hot cache
    */
-  private async loadRecentMemories(): Promise<void> {
+  private loadRecentMemories(): void {
     if (!this.coldStorage) {
       return;
     }
 
     try {
-      // Use inline limit to avoid sql.js parameter binding issues with LIMIT
-      const rows = (await this.coldStorage.all(
+      // Now using synchronous better-sqlite3 (no await needed)
+      const rows = this.coldStorage.all<MemoryRecord>(
         `
         SELECT id, user_id, content, tags, context, timestamp, importance,
                metadata, embedding, related_message_id, created_at, updated_at
@@ -134,7 +125,7 @@ export class HybridDataLayer {
         ORDER BY timestamp DESC
         LIMIT ${this.maxHotMemories}
       `
-      )) as MemoryRecord[];
+      );
 
       for (const row of rows) {
         this.hotData.set(row.id, row);
@@ -205,14 +196,15 @@ export class HybridDataLayer {
     // If not in hot cache, try cold storage
     if (this.coldStorage) {
       try {
-        const row = (await this.coldStorage.get(
+        // Now using synchronous better-sqlite3 (no await needed)
+        const row = this.coldStorage.get<MemoryRecord>(
           `
           SELECT id, user_id, content, tags, context, timestamp, importance,
                  metadata, embedding, related_message_id, created_at, updated_at
           FROM memories WHERE id = ?
         `,
           [id]
-        )) as MemoryRecord | undefined;
+        );
 
         if (row) {
           // Promote to hot cache
@@ -246,7 +238,8 @@ export class HybridDataLayer {
     // If we don't have enough in hot cache, check cold storage
     if (memories.length < limit && this.coldStorage) {
       try {
-        const rows = (await this.coldStorage.all(
+        // Now using synchronous better-sqlite3 (no await needed)
+        const rows = this.coldStorage.all<MemoryRecord>(
           `
           SELECT id, user_id, content, tags, context, timestamp, importance,
                  metadata, embedding, related_message_id, created_at, updated_at
@@ -256,7 +249,7 @@ export class HybridDataLayer {
           LIMIT ${limit}
         `,
           [userId]
-        )) as MemoryRecord[];
+        );
 
         return rows.slice(0, limit);
       } catch (error) {
@@ -289,7 +282,8 @@ export class HybridDataLayer {
     // Try FTS search in cold storage (only if query is not empty)
     if (query && query.trim().length > 0) {
       try {
-        const rows = (await this.coldStorage.all(
+        // Now using synchronous better-sqlite3 (no await needed)
+        const rows = this.coldStorage.all<MemoryRecord>(
           `
           SELECT m.id, m.user_id, m.content, m.tags, m.context, m.timestamp, m.importance,
                  m.metadata, m.embedding, m.related_message_id, m.created_at, m.updated_at
@@ -300,7 +294,7 @@ export class HybridDataLayer {
           LIMIT ${limit}
         `,
           [query.trim(), userId]
-        )) as MemoryRecord[];
+        );
 
         return rows;
       } catch (error) {
@@ -323,7 +317,8 @@ export class HybridDataLayer {
     }
 
     try {
-      const result = await this.coldStorage.run(
+      // Now using synchronous better-sqlite3 (no await needed)
+      const result = this.coldStorage.run(
         `
         INSERT INTO memories
         (user_id, content, tags, context, timestamp, importance, metadata, embedding, related_message_id)
@@ -342,7 +337,8 @@ export class HybridDataLayer {
         ]
       );
 
-      const realId = result.lastID as number;
+      // better-sqlite3 uses lastInsertRowid instead of lastID
+      const realId = Number(result.lastInsertRowid);
 
       // Replace temp entry with real ID in hot cache
       const tempMemory = this.hotData.get(tempId);
@@ -362,10 +358,11 @@ export class HybridDataLayer {
         }
       }
 
-      // Generate and store embedding asynchronously (non-blocking)
-      this.generateEmbeddingForMemory(realId, memory.content).catch((err) =>
-        logger.warn(`Failed to generate embedding for memory ${realId}:`, err)
-      );
+      // DISABLED: Embedding generation was flooding logs with errors
+      // Re-enable once vector-embeddings.ts storeEmbedding bug is fixed
+      // this.generateEmbeddingForMemory(realId, memory.content).catch((err) =>
+      //   logger.warn(`Failed to generate embedding for memory ${realId}:`, err)
+      // );
 
       return realId;
     } catch (error) {
@@ -387,7 +384,8 @@ export class HybridDataLayer {
         if (!this.coldStorage) return;
 
         try {
-          await this.coldStorage.run(
+          // Now using synchronous better-sqlite3 (no await needed)
+          this.coldStorage.run(
             `
             UPDATE memories
             SET content = ?, tags = ?, context = ?, timestamp = ?, importance = ?,
