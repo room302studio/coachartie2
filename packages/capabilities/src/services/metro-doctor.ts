@@ -2,56 +2,39 @@
  * Metro Doctor Service for Coach Artie
  *
  * Uses the official metro-savefile-doctor repo for loading, analyzing,
- * and repairing .metro save files.
+ * and repairing .metro save files. The repair script is loaded from
+ * the official repo, not hardcoded here.
  */
 
 import { mkdir, writeFile, readFile } from 'fs/promises';
-import { join, basename } from 'path';
+import { join, basename, dirname } from 'path';
+import { createRequire } from 'module';
 import { logger } from '@coachartie/shared';
 
 // Import from official metro-savefile-doctor repo
 import { readMetroSave, writeMetroSave, type MetroSaveData } from 'metro-savefile-doctor/metro-loader';
 import { runJSScriptString, type SaveData } from 'metro-savefile-doctor/js-script-runner';
 
-// Repair script - fixes common save file issues
-// NOTE: Routes use 'stNodes' (station nodes) - trunk routes have 0 stNodes intentionally
-// We do NOT auto-remove routes - too risky. Only fix stuck trains.
-// Train structure: motion.speed (not speed), stuckDetection.lastMovementTime (not state)
-const REPAIR_SCRIPT = `
-const fixes = [];
-const currentTime = save.data.elapsedSeconds || 0;
+// Resolve path to the official repair script from metro-savefile-doctor
+const require = createRequire(import.meta.url);
+const metroSavefileDoctorPath = dirname(require.resolve('metro-savefile-doctor/package.json'));
+const REPAIR_SCRIPT_PATH = join(metroSavefileDoctorPath, 'scripts', 'repair-save.js');
 
-// Fix: Nudge stuck trains (speed=0 for >60s)
-if (save.data.trains && Array.isArray(save.data.trains)) {
-    let stuckFixed = 0;
-    save.data.trains.forEach(train => {
-        if (!train.motion || !train.stuckDetection) return;
+// Cache for the repair script
+let cachedRepairScript: string | null = null;
 
-        const isStationary = train.motion.speed === 0;
-        const timeSinceMove = currentTime - train.stuckDetection.lastMovementTime;
-        const isStuck = isStationary && timeSinceMove > 60;
+async function getRepairScript(): Promise<string> {
+  if (cachedRepairScript) return cachedRepairScript;
 
-        if (isStuck) {
-            // Give the train a small nudge to unstick it
-            train.motion.speed = 0.1;
-            train.stuckDetection.lastMovementTime = currentTime;
-            stuckFixed++;
-        }
-    });
-    if (stuckFixed > 0) {
-        fixes.push('Nudged ' + stuckFixed + ' stuck trains');
-        log('Nudged ' + stuckFixed + ' stuck trains (were stationary >60s)');
-    }
+  try {
+    cachedRepairScript = await readFile(REPAIR_SCRIPT_PATH, 'utf-8');
+    logger.info(`🩺 Metro doctor: loaded repair script from ${REPAIR_SCRIPT_PATH}`);
+    return cachedRepairScript;
+  } catch (err) {
+    logger.error(`🩺 Metro doctor: failed to load repair script from ${REPAIR_SCRIPT_PATH}`, err);
+    throw new Error(`Failed to load repair script: ${(err as Error).message}`);
+  }
 }
-
-// Summary
-if (fixes.length === 0) {
-    log('No issues found - save file is healthy!');
-} else {
-    log('Applied ' + fixes.length + ' fixes:');
-    fixes.forEach(f => log('  - ' + f));
-}
-`;
 
 interface MetroAnalysis {
   valid: boolean;
@@ -260,7 +243,8 @@ export async function processMetroAttachment(
         data: saveData.data,
       };
 
-      const scriptResult = runJSScriptString(REPAIR_SCRIPT, scriptSaveData);
+      const repairScript = await getRepairScript();
+      const scriptResult = runJSScriptString(repairScript, scriptSaveData);
 
       if (scriptResult.success) {
         repairLog = scriptResult.logs;
