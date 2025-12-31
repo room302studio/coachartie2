@@ -5,6 +5,7 @@ import { MemoryEntourageInterface } from './memory-entourage-interface.js';
 import { CombinedMemoryEntourage } from './combined-memory-entourage.js';
 import { CreditMonitor } from './credit-monitor.js';
 import { visionCapability as visionCap } from '../capabilities/vision.js';
+import { processMetroAttachment } from './metro-doctor.js';
 
 // Vision capability wrapper for auto-extraction
 const visionCapability: { execute: (opts: any) => Promise<string> } | null = {
@@ -15,9 +16,6 @@ const visionCapability: { execute: (opts: any) => Promise<string> } | null = {
     );
   },
 };
-
-// Metro-doctor is still WIP
-const processMetroAttachment: ((url: string) => Promise<{ stdout: string; stderr?: string }>) | null = null;
 
 // Debug flag for detailed Context Alchemy logging
 const DEBUG = process.env.CONTEXT_ALCHEMY_DEBUG === 'true';
@@ -111,6 +109,28 @@ interface ContextBudget {
  * 3. Manages token budget intelligently
  * 4. Assembles optimal context for the LLM
  */
+// Pending file attachments to be sent back to Discord after response
+export interface PendingAttachment {
+  buffer: Buffer;
+  filename: string;
+  content?: string;
+}
+
+// Store pending attachments keyed by message/user ID
+const pendingAttachments = new Map<string, PendingAttachment[]>();
+
+export function getPendingAttachments(key: string): PendingAttachment[] {
+  const attachments = pendingAttachments.get(key) || [];
+  pendingAttachments.delete(key); // Clear after retrieval
+  return attachments;
+}
+
+export function addPendingAttachment(key: string, attachment: PendingAttachment): void {
+  const existing = pendingAttachments.get(key) || [];
+  existing.push(attachment);
+  pendingAttachments.set(key, existing);
+}
+
 export class ContextAlchemy {
   private static instance: ContextAlchemy;
   private memoryEntourage: MemoryEntourageInterface;
@@ -928,19 +948,21 @@ Be precise with numbers - if it says 1.5%, report 1.5% not 1.1%. If you can't re
     }
 
     // Optional: auto metro doctor for .metro files
-    const metroAttachments = attachments.filter((att: any) =>
+    // IMPORTANT: Only process metro files from the CURRENT message, not recentAttachments
+    // Otherwise we'd re-send metro files every time someone mentions Artie in a channel
+    const metroAttachments = currentAttachments.filter((att: any) =>
       typeof att.name === 'string' ? att.name.toLowerCase().endsWith('.metro') : false
     );
-    const autoMetro =
-      (process.env.AUTO_METRO_DOCTOR || 'true').toLowerCase() !== 'false' &&
-      processMetroAttachment !== null;
+    const autoMetro = (process.env.AUTO_METRO_DOCTOR || 'true').toLowerCase() !== 'false';
 
     if (autoMetro && metroAttachments.length > 0) {
       const first = metroAttachments[0];
       const url = first.url || first.proxyUrl;
       if (url) {
         try {
-          const result = await processMetroAttachment!(url);
+          // Pass sender name for filename prefixing
+          const sender = message.context?.displayName || message.context?.username;
+          const result = await processMetroAttachment(url, sender);
 
           const MAX_METRO_CHARS = 2000;
           const trimmed =
@@ -964,6 +986,19 @@ Be precise with numbers - if it says 1.5%, report 1.5% not 1.1%. If you can't re
             content,
             category: 'evidence',
           });
+
+          // Queue the file to be sent back to Discord
+          // Use message.userId as key since it's available in the Discord response flow
+          // Include the analysis summary so users know what was done
+          const attachmentContent = result.analysis?.summary
+            ? `📎 **${result.filename}**\n\n${result.analysis.summary}`
+            : `📎 Here's your analyzed save file: **${result.filename}**`;
+          addPendingAttachment(message.userId, {
+            buffer: result.buffer,
+            filename: result.filename,
+            content: attachmentContent,
+          });
+          logger.info(`📎 Queued metro file for sending: ${result.filename} (${result.buffer.length} bytes)`);
         } catch (error: any) {
           const msg = `Metro doctor failed: ${error?.message || String(error)}`;
           sources.push({
@@ -976,6 +1011,28 @@ Be precise with numbers - if it says 1.5%, report 1.5% not 1.1%. If you can't re
           logger.warn(msg);
         }
       }
+    }
+
+    // Resolved Discord message links - show the actual content of linked messages
+    const resolvedDiscordMessages = Array.isArray(message.context?.resolvedDiscordMessages)
+      ? message.context.resolvedDiscordMessages
+      : [];
+
+    if (resolvedDiscordMessages.length > 0) {
+      const lines = ['📨 Referenced Discord Messages:'];
+      for (const msg of resolvedDiscordMessages) {
+        lines.push(`\n**From @${msg.author} in #${msg.channel}:**`);
+        lines.push(msg.content);
+      }
+      const content = lines.join('\n');
+      sources.push({
+        name: 'resolved_discord_messages',
+        priority: 90, // Higher priority than regular URLs - these are explicitly referenced
+        tokenWeight: Math.ceil(content.length / 4),
+        content,
+        category: 'evidence',
+      });
+      logger.info(`📨 Added ${resolvedDiscordMessages.length} resolved Discord messages to context`);
     }
 
     // URLs from recent Discord context (non-attachments)
