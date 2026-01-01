@@ -37,11 +37,6 @@ export default defineConfig({
     sequence: {
       concurrent: false,
     },
-
-    // NOTE: Tests that import from @coachartie/* packages fail with
-    // "__vite_ssr_exportName__ is not defined" due to vitest 1.x SSR transform bug.
-    // Self-contained tests (like template-substitution.test.ts) work fine.
-    // Fix options: upgrade to vitest 2.x, switch to jest, or make tests self-contained.
   },
 
   resolve: {
