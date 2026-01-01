@@ -124,7 +124,11 @@ function formatTerminalOutput(opts: {
 }
 
 // Truncate output intelligently for LLM consumption
-function truncateOutput(output: string): { text: string; truncated: boolean; linesRemoved: number } {
+function truncateOutput(output: string): {
+  text: string;
+  truncated: boolean;
+  linesRemoved: number;
+} {
   const lines = output.split('\n');
 
   if (lines.length <= MAX_OUTPUT_LINES && output.length <= MAX_OUTPUT_BYTES) {

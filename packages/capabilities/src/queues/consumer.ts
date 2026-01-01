@@ -223,9 +223,7 @@ export async function startMessageConsumer(): Promise<Worker<IncomingMessage, vo
   return worker;
 }
 
-function getOutgoingQueueName(
-  type: 'discord' | 'slack' | 'sms' | 'email' | 'api' | 'irc'
-): string {
+function getOutgoingQueueName(type: 'discord' | 'slack' | 'sms' | 'email' | 'api' | 'irc'): string {
   switch (type) {
     case 'discord':
       return QUEUES.OUTGOING_DISCORD;

@@ -54,7 +54,9 @@ export class ServiceDiscovery {
 
     // Store in Redis for inter-service discovery (only if Redis is available and checked)
     if (!hasRedisBeenChecked() || !isRedisAvailable()) {
-      logger.info(`📡 Registered ${serviceName} service locally at ${serviceInfo.url} (Redis unavailable)`);
+      logger.info(
+        `📡 Registered ${serviceName} service locally at ${serviceInfo.url} (Redis unavailable)`
+      );
     } else {
       try {
         await redis.setex(

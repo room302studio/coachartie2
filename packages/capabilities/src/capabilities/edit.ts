@@ -36,7 +36,11 @@ async function execInContainer(command: string, timeout: number = 30000) {
 }
 
 // Read file with line numbers (like Claude Code's Read tool)
-async function readWithLineNumbers(file: string, startLine?: number, endLine?: number): Promise<string> {
+async function readWithLineNumbers(
+  file: string,
+  startLine?: number,
+  endLine?: number
+): Promise<string> {
   let command = `cat -n "${file}"`;
 
   if (startLine && endLine) {
@@ -77,7 +81,11 @@ async function findLineNumbers(file: string, searchString: string): Promise<numb
 
   try {
     const { stdout } = await execInContainer(command);
-    return stdout.trim().split('\n').filter(Boolean).map(n => parseInt(n));
+    return stdout
+      .trim()
+      .split('\n')
+      .filter(Boolean)
+      .map((n) => parseInt(n));
   } catch {
     return [];
   }
@@ -134,9 +142,7 @@ async function replaceInFile(
   }
 
   // Generate diff
-  const { stdout: diff } = await execInContainer(
-    `diff -u "${backupFile}" "${file}" || true`
-  );
+  const { stdout: diff } = await execInContainer(`diff -u "${backupFile}" "${file}" || true`);
 
   // Find which lines changed
   const linesChanged = await findLineNumbers(file, newString);
@@ -215,7 +221,7 @@ Always READ first to see line numbers, then EDIT with confidence.`,
           if (line) {
             const lineStr = String(line);
             if (lineStr.includes('-')) {
-              const [start, end] = lineStr.split('-').map(n => parseInt(n.trim()));
+              const [start, end] = lineStr.split('-').map((n) => parseInt(n.trim()));
               startLine = start;
               endLine = end;
             } else {
@@ -224,7 +230,9 @@ Always READ first to see line numbers, then EDIT with confidence.`,
             }
           }
 
-          logger.info(`Reading ${file}${startLine ? ` (lines ${startLine}-${endLine || 'end'})` : ''}`);
+          logger.info(
+            `Reading ${file}${startLine ? ` (lines ${startLine}-${endLine || 'end'})` : ''}`
+          );
 
           const content = await readWithLineNumbers(file, startLine, endLine);
 
@@ -232,7 +240,11 @@ Always READ first to see line numbers, then EDIT with confidence.`,
           const lines = content.split('\n');
           const maxLines = 200;
           if (lines.length > maxLines) {
-            const truncated = [...lines.slice(0, 100), `\n... ${lines.length - maxLines} lines omitted ...\n`, ...lines.slice(-100)].join('\n');
+            const truncated = [
+              ...lines.slice(0, 100),
+              `\n... ${lines.length - maxLines} lines omitted ...\n`,
+              ...lines.slice(-100),
+            ].join('\n');
             return `${file}:\n${truncated}`;
           }
 
@@ -247,7 +259,9 @@ Always READ first to see line numbers, then EDIT with confidence.`,
             return `Error: new_string required for replace. What should I replace it with?`;
           }
 
-          logger.info(`Replacing in ${file}: "${old_string.slice(0, 50)}..." -> "${new_string.slice(0, 50)}..."`);
+          logger.info(
+            `Replacing in ${file}: "${old_string.slice(0, 50)}..." -> "${new_string.slice(0, 50)}..."`
+          );
 
           // Check how many times old_string appears
           const count = await countOccurrences(file, old_string);
@@ -280,7 +294,7 @@ Either:
           // Format diff nicely
           const diffLines = diff.split('\n').slice(2); // Skip header
           const formattedDiff = diffLines
-            .filter(l => l.startsWith('+') || l.startsWith('-') || l.startsWith('@'))
+            .filter((l) => l.startsWith('+') || l.startsWith('-') || l.startsWith('@'))
             .slice(0, 30) // Limit diff output
             .join('\n');
 
@@ -329,7 +343,11 @@ ${formattedDiff || '(no visible diff)'}`;
           // Delete the line(s)
           await execInContainer(`sed -i '${range}d' "${file}"`);
 
-          const preview = toDelete.stdout.split('\n').slice(0, 3).map(l => `- ${l}`).join('\n');
+          const preview = toDelete.stdout
+            .split('\n')
+            .slice(0, 3)
+            .map((l) => `- ${l}`)
+            .join('\n');
           return `Deleted ${file}:${range}:
 ${preview}${toDelete.stdout.split('\n').length > 3 ? '\n  ...' : ''}`;
         }

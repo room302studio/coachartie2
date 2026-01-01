@@ -41,10 +41,9 @@ app.use(express.json());
 
 app.get('/health', (req, res) => {
   const isConnected = ircClient.connected;
-  const channels =
-    ircClient.network?.channels
-      ? Array.from(ircClient.network.channels.values()).map((c: any) => c.name)
-      : [];
+  const channels = ircClient.network?.channels
+    ? Array.from(ircClient.network.channels.values()).map((c: any) => c.name)
+    : [];
 
   res.json({
     status: isConnected ? 'ok' : 'disconnected',
@@ -59,10 +58,9 @@ app.get('/health', (req, res) => {
 // Write status file
 function writeStatus(status: 'starting' | 'connected' | 'error' | 'shutdown', data?: any) {
   try {
-    const channels =
-      ircClient.network?.channels
-        ? Array.from(ircClient.network.channels.values()).map((c: any) => c.name)
-        : [];
+    const channels = ircClient.network?.channels
+      ? Array.from(ircClient.network.channels.values()).map((c: any) => c.name)
+      : [];
 
     const statusData = {
       status,

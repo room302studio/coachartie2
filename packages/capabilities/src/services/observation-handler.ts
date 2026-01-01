@@ -47,7 +47,7 @@ Be concise (2-3 sentences) and factual. Don't make assumptions beyond what's dir
       // Build message chain for generateFromMessageChain
       const messages = [
         { role: 'system' as const, content: systemPrompt },
-        { role: 'user' as const, content: prompt }
+        { role: 'user' as const, content: prompt },
       ];
 
       // Use FAST_MODEL for cost efficiency
@@ -67,7 +67,7 @@ Be concise (2-3 sentences) and factual. Don't make assumptions beyond what's dir
 
       return {
         summary: response,
-        cost: estimatedCost
+        cost: estimatedCost,
       };
     } catch (error) {
       logger.error('Failed to generate observation summary:', error);
@@ -118,14 +118,14 @@ Be concise (2-3 sentences) and factual. Don't make assumptions beyond what's dir
       return {
         totalObservations: stats?.totalObservations || 0,
         totalCost: stats?.totalCost || 0,
-        observationsByGuild
+        observationsByGuild,
       };
     } catch (error) {
       logger.error('Failed to get observation stats:', error);
       return {
         totalObservations: 0,
         totalCost: 0,
-        observationsByGuild: {}
+        observationsByGuild: {},
       };
     }
   }

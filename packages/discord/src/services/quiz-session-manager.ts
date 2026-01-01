@@ -86,9 +86,7 @@ function isCorrectAnswer(userAnswer: string, correctAnswer: string): boolean {
  * Fetch a random flashcard from the API
  */
 async function fetchRandomCard(deckId?: string): Promise<FlashcardResponse> {
-  const url = deckId
-    ? `${FLASHCARD_API_BASE}/random/${deckId}`
-    : `${FLASHCARD_API_BASE}/random`;
+  const url = deckId ? `${FLASHCARD_API_BASE}/random/${deckId}` : `${FLASHCARD_API_BASE}/random`;
 
   const response = await fetch(url);
 
@@ -112,7 +110,13 @@ export const quizSessionManager = {
    * Start a new quiz in a channel
    */
   async startQuiz(options: QuizStartOptions): Promise<QuizSession> {
-    const { channelId, userId, deckId, questionCount = DEFAULT_QUESTION_COUNT, onTimeout } = options;
+    const {
+      channelId,
+      userId,
+      deckId,
+      questionCount = DEFAULT_QUESTION_COUNT,
+      onTimeout,
+    } = options;
 
     // Check if quiz already active
     if (activeSessions.has(channelId)) {
@@ -242,7 +246,9 @@ export const quizSessionManager = {
       }, QUESTION_TIMEOUT_MS);
     }
 
-    logger.info(`🎮 Quiz next question: ${channelId} Q${session.questionNumber}/${session.totalQuestions}`);
+    logger.info(
+      `🎮 Quiz next question: ${channelId} Q${session.questionNumber}/${session.totalQuestions}`
+    );
 
     return session;
   },
@@ -250,7 +256,9 @@ export const quizSessionManager = {
   /**
    * Skip current question (no points awarded)
    */
-  async skipQuestion(channelId: string): Promise<{ skippedAnswer: string; session: QuizSession | null }> {
+  async skipQuestion(
+    channelId: string
+  ): Promise<{ skippedAnswer: string; session: QuizSession | null }> {
     const session = activeSessions.get(channelId);
 
     if (!session || !session.currentCard) {
@@ -276,7 +284,9 @@ export const quizSessionManager = {
   /**
    * Handle question timeout (no one answered)
    */
-  async handleTimeout(channelId: string): Promise<{ answer: string; nextSession: QuizSession | null }> {
+  async handleTimeout(
+    channelId: string
+  ): Promise<{ answer: string; nextSession: QuizSession | null }> {
     const session = activeSessions.get(channelId);
 
     if (!session || !session.currentCard) {
@@ -310,7 +320,9 @@ export const quizSessionManager = {
     const finalScores = new Map(session.scores);
     activeSessions.delete(channelId);
 
-    logger.info(`🎮 Quiz ended in channel ${channelId}. Final scores: ${JSON.stringify([...finalScores])}`);
+    logger.info(
+      `🎮 Quiz ended in channel ${channelId}. Final scores: ${JSON.stringify([...finalScores])}`
+    );
 
     return finalScores;
   },
@@ -349,6 +361,8 @@ export const quizSessionManager = {
     if (scores.size === 0) return [];
 
     const maxScore = Math.max(...scores.values());
-    return [...scores.entries()].filter(([, score]) => score === maxScore).map(([oderId]) => oderId);
+    return [...scores.entries()]
+      .filter(([, score]) => score === maxScore)
+      .map(([oderId]) => oderId);
   },
 };

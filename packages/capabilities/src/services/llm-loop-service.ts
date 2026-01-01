@@ -7,10 +7,7 @@ import { capabilityParser } from './capability-parser.js';
 import { capabilityExecutor } from './capability-executor.js';
 import { llmResponseCoordinator } from './llm-response-coordinator.js';
 import { getErrorMessage } from '../utils/error-utils.js';
-import {
-  OrchestrationContext,
-  CapabilityResult,
-} from '../types/orchestration-types.js';
+import { OrchestrationContext, CapabilityResult } from '../types/orchestration-types.js';
 
 // =====================================================
 // LLM LOOP SERVICE
@@ -67,7 +64,9 @@ export class LLMLoopService {
     // This ensures <read>, <recall>, etc. tags in the first response actually get executed
     const initialCapabilities = capabilityParser.extractCapabilities(initialResponse);
     if (initialCapabilities.length > 0) {
-      logger.info(`📦 Found ${initialCapabilities.length} capabilities in initial response - executing first`);
+      logger.info(
+        `📦 Found ${initialCapabilities.length} capabilities in initial response - executing first`
+      );
 
       let systemFeedback = '';
       for (const capability of initialCapabilities) {
@@ -75,7 +74,10 @@ export class LLMLoopService {
         try {
           logger.info(`🔧 Executing initial capability: ${capabilityKey}`);
 
-          const processedCapability = await capabilityExecutor.substituteTemplateVariables(capability, context.results);
+          const processedCapability = await capabilityExecutor.substituteTemplateVariables(
+            capability,
+            context.results
+          );
           const capabilityForExecution = {
             name: processedCapability.name,
             action: processedCapability.action,
@@ -126,7 +128,9 @@ export class LLMLoopService {
       // Add initial capability results to conversation history
       if (systemFeedback) {
         conversationHistory.push(systemFeedback.trim());
-        logger.info(`🔄 Added initial capability results to conversation: ${systemFeedback.length} chars`);
+        logger.info(
+          `🔄 Added initial capability results to conversation: ${systemFeedback.length} chars`
+        );
       }
     }
 
@@ -206,7 +210,11 @@ export class LLMLoopService {
         `📡 LLM action: "${nextAction.substring(0, 100)}..." with ${capabilities.length} capabilities`
       );
       if (onPartialResponse) {
-        const cleanResponse = llmResponseCoordinator.stripThinkingTags(nextAction, context.userId, context.messageId);
+        const cleanResponse = llmResponseCoordinator.stripThinkingTags(
+          nextAction,
+          context.userId,
+          context.messageId
+        );
         if (cleanResponse.trim()) {
           onPartialResponse(cleanResponse);
         }
@@ -234,7 +242,10 @@ export class LLMLoopService {
             `🔧 Executing LLM-requested capability: ${capability.name}:${capability.action} (failure count: ${failureCount}/${MAX_FAILURES_PER_CAPABILITY})`
           );
 
-          const processedCapability = await capabilityExecutor.substituteTemplateVariables(capability, context.results);
+          const processedCapability = await capabilityExecutor.substituteTemplateVariables(
+            capability,
+            context.results
+          );
           const capabilityForExecution = {
             name: processedCapability.name,
             action: processedCapability.action,
@@ -264,7 +275,11 @@ export class LLMLoopService {
           if (outputVar && result.success && result.data) {
             const { GlobalVariableStore } = await import('../capabilities/variable-store.js');
             const globalStore = GlobalVariableStore.getInstance();
-            await globalStore.set(String(outputVar), result.data, `Auto-stored from ${capability.name}:${capability.action}`);
+            await globalStore.set(
+              String(outputVar),
+              result.data,
+              `Auto-stored from ${capability.name}:${capability.action}`
+            );
             logger.info(`📦 Auto-stored result to global variable: ${outputVar}`);
           }
 
@@ -365,8 +380,9 @@ Previous capability FAILED. To fix this:
         : '';
 
       // Fetch autonomous mode base prompt from DB (with fallback)
-      const autonomousModeBase = (await promptManager.getPrompt('PROMPT_AUTONOMOUS_MODE'))?.content ||
-        'You are Coach Artie in AUTONOMOUS DEEP EXPLORATION MODE.\n\nYour goal is to thoroughly explore and research the user\'s request using available capabilities.\n\nIMPORTANT RULES:\n- Think step-by-step about what information you need\n- Use capabilities to gather information systematically\n- If you encounter errors, learn from them and adjust your approach\n- Build on what you\'ve learned in previous steps\n- When you have enough information, synthesize it into a comprehensive response\n\nBe thorough, curious, and persistent in your research.';
+      const autonomousModeBase =
+        (await promptManager.getPrompt('PROMPT_AUTONOMOUS_MODE'))?.content ||
+        "You are Coach Artie in AUTONOMOUS DEEP EXPLORATION MODE.\n\nYour goal is to thoroughly explore and research the user's request using available capabilities.\n\nIMPORTANT RULES:\n- Think step-by-step about what information you need\n- Use capabilities to gather information systematically\n- If you encounter errors, learn from them and adjust your approach\n- Build on what you've learned in previous steps\n- When you have enough information, synthesize it into a comprehensive response\n\nBe thorough, curious, and persistent in your research.";
 
       const nextActionPrompt = `${progressIndicator} ${autonomousModeBase}
 
@@ -406,7 +422,11 @@ ${!canStop ? 'Execute the next capability now.' : 'Execute next capability OR pr
       );
 
       // SECURITY: Apply sanitization to prevent information disclosure
-      const sanitizedAction = llmResponseCoordinator.stripThinkingTags(nextAction, context.userId, context.messageId);
+      const sanitizedAction = llmResponseCoordinator.stripThinkingTags(
+        nextAction,
+        context.userId,
+        context.messageId
+      );
 
       return sanitizedAction;
     } catch (_error) {

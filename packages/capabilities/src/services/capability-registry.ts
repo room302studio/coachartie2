@@ -8,9 +8,23 @@ import {
 } from '../types/structured-errors.js';
 
 /**
+ * Context passed to capability handlers
+ */
+export interface CapabilityContext {
+  guildId?: string;
+  channelId?: string;
+  userId?: string;
+  messageId?: string;
+}
+
+/**
  * Type definition for a capability handler function
  */
-export type CapabilityHandler = (params: any, content?: string) => Promise<string>;
+export type CapabilityHandler = (
+  params: any,
+  content?: string,
+  context?: CapabilityContext
+) => Promise<string>;
 
 /**
  * Interface for a registered capability
@@ -254,10 +268,17 @@ export class CapabilityRegistry {
    * @param action - The action to perform
    * @param params - Parameters for the capability
    * @param content - Optional content string
+   * @param context - Optional context (guildId, channelId, etc.)
    * @returns Promise resolving to the capability result
    * @throws StructuredCapabilityError if capability not found, action not supported, or required params missing
    */
-  async execute(name: string, action: string, params: any = {}, content?: string): Promise<string> {
+  async execute(
+    name: string,
+    action: string,
+    params: any = {},
+    content?: string,
+    context?: CapabilityContext
+  ): Promise<string> {
     // Get capability (will throw if not found)
     const capability = this.capabilities.get(name);
 
@@ -308,7 +329,7 @@ export class CapabilityRegistry {
     );
 
     try {
-      const result = await capability.handler(handlerParams, content);
+      const result = await capability.handler(handlerParams, content, context);
       return result;
     } catch (error) {
       logger.error(`❌ Capability '${name}:${action}' failed:`, error);
@@ -487,9 +508,10 @@ export class CapabilityRegistry {
   ): Array<{ action: string; reason: string; example: string }> {
     const similar = Array.from(this.capabilities.values())
       .filter((cap) => cap.name !== capabilityName)
-      .filter((cap) =>
-        cap.name.toLowerCase().includes(capabilityName.toLowerCase().split(/[-_]/)[0]) ||
-        capabilityName.toLowerCase().includes(cap.name.toLowerCase().split(/[-_]/)[0])
+      .filter(
+        (cap) =>
+          cap.name.toLowerCase().includes(capabilityName.toLowerCase().split(/[-_]/)[0]) ||
+          capabilityName.toLowerCase().includes(cap.name.toLowerCase().split(/[-_]/)[0])
       )
       .slice(0, 2);
 
@@ -610,9 +632,12 @@ Available capabilities:
 <websearch>query</websearch> → search the web
 <calc>2+2</calc> → calculate
 <remember>fact to store</remember> → store memory
+<image_gen-generate prompt="description" /> → generate an image
+
+IMPORTANT: Always add <wants_loop>true</wants_loop> AFTER any capability tag to execute it!
+Example: <websearch>topic</websearch><wants_loop>true</wants_loop>
 
 Or full format: <capability name="X" action="Y" data='{"param":"value"}' />
-Include <wants_loop>true</wants_loop> after capabilities.
 
 Available: `;
 
@@ -696,6 +721,10 @@ capabilityRegistry.register(scrapbookCapability);
 // Auto-register n8n Browser capability
 import { n8nBrowserCapability } from '../capabilities/n8n-browser.js';
 capabilityRegistry.register(n8nBrowserCapability);
+
+// Auto-register Filesystem capability (for reading docs, etc.)
+import { filesystemCapability } from '../capabilities/filesystem.js';
+capabilityRegistry.register(filesystemCapability);
 
 // Log all successfully registered capabilities on startup
 logger.info(

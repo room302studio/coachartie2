@@ -1,31 +1,103 @@
 import { logger } from '@coachartie/shared';
-import { RegisteredCapability } from '../services/capability-registry.js';
+import { RegisteredCapability, CapabilityContext } from '../services/capability-registry.js';
+import { readFile, writeFile, mkdir } from 'fs/promises';
+import { dirname, resolve } from 'path';
+import { existsSync } from 'fs';
 
 /**
- * Scratchpad capability - externalized thinking
+ * Scratchpad capability - persistent guild notes
  *
- * This is like my thinking blocks but for Artie. A place to:
- * - Reason through complex problems step by step
- * - Keep notes that persist across the conversation
- * - Plan multi-step tasks before executing
- * - Track what's been tried and what worked
+ * Artie's long-term memory for each guild. A place to:
+ * - Note community members and their quirks
+ * - Track recurring issues and solutions
+ * - Remember things that worked or didn't
+ * - Build up knowledge over time
  *
- * The key insight: thinking out loud leads to better reasoning.
- * Instead of keeping it all in the context window, write it down.
+ * Persists to disk so knowledge survives restarts.
  */
 
 interface ScratchpadParams {
-  action: 'write' | 'read' | 'append' | 'clear' | 'section';
+  action: 'write' | 'read' | 'append' | 'clear' | 'section' | 'note';
   content?: string;
   section?: string;
+  guildId?: string;
 }
 
-// In-memory scratchpad (per conversation/session)
-// In production, this could persist to Redis with a conversation ID
-const scratchpads = new Map<string, string>();
-const DEFAULT_PAD = 'default';
+// Base path for guild notes
+const NOTES_BASE_PATH = resolve(process.cwd(), 'reference-docs/guild-notes');
 
-// Format the scratchpad nicely
+// In-memory cache of loaded scratchpads
+const scratchpadCache = new Map<string, string>();
+
+// Get the file path for a guild's scratchpad
+function getGuildNotesPath(guildId: string): string {
+  // Map known guild IDs to their note files
+  const guildFiles: Record<string, string> = {
+    '1420846272545296470': 'subwaybuilder.md',
+    '932719842522443928': 'room302studio.md',
+  };
+
+  const filename = guildFiles[guildId] || `guild-${guildId}.md`;
+  return resolve(NOTES_BASE_PATH, filename);
+}
+
+// Load scratchpad from disk
+async function loadScratchpad(guildId: string): Promise<string> {
+  // Check cache first
+  if (scratchpadCache.has(guildId)) {
+    return scratchpadCache.get(guildId)!;
+  }
+
+  const filePath = getGuildNotesPath(guildId);
+
+  try {
+    if (existsSync(filePath)) {
+      const content = await readFile(filePath, 'utf-8');
+      scratchpadCache.set(guildId, content);
+      return content;
+    }
+  } catch (error) {
+    logger.warn(`Could not load scratchpad for guild ${guildId}:`, error);
+  }
+
+  // Return default template if file doesn't exist
+  const template = `# Guild Notes
+
+*Artie's observations and notes about this community*
+
+## Community Members
+<!-- People I've interacted with, their interests, quirks -->
+
+## Recurring Topics
+<!-- Questions that come up often, common issues -->
+
+## Things I've Learned
+<!-- Patterns, solutions that worked, things to remember -->
+
+## Notes
+<!-- Ongoing observations -->
+`;
+  scratchpadCache.set(guildId, template);
+  return template;
+}
+
+// Save scratchpad to disk
+async function saveScratchpad(guildId: string, content: string): Promise<void> {
+  const filePath = getGuildNotesPath(guildId);
+
+  try {
+    // Ensure directory exists
+    await mkdir(dirname(filePath), { recursive: true });
+    await writeFile(filePath, content, 'utf-8');
+    scratchpadCache.set(guildId, content);
+    logger.info(`📝 Saved guild notes for ${guildId} to ${filePath}`);
+  } catch (error) {
+    logger.error(`Failed to save scratchpad for guild ${guildId}:`, error);
+    throw error;
+  }
+}
+
+// Format for display
 function formatPad(content: string): string {
   if (!content.trim()) {
     return '(empty scratchpad)';
@@ -45,54 +117,54 @@ function formatPad(content: string): string {
 export const scratchpadCapability: RegisteredCapability = {
   name: 'scratchpad',
   emoji: '📝',
-  supportedActions: ['write', 'read', 'append', 'clear', 'section'],
-  description: `Your thinking space. Write down reasoning, plans, notes - externalize your thought process.
+  supportedActions: ['write', 'read', 'append', 'clear', 'section', 'note'],
+  description: `Your persistent notes for this guild. Write down observations, community member quirks, recurring issues - things you want to remember.
+
+IMPORTANT: These notes persist across restarts. Use them to build knowledge over time!
 
 Use this to:
-- Break down complex problems step by step
-- Plan before you act
-- Track what you've tried
-- Keep notes for later in the conversation
+- Note interesting community members and what they're into
+- Track recurring questions or issues
+- Remember solutions that worked
+- Observe patterns in the community
 
 Actions:
-- write: Replace scratchpad content
-- read: See what's written
-- append: Add to existing content
-- section: Add a labeled section (## heading)
-- clear: Start fresh
+- note: Quick note (appends with timestamp) - USE THIS MOST
+- read: See your notes
+- section: Add to a specific section (Community Members, Recurring Topics, etc.)
+- append: Add to the end
+- write: Replace everything (careful!)
+- clear: Wipe notes (very careful!)
 
-Think out loud. It leads to better reasoning.`,
+When you learn something unique about this guild - a person, a pattern, a solution - jot it down!`,
   requiredParams: [],
   examples: [
-    // Planning
-    `<capability name="scratchpad" action="write" content="## Plan
-1. First, understand the current code structure
-2. Find where the bug originates
-3. Write a fix
-4. Test it" />`,
+    // Quick note (most common)
+    `<capability name="scratchpad" action="note" content="jan_gbg likes to tease me about errors - give it back to him playfully" />`,
 
-    // Adding thoughts
-    `<capability name="scratchpad" action="append" content="
-Observation: The error happens in the auth middleware.
-The token validation is failing because..." />`,
+    // Adding to a section
+    `<capability name="scratchpad" action="section" section="Community Members" content="Hudson - very active modder, helpful to newcomers" />`,
 
-    // Sections for organization
-    '<capability name="scratchpad" action="section" section="What I Found" content="The bug is in line 42..." />',
+    // Noting a recurring issue
+    `<capability name="scratchpad" action="section" section="Recurring Topics" content="License transfer questions come up often - direct to support@subwaybuilder.com" />`,
 
     // Reading back
     '<capability name="scratchpad" action="read" />',
-
-    // Starting fresh
-    '<capability name="scratchpad" action="clear" />',
   ],
 
-  handler: async (params: any, _content: string | undefined) => {
+  handler: async (params: any, _content: string | undefined, context?: CapabilityContext) => {
     const { action = 'read', content, section } = params as ScratchpadParams;
+
+    // Get guild ID from context or params
+    const guildId = context?.guildId || params.guildId || 'default';
+    logger.info(
+      `📝 Scratchpad context: guildId=${guildId} (from context: ${context?.guildId}, from params: ${params.guildId})`
+    );
 
     // Use content from params or from capability content
     const text = content || _content || '';
 
-    logger.info(`Scratchpad: ${action}${section ? ` [${section}]` : ''}`);
+    logger.info(`📝 Scratchpad [${guildId}]: ${action}${section ? ` [${section}]` : ''}`);
 
     try {
       switch (action) {
@@ -101,15 +173,27 @@ The token validation is failing because..." />`,
             return `Error: content required for write. Usage: action="write" content="your notes"`;
           }
 
-          scratchpads.set(DEFAULT_PAD, text);
-
+          await saveScratchpad(guildId, text);
           const lineCount = text.split('\n').length;
-          return `Wrote ${lineCount} lines to scratchpad.`;
+          return `Wrote ${lineCount} lines to guild notes.`;
         }
 
         case 'read': {
-          const pad = scratchpads.get(DEFAULT_PAD) || '';
-          return `--- Scratchpad ---\n${formatPad(pad)}`;
+          const pad = await loadScratchpad(guildId);
+          return `--- Guild Notes ---\n${formatPad(pad)}`;
+        }
+
+        case 'note': {
+          if (!text) {
+            return `Error: content required for note. Usage: action="note" content="something I learned"`;
+          }
+
+          const current = await loadScratchpad(guildId);
+          const timestamp = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+          const newContent = current + `\n- [${timestamp}] ${text}`;
+
+          await saveScratchpad(guildId, newContent);
+          return `📝 Noted!`;
         }
 
         case 'append': {
@@ -117,42 +201,63 @@ The token validation is failing because..." />`,
             return `Error: content required for append. Usage: action="append" content="more notes"`;
           }
 
-          const current = scratchpads.get(DEFAULT_PAD) || '';
+          const current = await loadScratchpad(guildId);
           const separator = current ? '\n' : '';
           const newContent = current + separator + text;
 
-          scratchpads.set(DEFAULT_PAD, newContent);
-
-          return `Appended to scratchpad (now ${newContent.split('\n').length} lines)`;
+          await saveScratchpad(guildId, newContent);
+          return `Appended to guild notes (now ${newContent.split('\n').length} lines)`;
         }
 
         case 'section': {
           if (!section) {
-            return `Error: section name required. Usage: action="section" section="My Section" content="..."`;
+            return `Error: section name required. Usage: action="section" section="Community Members" content="..."`;
           }
 
-          const current = scratchpads.get(DEFAULT_PAD) || '';
-          const sectionContent = text ? `\n${text}` : '';
-          const newContent = current + `\n\n## ${section}${sectionContent}`;
+          const current = await loadScratchpad(guildId);
 
-          scratchpads.set(DEFAULT_PAD, newContent.trim());
+          // Try to find existing section and append to it
+          const sectionHeader = `## ${section}`;
+          const sectionIndex = current.indexOf(sectionHeader);
 
-          return `Added section: ${section}`;
+          let newContent: string;
+          if (sectionIndex !== -1 && text) {
+            // Find where this section ends (next ## or end of file)
+            const afterSection = current.substring(sectionIndex + sectionHeader.length);
+            const nextSectionMatch = afterSection.match(/\n## /);
+
+            if (nextSectionMatch && nextSectionMatch.index !== undefined) {
+              // Insert before next section
+              const insertPoint = sectionIndex + sectionHeader.length + nextSectionMatch.index;
+              newContent =
+                current.substring(0, insertPoint) + `\n- ${text}` + current.substring(insertPoint);
+            } else {
+              // Append to end of this section (end of file)
+              newContent = current + `\n- ${text}`;
+            }
+          } else if (text) {
+            // Section doesn't exist, create it
+            newContent = current + `\n\n## ${section}\n- ${text}`;
+          } else {
+            newContent = current + `\n\n## ${section}`;
+          }
+
+          await saveScratchpad(guildId, newContent.trim());
+          return `Added to section: ${section}`;
         }
 
         case 'clear': {
-          const hadContent = scratchpads.has(DEFAULT_PAD);
-          scratchpads.delete(DEFAULT_PAD);
-
-          return hadContent ? 'Scratchpad cleared.' : 'Scratchpad was already empty.';
+          const template = `# Guild Notes\n\n*Cleared on ${new Date().toISOString().split('T')[0]}*\n`;
+          await saveScratchpad(guildId, template);
+          return 'Guild notes cleared (template restored).';
         }
 
         default:
           return `Unknown action: ${action}
-Available: write, read, append, section, clear`;
+Available: note, read, section, append, write, clear`;
       }
     } catch (error: any) {
-      logger.error(`Scratchpad failed:`, { action, error: error.message });
+      logger.error(`Scratchpad failed:`, { action, guildId, error: error.message });
       return `Scratchpad error: ${error.message}`;
     }
   },

@@ -236,7 +236,9 @@ export class ContextAlchemy {
         respondTo: { type: 'api' },
         timestamp: new Date(),
         retryCount: 0,
-        context: options.discordContext || (options.channelId ? { channelId: options.channelId } : undefined),
+        context:
+          options.discordContext ||
+          (options.channelId ? { channelId: options.channelId } : undefined),
       };
       const contextSources = await this.assembleMessageContext(
         mockMessage,
@@ -689,7 +691,9 @@ Important:
 
     // Mentions (if any)
     if (ctx.mentions && ctx.mentions.length > 0) {
-      const mentionNames = ctx.mentions.map((m: any) => `@${m.displayName || m.username}`).join(', ');
+      const mentionNames = ctx.mentions
+        .map((m: any) => `@${m.displayName || m.username}`)
+        .join(', ');
       parts.push(`🏷️  Mentions: ${mentionNames}`);
     }
 
@@ -724,7 +728,9 @@ Important:
       });
 
       if (DEBUG) {
-        logger.info(`│ ✅ Added Discord situational awareness: ${ctx.guildName || 'DM'}/#${ctx.channelName}`);
+        logger.info(
+          `│ ✅ Added Discord situational awareness: ${ctx.guildName || 'DM'}/#${ctx.channelName}`
+        );
       }
     }
   }
@@ -733,10 +739,7 @@ Important:
    * Add reply context - the message being replied to
    * Helps the LLM understand what the user is responding to
    */
-  private async addReplyContext(
-    message: IncomingMessage,
-    sources: ContextSource[]
-  ): Promise<void> {
+  private async addReplyContext(message: IncomingMessage, sources: ContextSource[]): Promise<void> {
     const ctx = message.context;
     if (!ctx || !ctx.replyContext) {
       return;
@@ -811,7 +814,9 @@ Important:
       });
 
       if (DEBUG) {
-        logger.info(`│ ✅ Added Slack situational awareness: ${ctx.channelType || 'channel'}/${ctx.channelId}`);
+        logger.info(
+          `│ ✅ Added Slack situational awareness: ${ctx.channelType || 'channel'}/${ctx.channelId}`
+        );
       }
     }
   }
@@ -829,17 +834,18 @@ Important:
     const recentAttachments = Array.isArray(message.context?.recentAttachments)
       ? message.context.recentAttachments
       : [];
-    const recentUrls = Array.isArray(message.context?.recentUrls)
-      ? message.context.recentUrls
-      : [];
+    const recentUrls = Array.isArray(message.context?.recentUrls) ? message.context.recentUrls : [];
 
-    logger.info(`📎 ATTACHMENT DEBUG: current=${currentAttachments.length}, recent=${recentAttachments.length}, urls=${recentUrls.length}`, {
-      contextKeys: message.context ? Object.keys(message.context) : [],
-      hasAttachmentsField: !!message.context?.attachments,
-      hasRecentAttachmentsField: !!message.context?.recentAttachments,
-      debugCurrent: message.context?._debug_currentAttachmentCount,
-      debugRecent: message.context?._debug_recentAttachmentCount,
-    });
+    logger.info(
+      `📎 ATTACHMENT DEBUG: current=${currentAttachments.length}, recent=${recentAttachments.length}, urls=${recentUrls.length}`,
+      {
+        contextKeys: message.context ? Object.keys(message.context) : [],
+        hasAttachmentsField: !!message.context?.attachments,
+        hasRecentAttachmentsField: !!message.context?.recentAttachments,
+        debugCurrent: message.context?._debug_currentAttachmentCount,
+        debugRecent: message.context?._debug_recentAttachmentCount,
+      }
+    );
 
     const attachments = [...currentAttachments, ...recentAttachments].filter((att) => !!att?.url);
     logger.info(`📎 ATTACHMENT DEBUG: combined after filter=${attachments.length}`);
@@ -897,7 +903,8 @@ Important:
           const guildId = message.context?.guildId;
           const guildName = message.context?.guildName;
 
-          let visionObjective = 'Describe what you see in these images. Include any text, objects, people, scenes, UI elements, or other notable content. Be specific and detailed.';
+          let visionObjective =
+            'Describe what you see in these images. Include any text, objects, people, scenes, UI elements, or other notable content. Be specific and detailed.';
 
           // Subway Builder guild - images are usually game screenshots
           if (guildId === '1420846272545296470' || guildName?.toLowerCase().includes('subway')) {
@@ -979,26 +986,74 @@ Be precise with numbers - if it says 1.5%, report 1.5% not 1.1%. If you can't re
             .filter(Boolean)
             .join('\n');
 
-          sources.push({
-            name: 'metro_doctor',
-            priority: 88, // below vision/link previews, above memory
-            tokenWeight: Math.ceil(content.length / 4),
-            content,
-            category: 'evidence',
-          });
+          // Check if actual repairs were made (filename starts with "repaired_")
+          const repairsMade = result.filename.startsWith('repaired_');
+          const summary = result.analysis?.summary || '';
 
-          // Queue the file to be sent back to Discord
-          // Use message.userId as key since it's available in the Discord response flow
-          // Include the analysis summary so users know what was done
-          const attachmentContent = result.analysis?.summary
-            ? `📎 **${result.filename}**\n\n${result.analysis.summary}`
-            : `📎 Here's your analyzed save file: **${result.filename}**`;
-          addPendingAttachment(message.userId, {
-            buffer: result.buffer,
-            filename: result.filename,
-            content: attachmentContent,
-          });
-          logger.info(`📎 Queued metro file for sending: ${result.filename} (${result.buffer.length} bytes)`);
+          if (repairsMade) {
+            // Only send file back if we actually repaired something
+            addPendingAttachment(message.userId, {
+              buffer: result.buffer,
+              filename: result.filename,
+              content: summary,
+            });
+            logger.info(`🔧 Queued repaired metro file: ${result.filename}`);
+
+            const repairedContent = `==== METRO SAVE FILE DOCTOR RESULTS ====
+STATUS: SUCCESS - REPAIRS MADE
+FILE: ${first.name}
+
+ANALYSIS RESULTS:
+${summary}
+
+ACTION TAKEN: The repaired save file is being sent as an attachment.
+
+==== INSTRUCTIONS FOR YOUR RESPONSE ====
+1. The save doctor ran SUCCESSFULLY - there was NO error
+2. Tell the user you analyzed their save and fixed some issues
+3. Mention the stats above (stations, routes, trains, money, playtime)
+4. Let them know the repaired file is attached
+5. Keep it casual and brief, like "fixed it up for you! your save has X stations and Y routes, looking good now"
+6. DO NOT say there was an error or that something failed
+7. DO NOT ask them to upload a file - they already did and you analyzed it`;
+
+            sources.push({
+              name: 'metro_doctor',
+              priority: 99, // Highest priority - this is THE answer
+              tokenWeight: Math.ceil(repairedContent.length / 4),
+              content: repairedContent,
+              category: 'evidence',
+            });
+          } else {
+            // No repairs needed - just tell the user
+            logger.info(`✅ Metro file healthy, no repairs needed: ${first.name}`);
+
+            const healthyContent = `==== METRO SAVE FILE DOCTOR RESULTS ====
+STATUS: SUCCESS - FILE IS HEALTHY
+FILE: ${first.name}
+
+ANALYSIS RESULTS:
+${summary}
+
+ACTION TAKEN: No repairs needed - the save file is in good shape.
+
+==== INSTRUCTIONS FOR YOUR RESPONSE ====
+1. The save doctor ran SUCCESSFULLY - there was NO error
+2. Tell the user their save file looks healthy
+3. Share the stats above (stations, routes, trains, money, playtime)
+4. Be casual and friendly, like "your save looks good! X stations, Y routes, Z trains"
+5. DO NOT say there was an error or that something failed
+6. DO NOT ask them to upload a file - they already did and you analyzed it
+7. DO NOT mention missing scripts or tools - everything worked fine`;
+
+            sources.push({
+              name: 'metro_doctor',
+              priority: 99, // Highest priority - this is THE answer
+              tokenWeight: Math.ceil(healthyContent.length / 4),
+              content: healthyContent,
+              category: 'evidence',
+            });
+          }
         } catch (error: any) {
           const msg = `Metro doctor failed: ${error?.message || String(error)}`;
           sources.push({
@@ -1032,7 +1087,9 @@ Be precise with numbers - if it says 1.5%, report 1.5% not 1.1%. If you can't re
         content,
         category: 'evidence',
       });
-      logger.info(`📨 Added ${resolvedDiscordMessages.length} resolved Discord messages to context`);
+      logger.info(
+        `📨 Added ${resolvedDiscordMessages.length} resolved Discord messages to context`
+      );
     }
 
     // URLs from recent Discord context (non-attachments)
@@ -1048,8 +1105,7 @@ Be precise with numbers - if it says 1.5%, report 1.5% not 1.1%. If you can't re
         category: 'evidence',
       });
 
-      const autoLinkFetch =
-        (process.env.AUTO_LINK_FETCH || 'true').toLowerCase() !== 'false';
+      const autoLinkFetch = (process.env.AUTO_LINK_FETCH || 'true').toLowerCase() !== 'false';
 
       if (autoLinkFetch) {
         const previews: string[] = [];
@@ -1195,14 +1251,16 @@ Be precise with numbers - if it says 1.5%, report 1.5% not 1.1%. If you can't re
    * Helps the LLM understand channel activity, type, and adjust response style
    * Works for both Discord and Slack
    */
-  private async addChannelVibes(
-    message: IncomingMessage,
-    sources: ContextSource[]
-  ): Promise<void> {
+  private async addChannelVibes(message: IncomingMessage, sources: ContextSource[]): Promise<void> {
     try {
       // Only for Discord or Slack messages with context
       const messageContext = message.context;
-      if (!messageContext || (message.source !== 'discord' && message.source !== 'slack' && messageContext.platform !== 'slack')) {
+      if (
+        !messageContext ||
+        (message.source !== 'discord' &&
+          message.source !== 'slack' &&
+          messageContext.platform !== 'slack')
+      ) {
         return;
       }
 
@@ -1212,7 +1270,8 @@ Be precise with numbers - if it says 1.5%, report 1.5% not 1.1%. If you can't re
       const channelId = messageContext.channelId;
       const channelName = messageContext.channelName || messageContext.channelId || 'unknown';
       const channelType = messageContext.channelType || 'text';
-      const platform = message.source === 'slack' || messageContext.platform === 'slack' ? 'Slack' : 'Discord';
+      const platform =
+        message.source === 'slack' || messageContext.platform === 'slack' ? 'Slack' : 'Discord';
 
       // Get recent activity in this channel (last 10 minutes)
       const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();
@@ -1247,7 +1306,7 @@ Be precise with numbers - if it says 1.5%, report 1.5% not 1.1%. If you can't re
         `- Name: ${channelName}`,
         `- Type: ${channelType}`,
         `- Activity: ${activityLevel} (${messageCount} msgs in last 10 min)`,
-        `- Your recent usage: ${artieCount} responses in last hour`
+        `- Your recent usage: ${artieCount} responses in last hour`,
       ];
 
       const content = vibes.join('\n');
@@ -1261,7 +1320,9 @@ Be precise with numbers - if it says 1.5%, report 1.5% not 1.1%. If you can't re
       });
 
       if (DEBUG) {
-        logger.info(`│ ✅ Channel vibes (${platform}): ${channelName} (${activityLevel}, ${messageCount} recent msgs)`);
+        logger.info(
+          `│ ✅ Channel vibes (${platform}): ${channelName} (${activityLevel}, ${messageCount} recent msgs)`
+        );
       }
     } catch (error) {
       logger.warn('Failed to add channel vibes:', error);
@@ -1494,7 +1555,8 @@ ${capabilityMemories
     try {
       // Fetch Discord health info from the health server
       // Use DISCORD_HEALTH_URL env var, fallback to localhost for local dev, docker hostname for containers
-      const discordHealthUrl = process.env.DISCORD_HEALTH_URL ||
+      const discordHealthUrl =
+        process.env.DISCORD_HEALTH_URL ||
         (process.env.DOCKER_ENV ? 'http://discord:47321/health' : 'http://localhost:47321/health');
       const response = await fetch(discordHealthUrl);
       if (!response.ok) {
@@ -1677,17 +1739,37 @@ ${capabilityMemories
     // 4. Add any existing conversation history from the caller
     messages.push(...existingMessages);
 
-    // 5. CRITICAL: Add evidence (vision analysis) RIGHT BEFORE user message
-    // This ensures the model sees the image analysis immediately before the question
+    // 5. CRITICAL: Add evidence RIGHT BEFORE user message
+    // This ensures the model sees the analysis immediately before the question
     if (contextByCategory.evidence.length > 0) {
-      logger.info(`│ 🖼️ Adding ${contextByCategory.evidence.length} evidence sources RIGHT BEFORE user message`);
-      let evidenceContent = '📷 CURRENT IMAGE ANALYSIS (just analyzed these images):\n\n';
-      for (const evidence of contextByCategory.evidence) {
-        logger.info(`│   - ${evidence.name}: ${evidence.content.length} chars`);
-        evidenceContent += `${evidence.content}\n\n`;
+      // Separate metro doctor evidence from image/vision evidence
+      const metroEvidence = contextByCategory.evidence.filter((e) => e.name === 'metro_doctor');
+      const imageEvidence = contextByCategory.evidence.filter((e) => e.name !== 'metro_doctor');
+
+      // Add metro doctor evidence first (if any)
+      if (metroEvidence.length > 0) {
+        logger.info(`│ 🩺 Adding ${metroEvidence.length} metro doctor evidence sources`);
+        for (const evidence of metroEvidence) {
+          logger.info(`│   - ${evidence.name}: ${evidence.content.length} chars`);
+          // Metro doctor content already has clear instructions, add as-is
+          messages.push({ role: 'system', content: evidence.content });
+        }
       }
-      evidenceContent += '\n⚠️ IMPORTANT: The images above were just analyzed. Use this analysis to answer the user\'s question about the image(s). Do NOT say you cannot see images.';
-      messages.push({ role: 'system', content: evidenceContent.trim() });
+
+      // Add image/vision evidence (if any)
+      if (imageEvidence.length > 0) {
+        logger.info(
+          `│ 🖼️ Adding ${imageEvidence.length} image evidence sources RIGHT BEFORE user message`
+        );
+        let evidenceContent = '📷 CURRENT IMAGE ANALYSIS (just analyzed these images):\n\n';
+        for (const evidence of imageEvidence) {
+          logger.info(`│   - ${evidence.name}: ${evidence.content.length} chars`);
+          evidenceContent += `${evidence.content}\n\n`;
+        }
+        evidenceContent +=
+          "\n⚠️ IMPORTANT: The images above were just analyzed. Use this analysis to answer the user's question about the image(s). Do NOT say you cannot see images.";
+        messages.push({ role: 'system', content: evidenceContent.trim() });
+      }
     }
 
     // 6. User message ALWAYS comes last

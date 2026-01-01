@@ -82,7 +82,10 @@ export async function processMessage(
           source: message.source,
           // Pass full Discord context for guild knowledge, proactive answering, etc.
           // Discord uses source: 'message', check for platform or guildKnowledge in context
-          discordContext: (message.context?.platform === 'discord' || message.context?.guildKnowledge) ? message.context : undefined,
+          discordContext:
+            message.context?.platform === 'discord' || message.context?.guildKnowledge
+              ? message.context
+              : undefined,
         }
       );
 

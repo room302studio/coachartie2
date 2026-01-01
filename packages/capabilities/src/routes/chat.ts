@@ -4,6 +4,7 @@ import { processMessage } from '../handlers/process-message.js';
 import { v4 as uuidv4 } from 'uuid';
 import { rateLimiter } from '../middleware/rate-limiter.js';
 import { jobTracker } from '../services/job-tracker.js';
+import { getPendingAttachments } from '../services/context-alchemy.js';
 
 const messageQueue = createQueue<IncomingMessage>(QUEUES.INCOMING_MESSAGES);
 
@@ -152,7 +153,7 @@ router.post('/', rateLimiter(50, 60000), async (req: Request, res: Response) => 
           }
 
           // Wait before next poll
-          await new Promise(resolve => setTimeout(resolve, pollInterval));
+          await new Promise((resolve) => setTimeout(resolve, pollInterval));
         }
 
         // Timeout - return pending status
@@ -408,6 +409,32 @@ router.get('/:messageId', (req: Request, res: Response) => {
       success: false,
       error: 'Internal server error',
     });
+  }
+});
+
+// GET /chat/pending-attachments/:userId - Get and clear pending file attachments for a user
+router.get('/pending-attachments/:userId', async (req: Request, res: Response) => {
+  try {
+    const { userId } = req.params;
+    const attachments = getPendingAttachments(userId);
+
+    if (attachments.length === 0) {
+      return res.json({ success: true, attachments: [] });
+    }
+
+    // Convert buffers to base64 for JSON transport
+    const serialized = attachments.map((att) => ({
+      filename: att.filename,
+      content: att.content,
+      data: att.buffer.toString('base64'),
+      size: att.buffer.length,
+    }));
+
+    logger.info(`📎 Returning ${attachments.length} pending attachments for user ${userId}`);
+    res.json({ success: true, attachments: serialized });
+  } catch (error) {
+    logger.error('Error getting pending attachments:', error);
+    res.status(500).json({ success: false, error: 'Internal server error' });
   }
 });
 

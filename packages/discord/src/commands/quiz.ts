@@ -8,7 +8,13 @@ import {
 import { logger } from '@coachartie/shared';
 import { quizSessionManager, QuizSession } from '../services/quiz-session-manager.js';
 
-const AVAILABLE_DECKS = ['COMPUTERS', 'ELECTRICAL_AND_RADIO', 'POLITICS', 'RUBIKS_2x2', 'SAR_AND_WILDERNESS'];
+const AVAILABLE_DECKS = [
+  'COMPUTERS',
+  'ELECTRICAL_AND_RADIO',
+  'POLITICS',
+  'RUBIKS_2x2',
+  'SAR_AND_WILDERNESS',
+];
 
 export const quizCommand = {
   data: new SlashCommandBuilder()
@@ -114,7 +120,9 @@ async function handleStart(
       onTimeout: async (timedOutSession: QuizSession) => {
         // Handle timeout - reveal answer and move to next question
         try {
-          const { answer, nextSession } = await quizSessionManager.handleTimeout(interaction.channelId);
+          const { answer, nextSession } = await quizSessionManager.handleTimeout(
+            interaction.channelId
+          );
 
           let response = `⏰ **Time's up!**\nThe answer was: **${answer}**\n`;
           response += `📊 ${quizSessionManager.formatScores(timedOutSession.scores)}\n`;

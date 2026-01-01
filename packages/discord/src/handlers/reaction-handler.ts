@@ -7,7 +7,14 @@
  * - Comprehensive telemetry tracking
  */
 
-import { Client, Events, MessageReaction, User, PartialMessageReaction, PartialUser } from 'discord.js';
+import {
+  Client,
+  Events,
+  MessageReaction,
+  User,
+  PartialMessageReaction,
+  PartialUser,
+} from 'discord.js';
 import { logger } from '@coachartie/shared';
 import { telemetry } from '../services/telemetry.js';
 import { generateCorrelationId, getShortCorrelationId } from '../utils/correlation.js';
@@ -26,20 +33,48 @@ const REACTION_CACHE_TTL = 60000; // 60 seconds TTL
 // Only track emojis with clear sentiment - ambiguous ones like 😂 🤔 are skipped
 const POSITIVE_EMOJIS = [
   // Clear approval/love (observed: 👍 ❤️ 🔥)
-  '👍', '❤️', '🔥',
+  '👍',
+  '❤️',
+  '🔥',
   // Other likely positives
-  '💯', '⭐', '✨', '🎉', '👏', '🙌', '✅', '💪', '🏆',
+  '💯',
+  '⭐',
+  '✨',
+  '🎉',
+  '👏',
+  '🙌',
+  '✅',
+  '💪',
+  '🏆',
   // Hearts
-  '💕', '💖', '💗', '💝', '💜', '💙', '💚', '🧡', '💛',
+  '💕',
+  '💖',
+  '💗',
+  '💝',
+  '💜',
+  '💙',
+  '💚',
+  '🧡',
+  '💛',
 ];
 
 const NEGATIVE_EMOJIS = [
   // Clear disapproval
-  '👎', '❌', '😡', '🤬', '💩',
+  '👎',
+  '❌',
+  '😡',
+  '🤬',
+  '💩',
   // Frustration/disappointment
-  '😤', '😠', '🙄', '😞', '😒',
+  '😤',
+  '😠',
+  '🙄',
+  '😞',
+  '😒',
   // Facepalm (often means "wtf artie")
-  '🤦', '🤦‍♂️', '🤦‍♀️',
+  '🤦',
+  '🤦‍♂️',
+  '🤦‍♀️',
 ];
 
 /**
@@ -55,137 +90,158 @@ function categorizeSentiment(emoji: string): 'positive' | 'negative' | null {
  * Setup reaction handler for Discord client
  */
 export function setupReactionHandler(client: Client) {
-  client.on(Events.MessageReactionAdd, async (reaction: MessageReaction | PartialMessageReaction, user: User | PartialUser) => {
-    const correlationId = generateCorrelationId();
-    const shortId = getShortCorrelationId(correlationId);
+  client.on(
+    Events.MessageReactionAdd,
+    async (reaction: MessageReaction | PartialMessageReaction, user: User | PartialUser) => {
+      const correlationId = generateCorrelationId();
+      const shortId = getShortCorrelationId(correlationId);
 
-    try {
-      // Fetch partial data if needed
-      if (reaction.partial) {
-        try {
-          await reaction.fetch();
-        } catch (error) {
-          logger.error(`Failed to fetch partial reaction [${shortId}]:`, error);
+      try {
+        // Fetch partial data if needed
+        if (reaction.partial) {
+          try {
+            await reaction.fetch();
+          } catch (error) {
+            logger.error(`Failed to fetch partial reaction [${shortId}]:`, error);
+            return;
+          }
+        }
+
+        if (user.partial) {
+          try {
+            await user.fetch();
+          } catch (error) {
+            logger.error(`Failed to fetch partial user [${shortId}]:`, error);
+            return;
+          }
+        }
+
+        // Ignore bot reactions
+        if (user.bot) {
+          logger.debug(`Ignoring bot reaction [${shortId}]`);
           return;
         }
-      }
 
-      if (user.partial) {
-        try {
-          await user.fetch();
-        } catch (error) {
-          logger.error(`Failed to fetch partial user [${shortId}]:`, error);
+        // Ignore reactions on non-bot messages (we only care about reactions to our messages)
+        if (!reaction.message.author?.bot || reaction.message.author.id !== client.user?.id) {
+          logger.debug(`Ignoring reaction on non-bot message [${shortId}]`);
           return;
         }
-      }
 
-      // Ignore bot reactions
-      if (user.bot) {
-        logger.debug(`Ignoring bot reaction [${shortId}]`);
-        return;
-      }
+        const emoji = reaction.emoji.name;
+        if (!emoji) {
+          logger.debug(`Ignoring reaction with no emoji name [${shortId}]`);
+          return;
+        }
 
-      // Ignore reactions on non-bot messages (we only care about reactions to our messages)
-      if (!reaction.message.author?.bot || reaction.message.author.id !== client.user?.id) {
-        logger.debug(`Ignoring reaction on non-bot message [${shortId}]`);
-        return;
-      }
-
-      const emoji = reaction.emoji.name;
-      if (!emoji) {
-        logger.debug(`Ignoring reaction with no emoji name [${shortId}]`);
-        return;
-      }
-
-      logger.info(`Reaction received [${shortId}]:`, {
-        correlationId,
-        emoji,
-        userId: user.id,
-        username: user.username,
-        messageId: reaction.message.id,
-        channelId: reaction.message.channelId,
-        guildId: reaction.message.guildId,
-      });
-
-      telemetry.logEvent(
-        'reaction_received',
-        {
+        logger.info(`Reaction received [${shortId}]:`, {
+          correlationId,
           emoji,
+          userId: user.id,
+          username: user.username,
           messageId: reaction.message.id,
           channelId: reaction.message.channelId,
           guildId: reaction.message.guildId,
-        },
-        correlationId,
-        user.id
-      );
+        });
 
-      // Deduplication: prevent processing same reaction multiple times
-      const reactionKey = `${reaction.message.id}-${user.id}-${emoji}`;
-      const now = Date.now();
+        telemetry.logEvent(
+          'reaction_received',
+          {
+            emoji,
+            messageId: reaction.message.id,
+            channelId: reaction.message.channelId,
+            guildId: reaction.message.guildId,
+          },
+          correlationId,
+          user.id
+        );
 
-      // Cleanup expired cache entries
-      for (const [key, timestamp] of reactionCache.entries()) {
-        if (now - timestamp > REACTION_CACHE_TTL) {
-          reactionCache.delete(key);
-        }
-      }
+        // Deduplication: prevent processing same reaction multiple times
+        const reactionKey = `${reaction.message.id}-${user.id}-${emoji}`;
+        const now = Date.now();
 
-      // Skip if we've seen this exact reaction recently
-      if (reactionCache.has(reactionKey)) {
-        logger.debug(`Duplicate reaction detected [${shortId}]`, { reactionKey });
-        return;
-      }
-
-      // Cache this reaction
-      reactionCache.set(reactionKey, now);
-
-      // Handle different reaction types
-      // At this point, reaction has been fetched and is no longer partial
-      const fetchedReaction = reaction as MessageReaction;
-      const fetchedUser = user as User;
-
-      switch (emoji) {
-        case REGENERATE_EMOJI:
-          await handleRegenerateReaction(fetchedReaction, fetchedUser, correlationId);
-          break;
-
-        case THUMBS_UP_EMOJI:
-          await handleFeedbackReaction(fetchedReaction, fetchedUser, 'positive', emoji, correlationId);
-          break;
-
-        case THUMBS_DOWN_EMOJI:
-          await handleFeedbackReaction(fetchedReaction, fetchedUser, 'negative', emoji, correlationId);
-          break;
-
-        default:
-          // Track ALL emoji reactions for community sentiment learning
-          const sentiment = categorizeSentiment(emoji);
-          if (sentiment) {
-            await handleFeedbackReaction(fetchedReaction, fetchedUser, sentiment, emoji, correlationId);
-          } else {
-            logger.debug(`Untracked reaction emoji: ${emoji} [${shortId}]`);
+        // Cleanup expired cache entries
+        for (const [key, timestamp] of reactionCache.entries()) {
+          if (now - timestamp > REACTION_CACHE_TTL) {
+            reactionCache.delete(key);
           }
-          return;
-      }
-    } catch (error) {
-      logger.error(`Error handling reaction [${shortId}]:`, {
-        correlationId,
-        error: error instanceof Error ? error.message : String(error),
-        stack: error instanceof Error ? error.stack : undefined,
-      });
+        }
 
-      telemetry.logEvent(
-        'reaction_error',
-        {
+        // Skip if we've seen this exact reaction recently
+        if (reactionCache.has(reactionKey)) {
+          logger.debug(`Duplicate reaction detected [${shortId}]`, { reactionKey });
+          return;
+        }
+
+        // Cache this reaction
+        reactionCache.set(reactionKey, now);
+
+        // Handle different reaction types
+        // At this point, reaction has been fetched and is no longer partial
+        const fetchedReaction = reaction as MessageReaction;
+        const fetchedUser = user as User;
+
+        switch (emoji) {
+          case REGENERATE_EMOJI:
+            await handleRegenerateReaction(fetchedReaction, fetchedUser, correlationId);
+            break;
+
+          case THUMBS_UP_EMOJI:
+            await handleFeedbackReaction(
+              fetchedReaction,
+              fetchedUser,
+              'positive',
+              emoji,
+              correlationId
+            );
+            break;
+
+          case THUMBS_DOWN_EMOJI:
+            await handleFeedbackReaction(
+              fetchedReaction,
+              fetchedUser,
+              'negative',
+              emoji,
+              correlationId
+            );
+            break;
+
+          default:
+            // Track ALL emoji reactions for community sentiment learning
+            const sentiment = categorizeSentiment(emoji);
+            if (sentiment) {
+              await handleFeedbackReaction(
+                fetchedReaction,
+                fetchedUser,
+                sentiment,
+                emoji,
+                correlationId
+              );
+            } else {
+              logger.debug(`Untracked reaction emoji: ${emoji} [${shortId}]`);
+            }
+            return;
+        }
+      } catch (error) {
+        logger.error(`Error handling reaction [${shortId}]:`, {
+          correlationId,
           error: error instanceof Error ? error.message : String(error),
-        },
-        correlationId,
-        user.id,
-        undefined,
-        false
-      );
+          stack: error instanceof Error ? error.stack : undefined,
+        });
+
+        telemetry.logEvent(
+          'reaction_error',
+          {
+            error: error instanceof Error ? error.message : String(error),
+          },
+          correlationId,
+          user.id,
+          undefined,
+          false
+        );
+      }
     }
-  });
+  );
 
   logger.info('Reaction handler setup complete');
 }
@@ -234,8 +290,11 @@ async function handleRegenerateReaction(
     // If not a reply, look for the most recent message from the user in this channel
     if (!originalMessage) {
       try {
-        const recentMessages = await botMessage.channel.messages.fetch({ limit: 20, before: botMessage.id });
-        originalMessage = recentMessages.find(msg => msg.author.id === user.id);
+        const recentMessages = await botMessage.channel.messages.fetch({
+          limit: 20,
+          before: botMessage.id,
+        });
+        originalMessage = recentMessages.find((msg) => msg.author.id === user.id);
       } catch (error) {
         logger.warn(`Failed to fetch recent messages [${shortId}]:`, error);
       }
@@ -328,18 +387,19 @@ async function handleRegenerateReaction(
           for (let i = 1; i < chunks.length; i++) {
             if ('send' in botMessage.channel) {
               await (botMessage.channel as any).send(chunks[i]);
-              await new Promise(resolve => setTimeout(resolve, 200));
+              await new Promise((resolve) => setTimeout(resolve, 200));
             }
           }
 
           telemetry.incrementResponsesDelivered(user.id, chunks.length);
         },
 
-        sendTyping: 'sendTyping' in botMessage.channel
-          ? async () => {
-              await (botMessage.channel as any).sendTyping();
-            }
-          : undefined,
+        sendTyping:
+          'sendTyping' in botMessage.channel
+            ? async () => {
+                await (botMessage.channel as any).sendTyping();
+              }
+            : undefined,
 
         addReaction: async (emoji: string) => {
           try {
@@ -445,9 +505,10 @@ async function handleFeedbackReaction(
     const guildName = reaction.message.guild?.name || 'unknown';
 
     // Build a reflection note about the community feedback
-    const feedbackNote = sentiment === 'positive'
-      ? `community feedback: someone reacted positively (${emoji}) to my response in ${guildName} #${channelName}. my response was: "${messageSnippet}..." - this kind of response works well`
-      : `community feedback: someone reacted negatively (${emoji}) to my response in ${guildName} #${channelName}. my response was: "${messageSnippet}..." - should reflect on how to improve this kind of response`;
+    const feedbackNote =
+      sentiment === 'positive'
+        ? `community feedback: someone reacted positively (${emoji}) to my response in ${guildName} #${channelName}. my response was: "${messageSnippet}..." - this kind of response works well`
+        : `community feedback: someone reacted negatively (${emoji}) to my response in ${guildName} #${channelName}. my response was: "${messageSnippet}..." - should reflect on how to improve this kind of response`;
 
     // Call capabilities API to store this as a memory
     const response = await fetch('http://localhost:47324/chat', {

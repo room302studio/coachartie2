@@ -166,7 +166,9 @@ export function initializeDb(dbPath?: string): BetterSQLite3Database<typeof sche
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )
   `);
-  raw.exec(`CREATE INDEX IF NOT EXISTS idx_capabilities_name_enabled ON capabilities_config(name, is_enabled)`);
+  raw.exec(
+    `CREATE INDEX IF NOT EXISTS idx_capabilities_name_enabled ON capabilities_config(name, is_enabled)`
+  );
 
   // Global variables table
   raw.exec(`
@@ -215,8 +217,12 @@ export function initializeDb(dbPath?: string): BetterSQLite3Database<typeof sche
       timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
     )
   `);
-  raw.exec(`CREATE INDEX IF NOT EXISTS idx_usage_user_time ON model_usage_stats(user_id, timestamp)`);
-  raw.exec(`CREATE INDEX IF NOT EXISTS idx_usage_model_time ON model_usage_stats(model_name, timestamp)`);
+  raw.exec(
+    `CREATE INDEX IF NOT EXISTS idx_usage_user_time ON model_usage_stats(user_id, timestamp)`
+  );
+  raw.exec(
+    `CREATE INDEX IF NOT EXISTS idx_usage_model_time ON model_usage_stats(model_name, timestamp)`
+  );
   raw.exec(`CREATE INDEX IF NOT EXISTS idx_usage_timestamp ON model_usage_stats(timestamp)`);
 
   // Credit balance table
@@ -234,7 +240,9 @@ export function initializeDb(dbPath?: string): BetterSQLite3Database<typeof sche
       raw_response TEXT
     )
   `);
-  raw.exec(`CREATE INDEX IF NOT EXISTS idx_credit_provider_time ON credit_balance(provider, last_updated)`);
+  raw.exec(
+    `CREATE INDEX IF NOT EXISTS idx_credit_provider_time ON credit_balance(provider, last_updated)`
+  );
 
   // Credit alerts table
   raw.exec(`
@@ -249,7 +257,9 @@ export function initializeDb(dbPath?: string): BetterSQLite3Database<typeof sche
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )
   `);
-  raw.exec(`CREATE INDEX IF NOT EXISTS idx_alerts_type_time ON credit_alerts(alert_type, created_at)`);
+  raw.exec(
+    `CREATE INDEX IF NOT EXISTS idx_alerts_type_time ON credit_alerts(alert_type, created_at)`
+  );
 
   // OAuth tokens table
   raw.exec(`
@@ -304,7 +314,9 @@ export function initializeDb(dbPath?: string): BetterSQLite3Database<typeof sche
       FOREIGN KEY (meeting_id) REFERENCES meetings(id) ON DELETE CASCADE
     )
   `);
-  raw.exec(`CREATE INDEX IF NOT EXISTS idx_meeting_participants_meeting_id ON meeting_participants(meeting_id)`);
+  raw.exec(
+    `CREATE INDEX IF NOT EXISTS idx_meeting_participants_meeting_id ON meeting_participants(meeting_id)`
+  );
 
   // Meeting reminders table
   raw.exec(`
@@ -318,7 +330,9 @@ export function initializeDb(dbPath?: string): BetterSQLite3Database<typeof sche
       FOREIGN KEY (meeting_id) REFERENCES meetings(id) ON DELETE CASCADE
     )
   `);
-  raw.exec(`CREATE INDEX IF NOT EXISTS idx_meeting_reminders_reminder_time ON meeting_reminders(reminder_time)`);
+  raw.exec(
+    `CREATE INDEX IF NOT EXISTS idx_meeting_reminders_reminder_time ON meeting_reminders(reminder_time)`
+  );
 
   // Todo lists table
   raw.exec(`
@@ -406,14 +420,21 @@ export interface SyncDbWrapper {
  * Log database errors with structured data for monitoring
  */
 function logDbError(operation: string, error: any, sql?: string): void {
-  const isCorruption = error?.code === 'SQLITE_CORRUPT' ||
-                       error?.message?.includes('database disk image is malformed');
+  const isCorruption =
+    error?.code === 'SQLITE_CORRUPT' ||
+    error?.message?.includes('database disk image is malformed');
   const isBusy = error?.code === 'SQLITE_BUSY';
   const isLocked = error?.code === 'SQLITE_LOCKED';
 
   // Structured log for Loki/Grafana
   const logData = {
-    event: isCorruption ? 'SQLITE_CORRUPT' : isBusy ? 'SQLITE_BUSY' : isLocked ? 'SQLITE_LOCKED' : 'SQLITE_ERROR',
+    event: isCorruption
+      ? 'SQLITE_CORRUPT'
+      : isBusy
+        ? 'SQLITE_BUSY'
+        : isLocked
+          ? 'SQLITE_LOCKED'
+          : 'SQLITE_ERROR',
     operation,
     code: error?.code,
     message: error?.message,

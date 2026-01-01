@@ -32,9 +32,11 @@ import { editCapability } from '../capabilities/edit.js';
 import { searchCapability } from '../capabilities/search.js';
 import { gitCapability } from '../capabilities/git.js';
 import { scratchpadCapability } from '../capabilities/scratchpad.js';
+import { selfStatsCapability } from '../capabilities/self-stats.js';
 import { contextCapability } from '../capabilities/context.js';
 import { diagnoseCapability } from '../capabilities/diagnose.js';
 import { visionCapability } from '../capabilities/vision.js';
+import { imageGenCapability } from '../capabilities/image-gen.js';
 import { meetingCapability } from './meeting-service.js';
 import { n8nBrowserCapability } from '../capabilities/n8n-browser.js';
 import { flashcardCapability } from '../capabilities/flashcard.js';
@@ -196,6 +198,11 @@ export class CapabilityBootstrap {
       capabilityRegistry.register(scratchpadCapability);
       logger.info('✅ scratchpad registered successfully');
 
+      // Register self-stats capability - introspection
+      logger.info('📦 Registering self-stats (introspection)...');
+      capabilityRegistry.register(selfStatsCapability);
+      logger.info('✅ self-stats registered successfully');
+
       // Register context capability - situational awareness
       logger.info('📦 Registering context (situational awareness)...');
       capabilityRegistry.register(contextCapability);
@@ -205,6 +212,11 @@ export class CapabilityBootstrap {
       logger.info('📦 Registering vision (image/text extraction helper)...');
       capabilityRegistry.register(visionCapability);
       logger.info('✅ vision registered successfully');
+
+      // Register image generation capability - Nano Banana (Gemini) image generation
+      logger.info('📦 Registering image_gen (Nano Banana image generation)...');
+      capabilityRegistry.register(imageGenCapability);
+      logger.info('✅ image_gen registered successfully');
 
       // Register diagnose capability - understand what went wrong
       logger.info('📦 Registering diagnose (error analysis)...');

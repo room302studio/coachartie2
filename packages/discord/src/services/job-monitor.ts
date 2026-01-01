@@ -195,7 +195,9 @@ export class JobMonitor {
           callback.orphanRetries = (callback.orphanRetries || 0) + 1;
 
           if (callback.onOrphaned && callback.orphanRetries <= maxOrphanRetries) {
-            logger.info(`🔄 Job ${shortId} orphaned (attempt ${callback.orphanRetries}/${maxOrphanRetries}) - attempting recovery...`);
+            logger.info(
+              `🔄 Job ${shortId} orphaned (attempt ${callback.orphanRetries}/${maxOrphanRetries}) - attempting recovery...`
+            );
 
             try {
               const newJobId = await callback.onOrphaned();
@@ -223,9 +225,13 @@ export class JobMonitor {
 
           // If we get here, recovery failed or wasn't possible
           if (callback.orphanRetries > maxOrphanRetries) {
-            logger.error(`💀 Job ${shortId} orphan recovery exhausted (${maxOrphanRetries} attempts)`);
+            logger.error(
+              `💀 Job ${shortId} orphan recovery exhausted (${maxOrphanRetries} attempts)`
+            );
             if (callback.onError) {
-              callback.onError(`Job lost after ${maxOrphanRetries} recovery attempts - capabilities service may have restarted`);
+              callback.onError(
+                `Job lost after ${maxOrphanRetries} recovery attempts - capabilities service may have restarted`
+              );
             }
             this.unmonitorJob(jobId);
             return;

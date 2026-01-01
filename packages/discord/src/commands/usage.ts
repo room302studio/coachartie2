@@ -144,8 +144,16 @@ async function createUsageEmbed(userId: string, period: string): Promise<EmbedBu
     embed.addFields(
       { name: '📊 Total Requests', value: (usage.total_requests || 0).toString(), inline: true },
       { name: '✅ Success Rate', value: `${successRate}%`, inline: true },
-      { name: '🎯 Tokens Used', value: Number(usage.total_tokens || 0).toLocaleString(), inline: true },
-      { name: '💰 Total Cost', value: `$${Number(usage.total_cost || 0).toFixed(4)}`, inline: true },
+      {
+        name: '🎯 Tokens Used',
+        value: Number(usage.total_tokens || 0).toLocaleString(),
+        inline: true,
+      },
+      {
+        name: '💰 Total Cost',
+        value: `$${Number(usage.total_cost || 0).toFixed(4)}`,
+        inline: true,
+      },
       { name: '📈 Cost/Message', value: `$${costPerMessage}`, inline: true },
       {
         name: '⚡ Avg Response',

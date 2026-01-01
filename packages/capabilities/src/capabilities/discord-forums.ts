@@ -110,7 +110,8 @@ async function listForums(params: DiscordForumsParams): Promise<string> {
   if (!guildId) {
     // Fetch available guilds from health endpoint to provide helpful error
     try {
-      const discordHealthUrl = process.env.DISCORD_HEALTH_URL ||
+      const discordHealthUrl =
+        process.env.DISCORD_HEALTH_URL ||
         (process.env.DOCKER_ENV ? 'http://discord:47319/health' : 'http://localhost:47319/health');
       const healthResponse = await fetchWithTimeout(discordHealthUrl);
       if (healthResponse.ok) {

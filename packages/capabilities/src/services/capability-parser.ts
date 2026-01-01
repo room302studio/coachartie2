@@ -145,10 +145,7 @@ export class CapabilityParser {
    * Detect and inject capabilities automatically from user message and LLM response
    * Currently disabled - returns empty array
    */
-  detectAndInjectCapabilities(
-    _userMessage: string,
-    _llmResponse: string
-  ): ExtractedCapability[] {
+  detectAndInjectCapabilities(_userMessage: string, _llmResponse: string): ExtractedCapability[] {
     // No auto-injection for now - let the LLM handle it or user be explicit
     return [];
   }
@@ -173,10 +170,7 @@ export class CapabilityParser {
     return CapabilityParser.SIMPLE_SHORTCUTS[`${name}:${action}`] || null;
   }
 
-  generateHelpfulErrorMessage(
-    capability: ExtractedCapability,
-    originalError: string
-  ): string {
+  generateHelpfulErrorMessage(capability: ExtractedCapability, originalError: string): string {
     const { name, action } = capability;
 
     // Check if the capability exists

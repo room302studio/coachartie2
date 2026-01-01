@@ -62,8 +62,8 @@ function createWrapper(database: SqlJsDatabase, filePath: string): DatabaseWrapp
       const lastIdResult = database.exec('SELECT last_insert_rowid() as lastID');
       const changesResult = database.exec('SELECT changes() as changes');
       return {
-        lastID: lastIdResult[0]?.values[0]?.[0] as number || 0,
-        changes: changesResult[0]?.values[0]?.[0] as number || 0,
+        lastID: (lastIdResult[0]?.values[0]?.[0] as number) || 0,
+        changes: (changesResult[0]?.values[0]?.[0] as number) || 0,
       };
     },
 
@@ -127,7 +127,9 @@ function createWrapper(database: SqlJsDatabase, filePath: string): DatabaseWrapp
  */
 export async function getDatabase(): Promise<DatabaseWrapper> {
   if (!deprecationWarningShown) {
-    console.warn('DEPRECATED: getDatabase() is deprecated. Use getDb() from @coachartie/shared instead.');
+    console.warn(
+      'DEPRECATED: getDatabase() is deprecated. Use getDb() from @coachartie/shared instead.'
+    );
     deprecationWarningShown = true;
   }
 
@@ -161,7 +163,9 @@ export async function getDatabase(): Promise<DatabaseWrapper> {
         if (errorMsg.includes('file is not a database') || errorMsg.includes('malformed')) {
           // Database file is corrupted - back it up and create fresh
           const backupPath = `${dbPath}.corrupted.${Date.now()}`;
-          logger.warn(`⚠️ Database file corrupted, backing up to ${backupPath} and creating fresh database`);
+          logger.warn(
+            `⚠️ Database file corrupted, backing up to ${backupPath} and creating fresh database`
+          );
           try {
             fs.renameSync(dbPath, backupPath);
           } catch {

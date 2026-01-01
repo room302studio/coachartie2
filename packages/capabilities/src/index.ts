@@ -50,6 +50,7 @@ import { capabilityRegistry } from './services/capability-registry.js';
 import { capabilitiesRouter } from './routes/capabilities.js';
 import { simpleHealer } from './runtime/simple-healer.js';
 import { hybridDataLayer } from './runtime/hybrid-data-layer.js';
+import { getMetrics, getMetricsContentType } from './services/metrics.js';
 
 // Export openRouterService for models endpoint
 export { openRouterService } from './services/openrouter.js';
@@ -86,6 +87,16 @@ app.get('/test', (req, res) => {
   res.send('Server is running!');
 });
 
+// Prometheus metrics endpoint
+app.get('/metrics', async (req, res) => {
+  try {
+    res.set('Content-Type', getMetricsContentType());
+    res.end(await getMetrics());
+  } catch (err) {
+    res.status(500).end((err as Error).message);
+  }
+});
+
 // Routes
 app.use('/health', healthRouter);
 app.use('/chat', chatRouter);
@@ -110,10 +121,12 @@ app.post('/api/observe', async (req, res) => {
     const { observationHandler } = await import('./services/observation-handler.js');
 
     // Generate summary
-    const result = await observationHandler.generateObservationSummary(
-      prompt,
-      { guildId, channelId, messageCount, timeRange }
-    );
+    const result = await observationHandler.generateObservationSummary(prompt, {
+      guildId,
+      channelId,
+      messageCount,
+      timeRange,
+    });
 
     res.json(result);
   } catch (error) {

@@ -139,7 +139,15 @@ export class EmailDraftingService {
     let end = atIndex;
     while (end < text.length) {
       const char = text[end];
-      if (char === ' ' || char === '>' || char === ')' || char === '\n' || char === ',' || char === ';') break;
+      if (
+        char === ' ' ||
+        char === '>' ||
+        char === ')' ||
+        char === '\n' ||
+        char === ',' ||
+        char === ';'
+      )
+        break;
       end++;
     }
 
@@ -210,7 +218,8 @@ Format your response using XML tags:
   <body>Your email body here</body>
 </email>`;
 
-      const emailDraftSystemPrompt = (await promptManager.getPrompt('PROMPT_EMAIL_DRAFT'))?.content ||
+      const emailDraftSystemPrompt =
+        (await promptManager.getPrompt('PROMPT_EMAIL_DRAFT'))?.content ||
         'You are Coach Artie, an AI assistant helping draft professional emails.';
       const { messages } = await contextAlchemy.buildMessageChain(
         draftPrompt,
@@ -408,7 +417,8 @@ Format your response using XML tags:
   <body>Your revised email body here</body>
 </email>`;
 
-      const emailRevisionSystemPrompt = (await promptManager.getPrompt('PROMPT_EMAIL_REVISION'))?.content ||
+      const emailRevisionSystemPrompt =
+        (await promptManager.getPrompt('PROMPT_EMAIL_REVISION'))?.content ||
         'You are Coach Artie, revising an email draft based on feedback.';
       const { messages } = await contextAlchemy.buildMessageChain(
         revisionPrompt,

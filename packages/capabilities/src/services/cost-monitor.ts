@@ -1,4 +1,5 @@
 import { logger } from '@coachartie/shared';
+import { recordApiCall } from './metrics.js';
 
 /**
  * Simple cost monitoring service to track OpenRouter API usage
@@ -84,6 +85,14 @@ class CostMonitor {
         totalCalls: this.totalCalls,
       }
     );
+
+    // Record to Prometheus metrics
+    recordApiCall({
+      model,
+      inputTokens,
+      outputTokens,
+      cost: estimatedCost,
+    });
 
     // Check tokens per call limit
     if (callTokens > this.maxTokensPerCall) {

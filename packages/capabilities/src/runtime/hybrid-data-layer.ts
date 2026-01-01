@@ -147,7 +147,9 @@ export class HybridDataLayer {
    * Store memory - instant hot cache write, async persistence
    * Accepts a partial memory (without id) and returns the assigned id
    */
-  async storeMemory(memory: Omit<MemoryRecord, 'id' | 'created_at' | 'updated_at'>): Promise<number> {
+  async storeMemory(
+    memory: Omit<MemoryRecord, 'id' | 'created_at' | 'updated_at'>
+  ): Promise<number> {
     // Generate a temporary negative ID for immediate hot cache storage
     // This will be replaced with the real auto-increment ID after persistence
     const tempId = -Date.now();

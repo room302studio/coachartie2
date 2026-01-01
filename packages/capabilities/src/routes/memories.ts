@@ -36,16 +36,17 @@ router.get('/', async (req, res) => {
       } else {
         // Get all recent memories across all users using Drizzle
         const db = getDb();
-        memoriesList = await db.select({
-          id: memories.id,
-          userId: memories.userId,
-          content: memories.content,
-          tags: memories.tags,
-          context: memories.context,
-          timestamp: memories.timestamp,
-          importance: memories.importance,
-          related_message_id: memories.relatedMessageId,
-        })
+        memoriesList = await db
+          .select({
+            id: memories.id,
+            userId: memories.userId,
+            content: memories.content,
+            tags: memories.tags,
+            context: memories.context,
+            timestamp: memories.timestamp,
+            importance: memories.importance,
+            related_message_id: memories.relatedMessageId,
+          })
           .from(memories)
           .orderBy(desc(memories.createdAt))
           .limit(parseInt(limit as string));

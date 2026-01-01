@@ -43,10 +43,7 @@ export const discordIssueParserCapability: RegisteredCapability = {
  * Handles patterns like #123 and github.com/owner/repo/issues/456
  * Ignores issue references inside code blocks (backticks)
  */
-async function parseIssueLinks(params: {
-  text: string;
-  repo?: string;
-}): Promise<any> {
+async function parseIssueLinks(params: { text: string; repo?: string }): Promise<any> {
   const { text, repo } = params;
 
   logger.info(`Parsing issue references from text (${text.length} chars)`);

@@ -1,5 +1,11 @@
 import type { App } from '@slack/bolt';
-import { createWorker, QUEUES, OutgoingMessage, logger, testRedisConnection } from '@coachartie/shared';
+import {
+  createWorker,
+  QUEUES,
+  OutgoingMessage,
+  logger,
+  testRedisConnection,
+} from '@coachartie/shared';
 import type { Worker } from 'bullmq';
 
 export async function startResponseConsumer(

@@ -156,7 +156,10 @@ export class RobustCapabilityExecutor {
    * Interpolate variables in parameters using Handlebars template engine
    * Supports both ${var} and {{var}} syntax
    */
-  private async interpolateParams(params: Record<string, any>, userId: string): Promise<Record<string, any>> {
+  private async interpolateParams(
+    params: Record<string, any>,
+    userId: string
+  ): Promise<Record<string, any>> {
     const variableStore = GlobalVariableStore.getInstance();
     const interpolated: Record<string, any> = {};
 

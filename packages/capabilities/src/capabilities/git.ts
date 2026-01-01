@@ -35,7 +35,10 @@ async function execInContainer(command: string, timeout: number = 30000) {
 }
 
 // Truncate long output intelligently
-function truncateOutput(output: string, maxLines: number = 100): { text: string; truncated: boolean } {
+function truncateOutput(
+  output: string,
+  maxLines: number = 100
+): { text: string; truncated: boolean } {
   const lines = output.split('\n');
   if (lines.length <= maxLines) {
     return { text: output, truncated: false };
@@ -94,13 +97,7 @@ Read-only operations. For committing, use shell with git commands.`,
   ],
 
   handler: async (params: any, _content: string | undefined) => {
-    const {
-      action = 'status',
-      path = '/workspace',
-      file,
-      ref,
-      count = 10,
-    } = params as GitParams;
+    const { action = 'status', path = '/workspace', file, ref, count = 10 } = params as GitParams;
 
     logger.info(`Git: ${action}${file ? ` ${file}` : ''}${ref ? ` (${ref})` : ''}`);
 
@@ -151,9 +148,7 @@ Read-only operations. For committing, use shell with git commands.`,
           }
 
           const truncated = truncateOutput(stdout.trim(), 150);
-          return truncated.truncated
-            ? `${truncated.text}\n[diff truncated]`
-            : truncated.text;
+          return truncated.truncated ? `${truncated.text}\n[diff truncated]` : truncated.text;
         }
 
         case 'log': {
@@ -209,9 +204,7 @@ Read-only operations. For committing, use shell with git commands.`,
           );
 
           const truncated = truncateOutput(stdout.trim(), 80);
-          return truncated.truncated
-            ? `${truncated.text}\n[output truncated]`
-            : truncated.text;
+          return truncated.truncated ? `${truncated.text}\n[output truncated]` : truncated.text;
         }
 
         case 'blame': {

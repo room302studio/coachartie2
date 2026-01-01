@@ -11,14 +11,15 @@ export const createApiRoutes: FastifyPluginAsync = async (fastify) => {
       fastify.get('/memories', async (request, reply) => {
         try {
           const db = getDb();
-          const result = await db.select({
-            id: memories.id,
-            user_id: memories.userId,
-            content: memories.content,
-            metadata: memories.metadata,
-            created_at: memories.createdAt,
-            updated_at: memories.updatedAt,
-          })
+          const result = await db
+            .select({
+              id: memories.id,
+              user_id: memories.userId,
+              content: memories.content,
+              metadata: memories.metadata,
+              created_at: memories.createdAt,
+              updated_at: memories.updatedAt,
+            })
             .from(memories)
             .orderBy(desc(memories.createdAt))
             .limit(50);
@@ -41,13 +42,14 @@ export const createApiRoutes: FastifyPluginAsync = async (fastify) => {
       fastify.get('/messages', async (request, reply) => {
         try {
           const db = getDb();
-          const result = await db.select({
-            id: messages.id,
-            user_id: messages.userId,
-            message: messages.value,
-            role: messages.role,
-            created_at: messages.createdAt,
-          })
+          const result = await db
+            .select({
+              id: messages.id,
+              user_id: messages.userId,
+              message: messages.value,
+              role: messages.role,
+              created_at: messages.createdAt,
+            })
             .from(messages)
             .orderBy(desc(messages.createdAt))
             .limit(50);
@@ -73,7 +75,9 @@ export const createApiRoutes: FastifyPluginAsync = async (fastify) => {
 
           const [memoriesCount] = await db.select({ count: sql<number>`COUNT(*)` }).from(memories);
           const [messagesCount] = await db.select({ count: sql<number>`COUNT(*)` }).from(messages);
-          const [usersCount] = await db.select({ count: countDistinct(messages.userId) }).from(messages);
+          const [usersCount] = await db
+            .select({ count: countDistinct(messages.userId) })
+            .from(messages);
 
           const stats = {
             memories: memoriesCount?.count || 0,

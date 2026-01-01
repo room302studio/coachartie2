@@ -9,7 +9,7 @@
  * - Comprehensive telemetry and correlation tracking
  */
 
-import { Client, Events, Message, EmbedBuilder, ChannelType } from 'discord.js';
+import { Client, Events, Message, EmbedBuilder, AttachmentBuilder, ChannelType } from 'discord.js';
 import { logger } from '@coachartie/shared';
 import { publishMessage } from '../queues/publisher.js';
 import { telemetry } from '../services/telemetry.js';
@@ -19,7 +19,12 @@ import {
   getShortCorrelationId,
 } from '../utils/correlation.js';
 import { processUserIntent } from '../services/user-intent-processor.js';
-import { isGuildWhitelisted, isWorkingGuild, getGuildConfig, GuildConfig } from '../config/guild-whitelist.js';
+import {
+  isGuildWhitelisted,
+  isWorkingGuild,
+  getGuildConfig,
+  GuildConfig,
+} from '../config/guild-whitelist.js';
 import { getGitHubIntegration } from '../services/github-integration.js';
 import { getForumTraversal } from '../services/forum-traversal.js';
 import { getMentionProxyService } from '../services/mention-proxy-service.js';
@@ -133,70 +138,6 @@ async function isForumThread(message: Message): Promise<boolean> {
 }
 
 /**
- * Helper: Check if message looks like a question that might warrant a proactive answer
- * This is a lightweight heuristic check - the actual decision to answer uses LLM judgment
- */
-function looksLikeQuestion(content: string): boolean {
-  const lowerContent = content.toLowerCase().trim();
-
-  // Direct question (ends with ?)
-  if (lowerContent.endsWith('?')) return true;
-
-  // Starts with "help" (like "Help my route is broken")
-  if (lowerContent.startsWith('help ') || lowerContent === 'help') return true;
-
-  // Question/help patterns
-  const questionPatterns = [
-    'how do i',
-    'how can i',
-    'how to',
-    'what is',
-    'what are',
-    'where is',
-    'where can',
-    'when is',
-    'when do',
-    'why is',
-    'why do',
-    'can i',
-    'can you',
-    'is there',
-    'are there',
-    'does anyone',
-    'does anybody',
-    'has anyone',
-    'anyone know',
-    'anybody know',
-    'help with',
-    'help me',
-    'need help',
-    'please help',
-    'someone help',
-    'trying to',
-    "i can't",
-    "i cant",
-    "don't know how",
-    "dont know how",
-    "doesn't work",
-    "doesnt work",
-    "not working",
-    "is broken",
-    "is messed up",
-    "is stuck",
-    "won't work",
-    "wont work",
-    "how come",
-    "i want to",
-    "i need to",
-    "having trouble",
-    "having issues",
-    "having a problem",
-  ];
-
-  return questionPatterns.some((pattern) => lowerContent.includes(pattern));
-}
-
-/**
  * Use LLM to judge if Artie should proactively answer a question
  * Based on the guild context and message content
  */
@@ -244,34 +185,57 @@ CRITICAL: When in doubt, answer FALSE. It's better to miss a question than to in
 
 JSON response:`;
 
-    const response = await fetch(`${capabilitiesUrl}/chat?wait=true`, {
+    // Use direct OpenRouter call to avoid capability orchestration
+    // The full chat endpoint includes email/calendar capabilities that can hijack the response
+    const openRouterApiKey = process.env.OPENROUTER_API_KEY;
+    if (!openRouterApiKey) {
+      logger.warn('No OpenRouter API key for proactive judgment');
+      return false;
+    }
+
+    const openRouterResponse = await fetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${openRouterApiKey}`,
+        'HTTP-Referer': 'https://coach-artie.local',
+        'X-Title': 'Coach Artie Proactive Judgment',
+      },
       body: JSON.stringify({
-        message: prompt,
-        userId: 'proactive-judgment-system',
-        source: 'api',
+        model: process.env.PROACTIVE_JUDGMENT_MODEL || 'google/gemini-2.0-flash-001',
+        messages: [{ role: 'user', content: prompt }],
+        max_tokens: 200, // Small response - just need yes/no JSON
       }),
     });
 
-    if (!response.ok) {
-      throw new Error(`Capabilities service returned ${response.status}`);
+    if (!openRouterResponse.ok) {
+      throw new Error(`OpenRouter returned ${openRouterResponse.status}`);
     }
 
-    const result = await response.json() as { response?: string };
-    const rawResponse = result.response || '';
+    const openRouterResult = (await openRouterResponse.json()) as {
+      choices?: Array<{ message?: { content?: string } }>;
+    };
+    const rawResponse = openRouterResult.choices?.[0]?.message?.content || '';
 
     // Parse JSON response
     try {
       // Extract JSON from response (in case there's extra text)
       const jsonMatch = rawResponse.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
-        const judgment = JSON.parse(jsonMatch[0]) as { answer: boolean; confidence: number; reason: string };
-        logger.info(`🤔 Proactive judgment: answer=${judgment.answer}, confidence=${judgment.confidence}, reason="${judgment.reason}"`);
+        const judgment = JSON.parse(jsonMatch[0]) as {
+          answer: boolean;
+          confidence: number;
+          reason: string;
+        };
+        logger.info(
+          `🤔 Proactive judgment: answer=${judgment.answer}, confidence=${judgment.confidence}, reason="${judgment.reason}"`
+        );
 
         // Require confidence > 0.7 to answer (be conservative)
         const shouldAnswer = judgment.answer && judgment.confidence > 0.7;
-        logger.info(`🤔 Final decision for "${message.content.substring(0, 50)}...": ${shouldAnswer ? 'YES' : 'NO'}`);
+        logger.info(
+          `🤔 Final decision for "${message.content.substring(0, 50)}...": ${shouldAnswer ? 'YES' : 'NO'}`
+        );
         return shouldAnswer;
       }
     } catch (parseError) {
@@ -280,7 +244,9 @@ JSON response:`;
 
     // Fallback: check for yes/no in response
     const decision = rawResponse.toLowerCase().trim();
-    logger.info(`🤔 Fallback judgment for "${message.content.substring(0, 50)}...": "${rawResponse}" -> ${decision.includes('yes') ? 'YES' : 'NO'}`);
+    logger.info(
+      `🤔 Fallback judgment for "${message.content.substring(0, 50)}...": "${rawResponse}" -> ${decision.includes('yes') ? 'YES' : 'NO'}`
+    );
     return decision.includes('yes');
   } catch (error) {
     logger.warn(`Failed proactive answer judgment, defaulting to no:`, error);
@@ -916,7 +882,9 @@ export function setupMessageHandler(client: Client) {
 
       if (result && result.correct) {
         // User got the answer right!
-        logger.info(`✅ Quiz answer correct! User: ${message.author.tag}, Channel: ${message.channelId}`);
+        logger.info(
+          `✅ Quiz answer correct! User: ${message.author.tag}, Channel: ${message.channelId}`
+        );
 
         // React to the winning message
         try {
@@ -1109,12 +1077,15 @@ export function setupMessageHandler(client: Client) {
     let proactiveAnswerContext: string | undefined;
     const channelNameDebug = ('name' in message.channel ? message.channel.name : 'DM') || 'unknown';
 
-    // Hard minimum: message must have at least 5 words to even consider proactive answering
+    // Basic sanity check - at least 3 words to avoid reacting to "lol" or "ok"
+    // But let the LLM judgment decide whether to actually respond
     const wordCount = message.content.trim().split(/\s+/).length;
-    const meetsMinimumLength = wordCount >= 5;
-    const isQuestion = meetsMinimumLength && looksLikeQuestion(message.content);
+    const meetsMinimumLength = wordCount >= 3;
+    const isQuestion = meetsMinimumLength; // Let LLM decide, don't regex-gatekeep
 
-    logger.info(`🔍 Proactive check: guild=${guildConfig?.name || 'none'}, channel=#${channelNameDebug}, proactive=${guildConfig?.proactiveAnswering}, wordCount=${wordCount}, looksLikeQuestion=${isQuestion}, mentioned=${responseConditions.botMentioned} [${shortId}]`);
+    logger.info(
+      `🔍 Proactive check: guild=${guildConfig?.name || 'none'}, channel=#${channelNameDebug}, proactive=${guildConfig?.proactiveAnswering}, wordCount=${wordCount}, looksLikeQuestion=${isQuestion}, mentioned=${responseConditions.botMentioned} [${shortId}]`
+    );
 
     if (
       guildConfig?.proactiveAnswering &&
@@ -1127,16 +1098,21 @@ export function setupMessageHandler(client: Client) {
       const channelName = ('name' in message.channel ? message.channel.name : '') || '';
       const channelNameLower = channelName.toLowerCase();
       const allowedChannels = guildConfig.proactiveChannels || [];
-      const isAllowedChannel = allowedChannels.length === 0 ||
-        allowedChannels.some(ch => channelNameLower.includes(ch.toLowerCase()));
+      const isAllowedChannel =
+        allowedChannels.length === 0 ||
+        allowedChannels.some((ch) => channelNameLower.includes(ch.toLowerCase()));
 
       if (!isAllowedChannel) {
-        logger.info(`🚫 Proactive answer skipped - channel #${channelName} not in whitelist [${shortId}]`);
+        logger.info(
+          `🚫 Proactive answer skipped - channel #${channelName} not in whitelist [${shortId}]`
+        );
       } else if (message.reference && !message.mentions.has(client.user?.id || '')) {
         // Check: Don't interrupt user-to-user conversations
         // If this is a reply to another message and doesn't mention us, skip proactive answering
         // We still observe and learn from these conversations, but don't butt in
-        logger.info(`🚫 Proactive answer skipped - user is replying to another user, not interrupting [${shortId}]`);
+        logger.info(
+          `🚫 Proactive answer skipped - user is replying to another user, not interrupting [${shortId}]`
+        );
       } else {
         // Check 2: Cooldown - don't spam the server
         const cooldownSeconds = guildConfig.proactiveCooldownSeconds || 60;
@@ -1144,10 +1120,14 @@ export function setupMessageHandler(client: Client) {
         const timeSinceLast = (Date.now() - lastProactive) / 1000;
 
         if (timeSinceLast < cooldownSeconds) {
-          logger.info(`⏳ Proactive answer skipped - cooldown (${Math.round(cooldownSeconds - timeSinceLast)}s remaining) [${shortId}]`);
+          logger.info(
+            `⏳ Proactive answer skipped - cooldown (${Math.round(cooldownSeconds - timeSinceLast)}s remaining) [${shortId}]`
+          );
         } else {
           // Check 3: Conscience/reflection - thoughtful judgment about whether to help
-          logger.info(`🤔 Checking proactive answer for question in ${guildConfig.name} #${channelName} [${shortId}]`);
+          logger.info(
+            `🤔 Checking proactive answer for question in ${guildConfig.name} #${channelName} [${shortId}]`
+          );
           const shouldAnswer = await shouldProactivelyAnswer(
             message,
             guildConfig.context,
@@ -1159,7 +1139,9 @@ export function setupMessageHandler(client: Client) {
             proactiveAnswerContext = getEnhancedGuildContext(guildConfig);
             // Update cooldown
             proactiveCooldownCache.set(message.guildId || '', Date.now());
-            logger.info(`✅ Proactive answer approved for ${guildConfig.name} #${channelName} [${shortId}]`);
+            logger.info(
+              `✅ Proactive answer approved for ${guildConfig.name} #${channelName} [${shortId}]`
+            );
             telemetry.logEvent(
               'proactive_answer_approved',
               { guildId: message.guildId, guildName: guildConfig.name, channel: channelName },
@@ -1173,10 +1155,18 @@ export function setupMessageHandler(client: Client) {
 
     // Determine response mode: active response vs passive observation
     // In forums, only respond when mentioned (too noisy otherwise)
+    // In robot channels, skip replies to other users (not the bot) - they're having their own conversation
+    const isReplyToOtherUser = message.reference && !responseConditions.botMentioned;
+    const shouldRespondInRobotChannel = responseConditions.isRobotChannel && !isReplyToOtherUser;
+
+    if (responseConditions.isRobotChannel && isReplyToOtherUser) {
+      logger.info(`🚫 Robot channel: skipping reply to other user [${shortId}]`);
+    }
+
     const shouldRespond =
       responseConditions.botMentioned ||
       responseConditions.isDM ||
-      responseConditions.isRobotChannel ||
+      shouldRespondInRobotChannel ||
       responseConditions.isProactiveAnswer;
 
     try {
@@ -1244,7 +1234,14 @@ export function setupMessageHandler(client: Client) {
         // Process with unified intent processor
         // Always pass guild context if available (not just for proactive answers)
         const guildContextToPass = proactiveAnswerContext || getEnhancedGuildContext(guildConfig);
-        await handleMessageAsIntent(message, cleanMessage, correlationId, undefined, guildContextToPass, responseConditions.isProactiveAnswer);
+        await handleMessageAsIntent(
+          message,
+          cleanMessage,
+          correlationId,
+          undefined,
+          guildContextToPass,
+          responseConditions.isProactiveAnswer
+        );
       } else {
         // PASSIVE OBSERVATION: Only process for learning if channel is whitelisted
         const channelName =
@@ -1254,8 +1251,9 @@ export function setupMessageHandler(client: Client) {
 
         // Check if this channel is in the observation whitelist
         const observationChannels = guildConfig?.observationChannels || [];
-        const shouldObserve = observationChannels.length === 0 ||
-          observationChannels.some(c => channelName.toLowerCase().includes(c.toLowerCase()));
+        const shouldObserve =
+          observationChannels.length === 0 ||
+          observationChannels.some((c) => channelName.toLowerCase().includes(c.toLowerCase()));
 
         if (shouldObserve) {
           logger.info(`👁️ Passive observation [${shortId}]`, {
@@ -1408,9 +1406,7 @@ async function fetchChannelHistory(message: Message): Promise<
 /**
  * Fetch recent attachments from the channel (last ~10 messages)
  */
-async function fetchRecentAttachments(
-  message: Message
-): Promise<
+async function fetchRecentAttachments(message: Message): Promise<
   Array<{
     id: string;
     name: string | null;
@@ -1514,6 +1510,73 @@ async function fetchRecentUrls(message: Message): Promise<string[]> {
 }
 
 /**
+ * Resolve Discord message links to their actual content
+ * Links look like: https://discord.com/channels/GUILD_ID/CHANNEL_ID/MESSAGE_ID
+ */
+async function resolveDiscordMessageLinks(
+  urls: string[],
+  currentMessage: Message
+): Promise<Array<{ url: string; content: string; author: string; channel: string }>> {
+  const resolved: Array<{ url: string; content: string; author: string; channel: string }> = [];
+  const discordLinkPattern =
+    /^https:\/\/(?:discord\.com|discordapp\.com)\/channels\/(\d+)\/(\d+)\/(\d+)$/;
+
+  for (const url of urls) {
+    const match = url.match(discordLinkPattern);
+    if (!match) continue;
+
+    const [, guildId, channelId, messageId] = match;
+
+    try {
+      // Only resolve links from the same guild for security
+      if (guildId !== currentMessage.guildId) {
+        logger.debug(`🔗 Skipping cross-guild Discord link: ${url}`);
+        continue;
+      }
+
+      const guild = currentMessage.guild;
+      if (!guild) continue;
+
+      const channel = guild.channels.cache.get(channelId);
+      if (!channel || !channel.isTextBased()) {
+        logger.debug(`🔗 Channel not found or not text-based: ${channelId}`);
+        continue;
+      }
+
+      // Fetch the referenced message
+      const referencedMessage = await (channel as any).messages.fetch(messageId);
+      if (!referencedMessage) continue;
+
+      const channelName = 'name' in channel ? channel.name : 'unknown';
+
+      // Build content including attachments
+      let content = referencedMessage.content || '';
+      if (referencedMessage.attachments.size > 0) {
+        const attachmentInfo = referencedMessage.attachments
+          .map((att: any) => `[Attachment: ${att.name}]`)
+          .join(', ');
+        content += content ? `\n${attachmentInfo}` : attachmentInfo;
+      }
+
+      resolved.push({
+        url,
+        content: content.substring(0, 1000), // Cap length
+        author: referencedMessage.author.username,
+        channel: channelName,
+      });
+
+      logger.info(`🔗 Resolved Discord message link: ${url} -> "${content.substring(0, 50)}..."`);
+    } catch (error) {
+      logger.debug(`🔗 Failed to resolve Discord link ${url}:`, error);
+    }
+
+    if (resolved.length >= 3) break; // Cap resolved messages
+  }
+
+  return resolved;
+}
+
+/**
  * Simple adapter: Convert Discord message to UserIntent and delegate to unified processor
  * Replaces ~400 lines of duplicate logic with ~30 lines of adapter code
  */
@@ -1546,6 +1609,11 @@ async function handleMessageAsIntent(
       logger.info(`📎 Found ${recentAttachments.length} recent attachments [${shortId}]`);
     }
 
+    // Check for .metro files - affects typing behavior
+    const hasMetroFile = Array.from(message.attachments.values()).some((att) =>
+      att.name?.toLowerCase().endsWith('.metro')
+    );
+
     // DEBUG: Log current message attachments
     if (message.attachments.size > 0) {
       logger.info(`📎 Current message has ${message.attachments.size} attachments [${shortId}]`, {
@@ -1555,11 +1623,49 @@ async function handleMessageAsIntent(
           contentType: att.contentType,
         })),
       });
+
+      // React with 👀 if there's a .metro file - shows we saw it
+      if (hasMetroFile) {
+        try {
+          await message.react('👀');
+        } catch (e) {
+          logger.warn(`Failed to add 👀 reaction for metro file [${shortId}]`);
+        }
+      }
     }
 
     const recentUrls = await fetchRecentUrls(message);
-    if (recentUrls.length > 0) {
-      logger.info(`🔗 Found ${recentUrls.length} recent URLs [${shortId}]`);
+
+    // Also extract URLs from the CURRENT message (not just recent ones)
+    const currentMessageUrls: string[] = [];
+    for (const token of message.content.split(/\s+/)) {
+      try {
+        const parsed = new URL(token);
+        if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+          currentMessageUrls.push(parsed.toString());
+        }
+      } catch {
+        // not a URL
+      }
+    }
+
+    // Combine current + recent URLs (current first, dedupe)
+    const allUrls = [
+      ...currentMessageUrls,
+      ...recentUrls.filter((u) => !currentMessageUrls.includes(u)),
+    ];
+    if (allUrls.length > 0) {
+      logger.info(
+        `🔗 Found ${allUrls.length} URLs (${currentMessageUrls.length} current, ${recentUrls.length} recent) [${shortId}]`
+      );
+    }
+
+    // Resolve Discord message links to their actual content
+    const resolvedDiscordMessages = await resolveDiscordMessageLinks(allUrls, message);
+    if (resolvedDiscordMessages.length > 0) {
+      logger.info(
+        `🔗 Resolved ${resolvedDiscordMessages.length} Discord message links [${shortId}]`
+      );
     }
 
     // ENHANCED: Fetch reply context if this is a reply
@@ -1625,6 +1731,7 @@ async function handleMessageAsIntent(
       hasAttachments: message.attachments.size > 0,
       recentAttachments,
       recentUrls,
+      resolvedDiscordMessages, // Discord message links resolved to their actual content
       // DEBUG: Log attachment counts for troubleshooting
       _debug_currentAttachmentCount: message.attachments.size,
       _debug_recentAttachmentCount: recentAttachments.length,
@@ -1694,6 +1801,17 @@ async function handleMessageAsIntent(
 
         // Response handlers
         respond: async (content: string): Promise<void> => {
+          // Check if LLM chose to stay silent
+          const trimmedContent = content.trim();
+          if (
+            !trimmedContent ||
+            trimmedContent === '[SILENT]' ||
+            trimmedContent.toLowerCase() === '[silent]'
+          ) {
+            logger.info(`🤫 DISCORD: LLM chose to stay silent [${shortId}]`);
+            return;
+          }
+
           logger.info(`📨 DISCORD RESPOND [${shortId}]:`, {
             correlationId,
             contentLength: content.length,
@@ -1863,6 +1981,31 @@ async function handleMessageAsIntent(
           }
         },
 
+        // Send file attachment
+        sendFile: async (fileData: { buffer: Buffer; filename: string; content?: string }) => {
+          try {
+            const attachment = new AttachmentBuilder(fileData.buffer, { name: fileData.filename });
+            await message.reply({
+              content: fileData.content || `📎 Here's your file: ${fileData.filename}`,
+              files: [attachment],
+            });
+            telemetry.logEvent(
+              'file_sent',
+              {
+                filename: fileData.filename,
+                size: fileData.buffer.length,
+              },
+              correlationId,
+              message.author.id
+            );
+            logger.info(
+              `📎 Sent file ${fileData.filename} (${fileData.buffer.length} bytes) [${shortId}]`
+            );
+          } catch (error) {
+            logger.warn(`Failed to send file [${shortId}]:`, error);
+          }
+        },
+
         updateProgressEmbed: statusMessage
           ? async (embedData: any) => {
               try {
@@ -1885,7 +2028,7 @@ async function handleMessageAsIntent(
       },
       {
         enableStreaming: true, // Enable streaming for messages
-        enableTyping: true, // Enable typing indicators for messages
+        enableTyping: !hasMetroFile, // No typing during file processing - just 👀 reaction
         enableReactions: false, // MINIMAL: No emoji reactions
         enableEditing: true, // Enable message editing for cleaner streaming
         enableThreading: false, // MINIMAL: No auto-threading

@@ -9,15 +9,23 @@
 import { mkdir, writeFile, readFile } from 'fs/promises';
 import { join, basename, dirname } from 'path';
 import { createRequire } from 'module';
+import { fileURLToPath } from 'url';
 import { logger } from '@coachartie/shared';
 
 // Import from official metro-savefile-doctor repo
-import { readMetroSave, writeMetroSave, type MetroSaveData } from 'metro-savefile-doctor/metro-loader';
+import {
+  readMetroSave,
+  writeMetroSave,
+  type MetroSaveData,
+} from 'metro-savefile-doctor/metro-loader';
 import { runJSScriptString, type SaveData } from 'metro-savefile-doctor/js-script-runner';
 
 // Resolve path to the official repair script from metro-savefile-doctor
+// Use createRequire to find the package location reliably
 const require = createRequire(import.meta.url);
-const metroSavefileDoctorPath = dirname(require.resolve('metro-savefile-doctor/package.json'));
+const metroLoaderPath = require.resolve('metro-savefile-doctor/metro-loader');
+// metro-loader resolves to .../dist/metro-loader.js, go up twice to package root
+const metroSavefileDoctorPath = dirname(dirname(metroLoaderPath));
 const REPAIR_SCRIPT_PATH = join(metroSavefileDoctorPath, 'scripts', 'repair-save.js');
 
 // Cache for the repair script
@@ -103,40 +111,27 @@ function buildAnalysisSummary(
   const stats = saveData.stats;
   const data = saveData.data || {};
 
-  // Get actual counts from game data if available
   const actualStations = Array.isArray(data.stations) ? data.stations.length : stats.stations;
   const actualRoutes = Array.isArray(data.routes) ? data.routes.length : stats.routes;
   const actualTrains = Array.isArray(data.trains) ? data.trains.length : stats.trains;
-  const elapsedSeconds = data.elapsedSeconds;
+  const money = formatMoney(stats.money || data.money || 0);
+  const playtime = formatPlaytime(data.elapsedSeconds);
+  const sizeMb = (originalSize / (1024 * 1024)).toFixed(1);
 
-  const statusEmoji = errors.length === 0 ? '✅' : '⚠️';
+  const statusEmoji = errors.length === 0 ? '✅' : '❌';
 
-  const lines = [
-    `${statusEmoji} **${saveData.name}** (${saveData.cityCode || 'Unknown City'})`,
-    '',
-    `📊 **Stats:**`,
-    `- Stations: ${actualStations}`,
-    `- Routes: ${actualRoutes}`,
-    `- Trains: ${actualTrains}`,
-    `- Balance: ${formatMoney(stats.money || data.money || 0)}`,
-    `- Playtime: ${formatPlaytime(elapsedSeconds)}`,
-    '',
-    `💾 **File Info:**`,
-    `- Size: ${(originalSize / (1024 * 1024)).toFixed(2)} MB`,
-    `- Last saved: ${new Date(saveData.timestamp).toLocaleString()}`,
-  ];
+  // Compact single-line format
+  let summary = `${statusEmoji} **${saveData.name}** (${saveData.cityCode || '?'}) | ${actualStations} stations, ${actualRoutes} routes, ${actualTrains} trains | ${money} | ${playtime} | ${sizeMb}MB`;
 
   if (warnings.length > 0) {
-    lines.push('', `⚠️ **Warnings:**`);
-    warnings.forEach((w) => lines.push(`- ${w}`));
+    summary += `\n⚠️ ${warnings.join('; ')}`;
   }
 
   if (errors.length > 0) {
-    lines.push('', `❌ **Errors:**`);
-    errors.forEach((e) => lines.push(`- ${e}`));
+    summary += `\n❌ ${errors.join('; ')}`;
   }
 
-  return lines.join('\n');
+  return summary;
 }
 
 export async function processMetroAttachment(
@@ -272,14 +267,16 @@ export async function processMetroAttachment(
     // Build summary
     const summary = buildAnalysisSummary(saveData, originalSize, warnings, errors);
 
-    // Add repair info to summary if repairs were made
+    // Track if actual repairs were made (file size changed)
+    const actualRepairsMade = resultBuffer.length !== originalSize;
+
+    // Add repair info if repairs were made
     let finalSummary = summary;
-    if (repairLog.length > 0 && resultBuffer.length !== originalSize) {
+    if (actualRepairsMade) {
       const sizeDiff = originalSize - resultBuffer.length;
-      const savedMb = (sizeDiff / (1024 * 1024)).toFixed(2);
-      finalSummary += `\n\n🔧 **Repairs Applied:**\n`;
-      repairLog.forEach((log) => (finalSummary += `- ${log}\n`));
-      finalSummary += `\n📦 Repaired file: ${(resultBuffer.length / (1024 * 1024)).toFixed(2)} MB (saved ${savedMb} MB)`;
+      const savedMb = (sizeDiff / (1024 * 1024)).toFixed(1);
+      const newSizeMb = (resultBuffer.length / (1024 * 1024)).toFixed(1);
+      finalSummary += `\n🔧 Repaired: ${newSizeMb}MB (saved ${savedMb}MB)`;
     }
 
     const analysis: MetroAnalysis = {
@@ -297,11 +294,11 @@ export async function processMetroAttachment(
 
     return {
       inputPath,
-      outputPath: warnings.length > 0 ? join(workDir, `repaired_${filename}`) : undefined,
+      outputPath: actualRepairsMade ? join(workDir, `repaired_${filename}`) : undefined,
       stdout: finalSummary,
       stderr: errors.join('\n'),
       buffer: resultBuffer, // Return repaired buffer if repairs were made
-      filename: warnings.length > 0 ? `repaired_${filename}` : filename,
+      filename: actualRepairsMade ? `repaired_${filename}` : filename,
       analysis,
     };
   } catch (err: any) {

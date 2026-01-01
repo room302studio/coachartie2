@@ -13,11 +13,7 @@ interface DiscordThreadParams {
 
 const DISCORD_SERVICE_URL = process.env.DISCORD_SERVICE_URL || 'http://localhost:47321';
 
-async function fetchWithTimeout(
-  url: string,
-  options: any = {},
-  timeout = 30000
-): Promise<any> {
+async function fetchWithTimeout(url: string, options: any = {}, timeout = 30000): Promise<any> {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeout);
 
