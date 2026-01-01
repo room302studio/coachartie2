@@ -3,27 +3,20 @@ import { resolve } from 'path';
 
 export default defineConfig({
   test: {
-    // Global test configuration
     globals: true,
     environment: 'node',
+    testTimeout: 10000,
+    hookTimeout: 15000,
 
-    // Test timeout settings
-    testTimeout: 10000, // 10 seconds for integration tests
-    hookTimeout: 15000, // 15 seconds for setup/teardown
-
-    // Test file patterns
     include: [
       'packages/**/src/**/*.{test,spec}.{js,mjs,cjs,ts,mts,cts,jsx,tsx}',
       'packages/**/tests/**/*.{test,spec}.{js,mjs,cjs,ts,mts,cts,jsx,tsx}',
     ],
 
-    // Exclude patterns
     exclude: ['**/node_modules/**', '**/dist/**', '**/build/**', '**/.turbo/**', 'mcp-servers/**'],
 
-    // Test setup
     setupFiles: ['./test-setup.ts'],
 
-    // Coverage configuration
     coverage: {
       provider: 'v8',
       reporter: ['text', 'json', 'html'],
@@ -38,19 +31,19 @@ export default defineConfig({
       ],
     },
 
-    // Reporter configuration
     reporter: ['verbose', 'json'],
-
-    // Retry failed tests
     retry: 1,
 
-    // Run tests in sequence for integration tests
     sequence: {
-      concurrent: false, // Disable for Redis/integration tests
+      concurrent: false,
     },
+
+    // NOTE: Tests that import from @coachartie/* packages fail with
+    // "__vite_ssr_exportName__ is not defined" due to vitest 1.x SSR transform bug.
+    // Self-contained tests (like template-substitution.test.ts) work fine.
+    // Fix options: upgrade to vitest 2.x, switch to jest, or make tests self-contained.
   },
 
-  // Resolve configuration for monorepo
   resolve: {
     alias: {
       '@coachartie/shared': resolve(__dirname, 'packages/shared/src'),
