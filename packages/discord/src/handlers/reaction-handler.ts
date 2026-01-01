@@ -22,6 +22,35 @@ const THUMBS_DOWN_EMOJI = '👎';
 const reactionCache = new Map<string, number>();
 const REACTION_CACHE_TTL = 60000; // 60 seconds TTL
 
+// Emoji sentiment categories - based on REAL observed reactions (no regex - simple lookup)
+// Only track emojis with clear sentiment - ambiguous ones like 😂 🤔 are skipped
+const POSITIVE_EMOJIS = [
+  // Clear approval/love (observed: 👍 ❤️ 🔥)
+  '👍', '❤️', '🔥',
+  // Other likely positives
+  '💯', '⭐', '✨', '🎉', '👏', '🙌', '✅', '💪', '🏆',
+  // Hearts
+  '💕', '💖', '💗', '💝', '💜', '💙', '💚', '🧡', '💛',
+];
+
+const NEGATIVE_EMOJIS = [
+  // Clear disapproval
+  '👎', '❌', '😡', '🤬', '💩',
+  // Frustration/disappointment
+  '😤', '😠', '🙄', '😞', '😒',
+  // Facepalm (often means "wtf artie")
+  '🤦', '🤦‍♂️', '🤦‍♀️',
+];
+
+/**
+ * Categorize emoji sentiment (no regex - simple lookup)
+ */
+function categorizeSentiment(emoji: string): 'positive' | 'negative' | null {
+  if (POSITIVE_EMOJIS.includes(emoji)) return 'positive';
+  if (NEGATIVE_EMOJIS.includes(emoji)) return 'negative';
+  return null; // Neutral or unknown - don't track
+}
+
 /**
  * Setup reaction handler for Discord client
  */
@@ -121,15 +150,21 @@ export function setupReactionHandler(client: Client) {
           break;
 
         case THUMBS_UP_EMOJI:
-          await handleFeedbackReaction(fetchedReaction, fetchedUser, 'positive', correlationId);
+          await handleFeedbackReaction(fetchedReaction, fetchedUser, 'positive', emoji, correlationId);
           break;
 
         case THUMBS_DOWN_EMOJI:
-          await handleFeedbackReaction(fetchedReaction, fetchedUser, 'negative', correlationId);
+          await handleFeedbackReaction(fetchedReaction, fetchedUser, 'negative', emoji, correlationId);
           break;
 
         default:
-          logger.debug(`Unhandled reaction emoji: ${emoji} [${shortId}]`);
+          // Track ALL emoji reactions for community sentiment learning
+          const sentiment = categorizeSentiment(emoji);
+          if (sentiment) {
+            await handleFeedbackReaction(fetchedReaction, fetchedUser, sentiment, emoji, correlationId);
+          } else {
+            logger.debug(`Untracked reaction emoji: ${emoji} [${shortId}]`);
+          }
           return;
       }
     } catch (error) {
@@ -367,13 +402,14 @@ async function handleRegenerateReaction(
 }
 
 /**
- * Handle feedback reaction (👍/👎)
- * Logs user feedback to telemetry
+ * Handle feedback reaction (any emoji with sentiment)
+ * Logs user feedback to telemetry AND stores memory for learning
  */
 async function handleFeedbackReaction(
   reaction: MessageReaction,
   user: User,
   sentiment: 'positive' | 'negative',
+  emoji: string,
   correlationId: string
 ): Promise<void> {
   const shortId = getShortCorrelationId(correlationId);
@@ -381,6 +417,7 @@ async function handleFeedbackReaction(
   logger.info(`Feedback reaction received [${shortId}]:`, {
     correlationId,
     sentiment,
+    emoji,
     userId: user.id,
     messageId: reaction.message.id,
   });
@@ -389,16 +426,51 @@ async function handleFeedbackReaction(
     'reaction_feedback',
     {
       sentiment,
+      emoji,
       messageId: reaction.message.id,
       channelId: reaction.message.channelId,
       guildId: reaction.message.guildId,
-      messageContent: reaction.message.content?.substring(0, 100) || '', // Log snippet for context
+      messageContent: reaction.message.content?.substring(0, 100) || '',
     },
     correlationId,
     user.id,
     undefined,
     true
   );
+
+  // Store memory about this feedback for learning
+  try {
+    const messageSnippet = reaction.message.content?.substring(0, 150) || 'unknown message';
+    const channelName = 'name' in reaction.message.channel ? reaction.message.channel.name : 'DM';
+    const guildName = reaction.message.guild?.name || 'unknown';
+
+    // Build a reflection note about the community feedback
+    const feedbackNote = sentiment === 'positive'
+      ? `community feedback: someone reacted positively (${emoji}) to my response in ${guildName} #${channelName}. my response was: "${messageSnippet}..." - this kind of response works well`
+      : `community feedback: someone reacted negatively (${emoji}) to my response in ${guildName} #${channelName}. my response was: "${messageSnippet}..." - should reflect on how to improve this kind of response`;
+
+    // Call capabilities API to store this as a memory
+    const response = await fetch('http://localhost:47324/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        userId: 'reaction-feedback-system',
+        message: `<capability name="memory" action="remember" content="${feedbackNote.replace(/"/g, "'")}" importance="3" tags="feedback,${sentiment},community-response" />`,
+        source: 'system',
+        context: {
+          platform: 'discord',
+          guildId: reaction.message.guildId,
+          channelId: reaction.message.channelId,
+        },
+      }),
+    });
+
+    if (response.ok) {
+      logger.info(`Stored ${sentiment} feedback memory [${shortId}]`);
+    }
+  } catch (error) {
+    logger.warn(`Failed to store feedback memory [${shortId}]:`, error);
+  }
 
   // Acknowledge the feedback with a subtle reaction
   try {
