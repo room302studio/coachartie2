@@ -25,16 +25,29 @@ export interface UsageStats {
   estimated_cost: number;
 }
 
-// Model pricing per 1K tokens (input/output) - OpenRouter pricing as of 2024
+// Model pricing per 1K tokens (input/output) - OpenRouter pricing as of 2025
 const MODEL_PRICING: Record<string, { input: number; output: number }> = {
+  // Anthropic
   'anthropic/claude-3.5-sonnet': { input: 0.003, output: 0.015 },
+  'anthropic/claude-sonnet-4': { input: 0.003, output: 0.015 },
+  'anthropic/claude-sonnet-4.5': { input: 0.003, output: 0.015 },
+  'anthropic/claude-opus-4': { input: 0.015, output: 0.075 },
+  'anthropic/claude-opus-4.5': { input: 0.015, output: 0.075 },
+  // OpenAI
+  'openai/gpt-3.5-turbo': { input: 0.0005, output: 0.0015 },
+  'openai/gpt-4': { input: 0.03, output: 0.06 },
+  'openai/gpt-4-turbo': { input: 0.01, output: 0.03 },
+  'openai/gpt-4o': { input: 0.005, output: 0.015 },
+  'openai/gpt-4o-mini': { input: 0.00015, output: 0.0006 },
+  // Google
+  'google/gemini-2.5-flash': { input: 0.00015, output: 0.0006 },
+  'google/gemini-2.0-flash': { input: 0.0001, output: 0.0004 },
+  'google/gemini-pro': { input: 0.00025, output: 0.0005 },
+  // Free models
   'mistralai/mistral-7b-instruct:free': { input: 0, output: 0 },
   'microsoft/phi-3-mini-128k-instruct:free': { input: 0, output: 0 },
   'meta-llama/llama-3.2-3b-instruct:free': { input: 0, output: 0 },
   'google/gemma-2-9b-it:free': { input: 0, output: 0 },
-  'openai/gpt-3.5-turbo': { input: 0.0005, output: 0.0015 },
-  'openai/gpt-4': { input: 0.03, output: 0.06 },
-  'openai/gpt-4-turbo': { input: 0.01, output: 0.03 },
 };
 
 export class UsageTracker {
