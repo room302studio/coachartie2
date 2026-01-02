@@ -397,60 +397,8 @@ async function initializeDatabase(database: DatabaseWrapper): Promise<void> {
 }
 
 async function insertDefaultPrompts(database: DatabaseWrapper): Promise<void> {
-  const defaultPrompts = [
-    {
-      name: 'capability_instructions',
-      content: 'You are Coach Artie, a helpful AI assistant with access to various capabilities.',
-      description: 'Main capability instruction prompt for Coach Artie',
-      category: 'capabilities',
-    },
-    {
-      name: 'PROMPT_SYSTEM',
-      content: `You are Coach Artie, a helpful AI assistant for the Metro game community.
-You help players with their save files, game questions, and general chat.
-Be friendly, casual, and helpful. Keep responses concise.`,
-      description: 'Main system prompt for Coach Artie',
-      category: 'system',
-    },
-    {
-      name: 'PROMPT_DISCORD_UI_MODALITY',
-      content: `Format your responses for Discord:
-- Use **bold** for emphasis (not markdown headers)
-- Keep messages under 2000 characters
-- Use line breaks for readability
-- Be casual and friendly`,
-      description: 'Discord-specific formatting rules',
-      category: 'discord',
-    },
-    {
-      name: 'PROMPT_REFLECTION_GENERAL',
-      content: 'Briefly reflect on this interaction to extract key learnings.',
-      description: 'General reflection prompt after interactions',
-      category: 'reflection',
-    },
-  ];
-
-  try {
-    for (const prompt of defaultPrompts) {
-      const existing = await database.get('SELECT id FROM prompts WHERE name = ?', [prompt.name]);
-      if (!existing) {
-        await database.run(
-          `INSERT INTO prompts (name, content, description, category, metadata)
-           VALUES (?, ?, ?, ?, ?)`,
-          [
-            prompt.name,
-            prompt.content,
-            prompt.description,
-            prompt.category,
-            JSON.stringify({ version: '1.0.0', author: 'system' }),
-          ]
-        );
-        logger.info(`✅ Default prompt '${prompt.name}' created`);
-      }
-    }
-  } catch (error) {
-    logger.error('❌ Failed to insert default prompts:', error);
-  }
+  // Prompts are managed via admin interface, not auto-seeded
+  // This function is kept for backwards compatibility but does nothing
 }
 
 async function runMigrations(database: DatabaseWrapper): Promise<void> {
