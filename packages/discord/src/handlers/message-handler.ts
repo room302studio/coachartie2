@@ -85,7 +85,7 @@ const proactiveCooldownCache = new Map<string, number>();
 // Discord API limits and timeouts
 const TYPING_REFRESH_INTERVAL = 8000; // Refresh typing every 8s (Discord typing lasts 10s)
 const CHUNK_RATE_LIMIT_DELAY = 200; // 200ms delay between message chunks
-const MAX_JOB_ATTEMPTS = 60; // 5 minute max job timeout (60 * 3s checks)
+const MAX_JOB_ATTEMPTS = 100; // ~5 minute max job timeout (100 * 3s checks) - allows for large metro files
 const DISCORD_MESSAGE_LIMIT = 2000; // Discord's maximum message length
 
 // UI and status constants

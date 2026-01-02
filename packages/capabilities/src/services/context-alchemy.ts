@@ -6,6 +6,7 @@ import { CombinedMemoryEntourage } from './combined-memory-entourage.js';
 import { CreditMonitor } from './credit-monitor.js';
 import { visionCapability as visionCap } from '../capabilities/vision.js';
 import { processMetroAttachment } from './metro-doctor.js';
+import { MemoryService } from '../capabilities/memory.js';
 
 // Vision capability wrapper for auto-extraction
 const visionCapability: { execute: (opts: any) => Promise<string> } | null = {
@@ -870,9 +871,18 @@ Important:
         lines.push(`…and ${attachments.length - 8} more (see context)`);
       }
 
-      lines.push(
-        'Vision/OCR recommended: call the vision capability with these URLs to extract text/entities, or ask the user to paste the text if vision is unavailable.'
+      // Check for .metro files in attachments
+      const metroFiles = attachments.filter((att: any) =>
+        typeof att.name === 'string' && att.name.toLowerCase().endsWith('.metro')
       );
+      if (metroFiles.length > 0) {
+        lines.push('\n🎮 Metro save files detected! You have already analyzed these or can use the metro-doctor to analyze them.');
+        lines.push('If the user asks about "my save" or "the file", they mean these metro files.');
+      } else {
+        lines.push(
+          'Vision/OCR recommended: call the vision capability with these URLs to extract text/entities, or ask the user to paste the text if vision is unavailable.'
+        );
+      }
 
       const content = lines.join('\n');
 
@@ -1024,6 +1034,28 @@ ACTION TAKEN: The repaired save file is being sent as an attachment.
               content: repairedContent,
               category: 'evidence',
             });
+
+            // Store metro analysis in memory for follow-up questions
+            try {
+              const memoryContent = `Metro save file analyzed: ${first.name}
+Stats: ${result.analysis?.stats?.stations || 0} stations, ${result.analysis?.stats?.routes || 0} routes, ${result.analysis?.stats?.trains || 0} trains
+Money: $${result.analysis?.stats?.money || 0}
+Warnings: ${result.analysis?.warnings?.join('; ') || 'None'}
+Repairs made: Yes - file was repaired and sent back
+File URL: ${url}`;
+              const memoryService = MemoryService.getInstance();
+              await memoryService.remember(
+                message.userId,
+                memoryContent,
+                'metro_analysis',
+                7, // Importance
+                undefined,
+                ['metro', 'save', 'analysis', first.name || 'save.metro']
+              );
+              logger.info(`📝 Stored metro analysis in memory for user ${message.userId}`);
+            } catch (memErr) {
+              logger.warn(`Failed to store metro analysis in memory: ${memErr}`);
+            }
           } else {
             // No repairs needed - just tell the user
             logger.info(`✅ Metro file healthy, no repairs needed: ${first.name}`);
@@ -1053,6 +1085,28 @@ ACTION TAKEN: No repairs needed - the save file is in good shape.
               content: healthyContent,
               category: 'evidence',
             });
+
+            // Store metro analysis in memory for follow-up questions
+            try {
+              const memoryContent = `Metro save file analyzed: ${first.name}
+Stats: ${result.analysis?.stats?.stations || 0} stations, ${result.analysis?.stats?.routes || 0} routes, ${result.analysis?.stats?.trains || 0} trains
+Money: $${result.analysis?.stats?.money || 0}
+Warnings: ${result.analysis?.warnings?.join('; ') || 'None'}
+Status: Healthy - no repairs needed
+File URL: ${url}`;
+              const memoryService = MemoryService.getInstance();
+              await memoryService.remember(
+                message.userId,
+                memoryContent,
+                'metro_analysis',
+                7, // Importance
+                undefined,
+                ['metro', 'save', 'analysis', first.name || 'save.metro']
+              );
+              logger.info(`📝 Stored metro analysis in memory for user ${message.userId}`);
+            } catch (memErr) {
+              logger.warn(`Failed to store metro analysis in memory: ${memErr}`);
+            }
           }
         } catch (error: any) {
           const msg = `Metro doctor failed: ${error?.message || String(error)}`;
