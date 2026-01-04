@@ -8,7 +8,7 @@
       "guildName": "Subway Builder",
       "responseMode": "direct",
       "triggerType": "any_mention",
-      "enabled": true,
+      "enabled": false,
       "name": "EJs Subway Builder Representative",
       "description": "Answer questions when @ejfox is mentioned in Subway Builder guild",
       "createdAt": "2025-10-25T17:53:31.200Z",

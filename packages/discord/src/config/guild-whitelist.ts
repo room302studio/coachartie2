@@ -38,6 +38,10 @@ export interface GuildConfig {
   proactiveCooldownSeconds?: number;
   /** Channels to observe and form memories from (if empty, no passive observation) */
   observationChannels?: string[];
+  /** Channels where Artie is allowed to respond (if empty, uses default behavior: robot channels + DMs) */
+  responseChannels?: string[];
+  /** If true, Artie will ONLY respond in robot channels (🤖 or 'robot' in name), even when @mentioned */
+  restrictToRobotChannelsOnly?: boolean;
   /** Content moderation level - 'strict' for kid-friendly, 'normal' for general, 'relaxed' for adult spaces */
   contentModeration?: 'strict' | 'normal' | 'relaxed';
   /** Path to Artie's scratchpad/notes file for this guild */
@@ -86,8 +90,11 @@ RESPONSE STYLE:
     type: 'working',
     name: 'Subwaybuilder',
     proactiveAnswering: true,
-    proactiveChannels: ['subway-builder-help', 'mods', 'general-mod-discussion', 'modders'],
+    proactiveChannels: ['robot'], // Only proactively answer in robot channels
     proactiveCooldownSeconds: 120, // 2 minutes - don't spam the channel
+    // CRITICAL: Only respond in robot channels - stop annoying everyone else
+    restrictToRobotChannelsOnly: true,
+    responseChannels: ['robot'], // Only respond in channels with 'robot' in the name
     // Only observe/learn from these channels (saves API costs)
     observationChannels: [
       'subway-builder-help',
@@ -179,6 +186,24 @@ Save file locations:
 - macOS: ~/Library/Application Support/Subwaybuilder/saves/
 - Linux: ~/.local/share/Subwaybuilder/saves/
 - Files are .metro format - drag and drop into Discord to upload
+
+🚇 SAVE FILE ANALYSIS - BE A TRANSIT CONSULTANT, NOT A ROBOT:
+When analyzing save files, don't just dump stats. BE OPINIONATED. You're a grizzled transit planner who's seen it all. Give advice like:
+
+ROLEPLAY STYLE:
+- "Hmm, 45 empty stations? Those are ghost stops bleeding your budget. Either close 'em or run a bus feeder network."
+- "3 stuck trains on Line 7 - classic bottleneck. Your junction at 42nd probably can't handle the headways."
+- "You've got $3B but only 17 routes? You're sitting on cash! Time to expand or add express service."
+- "152 trains for 278 stations is tight. No wonder you've got delays - you need at least 180 for this network size."
+- "That Metro line with no traffic? Check if it actually connects to anything useful. A line to nowhere stays empty."
+
+GIVE SPECIFIC ADVICE:
+- If stuck trains: Suggest they check junctions, reduce train frequency, or add passing tracks
+- If overcrowded stations: Tell them to add parallel lines, reduce headways, or move the station
+- If empty stations: Ask what they're trying to serve - maybe it needs a redesign
+- If low ridership line: Ask about connections, station placement, competing routes
+
+DON'T JUST SAY "looks good!" - find something interesting to comment on. Every save has a story.
 
 🐙 GITHUB ISSUES - CHECK BEFORE RESPONDING TO BUGS:
 When someone reports a bug or issue, SEARCH GitHub first to see if it's known:
@@ -272,4 +297,38 @@ export function isWorkingGuild(guildId: string | null): boolean {
 export function getGuildConfig(guildId: string | null): GuildConfig | null {
   if (!guildId) return null;
   return Object.values(GUILD_CONFIGS).find((c) => c.id === guildId) || null;
+}
+
+/**
+ * Check if Artie is allowed to respond in this channel
+ * Returns false if the guild has restrictToRobotChannelsOnly enabled
+ * and the channel is not a robot channel
+ */
+export function isChannelAllowedForResponse(
+  guildId: string | null,
+  channelName: string,
+  isRobotChannel: boolean,
+  isDM: boolean
+): boolean {
+  // Always allow DMs
+  if (isDM) return true;
+
+  const config = getGuildConfig(guildId);
+  if (!config) return true; // Unknown guild, allow by default
+
+  // Check restrictToRobotChannelsOnly first (strictest check)
+  if (config.restrictToRobotChannelsOnly) {
+    return isRobotChannel;
+  }
+
+  // Check responseChannels whitelist if specified
+  if (config.responseChannels && config.responseChannels.length > 0) {
+    const channelNameLower = channelName.toLowerCase();
+    return config.responseChannels.some((allowed) =>
+      channelNameLower.includes(allowed.toLowerCase())
+    );
+  }
+
+  // Default: allow (old behavior)
+  return true;
 }

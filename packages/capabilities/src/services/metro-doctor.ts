@@ -11,6 +11,7 @@ import { join, basename, dirname } from 'path';
 import { createRequire } from 'module';
 import { fileURLToPath } from 'url';
 import { logger } from '@coachartie/shared';
+import { analyzeMetroGeo, formatGeoInsights } from './metro-geo-analysis.js';
 
 // Import from official metro-savefile-doctor repo
 import {
@@ -115,20 +116,96 @@ function buildAnalysisSummary(
   const actualRoutes = Array.isArray(data.routes) ? data.routes.length : stats.routes;
   const actualTrains = Array.isArray(data.trains) ? data.trains.length : stats.trains;
   const money = formatMoney(stats.money || data.money || 0);
-  const playtime = formatPlaytime(data.elapsedSeconds);
   const sizeMb = (originalSize / (1024 * 1024)).toFixed(1);
 
   const statusEmoji = errors.length === 0 ? '✅' : '❌';
 
-  // Compact single-line format
-  let summary = `${statusEmoji} **${saveData.name}** (${saveData.cityCode || '?'}) | ${actualStations} stations, ${actualRoutes} routes, ${actualTrains} trains | ${money} | ${playtime} | ${sizeMb}MB`;
+  // Build detailed analysis
+  let summary = `${statusEmoji} **${saveData.name}** (${saveData.cityCode || '?'})\n`;
+  summary += `📊 **Stats:** ${actualStations} stations, ${actualRoutes} routes, ${actualTrains} trains | ${money} | ${sizeMb}MB\n`;
+
+  // Add route analysis
+  if (Array.isArray(data.routes) && data.routes.length > 0) {
+    const routeDetails: string[] = [];
+    const routesByType: Record<string, number> = {};
+
+    for (const route of data.routes) {
+      const routeType = route.bullet || 'Unknown';
+      routesByType[routeType] = (routesByType[routeType] || 0) + 1;
+    }
+
+    for (const [type, count] of Object.entries(routesByType)) {
+      routeDetails.push(`${type}: ${count}`);
+    }
+
+    if (routeDetails.length > 0) {
+      summary += `🚇 **Routes:** ${routeDetails.join(', ')}\n`;
+    }
+  }
+
+  // Add train analysis
+  if (Array.isArray(data.trains) && data.trains.length > 0) {
+    const currentTime = data.elapsedSeconds || 0;
+    let movingTrains = 0;
+    let stoppedTrains = 0;
+    let stuckTrains = 0;
+
+    for (const train of data.trains) {
+      if (train.motion?.speed > 0) {
+        movingTrains++;
+      } else if (train.stuckDetection) {
+        const timeSinceMove = currentTime - train.stuckDetection.lastMovementTime;
+        if (timeSinceMove > 60) {
+          stuckTrains++;
+        } else {
+          stoppedTrains++;
+        }
+      } else {
+        stoppedTrains++;
+      }
+    }
+
+    summary += `🚂 **Trains:** ${movingTrains} moving, ${stoppedTrains} stopped`;
+    if (stuckTrains > 0) {
+      summary += `, 🔧 ${stuckTrains} stuck (will fix)`;
+    }
+    summary += '\n';
+  }
+
+  // Add station analysis
+  if (Array.isArray(data.stations) && data.stations.length > 0) {
+    let overcrowdedStations = 0;
+    let emptyStations = 0;
+
+    for (const station of data.stations) {
+      const passengers = station.passengers?.length || 0;
+      if (passengers > 50) overcrowdedStations++;
+      if (passengers === 0) emptyStations++;
+    }
+
+    if (overcrowdedStations > 0 || emptyStations > 5) {
+      summary += `🏢 **Stations:** ${overcrowdedStations} overcrowded, ${emptyStations} empty\n`;
+    }
+  }
+
+  // Geographic analysis with Turf.js
+  try {
+    const geoResult = analyzeMetroGeo(data);
+    const geoInsights = formatGeoInsights(geoResult);
+    if (geoInsights) {
+      summary += `\n${geoInsights}\n`;
+    }
+  } catch (e) {
+    // Skip geo analysis if it fails
+    logger.warn('🩺 Metro doctor: geo analysis failed', e);
+  }
 
   if (warnings.length > 0) {
-    summary += `\n⚠️ ${warnings.join('; ')}`;
+    summary += `⚠️ **Issues found:** ${warnings.join('; ')}\n`;
   }
 
   if (errors.length > 0) {
-    summary += `\n❌ ${errors.join('; ')}`;
+    summary += `❌ **Errors:** ${errors.join('; ')}\n`;
   }
 
   return summary;
@@ -190,6 +267,9 @@ export async function processMetroAttachment(
     // Check for potential issues in game data
     const data = saveData.data || {};
 
+    // Track fixable issues (stuck trains) vs observations (everything else)
+    let stuckTrainCount = 0;
+
     if (Array.isArray(data.trains)) {
       // Train structure: motion.speed, stuckDetection.lastMovementTime
       const currentTime = data.elapsedSeconds || 0;
@@ -199,8 +279,10 @@ export async function processMetroAttachment(
         const timeSinceMove = currentTime - t.stuckDetection.lastMovementTime;
         return isStationary && timeSinceMove > 60; // Stuck for >60 seconds
       });
-      if (stuckTrains.length > 0) {
-        warnings.push(`${stuckTrains.length} trains may be stuck (stationary >60s)`);
+      stuckTrainCount = stuckTrains.length;
+      if (stuckTrainCount > 0) {
+        // This IS auto-fixable
+        warnings.push(`🔧 ${stuckTrainCount} stuck trains (will nudge)`);
       }
     }
 
@@ -213,20 +295,22 @@ export async function processMetroAttachment(
         return !hasStations && !isTrunkRoute;
       });
       if (brokenRoutes.length > 0) {
-        warnings.push(`${brokenRoutes.length} routes have no stations (may need attention)`);
+        // NOT auto-fixable - just an observation
+        warnings.push(`📋 ${brokenRoutes.length} routes have no stations (check in-game)`);
       }
     }
 
     if (data.money < 0) {
-      warnings.push(`Negative balance: ${formatMoney(data.money)}`);
+      // NOT auto-fixable
+      warnings.push(`📋 Negative balance: ${formatMoney(data.money)} (you're in debt)`);
     }
 
-    // Run repair script if there are warnings (issues to fix)
+    // Run repair script only if there are stuck trains to fix
     let resultBuffer = originalBuffer;
     let repairLog: string[] = [];
 
-    if (warnings.length > 0) {
-      logger.info(`🩺 Metro doctor: running repair script for ${warnings.length} potential issues`);
+    if (stuckTrainCount > 0) {
+      logger.info(`🩺 Metro doctor: running repair script to fix ${stuckTrainCount} stuck trains`);
 
       // Convert to SaveData format for script runner
       const scriptSaveData: SaveData = {
@@ -272,11 +356,10 @@ export async function processMetroAttachment(
 
     // Add repair info if repairs were made
     let finalSummary = summary;
-    if (actualRepairsMade) {
-      const sizeDiff = originalSize - resultBuffer.length;
-      const savedMb = (sizeDiff / (1024 * 1024)).toFixed(1);
-      const newSizeMb = (resultBuffer.length / (1024 * 1024)).toFixed(1);
-      finalSummary += `\n🔧 Repaired: ${newSizeMb}MB (saved ${savedMb}MB)`;
+    if (actualRepairsMade && stuckTrainCount > 0) {
+      finalSummary += `\n🔧 **Fixed:** Nudged ${stuckTrainCount} stuck trains - download the repaired save below`;
+    } else if (stuckTrainCount === 0 && warnings.length > 0) {
+      finalSummary += `\n📋 _No auto-fixes needed. The issues above require manual changes in-game._`;
     }
 
     const analysis: MetroAnalysis = {
@@ -303,12 +386,32 @@ export async function processMetroAttachment(
     };
   } catch (err: any) {
     logger.error(`🩺 Metro doctor error: ${err.message}`);
-    errors.push(err.message);
+
+    // Provide user-friendly error messages for common issues
+    let friendlyError = err.message;
+    let helpText = '';
+
+    if (err.message.includes('Unexpected end of JSON') || err.message.includes('Unexpected token')) {
+      friendlyError = 'Save file appears corrupted or incomplete';
+      helpText = 'Try uploading a different save file or a manual save instead of an autosave.';
+    } else if (err.message.includes('ENOENT')) {
+      friendlyError = 'Could not read the file';
+      helpText = 'Please try uploading again.';
+    } else if (err.message.includes('too large')) {
+      friendlyError = err.message;
+      helpText = 'Try sharing a smaller save file.';
+    }
+
+    const errorSummary = helpText
+      ? `❌ ${friendlyError}\n💡 ${helpText}`
+      : `❌ ${friendlyError}`;
+
+    errors.push(friendlyError);
 
     // Return original buffer on error
     return {
       inputPath,
-      stdout: `❌ Failed to process .metro file: ${err.message}`,
+      stdout: errorSummary,
       stderr: err.message,
       buffer: originalBuffer,
       filename,
@@ -322,7 +425,7 @@ export async function processMetroAttachment(
         fileSizeBytes: originalSize,
         errors,
         warnings: [],
-        summary: `❌ Failed to process .metro file: ${err.message}`,
+        summary: errorSummary,
       },
     };
   }

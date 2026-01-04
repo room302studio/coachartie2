@@ -25,6 +25,7 @@
     "@mozilla/readability": "^0.6.0",
     "@shelm/wikipedia-mcp-server": "^1.0.1",
     "@supabase/supabase-js": "^2.49.4",
+    "@turf/turf": "^6.5.0",
     "@types/cors": "^2.8.19",
     "@typescript-eslint/eslint-plugin": "^8.35.0",
     "@typescript-eslint/parser": "^8.35.0",
