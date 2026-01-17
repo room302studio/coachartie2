@@ -1,7 +1,7 @@
 import { IncomingMessage, logger } from '@coachartie/shared';
-import { openRouterService } from '../services/openrouter.js';
-import { capabilityOrchestrator } from '../services/capability-orchestrator.js';
-import { costMonitor } from '../services/cost-monitor.js';
+import { openRouterService } from '../services/llm/openrouter.js';
+import { capabilityOrchestrator } from '../services/capability/capability-orchestrator.js';
+import { costMonitor } from '../services/monitoring/cost-monitor.js';
 
 export async function processMessage(
   message: IncomingMessage,
@@ -41,7 +41,7 @@ export async function processMessage(
         logger.info(`📊 Auto-checking credits (message ${messageCount}/${autoCheckEvery})`);
 
         try {
-          const { capabilityRegistry } = await import('../services/capability-registry.js');
+          const { capabilityRegistry } = await import('../services/capability/capability-registry.js');
           const creditStatus = await capabilityRegistry.execute(
             'credit_status',
             'check_balance',
@@ -69,8 +69,8 @@ export async function processMessage(
       logger.info(`🤖 Processing message with simple AI chat: ${message.id}`);
 
       // Fallback to Context Alchemy-powered AI response
-      const { contextAlchemy } = await import('../services/context-alchemy.js');
-      const { promptManager } = await import('../services/prompt-manager.js');
+      const { contextAlchemy } = await import('../services/llm/context-alchemy.js');
+      const { promptManager } = await import('../services/llm/prompt-manager.js');
 
       const baseSystemPrompt = await promptManager.getCapabilityInstructions(message.message);
       const { messages } = await contextAlchemy.buildMessageChain(

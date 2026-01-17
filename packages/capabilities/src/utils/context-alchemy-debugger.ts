@@ -195,4 +195,4 @@ export class ContextAlchemyDebugger {
 export const contextDebugger = ContextAlchemyDebugger.getInstance();
 
 // Import for checking vector status
-import { vectorEmbeddingService } from '../services/vector-embeddings.js';
+import { vectorEmbeddingService } from '../services/memory/vector-embeddings.js';

@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { logger } from '@coachartie/shared';
-import { openRouterModelsService } from '../services/openrouter-models.js';
+import { openRouterModelsService } from '../services/llm/openrouter-models.js';
 
 const router: Router = Router();
 

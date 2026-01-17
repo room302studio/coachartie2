@@ -4,7 +4,7 @@
 
 import { Request, Response, Router } from 'express';
 import { logger } from '@coachartie/shared';
-import { securityMonitor } from '../services/security-monitor.js';
+import { securityMonitor } from '../services/monitoring/security-monitor.js';
 
 const router: Router = Router();
 

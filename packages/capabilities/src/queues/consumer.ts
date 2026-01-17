@@ -10,7 +10,7 @@ import {
   testRedisConnection,
 } from '@coachartie/shared';
 import { processMessage } from '../handlers/process-message.js';
-import { jobTracker } from '../services/job-tracker.js';
+import { jobTracker } from '../services/core/job-tracker.js';
 import type { Worker } from 'bullmq';
 
 export async function startMessageConsumer(): Promise<Worker<IncomingMessage, void> | null> {
@@ -59,7 +59,7 @@ export async function startMessageConsumer(): Promise<Worker<IncomingMessage, vo
         (message.source === 'api' && message.context?.platform === 'discord')
       ) {
         try {
-          const { database } = await import('../services/database.js');
+          const { database } = await import('../services/core/database.js');
           await database.run(
             `
               INSERT INTO messages (value, user_id, message_type, channel_id, guild_id, created_at)
@@ -159,7 +159,7 @@ export async function startMessageConsumer(): Promise<Worker<IncomingMessage, vo
           (message.source === 'api' && message.context?.platform === 'discord')
         ) {
           try {
-            const { database } = await import('../services/database.js');
+            const { database } = await import('../services/core/database.js');
             await database.run(
               `
                 INSERT INTO messages (value, user_id, message_type, channel_id, guild_id, role, related_message_id, created_at)

@@ -3,17 +3,17 @@
  * Tests the two-tier triage system before integration
  */
 
-import { capabilitySelector } from './services/capability-selector.js';
-import { capabilityRegistry } from './services/capability-registry.js';
+import { capabilitySelector } from './services/capability/capability-selector.js';
+import { capabilityRegistry } from './services/capability/capability-registry.js';
 import { logger } from '@coachartie/shared';
 
 // Initialize registry with capabilities (minimal set for testing)
-import { calculatorCapability } from './capabilities/calculator.js';
-import { memoryCapability } from './capabilities/memory.js';
-import { webCapability } from './capabilities/web.js';
-import { todoCapability } from './capabilities/todo.js';
-import { goalCapability } from './capabilities/goal.js';
-import { variableStoreCapability } from './capabilities/variable-store.js';
+import { calculatorCapability } from './capabilities/system/calculator.js';
+import { memoryCapability } from './capabilities/memory/memory.js';
+import { webCapability } from './capabilities/web/web.js';
+import { todoCapability } from './capabilities/productivity/todo.js';
+import { goalCapability } from './capabilities/productivity/goal.js';
+import { variableStoreCapability } from './capabilities/system/variable-store.js';
 
 console.log('\n═══════════════════════════════════════════════════');
 console.log('🧪 CAPABILITY SELECTOR STANDALONE TEST');

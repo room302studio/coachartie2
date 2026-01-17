@@ -1,7 +1,7 @@
 import crypto from 'crypto';
 import { logger } from '@coachartie/shared';
 import { publishMessage } from '../queues/publisher.js';
-import { mediaWikiManager } from '../services/mediawiki-manager.js';
+import { mediaWikiManager } from '../services/external/mediawiki-manager.js';
 
 interface GitHubWebhookPayload {
   action?: string;

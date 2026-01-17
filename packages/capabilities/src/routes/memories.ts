@@ -11,7 +11,7 @@ router.get('/', async (req, res) => {
 
     if (search) {
       // Use memory capability directly via registry
-      const { capabilityRegistry } = await import('../services/capability-registry.js');
+      const { capabilityRegistry } = await import('../services/capability/capability-registry.js');
       const result = await capabilityRegistry.execute('memory', 'search', {
         query: search as string,
         userId: userId as string,
@@ -25,7 +25,7 @@ router.get('/', async (req, res) => {
       });
     } else {
       // Get recent memories directly
-      const memoryService = new (await import('../capabilities/memory.js')).MemoryService();
+      const memoryService = new (await import('../capabilities/memory/memory.js')).MemoryService();
       let memoriesList;
 
       if (userId) {

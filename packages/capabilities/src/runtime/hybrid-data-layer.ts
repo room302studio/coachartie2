@@ -421,7 +421,7 @@ export class HybridDataLayer {
   private async generateEmbeddingForMemory(memoryId: number, content: string): Promise<void> {
     try {
       // Dynamic import to avoid circular dependencies
-      const { vectorEmbeddingService } = await import('../services/vector-embeddings.js');
+      const { vectorEmbeddingService } = await import('../services/memory/vector-embeddings.js');
 
       if (!vectorEmbeddingService.isReady()) {
         await vectorEmbeddingService.initialize();

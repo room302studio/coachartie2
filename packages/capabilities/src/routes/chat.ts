@@ -3,7 +3,7 @@ import { logger, createQueue, QUEUES, IncomingMessage } from '@coachartie/shared
 import { processMessage } from '../handlers/process-message.js';
 import { v4 as uuidv4 } from 'uuid';
 import { rateLimiter } from '../middleware/rate-limiter.js';
-import { jobTracker } from '../services/job-tracker.js';
+import { jobTracker } from '../services/core/job-tracker.js';
 
 const messageQueue = createQueue<IncomingMessage>(QUEUES.INCOMING_MESSAGES);
 

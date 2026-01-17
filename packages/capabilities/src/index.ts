@@ -40,19 +40,19 @@ import { servicesRouter } from './routes/services.js';
 import { memoriesRouter } from './routes/memories.js';
 import modelsRouter from './routes/models.js';
 import { logsRouter, stopCleanupInterval } from './routes/logs.js';
-import { schedulerService } from './services/scheduler.js';
-import { jobTracker } from './services/job-tracker.js';
-import { costMonitor } from './services/cost-monitor.js';
-import { GlobalVariableStore } from './capabilities/variable-store.js';
+import { schedulerService } from './services/core/scheduler.js';
+import { jobTracker } from './services/core/job-tracker.js';
+import { costMonitor } from './services/monitoring/cost-monitor.js';
+import { GlobalVariableStore } from './capabilities/system/variable-store.js';
 // Import orchestrator FIRST to trigger capability registration
-import './services/capability-orchestrator.js';
-import { capabilityRegistry } from './services/capability-registry.js';
+import './services/capability/capability-orchestrator.js';
+import { capabilityRegistry } from './services/capability/capability-registry.js';
 import { capabilitiesRouter } from './routes/capabilities.js';
 import { simpleHealer } from './runtime/simple-healer.js';
 import { hybridDataLayer } from './runtime/hybrid-data-layer.js';
 
 // Export openRouterService for models endpoint
-export { openRouterService } from './services/openrouter.js';
+export { openRouterService } from './services/llm/openrouter.js';
 
 const app = express();
 
@@ -107,7 +107,7 @@ app.post('/api/observe', async (req, res) => {
     }
 
     // Import observation handler
-    const { observationHandler } = await import('./services/observation-handler.js');
+    const { observationHandler } = await import('./services/core/observation-handler.js');
 
     // Generate summary
     const result = await observationHandler.generateObservationSummary(
@@ -125,7 +125,7 @@ app.post('/api/observe', async (req, res) => {
 // Observation stats endpoint
 app.get('/api/observe/stats', async (req, res) => {
   try {
-    const { observationHandler } = await import('./services/observation-handler.js');
+    const { observationHandler } = await import('./services/core/observation-handler.js');
     const stats = await observationHandler.getObservationStats();
     res.json(stats);
   } catch (error) {

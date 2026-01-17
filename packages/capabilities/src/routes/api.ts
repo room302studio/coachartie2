@@ -1,7 +1,7 @@
 import { FastifyPluginAsync } from 'fastify';
 import { logger, getDb, memories, messages } from '@coachartie/shared';
 import { desc, sql, countDistinct } from 'drizzle-orm';
-import { errorPatternTracker } from '../services/llm-error-pattern-tracker.js';
+import { errorPatternTracker } from '../services/llm/llm-error-pattern-tracker.js';
 
 export const createApiRoutes: FastifyPluginAsync = async (fastify) => {
   // API namespace

@@ -1,6 +1,6 @@
 import { XMLParser } from 'fast-xml-parser';
 import { logger } from '@coachartie/shared';
-import { capabilityRegistry } from '../services/capability-registry.js';
+import { capabilityRegistry } from '../services/capability/capability-registry.js';
 
 export interface ParsedCapability {
   name: string;
