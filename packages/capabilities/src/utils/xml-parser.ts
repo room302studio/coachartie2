@@ -91,13 +91,17 @@ export class CapabilityXMLParser {
       if (params.data && typeof params.data === 'string') {
         try {
           const parsedData = JSON.parse(params.data);
-          logger.info(`🔍 XML PARSER: Parsed data attribute as JSON: ${JSON.stringify(parsedData)}`);
+          logger.info(
+            `🔍 XML PARSER: Parsed data attribute as JSON: ${JSON.stringify(parsedData)}`
+          );
           // Merge parsed data into params (parsed data takes precedence)
           Object.assign(params, parsedData);
           // Remove the raw data string
           delete params.data;
         } catch (error) {
-          logger.warn(`⚠️ XML PARSER: Failed to parse data attribute as JSON, keeping as string: ${params.data}`);
+          logger.warn(
+            `⚠️ XML PARSER: Failed to parse data attribute as JSON, keeping as string: ${params.data}`
+          );
         }
       }
 
@@ -318,50 +322,56 @@ export class CapabilityXMLParser {
    *   <search>query string</search>
    *   <remember>important fact to store</remember>
    */
-  private static readonly TAG_ALIASES: Record<string, { name: string; action: string; pathParam?: string }> = {
+  private static readonly TAG_ALIASES: Record<
+    string,
+    { name: string; action: string; pathParam?: string }
+  > = {
     // === FILE OPERATIONS ===
-    'readfile': { name: 'filesystem', action: 'read_file', pathParam: 'path' },
-    'read': { name: 'filesystem', action: 'read_file', pathParam: 'path' },
-    'writefile': { name: 'filesystem', action: 'write_file', pathParam: 'path' },
-    'write': { name: 'filesystem', action: 'write_file', pathParam: 'path' },
-    'listdir': { name: 'filesystem', action: 'list_directory', pathParam: 'path' },
-    'ls': { name: 'filesystem', action: 'list_directory', pathParam: 'path' },
-    'exists': { name: 'filesystem', action: 'exists', pathParam: 'path' },
-    'mkdir': { name: 'filesystem', action: 'create_directory', pathParam: 'path' },
+    readfile: { name: 'filesystem', action: 'read_file', pathParam: 'path' },
+    read: { name: 'filesystem', action: 'read_file', pathParam: 'path' },
+    writefile: { name: 'filesystem', action: 'write_file', pathParam: 'path' },
+    write: { name: 'filesystem', action: 'write_file', pathParam: 'path' },
+    append: { name: 'filesystem', action: 'append_file', pathParam: 'path' },
+    listdir: { name: 'filesystem', action: 'list_directory', pathParam: 'path' },
+    ls: { name: 'filesystem', action: 'list_directory', pathParam: 'path' },
+    exists: { name: 'filesystem', action: 'exists', pathParam: 'path' },
+    mkdir: { name: 'filesystem', action: 'create_directory', pathParam: 'path' },
+    rm: { name: 'filesystem', action: 'delete', pathParam: 'path' },
+    delete: { name: 'filesystem', action: 'delete', pathParam: 'path' },
 
     // === MEMORY OPERATIONS ===
-    'remember': { name: 'memory', action: 'store' },
-    'store': { name: 'memory', action: 'store' },
-    'recall': { name: 'memory', action: 'recall' },
-    'forget': { name: 'memory', action: 'delete' },
+    remember: { name: 'memory', action: 'store' },
+    store: { name: 'memory', action: 'store' },
+    recall: { name: 'memory', action: 'recall' },
+    forget: { name: 'memory', action: 'delete' },
 
     // === SEARCH OPERATIONS ===
-    'search': { name: 'scrapbook', action: 'search' },
-    'websearch': { name: 'web', action: 'search' },
-    'google': { name: 'web', action: 'search' },
+    search: { name: 'scrapbook', action: 'search' },
+    websearch: { name: 'web', action: 'search' },
+    google: { name: 'web', action: 'search' },
 
     // === VISION ===
-    'see': { name: 'vision', action: 'extract' },
-    'ocr': { name: 'vision', action: 'extract' },
-    'lookatimage': { name: 'vision', action: 'extract' },
+    see: { name: 'vision', action: 'extract' },
+    ocr: { name: 'vision', action: 'extract' },
+    lookatimage: { name: 'vision', action: 'extract' },
 
     // === GITHUB ===
-    'github': { name: 'github', action: 'search' },
-    'ghissue': { name: 'github', action: 'issue' },
-    'ghpr': { name: 'github', action: 'pr' },
+    github: { name: 'github', action: 'search' },
+    ghissue: { name: 'github', action: 'issue' },
+    ghpr: { name: 'github', action: 'pr' },
 
     // === EMAIL ===
-    'email': { name: 'email', action: 'send' },
-    'sendemail': { name: 'email', action: 'send' },
+    email: { name: 'email', action: 'send' },
+    sendemail: { name: 'email', action: 'send' },
 
     // === CALCULATOR ===
-    'calc': { name: 'calculator', action: 'evaluate' },
-    'math': { name: 'calculator', action: 'evaluate' },
+    calc: { name: 'calculator', action: 'evaluate' },
+    math: { name: 'calculator', action: 'evaluate' },
 
     // === BROWSER ===
-    'browse': { name: 'web', action: 'fetch' },
-    'fetch': { name: 'web', action: 'fetch' },
-    'scrape': { name: 'web', action: 'scrape' },
+    browse: { name: 'web', action: 'fetch' },
+    fetch: { name: 'web', action: 'fetch' },
+    scrape: { name: 'web', action: 'scrape' },
   };
 
   /**
@@ -429,9 +439,7 @@ export class CapabilityXMLParser {
 
         // Validate this capability-action pair exists
         if (capabilityRegistry.supportsAction(capName, actionName)) {
-          logger.info(
-            `🎯 HYPHENATED TAG: Found <${tagName}> → ${capName}:${actionName}`
-          );
+          logger.info(`🎯 HYPHENATED TAG: Found <${tagName}> → ${capName}:${actionName}`);
 
           capabilities.push({
             name: capName,

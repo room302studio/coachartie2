@@ -61,7 +61,7 @@ const errorPatterns: { pattern: RegExp; cause: string; suggestion: string }[] = 
   {
     pattern: /EADDRINUSE|address already in use/i,
     cause: 'Port is already in use',
-    suggestion: 'Find what\'s using the port: lsof -i :PORT or kill the process.',
+    suggestion: "Find what's using the port: lsof -i :PORT or kill the process.",
   },
   {
     pattern: /ECONNREFUSED|connection refused/i,
@@ -197,13 +197,7 @@ When something fails, start here. Understand before fixing.`,
   ],
 
   handler: async (params: any, _content: string | undefined) => {
-    const {
-      action = 'error',
-      error,
-      file,
-      service,
-      lines = 30,
-    } = params as DiagnoseParams;
+    const { action = 'error', error, file, service, lines = 30 } = params as DiagnoseParams;
 
     // Use error from params or from capability content
     const errorText = error || _content || '';
@@ -259,7 +253,9 @@ Usage: action="error" error="your error message here"`;
             }
           } else {
             // Check npm/node logs
-            const npmDebug = await safeExec(`cat /workspace/npm-debug.log 2>/dev/null | tail -${lines}`);
+            const npmDebug = await safeExec(
+              `cat /workspace/npm-debug.log 2>/dev/null | tail -${lines}`
+            );
             if (npmDebug) {
               logLines.push('=== npm-debug.log ===', npmDebug);
             }
@@ -305,7 +301,9 @@ Usage: action="error" error="your error message here"`;
               const pids = await safeExec(`pgrep "${service}" 2>/dev/null`);
               if (pids) {
                 for (const pid of pids.split('\n').slice(0, 3)) {
-                  const status = await safeExec(`cat /proc/${pid}/status 2>/dev/null | grep -E "State|VmRSS|Threads"`);
+                  const status = await safeExec(
+                    `cat /proc/${pid}/status 2>/dev/null | grep -E "State|VmRSS|Threads"`
+                  );
                   if (status) {
                     lines.push(`\nPID ${pid}:`, status);
                   }

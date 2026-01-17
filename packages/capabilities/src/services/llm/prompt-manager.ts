@@ -72,7 +72,8 @@ export class PromptManager {
       );
 
       if (!row) {
-        logger.warn(`⚠️ Prompt '${name}' not found in database`);
+        // Not a warning - prompts are optional and have fallbacks
+        logger.debug(`Prompt '${name}' not in database, using fallback`);
         return null;
       }
 

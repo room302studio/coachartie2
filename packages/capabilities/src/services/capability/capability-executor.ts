@@ -9,6 +9,7 @@ import { contextAlchemy } from '../llm/context-alchemy.js';
 import { capabilityParser } from './capability-parser.js';
 import { GlobalVariableStore } from '../../capabilities/system/variable-store.js';
 import { jobTracker } from '../core/job-tracker.js';
+import { recordCapabilityUsage } from '../metrics.js';
 import {
   ExtractedCapability,
   CapabilityResult,
@@ -20,7 +21,10 @@ import {
 // =====================================================
 
 // Callback types for dependencies the executor needs from orchestrator
-export type ExtractCapabilitiesCallback = (response: string, modelName?: string) => ExtractedCapability[];
+export type ExtractCapabilitiesCallback = (
+  response: string,
+  modelName?: string
+) => ExtractedCapability[];
 export type GetIntermediateResponseCallback = (
   context: OrchestrationContext,
   capability: ExtractedCapability,
@@ -28,8 +32,14 @@ export type GetIntermediateResponseCallback = (
   currentStep: number,
   totalSteps: number
 ) => Promise<string>;
-export type GenerateHelpfulErrorCallback = (capability: ExtractedCapability, errorMessage: string) => string;
-export type AttemptErrorRecoveryCallback = (context: OrchestrationContext, originalMessage: string) => Promise<void>;
+export type GenerateHelpfulErrorCallback = (
+  capability: ExtractedCapability,
+  errorMessage: string
+) => string;
+export type AttemptErrorRecoveryCallback = (
+  context: OrchestrationContext,
+  originalMessage: string
+) => Promise<void>;
 export type GenerateFinalSummaryCallback = (context: OrchestrationContext) => Promise<string>;
 
 /**
@@ -77,7 +87,10 @@ export class CapabilityExecutor {
           `🔧 Executing capability ${capabilityIndex + 1}/${context.capabilities.length}: ${capability.name}:${capability.action}`
         );
 
-        const processedCapability = await this.substituteTemplateVariables(capability, context.results);
+        const processedCapability = await this.substituteTemplateVariables(
+          capability,
+          context.results
+        );
         const capabilityForExecution = {
           name: processedCapability.name,
           action: processedCapability.action,
@@ -106,7 +119,11 @@ export class CapabilityExecutor {
         const outputVar = processedCapability.params.output;
         if (outputVar && result.success && result.data) {
           const globalStore = GlobalVariableStore.getInstance();
-          await globalStore.set(String(outputVar), result.data, `Auto-stored from ${capability.name}:${capability.action}`);
+          await globalStore.set(
+            String(outputVar),
+            result.data,
+            `Auto-stored from ${capability.name}:${capability.action}`
+          );
           logger.info(`📦 Auto-stored result to global variable: ${outputVar}`);
         }
 
@@ -243,7 +260,10 @@ export class CapabilityExecutor {
   async executeCapabilityChain(context: OrchestrationContext): Promise<void> {
     for (const capability of context.capabilities) {
       // Apply template variable substitution using previous results
-      const processedCapability = await this.substituteTemplateVariables(capability, context.results);
+      const processedCapability = await this.substituteTemplateVariables(
+        capability,
+        context.results
+      );
 
       try {
         logger.info(`🔧 Executing capability ${capability.name}:${capability.action}`);
@@ -281,7 +301,11 @@ export class CapabilityExecutor {
         const outputVar = processedCapability.params.output;
         if (outputVar && result.success && result.data) {
           const globalStore = GlobalVariableStore.getInstance();
-          await globalStore.set(String(outputVar), result.data, `Auto-stored from ${capability.name}:${capability.action}`);
+          await globalStore.set(
+            String(outputVar),
+            result.data,
+            `Auto-stored from ${capability.name}:${capability.action}`
+          );
           logger.info(`📦 Auto-stored result to global variable: ${outputVar}`);
         }
 
@@ -388,9 +412,19 @@ export class CapabilityExecutor {
     // Get userId for use in both registry and legacy handlers
     const userId = context ? context.userId : 'unknown-user';
 
+    // Build capability context from discord_context (defined outside try for metrics access)
+    const capabilityContext = context?.discord_context
+      ? {
+          guildId: context.discord_context.guildId,
+          channelId: context.discord_context.channelId,
+          userId: context.userId,
+          messageId: context.messageId,
+        }
+      : undefined;
+
     try {
       // Inject userId and messageId into params for capabilities that need context
-      const paramsWithContext = ['scheduler', 'memory'].includes(capability.name)
+      const paramsWithContext = ['scheduler', 'memory', 'image_gen'].includes(capability.name)
         ? {
             ...capability.params,
             userId,
@@ -425,7 +459,8 @@ export class CapabilityExecutor {
         capability.name,
         capability.action,
         paramsWithContext,
-        capability.content
+        capability.content,
+        capabilityContext
       );
       result.success = true;
     } catch (error) {
@@ -435,8 +470,15 @@ export class CapabilityExecutor {
       const helpfulError = generateHelpfulError(capability, errorMessage);
       result.error = helpfulError;
       result.success = false;
-
     }
+
+    // Track capability usage in Prometheus metrics
+    recordCapabilityUsage({
+      capability: capability.name,
+      action: capability.action,
+      guild: capabilityContext?.guildId,
+      success: result.success,
+    });
 
     return result;
   }
@@ -499,12 +541,12 @@ WHAT TO DO:
    a) RETRY with corrected parameters (if you see how to fix it)
    b) ASK FOR CLARIFICATION (if you need more info from the user)
 
-If you retry, use the exact XML capability format with corrected parameters:
-<capability name="..." action="..." data='...' />
+If you retry, prefer simple shortcuts:
+<read>path</read>, <recall>query</recall>, <websearch>query</websearch>, <calc>2+2</calc>, <remember>fact</remember>
 
-If asking for clarification, respond naturally without capability tags.
+Or use full format if needed: <capability name="..." action="..." data='...' />
 
-Remember: Parameter names might be camelCase or snake_case. Try both if unsure.`;
+If asking for clarification, respond naturally without capability tags.`;
 
     try {
       // Use FAST_MODEL for quick error analysis
@@ -529,7 +571,10 @@ Remember: Parameter names might be camelCase or snake_case. Try both if unsure.`
       logger.info(`🔍 LLM Recovery Attempt:\n${recoveryAttempt.substring(0, 500)}...`);
 
       // Check if LLM found corrected capabilities
-      const recoveredCapabilities = capabilityParser.extractCapabilities(recoveryAttempt, fastModel);
+      const recoveredCapabilities = capabilityParser.extractCapabilities(
+        recoveryAttempt,
+        fastModel
+      );
       if (recoveredCapabilities.length > 0) {
         logger.info(
           `✅ LLM identified ${recoveredCapabilities.length} corrected capabilities to retry`
@@ -539,10 +584,8 @@ Remember: Parameter names might be camelCase or snake_case. Try both if unsure.`
         const newResults: CapabilityResult[] = [];
         for (const capability of recoveredCapabilities) {
           logger.info(`🔄 Retrying: ${capability.name}:${capability.action}`);
-          const result = await this.executeCapability(
-            capability,
-            context,
-            (cap, error) => capabilityParser.generateHelpfulErrorMessage(cap, error)
+          const result = await this.executeCapability(capability, context, (cap, error) =>
+            capabilityParser.generateHelpfulErrorMessage(cap, error)
           );
           newResults.push(result);
 
@@ -591,7 +634,6 @@ Remember: Parameter names might be camelCase or snake_case. Try both if unsure.`
       return false;
     }
   }
-
 }
 
 export const capabilityExecutor = CapabilityExecutor.getInstance();

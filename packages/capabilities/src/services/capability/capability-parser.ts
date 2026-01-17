@@ -145,10 +145,7 @@ export class CapabilityParser {
    * Detect and inject capabilities automatically from user message and LLM response
    * Currently disabled - returns empty array
    */
-  detectAndInjectCapabilities(
-    _userMessage: string,
-    _llmResponse: string
-  ): ExtractedCapability[] {
+  detectAndInjectCapabilities(_userMessage: string, _llmResponse: string): ExtractedCapability[] {
     // No auto-injection for now - let the LLM handle it or user be explicit
     return [];
   }
@@ -157,10 +154,23 @@ export class CapabilityParser {
    * Generate helpful error messages with actionable suggestions
    * Provides similar capability/action suggestions and example usage
    */
-  generateHelpfulErrorMessage(
-    capability: ExtractedCapability,
-    originalError: string
-  ): string {
+  // Simple syntax shortcuts for common capabilities
+  private static readonly SIMPLE_SHORTCUTS: Record<string, string> = {
+    'filesystem:read_file': '<read>path/to/file</read>',
+    'filesystem:write_file': '<write path="file">content</write>',
+    'memory:recall': '<recall>query</recall>',
+    'memory:store': '<remember>fact to store</remember>',
+    'web:search': '<websearch>query</websearch>',
+    'web:fetch': '<fetch>url</fetch>',
+    'calculator:calculate': '<calc>2+2</calc>',
+    'scrapbook:search': '<search>query</search>',
+  };
+
+  private getSimpleSyntax(name: string, action: string): string | null {
+    return CapabilityParser.SIMPLE_SHORTCUTS[`${name}:${action}`] || null;
+  }
+
+  generateHelpfulErrorMessage(capability: ExtractedCapability, originalError: string): string {
     const { name, action } = capability;
 
     // Check if the capability exists
@@ -168,7 +178,7 @@ export class CapabilityParser {
       const availableCapabilities = capabilityRegistry.list().map((cap) => cap.name);
       const suggestions = this.findSimilarCapabilities(name, availableCapabilities);
 
-      return `❌ Capability '${name}' not found. Available capabilities: ${availableCapabilities.join(', ')}. Did you mean: ${suggestions.join(' or ')}?`;
+      return `❌ Capability '${name}' not found. Try simple shortcuts: <read>path</read>, <recall>query</recall>, <websearch>query</websearch>. Did you mean: ${suggestions.join(' or ')}?`;
     }
 
     // Check if the action is supported
@@ -187,12 +197,20 @@ export class CapabilityParser {
       );
 
       if (missingParams.length > 0) {
-        return `❌ Missing required parameters for '${name}:${action}': ${missingParams.join(', ')}. Example: <capability name="${name}" action="${action}" ${missingParams.map((p) => `${p}="value"`).join(' ')}>content</capability>`;
+        const simpleSyntax = this.getSimpleSyntax(name, action);
+        if (simpleSyntax) {
+          return `❌ Missing required parameters for '${name}:${action}': ${missingParams.join(', ')}. Try: ${simpleSyntax}`;
+        }
+        return `❌ Missing required parameters for '${name}:${action}': ${missingParams.join(', ')}. Required: ${missingParams.join(', ')}`;
       }
     }
 
-    // Return enhanced original error with context
-    return `❌ ${originalError}. For '${name}' capability, use: <capability name="${name}" action="${registryCapability?.supportedActions[0] || action}">content</capability>`;
+    // Return enhanced original error with context - prefer simple syntax
+    const simpleSyntax = this.getSimpleSyntax(name, action);
+    if (simpleSyntax) {
+      return `❌ ${originalError}. Try: ${simpleSyntax}`;
+    }
+    return `❌ ${originalError}. For '${name}' capability, use action: ${registryCapability?.supportedActions[0] || action}`;
   }
 
   /**

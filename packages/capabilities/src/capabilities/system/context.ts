@@ -122,8 +122,12 @@ Start complex tasks with context. Know where you are.`,
           // Detect project type
           const projectIndicators: string[] = [];
           if (await safeExec(`test -f ${targetPath}/package.json && echo yes`)) {
-            const pkgName = await safeExec(`cat ${targetPath}/package.json | grep '"name"' | head -1`);
-            projectIndicators.push(`Node.js project${pkgName ? `: ${pkgName.match(/"name":\s*"([^"]+)"/)?.[1] || ''}` : ''}`);
+            const pkgName = await safeExec(
+              `cat ${targetPath}/package.json | grep '"name"' | head -1`
+            );
+            projectIndicators.push(
+              `Node.js project${pkgName ? `: ${pkgName.match(/"name":\s*"([^"]+)"/)?.[1] || ''}` : ''}`
+            );
           }
           if (await safeExec(`test -f ${targetPath}/requirements.txt && echo yes`)) {
             projectIndicators.push('Python project');
@@ -153,20 +157,16 @@ Start complex tasks with context. Know where you are.`,
           );
 
           // Recent git commits
-          const recentCommits = await safeExec(
-            'git log --oneline -5 2>/dev/null'
-          );
+          const recentCommits = await safeExec('git log --oneline -5 2>/dev/null');
 
           // Recent git activity
-          const gitActivity = await safeExec(
-            'git diff --stat HEAD~3 2>/dev/null | tail -5'
-          );
+          const gitActivity = await safeExec('git diff --stat HEAD~3 2>/dev/null | tail -5');
 
           const lines = ['Recent activity:'];
 
           if (recentFiles) {
             lines.push('', 'Files modified in last hour:');
-            recentFiles.split('\n').forEach(f => {
+            recentFiles.split('\n').forEach((f) => {
               lines.push(`  ${f.replace('/workspace/', '')}`);
             });
           } else {
@@ -244,7 +244,10 @@ Start complex tasks with context. Know where you are.`,
             'find /workspace -type f -mmin -30 -not -path "*/node_modules/*" -not -path "*/.git/*" 2>/dev/null | head -8'
           );
           if (recentFiles) {
-            const formatted = recentFiles.split('\n').map(f => f.replace('/workspace/', '')).join('\n');
+            const formatted = recentFiles
+              .split('\n')
+              .map((f) => f.replace('/workspace/', ''))
+              .join('\n');
             sections.push(`=== RECENTLY MODIFIED ===\n${formatted}`);
           }
 

@@ -53,7 +53,10 @@ export class LLMResponseCoordinator {
           // Pass Discord channel history - source of truth for DMs (includes webhook/n8n messages)
           discordChannelHistory: message.context?.channelHistory,
           // Pass full Discord context for guild knowledge, proactive answering, etc.
-          discordContext: (message.context?.platform === 'discord' || message.context?.guildKnowledge) ? message.context : undefined,
+          discordContext:
+            message.context?.platform === 'discord' || message.context?.guildKnowledge
+              ? message.context
+              : undefined,
         }
       );
 
@@ -94,9 +97,15 @@ export class LLMResponseCoordinator {
       const errorMessage = error?.message || String(error);
 
       // Check for billing/credit errors (402)
-      if (errorMessage.includes('402') || errorMessage.includes('credits') || errorMessage.includes('billing')) {
+      if (
+        errorMessage.includes('402') ||
+        errorMessage.includes('credits') ||
+        errorMessage.includes('billing')
+      ) {
         logger.error('💳 OpenRouter billing error - out of credits', error);
-        throw new Error(`💳 OUT OF CREDITS: OpenRouter account needs more credits. Visit https://openrouter.ai/settings/credits to add funds.`);
+        throw new Error(
+          `💳 OUT OF CREDITS: OpenRouter account needs more credits. Visit https://openrouter.ai/settings/credits to add funds.`
+        );
       }
 
       // Check for rate limiting (429)
@@ -106,15 +115,28 @@ export class LLMResponseCoordinator {
       }
 
       // Check for auth errors (401/403)
-      if (errorMessage.includes('401') || errorMessage.includes('403') || errorMessage.includes('unauthorized') || errorMessage.includes('invalid.*key')) {
+      if (
+        errorMessage.includes('401') ||
+        errorMessage.includes('403') ||
+        errorMessage.includes('unauthorized') ||
+        errorMessage.includes('invalid.*key')
+      ) {
         logger.error('🔑 OpenRouter authentication error', error);
-        throw new Error(`🔑 AUTH ERROR: OpenRouter API key is invalid or missing. Check OPENROUTER_API_KEY environment variable.`);
+        throw new Error(
+          `🔑 AUTH ERROR: OpenRouter API key is invalid or missing. Check OPENROUTER_API_KEY environment variable.`
+        );
       }
 
       // Check for network errors
-      if (errorMessage.includes('ECONNREFUSED') || errorMessage.includes('ETIMEDOUT') || errorMessage.includes('fetch failed')) {
+      if (
+        errorMessage.includes('ECONNREFUSED') ||
+        errorMessage.includes('ETIMEDOUT') ||
+        errorMessage.includes('fetch failed')
+      ) {
         logger.error('🌐 Network error connecting to OpenRouter', error);
-        throw new Error(`🌐 NETWORK ERROR: Could not connect to OpenRouter API. Check internet connection.`);
+        throw new Error(
+          `🌐 NETWORK ERROR: Could not connect to OpenRouter API. Check internet connection.`
+        );
       }
 
       // Check for model errors
@@ -124,7 +146,10 @@ export class LLMResponseCoordinator {
       }
 
       // Unknown error - log full details and throw with context
-      logger.error('❌ LLM request failed with unknown error', { error: errorMessage, stack: error?.stack });
+      logger.error('❌ LLM request failed with unknown error', {
+        error: errorMessage,
+        stack: error?.stack,
+      });
       throw new Error(`❌ LLM ERROR: ${errorMessage.substring(0, 200)}`);
     }
   }
@@ -167,7 +192,8 @@ Progress: Step ${currentStep} of ${totalSteps}
 If the error contains an example capability tag, extract it and use it immediately in your next response. If no example is provided, explain the error briefly and suggest what to try next.`;
 
       // Use Context Alchemy for intermediate response
-      const errorRecoveryPrompt = (await promptManager.getPrompt('PROMPT_ERROR_RECOVERY'))?.content ||
+      const errorRecoveryPrompt =
+        (await promptManager.getPrompt('PROMPT_ERROR_RECOVERY'))?.content ||
         "You are Coach Artie. When you see errors with examples, extract and use those examples immediately - don't just say there was an error.";
       const { messages } = await contextAlchemy.buildMessageChain(
         intermediatePrompt,
@@ -224,7 +250,8 @@ ${context.results
 
 Provide a concise, friendly summary (1-2 sentences) of what was accomplished overall.`;
 
-      const finalSummarySystemPrompt = (await promptManager.getPrompt('PROMPT_FINAL_SUMMARY'))?.content ||
+      const finalSummarySystemPrompt =
+        (await promptManager.getPrompt('PROMPT_FINAL_SUMMARY'))?.content ||
         'You are Coach Artie providing a final summary after completing multiple tasks.';
       const { messages } = await contextAlchemy.buildMessageChain(
         summaryPrompt,
@@ -299,7 +326,10 @@ Please provide a helpful response to the user that:
           );
 
           const model = process.env.SMART_MODEL || 'openai/gpt-4o';
-          const response = await openRouterService.generateFromMessageChain(messages, context.userId);
+          const response = await openRouterService.generateFromMessageChain(
+            messages,
+            context.userId
+          );
 
           return response || originalLLMResponse;
         } catch (error) {
@@ -373,7 +403,9 @@ Please provide a helpful response to the user that:
 
       // Add magical capability execution banner
       const capabilityBanner = this.generateCapabilityBanner(context.results);
-      const responseWithBanner = capabilityBanner ? `${sanitizedResponse}\n\n${capabilityBanner}` : sanitizedResponse;
+      const responseWithBanner = capabilityBanner
+        ? `${sanitizedResponse}\n\n${capabilityBanner}`
+        : sanitizedResponse;
 
       return responseWithBanner;
     } catch (_error) {
@@ -403,11 +435,14 @@ Please provide a helpful response to the user that:
   ): Promise<string> {
     try {
       // Load reflection prompts from database
-      const promptName = type === 'general' ? 'PROMPT_REFLECTION_GENERAL' : 'PROMPT_REFLECTION_CAPABILITY';
+      const promptName =
+        type === 'general' ? 'PROMPT_REFLECTION_GENERAL' : 'PROMPT_REFLECTION_CAPABILITY';
       const reflectionPrompt = await promptManager.getPrompt(promptName);
 
-      const promptContent = reflectionPrompt?.content || (type === 'general'
-        ? `In the dialogue I just sent, identify and list the key details worth remembering for future conversations:
+      const promptContent =
+        reflectionPrompt?.content ||
+        (type === 'general'
+          ? `In the dialogue I just sent, identify and list the key details worth remembering for future conversations:
 
 - Remember any hard facts – numeric values, URLs, dates, names, technical specifications
 - Remember user preferences, goals, and context about their projects
@@ -417,7 +452,7 @@ Please provide a helpful response to the user that:
 Never respond in the negative - if there are no hard facts, simply respond with "✨".
 
 Format your response as a bullet list of memorable facts.`
-        : `In the dialogue I just sent, identify and list the key learnings about capability usage:
+          : `In the dialogue I just sent, identify and list the key learnings about capability usage:
 
 - Remember the capability you used and the exact arguments that worked
 - Note any errors encountered and how they were resolved
@@ -483,16 +518,64 @@ ${capabilityDetails}`;
    * Checks for <wants_loop>true</wants_loop> signal in the response
    * Returns both the cleaned response and the loop decision flag
    */
-  extractLoopDecision(
-    content: string
-  ): { response: string; wantsLoop: boolean } {
+  extractLoopDecision(content: string): { response: string; wantsLoop: boolean } {
     const wantsLoopMatch = content.match(/<wants_loop>(true|false)<\/wants_loop>/i);
     const hasCapabilities = content.includes('<capability');
 
+    // CRITICAL: Also detect shorthand capability tags like <read>, <recall>, <websearch> etc.
+    // These are aliases defined in xml-parser.ts that expand to full capability calls
+    const shorthandTags = [
+      // File operations
+      'read',
+      'readfile',
+      'write',
+      'writefile',
+      'append',
+      'listdir',
+      'ls',
+      'exists',
+      'mkdir',
+      'rm',
+      'delete',
+      // Memory
+      'remember',
+      'store',
+      'recall',
+      'forget',
+      // Search
+      'search',
+      'websearch',
+      'google',
+      // Vision
+      'see',
+      'ocr',
+      'lookatimage',
+      // GitHub
+      'github-search_issues',
+      'github-get_issue',
+      'github-list_issues',
+      'github-create_issue',
+      'github-search_code',
+      'github-get_file',
+      'github-list_repo_files',
+      'github-get_pr',
+      // Calculator
+      'calc',
+      'calculate',
+      'math',
+    ];
+    const shorthandPattern = new RegExp(`<(${shorthandTags.join('|')})[^>]*>`, 'i');
+    const hasShorthandCapabilities = shorthandPattern.test(content);
+
     // SIMPLE LOGIC: If there are capabilities in the response, execute them.
     // Don't care about explicit tags or defaults - just execute what's there.
-    let wantsLoop = hasCapabilities;
-    let decisionSource = hasCapabilities ? 'detected <capability> tags' : 'no capabilities found';
+    const hasAnyCapabilities = hasCapabilities || hasShorthandCapabilities;
+    let wantsLoop = hasAnyCapabilities;
+    let decisionSource = hasCapabilities
+      ? 'detected <capability> tags'
+      : hasShorthandCapabilities
+        ? 'detected shorthand capability tags (e.g., <read>, <recall>)'
+        : 'no capabilities found';
 
     // If there's an explicit wants_loop tag, respect it
     if (wantsLoopMatch) {
@@ -501,13 +584,9 @@ ${capabilityDetails}`;
     }
 
     // Remove the wants_loop tag from the response
-    const cleanedResponse = content
-      .replace(/<wants_loop>(true|false)<\/wants_loop>/gi, '')
-      .trim();
+    const cleanedResponse = content.replace(/<wants_loop>(true|false)<\/wants_loop>/gi, '').trim();
 
-    logger.info(
-      `🎯 Loop decision: wantsLoop=${wantsLoop} (${decisionSource})`
-    );
+    logger.info(`🎯 Loop decision: wantsLoop=${wantsLoop} (${decisionSource})`);
 
     return {
       response: cleanedResponse,
@@ -521,9 +600,32 @@ ${capabilityDetails}`;
    */
   toSmallCaps(text: string): string {
     const smallCapsMap: Record<string, string> = {
-      a: 'ᴀ', b: 'ʙ', c: 'ᴄ', d: 'ᴅ', e: 'ᴇ', f: 'ғ', g: 'ɢ', h: 'ʜ', i: 'ɪ', j: 'ᴊ',
-      k: 'ᴋ', l: 'ʟ', m: 'ᴍ', n: 'ɴ', o: 'ᴏ', p: 'ᴘ', q: 'ǫ', r: 'ʀ', s: 's', t: 'ᴛ',
-      u: 'ᴜ', v: 'ᴠ', w: 'ᴡ', x: 'x', y: 'ʏ', z: 'ᴢ',
+      a: 'ᴀ',
+      b: 'ʙ',
+      c: 'ᴄ',
+      d: 'ᴅ',
+      e: 'ᴇ',
+      f: 'ғ',
+      g: 'ɢ',
+      h: 'ʜ',
+      i: 'ɪ',
+      j: 'ᴊ',
+      k: 'ᴋ',
+      l: 'ʟ',
+      m: 'ᴍ',
+      n: 'ɴ',
+      o: 'ᴏ',
+      p: 'ᴘ',
+      q: 'ǫ',
+      r: 'ʀ',
+      s: 's',
+      t: 'ᴛ',
+      u: 'ᴜ',
+      v: 'ᴠ',
+      w: 'ᴡ',
+      x: 'x',
+      y: 'ʏ',
+      z: 'ᴢ',
     };
 
     return text

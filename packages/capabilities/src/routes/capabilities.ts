@@ -183,7 +183,7 @@ router.get('/registry/:name', (req: Request, res: Response) => {
 router.post('/registry/:name/execute', async (req: Request, res: Response) => {
   try {
     const { name } = req.params;
-    const { action, params = {}, content } = req.body;
+    const { action, params = {}, content, guildId, channelId, userId, messageId } = req.body;
 
     if (!action) {
       return res.status(400).json({
@@ -206,7 +206,13 @@ router.post('/registry/:name/execute', async (req: Request, res: Response) => {
       });
     }
 
-    const result = await capabilityRegistry.execute(name, action, params, content);
+    // Build context from request body
+    const context =
+      guildId || channelId || userId || messageId
+        ? { guildId, channelId, userId, messageId }
+        : undefined;
+
+    const result = await capabilityRegistry.execute(name, action, params, content, context);
 
     res.json({
       success: true,

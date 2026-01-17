@@ -156,7 +156,10 @@ export class RobustCapabilityExecutor {
    * Interpolate variables in parameters using Handlebars template engine
    * Supports both ${var} and {{var}} syntax
    */
-  private async interpolateParams(params: Record<string, any>, userId: string): Promise<Record<string, any>> {
+  private async interpolateParams(
+    params: Record<string, any>,
+    userId: string
+  ): Promise<Record<string, any>> {
     const variableStore = GlobalVariableStore.getInstance();
     const interpolated: Record<string, any> = {};
 
@@ -335,7 +338,7 @@ export class RobustCapabilityExecutor {
     try {
       if (!expression || expression.trim().length === 0) {
         logger.warn(`🧮 FALLBACK: No expression provided for fallback calculation`);
-        return `I couldn't find a mathematical expression to calculate. Please use: <capability name="calculator" action="calculate" expression="2+2" />`;
+        return `I couldn't find a mathematical expression to calculate. Please use: <calc>2+2</calc>`;
       }
 
       // Clean the expression

@@ -31,6 +31,7 @@ import { memoryCapability } from '../../capabilities/memory/memory.js';
 // AI capabilities
 import { modelManagerCapability } from '../../capabilities/ai/model-manager.js';
 import { visionCapability } from '../../capabilities/ai/vision.js';
+import { imageGenCapability } from '../../capabilities/image-gen.js';
 // Productivity capabilities
 import { goalCapability } from '../../capabilities/productivity/goal.js';
 import { todoCapability } from '../../capabilities/productivity/todo.js';
@@ -47,6 +48,8 @@ import { slackUICapability } from '../../capabilities/slack/slack-ui.js';
 import { askQuestionCapability } from '../../capabilities/communication/ask-question.js';
 import { mentionProxyCapability } from '../../capabilities/communication/mention-proxy.js';
 import { emailCapability } from '../../capabilities/communication/email.js';
+// Analytics capabilities
+import { selfStatsCapability } from '../../capabilities/self-stats.js';
 // Services
 import { meetingCapability } from '../core/meeting-service.js';
 
@@ -206,6 +209,11 @@ export class CapabilityBootstrap {
       capabilityRegistry.register(scratchpadCapability);
       logger.info('✅ scratchpad registered successfully');
 
+      // Register self-stats capability - introspection
+      logger.info('📦 Registering self-stats (introspection)...');
+      capabilityRegistry.register(selfStatsCapability);
+      logger.info('✅ self-stats registered successfully');
+
       // Register context capability - situational awareness
       logger.info('📦 Registering context (situational awareness)...');
       capabilityRegistry.register(contextCapability);
@@ -215,6 +223,11 @@ export class CapabilityBootstrap {
       logger.info('📦 Registering vision (image/text extraction helper)...');
       capabilityRegistry.register(visionCapability);
       logger.info('✅ vision registered successfully');
+
+      // Register image generation capability - Nano Banana (Gemini) image generation
+      logger.info('📦 Registering image_gen (Nano Banana image generation)...');
+      capabilityRegistry.register(imageGenCapability);
+      logger.info('✅ image_gen registered successfully');
 
       // Register diagnose capability - understand what went wrong
       logger.info('📦 Registering diagnose (error analysis)...');

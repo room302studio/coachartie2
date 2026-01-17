@@ -23,7 +23,9 @@ export class ObservationalLearning {
   private processingTimer: NodeJS.Timeout | null = null;
 
   // Configuration
-  private readonly MESSAGES_PER_FETCH = parseInt(process.env.OBSERVATION_MESSAGES_PER_FETCH || '50');
+  private readonly MESSAGES_PER_FETCH = parseInt(
+    process.env.OBSERVATION_MESSAGES_PER_FETCH || '50'
+  );
   private readonly PROCESS_INTERVAL_MS = parseInt(process.env.OBSERVATION_INTERVAL_MS || '300000'); // 5 minutes
   private readonly CAPABILITIES_URL = process.env.CAPABILITIES_URL || 'http://localhost:47324';
 
@@ -48,14 +50,14 @@ export class ObservationalLearning {
     // - All 'watching' type guilds
     // - 'working' guilds with proactiveAnswering enabled (learn from communities we help)
     const learningGuilds = Object.values(GUILD_CONFIGS).filter(
-      g => g.type === 'watching' || (g.type === 'working' && g.proactiveAnswering)
+      (g) => g.type === 'watching' || (g.type === 'working' && g.proactiveAnswering)
     );
 
     if (learningGuilds.length > 0) {
       logger.info('👁️ Observational learning initialized', {
-        learningGuilds: learningGuilds.map(g => g.name),
+        learningGuilds: learningGuilds.map((g) => g.name),
         messagesPerFetch: this.MESSAGES_PER_FETCH,
-        intervalMs: this.PROCESS_INTERVAL_MS
+        intervalMs: this.PROCESS_INTERVAL_MS,
       });
 
       // Start processing timer
@@ -91,7 +93,7 @@ export class ObservationalLearning {
     }
 
     const learningGuilds = Object.values(GUILD_CONFIGS).filter(
-      g => g.type === 'watching' || (g.type === 'working' && g.proactiveAnswering)
+      (g) => g.type === 'watching' || (g.type === 'working' && g.proactiveAnswering)
     );
 
     for (const guildConfig of learningGuilds) {
@@ -104,7 +106,7 @@ export class ObservationalLearning {
 
         // Process text channels in the guild
         const textChannels = guild.channels.cache.filter(
-          channel => channel.type === 0 && channel.viewable
+          (channel) => channel.type === 0 && channel.viewable
         ) as Collection<string, TextChannel>;
 
         // Filter to only observation channels if configured
@@ -113,8 +115,8 @@ export class ObservationalLearning {
         for (const [channelId, channel] of textChannels) {
           // If observationChannels is configured, only process those channels
           if (observationChannels.length > 0) {
-            const isWhitelisted = observationChannels.some(
-              c => channel.name.toLowerCase().includes(c.toLowerCase())
+            const isWhitelisted = observationChannels.some((c) =>
+              channel.name.toLowerCase().includes(c.toLowerCase())
             );
             if (!isWhitelisted) {
               logger.debug(`👁️ Skipping #${channel.name} (not in observationChannels whitelist)`);
@@ -143,7 +145,7 @@ export class ObservationalLearning {
     try {
       // Fetch messages from Discord API
       const fetchOptions: { limit: number; before?: string } = {
-        limit: this.MESSAGES_PER_FETCH
+        limit: this.MESSAGES_PER_FETCH,
       };
 
       // If we've processed this channel before, fetch only new messages
@@ -151,7 +153,7 @@ export class ObservationalLearning {
         // Fetch messages after the last processed one
         const messages = await channel.messages.fetch({
           limit: this.MESSAGES_PER_FETCH,
-          after: processed.lastMessageId
+          after: processed.lastMessageId,
         });
 
         if (messages.size === 0) {
@@ -159,13 +161,7 @@ export class ObservationalLearning {
           return;
         }
 
-        await this.summarizeAndStore(
-          messages,
-          guildId,
-          guildName,
-          channel.id,
-          channel.name
-        );
+        await this.summarizeAndStore(messages, guildId, guildName, channel.id, channel.name);
 
         // Update last processed message
         const newestMessage = messages.first();
@@ -174,7 +170,7 @@ export class ObservationalLearning {
             guildId,
             channelId: channel.id,
             lastMessageId: newestMessage.id,
-            lastProcessedAt: new Date()
+            lastProcessedAt: new Date(),
           });
         }
       } else {
@@ -186,13 +182,7 @@ export class ObservationalLearning {
           return;
         }
 
-        await this.summarizeAndStore(
-          messages,
-          guildId,
-          guildName,
-          channel.id,
-          channel.name
-        );
+        await this.summarizeAndStore(messages, guildId, guildName, channel.id, channel.name);
 
         // Store the newest message ID for next time
         const newestMessage = messages.first();
@@ -201,7 +191,7 @@ export class ObservationalLearning {
             guildId,
             channelId: channel.id,
             lastMessageId: newestMessage.id,
-            lastProcessedAt: new Date()
+            lastProcessedAt: new Date(),
           });
         }
       }
@@ -222,7 +212,7 @@ export class ObservationalLearning {
   ): Promise<void> {
     // Filter out bot messages and sort chronologically
     const humanMessages = messages
-      .filter(m => !m.author.bot)
+      .filter((m) => !m.author.bot)
       .sort((a, b) => a.createdTimestamp - b.createdTimestamp);
 
     if (humanMessages.size === 0) {
@@ -234,7 +224,7 @@ export class ObservationalLearning {
 
     // Create conversation text
     const conversationText = humanMessages
-      .map(m => `${m.author.username}: ${m.content.substring(0, 500)}`)
+      .map((m) => `${m.author.username}: ${m.content.substring(0, 500)}`)
       .join('\n');
 
     // Create summary prompt
@@ -264,14 +254,16 @@ Focus on patterns that would help understand this community's needs and interest
           messageCount: humanMessages.size,
           timeRange: {
             start: humanMessages.last()?.createdAt.toISOString(),
-            end: humanMessages.first()?.createdAt.toISOString()
-          }
-        })
+            end: humanMessages.first()?.createdAt.toISOString(),
+          },
+        }),
       });
 
       if (response.ok) {
-        const result = await response.json() as { summary: string; cost: number };
-        logger.info(`👁️ Observation summary created (cost: $${result.cost?.toFixed(4)}): ${result.summary?.substring(0, 100)}...`);
+        const result = (await response.json()) as { summary: string; cost: number };
+        logger.info(
+          `👁️ Observation summary created (cost: $${result.cost?.toFixed(4)}): ${result.summary?.substring(0, 100)}...`
+        );
 
         // Store as observational memory
         await this.storeObservationalMemory(
@@ -299,26 +291,29 @@ Focus on patterns that would help understand this community's needs and interest
   ): Promise<void> {
     try {
       // Call memory capability to store observation
-      const memoryResponse = await fetch(`${this.CAPABILITIES_URL}/capabilities/registry/memory/execute`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          action: 'remember',
-          params: {
-            content: `[Observation from ${guildName} #${channelName} (${messageCount} messages)] ${summary}`,
-            userId: 'observational-system',
-            importance: 2,
-            tags: [
-              'observation',
-              'passive-learning',
-              guildName.toLowerCase().replace(/\s+/g, '-'),
-              channelName.toLowerCase().replace(/\s+/g, '-')
-            ]
-          }
-        })
-      });
+      const memoryResponse = await fetch(
+        `${this.CAPABILITIES_URL}/capabilities/registry/memory/execute`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            action: 'remember',
+            params: {
+              content: `[Observation from ${guildName} #${channelName} (${messageCount} messages)] ${summary}`,
+              userId: 'observational-system',
+              importance: 2,
+              tags: [
+                'observation',
+                'passive-learning',
+                guildName.toLowerCase().replace(/\s+/g, '-'),
+                channelName.toLowerCase().replace(/\s+/g, '-'),
+              ],
+            },
+          }),
+        }
+      );
 
       if (memoryResponse.ok) {
         logger.info(`👁️ Stored observational memory for ${guildName} #${channelName}`);
@@ -343,23 +338,23 @@ Focus on patterns that would help understand this community's needs and interest
     }>;
   } {
     const learningGuilds = Object.values(GUILD_CONFIGS).filter(
-      g => g.type === 'watching' || (g.type === 'working' && g.proactiveAnswering)
+      (g) => g.type === 'watching' || (g.type === 'working' && g.proactiveAnswering)
     );
 
-    const lastProcessedTimes = Array.from(this.processedChannels.values()).map(p => {
+    const lastProcessedTimes = Array.from(this.processedChannels.values()).map((p) => {
       const guildConfig = getGuildConfig(p.guildId);
       const channel = this.client?.channels.cache.get(p.channelId);
       return {
         guild: guildConfig?.name || p.guildId,
         channel: (channel && 'name' in channel ? channel.name : null) || p.channelId,
-        lastProcessed: p.lastProcessedAt
+        lastProcessed: p.lastProcessedAt,
       };
     });
 
     return {
       processedChannels: this.processedChannels.size,
       learningGuilds: learningGuilds.length,
-      lastProcessedTimes
+      lastProcessedTimes,
     };
   }
 

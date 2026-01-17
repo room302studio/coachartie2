@@ -5,10 +5,18 @@ import {
   SelectMenuBuilder,
   ModalBuilder,
 } from 'discord.js';
-import { createWorker, QUEUES, OutgoingMessage, logger, testRedisConnection } from '@coachartie/shared';
+import {
+  createWorker,
+  QUEUES,
+  OutgoingMessage,
+  logger,
+  testRedisConnection,
+} from '@coachartie/shared';
 import type { Worker } from 'bullmq';
 
-export async function startResponseConsumer(client: Client): Promise<Worker<OutgoingMessage> | null> {
+export async function startResponseConsumer(
+  client: Client
+): Promise<Worker<OutgoingMessage> | null> {
   // Check Redis availability first
   const redisOk = await testRedisConnection();
   if (!redisOk) {
@@ -42,9 +50,10 @@ export async function startResponseConsumer(client: Client): Promise<Worker<Outg
         // Send regular text message (only if channel supports it)
         if ('send' in channel) {
           // Add debug instance identifier if enabled
-          const debugInfo = process.env.ENABLE_INSTANCE_DEBUG === 'true'
-            ? `\n\n_[${process.env.INSTANCE_NAME || 'unknown'}]_`
-            : '';
+          const debugInfo =
+            process.env.ENABLE_INSTANCE_DEBUG === 'true'
+              ? `\n\n_[${process.env.INSTANCE_NAME || 'unknown'}]_`
+              : '';
 
           // Chunk the message to preserve formatting and respect Discord limits
           const chunks = chunkMessage(response.message + debugInfo);

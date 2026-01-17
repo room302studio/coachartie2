@@ -70,18 +70,15 @@ async function sendMessage(params: {
 
   try {
     // Call Discord service to send message
-    const response = await fetch(
-      `${DISCORD_SERVICE_URL}/api/channels/${channelId}/messages`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          content: message,
-        }),
-      }
-    );
+    const response = await fetch(`${DISCORD_SERVICE_URL}/api/channels/${channelId}/messages`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        content: message,
+      }),
+    });
 
     if (!response.ok) {
       const errorData = await response.text();

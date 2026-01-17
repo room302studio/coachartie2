@@ -331,7 +331,12 @@ const githubActions = {
     }
   },
 
-  list_issues: async (params: { repo?: string; query?: string; state?: string; limit?: number }) => {
+  list_issues: async (params: {
+    repo?: string;
+    query?: string;
+    state?: string;
+    limit?: number;
+  }) => {
     try {
       // Support both 'repo' and 'query' parameters for flexibility
       const repoName = params.repo || params.query;
@@ -406,7 +411,13 @@ const githubActions = {
     }
   },
 
-  search_issues: async (params: { repo?: string; query?: string; keywords?: string; limit?: number; state?: string }) => {
+  search_issues: async (params: {
+    repo?: string;
+    query?: string;
+    keywords?: string;
+    limit?: number;
+    state?: string;
+  }) => {
     try {
       const repoName = params.repo || params.query;
       const searchKeywords = params.keywords || params.query;
@@ -848,15 +859,15 @@ const githubActions = {
         const timelineData = (await timelineResponse.json()) as any;
         // Extract cross-referenced PRs from timeline
         linkedPRs = timelineData
-          .filter((event: any) => event.source && event.source.issue && event.source.issue.pull_request)
+          .filter(
+            (event: any) => event.source && event.source.issue && event.source.issue.pull_request
+          )
           .map((event: any) => event.source.issue);
       }
 
       // Combine search results and linked PRs, removing duplicates
       const allPRs = [...searchData.items, ...linkedPRs];
-      const uniquePRs = Array.from(
-        new Map(allPRs.map((pr: any) => [pr.number, pr])).values()
-      );
+      const uniquePRs = Array.from(new Map(allPRs.map((pr: any) => [pr.number, pr])).values());
 
       // Determine PR status (open/merged/closed)
       const prsWithStatus = await Promise.all(

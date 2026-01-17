@@ -161,14 +161,8 @@ function chunkMessage(text: string, maxLength: number = SLACK_MESSAGE_LIMIT): st
 /**
  * Check if we should stream this partial response
  */
-function shouldStreamPartialResponse(
-  status: any,
-  lastSentContent: string
-): boolean {
-  return !!(
-    status.partialResponse &&
-    status.partialResponse !== lastSentContent
-  );
+function shouldStreamPartialResponse(status: any, lastSentContent: string): boolean {
+  return !!(status.partialResponse && status.partialResponse !== lastSentContent);
 }
 
 /**
@@ -365,7 +359,13 @@ export function setupMessageHandler(app: App) {
         );
 
         // Process with unified intent processor
-        await handleMessageAsIntent(message as MessageEvent, cleanMessage, correlationId, say, client);
+        await handleMessageAsIntent(
+          message as MessageEvent,
+          cleanMessage,
+          correlationId,
+          say,
+          client
+        );
       } else {
         // PASSIVE OBSERVATION: Just process for learning, no response
         logger.info(`👁️ Passive observation [${shortId}]`, {

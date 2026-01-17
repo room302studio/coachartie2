@@ -61,10 +61,17 @@ export class CapabilityOrchestrator {
     }
 
     // Check if this is an email request
-    const emailIntent = await emailDraftingService.detectEmailIntent(message.message, message.userId);
+    const emailIntent = await emailDraftingService.detectEmailIntent(
+      message.message,
+      message.userId
+    );
     if (emailIntent) {
       logger.info('📧 EMAIL INTENT DETECTED - Routing to email writing mode');
-      return await emailDraftingService.handleEmailWritingMode(message, emailIntent, onPartialResponse);
+      return await emailDraftingService.handleEmailWritingMode(
+        message,
+        emailIntent,
+        onPartialResponse
+      );
     }
 
     const context = this.createOrchestrationContext(message);
@@ -104,13 +111,10 @@ export class CapabilityOrchestrator {
     );
 
     // Extract the bot's loop decision from the response
-    const { response: llmResponse, wantsLoop } = llmResponseCoordinator.extractLoopDecision(
-      initialLLMResponse
-    );
+    const { response: llmResponse, wantsLoop } =
+      llmResponseCoordinator.extractLoopDecision(initialLLMResponse);
 
-    logger.info(
-      `🎯 Bot loop decision: ${wantsLoop ? '✅ WANTS LOOP' : '❌ NO LOOP NEEDED'}`
-    );
+    logger.info(`🎯 Bot loop decision: ${wantsLoop ? '✅ WANTS LOOP' : '❌ NO LOOP NEEDED'}`);
 
     // If the bot doesn't want to loop, return the response directly
     if (!wantsLoop) {
@@ -242,7 +246,11 @@ The AI service is experiencing issues. Please try again in a few minutes.
     }
 
     // Check for auth errors
-    if (errorMessage.includes('AUTH ERROR') || errorMessage.includes('401') || errorMessage.includes('403')) {
+    if (
+      errorMessage.includes('AUTH ERROR') ||
+      errorMessage.includes('401') ||
+      errorMessage.includes('403')
+    ) {
       return `🔑 **Authentication Error**
 
 There's an issue with the API configuration. Please check the API keys.

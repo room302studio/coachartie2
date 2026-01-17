@@ -13,10 +13,7 @@ export const data = new SlashCommandBuilder()
   .setName('sync-discussions')
   .setDescription('Sync Discord forum discussions to GitHub issues')
   .addStringOption((option) =>
-    option
-      .setName('repo')
-      .setDescription('GitHub repository (owner/repo or URL)')
-      .setRequired(true)
+    option.setName('repo').setDescription('GitHub repository (owner/repo or URL)').setRequired(true)
   )
   .addStringOption((option) =>
     option

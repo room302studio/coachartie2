@@ -14,7 +14,8 @@ export const n8nBrowserCapability: RegisteredCapability = {
   name: 'n8n_browser',
   emoji: '🌐',
   supportedActions: ['fetch', 'browse'],
-  description: 'Fetches web pages via n8n browser automation workflow. Useful for sites that block direct requests. Returns page content with status code.',
+  description:
+    'Fetches web pages via n8n browser automation workflow. Useful for sites that block direct requests. Returns page content with status code.',
   examples: [
     '<capability name="n8n_browser" action="fetch" url="https://example.com" />',
     '<capability name="n8n_browser" action="browse" url="https://httpbin.org/get" />',
@@ -39,7 +40,12 @@ export const n8nBrowserCapability: RegisteredCapability = {
         throw new Error(`n8n webhook failed: ${response.status}`);
       }
 
-      const result = await response.json() as { success?: boolean; url?: string; status?: number; length?: number };
+      const result = (await response.json()) as {
+        success?: boolean;
+        url?: string;
+        status?: number;
+        length?: number;
+      };
 
       if (result.success) {
         return `Fetched ${result.url}\nStatus: ${result.status}\nContent length: ${result.length} bytes`;
@@ -48,7 +54,9 @@ export const n8nBrowserCapability: RegisteredCapability = {
       }
     } catch (error) {
       logger.error('n8n browser fetch failed:', error);
-      throw new Error(`n8n browser error: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      throw new Error(
+        `n8n browser error: ${error instanceof Error ? error.message : 'Unknown error'}`
+      );
     }
   },
 };

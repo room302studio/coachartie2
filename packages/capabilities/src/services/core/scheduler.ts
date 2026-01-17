@@ -415,7 +415,10 @@ export class SchedulerService {
     if (meetingId && this.discordQueue) {
       try {
         const db = getSyncDb();
-        const meeting = db.get<{ id: number; title: string }>('SELECT * FROM meetings WHERE id = ?', [meetingId]);
+        const meeting = db.get<{ id: number; title: string }>(
+          'SELECT * FROM meetings WHERE id = ?',
+          [meetingId]
+        );
 
         if (!meeting) {
           logger.error(`Meeting ${meetingId} not found for reminder`);

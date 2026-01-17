@@ -125,6 +125,33 @@ export class CapabilitiesClient {
   }
 
   /**
+   * Fetch pending file attachments for a user (and clear them from the server)
+   */
+  async getPendingAttachments(userId: string): Promise<
+    Array<{
+      filename: string;
+      content?: string;
+      data: string; // base64
+      size: number;
+    }>
+  > {
+    try {
+      const response = await fetch(`${this.baseUrl}/chat/pending-attachments/${userId}`);
+      if (!response.ok) {
+        logger.warn(`Failed to fetch pending attachments: ${response.status}`);
+        return [];
+      }
+      const result = (await response.json()) as {
+        attachments?: Array<{ filename: string; content?: string; data: string; size: number }>;
+      };
+      return result.attachments || [];
+    } catch (error) {
+      logger.error('Failed to fetch pending attachments:', error);
+      return [];
+    }
+  }
+
+  /**
    * Poll job until completion with progress callbacks
    */
   async pollJobUntilComplete(

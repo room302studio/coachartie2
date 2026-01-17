@@ -115,7 +115,9 @@ Be precise and concise. Accuracy over completeness.`;
   // Convert URLs to base64 for Discord CDN and other protected URLs
   logger.info(`Vision: Converting ${urls.length} URLs to base64...`);
   const base64Urls = await Promise.all(urls.map(urlToBase64));
-  logger.info(`Vision: Converted ${base64Urls.filter(u => u.startsWith('data:')).length}/${urls.length} URLs to base64`);
+  logger.info(
+    `Vision: Converted ${base64Urls.filter((u) => u.startsWith('data:')).length}/${urls.length} URLs to base64`
+  );
 
   const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
     { role: 'system', content: systemPrompt },
@@ -148,7 +150,7 @@ Be precise and concise. Accuracy over completeness.`;
       hasChoices: !!response.choices?.length,
       hasContent: !!content,
       contentLength: content?.length || 0,
-      contentPreview: content?.substring(0, 200) || 'NO CONTENT'
+      contentPreview: content?.substring(0, 200) || 'NO CONTENT',
     });
     if (!content) {
       throw new Error('Vision model returned no content.');

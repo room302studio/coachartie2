@@ -55,7 +55,9 @@ export class GlobalVariableStore {
 
     // Use raw db for upsert since Drizzle SQLite doesn't have native onConflictDoUpdate for all cases
     const rawDb = getRawDb();
-    rawDb.prepare(`
+    rawDb
+      .prepare(
+        `
       INSERT INTO global_variables (key, value, value_type, description)
       VALUES (?, ?, ?, ?)
       ON CONFLICT(key) DO UPDATE SET
@@ -63,7 +65,9 @@ export class GlobalVariableStore {
         value_type = excluded.value_type,
         description = excluded.description,
         updated_at = CURRENT_TIMESTAMP
-    `).run(key, serialized, valueType, description || null);
+    `
+      )
+      .run(key, serialized, valueType, description || null);
 
     logger.info(`📦 Set global variable: ${key} = ${serialized.substring(0, 100)}`);
   }
@@ -73,10 +77,11 @@ export class GlobalVariableStore {
    */
   async get(key: string): Promise<any> {
     const db = getDb();
-    const [row] = await db.select({
-      value: globalVariables.value,
-      valueType: globalVariables.valueType,
-    })
+    const [row] = await db
+      .select({
+        value: globalVariables.value,
+        valueType: globalVariables.valueType,
+      })
       .from(globalVariables)
       .where(eq(globalVariables.key, key))
       .limit(1);
@@ -111,12 +116,13 @@ export class GlobalVariableStore {
     }
 
     // Get all variables in one query
-    const keys = matches.map(m => m.replace(/\{\{|\}\}/g, ''));
-    const rows = await db.select({
-      key: globalVariables.key,
-      value: globalVariables.value,
-      valueType: globalVariables.valueType,
-    })
+    const keys = matches.map((m) => m.replace(/\{\{|\}\}/g, ''));
+    const rows = await db
+      .select({
+        key: globalVariables.key,
+        value: globalVariables.value,
+        valueType: globalVariables.valueType,
+      })
       .from(globalVariables)
       .where(inArray(globalVariables.key, keys));
 
@@ -153,12 +159,13 @@ export class GlobalVariableStore {
    */
   async list(): Promise<Record<string, any>> {
     const db = getDb();
-    const rows = await db.select({
-      key: globalVariables.key,
-      value: globalVariables.value,
-      valueType: globalVariables.valueType,
-      description: globalVariables.description,
-    })
+    const rows = await db
+      .select({
+        key: globalVariables.key,
+        value: globalVariables.value,
+        valueType: globalVariables.valueType,
+        description: globalVariables.description,
+      })
       .from(globalVariables)
       .orderBy(asc(globalVariables.key));
 
@@ -217,11 +224,15 @@ async function handleVariableAction(params: VariableParams, content?: string): P
         const value = params.value || content;
 
         if (!key) {
-          throw new Error('Missing required parameter: key. Example: <capability name="variable" action="set" key="myvar" value="myvalue" />');
+          throw new Error(
+            'Missing required parameter: key. Example: <capability name="variable" action="set" key="myvar" value="myvalue" />'
+          );
         }
 
         if (value === undefined) {
-          throw new Error('Missing required parameter: value. Example: <capability name="variable" action="set" key="myvar" value="myvalue" />');
+          throw new Error(
+            'Missing required parameter: value. Example: <capability name="variable" action="set" key="myvar" value="myvalue" />'
+          );
         }
 
         // Try to parse JSON if it looks like JSON
@@ -235,16 +246,19 @@ async function handleVariableAction(params: VariableParams, content?: string): P
         }
 
         await store.set(String(key), parsedValue, params.description as string);
-        const preview = typeof parsedValue === 'object'
-          ? JSON.stringify(parsedValue).substring(0, 100) + '...'
-          : parsedValue;
+        const preview =
+          typeof parsedValue === 'object'
+            ? JSON.stringify(parsedValue).substring(0, 100) + '...'
+            : parsedValue;
         return `✅ Variable "${key}" set to: ${preview}`;
       }
 
       case 'get': {
         const key = params.key;
         if (!key) {
-          throw new Error('Missing required parameter: key. Example: <capability name="variable" action="get" key="myvar" />');
+          throw new Error(
+            'Missing required parameter: key. Example: <capability name="variable" action="get" key="myvar" />'
+          );
         }
 
         const value = await store.get(String(key));
@@ -253,9 +267,10 @@ async function handleVariableAction(params: VariableParams, content?: string): P
         } else {
           const allVars = await store.list();
           const availableKeys = Object.keys(allVars);
-          const suggestions = availableKeys.length > 0
-            ? `\n\nAvailable variables: ${availableKeys.join(', ')}`
-            : '\n\nNo variables exist. Use action="set" to create one.';
+          const suggestions =
+            availableKeys.length > 0
+              ? `\n\nAvailable variables: ${availableKeys.join(', ')}`
+              : '\n\nNo variables exist. Use action="set" to create one.';
           throw new Error(`Variable "${key}" not found.${suggestions}`);
         }
       }
@@ -263,7 +278,9 @@ async function handleVariableAction(params: VariableParams, content?: string): P
       case 'substitute': {
         const template = content || String(params.template || '');
         if (!template) {
-          throw new Error('Missing template content. Example: <capability name="variable" action="substitute">Hello {{name}}</capability>');
+          throw new Error(
+            'Missing template content. Example: <capability name="variable" action="substitute">Hello {{name}}</capability>'
+          );
         }
 
         const result = await store.substitute(template);
@@ -279,11 +296,12 @@ async function handleVariableAction(params: VariableParams, content?: string): P
         }
 
         const varList = keys
-          .map(key => {
+          .map((key) => {
             const value = variables[key];
-            const preview = typeof value === 'object'
-              ? JSON.stringify(value).substring(0, 50) + '...'
-              : String(value).substring(0, 50);
+            const preview =
+              typeof value === 'object'
+                ? JSON.stringify(value).substring(0, 50) + '...'
+                : String(value).substring(0, 50);
             return `• ${key}: ${preview}`;
           })
           .join('\n');
@@ -294,16 +312,19 @@ async function handleVariableAction(params: VariableParams, content?: string): P
       case 'delete': {
         const key = params.key;
         if (!key) {
-          throw new Error('Missing required parameter: key. Example: <capability name="variable" action="delete" key="myvar" />');
+          throw new Error(
+            'Missing required parameter: key. Example: <capability name="variable" action="delete" key="myvar" />'
+          );
         }
 
         const deleted = await store.delete(String(key));
         if (!deleted) {
           const allVars = await store.list();
           const availableKeys = Object.keys(allVars);
-          const suggestions = availableKeys.length > 0
-            ? `\n\nAvailable variables: ${availableKeys.join(', ')}`
-            : '\n\nNo variables exist.';
+          const suggestions =
+            availableKeys.length > 0
+              ? `\n\nAvailable variables: ${availableKeys.join(', ')}`
+              : '\n\nNo variables exist.';
           throw new Error(`Variable "${key}" not found.${suggestions}`);
         }
         return `✅ Variable "${key}" deleted`;
@@ -315,7 +336,9 @@ async function handleVariableAction(params: VariableParams, content?: string): P
       }
 
       default:
-        throw new Error(`Unknown action: ${action}. Supported: set, get, substitute, list, delete, clear`);
+        throw new Error(
+          `Unknown action: ${action}. Supported: set, get, substitute, list, delete, clear`
+        );
     }
   } catch (error) {
     logger.error(`Variable capability error for action '${action}':`, error);
@@ -330,7 +353,8 @@ export const variableStoreCapability: RegisteredCapability = {
   name: 'variable',
   emoji: '💾',
   supportedActions: ['set', 'get', 'substitute', 'list', 'delete', 'clear'],
-  description: 'Global persistent variable store for mustache template substitution and LEGO-block orchestration',
+  description:
+    'Global persistent variable store for mustache template substitution and LEGO-block orchestration',
   handler: handleVariableAction,
   examples: [
     '<capability name="variable" action="set" key="name" value="Coach Artie" />',

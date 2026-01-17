@@ -578,10 +578,7 @@ Example: ["food", "pizza", "italian", "preference", "like"]`;
       const allTags = [...new Set([...currentTags, ...semanticTags])]; // Merge and dedupe
 
       // Update memory with combined tags
-      db.run(`UPDATE memories SET tags = ? WHERE id = ?`, [
-        JSON.stringify(allTags),
-        memoryId,
-      ]);
+      db.run(`UPDATE memories SET tags = ? WHERE id = ?`, [JSON.stringify(allTags), memoryId]);
     } catch (error) {
       logger.error(`❌ Failed to update tags for memory ${memoryId}:`, error);
     }

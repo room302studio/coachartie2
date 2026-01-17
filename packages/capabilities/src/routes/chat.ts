@@ -4,6 +4,7 @@ import { processMessage } from '../handlers/process-message.js';
 import { v4 as uuidv4 } from 'uuid';
 import { rateLimiter } from '../middleware/rate-limiter.js';
 import { jobTracker } from '../services/core/job-tracker.js';
+import { getPendingAttachments } from '../services/llm/context-alchemy.js';
 
 const messageQueue = createQueue<IncomingMessage>(QUEUES.INCOMING_MESSAGES);
 
@@ -152,7 +153,7 @@ router.post('/', rateLimiter(50, 60000), async (req: Request, res: Response) => 
           }
 
           // Wait before next poll
-          await new Promise(resolve => setTimeout(resolve, pollInterval));
+          await new Promise((resolve) => setTimeout(resolve, pollInterval));
         }
 
         // Timeout - return pending status
@@ -324,6 +325,96 @@ router.patch('/:messageId', (req: Request, res: Response) => {
   }
 });
 
+// GET /chat/:messageId/stream - SSE endpoint for real-time job status (no polling!)
+router.get('/:messageId/stream', async (req: Request, res: Response) => {
+  const { messageId } = req.params;
+
+  if (!messageId) {
+    return res.status(400).json({ error: 'Message ID required' });
+  }
+
+  // Set up SSE headers
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no'); // Disable nginx buffering
+
+  const sendEvent = (event: string, data: any) => {
+    res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+  };
+
+  // Send initial status
+  const job = jobTracker.getJob(messageId);
+  if (!job) {
+    sendEvent('error', { error: 'Job not found' });
+    res.end();
+    return;
+  }
+
+  sendEvent('status', { status: job.status, messageId });
+
+  // If already complete, send result and close
+  if (job.status === 'completed' || job.status === 'failed' || job.status === 'cancelled') {
+    sendEvent('complete', {
+      status: job.status,
+      response: job.result,
+      error: job.error,
+      processingTime: job.endTime ? job.endTime.getTime() - job.startTime.getTime() : 0,
+    });
+    res.end();
+    return;
+  }
+
+  // Poll internally until complete (but client doesn't need to poll!)
+  const maxWait = 300000; // 5 minutes
+  const pollInterval = 500; // Check every 500ms internally
+  const startTime = Date.now();
+
+  const checkJob = async () => {
+    const currentJob = jobTracker.getJob(messageId);
+
+    if (!currentJob) {
+      sendEvent('error', { error: 'Job disappeared' });
+      res.end();
+      return;
+    }
+
+    if (currentJob.status === 'completed' || currentJob.status === 'failed' || currentJob.status === 'cancelled') {
+      sendEvent('complete', {
+        status: currentJob.status,
+        response: currentJob.result,
+        error: currentJob.error,
+        processingTime: currentJob.endTime ? currentJob.endTime.getTime() - currentJob.startTime.getTime() : 0,
+      });
+      res.end();
+      return;
+    }
+
+    // Send progress update if partial response available
+    if (currentJob.partialResponse) {
+      sendEvent('progress', { partial: currentJob.partialResponse });
+    }
+
+    // Check timeout
+    if (Date.now() - startTime > maxWait) {
+      sendEvent('timeout', { error: 'Job timed out' });
+      res.end();
+      return;
+    }
+
+    // Schedule next check
+    setTimeout(checkJob, pollInterval);
+  };
+
+  // Handle client disconnect
+  req.on('close', () => {
+    logger.info(`📡 SSE client disconnected for job ${messageId}`);
+  });
+
+  // Start checking
+  setTimeout(checkJob, pollInterval);
+});
+
 // GET /chat/:messageId - Check job status and get result (MUST BE LAST)
 router.get('/:messageId', (req: Request, res: Response) => {
   try {
@@ -408,6 +499,32 @@ router.get('/:messageId', (req: Request, res: Response) => {
       success: false,
       error: 'Internal server error',
     });
+  }
+});
+
+// GET /chat/pending-attachments/:userId - Get and clear pending file attachments for a user
+router.get('/pending-attachments/:userId', async (req: Request, res: Response) => {
+  try {
+    const { userId } = req.params;
+    const attachments = getPendingAttachments(userId);
+
+    if (attachments.length === 0) {
+      return res.json({ success: true, attachments: [] });
+    }
+
+    // Convert buffers to base64 for JSON transport
+    const serialized = attachments.map((att) => ({
+      filename: att.filename,
+      content: att.content,
+      data: att.buffer.toString('base64'),
+      size: att.buffer.length,
+    }));
+
+    logger.info(`📎 Returning ${attachments.length} pending attachments for user ${userId}`);
+    res.json({ success: true, attachments: serialized });
+  } catch (error) {
+    logger.error('Error getting pending attachments:', error);
+    res.status(500).json({ success: false, error: 'Internal server error' });
   }
 });
 

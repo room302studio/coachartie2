@@ -207,7 +207,10 @@ export class LLMErrorPatternTracker {
 
     return {
       totalUniqueUsers: this.userProfiles.size,
-      totalErrors: Array.from(this.userProfiles.values()).reduce((sum, p) => sum + p.totalErrors, 0),
+      totalErrors: Array.from(this.userProfiles.values()).reduce(
+        (sum, p) => sum + p.totalErrors,
+        0
+      ),
       mostCommonErrors: patterns.slice(0, 10),
     };
   }
@@ -234,6 +237,9 @@ export class LLMErrorPatternTracker {
 export const errorPatternTracker = new LLMErrorPatternTracker();
 
 // Cleanup old data every hour
-setInterval(() => {
-  errorPatternTracker.cleanup();
-}, 60 * 60 * 1000);
+setInterval(
+  () => {
+    errorPatternTracker.cleanup();
+  },
+  60 * 60 * 1000
+);

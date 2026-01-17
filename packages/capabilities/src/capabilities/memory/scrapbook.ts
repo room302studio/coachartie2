@@ -20,7 +20,8 @@ function getSupabase(): SupabaseClient {
 }
 
 // Select fields (exclude heavy embedding fields)
-const SELECT_FIELDS = 'scrap_id,id,created_at,source,type,content,url,title,tags,concept_tags,summary,relationships,location,content_type,shared';
+const SELECT_FIELDS =
+  'scrap_id,id,created_at,source,type,content,url,title,tags,concept_tags,summary,relationships,location,content_type,shared';
 
 interface Scrap {
   scrap_id: string;
@@ -102,7 +103,9 @@ async function searchScraps(query: string, limit: number = 10): Promise<string> 
   const { data, error } = await client
     .from('scraps')
     .select(SELECT_FIELDS)
-    .or(`content.ilike.${searchPattern},summary.ilike.${searchPattern},title.ilike.${searchPattern}`)
+    .or(
+      `content.ilike.${searchPattern},summary.ilike.${searchPattern},title.ilike.${searchPattern}`
+    )
     .order('created_at', { ascending: false })
     .limit(limit);
 
@@ -149,11 +152,7 @@ async function getRecentScraps(limit: number = 10, source?: string): Promise<str
 async function getScrapById(scrapId: string): Promise<string> {
   const client = getSupabase();
 
-  const { data, error } = await client
-    .from('scraps')
-    .select('*')
-    .eq('scrap_id', scrapId)
-    .single();
+  const { data, error } = await client.from('scraps').select('*').eq('scrap_id', scrapId).single();
 
   if (error) {
     throw new Error(`Scrapbook fetch error: ${error.message}`);
@@ -174,7 +173,9 @@ async function getScrapById(scrapId: string): Promise<string> {
   if (data.location && data.location !== 'Unknown') parts.push(`Location: ${data.location}`);
 
   if (data.content) {
-    parts.push(`\nContent:\n${data.content.substring(0, 500)}${data.content.length > 500 ? '...' : ''}`);
+    parts.push(
+      `\nContent:\n${data.content.substring(0, 500)}${data.content.length > 500 ? '...' : ''}`
+    );
   }
 
   if (data.summary) {
@@ -190,10 +191,12 @@ async function getScrapById(scrapId: string): Promise<string> {
   }
 
   if (data.relationships?.length > 0) {
-    const rels = data.relationships.slice(0, 10).map(
-      (r: { source: string; target: string; relationship: string }) =>
-        `  ${r.source} ${r.relationship} ${r.target}`
-    );
+    const rels = data.relationships
+      .slice(0, 10)
+      .map(
+        (r: { source: string; target: string; relationship: string }) =>
+          `  ${r.source} ${r.relationship} ${r.target}`
+      );
     parts.push(`\nRelationships:\n${rels.join('\n')}`);
   }
 
@@ -226,8 +229,12 @@ async function queryByEntity(entityName: string, limit: number = 20): Promise<st
     if (!scrap.relationships || !Array.isArray(scrap.relationships)) return false;
 
     return scrap.relationships.some((rel) => {
-      const source = String(rel.source || '').toLowerCase().trim();
-      const target = String(rel.target || '').toLowerCase().trim();
+      const source = String(rel.source || '')
+        .toLowerCase()
+        .trim();
+      const target = String(rel.target || '')
+        .toLowerCase()
+        .trim();
 
       return source.includes(normalizedQuery) || target.includes(normalizedQuery);
     });
@@ -310,19 +317,17 @@ async function getStats(): Promise<string> {
     .sort((a, b) => b[1] - a[1])
     .map(([source, count]) => `  ${source}: ${count}`);
 
-  return [
-    `Scrapbook Statistics:`,
-    `Total Scraps: ${count}`,
-    `\nBy Source:`,
-    ...sortedSources,
-  ].join('\n');
+  return [`Scrapbook Statistics:`, `Total Scraps: ${count}`, `\nBy Source:`, ...sortedSources].join(
+    '\n'
+  );
 }
 
 export const scrapbookCapability: RegisteredCapability = {
   name: 'scrapbook',
   emoji: '📚',
   supportedActions: ['search', 'recent', 'get', 'entity', 'stats'],
-  description: "Query EJ's scrapbook - a personal knowledge base of bookmarks, articles, notes, and web content with rich metadata",
+  description:
+    "Query EJ's scrapbook - a personal knowledge base of bookmarks, articles, notes, and web content with rich metadata",
   requiredParams: [],
   examples: [
     '<scrapbook-search>machine learning</scrapbook-search>',

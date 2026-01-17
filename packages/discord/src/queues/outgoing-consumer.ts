@@ -40,7 +40,9 @@ async function initWorker() {
           }
         }
 
-        logger.info(`✅ Sent ${source} message to ${userId || channelId} (${chunks.length} chunks)`);
+        logger.info(
+          `✅ Sent ${source} message to ${userId || channelId} (${chunks.length} chunks)`
+        );
       } catch (error) {
         logger.error(`❌ Failed to send message:`, error);
         throw error; // Retry via Bull

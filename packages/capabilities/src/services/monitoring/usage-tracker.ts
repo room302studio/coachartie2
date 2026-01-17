@@ -25,16 +25,29 @@ export interface UsageStats {
   estimated_cost: number;
 }
 
-// Model pricing per 1K tokens (input/output) - OpenRouter pricing as of 2024
+// Model pricing per 1K tokens (input/output) - OpenRouter pricing as of 2025
 const MODEL_PRICING: Record<string, { input: number; output: number }> = {
+  // Anthropic
   'anthropic/claude-3.5-sonnet': { input: 0.003, output: 0.015 },
+  'anthropic/claude-sonnet-4': { input: 0.003, output: 0.015 },
+  'anthropic/claude-sonnet-4.5': { input: 0.003, output: 0.015 },
+  'anthropic/claude-opus-4': { input: 0.015, output: 0.075 },
+  'anthropic/claude-opus-4.5': { input: 0.015, output: 0.075 },
+  // OpenAI
+  'openai/gpt-3.5-turbo': { input: 0.0005, output: 0.0015 },
+  'openai/gpt-4': { input: 0.03, output: 0.06 },
+  'openai/gpt-4-turbo': { input: 0.01, output: 0.03 },
+  'openai/gpt-4o': { input: 0.005, output: 0.015 },
+  'openai/gpt-4o-mini': { input: 0.00015, output: 0.0006 },
+  // Google
+  'google/gemini-2.5-flash': { input: 0.00015, output: 0.0006 },
+  'google/gemini-2.0-flash': { input: 0.0001, output: 0.0004 },
+  'google/gemini-pro': { input: 0.00025, output: 0.0005 },
+  // Free models
   'mistralai/mistral-7b-instruct:free': { input: 0, output: 0 },
   'microsoft/phi-3-mini-128k-instruct:free': { input: 0, output: 0 },
   'meta-llama/llama-3.2-3b-instruct:free': { input: 0, output: 0 },
   'google/gemma-2-9b-it:free': { input: 0, output: 0 },
-  'openai/gpt-3.5-turbo': { input: 0.0005, output: 0.0015 },
-  'openai/gpt-4': { input: 0.03, output: 0.06 },
-  'openai/gpt-4-turbo': { input: 0.01, output: 0.03 },
 };
 
 export class UsageTracker {
@@ -61,6 +74,8 @@ export class UsageTracker {
     try {
       const db = getSyncDb();
 
+      // SQLite can't bind booleans - convert to 0/1
+      // Also ensure all values are valid types (no undefined)
       db.run(
         `INSERT INTO model_usage_stats (
           model_name, user_id, message_id, input_length, output_length,
@@ -69,21 +84,21 @@ export class UsageTracker {
           completion_tokens, total_tokens, estimated_cost
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
-          stats.model_name,
-          stats.user_id,
-          stats.message_id,
-          stats.input_length,
-          stats.output_length,
-          stats.response_time_ms,
-          stats.capabilities_detected,
-          stats.capabilities_executed,
-          stats.capability_types,
-          stats.success,
+          stats.model_name || 'unknown',
+          stats.user_id || 'unknown',
+          stats.message_id || 'unknown',
+          stats.input_length ?? 0,
+          stats.output_length ?? 0,
+          stats.response_time_ms ?? 0,
+          stats.capabilities_detected ?? 0,
+          stats.capabilities_executed ?? 0,
+          stats.capability_types || '',
+          stats.success ? 1 : 0, // Convert boolean to integer for SQLite
           stats.error_type || null,
-          stats.prompt_tokens,
-          stats.completion_tokens,
-          stats.total_tokens,
-          stats.estimated_cost,
+          stats.prompt_tokens ?? 0,
+          stats.completion_tokens ?? 0,
+          stats.total_tokens ?? 0,
+          stats.estimated_cost ?? 0,
         ]
       );
 

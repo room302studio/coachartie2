@@ -46,7 +46,7 @@ export class EmailDraftingService {
   }
 
   /**
-   * Detect email intent from user message
+   * Detect email intent from user message (no regex - simple string checks only)
    */
   async detectEmailIntent(
     message: string,
@@ -54,24 +54,22 @@ export class EmailDraftingService {
   ): Promise<{ to: string; subject?: string; about?: string } | null> {
     const lowerMessage = message.toLowerCase();
 
-    // Pattern 1: "email me" - lookup user's linked email
-    if (/\b(email|send)\s+(me|myself)\b/.test(lowerMessage) && userId) {
+    // Pattern 1: "email me" or "send me" - lookup user's linked email
+    const hasEmailMe =
+      lowerMessage.includes('email me') ||
+      lowerMessage.includes('send me') ||
+      lowerMessage.includes('email myself');
+
+    if (hasEmailMe && userId) {
       try {
-        // Use unified profile system
         const { UserProfileService } = await import('@coachartie/shared');
         const email = await UserProfileService.getAttribute(userId, 'email');
 
         if (email) {
-          // Extract topic from "email me this later" or "email me about X"
-          const aboutMatch = message.match(/about (.+?)(?:\.|$)/i);
-          const thisMatch = message.match(/me\s+(this|that)\s+(.+?)(?:\.|$)/i);
-
-          return {
-            to: email,
-            about: aboutMatch?.[1] || thisMatch?.[2],
-          };
+          // Extract topic using simple string parsing
+          const aboutTopic = this.extractAboutTopic(message);
+          return { to: email, about: aboutTopic };
         } else {
-          // User hasn't linked email - could prompt them
           logger.info('User requested "email me" but has no linked email', { userId });
           return null;
         }
@@ -81,39 +79,110 @@ export class EmailDraftingService {
       }
     }
 
-    // Pattern 2: Explicit email address
-    const emailRegex = /\b[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}\b/;
-    const emailMatch = message.match(emailRegex);
+    // Pattern 2: Explicit email address - find @ symbol
+    const atIndex = message.indexOf('@');
+    if (atIndex === -1) return null;
 
-    if (!emailMatch) return null;
+    // Extract email address by finding word boundaries around @
+    const emailAddress = this.extractEmailAddress(message, atIndex);
+    if (!emailAddress) return null;
 
-    // Must have action verb BEFORE the email address (not just "is my email")
-    const emailAddress = emailMatch[0];
     const emailIndex = message.indexOf(emailAddress);
     const textBeforeEmail = message.substring(0, emailIndex).toLowerCase();
 
-    // Check for action verbs before the email
+    // Check for explicit email-sending intent
     const hasActionVerb =
-      /\b(email|send|write|compose|draft)\b/.test(textBeforeEmail) ||
-      /\b(send|write).*(to|an email)/.test(textBeforeEmail);
+      textBeforeEmail.includes('send an email') ||
+      textBeforeEmail.includes('send email') ||
+      textBeforeEmail.includes('write an email') ||
+      textBeforeEmail.includes('write email') ||
+      textBeforeEmail.includes('compose email') ||
+      textBeforeEmail.includes('draft email') ||
+      textBeforeEmail.includes('email this to') ||
+      textBeforeEmail.includes('send this to');
 
-    // Exclude patterns like "my email is" or "email is"
-    const isDeclarative = /\b(my email|email)\s+(is|:)\s*$/.test(textBeforeEmail.trim());
+    // Exclude when people are just sharing/correcting email addresses
+    const isDeclarative =
+      textBeforeEmail.includes('email address') ||
+      textBeforeEmail.includes('address is') ||
+      textBeforeEmail.includes('email is') ||
+      textBeforeEmail.includes('correct email') ||
+      textBeforeEmail.includes('correct address') ||
+      textBeforeEmail.includes('real email') ||
+      textBeforeEmail.includes('actual email') ||
+      textBeforeEmail.endsWith('is ') ||
+      textBeforeEmail.endsWith(': ');
 
     if (hasActionVerb && !isDeclarative) {
-      const to = emailAddress;
-
-      // Try to extract subject/topic
-      const aboutMatch = message.match(/about (.+?)(?:\.|$)/i);
-      const askingMatch = message.match(/asking (?:about )?(.+?)(?:\.|$)/i);
-
       return {
-        to,
-        about: aboutMatch?.[1] || askingMatch?.[1],
+        to: emailAddress,
+        about: this.extractAboutTopic(message),
       };
     }
 
     return null;
+  }
+
+  /**
+   * Extract email address from text given the @ position (no regex)
+   */
+  private extractEmailAddress(text: string, atIndex: number): string | null {
+    // Find start of email (walk backwards from @)
+    let start = atIndex;
+    while (start > 0) {
+      const char = text[start - 1];
+      if (char === ' ' || char === '<' || char === '(' || char === '\n') break;
+      start--;
+    }
+
+    // Find end of email (walk forwards from @)
+    let end = atIndex;
+    while (end < text.length) {
+      const char = text[end];
+      if (
+        char === ' ' ||
+        char === '>' ||
+        char === ')' ||
+        char === '\n' ||
+        char === ',' ||
+        char === ';'
+      )
+        break;
+      end++;
+    }
+
+    const candidate = text.substring(start, end);
+
+    // Basic validation: must have @ with text on both sides and a dot after @
+    const parts = candidate.split('@');
+    if (parts.length !== 2 || parts[0].length === 0 || parts[1].length === 0) return null;
+    if (!parts[1].includes('.')) return null;
+
+    return candidate;
+  }
+
+  /**
+   * Extract "about X" topic from message (no regex)
+   */
+  private extractAboutTopic(message: string): string | undefined {
+    const lowerMessage = message.toLowerCase();
+    const aboutIndex = lowerMessage.indexOf(' about ');
+    if (aboutIndex === -1) return undefined;
+
+    // Get text after "about "
+    const afterAbout = message.substring(aboutIndex + 7);
+
+    // Find first sentence-ending punctuation
+    let endIndex = -1;
+    for (let i = 0; i < afterAbout.length; i++) {
+      const char = afterAbout[i];
+      if (char === '.' || char === '!' || char === '?' || char === '\n') {
+        endIndex = i;
+        break;
+      }
+    }
+
+    return endIndex === -1 ? afterAbout.trim() : afterAbout.substring(0, endIndex).trim();
   }
 
   /**
@@ -149,7 +218,8 @@ Format your response using XML tags:
   <body>Your email body here</body>
 </email>`;
 
-      const emailDraftSystemPrompt = (await promptManager.getPrompt('PROMPT_EMAIL_DRAFT'))?.content ||
+      const emailDraftSystemPrompt =
+        (await promptManager.getPrompt('PROMPT_EMAIL_DRAFT'))?.content ||
         'You are Coach Artie, an AI assistant helping draft professional emails.';
       const { messages } = await contextAlchemy.buildMessageChain(
         draftPrompt,
@@ -347,7 +417,8 @@ Format your response using XML tags:
   <body>Your revised email body here</body>
 </email>`;
 
-      const emailRevisionSystemPrompt = (await promptManager.getPrompt('PROMPT_EMAIL_REVISION'))?.content ||
+      const emailRevisionSystemPrompt =
+        (await promptManager.getPrompt('PROMPT_EMAIL_REVISION'))?.content ||
         'You are Coach Artie, revising an email draft based on feedback.';
       const { messages } = await contextAlchemy.buildMessageChain(
         revisionPrompt,
@@ -381,27 +452,26 @@ Format your response using XML tags:
   }
 
   /**
-   * Parse email draft from XML response
+   * Parse email draft from XML response (simple string parsing, no regex)
    */
   private parseEmailDraft(
     response: string,
     fallbackSubject: string
   ): { subject: string; body: string } {
     try {
-      // Use fast-xml-parser for proper XML parsing
-      const { XMLParser } = require('fast-xml-parser');
-      const parser = new XMLParser({
-        ignoreAttributes: true,
-        trimValues: true,
-      });
+      // Simple XML tag extraction without regex
+      const subjectStart = response.indexOf('<subject>');
+      const subjectEnd = response.indexOf('</subject>');
+      const bodyStart = response.indexOf('<body>');
+      const bodyEnd = response.indexOf('</body>');
 
-      const parsed = parser.parse(response);
+      if (subjectStart !== -1 && subjectEnd !== -1 && bodyStart !== -1 && bodyEnd !== -1) {
+        const subject = response.substring(subjectStart + 9, subjectEnd).trim();
+        const body = response.substring(bodyStart + 6, bodyEnd).trim();
 
-      if (parsed?.email?.subject && parsed?.email?.body) {
-        return {
-          subject: parsed.email.subject.trim(),
-          body: parsed.email.body.trim(),
-        };
+        if (subject && body) {
+          return { subject, body };
+        }
       }
 
       // Fallback: treat entire response as body

@@ -4,8 +4,10 @@ export interface JobCallback {
   onComplete: (result: string) => void;
   onError?: (error: string) => void;
   onProgress?: (status: any) => void;
+  onOrphaned?: () => Promise<string | null>; // Returns new job ID if resubmitted, null to give up
   maxAttempts?: number;
   attemptCount?: number;
+  orphanRetries?: number; // Track how many times we've tried to recover
   createdAt: number;
 }
 
@@ -78,7 +80,7 @@ export class JobMonitor {
   }
 
   /**
-   * Register a job to be monitored
+   * Register a job to be monitored - uses SSE for instant notification (no polling!)
    */
   public monitorJob(
     jobId: string,
@@ -86,36 +88,116 @@ export class JobMonitor {
       onComplete: (result: string) => void;
       onError?: (error: string) => void;
       onProgress?: (status: any) => void;
+      onOrphaned?: () => Promise<string | null>;
       maxAttempts?: number;
     }
   ): void {
-    logger.info(`📋 Registering job for monitoring:`, {
-      jobId: jobId,
-      shortId: jobId.slice(-8),
-      jobIdLength: jobId.length,
-      jobIdType: typeof jobId,
-      isNull: jobId === null,
-      isUndefined: jobId === undefined,
-      isEmpty: jobId === '',
-      maxAttempts: callbacks.maxAttempts || 60,
-    });
+    const shortId = jobId.slice(-8);
+
+    logger.info(`📋 Registering job for SSE monitoring: ${shortId}`);
 
     if (!jobId || jobId === 'null' || jobId === 'undefined') {
-      logger.error(`❌ ATTEMPTED TO MONITOR INVALID JOB ID:`, {
-        jobId,
-        jobIdType: typeof jobId,
-      });
+      logger.error(`❌ ATTEMPTED TO MONITOR INVALID JOB ID: ${jobId}`);
       throw new Error(`Cannot monitor invalid job ID: ${jobId}`);
     }
 
-    this.pendingJobs.set(jobId, {
-      ...callbacks,
-      maxAttempts: callbacks.maxAttempts || 60,
-      attemptCount: 0,
-      createdAt: Date.now(),
+    // Use SSE for real-time updates (no polling!)
+    this.monitorJobWithSSE(jobId, callbacks).catch((err) => {
+      logger.warn(`⚠️ SSE monitoring failed for ${shortId}, falling back to polling: ${err.message}`);
+      // Fallback to polling if SSE fails
+      this.pendingJobs.set(jobId, {
+        ...callbacks,
+        maxAttempts: callbacks.maxAttempts || 100,
+        attemptCount: 0,
+        orphanRetries: 0,
+        createdAt: Date.now(),
+      });
     });
+  }
 
-    logger.info(`📊 Job monitor status: ${this.pendingJobs.size} jobs being monitored`);
+  /**
+   * Monitor a job using Server-Sent Events (instant notification, no polling!)
+   */
+  private async monitorJobWithSSE(
+    jobId: string,
+    callbacks: {
+      onComplete: (result: string) => void;
+      onError?: (error: string) => void;
+      onProgress?: (status: any) => void;
+    }
+  ): Promise<void> {
+    const shortId = jobId.slice(-8);
+    const sseUrl = `${this.baseUrl}/chat/${jobId}/stream`;
+
+    logger.info(`📡 Starting SSE connection for job ${shortId}`);
+
+    return new Promise((resolve, reject) => {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => {
+        controller.abort();
+        reject(new Error('SSE connection timeout'));
+      }, 300000); // 5 minute timeout
+
+      fetch(sseUrl, {
+        signal: controller.signal,
+        headers: { 'Accept': 'text/event-stream' },
+      })
+        .then(async (response) => {
+          if (!response.ok) {
+            throw new Error(`SSE failed: ${response.status}`);
+          }
+
+          const reader = response.body?.getReader();
+          if (!reader) {
+            throw new Error('No response body');
+          }
+
+          const decoder = new TextDecoder();
+          let buffer = '';
+
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop() || ''; // Keep incomplete line in buffer
+
+            for (const line of lines) {
+              if (line.startsWith('data: ')) {
+                try {
+                  const data = JSON.parse(line.slice(6));
+
+                  if (data.status === 'completed' || data.response) {
+                    clearTimeout(timeout);
+                    logger.info(`✅ SSE: Job ${shortId} completed`);
+                    callbacks.onComplete(data.response || '');
+                    resolve();
+                    return;
+                  } else if (data.status === 'failed' || data.error) {
+                    clearTimeout(timeout);
+                    logger.error(`❌ SSE: Job ${shortId} failed: ${data.error}`);
+                    callbacks.onError?.(data.error || 'Job failed');
+                    resolve();
+                    return;
+                  } else if (data.partial && callbacks.onProgress) {
+                    callbacks.onProgress({ partialResponse: data.partial });
+                  }
+                } catch (e) {
+                  // Ignore parse errors for malformed events
+                }
+              }
+            }
+          }
+
+          clearTimeout(timeout);
+          resolve();
+        })
+        .catch((err) => {
+          clearTimeout(timeout);
+          reject(err);
+        });
+    });
   }
 
   /**
@@ -186,6 +268,53 @@ export class JobMonitor {
 
       if (!response.ok) {
         if (response.status === 404) {
+          // Job orphaned - try to recover!
+          const maxOrphanRetries = 2;
+          callback.orphanRetries = (callback.orphanRetries || 0) + 1;
+
+          if (callback.onOrphaned && callback.orphanRetries <= maxOrphanRetries) {
+            logger.info(
+              `🔄 Job ${shortId} orphaned (attempt ${callback.orphanRetries}/${maxOrphanRetries}) - attempting recovery...`
+            );
+
+            try {
+              const newJobId = await callback.onOrphaned();
+
+              if (newJobId) {
+                logger.info(`✅ Job recovered! Old: ${shortId} → New: ${newJobId.slice(-8)}`);
+
+                // Remove old job, register new one with same callbacks
+                this.unmonitorJob(jobId);
+                this.pendingJobs.set(newJobId, {
+                  ...callback,
+                  attemptCount: 0, // Reset attempt count for new job
+                  orphanRetries: callback.orphanRetries, // Keep orphan retry count
+                  createdAt: Date.now(),
+                });
+
+                return; // Successfully recovered
+              } else {
+                logger.warn(`⚠️ Job ${shortId} recovery returned no new job ID`);
+              }
+            } catch (recoveryError) {
+              logger.error(`❌ Job ${shortId} recovery failed:`, recoveryError);
+            }
+          }
+
+          // If we get here, recovery failed or wasn't possible
+          if (callback.orphanRetries > maxOrphanRetries) {
+            logger.error(
+              `💀 Job ${shortId} orphan recovery exhausted (${maxOrphanRetries} attempts)`
+            );
+            if (callback.onError) {
+              callback.onError(
+                `Job lost after ${maxOrphanRetries} recovery attempts - capabilities service may have restarted`
+              );
+            }
+            this.unmonitorJob(jobId);
+            return;
+          }
+
           throw new Error('Job not found or expired');
         }
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);

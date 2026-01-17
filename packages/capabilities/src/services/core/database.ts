@@ -1,4 +1,5 @@
-import { getDatabase } from '@coachartie/shared';
+import { getSyncDb, type SyncDbWrapper } from '@coachartie/shared';
 
-// Re-export the database instance for easier imports within capabilities
-export const database: Awaited<ReturnType<typeof getDatabase>> = await getDatabase();
+// Use the synchronous better-sqlite3 wrapper instead of deprecated sql.js
+// This prevents database corruption caused by sql.js overwriting better-sqlite3 changes
+export const database: SyncDbWrapper = getSyncDb();

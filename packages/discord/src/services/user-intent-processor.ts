@@ -30,6 +30,7 @@ export interface UserIntent {
   createThread?: (name: string) => Promise<any>;
   sendEmbed?: (embed: any) => Promise<void>;
   updateProgressEmbed?: (embed: any) => Promise<void>;
+  sendFile?: (fileData: { buffer: Buffer; filename: string; content?: string }) => Promise<void>;
 }
 
 export interface ProcessorOptions {
@@ -238,8 +239,27 @@ export async function processUserIntent(
     }
 
     // Submit job to capability system with Discord context
+    // Use descriptive placeholder for attachment-only messages (empty content but has attachments)
+    const currentAttachments = intent.context?.attachments || [];
+    const hasAttachments =
+      currentAttachments.length > 0 || intent.context?.recentAttachments?.length > 0;
+
+    let messageContent = intent.content;
+    if (!messageContent && hasAttachments) {
+      // Build descriptive placeholder: "jonah_ab uploaded game.metro"
+      const slugify = (str: string) =>
+        str
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, '_')
+          .replace(/^_|_$/g, '')
+          .slice(0, 8);
+      const senderSlug = slugify(intent.username || 'user');
+      const filenames = currentAttachments.map((a: any) => a.name || 'file').join(', ');
+      messageContent = `${senderSlug} uploaded ${filenames || 'attachment'}`;
+    }
+
     const jobInfo = await capabilitiesClient.submitJob(
-      intent.content,
+      messageContent,
       intent.userId,
       intent.context
     );
@@ -268,6 +288,39 @@ export async function processUserIntent(
     // Monitor job with unified progress handling
     jobMonitor.monitorJob(jobInfo.messageId, {
       maxAttempts,
+
+      // Recovery: resubmit if job is orphaned (e.g., capabilities restarted)
+      onOrphaned: async () => {
+        const downtimeMs = Date.now() - startTime;
+        const downtimeSeconds = (downtimeMs / 1000).toFixed(1);
+        logger.info(
+          `🔄 Attempting to recover orphaned job [${shortId}] after ${downtimeSeconds}s downtime...`
+        );
+
+        try {
+          // Inject recovery context so Artie knows he went down
+          const recoveryContext = {
+            ...intent.context,
+            systemNote: `[SYSTEM: You experienced a brief service interruption. You were processing this message for ${downtimeSeconds} seconds before your backend restarted. Acknowledge this briefly and naturally (e.g., "Whoa, sorry about that - I went down for a moment there. Anyway...") then continue helping with their request.]`,
+          };
+
+          const newJobInfo = await capabilitiesClient.submitJob(
+            messageContent,
+            intent.userId,
+            recoveryContext
+          );
+          if (newJobInfo?.messageId) {
+            logger.info(
+              `✅ Recovered job [${shortId}] → new job ${newJobInfo.messageId.slice(-8)} (after ${downtimeSeconds}s)`
+            );
+            return newJobInfo.messageId;
+          }
+          return null;
+        } catch (error) {
+          logger.error(`❌ Failed to recover job [${shortId}]:`, error);
+          return null;
+        }
+      },
 
       // Progress updates
       onProgress: async (status) => {
@@ -476,6 +529,31 @@ export async function processUserIntent(
               }
             } else {
               logger.info(`Skipped final response [${shortId}] (already fully streamed)`);
+            }
+          }
+
+          // Check for and send any pending file attachments (e.g., analyzed .metro files)
+          if (intent.sendFile) {
+            try {
+              const pendingAttachments = await capabilitiesClient.getPendingAttachments(
+                intent.userId
+              );
+              if (pendingAttachments.length > 0) {
+                logger.info(
+                  `📎 Sending ${pendingAttachments.length} pending attachments [${shortId}]`
+                );
+                for (const att of pendingAttachments) {
+                  const buffer = Buffer.from(att.data, 'base64');
+                  await intent.sendFile({
+                    buffer,
+                    filename: att.filename,
+                    content: att.content,
+                  });
+                }
+                logger.info(`✅ Sent all pending attachments [${shortId}]`);
+              }
+            } catch (attError) {
+              logger.warn(`Failed to send pending attachments [${shortId}]:`, attError);
             }
           }
 

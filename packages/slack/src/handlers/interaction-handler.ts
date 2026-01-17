@@ -32,7 +32,7 @@ export function setupInteractionHandler(app: App) {
   // =============================================================================
 
   // Generic slash command handler
-  app.command(/.*/,  async ({ command, ack, respond, client }) => {
+  app.command(/.*/, async ({ command, ack, respond, client }) => {
     // Acknowledge command immediately (required by Slack within 3 seconds)
     await ack();
 
@@ -143,7 +143,7 @@ export function setupInteractionHandler(app: App) {
   // BUTTON INTERACTIONS
   // =============================================================================
 
-  app.action(/.*/,  async ({ ack, body, client, respond }) => {
+  app.action(/.*/, async ({ ack, body, client, respond }) => {
     // Acknowledge action immediately
     await ack();
 
@@ -229,7 +229,7 @@ export function setupInteractionHandler(app: App) {
   // MODAL SUBMISSIONS
   // =============================================================================
 
-  app.view(/.*/,  async ({ ack, body, view, client }) => {
+  app.view(/.*/, async ({ ack, body, view, client }) => {
     // Acknowledge view submission
     await ack();
 

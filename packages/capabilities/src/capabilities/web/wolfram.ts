@@ -11,7 +11,8 @@ export const wolframCapability: RegisteredCapability = {
   name: 'wolfram',
   emoji: '📊',
   supportedActions: ['query', 'search'],
-  description: 'Professional computational engine providing authoritative real-time data: stock quotes (AAPL, TSLA, SPY), forex rates, crypto prices, weather conditions, mathematical computations, scientific data, demographic statistics, unit conversions, and verifiable factual information. Ideal for financial data, calculations, and any query requiring precise, current information.',
+  description:
+    'Professional computational engine providing authoritative real-time data: stock quotes (AAPL, TSLA, SPY), forex rates, crypto prices, weather conditions, mathematical computations, scientific data, demographic statistics, unit conversions, and verifiable factual information. Ideal for financial data, calculations, and any query requiring precise, current information.',
   requiredParams: ['input'],
   examples: [
     '<capability name="wolfram" action="query" input="AAPL stock price" />',

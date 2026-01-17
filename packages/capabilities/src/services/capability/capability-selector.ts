@@ -210,10 +210,12 @@ Be selective - only nominate capabilities that are actually useful for this spec
       return `No specific capabilities are needed for this request. Respond naturally without using any capabilities.`;
     }
 
-    let instructions = `CRITICAL CAPABILITY FORMAT RULES:
+    let instructions = `CAPABILITY FORMAT - USE SIMPLE SHORTCUTS WHEN POSSIBLE:
 
-When you need to execute a capability, you MUST use this EXACT XML format:
-<capability name="capability-name" action="action-name" data='{"param":"value"}' />
+Simple shortcuts (preferred):
+<read>path</read>, <recall>query</recall>, <websearch>query</websearch>, <calc>2+2</calc>, <remember>fact</remember>
+
+Or full format: <capability name="X" action="Y" data='{"param":"value"}' />
 
 RELEVANT CAPABILITIES FOR THIS REQUEST:
 `;
