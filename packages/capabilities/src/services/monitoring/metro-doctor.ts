@@ -11,7 +11,7 @@ import { join, basename, dirname } from 'path';
 import { createRequire } from 'module';
 import { fileURLToPath } from 'url';
 import { logger } from '@coachartie/shared';
-import { analyzeMetroGeo, formatGeoInsights } from './metro-geo-analysis.js';
+import { analyzeMetroGeo, formatGeoInsights } from '../metro-geo-analysis.js';
 
 // Import from official metro-savefile-doctor repo
 import {

@@ -1,5 +1,5 @@
 import { logger } from '@coachartie/shared';
-import { recordApiCall } from './metrics.js';
+import { recordApiCall } from '../metrics.js';
 
 /**
  * Simple cost monitoring service to track OpenRouter API usage

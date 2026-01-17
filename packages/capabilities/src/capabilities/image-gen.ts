@@ -1,7 +1,7 @@
 import OpenAI from 'openai';
-import { RegisteredCapability } from '../services/capability-registry.js';
+import { RegisteredCapability } from '../services/capability/capability-registry.js';
 import { logger } from '@coachartie/shared';
-import { addPendingAttachment } from '../services/context-alchemy.js';
+import { addPendingAttachment } from '../services/llm/context-alchemy.js';
 
 interface ImageGenParams {
   action: 'generate' | 'edit';
@@ -216,7 +216,7 @@ export const imageGenCapability: RegisteredCapability = {
     '<image_gen-generate prompt="A futuristic cityscape" aspect_ratio="16:9" />',
     '<image_gen-edit prompt="Add a rainbow in the sky" input_image="https://..." />',
   ],
-  handler: async (params, content) => {
+  handler: async (params: Record<string, any>, content?: string) => {
     const { action, prompt, aspect_ratio, size, input_image, userId } = params;
 
     const result = await handleImageGen({

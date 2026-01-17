@@ -1,5 +1,5 @@
 import { logger } from '@coachartie/shared';
-import { RegisteredCapability } from '../services/capability-registry.js';
+import { RegisteredCapability } from '../services/capability/capability-registry.js';
 import { metricsRegistry } from '../services/metrics.js';
 
 /**

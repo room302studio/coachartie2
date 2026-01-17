@@ -252,8 +252,8 @@ importers:
         specifier: ^14.0.0
         version: 14.9.1
       metro-savefile-doctor:
-        specifier: file:/data2/metro-savefile-doctor
-        version: file:../metro-savefile-doctor
+        specifier: github:ejfox/metro-savefile-doctor#main
+        version: github.com/ejfox/metro-savefile-doctor/df20c10e128f891d7ca0664b5705118b55d4816b
       neverthrow:
         specifier: ^6.1.0
         version: 6.2.2
@@ -13750,6 +13750,9 @@ packages:
   /sqlite3@5.1.7:
     resolution: {integrity: sha512-GGIyOiFaG+TUra3JIfkI/zGP8yZYLPQ0pl1bH+ODjiX57sPhrLU5sQJn1y9bDKZUFYkX1crlrPfSYt0BKKdkog==}
     requiresBuild: true
+    peerDependenciesMeta:
+      node-gyp:
+        optional: true
     dependencies:
       bindings: 1.5.0
       node-addon-api: 7.1.1
@@ -15754,10 +15757,13 @@ packages:
     resolution: {integrity: sha512-gzUt/qt81nXsFGKIFcC3YnfEAx5NkunCfnDlvuBSSFS02bcXu4Lmea0AFIUwbLWxWPx3d9p8S5QoaujKcNQxcQ==}
     dev: false
 
-  file:../metro-savefile-doctor:
-    resolution: {directory: ../metro-savefile-doctor, type: directory}
+  github.com/ejfox/metro-savefile-doctor/df20c10e128f891d7ca0664b5705118b55d4816b:
+    resolution: {tarball: https://codeload.github.com/ejfox/metro-savefile-doctor/tar.gz/df20c10e128f891d7ca0664b5705118b55d4816b}
     name: metro-savefile-doctor
+    version: 1.1.0
     hasBin: true
+    prepare: true
+    requiresBuild: true
     dependencies:
       chalk: 5.6.2
       ink: 5.2.1(react@18.3.1)
