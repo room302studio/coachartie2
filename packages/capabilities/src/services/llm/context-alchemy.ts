@@ -829,6 +829,7 @@ Important:
     message: IncomingMessage,
     sources: ContextSource[]
   ): Promise<void> {
+    const messageText = message.message || '';
     const currentAttachments = Array.isArray(message.context?.attachments)
       ? message.context.attachments
       : [];
@@ -836,6 +837,12 @@ Important:
       ? message.context.recentAttachments
       : [];
     const recentUrls = Array.isArray(message.context?.recentUrls) ? message.context.recentUrls : [];
+    const recentMetroAttachments = recentAttachments.filter(
+      (att: any) =>
+        typeof att?.name === 'string' &&
+        att.name.toLowerCase().endsWith('.metro') &&
+        (!att.authorId || att.authorId === message.userId)
+    );
 
     logger.info(
       `📎 ATTACHMENT DEBUG: current=${currentAttachments.length}, recent=${recentAttachments.length}, urls=${recentUrls.length}`,
@@ -878,6 +885,11 @@ Important:
       if (metroFiles.length > 0) {
         lines.push('\n🎮 Metro save files detected! You have already analyzed these or can use the metro-doctor to analyze them.');
         lines.push('If the user asks about "my save" or "the file", they mean these metro files.');
+        if (recentMetroAttachments.length > 0) {
+          const mostRecent = recentMetroAttachments[0];
+          const recentLabel = mostRecent.name || mostRecent.id || 'save.metro';
+          lines.push(`Recent save from this user is available: ${recentLabel}`);
+        }
       } else {
         lines.push(
           'Vision/OCR recommended: call the vision capability with these URLs to extract text/entities, or ask the user to paste the text if vision is unavailable.'
@@ -972,8 +984,52 @@ Be precise with numbers - if it says 1.5%, report 1.5% not 1.1%. If you can't re
     );
     const autoMetro = (process.env.AUTO_METRO_DOCTOR || 'true').toLowerCase() !== 'false';
 
-    if (autoMetro && metroAttachments.length > 0) {
-      const first = metroAttachments[0];
+    const isMetroFollowup = (() => {
+      const normalized = messageText.toLowerCase();
+      if (
+        normalized.includes('save') ||
+        normalized.includes('file') ||
+        normalized.includes('.metro') ||
+        normalized.includes('savefile')
+      ) {
+        return true;
+      }
+      return /route|routes|station|stations|ridership|boardings|trains?|capacity|line|overcrowd|junction|network|headway|frequency|gap|distance/i.test(
+        normalized
+      );
+    })();
+
+    const pickMostRecent = (items: any[]) =>
+      items
+        .slice()
+        .sort((a, b) => {
+          const aTime = a.timestamp ? new Date(a.timestamp).getTime() : 0;
+          const bTime = b.timestamp ? new Date(b.timestamp).getTime() : 0;
+          return bTime - aTime;
+        })[0];
+
+    let metroCandidate = metroAttachments[0];
+    let metroSource: 'current' | 'recent' = 'current';
+
+    if (!metroCandidate && isMetroFollowup && recentMetroAttachments.length > 0) {
+      const recentPick = pickMostRecent(recentMetroAttachments);
+      if (recentPick?.timestamp) {
+        const ageMs = Date.now() - new Date(recentPick.timestamp).getTime();
+        const maxAgeMs = 1000 * 60 * 60 * 2; // 2 hours
+        if (ageMs <= maxAgeMs) {
+          metroCandidate = recentPick;
+          metroSource = 'recent';
+          logger.info(
+            `🧵 Using recent metro attachment for follow-up (age ${(ageMs / 60000).toFixed(
+              1
+            )}m)`
+          );
+        }
+      }
+    }
+
+    if (autoMetro && metroCandidate) {
+      const first = metroCandidate;
       const url = first.url || first.proxyUrl;
       if (url) {
         try {
@@ -1001,13 +1057,16 @@ Be precise with numbers - if it says 1.5%, report 1.5% not 1.1%. If you can't re
           const summary = result.analysis?.summary || '';
 
           if (repairsMade) {
-            // Only send file back if we actually repaired something
-            addPendingAttachment(message.userId, {
-              buffer: result.buffer,
-              filename: result.filename,
-              content: summary,
-            });
-            logger.info(`🔧 Queued repaired metro file: ${result.filename}`);
+            const allowAttachmentSend = metroSource === 'current';
+            if (allowAttachmentSend) {
+              // Only send file back if we actually repaired something
+              addPendingAttachment(message.userId, {
+                buffer: result.buffer,
+                filename: result.filename,
+                content: summary,
+              });
+              logger.info(`🔧 Queued repaired metro file: ${result.filename}`);
+            }
 
             const repairedContent = `==== METRO SAVE FILE DOCTOR RESULTS ====
 STATUS: SUCCESS - REPAIRS MADE
@@ -1016,14 +1075,28 @@ FILE: ${first.name}
 ANALYSIS RESULTS:
 ${summary}
 
-ACTION TAKEN: The repaired save file is being sent as an attachment.
+ACTION TAKEN: ${
+              allowAttachmentSend
+                ? 'The repaired save file is being sent as an attachment.'
+                : 'Repairs are available for this save file.'
+            }
 
 ==== INSTRUCTIONS FOR YOUR RESPONSE ====
 1. The save doctor ran SUCCESSFULLY - there was NO error
-2. Tell the user you analyzed their save and fixed some issues
+2. Tell the user you analyzed their save and ${
+              allowAttachmentSend ? 'fixed some issues' : 'found issues'
+            }
 3. Mention the stats above (stations, routes, trains, money, playtime)
-4. Let them know the repaired file is attached
-5. Keep it casual and brief, like "fixed it up for you! your save has X stations and Y routes, looking good now"
+4. ${
+              allowAttachmentSend
+                ? 'Let them know the repaired file is attached'
+                : 'Let them know repairs are available and ask if they want the repaired file'
+            }
+5. Keep it casual and brief, like "${
+              allowAttachmentSend
+                ? 'fixed it up for you! your save has X stations and Y routes, looking good now'
+                : 'I found a couple issues in your save; want the repaired file?'
+            }"
 6. DO NOT say there was an error or that something failed
 7. DO NOT ask them to upload a file - they already did and you analyzed it`;
 
@@ -1041,7 +1114,9 @@ ACTION TAKEN: The repaired save file is being sent as an attachment.
 Stats: ${result.analysis?.stats?.stations || 0} stations, ${result.analysis?.stats?.routes || 0} routes, ${result.analysis?.stats?.trains || 0} trains
 Money: $${result.analysis?.stats?.money || 0}
 Warnings: ${result.analysis?.warnings?.join('; ') || 'None'}
-Repairs made: Yes - file was repaired and sent back
+Repairs made: Yes - ${
+                allowAttachmentSend ? 'file was repaired and sent back' : 'repairs available'
+              }
 File URL: ${url}`;
               const memoryService = MemoryService.getInstance();
               await memoryService.remember(
