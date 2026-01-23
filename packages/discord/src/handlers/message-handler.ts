@@ -1415,6 +1415,7 @@ async function fetchRecentAttachments(message: Message): Promise<
     size: number;
     proxyUrl: string | null;
     author: string;
+    authorId: string;
     messageId: string;
     timestamp: string;
   }>
@@ -1446,6 +1447,7 @@ async function fetchRecentAttachments(message: Message): Promise<
           size: att.size,
           proxyUrl: att.proxyURL ?? null,
           author: msg.author.displayName || msg.author.username,
+          authorId: msg.author.id,
           messageId: msg.id,
           timestamp: msg.createdAt.toISOString(),
         });
