@@ -6,7 +6,7 @@
  */
 
 import { Client } from 'discord.js';
-import { logger, getDb, githubRepoWatches } from '@coachartie/shared';
+import { logger, getDb, initializeDb, githubRepoWatches } from '@coachartie/shared';
 import { eq } from 'drizzle-orm';
 import {
   GitHubPollerService,
@@ -74,6 +74,9 @@ export class GitHubSyncService {
     }
 
     try {
+      // Ensure database tables exist
+      initializeDb();
+
       // Initialize components
       this.poller = initializeGitHubPoller(githubToken, this.config.poller);
       this.processor = initializeEventProcessor(this.config.processor);
