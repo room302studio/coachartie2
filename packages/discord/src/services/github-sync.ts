@@ -6,8 +6,7 @@
  */
 
 import { Client } from 'discord.js';
-import { logger, db } from '@coachartie/shared';
-import { githubRepoWatches } from '@coachartie/shared/db/schema';
+import { logger, getDb, githubRepoWatches } from '@coachartie/shared';
 import { eq } from 'drizzle-orm';
 import {
   GitHubPollerService,
@@ -176,7 +175,7 @@ export class GitHubSyncService {
       for (const repoConfig of config.githubSync.repos) {
         try {
           // Check if watch already exists
-          const existing = await db
+          const existing = await getDb()
             .select()
             .from(githubRepoWatches)
             .where(eq(githubRepoWatches.repo, repoConfig.repo))

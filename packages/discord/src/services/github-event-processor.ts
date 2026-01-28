@@ -8,12 +8,12 @@
  * - Enriches events with additional context
  */
 
-import { logger, db } from '@coachartie/shared';
 import {
+  logger,
+  getDb,
   githubIdentityMappings,
-  githubEventsQueue,
   type GithubIdentityMapping,
-} from '@coachartie/shared/db/schema';
+} from '@coachartie/shared';
 import { eq } from 'drizzle-orm';
 import type { GitHubSyncEvent, GitHubEventType } from './github-poller.js';
 
@@ -436,7 +436,7 @@ export class GitHubEventProcessor {
     githubUsername: string
   ): Promise<GithubIdentityMapping | null> {
     try {
-      const results = await db
+      const results = await getDb()
         .select()
         .from(githubIdentityMappings)
         .where(eq(githubIdentityMappings.githubUsername, githubUsername.toLowerCase()))
@@ -474,7 +474,7 @@ export class GitHubEventProcessor {
       const normalizedUsername = githubUsername.toLowerCase();
 
       // Check if mapping exists
-      const existing = await db
+      const existing = await getDb()
         .select()
         .from(githubIdentityMappings)
         .where(eq(githubIdentityMappings.githubUsername, normalizedUsername))
@@ -483,7 +483,7 @@ export class GitHubEventProcessor {
       if (existing[0]) {
         // Update existing - only if new confidence is higher or source is manual
         if (source === 'manual' || confidence > (existing[0].confidence || 0)) {
-          await db
+          await getDb()
             .update(githubIdentityMappings)
             .set({
               discordUserId,
@@ -498,7 +498,7 @@ export class GitHubEventProcessor {
         }
       } else {
         // Create new
-        await db.insert(githubIdentityMappings).values({
+        await getDb().insert(githubIdentityMappings).values({
           githubUsername: normalizedUsername,
           discordUserId,
           confidence,
@@ -520,7 +520,7 @@ export class GitHubEventProcessor {
    */
   async getIdentityMappings(): Promise<GithubIdentityMapping[]> {
     try {
-      return await db.select().from(githubIdentityMappings);
+      return await getDb().select().from(githubIdentityMappings);
     } catch (error) {
       logger.error('Failed to get identity mappings:', error);
       return [];
@@ -532,7 +532,7 @@ export class GitHubEventProcessor {
    */
   async deleteIdentityMapping(githubUsername: string): Promise<void> {
     try {
-      await db
+      await getDb()
         .delete(githubIdentityMappings)
         .where(eq(githubIdentityMappings.githubUsername, githubUsername.toLowerCase()));
       logger.info(`Deleted identity mapping for ${githubUsername}`);

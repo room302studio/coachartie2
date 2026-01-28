@@ -1,6 +1,5 @@
-import { logger, db } from '@coachartie/shared';
-import { githubIdentityMappings } from '@coachartie/shared/db/schema';
-import { eq, like } from 'drizzle-orm';
+import { logger, getDb, githubIdentityMappings, type GithubIdentityMapping } from '@coachartie/shared';
+import { eq } from 'drizzle-orm';
 import { RegisteredCapability } from '../services/capability/capability-registry.js';
 
 /**
@@ -27,7 +26,7 @@ interface GithubIdentityParams {
  */
 async function queryMapping(githubUsername: string): Promise<string> {
   try {
-    const results = await db
+    const results = await getDb()
       .select()
       .from(githubIdentityMappings)
       .where(eq(githubIdentityMappings.githubUsername, githubUsername.toLowerCase()))
@@ -61,7 +60,7 @@ async function learnMapping(
     const normalizedUsername = githubUsername.toLowerCase();
 
     // Check if mapping exists
-    const existing = await db
+    const existing = await getDb()
       .select()
       .from(githubIdentityMappings)
       .where(eq(githubIdentityMappings.githubUsername, normalizedUsername))
@@ -73,7 +72,7 @@ async function learnMapping(
         source === 'manual' || confidence > (existing[0].confidence || 0);
 
       if (shouldUpdate) {
-        await db
+        await getDb()
           .update(githubIdentityMappings)
           .set({
             discordUserId,
@@ -90,7 +89,7 @@ async function learnMapping(
     }
 
     // Create new mapping
-    await db.insert(githubIdentityMappings).values({
+    await getDb().insert(githubIdentityMappings).values({
       githubUsername: normalizedUsername,
       discordUserId,
       confidence,
@@ -111,13 +110,13 @@ async function learnMapping(
  */
 async function listMappings(): Promise<string> {
   try {
-    const mappings = await db.select().from(githubIdentityMappings);
+    const mappings = await getDb().select().from(githubIdentityMappings);
 
     if (mappings.length === 0) {
       return 'No GitHub → Discord mappings known yet.';
     }
 
-    const lines = mappings.map((m) => {
+    const lines = mappings.map((m: GithubIdentityMapping) => {
       const conf = Math.round((m.confidence || 1) * 100);
       return `• **${m.githubUsername}** → <@${m.discordUserId}> (${conf}%, ${m.source})`;
     });
@@ -136,7 +135,7 @@ async function forgetMapping(githubUsername: string): Promise<string> {
   try {
     const normalizedUsername = githubUsername.toLowerCase();
 
-    const existing = await db
+    const existing = await getDb()
       .select()
       .from(githubIdentityMappings)
       .where(eq(githubIdentityMappings.githubUsername, normalizedUsername))
@@ -146,7 +145,7 @@ async function forgetMapping(githubUsername: string): Promise<string> {
       return `No mapping found for GitHub user "${githubUsername}"`;
     }
 
-    await db
+    await getDb()
       .delete(githubIdentityMappings)
       .where(eq(githubIdentityMappings.githubUsername, normalizedUsername));
 
@@ -203,7 +202,7 @@ Use this when:
     '<capability name="github-identity" action="forget" githubUsername="ejfox" />',
   ],
 
-  execute: async (params: GithubIdentityParams): Promise<string> => {
+  handler: async (params: GithubIdentityParams): Promise<string> => {
     const { action } = params;
 
     logger.info('Executing github-identity capability', { action, params });

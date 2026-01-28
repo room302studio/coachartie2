@@ -6,15 +6,15 @@
  */
 
 import { Octokit } from '@octokit/rest';
-import { logger, db } from '@coachartie/shared';
 import {
+  logger,
+  getDb,
   githubRepoWatches,
   githubSyncState,
-  githubEventsQueue,
   type GithubRepoWatch,
   type GithubSyncState,
-} from '@coachartie/shared/db/schema';
-import { eq, and, lt, isNull, or } from 'drizzle-orm';
+} from '@coachartie/shared';
+import { eq, and } from 'drizzle-orm';
 import { EventEmitter } from 'events';
 
 // Event types for GitHub sync
@@ -553,7 +553,7 @@ export class GitHubPollerService extends EventEmitter {
    */
   private async getActiveWatches(): Promise<GithubRepoWatch[]> {
     try {
-      return await db.select().from(githubRepoWatches).where(eq(githubRepoWatches.isActive, true));
+      return await getDb().select().from(githubRepoWatches).where(eq(githubRepoWatches.isActive, true));
     } catch (error) {
       logger.error('Failed to get active watches:', error);
       return [];
@@ -565,7 +565,7 @@ export class GitHubPollerService extends EventEmitter {
    */
   private async getSyncState(repo: string): Promise<GithubSyncState | null> {
     try {
-      const results = await db
+      const results = await getDb()
         .select()
         .from(githubSyncState)
         .where(eq(githubSyncState.repo, repo))
@@ -583,13 +583,13 @@ export class GitHubPollerService extends EventEmitter {
   private async createSyncState(repo: string): Promise<GithubSyncState> {
     try {
       const now = new Date().toISOString();
-      await db.insert(githubSyncState).values({
+      await getDb().insert(githubSyncState).values({
         repo,
         lastPolledAt: now,
         createdAt: now,
         updatedAt: now,
       });
-      const results = await db
+      const results = await getDb()
         .select()
         .from(githubSyncState)
         .where(eq(githubSyncState.repo, repo))
@@ -609,7 +609,7 @@ export class GitHubPollerService extends EventEmitter {
     updates: Partial<GithubSyncState>
   ): Promise<void> {
     try {
-      await db
+      await getDb()
         .update(githubSyncState)
         .set({
           ...updates,
@@ -649,7 +649,7 @@ export class GitHubPollerService extends EventEmitter {
   ): Promise<void> {
     try {
       const now = new Date().toISOString();
-      await db.insert(githubRepoWatches).values({
+      await getDb().insert(githubRepoWatches).values({
         repo,
         guildId,
         channelId,
@@ -671,7 +671,7 @@ export class GitHubPollerService extends EventEmitter {
    */
   async removeWatch(repo: string, channelId: string): Promise<void> {
     try {
-      await db
+      await getDb()
         .delete(githubRepoWatches)
         .where(
           and(eq(githubRepoWatches.repo, repo), eq(githubRepoWatches.channelId, channelId))
@@ -688,6 +688,7 @@ export class GitHubPollerService extends EventEmitter {
    */
   async listWatches(guildId?: string, channelId?: string): Promise<GithubRepoWatch[]> {
     try {
+      const db = getDb();
       let query = db.select().from(githubRepoWatches);
 
       if (guildId && channelId) {
