@@ -7,6 +7,7 @@ import { CreditMonitor } from '../monitoring/credit-monitor.js';
 import { visionCapability as visionCap } from '../../capabilities/ai/vision.js';
 import { processMetroAttachment } from '../monitoring/metro-doctor.js';
 import { MemoryService } from '../../capabilities/memory/memory.js';
+import { storeAnalyzedMetroFile, addPendingAttachment, getPendingAttachments, hasStoredMetroFile, getStoredMetroFile, readAnalysis } from './pending-attachments.js';
 
 // Vision capability wrapper for auto-extraction
 const visionCapability: { execute: (opts: any) => Promise<string> } | null = {
@@ -110,27 +111,8 @@ interface ContextBudget {
  * 3. Manages token budget intelligently
  * 4. Assembles optimal context for the LLM
  */
-// Pending file attachments to be sent back to Discord after response
-export interface PendingAttachment {
-  buffer: Buffer;
-  filename: string;
-  content?: string;
-}
-
-// Store pending attachments keyed by message/user ID
-const pendingAttachments = new Map<string, PendingAttachment[]>();
-
-export function getPendingAttachments(key: string): PendingAttachment[] {
-  const attachments = pendingAttachments.get(key) || [];
-  pendingAttachments.delete(key); // Clear after retrieval
-  return attachments;
-}
-
-export function addPendingAttachment(key: string, attachment: PendingAttachment): void {
-  const existing = pendingAttachments.get(key) || [];
-  existing.push(attachment);
-  pendingAttachments.set(key, existing);
-}
+// Re-export pending attachment functions for backwards compatibility
+export { PendingAttachment, addPendingAttachment, getPendingAttachments } from './pending-attachments.js';
 
 export class ContextAlchemy {
   private static instance: ContextAlchemy;
@@ -405,6 +387,9 @@ Important:
 
     // Attachment context (includes URLs for vision/OCR or user follow-up)
     await this.addAttachmentContext(message, sources);
+
+    // Previously analyzed files - so follow-up messages know about them
+    await this.addStoredFileContext(message, sources);
 
     // Slack situational awareness - explicit "where am I" context for Slack
     await this.addSlackSituationalAwareness(message, sources);
@@ -1028,6 +1013,46 @@ Be precise with numbers - if it says 1.5%, report 1.5% not 1.1%. If you can't re
       }
     }
 
+    // For metro follow-ups, try to recall from memory FIRST before re-downloading
+    if (autoMetro && metroSource === 'recent' && isMetroFollowup) {
+      try {
+        const memoryService = MemoryService.getInstance();
+        const metroMemories = await memoryService.recallByTags(
+          message.userId,
+          ['metro', 'save', 'analysis'],
+          3
+        );
+
+        // Filter to recent memories (< 2 hours)
+        const recentMetroMemory = metroMemories.find((mem) => {
+          const ageMs = Date.now() - new Date(mem.timestamp).getTime();
+          return ageMs < 1000 * 60 * 60 * 2; // 2 hours
+        });
+
+        if (recentMetroMemory) {
+          logger.info(
+            `🧠 Found recent metro analysis in memory - using that instead of re-downloading`
+          );
+          const memoryContent = `PREVIOUS METRO ANALYSIS (from memory):
+${recentMetroMemory.content}`;
+
+          sources.push({
+            name: 'metro_memory',
+            priority: 99, // Highest priority
+            tokenWeight: Math.ceil(memoryContent.length / 4),
+            content: memoryContent,
+            category: 'evidence',
+          });
+
+          // Skip re-downloading since we have the analysis in memory
+          metroCandidate = null;
+        }
+      } catch (memError) {
+        logger.warn(`Failed to recall metro memory: ${memError}`);
+        // Continue with normal processing
+      }
+    }
+
     if (autoMetro && metroCandidate) {
       const first = metroCandidate;
       const url = first.url || first.proxyUrl;
@@ -1056,49 +1081,21 @@ Be precise with numbers - if it says 1.5%, report 1.5% not 1.1%. If you can't re
           const repairsMade = result.filename.startsWith('repaired_');
           const summary = result.analysis?.summary || '';
 
+          // Store the analyzed file so LLM can decide whether to send it back
+          const canSendFile = metroSource === 'current';
+          if (canSendFile) {
+            const storedFilename = repairsMade ? result.filename : `analyzed_${first.name || 'save.metro'}`;
+            storeAnalyzedMetroFile(message.userId, storedFilename, result.buffer, summary);
+            logger.info(`📦 Stored metro file for LLM to send: ${storedFilename} (repaired: ${repairsMade})`);
+          }
+
           if (repairsMade) {
-            const allowAttachmentSend = metroSource === 'current';
-            if (allowAttachmentSend) {
-              // Only send file back if we actually repaired something
-              addPendingAttachment(message.userId, {
-                buffer: result.buffer,
-                filename: result.filename,
-                content: summary,
-              });
-              logger.info(`🔧 Queued repaired metro file: ${result.filename}`);
-            }
 
-            const repairedContent = `==== METRO SAVE FILE DOCTOR RESULTS ====
-STATUS: SUCCESS - REPAIRS MADE
-FILE: ${first.name}
+            const repairedContent = `METRO SAVE ANALYZED: ${first.name}
+Status: Repairs made
+${canSendFile ? 'File ready to send back via send-metro-file capability.' : ''}
 
-ANALYSIS RESULTS:
-${summary}
-
-ACTION TAKEN: ${
-              allowAttachmentSend
-                ? 'The repaired save file is being sent as an attachment.'
-                : 'Repairs are available for this save file.'
-            }
-
-==== INSTRUCTIONS FOR YOUR RESPONSE ====
-1. The save doctor ran SUCCESSFULLY - there was NO error
-2. Tell the user you analyzed their save and ${
-              allowAttachmentSend ? 'fixed some issues' : 'found issues'
-            }
-3. Mention the stats above (stations, routes, trains, money, playtime)
-4. ${
-              allowAttachmentSend
-                ? 'Let them know the repaired file is attached'
-                : 'Let them know repairs are available and ask if they want the repaired file'
-            }
-5. Keep it casual and brief, like "${
-              allowAttachmentSend
-                ? 'fixed it up for you! your save has X stations and Y routes, looking good now'
-                : 'I found a couple issues in your save; want the repaired file?'
-            }"
-6. DO NOT say there was an error or that something failed
-7. DO NOT ask them to upload a file - they already did and you analyzed it`;
+${summary}`;
 
             sources.push({
               name: 'metro_doctor',
@@ -1108,26 +1105,45 @@ ACTION TAKEN: ${
               category: 'evidence',
             });
 
-            // Store metro analysis in memory for follow-up questions
+            // Store metro analysis in memory for follow-up questions (with dedup check)
             try {
-              const memoryContent = `Metro save file analyzed: ${first.name}
+              const memoryService = MemoryService.getInstance();
+              const memoryTags = ['metro', 'save', 'analysis', first.name || 'save.metro'];
+
+              // Check for recent duplicate (< 2 hours) before storing
+              const existingMemories = await memoryService.recallByTags(
+                message.userId,
+                memoryTags,
+                1
+              );
+              const hasDuplicate = existingMemories.some((mem) => {
+                const ageMs = Date.now() - new Date(mem.timestamp).getTime();
+                return ageMs < 1000 * 60 * 60 * 2; // 2 hours
+              });
+
+              if (hasDuplicate) {
+                logger.info(
+                  `📝 Skipping metro memory storage - recent duplicate exists for ${first.name}`
+                );
+              } else {
+                const memoryContent = `Metro save file analyzed: ${first.name}
 Stats: ${result.analysis?.stats?.stations || 0} stations, ${result.analysis?.stats?.routes || 0} routes, ${result.analysis?.stats?.trains || 0} trains
 Money: $${result.analysis?.stats?.money || 0}
 Warnings: ${result.analysis?.warnings?.join('; ') || 'None'}
 Repairs made: Yes - ${
-                allowAttachmentSend ? 'file was repaired and sent back' : 'repairs available'
-              }
+                  canSendFile ? 'file available to send back' : 'follow-up question'
+                }
 File URL: ${url}`;
-              const memoryService = MemoryService.getInstance();
-              await memoryService.remember(
-                message.userId,
-                memoryContent,
-                'metro_analysis',
-                7, // Importance
-                undefined,
-                ['metro', 'save', 'analysis', first.name || 'save.metro']
-              );
-              logger.info(`📝 Stored metro analysis in memory for user ${message.userId}`);
+                await memoryService.remember(
+                  message.userId,
+                  memoryContent,
+                  'metro_analysis',
+                  7, // Importance
+                  undefined,
+                  memoryTags
+                );
+                logger.info(`📝 Stored metro analysis in memory for user ${message.userId}`);
+              }
             } catch (memErr) {
               logger.warn(`Failed to store metro analysis in memory: ${memErr}`);
             }
@@ -1135,23 +1151,11 @@ File URL: ${url}`;
             // No repairs needed - just tell the user
             logger.info(`✅ Metro file healthy, no repairs needed: ${first.name}`);
 
-            const healthyContent = `==== METRO SAVE FILE DOCTOR RESULTS ====
-STATUS: SUCCESS - FILE IS HEALTHY
-FILE: ${first.name}
+            const healthyContent = `METRO SAVE ANALYZED: ${first.name}
+Status: Healthy
+${canSendFile ? 'File ready to send back via send-metro-file capability.' : ''}
 
-ANALYSIS RESULTS:
-${summary}
-
-ACTION TAKEN: No repairs needed - the save file is in good shape.
-
-==== INSTRUCTIONS FOR YOUR RESPONSE ====
-1. The save doctor ran SUCCESSFULLY - there was NO error
-2. Tell the user their save file looks healthy
-3. Share the stats above (stations, routes, trains, money, playtime)
-4. Be casual and friendly, like "your save looks good! X stations, Y routes, Z trains"
-5. DO NOT say there was an error or that something failed
-6. DO NOT ask them to upload a file - they already did and you analyzed it
-7. DO NOT mention missing scripts or tools - everything worked fine`;
+${summary}`;
 
             sources.push({
               name: 'metro_doctor',
@@ -1161,24 +1165,43 @@ ACTION TAKEN: No repairs needed - the save file is in good shape.
               category: 'evidence',
             });
 
-            // Store metro analysis in memory for follow-up questions
+            // Store metro analysis in memory for follow-up questions (with dedup check)
             try {
-              const memoryContent = `Metro save file analyzed: ${first.name}
+              const memoryService = MemoryService.getInstance();
+              const memoryTags = ['metro', 'save', 'analysis', first.name || 'save.metro'];
+
+              // Check for recent duplicate (< 2 hours) before storing
+              const existingMemories = await memoryService.recallByTags(
+                message.userId,
+                memoryTags,
+                1
+              );
+              const hasDuplicate = existingMemories.some((mem) => {
+                const ageMs = Date.now() - new Date(mem.timestamp).getTime();
+                return ageMs < 1000 * 60 * 60 * 2; // 2 hours
+              });
+
+              if (hasDuplicate) {
+                logger.info(
+                  `📝 Skipping metro memory storage - recent duplicate exists for ${first.name}`
+                );
+              } else {
+                const memoryContent = `Metro save file analyzed: ${first.name}
 Stats: ${result.analysis?.stats?.stations || 0} stations, ${result.analysis?.stats?.routes || 0} routes, ${result.analysis?.stats?.trains || 0} trains
 Money: $${result.analysis?.stats?.money || 0}
 Warnings: ${result.analysis?.warnings?.join('; ') || 'None'}
 Status: Healthy - no repairs needed
 File URL: ${url}`;
-              const memoryService = MemoryService.getInstance();
-              await memoryService.remember(
-                message.userId,
-                memoryContent,
-                'metro_analysis',
-                7, // Importance
-                undefined,
-                ['metro', 'save', 'analysis', first.name || 'save.metro']
-              );
-              logger.info(`📝 Stored metro analysis in memory for user ${message.userId}`);
+                await memoryService.remember(
+                  message.userId,
+                  memoryContent,
+                  'metro_analysis',
+                  7, // Importance
+                  undefined,
+                  memoryTags
+                );
+                logger.info(`📝 Stored metro analysis in memory for user ${message.userId}`);
+              }
             } catch (memErr) {
               logger.warn(`Failed to store metro analysis in memory: ${memErr}`);
             }
@@ -1291,6 +1314,38 @@ File URL: ${url}`;
           });
         }
       }
+    }
+  }
+
+  /**
+   * Add stored file context - reads analysis from /tmp/artie-analysis/{userId}.txt
+   * Simple file-based approach for follow-up questions
+   */
+  private async addStoredFileContext(
+    message: IncomingMessage,
+    sources: ContextSource[]
+  ): Promise<void> {
+    try {
+      const analysis = readAnalysis(message.userId);
+
+      if (analysis) {
+        const content = `PREVIOUS ANALYSIS (${analysis.age}min ago) - ${analysis.filename}:
+${analysis.summary}`;
+
+        sources.push({
+          name: 'previous_analysis',
+          priority: 96, // High priority - right before current attachments
+          tokenWeight: Math.ceil(content.length / 4),
+          content,
+          category: 'evidence',
+        });
+
+        if (DEBUG) {
+          logger.info(`│ ✅ Loaded previous analysis: ${analysis.filename} (${analysis.age}min old)`);
+        }
+      }
+    } catch (error) {
+      logger.warn('Failed to read analysis file:', error);
     }
   }
 
