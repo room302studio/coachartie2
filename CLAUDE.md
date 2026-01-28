@@ -70,38 +70,45 @@ Keep Discord channels in sync with GitHub repos - surfacing PRs ready for review
 
 ## Implementation Phases
 
-### Phase 1: Database & State
-- [ ] Add `github_repo_watches` table (repo, channel_id, guild_id, settings)
-- [ ] Add `github_sync_state` table (repo, last_pr_id, last_comment_id, last_check, etc.)
-- [ ] Extend `user_identities` or UserProfileService for GitHub username mappings
+### Phase 1: Database & State ✅
+- [x] Add `github_repo_watches` table (repo, channel_id, guild_id, settings)
+- [x] Add `github_sync_state` table (repo, last_pr_id, last_comment_id, last_check, etc.)
+- [x] Add `github_identity_mappings` table for GitHub username → Discord user mappings
+- [x] Add `github_events_queue` table for event batching
 
-### Phase 2: GitHub Poller Service
-- [ ] Create `/packages/discord/src/services/github-poller.ts`
-- [ ] Poll repos on configurable interval (2-5 min default)
-- [ ] Fetch PRs, comments, reviews, check runs via Octokit
-- [ ] Compare against sync state, emit new events
-- [ ] Handle rate limiting gracefully
+### Phase 2: GitHub Poller Service ✅
+- [x] Create `/packages/discord/src/services/github-poller.ts`
+- [x] Poll repos on configurable interval (3 min default)
+- [x] Fetch PRs, comments, reviews, check runs via Octokit
+- [x] Compare against sync state, emit new events
+- [x] Handle rate limiting with automatic backoff
 
-### Phase 3: Event Processing
-- [ ] Batching logic (group rapid comments within time window)
-- [ ] Filtering logic (skip bot PRs, drafts until ready)
-- [ ] Identity resolution (lookup GitHub→Discord user)
+### Phase 3: Event Processing ✅
+- [x] Create `/packages/discord/src/services/github-event-processor.ts`
+- [x] Batching logic (5-min window for related events)
+- [x] Filtering logic (skip bot PRs, drafts until ready)
+- [x] Identity resolution (lookup GitHub→Discord user)
+- [x] Event priority calculation
 
-### Phase 4: Discord Posting
-- [ ] Format messages with embeds (appropriate detail level)
-- [ ] Post to mapped channels
-- [ ] @ mention resolved Discord users for relevant events
+### Phase 4: Discord Posting ✅
+- [x] Create `/packages/discord/src/services/github-discord-poster.ts`
+- [x] Format messages with rich embeds (color-coded by event type)
+- [x] Post to mapped channels
+- [x] @ mention resolved Discord users for relevant events
+- [x] Extra fanfare for merges to main
 
-### Phase 5: Configuration Layer
-- [ ] Add `githubRepos` to guild whitelist config schema
-- [ ] `/watch-repo` command to add repo→channel mapping
-- [ ] `/unwatch-repo` command to remove mapping
-- [ ] Capability for Artie to manage mappings programmatically
+### Phase 5: Configuration Layer ✅
+- [x] Add `githubSync` to guild whitelist config schema
+- [x] `/watch-repo` command to add repo→channel mapping
+- [x] `/unwatch-repo` command to remove mapping
+- [x] `/list-watches` command to view active watches
+- [x] Create `github-sync.ts` orchestrator service
 
-### Phase 6: Identity Learning Capability
-- [ ] Capability for Artie to query GitHub↔Discord mappings
-- [ ] Capability for Artie to update/learn new mappings
-- [ ] Heuristics to suggest mappings (matching display names, etc.)
+### Phase 6: Identity Learning Capability ✅
+- [x] Create `/packages/capabilities/src/capabilities/github-identity.ts`
+- [x] Capability for Artie to query GitHub↔Discord mappings
+- [x] Capability for Artie to learn/update mappings
+- [x] Capability to list/forget mappings
 
 ## Key Files to Create/Modify
 
