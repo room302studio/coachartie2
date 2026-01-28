@@ -1,5 +1,41 @@
 import { logger } from '@coachartie/shared';
 
+/**
+ * Retry a function with exponential backoff
+ */
+async function withRetry<T>(
+  fn: () => Promise<T>,
+  options: { maxRetries?: number; baseDelay?: number; maxDelay?: number; name?: string } = {}
+): Promise<T> {
+  const { maxRetries = 3, baseDelay = 1000, maxDelay = 10000, name = 'operation' } = options;
+  let lastError: Error | null = null;
+
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      return await fn();
+    } catch (error: any) {
+      lastError = error instanceof Error ? error : new Error(String(error));
+
+      // Don't retry if explicitly marked as non-retryable (e.g., 404s)
+      if (error?.noRetry) {
+        throw lastError;
+      }
+
+      if (attempt === maxRetries) {
+        logger.error(`${name} failed after ${maxRetries} attempts:`, lastError.message);
+        throw lastError;
+      }
+
+      // Exponential backoff with jitter
+      const delay = Math.min(baseDelay * Math.pow(2, attempt - 1) + Math.random() * 500, maxDelay);
+      logger.warn(`${name} failed (attempt ${attempt}/${maxRetries}), retrying in ${Math.round(delay)}ms: ${lastError.message}`);
+      await new Promise(resolve => setTimeout(resolve, delay));
+    }
+  }
+
+  throw lastError || new Error(`${name} failed`);
+}
+
 export interface JobSubmissionResponse {
   success: boolean;
   messageId: string;
@@ -32,96 +68,99 @@ export class CapabilitiesClient {
 
   /**
    * Submit a message for processing and get job ID
+   * Includes automatic retry with exponential backoff
    */
   async submitJob(
     message: string,
     userId: string,
     context?: Record<string, any>
   ): Promise<JobSubmissionResponse> {
-    try {
-      // AUTO-DETECT: Set source to 'discord' if context contains Discord metadata
-      const source = context?.platform === 'discord' ? 'discord' : undefined;
+    return withRetry(
+      async () => {
+        // AUTO-DETECT: Set source to 'discord' if context contains Discord metadata
+        const source = context?.platform === 'discord' ? 'discord' : undefined;
 
-      const response = await fetch(`${this.baseUrl}/chat`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          message,
-          userId,
-          context,
-          source, // Pass source to trigger Discord-specific handling
-        }),
-      });
-
-      if (!response.ok) {
-        const errorBody = await response.text();
-        logger.error(`❌ Job submission failed:`, {
-          status: response.status,
-          statusText: response.statusText,
-          body: errorBody,
+        const response = await fetch(`${this.baseUrl}/chat`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            message,
+            userId,
+            context,
+            source, // Pass source to trigger Discord-specific handling
+          }),
         });
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-      }
 
-      const result = (await response.json()) as JobSubmissionResponse;
+        if (!response.ok) {
+          const errorBody = await response.text();
+          logger.error(`❌ Job submission failed:`, {
+            status: response.status,
+            statusText: response.statusText,
+            body: errorBody,
+          });
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
 
-      // DEFENSIVE: Log the raw response for debugging
-      logger.info(`📤 Submitted job for user ${userId}:`, {
-        messageId: result.messageId,
-        hasMessageId: !!result.messageId,
-        resultKeys: Object.keys(result),
-        fullResult: result,
-      });
+        const result = (await response.json()) as JobSubmissionResponse;
 
-      // DEFENSIVE: Validate response structure
-      if (!result.messageId) {
-        logger.error(`❌ INVALID RESPONSE FROM /chat - missing messageId:`, result);
-        throw new Error(`Invalid response from capabilities service: missing messageId`);
-      }
+        // DEFENSIVE: Log the raw response for debugging
+        logger.info(`📤 Submitted job for user ${userId}:`, {
+          messageId: result.messageId,
+          hasMessageId: !!result.messageId,
+          resultKeys: Object.keys(result),
+          fullResult: result,
+        });
 
-      return result;
-    } catch (error) {
-      logger.error('Failed to submit job to capabilities service:', error);
-      throw new Error(
-        `Failed to submit job: ${error instanceof Error ? error.message : String(error)}`
-      );
-    }
+        // DEFENSIVE: Validate response structure
+        if (!result.messageId) {
+          logger.error(`❌ INVALID RESPONSE FROM /chat - missing messageId:`, result);
+          throw new Error(`Invalid response from capabilities service: missing messageId`);
+        }
+
+        return result;
+      },
+      { maxRetries: 3, baseDelay: 1000, name: 'Job submission' }
+    );
   }
 
   /**
    * Check job status and get result if completed
+   * Includes automatic retry for transient failures (but not 404s)
    */
   async checkJobStatus(messageId: string): Promise<JobStatusResponse> {
-    try {
-      logger.info(`🔍 API CALL: GET /chat/${messageId.slice(-8)}`);
-      const response = await fetch(`${this.baseUrl}/chat/${messageId}`);
+    return withRetry(
+      async () => {
+        logger.info(`🔍 API CALL: GET /chat/${messageId.slice(-8)}`);
+        const response = await fetch(`${this.baseUrl}/chat/${messageId}`);
 
-      if (!response.ok) {
-        if (response.status === 404) {
-          logger.warn(`🔍 API RESPONSE: 404 Job not found - ${messageId.slice(-8)}`);
-          throw new Error('Job not found or expired');
+        if (!response.ok) {
+          if (response.status === 404) {
+            // Don't retry 404s - job genuinely doesn't exist
+            logger.warn(`🔍 API RESPONSE: 404 Job not found - ${messageId.slice(-8)}`);
+            const error = new Error('Job not found or expired') as Error & { noRetry?: boolean };
+            error.noRetry = true;
+            throw error;
+          }
+          logger.error(`🔍 API RESPONSE: HTTP ${response.status} - ${messageId.slice(-8)}`);
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
         }
-        logger.error(`🔍 API RESPONSE: HTTP ${response.status} - ${messageId.slice(-8)}`);
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-      }
 
-      const result = (await response.json()) as JobStatusResponse;
-      logger.info(
-        `🔍 API RESPONSE: status="${result.status}", hasResponse=${!!result.response}, responseLength=${result.response?.length || 0}`
-      );
-      if (result.status === 'completed') {
+        const result = (await response.json()) as JobStatusResponse;
         logger.info(
-          `🔍 API RESPONSE: Full response preview: "${result.response?.substring(0, 150)}..."`
+          `🔍 API RESPONSE: status="${result.status}", hasResponse=${!!result.response}, responseLength=${result.response?.length || 0}`
         );
-      }
+        if (result.status === 'completed') {
+          logger.info(
+            `🔍 API RESPONSE: Full response preview: "${result.response?.substring(0, 150)}..."`
+          );
+        }
 
-      return result;
-    } catch (error) {
-      logger.error(`Failed to check job status for ${messageId}:`, error);
-      throw error;
-    }
+        return result;
+      },
+      { maxRetries: 2, baseDelay: 500, name: `Job status check (${messageId.slice(-8)})` }
+    );
   }
 
   /**
