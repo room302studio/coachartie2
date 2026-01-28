@@ -24,6 +24,22 @@ export const ACTIVE_GUILD_WHITELIST = envWhitelist || GUILD_WHITELIST;
  */
 export type GuildType = 'working' | 'watching';
 
+/** GitHub repo watch configuration */
+export interface GitHubRepoConfig {
+  repo: string; // e.g., "owner/repo"
+  channelId: string;
+  events?: ('pr' | 'review' | 'ci' | 'all')[];
+}
+
+/** GitHub sync configuration for a guild */
+export interface GitHubSyncConfig {
+  enabled: boolean;
+  /** Default poll interval in minutes */
+  defaultPollIntervalMinutes?: number;
+  /** Repos to watch (can also be added dynamically via /watch-repo) */
+  repos?: GitHubRepoConfig[];
+}
+
 export interface GuildConfig {
   id: string;
   type: GuildType;
@@ -46,6 +62,8 @@ export interface GuildConfig {
   contentModeration?: 'strict' | 'normal' | 'relaxed';
   /** Path to Artie's scratchpad/notes file for this guild */
   scratchpadPath?: string;
+  /** GitHub-Discord sync configuration */
+  githubSync?: GitHubSyncConfig;
 }
 
 /**
