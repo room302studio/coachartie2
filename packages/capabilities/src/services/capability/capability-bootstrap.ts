@@ -48,6 +48,7 @@ import { slackUICapability } from '../../capabilities/slack/slack-ui.js';
 import { askQuestionCapability } from '../../capabilities/communication/ask-question.js';
 import { mentionProxyCapability } from '../../capabilities/communication/mention-proxy.js';
 import { emailCapability } from '../../capabilities/communication/email.js';
+import { redditCapability } from '../../capabilities/communication/reddit.js';
 // Analytics capabilities
 import { selfStatsCapability } from '../../capabilities/self-stats.js';
 // Services
@@ -248,6 +249,11 @@ export class CapabilityBootstrap {
       logger.info('📦 Registering quiz-game (multiplayer quizzes)...');
       capabilityRegistry.register(quizGameCapability);
       logger.info('✅ quiz-game registered successfully');
+
+      // Register reddit capability - read/write to Reddit
+      logger.info('📦 Registering reddit...');
+      capabilityRegistry.register(redditCapability);
+      logger.info('✅ reddit registered successfully');
 
       const totalCaps = capabilityRegistry.list().length;
       logger.info(

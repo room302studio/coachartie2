@@ -2,6 +2,33 @@
 
 The core AI orchestration service for Coach Artie 2.
 
+## Reddit Integration
+
+Enable the Reddit capability to read and write in a controlled set of subreddits.
+
+Environment variables:
+
+- `REDDIT_CLIENT_ID`, `REDDIT_CLIENT_SECRET`: Script app credentials from Reddit.
+- `REDDIT_USERNAME`, `REDDIT_PASSWORD`: Bot/account to post as (script app auth).
+- `REDDIT_ALLOWED_SUBS`: Optional comma-separated allowlist (e.g. `coachartie,funny`); if unset, all subs are allowed.
+- `REDDIT_USER_AGENT`: Optional user-agent override; defaults to `CoachArtieBot/1.0 (by /u/coachartie)`.
+- `REDDIT_SCOPES`: Optional space/comma separated scopes; defaults to `identity read submit privatemessages` (required for reading inbox/mentions, posting, and marking as read).
+
+Examples:
+
+```xml
+<capability name="reddit" action="status" />
+<capability name="reddit" action="list-subreddits" />
+<capability name="reddit" action="read" subreddit="coachartie" sort="new" limit="5" />
+<capability name="reddit" action="post" subreddit="coachartie" title="Weekly update" text="What shipped..." />
+<capability name="reddit" action="comment" thing_id="t3_abc123" text="Appreciate the feedback!" />
+<capability name="reddit" action="mentions" limit="10" />
+```
+
+Mention listener:
+- A scheduler job polls Reddit mentions hourly (`reddit-mentions`) and respects `REDDIT_ALLOWED_SUBS`.
+- Mentions are queued for processing with `shouldRespond=false` to avoid noisy status updates; Artie can still act using the reddit capability (e.g., comment back).
+
 ## MCP Tool Syntax
 
 **CRITICAL**: When calling MCP tools, use ONLY this syntax:
