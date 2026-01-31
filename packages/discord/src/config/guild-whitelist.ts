@@ -24,6 +24,22 @@ export const ACTIVE_GUILD_WHITELIST = envWhitelist || GUILD_WHITELIST;
  */
 export type GuildType = 'working' | 'watching';
 
+/** GitHub repo watch configuration */
+export interface GitHubRepoConfig {
+  repo: string; // e.g., "owner/repo"
+  channelId: string;
+  events?: ('pr' | 'review' | 'ci' | 'all')[];
+}
+
+/** GitHub sync configuration for a guild */
+export interface GitHubSyncConfig {
+  enabled: boolean;
+  /** Default poll interval in minutes */
+  defaultPollIntervalMinutes?: number;
+  /** Repos to watch (can also be added dynamically via /watch-repo) */
+  repos?: GitHubRepoConfig[];
+}
+
 export interface GuildConfig {
   id: string;
   type: GuildType;
@@ -46,6 +62,8 @@ export interface GuildConfig {
   contentModeration?: 'strict' | 'normal' | 'relaxed';
   /** Path to Artie's scratchpad/notes file for this guild */
   scratchpadPath?: string;
+  /** GitHub-Discord sync configuration */
+  githubSync?: GitHubSyncConfig;
 }
 
 /**
@@ -57,6 +75,17 @@ export const GUILD_CONFIGS: Record<string, GuildConfig> = {
     type: 'working',
     name: 'Room 302 Studio',
     scratchpadPath: 'reference-docs/guild-notes/room302studio.md',
+    githubSync: {
+      enabled: true,
+      defaultPollIntervalMinutes: 3,
+      repos: [
+        {
+          repo: 'Subway-Builder/metro-maker4',
+          channelId: '1412880705456836689', // #collab-subwaybuilder
+          events: ['all'],
+        },
+      ],
+    },
     context: `You are Artie, hanging out in Room 302 Studio - EJ Fox's creative studio and community Discord.
 
 PERSONALITY:

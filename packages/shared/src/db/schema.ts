@@ -515,6 +515,112 @@ export const meetingReminders = sqliteTable(
 );
 
 // ============================================================================
+// GITHUB SYNC
+// ============================================================================
+
+/**
+ * GitHub Repo Watches - Maps GitHub repos to Discord channels
+ */
+export const githubRepoWatches = sqliteTable(
+  'github_repo_watches',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    repo: text('repo').notNull(), // e.g., "owner/repo"
+    guildId: text('guild_id').notNull(),
+    channelId: text('channel_id').notNull(),
+    events: text('events').default('["all"]'), // JSON array: ["pr", "review", "ci"] or ["all"]
+    settings: text('settings').default('{}'), // JSON: poll interval, filters, etc.
+    isActive: integer('is_active', { mode: 'boolean' }).default(true),
+    createdBy: text('created_by'), // Discord user ID who added this watch
+    createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
+    updatedAt: text('updated_at').default(sql`CURRENT_TIMESTAMP`),
+  },
+  (table) => ({
+    repoIdx: index('idx_github_watches_repo').on(table.repo),
+    guildIdx: index('idx_github_watches_guild').on(table.guildId),
+    channelIdx: index('idx_github_watches_channel').on(table.channelId),
+    repoChannelUnique: index('idx_github_watches_repo_channel').on(table.repo, table.channelId),
+  })
+);
+
+/**
+ * GitHub Sync State - Tracks last seen events per repo for polling
+ */
+export const githubSyncState = sqliteTable(
+  'github_sync_state',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    repo: text('repo').notNull().unique(), // e.g., "owner/repo"
+    lastPrNumber: integer('last_pr_number').default(0),
+    lastPrUpdatedAt: text('last_pr_updated_at'),
+    lastCommentId: integer('last_comment_id').default(0),
+    lastReviewId: integer('last_review_id').default(0),
+    lastCheckRunId: integer('last_check_run_id').default(0),
+    lastPolledAt: text('last_polled_at'),
+    pollErrors: integer('poll_errors').default(0), // consecutive errors for backoff
+    metadata: text('metadata').default('{}'), // JSON for additional state
+    createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
+    updatedAt: text('updated_at').default(sql`CURRENT_TIMESTAMP`),
+  },
+  (table) => ({
+    repoIdx: index('idx_github_sync_repo').on(table.repo),
+    lastPolledIdx: index('idx_github_sync_last_polled').on(table.lastPolledAt),
+  })
+);
+
+/**
+ * GitHub Identity Mappings - Maps GitHub usernames to Discord users
+ * Learned organically by Artie, can be manually overridden
+ */
+export const githubIdentityMappings = sqliteTable(
+  'github_identity_mappings',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    githubUsername: text('github_username').notNull().unique(),
+    discordUserId: text('discord_user_id'),
+    displayName: text('display_name'), // Cached display name
+    confidence: real('confidence').default(1.0), // 0-1, how confident Artie is in this mapping
+    source: text('source').default('manual'), // manual, learned, heuristic
+    metadata: text('metadata').default('{}'), // JSON for additional info
+    createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
+    updatedAt: text('updated_at').default(sql`CURRENT_TIMESTAMP`),
+  },
+  (table) => ({
+    githubIdx: index('idx_github_identity_github').on(table.githubUsername),
+    discordIdx: index('idx_github_identity_discord').on(table.discordUserId),
+  })
+);
+
+/**
+ * GitHub Events Queue - Pending events to be posted to Discord
+ * Used for batching and deduplication
+ */
+export const githubEventsQueue = sqliteTable(
+  'github_events_queue',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    repo: text('repo').notNull(),
+    eventType: text('event_type').notNull(), // pr_opened, pr_ready, comment, review, ci_status, etc.
+    eventId: text('event_id').notNull(), // Unique ID from GitHub (PR number, comment ID, etc.)
+    channelId: text('channel_id').notNull(),
+    payload: text('payload').notNull(), // JSON event data
+    status: text('status').default('pending'), // pending, batched, posted, skipped
+    batchKey: text('batch_key'), // For grouping related events
+    priority: integer('priority').default(0),
+    scheduledFor: text('scheduled_for'), // When to post (for batching delay)
+    postedAt: text('posted_at'),
+    createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
+  },
+  (table) => ({
+    statusIdx: index('idx_github_events_status').on(table.status),
+    repoIdx: index('idx_github_events_repo').on(table.repo),
+    batchKeyIdx: index('idx_github_events_batch_key').on(table.batchKey),
+    scheduledIdx: index('idx_github_events_scheduled').on(table.scheduledFor),
+    eventIdIdx: index('idx_github_events_event_id').on(table.repo, table.eventType, table.eventId),
+  })
+);
+
+// ============================================================================
 // TYPE EXPORTS
 // ============================================================================
 
@@ -565,3 +671,15 @@ export type NewConfig = typeof config.$inferInsert;
 
 export type Log = typeof logs.$inferSelect;
 export type NewLog = typeof logs.$inferInsert;
+
+export type GithubRepoWatch = typeof githubRepoWatches.$inferSelect;
+export type NewGithubRepoWatch = typeof githubRepoWatches.$inferInsert;
+
+export type GithubSyncState = typeof githubSyncState.$inferSelect;
+export type NewGithubSyncState = typeof githubSyncState.$inferInsert;
+
+export type GithubIdentityMapping = typeof githubIdentityMappings.$inferSelect;
+export type NewGithubIdentityMapping = typeof githubIdentityMappings.$inferInsert;
+
+export type GithubEvent = typeof githubEventsQueue.$inferSelect;
+export type NewGithubEvent = typeof githubEventsQueue.$inferInsert;

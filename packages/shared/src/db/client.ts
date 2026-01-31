@@ -383,6 +383,79 @@ export function initializeDb(dbPath?: string): BetterSQLite3Database<typeof sche
   raw.exec(`CREATE INDEX IF NOT EXISTS idx_goals_user_id ON goals(user_id)`);
   raw.exec(`CREATE INDEX IF NOT EXISTS idx_goals_status ON goals(status)`);
 
+  // GitHub Sync tables
+  raw.exec(`
+    CREATE TABLE IF NOT EXISTS github_repo_watches (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      repo TEXT NOT NULL,
+      guild_id TEXT NOT NULL,
+      channel_id TEXT NOT NULL,
+      events TEXT DEFAULT '["all"]',
+      settings TEXT DEFAULT '{}',
+      is_active BOOLEAN DEFAULT 1,
+      created_by TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+  raw.exec(`CREATE INDEX IF NOT EXISTS idx_github_watches_repo ON github_repo_watches(repo)`);
+  raw.exec(`CREATE INDEX IF NOT EXISTS idx_github_watches_guild ON github_repo_watches(guild_id)`);
+  raw.exec(`CREATE INDEX IF NOT EXISTS idx_github_watches_channel ON github_repo_watches(channel_id)`);
+
+  raw.exec(`
+    CREATE TABLE IF NOT EXISTS github_sync_state (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      repo TEXT NOT NULL UNIQUE,
+      last_pr_number INTEGER DEFAULT 0,
+      last_pr_updated_at DATETIME,
+      last_comment_id INTEGER DEFAULT 0,
+      last_review_id INTEGER DEFAULT 0,
+      last_check_run_id INTEGER DEFAULT 0,
+      last_polled_at DATETIME,
+      poll_errors INTEGER DEFAULT 0,
+      metadata TEXT DEFAULT '{}',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+  raw.exec(`CREATE INDEX IF NOT EXISTS idx_github_sync_repo ON github_sync_state(repo)`);
+
+  raw.exec(`
+    CREATE TABLE IF NOT EXISTS github_identity_mappings (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      github_username TEXT NOT NULL UNIQUE,
+      discord_user_id TEXT,
+      display_name TEXT,
+      confidence REAL DEFAULT 1.0,
+      source TEXT DEFAULT 'manual',
+      metadata TEXT DEFAULT '{}',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+  raw.exec(`CREATE INDEX IF NOT EXISTS idx_github_identity_github ON github_identity_mappings(github_username)`);
+  raw.exec(`CREATE INDEX IF NOT EXISTS idx_github_identity_discord ON github_identity_mappings(discord_user_id)`);
+
+  raw.exec(`
+    CREATE TABLE IF NOT EXISTS github_events_queue (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      repo TEXT NOT NULL,
+      event_type TEXT NOT NULL,
+      event_id TEXT NOT NULL,
+      channel_id TEXT NOT NULL,
+      payload TEXT NOT NULL,
+      status TEXT DEFAULT 'pending',
+      batch_key TEXT,
+      priority INTEGER DEFAULT 0,
+      scheduled_for DATETIME,
+      posted_at DATETIME,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+  raw.exec(`CREATE INDEX IF NOT EXISTS idx_github_events_status ON github_events_queue(status)`);
+  raw.exec(`CREATE INDEX IF NOT EXISTS idx_github_events_repo ON github_events_queue(repo)`);
+  raw.exec(`CREATE INDEX IF NOT EXISTS idx_github_events_batch_key ON github_events_queue(batch_key)`);
+
   return database;
 }
 

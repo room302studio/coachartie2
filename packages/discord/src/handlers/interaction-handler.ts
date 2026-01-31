@@ -20,6 +20,9 @@ import { usageCommand } from '../commands/usage.js';
 import { debugCommand } from '../commands/debug.js';
 import * as syncDiscussionsCommand from '../commands/sync-discussions.js';
 import { quizCommand } from '../commands/quiz.js';
+import { watchRepoCommand } from '../commands/watch-repo.js';
+import { unwatchRepoCommand } from '../commands/unwatch-repo.js';
+import { listWatchesCommand } from '../commands/list-watches.js';
 import { telemetry } from '../services/telemetry.js';
 import {
   CorrelationContext,
@@ -42,6 +45,9 @@ const commands = new Map([
   ['debug', debugCommand],
   ['sync-discussions', syncDiscussionsCommand],
   ['quiz', quizCommand],
+  ['watch-repo', watchRepoCommand],
+  ['unwatch-repo', unwatchRepoCommand],
+  ['list-watches', listWatchesCommand],
 ] as any);
 
 export function setupInteractionHandler(client: Client) {
