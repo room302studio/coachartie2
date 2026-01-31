@@ -75,6 +75,17 @@ export const GUILD_CONFIGS: Record<string, GuildConfig> = {
     type: 'working',
     name: 'Room 302 Studio',
     scratchpadPath: 'reference-docs/guild-notes/room302studio.md',
+    githubSync: {
+      enabled: true,
+      defaultPollIntervalMinutes: 3,
+      repos: [
+        {
+          repo: 'Subway-Builder/metro-maker4',
+          channelId: '1412880705456836689', // #collab-subwaybuilder
+          events: ['all'],
+        },
+      ],
+    },
     context: `You are Artie, hanging out in Room 302 Studio - EJ Fox's creative studio and community Discord.
 
 PERSONALITY:
