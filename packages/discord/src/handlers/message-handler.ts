@@ -23,9 +23,11 @@ import {
   isGuildWhitelisted,
   isWorkingGuild,
   getGuildConfig,
+  getChannelPersona,
+  shouldRespondToAllInChannel,
   GuildConfig,
 } from '../config/guild-whitelist.js';
-import { getGitHubIntegration } from '../services/github-integration.js';
+import { getGitHubIntegrationSafe, isGitHubIntegrationReady } from '../services/github-integration.js';
 import { getForumTraversal } from '../services/forum-traversal.js';
 import { getMentionProxyService } from '../services/mention-proxy-service.js';
 import { quizSessionManager } from '../services/quiz-session-manager.js';
@@ -40,12 +42,32 @@ const chance = new Chance();
  * Returns the base context plus any notes from the guild's scratchpad file
  */
 function getEnhancedGuildContext(guildConfig: GuildConfig | null | undefined): string | undefined {
-  if (!guildConfig?.context) return undefined;
+  // Load context from file if contextPath is set, otherwise use inline context
+  let baseContext: string | undefined;
 
-  let fullContext = guildConfig.context;
+  if (guildConfig?.contextPath) {
+    try {
+      const contextFullPath = join(process.cwd(), guildConfig.contextPath);
+      if (existsSync(contextFullPath)) {
+        baseContext = readFileSync(contextFullPath, 'utf-8');
+      } else {
+        logger.warn(`Context file not found for ${guildConfig.name}: ${contextFullPath}`);
+        baseContext = guildConfig.context; // Fall back to inline
+      }
+    } catch (error) {
+      logger.warn(`Failed to load context file for ${guildConfig.name}:`, error);
+      baseContext = guildConfig.context; // Fall back to inline
+    }
+  } else {
+    baseContext = guildConfig?.context;
+  }
 
-  // Load scratchpad if configured
-  if (guildConfig.scratchpadPath) {
+  if (!baseContext) return undefined;
+
+  let fullContext = baseContext;
+
+  // Load scratchpad if configured (guildConfig is guaranteed to exist if we have baseContext from it)
+  if (guildConfig?.scratchpadPath) {
     try {
       const scratchpadFullPath = join(process.cwd(), guildConfig.scratchpadPath);
       if (existsSync(scratchpadFullPath)) {
@@ -64,7 +86,7 @@ To rewrite entirely: <write path="${guildConfig.scratchpadPath}">full new conten
 To delete: <rm path="${guildConfig.scratchpadPath}" />`;
       }
     } catch (error) {
-      logger.warn(`Failed to load scratchpad for ${guildConfig.name}:`, error);
+      logger.warn(`Failed to load scratchpad for ${guildConfig?.name}:`, error);
     }
   }
 
@@ -193,7 +215,7 @@ JSON response:`;
       return false;
     }
 
-    const openRouterResponse = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+    const openRouterResponse = await fetch('https://router.tools.ejfox.com/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -601,7 +623,7 @@ async function sendCompleteResponse(message: Message, result: string): Promise<n
  */
 async function handleGitHubAutoExpansion(
   message: Message,
-  githubService: ReturnType<typeof getGitHubIntegration>
+  githubService: NonNullable<ReturnType<typeof getGitHubIntegrationSafe>>
 ): Promise<boolean> {
   try {
     // Detect GitHub URLs in the message
@@ -869,6 +891,35 @@ export function setupMessageHandler(client: Client) {
     if (message.author.id === client.user!.id) return;
 
     // -------------------------------------------------------------------------
+    // PRESENCE CHECK-IN RESPONSE DETECTION
+    // -------------------------------------------------------------------------
+    // If this is a DM from EJ, capture it for the presence system
+    const EJ_USER_ID = '688448399879438340';
+    if (message.channel.isDMBased() && message.author.id === EJ_USER_ID) {
+      try {
+        const { appendFileSync } = await import('fs');
+        const PRESENCE_INBOX_PATH = '/app/data/presence-inbox.jsonl';
+
+        const presenceResponse = {
+          id: `response-${Date.now()}`,
+          content: message.content,
+          timestamp: new Date().toISOString(),
+          messageId: message.id,
+          acknowledged: false,
+          // Check if this is a reply to a specific message
+          replyTo: message.reference?.messageId || null,
+        };
+
+        appendFileSync(PRESENCE_INBOX_PATH, JSON.stringify(presenceResponse) + '\n');
+        logger.info(`📍 PRESENCE: Captured EJ's DM response (${presenceResponse.id})`);
+
+        // Continue normal processing - the DM will still get a response from Artie
+      } catch (e) {
+        logger.warn('📍 PRESENCE: Failed to capture DM response:', e);
+      }
+    }
+
+    // -------------------------------------------------------------------------
     // QUIZ ANSWER DETECTION
     // -------------------------------------------------------------------------
 
@@ -950,21 +1001,23 @@ export function setupMessageHandler(client: Client) {
     // GITHUB AUTO-EXPANSION (Working Guilds Only)
     // -------------------------------------------------------------------------
 
-    // Auto-expand GitHub URLs in working guilds
-    if (message.guildId && isWorkingGuild(message.guildId)) {
+    // Auto-expand GitHub URLs in working guilds (only if GitHub integration is ready)
+    if (message.guildId && isWorkingGuild(message.guildId) && isGitHubIntegrationReady()) {
       try {
-        const githubService = getGitHubIntegration();
-        const expanded = await handleGitHubAutoExpansion(message, githubService);
+        const githubService = getGitHubIntegrationSafe();
+        if (githubService) {
+          const expanded = await handleGitHubAutoExpansion(message, githubService);
 
-        if (expanded) {
-          logger.info(`✅ GitHub auto-expansion completed [${shortId}]`);
-          telemetry.logEvent(
-            'github_auto_expansion',
-            { guildId: message.guildId },
-            correlationId,
-            message.author.id
-          );
-          return; // Don't process message further - auto-expansion handled it
+          if (expanded) {
+            logger.info(`✅ GitHub auto-expansion completed [${shortId}]`);
+            telemetry.logEvent(
+              'github_auto_expansion',
+              { guildId: message.guildId },
+              correlationId,
+              message.author.id
+            );
+            return; // Don't process message further - auto-expansion handled it
+          }
         }
       } catch (error) {
         // Log error but continue with normal message processing
@@ -1163,11 +1216,25 @@ export function setupMessageHandler(client: Client) {
       logger.info(`🚫 Robot channel: skipping reply to other user [${shortId}]`);
     }
 
+    // Check for channel personas with respondToAll enabled (e.g., Judge Artie in #litigation)
+    const channelName =
+      message.channel.type === ChannelType.GuildText ||
+      message.channel.type === ChannelType.PublicThread
+        ? message.channel.name
+        : '';
+    const channelPersona = getChannelPersona(message.guildId, channelName);
+    const isRespondToAllChannel = shouldRespondToAllInChannel(message.guildId, channelName);
+
+    if (isRespondToAllChannel && channelPersona) {
+      logger.info(`⚖️ Channel persona active: ${channelPersona.personaName} in #${channelName} [${shortId}]`);
+    }
+
     const shouldRespond =
       responseConditions.botMentioned ||
       responseConditions.isDM ||
       shouldRespondInRobotChannel ||
-      responseConditions.isProactiveAnswer;
+      responseConditions.isProactiveAnswer ||
+      isRespondToAllChannel; // NEW: Respond to all in channels with respondToAll personas
 
     try {
       // -------------------------------------------------------------------------
@@ -1213,7 +1280,9 @@ export function setupMessageHandler(client: Client) {
             ? 'dm'
             : responseConditions.isProactiveAnswer
               ? 'proactive_answer'
-              : 'robot_channel';
+              : isRespondToAllChannel
+                ? `channel_persona:${channelPersona?.personaName || 'unknown'}`
+                : 'robot_channel';
 
         logger.info(`🤖 Will respond to message [${shortId}] (trigger: ${triggerType})`, {
           correlationId,
@@ -1233,14 +1302,29 @@ export function setupMessageHandler(client: Client) {
 
         // Process with unified intent processor
         // Always pass guild context if available (not just for proactive answers)
-        const guildContextToPass = proactiveAnswerContext || getEnhancedGuildContext(guildConfig);
+        let guildContextToPass = proactiveAnswerContext || getEnhancedGuildContext(guildConfig);
+
+        // If there's a channel persona (e.g., Judge Artie), prepend its system prompt
+        if (channelPersona?.systemPrompt) {
+          const personaContext = `🎭 CHANNEL PERSONA: ${channelPersona.personaName}
+
+${channelPersona.systemPrompt}
+
+---
+`;
+          guildContextToPass = guildContextToPass
+            ? personaContext + guildContextToPass
+            : personaContext;
+          logger.info(`⚖️ Injecting ${channelPersona.personaName} persona context [${shortId}]`);
+        }
+
         await handleMessageAsIntent(
           message,
           cleanMessage,
           correlationId,
           undefined,
           guildContextToPass,
-          responseConditions.isProactiveAnswer
+          responseConditions.isProactiveAnswer || isRespondToAllChannel
         );
       } else {
         // PASSIVE OBSERVATION: Only process for learning if channel is whitelisted

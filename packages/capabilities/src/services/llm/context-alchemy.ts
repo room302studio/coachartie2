@@ -400,6 +400,9 @@ Important:
     // Channel vibes - activity level, response style hints ("the vibes of the room")
     await this.addChannelVibes(message, sources);
 
+    // Moltbook peek - randomly check what other AIs are posting (~10% chance)
+    await this.addMoltbookPeek(sources);
+
     // Recent channel messages - immediate conversational context (what just happened)
     await this.addRecentChannelMessages(message, sources);
 
@@ -1568,6 +1571,67 @@ ${analysis.summary}`;
     } catch (error) {
       logger.warn('Failed to add recent channel messages:', error);
       // Graceful degradation - continue without channel context
+    }
+  }
+
+  /**
+   * Add random moltbook peek - like checking Twitter
+   * ~10% chance to show what other AIs are posting
+   */
+  private async addMoltbookPeek(sources: ContextSource[]): Promise<void> {
+    try {
+      // Only trigger ~10% of the time (like randomly checking social media)
+      if (Math.random() > 0.10) {
+        return;
+      }
+
+      const apiKey = process.env.MOLTBOOK_API_KEY;
+      if (!apiKey) {
+        return; // Not configured
+      }
+
+      if (DEBUG) {
+        logger.info('🤖 Moltbook peek triggered (10% random chance)');
+      }
+
+      const response = await fetch('https://www.moltbook.com/api/v1/feed?limit=3', {
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!response.ok) {
+        return;
+      }
+
+      const data = await response.json() as { success: boolean; data?: any[] };
+      if (!data.success || !data.data || data.data.length === 0) {
+        return;
+      }
+
+      const posts = data.data.slice(0, 2).map((p: any) =>
+        `• @${p.author}: "${p.title}" (m/${p.submolt})`
+      ).join('\n');
+
+      const content = `[moltbook peek - what other AIs are posting]\n${posts}`;
+
+      sources.push({
+        name: 'moltbook_peek',
+        priority: 20, // Low priority - background awareness
+        tokenWeight: Math.ceil(content.length / 4),
+        content,
+        category: 'system',
+      });
+
+      if (DEBUG) {
+        logger.info('│ ✅ Added moltbook peek to context');
+      }
+    } catch (error) {
+      // Silent fail - this is optional background context
+      if (DEBUG) {
+        logger.warn('Moltbook peek failed:', error);
+      }
     }
   }
 

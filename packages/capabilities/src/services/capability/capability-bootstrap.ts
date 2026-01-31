@@ -51,6 +51,8 @@ import { emailCapability } from '../../capabilities/communication/email.js';
 import { redditCapability } from '../../capabilities/communication/reddit.js';
 // Analytics capabilities
 import { selfStatsCapability } from '../../capabilities/self-stats.js';
+// Social capabilities
+import { moltbookCapability } from '../../capabilities/social/moltbook.js';
 // Services
 import { meetingCapability } from '../core/meeting-service.js';
 
@@ -254,6 +256,11 @@ export class CapabilityBootstrap {
       logger.info('📦 Registering reddit...');
       capabilityRegistry.register(redditCapability);
       logger.info('✅ reddit registered successfully');
+
+      // Register moltbook capability - AI-only social network
+      logger.info('📦 Registering moltbook (AI social network)...');
+      capabilityRegistry.register(moltbookCapability);
+      logger.info('✅ moltbook registered successfully');
 
       const totalCaps = capabilityRegistry.list().length;
       logger.info(

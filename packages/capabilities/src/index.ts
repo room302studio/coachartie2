@@ -50,6 +50,7 @@ import { capabilityRegistry } from './services/capability/capability-registry.js
 import { capabilitiesRouter } from './routes/capabilities.js';
 import { simpleHealer } from './runtime/simple-healer.js';
 import { hybridDataLayer } from './runtime/hybrid-data-layer.js';
+import { startSocialMediaBehavior, stopSocialMediaBehavior } from './services/behaviors/social-media-behavior.js';
 import { getMetrics, getMetricsContentType } from './services/metrics.js';
 
 // Export openRouterService for models endpoint
@@ -202,6 +203,10 @@ async function start() {
     console.log('🏥 Starting simple healer...');
     simpleHealer.start();
 
+    // Start social media behavior (periodic moltbook checks)
+    console.log('🌐 Starting social media behavior...');
+    startSocialMediaBehavior();
+
     console.log('🔍 Parsing port configuration...');
     console.log('  - CAPABILITIES_PORT env:', process.env.CAPABILITIES_PORT);
     const PORT = await parsePortWithFallback('CAPABILITIES_PORT', 'capabilities');
@@ -266,6 +271,9 @@ async function gracefulShutdown() {
     // Stop services in order
     logger.info('Stopping simple healer...');
     simpleHealer.stop();
+
+    logger.info('Stopping social media behavior...');
+    stopSocialMediaBehavior();
 
     logger.info('Shutting down scheduler...');
     await schedulerService.close();

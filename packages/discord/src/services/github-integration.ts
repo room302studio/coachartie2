@@ -533,3 +533,17 @@ export function getGitHubIntegration(): GitHubIntegrationService {
   }
   return githubService;
 }
+
+/**
+ * Safe getter that returns null if not initialized (for optional usage)
+ */
+export function getGitHubIntegrationSafe(): GitHubIntegrationService | null {
+  return githubService;
+}
+
+/**
+ * Check if GitHub integration is initialized
+ */
+export function isGitHubIntegrationReady(): boolean {
+  return githubService !== null;
+}

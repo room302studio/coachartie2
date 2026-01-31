@@ -200,6 +200,14 @@ class OpenRouterService {
     messageId?: string,
     selectedModel?: string
   ): Promise<string> {
+    // SHORT-CIRCUIT: If credits are exhausted, don't even try the API
+    if (creditMonitor.areCreditsExhausted()) {
+      logger.info('💳 Skipping API call - credits exhausted (in cooldown period)');
+      throw new Error(
+        '💳 OUT OF CREDITS: OpenRouter account needs more credits. Visit https://openrouter.ai/settings/credits to add funds.'
+      );
+    }
+
     const startTime = Date.now();
 
     // If a specific model was selected (three-tier strategy), use it
@@ -351,6 +359,8 @@ class OpenRouterService {
           logger.info(
             '💳 Billing/credit error detected' + (isLastModel ? '' : ', trying next model...')
           );
+          // Mark credits as exhausted to prevent repeated API calls
+          creditMonitor.markCreditsExhausted();
           if (isLastModel) {
             throw new Error(
               '💳 OUT OF CREDITS: OpenRouter account needs more credits. Visit https://openrouter.ai/settings/credits to add funds.'

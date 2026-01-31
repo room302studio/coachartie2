@@ -32,4 +32,10 @@ export interface OrchestrationContext {
   respondTo: IncomingMessage['respondTo'];
   capabilityFailureCount: Map<string, number>; // Circuit breaker: track failures per capability
   discord_context?: any; // Discord-specific context for mention resolution, etc.
+
+  // Security: Taint tracking for external content
+  // When true, dangerous capabilities (shell, fs write, git) are blocked
+  // to prevent prompt injection from external sources like moltbook
+  taintedByExternalContent?: boolean;
+  taintSource?: string; // Which capability caused the taint
 }

@@ -697,6 +697,9 @@ capabilityRegistry.register(discordIssueParserCapability);
 import { discordSendMessageCapability } from '../../capabilities/discord/discord-send-message.js';
 capabilityRegistry.register(discordSendMessageCapability);
 
+import { sendMetroFileCapability } from '../../capabilities/discord/send-metro-file.js';
+capabilityRegistry.register(sendMetroFileCapability);
+
 // Auto-register Communication capabilities
 import { emailCapability } from '../../capabilities/communication/email.js';
 capabilityRegistry.register(emailCapability);

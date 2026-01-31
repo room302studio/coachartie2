@@ -4,8 +4,7 @@ services:
   redis:
     image: redis:7-alpine
     command: redis-server --port 47320 --appendonly yes --maxmemory 512mb --maxmemory-policy noeviction
-    ports:
-      - "127.0.0.1:47320:47320"  # Same port internally and externally
+    # No host port binding - services connect via docker network
     volumes:
       - redis_data:/data
     healthcheck:
@@ -54,9 +53,12 @@ services:
       - TWILIO_PHONE_NUMBER=${TWILIO_PHONE_NUMBER}
       - ENABLE_AUTO_REFLECTION=${ENABLE_AUTO_REFLECTION}
       - SANDBOX_CONTAINER_NAME=coachartie-sandbox
+      - DISCORD_HEALTH_URL=http://discord:47321/health
+      - MOLTBOOK_API_KEY=${MOLTBOOK_API_KEY}
     volumes:
-      - ./packages/capabilities/data:/app/data:rw
+      - ./data:/app/data:rw
       - ./packages/capabilities/src:/app/packages/capabilities/src
+      - ./reference-docs:/app/reference-docs:ro  # Knowledge base
       - ./logs:/app/logs:rw
       - /var/run/docker.sock:/var/run/docker.sock  # Allow docker exec to sandbox
       - /app/node_modules
@@ -92,8 +94,9 @@ services:
       - SERVICE_NAME=discord
       - LOGS_DIR=/app/logs
     volumes:
-      - ./packages/capabilities/data:/app/data:rw
+      - ./data:/app/data:rw
       - ./logs:/app/logs:rw
+      - /data2/coachartie2/data:/data2/coachartie2/data:rw  # Presence system files
     depends_on:
       redis:
         condition: service_healthy
@@ -197,7 +200,7 @@ services:
       - SERVICE_NAME=brain
       - LOGS_DIR=/app/logs
     volumes:
-      - ./packages/capabilities/data:/app/data:rw
+      - ./data:/app/data:rw
       - ./logs:/app/logs:rw  # Explicit read-write permissions
     depends_on:
       redis:

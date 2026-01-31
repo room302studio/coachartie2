@@ -29,7 +29,44 @@ export class CreditMonitor {
     rate_limit_threshold: 5, // 5 requests remaining
   };
 
+  // Track credit exhaustion to avoid repeated API calls when out of credits
+  private creditsExhaustedAt: Date | null = null;
+  private static EXHAUSTION_COOLDOWN_MS = 5 * 60 * 1000; // 5 minutes before retrying
+
   private constructor() {}
+
+  /**
+   * Mark credits as exhausted (call this when we get a 402 error)
+   */
+  markCreditsExhausted(): void {
+    this.creditsExhaustedAt = new Date();
+    logger.warn('💳 Credits marked as EXHAUSTED - will skip API calls for 5 minutes');
+  }
+
+  /**
+   * Check if credits are currently exhausted (within cooldown period)
+   */
+  areCreditsExhausted(): boolean {
+    if (!this.creditsExhaustedAt) {
+      return false;
+    }
+    const timeSinceExhaustion = Date.now() - this.creditsExhaustedAt.getTime();
+    if (timeSinceExhaustion > CreditMonitor.EXHAUSTION_COOLDOWN_MS) {
+      // Cooldown expired, clear the flag and allow retrying
+      this.creditsExhaustedAt = null;
+      logger.info('💳 Credit exhaustion cooldown expired - will retry API calls');
+      return false;
+    }
+    return true;
+  }
+
+  /**
+   * Clear the exhausted flag (call this after adding credits)
+   */
+  clearExhaustedFlag(): void {
+    this.creditsExhaustedAt = null;
+    logger.info('💳 Credit exhaustion flag cleared');
+  }
 
   static getInstance(): CreditMonitor {
     if (!CreditMonitor.instance) {

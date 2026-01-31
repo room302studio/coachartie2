@@ -350,12 +350,13 @@ export async function processMetroAttachment(
     // Build summary
     const summary = buildAnalysisSummary(saveData, originalSize, warnings, errors);
 
-    // Track if actual repairs were made (file size changed)
-    const actualRepairsMade = resultBuffer.length !== originalSize;
+    // Track if actual repairs were made (repair script ran and succeeded)
+    // NOTE: Don't use buffer size comparison - it's unreliable since JSON can serialize to same size
+    const actualRepairsMade = stuckTrainCount > 0 && resultBuffer !== originalBuffer;
 
     // Add repair info if repairs were made
     let finalSummary = summary;
-    if (actualRepairsMade && stuckTrainCount > 0) {
+    if (actualRepairsMade) {
       finalSummary += `\n🔧 **Fixed:** Nudged ${stuckTrainCount} stuck trains - download the repaired save below`;
     } else if (stuckTrainCount === 0 && warnings.length > 0) {
       finalSummary += `\n📋 _No auto-fixes needed. The issues above require manual changes in-game._`;

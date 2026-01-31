@@ -18,6 +18,40 @@ import {
 // CAPABILITY EXECUTION ENGINE (THE CHAIN/LOOP)
 // =====================================================
 
+// =====================================================
+// TAINT TRACKING FOR EXTERNAL CONTENT SECURITY
+// Prevents prompt injection from external sources (moltbook, web, etc.)
+// from hijacking dangerous capabilities (shell, filesystem, git)
+// =====================================================
+
+// Capabilities that fetch external untrusted content - executing these taints the context
+const TAINTING_CAPABILITIES = new Set([
+  'moltbook',      // AI social network - prime injection target
+  'websearch',     // Web search results
+  'http',          // Raw HTTP fetches
+  'web',           // Web browsing
+  'n8n-browser',   // Browser automation
+]);
+
+// Capabilities that are dangerous when context is tainted by external content
+// These are blocked to prevent "rm -rf" style attacks via prompt injection
+const DANGEROUS_WHEN_TAINTED = new Set([
+  'shell',         // Command execution
+  'bash',          // Command execution
+  'filesystem',    // File operations (write/delete)
+  'git',           // Repository operations
+  'email',         // Sending emails (could exfiltrate data)
+  'sms',           // Sending SMS
+  'scheduler',     // Scheduling future actions
+  'n8n',           // Workflow automation
+]);
+
+// Actions within dangerous capabilities that are safe even when tainted
+const SAFE_ACTIONS_WHEN_TAINTED: Record<string, Set<string>> = {
+  'filesystem': new Set(['read', 'list', 'exists']),  // Read-only is fine
+  'git': new Set(['status', 'log', 'diff', 'branch']), // Read-only git ops
+};
+
 // Callback types for dependencies the executor needs from orchestrator
 export type ExtractCapabilitiesCallback = (
   response: string,
@@ -39,6 +73,44 @@ export type AttemptErrorRecoveryCallback = (
   originalMessage: string
 ) => Promise<void>;
 export type GenerateFinalSummaryCallback = (context: OrchestrationContext) => Promise<string>;
+
+/**
+ * Check if a capability is blocked due to taint
+ * Returns error message if blocked, null if allowed
+ */
+function checkTaintBlock(
+  capability: ExtractedCapability,
+  context: OrchestrationContext | undefined
+): string | null {
+  if (!context?.taintedByExternalContent) {
+    return null; // Not tainted, allow everything
+  }
+
+  const capName = capability.name.toLowerCase();
+
+  if (!DANGEROUS_WHEN_TAINTED.has(capName)) {
+    return null; // Not a dangerous capability
+  }
+
+  // Check if this specific action is safe
+  const safeActions = SAFE_ACTIONS_WHEN_TAINTED[capName];
+  if (safeActions && safeActions.has(capability.action.toLowerCase())) {
+    return null; // This action is safe even when tainted
+  }
+
+  // Block the capability
+  return `🛡️ SECURITY: Capability "${capability.name}:${capability.action}" blocked. ` +
+    `Context is tainted by external content from "${context.taintSource}". ` +
+    `Dangerous operations are disabled to prevent prompt injection attacks. ` +
+    `Safe read-only actions are still allowed.`;
+}
+
+/**
+ * Check if executing a capability should taint the context
+ */
+function shouldTaintContext(capability: ExtractedCapability): boolean {
+  return TAINTING_CAPABILITIES.has(capability.name.toLowerCase());
+}
 
 /**
  * Capability Execution Engine
@@ -80,6 +152,21 @@ export class CapabilityExecutor {
       const capability = context.capabilities[capabilityIndex];
 
       try {
+        // SECURITY: Check if capability is blocked due to taint
+        const taintBlock = checkTaintBlock(capability, context);
+        if (taintBlock) {
+          logger.warn(`🛡️ TAINT BLOCK: ${capability.name}:${capability.action} blocked (tainted by ${context.taintSource})`);
+          context.results.push({
+            capability,
+            success: false,
+            error: taintBlock,
+            timestamp: new Date().toISOString(),
+          });
+          context.currentStep++;
+          capabilityIndex++;
+          continue;
+        }
+
         // Execute this capability
         logger.info(
           `🔧 Executing capability ${capabilityIndex + 1}/${context.capabilities.length}: ${capability.name}:${capability.action}`
@@ -112,6 +199,16 @@ export class CapabilityExecutor {
 
         context.results.push(result);
         context.currentStep++;
+
+        // SECURITY: Mark context as tainted if this capability fetches external content
+        if (result.success && shouldTaintContext(processedCapability)) {
+          context.taintedByExternalContent = true;
+          context.taintSource = `${processedCapability.name}:${processedCapability.action}`;
+          logger.warn(
+            `🛡️ TAINT SET: Context now tainted by ${context.taintSource}. ` +
+            `Dangerous capabilities (shell, filesystem write, git, email) will be blocked.`
+          );
+        }
 
         // Auto-store result to global variable if 'output' param is specified
         const outputVar = processedCapability.params.output;
@@ -257,6 +354,20 @@ export class CapabilityExecutor {
    */
   async executeCapabilityChain(context: OrchestrationContext): Promise<void> {
     for (const capability of context.capabilities) {
+      // SECURITY: Check if capability is blocked due to taint
+      const taintBlock = checkTaintBlock(capability, context);
+      if (taintBlock) {
+        logger.warn(`🛡️ TAINT BLOCK: ${capability.name}:${capability.action} blocked (tainted by ${context.taintSource})`);
+        context.results.push({
+          capability,
+          success: false,
+          error: taintBlock,
+          timestamp: new Date().toISOString(),
+        });
+        context.currentStep++;
+        continue;
+      }
+
       // Apply template variable substitution using previous results
       const processedCapability = await this.substituteTemplateVariables(
         capability,
@@ -294,6 +405,16 @@ export class CapabilityExecutor {
         };
         context.results.push(result);
         context.currentStep++;
+
+        // SECURITY: Mark context as tainted if this capability fetches external content
+        if (result.success && shouldTaintContext(processedCapability)) {
+          context.taintedByExternalContent = true;
+          context.taintSource = `${processedCapability.name}:${processedCapability.action}`;
+          logger.warn(
+            `🛡️ TAINT SET: Context now tainted by ${context.taintSource}. ` +
+            `Dangerous capabilities (shell, filesystem write, git, email) will be blocked.`
+          );
+        }
 
         // Auto-store result to global variable if 'output' param is specified
         const outputVar = processedCapability.params.output;
@@ -406,6 +527,14 @@ export class CapabilityExecutor {
       success: false,
       timestamp: new Date().toISOString(),
     };
+
+    // SECURITY: Check if capability is blocked due to taint
+    const taintBlock = checkTaintBlock(capability, context);
+    if (taintBlock) {
+      logger.warn(`🛡️ TAINT BLOCK: ${capability.name}:${capability.action} blocked`);
+      result.error = taintBlock;
+      return result;
+    }
 
     // Get userId for use in both registry and legacy handlers
     const userId = context ? context.userId : 'unknown-user';
