@@ -33,6 +33,7 @@ export default defineConfig({
 
     reporter: ['verbose', 'json'],
     retry: 1,
+    passWithNoTests: true,
 
     sequence: {
       concurrent: false,

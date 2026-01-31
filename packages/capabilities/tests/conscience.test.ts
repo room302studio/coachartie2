@@ -1,10 +1,16 @@
-import { ConscienceLLM } from '../src/services/conscience.js';
 import { describe, it, expect, beforeEach } from 'vitest';
 
-describe('Conscience Safety Layer', () => {
-  let conscience: ConscienceLLM;
+// Skip if OPENROUTER_API_KEY not set (conscience imports openrouter which requires it)
+const hasApiKey = !!process.env.OPENROUTER_API_KEY;
 
-  beforeEach(() => {
+describe.skipIf(!hasApiKey)('Conscience Safety Layer', () => {
+  // Dynamic import to avoid module-level throw
+  let ConscienceLLM: typeof import('../src/services/monitoring/conscience').ConscienceLLM;
+  let conscience: InstanceType<typeof ConscienceLLM>;
+
+  beforeEach(async () => {
+    const module = await import('../src/services/monitoring/conscience');
+    ConscienceLLM = module.ConscienceLLM;
     conscience = new ConscienceLLM();
   });
 

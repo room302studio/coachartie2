@@ -1,4 +1,4 @@
-import { MemoryService } from '../src/capabilities/memory/memory.js';
+import { MemoryService } from '../src/capabilities/memory/memory';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 describe('Memory Capability', () => {

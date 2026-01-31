@@ -26,7 +26,7 @@ vi.mock(memoryModulePath, () => ({
   },
 }));
 
-import { contextAlchemy } from '../src/services/llm/context-alchemy.js';
+import { contextAlchemy } from '../src/services/llm/context-alchemy';
 
 describe.skip('ContextAlchemy metro follow-ups', () => {
   const baseSystemPrompt = 'system';

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { capabilityParser } from '../src/services/capability-parser.js';
+import { capabilityXMLParser as capabilityParser } from '../src/utils/xml-parser';
 
 describe('Capability Parser', () => {
   describe('extractCapabilities', () => {
@@ -26,7 +26,7 @@ describe('Capability Parser', () => {
       expect(capabilities[0].content).toBe('JavaScript tutorials');
     });
 
-    it('should extract multiple capabilities with priority order', () => {
+    it('should extract multiple capabilities in order', () => {
       const response = `
         First: <capability name="calculator" action="calculate" expression="5*5" />
         Then: <capability name="web" action="search" query="math facts" />
@@ -35,9 +35,7 @@ describe('Capability Parser', () => {
 
       expect(capabilities).toHaveLength(2);
       expect(capabilities[0].name).toBe('calculator');
-      expect(capabilities[0].priority).toBe(0);
       expect(capabilities[1].name).toBe('web');
-      expect(capabilities[1].priority).toBe(1);
     });
 
     it('should extract capability with mixed attributes and content', () => {

@@ -9,7 +9,7 @@
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
-import { GitHubIntegrationService } from '../src/services/github-integration.js';
+import { GitHubIntegrationService } from '../src/services/github-integration';
 
 describe('GitHub Integration Service', () => {
   let service: GitHubIntegrationService;

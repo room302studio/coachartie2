@@ -7,7 +7,7 @@ import {
   QUEUES,
   IncomingMessage,
   OutgoingMessage,
-} from '../src/index.js';
+} from '../src/index';
 
 describe('Redis Queue Integration Tests', () => {
   beforeAll(async () => {

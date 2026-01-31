@@ -8,7 +8,7 @@ import {
   IncomingMessage,
   OutgoingMessage,
   logger,
-} from '../src/index.js';
+} from '../src/index';
 import type { Queue, Worker } from 'bullmq';
 
 describe('Comprehensive Redis Queue Tests', () => {
