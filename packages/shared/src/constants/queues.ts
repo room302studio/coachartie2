@@ -6,6 +6,7 @@ export const QUEUES = {
   OUTGOING_SMS: 'coachartie-sms-outgoing',
   OUTGOING_EMAIL: 'coachartie-email-outgoing',
   OUTGOING_IRC: 'coachartie-irc-outgoing',
+  OUTGOING_REDDIT: 'coachartie-reddit-outgoing',
   DEAD_LETTER: 'coachartie-dlq',
 } as const;
 

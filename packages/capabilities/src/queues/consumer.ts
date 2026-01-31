@@ -223,7 +223,7 @@ export async function startMessageConsumer(): Promise<Worker<IncomingMessage, vo
   return worker;
 }
 
-function getOutgoingQueueName(type: 'discord' | 'slack' | 'sms' | 'email' | 'api' | 'irc'): string {
+function getOutgoingQueueName(type: 'discord' | 'slack' | 'sms' | 'email' | 'api' | 'irc' | 'reddit'): string {
   switch (type) {
     case 'discord':
       return QUEUES.OUTGOING_DISCORD;
@@ -235,6 +235,8 @@ function getOutgoingQueueName(type: 'discord' | 'slack' | 'sms' | 'email' | 'api
       return QUEUES.OUTGOING_EMAIL;
     case 'irc':
       return QUEUES.OUTGOING_IRC;
+    case 'reddit':
+      return QUEUES.OUTGOING_REDDIT;
     default:
       throw new Error(`Unknown response type: ${type}`);
   }

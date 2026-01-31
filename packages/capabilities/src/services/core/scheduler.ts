@@ -8,6 +8,7 @@ import {
   testRedisConnection,
   isRedisAvailable,
 } from '@coachartie/shared';
+import { redditMentionMonitor } from '../reddit-mention-monitor.js';
 
 export interface ScheduledTask {
   id: string;
@@ -316,6 +317,10 @@ export class SchedulerService {
           await this.executeCleanup(job.data);
           break;
 
+        case 'reddit-mentions':
+          await this.executeRedditMentions();
+          break;
+
         default:
           logger.warn(`Unknown scheduled job type: ${jobType} (job name: ${job.name})`);
       }
@@ -454,6 +459,18 @@ export class SchedulerService {
     logger.info('✅ Data cleanup completed');
   }
 
+  private async executeRedditMentions(): Promise<void> {
+    logger.info('👂 Polling Reddit mentions');
+    try {
+      const result = await redditMentionMonitor.pollMentions();
+      logger.info(
+        `Reddit mention poll done: fetched=${result.fetched}, queued=${result.queued}, skipped=${result.skipped}`
+      );
+    } catch (error) {
+      logger.error('❌ Reddit mention poll failed:', error);
+    }
+  }
+
   /**
    * Setup default scheduled tasks
    */
@@ -484,6 +501,15 @@ export class SchedulerService {
       name: 'cleanup-old-data',
       cron: '0 2 * * 0',
       data: { type: 'system-cleanup', maxAge: '7d' },
+      options: { immediate: false },
+    });
+
+    // Reddit mentions poll - hourly
+    await this.scheduleTask({
+      id: 'reddit-mentions',
+      name: 'reddit-mentions',
+      cron: '0 * * * *',
+      data: { type: 'reddit-mentions' },
       options: { immediate: false },
     });
 
