@@ -79,7 +79,7 @@ async function findFiles(
     }
 
     return files;
-  } catch (error) {
+  } catch (_error) {
     // Fallback to find
     const fallback = `find ${basePath} -type f -name '*${pattern}*' 2>/dev/null | head -${limit}`;
     try {

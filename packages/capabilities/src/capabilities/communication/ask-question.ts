@@ -148,7 +148,7 @@ async function createButtons(question: Question): Promise<string> {
       components: [] as any[],
     };
 
-    rowButtons.forEach((opt, index) => {
+    rowButtons.forEach((opt, _index) => {
       const button = {
         type: 2, // Button
         custom_id: `${customId}_${opt.value || opt.label}`,

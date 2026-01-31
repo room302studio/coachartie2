@@ -499,7 +499,7 @@ export class TemporalMemoryEntourage implements MemoryEntourageInterface {
 
     for (let i = 0; i < Math.min(maxAdditional, remaining.length); i++) {
       // Weight by temporal score and type diversity
-      const weights = remaining.map((m, idx) => {
+      const weights = remaining.map((m) => {
         let weight = m.temporalScore * 10;
         // Boost for temporal type diversity
         const existingTypes = selected.map((s) => s.temporalType);
@@ -538,27 +538,30 @@ export class TemporalMemoryEntourage implements MemoryEntourageInterface {
       temporalType: string;
     }>,
     style: string,
-    userMessage: string
+    _userMessage: string
   ): string {
     const memoryTexts = memories.map((m) => m.content);
 
     switch (style) {
-      case 'temporal_contextual':
+      case 'temporal_contextual': {
         const temporalContext = this.getTemporalContext(memories);
         return `${temporalContext}: ${memoryTexts.join(', and ')}.`;
+      }
 
-      case 'temporal_chronological':
+      case 'temporal_chronological': {
         // Sort by date and present chronologically
         const sortedByDate = [...memories].sort(
           (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
         );
         return `Timeline of memories:\n${sortedByDate
-          .map((m, i) => `${this.formatRelativeTime(m.date)}: ${m.content}`)
+          .map((m) => `${this.formatRelativeTime(m.date)}: ${m.content}`)
           .join('\n')}`;
+      }
 
-      case 'temporal_pattern':
+      case 'temporal_pattern': {
         const patterns = this.detectTemporalPatterns(memories);
         return `${patterns}: ${memoryTexts.join('. Also, ')}.`;
+      }
 
       default:
         return memoryTexts.join('\n');

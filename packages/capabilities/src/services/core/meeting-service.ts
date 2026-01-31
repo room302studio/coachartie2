@@ -267,7 +267,7 @@ class MeetingService {
       );
 
       // Query upcoming meetings to avoid conflicts
-      const upcomingMeetings = db.all(
+      const _upcomingMeetings = db.all(
         `
         SELECT scheduled_time, duration_minutes
         FROM meetings

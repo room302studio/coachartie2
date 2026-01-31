@@ -250,7 +250,7 @@ async function queryByEntity(entityName: string, limit: number = 20): Promise<st
   matchingScraps.forEach((scrap: Scrap) => {
     scrap.relationships?.forEach((rel) => {
       const source = String(rel.source || '').toLowerCase();
-      const target = String(rel.target || '').toLowerCase();
+      const _target = String(rel.target || '').toLowerCase();
       const isSource = source.includes(normalizedQuery);
       const connectedEntity = isSource ? rel.target : rel.source;
 
@@ -344,29 +344,32 @@ export const scrapbookCapability: RegisteredCapability = {
 
     try {
       switch (action) {
-        case 'search':
+        case 'search': {
           const searchQuery = query || content;
           if (!searchQuery) {
             return 'Please provide a search query. Example: <capability name="scrapbook" action="search" data=\'{"query":"visualization"}\' />';
           }
           return await searchScraps(searchQuery, limit);
+        }
 
         case 'recent':
           return await getRecentScraps(limit, source);
 
-        case 'get':
+        case 'get': {
           const scrapId = id || content;
           if (!scrapId) {
             return 'Please provide a scrap ID. Example: <capability name="scrapbook" action="get" data=\'{"id":"abc123"}\' />';
           }
           return await getScrapById(scrapId);
+        }
 
-        case 'entity':
+        case 'entity': {
           const entityName = entity || content;
           if (!entityName) {
             return 'Please provide an entity name. Example: <capability name="scrapbook" action="entity" data=\'{"entity":"GPT"}\' />';
           }
           return await queryByEntity(entityName, limit);
+        }
 
         case 'stats':
           return await getStats();

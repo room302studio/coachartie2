@@ -169,7 +169,7 @@ Be selective - only nominate capabilities that are actually useful for this spec
       if (line.includes('CAPABILITY:')) {
         try {
           // Extract name
-          const nameMatch = line.match(/CAPABILITY:\s*([^\|]+)/);
+          const nameMatch = line.match(/CAPABILITY:\s*([^|]+)/);
           const name = nameMatch ? nameMatch[1].trim() : null;
 
           // Extract score
@@ -192,7 +192,7 @@ Be selective - only nominate capabilities that are actually useful for this spec
               });
             }
           }
-        } catch (error) {
+        } catch (_error) {
           logger.warn(`⚠️ Failed to parse nomination line: ${line}`);
         }
       }

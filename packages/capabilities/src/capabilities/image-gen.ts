@@ -1,4 +1,3 @@
-import OpenAI from 'openai';
 import { RegisteredCapability } from '../services/capability/capability-registry.js';
 import { logger } from '@coachartie/shared';
 import { addPendingAttachment } from '../services/llm/context-alchemy.js';

@@ -1,4 +1,3 @@
-import { logger } from '@coachartie/shared';
 import { schedulerService } from '../../services/core/scheduler.js';
 import { RegisteredCapability } from '../../services/capability/capability-registry.js';
 

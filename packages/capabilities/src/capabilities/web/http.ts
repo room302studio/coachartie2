@@ -84,7 +84,7 @@ export const httpCapability: RegisteredCapability = {
           result = JSON.stringify(data, null, 2);
           logger.info(`✅ HTTP Success: Returned ${result.length} chars of JSON data`);
           logger.debug(`📦 HTTP Data preview: ${result.substring(0, 200)}...`);
-        } catch (e) {
+        } catch (_e) {
           // If JSON parse fails, fall back to text
           result = await response.text();
           logger.info(`✅ HTTP Success: Returned ${result.length} chars of text data`);

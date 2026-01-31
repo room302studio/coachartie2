@@ -1,5 +1,4 @@
 import { logger, getRawDb, initializeDb } from '@coachartie/shared';
-import { join } from 'path';
 
 interface OAuthToken {
   id?: number;

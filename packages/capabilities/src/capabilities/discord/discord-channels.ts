@@ -2,7 +2,7 @@ import { RegisteredCapability } from '../../services/capability/capability-regis
 import { logger } from '@coachartie/shared';
 import fetch from 'node-fetch';
 
-interface DiscordChannelParams {
+interface _DiscordChannelParams {
   action: 'get_messages' | 'get_pinned_messages' | 'search_messages';
   channelId: string;
   limit?: number;

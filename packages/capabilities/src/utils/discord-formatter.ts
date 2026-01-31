@@ -1,5 +1,3 @@
-import { logger } from '@coachartie/shared';
-
 /**
  * Discord Rich Formatting Utilities
  * Creates visually appealing, styled messages for Discord

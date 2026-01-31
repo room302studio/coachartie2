@@ -1,7 +1,6 @@
 import { logger, getSyncDb } from '@coachartie/shared';
 import { RegisteredCapability } from '../../services/capability/capability-registry.js';
 import { hybridDataLayer, MemoryRecord } from '../../runtime/hybrid-data-layer.js';
-import { v4 as uuidv4 } from 'uuid';
 
 interface MemoryRow {
   id: number;

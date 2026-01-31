@@ -194,7 +194,7 @@ async function listProxyRulesForUser(userId: string) {
 // CAPABILITY HANDLER
 // =============================================================================
 
-const handler = async (params: any, content?: string): Promise<string> => {
+const handler = async (params: any, _content?: string): Promise<string> => {
   try {
     const { action } = params;
 

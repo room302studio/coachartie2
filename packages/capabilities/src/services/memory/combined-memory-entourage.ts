@@ -191,7 +191,7 @@ export class CombinedMemoryEntourage implements MemoryEntourageInterface {
   private fuseMemoryContent(
     semanticResult: MemoryEntourageResult,
     temporalResult: MemoryEntourageResult,
-    options: any
+    _options: any
   ): string {
     const semanticContent = semanticResult.content.trim();
     const temporalContent = temporalResult.content.trim();
@@ -217,7 +217,7 @@ export class CombinedMemoryEntourage implements MemoryEntourageInterface {
     logger.info(`│ 🎲 FUSION PATTERN: "${pattern}" (randomly selected for variety)`);
 
     switch (pattern) {
-      case 'layered':
+      case 'layered': {
         let layered = '';
         if (semanticContent) {
           layered += semanticContent;
@@ -226,11 +226,12 @@ export class CombinedMemoryEntourage implements MemoryEntourageInterface {
           layered += layered ? `\n\nTiming: ${temporalContent.toLowerCase()}` : temporalContent;
         }
         return layered;
+      }
 
       case 'interleaved':
         return contents.join(' ');
 
-      case 'comparative':
+      case 'comparative': {
         let comparative = '';
         if (semanticContent) {
           comparative += `Conceptual: ${semanticContent}`;
@@ -241,6 +242,7 @@ export class CombinedMemoryEntourage implements MemoryEntourageInterface {
             : `Temporal: ${temporalContent}`;
         }
         return comparative;
+      }
 
       case 'synthesized':
         return `From what I remember: ${contents.join('. This connects to ')}.`;

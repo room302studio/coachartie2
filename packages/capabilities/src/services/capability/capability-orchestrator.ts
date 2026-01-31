@@ -1,28 +1,16 @@
 import { logger, IncomingMessage } from '@coachartie/shared';
-import { openRouterService } from '../llm/openrouter.js';
-import { promptManager } from '../llm/prompt-manager.js';
 import { capabilityRegistry } from './capability-registry.js';
-import { capabilityXMLParser } from '../../utils/xml-parser.js';
-import { robustExecutor } from '../../utils/robust-capability-executor.js';
-import { contextAlchemy } from '../llm/context-alchemy.js';
-import { securityMonitor } from '../monitoring/security-monitor.js';
 import { getErrorMessage, getErrorStack } from '../../utils/error-utils.js';
 
 // Import new modular services
 import { emailDraftingService } from '../external/email-drafting-service.js';
-import { capabilityExecutor } from './capability-executor.js';
 import { llmResponseCoordinator } from '../llm/llm-response-coordinator.js';
-import { capabilityParser } from './capability-parser.js';
 import { capabilityBootstrap } from './capability-bootstrap.js';
 import { memoryOrchestration } from '../memory/memory-orchestration.js';
 import { llmLoopService } from '../llm/llm-loop-service.js';
 
 // Import shared types
-import {
-  ExtractedCapability,
-  CapabilityResult,
-  OrchestrationContext,
-} from '../../types/orchestration-types.js';
+import { OrchestrationContext } from '../../types/orchestration-types.js';
 
 export class CapabilityOrchestrator {
   private contexts = new Map<string, OrchestrationContext>();

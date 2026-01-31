@@ -5,7 +5,6 @@ import { GlobalVariableStore } from '../capabilities/system/variable-store.js';
 import Handlebars from 'handlebars';
 import {
   StructuredCapabilityError,
-  formatStructuredErrorCompact,
   formatStructuredErrorForLLM,
 } from '../types/structured-errors.js';
 import { errorPatternTracker } from '../services/llm/llm-error-pattern-tracker.js';
@@ -160,7 +159,6 @@ export class RobustCapabilityExecutor {
     params: Record<string, any>,
     userId: string
   ): Promise<Record<string, any>> {
-    const variableStore = GlobalVariableStore.getInstance();
     const interpolated: Record<string, any> = {};
 
     // Get all global variables as a flat object for Handlebars
@@ -199,7 +197,7 @@ export class RobustCapabilityExecutor {
   /**
    * Get all global variables as a flat object for Handlebars
    */
-  private async getUserVariablesForHandlebars(userId: string): Promise<Record<string, any>> {
+  private async getUserVariablesForHandlebars(_userId: string): Promise<Record<string, any>> {
     const variableStore = GlobalVariableStore.getInstance();
     // Global store - get all variables
     return await variableStore.list();

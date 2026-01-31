@@ -325,7 +325,7 @@ Please provide a helpful response to the user that:
             baseSystemPrompt
           );
 
-          const model = process.env.SMART_MODEL || 'openai/gpt-4o';
+          const _model = process.env.SMART_MODEL || 'openai/gpt-4o';
           const response = await openRouterService.generateFromMessageChain(
             messages,
             context.userId
@@ -506,7 +506,7 @@ ${capabilityDetails}`;
    * Strip thinking tags from LLM responses
    * Security measure to prevent information disclosure
    */
-  stripThinkingTags(content: string, userId?: string, messageId?: string): string {
+  stripThinkingTags(content: string, _userId?: string, _messageId?: string): string {
     // Just remove actual <thinking> tags, nothing else
     // Use trimEnd() instead of trim() to preserve leading spaces needed for text concatenation
     // LLMs naturally add leading spaces between sentences for proper formatting

@@ -1,7 +1,7 @@
 import { logger, initializeDb, getSyncDb } from '@coachartie/shared';
 import { RegisteredCapability } from '../../services/capability/capability-registry.js';
 
-interface TodoListRow {
+interface _TodoListRow {
   id: number;
   user_id: string;
   name: string;

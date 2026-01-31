@@ -98,7 +98,7 @@ export const createApiRoutes: FastifyPluginAsync = async (fastify) => {
       });
 
       // GET /api/error-analytics/user/:userId - User error statistics
-      fastify.get('/error-analytics/user/:userId', async (request, reply) => {
+      fastify.get('/error-analytics/user/:userId', async (request, _reply) => {
         const { userId } = request.params as { userId: string };
         const stats = errorPatternTracker.getUserErrorStats(userId);
         const preventionTips = errorPatternTracker.getPreventionTips(userId);
@@ -111,7 +111,7 @@ export const createApiRoutes: FastifyPluginAsync = async (fastify) => {
       });
 
       // GET /api/error-analytics/global - Global error statistics
-      fastify.get('/error-analytics/global', async (request, reply) => {
+      fastify.get('/error-analytics/global', async (_request, _reply) => {
         const stats = errorPatternTracker.getGlobalErrorStats();
 
         return {

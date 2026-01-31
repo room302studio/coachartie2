@@ -1,7 +1,7 @@
 import { RegisteredCapability } from '../../services/capability/capability-registry.js';
 import { logger } from '@coachartie/shared';
 
-interface ParseIssueLinksParams {
+interface _ParseIssueLinksParams {
   action: 'parse_issue_links';
   text: string;
   repo?: string; // Format: "owner/repo" for generating full links

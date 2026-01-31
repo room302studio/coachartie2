@@ -226,7 +226,7 @@ async function createModal(params: SlackUIParams, content?: string): Promise<str
  * @param content - Optional content to parse for additional buttons
  * @returns Formatted response string with buttons JSON
  */
-async function createButtons(params: SlackUIParams, content?: string): Promise<string> {
+async function createButtons(params: SlackUIParams, _content?: string): Promise<string> {
   if (!params.buttons || params.buttons.length === 0) {
     throw new Error('Button action requires buttons array');
   }
@@ -289,12 +289,12 @@ async function createButtons(params: SlackUIParams, content?: string): Promise<s
  * @param content - Optional content to parse for additional options
  * @returns Formatted response string with select menu JSON
  */
-async function createSelectMenu(params: SlackUIParams, content?: string): Promise<string> {
+async function createSelectMenu(params: SlackUIParams, _content?: string): Promise<string> {
   const selectType = params.selectType || 'static';
   const actionId = params.callbackId || `select_${Date.now()}`;
   const placeholder = params.placeholder || 'Choose an option...';
 
-  let selectMenu: any = {
+  const selectMenu: any = {
     action_id: actionId,
     placeholder: {
       type: TextType.PlainText,
@@ -304,7 +304,7 @@ async function createSelectMenu(params: SlackUIParams, content?: string): Promis
 
   // Set select menu type and options based on selectType
   switch (selectType) {
-    case 'static':
+    case 'static': {
       if (!params.options || params.options.length === 0) {
         throw new Error('Static select menu requires options array');
       }
@@ -326,6 +326,7 @@ async function createSelectMenu(params: SlackUIParams, content?: string): Promis
       selectMenu.type = ElementType.StaticSelect;
       selectMenu.options = options;
       break;
+    }
 
     case 'users':
       selectMenu.type = ElementType.UsersSelect;
@@ -369,7 +370,7 @@ async function createSelectMenu(params: SlackUIParams, content?: string): Promis
  * @param content - Optional content to parse for additional blocks
  * @returns Formatted response string with rich text blocks JSON
  */
-async function createRichText(params: SlackUIParams, content?: string): Promise<string> {
+async function createRichText(params: SlackUIParams, _content?: string): Promise<string> {
   if (!params.blocks || params.blocks.length === 0) {
     throw new Error('Rich text action requires blocks array');
   }

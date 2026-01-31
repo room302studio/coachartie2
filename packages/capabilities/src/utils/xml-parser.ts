@@ -98,7 +98,7 @@ export class CapabilityXMLParser {
           Object.assign(params, parsedData);
           // Remove the raw data string
           delete params.data;
-        } catch (error) {
+        } catch {
           logger.warn(
             `⚠️ XML PARSER: Failed to parse data attribute as JSON, keeping as string: ${params.data}`
           );

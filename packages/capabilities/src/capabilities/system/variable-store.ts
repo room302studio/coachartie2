@@ -34,7 +34,7 @@ export class GlobalVariableStore {
    * Set a variable in the database
    */
   async set(key: string, value: any, description?: string): Promise<void> {
-    const db = getDb();
+    const _db = getDb();
 
     // Determine value type and serialize if needed
     let valueType = 'string';

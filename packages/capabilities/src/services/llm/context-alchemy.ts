@@ -7,7 +7,7 @@ import { CreditMonitor } from '../monitoring/credit-monitor.js';
 import { visionCapability as visionCap } from '../../capabilities/ai/vision.js';
 import { processMetroAttachment } from '../monitoring/metro-doctor.js';
 import { MemoryService } from '../../capabilities/memory/memory.js';
-import { storeAnalyzedMetroFile, addPendingAttachment, getPendingAttachments, hasStoredMetroFile, getStoredMetroFile, readAnalysis } from './pending-attachments.js';
+import { storeAnalyzedMetroFile, readAnalysis } from './pending-attachments.js';
 
 // Vision capability wrapper for auto-extraction
 const visionCapability: { execute: (opts: any) => Promise<string> } | null = {
@@ -306,7 +306,7 @@ export class ContextAlchemy {
           .replace(/\{\{USER_MESSAGE\}\}/g, originalMessage)
           .replace(/\{\{CAPABILITY_RESULTS\}\}/g, capabilityResults);
       }
-    } catch (error) {
+    } catch (_error) {
       logger.warn('Failed to load synthesis prompt from database, using fallback');
     }
 
@@ -1068,7 +1068,7 @@ ${recentMetroMemory.content}`;
               ? result.stdout.slice(0, MAX_METRO_CHARS) + '\n…[truncated]'
               : result.stdout;
 
-          const content = [
+          const _content = [
             '🩺 Metro savefile doctor (auto)',
             `File: ${first.name || first.id || url}`,
             trimmed,
@@ -1867,7 +1867,7 @@ ${capabilityMemories
         const uiPrompt = await promptManager.getPrompt('PROMPT_DISCORD_UI_MODALITY');
         const uiRules = uiPrompt?.content || UI_MODALITY_RULES_FALLBACK;
         systemContent += `\n\n${uiRules}`;
-      } catch (error) {
+      } catch (_error) {
         logger.warn('Failed to load Discord UI modality prompt, using fallback');
         systemContent += `\n\n${UI_MODALITY_RULES_FALLBACK}`;
       }
@@ -1883,7 +1883,7 @@ ${capabilityMemories
         if (DEBUG) {
           logger.info('│ ✅ Added Slack UI modality rules to system prompt');
         }
-      } catch (error) {
+      } catch (_error) {
         logger.warn('Failed to load Slack UI modality prompt, using fallback');
         systemContent += `\n\n${SLACK_UI_MODALITY_RULES_FALLBACK}`;
       }

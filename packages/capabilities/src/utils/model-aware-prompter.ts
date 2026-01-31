@@ -281,8 +281,8 @@ Then provide a natural response incorporating the results.`;
       [];
 
     // Math detection
-    if (/\d+.*?[\+\-\*/].*?\d+|calculate|compute|math/.test(message)) {
-      const mathMatch = message.match(/(\d+.*?[\+\-\*/].*?\d+)/);
+    if (/\d+.*?[+\-*/].*?\d+|calculate|compute|math/.test(message)) {
+      const mathMatch = message.match(/(\d+.*?[+\-*/].*?\d+)/);
       needed.push({ type: 'math', content: mathMatch?.[1] || 'mathematical expression' });
     }
 

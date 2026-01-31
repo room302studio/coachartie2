@@ -21,7 +21,7 @@ export const runtimeConfigCapability: RegisteredCapability = {
     'auto_optimize',
   ],
   description: 'Dynamically adjust runtime configuration (models, context size, iterations)',
-  handler: async (params, content) => {
+  handler: async (params, _content) => {
     const { action = 'get_active_model' } = params;
 
     switch (action) {

@@ -3,7 +3,6 @@ import {
   StructuredCapabilityError,
   createStructuredError,
   formatStructuredErrorCompact,
-  ErrorCodeTaxonomy,
   ParameterSchema,
 } from '../../types/structured-errors.js';
 
@@ -402,7 +401,7 @@ export class CapabilityRegistry {
     capabilityName: string,
     action: string,
     missingParams: string[],
-    capability: RegisteredCapability
+    _capability: RegisteredCapability
   ): StructuredCapabilityError {
     // Build parameter schema
     const paramSchema: ParameterSchema[] = missingParams.map((param) => ({

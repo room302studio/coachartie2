@@ -13,7 +13,7 @@ export const modelManagerCapability: RegisteredCapability = {
   emoji: '🤖',
   supportedActions: ['list_models', 'get_pricing', 'get_recommendation', 'compare_models'],
   description: 'Query available AI models, pricing, and get cost-aware recommendations',
-  handler: async (params, content) => {
+  handler: async (params, _content) => {
     const { action = 'list_models' } = params;
 
     switch (action) {

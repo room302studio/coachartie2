@@ -21,7 +21,7 @@ export const systemMonitorCapability: RegisteredCapability = {
     'health_summary',
   ],
   description: 'Monitor system resources, service health, and performance metrics',
-  handler: async (params, content) => {
+  handler: async (params, _content) => {
     const { action = 'get_resources' } = params;
 
     switch (action) {

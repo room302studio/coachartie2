@@ -2,7 +2,7 @@ import { RegisteredCapability } from '../../services/capability/capability-regis
 import { logger } from '@coachartie/shared';
 import fetch from 'node-fetch';
 
-interface DiscordThreadParams {
+interface _DiscordThreadParams {
   action: 'create_thread' | 'get_thread_messages';
   channelId: string;
   threadId?: string;

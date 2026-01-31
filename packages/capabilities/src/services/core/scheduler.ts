@@ -6,7 +6,6 @@ import {
   IncomingMessage,
   QUEUES,
   testRedisConnection,
-  isRedisAvailable,
 } from '@coachartie/shared';
 import { redditMentionMonitor } from '../reddit-mention-monitor.js';
 

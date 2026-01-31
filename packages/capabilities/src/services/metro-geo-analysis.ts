@@ -106,7 +106,7 @@ export function analyzeMetroGeo(data: {
     const corner1 = turf.point([bbox[0], bbox[1]]);
     const corner2 = turf.point([bbox[2], bbox[3]]);
     stats.networkSpreadKm = turf.distance(corner1, corner2, { units: 'kilometers' });
-  } catch (e) {
+  } catch {
     // Skip if bbox calculation fails
   }
 
@@ -226,7 +226,7 @@ export function analyzeMetroGeo(data: {
         efficiency: Math.round(efficiency * 100) / 100,
         lengthKm: Math.round(actualLength * 10) / 10,
       });
-    } catch (e) {
+    } catch {
       // Skip routes with invalid geometry
     }
   }
@@ -340,7 +340,7 @@ export function analyzeMetroGeo(data: {
             const p1 = turf.point(nodes[i - 1].center);
             const p2 = turf.point(nodes[i].center);
             routeLengthKm += turf.distance(p1, p2, { units: 'kilometers' });
-          } catch (e) {
+          } catch {
             // Skip invalid segments
           }
         }

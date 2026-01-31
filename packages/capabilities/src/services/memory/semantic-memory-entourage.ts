@@ -19,7 +19,7 @@ export class SemanticMemoryEntourage implements MemoryEntourageInterface {
     // Initialize vector service on construction
     vectorEmbeddingService
       .initialize()
-      .catch((err) =>
+      .catch((_err) =>
         logger.warn(
           '🚧 SemanticMemoryEntourage: Vector service init failed, will use TF-IDF fallback'
         )
@@ -477,7 +477,7 @@ export class SemanticMemoryEntourage implements MemoryEntourageInterface {
       semanticScore: number;
     }>,
     style: string,
-    userMessage: string
+    _userMessage: string
   ): string {
     const memoryTexts = memories.map((m) => m.content);
 
@@ -492,9 +492,10 @@ export class SemanticMemoryEntourage implements MemoryEntourageInterface {
           )
           .join('\n')}`;
 
-      case 'semantic_analytical':
+      case 'semantic_analytical': {
         const avgScore = memories.reduce((sum, m) => sum + m.semanticScore, 0) / memories.length;
         return `Based on semantic patterns (${(avgScore * 100).toFixed(0)}% relevance): ${memoryTexts.join('. Additionally, ')}.`;
+      }
 
       default:
         return memoryTexts.join('\n');
@@ -572,7 +573,7 @@ export class SemanticMemoryEntourage implements MemoryEntourageInterface {
    */
   private formatVectorResults(
     results: Array<{ memory_id: number; similarity_score: number; content: string }>,
-    userMessage: string
+    _userMessage: string
   ): string {
     if (results.length === 0) {
       return '';
@@ -591,10 +592,11 @@ export class SemanticMemoryEntourage implements MemoryEntourageInterface {
           .map((r) => `${r.content} (${(r.similarity_score * 100).toFixed(0)}% semantic match)`)
           .join('\n');
 
-      case 'vector_narrative':
+      case 'vector_narrative': {
         const avgSimilarity =
           results.reduce((sum, r) => sum + r.similarity_score, 0) / results.length;
         return `Semantically related (${(avgSimilarity * 100).toFixed(0)}% avg relevance): ${results.map((r) => r.content).join(', and ')}.`;
+      }
 
       default:
         return results.map((r) => r.content).join('\n');

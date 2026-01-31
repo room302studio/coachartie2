@@ -1,7 +1,5 @@
 import { logger } from '@coachartie/shared';
 import { capabilityRegistry } from './capability-registry.js';
-import { wolframService } from '../external/wolfram.js';
-import { schedulerService } from '../core/scheduler.js';
 import { robustExecutor } from '../../utils/robust-capability-executor.js';
 import { getErrorMessage } from '../../utils/error-utils.js';
 import { openRouterService } from '../llm/openrouter.js';

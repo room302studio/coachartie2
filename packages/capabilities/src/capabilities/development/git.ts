@@ -97,7 +97,7 @@ Read-only operations. For committing, use shell with git commands.`,
   ],
 
   handler: async (params: any, _content: string | undefined) => {
-    const { action = 'status', path = '/workspace', file, ref, count = 10 } = params as GitParams;
+    const { action = 'status', path: _path = '/workspace', file, ref, count = 10 } = params as GitParams;
 
     logger.info(`Git: ${action}${file ? ` ${file}` : ''}${ref ? ` (${ref})` : ''}`);
 

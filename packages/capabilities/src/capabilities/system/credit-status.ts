@@ -8,7 +8,7 @@ export const creditStatusCapability: RegisteredCapability = {
   emoji: '💳',
   supportedActions: ['check_balance', 'get_alerts', 'acknowledge_alerts', 'usage_summary'],
   description: 'Monitor API credit balance and usage statistics',
-  handler: async (params, content) => {
+  handler: async (params, _content) => {
     const { action = 'check_balance' } = params;
 
     switch (action) {
@@ -107,7 +107,7 @@ export const creditStatusCapability: RegisteredCapability = {
 
           let alertMessage = '🚨 **Active Credit Alerts (' + activeAlerts.length + '):**\n\n';
 
-          activeAlerts.forEach((alert, index) => {
+          activeAlerts.forEach((alert, _index) => {
             const emoji = alert.severity === 'critical' ? '🔴' : '⚠️';
             alertMessage += emoji + ' **' + alert.alert_type.toUpperCase() + '**\n';
             alertMessage += '   ' + alert.message + '\n';

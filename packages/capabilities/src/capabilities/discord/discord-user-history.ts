@@ -2,7 +2,7 @@ import { RegisteredCapability } from '../../services/capability/capability-regis
 import { logger } from '@coachartie/shared';
 import fetch from 'node-fetch';
 
-interface DiscordUserHistoryParams {
+interface _DiscordUserHistoryParams {
   action: 'get_user_messages';
   channelId: string;
   userId: string;

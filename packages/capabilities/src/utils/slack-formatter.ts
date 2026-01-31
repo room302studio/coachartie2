@@ -1,5 +1,3 @@
-import { logger } from '@coachartie/shared';
-
 /**
  * Slack Rich Formatting Utilities
  * Creates visually appealing, styled messages for Slack using mrkdwn

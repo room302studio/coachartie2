@@ -5,7 +5,6 @@ import { capabilityXMLParser } from '../../utils/xml-parser.js';
 import { conscienceLLM } from '../monitoring/conscience.js';
 import {
   ExtractedCapability,
-  CapabilityResult,
   OrchestrationContext,
 } from '../../types/orchestration-types.js';
 
@@ -28,7 +27,7 @@ export class CapabilityParser {
    * Extract capabilities from response text using XML parser
    * Converts parsed capabilities to ExtractedCapability format with priority
    */
-  extractCapabilities(response: string, modelName?: string): ExtractedCapability[] {
+  extractCapabilities(response: string, _modelName?: string): ExtractedCapability[] {
     try {
       // Parse capabilities via XML parser
       const parsedCapabilities = capabilityXMLParser.extractCapabilities(response);

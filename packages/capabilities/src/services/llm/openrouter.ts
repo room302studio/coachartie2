@@ -179,10 +179,10 @@ class OpenRouterService {
   }
 
   async generateResponse(
-    userMessage: string,
-    userId: string,
-    context?: string,
-    messageId?: string
+    _userMessage: string,
+    _userId: string,
+    _context?: string,
+    _messageId?: string
   ): Promise<string> {
     // DEPRECATED: This method should NOT exist - OpenRouter should be PURE
     // All message building should happen in Context Alchemy
@@ -272,7 +272,7 @@ class OpenRouterService {
         const estimatedCost = UsageTracker.calculateCost(model, usage);
 
         // Track costs in real-time cost monitor
-        const { shouldCheckCredits, warnings } = costMonitor.trackCall(
+        const { warnings } = costMonitor.trackCall(
           usage.prompt_tokens,
           usage.completion_tokens,
           model
@@ -503,15 +503,15 @@ class OpenRouterService {
         const estimatedCost = UsageTracker.calculateCost(model, usage);
 
         // Track costs in real-time cost monitor
-        const { shouldCheckCredits, warnings } = costMonitor.trackCall(
+        const { warnings: streamWarnings } = costMonitor.trackCall(
           usage.prompt_tokens,
           usage.completion_tokens,
           model
         );
 
         // Log warnings if any
-        if (warnings.length > 0) {
-          logger.warn(`💸 Cost warnings for streaming call:`, warnings);
+        if (streamWarnings.length > 0) {
+          logger.warn(`💸 Cost warnings for streaming call:`, streamWarnings);
         }
 
         // Record usage statistics (don't await to avoid blocking)

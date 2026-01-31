@@ -449,7 +449,7 @@ async function getForumSummary(params: DiscordForumsParams): Promise<string> {
   return `Forum Summary:\n${JSON.stringify(summary, null, 2)}`;
 }
 
-async function syncToGitHub(params: DiscordForumsParams, content?: string): Promise<string> {
+async function syncToGitHub(params: DiscordForumsParams, _content?: string): Promise<string> {
   const { forumId, repo } = params;
 
   if (!forumId) {

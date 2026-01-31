@@ -26,7 +26,7 @@ async function handleSemanticSearchCapability(
       case 'status':
         return vectorEmbeddingService.getStatus();
 
-      case 'search':
+      case 'search': {
         const query = params.query || content;
         if (!query) {
           throw new Error(
@@ -50,8 +50,9 @@ async function handleSemanticSearchCapability(
               `${i + 1}. ${result.content} (${(result.similarity_score * 100).toFixed(1)}% similarity)`
           )
           .join('\n')}`;
+      }
 
-      case 'similar':
+      case 'similar': {
         const memoryId = params.memory_id;
         if (!memoryId) {
           throw new Error(
@@ -78,8 +79,9 @@ async function handleSemanticSearchCapability(
               `${i + 1}. Memory #${result.memory_id}: ${result.content.substring(0, 100)}... (${(result.similarity_score * 100).toFixed(1)}% similarity)`
           )
           .join('\n')}`;
+      }
 
-      case 'cluster':
+      case 'cluster': {
         const userId = params.user_id as string;
         if (!userId) {
           throw new Error(
@@ -92,14 +94,16 @@ async function handleSemanticSearchCapability(
           return `🔍 No memories found for clustering analysis for user: ${userId}`;
         }
         return `🧠 Memory clustering analysis for ${userId}:\nFound ${allResults.length} memories for cluster analysis.\nTop clusters: General discussions, Technical topics, Personal preferences`;
+      }
 
-      case 'analyze':
+      case 'analyze': {
         const analysisUserId = (params.user_id as string) || 'ejfox';
         const patternResults = await vectorEmbeddingService.findSimilarMemories('pattern', 20);
         if (patternResults.length === 0) {
           return `🔍 No memory patterns found for analysis for user: ${analysisUserId}`;
         }
         return `🧠 Memory pattern analysis for ${analysisUserId}:\n${patternResults.length} memories analyzed.\nPatterns detected: Semantic clustering, Temporal patterns, Topic distributions`;
+      }
 
       default:
         throw new Error(

@@ -1,4 +1,4 @@
-import { logger, getSyncDb, type SyncDbWrapper, type Memory } from '@coachartie/shared';
+import { logger, getSyncDb, type SyncDbWrapper } from '@coachartie/shared';
 
 /**
  * Memory Record interface - Aligned with shared schema

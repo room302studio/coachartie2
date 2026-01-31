@@ -2,7 +2,7 @@ import { logger } from '@coachartie/shared';
 
 import { RegisteredCapability } from '../../services/capability/capability-registry.js';
 
-interface GitHubParams {
+interface _GitHubParams {
   action?: string;
   repo?: string;
   limit?: number;
@@ -821,7 +821,7 @@ const githubActions = {
         throw new Error('GITHUB_TOKEN not configured. Set GITHUB_TOKEN environment variable.');
       }
 
-      const [owner, repo] = repoName.split('/');
+      const [_owner, _repo] = repoName.split('/');
 
       // Search for PRs that reference this issue
       const searchQuery = `repo:${repoName} type:pr #${params.issueNumber}`;

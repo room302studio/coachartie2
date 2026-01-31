@@ -270,7 +270,7 @@ async function updateWikiForRelease(repoName: string, release: any): Promise<voi
 
       // Smart wiki selection based on repo name
       let wikiName: string | null = null;
-      let pageName = `${repoName.split('/')[1]}_Releases`;
+      const pageName = `${repoName.split('/')[1]}_Releases`;
 
       if (repoNameLower.includes('transit') || repoNameLower.includes('subway')) {
         wikiName = 'transit';
@@ -331,7 +331,7 @@ async function updateWikiPage(
       break;
 
     case 'list':
-    default:
+    default: {
       newEntry = `\n* '''${release.tag_name}''' - ${release.name || release.tag_name} (${new Date(release.published_at).toLocaleDateString()}) [${release.html_url} View on GitHub]`;
 
       // Find the right place to insert (after header, before first entry)
@@ -342,6 +342,7 @@ async function updateWikiPage(
         content += newEntry;
       }
       break;
+    }
   }
 
   await client.editPage(pageName, content, `Added ${release.tag_name} release`);
@@ -349,7 +350,7 @@ async function updateWikiPage(
   logger.info(`✅ Updated ${pageName} on ${wikiName} wiki for ${release.tag_name}`);
 }
 
-function createInitialReleasePage(pageName: string, release: any): string {
+function createInitialReleasePage(pageName: string, _release: any): string {
   const projectName = pageName.replace(/_/g, ' ').replace(' Releases', '');
 
   return `= ${projectName} Releases =

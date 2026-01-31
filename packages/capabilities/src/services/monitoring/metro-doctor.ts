@@ -9,7 +9,6 @@
 import { mkdir, writeFile, readFile } from 'fs/promises';
 import { join, basename, dirname } from 'path';
 import { createRequire } from 'module';
-import { fileURLToPath } from 'url';
 import { logger } from '@coachartie/shared';
 import { analyzeMetroGeo, formatGeoInsights } from '../metro-geo-analysis.js';
 
@@ -89,7 +88,7 @@ async function downloadMetro(url: string): Promise<Buffer> {
   return buf;
 }
 
-function formatPlaytime(seconds: number | undefined): string {
+function _formatPlaytime(seconds: number | undefined): string {
   if (!seconds) return 'Unknown';
   const hours = Math.floor(seconds / 3600);
   const minutes = Math.floor((seconds % 3600) / 60);

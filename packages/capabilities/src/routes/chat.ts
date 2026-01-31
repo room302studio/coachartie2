@@ -1,6 +1,5 @@
 import { Router, Request, Response } from 'express';
 import { logger, createQueue, QUEUES, IncomingMessage } from '@coachartie/shared';
-import { processMessage } from '../handlers/process-message.js';
 import { v4 as uuidv4 } from 'uuid';
 import { rateLimiter } from '../middleware/rate-limiter.js';
 import { jobTracker } from '../services/core/job-tracker.js';

@@ -1,7 +1,6 @@
 import { Router, type Router as ExpressRouter } from 'express';
 import { createRedisConnection } from '@coachartie/shared';
 import { access } from 'fs/promises';
-import { join } from 'path';
 import { logger } from '@coachartie/shared';
 import os from 'os';
 

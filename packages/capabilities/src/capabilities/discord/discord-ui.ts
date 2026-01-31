@@ -172,7 +172,7 @@ async function createModal(params: DiscordUIParams, content?: string): Promise<s
   })}:Modal "${title}" with ${inputs.length} input fields created! Waiting for user interaction...`;
 }
 
-async function createButtons(params: DiscordUIParams, content?: string): Promise<string> {
+async function createButtons(params: DiscordUIParams, _content?: string): Promise<string> {
   if (!params.buttons || params.buttons.length === 0) {
     throw new Error('Button action requires buttons array');
   }
@@ -214,7 +214,7 @@ async function createButtons(params: DiscordUIParams, content?: string): Promise
   })}:Created ${buttons.length} interactive buttons! Click to interact.`;
 }
 
-async function createSelectMenu(params: DiscordUIParams, content?: string): Promise<string> {
+async function createSelectMenu(params: DiscordUIParams, _content?: string): Promise<string> {
   if (!params.options || params.options.length === 0) {
     throw new Error('Select menu requires options array');
   }
@@ -255,7 +255,7 @@ async function createSelectMenu(params: DiscordUIParams, content?: string): Prom
   })}:Select menu with ${options.length} options created! Choose an option to continue.`;
 }
 
-async function createContextMenu(params: DiscordUIParams, content?: string): Promise<string> {
+async function createContextMenu(params: DiscordUIParams, _content?: string): Promise<string> {
   if (!params.name) {
     throw new Error('Context menu requires name parameter');
   }

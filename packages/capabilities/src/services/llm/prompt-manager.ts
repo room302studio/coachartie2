@@ -39,7 +39,7 @@ interface DatabaseRow {
   updated_at: string;
 }
 
-interface PromptHistoryRow extends DatabaseRow {
+interface _PromptHistoryRow extends DatabaseRow {
   // Additional fields specific to history if any
 }
 
