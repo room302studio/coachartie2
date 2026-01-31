@@ -40,6 +40,7 @@ import { jobMonitor } from './services/job-monitor.js';
 import { initializeForumTraversal } from './services/forum-traversal.js';
 import { initializeGitHubIntegration } from './services/github-integration.js';
 import { initializeMentionProxyService } from './services/mention-proxy-service.js';
+import { initializeGitHubSync } from './services/github-sync.js';
 import { observationalLearning } from './services/observational-learning.js';
 import './queues/outgoing-consumer.js';
 
@@ -177,6 +178,26 @@ async function start() {
       } catch (error) {
         logger.warn('Failed to initialize GitHub integration:', error);
         console.error('❌ GitHub integration init failed:', error);
+      }
+
+      // Initialize GitHub Sync service (PR/CI notifications)
+      try {
+        console.log('🔧 Checking GitHub Sync service...');
+        if (process.env.GITHUB_TOKEN) {
+          initializeGitHubSync(client).then(() => {
+            logger.info('✅ GitHub Sync service enabled');
+            console.log('✅ GitHub Sync service enabled');
+          }).catch((err) => {
+            logger.warn('GitHub Sync initialization failed:', err);
+            console.error('❌ GitHub Sync init failed:', err);
+          });
+        } else {
+          logger.info('ℹ️  GitHub Sync disabled (no GITHUB_TOKEN)');
+          console.log('ℹ️  GitHub Sync disabled (no GITHUB_TOKEN)');
+        }
+      } catch (error) {
+        logger.warn('Failed to initialize GitHub Sync:', error);
+        console.error('❌ GitHub Sync init failed:', error);
       }
 
       // Initialize observational learning

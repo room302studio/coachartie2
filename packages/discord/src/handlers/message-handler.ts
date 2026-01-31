@@ -1431,6 +1431,7 @@ async function fetchRecentAttachments(message: Message): Promise<
       size: number;
       proxyUrl: string | null;
       author: string;
+      authorId: string;
       messageId: string;
       timestamp: string;
     }> = [];
