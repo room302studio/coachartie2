@@ -53,6 +53,12 @@ import { redditCapability } from '../../capabilities/communication/reddit.js';
 import { selfStatsCapability } from '../../capabilities/self-stats.js';
 // Social capabilities
 import { moltbookCapability } from '../../capabilities/social/moltbook.js';
+// Research capabilities
+import { deepResearchCapability } from '../../capabilities/research/deep-research.js';
+// Cross-agent capabilities
+import { kanbanCapability } from '../../capabilities/system/kanban.js';
+import { vpsClaudeCapability } from '../../capabilities/system/vps-claude.js';
+import { systemMemoryCapability } from '../../capabilities/system/system-memory.js';
 // Services
 import { meetingCapability } from '../core/meeting-service.js';
 
@@ -261,6 +267,24 @@ export class CapabilityBootstrap {
       logger.info('📦 Registering moltbook (AI social network)...');
       capabilityRegistry.register(moltbookCapability);
       logger.info('✅ moltbook registered successfully');
+
+      // Register deep research capability - o4-mini-deep-research harness
+      logger.info('📦 Registering deep_research (o4-mini background research)...');
+      capabilityRegistry.register(deepResearchCapability);
+      logger.info('✅ deep_research registered successfully');
+
+      // Register cross-agent capabilities - weave VPS Claude and Artie together
+      logger.info('📦 Registering kanban (shared task board)...');
+      capabilityRegistry.register(kanbanCapability);
+      logger.info('✅ kanban registered successfully');
+
+      logger.info('📦 Registering vps_claude (cross-agent awareness)...');
+      capabilityRegistry.register(vpsClaudeCapability);
+      logger.info('✅ vps_claude registered successfully');
+
+      logger.info('📦 Registering system_memory (cross-agent communication)...');
+      capabilityRegistry.register(systemMemoryCapability);
+      logger.info('✅ system_memory registered successfully');
 
       const totalCaps = capabilityRegistry.list().length;
       logger.info(
