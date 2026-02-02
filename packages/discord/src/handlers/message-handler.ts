@@ -1,6 +1,9 @@
 /**
  * Discord Message Handler - Core message processing and streaming system
  *
+ * This is the main entry point for Discord message handling. It imports utilities
+ * from message-utils.ts and data fetchers from discord-fetchers.ts.
+ *
  * Features:
  * - Smart response detection (mentions, DMs, robot channels)
  * - Real-time streaming with duplicate prevention
@@ -31,805 +34,35 @@ import { getGitHubIntegrationSafe, isGitHubIntegrationReady } from '../services/
 import { getForumTraversal } from '../services/forum-traversal.js';
 import { getMentionProxyService } from '../services/mention-proxy-service.js';
 import { quizSessionManager } from '../services/quiz-session-manager.js';
-import Chance from 'chance';
-import { readFileSync, existsSync } from 'fs';
-import { join } from 'path';
 
-const chance = new Chance();
-
-/**
- * Load guild context with scratchpad notes
- * Returns the base context plus any notes from the guild's scratchpad file
- */
-function getEnhancedGuildContext(guildConfig: GuildConfig | null | undefined): string | undefined {
-  // Load context from file if contextPath is set, otherwise use inline context
-  let baseContext: string | undefined;
-
-  if (guildConfig?.contextPath) {
-    try {
-      const contextFullPath = join(process.cwd(), guildConfig.contextPath);
-      if (existsSync(contextFullPath)) {
-        baseContext = readFileSync(contextFullPath, 'utf-8');
-      } else {
-        logger.warn(`Context file not found for ${guildConfig.name}: ${contextFullPath}`);
-        baseContext = guildConfig.context; // Fall back to inline
-      }
-    } catch (error) {
-      logger.warn(`Failed to load context file for ${guildConfig.name}:`, error);
-      baseContext = guildConfig.context; // Fall back to inline
-    }
-  } else {
-    baseContext = guildConfig?.context;
-  }
-
-  if (!baseContext) return undefined;
-
-  let fullContext = baseContext;
-
-  // Load scratchpad if configured (guildConfig is guaranteed to exist if we have baseContext from it)
-  if (guildConfig?.scratchpadPath) {
-    try {
-      const scratchpadFullPath = join(process.cwd(), guildConfig.scratchpadPath);
-      if (existsSync(scratchpadFullPath)) {
-        const scratchpadContent = readFileSync(scratchpadFullPath, 'utf-8');
-        fullContext += `
-
-📝 YOUR SCRATCHPAD (your personal notes for this guild):
-${scratchpadContent}
-
-To add notes: <append path="${guildConfig.scratchpadPath}">
-## New Note (include date/username)
-Your observation here
-</append>
-
-To rewrite entirely: <write path="${guildConfig.scratchpadPath}">full new content</write>
-To delete: <rm path="${guildConfig.scratchpadPath}" />`;
-      }
-    } catch (error) {
-      logger.warn(`Failed to load scratchpad for ${guildConfig?.name}:`, error);
-    }
-  }
-
-  return fullContext;
-}
-
-// =============================================================================
-// CONSTANTS & CONFIGURATION
-// =============================================================================
-
-// Message deduplication cache to prevent duplicate processing
-const messageCache = new Map<string, number>();
-const MESSAGE_CACHE_TTL = 10000; // 10 seconds TTL
-
-// Proactive answering cooldown cache (guildId -> lastProactiveAnswerTimestamp)
-const proactiveCooldownCache = new Map<string, number>();
-
-// Discord API limits and timeouts
-const TYPING_REFRESH_INTERVAL = 8000; // Refresh typing every 8s (Discord typing lasts 10s)
-const CHUNK_RATE_LIMIT_DELAY = 200; // 200ms delay between message chunks
-const MAX_JOB_ATTEMPTS = 100; // ~5 minute max job timeout (100 * 3s checks) - allows for large metro files
-const DISCORD_MESSAGE_LIMIT = 2000; // Discord's maximum message length
-
-// UI and status constants
-const STATUS_UPDATE_INTERVAL = 5; // Update status every 5 progress callbacks
-const CONTEXT_CLEANUP_PROBABILITY = 0.01; // 1% chance to cleanup correlation context
-const ID_SLICE_LENGTH = -8; // Last 8 characters for job short IDs
-
-// Channel detection constants
-const GUILD_CHANNEL_TYPE = 0; // Discord guild text channel type
-
-// Channel history fetching constants
-const MIN_CHANNEL_HISTORY = 10; // Minimum messages to fetch
-const MAX_CHANNEL_HISTORY = 25; // Maximum messages to fetch
-
-// Status emojis
-const STATUS_EMOJI_PROCESSING = '🔄';
-const STATUS_EMOJI_THINKING = '🤔';
-const STREAM_EMOJI = '📡';
-
-// =============================================================================
-// MESSAGE CHUNKING UTILITIES
-// =============================================================================
-
-/**
- * Helper: Check if channel name indicates robot interaction
- */
-function isRobotChannelName(channel: Message['channel']): boolean {
-  return (
-    (channel.type === GUILD_CHANNEL_TYPE &&
-      'name' in channel &&
-      (channel.name?.includes('🤖') || channel.name?.includes('robot'))) ||
-    false
-  );
-}
-
-/**
- * Helper: Check if message is in a forum thread (Discord Discussions)
- */
-async function isForumThread(message: Message): Promise<boolean> {
-  if (
-    message.channel.type !== ChannelType.PublicThread &&
-    message.channel.type !== ChannelType.PrivateThread
-  ) {
-    return false;
-  }
-
-  // Get the parent channel to check if it's a forum
-  const parent = message.channel.parent;
-  return parent?.type === ChannelType.GuildForum;
-}
-
-/**
- * Use LLM to judge if Artie should proactively answer a question
- * Based on the guild context and message content
- */
-async function shouldProactivelyAnswer(
-  message: Message,
-  guildContext: string,
-  correlationId: string
-): Promise<boolean> {
-  try {
-    // Use fetch directly to call the capabilities service
-    const capabilitiesUrl = process.env.CAPABILITIES_URL || 'http://localhost:47324';
-
-    // Debug: log what context we have
-    logger.info(`🔍 Proactive judgment context length: ${guildContext?.length || 0} chars`);
-
-    const prompt = `You are a helper bot deciding whether to engage with a message. Be CONSERVATIVE - only answer clear help requests.
-
-YOUR KNOWLEDGE BASE:
-${guildContext}
-
-USER MESSAGE:
-"${message.content}"
-
-Respond with JSON only:
-{"answer": true/false, "confidence": 0.0-1.0, "reason": "brief explanation"}
-
-Set answer=true ONLY if:
-- They're clearly asking a SPECIFIC question about the game
-- They have a bug/issue AND are asking for help
-- Your knowledge base EXPLICITLY covers what they're asking about
-- The message is at least 10 words and contains a clear question
-
-Set answer=false if:
-- Short messages (under 10 words) - these are usually banter
-- Just chatting/joking between users
-- Rhetorical questions or sarcasm ("askers?", "who asked?", etc.)
-- Off-topic discussion (not about the game)
-- Meta-discussion about the bot itself ("the bot should...", "limit when bot...")
-- Someone else already answered
-- They're responding to someone else (not asking the room)
-- One-word or two-word messages
-- Messages that are reactions/commentary ("lmao", "bro", "oh my god", etc.)
-
-CRITICAL: When in doubt, answer FALSE. It's better to miss a question than to interrupt conversations. Only engage when someone is CLEARLY asking for help with the game.
-
-JSON response:`;
-
-    // Use direct OpenRouter call to avoid capability orchestration
-    // The full chat endpoint includes email/calendar capabilities that can hijack the response
-    const openRouterApiKey = process.env.OPENROUTER_API_KEY;
-    if (!openRouterApiKey) {
-      logger.warn('No OpenRouter API key for proactive judgment');
-      return false;
-    }
-
-    const openRouterResponse = await fetch('https://router.tools.ejfox.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${openRouterApiKey}`,
-        'HTTP-Referer': 'https://coach-artie.local',
-        'X-Title': 'Coach Artie Proactive Judgment',
-      },
-      body: JSON.stringify({
-        model: process.env.PROACTIVE_JUDGMENT_MODEL || 'google/gemini-2.0-flash-001',
-        messages: [{ role: 'user', content: prompt }],
-        max_tokens: 200, // Small response - just need yes/no JSON
-      }),
-    });
-
-    if (!openRouterResponse.ok) {
-      throw new Error(`OpenRouter returned ${openRouterResponse.status}`);
-    }
-
-    const openRouterResult = (await openRouterResponse.json()) as {
-      choices?: Array<{ message?: { content?: string } }>;
-    };
-    const rawResponse = openRouterResult.choices?.[0]?.message?.content || '';
-
-    // Parse JSON response
-    try {
-      // Extract JSON from response (in case there's extra text)
-      const jsonMatch = rawResponse.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        const judgment = JSON.parse(jsonMatch[0]) as {
-          answer: boolean;
-          confidence: number;
-          reason: string;
-        };
-        logger.info(
-          `🤔 Proactive judgment: answer=${judgment.answer}, confidence=${judgment.confidence}, reason="${judgment.reason}"`
-        );
-
-        // Require confidence > 0.7 to answer (be conservative)
-        const shouldAnswer = judgment.answer && judgment.confidence > 0.7;
-        logger.info(
-          `🤔 Final decision for "${message.content.substring(0, 50)}...": ${shouldAnswer ? 'YES' : 'NO'}`
-        );
-        return shouldAnswer;
-      }
-    } catch (parseError) {
-      logger.warn(`Failed to parse judgment JSON: ${rawResponse}`);
-    }
-
-    // Fallback: check for yes/no in response
-    const decision = rawResponse.toLowerCase().trim();
-    logger.info(
-      `🤔 Fallback judgment for "${message.content.substring(0, 50)}...": "${rawResponse}" -> ${decision.includes('yes') ? 'YES' : 'NO'}`
-    );
-    return decision.includes('yes');
-  } catch (error) {
-    logger.warn(`Failed proactive answer judgment, defaulting to no:`, error);
-    return false; // Default to not answering if judgment fails
-  }
-}
-
-/**
- * Split long messages into Discord-compatible chunks with smart code block handling
- *
- * Features:
- * - NEVER splits inside code blocks (``` ... ```)
- * - Prefers splitting at paragraph boundaries (\n\n)
- * - Falls back to line boundaries, then word boundaries
- * - Keeps the 2000 char limit for Discord
- * - Handles edge cases like oversized code blocks
- *
- * @param text - The text to chunk
- * @param maxLength - Maximum chunk size (default: 2000)
- * @returns Array of message chunks
- */
-function chunkMessage(text: string, maxLength: number = DISCORD_MESSAGE_LIMIT): string[] {
-  if (!text || text.length === 0) return [];
-  if (text.length <= maxLength) return [text];
-
-  const chunks: string[] = [];
-
-  // Step 1: Identify all code blocks and their positions
-  interface CodeBlock {
-    start: number;
-    end: number;
-    content: string;
-    language?: string;
-  }
-
-  const codeBlocks: CodeBlock[] = [];
-  const codeBlockRegex = /```(\w+)?\n([\s\S]*?)```/g;
-  let match: RegExpExecArray | null;
-
-  while ((match = codeBlockRegex.exec(text)) !== null) {
-    codeBlocks.push({
-      start: match.index,
-      end: match.index + match[0].length,
-      content: match[0],
-      language: match[1],
-    });
-  }
-
-  // Step 2: Split text into segments (code blocks and text between them)
-  interface Segment {
-    content: string;
-    isCodeBlock: boolean;
-    start: number;
-    end: number;
-  }
-
-  const segments: Segment[] = [];
-  let lastIndex = 0;
-
-  for (const block of codeBlocks) {
-    // Add text before code block
-    if (block.start > lastIndex) {
-      segments.push({
-        content: text.slice(lastIndex, block.start),
-        isCodeBlock: false,
-        start: lastIndex,
-        end: block.start,
-      });
-    }
-
-    // Add code block
-    segments.push({
-      content: block.content,
-      isCodeBlock: true,
-      start: block.start,
-      end: block.end,
-    });
-
-    lastIndex = block.end;
-  }
-
-  // Add remaining text after last code block
-  if (lastIndex < text.length) {
-    segments.push({
-      content: text.slice(lastIndex),
-      isCodeBlock: false,
-      start: lastIndex,
-      end: text.length,
-    });
-  }
-
-  // Step 3: Build chunks respecting code block boundaries
-  let currentChunk = '';
-
-  for (const segment of segments) {
-    if (segment.isCodeBlock) {
-      // Code block - must be kept intact
-      const segmentLength = segment.content.length;
-
-      // If adding this code block would exceed limit, flush current chunk first
-      if (currentChunk.length > 0 && currentChunk.length + segmentLength + 1 > maxLength) {
-        chunks.push(currentChunk.trim());
-        currentChunk = '';
-      }
-
-      // If code block itself is too large, handle specially
-      if (segmentLength > maxLength) {
-        // Flush any pending content first
-        if (currentChunk.trim()) {
-          chunks.push(currentChunk.trim());
-          currentChunk = '';
-        }
-
-        // Split large code block while maintaining syntax
-        // Extract language and content
-        const codeMatch = segment.content.match(/```(\w+)?\n([\s\S]*?)```/);
-        if (codeMatch) {
-          const language = codeMatch[1] || '';
-          const codeContent = codeMatch[2];
-          const codeLines = codeContent.split('\n');
-
-          let codeChunk = '';
-          const opener = `\`\`\`${language}\n`;
-          const closer = '\n```';
-          const overhead = opener.length + closer.length;
-
-          for (const line of codeLines) {
-            const testChunk = codeChunk + (codeChunk ? '\n' : '') + line;
-
-            if (testChunk.length + overhead > maxLength) {
-              // Flush current code chunk
-              if (codeChunk) {
-                chunks.push(opener + codeChunk + closer);
-                codeChunk = '';
-              }
-
-              // If single line is too long, split it (rare but possible)
-              if (line.length + overhead > maxLength) {
-                // Split line into smaller pieces
-                const safeLength = maxLength - overhead;
-                for (let i = 0; i < line.length; i += safeLength) {
-                  const piece = line.slice(i, i + safeLength);
-                  chunks.push(opener + piece + closer);
-                }
-              } else {
-                codeChunk = line;
-              }
-            } else {
-              codeChunk = testChunk;
-            }
-          }
-
-          // Flush remaining code
-          if (codeChunk) {
-            chunks.push(opener + codeChunk + closer);
-          }
-        } else {
-          // Fallback: just truncate with warning
-          chunks.push(segment.content.slice(0, maxLength - 20) + '\n... (truncated)');
-        }
-
-        continue;
-      }
-
-      // Normal-sized code block - add to current chunk
-      currentChunk += (currentChunk ? '\n' : '') + segment.content;
-    } else {
-      // Regular text - preserve newlines while respecting Discord's char limit
-      // This is CRITICAL for markdown formatting (headers, lists, paragraphs)
-      const textContent = segment.content;
-
-      // Split on double newlines to find paragraphs, but keep the delimiters
-      const paragraphParts = textContent.split(/(\n\n+)/);
-
-      for (const part of paragraphParts) {
-        // Check if this is a paragraph delimiter (double+ newlines)
-        const isDelimiter = /^\n\n+$/.test(part);
-
-        if (isDelimiter) {
-          // Preserve paragraph breaks - normalize to double newline
-          if (currentChunk.length + 2 <= maxLength) {
-            currentChunk += '\n\n';
-          } else {
-            // Flush and start fresh with the delimiter
-            if (currentChunk.trim()) {
-              chunks.push(currentChunk.trimEnd());
-              currentChunk = '';
-            }
-          }
-          continue;
-        }
-
-        // Regular paragraph content - preserve single newlines within it
-        const lines = part.split('\n');
-
-        for (let lineIdx = 0; lineIdx < lines.length; lineIdx++) {
-          const line = lines[lineIdx];
-          // Don't trim - preserve leading whitespace for indentation
-
-          // Calculate what we need to add
-          const needsNewline = currentChunk.length > 0 && lineIdx > 0;
-          const addition = (needsNewline ? '\n' : '') + line;
-
-          // If adding this line fits, add it
-          if (currentChunk.length + addition.length <= maxLength) {
-            currentChunk += addition;
-            continue;
-          }
-
-          // Line won't fit - flush current chunk first
-          if (currentChunk.trim()) {
-            chunks.push(currentChunk.trimEnd());
-            currentChunk = '';
-          }
-
-          // If line itself fits, use it
-          if (line.length <= maxLength) {
-            currentChunk = line;
-            continue;
-          }
-
-          // Line is too long - must split by words
-          const words = line.split(' ');
-
-          for (const word of words) {
-            if (currentChunk.length + word.length + 1 > maxLength) {
-              if (currentChunk.trim()) {
-                chunks.push(currentChunk.trimEnd());
-                currentChunk = '';
-              }
-
-              // If single word is too long, split it (rare but possible)
-              if (word.length > maxLength) {
-                for (let i = 0; i < word.length; i += maxLength) {
-                  chunks.push(word.slice(i, i + maxLength));
-                }
-              } else {
-                currentChunk = word;
-              }
-            } else {
-              currentChunk += (currentChunk ? ' ' : '') + word;
-            }
-          }
-        }
-      }
-    }
-  }
-
-  // Flush any remaining content
-  if (currentChunk.trim()) {
-    chunks.push(currentChunk.trim());
-  }
-
-  return chunks.length > 0 ? chunks : [text];
-}
-
-/**
- * Check if we should stream this partial response
- */
-function shouldStreamPartialResponse(
-  status: any,
-  lastSentContent: string,
-  channel: Message['channel']
-): boolean {
-  return !!(
-    status.partialResponse &&
-    status.partialResponse !== lastSentContent &&
-    'send' in channel &&
-    typeof channel.send === 'function'
-  );
-}
-
-/**
- * Send message chunks with rate limiting
- */
-async function sendMessageChunks(
-  content: string,
-  channel: Message['channel'],
-  currentChunkCount: number
-): Promise<number> {
-  const chunks = chunkMessage(content);
-  let chunksAdded = 0;
-
-  for (const chunk of chunks) {
-    await (channel as any).send(chunk);
-    chunksAdded++;
-
-    // Rate limiting: prevent Discord API abuse
-    if (currentChunkCount + chunksAdded > 1) {
-      await new Promise((resolve) => setTimeout(resolve, CHUNK_RATE_LIMIT_DELAY));
-    }
-  }
-
-  return chunksAdded;
-}
-
-/**
- * Check if status message should be updated
- */
-function shouldUpdateStatus(
-  currentStatus: string,
-  lastStatus: string,
-  updateCount: number
-): boolean {
-  return currentStatus !== lastStatus || updateCount % STATUS_UPDATE_INTERVAL === 0;
-}
-
-/**
- * Update the status message with current progress
- */
-async function updateStatusMessage(
-  statusMessage: Message,
-  status: any,
-  streamedChunks: number,
-  shortId: string,
-  jobShortId: string
-): Promise<void> {
-  const statusEmoji =
-    status.status === 'processing' ? STATUS_EMOJI_PROCESSING : STATUS_EMOJI_THINKING;
-  const streamEmoji = streamedChunks > 0 ? ` ${STREAM_EMOJI}` : '';
-
-  // Human-friendly status messages without technical clutter
-  let statusText = status.status === 'processing' ? 'Processing' : 'Working on it';
-  const statusContent = `${statusEmoji}${streamEmoji} ${statusText}...`;
-
-  await statusMessage.edit(statusContent);
-}
-
-/**
- * Send complete response in chunks
- */
-async function sendCompleteResponse(message: Message, result: string): Promise<number> {
-  const chunks = chunkMessage(result);
-  await message.reply(chunks[0]);
-
-  for (let i = 1; i < chunks.length; i++) {
-    if ('send' in message.channel) {
-      await (message.channel as any).send(chunks[i]);
-    }
-  }
-
-  return chunks.length;
-}
-
-// =============================================================================
-// GITHUB AUTO-EXPANSION
-// =============================================================================
-
-/**
- * Auto-expand GitHub URLs in messages (only in working guilds)
- * Returns true if expansion was performed
- */
-async function handleGitHubAutoExpansion(
-  message: Message,
-  githubService: NonNullable<ReturnType<typeof getGitHubIntegrationSafe>>
-): Promise<boolean> {
-  try {
-    // Detect GitHub URLs in the message
-    const detectedUrls = githubService.detectGitHubUrls(message.content);
-
-    if (detectedUrls.length === 0) {
-      return false; // No GitHub URLs found
-    }
-
-    logger.info(
-      `🔍 Detected ${detectedUrls.length} GitHub URL(s) in message from ${message.author.tag}`
-    );
-
-    // Expand each detected URL
-    for (const detected of detectedUrls) {
-      try {
-        if (detected.type === 'repo') {
-          const repoInfo = await githubService.getRepositoryInfo(detected.owner, detected.repo);
-          if (repoInfo) {
-            const embed = new EmbedBuilder()
-              .setColor(0x2ea44f)
-              .setTitle(`📦 ${repoInfo.fullName}`)
-              .setURL(repoInfo.url)
-              .setDescription(repoInfo.description || 'No description provided');
-
-            const fields = [];
-
-            if (repoInfo.language) {
-              fields.push({
-                name: 'Language',
-                value: repoInfo.language,
-                inline: true,
-              });
-            }
-
-            fields.push({
-              name: 'Stars',
-              value: `⭐ ${repoInfo.stars.toLocaleString()}`,
-              inline: true,
-            });
-
-            fields.push({
-              name: 'Forks',
-              value: `🍴 ${repoInfo.forks.toLocaleString()}`,
-              inline: true,
-            });
-
-            if (repoInfo.license) {
-              fields.push({
-                name: 'License',
-                value: repoInfo.license,
-                inline: true,
-              });
-            }
-
-            fields.push({
-              name: 'Open Issues',
-              value: `🐛 ${repoInfo.openIssues.toLocaleString()}`,
-              inline: true,
-            });
-
-            if (repoInfo.topics.length > 0) {
-              fields.push({
-                name: 'Topics',
-                value: repoInfo.topics.slice(0, 5).join(', '),
-                inline: false,
-              });
-            }
-
-            embed.addFields(fields);
-            embed.setFooter({
-              text: `Updated ${new Date(repoInfo.updatedAt).toLocaleDateString()}`,
-            });
-
-            await message.reply({ embeds: [embed] });
-            logger.info(`✅ Auto-expanded repo: ${repoInfo.fullName}`);
-          }
-        } else if (detected.type === 'pr') {
-          const prInfo = await githubService.getPullRequestInfo(
-            detected.owner,
-            detected.repo,
-            detected.number!
-          );
-          if (prInfo) {
-            const stateEmoji = prInfo.state === 'open' ? '🟢' : prInfo.mergedAt ? '🟣' : '🔴';
-            const stateText =
-              prInfo.state === 'open' ? 'Open' : prInfo.mergedAt ? 'Merged' : 'Closed';
-
-            const embed = new EmbedBuilder()
-              .setColor(prInfo.state === 'open' ? 0x2ea44f : prInfo.mergedAt ? 0x6f42c1 : 0xcb2431)
-              .setTitle(`${stateEmoji} PR #${prInfo.number}: ${prInfo.title}`)
-              .setURL(prInfo.url)
-              .setDescription(prInfo.body?.slice(0, 200) || 'No description provided');
-
-            const fields = [
-              {
-                name: 'Status',
-                value: `${stateText}${prInfo.isDraft ? ' (Draft)' : ''}`,
-                inline: true,
-              },
-              {
-                name: 'Author',
-                value: `@${prInfo.author}`,
-                inline: true,
-              },
-              {
-                name: 'Changes',
-                value: `+${prInfo.additions} -${prInfo.deletions}`,
-                inline: true,
-              },
-            ];
-
-            if (prInfo.labels.length > 0) {
-              fields.push({
-                name: 'Labels',
-                value: prInfo.labels.slice(0, 3).join(', '),
-                inline: false,
-              });
-            }
-
-            embed.addFields(fields);
-            embed.setFooter({
-              text: `${prInfo.commits} commit(s) • ${prInfo.changedFiles} file(s)`,
-            });
-
-            await message.reply({ embeds: [embed] });
-            logger.info(
-              `✅ Auto-expanded PR #${prInfo.number} in ${detected.owner}/${detected.repo}`
-            );
-          }
-        } else if (detected.type === 'issue') {
-          const issueInfo = await githubService.getIssueInfo(
-            detected.owner,
-            detected.repo,
-            detected.number!
-          );
-          if (issueInfo) {
-            const stateEmoji = issueInfo.state === 'open' ? '🟢' : '🔴';
-            const stateText = issueInfo.state === 'open' ? 'Open' : 'Closed';
-
-            const embed = new EmbedBuilder()
-              .setColor(issueInfo.state === 'open' ? 0x2ea44f : 0xcb2431)
-              .setTitle(`${stateEmoji} Issue #${issueInfo.number}: ${issueInfo.title}`)
-              .setURL(issueInfo.url)
-              .setDescription(issueInfo.body?.slice(0, 200) || 'No description provided');
-
-            const fields = [
-              {
-                name: 'Status',
-                value: stateText,
-                inline: true,
-              },
-              {
-                name: 'Author',
-                value: `@${issueInfo.author}`,
-                inline: true,
-              },
-              {
-                name: 'Comments',
-                value: `💬 ${issueInfo.comments}`,
-                inline: true,
-              },
-            ];
-
-            if (issueInfo.labels.length > 0) {
-              fields.push({
-                name: 'Labels',
-                value: issueInfo.labels.slice(0, 5).join(', '),
-                inline: false,
-              });
-            }
-
-            if (issueInfo.assignees.length > 0) {
-              fields.push({
-                name: 'Assignees',
-                value: issueInfo.assignees
-                  .slice(0, 3)
-                  .map((a) => `@${a}`)
-                  .join(', '),
-                inline: false,
-              });
-            }
-
-            embed.addFields(fields);
-            embed.setFooter({
-              text: `Created ${new Date(issueInfo.createdAt).toLocaleDateString()}`,
-            });
-
-            await message.reply({ embeds: [embed] });
-            logger.info(
-              `✅ Auto-expanded issue #${issueInfo.number} in ${detected.owner}/${detected.repo}`
-            );
-          }
-        }
-      } catch (error) {
-        logger.error(`Failed to expand GitHub URL ${detected.url}:`, error);
-        // Continue to next URL even if one fails
-      }
-    }
-
-    return true; // Expansion was performed
-  } catch (error) {
-    logger.error('GitHub auto-expansion failed:', error);
-    return false;
-  }
-}
+// Import utilities from split modules
+import {
+  GUILD_CHANNEL_TYPE,
+  MAX_JOB_ATTEMPTS,
+  STATUS_UPDATE_INTERVAL,
+  CHUNK_RATE_LIMIT_DELAY,
+  CONTEXT_CLEANUP_PROBABILITY,
+  chunkMessage,
+  isRobotChannelName,
+  isForumThread,
+  isDuplicateMessage,
+  isProactiveOnCooldown,
+  getProactiveCooldownRemaining,
+  updateProactiveCooldown,
+} from './message-utils.js';
+
+import {
+  getEnhancedGuildContext,
+  getDMScratchpad,
+  fetchReplyContext,
+  fetchChannelHistory,
+  fetchRecentAttachments,
+  fetchRecentUrls,
+  extractUrlsFromContent,
+  resolveDiscordMessageLinks,
+  handleGitHubAutoExpansion,
+  shouldProactivelyAnswer,
+} from './discord-fetchers.js';
 
 // =============================================================================
 // MAIN MESSAGE HANDLER SETUP
@@ -1097,12 +330,21 @@ export function setupMessageHandler(client: Client) {
           .trim();
 
         // Process using existing intent handler with proxy context
-        await handleMessageAsIntent(message, cleanMessage, correlationId, {
-          isProxyResponse: true,
-          proxyRule: matchedRule,
-          proxyContext: proxyService.getSystemContext(matchedRule),
-          proxyPrefix: proxyService.getResponsePrefix(matchedRule, matchedRule.targetUsername),
-        });
+        await handleMessageAsIntent(
+          message,
+          cleanMessage,
+          correlationId,
+          {
+            isProxyResponse: true,
+            proxyRule: matchedRule,
+            proxyContext: proxyService.getSystemContext(matchedRule),
+            proxyPrefix: proxyService.getResponsePrefix(matchedRule, matchedRule.targetUsername),
+          },
+          undefined, // guildContext
+          false, // isProactiveAnswer
+          'groupchat', // conversationMode - proxies happen in guilds
+          undefined // channelPersonaName
+        );
 
         return; // Don't process as normal message
       }
@@ -1169,12 +411,11 @@ export function setupMessageHandler(client: Client) {
       } else {
         // Check 2: Cooldown - don't spam the server
         const cooldownSeconds = guildConfig.proactiveCooldownSeconds || 60;
-        const lastProactive = proactiveCooldownCache.get(message.guildId || '') || 0;
-        const timeSinceLast = (Date.now() - lastProactive) / 1000;
 
-        if (timeSinceLast < cooldownSeconds) {
+        if (isProactiveOnCooldown(message.guildId || '', cooldownSeconds)) {
+          const remaining = getProactiveCooldownRemaining(message.guildId || '', cooldownSeconds);
           logger.info(
-            `⏳ Proactive answer skipped - cooldown (${Math.round(cooldownSeconds - timeSinceLast)}s remaining) [${shortId}]`
+            `⏳ Proactive answer skipped - cooldown (${remaining}s remaining) [${shortId}]`
           );
         } else {
           // Check 3: Conscience/reflection - thoughtful judgment about whether to help
@@ -1191,7 +432,7 @@ export function setupMessageHandler(client: Client) {
             responseConditions.isProactiveAnswer = true;
             proactiveAnswerContext = getEnhancedGuildContext(guildConfig);
             // Update cooldown
-            proactiveCooldownCache.set(message.guildId || '', Date.now());
+            updateProactiveCooldown(message.guildId || '');
             logger.info(
               `✅ Proactive answer approved for ${guildConfig.name} #${channelName} [${shortId}]`
             );
@@ -1248,25 +489,11 @@ export function setupMessageHandler(client: Client) {
         .trim();
 
       // Deduplication: prevent processing identical messages within TTL window
-      const messageKey = `${message.author.id}-${fullMessage}-${message.channelId}`;
-      const now = Date.now();
-
-      // Cleanup expired cache entries
-      for (const [key, timestamp] of messageCache.entries()) {
-        if (now - timestamp > MESSAGE_CACHE_TTL) {
-          messageCache.delete(key);
-        }
-      }
-
-      // Skip if we've seen this exact message recently
-      if (messageCache.has(messageKey)) {
-        logger.info(`🚫 Duplicate message detected [${shortId}]`, { correlationId, messageKey });
-        telemetry.logEvent('message_duplicate', { messageKey }, correlationId, message.author.id);
+      if (isDuplicateMessage(message.author.id, fullMessage, message.channelId)) {
+        logger.info(`🚫 Duplicate message detected [${shortId}]`, { correlationId });
+        telemetry.logEvent('message_duplicate', {}, correlationId, message.author.id);
         return;
       }
-
-      // Cache this message to prevent future duplicates
-      messageCache.set(messageKey, now);
 
       // -------------------------------------------------------------------------
       // RESPONSE ROUTING
@@ -1318,13 +545,22 @@ ${channelPersona.systemPrompt}
           logger.info(`⚖️ Injecting ${channelPersona.personaName} persona context [${shortId}]`);
         }
 
+        // Determine conversation mode for context
+        const conversationMode = responseConditions.isDM
+          ? 'personal'
+          : channelPersona
+            ? 'persona'
+            : 'groupchat';
+
         await handleMessageAsIntent(
           message,
           cleanMessage,
           correlationId,
           undefined,
           guildContextToPass,
-          responseConditions.isProactiveAnswer || isRespondToAllChannel
+          responseConditions.isProactiveAnswer || isRespondToAllChannel,
+          conversationMode,
+          channelPersona?.personaName
         );
       } else {
         // PASSIVE OBSERVATION: Only process for learning if channel is whitelisted
@@ -1413,259 +649,11 @@ ${channelPersona.systemPrompt}
 }
 
 // =============================================================================
-// MESSAGE ADAPTER - SIMPLE BRIDGE TO UNIFIED PROCESSOR
+// MESSAGE INTENT ADAPTER
 // =============================================================================
 
 /**
- * Fetch the message being replied to (if any)
- * Returns the message content or null if unavailable
- */
-async function fetchReplyContext(message: Message): Promise<{
-  messageId: string;
-  author: string;
-  content: string;
-  timestamp: string;
-} | null> {
-  try {
-    // Check if this message is a reply
-    if (!message.reference?.messageId) {
-      return null;
-    }
-
-    // Fetch the referenced message
-    const referencedMessage = await message.channel.messages.fetch(message.reference.messageId);
-
-    if (!referencedMessage) {
-      return null;
-    }
-
-    // Return formatted reply context
-    return {
-      messageId: referencedMessage.id,
-      author: referencedMessage.author.displayName || referencedMessage.author.username,
-      content: referencedMessage.content,
-      timestamp: referencedMessage.createdAt.toISOString(),
-    };
-  } catch (error) {
-    // Handle gracefully - message might be deleted, or we might lack permissions
-    logger.debug(`Could not fetch reply context for message ${message.id}:`, error);
-    return null;
-  }
-}
-
-/**
- * Fetch recent channel history for context
- * Randomly fetches 10-25 messages to give Artie conversational context
- */
-async function fetchChannelHistory(message: Message): Promise<
-  Array<{
-    author: string;
-    content: string;
-    timestamp: string;
-    isBot: boolean;
-  }>
-> {
-  try {
-    // Randomize how many messages to fetch (10-25)
-    const limit = chance.integer({ min: MIN_CHANNEL_HISTORY, max: MAX_CHANNEL_HISTORY });
-
-    // Fetch messages before the current one
-    const messages = await message.channel.messages.fetch({ limit, before: message.id });
-
-    // Convert to simple format for context
-    return Array.from(messages.values())
-      .reverse() // Chronological order (oldest first)
-      .map((msg) => ({
-        author: msg.author.displayName || msg.author.username,
-        content: msg.content,
-        timestamp: msg.createdAt.toISOString(),
-        isBot: msg.author.bot,
-      }));
-  } catch (error) {
-    logger.error('Failed to fetch channel history:', error);
-    return [];
-  }
-}
-
-/**
- * Fetch recent attachments from the channel (last ~10 messages)
- */
-async function fetchRecentAttachments(message: Message): Promise<
-  Array<{
-    id: string;
-    name: string | null;
-    url: string;
-    contentType: string | null;
-    size: number;
-    proxyUrl: string | null;
-    author: string;
-    authorId: string;
-    messageId: string;
-    timestamp: string;
-  }>
-> {
-  try {
-    const messages = await message.channel.messages.fetch({ limit: 12, before: message.id });
-
-    const attachments: Array<{
-      id: string;
-      name: string | null;
-      url: string;
-      contentType: string | null;
-      size: number;
-      proxyUrl: string | null;
-      author: string;
-      authorId: string;
-      messageId: string;
-      timestamp: string;
-    }> = [];
-
-    for (const msg of messages.values()) {
-      if (!msg.attachments || msg.attachments.size === 0) continue;
-
-      msg.attachments.forEach((att) => {
-        attachments.push({
-          id: att.id,
-          name: att.name,
-          url: att.url,
-          contentType: att.contentType ?? null,
-          size: att.size,
-          proxyUrl: att.proxyURL ?? null,
-          author: msg.author.displayName || msg.author.username,
-          authorId: msg.author.id,
-          messageId: msg.id,
-          timestamp: msg.createdAt.toISOString(),
-        });
-      });
-
-      if (attachments.length >= 10) break; // cap to keep context small
-    }
-
-    return attachments.slice(0, 10);
-  } catch (error) {
-    logger.error('Failed to fetch recent attachments:', error);
-    return [];
-  }
-}
-
-/**
- * Extract up to a few recent URLs from recent messages (excluding bot).
- */
-async function fetchRecentUrls(message: Message): Promise<string[]> {
-  try {
-    const messages = await message.channel.messages.fetch({ limit: 12, before: message.id });
-    const urls: string[] = [];
-
-    for (const msg of messages.values()) {
-      if (msg.author.bot) continue;
-      const tokens = msg.content.split(/\s+/);
-
-      // Collect URLs from message content
-      for (const token of tokens) {
-        try {
-          const parsed = new URL(token);
-          if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
-            const normalized = parsed.toString();
-            if (!urls.includes(normalized)) {
-              urls.push(normalized);
-            }
-          }
-        } catch {
-          // not a URL, skip
-        }
-        if (urls.length >= 5) break;
-      }
-
-      // Also include URLs from embeds if present
-      if (msg.embeds && msg.embeds.length > 0) {
-        for (const embed of msg.embeds) {
-          if (embed.url && !urls.includes(embed.url)) {
-            urls.push(embed.url);
-          }
-          if (urls.length >= 5) break;
-        }
-      }
-
-      if (urls.length >= 5) break; // cap before later trim
-    }
-
-    return urls.slice(0, 5);
-  } catch (error) {
-    logger.error('Failed to fetch recent URLs:', error);
-    return [];
-  }
-}
-
-/**
- * Resolve Discord message links to their actual content
- * Links look like: https://discord.com/channels/GUILD_ID/CHANNEL_ID/MESSAGE_ID
- */
-async function resolveDiscordMessageLinks(
-  urls: string[],
-  currentMessage: Message
-): Promise<Array<{ url: string; content: string; author: string; channel: string }>> {
-  const resolved: Array<{ url: string; content: string; author: string; channel: string }> = [];
-  const discordLinkPattern =
-    /^https:\/\/(?:discord\.com|discordapp\.com)\/channels\/(\d+)\/(\d+)\/(\d+)$/;
-
-  for (const url of urls) {
-    const match = url.match(discordLinkPattern);
-    if (!match) continue;
-
-    const [, guildId, channelId, messageId] = match;
-
-    try {
-      // Only resolve links from the same guild for security
-      if (guildId !== currentMessage.guildId) {
-        logger.debug(`🔗 Skipping cross-guild Discord link: ${url}`);
-        continue;
-      }
-
-      const guild = currentMessage.guild;
-      if (!guild) continue;
-
-      const channel = guild.channels.cache.get(channelId);
-      if (!channel || !channel.isTextBased()) {
-        logger.debug(`🔗 Channel not found or not text-based: ${channelId}`);
-        continue;
-      }
-
-      // Fetch the referenced message
-      const referencedMessage = await (channel as any).messages.fetch(messageId);
-      if (!referencedMessage) continue;
-
-      const channelName = 'name' in channel ? channel.name : 'unknown';
-
-      // Build content including attachments
-      let content = referencedMessage.content || '';
-      if (referencedMessage.attachments.size > 0) {
-        const attachmentInfo = referencedMessage.attachments
-          .map((att: any) => `[Attachment: ${att.name}]`)
-          .join(', ');
-        content += content ? `\n${attachmentInfo}` : attachmentInfo;
-      }
-
-      resolved.push({
-        url,
-        content: content.substring(0, 1000), // Cap length
-        author: referencedMessage.author.username,
-        channel: channelName,
-      });
-
-      logger.info(`🔗 Resolved Discord message link: ${url} -> "${content.substring(0, 50)}..."`);
-    } catch (error) {
-      logger.debug(`🔗 Failed to resolve Discord link ${url}:`, error);
-    }
-
-    if (resolved.length >= 3) break; // Cap resolved messages
-  }
-
-  return resolved;
-}
-
-/**
  * Simple adapter: Convert Discord message to UserIntent and delegate to unified processor
- * Replaces ~400 lines of duplicate logic with ~30 lines of adapter code
  */
 async function handleMessageAsIntent(
   message: Message,
@@ -1678,7 +666,9 @@ async function handleMessageAsIntent(
     proxyPrefix: string;
   },
   guildContext?: string,
-  isProactiveAnswer: boolean = false
+  isProactiveAnswer: boolean = false,
+  conversationMode: 'personal' | 'persona' | 'groupchat' = 'groupchat',
+  channelPersonaName?: string
 ): Promise<void> {
   const shortId = getShortCorrelationId(correlationId);
   let statusMessage: Message | null = null;
@@ -1724,17 +714,7 @@ async function handleMessageAsIntent(
     const recentUrls = await fetchRecentUrls(message);
 
     // Also extract URLs from the CURRENT message (not just recent ones)
-    const currentMessageUrls: string[] = [];
-    for (const token of message.content.split(/\s+/)) {
-      try {
-        const parsed = new URL(token);
-        if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
-          currentMessageUrls.push(parsed.toString());
-        }
-      } catch {
-        // not a URL
-      }
-    }
+    const currentMessageUrls = extractUrlsFromContent(message.content);
 
     // Combine current + recent URLs (current first, dedupe)
     const allUrls = [
@@ -1807,8 +787,19 @@ async function handleMessageAsIntent(
       };
     })();
 
+    // Load per-user DM scratchpad for personal conversations (DMs only)
+    const isDM = conversationMode === 'personal';
+    const dmScratchpad = isDM
+      ? getDMScratchpad(message.author.id, message.author.username)
+      : null;
+
+    if (dmScratchpad) {
+      logger.info(`📝 Loaded DM scratchpad for ${message.author.username} [${shortId}]`);
+    }
+
     const discordContext = {
       platform: 'discord',
+      conversationMode, // 'personal' (DM), 'persona' (Judge Artie etc), 'groupchat' (normal)
       ...guildInfo,
       ...channelInfo,
       ...userInfo,
@@ -1867,6 +858,26 @@ async function handleMessageAsIntent(
         ? {
             isProactiveAnswer,
             guildKnowledge: guildContext,
+          }
+        : {}),
+      // DM-specific scratchpad for personal conversations
+      ...(dmScratchpad
+        ? {
+            dmScratchpad: {
+              path: dmScratchpad.path,
+              content: dmScratchpad.content,
+              instructions: `📝 YOUR PRIVATE NOTES ABOUT THIS PERSON:
+${dmScratchpad.content}
+
+To add notes about this person:
+<append path="${dmScratchpad.path}">
+## ${new Date().toISOString().split('T')[0]} - Note Title
+Your observation here
+</append>
+
+To update their profile section:
+<write path="${dmScratchpad.path}">full updated content</write>`,
+            },
           }
         : {}),
     };
