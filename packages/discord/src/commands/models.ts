@@ -38,10 +38,11 @@ export const modelsCommand = {
 
 async function createModelsListEmbed(): Promise<EmbedBuilder> {
   // Get REAL models from capabilities service API with OpenRouter data
+  const brainUrl = process.env.BRAIN_URL || 'http://localhost:18239';
   let modelData: any = null;
 
   try {
-    const response = await fetch('http://localhost:18239/api/models');
+    const response = await fetch(`${brainUrl}/api/models`);
     if (response.ok) {
       const result = (await response.json()) as any;
 
@@ -65,7 +66,7 @@ async function createModelsListEmbed(): Promise<EmbedBuilder> {
     let configuredModels = '';
 
     try {
-      const response = await fetch('http://localhost:18239/api/models');
+      const response = await fetch(`${brainUrl}/api/models`);
       if (!response.ok) {
         const errorData = (await response.json()) as any;
         if (errorData.hint) {
@@ -184,8 +185,9 @@ async function createModelsListEmbed(): Promise<EmbedBuilder> {
 
 async function createModelDetailEmbed(modelQuery: string): Promise<EmbedBuilder> {
   // Get live model data from API
+  const brainUrl = process.env.BRAIN_URL || 'http://localhost:18239';
   try {
-    const response = await fetch('http://localhost:18239/api/models');
+    const response = await fetch(`${brainUrl}/api/models`);
     if (!response.ok) {
       throw new Error(`API returned ${response.status}`);
     }

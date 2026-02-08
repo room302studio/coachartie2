@@ -1,5 +1,5 @@
 import { ChatInputCommandInteraction, SlashCommandBuilder, EmbedBuilder } from 'discord.js';
-import { logger } from '@coachartie/shared';
+import { logger, testRedisConnection } from '@coachartie/shared';
 import { telemetry } from '../services/telemetry.js';
 import { capabilitiesClient } from '../services/capabilities-client.js';
 
@@ -142,12 +142,13 @@ async function createUserUsageEmbed(userId: string): Promise<EmbedBuilder> {
 
 async function createSystemStatusEmbed(): Promise<EmbedBuilder> {
   const embed = new EmbedBuilder().setTitle('🔧 System Status').setColor(0x9b59b6);
+  const capabilitiesUrl = process.env.CAPABILITIES_URL || 'http://localhost:47324';
 
   try {
     // Test capabilities service
     const capabilitiesStart = Date.now();
     const testResult = await Promise.race([
-      fetch('http://localhost:47324/health').then((r) => r.ok),
+      fetch(`${capabilitiesUrl}/health`).then((r) => r.ok),
       new Promise((resolve) => setTimeout(() => resolve(false), 5000)),
     ]);
     const capabilitiesLatency = Date.now() - capabilitiesStart;
@@ -155,10 +156,17 @@ async function createSystemStatusEmbed(): Promise<EmbedBuilder> {
     const capabilitiesStatus = testResult ? '🟢 Online' : '🔴 Offline';
     const capabilitiesLatencyText = testResult ? `${capabilitiesLatency}ms` : 'N/A';
 
+    // Test Redis connection
+    const redisStart = Date.now();
+    const redisOk = await testRedisConnection();
+    const redisLatency = Date.now() - redisStart;
+    const redisStatus = redisOk ? '🟢 Connected' : '🔴 Offline';
+    const redisLatencyText = redisOk ? `(${redisLatency}ms)` : '';
+
     embed.addFields(
       { name: '🧠 Capabilities Service', value: capabilitiesStatus, inline: true },
       { name: '⚡ Capabilities Latency', value: capabilitiesLatencyText, inline: true },
-      { name: '🔄 Redis Queue', value: '🟢 Connected', inline: true }, // TODO: actual check
+      { name: '🔄 Redis Queue', value: `${redisStatus} ${redisLatencyText}`, inline: true },
       { name: '🌐 Discord API', value: '🟢 Connected', inline: true },
       { name: '📊 Health Server', value: '🟢 Running :47319', inline: true },
       { name: '💾 Telemetry', value: '🟢 Recording', inline: true }

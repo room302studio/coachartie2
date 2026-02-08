@@ -20,6 +20,9 @@ import { telemetry } from '../services/telemetry.js';
 import { generateCorrelationId, getShortCorrelationId } from '../utils/correlation.js';
 import { processUserIntent } from '../services/user-intent-processor.js';
 
+// Capabilities service URL (use environment variable or default)
+const CAPABILITIES_URL = process.env.CAPABILITIES_URL || 'http://localhost:47324';
+
 // Reaction trigger emojis
 const REGENERATE_EMOJI = '🔄';
 const THUMBS_UP_EMOJI = '👍';
@@ -501,33 +504,39 @@ async function handleFeedbackReaction(
   // Store memory about this feedback for learning
   try {
     const messageSnippet = reaction.message.content?.substring(0, 150) || 'unknown message';
-    const channelName = 'name' in reaction.message.channel ? reaction.message.channel.name : 'DM';
+    const channelName = ('name' in reaction.message.channel ? reaction.message.channel.name : null) || 'DM';
     const guildName = reaction.message.guild?.name || 'unknown';
+    const guildId = reaction.message.guildId;
 
-    // Build a reflection note about the community feedback
+    // Build a more actionable reflection note
     const feedbackNote =
       sentiment === 'positive'
-        ? `community feedback: someone reacted positively (${emoji}) to my response in ${guildName} #${channelName}. my response was: "${messageSnippet}..." - this kind of response works well`
-        : `community feedback: someone reacted negatively (${emoji}) to my response in ${guildName} #${channelName}. my response was: "${messageSnippet}..." - should reflect on how to improve this kind of response`;
+        ? `community feedback: ${emoji} reaction to my response in ${guildName} #${channelName}. response was: "${messageSnippet}..." - this response style works well here`
+        : `community feedback: ${emoji} reaction (negative) to my response in ${guildName} #${channelName}. response was: "${messageSnippet}..." - should avoid this response style`;
 
-    // Call capabilities API to store this as a memory
-    const response = await fetch('http://localhost:47324/chat', {
+    // Use direct memory endpoint for proper storage with guild scope
+    const response = await fetch(`${CAPABILITIES_URL}/capabilities/registry/memory/execute`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        userId: 'reaction-feedback-system',
-        message: `<capability name="memory" action="remember" content="${feedbackNote.replace(/"/g, "'")}" importance="3" tags="feedback,${sentiment},community-response" />`,
-        source: 'system',
-        context: {
-          platform: 'discord',
-          guildId: reaction.message.guildId,
-          channelId: reaction.message.channelId,
+        action: 'remember',
+        params: {
+          content: feedbackNote,
+          userId: 'reaction-feedback-system',
+          importance: sentiment === 'negative' ? 5 : 3, // Negative feedback is more important to learn from
+          tags: ['community', 'feedback', sentiment, 'response-style', channelName.toLowerCase()],
+          guildId: guildId, // Store with guild scope so it's recalled in that guild
         },
       }),
     });
 
     if (response.ok) {
-      logger.info(`Stored ${sentiment} feedback memory [${shortId}]`);
+      logger.info(`Stored ${sentiment} feedback memory for guild ${guildId} [${shortId}]`);
+
+      // Check if negative feedback threshold crossed - trigger emergency reflection
+      if (sentiment === 'negative' && guildId) {
+        await checkNegativeFeedbackThreshold(guildId, shortId);
+      }
     }
   } catch (error) {
     logger.warn(`Failed to store feedback memory [${shortId}]:`, error);
@@ -647,4 +656,42 @@ function chunkMessage(text: string, maxLength: number = 2000): string[] {
   }
 
   return chunks.length > 0 ? chunks : [text];
+}
+
+/**
+ * Check if negative feedback threshold is crossed and trigger emergency reflection
+ * Threshold is configurable via REFLECTION_NEGATIVE_THRESHOLD env var (default: 5)
+ */
+async function checkNegativeFeedbackThreshold(guildId: string, shortId: string): Promise<void> {
+  try {
+    // Check if reflection is enabled
+    if (process.env.ENABLE_REFLECTION_CONSOLIDATION !== 'true') {
+      return;
+    }
+
+    const threshold = parseInt(process.env.REFLECTION_NEGATIVE_THRESHOLD || '5', 10);
+
+    // Call the capabilities service to check threshold and trigger reflection
+    const response = await fetch(`${CAPABILITIES_URL}/api/reflection/check-threshold`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        guildId,
+        threshold,
+        hours: 1, // Check last hour
+      }),
+    });
+
+    if (response.ok) {
+      const result = await response.json() as { triggered?: boolean; count?: number };
+      if (result.triggered) {
+        logger.warn(
+          `🚨 Emergency reflection triggered for guild ${guildId}: ${result.count} negative reactions in last hour [${shortId}]`
+        );
+      }
+    }
+  } catch (error) {
+    // Don't fail the reaction handler if threshold check fails
+    logger.debug(`Failed to check negative feedback threshold [${shortId}]:`, error);
+  }
 }

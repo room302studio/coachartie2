@@ -64,6 +64,8 @@ export const debugCommand = {
 
 async function createConnectionTestEmbed(): Promise<EmbedBuilder> {
   const embed = new EmbedBuilder().setTitle('🔍 Connection Test Results').setColor(0x3498db);
+  const capabilitiesUrl = process.env.CAPABILITIES_URL || 'http://localhost:47324';
+  const healthServerUrl = process.env.HEALTH_SERVER_URL || 'http://localhost:47319';
 
   const tests = [];
 
@@ -78,7 +80,7 @@ async function createConnectionTestEmbed(): Promise<EmbedBuilder> {
   try {
     const start = Date.now();
     const response = (await Promise.race([
-      fetch('http://localhost:47324/health'),
+      fetch(`${capabilitiesUrl}/health`),
       new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 10000)),
     ])) as Response;
 
@@ -115,7 +117,7 @@ async function createConnectionTestEmbed(): Promise<EmbedBuilder> {
 
   // Test Health Server
   try {
-    const response = await fetch('http://localhost:3001/health');
+    const response = await fetch(`${healthServerUrl}/health`);
     tests.push({
       name: '📊 Health Server',
       status: response.ok ? '🟢 Online' : '🟡 Issues',
@@ -221,11 +223,12 @@ async function createPerformanceEmbed(userId: string): Promise<EmbedBuilder> {
 
 async function createCapabilitiesTestEmbed(): Promise<EmbedBuilder> {
   const embed = new EmbedBuilder().setTitle('🧠 Capabilities Test').setColor(0xe74c3c);
+  const brainUrl = process.env.BRAIN_URL || 'http://localhost:18239';
 
   try {
     // Test a simple capability
     const testStart = Date.now();
-    const response = await fetch('http://localhost:18239/chat', {
+    const response = await fetch(`${brainUrl}/chat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({

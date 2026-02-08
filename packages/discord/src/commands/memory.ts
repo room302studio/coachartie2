@@ -74,11 +74,12 @@ export const memoryCommand = {
 async function handleMemorySearch(interaction: ChatInputCommandInteraction, userId: string) {
   const query = interaction.options.get('query')?.value as string;
   const limit = (interaction.options.get('limit')?.value as number) || 10;
+  const brainUrl = process.env.BRAIN_URL || 'http://localhost:18239';
 
   try {
     // Call the existing memories API endpoint
     const response = await fetch(
-      `http://localhost:18239/api/memories?userId=${userId}&search=${encodeURIComponent(query)}&limit=${limit}`
+      `${brainUrl}/api/memories?userId=${userId}&search=${encodeURIComponent(query)}&limit=${limit}`
     );
 
     if (!response.ok) {
@@ -144,11 +145,12 @@ async function handleMemorySearch(interaction: ChatInputCommandInteraction, user
 
 async function handleRecentMemories(interaction: ChatInputCommandInteraction, userId: string) {
   const limit = (interaction.options.get('limit')?.value as number) || 10;
+  const brainUrl = process.env.BRAIN_URL || 'http://localhost:18239';
 
   try {
     // Call the existing memories API endpoint
     const response = await fetch(
-      `http://localhost:18239/api/memories?userId=${userId}&limit=${limit}`
+      `${brainUrl}/api/memories?userId=${userId}&limit=${limit}`
     );
 
     if (!response.ok) {
@@ -211,9 +213,10 @@ async function handleRecentMemories(interaction: ChatInputCommandInteraction, us
 }
 
 async function handleMemoryStats(interaction: ChatInputCommandInteraction, userId: string) {
+  const brainUrl = process.env.BRAIN_URL || 'http://localhost:18239';
   try {
     // Call the existing memories API endpoint to get total count
-    const response = await fetch(`http://localhost:18239/api/memories?userId=${userId}&limit=1000`);
+    const response = await fetch(`${brainUrl}/api/memories?userId=${userId}&limit=1000`);
 
     if (!response.ok) {
       throw new Error(`API response: ${response.status}`);
