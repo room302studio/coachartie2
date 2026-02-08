@@ -298,6 +298,18 @@ process.on('SIGINT', async () => {
   process.exit(0);
 });
 
+// Handle uncaught exceptions
+process.on('uncaughtException', (error) => {
+  logger.error('💥 Uncaught Exception:', error);
+  telemetry.logEvent('error', { type: 'uncaughtException', message: error.message });
+  process.exit(1);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  logger.error('💥 Unhandled Rejection:', reason);
+  telemetry.logEvent('error', { type: 'unhandledRejection', reason: String(reason) });
+});
+
 // Start the bot
 console.log('🏁 CALLING START FUNCTION - JUCKS ARE SNUCKED!');
 start().catch((err) => {
