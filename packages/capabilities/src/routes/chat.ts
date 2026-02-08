@@ -25,6 +25,11 @@ interface ChatResponse {
   error?: string;
   cancellationReason?: string;
   additionalContext?: string[];
+  partialResponse?: string;
+  lastStreamUpdate?: string;
+  processingTime?: number;
+  startTime?: string;
+  endTime?: string;
 }
 
 // POST /chat - Process message and return AI response immediately (or wait with ?wait=true)
@@ -473,8 +478,8 @@ router.get('/:messageId', (req: Request, res: Response) => {
       response.cancellationReason = job.cancellationReason;
     } else if ((job.status === 'processing' || job.status === 'pending') && job.partialResponse) {
       // Include partial response for streaming
-      (response as any).partialResponse = job.partialResponse;
-      (response as any).lastStreamUpdate = job.lastStreamUpdate?.toISOString();
+      response.partialResponse = job.partialResponse;
+      response.lastStreamUpdate = job.lastStreamUpdate?.toISOString();
     }
 
     // Add additional context if present
@@ -483,10 +488,10 @@ router.get('/:messageId', (req: Request, res: Response) => {
     }
 
     // Add timing info for debugging
-    (response as any).processingTime = processingTime;
-    (response as any).startTime = job.startTime.toISOString();
+    response.processingTime = processingTime;
+    response.startTime = job.startTime.toISOString();
     if (job.endTime) {
-      (response as any).endTime = job.endTime.toISOString();
+      response.endTime = job.endTime.toISOString();
     }
 
     logger.info(`📊 Job status check for ${messageId}: ${job.status} (${processingTime}ms)`);

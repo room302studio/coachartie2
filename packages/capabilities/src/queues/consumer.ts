@@ -30,7 +30,6 @@ export async function startMessageConsumer(): Promise<Worker<IncomingMessage, vo
   logger.info('✅ Redis available - starting queue workers');
 
   const worker = createWorker<IncomingMessage, void>(QUEUES.INCOMING_MESSAGES, async (job) => {
-    console.log(`📬 Processing job ${job.id} - SNOOKITY LOOKITY!`);
     const message = job.data;
 
     logger.info(`🔄 WORKER: Job ${job.id} pulled from queue:`, {
@@ -124,6 +123,40 @@ export async function startMessageConsumer(): Promise<Worker<IncomingMessage, vo
         logger.info(
           `API message processed successfully: ${(message.respondTo as { apiResponseId?: string })?.apiResponseId}`
         );
+
+        // Store Artie's response for Discord messages (via API path)
+        // Skip storing [SILENT] responses - they pollute conversation history
+        const isSilent = response.trim() === '[SILENT]' || response.trim().toLowerCase() === '[silent]';
+        if (
+          !isSilent &&
+          (message.source === 'discord' ||
+            (message.source === 'api' && message.context?.platform === 'discord'))
+        ) {
+          try {
+            const { database } = await import('../services/core/database.js');
+            await database.run(
+              `
+                INSERT INTO messages (value, user_id, message_type, channel_id, guild_id, role, related_message_id, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
+              `,
+              [
+                response,
+                'artie',
+                'discord',
+                message.context?.channelId || null,
+                message.context?.guildId || null,
+                'assistant',
+                message.id,
+              ]
+            );
+            logger.debug(`[consumer] Stored Artie response for ${message.id}`);
+          } catch (dbError) {
+            logger.error('[consumer] Failed to store Artie response:', dbError);
+          }
+        } else if (isSilent) {
+          logger.debug(`[consumer] Skipped storing [SILENT] response for ${message.id}`);
+        }
+
         // Mark job as complete
         jobTracker.completeJob(message.id, response);
         logger.info(`📊 Job ${message.id} marked as complete`);

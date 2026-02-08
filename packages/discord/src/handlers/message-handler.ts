@@ -47,7 +47,9 @@ function getEnhancedGuildContext(guildConfig: GuildConfig | null | undefined): s
 
   if (guildConfig?.contextPath) {
     try {
-      const contextFullPath = join(process.cwd(), guildConfig.contextPath);
+      // Use /app as base in Docker, or process.cwd() locally
+      const baseDir = process.env.APP_ROOT || '/app';
+      const contextFullPath = join(baseDir, guildConfig.contextPath);
       if (existsSync(contextFullPath)) {
         baseContext = readFileSync(contextFullPath, 'utf-8');
       } else {
@@ -848,9 +850,6 @@ async function handleGitHubAutoExpansion(
  */
 export function setupMessageHandler(client: Client) {
   client.on(Events.MessageCreate, async (message: Message) => {
-    // DEBUG: Verify handler is receiving messages
-    console.log(`🎯 HANDLER GOT MESSAGE: ${message.author.tag} in ${message.guild?.name || 'DM'}`);
-
     // -------------------------------------------------------------------------
     // CORRELATION & LOGGING SETUP
     // -------------------------------------------------------------------------
