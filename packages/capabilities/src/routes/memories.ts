@@ -1,6 +1,5 @@
 import express from 'express';
-import { getDb, memories } from '@coachartie/shared';
-import { desc } from 'drizzle-orm';
+import { getDb, memories, desc, logger } from '@coachartie/shared';
 
 const router: express.Router = express.Router();
 
@@ -59,7 +58,7 @@ router.get('/', async (req, res) => {
       });
     }
   } catch (error) {
-    console.error('Error fetching memories:', error);
+    logger.error('Error fetching memories:', error);
     res.status(500).json({
       success: false,
       error: error instanceof Error ? error.message : 'Unknown error',
