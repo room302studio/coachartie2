@@ -1,7 +1,7 @@
 import { logger } from '@coachartie/shared';
 import { RegisteredCapability } from '../../services/capability/capability-registry.js';
 
-const N8N_URL = 'http://localhost:5678';
+const N8N_URL = process.env.N8N_URL || 'http://localhost:5678';
 const WORKFLOW_ID = 'icDlrOYPgN9OGPqb';
 
 /**

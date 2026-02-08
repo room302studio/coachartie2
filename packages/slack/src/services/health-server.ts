@@ -26,9 +26,34 @@ export class HealthServer {
   private server: any;
   private port: number;
   private slackApp: any;
+  private capabilitiesHealthCache: { reachable: boolean; checkedAt: number } = {
+    reachable: false,
+    checkedAt: 0,
+  };
+  private readonly CAPABILITIES_CACHE_TTL_MS = 30000; // 30 seconds
 
   constructor(port: number = 47320) {
     this.port = port;
+  }
+
+  private async checkCapabilitiesHealth(): Promise<boolean> {
+    const now = Date.now();
+    if (now - this.capabilitiesHealthCache.checkedAt < this.CAPABILITIES_CACHE_TTL_MS) {
+      return this.capabilitiesHealthCache.reachable;
+    }
+
+    const capabilitiesUrl = process.env.CAPABILITIES_URL || 'http://localhost:47324';
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 3000);
+      const response = await fetch(`${capabilitiesUrl}/health`, { signal: controller.signal });
+      clearTimeout(timeout);
+      this.capabilitiesHealthCache = { reachable: response.ok, checkedAt: now };
+      return response.ok;
+    } catch {
+      this.capabilitiesHealthCache = { reachable: false, checkedAt: now };
+      return false;
+    }
   }
 
   setSlackApp(app: any): void {
@@ -65,7 +90,7 @@ export class HealthServer {
             this.handleMetrics(res);
             break;
           case '/ready':
-            this.handleReadiness(res);
+            void this.handleReadiness(res);
             break;
           case '/live':
             this.handleLiveness(res);
@@ -150,9 +175,9 @@ export class HealthServer {
     res.end(JSON.stringify(response, null, 2));
   }
 
-  private handleReadiness(res: ServerResponse): void {
+  private async handleReadiness(res: ServerResponse): Promise<void> {
     const slackConnected = this.slackApp !== null;
-    const capabilitiesReachable = true; // TODO: Add actual capabilities service check
+    const capabilitiesReachable = await this.checkCapabilitiesHealth();
 
     const ready = slackConnected && capabilitiesReachable;
     const issues: string[] = [];

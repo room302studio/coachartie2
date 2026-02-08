@@ -1,6 +1,7 @@
 import { IncomingMessage, logger } from '@coachartie/shared';
 import { openRouterService } from '../services/llm/openrouter.js';
 import { capabilityOrchestrator } from '../services/capability/capability-orchestrator.js';
+import { capabilityRegistry } from '../services/capability/capability-registry.js';
 import { costMonitor } from '../services/monitoring/cost-monitor.js';
 
 export async function processMessage(
@@ -115,8 +116,8 @@ Timestamp: ${new Date().toISOString()}
 OpenRouter Key Status: ${process.env.OPENROUTER_API_KEY ? 'CONFIGURED' : 'MISSING'}
 Capabilities Enabled: ${process.env.ENABLE_CAPABILITIES !== 'false'}
 Environment: ${process.env.NODE_ENV || 'unknown'}
-Available Capabilities: ${require('../services/capability-registry.js')
-      .capabilityRegistry.list()
+Available Capabilities: ${capabilityRegistry
+      .list()
       .map((c: { name: string }) => c.name)
       .join(', ')}`;
   }

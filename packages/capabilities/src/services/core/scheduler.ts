@@ -8,6 +8,7 @@ import {
   testRedisConnection,
 } from '@coachartie/shared';
 import { redditMentionMonitor } from '../reddit-mention-monitor.js';
+import { moltbookSocialBehavior } from '../behaviors/moltbook-social.js';
 
 export interface ScheduledTask {
   id: string;
@@ -296,7 +297,7 @@ export class SchedulerService {
       logger.info(`⏰ EXECUTING SCHEDULED JOB: ${job.name} (ID: ${taskId})`);
 
       // Determine job type: use job.name first, fall back to job.data.type for dynamic names
-      const jobType = job.data.type || job.name;
+      const jobType = job.name || job.data.type;
 
       // Handle different types of scheduled jobs
       switch (jobType) {
@@ -318,6 +319,18 @@ export class SchedulerService {
 
         case 'reddit-mentions':
           await this.executeRedditMentions();
+          break;
+
+        case 'moltbook-social':
+          await this.executeMoltbookSocial();
+          break;
+
+        case 'daily-reflection':
+          await this.executeDailyReflection();
+          break;
+
+        case 'weekly-rule-review':
+          await this.executeWeeklyRuleReview();
           break;
 
         default:
@@ -470,6 +483,64 @@ export class SchedulerService {
     }
   }
 
+  private async executeMoltbookSocial(): Promise<void> {
+    logger.info('🤖 Moltbook social behavior triggered');
+    try {
+      const result = await moltbookSocialBehavior.execute();
+      logger.info(`Moltbook social: ${result.action} - ${result.message}`);
+    } catch (error) {
+      logger.error('❌ Moltbook social behavior failed:', error);
+    }
+  }
+
+  /**
+   * Execute daily reflection consolidation
+   * Analyzes recent feedback and generates/updates learned rules
+   */
+  private async executeDailyReflection(): Promise<void> {
+    logger.info('🔄 Daily reflection consolidation triggered');
+
+    // Check if reflection is enabled
+    if (process.env.ENABLE_REFLECTION_CONSOLIDATION !== 'true') {
+      logger.info('⏭️ Reflection consolidation disabled (set ENABLE_REFLECTION_CONSOLIDATION=true to enable)');
+      return;
+    }
+
+    try {
+      const { reflectionConsolidator } = await import('../learning/reflection-consolidator.js');
+      const result = await reflectionConsolidator.runDailyConsolidation();
+      logger.info(
+        `✅ Daily reflection complete: ${result.rulesCreated} created, ${result.rulesUpdated} updated, ${result.guildsProcessed} guilds`
+      );
+    } catch (error) {
+      logger.error('❌ Daily reflection failed:', error);
+    }
+  }
+
+  /**
+   * Execute weekly rule review
+   * Reviews existing rules and retires/modifies based on recent feedback
+   */
+  private async executeWeeklyRuleReview(): Promise<void> {
+    logger.info('📋 Weekly rule review triggered');
+
+    // Check if reflection is enabled
+    if (process.env.ENABLE_REFLECTION_CONSOLIDATION !== 'true') {
+      logger.info('⏭️ Rule review disabled (set ENABLE_REFLECTION_CONSOLIDATION=true to enable)');
+      return;
+    }
+
+    try {
+      const { reflectionConsolidator } = await import('../learning/reflection-consolidator.js');
+      const result = await reflectionConsolidator.reviewAndPruneRules();
+      logger.info(
+        `✅ Weekly rule review complete: ${result.kept} kept, ${result.modified} modified, ${result.retired} retired`
+      );
+    } catch (error) {
+      logger.error('❌ Weekly rule review failed:', error);
+    }
+  }
+
   /**
    * Setup default scheduled tasks
    */
@@ -509,6 +580,38 @@ export class SchedulerService {
       name: 'reddit-mentions',
       cron: '0 * * * *',
       data: { type: 'reddit-mentions' },
+      options: { immediate: false },
+    });
+
+    // Moltbook social behavior - every 4 hours with random skip
+    // Runs at 8am, 12pm, 4pm, 8pm UTC but randomly skips ~30% of the time
+    await this.scheduleTask({
+      id: 'moltbook-social',
+      name: 'moltbook-social',
+      cron: '0 8,12,16,20 * * *',
+      data: { type: 'moltbook-social' },
+      options: { immediate: false },
+    });
+
+    // Daily reflection consolidation - 4 AM UTC
+    // Analyzes feedback from the past 24 hours and generates learned rules
+    const dailyReflectionCron = process.env.REFLECTION_DAILY_CRON || '0 4 * * *';
+    await this.scheduleTask({
+      id: 'daily-reflection',
+      name: 'daily-reflection',
+      cron: dailyReflectionCron,
+      data: { type: 'daily-reflection' },
+      options: { immediate: false },
+    });
+
+    // Weekly rule review - Monday 3 AM UTC
+    // Reviews existing rules and retires ineffective ones
+    const weeklyRuleReviewCron = process.env.REFLECTION_WEEKLY_CRON || '0 3 * * 1';
+    await this.scheduleTask({
+      id: 'weekly-rule-review',
+      name: 'weekly-rule-review',
+      cron: weeklyRuleReviewCron,
+      data: { type: 'weekly-rule-review' },
       options: { immediate: false },
     });
 
