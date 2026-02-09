@@ -5,6 +5,7 @@ import { traceManager, experimentManager } from '../services/context-alchemy/ind
 import type { ExperimentDefinition } from '../services/context-alchemy/experiment-manager.js';
 import { evalHarness } from '../services/observability/eval-harness.js';
 import { evalSuite, DEFAULT_TEST_SET, type Condition } from '../services/observability/eval-suite.js';
+import { hybridDataLayer } from '../runtime/hybrid-data-layer.js';
 
 export const apiRouter = Router();
 
@@ -1083,6 +1084,92 @@ apiRouter.post('/eval/suite/test-sets/seed-default', async (_req: Request, res: 
     logger.error('Failed to seed default test set:', error);
     res.status(500).json({
       error: 'Failed to seed default test set',
+      message: error instanceof Error ? error.message : 'Unknown error',
+    });
+  }
+});
+
+// ============================================================================
+// MEMORY RECALL ANALYTICS
+// ============================================================================
+
+// GET /api/memories/most-recalled - Get most frequently accessed memories
+apiRouter.get('/memories/most-recalled', (_req: Request, res: Response) => {
+  try {
+    const limit = parseInt(_req.query.limit as string) || 20;
+    const memories = hybridDataLayer.getMostRecalledMemories(limit);
+
+    res.json({
+      memories,
+      count: memories.length,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error) {
+    logger.error('Failed to get most recalled memories:', error);
+    res.status(500).json({
+      error: 'Failed to get most recalled memories',
+      message: error instanceof Error ? error.message : 'Unknown error',
+    });
+  }
+});
+
+// GET /api/memories/:id/recall-stats - Get recall statistics for a specific memory
+apiRouter.get('/memories/:id/recall-stats', (req: Request, res: Response) => {
+  try {
+    const memoryId = parseInt(req.params.id);
+    const stats = hybridDataLayer.getMemoryRecallStats(memoryId);
+
+    if (!stats) {
+      res.status(404).json({ error: 'Memory not found' });
+      return;
+    }
+
+    res.json({
+      memoryId,
+      ...stats,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error) {
+    logger.error('Failed to get memory recall stats:', error);
+    res.status(500).json({
+      error: 'Failed to get memory recall stats',
+      message: error instanceof Error ? error.message : 'Unknown error',
+    });
+  }
+});
+
+// GET /api/memories/recall-history - Get recent recall events
+apiRouter.get('/memories/recall-history', (_req: Request, res: Response) => {
+  try {
+    const limit = parseInt(_req.query.limit as string) || 50;
+    const db = getSyncDb();
+
+    const recalls = db.all(
+      `SELECT mr.*, m.content as memory_preview
+       FROM memory_recalls mr
+       JOIN memories m ON mr.memory_id = m.id
+       ORDER BY mr.recalled_at DESC
+       LIMIT ?`,
+      [limit]
+    ) || [];
+
+    res.json({
+      recalls: recalls.map((r: Record<string, unknown>) => ({
+        id: r.id,
+        memoryId: r.memory_id,
+        memoryPreview: typeof r.memory_preview === 'string' ? r.memory_preview.substring(0, 100) : '',
+        recalledAt: r.recalled_at,
+        context: r.context,
+        userId: r.user_id,
+        guildId: r.guild_id,
+      })),
+      count: recalls.length,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error) {
+    logger.error('Failed to get recall history:', error);
+    res.status(500).json({
+      error: 'Failed to get recall history',
       message: error instanceof Error ? error.message : 'Unknown error',
     });
   }

@@ -144,6 +144,13 @@ export class MemoryService {
         this.lastRecallMemoryIds = memories.map((m) => m.id);
         logger.info(`📝 [HYBRID] Formatted output length: ${formatted.length} characters`);
         logger.info(`🔍 [HYBRID] Memory IDs: [${this.lastRecallMemoryIds.join(', ')}]`);
+
+        // 📊 Track memory recalls for analytics
+        hybridDataLayer.recordMemoryRecalls(this.lastRecallMemoryIds, {
+          userId,
+          query,
+        });
+
         return formatted;
       } catch (error) {
         logger.error('❌ [HYBRID] Failed to recall memories:', error);
@@ -185,6 +192,15 @@ export class MemoryService {
             return importanceB - importanceA;
           })
           .slice(0, limit);
+
+        // 📊 Track memory recalls for analytics
+        const memoryIds = sortedMemories.map((m) => m.id);
+        if (memoryIds.length > 0) {
+          hybridDataLayer.recordMemoryRecalls(memoryIds, {
+            userId,
+            query: `tags:${tags.join(',')}`,
+          });
+        }
 
         return sortedMemories.map((memory) => ({
           id: memory.id,

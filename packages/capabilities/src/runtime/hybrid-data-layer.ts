@@ -529,6 +529,105 @@ export class HybridDataLayer {
   }
 
   /**
+   * Record that memories were recalled/accessed
+   * Tracks usage patterns to understand which memories are actually useful
+   */
+  recordMemoryRecalls(
+    memoryIds: number[],
+    context?: {
+      userId?: string;
+      guildId?: string;
+      query?: string;
+      relevanceScores?: number[];
+    }
+  ): void {
+    if (!this.coldStorage || memoryIds.length === 0) {
+      return;
+    }
+
+    try {
+      const now = new Date().toISOString();
+
+      for (let i = 0; i < memoryIds.length; i++) {
+        const memoryId = memoryIds[i];
+
+        // Update recall count and timestamp on the memory
+        this.coldStorage.run(
+          `UPDATE memories
+           SET recall_count = COALESCE(recall_count, 0) + 1,
+               last_recalled_at = ?
+           WHERE id = ?`,
+          [now, memoryId]
+        );
+
+        // Log the individual recall event
+        this.coldStorage.run(
+          `INSERT INTO memory_recalls
+           (memory_id, recalled_at, context, user_id, guild_id, relevance_score)
+           VALUES (?, ?, ?, ?, ?, ?)`,
+          [
+            memoryId,
+            now,
+            context?.query || null,
+            context?.userId || null,
+            context?.guildId || null,
+            context?.relevanceScores?.[i] || null,
+          ]
+        );
+      }
+
+      logger.debug(`📊 Recorded ${memoryIds.length} memory recalls`);
+    } catch (error) {
+      // Don't let recall tracking break the main flow
+      logger.warn('Failed to record memory recalls:', error);
+    }
+  }
+
+  /**
+   * Get recall statistics for a memory
+   */
+  getMemoryRecallStats(memoryId: number): { recallCount: number; lastRecalled: string | null } | null {
+    if (!this.coldStorage) {
+      return null;
+    }
+
+    try {
+      const result = this.coldStorage.get<{ recall_count: number; last_recalled_at: string | null }>(
+        `SELECT recall_count, last_recalled_at FROM memories WHERE id = ?`,
+        [memoryId]
+      );
+
+      return result
+        ? { recallCount: result.recall_count || 0, lastRecalled: result.last_recalled_at }
+        : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Get most frequently recalled memories
+   */
+  getMostRecalledMemories(limit = 20): Array<{ id: number; content: string; recallCount: number }> {
+    if (!this.coldStorage) {
+      return [];
+    }
+
+    try {
+      return this.coldStorage.all<{ id: number; content: string; recall_count: number }>(
+        `SELECT id, substr(content, 1, 200) as content, recall_count
+         FROM memories
+         WHERE recall_count > 0
+         ORDER BY recall_count DESC
+         LIMIT ?`,
+        [limit]
+      ).map(r => ({ id: r.id, content: r.content, recallCount: r.recall_count }));
+    } catch {
+      return [];
+    }
+  }
+
+  /**
    * Health check
    */
   async healthCheck(): Promise<{ hotCacheSize: number; coldStorageConnected: boolean }> {
