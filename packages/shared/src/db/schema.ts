@@ -1054,6 +1054,128 @@ export const evalJudgments = sqliteTable(
   })
 );
 
+// ============================================================================
+// EXTENDED OBSERVABILITY - Sessions, Conversations, Errors
+// ============================================================================
+
+/**
+ * Conversations - Groups messages into conversation threads
+ */
+export const conversations = sqliteTable('conversations', {
+  id: text('id').primaryKey(),
+  userId: text('user_id').notNull(),
+  guildId: text('guild_id'),
+  channelId: text('channel_id'),
+  startedAt: text('started_at').notNull(),
+  lastActivityAt: text('last_activity_at').notNull(),
+  endedAt: text('ended_at'),
+  messageCount: integer('message_count').default(0),
+  turnCount: integer('turn_count').default(0),
+  totalDurationMs: integer('total_duration_ms'),
+  feedbackSentiment: text('feedback_sentiment'),
+  positiveReactions: integer('positive_reactions').default(0),
+  negativeReactions: integer('negative_reactions').default(0),
+  createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
+}, (table) => ({
+  userIdIdx: index('idx_conversations_user_id').on(table.userId),
+  channelIdIdx: index('idx_conversations_channel_id').on(table.channelId),
+  startedAtIdx: index('idx_conversations_started_at').on(table.startedAt),
+}));
+
+/**
+ * Capability Invocations - Track every capability execution
+ */
+export const capabilityInvocations = sqliteTable('capability_invocations', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  traceId: text('trace_id'),
+  capabilityName: text('capability_name').notNull(),
+  action: text('action').notNull(),
+  paramsJson: text('params_json'),
+  resultJson: text('result_json'),
+  startedAt: text('started_at').notNull(),
+  completedAt: text('completed_at'),
+  durationMs: integer('duration_ms'),
+  success: integer('success', { mode: 'boolean' }).default(true),
+  errorType: text('error_type'),
+  errorMessage: text('error_message'),
+  sequenceNumber: integer('sequence_number').default(0),
+  createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
+}, (table) => ({
+  traceIdIdx: index('idx_cap_invocations_trace_id').on(table.traceId),
+  capabilityIdx: index('idx_cap_invocations_capability').on(table.capabilityName, table.action),
+  successIdx: index('idx_cap_invocations_success').on(table.success),
+}));
+
+/**
+ * Memory Events - Track memory lifecycle (create, recall, pin, forget)
+ */
+export const memoryEvents = sqliteTable('memory_events', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  memoryId: integer('memory_id').notNull(),
+  eventType: text('event_type').notNull(),
+  userId: text('user_id'),
+  traceId: text('trace_id'),
+  query: text('query'),
+  relevanceScore: real('relevance_score'),
+  detailsJson: text('details_json'),
+  createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
+}, (table) => ({
+  memoryIdIdx: index('idx_memory_events_memory_id').on(table.memoryId),
+  eventTypeIdx: index('idx_memory_events_event_type').on(table.eventType),
+  createdAtIdx: index('idx_memory_events_created_at').on(table.createdAt),
+}));
+
+/**
+ * Error Events - Structured error logging
+ */
+export const errorEvents = sqliteTable('error_events', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  errorType: text('error_type').notNull(),
+  errorCode: text('error_code'),
+  severity: text('severity').default('error'),
+  traceId: text('trace_id'),
+  userId: text('user_id'),
+  guildId: text('guild_id'),
+  service: text('service').notNull(),
+  message: text('message'),
+  stackTrace: text('stack_trace'),
+  contextJson: text('context_json'),
+  recovered: integer('recovered', { mode: 'boolean' }).default(false),
+  recoveryAction: text('recovery_action'),
+  retryCount: integer('retry_count').default(0),
+  createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
+}, (table) => ({
+  errorTypeIdx: index('idx_error_events_type').on(table.errorType),
+  serviceIdx: index('idx_error_events_service').on(table.service),
+  severityIdx: index('idx_error_events_severity').on(table.severity),
+  createdAtIdx: index('idx_error_events_created_at').on(table.createdAt),
+}));
+
+/**
+ * User Sessions - Track user engagement sessions
+ */
+export const userSessions = sqliteTable('user_sessions', {
+  id: text('id').primaryKey(),
+  userId: text('user_id').notNull(),
+  guildId: text('guild_id'),
+  startedAt: text('started_at').notNull(),
+  lastActivityAt: text('last_activity_at').notNull(),
+  endedAt: text('ended_at'),
+  messageCount: integer('message_count').default(0),
+  conversationCount: integer('conversation_count').default(0),
+  capabilityUsageCount: integer('capability_usage_count').default(0),
+  totalDurationMs: integer('total_duration_ms'),
+  avgResponseTimeMs: integer('avg_response_time_ms'),
+  positiveReactions: integer('positive_reactions').default(0),
+  negativeReactions: integer('negative_reactions').default(0),
+  createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
+}, (table) => ({
+  userIdIdx: index('idx_user_sessions_user_id').on(table.userId),
+  guildIdIdx: index('idx_user_sessions_guild_id').on(table.guildId),
+  startedAtIdx: index('idx_user_sessions_started_at').on(table.startedAt),
+  endedAtIdx: index('idx_user_sessions_ended_at').on(table.endedAt),
+}));
+
 export type GenerationTrace = typeof generationTraces.$inferSelect;
 export type NewGenerationTrace = typeof generationTraces.$inferInsert;
 
@@ -1080,3 +1202,18 @@ export type NewEvalGeneration = typeof evalGenerations.$inferInsert;
 
 export type EvalJudgment = typeof evalJudgments.$inferSelect;
 export type NewEvalJudgment = typeof evalJudgments.$inferInsert;
+
+export type Conversation = typeof conversations.$inferSelect;
+export type NewConversation = typeof conversations.$inferInsert;
+
+export type CapabilityInvocation = typeof capabilityInvocations.$inferSelect;
+export type NewCapabilityInvocation = typeof capabilityInvocations.$inferInsert;
+
+export type MemoryEvent = typeof memoryEvents.$inferSelect;
+export type NewMemoryEvent = typeof memoryEvents.$inferInsert;
+
+export type ErrorEvent = typeof errorEvents.$inferSelect;
+export type NewErrorEvent = typeof errorEvents.$inferInsert;
+
+export type UserSession = typeof userSessions.$inferSelect;
+export type NewUserSession = typeof userSessions.$inferInsert;
