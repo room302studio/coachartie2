@@ -38,9 +38,14 @@ export class SemanticMemoryEntourage implements MemoryEntourageInterface {
     }
 
     try {
-      // Get all memories for the user
-      const allMemoriesResult = await this.memoryService.recall(userId, '', 50);
-      const memories = this.parseMemoryResult(allMemoriesResult);
+      // Get recent memories for the user (using getRecentMemories to avoid empty query error)
+      const recentMemories = await this.memoryService.getRecentMemories(userId, 50);
+      const memories = recentMemories.map(m => ({
+        content: m.content,
+        importance: m.importance || 5,
+        date: m.timestamp || new Date().toISOString(),
+        tags: Array.isArray(m.tags) ? m.tags : []
+      }));
 
       if (memories.length === 0) {
         return {
@@ -163,10 +168,45 @@ export class SemanticMemoryEntourage implements MemoryEntourageInterface {
 
     // Remove common stop words
     const stopWords = new Set([
-      'the', 'and', 'for', 'are', 'but', 'not', 'you', 'all', 'can', 'had',
-      'her', 'was', 'one', 'our', 'out', 'day', 'get', 'has', 'him', 'his',
-      'how', 'its', 'may', 'new', 'now', 'old', 'see', 'two', 'way', 'who',
-      'what', 'when', 'where', 'why', 'tell', 'about', 'said', 'each', 'which',
+      'the',
+      'and',
+      'for',
+      'are',
+      'but',
+      'not',
+      'you',
+      'all',
+      'can',
+      'had',
+      'her',
+      'was',
+      'one',
+      'our',
+      'out',
+      'day',
+      'get',
+      'has',
+      'him',
+      'his',
+      'how',
+      'its',
+      'may',
+      'new',
+      'now',
+      'old',
+      'see',
+      'two',
+      'way',
+      'who',
+      'what',
+      'when',
+      'where',
+      'why',
+      'tell',
+      'about',
+      'said',
+      'each',
+      'which',
     ]);
 
     const filteredWords = words.filter((word) => !stopWords.has(word));

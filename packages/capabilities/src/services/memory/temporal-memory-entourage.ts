@@ -41,9 +41,14 @@ export class TemporalMemoryEntourage implements MemoryEntourageInterface {
     try {
       logger.info('⏰ TemporalMemoryEntourage: Starting temporal pattern analysis');
 
-      // Get all recent memories for temporal analysis
-      const allMemoriesResult = await this.memoryService.recall(userId, '', 100); // More memories for pattern detection
-      const memories = this.parseMemoryResult(allMemoriesResult);
+      // Get recent memories for temporal analysis (using getRecentMemories to avoid empty query error)
+      const recentMemories = await this.memoryService.getRecentMemories(userId, 100);
+      const memories = recentMemories.map(m => ({
+        content: m.content,
+        importance: m.importance || 5,
+        date: m.timestamp || new Date().toISOString(),
+        tags: Array.isArray(m.tags) ? m.tags : []
+      }));
 
       if (memories.length === 0) {
         return {

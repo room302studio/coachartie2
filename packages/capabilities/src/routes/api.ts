@@ -1,13 +1,26 @@
 import { Router, Request, Response } from 'express';
-import { logger, getDb, memories, messages, desc, sql, countDistinct, getSyncDb } from '@coachartie/shared';
+import {
+  logger,
+  getDb,
+  memories,
+  messages,
+  desc,
+  sql,
+  countDistinct,
+  getSyncDb,
+} from '@coachartie/shared';
 import { errorPatternTracker } from '../services/llm/llm-error-pattern-tracker.js';
 import { traceManager, experimentManager } from '../services/context-alchemy/index.js';
 import type { ExperimentDefinition } from '../services/context-alchemy/experiment-manager.js';
 import { evalHarness } from '../services/observability/eval-harness.js';
-import { evalSuite, DEFAULT_TEST_SET, type Condition } from '../services/observability/eval-suite.js';
+import {
+  evalSuite,
+  DEFAULT_TEST_SET,
+  type Condition,
+} from '../services/observability/eval-suite.js';
 import { hybridDataLayer } from '../runtime/hybrid-data-layer.js';
 
-export const apiRouter = Router();
+export const apiRouter: ReturnType<typeof Router> = Router();
 
 // ============================================================================
 // CORE API ENDPOINTS
@@ -81,9 +94,7 @@ apiRouter.get('/stats', async (_req: Request, res: Response) => {
 
     const [memoriesCount] = await db.select({ count: sql<number>`COUNT(*)` }).from(memories);
     const [messagesCount] = await db.select({ count: sql<number>`COUNT(*)` }).from(messages);
-    const [usersCount] = await db
-      .select({ count: countDistinct(messages.userId) })
-      .from(messages);
+    const [usersCount] = await db.select({ count: countDistinct(messages.userId) }).from(messages);
 
     const stats = {
       memories: memoriesCount?.count || 0,
@@ -369,9 +380,13 @@ apiRouter.post('/experiments', async (req: Request, res: Response) => {
       targetType: body.targetType as 'global' | 'guild' | 'user',
       targetIds: body.targetIds,
       trafficPercent: body.trafficPercent,
-      variants: body.variants.map(v => ({
+      variants: body.variants.map((v) => ({
         name: v.name,
-        type: (v.type || v.variantType || 'feature') as 'model' | 'prompt' | 'parameter' | 'feature',
+        type: (v.type || v.variantType || 'feature') as
+          | 'model'
+          | 'prompt'
+          | 'parameter'
+          | 'feature',
         config: v.config as any,
         weight: v.weight,
       })),
@@ -654,10 +669,13 @@ apiRouter.post('/eval/compare', async (req: Request, res: Response) => {
   try {
     const {
       experimentId,
-      traceIdA, traceIdB,
-      variantIdA, variantIdB,
+      traceIdA,
+      traceIdB,
+      variantIdA,
+      variantIdB,
       userMessage,
-      responseA, responseB
+      responseA,
+      responseB,
     } = req.body as {
       experimentId: string;
       traceIdA: string;
@@ -678,10 +696,13 @@ apiRouter.post('/eval/compare', async (req: Request, res: Response) => {
 
     const result = await evalHarness.comparePair(
       experimentId,
-      traceIdA, traceIdB,
-      variantIdA, variantIdB,
+      traceIdA,
+      traceIdB,
+      variantIdA,
+      variantIdB,
       userMessage,
-      responseA, responseB
+      responseA,
+      responseB
     );
 
     res.json({ success: true, result });
@@ -742,8 +763,9 @@ apiRouter.get('/eval/leaderboard', async (_req: Request, res: Response) => {
     const db = getSyncDb();
 
     // Get aggregate scores by variant across all experiments
-    const leaderboard = db.all(
-      `SELECT
+    const leaderboard =
+      db.all(
+        `SELECT
         ev.experiment_id,
         ev.variant_id,
         e.name as experiment_name,
@@ -756,18 +778,19 @@ apiRouter.get('/eval/leaderboard', async (_req: Request, res: Response) => {
       JOIN experiments e ON ev.experiment_id = e.id
       GROUP BY ev.experiment_id, ev.variant_id
       ORDER BY avg_score DESC`
-    ) || [];
+      ) || [];
 
     // Get pairwise win rates
-    const winRates = db.all(
-      `SELECT
+    const winRates =
+      db.all(
+        `SELECT
         winner_variant_id,
         COUNT(*) as wins,
         (SELECT COUNT(*) FROM pairwise_results WHERE experiment_id = pr.experiment_id) as total
       FROM pairwise_results pr
       WHERE winner_variant_id IS NOT NULL
       GROUP BY experiment_id, winner_variant_id`
-    ) || [];
+      ) || [];
 
     res.json({
       leaderboard,
@@ -831,20 +854,14 @@ apiRouter.get('/eval/suite/test-set', (_req: Request, res: Response) => {
   res.json({
     testSet: DEFAULT_TEST_SET,
     count: DEFAULT_TEST_SET.length,
-    categories: [...new Set(DEFAULT_TEST_SET.map(p => p.category))],
+    categories: [...new Set(DEFAULT_TEST_SET.map((p) => p.category))],
   });
 });
 
 // POST /api/eval/suite/run - Start a new proactive evaluation
 apiRouter.post('/eval/suite/run', async (req: Request, res: Response) => {
   try {
-    const {
-      name,
-      conditions,
-      testSet,
-      judgeModel,
-      generationsPerPrompt
-    } = req.body as {
+    const { name, conditions, testSet, judgeModel, generationsPerPrompt } = req.body as {
       name: string;
       conditions: Condition[];
       testSet?: typeof DEFAULT_TEST_SET;
@@ -871,15 +888,10 @@ apiRouter.post('/eval/suite/run', async (req: Request, res: Response) => {
 
     // Run the eval (this can take a while - for now, synchronous)
     // TODO: Make this async with a job queue
-    const summary = await evalSuite.runEval(
-      name,
-      conditions,
-      testSet || DEFAULT_TEST_SET,
-      {
-        judgeModel,
-        generationsPerPrompt,
-      }
-    );
+    const summary = await evalSuite.runEval(name, conditions, testSet || DEFAULT_TEST_SET, {
+      judgeModel,
+      generationsPerPrompt,
+    });
 
     res.json({
       success: true,
@@ -897,13 +909,7 @@ apiRouter.post('/eval/suite/run', async (req: Request, res: Response) => {
 // POST /api/eval/suite/quick - Quick 2-condition comparison with defaults
 apiRouter.post('/eval/suite/quick', async (req: Request, res: Response) => {
   try {
-    const {
-      name,
-      modelA,
-      modelB,
-      promptCount,
-      judgeModel
-    } = req.body as {
+    const { name, modelA, modelB, promptCount, judgeModel } = req.body as {
       name?: string;
       modelA: string;
       modelB: string;
@@ -939,18 +945,11 @@ apiRouter.post('/eval/suite/quick', async (req: Request, res: Response) => {
     ];
 
     // Use subset of test set if requested
-    const testSet = promptCount
-      ? DEFAULT_TEST_SET.slice(0, promptCount)
-      : DEFAULT_TEST_SET;
+    const testSet = promptCount ? DEFAULT_TEST_SET.slice(0, promptCount) : DEFAULT_TEST_SET;
 
     const evalName = name || `${conditions[0].name} vs ${conditions[1].name}`;
 
-    const summary = await evalSuite.runEval(
-      evalName,
-      conditions,
-      testSet,
-      { judgeModel }
-    );
+    const summary = await evalSuite.runEval(evalName, conditions, testSet, { judgeModel });
 
     res.json({
       success: true,
@@ -1034,16 +1033,14 @@ apiRouter.post('/eval/suite/test-sets', async (req: Request, res: Response) => {
         example: {
           name: 'My Test Set',
           description: 'A custom test set',
-          prompts: [
-            { id: 'test-1', category: 'factual', prompt: 'What is 2+2?' },
-          ],
+          prompts: [{ id: 'test-1', category: 'factual', prompt: 'What is 2+2?' }],
         },
       });
       return;
     }
 
     // Normalize prompts
-    const normalizedPrompts = prompts.map(p => ({
+    const normalizedPrompts = prompts.map((p) => ({
       id: p.id,
       category: p.category,
       difficulty: (p.difficulty || 'medium') as 'easy' | 'medium' | 'hard',
@@ -1144,20 +1141,22 @@ apiRouter.get('/memories/recall-history', (_req: Request, res: Response) => {
     const limit = parseInt(_req.query.limit as string) || 50;
     const db = getSyncDb();
 
-    const recalls = db.all(
-      `SELECT mr.*, m.content as memory_preview
+    const recalls =
+      db.all(
+        `SELECT mr.*, m.content as memory_preview
        FROM memory_recalls mr
        JOIN memories m ON mr.memory_id = m.id
        ORDER BY mr.recalled_at DESC
        LIMIT ?`,
-      [limit]
-    ) || [];
+        [limit]
+      ) || [];
 
     res.json({
       recalls: recalls.map((r: Record<string, unknown>) => ({
         id: r.id,
         memoryId: r.memory_id,
-        memoryPreview: typeof r.memory_preview === 'string' ? r.memory_preview.substring(0, 100) : '',
+        memoryPreview:
+          typeof r.memory_preview === 'string' ? r.memory_preview.substring(0, 100) : '',
         recalledAt: r.recalled_at,
         context: r.context,
         userId: r.user_id,
