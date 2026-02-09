@@ -13,6 +13,9 @@ import { UsageTracker, TokenUsage } from '../monitoring/usage-tracker.js';
 import { creditMonitor } from '../monitoring/credit-monitor.js';
 import { costMonitor } from '../monitoring/cost-monitor.js';
 
+// Context Alchemy observability
+import { traceManager, experimentManager } from '../context-alchemy/index.js';
+
 class OpenRouterService {
   private client: OpenAI;
   private models: string[];
@@ -101,6 +104,87 @@ class OpenRouterService {
     });
 
     logger.info(`OpenRouter client initialized with models: ${this.models.join(', ')}`);
+
+    // Validate models against API on startup (async, non-blocking)
+    this.validateModelsOnStartup().catch((err) => {
+      logger.error('❌ Failed to validate models on startup:', err);
+    });
+
+    // Check credit balance on startup
+    import('../monitoring/credit-monitor.js').then(({ creditMonitor }) => {
+      creditMonitor.proactiveBalanceCheck().then((result) => {
+        if (result.error) {
+          logger.debug(`Credit check on startup: ${result.error}`);
+        }
+      });
+    });
+  }
+
+  /**
+   * Validate configured models exist on the API
+   * Warns loudly if models don't exist to prevent silent fallback
+   */
+  private async validateModelsOnStartup(): Promise<void> {
+    try {
+      const baseURL = process.env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1';
+      const response = await fetch(`${baseURL}/models`, {
+        headers: {
+          Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
+        },
+      });
+
+      if (!response.ok) {
+        logger.warn(`⚠️ Could not fetch models from API (${response.status}) - skipping validation`);
+        return;
+      }
+
+      const data = (await response.json()) as { data?: Array<{ id: string }> };
+      const availableModels = new Set((data.data || []).map((m) => m.id));
+
+      const missingModels: string[] = [];
+      const validModels: string[] = [];
+
+      for (const model of this.models) {
+        if (availableModels.has(model)) {
+          validModels.push(model);
+        } else {
+          missingModels.push(model);
+        }
+      }
+
+      if (missingModels.length > 0) {
+        logger.error(`\n${'='.repeat(70)}`);
+        logger.error(`🚨 MODEL VALIDATION FAILED: ${missingModels.length} configured models don't exist on API!`);
+        logger.error(`   Missing: ${missingModels.join(', ')}`);
+        logger.error(`   API has ${availableModels.size} models available.`);
+        logger.error(`   Similar models that DO exist:`);
+
+        // Suggest similar models
+        for (const missing of missingModels) {
+          const prefix = missing.split('/')[0];
+          const similar = Array.from(availableModels)
+            .filter((m) => (m as string).startsWith(prefix + '/'))
+            .slice(0, 3);
+          if (similar.length > 0) {
+            logger.error(`     ${missing} → try: ${similar.join(', ')}`);
+          }
+        }
+
+        logger.error(`${'='.repeat(70)}\n`);
+
+        // Update models list to only include valid ones
+        if (validModels.length > 0) {
+          this.models = validModels;
+          logger.warn(`⚠️ Continuing with ${validModels.length} valid models: ${validModels.join(', ')}`);
+        } else {
+          logger.error(`🚨 NO VALID MODELS! Requests will likely fail or use fallback.`);
+        }
+      } else {
+        logger.info(`✅ All ${this.models.length} configured models validated against API`);
+      }
+    } catch (error) {
+      logger.warn(`⚠️ Model validation failed (non-critical):`, error);
+    }
   }
 
   getCurrentModel(): string {
@@ -178,6 +262,26 @@ class OpenRouterService {
     }
   }
 
+  /**
+   * Determine model tier for observability tracking
+   * Returns 'fast', 'smart', or 'manager' based on model configuration
+   */
+  getModelTier(model: string): string {
+    const fastModel = process.env.FAST_MODEL;
+    const smartModel = process.env.SMART_MODEL;
+    const managerModel = process.env.MANAGER_MODEL;
+
+    if (fastModel && model === fastModel) return 'fast';
+    if (smartModel && model === smartModel) return 'smart';
+    if (managerModel && model === managerModel) return 'manager';
+
+    // Infer from model name patterns
+    if (model.includes('mini') || model.includes('flash') || model.includes('fast')) return 'fast';
+    if (model.includes('opus') || model.includes('4o') || model.includes('large')) return 'manager';
+
+    return 'smart'; // Default tier
+  }
+
   async generateResponse(
     _userMessage: string,
     _userId: string,
@@ -198,7 +302,12 @@ class OpenRouterService {
     messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>,
     userId: string,
     messageId?: string,
-    selectedModel?: string
+    selectedModel?: string,
+    options?: {
+      traceId?: string | null;
+      guildId?: string;
+      maxTokens?: number; // Dynamic token limit from preflight analysis
+    }
   ): Promise<string> {
     // SHORT-CIRCUIT: If credits are exhausted, don't even try the API
     if (creditMonitor.areCreditsExhausted()) {
@@ -209,18 +318,50 @@ class OpenRouterService {
     }
 
     const startTime = Date.now();
+    const traceId = options?.traceId;
+    const guildId = options?.guildId;
+
+    // Context Alchemy: Check for experiment variant assignment
+    let experimentId: string | null = null;
+    let variantId: string | null = null;
+    let variantModelOverride: string | undefined;
+    let variantTemperature: number | undefined;
+
+    if (traceId) {
+      try {
+        const variant = await experimentManager.getVariantForUser(userId, guildId);
+        experimentId = variant.experimentId;
+        variantId = variant.variantId;
+
+        // Apply model override if experiment specifies one
+        if (variant.config.smartModel && !selectedModel) {
+          variantModelOverride = variant.config.smartModel;
+          logger.info(`🧪 Experiment ${experimentId}: Using model override ${variantModelOverride}`);
+        }
+
+        // Apply temperature override if experiment specifies one
+        if (variant.config.temperature !== undefined) {
+          variantTemperature = variant.config.temperature;
+          logger.info(`🧪 Experiment ${experimentId}: Using temperature ${variantTemperature}`);
+        }
+      } catch (error) {
+        // Experiment lookup failed, continue without experiment
+        logger.debug('[experiment] Variant lookup failed, continuing normally');
+      }
+    }
 
     // If a specific model was selected (three-tier strategy), use it
-    // Otherwise rotate through models for testing different tool usage performance
-    const useSpecificModel = selectedModel && selectedModel.trim().length > 0;
+    // Otherwise check for experiment override, then rotate through models
+    const effectiveModel = selectedModel || variantModelOverride;
+    const useSpecificModel = effectiveModel && effectiveModel.trim().length > 0;
     const startIndex = this.currentModelIndex;
 
     // Try each model starting from current rotation position (or just the selected model)
-    const modelsToTry = useSpecificModel ? [selectedModel] : this.models;
+    const modelsToTry = useSpecificModel ? [effectiveModel] : this.models;
 
     for (let i = 0; i < modelsToTry.length; i++) {
       const model = useSpecificModel
-        ? selectedModel
+        ? effectiveModel
         : this.models[(startIndex + i) % this.models.length];
 
       try {
@@ -228,12 +369,18 @@ class OpenRouterService {
           `🤖 MODEL SELECTION: Using ${model} ${useSpecificModel ? '(SPECIFIC)' : `(${i + 1}/${modelsToTry.length})`} for ${messages.length} messages`
         );
 
-        const maxTokens = parseInt(process.env.LLM_MAX_TOKENS || '400', 10);
+        // Use dynamic maxTokens from preflight analysis, or fall back to env default
+        const maxTokens = options?.maxTokens || parseInt(process.env.LLM_MAX_TOKENS || '400', 10);
+        logger.debug(`📏 Using max_tokens: ${maxTokens}${options?.maxTokens ? ' (preflight)' : ' (default)'}`);
+
+        // Use experiment temperature if set, otherwise default
+        const temperature = variantTemperature ?? 0.7;
+
         const completion = await this.client.chat.completions.create({
           model,
           messages,
           max_tokens: maxTokens,
-          temperature: 0.7,
+          temperature,
         });
 
         const response = completion.choices[0]?.message?.content;
@@ -315,6 +462,18 @@ class OpenRouterService {
 
         // Rotate to next model for testing different models' tool usage
         this.currentModelIndex = (this.currentModelIndex + 1) % this.models.length;
+
+        // Context Alchemy: Update trace with model and cost info
+        if (traceId) {
+          await traceManager.updateTrace(traceId, {
+            modelUsed: model,
+            modelTier: this.getModelTier(model),
+            responseTokens: usage.completion_tokens,
+            estimatedCost,
+            experimentId: experimentId || undefined,
+            variantId: variantId || undefined,
+          });
+        }
 
         logger.info(
           `✅ Generated response for user ${userId} using ${model} (${usage.total_tokens} tokens, $${estimatedCost.toFixed(4)})`
@@ -413,29 +572,64 @@ class OpenRouterService {
     userId: string,
     onPartialResponse?: (partial: string) => void,
     messageId?: string,
-    selectedModel?: string
+    selectedModel?: string,
+    options?: {
+      traceId?: string | null;
+      guildId?: string;
+      maxTokens?: number; // Dynamic token limit from preflight analysis
+    }
   ): Promise<string> {
     if (messages.length === 0) {
       throw new Error('No messages provided');
     }
 
     const startTime = Date.now();
+    const traceId = options?.traceId;
+    const guildId = options?.guildId;
+    const requestedMaxTokens = options?.maxTokens;
+
+    // Context Alchemy: Check for experiment variant assignment
+    let experimentId: string | null = null;
+    let variantId: string | null = null;
+    let variantModelOverride: string | undefined;
+    let variantTemperature: number | undefined;
+
+    if (traceId) {
+      try {
+        const variant = await experimentManager.getVariantForUser(userId, guildId);
+        experimentId = variant.experimentId;
+        variantId = variant.variantId;
+
+        if (variant.config.smartModel && !selectedModel) {
+          variantModelOverride = variant.config.smartModel;
+          logger.info(`🧪 Experiment ${experimentId}: Using model override ${variantModelOverride}`);
+        }
+
+        if (variant.config.temperature !== undefined) {
+          variantTemperature = variant.config.temperature;
+          logger.info(`🧪 Experiment ${experimentId}: Using temperature ${variantTemperature}`);
+        }
+      } catch (error) {
+        logger.debug('[experiment] Variant lookup failed, continuing normally');
+      }
+    }
 
     // If a specific model was selected (three-tier strategy), use it
-    // Otherwise rotate through models for testing different tool usage performance
-    const useSpecificModel = selectedModel && selectedModel.trim().length > 0;
+    // Otherwise check for experiment override, then rotate through models
+    const effectiveModel = selectedModel || variantModelOverride;
+    const useSpecificModel = effectiveModel && effectiveModel.trim().length > 0;
     const startIndex = this.currentModelIndex;
 
     // Try each model starting from current rotation position (or just the selected model)
-    const modelsToTry = useSpecificModel ? [selectedModel] : this.models;
+    const modelsToTry = useSpecificModel ? [effectiveModel] : this.models;
 
     logger.info(
-      `🤖 Starting streaming generation for user ${userId} ${useSpecificModel ? `using SPECIFIC model ${selectedModel}` : `using model rotation`}`
+      `🤖 Starting streaming generation for user ${userId} ${useSpecificModel ? `using SPECIFIC model ${effectiveModel}` : `using model rotation`}`
     );
 
     for (let i = 0; i < modelsToTry.length; i++) {
       const model = useSpecificModel
-        ? selectedModel
+        ? effectiveModel
         : this.models[(startIndex + i) % this.models.length];
 
       try {
@@ -443,12 +637,15 @@ class OpenRouterService {
           `📡 Attempting streaming with model ${model} ${useSpecificModel ? '(SPECIFIC)' : `(${i + 1}/${modelsToTry.length})`}`
         );
 
-        const maxTokens = parseInt(process.env.LLM_MAX_TOKENS || '400', 10);
+        // Use preflight-analyzed maxTokens if provided, otherwise fall back to env default
+        const maxTokens = requestedMaxTokens || parseInt(process.env.LLM_MAX_TOKENS || '400', 10);
+        const temperature = variantTemperature ?? 0.7;
+
         const completion = await this.client.chat.completions.create({
           model,
           messages,
           max_tokens: maxTokens,
-          temperature: 0.7,
+          temperature,
           stream: true, // Enable streaming
           stream_options: { include_usage: true }, // Request usage data in stream
         });
@@ -548,6 +745,18 @@ class OpenRouterService {
 
         // Rotate to next model for testing different models' tool usage
         this.currentModelIndex = (this.currentModelIndex + 1) % this.models.length;
+
+        // Context Alchemy: Update trace with model and cost info
+        if (traceId) {
+          await traceManager.updateTrace(traceId, {
+            modelUsed: model,
+            modelTier: this.getModelTier(model),
+            responseTokens: usage.completion_tokens,
+            estimatedCost,
+            experimentId: experimentId || undefined,
+            variantId: variantId || undefined,
+          });
+        }
 
         logger.info(
           `✅ Streaming completed for user ${userId} using ${model} (${usage.total_tokens} tokens, $${estimatedCost.toFixed(4)})`

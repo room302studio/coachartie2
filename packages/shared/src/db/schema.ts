@@ -34,6 +34,8 @@ export const memories = sqliteTable(
     metadata: text('metadata').default('{}'), // JSON object
     embedding: text('embedding'),
     relatedMessageId: text('related_message_id'),
+    guildId: text('guild_id'), // Discord guild scope (null = user-level or global)
+    channelId: text('channel_id'), // Discord channel scope (null = guild-level or broader)
     createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
     updatedAt: text('updated_at').default(sql`CURRENT_TIMESTAMP`),
   },
@@ -41,6 +43,7 @@ export const memories = sqliteTable(
     userIdIdx: index('idx_memories_user_id').on(table.userId),
     timestampIdx: index('idx_memories_timestamp').on(table.timestamp),
     importanceIdx: index('idx_memories_importance').on(table.importance),
+    guildIdIdx: index('idx_memories_guild_id').on(table.guildId),
   })
 );
 
@@ -683,3 +686,227 @@ export type NewGithubIdentityMapping = typeof githubIdentityMappings.$inferInser
 
 export type GithubEvent = typeof githubEventsQueue.$inferSelect;
 export type NewGithubEvent = typeof githubEventsQueue.$inferInsert;
+
+// ============================================================================
+// REFLECTION & LEARNING
+// ============================================================================
+
+/**
+ * Learned Rules - Consolidated learnings from community feedback
+ * Stores actionable rules extracted from reaction feedback patterns
+ */
+export const learnedRules = sqliteTable(
+  'learned_rules',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    ruleType: text('rule_type').notNull(), // 'guild' | 'system' | 'channel'
+    scopeId: text('scope_id'), // guildId, channelId, or null for system-wide
+    ruleText: text('rule_text').notNull(), // The actual instruction
+    sourceTag: text('source_tag'), // 'response-style', 'format', 'tone', etc.
+    confidence: real('confidence').default(0.5), // 0.0-1.0 based on feedback volume
+    sourceCount: integer('source_count').default(1), // How many feedback items informed this
+    isActive: integer('is_active', { mode: 'boolean' }).default(true),
+    metadata: text('metadata').default('{}'), // JSON: examples, counter-examples
+    createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
+    updatedAt: text('updated_at').default(sql`CURRENT_TIMESTAMP`),
+  },
+  (table) => ({
+    ruleTypeIdx: index('idx_learned_rules_type').on(table.ruleType),
+    scopeIdIdx: index('idx_learned_rules_scope').on(table.scopeId),
+    activeIdx: index('idx_learned_rules_active').on(table.isActive),
+    typeScopeActiveIdx: index('idx_learned_rules_type_scope_active').on(
+      table.ruleType,
+      table.scopeId,
+      table.isActive
+    ),
+  })
+);
+
+/**
+ * Learned Rules History - Track changes to rules for versioning
+ */
+export const learnedRulesHistory = sqliteTable(
+  'learned_rules_history',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    ruleId: integer('rule_id')
+      .notNull()
+      .references(() => learnedRules.id, { onDelete: 'cascade' }),
+    ruleText: text('rule_text').notNull(),
+    confidence: real('confidence'),
+    sourceCount: integer('source_count'),
+    changeType: text('change_type').notNull(), // 'created' | 'updated' | 'retired' | 'reactivated'
+    changeReason: text('change_reason'),
+    createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
+  },
+  (table) => ({
+    ruleIdIdx: index('idx_learned_rules_history_rule_id').on(table.ruleId),
+    createdAtIdx: index('idx_learned_rules_history_created').on(table.createdAt),
+  })
+);
+
+export type LearnedRule = typeof learnedRules.$inferSelect;
+export type NewLearnedRule = typeof learnedRules.$inferInsert;
+
+export type LearnedRuleHistory = typeof learnedRulesHistory.$inferSelect;
+export type NewLearnedRuleHistory = typeof learnedRulesHistory.$inferInsert;
+
+// ============================================================================
+// CONTEXT ALCHEMY - OBSERVABILITY & EXPERIMENTATION
+// ============================================================================
+
+/**
+ * Generation Traces - Core observability table for every LLM generation
+ * Tracks timing, context metrics, model selection, and feedback correlation
+ */
+export const generationTraces = sqliteTable(
+  'generation_traces',
+  {
+    id: text('id').primaryKey(), // UUID
+    messageId: text('message_id').notNull(),
+    discordMessageId: text('discord_message_id'), // For feedback correlation
+    userId: text('user_id').notNull(),
+    guildId: text('guild_id'),
+    channelId: text('channel_id'),
+
+    // Timing
+    startedAt: text('started_at').notNull(),
+    completedAt: text('completed_at'),
+    durationMs: integer('duration_ms'),
+
+    // Model
+    modelUsed: text('model_used'),
+    modelTier: text('model_tier'), // 'fast', 'smart', 'manager'
+
+    // Context metrics
+    contextTokenCount: integer('context_token_count'),
+    memoriesRetrievedCount: integer('memories_retrieved_count').default(0),
+    rulesAppliedCount: integer('rules_applied_count').default(0),
+    rulesAppliedIds: text('rules_applied_ids').default('[]'), // JSON array of rule IDs
+
+    // Response
+    responseLength: integer('response_length'),
+    responseTokens: integer('response_tokens'),
+    estimatedCost: real('estimated_cost'),
+
+    // Experiment
+    experimentId: text('experiment_id'),
+    variantId: text('variant_id'),
+
+    // Feedback (updated async when reaction received)
+    feedbackSentiment: text('feedback_sentiment'), // 'positive' | 'negative' | null
+    feedbackEmoji: text('feedback_emoji'),
+    feedbackAt: text('feedback_at'),
+
+    // Status
+    success: integer('success', { mode: 'boolean' }).default(true),
+    errorType: text('error_type'),
+  },
+  (table) => ({
+    messageIdIdx: index('idx_traces_message_id').on(table.messageId),
+    discordMsgIdx: index('idx_traces_discord_msg').on(table.discordMessageId),
+    userIdIdx: index('idx_traces_user_id').on(table.userId),
+    guildIdIdx: index('idx_traces_guild_id').on(table.guildId),
+    startedAtIdx: index('idx_traces_started_at').on(table.startedAt),
+    experimentIdx: index('idx_traces_experiment').on(table.experimentId, table.variantId),
+    feedbackIdx: index('idx_traces_feedback').on(table.feedbackSentiment),
+    modelIdx: index('idx_traces_model').on(table.modelUsed),
+  })
+);
+
+/**
+ * Context Snapshots - Full context captures for debugging (sampled)
+ * Stores complete context for a subset of traces to enable deep analysis
+ */
+export const contextSnapshots = sqliteTable(
+  'context_snapshots',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    traceId: text('trace_id')
+      .notNull()
+      .references(() => generationTraces.id, { onDelete: 'cascade' }),
+
+    systemPrompt: text('system_prompt'),
+    contextSourcesJson: text('context_sources_json'), // Full ContextSource[] as JSON
+    messageChainJson: text('message_chain_json'), // Messages sent to LLM as JSON
+    fullResponse: text('full_response'), // Complete LLM response
+
+    createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
+  },
+  (table) => ({
+    traceIdIdx: index('idx_snapshots_trace_id').on(table.traceId),
+    createdAtIdx: index('idx_snapshots_created_at').on(table.createdAt),
+  })
+);
+
+/**
+ * Experiments - A/B test definitions
+ * Defines experiments to test different models, prompts, or parameters
+ */
+export const experiments = sqliteTable(
+  'experiments',
+  {
+    id: text('id').primaryKey(), // UUID or slug
+    name: text('name').notNull(),
+    hypothesis: text('hypothesis'), // What we're trying to prove
+
+    targetType: text('target_type').notNull(), // 'global' | 'guild' | 'user'
+    targetIds: text('target_ids').default('[]'), // JSON array of specific targets (empty = all)
+
+    status: text('status').default('draft'), // 'draft' | 'active' | 'completed' | 'cancelled'
+    trafficPercent: integer('traffic_percent').default(100), // % of eligible traffic to include
+
+    startedAt: text('started_at'),
+    endedAt: text('ended_at'),
+
+    createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
+    updatedAt: text('updated_at').default(sql`CURRENT_TIMESTAMP`),
+  },
+  (table) => ({
+    statusIdx: index('idx_experiments_status').on(table.status),
+    targetTypeIdx: index('idx_experiments_target_type').on(table.targetType),
+  })
+);
+
+/**
+ * Experiment Variants - Individual variants within an experiment
+ * Each variant defines a specific configuration to test
+ */
+export const experimentVariants = sqliteTable(
+  'experiment_variants',
+  {
+    id: text('id').primaryKey(), // UUID
+    experimentId: text('experiment_id')
+      .notNull()
+      .references(() => experiments.id, { onDelete: 'cascade' }),
+    name: text('name').notNull(), // 'control', 'treatment_a', etc.
+
+    variantType: text('variant_type').notNull(), // 'model' | 'prompt' | 'parameter' | 'feature'
+    variantConfig: text('variant_config').notNull(), // JSON configuration
+
+    weight: integer('weight').default(50), // Traffic weight for this variant
+
+    // Stats (updated as traces complete)
+    impressions: integer('impressions').default(0),
+    positiveCount: integer('positive_count').default(0),
+    negativeCount: integer('negative_count').default(0),
+
+    createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
+  },
+  (table) => ({
+    experimentIdIdx: index('idx_variants_experiment_id').on(table.experimentId),
+    nameIdx: index('idx_variants_name').on(table.experimentId, table.name),
+  })
+);
+
+export type GenerationTrace = typeof generationTraces.$inferSelect;
+export type NewGenerationTrace = typeof generationTraces.$inferInsert;
+
+export type ContextSnapshot = typeof contextSnapshots.$inferSelect;
+export type NewContextSnapshot = typeof contextSnapshots.$inferInsert;
+
+export type Experiment = typeof experiments.$inferSelect;
+export type NewExperiment = typeof experiments.$inferInsert;
+
+export type ExperimentVariant = typeof experimentVariants.$inferSelect;
+export type NewExperimentVariant = typeof experimentVariants.$inferInsert;

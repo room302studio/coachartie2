@@ -3,6 +3,8 @@ import { openRouterService } from './openrouter.js';
 import { promptManager } from './prompt-manager.js';
 import { contextAlchemy } from './context-alchemy.js';
 import { modelAwarePrompter } from '../../utils/model-aware-prompter.js';
+import { preflightAnalyzer } from './preflight-analyzer.js';
+import { experimentManager } from '../context-alchemy/index.js';
 import {
   ExtractedCapability,
   CapabilityResult,
@@ -36,8 +38,34 @@ export class LLMResponseCoordinator {
     try {
       logger.info(`🚀 getLLMResponseWithCapabilities called for message: "${message.message}"`);
 
+      // Use micro LLM for smart preflight analysis
+      // No regex heuristics - let a cheap fast model make intelligent decisions
+      const preflight = await preflightAnalyzer.analyze(message.message);
+
       // Get base capability instructions template
       const baseInstructions = await promptManager.getCapabilityInstructions(message.message);
+
+      // Check for experiment feature flags (memory/rules ablation)
+      let experimentFeatureFlags: { enableMemories?: boolean; enableRules?: boolean } = {};
+      if (message.context?.traceId) {
+        try {
+          const variant = await experimentManager.getVariantForUser(
+            message.userId,
+            message.context?.guildId
+          );
+          if (variant.experimentId) {
+            experimentFeatureFlags = {
+              enableMemories: variant.config.enableMemories,
+              enableRules: variant.config.enableRules,
+            };
+            if (variant.config.enableMemories === false || variant.config.enableRules === false) {
+              logger.info(`🧪 Experiment ${variant.experimentId}: Feature flags applied`, experimentFeatureFlags);
+            }
+          }
+        } catch (error) {
+          // Experiment lookup failed, continue with defaults
+        }
+      }
 
       // Use Context Alchemy to build intelligent message chain
       logger.info('🧪 CONTEXT ALCHEMY: Building intelligent message chain');
@@ -57,6 +85,10 @@ export class LLMResponseCoordinator {
             message.context?.platform === 'discord' || message.context?.guildKnowledge
               ? message.context
               : undefined,
+          // Context Alchemy observability: pass trace ID for metrics capture
+          traceId: message.context?.traceId,
+          // Experiment feature flags for memory/rules ablation
+          ...experimentFeatureFlags,
         }
       );
 
@@ -79,19 +111,29 @@ export class LLMResponseCoordinator {
 
       // Use streaming if callback provided, otherwise regular generation
       // Pass the fast model explicitly to ensure consistent model selection
+      // Context Alchemy: Include traceId and guildId for observability
+      // Preflight: Include maxTokens for dynamic response length
+      const generationOptions = {
+        traceId: message.context?.traceId,
+        guildId: message.context?.guildId,
+        maxTokens: preflight.responseTokens,
+      };
+
       return onPartialResponse
         ? await openRouterService.generateFromMessageChainStreaming(
             modelAwareMessages,
             message.userId,
             onPartialResponse,
             message.id,
-            fastModel
+            fastModel,
+            generationOptions
           )
         : await openRouterService.generateFromMessageChain(
             modelAwareMessages,
             message.userId,
             message.id,
-            fastModel
+            fastModel,
+            generationOptions
           );
     } catch (error: any) {
       const errorMessage = error?.message || String(error);
@@ -503,14 +545,32 @@ ${capabilityDetails}`;
   }
 
   /**
-   * Strip thinking tags from LLM responses
+   * Strip thinking tags and other internal artifacts from LLM responses
    * Security measure to prevent information disclosure
    */
   stripThinkingTags(content: string, _userId?: string, _messageId?: string): string {
-    // Just remove actual <thinking> tags, nothing else
-    // Use trimEnd() instead of trim() to preserve leading spaces needed for text concatenation
-    // LLMs naturally add leading spaces between sentences for proper formatting
-    return content.replace(/<thinking>[\s\S]*?<\/thinking>/gi, '').trimEnd();
+    let result = content;
+
+    // Remove thinking tags
+    result = result.replace(/<thinking>[\s\S]*?<\/thinking>/gi, '');
+
+    // SECURITY: Remove internal prompt artifacts that should never be exposed
+    result = result.replace(/<security_reminder>[\s\S]*?<\/security_reminder>/gi, '');
+    result = result.replace(/\[USER_MESSAGE\][\s\S]*?\[\/USER_MESSAGE\]/gi, '');
+    result = result.replace(/\[SYSTEM:[\s\S]*?(?:\]|→[^\]]*)/g, '');
+
+    // Remove role prefixes the LLM shouldn't use
+    result = result.replace(/^\[artie\]:\s*/i, '');
+    result = result.replace(/^\*\*Response:\*\*\s*/i, '');
+    result = result.replace(/^\*\*Me:\*\*\s*/i, '');
+    result = result.replace(/^\*\*Artie:\*\*\s*/i, '');
+    result = result.replace(/^\*\*Coach Artie:\*\*\s*/i, '');
+
+    // Remove <artie> wrapper tags some models add (seen in Llama/Mistral outputs)
+    result = result.replace(/<\/?artie>/gi, '');
+
+    // Use trimEnd() to preserve leading spaces needed for text concatenation
+    return result.trimEnd();
   }
 
   /**

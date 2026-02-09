@@ -1,0 +1,247 @@
+#!/bin/bash
+# Artie Evaluation CLI
+# Usage: artie-eval <command> [args]
+
+API="http://localhost:47324/api"
+
+case "$1" in
+  experiments|exp)
+    # List active experiments
+    echo "=== Active Experiments ==="
+    curl -s "$API/experiments?status=active" | jq -r '.experiments[] | "[\(.id | .[0:8])] \(.name)"'
+    ;;
+
+  results)
+    # Get experiment results (reactions-based)
+    if [ -z "$2" ]; then
+      echo "Usage: artie-eval results <experiment-id>"
+      exit 1
+    fi
+    echo "=== Experiment Results (Reactions) ==="
+    curl -s "$API/experiments/$2/results" | jq .
+    ;;
+
+  eval)
+    # Run LLM-as-judge evaluation on experiment
+    if [ -z "$2" ]; then
+      echo "Usage: artie-eval eval <experiment-id> [limit]"
+      exit 1
+    fi
+    LIMIT=${3:-20}
+    echo "=== Running LLM-as-Judge Evaluation (limit: $LIMIT) ==="
+    curl -s -X POST "$API/eval/experiment/$2" \
+      -H "Content-Type: application/json" \
+      -d "{\"limit\": $LIMIT}" | jq .
+    ;;
+
+  stats)
+    # Get evaluation statistics for experiment
+    if [ -z "$2" ]; then
+      echo "Usage: artie-eval stats <experiment-id>"
+      exit 1
+    fi
+    echo "=== Evaluation Statistics ==="
+    curl -s "$API/eval/experiment/$2/stats" | jq .
+    ;;
+
+  leaderboard|lb)
+    # Get cross-experiment leaderboard
+    echo "=== Variant Leaderboard ==="
+    curl -s "$API/eval/leaderboard" | jq '.leaderboard[] | "\(.experiment_name): \(.avg_score) (n=\(.eval_count))"'
+    ;;
+
+  traces)
+    # View recent traces
+    LIMIT=${2:-10}
+    echo "=== Recent Traces (limit: $LIMIT) ==="
+    curl -s "$API/traces?limit=$LIMIT" | jq -r '.traces[] | "[\(.id | .[0:8])] \(.model_used // "no-model") | feedback: \(.feedback_sentiment // "none") | exp: \(.experiment_id // "none" | .[0:8])"'
+    ;;
+
+  compare)
+    # Pairwise comparison of two traces
+    if [ -z "$2" ] || [ -z "$3" ]; then
+      echo "Usage: artie-eval compare <trace-id-a> <trace-id-b>"
+      exit 1
+    fi
+    echo "=== Pairwise Comparison ==="
+    # Get trace details first
+    TRACE_A=$(curl -s "$API/traces/$2")
+    TRACE_B=$(curl -s "$API/traces/$3")
+
+    # Extract details
+    EXP_ID=$(echo "$TRACE_A" | jq -r '.trace.experiment_id // "unknown"')
+    VAR_A=$(echo "$TRACE_A" | jq -r '.trace.variant_id // "unknown"')
+    VAR_B=$(echo "$TRACE_B" | jq -r '.trace.variant_id // "unknown"')
+
+    # Get snapshots for message and response
+    MSG=$(curl -s "$API/traces/$2" | jq -r '.snapshot.message_chain_json // "[]"' | jq -r '.[] | select(.role == "user") | .content' | head -1)
+    RESP_A=$(curl -s "$API/traces/$2" | jq -r '.snapshot.full_response // "no response"')
+    RESP_B=$(curl -s "$API/traces/$3" | jq -r '.snapshot.full_response // "no response"')
+
+    curl -s -X POST "$API/eval/compare" \
+      -H "Content-Type: application/json" \
+      -d "{
+        \"experimentId\": \"$EXP_ID\",
+        \"traceIdA\": \"$2\",
+        \"traceIdB\": \"$3\",
+        \"variantIdA\": \"$VAR_A\",
+        \"variantIdB\": \"$VAR_B\",
+        \"userMessage\": $(echo "$MSG" | jq -Rs .),
+        \"responseA\": $(echo "$RESP_A" | jq -Rs .),
+        \"responseB\": $(echo "$RESP_B" | jq -Rs .)
+      }" | jq .
+    ;;
+
+  single)
+    # Evaluate a single trace
+    if [ -z "$2" ]; then
+      echo "Usage: artie-eval single <trace-id>"
+      exit 1
+    fi
+    echo "=== Single Response Evaluation ==="
+
+    # Get trace and snapshot
+    TRACE=$(curl -s "$API/traces/$2")
+    EXP_ID=$(echo "$TRACE" | jq -r '.trace.experiment_id // null')
+    VAR_ID=$(echo "$TRACE" | jq -r '.trace.variant_id // null')
+    MSG=$(echo "$TRACE" | jq -r '.snapshot.message_chain_json // "[]"' | jq -r '.[] | select(.role == "user") | .content' | head -1)
+    RESP=$(echo "$TRACE" | jq -r '.snapshot.full_response // "no response"')
+
+    curl -s -X POST "$API/eval/response" \
+      -H "Content-Type: application/json" \
+      -d "{
+        \"traceId\": \"$2\",
+        \"userMessage\": $(echo "$MSG" | jq -Rs .),
+        \"response\": $(echo "$RESP" | jq -Rs .),
+        \"experimentId\": $EXP_ID,
+        \"variantId\": $VAR_ID
+      }" | jq .
+    ;;
+
+  # ===========================================================================
+  # PROACTIVE EVAL SUITE - Scientific A/B Testing
+  # ===========================================================================
+
+  runs)
+    # List all proactive eval runs
+    echo "=== Proactive Eval Runs ==="
+    curl -s "$API/eval/suite/runs" | jq -r '.runs[] | "[\(.id | .[0:8])] \(.name) | prompts: \(.promptCount) | \(.completedAt // "running...")"'
+    ;;
+
+  run-results)
+    # Get results for a specific eval run
+    if [ -z "$2" ]; then
+      echo "Usage: artie-eval run-results <run-id>"
+      exit 1
+    fi
+    echo "=== Eval Run Results ==="
+    curl -s "$API/eval/suite/runs/$2" | jq '.results'
+    ;;
+
+  test-set)
+    # Show the default test set
+    echo "=== Default Test Set ==="
+    curl -s "$API/eval/suite/test-set" | jq -r '.testSet[] | "[\(.id)] (\(.category)/\(.difficulty)) \(.prompt | .[0:60])..."'
+    ;;
+
+  battle)
+    # Quick model comparison
+    if [ -z "$2" ] || [ -z "$3" ]; then
+      echo "Usage: artie-eval battle <model-a> <model-b> [prompt-count] [judge-model]"
+      echo ""
+      echo "Examples:"
+      echo "  artie-eval battle anthropic/claude-3-5-sonnet google/gemini-flash-1.5"
+      echo "  artie-eval battle anthropic/claude-3-5-sonnet openai/gpt-4o 6"
+      echo "  artie-eval battle claude-3-5-sonnet gemini-flash-1.5 18 anthropic/claude-3-haiku"
+      exit 1
+    fi
+    PROMPT_COUNT=${4:-6}
+    JUDGE=${5:-""}
+
+    echo "=== Model Battle: $2 vs $3 ==="
+    echo "Using $PROMPT_COUNT prompts from test set"
+    if [ -n "$JUDGE" ]; then
+      echo "Judge model: $JUDGE"
+    fi
+    echo "This may take a while..."
+    echo ""
+
+    if [ -n "$JUDGE" ]; then
+      curl -s -X POST "$API/eval/suite/quick" \
+        -H "Content-Type: application/json" \
+        -d "{
+          \"modelA\": \"$2\",
+          \"modelB\": \"$3\",
+          \"promptCount\": $PROMPT_COUNT,
+          \"judgeModel\": \"$JUDGE\"
+        }" | jq '.summary.results'
+    else
+      curl -s -X POST "$API/eval/suite/quick" \
+        -H "Content-Type: application/json" \
+        -d "{
+          \"modelA\": \"$2\",
+          \"modelB\": \"$3\",
+          \"promptCount\": $PROMPT_COUNT
+        }" | jq '.summary.results'
+    fi
+    ;;
+
+  science)
+    # Full proactive eval with custom conditions
+    if [ -z "$2" ]; then
+      echo "Usage: artie-eval science <config-file.json>"
+      echo ""
+      echo "Config file format:"
+      echo '{'
+      echo '  "name": "My Experiment",'
+      echo '  "conditions": ['
+      echo '    {"id": "control", "name": "Control", "config": {"model": "anthropic/claude-3-5-sonnet"}},'
+      echo '    {"id": "treatment", "name": "High Temp", "config": {"model": "anthropic/claude-3-5-sonnet", "temperature": 0.9}}'
+      echo '  ],'
+      echo '  "judgeModel": "anthropic/claude-3-haiku"  // optional'
+      echo '}'
+      exit 1
+    fi
+
+    if [ ! -f "$2" ]; then
+      echo "Error: Config file not found: $2"
+      exit 1
+    fi
+
+    echo "=== Running Proactive Eval ==="
+    cat "$2" | jq .
+    echo ""
+    echo "Starting evaluation..."
+
+    curl -s -X POST "$API/eval/suite/run" \
+      -H "Content-Type: application/json" \
+      -d @"$2" | jq '.summary.results'
+    ;;
+
+  help|*)
+    echo "Artie Evaluation CLI"
+    echo ""
+    echo "=== Reactive Eval (from live traces) ==="
+    echo "  experiments, exp     List active experiments"
+    echo "  results <id>         Get reaction-based results for experiment"
+    echo "  eval <id> [n]        Run LLM-as-judge on n traces (default: 20)"
+    echo "  stats <id>           Get evaluation statistics for experiment"
+    echo "  leaderboard, lb      Compare variants across experiments"
+    echo "  traces [n]           View recent traces (default: 10)"
+    echo "  compare <a> <b>      Pairwise comparison of two traces"
+    echo "  single <id>          Evaluate a single trace"
+    echo ""
+    echo "=== Proactive Eval (controlled experiments) ==="
+    echo "  runs                 List all proactive eval runs"
+    echo "  run-results <id>     Get results for a specific eval run"
+    echo "  test-set             Show the default test prompts"
+    echo "  battle <a> <b> [n]   Quick model comparison (n prompts)"
+    echo "  science <config>     Full eval with custom conditions"
+    echo ""
+    echo "Examples:"
+    echo "  artie-eval exp"
+    echo "  artie-eval battle anthropic/claude-3-5-sonnet google/gemini-flash-1.5 6"
+    echo "  artie-eval runs"
+    echo "  artie-eval science my-experiment.json"
+    ;;
+esac
