@@ -8,7 +8,8 @@ import {
   testRedisConnection,
 } from '@coachartie/shared';
 import { redditMentionMonitor } from '../reddit-mention-monitor.js';
-import { moltbookSocialBehavior } from '../behaviors/moltbook-social.js';
+import { executeOnDemand as moltbookExecute } from '../behaviors/social-media-behavior.js';
+import { memoryGardener } from '../learning/memory-gardener.js';
 
 export interface ScheduledTask {
   id: string;
@@ -333,6 +334,10 @@ export class SchedulerService {
           await this.executeWeeklyRuleReview();
           break;
 
+        case 'memory-gardening':
+          await this.executeMemoryGardening();
+          break;
+
         default:
           logger.warn(`Unknown scheduled job type: ${jobType} (job name: ${job.name})`);
       }
@@ -484,9 +489,9 @@ export class SchedulerService {
   }
 
   private async executeMoltbookSocial(): Promise<void> {
-    logger.info('🤖 Moltbook social behavior triggered');
+    logger.info('🤖 Moltbook social behavior triggered (LLM + memories)');
     try {
-      const result = await moltbookSocialBehavior.execute();
+      const result = await moltbookExecute();
       logger.info(`Moltbook social: ${result.action} - ${result.message}`);
     } catch (error) {
       logger.error('❌ Moltbook social behavior failed:', error);
@@ -538,6 +543,31 @@ export class SchedulerService {
       );
     } catch (error) {
       logger.error('❌ Weekly rule review failed:', error);
+    }
+  }
+
+  /**
+   * Execute memory gardening
+   * Links related memories, consolidates duplicates, prunes stale ones, surfaces gems
+   * Inspired by: https://robdodson.me/posts/i-gave-my-second-brain-a-gardener/
+   */
+  private async executeMemoryGardening(): Promise<void> {
+    logger.info('🌱 Memory gardening triggered');
+
+    try {
+      const result = await memoryGardener.garden();
+      logger.info(
+        `✅ Memory gardening complete: ${result.memoriesLinked} linked, ${result.memoriesConsolidated} consolidated, ${result.memoriesPruned} pruned, ${result.memoriesBoosted} boosted`
+      );
+
+      // Generate weekly digest on Sundays
+      const today = new Date().getDay();
+      if (today === 0) { // Sunday
+        const digest = await memoryGardener.generateWeeklyDigest();
+        logger.info(`📋 Weekly digest generated: ${digest.newMemories} new memories, themes: ${digest.topThemes.slice(0, 3).join(', ')}`);
+      }
+    } catch (error) {
+      logger.error('❌ Memory gardening failed:', error);
     }
   }
 
@@ -612,6 +642,17 @@ export class SchedulerService {
       name: 'weekly-rule-review',
       cron: weeklyRuleReviewCron,
       data: { type: 'weekly-rule-review' },
+      options: { immediate: false },
+    });
+
+    // Memory gardening - daily at 5 AM UTC
+    // Links related memories, consolidates duplicates, prunes stale ones
+    const memoryGardeningCron = process.env.MEMORY_GARDENING_CRON || '0 5 * * *';
+    await this.scheduleTask({
+      id: 'memory-gardening',
+      name: 'memory-gardening',
+      cron: memoryGardeningCron,
+      data: { type: 'memory-gardening' },
       options: { immediate: false },
     });
 

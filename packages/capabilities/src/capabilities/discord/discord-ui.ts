@@ -173,12 +173,21 @@ async function createModal(params: DiscordUIParams, content?: string): Promise<s
 }
 
 async function createButtons(params: DiscordUIParams, _content?: string): Promise<string> {
-  if (!params.buttons || params.buttons.length === 0) {
+  // Extract buttons - handle both array format and object-with-numeric-keys
+  const buttonsArray = extractButtonsArray(params);
+
+  logger.debug('🔘 createButtons input:', {
+    hasButtonsArray: !!params.buttons,
+    hasNumericKeys: Object.keys(params).some((k) => !isNaN(parseInt(k, 10))),
+    extractedCount: buttonsArray?.length || 0,
+  });
+
+  if (!buttonsArray || buttonsArray.length === 0) {
     throw new Error('Button action requires buttons array');
   }
 
   const actionRows: any[] = [];
-  const buttons = params.buttons.slice(0, 25); // Discord limit: 25 buttons total
+  const buttons = buttonsArray.slice(0, 25); // Discord limit: 25 buttons total
 
   // Discord allows max 5 buttons per row, max 5 rows
   for (let i = 0; i < buttons.length; i += 5) {
@@ -215,7 +224,10 @@ async function createButtons(params: DiscordUIParams, _content?: string): Promis
 }
 
 async function createSelectMenu(params: DiscordUIParams, _content?: string): Promise<string> {
-  if (!params.options || params.options.length === 0) {
+  // Extract options - handle both array format and object-with-numeric-keys
+  const optionsArray = extractOptionsArray(params);
+
+  if (!optionsArray || optionsArray.length === 0) {
     throw new Error('Select menu requires options array');
   }
 
@@ -223,7 +235,7 @@ async function createSelectMenu(params: DiscordUIParams, _content?: string): Pro
   const placeholder = params.placeholder || 'Choose an option...';
 
   // Add options (max 25)
-  const options = params.options.slice(0, 25).map((opt) => ({
+  const options = optionsArray.slice(0, 25).map((opt) => ({
     label: opt.label,
     value: opt.value,
     description: opt.description,
@@ -274,6 +286,69 @@ async function createContextMenu(params: DiscordUIParams, _content?: string): Pr
 }
 
 // Helper functions
+
+/**
+ * Convert object with numeric keys to array
+ * The LLM sometimes generates params like {"0":{...},"1":{...}} instead of [{...},{...}]
+ */
+function objectWithNumericKeysToArray(obj: any): any[] | null {
+  if (!obj || typeof obj !== 'object' || Array.isArray(obj)) {
+    return null;
+  }
+
+  // Check if object has numeric keys (0, 1, 2, etc.)
+  const keys = Object.keys(obj).filter((k) => !isNaN(parseInt(k, 10)));
+  if (keys.length === 0) {
+    return null;
+  }
+
+  // Sort keys numerically and extract values
+  const sortedKeys = keys.sort((a, b) => parseInt(a, 10) - parseInt(b, 10));
+  return sortedKeys.map((k) => obj[k]);
+}
+
+/**
+ * Extract buttons array from params that might have numeric keys
+ */
+function extractButtonsArray(params: any): any[] | undefined {
+  // If buttons array exists, use it
+  if (params.buttons && Array.isArray(params.buttons)) {
+    return params.buttons;
+  }
+
+  // Try to convert numeric keys to array
+  const fromNumericKeys = objectWithNumericKeysToArray(params);
+  if (fromNumericKeys && fromNumericKeys.length > 0) {
+    // Verify these look like button objects
+    if (fromNumericKeys[0] && typeof fromNumericKeys[0].label === 'string') {
+      return fromNumericKeys;
+    }
+  }
+
+  return undefined;
+}
+
+/**
+ * Extract options array from params that might have numeric keys
+ */
+function extractOptionsArray(params: any): any[] | undefined {
+  // If options array exists, use it
+  if (params.options && Array.isArray(params.options)) {
+    return params.options;
+  }
+
+  // Try to convert numeric keys to array
+  const fromNumericKeys = objectWithNumericKeysToArray(params);
+  if (fromNumericKeys && fromNumericKeys.length > 0) {
+    // Verify these look like option objects
+    if (fromNumericKeys[0] && typeof fromNumericKeys[0].label === 'string') {
+      return fromNumericKeys;
+    }
+  }
+
+  return undefined;
+}
+
 function parseInputsFromContent(content?: string): Array<any> {
   if (!content) {
     return [];

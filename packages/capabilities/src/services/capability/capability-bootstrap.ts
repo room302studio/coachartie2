@@ -42,6 +42,7 @@ import { quizGameCapability } from '../../capabilities/productivity/quiz-game.js
 // Discord capabilities
 import { discordUICapability } from '../../capabilities/discord/discord-ui.js';
 import { discordForumsCapability } from '../../capabilities/discord/discord-forums.js';
+import { discordModerationCapability } from '../../capabilities/discord/discord-moderation.js';
 // Slack capabilities
 import { slackUICapability } from '../../capabilities/slack/slack-ui.js';
 // Communication capabilities
@@ -163,6 +164,11 @@ export class CapabilityBootstrap {
       logger.info('📦 Registering discord-forums...');
       capabilityRegistry.register(discordForumsCapability);
       logger.info('✅ discord-forums registered successfully');
+
+      // Register Discord Moderation capability for timeouts and role management
+      logger.info('📦 Registering discord-moderation...');
+      capabilityRegistry.register(discordModerationCapability);
+      logger.info('✅ discord-moderation registered successfully');
 
       // Register Mention Proxy capability for user representation
       logger.info('📦 Registering mention-proxy...');

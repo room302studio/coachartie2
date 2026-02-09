@@ -5,7 +5,69 @@ import { openRouterService } from '../llm/openrouter.js';
  * Observation Handler Service
  * Processes observational learning requests using the FAST_MODEL
  * for cost-effective passive learning from Discord conversations
+ *
+ * Now uses Context Alchemy (database prompts) for consistent observation style
  */
+
+// Cache for observation prompt to avoid repeated database lookups
+let cachedObservationPrompt: string | null = null;
+let promptLastFetched = 0;
+const PROMPT_CACHE_TTL = 30 * 60 * 1000; // 30 minutes
+
+/**
+ * Load observation system prompt from database
+ * Falls back to default if not found
+ */
+async function getObservationSystemPrompt(): Promise<string> {
+  const now = Date.now();
+  if (cachedObservationPrompt && (now - promptLastFetched) < PROMPT_CACHE_TTL) {
+    return cachedObservationPrompt;
+  }
+
+  try {
+    const { promptManager } = await import('../llm/prompt-manager.js');
+
+    // Try to load a dedicated observation prompt first
+    const observationPrompt = await promptManager.getPrompt('PROMPT_OBSERVATION');
+    if (observationPrompt?.content) {
+      cachedObservationPrompt = observationPrompt.content;
+      promptLastFetched = now;
+      return cachedObservationPrompt;
+    }
+
+    // Fall back to extracting observation style from PROMPT_SYSTEM
+    const systemPrompt = await promptManager.getPrompt('PROMPT_SYSTEM');
+    if (systemPrompt?.content) {
+      // Extract Artie's core identity for observation context
+      cachedObservationPrompt = `You are observing conversations as Coach Artie, a warm and encouraging AI assistant who values community and genuine connection.
+
+Your role is to passively analyze Discord conversations and extract patterns, themes, and insights without participating.
+
+Focus on:
+- Main topics and themes
+- User interests and preferences
+- Recurring questions or problems
+- Community dynamics and culture
+
+Be concise (2-3 sentences) and factual. Don't make assumptions beyond what's directly observable.`;
+      promptLastFetched = now;
+      return cachedObservationPrompt;
+    }
+  } catch (error) {
+    logger.warn('Observation handler: Could not load prompt from database, using fallback');
+  }
+
+  // Fallback prompt
+  return `You are an observational analysis system. Your role is to passively observe Discord conversations and extract patterns, themes, and insights without participating.
+
+Focus on:
+- Main topics and themes
+- User interests and preferences
+- Recurring questions or problems
+- Community dynamics and culture
+
+Be concise (2-3 sentences) and factual. Don't make assumptions beyond what's directly observable.`;
+}
 
 export class ObservationHandler {
   private static instance: ObservationHandler;
@@ -20,6 +82,7 @@ export class ObservationHandler {
   /**
    * Generate a summary of observed messages
    * Uses FAST_MODEL for cost efficiency (~$0.0002 per summary)
+   * Now uses Context Alchemy (database prompts) for consistent observation style
    */
   async generateObservationSummary(
     prompt: string,
@@ -33,16 +96,8 @@ export class ObservationHandler {
     try {
       logger.info(`👁️ Generating observation summary for ${metadata.messageCount} messages`);
 
-      // System prompt for observation analysis
-      const systemPrompt = `You are an observational analysis system. Your role is to passively observe Discord conversations and extract patterns, themes, and insights without participating.
-
-Focus on:
-- Main topics and themes
-- User interests and preferences
-- Recurring questions or problems
-- Community dynamics and culture
-
-Be concise (2-3 sentences) and factual. Don't make assumptions beyond what's directly observable.`;
+      // Load system prompt from database for consistent observation style
+      const systemPrompt = await getObservationSystemPrompt();
 
       // Build message chain for generateFromMessageChain
       const messages = [

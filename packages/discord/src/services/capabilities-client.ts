@@ -331,6 +331,72 @@ export class CapabilitiesClient {
       throw new Error(`Job ended in unexpected status: ${finalStatus.status}`);
     }
   }
+
+  /**
+   * Link a Discord message ID to a trace for feedback correlation
+   * Called after sending a response to Discord
+   */
+  async linkDiscordMessage(jobId: string, discordMessageId: string): Promise<void> {
+    try {
+      const response = await fetch(`${this.baseUrl}/api/traces/link-discord`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          jobId,
+          discordMessageId,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorBody = await response.text();
+        logger.warn(`Failed to link Discord message: ${response.status} ${errorBody}`);
+      } else {
+        logger.debug(`Linked Discord message ${discordMessageId} to job ${jobId.slice(-8)}`);
+      }
+    } catch (error) {
+      // Non-critical - log and continue
+      logger.warn('Failed to link Discord message to trace:', error);
+    }
+  }
+
+  /**
+   * Record feedback for a trace based on Discord reaction
+   * Called when a user reacts to Artie's message with 👍/👎 etc.
+   */
+  async recordTraceFeedback(
+    discordMessageId: string,
+    sentiment: 'positive' | 'negative',
+    emoji: string
+  ): Promise<boolean> {
+    try {
+      const response = await fetch(`${this.baseUrl}/api/traces/feedback`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          discordMessageId,
+          sentiment,
+          emoji,
+        }),
+      });
+
+      if (response.ok) {
+        logger.debug(`Recorded ${sentiment} feedback for Discord message ${discordMessageId}`);
+        return true;
+      } else {
+        const errorBody = await response.text();
+        logger.debug(`No trace found for Discord message ${discordMessageId}: ${errorBody}`);
+        return false;
+      }
+    } catch (error) {
+      // Non-critical - log and continue
+      logger.debug('Failed to record trace feedback:', error);
+      return false;
+    }
+  }
 }
 
 // Export singleton instance

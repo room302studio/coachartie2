@@ -95,45 +95,21 @@ function cleanCapabilityTags(text: string): string {
 
 /**
  * Determine if content warrants a thread
+ * Simple heuristic: long messages or multiple questions get threads
  */
 function shouldCreateThread(content: string): boolean {
-  // Create threads for:
-  return (
-    content.length > 200 || // Long requests
-    (content.includes('explain') && content.length > 100) || // Explanations
-    (content.includes('help me with') && content.length > 80) || // Help requests
-    (content.includes('how do I') && content.length > 60) || // How-to questions
-    content.includes('walk me through') || // Step-by-step requests
-    content.includes('tutorial') || // Tutorial requests
-    content.includes('step by step') || // Detailed instructions
-    content.split('?').length > 2 // Multiple questions
-  );
+  // Create threads for long requests or multiple questions
+  // No keyword heuristics - just length-based
+  return content.length > 200 || content.split('?').length > 2;
 }
 
 /**
  * Generate a friendly thread name from content
+ * Simple approach: first few words
  */
 function generateThreadName(content: string): string {
-  // Extract key phrases for thread naming
+  // Just use first few words - no keyword heuristics
   const truncated = content.slice(0, 80);
-
-  // Common patterns for better naming
-  if (content.includes('explain')) {
-    const match = content.match(/explain\s+([^?.,]+)/i);
-    if (match) return `Explaining ${match[1].trim()}`;
-  }
-
-  if (content.includes('help me with')) {
-    const match = content.match(/help me with\s+([^?.,]+)/i);
-    if (match) return `Help with ${match[1].trim()}`;
-  }
-
-  if (content.includes('how do I') || content.includes('how to')) {
-    const match = content.match(/how (?:do I|to)\s+([^?.,]+)/i);
-    if (match) return `How to ${match[1].trim()}`;
-  }
-
-  // Fallback: first meaningful phrase
   const words = truncated.split(' ').slice(0, 8);
   return words.join(' ') + (content.length > 80 ? '...' : '');
 }

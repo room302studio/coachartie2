@@ -271,42 +271,8 @@ ${examples[missing.type]}
 Then provide a natural response incorporating the results.`;
   }
 
-  /**
-   * Detect what capabilities might be needed based on user message
-   */
-  detectNeededCapabilities(
-    message: string
-  ): Array<{ type: 'math' | 'memory' | 'search' | 'web' | 'time'; content: string }> {
-    const needed: Array<{ type: 'math' | 'memory' | 'search' | 'web' | 'time'; content: string }> =
-      [];
-
-    // Math detection
-    if (/\d+.*?[+\-*/].*?\d+|calculate|compute|math/.test(message)) {
-      const mathMatch = message.match(/(\d+.*?[+\-*/].*?\d+)/);
-      needed.push({ type: 'math', content: mathMatch?.[1] || 'mathematical expression' });
-    }
-
-    // Memory search detection
-    if (
-      /what do (?:i|you) (?:like|prefer|think)|my (?:preference|opinion)|do i like/.test(message)
-    ) {
-      const searchMatch = message.match(/(?:about|like|prefer)\s+(.+?)(?:\?|$)/);
-      needed.push({ type: 'search', content: searchMatch?.[1] || 'user preferences' });
-    }
-
-    // Memory storage detection
-    if (/remember|store|save|note/.test(message)) {
-      const rememberMatch = message.match(/(?:remember|store|save|note)\s+(.+?)(?:\.|$)/);
-      needed.push({ type: 'memory', content: rememberMatch?.[1] || 'information' });
-    }
-
-    // Time detection
-    if (/what time|current time|time now/.test(message)) {
-      needed.push({ type: 'time', content: 'current time' });
-    }
-
-    return needed;
-  }
+  // NOTE: detectNeededCapabilities() was removed - regex heuristics for understanding
+  // intent are an anti-pattern. The LLM should decide what capabilities it needs.
 }
 
 // Export singleton

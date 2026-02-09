@@ -71,10 +71,20 @@ class MeetingService {
       if (isValid(date)) return fromZonedTime(date, userTimezone);
     }
 
-    // Try 3: Relative dates (tomorrow, next Tuesday)
-    if (input.toLowerCase().includes('tomorrow')) {
-      const tomorrow = addDays(new Date(), 1);
-      return fromZonedTime(tomorrow, userTimezone);
+    // Try 3: Use micro-LLM to parse relative dates
+    try {
+      const { microLLM } = await import('../llm/micro-llm.js');
+      const today = new Date().toISOString().split('T')[0];
+      const result = await microLLM.extract(
+        `Today is ${today}. Convert this to YYYY-MM-DD format. Reply with ONLY the date, nothing else.`,
+        input
+      );
+      if (result.result && !result.fallback) {
+        const parsed = parseISO(result.result.trim());
+        if (isValid(parsed)) return fromZonedTime(parsed, userTimezone);
+      }
+    } catch {
+      // Fall through to error
     }
 
     throw new Error(`Cannot parse date: ${input}`);

@@ -31,6 +31,8 @@ export interface UserIntent {
   sendEmbed?: (embed: any) => Promise<void>;
   updateProgressEmbed?: (embed: any) => Promise<void>;
   sendFile?: (fileData: { buffer: Buffer; filename: string; content?: string }) => Promise<void>;
+  // Context Alchemy: Get the Discord message ID for the response (for feedback correlation)
+  getResponseMessageId?: () => string | undefined;
 }
 
 export interface ProcessorOptions {
@@ -53,45 +55,21 @@ function cleanCapabilityTags(text: string): string {
 
 /**
  * Determine if content warrants a thread
+ * Simple heuristic: long messages or multiple questions get threads
  */
 function shouldCreateThread(content: string): boolean {
-  // Create threads for:
-  return (
-    content.length > 200 || // Long requests
-    (content.includes('explain') && content.length > 100) || // Explanations
-    (content.includes('help me with') && content.length > 80) || // Help requests
-    (content.includes('how do I') && content.length > 60) || // How-to questions
-    content.includes('walk me through') || // Step-by-step requests
-    content.includes('tutorial') || // Tutorial requests
-    content.includes('step by step') || // Detailed instructions
-    content.split('?').length > 2 // Multiple questions
-  );
+  // Create threads for long requests or multiple questions
+  // No keyword heuristics - just length-based
+  return content.length > 200 || content.split('?').length > 2;
 }
 
 /**
  * Generate a friendly thread name from content
+ * Simple approach: first few words
  */
 function generateThreadName(content: string): string {
-  // Extract key phrases for thread naming
+  // Just use first few words - no keyword heuristics
   const truncated = content.slice(0, 80);
-
-  // Common patterns for better naming
-  if (content.includes('explain')) {
-    const match = content.match(/explain\s+([^?.,]+)/i);
-    if (match) return `Explaining ${match[1].trim()}`;
-  }
-
-  if (content.includes('help me with')) {
-    const match = content.match(/help me with\s+([^?.,]+)/i);
-    if (match) return `Help with ${match[1].trim()}`;
-  }
-
-  if (content.includes('how do I') || content.includes('how to')) {
-    const match = content.match(/how (?:do I|to)\s+([^?.,]+)/i);
-    if (match) return `How to ${match[1].trim()}`;
-  }
-
-  // Fallback: first meaningful phrase
   const words = truncated.split(' ').slice(0, 8);
   return words.join(' ') + (content.length > 80 ? '...' : '');
 }
@@ -179,6 +157,7 @@ export async function processUserIntent(
   let lastUpdateTime = 0; // Track time between edits to prevent spam
   let lastEmoji: string | null = null; // Track dynamic emoji reactions
   const reactedEmojis = new Set<string>(); // Track capability emojis already reacted with
+  let discordMessageLinked = false; // Context Alchemy: Track if we've linked the Discord message
 
   try {
     logger.info(`Processing user intent [${shortId}]:`, {
@@ -366,6 +345,17 @@ export async function processUserIntent(
                     lastUpdateTime = Date.now();
                     streamedChunks = 1;
                     logger.info(`Created initial streaming message [${shortId}]`);
+
+                    // Context Alchemy: Link Discord message to trace for feedback correlation
+                    if (!discordMessageLinked && intent.getResponseMessageId) {
+                      const discordMsgId = intent.getResponseMessageId();
+                      if (discordMsgId && jobInfo?.messageId) {
+                        discordMessageLinked = true;
+                        capabilitiesClient.linkDiscordMessage(jobInfo.messageId, discordMsgId).catch((err) => {
+                          logger.debug(`Failed to link Discord message [${shortId}]:`, err);
+                        });
+                      }
+                    }
                   } catch (error) {
                     logger.warn(`Failed to create streaming message [${shortId}]:`, error);
                   }
@@ -389,6 +379,17 @@ export async function processUserIntent(
                   lastSentContent = cleanedResponse;
                   streamedChunks = 1;
                   logger.info(`Sent initial response [${shortId}]`);
+
+                  // Context Alchemy: Link Discord message to trace for feedback correlation
+                  if (!discordMessageLinked && intent.getResponseMessageId) {
+                    const discordMsgId = intent.getResponseMessageId();
+                    if (discordMsgId && jobInfo?.messageId) {
+                      discordMessageLinked = true;
+                      capabilitiesClient.linkDiscordMessage(jobInfo.messageId, discordMsgId).catch((err) => {
+                        logger.debug(`Failed to link Discord message [${shortId}]:`, err);
+                      });
+                    }
+                  }
                 }
               }
             }

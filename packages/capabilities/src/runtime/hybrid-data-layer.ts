@@ -17,8 +17,9 @@ export interface MemoryRecord {
   timestamp: string; // ISO timestamp string
   importance: number;
   metadata: string; // JSON object as string
-  embedding?: string | null; // JSON array as string
   related_message_id?: string | null; // Changed to string to match shared schema
+  guild_id?: string | null; // Discord guild scope
+  channel_id?: string | null; // Discord channel scope
   created_at?: string;
   updated_at?: string;
 }
@@ -89,6 +90,7 @@ export class HybridDataLayer {
         // Use synchronous better-sqlite3 instead of async sql.js
         // This prevents database corruption from sql.js overwriting better-sqlite3 changes
         this.coldStorage = getSyncDb();
+        this.validateSchema(); // Check schema integrity at startup
         this.loadRecentMemories();
       } catch (error) {
         logger.warn('Failed to initialize SQLite, running in memory-only mode:', error);
@@ -108,6 +110,40 @@ export class HybridDataLayer {
   // Schema initialization deleted - use existing database schema
 
   /**
+   * Validate required schema exists at startup
+   * Logs errors loudly if critical tables/indexes are missing
+   */
+  private validateSchema(): void {
+    if (!this.coldStorage) return;
+
+    const requiredTables = ['memories', 'memories_fts', 'messages', 'learned_rules'];
+    const missingTables: string[] = [];
+
+    for (const table of requiredTables) {
+      try {
+        // Check if table exists by querying it
+        const result = this.coldStorage.get<{ count: number }>(
+          `SELECT COUNT(*) as count FROM ${table} LIMIT 1`
+        );
+        if (result === undefined) {
+          missingTables.push(table);
+        }
+      } catch {
+        missingTables.push(table);
+      }
+    }
+
+    if (missingTables.length > 0) {
+      const msg = `⚠️ SCHEMA VALIDATION FAILED: Missing tables: ${missingTables.join(', ')}. Run schema.sql to fix.`;
+      logger.error(msg);
+      // Log every startup, not just once - this is critical
+      console.error(`\n${'='.repeat(60)}\n${msg}\n${'='.repeat(60)}\n`);
+    } else {
+      logger.info('✅ Schema validation passed: all required tables exist');
+    }
+  }
+
+  /**
    * Load recent memories into hot cache
    */
   private loadRecentMemories(): void {
@@ -120,7 +156,7 @@ export class HybridDataLayer {
       const rows = this.coldStorage.all<MemoryRecord>(
         `
         SELECT id, user_id, content, tags, context, timestamp, importance,
-               metadata, embedding, related_message_id, created_at, updated_at
+               metadata, embedding, related_message_id, guild_id, channel_id, created_at, updated_at
         FROM memories
         ORDER BY timestamp DESC
         LIMIT ${this.maxHotMemories}
@@ -202,7 +238,7 @@ export class HybridDataLayer {
         const row = this.coldStorage.get<MemoryRecord>(
           `
           SELECT id, user_id, content, tags, context, timestamp, importance,
-                 metadata, embedding, related_message_id, created_at, updated_at
+                 metadata, embedding, related_message_id, guild_id, channel_id, created_at, updated_at
           FROM memories WHERE id = ?
         `,
           [id]
@@ -223,34 +259,43 @@ export class HybridDataLayer {
 
   /**
    * Get recent memories for user - fast index lookup
+   * SECURITY: Filters by guild_id to prevent cross-guild info leakage
    */
-  async getRecentMemories(userId: string, limit = 10): Promise<MemoryRecord[]> {
+  async getRecentMemories(userId: string, limit = 10, guildId?: string): Promise<MemoryRecord[]> {
     const userMemoryIds = this.userIndex.get(userId);
     if (!userMemoryIds) {
       return [];
     }
 
-    // Get memories from hot cache
+    // Get memories from hot cache with guild isolation
     const memories = Array.from(userMemoryIds)
       .map((id) => this.hotData.get(id))
-      .filter((memory): memory is MemoryRecord => memory !== undefined)
+      .filter((memory): memory is MemoryRecord =>
+        memory !== undefined &&
+        // Guild isolation: only return memories from same guild or no guild
+        (!guildId || !memory.guild_id || memory.guild_id === guildId)
+      )
       .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
       .slice(0, limit);
 
     // If we don't have enough in hot cache, check cold storage
     if (memories.length < limit && this.coldStorage) {
       try {
+        // Build query with optional guild filter
+        const guildFilter = guildId ? 'AND (guild_id = ? OR guild_id IS NULL)' : '';
+        const params = guildId ? [userId, guildId, limit] : [userId, limit];
+
         // Now using synchronous better-sqlite3 (no await needed)
         const rows = this.coldStorage.all<MemoryRecord>(
           `
           SELECT id, user_id, content, tags, context, timestamp, importance,
-                 metadata, embedding, related_message_id, created_at, updated_at
+                 metadata, embedding, related_message_id, guild_id, channel_id, created_at, updated_at
           FROM memories
-          WHERE user_id = ?
+          WHERE user_id = ? ${guildFilter}
           ORDER BY timestamp DESC
-          LIMIT ${limit}
+          LIMIT ?
         `,
-          [userId]
+          params
         );
 
         return rows.slice(0, limit);
@@ -263,16 +308,48 @@ export class HybridDataLayer {
   }
 
   /**
-   * Search memories - uses FTS if available
+   * Get memories for a specific guild (community knowledge)
+   * These are guild-scoped memories like observations, community facts, etc.
    */
-  async searchMemories(userId: string, query: string, limit = 10): Promise<MemoryRecord[]> {
+  async getGuildMemories(guildId: string, limit = 10): Promise<MemoryRecord[]> {
+    if (!this.coldStorage) {
+      return [];
+    }
+
+    try {
+      const rows = this.coldStorage.all<MemoryRecord>(
+        `
+        SELECT id, user_id, content, tags, context, timestamp, importance,
+               metadata, embedding, related_message_id, guild_id, channel_id, created_at, updated_at
+        FROM memories
+        WHERE guild_id = ?
+        ORDER BY timestamp DESC
+        LIMIT ?
+        `,
+        [guildId, limit]
+      );
+      return rows;
+    } catch (error) {
+      logger.error('Failed to get guild memories:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Search memories - uses FTS if available
+   * SECURITY: Filters by guild_id to prevent cross-guild info leakage
+   */
+  async searchMemories(userId: string, query: string, limit = 10, guildId?: string): Promise<MemoryRecord[]> {
     // First try hot cache simple search
     const userMemoryIds = this.userIndex.get(userId) || new Set();
     const hotResults = Array.from(userMemoryIds)
       .map((id) => this.hotData.get(id))
       .filter(
         (memory): memory is MemoryRecord =>
-          memory !== undefined && memory.content.toLowerCase().includes(query.toLowerCase())
+          memory !== undefined &&
+          memory.content.toLowerCase().includes(query.toLowerCase()) &&
+          // Guild isolation: only return memories from same guild or no guild
+          (!guildId || !memory.guild_id || memory.guild_id === guildId)
       )
       .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
       .slice(0, limit);
@@ -284,6 +361,14 @@ export class HybridDataLayer {
     // Try FTS search in cold storage (only if query is not empty)
     if (query && query.trim().length > 0) {
       try {
+        // Build query with optional guild filter
+        const guildFilter = guildId ? 'AND (m.guild_id = ? OR m.guild_id IS NULL)' : '';
+
+        // Escape FTS5 query to prevent syntax errors
+        // Wrap in quotes and escape internal quotes to make it a phrase search
+        const escapedQuery = `"${query.trim().replace(/"/g, '""')}"`;
+        const params = guildId ? [escapedQuery, userId, guildId] : [escapedQuery, userId];
+
         // Now using synchronous better-sqlite3 (no await needed)
         const rows = this.coldStorage.all<MemoryRecord>(
           `
@@ -291,11 +376,11 @@ export class HybridDataLayer {
                  m.metadata, m.embedding, m.related_message_id, m.created_at, m.updated_at
           FROM memories_fts f
           JOIN memories m ON m.rowid = f.rowid
-          WHERE f.content MATCH ? AND m.user_id = ?
+          WHERE f.content MATCH ? AND m.user_id = ? ${guildFilter}
           ORDER BY m.timestamp DESC
           LIMIT ${limit}
         `,
-          [query.trim(), userId]
+          params
         );
 
         return rows;
@@ -323,8 +408,8 @@ export class HybridDataLayer {
       const result = this.coldStorage.run(
         `
         INSERT INTO memories
-        (user_id, content, tags, context, timestamp, importance, metadata, embedding, related_message_id)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        (user_id, content, tags, context, timestamp, importance, metadata, related_message_id, guild_id, channel_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
         [
           memory.user_id,
@@ -334,8 +419,9 @@ export class HybridDataLayer {
           memory.timestamp,
           memory.importance,
           memory.metadata,
-          memory.embedding || null,
           memory.related_message_id || null,
+          memory.guild_id || null,
+          memory.channel_id || null,
         ]
       );
 
@@ -359,12 +445,6 @@ export class HybridDataLayer {
           userSet.add(realId);
         }
       }
-
-      // DISABLED: Embedding generation was flooding logs with errors
-      // Re-enable once vector-embeddings.ts storeEmbedding bug is fixed
-      // this.generateEmbeddingForMemory(realId, memory.content).catch((err) =>
-      //   logger.warn(`Failed to generate embedding for memory ${realId}:`, err)
-      // );
 
       return realId;
     } catch (error) {
@@ -391,7 +471,7 @@ export class HybridDataLayer {
             `
             UPDATE memories
             SET content = ?, tags = ?, context = ?, timestamp = ?, importance = ?,
-                metadata = ?, embedding = ?, related_message_id = ?, updated_at = CURRENT_TIMESTAMP
+                metadata = ?, related_message_id = ?, updated_at = CURRENT_TIMESTAMP
             WHERE id = ?
           `,
             [
@@ -401,7 +481,6 @@ export class HybridDataLayer {
               memory.timestamp,
               memory.importance,
               memory.metadata,
-              memory.embedding || null,
               memory.related_message_id || null,
               memory.id,
             ]
@@ -413,30 +492,6 @@ export class HybridDataLayer {
       .catch((error) => {
         logger.error('Failed to queue memory update:', error);
       });
-  }
-
-  /**
-   * Generate and store embedding for a memory (async, non-blocking)
-   */
-  private async generateEmbeddingForMemory(memoryId: number, content: string): Promise<void> {
-    try {
-      // Dynamic import to avoid circular dependencies
-      const { vectorEmbeddingService } = await import('../services/memory/vector-embeddings.js');
-
-      if (!vectorEmbeddingService.isReady()) {
-        await vectorEmbeddingService.initialize();
-      }
-
-      if (vectorEmbeddingService.isReady()) {
-        const success = await vectorEmbeddingService.storeEmbedding(memoryId, content);
-        if (success) {
-          logger.debug(`🧠 Auto-generated embedding for memory #${memoryId}`);
-        }
-      }
-    } catch (_error) {
-      // Silently fail - embeddings are optional enhancement
-      logger.debug(`Embedding generation skipped for memory #${memoryId}`);
-    }
   }
 
   /**

@@ -76,6 +76,62 @@ export class CreditMonitor {
   }
 
   /**
+   * Proactively check credit balance by calling the API
+   * Call this on startup and periodically to catch low balance before exhaustion
+   */
+  async proactiveBalanceCheck(): Promise<{ balance: number | null; error?: string }> {
+    const baseURL = process.env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1';
+    const apiKey = process.env.OPENROUTER_API_KEY;
+
+    if (!apiKey) {
+      return { balance: null, error: 'No API key configured' };
+    }
+
+    try {
+      // Try to get credits/balance from the API
+      const response = await fetch(`${baseURL.replace('/v1', '')}/api/v1/auth/key`, {
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+        },
+      });
+
+      if (!response.ok) {
+        // If auth/key endpoint doesn't exist, try a minimal completion to get usage info
+        logger.debug(`Credit check endpoint returned ${response.status}, balance unknown`);
+        return { balance: null, error: `API returned ${response.status}` };
+      }
+
+      const data = (await response.json()) as { data?: { limit?: number; usage?: number } };
+
+      if (data.data?.limit !== undefined && data.data?.usage !== undefined) {
+        const balance = data.data.limit - data.data.usage;
+
+        // Log and alert based on balance
+        if (balance <= 0) {
+          logger.error(`\n${'='.repeat(60)}`);
+          logger.error(`🚨 CREDITS EXHAUSTED! Balance: $${balance.toFixed(2)}`);
+          logger.error(`   Add credits at: https://openrouter.ai/settings/credits`);
+          logger.error(`${'='.repeat(60)}\n`);
+          this.markCreditsExhausted();
+        } else if (balance <= this.alertThresholds.low_balance_critical) {
+          logger.error(`🚨 CRITICAL: Only $${balance.toFixed(2)} credits remaining!`);
+        } else if (balance <= this.alertThresholds.low_balance_warning) {
+          logger.warn(`⚠️ LOW CREDITS: $${balance.toFixed(2)} remaining`);
+        } else {
+          logger.info(`💳 Credit balance: $${balance.toFixed(2)}`);
+        }
+
+        return { balance };
+      }
+
+      return { balance: null, error: 'Balance not in response' };
+    } catch (error) {
+      logger.debug(`Credit check failed: ${error}`);
+      return { balance: null, error: String(error) };
+    }
+  }
+
+  /**
    * Extract and store credit information from OpenRouter response
    */
   async recordCreditInfo(creditData: any): Promise<void> {

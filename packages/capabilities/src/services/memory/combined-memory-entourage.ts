@@ -2,6 +2,7 @@ import { logger } from '@coachartie/shared';
 import { MemoryEntourageInterface, MemoryEntourageResult } from './memory-entourage-interface.js';
 import { SemanticMemoryEntourage } from './semantic-memory-entourage.js';
 import { TemporalMemoryEntourage } from './temporal-memory-entourage.js';
+import { hybridDataLayer } from '../../runtime/hybrid-data-layer.js';
 
 /**
  * CombinedMemoryEntourage - Multi-layered memory recall with entourage pattern
@@ -34,6 +35,7 @@ export class CombinedMemoryEntourage implements MemoryEntourageInterface {
       maxTokens?: number;
       priority?: 'speed' | 'accuracy' | 'comprehensive';
       minimal?: boolean;
+      guildId?: string;
     } = {}
   ): Promise<MemoryEntourageResult> {
     // Handle minimal mode
@@ -48,20 +50,20 @@ export class CombinedMemoryEntourage implements MemoryEntourageInterface {
     }
 
     try {
-      logger.info('│ 🧠 Running 2-LAYER PARALLEL SEARCH:');
+      logger.info('│ 🧠 Running MULTI-LAYER PARALLEL SEARCH:');
       logger.info(
-        `│ Priority Mode: ${options.priority || 'speed'} | Max Tokens: ${options.maxTokens || 800}`
+        `│ Priority Mode: ${options.priority || 'speed'} | Max Tokens: ${options.maxTokens || 800} | Guild: ${options.guildId || 'none'}`
       );
 
-      // Calculate token budget for each layer (60/40 split: semantic gets more)
-      const tokenBudget = this.calculateLayerTokenBudgets(options.maxTokens);
+      // Calculate token budget for each layer
+      const tokenBudget = this.calculateLayerTokenBudgets(options.maxTokens, !!options.guildId);
       logger.info(
-        `│ Token Split: Semantic=${tokenBudget.semantic}, Temporal=${tokenBudget.temporal}`
+        `│ Token Split: Semantic=${tokenBudget.semantic}, Temporal=${tokenBudget.temporal}, Guild=${tokenBudget.guild}`
       );
 
       // Run memory searches in parallel (entourage pattern)
       const startTime = Date.now();
-      const [semanticResult, temporalResult] = await Promise.all([
+      const searchPromises: Promise<MemoryEntourageResult>[] = [
         this.semanticEntourage.getMemoryContext(userMessage, userId, {
           ...options,
           maxTokens: tokenBudget.semantic,
@@ -70,7 +72,16 @@ export class CombinedMemoryEntourage implements MemoryEntourageInterface {
           ...options,
           maxTokens: tokenBudget.temporal,
         }),
-      ]);
+      ];
+
+      // Add guild memory search if guildId provided
+      if (options.guildId) {
+        searchPromises.push(this.getGuildMemoryContext(options.guildId, tokenBudget.guild));
+      }
+
+      const results = await Promise.all(searchPromises);
+      const [semanticResult, temporalResult] = results;
+      const guildResult = results[2]; // May be undefined
       const parallelTime = Date.now() - startTime;
       logger.info(`│ ⚡ Parallel search completed in ${parallelTime}ms`);
 
@@ -82,6 +93,11 @@ export class CombinedMemoryEntourage implements MemoryEntourageInterface {
       logger.info(
         `│ │ 📅 Temporal: ${temporalResult.memoryCount} memories, ${(temporalResult.confidence * 100).toFixed(1)}% confidence`
       );
+      if (guildResult) {
+        logger.info(
+          `│ │ 🏠 Guild: ${guildResult.memoryCount} memories, ${(guildResult.confidence * 100).toFixed(1)}% confidence`
+        );
+      }
       logger.info('│ └───────────────────────────────────────────────────────────┘');
 
       // Combine results intelligently
@@ -89,7 +105,8 @@ export class CombinedMemoryEntourage implements MemoryEntourageInterface {
         semanticResult,
         temporalResult,
         userMessage,
-        options
+        options,
+        guildResult
       );
 
       logger.info(`│ 🎯 FUSION COMPLETE: ${combinedResult.memoryCount} total memories`);
@@ -115,22 +132,76 @@ export class CombinedMemoryEntourage implements MemoryEntourageInterface {
   /**
    * Calculate token budgets for each memory layer
    */
-  private calculateLayerTokenBudgets(maxTokens?: number): {
+  private calculateLayerTokenBudgets(maxTokens?: number, includeGuild?: boolean): {
     semantic: number;
     temporal: number;
+    guild: number;
   } {
     const totalBudget = maxTokens || 800;
+
+    if (includeGuild) {
+      // With guild: 45% semantic, 30% temporal, 25% guild
+      return {
+        semantic: Math.floor(totalBudget * 0.45),
+        temporal: Math.floor(totalBudget * 0.30),
+        guild: Math.floor(totalBudget * 0.25),
+      };
+    }
 
     // Allocate tokens: Semantic gets priority for better contextual understanding
     // Semantic: 60% (more important for accurate matches)
     // Temporal: 40% (good for context timing)
-    const semanticBudget = Math.floor(totalBudget * 0.6);
-    const temporalBudget = Math.floor(totalBudget * 0.4);
-
     return {
-      semantic: semanticBudget,
-      temporal: temporalBudget,
+      semantic: Math.floor(totalBudget * 0.6),
+      temporal: Math.floor(totalBudget * 0.4),
+      guild: 0,
     };
+  }
+
+  /**
+   * Get guild-scoped memories (community knowledge, observations)
+   */
+  private async getGuildMemoryContext(guildId: string, maxTokens: number): Promise<MemoryEntourageResult> {
+    try {
+      const guildMemories = await hybridDataLayer.getGuildMemories(guildId, 5);
+
+      if (guildMemories.length === 0) {
+        return {
+          content: '',
+          confidence: 0.0,
+          memoryCount: 0,
+          categories: ['guild'],
+          memoryIds: [],
+        };
+      }
+
+      // Format guild memories
+      const formattedMemories = guildMemories.map((m) => {
+        // Extract summary from observational memories (after the bracket prefix)
+        const bracketEnd = m.content.indexOf('] ');
+        const content = bracketEnd > 0 ? m.content.substring(bracketEnd + 2) : m.content;
+        return content.substring(0, 300) + (content.length > 300 ? '...' : '');
+      });
+
+      const content = `🏠 Community knowledge:\n${formattedMemories.map(m => `• ${m}`).join('\n')}`;
+
+      return {
+        content,
+        confidence: 0.8, // Guild memories are reliable community context
+        memoryCount: guildMemories.length,
+        categories: ['guild', 'community'],
+        memoryIds: guildMemories.map((m) => String(m.id)),
+      };
+    } catch (error) {
+      logger.warn('Failed to get guild memories:', error);
+      return {
+        content: '',
+        confidence: 0.0,
+        memoryCount: 0,
+        categories: ['guild', 'error'],
+        memoryIds: [],
+      };
+    }
   }
 
   /**
@@ -140,10 +211,12 @@ export class CombinedMemoryEntourage implements MemoryEntourageInterface {
     semanticResult: MemoryEntourageResult,
     temporalResult: MemoryEntourageResult,
     userMessage: string,
-    options: any
+    options: any,
+    guildResult?: MemoryEntourageResult
   ): MemoryEntourageResult {
     // Handle case where no layer found memories
-    if (semanticResult.memoryCount === 0 && temporalResult.memoryCount === 0) {
+    const totalCount = semanticResult.memoryCount + temporalResult.memoryCount + (guildResult?.memoryCount || 0);
+    if (totalCount === 0) {
       return {
         content: '',
         confidence: 0.0,
@@ -153,13 +226,16 @@ export class CombinedMemoryEntourage implements MemoryEntourageInterface {
       };
     }
 
-    // Handle cases where only one layer found memories
-    const activeLayers = [];
+    // Collect active layers
+    const activeLayers: Array<{name: string; result: MemoryEntourageResult}> = [];
     if (semanticResult.memoryCount > 0) {
       activeLayers.push({ name: 'semantic', result: semanticResult });
     }
     if (temporalResult.memoryCount > 0) {
       activeLayers.push({ name: 'temporal', result: temporalResult });
+    }
+    if (guildResult && guildResult.memoryCount > 0) {
+      activeLayers.push({ name: 'guild', result: guildResult });
     }
 
     if (activeLayers.length === 1) {
@@ -170,18 +246,49 @@ export class CombinedMemoryEntourage implements MemoryEntourageInterface {
     }
 
     // Multiple layers found memories - intelligent fusion
-    const fusedContent = this.fuseMemoryContent(semanticResult, temporalResult, options);
-    const fusedConfidence = this.fuseConfidenceScores(semanticResult, temporalResult);
-    const fusedCategories = this.fuseCategories(semanticResult, temporalResult);
-    const fusedMemoryIds = this.fuseMemoryIds(semanticResult, temporalResult);
-    const totalMemoryCount = semanticResult.memoryCount + temporalResult.memoryCount;
+    const contentParts: string[] = [];
+    if (semanticResult.content) contentParts.push(semanticResult.content);
+    if (temporalResult.content) contentParts.push(temporalResult.content);
+    if (guildResult?.content) contentParts.push(guildResult.content);
+
+    const fusedContent = contentParts.join('\n\n');
+
+    // Calculate weighted confidence
+    let totalWeight = 0;
+    let weightedConfidence = 0;
+    if (semanticResult.memoryCount > 0) {
+      weightedConfidence += semanticResult.confidence * 0.4;
+      totalWeight += 0.4;
+    }
+    if (temporalResult.memoryCount > 0) {
+      weightedConfidence += temporalResult.confidence * 0.3;
+      totalWeight += 0.3;
+    }
+    if (guildResult && guildResult.memoryCount > 0) {
+      weightedConfidence += guildResult.confidence * 0.3;
+      totalWeight += 0.3;
+    }
+    const fusedConfidence = totalWeight > 0 ? weightedConfidence / totalWeight : 0;
+
+    // Merge categories and IDs
+    const allCategories = new Set([
+      ...semanticResult.categories,
+      ...temporalResult.categories,
+      ...(guildResult?.categories || []),
+      'multi_layer_fusion',
+    ]);
+    const allMemoryIds = [
+      ...semanticResult.memoryIds,
+      ...temporalResult.memoryIds,
+      ...(guildResult?.memoryIds || []),
+    ];
 
     return {
       content: fusedContent,
       confidence: fusedConfidence,
-      memoryCount: totalMemoryCount,
-      categories: fusedCategories,
-      memoryIds: fusedMemoryIds,
+      memoryCount: totalCount,
+      categories: Array.from(allCategories),
+      memoryIds: allMemoryIds,
     };
   }
 

@@ -5,7 +5,9 @@ import fetch from 'node-fetch';
 // Room 302 Studio Guild whitelist
 const WHITELISTED_GUILD_IDS = ['932719842522443928'];
 
-const DISCORD_SERVICE_URL = process.env.DISCORD_SERVICE_URL || 'http://localhost:47321';
+// Use docker service name when running in container, localhost otherwise
+const DISCORD_SERVICE_URL = process.env.DISCORD_SERVICE_URL ||
+  (process.env.DOCKER_ENV ? 'http://discord:47321' : 'http://localhost:47321');
 
 export const discordSendMessageCapability: RegisteredCapability = {
   name: 'discord-send-message',

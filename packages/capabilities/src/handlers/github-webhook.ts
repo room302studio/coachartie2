@@ -1,4 +1,4 @@
-import crypto from 'crypto';
+import * as crypto from 'crypto';
 import { logger } from '@coachartie/shared';
 import { publishMessage } from '../queues/publisher.js';
 import { mediaWikiManager } from '../services/external/mediawiki-manager.js';

@@ -9,6 +9,9 @@ import { capabilityBootstrap } from './capability-bootstrap.js';
 import { memoryOrchestration } from '../memory/memory-orchestration.js';
 import { llmLoopService } from '../llm/llm-loop-service.js';
 
+// Import Context Alchemy observability
+import { traceManager } from '../context-alchemy/index.js';
+
 // Import shared types
 import { OrchestrationContext } from '../../types/orchestration-types.js';
 
@@ -28,10 +31,19 @@ export class CapabilityOrchestrator {
     message: IncomingMessage,
     onPartialResponse?: (partial: string) => void
   ): Promise<string> {
+    const startTime = Date.now();
     logger.info('🎯 ORCHESTRATOR START - This should always appear');
     logger.info(
       '🔥 ORCHESTRATOR ENTRY - About to create context and call assembleMessageOrchestration'
     );
+
+    // Context Alchemy: Create trace at the start of orchestration
+    const traceId = await traceManager.createTrace({
+      messageId: message.id,
+      userId: message.userId,
+      guildId: message.context?.guildId,
+      channelId: message.context?.channelId,
+    });
 
     // Check if user has an active draft and is responding to it
     const activeDraft = emailDraftingService.getDraft(message.userId);
@@ -39,12 +51,20 @@ export class CapabilityOrchestrator {
       const draftResponse = emailDraftingService.detectDraftResponse(message.message);
       if (draftResponse) {
         logger.info(`📧 DRAFT RESPONSE DETECTED: ${draftResponse.action}`);
-        return await emailDraftingService.handleDraftResponse(
+        const result = await emailDraftingService.handleDraftResponse(
           message,
           activeDraft,
           draftResponse,
           onPartialResponse
         );
+        // Update trace for draft handling
+        await traceManager.updateTrace(traceId, {
+          completedAt: new Date().toISOString(),
+          durationMs: Date.now() - startTime,
+          responseLength: result.length,
+          success: true,
+        });
+        return result;
       }
     }
 
@@ -55,25 +75,60 @@ export class CapabilityOrchestrator {
     );
     if (emailIntent) {
       logger.info('📧 EMAIL INTENT DETECTED - Routing to email writing mode');
-      return await emailDraftingService.handleEmailWritingMode(
+      const result = await emailDraftingService.handleEmailWritingMode(
         message,
         emailIntent,
         onPartialResponse
       );
+      // Update trace for email handling
+      await traceManager.updateTrace(traceId, {
+        completedAt: new Date().toISOString(),
+        durationMs: Date.now() - startTime,
+        responseLength: result.length,
+        success: true,
+      });
+      return result;
     }
 
-    const context = this.createOrchestrationContext(message);
+    const context = this.createOrchestrationContext(message, traceId);
     this.contexts.set(message.id, context);
+
+    // Context Alchemy: Inject traceId into message context for downstream services
+    const messageWithTrace = {
+      ...message,
+      context: {
+        ...message.context,
+        traceId,
+      },
+    };
 
     try {
       logger.info(`🎬 Starting orchestration for message ${message.id}`);
       logger.info(`🔥 ABOUT TO CALL assembleMessageOrchestration for ${message.id}`);
-      const result = await this.assembleMessageOrchestration(context, message, onPartialResponse);
+      const result = await this.assembleMessageOrchestration(context, messageWithTrace, onPartialResponse);
       logger.info(`🔥 assembleMessageOrchestration COMPLETED for ${message.id}`);
+
+      // Context Alchemy: Update trace on successful completion
+      await traceManager.updateTrace(traceId, {
+        completedAt: new Date().toISOString(),
+        durationMs: Date.now() - startTime,
+        responseLength: result.length,
+        success: true,
+      });
+
       return result;
     } catch (error) {
       logger.error(`❌ Orchestration failed for message ${message.id}:`, error);
       this.contexts.delete(message.id);
+
+      // Context Alchemy: Update trace on failure
+      await traceManager.updateTrace(traceId, {
+        completedAt: new Date().toISOString(),
+        durationMs: Date.now() - startTime,
+        success: false,
+        errorType: getErrorMessage(error),
+      });
+
       return this.generateOrchestrationFailureResponse(error, context, message);
     }
   }
@@ -149,7 +204,10 @@ export class CapabilityOrchestrator {
   /**
    * Gospel Method: Create orchestration context
    */
-  private createOrchestrationContext(message: IncomingMessage): OrchestrationContext {
+  private createOrchestrationContext(
+    message: IncomingMessage,
+    traceId?: string | null
+  ): OrchestrationContext {
     return {
       messageId: message.id,
       userId: message.userId,
@@ -161,6 +219,7 @@ export class CapabilityOrchestrator {
       respondTo: message.respondTo,
       capabilityFailureCount: new Map(), // Circuit breaker
       discord_context: message.context, // Pass through Discord context for mention resolution
+      traceId, // Context Alchemy: Link to generation trace
     };
   }
 

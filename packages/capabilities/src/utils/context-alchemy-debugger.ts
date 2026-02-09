@@ -104,7 +104,7 @@ export class ContextAlchemyDebugger {
       `│ 🔍 Keyword:  ${this.padNumber(keyword)} memories found                          │`
     );
     logger.info(
-      `│ 🧠 Semantic: ${this.padNumber(semantic)} memories found (${vectorEmbeddingService.isReady() ? 'OpenAI' : 'TF-IDF'})        │`
+      `│ 🧠 Semantic: ${this.padNumber(semantic)} memories found (TF-IDF)                 │`
     );
     logger.info(
       `│ 📅 Temporal: ${this.padNumber(temporal)} memories found                          │`
@@ -193,6 +193,3 @@ export class ContextAlchemyDebugger {
 
 // Export singleton instance
 export const contextDebugger = ContextAlchemyDebugger.getInstance();
-
-// Import for checking vector status
-import { vectorEmbeddingService } from '../services/memory/vector-embeddings.js';

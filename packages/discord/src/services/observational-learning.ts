@@ -26,7 +26,7 @@ export class ObservationalLearning {
   private readonly MESSAGES_PER_FETCH = parseInt(
     process.env.OBSERVATION_MESSAGES_PER_FETCH || '50'
   );
-  private readonly PROCESS_INTERVAL_MS = parseInt(process.env.OBSERVATION_INTERVAL_MS || '300000'); // 5 minutes
+  private readonly PROCESS_INTERVAL_MS = parseInt(process.env.OBSERVATION_INTERVAL_MS || '1500000'); // 25 minutes
   private readonly CAPABILITIES_URL = process.env.CAPABILITIES_URL || 'http://localhost:47324';
 
   private constructor() {
@@ -49,8 +49,9 @@ export class ObservationalLearning {
     // Check for guilds that should be observed:
     // - All 'watching' type guilds
     // - 'working' guilds with proactiveAnswering enabled (learn from communities we help)
+    // - 'working' guilds with observationChannels explicitly configured
     const learningGuilds = Object.values(GUILD_CONFIGS).filter(
-      (g) => g.type === 'watching' || (g.type === 'working' && g.proactiveAnswering)
+      (g) => g.type === 'watching' || (g.type === 'working' && (g.proactiveAnswering || g.observationChannels !== undefined))
     );
 
     if (learningGuilds.length > 0) {
@@ -93,7 +94,7 @@ export class ObservationalLearning {
     }
 
     const learningGuilds = Object.values(GUILD_CONFIGS).filter(
-      (g) => g.type === 'watching' || (g.type === 'working' && g.proactiveAnswering)
+      (g) => g.type === 'watching' || (g.type === 'working' && (g.proactiveAnswering || g.observationChannels !== undefined))
     );
 
     for (const guildConfig of learningGuilds) {
@@ -267,7 +268,9 @@ Focus on patterns that would help understand this community's needs and interest
 
         // Store as observational memory
         await this.storeObservationalMemory(
+          guildId,
           guildName,
+          channelId,
           channelName,
           result.summary,
           humanMessages.size
@@ -284,7 +287,9 @@ Focus on patterns that would help understand this community's needs and interest
    * Store the observation as a memory
    */
   private async storeObservationalMemory(
+    guildId: string,
     guildName: string,
+    channelId: string,
     channelName: string,
     summary: string,
     messageCount: number
@@ -307,9 +312,12 @@ Focus on patterns that would help understand this community's needs and interest
               tags: [
                 'observation',
                 'passive-learning',
-                guildName.toLowerCase().replace(/\s+/g, '-'),
-                channelName.toLowerCase().replace(/\s+/g, '-'),
+                guildName.toLowerCase().split(' ').join('-'),
+                channelName.toLowerCase().split(' ').join('-'),
               ],
+              // Store guild/channel scope directly on the memory
+              guildId,
+              channelId,
             },
           }),
         }
@@ -338,7 +346,7 @@ Focus on patterns that would help understand this community's needs and interest
     }>;
   } {
     const learningGuilds = Object.values(GUILD_CONFIGS).filter(
-      (g) => g.type === 'watching' || (g.type === 'working' && g.proactiveAnswering)
+      (g) => g.type === 'watching' || (g.type === 'working' && (g.proactiveAnswering || g.observationChannels !== undefined))
     );
 
     const lastProcessedTimes = Array.from(this.processedChannels.values()).map((p) => {

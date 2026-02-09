@@ -3,6 +3,7 @@
  *
  * Formats and posts GitHub events to Discord channels.
  * Handles embed formatting, mentions, and message styling.
+ * Now with Discord ↔ GitHub cross-referencing!
  */
 
 import { Client, EmbedBuilder, TextChannel, NewsChannel, ThreadChannel } from 'discord.js';
@@ -22,6 +23,7 @@ const EVENT_COLORS: Record<GitHubEventType, number> = {
   pr_review: 0x6e7681, // Gray
   ci_success: 0x238636, // Green
   ci_failure: 0xda3633, // Red
+  pr_stale: 0xda3633, // Red for stale
 };
 
 // Emoji for event types
@@ -36,6 +38,29 @@ const EVENT_EMOJI: Record<GitHubEventType, string> = {
   pr_review: '📝',
   ci_success: '✅',
   ci_failure: '❌',
+  pr_stale: '⏰',
+};
+
+// Labels that indicate important/breaking changes
+const IMPORTANT_LABELS = ['breaking-change', 'breaking', 'security', 'critical', 'urgent', 'hotfix'];
+const MINOR_LABELS = ['documentation', 'docs', 'chore', 'typo', 'style', 'refactor'];
+
+// Size thresholds for PR size badges (based on total lines changed)
+const SIZE_THRESHOLDS = {
+  XS: 10,    // Tiny fix
+  S: 50,     // Small change
+  M: 200,    // Medium feature
+  L: 500,    // Large feature
+  // XL: anything above L
+};
+
+// Size badge display with emoji
+const SIZE_BADGES: Record<string, { emoji: string; color: number; label: string }> = {
+  XS: { emoji: '🟢', color: 0x238636, label: 'XS' },
+  S: { emoji: '🟢', color: 0x238636, label: 'S' },
+  M: { emoji: '🟡', color: 0xd29922, label: 'M' },
+  L: { emoji: '🟠', color: 0xdb6d28, label: 'L' },
+  XL: { emoji: '🔴', color: 0xda3633, label: 'XL' },
 };
 
 export interface PosterConfig {
@@ -143,39 +168,87 @@ export class GitHubDiscordPoster {
     const [owner, repo] = event.repo.split('/');
 
     switch (event.type) {
-      case 'pr_opened':
-        embed
-          .setTitle(`${emoji} New Pull Request`)
-          .setURL(event.data.prUrl || '')
-          .setDescription(this.formatPrDescription(event))
-          .setFooter({ text: `${owner}/${repo}` });
-        break;
+      case 'pr_opened': {
+        const prSize = this.getPrSize(event.data.additions, event.data.deletions);
+        const sizeBadge = SIZE_BADGES[prSize];
 
-      case 'pr_ready_for_review':
         embed
-          .setTitle(`${emoji} Ready for Review`)
+          .setTitle(`${emoji} New PR [${sizeBadge.label}]`)
           .setURL(event.data.prUrl || '')
+          .setColor(sizeBadge.color)
+          .setDescription(this.formatPrDescription(event))
+          .setFooter({ text: `${owner}/${repo} • ${this.formatSizeBadge(event.data.additions, event.data.deletions, event.data.changedFiles)}` });
+
+        // Large PRs get extra visibility
+        if (prSize === 'L' || prSize === 'XL') {
+          embed.setTitle(`${sizeBadge.emoji} Large PR [${sizeBadge.label}] - Needs Extra Review`);
+        }
+        break;
+      }
+
+      case 'pr_ready_for_review': {
+        const reviewSize = this.getPrSize(event.data.additions, event.data.deletions);
+        const reviewSizeBadge = SIZE_BADGES[reviewSize];
+
+        embed
+          .setTitle(`${emoji} Review Needed [${reviewSizeBadge.label}]`)
+          .setURL(event.data.prUrl || '')
+          .setColor(0x1f6feb) // Blue for review needed
           .setDescription(`**#${event.data.prNumber}** ${event.data.prTitle}`)
           .addFields({
             name: 'Author',
             value: event.data.prAuthor || 'Unknown',
             inline: true,
-          })
-          .setFooter({ text: `${owner}/${repo}` });
+          });
+
+        // Show requested reviewers if available
+        if (event.data.reviewers && event.data.reviewers.length > 0) {
+          embed.addFields({
+            name: 'Reviewers',
+            value: event.data.reviewers.map((r) => `@${r}`).join(', '),
+            inline: true,
+          });
+        }
+
+        embed.setFooter({ text: `${owner}/${repo} • ${this.formatSizeBadge(event.data.additions, event.data.deletions, event.data.changedFiles)}` });
         break;
+      }
 
-      case 'pr_merged':
-        embed
-          .setTitle(`${emoji} Pull Request Merged`)
-          .setURL(event.data.prUrl || '')
-          .setDescription(this.formatMergeDescription(event))
-          .setFooter({ text: `${owner}/${repo}` });
+      case 'pr_merged': {
+        const isMainMerge = ['main', 'master', 'beta', 'production', 'prod'].includes(
+          event.data.prBaseBranch?.toLowerCase() || ''
+        );
+        const hasBreakingLabel = this.hasImportantLabel(event.data.labels);
 
-        // Extra fanfare for merges to main
-        if (event.data.prBaseBranch === 'main' && this.config.verboseMerges) {
-          embed.setTitle(`${emoji} Merged to Main! ${emoji}`);
+        if (isMainMerge && this.config.verboseMerges) {
+          // 🚀 Extra prominent for production merges
+          const branchName = event.data.prBaseBranch === 'main' ? 'Main' : event.data.prBaseBranch;
+
+          if (hasBreakingLabel) {
+            // ⚠️ Breaking change gets extra warning
+            embed
+              .setTitle(`⚠️ Breaking Change Shipped to ${branchName}!`)
+              .setColor(0xd29922) // Orange/yellow for warning
+              .setURL(event.data.prUrl || '')
+              .setDescription(this.formatMergeDescription(event))
+              .setFooter({ text: `${owner}/${repo} • ⚠️ May require migration` });
+          } else {
+            embed
+              .setTitle(`🚀 Shipped to ${branchName}!`)
+              .setColor(0x238636) // Bright green for shipping
+              .setURL(event.data.prUrl || '')
+              .setDescription(this.formatMergeDescription(event))
+              .setFooter({ text: `${owner}/${repo} • Now live` });
+          }
+        } else {
+          embed
+            .setTitle(`${emoji} Pull Request Merged`)
+            .setURL(event.data.prUrl || '')
+            .setDescription(this.formatMergeDescription(event))
+            .setFooter({ text: `${owner}/${repo}` });
         }
         break;
+      }
 
       case 'pr_closed':
         embed
@@ -187,9 +260,15 @@ export class GitHubDiscordPoster {
 
       case 'pr_approved':
         embed
-          .setTitle(`${emoji} Pull Request Approved`)
-          .setDescription(`**#${event.data.prNumber}** approved by **${event.data.reviewAuthor}**`)
-          .setFooter({ text: `${owner}/${repo}` });
+          .setTitle(`${emoji} Approved by ${event.data.reviewAuthor}`)
+          .setColor(0x238636) // Green for approval
+          .setDescription(`**#${event.data.prNumber}** ${event.data.prTitle || ''}`.trim())
+          .addFields({
+            name: 'Reviewer',
+            value: event.data.reviewAuthor || 'Unknown',
+            inline: true,
+          })
+          .setFooter({ text: `${owner}/${repo} • Ready to merge?` });
         if (event.data.reviewBody) {
           embed.addFields({
             name: 'Comment',
@@ -200,14 +279,18 @@ export class GitHubDiscordPoster {
 
       case 'pr_changes_requested':
         embed
-          .setTitle(`${emoji} Changes Requested`)
-          .setDescription(
-            `**${event.data.reviewAuthor}** requested changes on **#${event.data.prNumber}**`
-          )
-          .setFooter({ text: `${owner}/${repo}` });
+          .setTitle(`${emoji} Changes Requested on #${event.data.prNumber}`)
+          .setColor(0xd29922) // Yellow/orange for attention needed
+          .setDescription(`**${event.data.reviewAuthor}** needs changes before approval`)
+          .addFields({
+            name: 'PR',
+            value: event.data.prTitle || `#${event.data.prNumber}`,
+            inline: false,
+          })
+          .setFooter({ text: `${owner}/${repo} • Action needed` });
         if (event.data.reviewBody) {
           embed.addFields({
-            name: 'Comment',
+            name: 'Feedback',
             value: this.truncate(event.data.reviewBody, 300),
           });
         }
@@ -240,12 +323,19 @@ export class GitHubDiscordPoster {
           .setFooter({ text: `${owner}/${repo}` });
         break;
 
-      case 'ci_failure':
+      case 'ci_failure': {
+        const ciDesc = event.data.checkRunUrl
+          ? `**[${event.data.checkRunName}](${event.data.checkRunUrl})** failed`
+          : `**${event.data.checkRunName}** failed`;
         embed
           .setTitle(`${emoji} CI Failed`)
-          .setDescription(`**${event.data.checkRunName}** failed`)
-          .setFooter({ text: `${owner}/${repo}` });
+          .setDescription(ciDesc)
+          .setFooter({ text: `${owner}/${repo} • Click name for logs` });
+        if (event.data.checkRunUrl) {
+          embed.setURL(event.data.checkRunUrl);
+        }
         break;
+      }
 
       default:
         embed
@@ -323,12 +413,25 @@ export class GitHubDiscordPoster {
     const parts: string[] = [];
 
     parts.push(`**#${event.data.prNumber}** ${event.data.prTitle}`);
-    parts.push(`\nMerged to **${event.data.prBaseBranch}** by **${event.data.prAuthor}**`);
+
+    // Show author and merger (if different)
+    const author = event.data.prAuthor || 'unknown';
+    const merger = event.data.mergedBy || author;
+    if (merger !== author) {
+      parts.push(`\nBy **${author}** • Merged by **${merger}**`);
+    } else {
+      parts.push(`\nBy **${author}**`);
+    }
 
     if (this.config.showLineChanges && (event.data.additions || event.data.deletions)) {
       parts.push(
         `\n\`+${event.data.additions || 0}\` / \`-${event.data.deletions || 0}\``
       );
+    }
+
+    // Show labels on merges (especially useful for breaking changes, features, etc.)
+    if (this.config.showLabels && event.data.labels && event.data.labels.length > 0) {
+      parts.push(`\n${event.data.labels.map((l) => `\`${l}\``).join(' ')}`);
     }
 
     return parts.join('');
@@ -435,6 +538,41 @@ export class GitHubDiscordPoster {
       return text;
     }
     return text.slice(0, maxLength - 3) + '...';
+  }
+
+  /**
+   * Check if PR has important/breaking labels
+   */
+  private hasImportantLabel(labels?: string[]): boolean {
+    if (!labels || labels.length === 0) return false;
+    return labels.some((label) =>
+      IMPORTANT_LABELS.some((important) =>
+        label.toLowerCase().includes(important.toLowerCase())
+      )
+    );
+  }
+
+  /**
+   * Get PR size category based on lines changed
+   */
+  private getPrSize(additions?: number, deletions?: number): keyof typeof SIZE_BADGES {
+    const total = (additions || 0) + (deletions || 0);
+    if (total <= SIZE_THRESHOLDS.XS) return 'XS';
+    if (total <= SIZE_THRESHOLDS.S) return 'S';
+    if (total <= SIZE_THRESHOLDS.M) return 'M';
+    if (total <= SIZE_THRESHOLDS.L) return 'L';
+    return 'XL';
+  }
+
+  /**
+   * Format size badge for display
+   */
+  private formatSizeBadge(additions?: number, deletions?: number, files?: number): string {
+    const size = this.getPrSize(additions, deletions);
+    const badge = SIZE_BADGES[size];
+    const total = (additions || 0) + (deletions || 0);
+    const fileInfo = files ? `, ${files} file${files !== 1 ? 's' : ''}` : '';
+    return `${badge.emoji} **${badge.label}** (${total} lines${fileInfo})`;
   }
 }
 

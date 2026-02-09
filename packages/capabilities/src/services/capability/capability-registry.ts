@@ -662,9 +662,6 @@ import { embeddedMCPCapability } from '../../capabilities/ai/embedded-mcp.js';
 capabilityRegistry.register(embeddedMCPCapability);
 
 // Auto-register Memory capabilities
-import { semanticSearchCapability } from '../../capabilities/memory/semantic-search.js';
-capabilityRegistry.register(semanticSearchCapability);
-
 import { memoryCapability } from '../../capabilities/memory/memory.js';
 capabilityRegistry.register(memoryCapability);
 

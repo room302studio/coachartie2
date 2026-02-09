@@ -13,8 +13,9 @@ import {
   githubSyncState,
   type GithubRepoWatch,
   type GithubSyncState,
+  eq,
+  and,
 } from '@coachartie/shared';
-import { eq, and } from 'drizzle-orm';
 import { EventEmitter } from 'events';
 
 // Event types for GitHub sync
@@ -28,7 +29,8 @@ export type GitHubEventType =
   | 'pr_comment'
   | 'pr_review'
   | 'ci_success'
-  | 'ci_failure';
+  | 'ci_failure'
+  | 'pr_stale';
 
 export interface GitHubSyncEvent {
   type: GitHubEventType;
@@ -55,10 +57,17 @@ export interface GitHubSyncEvent {
     checkRunName?: string;
     checkRunStatus?: string;
     checkRunConclusion?: string;
+    checkRunUrl?: string;
     additions?: number;
     deletions?: number;
     labels?: string[];
     reviewers?: string[];
+    mergedBy?: string;
+    changedFiles?: number;
+    // Stale PR fields
+    hoursWaiting?: number;
+    staleSeverity?: 'warning' | 'critical';
+    prCreatedAt?: string;
   };
   timestamp: string;
 }
@@ -190,6 +199,9 @@ export class GitHubPollerService extends EventEmitter {
           await this.incrementPollErrors(watch.repo);
         }
       }
+
+      // Signal end of poll cycle (for digest mode)
+      this.emit('poll-cycle-end');
     } finally {
       this.isPolling = false;
     }
@@ -207,12 +219,21 @@ export class GitHubPollerService extends EventEmitter {
 
     // Get or create sync state
     let syncState = await this.getSyncState(watch.repo);
+    let isFirstSync = false;
     if (!syncState) {
       syncState = await this.createSyncState(watch.repo);
+      isFirstSync = true;
+      logger.info(`First sync for ${watch.repo} - will update state silently without posting`);
     }
 
     const events = watch.events ? JSON.parse(watch.events) : ['all'];
     const shouldPollAll = events.includes('all');
+
+    // On first sync, just update state without emitting events (prevents spam)
+    if (isFirstSync) {
+      await this.silentFirstSync(owner, repo, watch, syncState);
+      return;
+    }
 
     // Poll PRs
     if (shouldPollAll || events.includes('pr') || events.includes('review')) {
@@ -311,6 +332,8 @@ export class GitHubPollerService extends EventEmitter {
           additions: pr.additions,
           deletions: pr.deletions,
           labels: pr.labels?.map((l: any) => l.name) || [],
+          reviewers: pr.requested_reviewers?.map((r: any) => r.login) || [],
+          changedFiles: pr.changed_files,
         },
         timestamp: pr.created_at,
       });
@@ -336,6 +359,9 @@ export class GitHubPollerService extends EventEmitter {
             prBaseBranch: pr.base?.ref,
             additions: pr.additions,
             deletions: pr.deletions,
+            labels: pr.labels?.map((l: any) => l.name) || [],
+            mergedBy: pr.merged_by?.login,
+            changedFiles: pr.changed_files,
           },
           timestamp: pr.merged_at,
         });
@@ -506,6 +532,7 @@ export class GitHubPollerService extends EventEmitter {
             checkRunName: checkRun.name,
             checkRunStatus: checkRun.status,
             checkRunConclusion: checkRun.conclusion || undefined,
+            checkRunUrl: checkRun.html_url || undefined,
           },
           timestamp: checkRun.completed_at || new Date().toISOString(),
         });
@@ -574,6 +601,85 @@ export class GitHubPollerService extends EventEmitter {
     } catch (error) {
       logger.error(`Failed to get sync state for ${repo}:`, error);
       return null;
+    }
+  }
+
+  /**
+   * Silent first sync - updates state markers without emitting events
+   * This prevents spamming Discord when a repo is first added
+   */
+  private async silentFirstSync(
+    owner: string,
+    repo: string,
+    watch: GithubRepoWatch,
+    syncState: GithubSyncState
+  ): Promise<void> {
+    const repoFullName = `${owner}/${repo}`;
+    logger.info(`Running silent first sync for ${repoFullName}`);
+
+    try {
+      // Get latest PR to set our "seen" marker
+      const { data: prs } = await this.octokit.pulls.list({
+        owner,
+        repo,
+        state: 'all',
+        sort: 'updated',
+        direction: 'desc',
+        per_page: 1,
+      });
+
+      let lastCommentId = 0;
+      let lastReviewId = 0;
+
+      // Get latest comment and review IDs if there's a PR
+      if (prs.length > 0) {
+        const pr = prs[0];
+
+        // Get latest comment
+        try {
+          const { data: comments } = await this.octokit.pulls.listReviewComments({
+            owner,
+            repo,
+            pull_number: pr.number,
+            sort: 'created',
+            direction: 'desc',
+            per_page: 1,
+          });
+          if (comments.length > 0) {
+            lastCommentId = comments[0].id;
+          }
+        } catch (e) {
+          // No comments, that's fine
+        }
+
+        // Get latest review
+        try {
+          const { data: reviews } = await this.octokit.pulls.listReviews({
+            owner,
+            repo,
+            pull_number: pr.number,
+          });
+          if (reviews.length > 0) {
+            lastReviewId = reviews[reviews.length - 1].id;
+          }
+        } catch (e) {
+          // No reviews, that's fine
+        }
+      }
+
+      // Update sync state to mark everything as "seen"
+      await this.updateSyncState(repoFullName, {
+        lastPrUpdatedAt: prs.length > 0 ? prs[0].updated_at : new Date().toISOString(),
+        lastCommentId,
+        lastReviewId,
+        lastPolledAt: new Date().toISOString(),
+        pollErrors: 0,
+      });
+
+      logger.info(`Silent first sync complete for ${repoFullName} - marked as seen: lastComment=${lastCommentId}, lastReview=${lastReviewId}`);
+    } catch (error) {
+      logger.error(`Error during silent first sync for ${repoFullName}:`, error);
+      throw error;
     }
   }
 

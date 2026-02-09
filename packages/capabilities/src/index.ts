@@ -40,9 +40,11 @@ import { servicesRouter } from './routes/services.js';
 import { memoriesRouter } from './routes/memories.js';
 import modelsRouter from './routes/models.js';
 import { logsRouter, stopCleanupInterval } from './routes/logs.js';
+import { apiRouter } from './routes/api.js';
 import { schedulerService } from './services/core/scheduler.js';
 import { jobTracker } from './services/core/job-tracker.js';
 import { costMonitor } from './services/monitoring/cost-monitor.js';
+import { distressMonitor } from './services/monitoring/distress-monitor.js';
 import { GlobalVariableStore } from './capabilities/system/variable-store.js';
 // Import orchestrator FIRST to trigger capability registration
 import './services/capability/capability-orchestrator.js';
@@ -107,6 +109,7 @@ app.use('/github', githubRouter);
 app.use('/services', servicesRouter);
 app.use('/api/memories', memoriesRouter);
 app.use('/api/models', modelsRouter);
+app.use('/api', apiRouter);  // Context Alchemy observability + experiments
 app.use('/logs', logsRouter);
 
 // Observational learning endpoint
@@ -145,6 +148,85 @@ app.get('/api/observe/stats', async (req, res) => {
   } catch (error) {
     logger.error('Observation stats error:', error);
     res.status(500).json({ error: 'Failed to get observation stats' });
+  }
+});
+
+// Reflection threshold check endpoint - triggers emergency reflection if threshold crossed
+app.post('/api/reflection/check-threshold', async (req, res) => {
+  try {
+    const { guildId, threshold, hours } = req.body;
+
+    if (!guildId || !threshold) {
+      return res.status(400).json({ error: 'guildId and threshold are required' });
+    }
+
+    // Import the consolidator
+    const { reflectionConsolidator, countRecentNegativeFeedback } = await import(
+      './services/learning/reflection-consolidator.js'
+    );
+
+    // Check count of recent negative feedback
+    const count = await countRecentNegativeFeedback(guildId, hours || 1);
+
+    if (count >= threshold) {
+      // Trigger emergency reflection
+      const result = await reflectionConsolidator.triggerEmergencyReflection(
+        guildId,
+        `${count} negative reactions in last ${hours || 1} hour(s)`
+      );
+
+      res.json({
+        triggered: true,
+        count,
+        threshold,
+        rulesCreated: result.rulesCreated,
+      });
+    } else {
+      res.json({
+        triggered: false,
+        count,
+        threshold,
+      });
+    }
+  } catch (error) {
+    logger.error('Reflection threshold check error:', error);
+    res.status(500).json({ error: 'Failed to check reflection threshold' });
+  }
+});
+
+// Reflection stats endpoint - get active rules and reflection statistics
+app.get('/api/reflection/stats', async (req, res) => {
+  try {
+    const { reflectionConsolidator } = await import(
+      './services/learning/reflection-consolidator.js'
+    );
+
+    const systemRules = await reflectionConsolidator.getActiveRules('system');
+
+    // Get guild-specific rules count
+    const { getSyncDb } = await import('@coachartie/shared');
+    const db = getSyncDb();
+
+    const guildStats = db.all<{ scope_id: string; count: number }>(
+      `SELECT scope_id, COUNT(*) as count
+       FROM learned_rules
+       WHERE rule_type = 'guild' AND is_active = 1
+       GROUP BY scope_id`
+    );
+
+    const totalRules = db.get<{ count: number }>(
+      `SELECT COUNT(*) as count FROM learned_rules WHERE is_active = 1`
+    );
+
+    res.json({
+      systemRules: systemRules.length,
+      guildRules: guildStats || [],
+      totalActiveRules: totalRules?.count || 0,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error) {
+    logger.error('Reflection stats error:', error);
+    res.status(500).json({ error: 'Failed to get reflection stats' });
   }
 });
 
@@ -206,6 +288,10 @@ async function start() {
     // Start social media behavior (periodic moltbook checks)
     console.log('🌐 Starting social media behavior...');
     startSocialMediaBehavior();
+
+    // Start distress monitor (detects when Artie needs help)
+    console.log('🆘 Starting distress monitor...');
+    distressMonitor.start();
 
     console.log('🔍 Parsing port configuration...');
     console.log('  - CAPABILITIES_PORT env:', process.env.CAPABILITIES_PORT);

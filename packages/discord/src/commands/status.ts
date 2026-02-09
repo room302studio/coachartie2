@@ -4,8 +4,7 @@ import {
   EmbedBuilder,
   InteractionResponse,
 } from 'discord.js';
-import { getDb, modelUsageStats, logger } from '@coachartie/shared';
-import { eq, desc } from 'drizzle-orm';
+import { getDb, modelUsageStats, logger, eq, desc } from '@coachartie/shared';
 
 export const statusCommand = {
   data: new SlashCommandBuilder()

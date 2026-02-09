@@ -88,6 +88,8 @@ export const GUILD_CONFIGS: Record<string, GuildConfig> = {
     type: 'working',
     name: 'Room 302 Studio',
     scratchpadPath: 'reference-docs/guild-notes/room302studio.md',
+    // Observe ALL channels for memory formation (empty array = all channels)
+    observationChannels: [],
     githubSync: {
       enabled: true,
       defaultPollIntervalMinutes: 3,
@@ -131,12 +133,12 @@ RESPONSE STYLE:
     id: '1420846272545296470',
     type: 'working',
     name: 'Subwaybuilder',
-    proactiveAnswering: true,
-    proactiveChannels: ['robot', 'litigation'], // Proactive in robot channels AND litigation court
+    proactiveAnswering: false, // DISABLED - only respond when directly @mentioned
+    proactiveChannels: ['litigation'], // Only proactive in litigation court (Judge Artie)
     proactiveCooldownSeconds: 120, // 2 minutes - don't spam the channel
-    // CRITICAL: Only respond in robot channels - stop annoying everyone else (except litigation!)
-    restrictToRobotChannelsOnly: false, // Disabled so litigation can work
-    responseChannels: ['robot', 'litigation'], // Respond in robot channels AND litigation court
+    // Only respond when directly @mentioned (not role mentions, not @everyone)
+    restrictToRobotChannelsOnly: false,
+    responseChannels: ['litigation'], // Only auto-respond in litigation court (Judge Artie)
     // Only observe/learn from these channels (saves API costs)
     observationChannels: [
       'subway-builder-help',
@@ -145,6 +147,7 @@ RESPONSE STYLE:
       'modders',
       'bug-reports',
       'litigation', // Observe the courtroom drama
+      'robot', // Learn from robot channel interactions (especially reactions/feedback)
     ],
     contentModeration: 'strict',
     scratchpadPath: 'reference-docs/guild-notes/subwaybuilder.md',

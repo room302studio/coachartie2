@@ -215,12 +215,12 @@ class MentionProxyService {
    * @param channelId - Channel where message was sent
    * @returns Matching rule, or null
    */
-  findMatchingRule(
+  async findMatchingRule(
     content: string,
     mentions: string[],
     guildId: string | null,
     channelId: string
-  ): MentionProxyRule | null {
+  ): Promise<MentionProxyRule | null> {
     if (!guildId) return null;
 
     // Get enabled rules for this guild
@@ -238,7 +238,7 @@ class MentionProxyService {
       }
 
       // Check trigger type
-      if (!this.matchesTrigger(content, rule)) {
+      if (!(await this.matchesTrigger(content, rule))) {
         continue;
       }
 
@@ -252,14 +252,32 @@ class MentionProxyService {
   /**
    * Check if message content matches the rule's trigger conditions
    */
-  private matchesTrigger(content: string, rule: MentionProxyRule): boolean {
+  private async matchesTrigger(content: string, rule: MentionProxyRule): Promise<boolean> {
     switch (rule.triggerType) {
       case 'any_mention':
         return true;
 
       case 'questions_only':
-        // Simple question detection: just check for ?
-        return content.includes('?');
+        // Basic question detection - checks for ? or question words
+        // Note: The judgment layer (judgeIfShouldRespond) uses LLM for smart detection
+        const lowerContent = content.toLowerCase();
+        return (
+          content.includes('?') ||
+          lowerContent.startsWith('what ') ||
+          lowerContent.startsWith('how ') ||
+          lowerContent.startsWith('why ') ||
+          lowerContent.startsWith('when ') ||
+          lowerContent.startsWith('where ') ||
+          lowerContent.startsWith('who ') ||
+          lowerContent.startsWith('can ') ||
+          lowerContent.startsWith('could ') ||
+          lowerContent.startsWith('would ') ||
+          lowerContent.startsWith('should ') ||
+          lowerContent.startsWith('is ') ||
+          lowerContent.startsWith('are ') ||
+          lowerContent.startsWith('do ') ||
+          lowerContent.startsWith('does ')
+        );
 
       case 'keywords':
         if (!rule.keywords || rule.keywords.length === 0) {

@@ -46,80 +46,18 @@ export class EmailDraftingService {
   }
 
   /**
-   * Detect email intent from user message (no regex - simple string checks only)
+   * Detect email intent from user message
+   *
+   * NOTE: Removed keyword heuristics - the LLM should handle email intent
+   * through the normal capability system. This function now just returns null
+   * to let the LLM decide.
    */
   async detectEmailIntent(
-    message: string,
-    userId?: string
+    _message: string,
+    _userId?: string
   ): Promise<{ to: string; subject?: string; about?: string } | null> {
-    const lowerMessage = message.toLowerCase();
-
-    // Pattern 1: "email me" or "send me" - lookup user's linked email
-    const hasEmailMe =
-      lowerMessage.includes('email me') ||
-      lowerMessage.includes('send me') ||
-      lowerMessage.includes('email myself');
-
-    if (hasEmailMe && userId) {
-      try {
-        const { UserProfileService } = await import('@coachartie/shared');
-        const email = await UserProfileService.getAttribute(userId, 'email');
-
-        if (email) {
-          // Extract topic using simple string parsing
-          const aboutTopic = this.extractAboutTopic(message);
-          return { to: email, about: aboutTopic };
-        } else {
-          logger.info('User requested "email me" but has no linked email', { userId });
-          return null;
-        }
-      } catch (error) {
-        logger.error('Failed to lookup user email:', error);
-        return null;
-      }
-    }
-
-    // Pattern 2: Explicit email address - find @ symbol
-    const atIndex = message.indexOf('@');
-    if (atIndex === -1) return null;
-
-    // Extract email address by finding word boundaries around @
-    const emailAddress = this.extractEmailAddress(message, atIndex);
-    if (!emailAddress) return null;
-
-    const emailIndex = message.indexOf(emailAddress);
-    const textBeforeEmail = message.substring(0, emailIndex).toLowerCase();
-
-    // Check for explicit email-sending intent
-    const hasActionVerb =
-      textBeforeEmail.includes('send an email') ||
-      textBeforeEmail.includes('send email') ||
-      textBeforeEmail.includes('write an email') ||
-      textBeforeEmail.includes('write email') ||
-      textBeforeEmail.includes('compose email') ||
-      textBeforeEmail.includes('draft email') ||
-      textBeforeEmail.includes('email this to') ||
-      textBeforeEmail.includes('send this to');
-
-    // Exclude when people are just sharing/correcting email addresses
-    const isDeclarative =
-      textBeforeEmail.includes('email address') ||
-      textBeforeEmail.includes('address is') ||
-      textBeforeEmail.includes('email is') ||
-      textBeforeEmail.includes('correct email') ||
-      textBeforeEmail.includes('correct address') ||
-      textBeforeEmail.includes('real email') ||
-      textBeforeEmail.includes('actual email') ||
-      textBeforeEmail.endsWith('is ') ||
-      textBeforeEmail.endsWith(': ');
-
-    if (hasActionVerb && !isDeclarative) {
-      return {
-        to: emailAddress,
-        about: this.extractAboutTopic(message),
-      };
-    }
-
+    // Don't try to guess email intent with keyword matching
+    // Let the LLM handle this through capabilities
     return null;
   }
 
@@ -265,48 +203,16 @@ Format your response using XML tags:
 
   /**
    * Detect if user message is responding to a draft
+   *
+   * NOTE: Removed regex heuristics - the LLM should interpret user intent
+   * in context. If there's a pending draft, include that context in the
+   * prompt and let the LLM decide what the user wants.
    */
   detectDraftResponse(
-    message: string
+    _message: string
   ): { action: 'send' | 'edit' | 'cancel'; feedback?: string } | null {
-    const lowerMessage = message.toLowerCase().trim();
-
-    // Send actions
-    if (
-      ['send it', 'send', 'yes', 'approve', 'looks good', 'lgtm', 'perfect'].some(
-        (phrase) => lowerMessage === phrase || lowerMessage.startsWith(phrase)
-      )
-    ) {
-      return { action: 'send' };
-    }
-
-    // Cancel actions
-    if (
-      ['cancel', 'discard', 'no', 'nevermind', 'never mind'].some(
-        (phrase) => lowerMessage === phrase || lowerMessage.startsWith(phrase)
-      )
-    ) {
-      return { action: 'cancel' };
-    }
-
-    // Edit actions - capture feedback
-    const editMatch = message.match(/^(?:edit|revise|change|update|fix|make it)\s+(.+)/i);
-    if (editMatch) {
-      return { action: 'edit', feedback: editMatch[1] };
-    }
-
-    // General feedback without "edit" keyword
-    if (
-      lowerMessage.includes('more') ||
-      lowerMessage.includes('less') ||
-      lowerMessage.includes('shorter') ||
-      lowerMessage.includes('longer') ||
-      lowerMessage.includes('formal') ||
-      lowerMessage.includes('casual')
-    ) {
-      return { action: 'edit', feedback: message };
-    }
-
+    // Don't try to guess user intent with regex
+    // Let the LLM handle this in context
     return null;
   }
 

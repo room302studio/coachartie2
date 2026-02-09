@@ -13,11 +13,11 @@ import {
   getDb,
   githubIdentityMappings,
   type GithubIdentityMapping,
+  eq,
 } from '@coachartie/shared';
-import { eq } from 'drizzle-orm';
 import type { GitHubSyncEvent, GitHubEventType } from './github-poller.js';
 
-// Bot usernames to filter out
+// Bot usernames to filter out (excludes Copilot since those are human-initiated)
 const BOT_USERNAMES = [
   'dependabot',
   'dependabot[bot]',
@@ -75,7 +75,7 @@ export interface ProcessorConfig {
 }
 
 const DEFAULT_CONFIG: ProcessorConfig = {
-  batchWindowMs: 5 * 60 * 1000, // 5 minutes
+  batchWindowMs: 15 * 60 * 1000, // 15 minutes (longer window to reduce noise)
   maxBatchSize: 10,
   filterBots: true,
   filterDrafts: true,
@@ -116,6 +116,32 @@ export class GitHubEventProcessor {
     if (this.config.filterDrafts && event.data.prDraft) {
       processed.shouldPost = false;
       processed.skipReason = 'Draft PR';
+      return processed;
+    }
+
+    // Filter merges to non-main/beta branches (these are PR-to-PR merges, not deploys)
+    if (event.type === 'pr_merged') {
+      const targetBranch = event.data.prBaseBranch?.toLowerCase() || '';
+      const isMainMerge = ['main', 'master', 'beta', 'production', 'prod'].includes(targetBranch);
+      if (!isMainMerge) {
+        processed.shouldPost = false;
+        processed.skipReason = `Merge to feature branch (${event.data.prBaseBranch})`;
+        return processed;
+      }
+    }
+
+    // Filter CI success events (too noisy, only failures are actionable)
+    if (event.type === 'ci_success') {
+      processed.shouldPost = false;
+      processed.skipReason = 'CI success events disabled (only failures shown)';
+      return processed;
+    }
+
+    // Filter PR closed events (abandoned PRs are rarely interesting)
+    // Merged PRs are handled by pr_merged, this is only for closed-without-merge
+    if (event.type === 'pr_closed') {
+      processed.shouldPost = false;
+      processed.skipReason = 'PR closed without merge (abandoned)';
       return processed;
     }
 
@@ -232,8 +258,8 @@ export class GitHubEventProcessor {
    */
   private calculatePriority(event: GitHubSyncEvent): number {
     const priorities: Record<GitHubEventType, number> = {
-      pr_merged: 10, // Big deal, especially to main
-      ci_failure: 9, // Needs immediate attention
+      pr_merged: 10,
+      ci_failure: 9,
       pr_changes_requested: 8,
       pr_approved: 7,
       pr_ready_for_review: 6,
@@ -242,6 +268,7 @@ export class GitHubEventProcessor {
       pr_comment: 3,
       ci_success: 2,
       pr_closed: 1,
+      pr_stale: 1, // Disabled feature, kept for type compatibility
     };
 
     let priority = priorities[event.type] || 5;
@@ -457,87 +484,6 @@ export class GitHubEventProcessor {
     } catch (error) {
       logger.error(`Failed to resolve GitHub user ${githubUsername}:`, error);
       return null;
-    }
-  }
-
-  /**
-   * Learn a new GitHub → Discord mapping
-   */
-  async learnIdentityMapping(
-    githubUsername: string,
-    discordUserId: string,
-    source: 'manual' | 'learned' | 'heuristic' = 'learned',
-    confidence: number = 0.8
-  ): Promise<void> {
-    try {
-      const now = new Date().toISOString();
-      const normalizedUsername = githubUsername.toLowerCase();
-
-      // Check if mapping exists
-      const existing = await getDb()
-        .select()
-        .from(githubIdentityMappings)
-        .where(eq(githubIdentityMappings.githubUsername, normalizedUsername))
-        .limit(1);
-
-      if (existing[0]) {
-        // Update existing - only if new confidence is higher or source is manual
-        if (source === 'manual' || confidence > (existing[0].confidence || 0)) {
-          await getDb()
-            .update(githubIdentityMappings)
-            .set({
-              discordUserId,
-              confidence,
-              source,
-              updatedAt: now,
-            })
-            .where(eq(githubIdentityMappings.githubUsername, normalizedUsername));
-          logger.info(
-            `Updated identity mapping: ${githubUsername} -> ${discordUserId} (${source}, ${confidence})`
-          );
-        }
-      } else {
-        // Create new
-        await getDb().insert(githubIdentityMappings).values({
-          githubUsername: normalizedUsername,
-          discordUserId,
-          confidence,
-          source,
-          createdAt: now,
-          updatedAt: now,
-        });
-        logger.info(
-          `Created identity mapping: ${githubUsername} -> ${discordUserId} (${source}, ${confidence})`
-        );
-      }
-    } catch (error) {
-      logger.error(`Failed to learn identity mapping:`, error);
-    }
-  }
-
-  /**
-   * Get all identity mappings
-   */
-  async getIdentityMappings(): Promise<GithubIdentityMapping[]> {
-    try {
-      return await getDb().select().from(githubIdentityMappings);
-    } catch (error) {
-      logger.error('Failed to get identity mappings:', error);
-      return [];
-    }
-  }
-
-  /**
-   * Delete an identity mapping
-   */
-  async deleteIdentityMapping(githubUsername: string): Promise<void> {
-    try {
-      await getDb()
-        .delete(githubIdentityMappings)
-        .where(eq(githubIdentityMappings.githubUsername, githubUsername.toLowerCase()));
-      logger.info(`Deleted identity mapping for ${githubUsername}`);
-    } catch (error) {
-      logger.error(`Failed to delete identity mapping for ${githubUsername}:`, error);
     }
   }
 }

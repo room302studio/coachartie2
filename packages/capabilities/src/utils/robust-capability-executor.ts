@@ -137,8 +137,8 @@ export class RobustCapabilityExecutor {
     // Fix MCP client parameters
     if (capability.name === 'mcp_client') {
       if (!cleaned.params.tool_name && cleaned.content) {
-        // Try to infer tool name from content
-        cleaned.params.tool_name = this.inferMCPToolName(cleaned.content);
+        // Don't try to guess - the LLM should specify the tool name
+        cleaned.params.tool_name = 'unknown_tool';
       }
     }
 
@@ -433,21 +433,8 @@ export class RobustCapabilityExecutor {
     throw new Error('Complex mathematical expressions not supported in fallback mode');
   }
 
-  /**
-   * Infer MCP tool name from content
-   */
-  private inferMCPToolName(content: string): string {
-    if (/time|clock/i.test(content)) {
-      return 'get_current_time';
-    }
-    if (/wikipedia/i.test(content)) {
-      return 'search_wikipedia';
-    }
-    if (/weather/i.test(content)) {
-      return 'get_weather';
-    }
-    return 'unknown_tool';
-  }
+  // NOTE: inferMCPToolName() was removed - regex heuristics for understanding
+  // intent are an anti-pattern. The LLM should specify the tool name explicitly.
 
   /**
    * Detect if error is a structured error from registry

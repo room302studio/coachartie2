@@ -1,5 +1,4 @@
-import { logger, getDb, globalVariables, getRawDb } from '@coachartie/shared';
-import { eq, inArray, asc } from 'drizzle-orm';
+import { logger, getDb, globalVariables, getRawDb, eq, inArray, asc } from '@coachartie/shared';
 import { RegisteredCapability } from '../../services/capability/capability-registry.js';
 
 interface VariableParams {

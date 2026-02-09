@@ -1,6 +1,5 @@
 import { ChatInputCommandInteraction, SlashCommandBuilder, EmbedBuilder } from 'discord.js';
-import { logger, getDb, modelUsageStats } from '@coachartie/shared';
-import { desc, eq, gte, count, sum, avg, sql } from 'drizzle-orm';
+import { logger, getDb, modelUsageStats, desc, eq, gte, count, sum, avg, sql } from '@coachartie/shared';
 
 export const usageCommand = {
   data: new SlashCommandBuilder()

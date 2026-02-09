@@ -53,10 +53,12 @@ export class ConscienceLLM {
     // Get context quickly
     const context = await this.getQuickContext(userId);
 
+    const energyLevel = await this.inferEnergyLevel(userMessage);
+
     const prompt = `Active goals: ${context.goals}
 Recent activity: ${context.recentTopics}
 Current time: ${new Date().toLocaleTimeString()}
-User energy: ${this.inferEnergyLevel(userMessage)}
+User energy: ${energyLevel}
 
 User just said: "${userMessage}"
 
@@ -120,20 +122,19 @@ Examples:
     }
   }
 
-  private inferEnergyLevel(message: string): string {
-    const lower = message.toLowerCase();
-
-    if (lower.includes('tired') || lower.includes('exhausted') || lower.includes('burned out')) {
-      return 'low';
+  private async inferEnergyLevel(message: string): Promise<string> {
+    try {
+      const { microLLM } = await import('../llm/micro-llm.js');
+      const result = await microLLM.pickOne(
+        'What energy/emotional state does this message convey?',
+        message.substring(0, 150),
+        ['low', 'high', 'frustrated', 'neutral'] as const,
+        'neutral'
+      );
+      return result.result;
+    } catch {
+      return 'neutral';
     }
-    if (lower.includes('excited') || lower.includes('pumped') || lower.includes('love')) {
-      return 'high';
-    }
-    if (lower.includes('frustrated') || lower.includes('stuck') || lower.includes('confused')) {
-      return 'frustrated';
-    }
-
-    return 'neutral';
   }
 
   // Get conscience prompt from database

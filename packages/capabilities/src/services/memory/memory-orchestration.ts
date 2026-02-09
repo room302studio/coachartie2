@@ -37,24 +37,26 @@ export class MemoryOrchestration {
         `🗃️ Found user ${userId} capability memories: ${capabilityMemories ? capabilityMemories.substring(0, 100) : 'None'}...`
       );
 
-      // Also search for any patterns related to current query type for THIS USER ONLY
+      // Use micro-LLM to detect query type for memory search
       let queryTypeMemories = '';
-      const lowerMessage = userMessage.toLowerCase();
+      try {
+        const { microLLM } = await import('../llm/micro-llm.js');
+        const queryType = await microLLM.pickOne(
+          'What type of query is this?',
+          userMessage.substring(0, 150),
+          ['preferences', 'calculation', 'search', 'other'] as const,
+          'other'
+        );
 
-      if (
-        lowerMessage.includes('food') ||
-        lowerMessage.includes('like') ||
-        lowerMessage.includes('prefer')
-      ) {
-        queryTypeMemories = await service.recall(userId, 'food preferences memory search', 2);
-      } else if (lowerMessage.match(/\d+.*[+\-*/].*\d+/)) {
-        queryTypeMemories = await service.recall(userId, 'calculator math calculation', 2);
-      } else if (
-        lowerMessage.includes('what is') ||
-        lowerMessage.includes('search') ||
-        lowerMessage.includes('find')
-      ) {
-        queryTypeMemories = await service.recall(userId, 'web search latest recent', 2);
+        if (queryType.result === 'preferences') {
+          queryTypeMemories = await service.recall(userId, 'preferences likes dislikes', 2);
+        } else if (queryType.result === 'calculation') {
+          queryTypeMemories = await service.recall(userId, 'calculator math calculation', 2);
+        } else if (queryType.result === 'search') {
+          queryTypeMemories = await service.recall(userId, 'web search information', 2);
+        }
+      } catch {
+        // Skip query type memory on error
       }
 
       // Extract capability patterns from memory results

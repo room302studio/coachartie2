@@ -208,25 +208,26 @@ export class MediaWikiManager {
 
   /**
    * Smart wiki suggestion based on page name or content
+   * Uses micro-LLM to intelligently match content to wikis
    */
-  suggestWiki(pageNameOrContent: string): string | null {
-    const lower = pageNameOrContent.toLowerCase();
+  async suggestWiki(pageNameOrContent: string): Promise<string | null> {
+    const availableWikis = Array.from(this.clients.keys());
+    if (availableWikis.length === 0) return null;
+    if (availableWikis.length === 1) return availableWikis[0];
 
-    // Smart matching based on keywords
-    if (lower.includes('subway') || lower.includes('transit')) {
-      return this.clients.has('transit') ? 'transit' : null;
+    try {
+      const { microLLM } = await import('../llm/micro-llm.js');
+      const result = await microLLM.pickOne(
+        'Which wiki is this content most appropriate for?',
+        `Content: "${pageNameOrContent.substring(0, 150)}"\nAvailable wikis: ${availableWikis.join(', ')}`,
+        availableWikis as [string, ...string[]],
+        this.lastUsedWiki || availableWikis[0]
+      );
+      return this.clients.has(result.result) ? result.result : (this.lastUsedWiki || 'default');
+    } catch {
+      // Fallback to last used or default
+      return this.lastUsedWiki || 'default';
     }
-
-    if (lower.includes('personal') || lower.includes('journal')) {
-      return this.clients.has('personal') ? 'personal' : null;
-    }
-
-    if (lower.includes('archive')) {
-      return this.clients.has('archive') ? 'archive' : null;
-    }
-
-    // Return last used or default
-    return this.lastUsedWiki || 'default';
   }
 
   /**

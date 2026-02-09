@@ -1,0 +1,102 @@
+#!/bin/bash
+# Coach Artie management script
+# Usage: artie <command>
+
+set -e
+cd /data2/coachartie2
+
+case "$1" in
+  status|s)
+    pm2 status
+    echo ""
+    echo "Docker services:"
+    docker compose ps --format "table {{.Name}}\t{{.Status}}" 2>/dev/null | grep -v "level=warning"
+    ;;
+
+  logs|l)
+    shift
+    if [ -z "$1" ]; then
+      pm2 logs --lines 50
+    else
+      pm2 logs "coach-artie-$1" --lines 50
+    fi
+    ;;
+
+  restart|r)
+    shift
+    if [ -z "$1" ]; then
+      pm2 restart all
+    else
+      pm2 restart "coach-artie-$1"
+    fi
+    ;;
+
+  deploy|d)
+    echo "Building..."
+    pnpm run build
+    echo "Restarting..."
+    pm2 restart all
+    echo "Done!"
+    pm2 status
+    ;;
+
+  build|b)
+    pnpm run build
+    ;;
+
+  health|h)
+    echo "Capabilities:"
+    curl -s http://localhost:47324/health | jq . 2>/dev/null || echo "  DOWN"
+    echo ""
+    echo "Brain:"
+    curl -s -o /dev/null -w "  HTTP %{http_code}\n" http://localhost:47325 || echo "  DOWN"
+    echo ""
+    echo "Redis:"
+    redis-cli -p 47320 ping 2>/dev/null || echo "  DOWN"
+    ;;
+
+  db)
+    sqlite3 /data2/coachartie2/data/coachartie.db
+    ;;
+
+  backup)
+    BACKUP_DIR="/data2/backups/coachartie"
+    mkdir -p "$BACKUP_DIR"
+    BACKUP_FILE="$BACKUP_DIR/coachartie-$(date +%Y%m%d-%H%M%S).db"
+    sqlite3 /data2/coachartie2/data/coachartie.db ".backup '$BACKUP_FILE'"
+    echo "Backed up to: $BACKUP_FILE"
+    ls -lh "$BACKUP_FILE"
+    ;;
+
+  memories)
+    sqlite3 /data2/coachartie2/data/coachartie.db "SELECT COUNT(*) as count FROM memories;"
+    ;;
+
+  social)
+    grep -i "social\|moltbook" /data2/coachartie2/logs/capabilities-out-0.log | tail -20
+    ;;
+
+  *)
+    echo "Coach Artie Management"
+    echo ""
+    echo "Usage: artie <command>"
+    echo ""
+    echo "Commands:"
+    echo "  status, s          Show all service status"
+    echo "  logs, l [service]  View logs (capabilities, discord, brain, sms)"
+    echo "  restart, r [svc]   Restart all or specific service"
+    echo "  deploy, d          Build and restart all"
+    echo "  build, b           Build only (no restart)"
+    echo "  health, h          Check service health"
+    echo "  db                 Open SQLite shell"
+    echo "  backup             Backup database"
+    echo "  memories           Count memories in DB"
+    echo "  social             View social media behavior logs"
+    echo ""
+    echo "Examples:"
+    echo "  artie status"
+    echo "  artie logs discord"
+    echo "  artie restart capabilities"
+    echo "  artie deploy"
+    ;;
+esac

@@ -63,8 +63,23 @@ export class MemoryService {
     context: string = '',
     importance: number = 5,
     relatedMessageId?: number,
-    explicitTags?: string[]
+    explicitTags?: string[],
+    guildId?: string,
+    channelId?: string
   ): Promise<string> {
+    // Filter out internal markers that should never be stored as memories
+    const trimmedContent = content.trim();
+    if (
+      trimmedContent === '[SILENT]' ||
+      trimmedContent.toLowerCase() === '[silent]' ||
+      trimmedContent.startsWith('<security_reminder>') ||
+      trimmedContent.includes('[USER_MESSAGE]') ||
+      trimmedContent.includes('[SYSTEM:')
+    ) {
+      logger.debug(`⏭️ Skipping memory storage for internal marker: ${trimmedContent.substring(0, 30)}...`);
+      return '⏭️ Skipped: Internal markers are not stored as memories';
+    }
+
     if (this.useHybridLayer) {
       // FAST PATH: Use hybrid data layer for instant storage + background persistence
       try {
@@ -81,6 +96,8 @@ export class MemoryService {
           importance,
           metadata: JSON.stringify({}),
           related_message_id: relatedMessageId ? String(relatedMessageId) : null,
+          guild_id: guildId || null,
+          channel_id: channelId || null,
         };
 
         // Instant hot cache storage + async SQLite persistence
@@ -642,12 +659,22 @@ async function handleMemoryAction(params: MemoryParams, content?: string): Promi
         // Get messageId from params (set by capability orchestrator)
         const relatedMessageId = params.messageId ? parseInt(String(params.messageId)) : undefined;
 
+        // Get explicit tags if provided
+        const explicitTags = Array.isArray(params.tags) ? params.tags : undefined;
+
+        // Get guild/channel scope if provided
+        const guildId = params.guildId ? String(params.guildId) : undefined;
+        const channelId = params.channelId ? String(params.channelId) : undefined;
+
         const result = await memoryService.remember(
           String(userId),
           String(contentToRemember),
           context,
           importance,
-          relatedMessageId
+          relatedMessageId,
+          explicitTags,
+          guildId,
+          channelId
         );
         logger.info(`🎯 Memory remember result: ${result}`);
         return result;

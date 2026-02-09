@@ -2,6 +2,35 @@ import { logger } from '@coachartie/shared';
 import { capabilityRegistry, RegisteredCapability } from './capability-registry.js';
 import { openRouterService } from '../llm/openrouter.js';
 
+// Cache for CAPABILITY_PROMPT_INTRO to avoid repeated database lookups
+let cachedCapabilityIntro: string | null = null;
+let introLastFetched = 0;
+const INTRO_CACHE_TTL = 30 * 60 * 1000; // 30 minutes
+
+/**
+ * Load capability intro from database for consistent decision-making style
+ */
+async function getCapabilityIntro(): Promise<string> {
+  const now = Date.now();
+  if (cachedCapabilityIntro && (now - introLastFetched) < INTRO_CACHE_TTL) {
+    return cachedCapabilityIntro;
+  }
+
+  try {
+    const { promptManager } = await import('../llm/prompt-manager.js');
+    const promptData = await promptManager.getPrompt('CAPABILITY_PROMPT_INTRO');
+    if (promptData?.content) {
+      cachedCapabilityIntro = promptData.content;
+      introLastFetched = now;
+      return cachedCapabilityIntro;
+    }
+  } catch (error) {
+    logger.warn('Capability selector: Could not load CAPABILITY_PROMPT_INTRO from database');
+  }
+
+  return ''; // Empty string if not found - triage works without it
+}
+
 /**
  * Capability Selector - Two-tier capability triage system
  *
@@ -57,8 +86,8 @@ export class CapabilitySelector {
       })
       .join('\n');
 
-    // Build triage prompt
-    const triagePrompt = this.buildTriagePrompt(userMessage, capabilityList, conversationContext);
+    // Build triage prompt (now async to load from database)
+    const triagePrompt = await this.buildTriagePrompt(userMessage, capabilityList, conversationContext);
 
     try {
       // Use FAST_MODEL for cheap triage
@@ -108,18 +137,23 @@ export class CapabilitySelector {
 
   /**
    * Build the triage prompt for FAST_MODEL
+   * Now uses Context Alchemy (CAPABILITY_PROMPT_INTRO) for consistent decision-making
    */
-  private buildTriagePrompt(
+  private async buildTriagePrompt(
     userMessage: string,
     capabilityList: string,
     conversationContext?: string[]
-  ): string {
+  ): Promise<string> {
     const contextSection =
       conversationContext && conversationContext.length > 0
         ? `\nRecent conversation:\n${conversationContext.slice(-3).join('\n')}\n`
         : '';
 
-    return `You are a capability triage system. Your job is to quickly identify which capabilities (if any) are relevant to the user's request.
+    // Load capability intro from database for consistent approach
+    const capabilityIntro = await getCapabilityIntro();
+    const introSection = capabilityIntro ? `\n${capabilityIntro}\n` : '';
+
+    return `You are a capability triage system. Your job is to quickly identify which capabilities (if any) are relevant to the user's request.${introSection}
 
 AVAILABLE CAPABILITIES:
 ${capabilityList}
@@ -235,98 +269,27 @@ RELEVANT CAPABILITIES FOR THIS REQUEST:
   }
 
   /**
-   * Check if a message likely needs capabilities (quick heuristic)
-   * Used to skip expensive triage for obviously simple messages
+   * Check if a message likely needs capabilities
+   * Uses micro-LLM for smart detection instead of keyword heuristics
    */
-  likelyNeedsCapabilities(userMessage: string): boolean {
-    const message = userMessage.toLowerCase();
-
-    // Keywords that suggest capability needs
-    const capabilityKeywords = [
-      'calculate',
-      'remember',
-      'recall',
-      'search',
-      'find',
-      'web',
-      'look up',
-      'save',
-      'store',
-      'todo',
-      'goal',
-      'variable',
-      'set',
-      'get',
-      'create',
-      'delete',
-      'update',
-      'list',
-      'show me',
-      // Laptop/shell/code-related keywords
-      'laptop',
-      'code',
-      'file',
-      'edit',
-      'run',
-      'execute',
-      'script',
-      'terminal',
-      'shell',
-      'command',
-      'git',
-      'npm',
-      'python',
-      'node',
-      'grep',
-      'install',
-      'error',
-      'diagnose',
-      'debug',
-      'logs',
-      'branch',
-      'commit',
-      'diff',
-      'status',
-      'think',
-      'plan',
-      'reasoning',
-      'scratchpad',
-      'context',
-      'where',
-      'directory',
-      // Scheduler-related keywords
-      'remind',
-      'reminder',
-      'alert',
-      'notification',
-      'later',
-      'schedule',
-      'recurring',
-      'repeat',
-      'daily',
-      'weekly',
-      'monthly',
-      'yearly',
-      'cron',
-      'every',
-      'each',
-      'soon',
-      'send me a reminder',
-    ];
-
-    // Check simple keywords
-    if (capabilityKeywords.some((keyword) => message.includes(keyword))) {
-      return true;
+  async likelyNeedsCapabilities(userMessage: string): Promise<boolean> {
+    // Very short messages rarely need capabilities
+    if (userMessage.length < 15) {
+      return false;
     }
 
-    // Check temporal keywords with word boundaries to avoid false matches
-    // (e.g., "at" in "what", "in" in "doing")
-    const temporalPatterns = [
-      /\bat\s+\d+\s*(am|pm|o'clock)/i, // "at 9 AM", "at 2 PM"
-      /\bin\s+(\d+\s*(minutes?|hours?|days?|weeks?|seconds?|months?)|a\s+(few|couple))/i, // "in 5 minutes", "in a day"
-    ];
-
-    return temporalPatterns.some((pattern) => pattern.test(message));
+    try {
+      const { microLLM } = await import('../llm/micro-llm.js');
+      const result = await microLLM.askYesNo(
+        'Does this message need tools like: file operations, web search, memory/recall, calculations, scheduling, or code execution?',
+        userMessage.substring(0, 200),
+        false // Default to no if micro-LLM fails
+      );
+      return result.result;
+    } catch {
+      // If micro-LLM fails, default to true (safer to include capabilities)
+      return true;
+    }
   }
 }
 

@@ -1,14 +1,13 @@
 import { logger } from '@coachartie/shared';
 import { MemoryEntourageInterface, MemoryEntourageResult } from './memory-entourage-interface.js';
 import { MemoryService } from '../../capabilities/memory/memory.js';
-import { vectorEmbeddingService } from './vector-embeddings.js';
 
 /**
- * SemanticMemoryEntourage - Real OpenAI vector-based semantic memory search
+ * SemanticMemoryEntourage - TF-IDF based semantic memory search
  *
- * This layer uses OpenAI's text-embedding-3-small model to find memories
- * that are semantically related through cosine similarity of embeddings.
- * Falls back to TF-IDF when OpenAI API is unavailable.
+ * Uses term frequency-inverse document frequency to find memories
+ * that are semantically related to the user's query.
+ * Simple, fast, no external API dependencies.
  */
 export class SemanticMemoryEntourage implements MemoryEntourageInterface {
   private memoryService: MemoryService;
@@ -16,14 +15,6 @@ export class SemanticMemoryEntourage implements MemoryEntourageInterface {
 
   constructor() {
     this.memoryService = MemoryService.getInstance();
-    // Initialize vector service on construction
-    vectorEmbeddingService
-      .initialize()
-      .catch((_err) =>
-        logger.warn(
-          '🚧 SemanticMemoryEntourage: Vector service init failed, will use TF-IDF fallback'
-        )
-      );
   }
 
   async getMemoryContext(
@@ -47,42 +38,8 @@ export class SemanticMemoryEntourage implements MemoryEntourageInterface {
     }
 
     try {
-      // Try real vector search first if available
-      if (vectorEmbeddingService.isReady()) {
-        logger.info('🧠 SemanticMemoryEntourage: Using real OpenAI vector search');
-
-        const limit = this.getSemanticLimit(options);
-        const vectorResults = await vectorEmbeddingService.findSimilarMemories(
-          userMessage,
-          limit,
-          0.5 // Lower threshold for semantic relevance
-        );
-
-        if (vectorResults.length > 0) {
-          // Format vector search results
-          const formattedContent = this.formatVectorResults(vectorResults, userMessage);
-          const confidence = this.calculateVectorConfidence(vectorResults);
-          const memoryIds = vectorResults.map((r) => r.memory_id.toString());
-
-          logger.info(
-            `🧠 SemanticMemoryEntourage: Found ${vectorResults.length} vector matches (avg similarity: ${(confidence * 100).toFixed(1)}%)`
-          );
-
-          return {
-            content: formattedContent,
-            confidence,
-            memoryCount: vectorResults.length,
-            categories: ['semantic', 'vector_based', 'openai_embeddings'],
-            memoryIds,
-          };
-        }
-      }
-
-      // Fall back to TF-IDF if vector search unavailable or no results
-      logger.info('🧠 SemanticMemoryEntourage: Using TF-IDF fallback for semantic search');
-
-      // Get all memories for the user (we need to analyze them semantically)
-      const allMemoriesResult = await this.memoryService.recall(userId, '', 50); // Get more for analysis
+      // Get all memories for the user
+      const allMemoriesResult = await this.memoryService.recall(userId, '', 50);
       const memories = this.parseMemoryResult(allMemoriesResult);
 
       if (memories.length === 0) {
@@ -95,7 +52,7 @@ export class SemanticMemoryEntourage implements MemoryEntourageInterface {
         };
       }
 
-      // Calculate semantic similarity scores
+      // Calculate semantic similarity scores using TF-IDF
       const semanticMatches = await this.findSemanticMatches(userMessage, memories, options);
 
       if (semanticMatches.length === 0) {
@@ -118,10 +75,9 @@ export class SemanticMemoryEntourage implements MemoryEntourageInterface {
       const categories = this.detectSemanticCategories(semanticMatches);
 
       logger.info(
-        `🧠 SemanticMemoryEntourage: Found ${semanticMatches.length} TF-IDF matches (confidence: ${confidence.toFixed(2)})`
+        `🧠 SemanticMemoryEntourage: Found ${semanticMatches.length} matches (confidence: ${confidence.toFixed(2)})`
       );
 
-      // 🔍 Get memory IDs from semantic matches (using dummy IDs for TF-IDF)
       const memoryIds = semanticMatches.map((_, index) => `tfidf_${index}`);
 
       return {
@@ -145,7 +101,7 @@ export class SemanticMemoryEntourage implements MemoryEntourageInterface {
   }
 
   /**
-   * Find memories with semantic similarity using TF-IDF approach
+   * Find memories with semantic similarity using TF-IDF
    */
   private async findSemanticMatches(
     userMessage: string,
@@ -190,10 +146,10 @@ export class SemanticMemoryEntourage implements MemoryEntourageInterface {
   }
 
   /**
-   * Create TF-IDF vector for text (lightweight semantic representation)
+   * Create TF-IDF vector for text
    */
   private createTfIdfVector(text: string): Map<string, number> {
-    const cacheKey = text.toLowerCase().slice(0, 100); // Cache shorter version
+    const cacheKey = text.toLowerCase().slice(0, 100);
 
     if (this.semanticCache.has(cacheKey)) {
       return new Map(this.semanticCache.get(cacheKey)!.map((val, idx) => [`term_${idx}`, val]));
@@ -207,45 +163,10 @@ export class SemanticMemoryEntourage implements MemoryEntourageInterface {
 
     // Remove common stop words
     const stopWords = new Set([
-      'the',
-      'and',
-      'for',
-      'are',
-      'but',
-      'not',
-      'you',
-      'all',
-      'can',
-      'had',
-      'her',
-      'was',
-      'one',
-      'our',
-      'out',
-      'day',
-      'get',
-      'has',
-      'him',
-      'his',
-      'how',
-      'its',
-      'may',
-      'new',
-      'now',
-      'old',
-      'see',
-      'two',
-      'way',
-      'who',
-      'what',
-      'when',
-      'where',
-      'why',
-      'tell',
-      'about',
-      'said',
-      'each',
-      'which',
+      'the', 'and', 'for', 'are', 'but', 'not', 'you', 'all', 'can', 'had',
+      'her', 'was', 'one', 'our', 'out', 'day', 'get', 'has', 'him', 'his',
+      'how', 'its', 'may', 'new', 'now', 'old', 'see', 'two', 'way', 'who',
+      'what', 'when', 'where', 'why', 'tell', 'about', 'said', 'each', 'which',
     ]);
 
     const filteredWords = words.filter((word) => !stopWords.has(word));
@@ -256,7 +177,7 @@ export class SemanticMemoryEntourage implements MemoryEntourageInterface {
       termFreq.set(word, (termFreq.get(word) || 0) + 1);
     });
 
-    // Normalize by document length (simple TF)
+    // Normalize by document length
     const maxFreq = Math.max(...termFreq.values());
     const normalizedVector = new Map<string, number>();
 
@@ -286,14 +207,12 @@ export class SemanticMemoryEntourage implements MemoryEntourageInterface {
     let normA = 0;
     let normB = 0;
 
-    // Calculate dot product and norms
     for (const term of commonTerms) {
       const valA = vectorA.get(term) || 0;
       const valB = vectorB.get(term) || 0;
       dotProduct += valA * valB;
     }
 
-    // Calculate norms
     for (const val of vectorA.values()) {
       normA += val * val;
     }
@@ -309,7 +228,7 @@ export class SemanticMemoryEntourage implements MemoryEntourageInterface {
   }
 
   /**
-   * Parse memory service result (reuse logic from BasicKeywordMemoryEntourage)
+   * Parse memory service result
    */
   private parseMemoryResult(
     memoryResult: string
@@ -343,13 +262,13 @@ export class SemanticMemoryEntourage implements MemoryEntourageInterface {
         continue;
       }
 
-      // Match metadata lines (📅 date | 🏷️ tags)
+      // Match metadata lines
       const metaMatch = trimmed.match(/📅\s*(.*?)\s*\|\s*🏷️\s*(.*?)(?:\s*\|\s*📝|$)/);
       if (metaMatch && currentMemory) {
         currentMemory.date = metaMatch[1];
         const tagString = metaMatch[2];
         if (tagString && tagString !== 'no tags') {
-          currentMemory.tags = tagString.split(',').map((tag) => tag.trim());
+          currentMemory.tags = tagString.split(',').map((tag: string) => tag.trim());
         }
       }
     }
@@ -374,9 +293,8 @@ export class SemanticMemoryEntourage implements MemoryEntourageInterface {
     const priority = options.priority || 'speed';
     let limit = baseLimits[priority as keyof typeof baseLimits];
 
-    // Adjust for token budget
     if (options.maxTokens) {
-      const tokenBasedLimit = Math.floor(options.maxTokens / 120); // ~120 tokens per semantic memory
+      const tokenBasedLimit = Math.floor(options.maxTokens / 120);
       limit = Math.min(limit, Math.max(1, tokenBasedLimit));
     }
 
@@ -401,18 +319,15 @@ export class SemanticMemoryEntourage implements MemoryEntourageInterface {
       return '';
     }
 
-    // Apply stochastic selection
     const selectedMemories = this.selectSemanticMemoriesWithVariety(matches, maxTokens);
-
-    // Format with semantic context
-    const styles = ['semantic_contextual', 'semantic_direct', 'semantic_analytical'];
+    const styles = ['contextual', 'direct', 'analytical'];
     const style = styles[Math.floor(Math.random() * styles.length)];
 
-    return this.formatBySemanticStyle(selectedMemories, style, userMessage);
+    return this.formatByStyle(selectedMemories, style);
   }
 
   /**
-   * Select semantic memories with stochastic variety
+   * Select memories with stochastic variety
    */
   private selectSemanticMemoriesWithVariety(
     matches: Array<{
@@ -434,16 +349,13 @@ export class SemanticMemoryEntourage implements MemoryEntourageInterface {
       return matches;
     }
 
-    // Always include highest semantic score
     const sorted = [...matches].sort((a, b) => b.semanticScore - a.semanticScore);
     const selected = [sorted[0]];
 
-    // Stochastically select additional matches
     const remaining = sorted.slice(1);
     const maxAdditional = maxTokens ? Math.floor((maxTokens - 120) / 100) : 2;
 
     for (let i = 0; i < Math.min(maxAdditional, remaining.length); i++) {
-      // Weight by semantic score and importance
       const weights = remaining.map((m) => m.semanticScore * 10 + m.importance / 5);
       const totalWeight = weights.reduce((sum, w) => sum + w, 0);
 
@@ -466,9 +378,9 @@ export class SemanticMemoryEntourage implements MemoryEntourageInterface {
   }
 
   /**
-   * Format memories by semantic style
+   * Format memories by style
    */
-  private formatBySemanticStyle(
+  private formatByStyle(
     memories: Array<{
       content: string;
       importance: number;
@@ -476,23 +388,22 @@ export class SemanticMemoryEntourage implements MemoryEntourageInterface {
       tags: string[];
       semanticScore: number;
     }>,
-    style: string,
-    _userMessage: string
+    style: string
   ): string {
     const memoryTexts = memories.map((m) => m.content);
 
     switch (style) {
-      case 'semantic_contextual':
+      case 'contextual':
         return `This reminds me of: ${memoryTexts.join(', and also ')}.`;
 
-      case 'semantic_direct':
+      case 'direct':
         return `Related memories:\n${memoryTexts
           .map(
             (text, i) => `• ${text} (${(memories[i].semanticScore * 100).toFixed(0)}% relevance)`
           )
           .join('\n')}`;
 
-      case 'semantic_analytical': {
+      case 'analytical': {
         const avgScore = memories.reduce((sum, m) => sum + m.semanticScore, 0) / memories.length;
         return `Based on semantic patterns (${(avgScore * 100).toFixed(0)}% relevance): ${memoryTexts.join('. Additionally, ')}.`;
       }
@@ -521,7 +432,6 @@ export class SemanticMemoryEntourage implements MemoryEntourageInterface {
     const avgSemanticScore = matches.reduce((sum, m) => sum + m.semanticScore, 0) / matches.length;
     const avgImportance = matches.reduce((sum, m) => sum + m.importance, 0) / matches.length;
 
-    // Combine semantic score with importance (semantic score is primary)
     const confidence = avgSemanticScore * 0.8 + (avgImportance / 5) * 0.2;
 
     return Math.max(0.1, Math.min(1.0, confidence));
@@ -542,13 +452,11 @@ export class SemanticMemoryEntourage implements MemoryEntourageInterface {
     const categories = new Set<string>();
     categories.add('semantic');
 
-    // Add based on semantic strength
     const highSemanticMatches = matches.filter((m) => m.semanticScore > 0.3);
     if (highSemanticMatches.length > 0) {
       categories.add('high_relevance');
     }
 
-    // Add patterns detected in content
     for (const match of matches) {
       const content = match.content.toLowerCase();
 
@@ -566,60 +474,5 @@ export class SemanticMemoryEntourage implements MemoryEntourageInterface {
     }
 
     return Array.from(categories);
-  }
-
-  /**
-   * Format vector search results with variety
-   */
-  private formatVectorResults(
-    results: Array<{ memory_id: number; similarity_score: number; content: string }>,
-    _userMessage: string
-  ): string {
-    if (results.length === 0) {
-      return '';
-    }
-
-    // Apply stochastic formatting
-    const styles = ['vector_contextual', 'vector_similarity', 'vector_narrative'];
-    const style = styles[Math.floor(Math.random() * styles.length)];
-
-    switch (style) {
-      case 'vector_contextual':
-        return `Based on deep semantic understanding: ${results.map((r) => r.content).join('. Also relevant: ')}.`;
-
-      case 'vector_similarity':
-        return results
-          .map((r) => `${r.content} (${(r.similarity_score * 100).toFixed(0)}% semantic match)`)
-          .join('\n');
-
-      case 'vector_narrative': {
-        const avgSimilarity =
-          results.reduce((sum, r) => sum + r.similarity_score, 0) / results.length;
-        return `Semantically related (${(avgSimilarity * 100).toFixed(0)}% avg relevance): ${results.map((r) => r.content).join(', and ')}.`;
-      }
-
-      default:
-        return results.map((r) => r.content).join('\n');
-    }
-  }
-
-  /**
-   * Calculate confidence from vector similarity scores
-   */
-  private calculateVectorConfidence(
-    results: Array<{ memory_id: number; similarity_score: number; content: string }>
-  ): number {
-    if (results.length === 0) {
-      return 0.0;
-    }
-
-    // Average similarity score represents confidence
-    const avgSimilarity = results.reduce((sum, r) => sum + r.similarity_score, 0) / results.length;
-
-    // Boost confidence if we have multiple high-quality matches
-    const highQualityMatches = results.filter((r) => r.similarity_score > 0.7).length;
-    const boost = Math.min(0.2, highQualityMatches * 0.05);
-
-    return Math.min(1.0, avgSimilarity + boost);
   }
 }

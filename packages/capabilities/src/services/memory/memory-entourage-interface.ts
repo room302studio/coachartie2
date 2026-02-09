@@ -28,6 +28,7 @@ export interface MemoryEntourageInterface {
       maxTokens?: number; // Token budget constraint from Context Alchemy
       priority?: 'speed' | 'accuracy' | 'comprehensive';
       minimal?: boolean; // Match Context Alchemy's minimal mode
+      guildId?: string; // Discord guild scope - include guild-level memories
     }
   ): Promise<MemoryEntourageResult>;
 }

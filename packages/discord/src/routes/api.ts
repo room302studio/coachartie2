@@ -299,6 +299,58 @@ export function createApiRouter(discordClient: Client): Router {
     }
   });
 
+  // POST /api/channels/:channelId/messages - Send a message to a channel
+  router.post('/channels/:channelId/messages', async (req: Request, res: Response) => {
+    try {
+      const { channelId } = req.params;
+      const { content } = req.body;
+
+      if (!content) {
+        return res.status(400).json({
+          success: false,
+          error: 'content is required',
+        });
+      }
+
+      logger.info(`📨 API: Sending message to channel ${channelId}`);
+
+      // Fetch the channel
+      const channel = await discordClient.channels.fetch(channelId);
+      if (!channel) {
+        return res.status(404).json({
+          success: false,
+          error: `Channel ${channelId} not found`,
+        });
+      }
+
+      // Check if it's a text-based channel that supports sending
+      if (!channel.isTextBased() || !('send' in channel)) {
+        return res.status(400).json({
+          success: false,
+          error: `Channel ${channelId} is not a text channel`,
+        });
+      }
+
+      // Send the message (narrowed to channels with send method)
+      const sentMessage = await (channel as any).send(content);
+
+      logger.info(`✅ Message sent to channel ${channelId} (message ID: ${sentMessage.id})`);
+
+      res.json({
+        success: true,
+        id: sentMessage.id,
+        channelId,
+        content: content.substring(0, 100) + (content.length > 100 ? '...' : ''),
+      });
+    } catch (error) {
+      logger.error('Error sending channel message:', error);
+      res.status(500).json({
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  });
+
   // ============================================================================
   // PRESENCE CHECK-IN SYSTEM
   // Two-way contextual check-ins via Discord DM

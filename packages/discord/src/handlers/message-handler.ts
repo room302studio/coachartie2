@@ -1033,7 +1033,7 @@ export function setupMessageHandler(client: Client) {
       const proxyService = getMentionProxyService();
       const mentionedUserIds = Array.from(message.mentions.users.keys());
 
-      const matchedRule = proxyService.findMatchingRule(
+      const matchedRule = await proxyService.findMatchingRule(
         message.content,
         mentionedUserIds,
         message.guildId,
@@ -1117,8 +1117,14 @@ export function setupMessageHandler(client: Client) {
     // Check various response triggers
     const isForum = await isForumThread(message);
     const guildConfig = getGuildConfig(message.guildId);
+
+    // Check for direct @bot mention (exclude role mentions and @everyone/@here)
+    const isDirectBotMention = message.mentions.has(client.user!.id) &&
+      !message.mentions.everyone && // Exclude @everyone and @here
+      !message.content.includes(`<@&`); // Exclude role mentions (format: <@&ROLE_ID>)
+
     const responseConditions = {
-      botMentioned: message.mentions.has(client.user!.id),
+      botMentioned: isDirectBotMention,
       isDM: message.channel.isDMBased(),
       isRobotChannel: isRobotChannelName(message.channel),
       isForumThread: isForum,
@@ -2111,6 +2117,9 @@ async function handleMessageAsIntent(
               }
             }
           : undefined,
+
+        // Context Alchemy: Get the Discord message ID for the response (for feedback correlation)
+        getResponseMessageId: () => streamingMessage?.id,
       },
       {
         enableStreaming: true, // Enable streaming for messages

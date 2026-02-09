@@ -1,5 +1,4 @@
-import { logger, getDb, githubIdentityMappings, type GithubIdentityMapping } from '@coachartie/shared';
-import { eq } from 'drizzle-orm';
+import { logger, getDb, githubIdentityMappings, type GithubIdentityMapping, eq } from '@coachartie/shared';
 import { RegisteredCapability } from '../services/capability/capability-registry.js';
 
 /**

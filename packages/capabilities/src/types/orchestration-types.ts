@@ -38,4 +38,8 @@ export interface OrchestrationContext {
   // to prevent prompt injection from external sources like moltbook
   taintedByExternalContent?: boolean;
   taintSource?: string; // Which capability caused the taint
+
+  // Context Alchemy: Observability trace ID
+  // Links this orchestration to a generation trace for analytics
+  traceId?: string | null;
 }

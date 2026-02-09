@@ -23,6 +23,9 @@ import { processUserIntent } from '../services/user-intent-processor.js';
 // Capabilities service URL (use environment variable or default)
 const CAPABILITIES_URL = process.env.CAPABILITIES_URL || 'http://localhost:47324';
 
+// Import capabilities client for trace feedback correlation
+import { capabilitiesClient } from '../services/capabilities-client.js';
+
 // Reaction trigger emojis
 const REGENERATE_EMOJI = '🔄';
 const THUMBS_UP_EMOJI = '👍';
@@ -500,6 +503,14 @@ async function handleFeedbackReaction(
     undefined,
     true
   );
+
+  // Context Alchemy: Record feedback in trace for observability
+  try {
+    await capabilitiesClient.recordTraceFeedback(reaction.message.id, sentiment, emoji);
+  } catch (error) {
+    // Non-critical - trace feedback is for observability only
+    logger.debug(`Failed to record trace feedback [${shortId}]:`, error);
+  }
 
   // Store memory about this feedback for learning
   try {
