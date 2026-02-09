@@ -963,3 +963,127 @@ apiRouter.post('/eval/suite/quick', async (req: Request, res: Response) => {
     });
   }
 });
+
+// ============================================================================
+// TEST SET MANAGEMENT - Versioned Prompt Sets
+// ============================================================================
+
+// GET /api/eval/suite/test-sets - List all test sets
+apiRouter.get('/eval/suite/test-sets', async (_req: Request, res: Response) => {
+  try {
+    const testSets = await evalSuite.listTestSets();
+    res.json({
+      testSets,
+      count: testSets.length,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error) {
+    logger.error('Failed to list test sets:', error);
+    res.status(500).json({
+      error: 'Failed to list test sets',
+      message: error instanceof Error ? error.message : 'Unknown error',
+    });
+  }
+});
+
+// GET /api/eval/suite/test-sets/:id - Get a specific test set with prompts
+apiRouter.get('/eval/suite/test-sets/:id', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const result = await evalSuite.getTestSet(id);
+
+    if (!result) {
+      res.status(404).json({ error: 'Test set not found' });
+      return;
+    }
+
+    res.json({
+      testSet: result.set,
+      prompts: result.prompts,
+      count: result.prompts.length,
+    });
+  } catch (error) {
+    logger.error('Failed to get test set:', error);
+    res.status(500).json({
+      error: 'Failed to get test set',
+      message: error instanceof Error ? error.message : 'Unknown error',
+    });
+  }
+});
+
+// POST /api/eval/suite/test-sets - Create a new test set
+apiRouter.post('/eval/suite/test-sets', async (req: Request, res: Response) => {
+  try {
+    const { name, description, prompts, isDefault } = req.body as {
+      name: string;
+      description?: string;
+      prompts: Array<{
+        id: string;
+        category: string;
+        difficulty?: string;
+        prompt: string;
+        context?: string;
+      }>;
+      isDefault?: boolean;
+    };
+
+    if (!name || !prompts?.length) {
+      res.status(400).json({
+        error: 'Missing required fields: name, prompts',
+        example: {
+          name: 'My Test Set',
+          description: 'A custom test set',
+          prompts: [
+            { id: 'test-1', category: 'factual', prompt: 'What is 2+2?' },
+          ],
+        },
+      });
+      return;
+    }
+
+    // Normalize prompts
+    const normalizedPrompts = prompts.map(p => ({
+      id: p.id,
+      category: p.category,
+      difficulty: (p.difficulty || 'medium') as 'easy' | 'medium' | 'hard',
+      prompt: p.prompt,
+      context: p.context,
+    }));
+
+    const result = await evalSuite.createTestSet(name, normalizedPrompts, {
+      description,
+      isDefault,
+    });
+
+    res.json({
+      success: true,
+      testSetId: result.id,
+      version: result.version,
+      promptCount: prompts.length,
+    });
+  } catch (error) {
+    logger.error('Failed to create test set:', error);
+    res.status(500).json({
+      error: 'Failed to create test set',
+      message: error instanceof Error ? error.message : 'Unknown error',
+    });
+  }
+});
+
+// POST /api/eval/suite/test-sets/seed-default - Ensure default test set exists
+apiRouter.post('/eval/suite/test-sets/seed-default', async (_req: Request, res: Response) => {
+  try {
+    const result = await evalSuite.getOrCreateDefaultTestSet();
+    res.json({
+      success: true,
+      testSetId: result.id,
+      promptCount: result.prompts.length,
+    });
+  } catch (error) {
+    logger.error('Failed to seed default test set:', error);
+    res.status(500).json({
+      error: 'Failed to seed default test set',
+      message: error instanceof Error ? error.message : 'Unknown error',
+    });
+  }
+});

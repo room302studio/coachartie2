@@ -899,6 +899,161 @@ export const experimentVariants = sqliteTable(
   })
 );
 
+// ============================================================================
+// EVAL SUITE - Test Sets & Prompts (Versioned)
+// ============================================================================
+
+/**
+ * Test Sets - Named collections of test prompts
+ * Each test set is versioned so eval runs can reference specific versions
+ */
+export const testSets = sqliteTable(
+  'test_sets',
+  {
+    id: text('id').primaryKey(), // UUID
+    name: text('name').notNull(),
+    description: text('description'),
+    version: integer('version').notNull().default(1),
+
+    // Metadata
+    createdBy: text('created_by'), // user/system that created it
+    isDefault: integer('is_default', { mode: 'boolean' }).default(false),
+    isActive: integer('is_active', { mode: 'boolean' }).default(true),
+
+    createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
+    updatedAt: text('updated_at').default(sql`CURRENT_TIMESTAMP`),
+  },
+  (table) => ({
+    nameVersionIdx: index('idx_test_sets_name_version').on(table.name, table.version),
+    isDefaultIdx: index('idx_test_sets_is_default').on(table.isDefault),
+  })
+);
+
+/**
+ * Test Prompts - Individual prompts within a test set
+ * Versioned along with their parent test set
+ */
+export const testPrompts = sqliteTable(
+  'test_prompts',
+  {
+    id: text('id').primaryKey(), // UUID
+    testSetId: text('test_set_id')
+      .notNull()
+      .references(() => testSets.id, { onDelete: 'cascade' }),
+
+    promptKey: text('prompt_key').notNull(), // e.g., 'fact-1', 'reasoning-2'
+    category: text('category').notNull(), // 'factual', 'reasoning', 'creative', etc.
+    difficulty: text('difficulty').default('medium'), // 'easy', 'medium', 'hard'
+
+    prompt: text('prompt').notNull(), // The actual prompt text
+    context: text('context'), // Optional context/system prompt additions
+    expectedBehavior: text('expected_behavior'), // What a good response should include
+
+    // For ordering
+    position: integer('position').default(0),
+
+    createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
+  },
+  (table) => ({
+    testSetIdIdx: index('idx_test_prompts_test_set_id').on(table.testSetId),
+    categoryIdx: index('idx_test_prompts_category').on(table.category),
+    promptKeyIdx: index('idx_test_prompts_key').on(table.testSetId, table.promptKey),
+  })
+);
+
+/**
+ * Eval Runs - Records of proactive evaluation runs
+ * Links to a specific test set version
+ */
+export const evalRuns = sqliteTable(
+  'eval_runs',
+  {
+    id: text('id').primaryKey(), // UUID
+    name: text('name').notNull(),
+
+    testSetId: text('test_set_id').references(() => testSets.id),
+    testSetVersion: integer('test_set_version'), // Snapshot of version at run time
+
+    conditionsJson: text('conditions_json').notNull(), // JSON array of Condition objects
+    promptCount: integer('prompt_count').notNull(),
+    generationCount: integer('generation_count').default(0),
+    judgmentCount: integer('judgment_count').default(0),
+
+    resultsJson: text('results_json'), // JSON summary of results
+
+    judgeModel: text('judge_model'), // Which model judged
+
+    startedAt: text('started_at').notNull(),
+    completedAt: text('completed_at'),
+  },
+  (table) => ({
+    testSetIdIdx: index('idx_eval_runs_test_set_id').on(table.testSetId),
+    startedAtIdx: index('idx_eval_runs_started_at').on(table.startedAt),
+  })
+);
+
+/**
+ * Eval Generations - Individual responses generated during eval
+ */
+export const evalGenerations = sqliteTable(
+  'eval_generations',
+  {
+    id: text('id').primaryKey(), // UUID
+    runId: text('run_id')
+      .notNull()
+      .references(() => evalRuns.id, { onDelete: 'cascade' }),
+
+    promptId: text('prompt_id').notNull(), // Key like 'fact-1'
+    conditionId: text('condition_id').notNull(),
+
+    prompt: text('prompt').notNull(),
+    response: text('response').notNull(),
+
+    latencyMs: integer('latency_ms').notNull(),
+    tokenCount: integer('token_count'),
+
+    generatedAt: text('generated_at').notNull(),
+  },
+  (table) => ({
+    runIdIdx: index('idx_eval_generations_run_id').on(table.runId),
+    promptConditionIdx: index('idx_eval_generations_prompt_condition').on(
+      table.runId,
+      table.promptId,
+      table.conditionId
+    ),
+  })
+);
+
+/**
+ * Eval Judgments - Pairwise comparisons from LLM-as-judge
+ */
+export const evalJudgments = sqliteTable(
+  'eval_judgments',
+  {
+    id: text('id').primaryKey(), // UUID
+    runId: text('run_id')
+      .notNull()
+      .references(() => evalRuns.id, { onDelete: 'cascade' }),
+
+    promptId: text('prompt_id').notNull(),
+    conditionA: text('condition_a').notNull(),
+    conditionB: text('condition_b').notNull(),
+    generationA: text('generation_a').notNull(),
+    generationB: text('generation_b').notNull(),
+
+    winner: text('winner').notNull(), // 'A', 'B', or 'tie'
+    confidence: integer('confidence').notNull(), // 1-5
+    reasoning: text('reasoning'),
+
+    judgeModel: text('judge_model').notNull(),
+    judgedAt: text('judged_at').notNull(),
+  },
+  (table) => ({
+    runIdIdx: index('idx_eval_judgments_run_id').on(table.runId),
+    winnerIdx: index('idx_eval_judgments_winner').on(table.runId, table.winner),
+  })
+);
+
 export type GenerationTrace = typeof generationTraces.$inferSelect;
 export type NewGenerationTrace = typeof generationTraces.$inferInsert;
 
@@ -910,3 +1065,18 @@ export type NewExperiment = typeof experiments.$inferInsert;
 
 export type ExperimentVariant = typeof experimentVariants.$inferSelect;
 export type NewExperimentVariant = typeof experimentVariants.$inferInsert;
+
+export type TestSet = typeof testSets.$inferSelect;
+export type NewTestSet = typeof testSets.$inferInsert;
+
+export type TestPrompt = typeof testPrompts.$inferSelect;
+export type NewTestPrompt = typeof testPrompts.$inferInsert;
+
+export type EvalRun = typeof evalRuns.$inferSelect;
+export type NewEvalRun = typeof evalRuns.$inferInsert;
+
+export type EvalGeneration = typeof evalGenerations.$inferSelect;
+export type NewEvalGeneration = typeof evalGenerations.$inferInsert;
+
+export type EvalJudgment = typeof evalJudgments.$inferSelect;
+export type NewEvalJudgment = typeof evalJudgments.$inferInsert;

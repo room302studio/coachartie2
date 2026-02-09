@@ -589,6 +589,145 @@ Be decisive. Only call it a tie if truly equivalent.`;
       results: JSON.parse(run.results_json || '[]'),
     };
   }
+
+  // ============================================================================
+  // TEST SET MANAGEMENT
+  // ============================================================================
+
+  /**
+   * Create a new test set (or new version of existing)
+   */
+  async createTestSet(
+    name: string,
+    prompts: TestPrompt[],
+    options: { description?: string; createdBy?: string; isDefault?: boolean } = {}
+  ): Promise<{ id: string; version: number }> {
+    const db = getSyncDb();
+    const setId = uuidv4();
+
+    // Get next version number for this name
+    const existing = db.get<{ max_version: number }>(
+      `SELECT MAX(version) as max_version FROM test_sets WHERE name = ?`,
+      [name]
+    );
+    const version = (existing?.max_version || 0) + 1;
+
+    // Create test set
+    db.run(
+      `INSERT INTO test_sets (id, name, description, version, created_by, is_default, is_active)
+       VALUES (?, ?, ?, ?, ?, ?, 1)`,
+      [setId, name, options.description || null, version, options.createdBy || null, options.isDefault ? 1 : 0]
+    );
+
+    // Insert prompts
+    for (let i = 0; i < prompts.length; i++) {
+      const p = prompts[i];
+      db.run(
+        `INSERT INTO test_prompts (id, test_set_id, prompt_key, category, difficulty, prompt, context, expected_behavior, position)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [uuidv4(), setId, p.id, p.category, p.difficulty, p.prompt, p.context || null, null, i]
+      );
+    }
+
+    logger.info(`📝 Created test set: ${name} v${version} with ${prompts.length} prompts`);
+    return { id: setId, version };
+  }
+
+  /**
+   * Get a test set by ID or name (latest version if by name)
+   */
+  async getTestSet(idOrName: string): Promise<{ set: { id: string; name: string; version: number }; prompts: TestPrompt[] } | null> {
+    const db = getSyncDb();
+
+    // Try by ID first
+    let set = db.get<{ id: string; name: string; version: number }>(
+      `SELECT id, name, version FROM test_sets WHERE id = ? AND is_active = 1`,
+      [idOrName]
+    );
+
+    // If not found, try by name (latest version)
+    if (!set) {
+      set = db.get<{ id: string; name: string; version: number }>(
+        `SELECT id, name, version FROM test_sets WHERE name = ? AND is_active = 1 ORDER BY version DESC LIMIT 1`,
+        [idOrName]
+      );
+    }
+
+    if (!set) return null;
+
+    // Get prompts
+    const rows = db.all<{
+      prompt_key: string;
+      category: string;
+      difficulty: string;
+      prompt: string;
+      context: string | null;
+    }>(
+      `SELECT prompt_key, category, difficulty, prompt, context
+       FROM test_prompts WHERE test_set_id = ? ORDER BY position`,
+      [set.id]
+    ) || [];
+
+    const prompts: TestPrompt[] = rows.map(r => ({
+      id: r.prompt_key,
+      category: r.category,
+      prompt: r.prompt,
+      difficulty: r.difficulty as 'easy' | 'medium' | 'hard',
+      context: r.context || undefined,
+    }));
+
+    return { set, prompts };
+  }
+
+  /**
+   * List all test sets
+   */
+  async listTestSets(): Promise<Array<{ id: string; name: string; version: number; promptCount: number; isDefault: boolean; createdAt: string }>> {
+    const db = getSyncDb();
+    return db.all(
+      `SELECT ts.id, ts.name, ts.version, ts.is_default as isDefault, ts.created_at as createdAt,
+              (SELECT COUNT(*) FROM test_prompts WHERE test_set_id = ts.id) as promptCount
+       FROM test_sets ts
+       WHERE ts.is_active = 1
+       ORDER BY ts.is_default DESC, ts.created_at DESC`
+    ) || [];
+  }
+
+  /**
+   * Get the default test set, or create it from hardcoded prompts
+   */
+  async getOrCreateDefaultTestSet(): Promise<{ id: string; prompts: TestPrompt[] }> {
+    const db = getSyncDb();
+
+    // Check for existing default
+    const existing = db.get<{ id: string }>(
+      `SELECT id FROM test_sets WHERE is_default = 1 AND is_active = 1 ORDER BY version DESC LIMIT 1`
+    );
+
+    if (existing) {
+      const result = await this.getTestSet(existing.id);
+      if (result) {
+        return { id: result.set.id, prompts: result.prompts };
+      }
+    }
+
+    // Create default from hardcoded prompts
+    logger.info('📝 Creating default test set from hardcoded prompts...');
+    const { id } = await this.createTestSet('Default Artie Eval Set', DEFAULT_TEST_SET, {
+      description: 'Standard test set covering factual, reasoning, creative, emotional, task, and conversational prompts',
+      createdBy: 'system',
+      isDefault: true,
+    });
+
+    return { id, prompts: DEFAULT_TEST_SET };
+  }
+
+  /**
+   * Seed the default test set if it doesn't exist
+   */
+  async ensureDefaultTestSet(): Promise<void> {
+    await this.getOrCreateDefaultTestSet();
+  }
 }
 
 export const evalSuite = EvalSuite.getInstance();
