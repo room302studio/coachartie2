@@ -8,9 +8,12 @@
  * - Deliver proactive insights
  *
  * This is the core of Artie's autonomous behavior.
+ *
+ * IMPORTANT: Only sends proactive DMs to whitelisted users (owner only by default).
+ * See @coachartie/shared config/owner.ts for the whitelist.
  */
 
-import { logger, getSyncDb } from '@coachartie/shared';
+import { logger, getSyncDb, canReceiveProactiveDMs, OWNER_USER_ID } from '@coachartie/shared';
 import { sendDiscordDM } from '../../capabilities/communication/proactive-dm.js';
 
 interface StuckQuest {
@@ -31,6 +34,7 @@ interface UserHeartbeatData {
 
 /**
  * Find users with stalled quests (no progress in 24+ hours)
+ * Only returns whitelisted users who can receive proactive DMs
  */
 function findStalledQuests(): UserHeartbeatData[] {
   try {
@@ -50,6 +54,11 @@ function findStalledQuests(): UserHeartbeatData[] {
     const userQuests = new Map<string, StuckQuest[]>();
 
     for (const row of rows) {
+      // CRITICAL: Only include whitelisted users
+      if (!canReceiveProactiveDMs(row.user_id)) {
+        continue;
+      }
+
       try {
         const metadata = JSON.parse(row.metadata || '{}');
         if (metadata.quest && metadata.quest.status === 'active') {
@@ -83,7 +92,7 @@ function findStalledQuests(): UserHeartbeatData[] {
     for (const [userId, quests] of userQuests) {
       results.push({
         userId,
-        username: userId, // Could enhance with user profile lookup
+        username: userId,
         activeQuests: quests,
         lastActivity: '',
         daysSinceActivity: 0,
@@ -114,6 +123,7 @@ function generateNudgeMessage(quest: StuckQuest): string {
 
 /**
  * Check for users who haven't interacted in a while
+ * Only returns whitelisted users
  */
 function findInactiveUsers(dayThreshold: number = 3): string[] {
   try {
@@ -137,6 +147,7 @@ function findInactiveUsers(dayThreshold: number = 3): string[] {
     const activeSet = new Set(activeUsers.map(u => u.user_id));
     const inactiveWithQuests = questUsers
       .filter(u => !activeSet.has(u.user_id))
+      .filter(u => canReceiveProactiveDMs(u.user_id)) // Only whitelisted users
       .map(u => u.user_id);
 
     return inactiveWithQuests;
@@ -150,6 +161,11 @@ function findInactiveUsers(dayThreshold: number = 3): string[] {
  * Generate daily insights from recent activity
  */
 async function generateDailyInsights(userId: string): Promise<string | null> {
+  // CRITICAL: Only generate for whitelisted users
+  if (!canReceiveProactiveDMs(userId)) {
+    return null;
+  }
+
   try {
     const db = getSyncDb();
     const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
@@ -176,7 +192,7 @@ async function generateDailyInsights(userId: string): Promise<string | null> {
     let insight = `**Your Daily Digest**\n\n`;
 
     if (memoryCount?.count) {
-      insight += `I learned ${memoryCount.count} new thing${memoryCount.count > 1 ? 's' : ''} about you today.\n\n`;
+      insight += `Captured ${memoryCount.count} new memory${memoryCount.count > 1 ? 'ies' : ''} today.\n\n`;
     }
 
     if (gems.length > 0) {
@@ -196,6 +212,8 @@ async function generateDailyInsights(userId: string): Promise<string | null> {
 /**
  * Main heartbeat execution
  * Called by scheduler every hour
+ *
+ * IMPORTANT: Only sends to whitelisted users (owner by default)
  */
 export async function executeHeartbeat(): Promise<{
   questNudges: number;
@@ -211,23 +229,43 @@ export async function executeHeartbeat(): Promise<{
   };
 
   try {
-    // 1. Quest nudges - DISABLED until opt-in system is built
-    // TODO: Only nudge users who have explicitly opted into proactive messages
-    // This should check a user preference before sending ANY unsolicited DMs
+    // 1. Quest nudges - Only for whitelisted users (owner)
     const stalledUsers = findStalledQuests();
-    logger.info(`Heartbeat: Found ${stalledUsers.length} users with stalled quests (NOT sending - needs opt-in)`);
+    logger.info(`Heartbeat: Found ${stalledUsers.length} whitelisted users with stalled quests`);
 
-    // Log but don't send until opt-in is implemented
     for (const userData of stalledUsers) {
       for (const quest of userData.activeQuests) {
-        logger.info(`Heartbeat: Would nudge ${userData.userId} about "${quest.title}" (DISABLED)`);
+        try {
+          const message = generateNudgeMessage(quest);
+          const sent = await sendDiscordDM(userData.userId, message, 'heartbeat-nudge');
+          if (sent) {
+            stats.questNudges++;
+            logger.info(`Heartbeat: Sent quest nudge to ${userData.userId} about "${quest.title}"`);
+          }
+        } catch (error) {
+          logger.error(`Heartbeat: Failed to nudge ${userData.userId}:`, error);
+          stats.errors++;
+        }
       }
     }
 
-    // 2. Daily insights - DISABLED until opt-in system is built
-    // TODO: Only send to users who have explicitly opted in
-    // The previous code was sending to ALL active users which is NOT okay
-    logger.info('Heartbeat: Daily insights DISABLED - needs opt-in system');
+    // 2. Daily insights - Only for owner at specific times (9 AM and 6 PM UTC)
+    const hour = new Date().getUTCHours();
+    if (hour === 9 || hour === 18) {
+      const insight = await generateDailyInsights(OWNER_USER_ID);
+      if (insight) {
+        try {
+          const sent = await sendDiscordDM(OWNER_USER_ID, insight, 'daily-insight');
+          if (sent) {
+            stats.insightsDelivered++;
+            logger.info(`Heartbeat: Sent daily insight to owner`);
+          }
+        } catch (error) {
+          logger.error(`Heartbeat: Failed to send insight to owner:`, error);
+          stats.errors++;
+        }
+      }
+    }
 
     logger.info(`Heartbeat complete: ${stats.questNudges} nudges, ${stats.insightsDelivered} insights, ${stats.errors} errors`);
     return stats;

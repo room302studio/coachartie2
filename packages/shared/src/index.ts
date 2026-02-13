@@ -10,6 +10,9 @@ export * from './services/index.js';
 // Database (Drizzle ORM - SINGLE SOURCE OF TRUTH)
 export * from './db/index.js';
 
+// Owner/Admin configuration
+export * from './config/owner.js';
+
 // Utilities
 export * from './utils/redis.js';
 export * from './utils/logger.js';

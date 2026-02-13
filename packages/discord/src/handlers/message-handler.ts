@@ -10,7 +10,7 @@
  */
 
 import { Client, Events, Message, EmbedBuilder, AttachmentBuilder, ChannelType } from 'discord.js';
-import { logger } from '@coachartie/shared';
+import { logger, canDMForTasks } from '@coachartie/shared';
 import { publishMessage } from '../queues/publisher.js';
 import { telemetry } from '../services/telemetry.js';
 import {
@@ -27,7 +27,10 @@ import {
   shouldRespondToAllInChannel,
   GuildConfig,
 } from '../config/guild-whitelist.js';
-import { getGitHubIntegrationSafe, isGitHubIntegrationReady } from '../services/github-integration.js';
+import {
+  getGitHubIntegrationSafe,
+  isGitHubIntegrationReady,
+} from '../services/github-integration.js';
 import { getForumTraversal } from '../services/forum-traversal.js';
 import { getMentionProxyService } from '../services/mention-proxy-service.js';
 import { quizSessionManager } from '../services/quiz-session-manager.js';
@@ -1119,7 +1122,8 @@ export function setupMessageHandler(client: Client) {
     const guildConfig = getGuildConfig(message.guildId);
 
     // Check for direct @bot mention (exclude role mentions and @everyone/@here)
-    const isDirectBotMention = message.mentions.has(client.user!.id) &&
+    const isDirectBotMention =
+      message.mentions.has(client.user!.id) &&
       !message.mentions.everyone && // Exclude @everyone and @here
       !message.content.includes(`<@&`); // Exclude role mentions (format: <@&ROLE_ID>)
 
@@ -1231,15 +1235,25 @@ export function setupMessageHandler(client: Client) {
     const isRespondToAllChannel = shouldRespondToAllInChannel(message.guildId, channelName);
 
     if (isRespondToAllChannel && channelPersona) {
-      logger.info(`⚖️ Channel persona active: ${channelPersona.personaName} in #${channelName} [${shortId}]`);
+      logger.info(
+        `⚖️ Channel persona active: ${channelPersona.personaName} in #${channelName} [${shortId}]`
+      );
+    }
+
+    // For DMs, only respond to whitelisted users (owner by default)
+    // Others can still interact via mentions in guilds
+    const isDMFromAuthorizedUser = responseConditions.isDM && canDMForTasks(message.author.id);
+
+    if (responseConditions.isDM && !isDMFromAuthorizedUser) {
+      logger.info(`🚫 DM from non-whitelisted user ${message.author.id} - ignoring [${shortId}]`);
     }
 
     const shouldRespond =
       responseConditions.botMentioned ||
-      responseConditions.isDM ||
+      isDMFromAuthorizedUser || // Only respond to DMs from authorized users
       shouldRespondInRobotChannel ||
       responseConditions.isProactiveAnswer ||
-      isRespondToAllChannel; // NEW: Respond to all in channels with respondToAll personas
+      isRespondToAllChannel; // Respond to all in channels with respondToAll personas
 
     try {
       // -------------------------------------------------------------------------
