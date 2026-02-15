@@ -29,7 +29,7 @@ interface BriefingConfig {
 }
 
 interface BriefingSection {
-  type: 'weather' | 'calendar' | 'github' | 'trends' | 'tasks' | 'memories' | 'custom';
+  type: 'weather' | 'calendar' | 'github' | 'trends' | 'tasks' | 'memories' | 'goals' | 'custom';
   enabled: boolean;
   config?: Record<string, unknown>;
 }
@@ -48,6 +48,7 @@ const briefingConfigs = new Map<string, BriefingConfig>();
 
 // Default briefing sections
 const DEFAULT_SECTIONS: BriefingSection[] = [
+  { type: 'goals', enabled: true }, // High-level objectives first
   { type: 'weather', enabled: true },
   { type: 'calendar', enabled: true },
   { type: 'tasks', enabled: true },
@@ -95,6 +96,27 @@ async function generateWeatherSection(_userId: string): Promise<string> {
 async function generateCalendarSection(_userId: string): Promise<string> {
   // TODO: Integrate with calendar capability
   return `**Calendar**: No calendar integration configured yet.`;
+}
+
+/**
+ * Generate goals section - Artie's persistent objectives
+ */
+async function generateGoalsSection(userId: string): Promise<string> {
+  try {
+    const { goalsCapability } = await import('./goals.js');
+    const goalsStatus = await goalsCapability.handler(
+      { action: 'status' },
+      undefined,
+      { userId }
+    );
+
+    if (!goalsStatus.includes('No Active Goals')) {
+      return goalsStatus;
+    }
+  } catch {
+    // Goals system unavailable
+  }
+  return '';
 }
 
 /**
@@ -236,6 +258,10 @@ async function generateBriefing(config: BriefingConfig): Promise<string> {
           break;
         case 'tasks':
           sections.push(await generateTasksSection(config.userId));
+          break;
+        case 'goals':
+          const goalsSection = await generateGoalsSection(config.userId);
+          if (goalsSection) sections.push(goalsSection);
           break;
         case 'trends':
           sections.push(await generateTrendsSection(section.config));

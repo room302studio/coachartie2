@@ -1061,120 +1061,239 @@ export const evalJudgments = sqliteTable(
 /**
  * Conversations - Groups messages into conversation threads
  */
-export const conversations = sqliteTable('conversations', {
-  id: text('id').primaryKey(),
-  userId: text('user_id').notNull(),
-  guildId: text('guild_id'),
-  channelId: text('channel_id'),
-  startedAt: text('started_at').notNull(),
-  lastActivityAt: text('last_activity_at').notNull(),
-  endedAt: text('ended_at'),
-  messageCount: integer('message_count').default(0),
-  turnCount: integer('turn_count').default(0),
-  totalDurationMs: integer('total_duration_ms'),
-  feedbackSentiment: text('feedback_sentiment'),
-  positiveReactions: integer('positive_reactions').default(0),
-  negativeReactions: integer('negative_reactions').default(0),
-  createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
-}, (table) => ({
-  userIdIdx: index('idx_conversations_user_id').on(table.userId),
-  channelIdIdx: index('idx_conversations_channel_id').on(table.channelId),
-  startedAtIdx: index('idx_conversations_started_at').on(table.startedAt),
-}));
+export const conversations = sqliteTable(
+  'conversations',
+  {
+    id: text('id').primaryKey(),
+    userId: text('user_id').notNull(),
+    guildId: text('guild_id'),
+    channelId: text('channel_id'),
+    startedAt: text('started_at').notNull(),
+    lastActivityAt: text('last_activity_at').notNull(),
+    endedAt: text('ended_at'),
+    messageCount: integer('message_count').default(0),
+    turnCount: integer('turn_count').default(0),
+    totalDurationMs: integer('total_duration_ms'),
+    feedbackSentiment: text('feedback_sentiment'),
+    positiveReactions: integer('positive_reactions').default(0),
+    negativeReactions: integer('negative_reactions').default(0),
+    createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
+  },
+  (table) => ({
+    userIdIdx: index('idx_conversations_user_id').on(table.userId),
+    channelIdIdx: index('idx_conversations_channel_id').on(table.channelId),
+    startedAtIdx: index('idx_conversations_started_at').on(table.startedAt),
+  })
+);
 
 /**
  * Capability Invocations - Track every capability execution
  */
-export const capabilityInvocations = sqliteTable('capability_invocations', {
-  id: integer('id').primaryKey({ autoIncrement: true }),
-  traceId: text('trace_id'),
-  capabilityName: text('capability_name').notNull(),
-  action: text('action').notNull(),
-  paramsJson: text('params_json'),
-  resultJson: text('result_json'),
-  startedAt: text('started_at').notNull(),
-  completedAt: text('completed_at'),
-  durationMs: integer('duration_ms'),
-  success: integer('success', { mode: 'boolean' }).default(true),
-  errorType: text('error_type'),
-  errorMessage: text('error_message'),
-  sequenceNumber: integer('sequence_number').default(0),
-  createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
-}, (table) => ({
-  traceIdIdx: index('idx_cap_invocations_trace_id').on(table.traceId),
-  capabilityIdx: index('idx_cap_invocations_capability').on(table.capabilityName, table.action),
-  successIdx: index('idx_cap_invocations_success').on(table.success),
-}));
+export const capabilityInvocations = sqliteTable(
+  'capability_invocations',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    traceId: text('trace_id'),
+    capabilityName: text('capability_name').notNull(),
+    action: text('action').notNull(),
+    paramsJson: text('params_json'),
+    resultJson: text('result_json'),
+    startedAt: text('started_at').notNull(),
+    completedAt: text('completed_at'),
+    durationMs: integer('duration_ms'),
+    success: integer('success', { mode: 'boolean' }).default(true),
+    errorType: text('error_type'),
+    errorMessage: text('error_message'),
+    sequenceNumber: integer('sequence_number').default(0),
+    createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
+  },
+  (table) => ({
+    traceIdIdx: index('idx_cap_invocations_trace_id').on(table.traceId),
+    capabilityIdx: index('idx_cap_invocations_capability').on(table.capabilityName, table.action),
+    successIdx: index('idx_cap_invocations_success').on(table.success),
+  })
+);
 
 /**
  * Memory Events - Track memory lifecycle (create, recall, pin, forget)
  */
-export const memoryEvents = sqliteTable('memory_events', {
-  id: integer('id').primaryKey({ autoIncrement: true }),
-  memoryId: integer('memory_id').notNull(),
-  eventType: text('event_type').notNull(),
-  userId: text('user_id'),
-  traceId: text('trace_id'),
-  query: text('query'),
-  relevanceScore: real('relevance_score'),
-  detailsJson: text('details_json'),
-  createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
-}, (table) => ({
-  memoryIdIdx: index('idx_memory_events_memory_id').on(table.memoryId),
-  eventTypeIdx: index('idx_memory_events_event_type').on(table.eventType),
-  createdAtIdx: index('idx_memory_events_created_at').on(table.createdAt),
-}));
+export const memoryEvents = sqliteTable(
+  'memory_events',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    memoryId: integer('memory_id').notNull(),
+    eventType: text('event_type').notNull(),
+    userId: text('user_id'),
+    traceId: text('trace_id'),
+    query: text('query'),
+    relevanceScore: real('relevance_score'),
+    detailsJson: text('details_json'),
+    createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
+  },
+  (table) => ({
+    memoryIdIdx: index('idx_memory_events_memory_id').on(table.memoryId),
+    eventTypeIdx: index('idx_memory_events_event_type').on(table.eventType),
+    createdAtIdx: index('idx_memory_events_created_at').on(table.createdAt),
+  })
+);
 
 /**
  * Error Events - Structured error logging
  */
-export const errorEvents = sqliteTable('error_events', {
-  id: integer('id').primaryKey({ autoIncrement: true }),
-  errorType: text('error_type').notNull(),
-  errorCode: text('error_code'),
-  severity: text('severity').default('error'),
-  traceId: text('trace_id'),
-  userId: text('user_id'),
-  guildId: text('guild_id'),
-  service: text('service').notNull(),
-  message: text('message'),
-  stackTrace: text('stack_trace'),
-  contextJson: text('context_json'),
-  recovered: integer('recovered', { mode: 'boolean' }).default(false),
-  recoveryAction: text('recovery_action'),
-  retryCount: integer('retry_count').default(0),
-  createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
-}, (table) => ({
-  errorTypeIdx: index('idx_error_events_type').on(table.errorType),
-  serviceIdx: index('idx_error_events_service').on(table.service),
-  severityIdx: index('idx_error_events_severity').on(table.severity),
-  createdAtIdx: index('idx_error_events_created_at').on(table.createdAt),
-}));
+export const errorEvents = sqliteTable(
+  'error_events',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    errorType: text('error_type').notNull(),
+    errorCode: text('error_code'),
+    severity: text('severity').default('error'),
+    traceId: text('trace_id'),
+    userId: text('user_id'),
+    guildId: text('guild_id'),
+    service: text('service').notNull(),
+    message: text('message'),
+    stackTrace: text('stack_trace'),
+    contextJson: text('context_json'),
+    recovered: integer('recovered', { mode: 'boolean' }).default(false),
+    recoveryAction: text('recovery_action'),
+    retryCount: integer('retry_count').default(0),
+    createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
+  },
+  (table) => ({
+    errorTypeIdx: index('idx_error_events_type').on(table.errorType),
+    serviceIdx: index('idx_error_events_service').on(table.service),
+    severityIdx: index('idx_error_events_severity').on(table.severity),
+    createdAtIdx: index('idx_error_events_created_at').on(table.createdAt),
+  })
+);
 
 /**
  * User Sessions - Track user engagement sessions
  */
-export const userSessions = sqliteTable('user_sessions', {
-  id: text('id').primaryKey(),
-  userId: text('user_id').notNull(),
-  guildId: text('guild_id'),
-  startedAt: text('started_at').notNull(),
-  lastActivityAt: text('last_activity_at').notNull(),
-  endedAt: text('ended_at'),
-  messageCount: integer('message_count').default(0),
-  conversationCount: integer('conversation_count').default(0),
-  capabilityUsageCount: integer('capability_usage_count').default(0),
-  totalDurationMs: integer('total_duration_ms'),
-  avgResponseTimeMs: integer('avg_response_time_ms'),
-  positiveReactions: integer('positive_reactions').default(0),
-  negativeReactions: integer('negative_reactions').default(0),
-  createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
-}, (table) => ({
-  userIdIdx: index('idx_user_sessions_user_id').on(table.userId),
-  guildIdIdx: index('idx_user_sessions_guild_id').on(table.guildId),
-  startedAtIdx: index('idx_user_sessions_started_at').on(table.startedAt),
-  endedAtIdx: index('idx_user_sessions_ended_at').on(table.endedAt),
-}));
+export const userSessions = sqliteTable(
+  'user_sessions',
+  {
+    id: text('id').primaryKey(),
+    userId: text('user_id').notNull(),
+    guildId: text('guild_id'),
+    startedAt: text('started_at').notNull(),
+    lastActivityAt: text('last_activity_at').notNull(),
+    endedAt: text('ended_at'),
+    messageCount: integer('message_count').default(0),
+    conversationCount: integer('conversation_count').default(0),
+    capabilityUsageCount: integer('capability_usage_count').default(0),
+    totalDurationMs: integer('total_duration_ms'),
+    avgResponseTimeMs: integer('avg_response_time_ms'),
+    positiveReactions: integer('positive_reactions').default(0),
+    negativeReactions: integer('negative_reactions').default(0),
+    createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
+  },
+  (table) => ({
+    userIdIdx: index('idx_user_sessions_user_id').on(table.userId),
+    guildIdIdx: index('idx_user_sessions_guild_id').on(table.guildId),
+    startedAtIdx: index('idx_user_sessions_started_at').on(table.startedAt),
+    endedAtIdx: index('idx_user_sessions_ended_at').on(table.endedAt),
+  })
+);
+
+// ============================================================================
+// AUTONOMY - Objectives and Hired Tasks
+// ============================================================================
+
+/**
+ * Objectives - Artie's persistent autonomous objectives
+ * Not tasks, but directions Artie works toward over time
+ * (Named 'objectives' to avoid conflict with legacy 'goals' table)
+ */
+export const objectives = sqliteTable(
+  'objectives',
+  {
+    id: text('id').primaryKey(),
+    title: text('title').notNull(),
+    description: text('description'),
+    goalType: text('goal_type').notNull(), // 'project', 'care', 'growth', 'watch', 'relationship', 'learning'
+    successCriteria: text('success_criteria'),
+    owner: text('owner').default('ej'),
+    createdBy: text('created_by').default('ej'), // 'ej' or 'artie'
+    status: text('status').default('active'), // 'dormant', 'active', 'blocked', 'achieved', 'abandoned'
+    progress: integer('progress').default(0), // 0-100
+    targetDate: text('target_date'),
+    lastWorkedAt: text('last_worked_at'),
+    achievedAt: text('achieved_at'),
+    parentGoalId: text('parent_goal_id'),
+    notes: text('notes'),
+    blockers: text('blockers'),
+    budgetEth: real('budget_eth'),
+    budgetSpentEth: real('budget_spent_eth').default(0),
+    createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
+    updatedAt: text('updated_at').default(sql`CURRENT_TIMESTAMP`),
+  },
+  (table) => ({
+    ownerIdx: index('idx_objectives_owner').on(table.owner),
+    statusIdx: index('idx_objectives_status').on(table.status),
+    goalTypeIdx: index('idx_objectives_goal_type').on(table.goalType),
+    parentGoalIdx: index('idx_objectives_parent_goal_id').on(table.parentGoalId),
+  })
+);
+
+/**
+ * Goal Actions - Things Artie does for goals
+ */
+export const goalActions = sqliteTable(
+  'goal_actions',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    goalId: text('goal_id').notNull(),
+    actionType: text('action_type').notNull(), // 'reminder', 'check_in', 'research', 'hire', 'suggest', 'celebrate', 'progress_update'
+    actionDescription: text('action_description'),
+    result: text('result'),
+    triggeredAt: text('triggered_at').default(sql`CURRENT_TIMESTAMP`),
+  },
+  (table) => ({
+    goalIdIdx: index('idx_goal_actions_goal_id').on(table.goalId),
+    actionTypeIdx: index('idx_goal_actions_action_type').on(table.actionType),
+  })
+);
+
+/**
+ * Hired Tasks - Work Artie delegates to humans or agents
+ */
+export const hiredTasks = sqliteTable(
+  'hired_tasks',
+  {
+    id: text('id').primaryKey(),
+    platform: text('platform').notNull(), // 'moltbook', 'mturk', 'freelancer'
+    taskDescription: text('task_description').notNull(),
+    taskType: text('task_type'), // 'research', 'judgment', 'creative', 'verification'
+    budgetEth: real('budget_eth'),
+    budgetUsd: real('budget_usd'),
+    status: text('status').default('open'), // 'open', 'claimed', 'submitted', 'verified', 'paid', 'disputed'
+    workerId: text('worker_id'),
+    workerPlatformId: text('worker_platform_id'),
+    result: text('result'),
+    resultRating: integer('result_rating'), // 1-5
+    parentGoalId: text('parent_goal_id'),
+    postedAt: text('posted_at').default(sql`CURRENT_TIMESTAMP`),
+    claimedAt: text('claimed_at'),
+    submittedAt: text('submitted_at'),
+    paidAt: text('paid_at'),
+    txHash: text('tx_hash'),
+  },
+  (table) => ({
+    platformIdx: index('idx_hired_tasks_platform').on(table.platform),
+    statusIdx: index('idx_hired_tasks_status').on(table.status),
+    parentGoalIdx: index('idx_hired_tasks_parent_goal_id').on(table.parentGoalId),
+  })
+);
+
+export type Objective = typeof objectives.$inferSelect;
+export type NewObjective = typeof objectives.$inferInsert;
+
+export type GoalAction = typeof goalActions.$inferSelect;
+export type NewGoalAction = typeof goalActions.$inferInsert;
+
+export type HiredTask = typeof hiredTasks.$inferSelect;
+export type NewHiredTask = typeof hiredTasks.$inferInsert;
 
 export type GenerationTrace = typeof generationTraces.$inferSelect;
 export type NewGenerationTrace = typeof generationTraces.$inferInsert;

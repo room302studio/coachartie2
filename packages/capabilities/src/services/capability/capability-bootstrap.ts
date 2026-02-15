@@ -44,6 +44,7 @@ import { quizGameCapability } from '../../capabilities/productivity/quiz-game.js
 import { questsCapability } from '../../capabilities/productivity/quests.js';
 import { taskStatusCapability } from '../../capabilities/productivity/task-status.js';
 import { morningBriefingCapability } from '../../capabilities/productivity/morning-briefing.js';
+import { goalsCapability } from '../../capabilities/productivity/goals.js';
 // Discord capabilities
 import { discordUICapability } from '../../capabilities/discord/discord-ui.js';
 import { discordForumsCapability } from '../../capabilities/discord/discord-forums.js';
@@ -321,6 +322,11 @@ export class CapabilityBootstrap {
       logger.info('📦 Registering morning-briefing (daily digest)...');
       capabilityRegistry.register(morningBriefingCapability);
       logger.info('✅ morning-briefing registered successfully');
+
+      // Register goals capability - Artie's autonomous objectives
+      logger.info('📦 Registering goals (autonomous objectives)...');
+      capabilityRegistry.register(goalsCapability);
+      logger.info('✅ goals registered successfully');
 
       // Register cross-agent capabilities - weave VPS Claude and Artie together
       logger.info('📦 Registering kanban (shared task board)...');
