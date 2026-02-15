@@ -11,6 +11,7 @@ import { sequenceCapability } from '../../capabilities/system/sequence.js';
 import { contextCapability } from '../../capabilities/system/context.js';
 import { diagnoseCapability } from '../../capabilities/system/diagnose.js';
 import { userProfileCapability } from '../../capabilities/system/user-profile.js';
+import { autonomousCapability } from '../../capabilities/system/autonomous.js';
 // Web capabilities
 import { webCapability } from '../../capabilities/web/web.js';
 import { httpCapability } from '../../capabilities/web/http.js';
@@ -39,6 +40,9 @@ import { schedulerCapability } from '../../capabilities/productivity/scheduler.j
 import { scratchpadCapability } from '../../capabilities/productivity/scratchpad.js';
 import { flashcardCapability } from '../../capabilities/productivity/flashcard.js';
 import { quizGameCapability } from '../../capabilities/productivity/quiz-game.js';
+import { questsCapability } from '../../capabilities/productivity/quests.js';
+import { taskStatusCapability } from '../../capabilities/productivity/task-status.js';
+import { morningBriefingCapability } from '../../capabilities/productivity/morning-briefing.js';
 // Discord capabilities
 import { discordUICapability } from '../../capabilities/discord/discord-ui.js';
 import { discordForumsCapability } from '../../capabilities/discord/discord-forums.js';
@@ -50,12 +54,14 @@ import { askQuestionCapability } from '../../capabilities/communication/ask-ques
 import { mentionProxyCapability } from '../../capabilities/communication/mention-proxy.js';
 import { emailCapability } from '../../capabilities/communication/email.js';
 import { redditCapability } from '../../capabilities/communication/reddit.js';
+import { proactiveDMCapability } from '../../capabilities/communication/proactive-dm.js';
 // Analytics capabilities
 import { selfStatsCapability } from '../../capabilities/self-stats.js';
 // Social capabilities
 import { moltbookCapability } from '../../capabilities/social/moltbook.js';
 // Research capabilities
 import { deepResearchCapability } from '../../capabilities/research/deep-research.js';
+import { trendWatcherCapability } from '../../capabilities/research/trend-watcher.js';
 // Cross-agent capabilities
 import { kanbanCapability } from '../../capabilities/system/kanban.js';
 import { vpsClaudeCapability } from '../../capabilities/system/vps-claude.js';
@@ -180,6 +186,11 @@ export class CapabilityBootstrap {
       capabilityRegistry.register(emailCapability);
       logger.info('✅ email registered successfully');
 
+      // Register Proactive DM capability - Clawdbot-style proactive messaging
+      logger.info('📦 Registering proactive-dm (proactive messaging)...');
+      capabilityRegistry.register(proactiveDMCapability);
+      logger.info('✅ proactive-dm registered successfully');
+
       // Register User Profile capability for managing user metadata
       logger.info('📦 Registering user-profile...');
       capabilityRegistry.register(userProfileCapability);
@@ -249,6 +260,11 @@ export class CapabilityBootstrap {
       capabilityRegistry.register(diagnoseCapability);
       logger.info('✅ diagnose registered successfully');
 
+      // Register autonomous capability - n8nClaw-style proactive behaviors
+      logger.info('📦 Registering autonomous (proactive behaviors)...');
+      capabilityRegistry.register(autonomousCapability);
+      logger.info('✅ autonomous registered successfully');
+
       // Register n8n browser capability - fetch web pages via n8n
       logger.info('📦 Registering n8n-browser (web fetching)...');
       capabilityRegistry.register(n8nBrowserCapability);
@@ -279,6 +295,26 @@ export class CapabilityBootstrap {
       capabilityRegistry.register(deepResearchCapability);
       logger.info('✅ deep_research registered successfully');
 
+      // Register trend watcher capability - monitor GitHub trending and HN
+      logger.info('📦 Registering trend-watcher (tech trends monitoring)...');
+      capabilityRegistry.register(trendWatcherCapability);
+      logger.info('✅ trend-watcher registered successfully');
+
+      // Register quests capability - multi-step workflow guidance
+      logger.info('📦 Registering quests (workflow guidance)...');
+      capabilityRegistry.register(questsCapability);
+      logger.info('✅ quests registered successfully');
+
+      // Register task status capability - progress updates for long operations
+      logger.info('📦 Registering task-status (progress tracking)...');
+      capabilityRegistry.register(taskStatusCapability);
+      logger.info('✅ task-status registered successfully');
+
+      // Register morning briefing capability - Clawdbot-style daily intelligence
+      logger.info('📦 Registering morning-briefing (daily digest)...');
+      capabilityRegistry.register(morningBriefingCapability);
+      logger.info('✅ morning-briefing registered successfully');
+
       // Register cross-agent capabilities - weave VPS Claude and Artie together
       logger.info('📦 Registering kanban (shared task board)...');
       capabilityRegistry.register(kanbanCapability);
@@ -291,6 +327,19 @@ export class CapabilityBootstrap {
       logger.info('📦 Registering system_memory (cross-agent communication)...');
       capabilityRegistry.register(systemMemoryCapability);
       logger.info('✅ system_memory registered successfully');
+
+      // Initialize OpenClaw-compatible skill system (async, runs after main init)
+      logger.info('🦞 Scheduling OpenClaw skill system initialization...');
+      setImmediate(async () => {
+        try {
+          const { skillRegistry, skillsCapability } = await import('../skills/skill-registry.js');
+          capabilityRegistry.register(skillsCapability);
+          await skillRegistry.initialize();
+          logger.info(`🦞 Skills system ready: ${skillRegistry.size()} skills loaded`);
+        } catch (skillError) {
+          logger.warn('⚠️ Skill system initialization failed (non-fatal):', skillError);
+        }
+      });
 
       const totalCaps = capabilityRegistry.list().length;
       logger.info(
