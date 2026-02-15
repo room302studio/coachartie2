@@ -12,6 +12,7 @@ import { contextCapability } from '../../capabilities/system/context.js';
 import { diagnoseCapability } from '../../capabilities/system/diagnose.js';
 import { userProfileCapability } from '../../capabilities/system/user-profile.js';
 import { autonomousCapability } from '../../capabilities/system/autonomous.js';
+import { pairingCapability } from '../../capabilities/system/pairing.js';
 // Web capabilities
 import { webCapability } from '../../capabilities/web/web.js';
 import { httpCapability } from '../../capabilities/web/http.js';
@@ -195,6 +196,11 @@ export class CapabilityBootstrap {
       logger.info('📦 Registering user-profile...');
       capabilityRegistry.register(userProfileCapability);
       logger.info('✅ user-profile registered successfully');
+
+      // Register Pairing capability for DM access control (OpenClaw-compatible)
+      logger.info('📦 Registering pairing (DM access control)...');
+      capabilityRegistry.register(pairingCapability);
+      logger.info('✅ pairing registered successfully');
 
       // Register MediaWiki capability for editing multiple wikis
       logger.info('📦 Registering mediawiki...');

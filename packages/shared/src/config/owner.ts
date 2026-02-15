@@ -1,23 +1,12 @@
 /**
  * Owner/Admin Configuration
  *
- * EJ is the owner and only user who should receive proactive DMs
- * and have special access to administrative features.
+ * EJ is the owner and always has full access.
+ * Other users can gain DM access via the pairing system.
  */
 
 // EJ's Discord user ID - the owner of Coach Artie
 export const OWNER_USER_ID = '688448399879438340';
-
-// Users who can receive proactive DMs (opt-in whitelist)
-// For now, only the owner. Later this can be expanded with a proper opt-in system.
-export const PROACTIVE_DM_WHITELIST = new Set([
-  OWNER_USER_ID,
-]);
-
-// Users who can DM Artie directly for tasks
-export const DM_TASK_WHITELIST = new Set([
-  OWNER_USER_ID,
-]);
 
 // Admin users who can access admin-only capabilities
 export const ADMIN_USERS = new Set([
@@ -26,16 +15,39 @@ export const ADMIN_USERS = new Set([
 
 /**
  * Check if a user can receive proactive DMs
+ * Owner always can, others need to be on allowlist
  */
 export function canReceiveProactiveDMs(userId: string): boolean {
-  return PROACTIVE_DM_WHITELIST.has(userId);
+  // Owner always receives proactive DMs
+  if (userId === OWNER_USER_ID) return true;
+
+  // For others, check allowlist via pairing service
+  // This is a lazy import to avoid circular deps
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { dmPairingService } = require('../services/dm-pairing.js');
+    return dmPairingService.isAllowed('discord', userId);
+  } catch {
+    return false;
+  }
 }
 
 /**
  * Check if a user can DM Artie for tasks
+ * Owner always can, others checked against pairing allowlist
  */
 export function canDMForTasks(userId: string): boolean {
-  return DM_TASK_WHITELIST.has(userId);
+  // Owner always has DM access
+  if (userId === OWNER_USER_ID) return true;
+
+  // For others, check allowlist
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { dmPairingService } = require('../services/dm-pairing.js');
+    return dmPairingService.isAllowed('discord', userId);
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -50,4 +62,17 @@ export function isAdmin(userId: string): boolean {
  */
 export function isOwner(userId: string): boolean {
   return userId === OWNER_USER_ID;
+}
+
+/**
+ * Get the DM policy for a platform
+ */
+export function getDMPolicy(platform: string = 'discord'): { policy: 'pairing' | 'open' | 'closed'; codeExpiryMinutes: number } {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { dmPairingService } = require('../services/dm-pairing.js');
+    return dmPairingService.getPolicy(platform);
+  } catch {
+    return { policy: 'pairing', codeExpiryMinutes: 60 };
+  }
 }

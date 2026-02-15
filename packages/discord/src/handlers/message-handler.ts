@@ -10,7 +10,7 @@
  */
 
 import { Client, Events, Message, EmbedBuilder, AttachmentBuilder, ChannelType } from 'discord.js';
-import { logger, canDMForTasks } from '@coachartie/shared';
+import { logger, canDMForTasks, getDMPolicy, dmPairingService } from '@coachartie/shared';
 import { publishMessage } from '../queues/publisher.js';
 import { telemetry } from '../services/telemetry.js';
 import {
@@ -1240,17 +1240,52 @@ export function setupMessageHandler(client: Client) {
       );
     }
 
-    // For DMs, only respond to whitelisted users (owner by default)
-    // Others can still interact via mentions in guilds
+    // For DMs, check authorization via pairing system
+    // OpenClaw-compatible: unknown users get pairing code
     const isDMFromAuthorizedUser = responseConditions.isDM && canDMForTasks(message.author.id);
 
     if (responseConditions.isDM && !isDMFromAuthorizedUser) {
-      logger.info(`🚫 DM from non-whitelisted user ${message.author.id} - ignoring [${shortId}]`);
+      const policy = getDMPolicy('discord');
+
+      if (policy.policy === 'open') {
+        // Open mode: treat as authorized
+        logger.info(`🔓 DM from ${message.author.id} - open policy [${shortId}]`);
+      } else if (policy.policy === 'pairing') {
+        // Pairing mode: send pairing code
+        logger.info(`🔐 DM from unknown user ${message.author.id} - sending pairing code [${shortId}]`);
+
+        try {
+          const { code, expiresAt, isNew } = dmPairingService.getOrCreatePairingCode(
+            'discord',
+            message.author.id,
+            message.author.username,
+            message.content
+          );
+
+          const expiresInMinutes = Math.round((expiresAt.getTime() - Date.now()) / 60000);
+          const pairingMessage = dmPairingService.generatePairingMessage('discord', code, expiresInMinutes);
+
+          await message.reply(pairingMessage);
+          telemetry.logEvent('dm_pairing_code_sent', { userId: message.author.id, isNew }, correlationId, message.author.id);
+        } catch (error) {
+          logger.error('Failed to send pairing code:', error);
+        }
+
+        return; // Don't process the message further
+      } else {
+        // Closed mode: silent ignore (current behavior)
+        logger.info(`🚫 DM from non-whitelisted user ${message.author.id} - closed policy [${shortId}]`);
+        return;
+      }
     }
+
+    // Check if DM should be processed (authorized OR open policy)
+    const dmPolicy = responseConditions.isDM ? getDMPolicy('discord') : null;
+    const isDMAllowed = isDMFromAuthorizedUser || (responseConditions.isDM && dmPolicy?.policy === 'open');
 
     const shouldRespond =
       responseConditions.botMentioned ||
-      isDMFromAuthorizedUser || // Only respond to DMs from authorized users
+      isDMAllowed || // Respond to authorized DMs or open policy DMs
       shouldRespondInRobotChannel ||
       responseConditions.isProactiveAnswer ||
       isRespondToAllChannel; // Respond to all in channels with respondToAll personas
