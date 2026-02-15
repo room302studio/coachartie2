@@ -14,7 +14,9 @@
  */
 
 import { logger, getSyncDb, canReceiveProactiveDMs, OWNER_USER_ID } from '@coachartie/shared';
+import type { Objective } from '@coachartie/shared';
 import { sendDiscordDM } from '../../capabilities/communication/proactive-dm.js';
+import { getStalledGoals, logGoalAction } from '../../capabilities/productivity/goals.js';
 
 interface StuckQuest {
   questId: string;
@@ -248,6 +250,30 @@ function findStalledTodos(): Array<{ userId: string; listName: string; pendingCo
 }
 
 /**
+ * Generate a nudge message for a stalled goal
+ */
+function generateGoalNudgeMessage(goal: Objective): string {
+  const lastWorked = goal.lastWorkedAt ? new Date(goal.lastWorkedAt) : new Date(goal.createdAt || Date.now());
+  const staleDays = Math.floor((Date.now() - lastWorked.getTime()) / (24 * 60 * 60 * 1000));
+  const dayText = staleDays === 1 ? 'a day' : `${staleDays} days`;
+
+  const progressBar = '█'.repeat(Math.floor((goal.progress || 0) / 10)) + '░'.repeat(10 - Math.floor((goal.progress || 0) / 10));
+
+  const nudges = [
+    `🎯 Your goal **"${goal.title}"** hasn't seen action in ${dayText}.\n\n[${progressBar}] ${goal.progress || 0}%\n\nWhat's one small thing you could do today to move it forward?`,
+    `Checking in on **"${goal.title}"** - it's been ${dayText} since any progress. Currently at ${goal.progress || 0}%.\n\nNeed help breaking it down into smaller steps?`,
+    `Quick nudge: **"${goal.title}"** is waiting for you! You're at ${goal.progress || 0}%. Say "goals progress ${goal.id.slice(0, 8)} 60" to update your progress.`,
+  ];
+
+  // Add blocker-specific message if goal is blocked
+  if (goal.status === 'blocked' && goal.blockers) {
+    return `🚧 Your goal **"${goal.title}"** is blocked: ${goal.blockers}\n\nCan I help unblock this? Let me know what's in the way.`;
+  }
+
+  return nudges[Math.floor(Math.random() * nudges.length)];
+}
+
+/**
  * Check kanban for cards assigned to Artie
  */
 async function checkKanbanForArtie(): Promise<Array<{ id: string; title: string; lane: string }>> {
@@ -283,6 +309,7 @@ async function checkKanbanForArtie(): Promise<Array<{ id: string; title: string;
 export async function executeHeartbeat(): Promise<{
   questNudges: number;
   todoNudges: number;
+  goalNudges: number;
   kanbanAlerts: number;
   insightsDelivered: number;
   errors: number;
@@ -292,6 +319,7 @@ export async function executeHeartbeat(): Promise<{
   const stats = {
     questNudges: 0,
     todoNudges: 0,
+    goalNudges: 0,
     kanbanAlerts: 0,
     insightsDelivered: 0,
     errors: 0,
@@ -335,14 +363,39 @@ export async function executeHeartbeat(): Promise<{
       }
     }
 
-    // 3. Kanban awareness - check for active cards (once per hour is fine)
+    // 3. Goal nudges - stalled autonomous objectives (3+ days inactive)
+    try {
+      const stalledGoals = await getStalledGoals(OWNER_USER_ID);
+      logger.info(`Heartbeat: Found ${stalledGoals.length} stalled goals`);
+
+      for (const goal of stalledGoals) {
+        try {
+          const message = generateGoalNudgeMessage(goal);
+          const sent = await sendDiscordDM(OWNER_USER_ID, message, 'heartbeat-goal');
+          if (sent) {
+            stats.goalNudges++;
+            // Log the nudge action
+            await logGoalAction(goal.id, 'reminder', 'Sent stalled goal reminder');
+            logger.info(`Heartbeat: Sent goal nudge about "${goal.title}"`);
+          }
+        } catch (error) {
+          logger.error(`Heartbeat: Failed to send goal nudge:`, error);
+          stats.errors++;
+        }
+      }
+    } catch (error) {
+      logger.error('Heartbeat: Failed to check stalled goals:', error);
+      stats.errors++;
+    }
+
+    // 4. Kanban awareness - check for active cards (once per hour is fine)
     const activeCards = await checkKanbanForArtie();
     if (activeCards.length > 0) {
       logger.info(`Heartbeat: ${activeCards.length} active kanban cards`);
       // Don't spam - just log. Owner sees these in briefing.
     }
 
-    // 4. Daily insights - aggregate across all systems (9 AM and 6 PM UTC)
+    // 5. Daily insights - aggregate across all systems (9 AM and 6 PM UTC)
     const hour = new Date().getUTCHours();
     if (hour === 9 || hour === 18) {
       const insight = await generateDailyInsights(OWNER_USER_ID);
@@ -360,7 +413,7 @@ export async function executeHeartbeat(): Promise<{
       }
     }
 
-    logger.info(`Heartbeat complete: ${stats.questNudges} quest nudges, ${stats.todoNudges} todo nudges, ${stats.insightsDelivered} insights, ${stats.errors} errors`);
+    logger.info(`Heartbeat complete: ${stats.questNudges} quest nudges, ${stats.todoNudges} todo nudges, ${stats.goalNudges} goal nudges, ${stats.insightsDelivered} insights, ${stats.errors} errors`);
     return stats;
 
   } catch (error) {
@@ -374,20 +427,23 @@ export async function executeHeartbeat(): Promise<{
  * Quick health check for the heartbeat system
  * Returns status across all meshed task systems
  */
-export function heartbeatStatus(): {
+export async function heartbeatStatus(): Promise<{
   healthy: boolean;
   stalledQuests: number;
   stalledTodos: number;
+  stalledGoals: number;
   inactiveUsers: number;
-} {
+}> {
   const stalledUsers = findStalledQuests();
   const stalledTodos = findStalledTodos();
+  const stalledGoals = await getStalledGoals(OWNER_USER_ID);
   const inactiveUsers = findInactiveUsers();
 
   return {
     healthy: true,
     stalledQuests: stalledUsers.reduce((sum, u) => sum + u.activeQuests.length, 0),
     stalledTodos: stalledTodos.length,
+    stalledGoals: stalledGoals.length,
     inactiveUsers: inactiveUsers.length,
   };
 }
