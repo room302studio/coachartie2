@@ -210,13 +210,80 @@ async function generateDailyInsights(userId: string): Promise<string | null> {
 }
 
 /**
+ * Find stalled todos (lists with pending items not touched in 2+ days)
+ */
+function findStalledTodos(): Array<{ userId: string; listName: string; pendingCount: number; staleDays: number }> {
+  try {
+    const db = getSyncDb();
+    const twoDaysAgo = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString();
+
+    const rows = db.all<{
+      user_id: string;
+      name: string;
+      pending_count: number;
+      updated_at: string;
+    }>(`
+      SELECT tl.user_id, tl.name, tl.updated_at,
+             COUNT(ti.id) as pending_count
+      FROM todo_lists tl
+      JOIN todo_items ti ON tl.id = ti.list_id
+      WHERE ti.status = 'pending'
+        AND tl.updated_at < ?
+      GROUP BY tl.id
+      HAVING pending_count > 0
+    `, [twoDaysAgo]);
+
+    return rows
+      .filter(row => canReceiveProactiveDMs(row.user_id))
+      .map(row => ({
+        userId: row.user_id,
+        listName: row.name,
+        pendingCount: row.pending_count,
+        staleDays: Math.floor((Date.now() - new Date(row.updated_at).getTime()) / (24 * 60 * 60 * 1000)),
+      }));
+  } catch (error) {
+    logger.error('Failed to find stalled todos:', error);
+    return [];
+  }
+}
+
+/**
+ * Check kanban for cards assigned to Artie
+ */
+async function checkKanbanForArtie(): Promise<Array<{ id: string; title: string; lane: string }>> {
+  try {
+    const { execSync } = await import('child_process');
+    const result = execSync('~/scripts/kanban list Active 2>/dev/null || true', {
+      encoding: 'utf-8',
+      timeout: 5000,
+    });
+
+    // Parse kanban CLI output (format: "ID: title [lane]")
+    const cards: Array<{ id: string; title: string; lane: string }> = [];
+    for (const line of result.split('\n')) {
+      const match = line.match(/^(\d+):\s+(.+?)\s+\[(\w+)\]/);
+      if (match) {
+        cards.push({ id: match[1], title: match[2], lane: match[3] });
+      }
+    }
+    return cards;
+  } catch {
+    return [];
+  }
+}
+
+/**
  * Main heartbeat execution
  * Called by scheduler every hour
  *
  * IMPORTANT: Only sends to whitelisted users (owner by default)
+ *
+ * Systems mesh: Aggregates across quests, todos, and kanban
  */
 export async function executeHeartbeat(): Promise<{
   questNudges: number;
+  todoNudges: number;
+  kanbanAlerts: number;
   insightsDelivered: number;
   errors: number;
 }> {
@@ -224,14 +291,16 @@ export async function executeHeartbeat(): Promise<{
 
   const stats = {
     questNudges: 0,
+    todoNudges: 0,
+    kanbanAlerts: 0,
     insightsDelivered: 0,
     errors: 0,
   };
 
   try {
-    // 1. Quest nudges - Only for whitelisted users (owner)
+    // 1. Quest nudges - stalled multi-step journeys
     const stalledUsers = findStalledQuests();
-    logger.info(`Heartbeat: Found ${stalledUsers.length} whitelisted users with stalled quests`);
+    logger.info(`Heartbeat: Found ${stalledUsers.length} users with stalled quests`);
 
     for (const userData of stalledUsers) {
       for (const quest of userData.activeQuests) {
@@ -249,7 +318,31 @@ export async function executeHeartbeat(): Promise<{
       }
     }
 
-    // 2. Daily insights - Only for owner at specific times (9 AM and 6 PM UTC)
+    // 2. Todo nudges - stalled todo lists (not touched in 2+ days)
+    const stalledTodos = findStalledTodos();
+    logger.info(`Heartbeat: Found ${stalledTodos.length} stalled todo lists`);
+
+    for (const todo of stalledTodos) {
+      try {
+        const message = `📋 Your todo list "${todo.listName}" has ${todo.pendingCount} pending items and hasn't been touched in ${todo.staleDays} days. Say "todo status ${todo.listName}" to review.`;
+        const sent = await sendDiscordDM(todo.userId, message, 'heartbeat-todo');
+        if (sent) {
+          stats.todoNudges++;
+        }
+      } catch (error) {
+        logger.error(`Heartbeat: Failed to send todo nudge:`, error);
+        stats.errors++;
+      }
+    }
+
+    // 3. Kanban awareness - check for active cards (once per hour is fine)
+    const activeCards = await checkKanbanForArtie();
+    if (activeCards.length > 0) {
+      logger.info(`Heartbeat: ${activeCards.length} active kanban cards`);
+      // Don't spam - just log. Owner sees these in briefing.
+    }
+
+    // 4. Daily insights - aggregate across all systems (9 AM and 6 PM UTC)
     const hour = new Date().getUTCHours();
     if (hour === 9 || hour === 18) {
       const insight = await generateDailyInsights(OWNER_USER_ID);
@@ -267,7 +360,7 @@ export async function executeHeartbeat(): Promise<{
       }
     }
 
-    logger.info(`Heartbeat complete: ${stats.questNudges} nudges, ${stats.insightsDelivered} insights, ${stats.errors} errors`);
+    logger.info(`Heartbeat complete: ${stats.questNudges} quest nudges, ${stats.todoNudges} todo nudges, ${stats.insightsDelivered} insights, ${stats.errors} errors`);
     return stats;
 
   } catch (error) {
@@ -279,18 +372,22 @@ export async function executeHeartbeat(): Promise<{
 
 /**
  * Quick health check for the heartbeat system
+ * Returns status across all meshed task systems
  */
 export function heartbeatStatus(): {
   healthy: boolean;
   stalledQuests: number;
+  stalledTodos: number;
   inactiveUsers: number;
 } {
   const stalledUsers = findStalledQuests();
+  const stalledTodos = findStalledTodos();
   const inactiveUsers = findInactiveUsers();
 
   return {
     healthy: true,
     stalledQuests: stalledUsers.reduce((sum, u) => sum + u.activeQuests.length, 0),
+    stalledTodos: stalledTodos.length,
     inactiveUsers: inactiveUsers.length,
   };
 }
