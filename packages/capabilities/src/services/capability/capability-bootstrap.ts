@@ -67,6 +67,7 @@ import { trendWatcherCapability } from '../../capabilities/research/trend-watche
 import { kanbanCapability } from '../../capabilities/system/kanban.js';
 import { vpsClaudeCapability } from '../../capabilities/system/vps-claude.js';
 import { systemMemoryCapability } from '../../capabilities/system/system-memory.js';
+import { walletCapability } from '../../capabilities/system/wallet.js';
 // Services
 import { meetingCapability } from '../core/meeting-service.js';
 
@@ -333,6 +334,10 @@ export class CapabilityBootstrap {
       logger.info('📦 Registering system_memory (cross-agent communication)...');
       capabilityRegistry.register(systemMemoryCapability);
       logger.info('✅ system_memory registered successfully');
+
+      logger.info('📦 Registering wallet (crypto autonomy)...');
+      capabilityRegistry.register(walletCapability);
+      logger.info('✅ wallet registered successfully');
 
       // Initialize OpenClaw-compatible skill system (async, runs after main init)
       logger.info('🦞 Scheduling OpenClaw skill system initialization...');
