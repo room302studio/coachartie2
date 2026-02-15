@@ -338,6 +338,22 @@ export class SchedulerService {
           await this.executeMemoryGardening();
           break;
 
+        case 'morning-briefing':
+          await this.executeMorningBriefing(job.data);
+          break;
+
+        case 'trend-digest':
+          await this.executeTrendDigest(job.data);
+          break;
+
+        case 'heartbeat':
+          await this.executeAutonomousHeartbeat();
+          break;
+
+        case 'daily-summarization':
+          await this.executeDailySummarization();
+          break;
+
         default:
           logger.warn(`Unknown scheduled job type: ${jobType} (job name: ${job.name})`);
       }
@@ -507,7 +523,9 @@ export class SchedulerService {
 
     // Check if reflection is enabled
     if (process.env.ENABLE_REFLECTION_CONSOLIDATION !== 'true') {
-      logger.info('⏭️ Reflection consolidation disabled (set ENABLE_REFLECTION_CONSOLIDATION=true to enable)');
+      logger.info(
+        '⏭️ Reflection consolidation disabled (set ENABLE_REFLECTION_CONSOLIDATION=true to enable)'
+      );
       return;
     }
 
@@ -562,12 +580,125 @@ export class SchedulerService {
 
       // Generate weekly digest on Sundays
       const today = new Date().getDay();
-      if (today === 0) { // Sunday
+      if (today === 0) {
+        // Sunday
         const digest = await memoryGardener.generateWeeklyDigest();
-        logger.info(`📋 Weekly digest generated: ${digest.newMemories} new memories, themes: ${digest.topThemes.slice(0, 3).join(', ')}`);
+        logger.info(
+          `📋 Weekly digest generated: ${digest.newMemories} new memories, themes: ${digest.topThemes.slice(0, 3).join(', ')}`
+        );
       }
     } catch (error) {
       logger.error('❌ Memory gardening failed:', error);
+    }
+  }
+
+  /**
+   * Execute morning briefing
+   * Clawdbot-style daily intelligence briefing delivered via DM
+   */
+  private async executeMorningBriefing(data: Record<string, unknown>): Promise<void> {
+    const { userId, channel } = data;
+    logger.info(`☀️ Morning briefing triggered for user ${userId}`);
+
+    try {
+      // Import the briefing capability
+      const { morningBriefingCapability } = await import(
+        '../../capabilities/productivity/morning-briefing.js'
+      );
+
+      // Generate the briefing
+      const briefing = await morningBriefingCapability.handler(
+        { action: 'now' },
+        undefined,
+        { userId: userId as string }
+      );
+
+      // Queue for delivery via Discord DM
+      if (this.discordQueue && (channel === 'discord' || channel === 'both')) {
+        await this.discordQueue.add('send-dm', {
+          userId,
+          content: briefing,
+          source: 'morning-briefing',
+        });
+        logger.info(`✅ Morning briefing queued for Discord delivery to ${userId}`);
+      }
+
+      // TODO: Add SMS delivery when channel === 'sms' or 'both'
+    } catch (error) {
+      logger.error('❌ Morning briefing failed:', error);
+    }
+  }
+
+  /**
+   * Execute trend digest
+   * Scheduled delivery of tech trends (GitHub, HN, etc.)
+   */
+  private async executeTrendDigest(data: Record<string, unknown>): Promise<void> {
+    const { userId, sources, limit } = data;
+    logger.info(`Trend digest triggered for user ${userId}`);
+
+    try {
+      const { trendWatcherCapability } = await import(
+        '../../capabilities/research/trend-watcher.js'
+      );
+
+      const digest = await trendWatcherCapability.handler(
+        {
+          action: 'overview',
+          source: (sources as string) || 'all',
+          limit: (limit as number) || 5,
+        },
+        undefined,
+        { userId: userId as string }
+      );
+
+      // Queue for Discord delivery
+      if (this.discordQueue) {
+        await this.discordQueue.add('send-dm', {
+          userId,
+          content: `**Your Tech Trend Digest**\n\n${digest}`,
+          source: 'trend-digest',
+        });
+        logger.info(`Trend digest queued for delivery to ${userId}`);
+      }
+    } catch (error) {
+      logger.error('Trend digest failed:', error);
+    }
+  }
+
+  /**
+   * Execute autonomous heartbeat
+   * n8nClaw-style hourly check-in that nudges stalled quests and delivers insights
+   */
+  private async executeAutonomousHeartbeat(): Promise<void> {
+    logger.info('Autonomous heartbeat triggered');
+
+    try {
+      const { executeHeartbeat } = await import('../autonomous/heartbeat.js');
+      const result = await executeHeartbeat();
+      logger.info(
+        `Heartbeat complete: ${result.questNudges} nudges, ${result.insightsDelivered} insights, ${result.errors} errors`
+      );
+    } catch (error) {
+      logger.error('Autonomous heartbeat failed:', error);
+    }
+  }
+
+  /**
+   * Execute daily conversation summarization
+   * Creates long-term memory summaries from daily interactions
+   */
+  private async executeDailySummarization(): Promise<void> {
+    logger.info('Daily conversation summarization triggered');
+
+    try {
+      const { runDailySummarization } = await import('../autonomous/conversation-summarizer.js');
+      const result = await runDailySummarization();
+      logger.info(
+        `Summarization complete: ${result.usersProcessed} users, ${result.summariesCreated} summaries`
+      );
+    } catch (error) {
+      logger.error('Daily summarization failed:', error);
     }
   }
 
@@ -656,7 +787,94 @@ export class SchedulerService {
       options: { immediate: false },
     });
 
+    // Autonomous heartbeat - hourly
+    // n8nClaw-style proactive check-ins: nudge stalled quests, deliver insights
+    const heartbeatCron = process.env.HEARTBEAT_CRON || '30 * * * *'; // Every hour at :30
+    await this.scheduleTask({
+      id: 'heartbeat',
+      name: 'heartbeat',
+      cron: heartbeatCron,
+      data: { type: 'heartbeat' },
+      options: { immediate: false },
+    });
+
+    // Daily conversation summarization - 6 AM UTC
+    // Aggregates daily conversations into long-term memory summaries
+    const summarizationCron = process.env.SUMMARIZATION_CRON || '0 6 * * *';
+    await this.scheduleTask({
+      id: 'daily-summarization',
+      name: 'daily-summarization',
+      cron: summarizationCron,
+      data: { type: 'daily-summarization' },
+      options: { immediate: false },
+    });
+
+    // Owner morning briefing - 8 AM Eastern (13:00 UTC)
+    // Clawdbot-style daily intelligence briefing for the owner
+    const { OWNER_USER_ID } = await import('@coachartie/shared');
+    const morningBriefingCron = process.env.MORNING_BRIEFING_CRON || '0 13 * * *';
+    await this.scheduleTask({
+      id: 'owner-morning-briefing',
+      name: 'morning-briefing',
+      cron: morningBriefingCron,
+      data: {
+        type: 'morning-briefing',
+        userId: OWNER_USER_ID,
+        channel: 'discord',
+      },
+      options: { immediate: false, timezone: 'America/New_York' },
+    });
+    logger.info(`☀️ Owner morning briefing scheduled at ${morningBriefingCron}`);
+
+    // Startup notification - let owner know Artie is awake
+    // Only send if ENABLE_STARTUP_NOTIFICATION is true (default: true)
+    if (process.env.ENABLE_STARTUP_NOTIFICATION !== 'false') {
+      await this.sendStartupNotification(OWNER_USER_ID);
+    }
+
     // Tasks scheduled
+  }
+
+  /**
+   * Send startup notification to owner
+   * Clawdbot-style "I'm awake" notification with system status
+   */
+  private async sendStartupNotification(ownerId: string): Promise<void> {
+    if (!this.discordQueue) {
+      logger.warn('Cannot send startup notification - Discord queue not available');
+      return;
+    }
+
+    try {
+      const now = new Date();
+      const timeStr = now.toLocaleTimeString('en-US', {
+        hour: 'numeric',
+        minute: '2-digit',
+        timeZone: 'America/New_York'
+      });
+
+      // Get quick stats
+      const stats = await this.getStats();
+
+      const message = `**System Online** 🟢
+
+Artie capabilities service restarted at ${timeStr} ET.
+
+**Scheduled Tasks**: ${stats.repeatable} active
+**Next Heartbeat**: :30 past the hour
+
+Say "briefing now" for a full status update.`;
+
+      await this.discordQueue.add('send-dm', {
+        userId: ownerId,
+        content: message,
+        source: 'startup-notification',
+      });
+
+      logger.info(`✅ Startup notification queued for owner`);
+    } catch (error) {
+      logger.error('Failed to send startup notification:', error);
+    }
   }
 
   /**
