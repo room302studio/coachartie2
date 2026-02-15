@@ -41,6 +41,12 @@ const ERC20_ABI = [
   'function transfer(address to, uint256 amount) returns (bool)',
 ];
 
+// Base bridge contract on Ethereum mainnet
+const BASE_BRIDGE_ADDRESS = '0x49048044D57e1C92A77f79988d21Fa8fAF74E97e';
+const BASE_BRIDGE_ABI = [
+  'function depositTransaction(address _to, uint256 _value, uint64 _gasLimit, bool _isCreation, bytes _data) payable',
+];
+
 // Daily spending tracker
 interface SpendingTracker {
   date: string;
@@ -203,8 +209,49 @@ async function handleWallet(
         return `**Artie's Wallet Address**\n\n\`${walletData.address}\`\n\nSend ETH or USDC on Ethereum or Base.`;
       }
 
+      case 'bridge': {
+        const { amount } = params;
+        if (!amount) {
+          return 'Need `amount` of ETH to bridge to Base';
+        }
+
+        const amountNum = parseFloat(amount);
+        const estimatedUsd = amountNum * 2000;
+
+        // Check we have enough on mainnet
+        const mainnetProvider = new ethers.JsonRpcProvider(NETWORKS.ethereum.rpc);
+        const balance = await mainnetProvider.getBalance(walletData.address);
+        const balanceEth = parseFloat(ethers.formatEther(balance));
+
+        if (balanceEth < amountNum + 0.001) {
+          return `Insufficient balance. Have ${balanceEth.toFixed(6)} ETH, need ${amountNum} + gas`;
+        }
+
+        if (!checkDailyLimit(estimatedUsd)) {
+          return `Would exceed daily limit of $${DAILY_LIMIT_USD}. Already spent: $${dailySpending.spent.toFixed(2)}`;
+        }
+
+        const wallet = new ethers.Wallet(walletData.privateKey, mainnetProvider);
+        const bridge = new ethers.Contract(BASE_BRIDGE_ADDRESS, BASE_BRIDGE_ABI, wallet);
+
+        // Bridge ETH to Base (same address on L2)
+        const gasLimit = 100000n;
+        const tx = await bridge.depositTransaction(
+          walletData.address,
+          ethers.parseEther(amount),
+          gasLimit,
+          false,
+          '0x',
+          { value: ethers.parseEther(amount) }
+        );
+
+        recordSpending(estimatedUsd);
+
+        return `Bridging ${amount} ETH to Base!\n\nTx: ${tx.hash}\n\nETH will arrive on Base in ~10-20 minutes.\nTrack at: https://etherscan.io/tx/${tx.hash}`;
+      }
+
       default:
-        return `Unknown wallet action: ${action}. Try: balance, send, sign, address`;
+        return `Unknown wallet action: ${action}. Try: balance, send, sign, address, bridge`;
     }
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'Unknown error';
@@ -220,7 +267,8 @@ export const walletCapability: RegisteredCapability = {
 - balance: Check balances across networks
 - send: Send ETH or USDC (daily limit: $${DAILY_LIMIT_USD})
 - sign: Sign messages for authentication
-- address: Show wallet address`,
-  supportedActions: ['balance', 'send', 'sign', 'address'],
+- address: Show wallet address
+- bridge: Bridge ETH from Ethereum to Base (lower fees)`,
+  supportedActions: ['balance', 'send', 'sign', 'address', 'bridge'],
   handler: handleWallet,
 };
