@@ -365,7 +365,7 @@ export async function executeHeartbeat(): Promise<{
 
     // 3. Goal nudges - stalled autonomous objectives (3+ days inactive)
     try {
-      const stalledGoals = await getStalledGoals(OWNER_USER_ID);
+      const stalledGoals = await getStalledGoals('ej'); // Goals use 'ej' as owner
       logger.info(`Heartbeat: Found ${stalledGoals.length} stalled goals`);
 
       for (const goal of stalledGoals) {
@@ -436,7 +436,7 @@ export async function heartbeatStatus(): Promise<{
 }> {
   const stalledUsers = findStalledQuests();
   const stalledTodos = findStalledTodos();
-  const stalledGoals = await getStalledGoals(OWNER_USER_ID);
+  const stalledGoals = await getStalledGoals('ej'); // Goals use 'ej' as owner
   const inactiveUsers = findInactiveUsers();
 
   return {
