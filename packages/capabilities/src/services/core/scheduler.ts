@@ -809,10 +809,10 @@ export class SchedulerService {
       options: { immediate: false },
     });
 
-    // Owner morning briefing - 8 AM Eastern (13:00 UTC)
+    // Owner morning briefing - 8 AM Eastern
     // Clawdbot-style daily intelligence briefing for the owner
     const { OWNER_USER_ID } = await import('@coachartie/shared');
-    const morningBriefingCron = process.env.MORNING_BRIEFING_CRON || '0 13 * * *';
+    const morningBriefingCron = process.env.MORNING_BRIEFING_CRON || '0 8 * * *';
     await this.scheduleTask({
       id: 'owner-morning-briefing',
       name: 'morning-briefing',
@@ -824,7 +824,7 @@ export class SchedulerService {
       },
       options: { immediate: false, timezone: 'America/New_York' },
     });
-    logger.info(`☀️ Owner morning briefing scheduled at ${morningBriefingCron}`);
+    logger.info(`☀️ Owner morning briefing scheduled at ${morningBriefingCron} (America/New_York)`);
 
     // Startup notification - let owner know Artie is awake
     // Only send if ENABLE_STARTUP_NOTIFICATION is true (default: true)

@@ -289,7 +289,8 @@ async function handleMorningBriefing(
   ctx?: CapabilityContext
 ): Promise<string> {
   const { action } = params;
-  const userId = ctx?.userId || 'unknown-user';
+  // Default to 'ej' since morning briefing is primarily for the owner
+  const userId = ctx?.userId || 'ej';
 
   logger.info(`Morning briefing - Action: ${action}, UserId: ${userId}`);
 
