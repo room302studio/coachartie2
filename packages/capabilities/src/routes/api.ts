@@ -1417,3 +1417,58 @@ apiRouter.get('/analytics/traces/with-text', (_req: Request, res: Response) => {
     });
   }
 });
+
+// GET /api/analytics/delivery/stats - Delivery attempt statistics
+apiRouter.get('/analytics/delivery/stats', async (_req: Request, res: Response) => {
+  try {
+    const { deliveryManager } = await import('../services/delivery/index.js');
+    const days = parseInt(_req.query.days as string) || 7;
+    const stats = await deliveryManager.getStats(days);
+
+    res.json({
+      ...stats,
+      period: `${days} days`,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error) {
+    logger.error('Failed to get delivery stats:', error);
+    res.status(500).json({
+      error: 'Failed to get delivery stats',
+      message: error instanceof Error ? error.message : 'Unknown error',
+    });
+  }
+});
+
+// GET /api/analytics/delivery/recent - Recent delivery attempts
+apiRouter.get('/analytics/delivery/recent', (_req: Request, res: Response) => {
+  try {
+    const limit = parseInt(_req.query.limit as string) || 50;
+    const status = _req.query.status as string;
+    const db = getSyncDb();
+
+    let query = `SELECT * FROM delivery_attempts`;
+    const values: unknown[] = [];
+
+    if (status) {
+      query += ` WHERE status = ?`;
+      values.push(status);
+    }
+
+    query += ` ORDER BY created_at DESC LIMIT ?`;
+    values.push(limit);
+
+    const results = db.all(query, values) || [];
+
+    res.json({
+      attempts: results,
+      count: results.length,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error) {
+    logger.error('Failed to get recent delivery attempts:', error);
+    res.status(500).json({
+      error: 'Failed to get recent delivery attempts',
+      message: error instanceof Error ? error.message : 'Unknown error',
+    });
+  }
+});

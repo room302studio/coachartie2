@@ -354,6 +354,10 @@ export class SchedulerService {
           await this.executeDailySummarization();
           break;
 
+        case 'delivery-retries':
+          await this.executeDeliveryRetries();
+          break;
+
         default:
           logger.warn(`Unknown scheduled job type: ${jobType} (job name: ${job.name})`);
       }
@@ -703,6 +707,25 @@ export class SchedulerService {
   }
 
   /**
+   * Execute delivery retry processing
+   * Retries failed message deliveries with exponential backoff
+   */
+  private async executeDeliveryRetries(): Promise<void> {
+    logger.info('Delivery retry processing triggered');
+
+    try {
+      const { deliveryManager } = await import('../delivery/index.js');
+      await deliveryManager.initialize();
+      const result = await deliveryManager.processRetries();
+      logger.info(
+        `Delivery retries: ${result.processed} processed, ${result.succeeded} succeeded, ${result.failed} abandoned`
+      );
+    } catch (error) {
+      logger.error('Delivery retry processing failed:', error);
+    }
+  }
+
+  /**
    * Setup default scheduled tasks
    */
   async setupDefaultTasks(): Promise<void> {
@@ -795,6 +818,17 @@ export class SchedulerService {
       name: 'heartbeat',
       cron: heartbeatCron,
       data: { type: 'heartbeat' },
+      options: { immediate: false },
+    });
+
+    // Delivery retry processing - every 15 minutes
+    // Processes failed deliveries with exponential backoff
+    const deliveryRetryCron = process.env.DELIVERY_RETRY_CRON || '*/15 * * * *';
+    await this.scheduleTask({
+      id: 'delivery-retries',
+      name: 'delivery-retries',
+      cron: deliveryRetryCron,
+      data: { type: 'delivery-retries' },
       options: { immediate: false },
     });
 

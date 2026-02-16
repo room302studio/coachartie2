@@ -17,6 +17,7 @@ import { logger, getSyncDb, canReceiveProactiveDMs, OWNER_USER_ID, getDb, object
 import type { Objective } from '@coachartie/shared';
 import { sendDiscordDM } from '../../capabilities/communication/proactive-dm.js';
 import { getStalledGoals, logGoalAction } from '../../capabilities/productivity/goals.js';
+import { deliveryManager } from '../delivery/index.js';
 
 const NUDGE_COOLDOWN_HOURS = 24;
 
@@ -366,9 +367,13 @@ export async function executeHeartbeat(): Promise<{
     }
 
     // 3. Goal nudges - stalled autonomous objectives (3+ days inactive)
+    // Uses delivery manager for reliable delivery with retry
     try {
       const stalledGoals = await getStalledGoals('ej'); // Goals use 'ej' as owner
       logger.info(`Heartbeat: Found ${stalledGoals.length} stalled goals`);
+
+      // Initialize delivery manager if needed
+      await deliveryManager.initialize();
 
       const db = getDb();
       for (const goal of stalledGoals) {
@@ -383,8 +388,17 @@ export async function executeHeartbeat(): Promise<{
           }
 
           const message = generateGoalNudgeMessage(goal);
-          const sent = await sendDiscordDM(OWNER_USER_ID, message, 'heartbeat-goal');
-          if (sent) {
+
+          // Use delivery manager for reliable delivery with retry
+          const result = await deliveryManager.deliver({
+            messageType: 'goal_nudge',
+            userId: OWNER_USER_ID,
+            content: message,
+            relatedId: goal.id,
+            priority: goal.status === 'blocked' ? 'high' : 'normal',
+          });
+
+          if (result.success) {
             stats.goalNudges++;
 
             // Update lastNudgedAt to prevent spam
@@ -395,6 +409,9 @@ export async function executeHeartbeat(): Promise<{
             // Log the nudge action
             await logGoalAction(goal.id, 'reminder', 'Sent stalled goal reminder');
             logger.info(`Heartbeat: Sent goal nudge about "${goal.title}"`);
+          } else {
+            // Delivery manager will handle retry scheduling
+            logger.warn(`Heartbeat: Goal nudge queued for retry: "${goal.title}" - ${result.error}`);
           }
         } catch (error) {
           logger.error(`Heartbeat: Failed to send goal nudge:`, error);
