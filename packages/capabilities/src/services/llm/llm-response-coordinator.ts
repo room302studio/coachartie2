@@ -5,6 +5,7 @@ import { contextAlchemy } from './context-alchemy.js';
 import { modelAwarePrompter } from '../../utils/model-aware-prompter.js';
 import { preflightAnalyzer } from './preflight-analyzer.js';
 import { experimentManager } from '../context-alchemy/index.js';
+import { errorTracker, ERROR_TYPES } from '../observability/error-tracker.js';
 import {
   ExtractedCapability,
   CapabilityResult,
@@ -59,7 +60,10 @@ export class LLMResponseCoordinator {
               enableRules: variant.config.enableRules,
             };
             if (variant.config.enableMemories === false || variant.config.enableRules === false) {
-              logger.info(`🧪 Experiment ${variant.experimentId}: Feature flags applied`, experimentFeatureFlags);
+              logger.info(
+                `🧪 Experiment ${variant.experimentId}: Feature flags applied`,
+                experimentFeatureFlags
+              );
             }
           }
         } catch (error) {
@@ -137,6 +141,7 @@ export class LLMResponseCoordinator {
           );
     } catch (error: any) {
       const errorMessage = error?.message || String(error);
+      const traceId = message.context?.traceId;
 
       // Check for billing/credit errors (402)
       if (
@@ -145,6 +150,13 @@ export class LLMResponseCoordinator {
         errorMessage.includes('billing')
       ) {
         logger.error('💳 OpenRouter billing error - out of credits', error);
+        await errorTracker.trackError({
+          error,
+          errorType: ERROR_TYPES.LLM_BILLING,
+          service: 'openrouter',
+          severity: 'critical',
+          context: { traceId, userId: message.userId },
+        });
         throw new Error(
           `💳 OUT OF CREDITS: OpenRouter account needs more credits. Visit https://openrouter.ai/settings/credits to add funds.`
         );
@@ -153,6 +165,13 @@ export class LLMResponseCoordinator {
       // Check for rate limiting (429)
       if (errorMessage.includes('429') || errorMessage.includes('rate limit')) {
         logger.error('⏱️ Rate limited by OpenRouter', error);
+        await errorTracker.trackError({
+          error,
+          errorType: ERROR_TYPES.LLM_RATE_LIMIT,
+          service: 'openrouter',
+          severity: 'warning',
+          context: { traceId, userId: message.userId },
+        });
         throw new Error(`⏱️ RATE LIMITED: Too many requests. Please wait a moment and try again.`);
       }
 
@@ -164,6 +183,13 @@ export class LLMResponseCoordinator {
         errorMessage.includes('invalid.*key')
       ) {
         logger.error('🔑 OpenRouter authentication error', error);
+        await errorTracker.trackError({
+          error,
+          errorType: ERROR_TYPES.LLM_AUTH,
+          service: 'openrouter',
+          severity: 'critical',
+          context: { traceId, userId: message.userId },
+        });
         throw new Error(
           `🔑 AUTH ERROR: OpenRouter API key is invalid or missing. Check OPENROUTER_API_KEY environment variable.`
         );
@@ -176,6 +202,13 @@ export class LLMResponseCoordinator {
         errorMessage.includes('fetch failed')
       ) {
         logger.error('🌐 Network error connecting to OpenRouter', error);
+        await errorTracker.trackError({
+          error,
+          errorType: ERROR_TYPES.NETWORK_ERROR,
+          service: 'openrouter',
+          severity: 'error',
+          context: { traceId, userId: message.userId },
+        });
         throw new Error(
           `🌐 NETWORK ERROR: Could not connect to OpenRouter API. Check internet connection.`
         );
@@ -184,6 +217,13 @@ export class LLMResponseCoordinator {
       // Check for model errors
       if (errorMessage.includes('All OpenRouter models failed')) {
         logger.error('🤖 All LLM models failed', error);
+        await errorTracker.trackError({
+          error,
+          errorType: ERROR_TYPES.LLM_MODEL,
+          service: 'openrouter',
+          severity: 'error',
+          context: { traceId, userId: message.userId },
+        });
         throw new Error(`🤖 ALL MODELS FAILED: ${errorMessage}`);
       }
 
@@ -191,6 +231,13 @@ export class LLMResponseCoordinator {
       logger.error('❌ LLM request failed with unknown error', {
         error: errorMessage,
         stack: error?.stack,
+      });
+      await errorTracker.trackError({
+        error,
+        errorType: ERROR_TYPES.UNKNOWN,
+        service: 'openrouter',
+        severity: 'error',
+        context: { traceId, userId: message.userId },
       });
       throw new Error(`❌ LLM ERROR: ${errorMessage.substring(0, 200)}`);
     }

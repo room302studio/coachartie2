@@ -1173,3 +1173,247 @@ apiRouter.get('/memories/recall-history', (_req: Request, res: Response) => {
     });
   }
 });
+
+// ============================================================================
+// EXTENDED OBSERVABILITY - Sessions, Capabilities, Errors
+// ============================================================================
+
+// GET /api/analytics/sessions/daily-active-users - DAU over time
+apiRouter.get('/analytics/sessions/daily-active-users', (_req: Request, res: Response) => {
+  try {
+    const days = parseInt(_req.query.days as string) || 30;
+    const db = getSyncDb();
+
+    const results = db.all(
+      `SELECT
+        DATE(started_at) as date,
+        COUNT(DISTINCT user_id) as dau,
+        COUNT(*) as sessions,
+        SUM(message_count) as total_messages
+      FROM user_sessions
+      WHERE started_at > datetime('now', '-' || ? || ' days')
+      GROUP BY DATE(started_at)
+      ORDER BY date DESC`,
+      [days]
+    ) || [];
+
+    res.json({
+      data: results,
+      days,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error) {
+    logger.error('Failed to get DAU:', error);
+    res.status(500).json({
+      error: 'Failed to get DAU',
+      message: error instanceof Error ? error.message : 'Unknown error',
+    });
+  }
+});
+
+// GET /api/analytics/sessions/duration-distribution - Session length distribution
+apiRouter.get('/analytics/sessions/duration-distribution', (_req: Request, res: Response) => {
+  try {
+    const db = getSyncDb();
+
+    const results = db.all(
+      `SELECT
+        CASE
+          WHEN total_duration_ms < 60000 THEN '<1min'
+          WHEN total_duration_ms < 300000 THEN '1-5min'
+          WHEN total_duration_ms < 900000 THEN '5-15min'
+          WHEN total_duration_ms < 1800000 THEN '15-30min'
+          ELSE '>30min'
+        END as duration_bucket,
+        COUNT(*) as sessions,
+        AVG(message_count) as avg_messages
+      FROM user_sessions
+      WHERE ended_at IS NOT NULL
+        AND started_at > datetime('now', '-7 days')
+      GROUP BY duration_bucket
+      ORDER BY
+        CASE duration_bucket
+          WHEN '<1min' THEN 1
+          WHEN '1-5min' THEN 2
+          WHEN '5-15min' THEN 3
+          WHEN '15-30min' THEN 4
+          ELSE 5
+        END`
+    ) || [];
+
+    res.json({
+      distribution: results,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error) {
+    logger.error('Failed to get session distribution:', error);
+    res.status(500).json({
+      error: 'Failed to get session distribution',
+      message: error instanceof Error ? error.message : 'Unknown error',
+    });
+  }
+});
+
+// GET /api/analytics/capabilities/usage - Capability usage statistics
+apiRouter.get('/analytics/capabilities/usage', (_req: Request, res: Response) => {
+  try {
+    const days = parseInt(_req.query.days as string) || 7;
+    const db = getSyncDb();
+
+    const results = db.all(
+      `SELECT
+        capability_name,
+        action,
+        COUNT(*) as total,
+        SUM(CASE WHEN success = 0 THEN 1 ELSE 0 END) as failures,
+        ROUND(AVG(duration_ms), 0) as avg_duration_ms,
+        MAX(duration_ms) as max_duration_ms
+      FROM capability_invocations
+      WHERE started_at > datetime('now', '-' || ? || ' days')
+      GROUP BY capability_name, action
+      ORDER BY total DESC
+      LIMIT 50`,
+      [days]
+    ) || [];
+
+    res.json({
+      capabilities: results.map((r: Record<string, unknown>) => ({
+        name: r.capability_name,
+        action: r.action,
+        total: r.total,
+        failures: r.failures || 0,
+        failureRate: (r.total as number) > 0
+          ? Math.round(((r.failures as number || 0) / (r.total as number)) * 100)
+          : 0,
+        avgDurationMs: r.avg_duration_ms,
+        maxDurationMs: r.max_duration_ms,
+      })),
+      days,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error) {
+    logger.error('Failed to get capability usage:', error);
+    res.status(500).json({
+      error: 'Failed to get capability usage',
+      message: error instanceof Error ? error.message : 'Unknown error',
+    });
+  }
+});
+
+// GET /api/analytics/errors/by-type - Error breakdown by type
+apiRouter.get('/analytics/errors/by-type', (_req: Request, res: Response) => {
+  try {
+    const days = parseInt(_req.query.days as string) || 7;
+    const db = getSyncDb();
+
+    const results = db.all(
+      `SELECT
+        error_type,
+        service,
+        severity,
+        COUNT(*) as count,
+        SUM(CASE WHEN recovered = 1 THEN 1 ELSE 0 END) as recovered
+      FROM error_events
+      WHERE created_at > datetime('now', '-' || ? || ' days')
+      GROUP BY error_type, service, severity
+      ORDER BY count DESC`,
+      [days]
+    ) || [];
+
+    res.json({
+      errors: results,
+      days,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error) {
+    logger.error('Failed to get errors by type:', error);
+    res.status(500).json({
+      error: 'Failed to get errors by type',
+      message: error instanceof Error ? error.message : 'Unknown error',
+    });
+  }
+});
+
+// GET /api/analytics/errors/recent - Recent errors
+apiRouter.get('/analytics/errors/recent', (_req: Request, res: Response) => {
+  try {
+    const limit = parseInt(_req.query.limit as string) || 50;
+    const db = getSyncDb();
+
+    const results = db.all(
+      `SELECT
+        id, error_type, error_code, severity, service,
+        message, recovered, recovery_action, retry_count,
+        created_at, trace_id, user_id
+      FROM error_events
+      ORDER BY created_at DESC
+      LIMIT ?`,
+      [limit]
+    ) || [];
+
+    res.json({
+      errors: results,
+      count: results.length,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error) {
+    logger.error('Failed to get recent errors:', error);
+    res.status(500).json({
+      error: 'Failed to get recent errors',
+      message: error instanceof Error ? error.message : 'Unknown error',
+    });
+  }
+});
+
+// GET /api/analytics/traces/with-text - Get traces with input/response text for debugging
+apiRouter.get('/analytics/traces/with-text', (_req: Request, res: Response) => {
+  try {
+    const limit = parseInt(_req.query.limit as string) || 20;
+    const sentiment = _req.query.sentiment as string;
+    const db = getSyncDb();
+
+    let query = `SELECT
+      id, user_id, guild_id, started_at, duration_ms,
+      model_used, success, error_type,
+      feedback_sentiment, feedback_emoji,
+      input_text, response_text
+    FROM generation_traces
+    WHERE input_text IS NOT NULL OR response_text IS NOT NULL`;
+
+    const values: unknown[] = [];
+    if (sentiment === 'positive' || sentiment === 'negative') {
+      query += ` AND feedback_sentiment = ?`;
+      values.push(sentiment);
+    }
+
+    query += ` ORDER BY started_at DESC LIMIT ?`;
+    values.push(limit);
+
+    const results = db.all(query, values) || [];
+
+    res.json({
+      traces: results.map((r: Record<string, unknown>) => ({
+        id: r.id,
+        userId: r.user_id,
+        guildId: r.guild_id,
+        startedAt: r.started_at,
+        durationMs: r.duration_ms,
+        modelUsed: r.model_used,
+        success: r.success,
+        errorType: r.error_type,
+        feedbackSentiment: r.feedback_sentiment,
+        feedbackEmoji: r.feedback_emoji,
+        inputText: r.input_text,
+        responseText: r.response_text,
+      })),
+      count: results.length,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error) {
+    logger.error('Failed to get traces with text:', error);
+    res.status(500).json({
+      error: 'Failed to get traces with text',
+      message: error instanceof Error ? error.message : 'Unknown error',
+    });
+  }
+});
