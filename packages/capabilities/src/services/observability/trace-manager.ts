@@ -38,6 +38,8 @@ export interface TraceUpdateData {
   responseLength?: number;
   responseTokens?: number;
   estimatedCost?: number;
+  responseText?: string; // Full response text for debugging
+  inputText?: string; // User's original message
   experimentId?: string;
   variantId?: string;
   success?: boolean;
@@ -92,7 +94,14 @@ class TraceManager {
       db.run(
         `INSERT INTO generation_traces (id, message_id, user_id, guild_id, channel_id, started_at)
          VALUES (?, ?, ?, ?, ?, ?)`,
-        [traceId, data.messageId, data.userId, data.guildId || null, data.channelId || null, startedAt]
+        [
+          traceId,
+          data.messageId,
+          data.userId,
+          data.guildId || null,
+          data.channelId || null,
+          startedAt,
+        ]
       );
 
       logger.debug(`📊 Trace created: ${traceId.slice(0, 8)}... for message ${data.messageId}`);
@@ -163,6 +172,16 @@ class TraceManager {
         setClauses.push('estimated_cost = ?');
         values.push(updates.estimatedCost);
       }
+      if (updates.responseText !== undefined) {
+        setClauses.push('response_text = ?');
+        // Truncate to 10KB max to avoid bloating DB
+        values.push(updates.responseText.slice(0, 10000));
+      }
+      if (updates.inputText !== undefined) {
+        setClauses.push('input_text = ?');
+        // Truncate to 4KB max
+        values.push(updates.inputText.slice(0, 4000));
+      }
       if (updates.experimentId !== undefined) {
         setClauses.push('experiment_id = ?');
         values.push(updates.experimentId);
@@ -190,10 +209,7 @@ class TraceManager {
 
       values.push(traceId);
 
-      db.run(
-        `UPDATE generation_traces SET ${setClauses.join(', ')} WHERE id = ?`,
-        values
-      );
+      db.run(`UPDATE generation_traces SET ${setClauses.join(', ')} WHERE id = ?`, values);
 
       logger.debug(`📊 Trace updated: ${traceId.slice(0, 8)}...`);
     } catch (error) {
@@ -213,12 +229,14 @@ class TraceManager {
 
     try {
       const db = getSyncDb();
-      db.run(
-        `UPDATE generation_traces SET discord_message_id = ? WHERE id = ?`,
-        [discordMessageId, traceId]
-      );
+      db.run(`UPDATE generation_traces SET discord_message_id = ? WHERE id = ?`, [
+        discordMessageId,
+        traceId,
+      ]);
 
-      logger.debug(`📊 Trace ${traceId.slice(0, 8)}... linked to Discord message ${discordMessageId}`);
+      logger.debug(
+        `📊 Trace ${traceId.slice(0, 8)}... linked to Discord message ${discordMessageId}`
+      );
     } catch (error) {
       logger.error('Failed to link Discord message:', error);
     }
@@ -249,7 +267,9 @@ class TraceManager {
       );
 
       if (result.changes > 0) {
-        logger.info(`📊 Feedback recorded: ${sentiment} (${emoji}) for message ${discordMessageId}`);
+        logger.info(
+          `📊 Feedback recorded: ${sentiment} (${emoji}) for message ${discordMessageId}`
+        );
 
         // Also update experiment variant stats if applicable
         const trace = db.get<{ experiment_id: string | null; variant_id: string | null }>(
@@ -259,11 +279,12 @@ class TraceManager {
 
         if (trace?.experiment_id && trace.variant_id) {
           const column = sentiment === 'positive' ? 'positive_count' : 'negative_count';
-          db.run(
-            `UPDATE experiment_variants SET ${column} = ${column} + 1 WHERE id = ?`,
-            [trace.variant_id]
+          db.run(`UPDATE experiment_variants SET ${column} = ${column} + 1 WHERE id = ?`, [
+            trace.variant_id,
+          ]);
+          logger.debug(
+            `📊 Updated experiment ${trace.experiment_id} variant ${trace.variant_id} ${sentiment} count`
           );
-          logger.debug(`📊 Updated experiment ${trace.experiment_id} variant ${trace.variant_id} ${sentiment} count`);
         }
       }
     } catch (error) {
@@ -317,10 +338,10 @@ class TraceManager {
 
     try {
       const db = getSyncDb();
-      db.run(
-        `UPDATE context_snapshots SET full_response = ? WHERE trace_id = ?`,
-        [response, traceId]
-      );
+      db.run(`UPDATE context_snapshots SET full_response = ? WHERE trace_id = ?`, [
+        response,
+        traceId,
+      ]);
     } catch (error) {
       logger.error('Failed to update snapshot response:', error);
     }
@@ -332,10 +353,7 @@ class TraceManager {
   async getTrace(traceId: string): Promise<any | null> {
     try {
       const db = getSyncDb();
-      return db.get(
-        `SELECT * FROM generation_traces WHERE id = ?`,
-        [traceId]
-      );
+      return db.get(`SELECT * FROM generation_traces WHERE id = ?`, [traceId]);
     } catch (error) {
       logger.error('Failed to get trace:', error);
       return null;
@@ -345,14 +363,16 @@ class TraceManager {
   /**
    * Get traces with optional filtering
    */
-  async getTraces(options: {
-    guildId?: string;
-    userId?: string;
-    sentiment?: 'positive' | 'negative' | null;
-    experimentId?: string;
-    limit?: number;
-    offset?: number;
-  } = {}): Promise<any[]> {
+  async getTraces(
+    options: {
+      guildId?: string;
+      userId?: string;
+      sentiment?: 'positive' | 'negative' | null;
+      experimentId?: string;
+      limit?: number;
+      offset?: number;
+    } = {}
+  ): Promise<any[]> {
     try {
       const db = getSyncDb();
       const conditions: string[] = [];
@@ -383,10 +403,12 @@ class TraceManager {
       const limit = options.limit || 50;
       const offset = options.offset || 0;
 
-      return db.all(
-        `SELECT * FROM generation_traces ${whereClause} ORDER BY started_at DESC LIMIT ? OFFSET ?`,
-        [...values, limit, offset]
-      ) || [];
+      return (
+        db.all(
+          `SELECT * FROM generation_traces ${whereClause} ORDER BY started_at DESC LIMIT ? OFFSET ?`,
+          [...values, limit, offset]
+        ) || []
+      );
     } catch (error) {
       logger.error('Failed to get traces:', error);
       return [];
@@ -396,10 +418,12 @@ class TraceManager {
   /**
    * Get analytics summary for a time period
    */
-  async getAnalyticsSummary(options: {
-    guildId?: string;
-    days?: number;
-  } = {}): Promise<{
+  async getAnalyticsSummary(
+    options: {
+      guildId?: string;
+      days?: number;
+    } = {}
+  ): Promise<{
     totalGenerations: number;
     feedbackRate: number;
     positiveRate: number;

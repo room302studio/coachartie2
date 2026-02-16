@@ -13,12 +13,12 @@ import { v4 as uuidv4 } from 'uuid';
 
 // Evaluation dimensions - each scored 1-5
 export interface EvalDimensions {
-  helpfulness: number;      // Did it answer the question/request?
-  accuracy: number;         // Is the information correct?
-  relevance: number;        // Is the response on-topic?
-  coherence: number;        // Is it well-structured and clear?
-  tone: number;             // Is the tone appropriate (friendly, professional)?
-  conciseness: number;      // Is it appropriately brief (not verbose)?
+  helpfulness: number; // Did it answer the question/request?
+  accuracy: number; // Is the information correct?
+  relevance: number; // Is the response on-topic?
+  coherence: number; // Is it well-structured and clear?
+  tone: number; // Is the tone appropriate (friendly, professional)?
+  conciseness: number; // Is it appropriately brief (not verbose)?
 }
 
 export interface EvalResult {
@@ -33,12 +33,12 @@ export interface EvalResult {
 
   // Scores
   dimensions: EvalDimensions;
-  overallScore: number;     // Weighted average
+  overallScore: number; // Weighted average
 
   // Metadata
   judgeModel: string;
   evaluatedAt: string;
-  rawJudgment: string;      // Full LLM response for debugging
+  rawJudgment: string; // Full LLM response for debugging
 }
 
 export interface PairwiseResult {
@@ -60,7 +60,7 @@ export interface PairwiseResult {
   winner: 'A' | 'B' | 'tie';
   winnerVariantId: string | null;
   reasoning: string;
-  confidence: number;       // 1-5 how confident is the judge
+  confidence: number; // 1-5 how confident is the judge
 
   // Metadata
   judgeModel: string;
@@ -70,11 +70,11 @@ export interface PairwiseResult {
 // Weights for overall score calculation
 const DIMENSION_WEIGHTS: Record<keyof EvalDimensions, number> = {
   helpfulness: 0.25,
-  accuracy: 0.20,
-  relevance: 0.20,
+  accuracy: 0.2,
+  relevance: 0.2,
   coherence: 0.15,
-  tone: 0.10,
-  conciseness: 0.10,
+  tone: 0.1,
+  conciseness: 0.1,
 };
 
 class EvalHarness {
@@ -137,8 +137,11 @@ DIMENSION DEFINITIONS:
 
       const judgment = await openRouterService.generateFromMessageChain(
         [
-          { role: 'system', content: 'You are an expert evaluator of AI responses. Output only valid JSON.' },
-          { role: 'user', content: evalPrompt }
+          {
+            role: 'system',
+            content: 'You are an expert evaluator of AI responses. Output only valid JSON.',
+          },
+          { role: 'user', content: evalPrompt },
         ],
         'eval-harness',
         undefined,
@@ -181,9 +184,10 @@ DIMENSION DEFINITIONS:
       // Store in database
       await this.storeEvalResult(result);
 
-      logger.info(`📊 Eval complete: trace=${traceId.slice(0,8)} score=${overallScore.toFixed(2)}`);
+      logger.info(
+        `📊 Eval complete: trace=${traceId.slice(0, 8)} score=${overallScore.toFixed(2)}`
+      );
       return result;
-
     } catch (error) {
       logger.error('Eval failed:', error);
       throw error;
@@ -206,8 +210,12 @@ DIMENSION DEFINITIONS:
   ): Promise<PairwiseResult> {
     // Randomize order to prevent position bias
     const showAFirst = Math.random() > 0.5;
-    const first = showAFirst ? { response: responseA, label: 'A' } : { response: responseB, label: 'B' };
-    const second = showAFirst ? { response: responseB, label: 'B' } : { response: responseA, label: 'A' };
+    const first = showAFirst
+      ? { response: responseA, label: 'A' }
+      : { response: responseB, label: 'B' };
+    const second = showAFirst
+      ? { response: responseB, label: 'B' }
+      : { response: responseA, label: 'A' };
 
     const comparePrompt = `You are comparing two AI responses to the same user message. Be objective and critical.
 
@@ -237,7 +245,7 @@ Be decisive - only call it a tie if they are truly equivalent.`;
       const judgment = await openRouterService.generateFromMessageChain(
         [
           { role: 'system', content: 'You are an expert evaluator. Output only valid JSON.' },
-          { role: 'user', content: comparePrompt }
+          { role: 'user', content: comparePrompt },
         ],
         'eval-harness',
         undefined,
@@ -281,9 +289,10 @@ Be decisive - only call it a tie if they are truly equivalent.`;
 
       await this.storePairwiseResult(result);
 
-      logger.info(`📊 Pairwise eval: winner=${winner} (${winner === 'A' ? variantIdA.slice(0,8) : winner === 'B' ? variantIdB.slice(0,8) : 'tie'})`);
+      logger.info(
+        `📊 Pairwise eval: winner=${winner} (${winner === 'A' ? variantIdA.slice(0, 8) : winner === 'B' ? variantIdB.slice(0, 8) : 'tie'})`
+      );
       return result;
-
     } catch (error) {
       logger.error('Pairwise eval failed:', error);
       throw error;
@@ -293,7 +302,10 @@ Be decisive - only call it a tie if they are truly equivalent.`;
   /**
    * Run evaluation on recent traces for an experiment
    */
-  async evaluateExperiment(experimentId: string, limit: number = 50): Promise<{
+  async evaluateExperiment(
+    experimentId: string,
+    limit: number = 50
+  ): Promise<{
     evaluated: number;
     byVariant: Record<string, { count: number; avgScore: number; scores: number[] }>;
   }> {
@@ -325,10 +337,9 @@ Be decisive - only call it a tie if they are truly equivalent.`;
       const snapshot = db.get<{
         message_chain_json: string;
         full_response: string;
-      }>(
-        `SELECT message_chain_json, full_response FROM context_snapshots WHERE trace_id = ?`,
-        [trace.id]
-      );
+      }>(`SELECT message_chain_json, full_response FROM context_snapshots WHERE trace_id = ?`, [
+        trace.id,
+      ]);
 
       if (!snapshot?.full_response) continue;
 
@@ -377,11 +388,14 @@ Be decisive - only call it a tie if they are truly equivalent.`;
    */
   async getExperimentStats(experimentId: string): Promise<{
     totalEvals: number;
-    byVariant: Record<string, {
-      count: number;
-      avgScore: number;
-      dimensions: Record<keyof EvalDimensions, number>;
-    }>;
+    byVariant: Record<
+      string,
+      {
+        count: number;
+        avgScore: number;
+        dimensions: Record<keyof EvalDimensions, number>;
+      }
+    >;
     pairwise: {
       total: number;
       wins: Record<string, number>;
@@ -391,18 +405,19 @@ Be decisive - only call it a tie if they are truly equivalent.`;
     const db = getSyncDb();
 
     // Get dimension-level stats by variant
-    const evalStats = db.all<{
-      variant_id: string;
-      count: number;
-      avg_overall: number;
-      avg_helpfulness: number;
-      avg_accuracy: number;
-      avg_relevance: number;
-      avg_coherence: number;
-      avg_tone: number;
-      avg_conciseness: number;
-    }>(
-      `SELECT
+    const evalStats =
+      db.all<{
+        variant_id: string;
+        count: number;
+        avg_overall: number;
+        avg_helpfulness: number;
+        avg_accuracy: number;
+        avg_relevance: number;
+        avg_coherence: number;
+        avg_tone: number;
+        avg_conciseness: number;
+      }>(
+        `SELECT
         variant_id,
         COUNT(*) as count,
         AVG(overall_score) as avg_overall,
@@ -415,25 +430,27 @@ Be decisive - only call it a tie if they are truly equivalent.`;
        FROM eval_results
        WHERE experiment_id = ?
        GROUP BY variant_id`,
-      [experimentId]
-    ) || [];
+        [experimentId]
+      ) || [];
 
     // Get pairwise comparison stats
-    const pairwiseStats = db.all<{
-      winner_variant_id: string;
-      wins: number;
-    }>(
-      `SELECT winner_variant_id, COUNT(*) as wins
+    const pairwiseStats =
+      db.all<{
+        winner_variant_id: string;
+        wins: number;
+      }>(
+        `SELECT winner_variant_id, COUNT(*) as wins
        FROM pairwise_results
        WHERE experiment_id = ? AND winner_variant_id IS NOT NULL
        GROUP BY winner_variant_id`,
-      [experimentId]
-    ) || [];
+        [experimentId]
+      ) || [];
 
-    const totalPairwise = db.get<{ count: number }>(
-      `SELECT COUNT(*) as count FROM pairwise_results WHERE experiment_id = ?`,
-      [experimentId]
-    )?.count || 0;
+    const totalPairwise =
+      db.get<{ count: number }>(
+        `SELECT COUNT(*) as count FROM pairwise_results WHERE experiment_id = ?`,
+        [experimentId]
+      )?.count || 0;
 
     // Build response
     const byVariant: Record<string, any> = {};

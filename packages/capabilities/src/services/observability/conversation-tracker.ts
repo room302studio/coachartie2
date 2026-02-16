@@ -36,13 +36,16 @@ class ConversationTracker {
       const now = new Date();
       const cutoff = new Date(now.getTime() - CONVERSATION_TIMEOUT_MS);
 
-      const activeConversations = await db.select()
+      const activeConversations = await db
+        .select()
         .from(conversations)
-        .where(and(
-          eq(conversations.userId, userId),
-          eq(conversations.channelId, channelId),
-          isNull(conversations.endedAt)
-        ))
+        .where(
+          and(
+            eq(conversations.userId, userId),
+            eq(conversations.channelId, channelId),
+            isNull(conversations.endedAt)
+          )
+        )
         .orderBy(desc(conversations.lastActivityAt))
         .limit(1);
 
@@ -51,7 +54,8 @@ class ConversationTracker {
       if (active) {
         const lastActivity = new Date(active.lastActivityAt);
         if (lastActivity > cutoff) {
-          await db.update(conversations)
+          await db
+            .update(conversations)
             .set({
               lastActivityAt: now.toISOString(),
               messageCount: (active.messageCount || 0) + 1,
@@ -88,14 +92,16 @@ class ConversationTracker {
 
     try {
       const db = getDb();
-      const convos = await db.select()
+      const convos = await db
+        .select()
         .from(conversations)
         .where(eq(conversations.id, conversationId))
         .limit(1);
 
       if (convos.length === 0) return;
 
-      await db.update(conversations)
+      await db
+        .update(conversations)
         .set({
           turnCount: (convos[0].turnCount || 0) + 1,
           lastActivityAt: new Date().toISOString(),
@@ -111,7 +117,8 @@ class ConversationTracker {
 
     try {
       const db = getDb();
-      const convos = await db.select()
+      const convos = await db
+        .select()
         .from(conversations)
         .where(eq(conversations.id, conversationId))
         .limit(1);
@@ -122,7 +129,8 @@ class ConversationTracker {
       const field = sentiment === 'positive' ? 'positiveReactions' : 'negativeReactions';
       const currentValue = convo[field] || 0;
 
-      await db.update(conversations)
+      await db
+        .update(conversations)
         .set({ [field]: currentValue + 1 })
         .where(eq(conversations.id, conversationId));
     } catch (error) {
@@ -135,7 +143,8 @@ class ConversationTracker {
 
     try {
       const db = getDb();
-      const convos = await db.select()
+      const convos = await db
+        .select()
         .from(conversations)
         .where(eq(conversations.id, conversationId))
         .limit(1);
@@ -147,7 +156,8 @@ class ConversationTracker {
       const lastActivity = new Date(convo.lastActivityAt);
       const durationMs = lastActivity.getTime() - startedAt.getTime();
 
-      await db.update(conversations)
+      await db
+        .update(conversations)
         .set({
           endedAt: lastActivity.toISOString(),
           totalDurationMs: durationMs,

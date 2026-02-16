@@ -11,6 +11,7 @@ import { llmLoopService } from '../llm/llm-loop-service.js';
 
 // Import Context Alchemy observability
 import { traceManager } from '../context-alchemy/index.js';
+import { sessionManager } from '../observability/index.js';
 
 // Import shared types
 import { OrchestrationContext } from '../../types/orchestration-types.js';
@@ -37,6 +38,9 @@ export class CapabilityOrchestrator {
       '🔥 ORCHESTRATOR ENTRY - About to create context and call assembleMessageOrchestration'
     );
 
+    // Track user session for engagement analytics
+    await sessionManager.trackActivity(message.userId, message.context?.guildId);
+
     // Context Alchemy: Create trace at the start of orchestration
     const traceId = await traceManager.createTrace({
       messageId: message.id,
@@ -44,6 +48,13 @@ export class CapabilityOrchestrator {
       guildId: message.context?.guildId,
       channelId: message.context?.channelId,
     });
+
+    // Capture input text for debugging
+    if (traceId) {
+      await traceManager.updateTrace(traceId, {
+        inputText: message.message,
+      });
+    }
 
     // Check if user has an active draft and is responding to it
     const activeDraft = emailDraftingService.getDraft(message.userId);
@@ -62,6 +73,8 @@ export class CapabilityOrchestrator {
           completedAt: new Date().toISOString(),
           durationMs: Date.now() - startTime,
           responseLength: result.length,
+          responseText: result,
+          inputText: message.message,
           success: true,
         });
         return result;
@@ -85,6 +98,8 @@ export class CapabilityOrchestrator {
         completedAt: new Date().toISOString(),
         durationMs: Date.now() - startTime,
         responseLength: result.length,
+        responseText: result,
+        inputText: message.message,
         success: true,
       });
       return result;
@@ -105,7 +120,11 @@ export class CapabilityOrchestrator {
     try {
       logger.info(`🎬 Starting orchestration for message ${message.id}`);
       logger.info(`🔥 ABOUT TO CALL assembleMessageOrchestration for ${message.id}`);
-      const result = await this.assembleMessageOrchestration(context, messageWithTrace, onPartialResponse);
+      const result = await this.assembleMessageOrchestration(
+        context,
+        messageWithTrace,
+        onPartialResponse
+      );
       logger.info(`🔥 assembleMessageOrchestration COMPLETED for ${message.id}`);
 
       // Context Alchemy: Update trace on successful completion
@@ -113,6 +132,7 @@ export class CapabilityOrchestrator {
         completedAt: new Date().toISOString(),
         durationMs: Date.now() - startTime,
         responseLength: result.length,
+        responseText: result, // Capture full response for debugging bad responses
         success: true,
       });
 

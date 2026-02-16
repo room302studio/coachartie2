@@ -7,10 +7,7 @@ import { capabilityParser } from '../capability/capability-parser.js';
 import { capabilityExecutor } from '../capability/capability-executor.js';
 import { llmResponseCoordinator } from './llm-response-coordinator.js';
 import { getErrorMessage } from '../../utils/error-utils.js';
-import {
-  OrchestrationContext,
-  CapabilityResult,
-} from '../../types/orchestration-types.js';
+import { OrchestrationContext, CapabilityResult } from '../../types/orchestration-types.js';
 
 // =====================================================
 // LLM LOOP SERVICE
@@ -90,7 +87,7 @@ export class LLMLoopService {
 
           const robustResult = await robustExecutor.executeWithRetry(
             capabilityForExecution,
-            { userId: context.userId, messageId: context.messageId },
+            { userId: context.userId, messageId: context.messageId, traceId: context.traceId || undefined },
             3
           );
 
@@ -258,7 +255,7 @@ export class LLMLoopService {
 
           const robustResult = await robustExecutor.executeWithRetry(
             capabilityForExecution,
-            { userId: context.userId, messageId: context.messageId },
+            { userId: context.userId, messageId: context.messageId, traceId: context.traceId || undefined },
             3
           );
 
@@ -276,7 +273,9 @@ export class LLMLoopService {
           // Auto-store result to global variable if 'output' param is specified
           const outputVar = processedCapability.params.output;
           if (outputVar && result.success && result.data) {
-            const { GlobalVariableStore } = await import('../../capabilities/system/variable-store.js');
+            const { GlobalVariableStore } = await import(
+              '../../capabilities/system/variable-store.js'
+            );
             const globalStore = GlobalVariableStore.getInstance();
             await globalStore.set(
               String(outputVar),

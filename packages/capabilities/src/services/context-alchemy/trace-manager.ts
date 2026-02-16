@@ -42,6 +42,8 @@ export interface TraceUpdateData {
   responseLength?: number;
   responseTokens?: number;
   estimatedCost?: number;
+  responseText?: string; // Full response for debugging
+  inputText?: string; // User's original message
   experimentId?: string;
   variantId?: string;
   success?: boolean;
@@ -90,10 +92,19 @@ export class TraceManager {
           id, message_id, user_id, guild_id, channel_id,
           started_at, success
         ) VALUES (?, ?, ?, ?, ?, ?, 1)`,
-        [traceId, data.messageId, data.userId, data.guildId || null, data.channelId || null, startedAt]
+        [
+          traceId,
+          data.messageId,
+          data.userId,
+          data.guildId || null,
+          data.channelId || null,
+          startedAt,
+        ]
       );
 
-      logger.debug(`[trace] Created trace ${traceId.substring(0, 8)} for message ${data.messageId}`);
+      logger.debug(
+        `[trace] Created trace ${traceId.substring(0, 8)} for message ${data.messageId}`
+      );
       return traceId;
     } catch (error) {
       logger.error('[trace] Failed to create trace:', error);
@@ -177,6 +188,16 @@ export class TraceManager {
       if (updates.errorType !== undefined) {
         setClauses.push('error_type = ?');
         values.push(updates.errorType);
+      }
+      if (updates.responseText !== undefined) {
+        setClauses.push('response_text = ?');
+        // Truncate to 10KB max
+        values.push(updates.responseText.slice(0, 10000));
+      }
+      if (updates.inputText !== undefined) {
+        setClauses.push('input_text = ?');
+        // Truncate to 4KB max
+        values.push(updates.inputText.slice(0, 4000));
       }
 
       if (setClauses.length === 0) {
@@ -350,9 +371,7 @@ export class TraceManager {
   /**
    * Get a trace by ID (for debugging/analysis)
    */
-  async getTrace(
-    traceId: string
-  ): Promise<{
+  async getTrace(traceId: string): Promise<{
     id: string;
     messageId: string;
     discordMessageId: string | null;
@@ -534,11 +553,7 @@ export class TraceManager {
   /**
    * Get aggregate statistics for analysis
    */
-  async getStats(options: {
-    guildId?: string;
-    startDate?: string;
-    endDate?: string;
-  }): Promise<{
+  async getStats(options: { guildId?: string; startDate?: string; endDate?: string }): Promise<{
     totalTraces: number;
     successRate: number;
     avgDurationMs: number;
@@ -603,7 +618,12 @@ export class TraceManager {
 
       const modelBreakdown: Record<string, { count: number; positiveRate: number }> = {};
       for (const m of models) {
-        const model = m as { model_used: string; count: number; positive: number; with_feedback: number };
+        const model = m as {
+          model_used: string;
+          count: number;
+          positive: number;
+          with_feedback: number;
+        };
         modelBreakdown[model.model_used] = {
           count: model.count,
           positiveRate:

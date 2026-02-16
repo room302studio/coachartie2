@@ -52,7 +52,11 @@ class MemoryTracker {
     }
   }
 
-  async logCreated(memoryId: number, userId?: string, details?: Record<string, any>): Promise<void> {
+  async logCreated(
+    memoryId: number,
+    userId?: string,
+    details?: Record<string, any>
+  ): Promise<void> {
     await this.logEvent({ memoryId, eventType: 'created', userId, details });
   }
 
@@ -73,7 +77,11 @@ class MemoryTracker {
     });
   }
 
-  async logUpdated(memoryId: number, userId?: string, details?: Record<string, any>): Promise<void> {
+  async logUpdated(
+    memoryId: number,
+    userId?: string,
+    details?: Record<string, any>
+  ): Promise<void> {
     await this.logEvent({ memoryId, eventType: 'updated', userId, details });
   }
 

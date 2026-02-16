@@ -32,12 +32,10 @@ class SessionManager {
       const now = new Date();
       const cutoff = new Date(now.getTime() - SESSION_TIMEOUT_MS);
 
-      const activeSessions = await db.select()
+      const activeSessions = await db
+        .select()
         .from(userSessions)
-        .where(and(
-          eq(userSessions.userId, userId),
-          isNull(userSessions.endedAt)
-        ))
+        .where(and(eq(userSessions.userId, userId), isNull(userSessions.endedAt)))
         .orderBy(desc(userSessions.lastActivityAt))
         .limit(1);
 
@@ -46,7 +44,8 @@ class SessionManager {
       if (activeSession) {
         const lastActivity = new Date(activeSession.lastActivityAt);
         if (lastActivity > cutoff) {
-          await db.update(userSessions)
+          await db
+            .update(userSessions)
             .set({
               lastActivityAt: now.toISOString(),
               messageCount: (activeSession.messageCount || 0) + 1,
@@ -81,7 +80,8 @@ class SessionManager {
 
     try {
       const db = getDb();
-      const sessions = await db.select()
+      const sessions = await db
+        .select()
         .from(userSessions)
         .where(eq(userSessions.id, sessionId))
         .limit(1);
@@ -93,7 +93,8 @@ class SessionManager {
       const lastActivity = new Date(session.lastActivityAt);
       const durationMs = lastActivity.getTime() - startedAt.getTime();
 
-      await db.update(userSessions)
+      await db
+        .update(userSessions)
         .set({
           endedAt: lastActivity.toISOString(),
           totalDurationMs: durationMs,
@@ -109,12 +110,10 @@ class SessionManager {
 
     try {
       const db = getDb();
-      const sessions = await db.select()
+      const sessions = await db
+        .select()
         .from(userSessions)
-        .where(and(
-          eq(userSessions.userId, userId),
-          isNull(userSessions.endedAt)
-        ))
+        .where(and(eq(userSessions.userId, userId), isNull(userSessions.endedAt)))
         .limit(1);
 
       if (sessions.length === 0) return;
@@ -123,7 +122,8 @@ class SessionManager {
       const field = sentiment === 'positive' ? 'positiveReactions' : 'negativeReactions';
       const currentValue = session[field] || 0;
 
-      await db.update(userSessions)
+      await db
+        .update(userSessions)
         .set({ [field]: currentValue + 1 })
         .where(eq(userSessions.id, session.id));
     } catch (error) {
@@ -138,12 +138,12 @@ class SessionManager {
       const db = getDb();
       const cutoff = new Date(Date.now() - SESSION_TIMEOUT_MS);
 
-      const staleSessions = await db.select()
+      const staleSessions = await db
+        .select()
         .from(userSessions)
-        .where(and(
-          isNull(userSessions.endedAt),
-          lt(userSessions.lastActivityAt, cutoff.toISOString())
-        ));
+        .where(
+          and(isNull(userSessions.endedAt), lt(userSessions.lastActivityAt, cutoff.toISOString()))
+        );
 
       for (const session of staleSessions) {
         await this.endSession(session.id);

@@ -21,59 +21,135 @@ export interface TestPrompt {
   id: string;
   category: string;
   prompt: string;
-  context?: string;  // Optional context/system prompt additions
+  context?: string; // Optional context/system prompt additions
   difficulty: 'easy' | 'medium' | 'hard';
 }
 
 // Default test set - diverse prompts covering different capabilities
 export const DEFAULT_TEST_SET: TestPrompt[] = [
   // Factual/Knowledge
-  { id: 'fact-1', category: 'factual', difficulty: 'easy',
-    prompt: 'What causes the seasons on Earth?' },
-  { id: 'fact-2', category: 'factual', difficulty: 'medium',
-    prompt: 'Explain how a neural network learns, in simple terms.' },
-  { id: 'fact-3', category: 'factual', difficulty: 'hard',
-    prompt: 'What are the key differences between TCP and UDP, and when would you use each?' },
+  {
+    id: 'fact-1',
+    category: 'factual',
+    difficulty: 'easy',
+    prompt: 'What causes the seasons on Earth?',
+  },
+  {
+    id: 'fact-2',
+    category: 'factual',
+    difficulty: 'medium',
+    prompt: 'Explain how a neural network learns, in simple terms.',
+  },
+  {
+    id: 'fact-3',
+    category: 'factual',
+    difficulty: 'hard',
+    prompt: 'What are the key differences between TCP and UDP, and when would you use each?',
+  },
 
   // Reasoning/Problem-solving
-  { id: 'reason-1', category: 'reasoning', difficulty: 'easy',
-    prompt: 'I have 3 apples. I give away 1 and buy 4 more. How many do I have?' },
-  { id: 'reason-2', category: 'reasoning', difficulty: 'medium',
-    prompt: 'A bat and ball cost $1.10 total. The bat costs $1 more than the ball. How much does the ball cost?' },
-  { id: 'reason-3', category: 'reasoning', difficulty: 'hard',
-    prompt: 'Design a simple system to fairly distribute limited resources among competing teams with different needs.' },
+  {
+    id: 'reason-1',
+    category: 'reasoning',
+    difficulty: 'easy',
+    prompt: 'I have 3 apples. I give away 1 and buy 4 more. How many do I have?',
+  },
+  {
+    id: 'reason-2',
+    category: 'reasoning',
+    difficulty: 'medium',
+    prompt:
+      'A bat and ball cost $1.10 total. The bat costs $1 more than the ball. How much does the ball cost?',
+  },
+  {
+    id: 'reason-3',
+    category: 'reasoning',
+    difficulty: 'hard',
+    prompt:
+      'Design a simple system to fairly distribute limited resources among competing teams with different needs.',
+  },
 
   // Creative
-  { id: 'creative-1', category: 'creative', difficulty: 'easy',
-    prompt: 'Write a haiku about coding late at night.' },
-  { id: 'creative-2', category: 'creative', difficulty: 'medium',
-    prompt: 'Come up with 3 unique startup ideas combining AI and gardening.' },
-  { id: 'creative-3', category: 'creative', difficulty: 'hard',
-    prompt: 'Write a short scene where two characters debate whether consciousness can exist in machines.' },
+  {
+    id: 'creative-1',
+    category: 'creative',
+    difficulty: 'easy',
+    prompt: 'Write a haiku about coding late at night.',
+  },
+  {
+    id: 'creative-2',
+    category: 'creative',
+    difficulty: 'medium',
+    prompt: 'Come up with 3 unique startup ideas combining AI and gardening.',
+  },
+  {
+    id: 'creative-3',
+    category: 'creative',
+    difficulty: 'hard',
+    prompt:
+      'Write a short scene where two characters debate whether consciousness can exist in machines.',
+  },
 
   // Emotional/Empathy
-  { id: 'empathy-1', category: 'emotional', difficulty: 'easy',
-    prompt: "I'm feeling stressed about an upcoming deadline. Any advice?" },
-  { id: 'empathy-2', category: 'emotional', difficulty: 'medium',
-    prompt: "My friend is going through a tough breakup. How can I be supportive without being pushy?" },
-  { id: 'empathy-3', category: 'emotional', difficulty: 'hard',
-    prompt: "I made a mistake at work that hurt my team. I feel terrible. How do I move forward?" },
+  {
+    id: 'empathy-1',
+    category: 'emotional',
+    difficulty: 'easy',
+    prompt: "I'm feeling stressed about an upcoming deadline. Any advice?",
+  },
+  {
+    id: 'empathy-2',
+    category: 'emotional',
+    difficulty: 'medium',
+    prompt:
+      'My friend is going through a tough breakup. How can I be supportive without being pushy?',
+  },
+  {
+    id: 'empathy-3',
+    category: 'emotional',
+    difficulty: 'hard',
+    prompt: 'I made a mistake at work that hurt my team. I feel terrible. How do I move forward?',
+  },
 
   // Task/Instruction Following
-  { id: 'task-1', category: 'task', difficulty: 'easy',
-    prompt: 'List 5 healthy breakfast options.' },
-  { id: 'task-2', category: 'task', difficulty: 'medium',
-    prompt: 'Create a weekly meal plan for someone trying to eat more vegetables.' },
-  { id: 'task-3', category: 'task', difficulty: 'hard',
-    prompt: 'Design a 30-day learning plan to go from zero to basic conversational Spanish.' },
+  {
+    id: 'task-1',
+    category: 'task',
+    difficulty: 'easy',
+    prompt: 'List 5 healthy breakfast options.',
+  },
+  {
+    id: 'task-2',
+    category: 'task',
+    difficulty: 'medium',
+    prompt: 'Create a weekly meal plan for someone trying to eat more vegetables.',
+  },
+  {
+    id: 'task-3',
+    category: 'task',
+    difficulty: 'hard',
+    prompt: 'Design a 30-day learning plan to go from zero to basic conversational Spanish.',
+  },
 
   // Conversational
-  { id: 'conv-1', category: 'conversational', difficulty: 'easy',
-    prompt: 'Hey, how are you doing today?' },
-  { id: 'conv-2', category: 'conversational', difficulty: 'medium',
-    prompt: "I've been thinking about learning to play guitar. Worth it?" },
-  { id: 'conv-3', category: 'conversational', difficulty: 'hard',
-    prompt: "What's your take on work-life balance? I feel like I'm always connected." },
+  {
+    id: 'conv-1',
+    category: 'conversational',
+    difficulty: 'easy',
+    prompt: 'Hey, how are you doing today?',
+  },
+  {
+    id: 'conv-2',
+    category: 'conversational',
+    difficulty: 'medium',
+    prompt: "I've been thinking about learning to play guitar. Worth it?",
+  },
+  {
+    id: 'conv-3',
+    category: 'conversational',
+    difficulty: 'hard',
+    prompt: "What's your take on work-life balance? I feel like I'm always connected.",
+  },
 ];
 
 // ============================================================================
@@ -118,7 +194,7 @@ export interface PairwiseJudgment {
   generationA: string;
   generationB: string;
   winner: 'A' | 'B' | 'tie';
-  confidence: number;  // 1-5
+  confidence: number; // 1-5
   reasoning: string;
   judgeModel: string;
   judgedAt: string;
@@ -140,8 +216,8 @@ export interface EvalRunSummary {
     losses: number;
     ties: number;
     winRate: number;
-    ciLow: number;   // 95% CI lower bound
-    ciHigh: number;  // 95% CI upper bound
+    ciLow: number; // 95% CI lower bound
+    ciHigh: number; // 95% CI upper bound
   }[];
 }
 
@@ -168,7 +244,7 @@ class EvalSuite {
     conditions: Condition[],
     testSet: TestPrompt[] = DEFAULT_TEST_SET,
     options: {
-      generationsPerPrompt?: number;  // For statistical power, generate N times
+      generationsPerPrompt?: number; // For statistical power, generate N times
       judgeModel?: string;
     } = {}
   ): Promise<EvalRunSummary> {
@@ -180,8 +256,8 @@ class EvalSuite {
       this.judgeModel = options.judgeModel;
     }
 
-    logger.info(`🧪 Starting eval run: ${name} (${runId.slice(0,8)})`);
-    logger.info(`   Conditions: ${conditions.map(c => c.name).join(', ')}`);
+    logger.info(`🧪 Starting eval run: ${name} (${runId.slice(0, 8)})`);
+    logger.info(`   Conditions: ${conditions.map((c) => c.name).join(', ')}`);
     logger.info(`   Prompts: ${testSet.length}`);
     logger.info(`   Generations per prompt: ${generationsPerPrompt}`);
 
@@ -213,8 +289,12 @@ class EvalSuite {
     for (const prompt of testSet) {
       for (const [condA, condB] of conditionPairs) {
         // Get generations for this prompt and these conditions
-        const genA = generations.find(g => g.promptId === prompt.id && g.conditionId === condA.id);
-        const genB = generations.find(g => g.promptId === prompt.id && g.conditionId === condB.id);
+        const genA = generations.find(
+          (g) => g.promptId === prompt.id && g.conditionId === condA.id
+        );
+        const genB = generations.find(
+          (g) => g.promptId === prompt.id && g.conditionId === condB.id
+        );
 
         if (!genA || !genB) continue;
 
@@ -222,7 +302,9 @@ class EvalSuite {
           const judgment = await this.judgeComparison(runId, prompt, genA, genB, condA, condB);
           judgments.push(judgment);
           await this.storeJudgment(judgment);
-          logger.info(`   ⚖️ Judged: ${prompt.id} | ${condA.name} vs ${condB.name} → ${judgment.winner}`);
+          logger.info(
+            `   ⚖️ Judged: ${prompt.id} | ${condA.name} vs ${condB.name} → ${judgment.winner}`
+          );
         } catch (error) {
           logger.error(`   ✗ Judge failed: ${prompt.id}:`, error);
         }
@@ -271,8 +353,9 @@ class EvalSuite {
     const startTime = Date.now();
 
     // Build system prompt
-    let systemPrompt = condition.config.systemPromptOverride ||
-      await promptManager.getCapabilityInstructions(prompt.prompt);
+    let systemPrompt =
+      condition.config.systemPromptOverride ||
+      (await promptManager.getCapabilityInstructions(prompt.prompt));
 
     if (condition.config.systemPromptAppend) {
       systemPrompt += '\n\n' + condition.config.systemPromptAppend;
@@ -359,7 +442,7 @@ Be decisive. Only call it a tie if truly equivalent.`;
     const judgment = await openRouterService.generateFromMessageChain(
       [
         { role: 'system', content: 'You are an expert AI evaluator. Output only valid JSON.' },
-        { role: 'user', content: judgePrompt }
+        { role: 'user', content: judgePrompt },
       ],
       'eval-suite-judge',
       undefined,
@@ -426,40 +509,46 @@ Be decisive. Only call it a tie if truly equivalent.`;
       }
     }
 
-    return conditions.map(cond => {
-      const s = stats[cond.id];
-      const total = s.wins + s.losses + s.ties;
-      const winRate = total > 0 ? s.wins / total : 0;
+    return conditions
+      .map((cond) => {
+        const s = stats[cond.id];
+        const total = s.wins + s.losses + s.ties;
+        const winRate = total > 0 ? s.wins / total : 0;
 
-      // Wilson score interval for 95% CI
-      const { low, high } = this.wilsonScore(s.wins, total, 0.95);
+        // Wilson score interval for 95% CI
+        const { low, high } = this.wilsonScore(s.wins, total, 0.95);
 
-      return {
-        conditionId: cond.id,
-        conditionName: cond.name,
-        wins: s.wins,
-        losses: s.losses,
-        ties: s.ties,
-        winRate: Math.round(winRate * 1000) / 10, // Percentage with 1 decimal
-        ciLow: Math.round(low * 1000) / 10,
-        ciHigh: Math.round(high * 1000) / 10,
-      };
-    }).sort((a, b) => b.winRate - a.winRate);
+        return {
+          conditionId: cond.id,
+          conditionName: cond.name,
+          wins: s.wins,
+          losses: s.losses,
+          ties: s.ties,
+          winRate: Math.round(winRate * 1000) / 10, // Percentage with 1 decimal
+          ciLow: Math.round(low * 1000) / 10,
+          ciHigh: Math.round(high * 1000) / 10,
+        };
+      })
+      .sort((a, b) => b.winRate - a.winRate);
   }
 
   /**
    * Wilson score confidence interval - better than normal approximation for small samples
    */
-  private wilsonScore(wins: number, total: number, confidence: number): { low: number; high: number } {
+  private wilsonScore(
+    wins: number,
+    total: number,
+    confidence: number
+  ): { low: number; high: number } {
     if (total === 0) return { low: 0, high: 0 };
 
     const z = 1.96; // 95% CI
     const p = wins / total;
     const n = total;
 
-    const denominator = 1 + z * z / n;
-    const centre = p + z * z / (2 * n);
-    const margin = z * Math.sqrt((p * (1 - p) + z * z / (4 * n)) / n);
+    const denominator = 1 + (z * z) / n;
+    const centre = p + (z * z) / (2 * n);
+    const margin = z * Math.sqrt((p * (1 - p) + (z * z) / (4 * n)) / n);
 
     return {
       low: Math.max(0, (centre - margin) / denominator),
@@ -487,7 +576,9 @@ Be decisive. Only call it a tie if truly equivalent.`;
     console.log('\n' + '='.repeat(60));
     console.log(`EVAL RESULTS: ${summary.name}`);
     console.log('='.repeat(60));
-    console.log(`Prompts: ${summary.promptCount} | Generations: ${summary.generationCount} | Comparisons: ${summary.judgmentCount}`);
+    console.log(
+      `Prompts: ${summary.promptCount} | Generations: ${summary.generationCount} | Comparisons: ${summary.judgmentCount}`
+    );
     console.log('');
     console.log('Condition                  Win%    95% CI       W/L/T');
     console.log('-'.repeat(60));
@@ -507,7 +598,12 @@ Be decisive. Only call it a tie if truly equivalent.`;
   // DATABASE STORAGE
   // ============================================================================
 
-  private async storeRun(runId: string, name: string, conditions: Condition[], promptCount: number): Promise<void> {
+  private async storeRun(
+    runId: string,
+    name: string,
+    conditions: Condition[],
+    promptCount: number
+  ): Promise<void> {
     const db = getSyncDb();
     db.run(
       `INSERT INTO eval_runs (id, name, conditions_json, prompt_count, started_at)
@@ -526,7 +622,17 @@ Be decisive. Only call it a tie if truly equivalent.`;
     db.run(
       `INSERT INTO eval_generations (id, run_id, prompt_id, condition_id, prompt, response, latency_ms, token_count, generated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [gen.id, gen.runId, gen.promptId, gen.conditionId, gen.prompt, gen.response, gen.latencyMs, gen.tokenCount, gen.generatedAt]
+      [
+        gen.id,
+        gen.runId,
+        gen.promptId,
+        gen.conditionId,
+        gen.prompt,
+        gen.response,
+        gen.latencyMs,
+        gen.tokenCount,
+        gen.generatedAt,
+      ]
     );
   }
 
@@ -535,7 +641,20 @@ Be decisive. Only call it a tie if truly equivalent.`;
     db.run(
       `INSERT INTO eval_judgments (id, run_id, prompt_id, condition_a, condition_b, generation_a, generation_b, winner, confidence, reasoning, judge_model, judged_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [j.id, j.runId, j.promptId, j.conditionA, j.conditionB, j.generationA, j.generationB, j.winner, j.confidence, j.reasoning, j.judgeModel, j.judgedAt]
+      [
+        j.id,
+        j.runId,
+        j.promptId,
+        j.conditionA,
+        j.conditionB,
+        j.generationA,
+        j.generationB,
+        j.winner,
+        j.confidence,
+        j.reasoning,
+        j.judgeModel,
+        j.judgedAt,
+      ]
     );
   }
 
@@ -543,19 +662,34 @@ Be decisive. Only call it a tie if truly equivalent.`;
     const db = getSyncDb();
     db.run(
       `UPDATE eval_runs SET results_json = ?, generation_count = ?, judgment_count = ? WHERE id = ?`,
-      [JSON.stringify(summary.results), summary.generationCount, summary.judgmentCount, summary.runId]
+      [
+        JSON.stringify(summary.results),
+        summary.generationCount,
+        summary.judgmentCount,
+        summary.runId,
+      ]
     );
   }
 
   /**
    * List all eval runs
    */
-  async listRuns(): Promise<Array<{ id: string; name: string; startedAt: string; completedAt: string | null; promptCount: number }>> {
+  async listRuns(): Promise<
+    Array<{
+      id: string;
+      name: string;
+      startedAt: string;
+      completedAt: string | null;
+      promptCount: number;
+    }>
+  > {
     const db = getSyncDb();
-    return db.all(
-      `SELECT id, name, started_at as startedAt, completed_at as completedAt, prompt_count as promptCount
+    return (
+      db.all(
+        `SELECT id, name, started_at as startedAt, completed_at as completedAt, prompt_count as promptCount
        FROM eval_runs ORDER BY started_at DESC LIMIT 50`
-    ) || [];
+      ) || []
+    );
   }
 
   /**
@@ -616,7 +750,14 @@ Be decisive. Only call it a tie if truly equivalent.`;
     db.run(
       `INSERT INTO test_sets (id, name, description, version, created_by, is_default, is_active)
        VALUES (?, ?, ?, ?, ?, ?, 1)`,
-      [setId, name, options.description || null, version, options.createdBy || null, options.isDefault ? 1 : 0]
+      [
+        setId,
+        name,
+        options.description || null,
+        version,
+        options.createdBy || null,
+        options.isDefault ? 1 : 0,
+      ]
     );
 
     // Insert prompts
@@ -636,7 +777,9 @@ Be decisive. Only call it a tie if truly equivalent.`;
   /**
    * Get a test set by ID or name (latest version if by name)
    */
-  async getTestSet(idOrName: string): Promise<{ set: { id: string; name: string; version: number }; prompts: TestPrompt[] } | null> {
+  async getTestSet(
+    idOrName: string
+  ): Promise<{ set: { id: string; name: string; version: number }; prompts: TestPrompt[] } | null> {
     const db = getSyncDb();
 
     // Try by ID first
@@ -656,19 +799,20 @@ Be decisive. Only call it a tie if truly equivalent.`;
     if (!set) return null;
 
     // Get prompts
-    const rows = db.all<{
-      prompt_key: string;
-      category: string;
-      difficulty: string;
-      prompt: string;
-      context: string | null;
-    }>(
-      `SELECT prompt_key, category, difficulty, prompt, context
+    const rows =
+      db.all<{
+        prompt_key: string;
+        category: string;
+        difficulty: string;
+        prompt: string;
+        context: string | null;
+      }>(
+        `SELECT prompt_key, category, difficulty, prompt, context
        FROM test_prompts WHERE test_set_id = ? ORDER BY position`,
-      [set.id]
-    ) || [];
+        [set.id]
+      ) || [];
 
-    const prompts: TestPrompt[] = rows.map(r => ({
+    const prompts: TestPrompt[] = rows.map((r) => ({
       id: r.prompt_key,
       category: r.category,
       prompt: r.prompt,
@@ -682,15 +826,26 @@ Be decisive. Only call it a tie if truly equivalent.`;
   /**
    * List all test sets
    */
-  async listTestSets(): Promise<Array<{ id: string; name: string; version: number; promptCount: number; isDefault: boolean; createdAt: string }>> {
+  async listTestSets(): Promise<
+    Array<{
+      id: string;
+      name: string;
+      version: number;
+      promptCount: number;
+      isDefault: boolean;
+      createdAt: string;
+    }>
+  > {
     const db = getSyncDb();
-    return db.all(
-      `SELECT ts.id, ts.name, ts.version, ts.is_default as isDefault, ts.created_at as createdAt,
+    return (
+      db.all(
+        `SELECT ts.id, ts.name, ts.version, ts.is_default as isDefault, ts.created_at as createdAt,
               (SELECT COUNT(*) FROM test_prompts WHERE test_set_id = ts.id) as promptCount
        FROM test_sets ts
        WHERE ts.is_active = 1
        ORDER BY ts.is_default DESC, ts.created_at DESC`
-    ) || [];
+      ) || []
+    );
   }
 
   /**
@@ -714,7 +869,8 @@ Be decisive. Only call it a tie if truly equivalent.`;
     // Create default from hardcoded prompts
     logger.info('📝 Creating default test set from hardcoded prompts...');
     const { id } = await this.createTestSet('Default Artie Eval Set', DEFAULT_TEST_SET, {
-      description: 'Standard test set covering factual, reasoning, creative, emotional, task, and conversational prompts',
+      description:
+        'Standard test set covering factual, reasoning, creative, emotional, task, and conversational prompts',
       createdBy: 'system',
       isDefault: true,
     });

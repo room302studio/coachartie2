@@ -286,10 +286,9 @@ class ExperimentManager {
         status: string;
         started_at: string | null;
         ended_at: string | null;
-      }>(
-        `SELECT id, name, status, started_at, ended_at FROM experiments WHERE id = ?`,
-        [experimentId]
-      );
+      }>(`SELECT id, name, status, started_at, ended_at FROM experiments WHERE id = ?`, [
+        experimentId,
+      ]);
 
       if (!experiment) {
         return null;
@@ -350,7 +349,8 @@ class ExperimentManager {
       });
 
       // Find control variant (usually named "control")
-      const control = variantResults.find((v) => v.name.toLowerCase() === 'control') || variantResults[0];
+      const control =
+        variantResults.find((v) => v.name.toLowerCase() === 'control') || variantResults[0];
 
       // Calculate significance vs control for each variant
       for (const variant of variantResults) {
@@ -408,15 +408,13 @@ class ExperimentManager {
       const db = getSyncDb();
 
       if (status) {
-        return db.all(
-          `SELECT * FROM experiments WHERE status = ? ORDER BY created_at DESC`,
-          [status]
-        ) || [];
+        return (
+          db.all(`SELECT * FROM experiments WHERE status = ? ORDER BY created_at DESC`, [status]) ||
+          []
+        );
       }
 
-      return db.all(
-        `SELECT * FROM experiments ORDER BY created_at DESC`
-      ) || [];
+      return db.all(`SELECT * FROM experiments ORDER BY created_at DESC`) || [];
     } catch (error) {
       logger.error('Failed to list experiments:', error);
       return [];
@@ -435,9 +433,7 @@ class ExperimentManager {
 
     try {
       const db = getSyncDb();
-      const experiments = db.all(
-        `SELECT * FROM experiments WHERE status = 'active'`
-      ) || [];
+      const experiments = db.all(`SELECT * FROM experiments WHERE status = 'active'`) || [];
 
       // Update cache
       this.activeExperimentsCache.clear();
@@ -527,10 +523,9 @@ class ExperimentManager {
   private incrementImpressions(variantId: string): void {
     try {
       const db = getSyncDb();
-      db.run(
-        `UPDATE experiment_variants SET impressions = impressions + 1 WHERE id = ?`,
-        [variantId]
-      );
+      db.run(`UPDATE experiment_variants SET impressions = impressions + 1 WHERE id = ?`, [
+        variantId,
+      ]);
     } catch (error) {
       // Fail silently
     }

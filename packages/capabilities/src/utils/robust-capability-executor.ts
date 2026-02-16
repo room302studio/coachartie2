@@ -8,6 +8,7 @@ import {
   formatStructuredErrorForLLM,
 } from '../types/structured-errors.js';
 import { errorPatternTracker } from '../services/llm/llm-error-pattern-tracker.js';
+import { capabilityTracker } from '../services/observability/capability-tracker.js';
 
 export interface CapabilityResult {
   capability: ParsedCapability;
@@ -25,7 +26,7 @@ export class RobustCapabilityExecutor {
    */
   async executeWithRetry(
     capability: ParsedCapability,
-    context: { userId: string; messageId: string },
+    context: { userId: string; messageId: string; traceId?: string },
     maxRetries = capability.name === 'mcp_auto_installer' ? 1 : 3 // No retries for MCP installs
   ): Promise<CapabilityResult> {
     logger.info(
@@ -33,6 +34,7 @@ export class RobustCapabilityExecutor {
     );
 
     let lastError: Error | null = null;
+    const startedAt = new Date();
 
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
@@ -48,6 +50,18 @@ export class RobustCapabilityExecutor {
 
         // Validate result
         if (this.validateResult(cleanedCapability, result)) {
+          // Log successful invocation
+          await capabilityTracker.logInvocation({
+            traceId: context.traceId,
+            capabilityName: cleanedCapability.name,
+            action: cleanedCapability.action,
+            params: cleanedCapability.params,
+            result,
+            startedAt,
+            completedAt: new Date(),
+            success: true,
+          });
+
           return {
             capability: cleanedCapability,
             success: true,
@@ -89,12 +103,26 @@ export class RobustCapabilityExecutor {
       };
     } catch (_fallbackError) {
       // Final failure - track the error
+      const errorMessage = this.getHelpfulErrorMessage(capability, lastError, {
+        userId: context.userId,
+      });
+
+      // Log failed invocation
+      await capabilityTracker.logInvocation({
+        traceId: context.traceId,
+        capabilityName: capability.name,
+        action: capability.action,
+        params: capability.params,
+        startedAt,
+        completedAt: new Date(),
+        success: false,
+        error: errorMessage,
+      });
+
       return {
         capability,
         success: false,
-        error: this.getHelpfulErrorMessage(capability, lastError, {
-          userId: context.userId,
-        }),
+        error: errorMessage,
         timestamp: new Date().toISOString(),
         attempts: maxRetries,
       };

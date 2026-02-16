@@ -788,6 +788,8 @@ export const generationTraces = sqliteTable(
     responseLength: integer('response_length'),
     responseTokens: integer('response_tokens'),
     estimatedCost: real('estimated_cost'),
+    responseText: text('response_text'), // Full response text (for debugging bad responses)
+    inputText: text('input_text'), // User's original message
 
     // Experiment
     experimentId: text('experiment_id'),

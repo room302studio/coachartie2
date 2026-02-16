@@ -25,7 +25,7 @@ export const ERROR_TYPES = {
   UNKNOWN: 'unknown',
 } as const;
 
-export type ErrorType = typeof ERROR_TYPES[keyof typeof ERROR_TYPES];
+export type ErrorType = (typeof ERROR_TYPES)[keyof typeof ERROR_TYPES];
 
 export interface ErrorContext {
   traceId?: string;
@@ -66,12 +66,10 @@ class ErrorTracker {
 
     try {
       const db = getDb();
-      const errorMessage = typeof options.error === 'string'
-        ? options.error
-        : options.error.message;
-      const stackTrace = typeof options.error === 'string'
-        ? undefined
-        : options.error.stack?.slice(0, 2000);
+      const errorMessage =
+        typeof options.error === 'string' ? options.error : options.error.message;
+      const stackTrace =
+        typeof options.error === 'string' ? undefined : options.error.stack?.slice(0, 2000);
       const errorCode = this.extractErrorCode(errorMessage);
 
       await db.insert(errorEvents).values({
@@ -96,17 +94,29 @@ class ErrorTracker {
     }
   }
 
-  classifyError(error: Error | string): { type: ErrorType; code?: string; severity: 'warning' | 'error' | 'critical' } {
+  classifyError(error: Error | string): {
+    type: ErrorType;
+    code?: string;
+    severity: 'warning' | 'error' | 'critical';
+  } {
     const message = typeof error === 'string' ? error : error.message;
     const lowerMessage = message.toLowerCase();
 
-    if (lowerMessage.includes('credit') || lowerMessage.includes('billing') || lowerMessage.includes('402')) {
+    if (
+      lowerMessage.includes('credit') ||
+      lowerMessage.includes('billing') ||
+      lowerMessage.includes('402')
+    ) {
       return { type: ERROR_TYPES.LLM_BILLING, code: '402', severity: 'critical' };
     }
     if (lowerMessage.includes('rate limit') || lowerMessage.includes('429')) {
       return { type: ERROR_TYPES.LLM_RATE_LIMIT, code: '429', severity: 'warning' };
     }
-    if (lowerMessage.includes('unauthorized') || lowerMessage.includes('401') || lowerMessage.includes('403')) {
+    if (
+      lowerMessage.includes('unauthorized') ||
+      lowerMessage.includes('401') ||
+      lowerMessage.includes('403')
+    ) {
       return { type: ERROR_TYPES.LLM_AUTH, code: '401', severity: 'critical' };
     }
     if (lowerMessage.includes('timeout') || lowerMessage.includes('etimedout')) {
@@ -124,7 +134,11 @@ class ErrorTracker {
     if (lowerMessage.includes('fts5') || lowerMessage.includes('search')) {
       return { type: ERROR_TYPES.MEM_SEARCH_FAIL, severity: 'error' };
     }
-    if (lowerMessage.includes('econnrefused') || lowerMessage.includes('network') || lowerMessage.includes('fetch failed')) {
+    if (
+      lowerMessage.includes('econnrefused') ||
+      lowerMessage.includes('network') ||
+      lowerMessage.includes('fetch failed')
+    ) {
       return { type: ERROR_TYPES.NETWORK_ERROR, severity: 'error' };
     }
     if (lowerMessage.includes('sqlite') || lowerMessage.includes('database')) {
@@ -171,10 +185,7 @@ class ErrorTracker {
 
     try {
       const db = getDb();
-      return await db.select()
-        .from(errorEvents)
-        .orderBy(desc(errorEvents.createdAt))
-        .limit(limit);
+      return await db.select().from(errorEvents).orderBy(desc(errorEvents.createdAt)).limit(limit);
     } catch (error) {
       logger.error('Failed to get recent errors:', error);
       return [];
