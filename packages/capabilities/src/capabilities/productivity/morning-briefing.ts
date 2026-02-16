@@ -275,6 +275,11 @@ async function generateBriefing(config: BriefingConfig): Promise<string> {
     }
   }
 
+  // If no content sections generated, add a fallback message
+  if (sections.length <= 1) {
+    sections.push(`**All quiet today.** No goals, tasks, or notable items to report.\n\nSay "goals create [title]" to set a new objective.`);
+  }
+
   sections.push(`\n---\n*Briefing generated at ${now.toLocaleTimeString()}*`);
 
   return sections.join('\n\n');

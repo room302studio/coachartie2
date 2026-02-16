@@ -1225,6 +1225,7 @@ export const objectives = sqliteTable(
     blockers: text('blockers'),
     budgetEth: real('budget_eth'),
     budgetSpentEth: real('budget_spent_eth').default(0),
+    lastNudgedAt: text('last_nudged_at'), // Rate-limit nudge DMs (24h cooldown)
     createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
     updatedAt: text('updated_at').default(sql`CURRENT_TIMESTAMP`),
   },

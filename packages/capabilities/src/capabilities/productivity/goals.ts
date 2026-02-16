@@ -203,6 +203,7 @@ async function handleGoals(
         const updates: Partial<Objective> = {
           updatedAt: new Date().toISOString(),
           lastWorkedAt: new Date().toISOString(),
+          lastNudgedAt: null, // Reset nudge timer so fresh cycle starts if goal stalls again
         };
 
         if (progress !== undefined) {
@@ -366,8 +367,37 @@ async function handleGoals(
         return result;
       }
 
+      case 'delete': {
+        const { id } = params;
+
+        if (!id) {
+          return 'Which goal to delete? Provide the goal ID.';
+        }
+
+        const { goal, error } = await resolveGoalId(db, id, userId);
+        if (!goal) {
+          return error || `Goal not found: ${id}`;
+        }
+
+        // Check for subgoals
+        const subgoals = await db.select().from(objectives)
+          .where(eq(objectives.parentGoalId, goal.id));
+
+        if (subgoals.length > 0) {
+          return `Cannot delete "${goal.title}" - it has ${subgoals.length} subgoal(s). Delete or reassign them first.`;
+        }
+
+        // Delete associated actions first
+        await db.delete(goalActions).where(eq(goalActions.goalId, goal.id));
+
+        // Delete the goal
+        await db.delete(objectives).where(eq(objectives.id, goal.id));
+
+        return `Goal "${goal.title}" deleted.`;
+      }
+
       default:
-        return `Unknown goals action: ${action}. Try: create, list, status, progress, achieve, abandon, subgoal, history`;
+        return `Unknown goals action: ${action}. Try: create, list, status, progress, achieve, abandon, subgoal, history, delete`;
     }
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'Unknown error';
@@ -441,6 +471,6 @@ export const goalsCapability: RegisteredCapability = {
 - history: See history of a goal
 
 Types: project, care, growth, watch, relationship, learning`,
-  supportedActions: ['create', 'list', 'status', 'progress', 'update', 'achieve', 'complete', 'abandon', 'subgoal', 'history'],
+  supportedActions: ['create', 'list', 'status', 'progress', 'update', 'achieve', 'complete', 'abandon', 'subgoal', 'history', 'delete'],
   handler: handleGoals,
 };

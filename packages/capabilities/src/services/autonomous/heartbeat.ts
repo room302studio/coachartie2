@@ -13,10 +13,12 @@
  * See @coachartie/shared config/owner.ts for the whitelist.
  */
 
-import { logger, getSyncDb, canReceiveProactiveDMs, OWNER_USER_ID } from '@coachartie/shared';
+import { logger, getSyncDb, canReceiveProactiveDMs, OWNER_USER_ID, getDb, objectives, eq } from '@coachartie/shared';
 import type { Objective } from '@coachartie/shared';
 import { sendDiscordDM } from '../../capabilities/communication/proactive-dm.js';
 import { getStalledGoals, logGoalAction } from '../../capabilities/productivity/goals.js';
+
+const NUDGE_COOLDOWN_HOURS = 24;
 
 interface StuckQuest {
   questId: string;
@@ -368,12 +370,28 @@ export async function executeHeartbeat(): Promise<{
       const stalledGoals = await getStalledGoals('ej'); // Goals use 'ej' as owner
       logger.info(`Heartbeat: Found ${stalledGoals.length} stalled goals`);
 
+      const db = getDb();
       for (const goal of stalledGoals) {
         try {
+          // Rate limit: skip if nudged within last 24 hours
+          if (goal.lastNudgedAt) {
+            const hoursSinceNudge = (Date.now() - new Date(goal.lastNudgedAt).getTime()) / (1000 * 60 * 60);
+            if (hoursSinceNudge < NUDGE_COOLDOWN_HOURS) {
+              logger.info(`Heartbeat: Skipping nudge for "${goal.title}" - nudged ${hoursSinceNudge.toFixed(1)}h ago`);
+              continue;
+            }
+          }
+
           const message = generateGoalNudgeMessage(goal);
           const sent = await sendDiscordDM(OWNER_USER_ID, message, 'heartbeat-goal');
           if (sent) {
             stats.goalNudges++;
+
+            // Update lastNudgedAt to prevent spam
+            await db.update(objectives)
+              .set({ lastNudgedAt: new Date().toISOString() })
+              .where(eq(objectives.id, goal.id));
+
             // Log the nudge action
             await logGoalAction(goal.id, 'reminder', 'Sent stalled goal reminder');
             logger.info(`Heartbeat: Sent goal nudge about "${goal.title}"`);
