@@ -4,16 +4,16 @@ Reference documents for Discord bot. Each file covers one topic.
 
 ## Files
 
-| File | Topics |
-|------|--------|
-| trains.md | Train types, speeds, capacity, costs, physics |
-| routes.md | Creating routes, frequency, scheduling, variants |
-| tracks.md | Track types, stations, platforms, construction |
-| signals.md | Automatic signals, collision prevention |
-| economy.md | Fares, construction costs, operating costs, bonds |
-| passengers.md | Demand, mode choice, RAPTOR pathfinding |
-| progression.md | Career mode, stars, challenges, unlocks |
-| faq.md | Common questions with direct answers |
+| File           | Topics                                            |
+| -------------- | ------------------------------------------------- |
+| trains.md      | Train types, speeds, capacity, costs, physics     |
+| routes.md      | Creating routes, frequency, scheduling, variants  |
+| tracks.md      | Track types, stations, platforms, construction    |
+| signals.md     | Automatic signals, collision prevention           |
+| economy.md     | Fares, construction costs, operating costs, bonds |
+| passengers.md  | Demand, mode choice, RAPTOR pathfinding           |
+| progression.md | Career mode, stars, challenges, unlocks           |
+| faq.md         | Common questions with direct answers              |
 
 ## Quick Lookups
 

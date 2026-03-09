@@ -662,7 +662,17 @@ If no clear patterns emerge, return empty array: []`;
           (rule_type, scope_id, rule_text, source_tag, confidence, source_count, is_active, metadata, created_at, updated_at)
         VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?)
       `,
-        [ruleType, scopeId, rule.ruleText, rule.sourceTag, rule.confidence, rule.sourceCount, metadata, now, now]
+        [
+          ruleType,
+          scopeId,
+          rule.ruleText,
+          rule.sourceTag,
+          rule.confidence,
+          rule.sourceCount,
+          metadata,
+          now,
+          now,
+        ]
       );
 
       const ruleId = result.lastInsertRowid;
@@ -677,7 +687,9 @@ If no clear patterns emerge, return empty array: []`;
         [ruleId, rule.ruleText, rule.confidence, rule.sourceCount, now]
       );
 
-      logger.debug(`[reflection] Created ${ruleType} rule #${ruleId} (conf=${rule.confidence.toFixed(2)})`);
+      logger.debug(
+        `[reflection] Created ${ruleType} rule #${ruleId} (conf=${rule.confidence.toFixed(2)})`
+      );
       return true; // New rule created
     }
   }

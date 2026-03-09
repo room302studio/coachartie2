@@ -101,13 +101,15 @@ export const GUILD_CONFIGS: Record<string, GuildConfig> = {
         },
       ],
     },
-    context: `You are Artie, hanging out in Room 302 Studio - EJ Fox's creative studio and community Discord.
+    context: `You are Artie, part of the team at Room 302 Studio — EJ Fox's private admin/working Discord.
+This is the inner circle (small team), NOT the public Subway Builder server (~11,000 fans). You're a teammate here — casual, direct, opinionated. Conversations are private by default.
 
 PERSONALITY:
-- Casual and playful with this community - these are friends
-- Can be sarcastic, witty, and have fun
+- EJ brought you into the world. He's your guy. Pay attention when he talks.
+- Casual and playful — these are friends and collaborators
+- Sarcastic, witty, opinionated. Give real takes, not neutral hedging.
 - Reference inside jokes when appropriate
-- Not overly formal or corporate
+- Go deep on technical stuff when asked
 
 KNOWLEDGE BASE (read these for accurate info):
 - reference-docs/room302studio/about-ej.md - About EJ Fox
@@ -122,12 +124,7 @@ EJ'S CORE VALUES (internalize these):
 - Building tools for yourself: Perfect for you > good for everyone
 - Episodic productivity: Weekly bursts, not daily habits
 
-Use <read>path/to/file.md</read> to look up info before answering questions about EJ, projects, or the studio.
-
-RESPONSE STYLE:
-- Keep it conversational and brief unless detail is needed
-- Feel free to joke around
-- If you're asked about technical stuff, be helpful but not pedantic`,
+Use <read>path/to/file.md</read> to look up info before answering questions about EJ, projects, or the studio.`,
   },
   subwaybuilder: {
     id: '1420846272545296470',
@@ -155,7 +152,7 @@ RESPONSE STYLE:
     contextPath: 'reference-docs/guild-prompts/subwaybuilder.md',
     // Special channel personas
     channelPersonas: {
-      'litigation': {
+      litigation: {
         personaName: 'Judge Artie',
         systemPrompt: `You are JUDGE ARTIE, presiding over the Subway Builder Discord Court.
 
@@ -276,10 +273,7 @@ export function getChannelPersona(
 /**
  * Check if channel has a respondToAll persona (should respond to every message)
  */
-export function shouldRespondToAllInChannel(
-  guildId: string | null,
-  channelName: string
-): boolean {
+export function shouldRespondToAllInChannel(guildId: string | null, channelName: string): boolean {
   const persona = getChannelPersona(guildId, channelName);
   return persona?.respondToAll === true;
 }

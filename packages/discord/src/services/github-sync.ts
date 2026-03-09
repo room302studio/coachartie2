@@ -167,7 +167,9 @@ export class GitHubSyncService {
 
     // If we've exceeded the threshold, we'll handle as digest at end of cycle
     if (this.pollCycleEventCount > MAX_EVENTS_BEFORE_DIGEST) {
-      logger.debug(`Event ${this.pollCycleEventCount} queued for digest (threshold: ${MAX_EVENTS_BEFORE_DIGEST})`);
+      logger.debug(
+        `Event ${this.pollCycleEventCount} queued for digest (threshold: ${MAX_EVENTS_BEFORE_DIGEST})`
+      );
       return; // Don't process individually, will be digested
     }
 
@@ -255,7 +257,9 @@ export class GitHubSyncService {
       const embed = new EmbedBuilder()
         .setColor(0x6e7681)
         .setTitle(`📊 GitHub Activity Digest`)
-        .setDescription(`**[${repo}](https://github.com/${repo})** had ${repoEvents.length} updates:\n\n${summary}`)
+        .setDescription(
+          `**[${repo}](https://github.com/${repo})** had ${repoEvents.length} updates:\n\n${summary}`
+        )
         .setFooter({ text: 'Digest mode - too many events to post individually' })
         .setTimestamp();
 

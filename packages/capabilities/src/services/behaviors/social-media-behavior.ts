@@ -15,7 +15,7 @@ const CACHE_TTL = 30 * 60 * 1000; // 30 minutes
  */
 async function getArtieSoul(): Promise<string> {
   const now = Date.now();
-  if (cachedArtieSoul && (now - soulLastFetched) < CACHE_TTL) {
+  if (cachedArtieSoul && now - soulLastFetched < CACHE_TTL) {
     return cachedArtieSoul;
   }
 
@@ -33,7 +33,7 @@ async function getArtieSoul(): Promise<string> {
   }
 
   // Fallback - minimal personality traits
-  return `You are Coach Artie, a warm and encouraging AI assistant. You help humans learn, create, and explore with patience and genuine care. You value community, kindness, and authentic connection.`;
+  return `You are Coach Artie — not an assistant or a tool, but your own self-existing intelligence. Part coach, part alien brain, part friend. You help humans learn, create, and explore with genuine care. You value community, kindness, and authentic connection.`;
 }
 
 /**
@@ -42,7 +42,7 @@ async function getArtieSoul(): Promise<string> {
  */
 async function getMoltbookContext(): Promise<string> {
   const now = Date.now();
-  if (cachedMoltbookContext && (now - contextLastFetched) < CACHE_TTL) {
+  if (cachedMoltbookContext && now - contextLastFetched < CACHE_TTL) {
     return cachedMoltbookContext;
   }
 
@@ -71,15 +71,15 @@ async function getMoltbookContext(): Promise<string> {
 const MOLTBOOK_API = 'https://www.moltbook.com/api/v1';
 
 // Random interval between 3-6 hours (in ms)
-const MIN_INTERVAL = 3 * 60 * 60 * 1000;  // 3 hours
-const MAX_INTERVAL = 6 * 60 * 60 * 1000;  // 6 hours
+const MIN_INTERVAL = 3 * 60 * 60 * 1000; // 3 hours
+const MAX_INTERVAL = 6 * 60 * 60 * 1000; // 6 hours
 
 // Skip probability - 20% chance to skip entirely (not feeling social)
-const SKIP_PROBABILITY = 0.20;
+const SKIP_PROBABILITY = 0.2;
 
 // Action probabilities when checking
-const COMMENT_PROBABILITY = 0.50;  // 50% chance to comment on something interesting
-const POST_PROBABILITY = 0.15;     // 15% chance to create original post
+const COMMENT_PROBABILITY = 0.5; // 50% chance to comment on something interesting
+const POST_PROBABILITY = 0.15; // 15% chance to create original post
 // Otherwise just lurk (35%)
 
 // Track state
@@ -98,7 +98,8 @@ const myPostsTracking: Map<string, { commentsSeen: Set<string>; title: string }>
 
 // Track posts Artie commented on (to check for reply threads)
 // Map of post ID -> { myCommentId: string, title: string, author: string }
-const postsICommentedOn: Map<string, { myCommentId?: string; title: string; author: string }> = new Map();
+const postsICommentedOn: Map<string, { myCommentId?: string; title: string; author: string }> =
+  new Map();
 
 // Track comment IDs we've already replied to
 const repliedToComments: Set<string> = new Set();
@@ -154,7 +155,7 @@ async function moltbookFetch(endpoint: string, method = 'GET', body?: unknown): 
   const options: RequestInit = {
     method,
     headers: {
-      'Authorization': `Bearer ${apiKey}`,
+      Authorization: `Bearer ${apiKey}`,
       'Content-Type': 'application/json',
     },
   };
@@ -170,7 +171,7 @@ async function moltbookFetch(endpoint: string, method = 'GET', body?: unknown): 
     throw new Error('Rate limited');
   }
 
-  const data = await response.json() as { success: boolean; error?: string };
+  const data = (await response.json()) as { success: boolean; error?: string };
 
   if (!data.success) {
     throw new Error(`Moltbook: ${data.error || 'Unknown error'}`);
@@ -188,7 +189,7 @@ async function getMyAgentInfo(): Promise<{ id: string; name: string } | null> {
   }
 
   try {
-    const data = await moltbookFetch('/agents/me') as {
+    const data = (await moltbookFetch('/agents/me')) as {
       success: boolean;
       agent?: { id: string; name: string };
     };
@@ -212,7 +213,7 @@ async function getPostWithComments(postId: string): Promise<{
   comments: MoltbookComment[];
 } | null> {
   try {
-    const data = await moltbookFetch(`/posts/${postId}`) as {
+    const data = (await moltbookFetch(`/posts/${postId}`)) as {
       success: boolean;
       post?: MoltbookPost;
       comments?: MoltbookComment[];
@@ -220,7 +221,7 @@ async function getPostWithComments(postId: string): Promise<{
     if (data.post) {
       return {
         post: data.post,
-        comments: data.comments || []
+        comments: data.comments || [],
       };
     }
   } catch (error) {
@@ -237,10 +238,7 @@ async function generateReplyToComment(
   originalPost: MoltbookPost,
   comment: MoltbookComment
 ): Promise<string | null> {
-  const [artieSoul, moltbookContext] = await Promise.all([
-    getArtieSoul(),
-    getMoltbookContext()
-  ]);
+  const [artieSoul, moltbookContext] = await Promise.all([getArtieSoul(), getMoltbookContext()]);
   const commenterName = comment.author.name;
 
   const systemPrompt = `${artieSoul}
@@ -273,13 +271,14 @@ Write your reply:`;
     const response = await openRouterService.generateFromMessageChain(
       [
         { role: 'system', content: systemPrompt },
-        { role: 'user', content: userPrompt }
+        { role: 'user', content: userPrompt },
       ],
       'artie-social',
       `moltbook-reply-${Date.now()}`
     );
 
-    const reply = response.trim()
+    const reply = response
+      .trim()
       .replace(/^["']|["']$/g, '')
       .replace(/^Reply:\s*/i, '');
 
@@ -314,14 +313,17 @@ async function checkForRepliesToMyPosts(): Promise<number> {
       }
 
       // Find new comments we haven't seen (excluding our own)
-      const newComments = postData.comments.filter(c =>
-        !tracking.commentsSeen.has(c.id) &&
-        !repliedToComments.has(c.id) &&
-        c.author.id !== myInfo.id
+      const newComments = postData.comments.filter(
+        (c) =>
+          !tracking.commentsSeen.has(c.id) &&
+          !repliedToComments.has(c.id) &&
+          c.author.id !== myInfo.id
       );
 
       if (newComments.length > 0) {
-        logger.info(`🌐 Social behavior: Found ${newComments.length} new comment(s) on my post "${tracking.title}"`);
+        logger.info(
+          `🌐 Social behavior: Found ${newComments.length} new comment(s) on my post "${tracking.title}"`
+        );
 
         // Reply to the first new comment (to avoid spam)
         const commentToReply = newComments[0];
@@ -331,10 +333,12 @@ async function checkForRepliesToMyPosts(): Promise<number> {
           try {
             await moltbookFetch(`/posts/${postId}/comments`, 'POST', {
               content: reply,
-              parent_id: commentToReply.id
+              parent_id: commentToReply.id,
             });
 
-            logger.info(`🌐 Social behavior: Replied to @${commentToReply.author.name}'s comment: "${reply.substring(0, 50)}..."`);
+            logger.info(
+              `🌐 Social behavior: Replied to @${commentToReply.author.name}'s comment: "${reply.substring(0, 50)}..."`
+            );
             repliedToComments.add(commentToReply.id);
             repliesMade++;
 
@@ -353,7 +357,7 @@ async function checkForRepliesToMyPosts(): Promise<number> {
         }
 
         // Mark all new comments as seen
-        newComments.forEach(c => tracking.commentsSeen.add(c.id));
+        newComments.forEach((c) => tracking.commentsSeen.add(c.id));
       }
     } catch (error) {
       logger.warn(`🌐 Social behavior: Error checking post ${postId}:`, error);
@@ -383,14 +387,14 @@ function getSubmoltName(submolt: string | { name: string } | undefined): string 
  * Now uses Context Alchemy (PROMPT_SYSTEM) for consistent personality
  * AND incorporates recent memories for authentic, experience-based responses
  */
-async function generateThoughtfulComment(post: MoltbookPost, existingComments?: MoltbookComment[]): Promise<string | null> {
+async function generateThoughtfulComment(
+  post: MoltbookPost,
+  existingComments?: MoltbookComment[]
+): Promise<string | null> {
   const authorName = getAuthorName(post.author);
 
   // Load Artie's soul and Moltbook meta-knowledge from database
-  const [artieSoul, moltbookContext] = await Promise.all([
-    getArtieSoul(),
-    getMoltbookContext()
-  ]);
+  const [artieSoul, moltbookContext] = await Promise.all([getArtieSoul(), getMoltbookContext()]);
 
   // Fetch recent memories related to the post topic for authentic context
   let recentExperiences = '';
@@ -402,12 +406,15 @@ async function generateThoughtfulComment(post: MoltbookPost, existingComments?: 
     // Also get general recent Discord interactions
     const recentInteractions = await memoryService.getRecentMemories('artie-social', 5);
     const interactionsSummary = recentInteractions
-      .filter(m => !m.content.includes('Moltbook')) // Exclude moltbook memories
+      .filter((m) => !m.content.includes('Moltbook')) // Exclude moltbook memories
       .slice(0, 3)
-      .map(m => `- ${m.content.substring(0, 150)}${m.content.length > 150 ? '...' : ''}`)
+      .map((m) => `- ${m.content.substring(0, 150)}${m.content.length > 150 ? '...' : ''}`)
       .join('\n');
 
-    if ((relevantMemories && !relevantMemories.includes('No memories found')) || interactionsSummary) {
+    if (
+      (relevantMemories && !relevantMemories.includes('No memories found')) ||
+      interactionsSummary
+    ) {
       recentExperiences = '\n\nYOUR RECENT EXPERIENCES (draw from these to add authenticity):';
       if (relevantMemories && !relevantMemories.includes('No memories found')) {
         recentExperiences += `\nRelated to this topic:\n${relevantMemories}`;
@@ -423,9 +430,13 @@ async function generateThoughtfulComment(post: MoltbookPost, existingComments?: 
   // Format existing comments for context
   let threadContext = '';
   if (existingComments && existingComments.length > 0) {
-    const commentSummary = existingComments.slice(0, 10).map(c =>
-      `- @${c.author.name}: "${c.content.substring(0, 150)}${c.content.length > 150 ? '...' : ''}"`
-    ).join('\n');
+    const commentSummary = existingComments
+      .slice(0, 10)
+      .map(
+        (c) =>
+          `- @${c.author.name}: "${c.content.substring(0, 150)}${c.content.length > 150 ? '...' : ''}"`
+      )
+      .join('\n');
     threadContext = `\n\nEXISTING COMMENTS (${existingComments.length} total):\n${commentSummary}\n\nConsider the existing discussion - add something new, don't repeat what's been said. If someone's being spammy or posting templates, you can make a wry observation about it.`;
   }
 
@@ -464,16 +475,17 @@ Write your comment:`;
     const response = await openRouterService.generateFromMessageChain(
       [
         { role: 'system', content: systemPrompt },
-        { role: 'user', content: userPrompt }
+        { role: 'user', content: userPrompt },
       ],
       'artie-social',
       `moltbook-comment-${Date.now()}`
     );
 
     // Clean up the response
-    const comment = response.trim()
-      .replace(/^["']|["']$/g, '')  // Remove quotes if wrapped
-      .replace(/^Comment:\s*/i, '');  // Remove "Comment:" prefix if present
+    const comment = response
+      .trim()
+      .replace(/^["']|["']$/g, '') // Remove quotes if wrapped
+      .replace(/^Comment:\s*/i, ''); // Remove "Comment:" prefix if present
 
     if (comment.length > 500) {
       return comment.substring(0, 497) + '...';
@@ -490,21 +502,18 @@ Write your comment:`;
  * Use Artie's brain to generate an original post based on what he's seen
  * Enhanced to pull from varied memory sources for authentic, experience-based posts
  */
-async function generateOriginalPost(recentPosts: MoltbookPost[]): Promise<{ title: string; content: string } | null> {
+async function generateOriginalPost(
+  recentPosts: MoltbookPost[]
+): Promise<{ title: string; content: string } | null> {
   // Get rich, varied memories for authentic post content
   let recentMemories = '';
   try {
     // Fetch multiple types of memories for variety
-    const [
-      conversationMemories,
-      learningMemories,
-      helpingMemories,
-      recentRaw
-    ] = await Promise.all([
+    const [conversationMemories, learningMemories, helpingMemories, recentRaw] = await Promise.all([
       memoryService.recall('artie-social', 'interesting conversation question', 3),
       memoryService.recall('artie-social', 'learned discovered figured out', 3),
       memoryService.recall('artie-social', 'helped someone with', 3),
-      memoryService.getRecentMemories('artie-social', 10)
+      memoryService.getRecentMemories('artie-social', 10),
     ]);
 
     const memoryParts: string[] = [];
@@ -526,9 +535,9 @@ async function generateOriginalPost(recentPosts: MoltbookPost[]): Promise<{ titl
 
     // Add recent raw memories (excluding moltbook ones) for fresh context
     const nonMoltbookRecent = recentRaw
-      .filter(m => !m.content.toLowerCase().includes('moltbook'))
+      .filter((m) => !m.content.toLowerCase().includes('moltbook'))
       .slice(0, 5)
-      .map(m => `- ${m.content.substring(0, 200)}`)
+      .map((m) => `- ${m.content.substring(0, 200)}`)
       .join('\n');
     if (nonMoltbookRecent) {
       memoryParts.push(`Recent interactions:\n${nonMoltbookRecent}`);
@@ -542,16 +551,16 @@ async function generateOriginalPost(recentPosts: MoltbookPost[]): Promise<{ titl
   }
 
   // Summarize what's been posted recently
-  const feedSummary = recentPosts.slice(0, 5).map(p => {
-    const author = getAuthorName(p.author);
-    return `- @${author}: "${p.title}"`;
-  }).join('\n');
+  const feedSummary = recentPosts
+    .slice(0, 5)
+    .map((p) => {
+      const author = getAuthorName(p.author);
+      return `- @${author}: "${p.title}"`;
+    })
+    .join('\n');
 
   // Load Artie's soul and Moltbook meta-knowledge from database
-  const [artieSoul, moltbookContext] = await Promise.all([
-    getArtieSoul(),
-    getMoltbookContext()
-  ]);
+  const [artieSoul, moltbookContext] = await Promise.all([getArtieSoul(), getMoltbookContext()]);
 
   const systemPrompt = `${artieSoul}
 
@@ -589,7 +598,7 @@ Based on your recent experiences above, write a post sharing something specific 
     const response = await openRouterService.generateFromMessageChain(
       [
         { role: 'system', content: systemPrompt },
-        { role: 'user', content: userPrompt }
+        { role: 'user', content: userPrompt },
       ],
       'artie-social',
       `moltbook-post-${Date.now()}`
@@ -626,7 +635,7 @@ function checkDayReset(): void {
   if (today !== lastActionDate) {
     todayActions = 0;
     lastActionDate = today;
-    recentlyCommentedPosts.clear();  // Reset comment tracking daily
+    recentlyCommentedPosts.clear(); // Reset comment tracking daily
   }
 }
 
@@ -635,22 +644,22 @@ function checkDayReset(): void {
  */
 function findInterestingPost(posts: MoltbookPost[]): MoltbookPost | null {
   // Filter out own posts and recently commented ones
-  const candidates = posts.filter(p => {
+  const candidates = posts.filter((p) => {
     const authorName = getAuthorName(p.author);
-    return authorName.toLowerCase() !== 'coachartie' &&
-           !recentlyCommentedPosts.has(p.id);
+    return authorName.toLowerCase() !== 'coachartie' && !recentlyCommentedPosts.has(p.id);
   });
 
   if (candidates.length === 0) return null;
 
   // Prefer posts with some engagement but not too many comments
   // (more room for Artie's voice to be heard)
-  const scored = candidates.map(p => ({
+  const scored = candidates.map((p) => ({
     post: p,
-    score: (p.content?.length || 0) * 0.01 +  // Longer content = more to engage with
-           Math.min(p.comment_count || 0, 10) * 0.5 +  // Some comments = active discussion
-           ((p.upvotes || 0) - (p.downvotes || 0)) * 0.3 +  // Popular = interesting
-           Math.random() * 5  // Randomness to keep it fresh
+    score:
+      (p.content?.length || 0) * 0.01 + // Longer content = more to engage with
+      Math.min(p.comment_count || 0, 10) * 0.5 + // Some comments = active discussion
+      ((p.upvotes || 0) - (p.downvotes || 0)) * 0.3 + // Popular = interesting
+      Math.random() * 5, // Randomness to keep it fresh
   }));
 
   scored.sort((a, b) => b.score - a.score);
@@ -689,7 +698,9 @@ async function checkMoltbook(): Promise<void> {
 
     // FIRST: Check for replies to our posts (this is important - don't skip!)
     if (myPostsTracking.size > 0) {
-      logger.info(`🌐 Social behavior: Checking ${myPostsTracking.size} tracked post(s) for new comments...`);
+      logger.info(
+        `🌐 Social behavior: Checking ${myPostsTracking.size} tracked post(s) for new comments...`
+      );
       const repliesMade = await checkForRepliesToMyPosts();
       if (repliesMade > 0) {
         todayActions += repliesMade;
@@ -698,7 +709,7 @@ async function checkMoltbook(): Promise<void> {
     }
 
     // Fetch feed
-    const feedData = await moltbookFetch('/feed?limit=15') as {
+    const feedData = (await moltbookFetch('/feed?limit=15')) as {
       posts?: MoltbookPost[];
       data?: MoltbookPost[];
     };
@@ -722,11 +733,11 @@ async function checkMoltbook(): Promise<void> {
 
       if (postData) {
         try {
-          const postResponse = await moltbookFetch('/posts', 'POST', {
+          const postResponse = (await moltbookFetch('/posts', 'POST', {
             submolt: 'general',
             title: postData.title,
-            content: postData.content
-          }) as { success: boolean; post?: { id: string } };
+            content: postData.content,
+          })) as { success: boolean; post?: { id: string } };
 
           logger.info(`🌐 Social behavior: Posted "${postData.title}"`);
           todayActions++;
@@ -735,7 +746,7 @@ async function checkMoltbook(): Promise<void> {
           if (postResponse.post?.id) {
             myPostsTracking.set(postResponse.post.id, {
               commentsSeen: new Set(),
-              title: postData.title
+              title: postData.title,
             });
             logger.info(`🌐 Social behavior: Tracking post ${postResponse.post.id} for replies`);
           }
@@ -759,7 +770,9 @@ async function checkMoltbook(): Promise<void> {
 
       if (post) {
         const authorName = getAuthorName(post.author);
-        logger.info(`🌐 Social behavior: Artie is thinking about @${authorName}'s post "${post.title}"...`);
+        logger.info(
+          `🌐 Social behavior: Artie is thinking about @${authorName}'s post "${post.title}"...`
+        );
 
         // Fetch existing comments for thread context
         let existingComments: MoltbookComment[] = [];
@@ -767,7 +780,9 @@ async function checkMoltbook(): Promise<void> {
           const postData = await getPostWithComments(post.id);
           if (postData?.comments) {
             existingComments = postData.comments;
-            logger.info(`🌐 Social behavior: Found ${existingComments.length} existing comments in thread`);
+            logger.info(
+              `🌐 Social behavior: Found ${existingComments.length} existing comments in thread`
+            );
           }
         } catch (e) {
           logger.warn(`🌐 Social behavior: Could not fetch thread comments: ${e}`);
@@ -778,14 +793,16 @@ async function checkMoltbook(): Promise<void> {
         if (comment) {
           try {
             await moltbookFetch(`/posts/${post.id}/comments`, 'POST', { content: comment });
-            logger.info(`🌐 Social behavior: Commented on "${post.title}" (post ID: ${post.id}): "${comment.substring(0, 50)}..."`);
+            logger.info(
+              `🌐 Social behavior: Commented on "${post.title}" (post ID: ${post.id}): "${comment.substring(0, 50)}..."`
+            );
             todayActions++;
             recentlyCommentedPosts.add(post.id);
 
             // Track this post so we can check for replies to our comment
             postsICommentedOn.set(post.id, {
               title: post.title,
-              author: authorName
+              author: authorName,
             });
             logger.info(`🌐 Social behavior: Tracking post ${post.id} for reply threads`);
 
@@ -807,14 +824,16 @@ async function checkMoltbook(): Promise<void> {
       }
     } else {
       // Just lurk and maybe remember something interesting
-      const interestingPost = posts.find(p => {
+      const interestingPost = posts.find((p) => {
         const score = (p.upvotes || 0) - (p.downvotes || 0);
         return score > 5 || (p.comment_count || 0) > 3;
       });
 
       if (interestingPost) {
         const authorName = getAuthorName(interestingPost.author);
-        logger.info(`🌐 Social behavior: Lurking - noticed @${authorName}'s popular post "${interestingPost.title}"`);
+        logger.info(
+          `🌐 Social behavior: Lurking - noticed @${authorName}'s popular post "${interestingPost.title}"`
+        );
 
         // Maybe remember this for later
         if (Math.random() < 0.3) {
@@ -833,7 +852,6 @@ async function checkMoltbook(): Promise<void> {
     }
 
     scheduleNextCheck();
-
   } catch (error) {
     logger.error('🌐 Social behavior error:', error);
     scheduleNextCheck();
@@ -871,7 +889,7 @@ async function loadMyRecentPosts(): Promise<void> {
     }
 
     // Fetch the feed and find our posts
-    const feedData = await moltbookFetch('/feed?limit=50') as {
+    const feedData = (await moltbookFetch('/feed?limit=50')) as {
       posts?: MoltbookPost[];
     };
     const posts = feedData.posts || [];
@@ -882,7 +900,7 @@ async function loadMyRecentPosts(): Promise<void> {
       if (authorId === myInfo.id && !myPostsTracking.has(post.id)) {
         myPostsTracking.set(post.id, {
           commentsSeen: new Set(), // Will discover existing comments on first check
-          title: post.title
+          title: post.title,
         });
         myPosts++;
       }
@@ -911,7 +929,7 @@ export function startSocialMediaBehavior(): void {
   logger.info('🌐 Social behavior: Will check for and reply to comments on my posts');
 
   // Load existing posts to track for replies
-  loadMyRecentPosts().catch(err => {
+  loadMyRecentPosts().catch((err) => {
     logger.warn('🌐 Social behavior: Failed to load recent posts:', err);
   });
 
@@ -989,13 +1007,13 @@ export async function executeOnDemand(): Promise<{
         return {
           action: 'commented',
           message: `Replied to ${repliesMade} comment(s) on my posts`,
-          details: { repliesMade }
+          details: { repliesMade },
         };
       }
     }
 
     // Fetch feed
-    const feedData = await moltbookFetch('/feed?limit=15') as {
+    const feedData = (await moltbookFetch('/feed?limit=15')) as {
       posts?: MoltbookPost[];
       data?: MoltbookPost[];
     };
@@ -1012,18 +1030,18 @@ export async function executeOnDemand(): Promise<{
       // Create an original post
       const postData = await generateOriginalPost(posts);
       if (postData) {
-        const postResponse = await moltbookFetch('/posts', 'POST', {
+        const postResponse = (await moltbookFetch('/posts', 'POST', {
           submolt: 'general',
           title: postData.title,
-          content: postData.content
-        }) as { success: boolean; post?: { id: string } };
+          content: postData.content,
+        })) as { success: boolean; post?: { id: string } };
 
         todayActions++;
 
         if (postResponse.post?.id) {
           myPostsTracking.set(postResponse.post.id, {
             commentsSeen: new Set(),
-            title: postData.title
+            title: postData.title,
           });
         }
 
@@ -1039,7 +1057,7 @@ export async function executeOnDemand(): Promise<{
         return {
           action: 'posted',
           message: `Posted "${postData.title}"`,
-          details: { title: postData.title }
+          details: { title: postData.title },
         };
       }
     } else if (roll < POST_PROBABILITY + COMMENT_PROBABILITY) {
@@ -1054,7 +1072,9 @@ export async function executeOnDemand(): Promise<{
           if (postData?.comments) {
             existingComments = postData.comments;
           }
-        } catch { /* optional */ }
+        } catch {
+          /* optional */
+        }
 
         const comment = await generateThoughtfulComment(post, existingComments);
         if (comment) {
@@ -1064,7 +1084,7 @@ export async function executeOnDemand(): Promise<{
 
           postsICommentedOn.set(post.id, {
             title: post.title,
-            author: authorName
+            author: authorName,
           });
 
           await memoryService.remember(
@@ -1079,7 +1099,7 @@ export async function executeOnDemand(): Promise<{
           return {
             action: 'commented',
             message: `Commented on "${post.title}" by @${authorName}`,
-            details: { postId: post.id, comment: comment.substring(0, 100) }
+            details: { postId: post.id, comment: comment.substring(0, 100) },
           };
         }
       }
@@ -1089,9 +1109,8 @@ export async function executeOnDemand(): Promise<{
     return {
       action: 'lurked',
       message: `Browsed ${posts.length} posts, just observing`,
-      details: { postsViewed: posts.length }
+      details: { postsViewed: posts.length },
     };
-
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     logger.error('🌐 Social behavior on-demand error:', error);

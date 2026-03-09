@@ -132,7 +132,10 @@ export class CombinedMemoryEntourage implements MemoryEntourageInterface {
   /**
    * Calculate token budgets for each memory layer
    */
-  private calculateLayerTokenBudgets(maxTokens?: number, includeGuild?: boolean): {
+  private calculateLayerTokenBudgets(
+    maxTokens?: number,
+    includeGuild?: boolean
+  ): {
     semantic: number;
     temporal: number;
     guild: number;
@@ -143,7 +146,7 @@ export class CombinedMemoryEntourage implements MemoryEntourageInterface {
       // With guild: 45% semantic, 30% temporal, 25% guild
       return {
         semantic: Math.floor(totalBudget * 0.45),
-        temporal: Math.floor(totalBudget * 0.30),
+        temporal: Math.floor(totalBudget * 0.3),
         guild: Math.floor(totalBudget * 0.25),
       };
     }
@@ -161,7 +164,10 @@ export class CombinedMemoryEntourage implements MemoryEntourageInterface {
   /**
    * Get guild-scoped memories (community knowledge, observations)
    */
-  private async getGuildMemoryContext(guildId: string, maxTokens: number): Promise<MemoryEntourageResult> {
+  private async getGuildMemoryContext(
+    guildId: string,
+    maxTokens: number
+  ): Promise<MemoryEntourageResult> {
     try {
       const guildMemories = await hybridDataLayer.getGuildMemories(guildId, 5);
 
@@ -183,7 +189,7 @@ export class CombinedMemoryEntourage implements MemoryEntourageInterface {
         return content.substring(0, 300) + (content.length > 300 ? '...' : '');
       });
 
-      const content = `🏠 Community knowledge:\n${formattedMemories.map(m => `• ${m}`).join('\n')}`;
+      const content = `🏠 Community knowledge:\n${formattedMemories.map((m) => `• ${m}`).join('\n')}`;
 
       return {
         content,
@@ -215,7 +221,8 @@ export class CombinedMemoryEntourage implements MemoryEntourageInterface {
     guildResult?: MemoryEntourageResult
   ): MemoryEntourageResult {
     // Handle case where no layer found memories
-    const totalCount = semanticResult.memoryCount + temporalResult.memoryCount + (guildResult?.memoryCount || 0);
+    const totalCount =
+      semanticResult.memoryCount + temporalResult.memoryCount + (guildResult?.memoryCount || 0);
     if (totalCount === 0) {
       return {
         content: '',
@@ -227,7 +234,7 @@ export class CombinedMemoryEntourage implements MemoryEntourageInterface {
     }
 
     // Collect active layers
-    const activeLayers: Array<{name: string; result: MemoryEntourageResult}> = [];
+    const activeLayers: Array<{ name: string; result: MemoryEntourageResult }> = [];
     if (semanticResult.memoryCount > 0) {
       activeLayers.push({ name: 'semantic', result: semanticResult });
     }

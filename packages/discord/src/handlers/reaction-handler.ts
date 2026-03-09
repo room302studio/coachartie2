@@ -515,7 +515,8 @@ async function handleFeedbackReaction(
   // Store memory about this feedback for learning
   try {
     const messageSnippet = reaction.message.content?.substring(0, 150) || 'unknown message';
-    const channelName = ('name' in reaction.message.channel ? reaction.message.channel.name : null) || 'DM';
+    const channelName =
+      ('name' in reaction.message.channel ? reaction.message.channel.name : null) || 'DM';
     const guildName = reaction.message.guild?.name || 'unknown';
     const guildId = reaction.message.guildId;
 
@@ -694,7 +695,7 @@ async function checkNegativeFeedbackThreshold(guildId: string, shortId: string):
     });
 
     if (response.ok) {
-      const result = await response.json() as { triggered?: boolean; count?: number };
+      const result = (await response.json()) as { triggered?: boolean; count?: number };
       if (result.triggered) {
         logger.warn(
           `🚨 Emergency reflection triggered for guild ${guildId}: ${result.count} negative reactions in last hour [${shortId}]`

@@ -400,7 +400,9 @@ export function initializeDb(dbPath?: string): BetterSQLite3Database<typeof sche
   `);
   raw.exec(`CREATE INDEX IF NOT EXISTS idx_github_watches_repo ON github_repo_watches(repo)`);
   raw.exec(`CREATE INDEX IF NOT EXISTS idx_github_watches_guild ON github_repo_watches(guild_id)`);
-  raw.exec(`CREATE INDEX IF NOT EXISTS idx_github_watches_channel ON github_repo_watches(channel_id)`);
+  raw.exec(
+    `CREATE INDEX IF NOT EXISTS idx_github_watches_channel ON github_repo_watches(channel_id)`
+  );
 
   raw.exec(`
     CREATE TABLE IF NOT EXISTS github_sync_state (
@@ -433,8 +435,12 @@ export function initializeDb(dbPath?: string): BetterSQLite3Database<typeof sche
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )
   `);
-  raw.exec(`CREATE INDEX IF NOT EXISTS idx_github_identity_github ON github_identity_mappings(github_username)`);
-  raw.exec(`CREATE INDEX IF NOT EXISTS idx_github_identity_discord ON github_identity_mappings(discord_user_id)`);
+  raw.exec(
+    `CREATE INDEX IF NOT EXISTS idx_github_identity_github ON github_identity_mappings(github_username)`
+  );
+  raw.exec(
+    `CREATE INDEX IF NOT EXISTS idx_github_identity_discord ON github_identity_mappings(discord_user_id)`
+  );
 
   raw.exec(`
     CREATE TABLE IF NOT EXISTS github_events_queue (
@@ -454,7 +460,9 @@ export function initializeDb(dbPath?: string): BetterSQLite3Database<typeof sche
   `);
   raw.exec(`CREATE INDEX IF NOT EXISTS idx_github_events_status ON github_events_queue(status)`);
   raw.exec(`CREATE INDEX IF NOT EXISTS idx_github_events_repo ON github_events_queue(repo)`);
-  raw.exec(`CREATE INDEX IF NOT EXISTS idx_github_events_batch_key ON github_events_queue(batch_key)`);
+  raw.exec(
+    `CREATE INDEX IF NOT EXISTS idx_github_events_batch_key ON github_events_queue(batch_key)`
+  );
 
   return database;
 }

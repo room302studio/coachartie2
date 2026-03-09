@@ -283,7 +283,7 @@ create_env_file() {
 
 OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-""}
 OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
-OPENROUTER_MODELS=openai/gpt-4o-mini,openai/gpt-4o,anthropic/claude-3.5-sonnet,google/gemini-2.0-flash-exp:free
+OPENROUTER_MODELS=openai/gpt-4o-mini,openai/gpt-4o,anthropic/claude-3.5-sonnet
 FAST_MODEL=openai/gpt-4o-mini
 SMART_MODEL=openai/gpt-4o
 MANAGER_MODEL=anthropic/claude-3.5-sonnet

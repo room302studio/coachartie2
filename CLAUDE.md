@@ -6,19 +6,20 @@ Keep Discord channels in sync with GitHub repos - surfacing PRs ready for review
 
 ## Requirements Summary
 
-| Aspect | Decision |
-|--------|----------|
-| **Trigger** | Polling via existing `GITHUB_TOKEN` - no webhooks needed |
-| **Events** | PR opened, ready for review, comments, reviews, approved, changes requested, merged (emphasis on main), CI runs |
-| **Channel mapping** | Channel-per-project, multiple repos can feed one channel |
-| **Mentions** | Artie figures out GitHub→Discord mappings organically, pings relevant people |
-| **Message format** | Artie's judgment - fanfare for big moments, minimal for routine |
-| **Filtering** | Affordances to ignore/batch, Artie decides when |
-| **Config** | Guild whitelist defaults + database + commands + Artie learning |
+| Aspect              | Decision                                                                                                        |
+| ------------------- | --------------------------------------------------------------------------------------------------------------- |
+| **Trigger**         | Polling via existing `GITHUB_TOKEN` - no webhooks needed                                                        |
+| **Events**          | PR opened, ready for review, comments, reviews, approved, changes requested, merged (emphasis on main), CI runs |
+| **Channel mapping** | Channel-per-project, multiple repos can feed one channel                                                        |
+| **Mentions**        | Artie figures out GitHub→Discord mappings organically, pings relevant people                                    |
+| **Message format**  | Artie's judgment - fanfare for big moments, minimal for routine                                                 |
+| **Filtering**       | Affordances to ignore/batch, Artie decides when                                                                 |
+| **Config**          | Guild whitelist defaults + database + commands + Artie learning                                                 |
 
 ## Events to Track
 
 ### PR Workflow
+
 - PR opened
 - PR ready for review (draft → ready)
 - New comments on PRs
@@ -28,6 +29,7 @@ Keep Discord channels in sync with GitHub repos - surfacing PRs ready for review
 - PR merged (extra emphasis if merged to `main`)
 
 ### CI/CD
+
 - GitHub Actions job runs (pass/fail)
 
 ## Architecture
@@ -71,12 +73,14 @@ Keep Discord channels in sync with GitHub repos - surfacing PRs ready for review
 ## Implementation Phases
 
 ### Phase 1: Database & State ✅
+
 - [x] Add `github_repo_watches` table (repo, channel_id, guild_id, settings)
 - [x] Add `github_sync_state` table (repo, last_pr_id, last_comment_id, last_check, etc.)
 - [x] Add `github_identity_mappings` table for GitHub username → Discord user mappings
 - [x] Add `github_events_queue` table for event batching
 
 ### Phase 2: GitHub Poller Service ✅
+
 - [x] Create `/packages/discord/src/services/github-poller.ts`
 - [x] Poll repos on configurable interval (3 min default)
 - [x] Fetch PRs, comments, reviews, check runs via Octokit
@@ -84,6 +88,7 @@ Keep Discord channels in sync with GitHub repos - surfacing PRs ready for review
 - [x] Handle rate limiting with automatic backoff
 
 ### Phase 3: Event Processing ✅
+
 - [x] Create `/packages/discord/src/services/github-event-processor.ts`
 - [x] Batching logic (5-min window for related events)
 - [x] Filtering logic (skip bot PRs, drafts until ready)
@@ -91,6 +96,7 @@ Keep Discord channels in sync with GitHub repos - surfacing PRs ready for review
 - [x] Event priority calculation
 
 ### Phase 4: Discord Posting ✅
+
 - [x] Create `/packages/discord/src/services/github-discord-poster.ts`
 - [x] Format messages with rich embeds (color-coded by event type)
 - [x] Post to mapped channels
@@ -98,6 +104,7 @@ Keep Discord channels in sync with GitHub repos - surfacing PRs ready for review
 - [x] Extra fanfare for merges to main
 
 ### Phase 5: Configuration Layer ✅
+
 - [x] Add `githubSync` to guild whitelist config schema
 - [x] `/watch-repo` command to add repo→channel mapping
 - [x] `/unwatch-repo` command to remove mapping
@@ -105,6 +112,7 @@ Keep Discord channels in sync with GitHub repos - surfacing PRs ready for review
 - [x] Create `github-sync.ts` orchestrator service
 
 ### Phase 6: Identity Learning Capability ✅
+
 - [x] Create `/packages/capabilities/src/capabilities/github-identity.ts`
 - [x] Capability for Artie to query GitHub↔Discord mappings
 - [x] Capability for Artie to learn/update mappings
@@ -113,6 +121,7 @@ Keep Discord channels in sync with GitHub repos - surfacing PRs ready for review
 ## Key Files to Create/Modify
 
 ### New Files
+
 - `/packages/shared/src/db/schema.ts` - Add new tables
 - `/packages/discord/src/services/github-poller.ts` - Main poller service
 - `/packages/discord/src/services/github-event-processor.ts` - Event batching/filtering
@@ -122,6 +131,7 @@ Keep Discord channels in sync with GitHub repos - surfacing PRs ready for review
 - `/packages/capabilities/src/capabilities/github-identity.ts` - Identity capability
 
 ### Modified Files
+
 - `/packages/discord/src/config/guild-whitelist.ts` - Add githubRepos config
 - `/packages/discord/src/index.ts` - Initialize poller service
 - `/packages/shared/src/services/user-profile.ts` - Extend for GitHub identity
@@ -154,13 +164,13 @@ Keep Discord channels in sync with GitHub repos - surfacing PRs ready for review
 
 ## Mention Rules
 
-| Event | Who to Ping |
-|-------|-------------|
+| Event               | Who to Ping                                       |
+| ------------------- | ------------------------------------------------- |
 | PR ready for review | Requested reviewers (if mapped) or @reviewer role |
-| Changes requested | PR author |
-| PR approved | PR author |
-| CI failed | PR author |
-| PR merged to main | Celebratory, maybe @channel or custom role |
+| Changes requested   | PR author                                         |
+| PR approved         | PR author                                         |
+| CI failed           | PR author                                         |
+| PR merged to main   | Celebratory, maybe @channel or custom role        |
 
 ## Batching Rules
 

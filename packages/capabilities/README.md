@@ -26,6 +26,7 @@ Examples:
 ```
 
 Mention listener:
+
 - A scheduler job polls Reddit mentions hourly (`reddit-mentions`) and respects `REDDIT_ALLOWED_SUBS`.
 - Mentions are queued for processing with `shouldRespond=false` to avoid noisy status updates; Artie can still act using the reddit capability (e.g., comment back).
 

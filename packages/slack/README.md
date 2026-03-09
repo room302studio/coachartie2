@@ -60,28 +60,30 @@ After creating the app, you'll land on the "Basic Information" page. Keep this p
 ### Step 1: Navigate to OAuth & Permissions
 
 From your app's settings page:
+
 1. Click **"OAuth & Permissions"** in the left sidebar
 2. Scroll to **"Scopes"** section
 3. Under **"Bot Token Scopes"**, add the following scopes:
 
 ### Required Bot Token Scopes
 
-| Scope | Purpose |
-|-------|---------|
+| Scope               | Purpose                                           |
+| ------------------- | ------------------------------------------------- |
 | `app_mentions:read` | Detect when the bot is mentioned with @CoachArtie |
-| `channels:history` | Read message history in public channels |
-| `channels:read` | View basic information about public channels |
-| `chat:write` | Send messages as the bot |
-| `im:history` | Read message history in direct messages |
-| `im:read` | View basic information about DMs |
-| `im:write` | Send direct messages |
-| `users:read` | View user information (names, profiles) |
-| `reactions:read` | View reactions on messages |
-| `reactions:write` | Add reactions to messages |
+| `channels:history`  | Read message history in public channels           |
+| `channels:read`     | View basic information about public channels      |
+| `chat:write`        | Send messages as the bot                          |
+| `im:history`        | Read message history in direct messages           |
+| `im:read`           | View basic information about DMs                  |
+| `im:write`          | Send direct messages                              |
+| `users:read`        | View user information (names, profiles)           |
+| `reactions:read`    | View reactions on messages                        |
+| `reactions:write`   | Add reactions to messages                         |
 
 ### Adding Scopes
 
 For each scope listed above:
+
 1. Click **"Add an OAuth Scope"**
 2. Search for the scope name
 3. Click to add it
@@ -102,10 +104,12 @@ Events allow your bot to respond to messages and mentions in real-time.
 You need to provide a public URL that Slack can send events to. This must be accessible from the internet.
 
 **Development Options:**
+
 - Use [ngrok](https://ngrok.com/) to expose your local server: `ngrok http 3000`
 - Use a cloud deployment (recommended for production)
 
 **Request URL Format:**
+
 ```
 https://your-domain.com/slack/events
 ```
@@ -116,13 +120,14 @@ https://your-domain.com/slack/events
 
 Scroll to **"Subscribe to bot events"** and add these event types:
 
-| Event Name | Description |
-|------------|-------------|
-| `app_mention` | When someone mentions @CoachArtie |
+| Event Name         | Description                        |
+| ------------------ | ---------------------------------- |
+| `app_mention`      | When someone mentions @CoachArtie  |
 | `message.channels` | Messages posted to public channels |
-| `message.im` | Direct messages sent to the bot |
+| `message.im`       | Direct messages sent to the bot    |
 
 After adding all events:
+
 1. Click **"Save Changes"**
 2. Slack will verify your Request URL
 
@@ -215,17 +220,17 @@ LOG_LEVEL=info
 
 ### Configuration Details
 
-| Variable | Required | Default | Description |
-|----------|----------|---------|-------------|
-| `SLACK_BOT_TOKEN` | ✅ Yes | - | Bot User OAuth Token from Slack |
-| `SLACK_SIGNING_SECRET` | ✅ Yes | - | Signing Secret for request verification |
-| `SLACK_PORT` | No | `3000` | Port for Slack event server |
-| `CAPABILITIES_URL` | ✅ Yes | - | URL of the capabilities service |
-| `REDIS_HOST` | ✅ Yes | - | Redis server hostname |
-| `REDIS_PORT` | ✅ Yes | `6379` | Redis server port |
-| `HEALTH_PORT` | No | `47320` | Health check server port |
-| `NODE_ENV` | No | `development` | Environment mode |
-| `LOG_LEVEL` | No | `info` | Logging verbosity |
+| Variable               | Required | Default       | Description                             |
+| ---------------------- | -------- | ------------- | --------------------------------------- |
+| `SLACK_BOT_TOKEN`      | ✅ Yes   | -             | Bot User OAuth Token from Slack         |
+| `SLACK_SIGNING_SECRET` | ✅ Yes   | -             | Signing Secret for request verification |
+| `SLACK_PORT`           | No       | `3000`        | Port for Slack event server             |
+| `CAPABILITIES_URL`     | ✅ Yes   | -             | URL of the capabilities service         |
+| `REDIS_HOST`           | ✅ Yes   | -             | Redis server hostname                   |
+| `REDIS_PORT`           | ✅ Yes   | `6379`        | Redis server port                       |
+| `HEALTH_PORT`          | No       | `47320`       | Health check server port                |
+| `NODE_ENV`             | No       | `development` | Environment mode                        |
+| `LOG_LEVEL`            | No       | `info`        | Logging verbosity                       |
 
 ## Running the Service
 
@@ -234,6 +239,7 @@ LOG_LEVEL=info
 Before starting, ensure these services are running:
 
 1. **Redis Server**
+
    ```bash
    # Check if Redis is running
    redis-cli ping
@@ -263,6 +269,7 @@ npm run dev
 ```
 
 You should see output like:
+
 ```
 🚀 SLACK SERVICE STARTING UP - BOOKITY BOOKITY!
 📍 Current directory: /Users/ejfox/code/coachartie2/packages/slack
@@ -364,12 +371,12 @@ The Slack bot includes a comprehensive health check server.
 
 ### Health Endpoints
 
-| Endpoint | Purpose | Response |
-|----------|---------|----------|
-| `/health` | Overall health status | Full health report with Slack status and metrics |
-| `/metrics` | Telemetry metrics | Message counts, user stats, recent events |
-| `/ready` | Readiness probe | Whether bot is ready to handle requests |
-| `/live` | Liveness probe | Whether bot process is alive |
+| Endpoint   | Purpose               | Response                                         |
+| ---------- | --------------------- | ------------------------------------------------ |
+| `/health`  | Overall health status | Full health report with Slack status and metrics |
+| `/metrics` | Telemetry metrics     | Message counts, user stats, recent events        |
+| `/ready`   | Readiness probe       | Whether bot is ready to handle requests          |
+| `/live`    | Liveness probe        | Whether bot process is alive                     |
 
 ### Health Status Example
 
@@ -434,6 +441,7 @@ curl http://localhost:47320/metrics
 For production deployments, you can:
 
 1. **Set up health check alerts**
+
    ```bash
    # Example: Check health every minute
    * * * * * curl -f http://localhost:47320/health || alert-team
@@ -444,6 +452,7 @@ For production deployments, you can:
    - Track message success rate, response times, error rates
 
 3. **Use Kubernetes probes** (if applicable)
+
    ```yaml
    livenessProbe:
      httpGet:
@@ -510,11 +519,13 @@ packages/slack/
 ### Correlation Tracking
 
 Every message gets a unique correlation ID for request tracing:
+
 - Logged with all events
 - Included in telemetry
 - Helps debug issues across services
 
 Example log:
+
 ```
 📨 Message received [a1b2c3d4]
 🤖 Will respond to message [a1b2c3d4]
@@ -525,11 +536,13 @@ Example log:
 ### Queue System
 
 Uses BullMQ with Redis for reliable message processing:
+
 - **Incoming Queue**: Messages from Slack → Capabilities
 - **Response Queue**: Responses from Capabilities → Slack
 - **Outgoing Queue**: Messages to send to Slack
 
 Benefits:
+
 - Resilient to service restarts
 - Retry failed messages
 - Track job status
@@ -540,11 +553,13 @@ Benefits:
 ### Bot Not Responding
 
 **Check 1: Verify bot is running**
+
 ```bash
 curl http://localhost:47320/health
 ```
 
 **Check 2: Verify environment variables**
+
 ```bash
 # In packages/slack directory
 npm run dev
@@ -555,10 +570,12 @@ npm run dev
 ```
 
 **Check 3: Verify bot is in the channel**
+
 - Type `/invite @CoachArtie` in the channel
 - Or add via channel settings
 
 **Check 4: Check permissions**
+
 - Go to [Slack API Apps](https://api.slack.com/apps)
 - Select your app → OAuth & Permissions
 - Verify all scopes are present
@@ -567,6 +584,7 @@ npm run dev
 ### Events Not Reaching Bot
 
 **Check 1: Verify Event Subscriptions**
+
 - Go to Event Subscriptions in Slack app settings
 - Ensure Request URL is verified (green checkmark)
 - Verify all three events are subscribed:
@@ -577,6 +595,7 @@ npm run dev
 **Check 2: Request URL Issues**
 
 If using ngrok:
+
 ```bash
 # Start ngrok
 ngrok http 3000
@@ -586,6 +605,7 @@ ngrok http 3000
 ```
 
 **Check 3: Firewall/Network**
+
 - Ensure port 3000 is accessible
 - Check firewall rules
 - Verify Slack can reach your server
@@ -593,12 +613,14 @@ ngrok http 3000
 ### Redis Connection Errors
 
 **Check 1: Redis is running**
+
 ```bash
 redis-cli ping
 # Should return: PONG
 ```
 
 **Check 2: Redis connection settings**
+
 ```bash
 # Verify in .env:
 REDIS_HOST=localhost
@@ -606,6 +628,7 @@ REDIS_PORT=6379
 ```
 
 **Check 3: Redis permissions**
+
 ```bash
 # Test connection
 redis-cli -h localhost -p 6379 ping
@@ -614,16 +637,19 @@ redis-cli -h localhost -p 6379 ping
 ### Capabilities Service Errors
 
 **Check 1: Service is running**
+
 ```bash
 curl http://localhost:47324/health
 ```
 
 **Check 2: Verify URL in .env**
+
 ```bash
 CAPABILITIES_URL=http://localhost:47324
 ```
 
 **Check 3: Check logs**
+
 ```bash
 # In packages/capabilities
 npm run dev
@@ -632,12 +658,14 @@ npm run dev
 ### High Response Times
 
 **Check 1: Capabilities service performance**
+
 ```bash
 # Check capabilities metrics
 curl http://localhost:47324/metrics
 ```
 
 **Check 2: Redis queue backlog**
+
 ```bash
 # Connect to Redis
 redis-cli
@@ -648,6 +676,7 @@ LLEN bull:slack-responses:waiting
 ```
 
 **Check 3: Message history fetch**
+
 - Bot fetches 10-25 recent messages for context
 - In busy channels, this may slow responses
 - Consider reducing MAX_CHANNEL_HISTORY in message-handler.ts
@@ -655,29 +684,35 @@ LLEN bull:slack-responses:waiting
 ### Streaming Not Working
 
 **Check 1: Network latency**
+
 - Streaming requires stable connection
 - Check network stability
 
 **Check 2: Message size**
+
 - Large responses may appear to stream slower
 - Check message chunking is working
 
 **Check 3: Capabilities service streaming**
+
 - Verify capabilities service supports streaming
 - Check job status updates are being sent
 
 ### Permission Errors
 
 **Error: `missing_scope`**
+
 - Go to OAuth & Permissions
 - Add the missing scope
 - Reinstall app to workspace
 
 **Error: `not_in_channel`**
+
 - Invite bot to channel: `/invite @CoachArtie`
 - Or add via channel settings → Integrations
 
 **Error: `channel_not_found`**
+
 - Verify bot has access to channel
 - Check if channel is private (bot needs invite)
 
@@ -695,6 +730,7 @@ npm run dev
 ```
 
 This will show detailed logs including:
+
 - Full message payloads
 - Queue job details
 - API responses

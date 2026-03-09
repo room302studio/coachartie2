@@ -42,7 +42,9 @@ export async function processMessage(
         logger.info(`📊 Auto-checking credits (message ${messageCount}/${autoCheckEvery})`);
 
         try {
-          const { capabilityRegistry } = await import('../services/capability/capability-registry.js');
+          const { capabilityRegistry } = await import(
+            '../services/capability/capability-registry.js'
+          );
           const creditStatus = await capabilityRegistry.execute(
             'credit_status',
             'check_balance',

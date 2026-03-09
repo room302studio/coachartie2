@@ -19,6 +19,7 @@
     "better-sqlite3": "^12.4.6",
     "bullmq": "^5.1.0",
     "drizzle-orm": "^0.44.7",
+    "ethers": "^6.16.0",
     "ioredis": "^5.3.2",
     "sql.js": "^1.13.0",
     "winston": "^3.11.0",

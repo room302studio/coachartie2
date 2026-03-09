@@ -149,9 +149,7 @@ async function handleRecentMemories(interaction: ChatInputCommandInteraction, us
 
   try {
     // Call the existing memories API endpoint
-    const response = await fetch(
-      `${brainUrl}/api/memories?userId=${userId}&limit=${limit}`
-    );
+    const response = await fetch(`${brainUrl}/api/memories?userId=${userId}&limit=${limit}`);
 
     if (!response.ok) {
       throw new Error(`API response: ${response.status}`);

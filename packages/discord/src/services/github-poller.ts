@@ -580,7 +580,10 @@ export class GitHubPollerService extends EventEmitter {
    */
   private async getActiveWatches(): Promise<GithubRepoWatch[]> {
     try {
-      return await getDb().select().from(githubRepoWatches).where(eq(githubRepoWatches.isActive, true));
+      return await getDb()
+        .select()
+        .from(githubRepoWatches)
+        .where(eq(githubRepoWatches.isActive, true));
     } catch (error) {
       logger.error('Failed to get active watches:', error);
       return [];
@@ -676,7 +679,9 @@ export class GitHubPollerService extends EventEmitter {
         pollErrors: 0,
       });
 
-      logger.info(`Silent first sync complete for ${repoFullName} - marked as seen: lastComment=${lastCommentId}, lastReview=${lastReviewId}`);
+      logger.info(
+        `Silent first sync complete for ${repoFullName} - marked as seen: lastComment=${lastCommentId}, lastReview=${lastReviewId}`
+      );
     } catch (error) {
       logger.error(`Error during silent first sync for ${repoFullName}:`, error);
       throw error;
@@ -710,10 +715,7 @@ export class GitHubPollerService extends EventEmitter {
   /**
    * Update sync state for a repo
    */
-  private async updateSyncState(
-    repo: string,
-    updates: Partial<GithubSyncState>
-  ): Promise<void> {
+  private async updateSyncState(repo: string, updates: Partial<GithubSyncState>): Promise<void> {
     try {
       await getDb()
         .update(githubSyncState)
@@ -755,16 +757,18 @@ export class GitHubPollerService extends EventEmitter {
   ): Promise<void> {
     try {
       const now = new Date().toISOString();
-      await getDb().insert(githubRepoWatches).values({
-        repo,
-        guildId,
-        channelId,
-        events: JSON.stringify(events),
-        isActive: true,
-        createdBy,
-        createdAt: now,
-        updatedAt: now,
-      });
+      await getDb()
+        .insert(githubRepoWatches)
+        .values({
+          repo,
+          guildId,
+          channelId,
+          events: JSON.stringify(events),
+          isActive: true,
+          createdBy,
+          createdAt: now,
+          updatedAt: now,
+        });
       logger.info(`Added watch for ${repo} -> ${channelId}`);
     } catch (error) {
       logger.error(`Failed to add watch for ${repo}:`, error);
@@ -779,9 +783,7 @@ export class GitHubPollerService extends EventEmitter {
     try {
       await getDb()
         .delete(githubRepoWatches)
-        .where(
-          and(eq(githubRepoWatches.repo, repo), eq(githubRepoWatches.channelId, channelId))
-        );
+        .where(and(eq(githubRepoWatches.repo, repo), eq(githubRepoWatches.channelId, channelId)));
       logger.info(`Removed watch for ${repo} -> ${channelId}`);
     } catch (error) {
       logger.error(`Failed to remove watch for ${repo}:`, error);
@@ -799,10 +801,7 @@ export class GitHubPollerService extends EventEmitter {
 
       if (guildId && channelId) {
         return await query.where(
-          and(
-            eq(githubRepoWatches.guildId, guildId),
-            eq(githubRepoWatches.channelId, channelId)
-          )
+          and(eq(githubRepoWatches.guildId, guildId), eq(githubRepoWatches.channelId, channelId))
         );
       } else if (guildId) {
         return await query.where(eq(githubRepoWatches.guildId, guildId));
@@ -848,9 +847,7 @@ export function initializeGitHubPoller(
  */
 export function getGitHubPoller(): GitHubPollerService {
   if (!pollerInstance) {
-    throw new Error(
-      'GitHub poller service not initialized. Call initializeGitHubPoller first.'
-    );
+    throw new Error('GitHub poller service not initialized. Call initializeGitHubPoller first.');
   }
   return pollerInstance;
 }

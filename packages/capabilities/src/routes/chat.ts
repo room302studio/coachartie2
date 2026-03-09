@@ -383,12 +383,18 @@ router.get('/:messageId/stream', async (req: Request, res: Response) => {
       return;
     }
 
-    if (currentJob.status === 'completed' || currentJob.status === 'failed' || currentJob.status === 'cancelled') {
+    if (
+      currentJob.status === 'completed' ||
+      currentJob.status === 'failed' ||
+      currentJob.status === 'cancelled'
+    ) {
       sendEvent('complete', {
         status: currentJob.status,
         response: currentJob.result,
         error: currentJob.error,
-        processingTime: currentJob.endTime ? currentJob.endTime.getTime() - currentJob.startTime.getTime() : 0,
+        processingTime: currentJob.endTime
+          ? currentJob.endTime.getTime() - currentJob.startTime.getTime()
+          : 0,
       });
       res.end();
       return;

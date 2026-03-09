@@ -134,7 +134,9 @@ class OpenRouterService {
       });
 
       if (!response.ok) {
-        logger.warn(`⚠️ Could not fetch models from API (${response.status}) - skipping validation`);
+        logger.warn(
+          `⚠️ Could not fetch models from API (${response.status}) - skipping validation`
+        );
         return;
       }
 
@@ -154,7 +156,9 @@ class OpenRouterService {
 
       if (missingModels.length > 0) {
         logger.error(`\n${'='.repeat(70)}`);
-        logger.error(`🚨 MODEL VALIDATION FAILED: ${missingModels.length} configured models don't exist on API!`);
+        logger.error(
+          `🚨 MODEL VALIDATION FAILED: ${missingModels.length} configured models don't exist on API!`
+        );
         logger.error(`   Missing: ${missingModels.join(', ')}`);
         logger.error(`   API has ${availableModels.size} models available.`);
         logger.error(`   Similar models that DO exist:`);
@@ -175,7 +179,9 @@ class OpenRouterService {
         // Update models list to only include valid ones
         if (validModels.length > 0) {
           this.models = validModels;
-          logger.warn(`⚠️ Continuing with ${validModels.length} valid models: ${validModels.join(', ')}`);
+          logger.warn(
+            `⚠️ Continuing with ${validModels.length} valid models: ${validModels.join(', ')}`
+          );
         } else {
           logger.error(`🚨 NO VALID MODELS! Requests will likely fail or use fallback.`);
         }
@@ -336,7 +342,9 @@ class OpenRouterService {
         // Apply model override if experiment specifies one
         if (variant.config.smartModel && !selectedModel) {
           variantModelOverride = variant.config.smartModel;
-          logger.info(`🧪 Experiment ${experimentId}: Using model override ${variantModelOverride}`);
+          logger.info(
+            `🧪 Experiment ${experimentId}: Using model override ${variantModelOverride}`
+          );
         }
 
         // Apply temperature override if experiment specifies one
@@ -371,7 +379,9 @@ class OpenRouterService {
 
         // Use dynamic maxTokens from preflight analysis, or fall back to env default
         const maxTokens = options?.maxTokens || parseInt(process.env.LLM_MAX_TOKENS || '400', 10);
-        logger.debug(`📏 Using max_tokens: ${maxTokens}${options?.maxTokens ? ' (preflight)' : ' (default)'}`);
+        logger.debug(
+          `📏 Using max_tokens: ${maxTokens}${options?.maxTokens ? ' (preflight)' : ' (default)'}`
+        );
 
         // Use experiment temperature if set, otherwise default
         const temperature = variantTemperature ?? 0.7;
@@ -602,7 +612,9 @@ class OpenRouterService {
 
         if (variant.config.smartModel && !selectedModel) {
           variantModelOverride = variant.config.smartModel;
-          logger.info(`🧪 Experiment ${experimentId}: Using model override ${variantModelOverride}`);
+          logger.info(
+            `🧪 Experiment ${experimentId}: Using model override ${variantModelOverride}`
+          );
         }
 
         if (variant.config.temperature !== undefined) {

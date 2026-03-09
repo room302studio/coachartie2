@@ -11,7 +11,10 @@
  */
 
 import { logger } from '@coachartie/shared';
-import type { RegisteredCapability, CapabilityContext } from '../../services/capability/capability-registry.js';
+import type {
+  RegisteredCapability,
+  CapabilityContext,
+} from '../../services/capability/capability-registry.js';
 
 const KANBAN_URL = 'https://kanban.tools.ejfox.com/api';
 
@@ -63,7 +66,7 @@ async function kanbanFetch(endpoint: string, options: RequestInit = {}): Promise
   const response = await fetch(`${KANBAN_URL}${endpoint}`, {
     ...options,
     headers: {
-      'Authorization': `Bearer ${token}`,
+      Authorization: `Bearer ${token}`,
       'Content-Type': 'application/json',
       ...options.headers,
     },
@@ -76,7 +79,11 @@ async function kanbanFetch(endpoint: string, options: RequestInit = {}): Promise
   return response.json();
 }
 
-async function handleKanban(params: KanbanParams, content?: string, ctx?: CapabilityContext): Promise<string> {
+async function handleKanban(
+  params: KanbanParams,
+  content?: string,
+  ctx?: CapabilityContext
+): Promise<string> {
   const { action } = params;
 
   logger.info(`📋 Kanban handler - Action: ${action}`);
@@ -88,7 +95,7 @@ async function handleKanban(params: KanbanParams, content?: string, ctx?: Capabi
         const cards: KanbanCard[] = await kanbanFetch('/cards');
 
         const filtered = lane
-          ? cards.filter(c => c.lane.toLowerCase() === lane.toLowerCase())
+          ? cards.filter((c) => c.lane.toLowerCase() === lane.toLowerCase())
           : cards;
 
         if (filtered.length === 0) {
@@ -99,7 +106,7 @@ async function handleKanban(params: KanbanParams, content?: string, ctx?: Capabi
           });
         }
 
-        const summary = filtered.map(c => ({
+        const summary = filtered.map((c) => ({
           id: c.id,
           title: c.title,
           lane: c.lane,
@@ -207,13 +214,13 @@ async function handleKanban(params: KanbanParams, content?: string, ctx?: Capabi
       case 'active': {
         // Quick view of what's being worked on
         const cards: KanbanCard[] = await kanbanFetch('/cards');
-        const active = cards.filter(c => c.lane === 'Active');
-        const blocked = cards.filter(c => c.blocked);
+        const active = cards.filter((c) => c.lane === 'Active');
+        const blocked = cards.filter((c) => c.blocked);
 
         return JSON.stringify({
           success: true,
-          active: active.map(c => ({ id: c.id, title: c.title, agent: c.agent })),
-          blocked: blocked.map(c => ({ id: c.id, title: c.title, reason: c.blocked_reason })),
+          active: active.map((c) => ({ id: c.id, title: c.title, agent: c.agent })),
+          blocked: blocked.map((c) => ({ id: c.id, title: c.title, reason: c.blocked_reason })),
           summary: `${active.length} active, ${blocked.length} blocked`,
         });
       }
@@ -237,7 +244,8 @@ export const kanbanCapability: RegisteredCapability = {
   name: 'kanban',
   emoji: '📋',
   supportedActions: ['list', 'get', 'create', 'move', 'block', 'unblock', 'active'],
-  description: 'Access the shared kanban board for task coordination with VPS Claude. View active work, create tasks, update status.',
+  description:
+    'Access the shared kanban board for task coordination with VPS Claude. View active work, create tasks, update status.',
   handler: handleKanban,
   examples: [
     '<capability name="kanban" action="active" /> - See what\'s being worked on',

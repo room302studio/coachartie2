@@ -93,8 +93,10 @@ export function analyzeMetroGeo(data: {
 
   // Convert stations to GeoJSON points
   const stationPoints = stations
-    .filter(s => s.coords && s.coords.length === 2)
-    .map(s => turf.point(s.coords, { id: s.id, name: s.name, routeCount: s.routeIds?.length || 0 }));
+    .filter((s) => s.coords && s.coords.length === 2)
+    .map((s) =>
+      turf.point(s.coords, { id: s.id, name: s.name, routeCount: s.routeIds?.length || 0 })
+    );
 
   if (stationPoints.length < 3) {
     return { insights: [], stats };
@@ -161,8 +163,8 @@ export function analyzeMetroGeo(data: {
 
   // 3. Find hub stations (most route connections)
   const stationRouteCounts = stations
-    .filter(s => s.routeIds && s.routeIds.length > 0)
-    .map(s => ({ name: s.name, routeCount: s.routeIds!.length }))
+    .filter((s) => s.routeIds && s.routeIds.length > 0)
+    .map((s) => ({ name: s.name, routeCount: s.routeIds!.length }))
     .sort((a, b) => b.routeCount - a.routeCount);
 
   if (stationRouteCounts.length > 0) {
@@ -187,7 +189,7 @@ export function analyzeMetroGeo(data: {
   for (const route of routes) {
     if (!route.stNodes || route.stNodes.length < 2) continue;
 
-    const nodes = route.stNodes.filter(n => n.center && n.center.length === 2);
+    const nodes = route.stNodes.filter((n) => n.center && n.center.length === 2);
     if (nodes.length < 2) continue;
 
     const routeName = route.bullet || `Route ${route.id.slice(0, 6)}`;
@@ -232,7 +234,8 @@ export function analyzeMetroGeo(data: {
   }
 
   stats.totalNetworkKm = Math.round(totalNetworkKm * 10) / 10;
-  stats.trainsPerStation = stations.length > 0 ? Math.round((trains.length / stations.length) * 100) / 100 : 0;
+  stats.trainsPerStation =
+    stations.length > 0 ? Math.round((trains.length / stations.length) * 100) / 100 : 0;
 
   // Flag if there's a very long gap (over 5km between stations)
   if (longestGap && longestGap.distanceKm > 5) {
@@ -295,7 +298,7 @@ export function analyzeMetroGeo(data: {
   }
 
   // 7. Check for potential dead-end stations (only 1 route connection, far from center)
-  const potentialDeadEnds = stations.filter(s => {
+  const potentialDeadEnds = stations.filter((s) => {
     const routeCount = s.routeIds?.length || 0;
     return routeCount === 1;
   });
@@ -304,7 +307,7 @@ export function analyzeMetroGeo(data: {
     insights.push({
       type: 'observation',
       category: 'coverage',
-      message: `${potentialDeadEnds.length} stations are single-line only - that's ${Math.round(potentialDeadEnds.length / stations.length * 100)}% of your network`,
+      message: `${potentialDeadEnds.length} stations are single-line only - that's ${Math.round((potentialDeadEnds.length / stations.length) * 100)}% of your network`,
       details: `A lot of terminal/branch stations. Not necessarily bad, but passengers there have limited options if something goes wrong.`,
     });
   }
@@ -320,7 +323,12 @@ export function analyzeMetroGeo(data: {
     }
 
     const deadRoutes: string[] = [];
-    const understaffedRoutes: { name: string; trainsPerKm: number; trainCount: number; lengthKm: number }[] = [];
+    const understaffedRoutes: {
+      name: string;
+      trainsPerKm: number;
+      trainCount: number;
+      lengthKm: number;
+    }[] = [];
 
     for (const route of routes) {
       const routeName = route.bullet || `Route ${route.id.slice(0, 6)}`;
@@ -334,7 +342,7 @@ export function analyzeMetroGeo(data: {
         }
       } else if (route.stNodes && route.stNodes.length >= 2) {
         // Fallback to calculating from node positions
-        const nodes = route.stNodes.filter(n => n.center && n.center.length === 2);
+        const nodes = route.stNodes.filter((n) => n.center && n.center.length === 2);
         for (let i = 1; i < nodes.length; i++) {
           try {
             const p1 = turf.point(nodes[i - 1].center);
@@ -380,7 +388,7 @@ export function analyzeMetroGeo(data: {
     // Report understaffed routes (worst offenders)
     understaffedRoutes.sort((a, b) => a.trainsPerKm - b.trainsPerKm);
     if (understaffedRoutes.length > 0) {
-      stats.understaffedRoutes = understaffedRoutes.slice(0, 3).map(r => ({
+      stats.understaffedRoutes = understaffedRoutes.slice(0, 3).map((r) => ({
         name: r.name,
         trainsPerKm: r.trainsPerKm,
       }));

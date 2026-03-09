@@ -40,12 +40,7 @@ describe('Memory Capability', () => {
     });
 
     it('should include importance level', async () => {
-      const result = await memoryService.remember(
-        testUserId,
-        'Important meeting tomorrow',
-        '',
-        8
-      );
+      const result = await memoryService.remember(testUserId, 'Important meeting tomorrow', '', 8);
 
       expect(result).toContain('importance: 8/10');
     });
@@ -53,7 +48,11 @@ describe('Memory Capability', () => {
 
   describe('Recall Operation', () => {
     it('should return helpful message when no memories found', async () => {
-      const result = await memoryService.recall('nonexistent-user', 'completely unrelated query xyz', 5);
+      const result = await memoryService.recall(
+        'nonexistent-user',
+        'completely unrelated query xyz',
+        5
+      );
 
       expect(result).toContain('No memories found');
       expect(result).toContain('Try a different search term');

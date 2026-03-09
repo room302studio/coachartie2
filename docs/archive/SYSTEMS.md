@@ -10,122 +10,122 @@
 
 Artie thinks, acts, reflects, and keeps going until the job's done.
 
-| Feature | What It Does |
-|---------|--------------|
-| **ReAct Loop** | LLM picks tools, runs them, checks results, decides next move. Up to 8 iterations per task. |
-| **Circuit Breakers** | 5 failures on same capability = automatic stop. No infinite loops. |
-| **120s Global Timeout** | Every task has a ceiling. Predictable costs, no zombies. |
-| **Random Exploration Boost** | 50% chance to keep digging even when LLM thinks it's done. Finds the good stuff. |
-| **Self-Reflection** | "Are you making progress?" injected each iteration. Keeps focus tight. |
+| Feature                      | What It Does                                                                                |
+| ---------------------------- | ------------------------------------------------------------------------------------------- |
+| **ReAct Loop**               | LLM picks tools, runs them, checks results, decides next move. Up to 8 iterations per task. |
+| **Circuit Breakers**         | 5 failures on same capability = automatic stop. No infinite loops.                          |
+| **120s Global Timeout**      | Every task has a ceiling. Predictable costs, no zombies.                                    |
+| **Random Exploration Boost** | 50% chance to keep digging even when LLM thinks it's done. Finds the good stuff.            |
+| **Self-Reflection**          | "Are you making progress?" injected each iteration. Keeps focus tight.                      |
 
 ### 39 Production Capabilities
 
-| Category | Count | Examples |
-|----------|-------|----------|
-| **Core Tools** | 12 | Shell, Edit, Search, Git, Context, Scratchpad, Diagnose, Memory, Filesystem, HTTP, Web Search, Calculator |
-| **Discord Native** | 7 | Channels, Forums, Threads, User History, UI Components, Send Message, Issue Parser |
-| **External Services** | 4 | GitHub (full API), MediaWiki, Wolfram Alpha, Email |
-| **User Management** | 6 | Profiles, Goals, Todos, Mention Proxy, Credit Status, Model Manager |
-| **System** | 8 | Environment, Runtime Config, Scheduler, System Monitor, Package Manager |
-| **Communication** | 3 | Ask Question (multi-platform), Slack UI, Discord UI |
-| **Persistence** | 2 | Variable Store (cross-session), Memory (semantic) |
+| Category              | Count | Examples                                                                                                  |
+| --------------------- | ----- | --------------------------------------------------------------------------------------------------------- |
+| **Core Tools**        | 12    | Shell, Edit, Search, Git, Context, Scratchpad, Diagnose, Memory, Filesystem, HTTP, Web Search, Calculator |
+| **Discord Native**    | 7     | Channels, Forums, Threads, User History, UI Components, Send Message, Issue Parser                        |
+| **External Services** | 4     | GitHub (full API), MediaWiki, Wolfram Alpha, Email                                                        |
+| **User Management**   | 6     | Profiles, Goals, Todos, Mention Proxy, Credit Status, Model Manager                                       |
+| **System**            | 8     | Environment, Runtime Config, Scheduler, System Monitor, Package Manager                                   |
+| **Communication**     | 3     | Ask Question (multi-platform), Slack UI, Discord UI                                                       |
+| **Persistence**       | 2     | Variable Store (cross-session), Memory (semantic)                                                         |
 
 ### Memory System
 
-| Feature | How |
-|---------|-----|
-| **Hybrid Data Layer** | In-memory Map (10k cap) + async SQLite. Zero-latency reads, durable writes. |
-| **Semantic Auto-Tagging** | LLM generates tags in background. Find by meaning. |
-| **User Indexing** | `Map<userId, Set<memoryId>>` for instant per-user recall. |
-| **Importance Scoring** | 1-10 scale. Important stuff surfaces, noise fades. |
-| **Cross-Session Persistence** | Remembers across conversations, days, weeks. |
+| Feature                       | How                                                                         |
+| ----------------------------- | --------------------------------------------------------------------------- |
+| **Hybrid Data Layer**         | In-memory Map (10k cap) + async SQLite. Zero-latency reads, durable writes. |
+| **Semantic Auto-Tagging**     | LLM generates tags in background. Find by meaning.                          |
+| **User Indexing**             | `Map<userId, Set<memoryId>>` for instant per-user recall.                   |
+| **Importance Scoring**        | 1-10 scale. Important stuff surfaces, noise fades.                          |
+| **Cross-Session Persistence** | Remembers across conversations, days, weeks.                                |
 
 ### Context Alchemy
 
 Smart token budgeting. Assembles the optimal prompt from multiple sources:
 
-| Source | Priority | What It Adds |
-|--------|----------|--------------|
-| Current DateTime | Highest | Temporal awareness |
-| Active User Goals | High | Goal-directed behavior |
-| Relevant Memories | High | Personal context |
-| Conversation History | Medium | Continuity |
-| Available Capabilities | Medium | Tool awareness |
-| User Profile | Medium | Preferences, linked accounts |
-| Credit Warnings | Low | Cost awareness |
-| UI Modality Rules | Low | Platform-specific formatting |
+| Source                 | Priority | What It Adds                 |
+| ---------------------- | -------- | ---------------------------- |
+| Current DateTime       | Highest  | Temporal awareness           |
+| Active User Goals      | High     | Goal-directed behavior       |
+| Relevant Memories      | High     | Personal context             |
+| Conversation History   | Medium   | Continuity                   |
+| Available Capabilities | Medium   | Tool awareness               |
+| User Profile           | Medium   | Preferences, linked accounts |
+| Credit Warnings        | Low      | Cost awareness               |
+| UI Modality Rules      | Low      | Platform-specific formatting |
 
 **Token Budget:** Reserves space for user message + system prompt, fills remaining with prioritized context.
 
 ### Multi-Platform, Single Brain
 
-| Platform | Status | Special Features |
-|----------|--------|------------------|
+| Platform    | Status     | Special Features                                                |
+| ----------- | ---------- | --------------------------------------------------------------- |
 | **Discord** | Production | Buttons, selects, modals, threads, forums, reactions, streaming |
-| **Slack** | Ready | Block Kit UI, threading, streaming |
-| **IRC** | Production | forestpunks.com, reconnection logic |
-| **SMS** | Production | Twilio, phone verification |
-| **Email** | Ready | Webhook handler, needs deployment |
+| **Slack**   | Ready      | Block Kit UI, threading, streaming                              |
+| **IRC**     | Production | forestpunks.com, reconnection logic                             |
+| **SMS**     | Production | Twilio, phone verification                                      |
+| **Email**   | Ready      | Webhook handler, needs deployment                               |
 
 **Same AI personality, same capabilities, same memory** - just different interfaces.
 
 ### Production Hardening
 
-| Feature | Implementation | Why |
-|---------|----------------|-----|
-| **Graceful Redis Fallback** | Works without Redis, logs warnings | No single point of failure |
-| **Three-Tier Model Strategy** | Fast → Main → Fallback | Cost optimization + reliability |
-| **Edit-Based Streaming** | Updates Discord messages in place | No spam, clean UX |
-| **Message Chunking** | Auto-splits at 2000 chars | Never fails on long responses |
-| **Job Monitoring Wheel** | Single poller for all jobs | Efficient, no race conditions |
-| **Self-Healing** | Monitors processes, forces GC at 200MB | Stays healthy without restarts |
-| **Prompt Hot-Reload** | Prompts from DB, no restart needed | Change behavior instantly |
+| Feature                       | Implementation                         | Why                             |
+| ----------------------------- | -------------------------------------- | ------------------------------- |
+| **Graceful Redis Fallback**   | Works without Redis, logs warnings     | No single point of failure      |
+| **Three-Tier Model Strategy** | Fast → Main → Fallback                 | Cost optimization + reliability |
+| **Edit-Based Streaming**      | Updates Discord messages in place      | No spam, clean UX               |
+| **Message Chunking**          | Auto-splits at 2000 chars              | Never fails on long responses   |
+| **Job Monitoring Wheel**      | Single poller for all jobs             | Efficient, no race conditions   |
+| **Self-Healing**              | Monitors processes, forces GC at 200MB | Stays healthy without restarts  |
+| **Prompt Hot-Reload**         | Prompts from DB, no restart needed     | Change behavior instantly       |
 
 ### Unique Integrations
 
-| Feature | What It Does |
-|---------|--------------|
-| **Forum → GitHub Sync** | `/sync-discussions` converts Discord forum threads to GitHub issues |
-| **Mention Proxy** | Act as representative for offline users |
-| **Observational Learning** | Passively learns from "watching" guilds |
-| **GitHub URL Auto-Expand** | Pastes repo/issue info when GitHub links shared |
-| **Phone/Email Linking** | Unified profile system, verify via SMS |
-| **Docker Sandbox** | Isolated Linux environment for code execution |
+| Feature                    | What It Does                                                        |
+| -------------------------- | ------------------------------------------------------------------- |
+| **Forum → GitHub Sync**    | `/sync-discussions` converts Discord forum threads to GitHub issues |
+| **Mention Proxy**          | Act as representative for offline users                             |
+| **Observational Learning** | Passively learns from "watching" guilds                             |
+| **GitHub URL Auto-Expand** | Pastes repo/issue info when GitHub links shared                     |
+| **Phone/Email Linking**    | Unified profile system, verify via SMS                              |
+| **Docker Sandbox**         | Isolated Linux environment for code execution                       |
 
 ### Developer Experience
 
-| Tool | Purpose |
-|------|---------|
-| **Prompt TUI** | `npm run prompts` - Interactive terminal editor |
-| **Prompt CLI** | `npx ts-node tools/prompt-cli.ts` - Scriptable management |
-| **Health Endpoints** | `/health`, `/ready`, `/live`, `/health/detailed` |
-| **Structured Logging** | Winston + Grafana Loki |
-| **Drizzle ORM** | Type-safe schema, single source of truth |
+| Tool                   | Purpose                                                   |
+| ---------------------- | --------------------------------------------------------- |
+| **Prompt TUI**         | `npm run prompts` - Interactive terminal editor           |
+| **Prompt CLI**         | `npx ts-node tools/prompt-cli.ts` - Scriptable management |
+| **Health Endpoints**   | `/health`, `/ready`, `/live`, `/health/detailed`          |
+| **Structured Logging** | Winston + Grafana Loki                                    |
+| **Drizzle ORM**        | Type-safe schema, single source of truth                  |
 
 ### By The Numbers
 
-| Metric | Value |
-|--------|-------|
-| Total Capabilities | 39 |
-| Database Tables | 18 |
-| Platform Adapters | 5 (Discord, Slack, IRC, SMS, Email) |
-| API Endpoints | 30+ |
-| Lines of Code | ~40,000 |
-| Max ReAct Iterations | 8 |
-| Global Timeout | 120 seconds |
-| Memory Hot Cache | 10,000 records |
-| Concurrent Platforms | Unlimited |
+| Metric               | Value                               |
+| -------------------- | ----------------------------------- |
+| Total Capabilities   | 39                                  |
+| Database Tables      | 18                                  |
+| Platform Adapters    | 5 (Discord, Slack, IRC, SMS, Email) |
+| API Endpoints        | 30+                                 |
+| Lines of Code        | ~40,000                             |
+| Max ReAct Iterations | 8                                   |
+| Global Timeout       | 120 seconds                         |
+| Memory Hot Cache     | 10,000 records                      |
+| Concurrent Platforms | Unlimited                           |
 
 ### Design Philosophy
 
-| Choice | Rationale |
-|--------|-----------|
-| LLM-native text ranking | Free with every inference call. Skip the embedding API. |
-| Single ReAct loop | State emerges from conversation. Zero state machine code. |
-| One universal prompt | Scales across models. Less maintenance. |
-| LLM entity extraction | Handles edge cases regex can't. |
-| Safety in main prompt | One LLM call, not two. |
-| Autonomous tool ordering | LLM knows the task context. Let it choose. |
+| Choice                   | Rationale                                                 |
+| ------------------------ | --------------------------------------------------------- |
+| LLM-native text ranking  | Free with every inference call. Skip the embedding API.   |
+| Single ReAct loop        | State emerges from conversation. Zero state machine code. |
+| One universal prompt     | Scales across models. Less maintenance.                   |
+| LLM entity extraction    | Handles edge cases regex can't.                           |
+| Safety in main prompt    | One LLM call, not two.                                    |
+| Autonomous tool ordering | LLM knows the task context. Let it choose.                |
 
 ---
 
@@ -135,41 +135,41 @@ How Coach Artie compares to industry consensus from [Comet AI Agent Design](http
 
 ### We Follow Best Practices
 
-| Practice | Industry Recommendation | Coach Artie Implementation |
-|----------|------------------------|---------------------------|
-| **ReAct Architecture** | "Thought → Action → Observation loop until solution" | Exactly this. `llm-loop-service.ts` implements classic ReAct. |
-| **Single Agent + Tools** | "Can achieve similar accuracy to complex architectures at 50% lower cost" | One brain, 39 tools. No multi-agent overhead. |
-| **Loop Termination** | "Max iterations + timeout to prevent runaway" | 8 max iterations, 120s global timeout, circuit breakers. |
-| **Capable Models** | "ReAct benefits from highly capable models" | Three-tier strategy: Claude 3.5 Sonnet (main), Haiku (fast), GPT-4o-mini (fallback). |
-| **Memory Architecture** | "Combine persistent memory with working memory" | Hybrid Data Layer (hot Map + cold SQLite) + conversation history in context. |
-| **Context Engineering** | "Fill context window with just the right information" | Context Alchemy with 11 prioritized sources and token budgeting. |
-| **Graceful Degradation** | "Hard caps with graceful fallbacks" | Redis goes down → bot keeps running. Context overflow → lower-priority items dropped. |
-| **Tool Error Handling** | "Handle tool calls safely with error handling" | Try/catch on every capability, results added to context for LLM to reason about. |
-| **Modular Design** | "Multi-agent systems are most effective when each agent has a specialized task" | We use modular capabilities instead of agents. Each capability is a specialist. |
-| **Conversation History Blending** | "Retrieve relevant information from external knowledge base" | 70% current channel, 30% cross-channel (like human memory). |
+| Practice                          | Industry Recommendation                                                         | Coach Artie Implementation                                                            |
+| --------------------------------- | ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| **ReAct Architecture**            | "Thought → Action → Observation loop until solution"                            | Exactly this. `llm-loop-service.ts` implements classic ReAct.                         |
+| **Single Agent + Tools**          | "Can achieve similar accuracy to complex architectures at 50% lower cost"       | One brain, 39 tools. No multi-agent overhead.                                         |
+| **Loop Termination**              | "Max iterations + timeout to prevent runaway"                                   | 8 max iterations, 120s global timeout, circuit breakers.                              |
+| **Capable Models**                | "ReAct benefits from highly capable models"                                     | Three-tier strategy: Claude 3.5 Sonnet (main), Haiku (fast), GPT-4o-mini (fallback).  |
+| **Memory Architecture**           | "Combine persistent memory with working memory"                                 | Hybrid Data Layer (hot Map + cold SQLite) + conversation history in context.          |
+| **Context Engineering**           | "Fill context window with just the right information"                           | Context Alchemy with 11 prioritized sources and token budgeting.                      |
+| **Graceful Degradation**          | "Hard caps with graceful fallbacks"                                             | Redis goes down → bot keeps running. Context overflow → lower-priority items dropped. |
+| **Tool Error Handling**           | "Handle tool calls safely with error handling"                                  | Try/catch on every capability, results added to context for LLM to reason about.      |
+| **Modular Design**                | "Multi-agent systems are most effective when each agent has a specialized task" | We use modular capabilities instead of agents. Each capability is a specialist.       |
+| **Conversation History Blending** | "Retrieve relevant information from external knowledge base"                    | 70% current channel, 30% cross-channel (like human memory).                           |
 
 ### We Deviate From Conventional Wisdom
 
-| Convention | Industry Says | What We Do | Why |
-|------------|---------------|------------|-----|
-| **Vector Embeddings for RAG** | "Use vector database for long-term memory" | Keyword search + LLM ranking | Embedding APIs cost money. LLMs rank text similarity for free during inference. Works fine for our scale. |
-| **OpenTelemetry Standard** | "Use GenAI semantic conventions" | Winston + Grafana Loki | Simpler stack. We log prompts/responses, but not in OTel format. Trade-off: less tooling compatibility. |
-| **Model-Aware Prompting** | "Different prompts for different model capabilities" | One universal prompt | One good prompt beats three mediocre ones. Less maintenance, fewer bugs. Models are smart enough. |
-| **Separate Safety Layer** | "Validate outputs with guardrails" | Safety rules in main prompt | Extra LLM call per request is expensive. Main prompt handles safety. |
-| **Plan-and-Execute for Complex Tasks** | "Use planning phase before execution" | Pure ReAct (no separate planning) | ReAct handles planning implicitly. Self-reflection prompts keep it on track. |
-| **Structured Output Validation** | "Validate JSON schemas on outputs" | Trust LLM + retry on parse failure | Adds latency. LLMs rarely malform XML capability tags. Retry handles edge cases. |
+| Convention                             | Industry Says                                        | What We Do                         | Why                                                                                                       |
+| -------------------------------------- | ---------------------------------------------------- | ---------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| **Vector Embeddings for RAG**          | "Use vector database for long-term memory"           | Keyword search + LLM ranking       | Embedding APIs cost money. LLMs rank text similarity for free during inference. Works fine for our scale. |
+| **OpenTelemetry Standard**             | "Use GenAI semantic conventions"                     | Winston + Grafana Loki             | Simpler stack. We log prompts/responses, but not in OTel format. Trade-off: less tooling compatibility.   |
+| **Model-Aware Prompting**              | "Different prompts for different model capabilities" | One universal prompt               | One good prompt beats three mediocre ones. Less maintenance, fewer bugs. Models are smart enough.         |
+| **Separate Safety Layer**              | "Validate outputs with guardrails"                   | Safety rules in main prompt        | Extra LLM call per request is expensive. Main prompt handles safety.                                      |
+| **Plan-and-Execute for Complex Tasks** | "Use planning phase before execution"                | Pure ReAct (no separate planning)  | ReAct handles planning implicitly. Self-reflection prompts keep it on track.                              |
+| **Structured Output Validation**       | "Validate JSON schemas on outputs"                   | Trust LLM + retry on parse failure | Adds latency. LLMs rarely malform XML capability tags. Retry handles edge cases.                          |
 
 ### Unconventional Techniques (Our Innovations)
 
-| Technique | Industry Status | Our Rationale |
-|-----------|-----------------|---------------|
-| **Random Exploration Boost** | Not standard. Most systems stop when LLM says done. | LLMs satisfice (stop at "good enough"). 50% chance to keep going finds better answers. Circuit breaker prevents runaway. |
-| **Credit Awareness in Context** | Rare. Most systems don't tell the AI about costs. | Artie knows when he's running low. Adjusts behavior, suggests cheaper models. Self-preservation instinct. |
-| **Reflection-Based Learning** | Industry uses automated test suites. We use experiential learning. | After each interaction: generate reflection → store with capability tags → retrieve for similar future queries. Learns from real usage, not synthetic benchmarks. |
-| **In-Loop Self-Reflection** | Some systems do this. We inject it every iteration. | "Are you making progress? Are you repeating yourself?" keeps the ReAct loop focused and self-correcting. |
-| **Observational Learning** | Unusual. Most bots only respond to direct messages. | Passive watching builds community knowledge without engagement fatigue. ~$0.0002/summary. |
-| **Mention Proxy with Judgment** | Unique. Most bots don't represent offline users. | LLM judgment layer decides if user is actively chatting before interrupting. Social intelligence. |
-| **Cross-Platform Identity** | Rare. Most bots are single-platform. | Same memory across Discord/Slack/SMS/Email. Users are people, not platform IDs. |
+| Technique                       | Industry Status                                                    | Our Rationale                                                                                                                                                     |
+| ------------------------------- | ------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Random Exploration Boost**    | Not standard. Most systems stop when LLM says done.                | LLMs satisfice (stop at "good enough"). 50% chance to keep going finds better answers. Circuit breaker prevents runaway.                                          |
+| **Credit Awareness in Context** | Rare. Most systems don't tell the AI about costs.                  | Artie knows when he's running low. Adjusts behavior, suggests cheaper models. Self-preservation instinct.                                                         |
+| **Reflection-Based Learning**   | Industry uses automated test suites. We use experiential learning. | After each interaction: generate reflection → store with capability tags → retrieve for similar future queries. Learns from real usage, not synthetic benchmarks. |
+| **In-Loop Self-Reflection**     | Some systems do this. We inject it every iteration.                | "Are you making progress? Are you repeating yourself?" keeps the ReAct loop focused and self-correcting.                                                          |
+| **Observational Learning**      | Unusual. Most bots only respond to direct messages.                | Passive watching builds community knowledge without engagement fatigue. ~$0.0002/summary.                                                                         |
+| **Mention Proxy with Judgment** | Unique. Most bots don't represent offline users.                   | LLM judgment layer decides if user is actively chatting before interrupting. Social intelligence.                                                                 |
+| **Cross-Platform Identity**     | Rare. Most bots are single-platform.                               | Same memory across Discord/Slack/SMS/Email. Users are people, not platform IDs.                                                                                   |
 
 ### Why We Skip Prompt Injection Defense
 
@@ -210,6 +210,7 @@ The edit capability lets Artie make precise changes without rewriting entire fil
 ```
 
 Key features:
+
 - `read` action shows files with line numbers (crucial for knowing WHERE to edit)
 - `replace` fails if old_string not found or not unique (forces precision)
 - `insert` adds at specific line numbers
@@ -232,6 +233,7 @@ Results come back as readable text, not JSON structures. Files sorted by modific
 **The Workflow**
 
 These three capabilities work together like Claude Code's tools:
+
 1. **search** to find relevant files
 2. **edit:read** to understand context with line numbers
 3. **edit:replace** to make surgical changes
@@ -327,7 +329,7 @@ Core Services
 
 `email-drafting-service.ts` provides a full drafting workflow: LLM-assisted draft creation, versioning for revisions, status tracking (draft/approved/sent/cancelled), intent detection from natural language.
 
-`mediawiki-manager.ts` supports multiple wikis. Auto-discovers wikis from MEDIAWIKI_*_URL environment variables, manages authentication per wiki. Artie can read and edit wiki pages.
+`mediawiki-manager.ts` supports multiple wikis. Auto-discovers wikis from MEDIAWIKI\_\*\_URL environment variables, manages authentication per wiki. Artie can read and edit wiki pages.
 
 `conversation-state.ts` (Slack) tracks multi-turn conversations. Per-user state with 5-minute auto-timeout, concurrent conversation support, automatic cleanup of expired states.
 
@@ -441,6 +443,7 @@ Artie has a persistent Linux computer that survives across conversations.
 ```
 
 **What this enables:**
+
 - Clone a repo, make changes, push commits
 - Run test suites and report results
 - Build and deploy projects
@@ -475,6 +478,7 @@ Same AI, multiple bodies. Artie exists simultaneously across platforms.
 ```
 
 **Cross-Platform Identity:**
+
 ```
 User: ejfox
 ├── Discord: 123456789
@@ -485,6 +489,7 @@ User: ejfox
 ```
 
 **What this means:**
+
 - Tell Artie something on Discord, he remembers it when you text him
 - Link your GitHub account on Discord, he can use it on Slack
 - One conversation can span platforms (start on Discord, continue via SMS)
@@ -548,6 +553,7 @@ Artie passively watches Discord servers to learn community patterns.
 ```
 
 **What Artie learns:**
+
 - Community topics and interests
 - Recurring questions (FAQ fodder)
 - User behavior patterns
@@ -637,6 +643,7 @@ Two-layer reflection system: real-time self-correction + post-interaction memory
 | Synthetic test cases | Real usage patterns |
 
 **Location:**
+
 - `packages/capabilities/src/services/llm-loop-service.ts:240` (in-loop)
 - `packages/capabilities/src/services/memory-orchestration.ts` (post-interaction)
 
@@ -658,6 +665,7 @@ if (!wantsLoop && iteration < 6) {
 ```
 
 **Why this matters:**
+
 - LLMs often stop too early (satisficing behavior)
 - Random continuation finds useful info the LLM would have missed
 - Self-reflection prompt injected: "Are you making progress? What could you explore further?"
@@ -705,6 +713,7 @@ The brain's memory assembly system. Every message gets a custom-built context wi
 ```
 
 **Situational Awareness:**
+
 ```
 📍 Discord server "Forest Punks" in #general
 👤 Talking to: @ejfox
@@ -714,6 +723,7 @@ The brain's memory assembly system. Every message gets a custom-built context wi
 
 **Credit Awareness:**
 When funds are low, Artie knows it:
+
 ```
 ⚠️ Low credit balance: $12.50 remaining
 💡 Consider using cheaper models for simple tasks
@@ -765,6 +775,7 @@ The nervous system. Every message flows through Redis queues for reliable async 
 | `sms-outgoing` | Responses → SMS |
 
 **BullMQ Features We Use:**
+
 ```typescript
 // Job options
 {
@@ -782,6 +793,7 @@ concurrency: 5  // Process 5 jobs in parallel
 ```
 
 **Graceful Degradation:**
+
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │  REDIS UNAVAILABLE? NO PROBLEM.                             │
@@ -888,6 +900,7 @@ When capabilities execute in the same ReAct loop, results are automatically avai
 ```
 
 **Example Flow:**
+
 ```xml
 <!-- Step 1: Search web -->
 <capability name="web" action="search" query="weather in NYC" />
@@ -911,6 +924,7 @@ Store results to named variables that persist in the database:
 ```
 
 **Auto-Storage:** Any capability with `output` param automatically stores its result:
+
 ```typescript
 // In llm-loop-service.ts:195
 const outputVar = processedCapability.params.output;
@@ -920,6 +934,7 @@ if (outputVar && result.success && result.data) {
 ```
 
 **Manual Storage:**
+
 ```xml
 <capability name="variable-store" action="set" key="my_var" value="hello world" />
 <capability name="variable-store" action="get" key="my_var" />
@@ -1050,6 +1065,7 @@ Done! I've checked the weather (Sunny, 72°F) and set up a daily reminder for 9 
 | Circuit breaker threshold | 5 failures | Hardcoded |
 
 **Flow:**
+
 ```
 executeLLMDrivenLoop()
   ├── Build conversation history
@@ -1077,72 +1093,79 @@ executeLLMDrivenLoop()
 **39 registered capabilities** in `packages/capabilities/src/capabilities/`
 
 ### Core Tools
-| Capability | Actions | Description |
-|------------|---------|-------------|
-| `shell` | exec, send, read, split, list | Terminal-native output. LLM reads like a screen. Tmux sessions. |
-| `edit` | read, replace, insert, delete | Surgical file editing with line numbers. Fails if old_string not unique. |
-| `search` | files, content, both | Glob-style file finding + ripgrep content search. |
-| `git` | status, diff, log, branch, show, blame | Version control awareness. Terminal-native output. |
-| `context` | where, what, recent, running, full | Situational awareness. Know where you are. |
-| `scratchpad` | write, read, append, section, clear | Externalized thinking. Plan before acting. |
-| `diagnose` | error, logs, process, network, disk | Error analysis. Understand what went wrong. |
-| `memory` | remember, recall, forget, list, update | Persistent storage with semantic tags. |
-| `filesystem` | read, write, create, list, delete, copy, move | File CRUD with permission checks. |
-| `http` | GET, POST, PUT, DELETE | HTTP client for APIs. |
-| `web` | search, fetch | DuckDuckGo search + HTML fetching. |
-| `calculator` | evaluate | mathjs expression evaluation. |
+
+| Capability   | Actions                                       | Description                                                              |
+| ------------ | --------------------------------------------- | ------------------------------------------------------------------------ |
+| `shell`      | exec, send, read, split, list                 | Terminal-native output. LLM reads like a screen. Tmux sessions.          |
+| `edit`       | read, replace, insert, delete                 | Surgical file editing with line numbers. Fails if old_string not unique. |
+| `search`     | files, content, both                          | Glob-style file finding + ripgrep content search.                        |
+| `git`        | status, diff, log, branch, show, blame        | Version control awareness. Terminal-native output.                       |
+| `context`    | where, what, recent, running, full            | Situational awareness. Know where you are.                               |
+| `scratchpad` | write, read, append, section, clear           | Externalized thinking. Plan before acting.                               |
+| `diagnose`   | error, logs, process, network, disk           | Error analysis. Understand what went wrong.                              |
+| `memory`     | remember, recall, forget, list, update        | Persistent storage with semantic tags.                                   |
+| `filesystem` | read, write, create, list, delete, copy, move | File CRUD with permission checks.                                        |
+| `http`       | GET, POST, PUT, DELETE                        | HTTP client for APIs.                                                    |
+| `web`        | search, fetch                                 | DuckDuckGo search + HTML fetching.                                       |
+| `calculator` | evaluate                                      | mathjs expression evaluation.                                            |
 
 ### Discord Integration
-| Capability | Actions | Description |
-|------------|---------|-------------|
-| `discord-channels` | get_recent, get_pinned, search | Query channel messages. |
-| `discord-forums` | list_forums, get_threads, get_thread_messages | Forum traversal. |
-| `discord-threads` | create, get_messages | Thread management. |
-| `discord-user-history` | get_messages | User message history. |
-| `discord-ui` | buttons, select, modal | Interactive UI components. |
-| `discord-send-message` | send | Send to whitelisted channels. |
-| `discord-issue-parser` | parse | Extract GitHub issue refs. |
+
+| Capability             | Actions                                       | Description                   |
+| ---------------------- | --------------------------------------------- | ----------------------------- |
+| `discord-channels`     | get_recent, get_pinned, search                | Query channel messages.       |
+| `discord-forums`       | list_forums, get_threads, get_thread_messages | Forum traversal.              |
+| `discord-threads`      | create, get_messages                          | Thread management.            |
+| `discord-user-history` | get_messages                                  | User message history.         |
+| `discord-ui`           | buttons, select, modal                        | Interactive UI components.    |
+| `discord-send-message` | send                                          | Send to whitelisted channels. |
+| `discord-issue-parser` | parse                                         | Extract GitHub issue refs.    |
 
 ### External Services
-| Capability | Actions | Description |
-|------------|---------|-------------|
-| `github` | get_releases, get_commits, list_issues, create_issue, etc. | Full GitHub API. |
-| `mediawiki` | get_page, edit_page, search | MediaWiki API. |
-| `wolfram` | query | Wolfram Alpha API. |
-| `email` | send, draft | Email via n8n/SMTP. |
+
+| Capability  | Actions                                                    | Description         |
+| ----------- | ---------------------------------------------------------- | ------------------- |
+| `github`    | get_releases, get_commits, list_issues, create_issue, etc. | Full GitHub API.    |
+| `mediawiki` | get_page, edit_page, search                                | MediaWiki API.      |
+| `wolfram`   | query                                                      | Wolfram Alpha API.  |
+| `email`     | send, draft                                                | Email via n8n/SMTP. |
 
 ### User Management
-| Capability | Actions | Description |
-|------------|---------|-------------|
-| `user-profile` | get, update, link, unlink | Extensible profile system. |
-| `goal` | create, update, list, complete | Goal tracking. |
-| `todo` | create, update, list, complete | Todo management. |
-| `mention-proxy` | create, list, delete | Act as user proxy. |
-| `credit-status` | get, history | API credit monitoring. |
+
+| Capability      | Actions                        | Description                |
+| --------------- | ------------------------------ | -------------------------- |
+| `user-profile`  | get, update, link, unlink      | Extensible profile system. |
+| `goal`          | create, update, list, complete | Goal tracking.             |
+| `todo`          | create, update, list, complete | Todo management.           |
+| `mention-proxy` | create, list, delete           | Act as user proxy.         |
+| `credit-status` | get, history                   | API credit monitoring.     |
 
 ### System
-| Capability | Actions | Description |
-|------------|---------|-------------|
-| `environment` | get, set, list, backup | Env var management. |
-| `runtime-config` | get, set | Dynamic config adjustment. |
-| `scheduler` | create, list, cancel | Cron tasks and reminders. |
-| `system-monitor` | cpu, memory, disk, health | System metrics. |
-| `system-installer` | install | Install Chrome, Git, etc. |
-| `package-manager` | install, uninstall, list | npm package management. |
-| `model-manager` | list, recommend | AI model info. |
-| `variable-store` | get, set, list, delete | Global mustache variables. |
+
+| Capability         | Actions                   | Description                |
+| ------------------ | ------------------------- | -------------------------- |
+| `environment`      | get, set, list, backup    | Env var management.        |
+| `runtime-config`   | get, set                  | Dynamic config adjustment. |
+| `scheduler`        | create, list, cancel      | Cron tasks and reminders.  |
+| `system-monitor`   | cpu, memory, disk, health | System metrics.            |
+| `system-installer` | install                   | Install Chrome, Git, etc.  |
+| `package-manager`  | install, uninstall, list  | npm package management.    |
+| `model-manager`    | list, recommend           | AI model info.             |
+| `variable-store`   | get, set, list, delete    | Global mustache variables. |
 
 ### Communication
-| Capability | Actions | Description |
-|------------|---------|-------------|
-| `ask-question` | ask | Multi-choice questions with buttons. |
-| `slack-ui` | buttons, select, modal | Slack Block Kit. |
+
+| Capability     | Actions                | Description                          |
+| -------------- | ---------------------- | ------------------------------------ |
+| `ask-question` | ask                    | Multi-choice questions with buttons. |
+| `slack-ui`     | buttons, select, modal | Slack Block Kit.                     |
 
 ### Notes
-| Capability | Note |
-|------------|------|
-| `semantic-search` | Expensive embeddings, but useful as explicit tool for intentional vector search. |
-| `sequence` | Explicit orchestration from management agents to subagents. Different purpose than ReAct exploration. |
+
+| Capability        | Note                                                                                                  |
+| ----------------- | ----------------------------------------------------------------------------------------------------- |
+| `semantic-search` | Expensive embeddings, but useful as explicit tool for intentional vector search.                      |
+| `sequence`        | Explicit orchestration from management agents to subagents. Different purpose than ReAct exploration. |
 
 ---
 
@@ -1151,6 +1174,7 @@ executeLLMDrivenLoop()
 **Location:** `packages/capabilities/src/capabilities/memory.ts`
 
 **Architecture:**
+
 ```
 MemoryService (singleton)
   └── HybridDataLayer
@@ -1170,17 +1194,18 @@ MemoryService (singleton)
 | `update` | `MemoryService.update()` | Modify existing memory |
 
 **Memory Record Schema:**
+
 ```typescript
 interface MemoryRecord {
-  id: number;           // Auto-increment
-  user_id: string;      // Discord/Slack user ID
-  content: string;      // The memory text
-  tags: string;         // JSON array of tags
-  context: string;      // Additional context
-  timestamp: string;    // ISO timestamp
-  importance: number;   // 1-10 scale
-  metadata: string;     // JSON object
-  embedding?: string;   // Vector embedding (optional)
+  id: number; // Auto-increment
+  user_id: string; // Discord/Slack user ID
+  content: string; // The memory text
+  tags: string; // JSON array of tags
+  context: string; // Additional context
+  timestamp: string; // ISO timestamp
+  importance: number; // 1-10 scale
+  metadata: string; // JSON object
+  embedding?: string; // Vector embedding (optional)
   related_message_id?: string;
 }
 ```
@@ -1194,6 +1219,7 @@ interface MemoryRecord {
 **Purpose:** Intelligent assembly of LLM context from multiple sources.
 
 **Token Budget:**
+
 ```
 Total Context Window (default 32k)
   ├── Reserved for User Message: ~2000 tokens
@@ -1202,6 +1228,7 @@ Total Context Window (default 32k)
 ```
 
 **Context Sources (by priority):**
+
 1. **Temporal** - Current date/time
 2. **Goals** - Active user goals
 3. **Memories** - Relevant memories (keyword + semantic search)
@@ -1212,6 +1239,7 @@ Total Context Window (default 32k)
 8. **Credit Warnings** - Low balance alerts
 
 **Key Methods:**
+
 - `buildMessageChain()` - Main entry point
 - `assembleMessageContext()` - Gather all context sources
 - `selectOptimalContext()` - Prioritize within token budget
@@ -1226,6 +1254,7 @@ Total Context Window (default 32k)
 **Storage:** Redis with 86400s TTL
 
 **Profile Structure:**
+
 ```typescript
 interface UserProfile {
   userId: string;
@@ -1250,6 +1279,7 @@ interface UserProfile {
 ```
 
 **Operations:**
+
 - `getProfile(userId)` - Fetch profile from Redis
 - `updateProfile(userId, data)` - Merge updates
 - `linkEmail(userId, email)` - Add email
@@ -1316,78 +1346,81 @@ interface UserProfile {
 
 ### Capabilities Service (port 47324)
 
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/health` | Basic health check |
-| GET | `/health/detailed` | Full system status |
-| GET | `/health/ready` | Readiness probe |
-| GET | `/health/live` | Liveness probe |
-| POST | `/chat` | Submit job for processing |
-| GET | `/chat/:id` | Poll job status |
-| DELETE | `/chat/:id` | Cancel job |
-| GET | `/capabilities` | List all capabilities |
-| POST | `/capabilities/test` | Test capability execution |
-| GET | `/scheduler` | List scheduled tasks |
-| POST | `/scheduler` | Create scheduled task |
-| DELETE | `/scheduler/:id` | Cancel scheduled task |
-| POST | `/github/webhook` | GitHub webhook handler |
-| GET | `/api/memories` | Search memories |
-| GET | `/api/models` | List available models |
-| GET | `/logs` | View recent logs |
-| GET | `/services` | Service discovery |
+| Method | Path                 | Description               |
+| ------ | -------------------- | ------------------------- |
+| GET    | `/health`            | Basic health check        |
+| GET    | `/health/detailed`   | Full system status        |
+| GET    | `/health/ready`      | Readiness probe           |
+| GET    | `/health/live`       | Liveness probe            |
+| POST   | `/chat`              | Submit job for processing |
+| GET    | `/chat/:id`          | Poll job status           |
+| DELETE | `/chat/:id`          | Cancel job                |
+| GET    | `/capabilities`      | List all capabilities     |
+| POST   | `/capabilities/test` | Test capability execution |
+| GET    | `/scheduler`         | List scheduled tasks      |
+| POST   | `/scheduler`         | Create scheduled task     |
+| DELETE | `/scheduler/:id`     | Cancel scheduled task     |
+| POST   | `/github/webhook`    | GitHub webhook handler    |
+| GET    | `/api/memories`      | Search memories           |
+| GET    | `/api/models`        | List available models     |
+| GET    | `/logs`              | View recent logs          |
+| GET    | `/services`          | Service discovery         |
 
 ### Discord Service (port 47326/47327)
 
-| Method | Path | Service | Description |
-|--------|------|---------|-------------|
-| GET | `/health` | Health (47326) | Health check |
-| GET | `/ready` | Health (47326) | Readiness |
-| GET | `/live` | Health (47326) | Liveness |
-| GET | `/forums` | API (47327) | List forums |
-| GET | `/forums/:id` | API (47327) | Forum details |
-| GET | `/threads/:id` | API (47327) | Thread details |
+| Method | Path           | Service        | Description    |
+| ------ | -------------- | -------------- | -------------- |
+| GET    | `/health`      | Health (47326) | Health check   |
+| GET    | `/ready`       | Health (47326) | Readiness      |
+| GET    | `/live`        | Health (47326) | Liveness       |
+| GET    | `/forums`      | API (47327)    | List forums    |
+| GET    | `/forums/:id`  | API (47327)    | Forum details  |
+| GET    | `/threads/:id` | API (47327)    | Thread details |
 
 ### Brain Dashboard (port 47325)
 
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/api/status` | System status + metrics |
-| GET | `/api/analytics` | Dynamic analytics queries |
-| GET | `/api/memories` | Memory list |
-| POST | `/api/memories` | Create memory |
-| GET | `/api/memories/search` | Search memories |
-| GET | `/api/messages` | Message list |
-| GET | `/api/prompts` | Prompt list |
-| GET | `/api/stats/*` | Various stats endpoints |
+| Method | Path                   | Description               |
+| ------ | ---------------------- | ------------------------- |
+| GET    | `/api/status`          | System status + metrics   |
+| GET    | `/api/analytics`       | Dynamic analytics queries |
+| GET    | `/api/memories`        | Memory list               |
+| POST   | `/api/memories`        | Create memory             |
+| GET    | `/api/memories/search` | Search memories           |
+| GET    | `/api/messages`        | Message list              |
+| GET    | `/api/prompts`         | Prompt list               |
+| GET    | `/api/stats/*`         | Various stats endpoints   |
 
 ---
 
 ## Discord Integration
 
 ### Slash Commands
-| Command | Description |
-|---------|-------------|
-| `/bot-status` | System health + stats |
-| `/debug` | Diagnostics |
-| `/link-email` | Link email address |
-| `/link-phone` | Link phone number |
-| `/unlink-email` | Remove email |
-| `/unlink-phone` | Remove phone |
-| `/verify-phone` | Verify SMS code |
-| `/memory` | Search memories |
-| `/models` | List AI models |
-| `/status` | Last model used |
-| `/usage` | Usage stats |
-| `/sync-discussions` | Sync forum → GitHub |
+
+| Command             | Description           |
+| ------------------- | --------------------- |
+| `/bot-status`       | System health + stats |
+| `/debug`            | Diagnostics           |
+| `/link-email`       | Link email address    |
+| `/link-phone`       | Link phone number     |
+| `/unlink-email`     | Remove email          |
+| `/unlink-phone`     | Remove phone          |
+| `/verify-phone`     | Verify SMS code       |
+| `/memory`           | Search memories       |
+| `/models`           | List AI models        |
+| `/status`           | Last model used       |
+| `/usage`            | Usage stats           |
+| `/sync-discussions` | Sync forum → GitHub   |
 
 ### UI Components
-| Type | Capability Tag |
-|------|---------------|
-| Buttons | `<capability name="discord-ui" action="buttons" data='[{"label":"Yes","style":"primary"}]' />` |
+
+| Type        | Capability Tag                                                                                        |
+| ----------- | ----------------------------------------------------------------------------------------------------- |
+| Buttons     | `<capability name="discord-ui" action="buttons" data='[{"label":"Yes","style":"primary"}]' />`        |
 | Select Menu | `<capability name="discord-ui" action="select" data='{"placeholder":"Choose...","options":[...]}' />` |
-| Modal | `<capability name="discord-ui" action="modal" data='{"title":"Form","inputs":[...]}' />` |
+| Modal       | `<capability name="discord-ui" action="modal" data='{"title":"Form","inputs":[...]}' />`              |
 
 ### Message Handling
+
 - **Mentions:** Responds when @mentioned
 - **DMs:** Always responds in direct messages
 - **Robot Channels:** Channels containing "robot" in name
@@ -1410,6 +1443,7 @@ interface UserProfile {
 | `reality_anchor` | Grounding + accuracy rules |
 
 **Management Tools:**
+
 - `npm run prompts` - TUI editor (tools/prompt-tui.ts)
 - `npx ts-node tools/prompt-cli.ts` - CLI tool
 
@@ -1420,62 +1454,69 @@ interface UserProfile {
 ## Environment Variables
 
 ### Required
-| Variable | Description |
-|----------|-------------|
-| `DISCORD_TOKEN` | Discord bot token |
-| `OPENROUTER_API_KEY` | OpenRouter API key |
-| `DATABASE_PATH` | SQLite database path |
+
+| Variable             | Description          |
+| -------------------- | -------------------- |
+| `DISCORD_TOKEN`      | Discord bot token    |
+| `OPENROUTER_API_KEY` | OpenRouter API key   |
+| `DATABASE_PATH`      | SQLite database path |
 
 ### Optional - Redis
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `REDIS_HOST` | localhost | Redis host |
-| `REDIS_PORT` | 6379 | Redis port |
-| `REDIS_PASSWORD` | - | Redis password |
+
+| Variable         | Default   | Description    |
+| ---------------- | --------- | -------------- |
+| `REDIS_HOST`     | localhost | Redis host     |
+| `REDIS_PORT`     | 6379      | Redis port     |
+| `REDIS_PASSWORD` | -         | Redis password |
 
 ### Optional - Services
-| Variable | Default | Description |
-|----------|---------|-------------|
+
+| Variable           | Default                | Description              |
+| ------------------ | ---------------------- | ------------------------ |
 | `CAPABILITIES_URL` | http://localhost:47324 | Capabilities service URL |
-| `BRAIN_PORT` | 47325 | Dashboard port |
-| `DISCORD_PORT` | 47326 | Discord health port |
+| `BRAIN_PORT`       | 47325                  | Dashboard port           |
+| `DISCORD_PORT`     | 47326                  | Discord health port      |
 
 ### Optional - LLM
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `MAIN_MODEL` | anthropic/claude-3.5-sonnet | Primary model |
-| `FAST_MODEL` | anthropic/claude-3-haiku | Fast/cheap model |
-| `FALLBACK_MODEL` | openai/gpt-4o-mini | Backup model |
-| `CONTEXT_WINDOW_SIZE` | 32000 | Context window tokens |
-| `EXPLORATION_MAX_ITERATIONS` | 8 | Max ReAct loops |
+
+| Variable                     | Default                     | Description           |
+| ---------------------------- | --------------------------- | --------------------- |
+| `MAIN_MODEL`                 | anthropic/claude-3.5-sonnet | Primary model         |
+| `FAST_MODEL`                 | anthropic/claude-3-haiku    | Fast/cheap model      |
+| `FALLBACK_MODEL`             | openai/gpt-4o-mini          | Backup model          |
+| `CONTEXT_WINDOW_SIZE`        | 32000                       | Context window tokens |
+| `EXPLORATION_MAX_ITERATIONS` | 8                           | Max ReAct loops       |
 
 ### Optional - External
-| Variable | Description |
-|----------|-------------|
-| `GITHUB_TOKEN` | GitHub API token |
-| `TWILIO_ACCOUNT_SID` | Twilio account |
-| `TWILIO_AUTH_TOKEN` | Twilio auth |
-| `TWILIO_PHONE_NUMBER` | Twilio phone |
-| `WOLFRAM_APP_ID` | Wolfram Alpha API |
-| `OPENAI_API_KEY` | OpenAI (for embeddings) |
-| `LOKI_URL` | Grafana Loki endpoint |
+
+| Variable              | Description             |
+| --------------------- | ----------------------- |
+| `GITHUB_TOKEN`        | GitHub API token        |
+| `TWILIO_ACCOUNT_SID`  | Twilio account          |
+| `TWILIO_AUTH_TOKEN`   | Twilio auth             |
+| `TWILIO_PHONE_NUMBER` | Twilio phone            |
+| `WOLFRAM_APP_ID`      | Wolfram Alpha API       |
+| `OPENAI_API_KEY`      | OpenAI (for embeddings) |
+| `LOKI_URL`            | Grafana Loki endpoint   |
 
 ---
 
 ## Deployment
 
 ### Services (docker-compose)
-| Service | Port | Description |
-|---------|------|-------------|
-| capabilities | 47324 | Core AI processing |
-| discord | 47326/47327 | Discord bot |
-| brain | 47325 | Dashboard |
-| irc | 47328 | IRC bot |
-| sms | 47329 | SMS adapter |
-| sandbox | - | Docker-in-Docker for shell |
-| redis | 6379 | Queue backend |
+
+| Service      | Port        | Description                |
+| ------------ | ----------- | -------------------------- |
+| capabilities | 47324       | Core AI processing         |
+| discord      | 47326/47327 | Discord bot                |
+| brain        | 47325       | Dashboard                  |
+| irc          | 47328       | IRC bot                    |
+| sms          | 47329       | SMS adapter                |
+| sandbox      | -           | Docker-in-Docker for shell |
+| redis        | 6379        | Queue backend              |
 
 ### Commands
+
 ```bash
 # Development
 npm run dev              # Start all services
@@ -1492,6 +1533,7 @@ pnpm db:migrate          # Apply migrations
 ```
 
 ### Health Checks
+
 - `/health` - Basic alive check
 - `/health/ready` - Ready to accept traffic
 - `/health/live` - Application running
@@ -1499,4 +1541,4 @@ pnpm db:migrate          # Apply migrations
 
 ---
 
-*This document is the authoritative reference for all Coach Artie systems and features.*
+_This document is the authoritative reference for all Coach Artie systems and features._

@@ -715,7 +715,6 @@ capabilityRegistry.register(shellCapability);
 import { filesystemCapability } from '../../capabilities/development/filesystem.js';
 capabilityRegistry.register(filesystemCapability);
 
-
 // Log all successfully registered capabilities on startup
 logger.info(
   `🚀 Capability Registry initialized with ${capabilityRegistry.size()} capabilities:`,

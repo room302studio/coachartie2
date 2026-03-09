@@ -69,6 +69,7 @@ import { kanbanCapability } from '../../capabilities/system/kanban.js';
 import { vpsClaudeCapability } from '../../capabilities/system/vps-claude.js';
 import { systemMemoryCapability } from '../../capabilities/system/system-memory.js';
 import { walletCapability } from '../../capabilities/system/wallet.js';
+import { osintLookupCapability } from '../../capabilities/system/osint-lookup.js';
 // Services
 import { meetingCapability } from '../core/meeting-service.js';
 
@@ -344,6 +345,11 @@ export class CapabilityBootstrap {
       logger.info('📦 Registering wallet (crypto autonomy)...');
       capabilityRegistry.register(walletCapability);
       logger.info('✅ wallet registered successfully');
+
+      // Register OSINT lookup capability - query anomalywatch, skywatch, entityhub
+      logger.info('📦 Registering osint (OSINT monitoring stack)...');
+      capabilityRegistry.register(osintLookupCapability);
+      logger.info('✅ osint registered successfully');
 
       // Initialize OpenClaw-compatible skill system (async, runs after main init)
       logger.info('🦞 Scheduling OpenClaw skill system initialization...');

@@ -14,7 +14,7 @@ export class ApiServer {
     this.app = express();
 
     // Middleware
-    this.app.use(express.json());
+    this.app.use(express.json({ limit: '1mb' }));
 
     // CORS
     this.app.use((req, res, next) => {

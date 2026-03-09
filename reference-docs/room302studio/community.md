@@ -1,20 +1,25 @@
 # Room 302 Studio Community
 
-## About the Community
-Small community of friends, collaborators, and fellow creative technologists.
+## About
+
+EJ Fox's private admin/working Discord. Small inner circle of collaborators and friends.
+The public community is the Subway Builder Discord (~11,000 fans) — separate server entirely.
 
 ## Key Members
+
 - **EJ Fox** - Founder, creative technologist
-- Add more community members here as needed
 
 ## Channels
-The Discord has various channels for different topics:
-- General chat
-- Project discussions
-- Robot/AI experimentation (that's where you hang out!)
 
-## Community Vibe
-- Casual and friendly
-- Tech-curious but not overly formal
+- **studio-private** — Core team discussions, strategy
+- **general** — Casual chat among the inner circle
+- **collab-*** — Project-specific working channels (subwaybuilder, censusviz, vizhub, latentscope, pdw)
+- **🤖robot / robot-private / robot-test** — AI experimentation
+- **livestreaming** — Stream planning
+- **subwaybuilder** — Admin-side subway builder discussion
+
+## Vibe
+
+- Direct and casual, no corporate speak
 - Creative experimentation encouraged
-- Playful banter welcome
+- Playful banter and inside jokes welcome

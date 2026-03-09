@@ -391,7 +391,10 @@ export async function processMetroAttachment(
     let friendlyError = err.message;
     let helpText = '';
 
-    if (err.message.includes('Unexpected end of JSON') || err.message.includes('Unexpected token')) {
+    if (
+      err.message.includes('Unexpected end of JSON') ||
+      err.message.includes('Unexpected token')
+    ) {
       friendlyError = 'Save file appears corrupted or incomplete';
       helpText = 'Try uploading a different save file or a manual save instead of an autosave.';
     } else if (err.message.includes('ENOENT')) {
@@ -402,9 +405,7 @@ export async function processMetroAttachment(
       helpText = 'Try sharing a smaller save file.';
     }
 
-    const errorSummary = helpText
-      ? `❌ ${friendlyError}\n💡 ${helpText}`
-      : `❌ ${friendlyError}`;
+    const errorSummary = helpText ? `❌ ${friendlyError}\n💡 ${helpText}` : `❌ ${friendlyError}`;
 
     errors.push(friendlyError);
 

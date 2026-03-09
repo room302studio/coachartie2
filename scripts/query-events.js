@@ -10,7 +10,8 @@
 
 const { execSync } = require('child_process');
 
-const ENDPOINT = 'https://catalog.cloudflarestorage.com/a5d6e80b1df831981a1d0ca249cf082e/subway-builder-warehouse';
+const ENDPOINT =
+  'https://catalog.cloudflarestorage.com/a5d6e80b1df831981a1d0ca249cf082e/subway-builder-warehouse';
 const EVENT_TABLE = 'subway_builder_warehouse.logging.event_ingestion';
 const EVENT_API_TOKEN = process.env.EVENT_API_TOKEN || 'placeholder';
 

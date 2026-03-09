@@ -270,10 +270,11 @@ export class HybridDataLayer {
     // Get memories from hot cache with guild isolation
     const memories = Array.from(userMemoryIds)
       .map((id) => this.hotData.get(id))
-      .filter((memory): memory is MemoryRecord =>
-        memory !== undefined &&
-        // Guild isolation: only return memories from same guild or no guild
-        (!guildId || !memory.guild_id || memory.guild_id === guildId)
+      .filter(
+        (memory): memory is MemoryRecord =>
+          memory !== undefined &&
+          // Guild isolation: only return memories from same guild or no guild
+          (!guildId || !memory.guild_id || memory.guild_id === guildId)
       )
       .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
       .slice(0, limit);
@@ -339,7 +340,12 @@ export class HybridDataLayer {
    * Search memories - uses FTS if available
    * SECURITY: Filters by guild_id to prevent cross-guild info leakage
    */
-  async searchMemories(userId: string, query: string, limit = 10, guildId?: string): Promise<MemoryRecord[]> {
+  async searchMemories(
+    userId: string,
+    query: string,
+    limit = 10,
+    guildId?: string
+  ): Promise<MemoryRecord[]> {
     // First try hot cache simple search
     const userMemoryIds = this.userIndex.get(userId) || new Set();
     const hotResults = Array.from(userMemoryIds)
@@ -586,16 +592,18 @@ export class HybridDataLayer {
   /**
    * Get recall statistics for a memory
    */
-  getMemoryRecallStats(memoryId: number): { recallCount: number; lastRecalled: string | null } | null {
+  getMemoryRecallStats(
+    memoryId: number
+  ): { recallCount: number; lastRecalled: string | null } | null {
     if (!this.coldStorage) {
       return null;
     }
 
     try {
-      const result = this.coldStorage.get<{ recall_count: number; last_recalled_at: string | null }>(
-        `SELECT recall_count, last_recalled_at FROM memories WHERE id = ?`,
-        [memoryId]
-      );
+      const result = this.coldStorage.get<{
+        recall_count: number;
+        last_recalled_at: string | null;
+      }>(`SELECT recall_count, last_recalled_at FROM memories WHERE id = ?`, [memoryId]);
 
       return result
         ? { recallCount: result.recall_count || 0, lastRecalled: result.last_recalled_at }
@@ -614,14 +622,16 @@ export class HybridDataLayer {
     }
 
     try {
-      return this.coldStorage.all<{ id: number; content: string; recall_count: number }>(
-        `SELECT id, substr(content, 1, 200) as content, recall_count
+      return this.coldStorage
+        .all<{ id: number; content: string; recall_count: number }>(
+          `SELECT id, substr(content, 1, 200) as content, recall_count
          FROM memories
          WHERE recall_count > 0
          ORDER BY recall_count DESC
          LIMIT ?`,
-        [limit]
-      ).map(r => ({ id: r.id, content: r.content, recallCount: r.recall_count }));
+          [limit]
+        )
+        .map((r) => ({ id: r.id, content: r.content, recallCount: r.recall_count }));
     } catch {
       return [];
     }

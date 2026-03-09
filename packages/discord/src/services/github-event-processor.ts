@@ -199,10 +199,7 @@ export class GitHubEventProcessor {
   /**
    * Flush a batch and call the callback
    */
-  private flushBatch(
-    batchKey: string,
-    onBatchReady: (batch: BatchedEvents) => void
-  ): void {
+  private flushBatch(batchKey: string, onBatchReady: (batch: BatchedEvents) => void): void {
     const events = this.pendingBatches.get(batchKey);
     if (!events || events.length === 0) {
       return;
@@ -242,15 +239,9 @@ export class GitHubEventProcessor {
    * Check if event is from a bot
    */
   private isBotEvent(event: GitHubSyncEvent): boolean {
-    const author =
-      event.data.prAuthor ||
-      event.data.commentAuthor ||
-      event.data.reviewAuthor ||
-      '';
+    const author = event.data.prAuthor || event.data.commentAuthor || event.data.reviewAuthor || '';
 
-    return BOT_USERNAMES.some(
-      (bot) => author.toLowerCase() === bot.toLowerCase()
-    );
+    return BOT_USERNAMES.some((bot) => author.toLowerCase() === bot.toLowerCase());
   }
 
   /**
@@ -352,9 +343,7 @@ export class GitHubEventProcessor {
       firstEvent.type === 'pr_changes_requested'
     ) {
       const approved = events.filter((e) => e.event.type === 'pr_approved').length;
-      const changesRequested = events.filter(
-        (e) => e.event.type === 'pr_changes_requested'
-      ).length;
+      const changesRequested = events.filter((e) => e.event.type === 'pr_changes_requested').length;
       const parts: string[] = [];
       if (approved > 0) parts.push(`${approved} approved`);
       if (changesRequested > 0) parts.push(`${changesRequested} requested changes`);
@@ -459,9 +448,7 @@ export class GitHubEventProcessor {
   /**
    * Resolve a GitHub username to a Discord user
    */
-  async resolveGitHubUser(
-    githubUsername: string
-  ): Promise<GithubIdentityMapping | null> {
+  async resolveGitHubUser(githubUsername: string): Promise<GithubIdentityMapping | null> {
     try {
       const results = await getDb()
         .select()
@@ -494,9 +481,7 @@ let processorInstance: GitHubEventProcessor | null = null;
 /**
  * Initialize the event processor
  */
-export function initializeEventProcessor(
-  config?: Partial<ProcessorConfig>
-): GitHubEventProcessor {
+export function initializeEventProcessor(config?: Partial<ProcessorConfig>): GitHubEventProcessor {
   processorInstance = new GitHubEventProcessor(config);
   logger.info('GitHub event processor initialized');
   return processorInstance;
@@ -507,9 +492,7 @@ export function initializeEventProcessor(
  */
 export function getEventProcessor(): GitHubEventProcessor {
   if (!processorInstance) {
-    throw new Error(
-      'GitHub event processor not initialized. Call initializeEventProcessor first.'
-    );
+    throw new Error('GitHub event processor not initialized. Call initializeEventProcessor first.');
   }
   return processorInstance;
 }

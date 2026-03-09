@@ -351,9 +351,11 @@ export async function processUserIntent(
                       const discordMsgId = intent.getResponseMessageId();
                       if (discordMsgId && jobInfo?.messageId) {
                         discordMessageLinked = true;
-                        capabilitiesClient.linkDiscordMessage(jobInfo.messageId, discordMsgId).catch((err) => {
-                          logger.debug(`Failed to link Discord message [${shortId}]:`, err);
-                        });
+                        capabilitiesClient
+                          .linkDiscordMessage(jobInfo.messageId, discordMsgId)
+                          .catch((err) => {
+                            logger.debug(`Failed to link Discord message [${shortId}]:`, err);
+                          });
                       }
                     }
                   } catch (error) {
@@ -385,9 +387,11 @@ export async function processUserIntent(
                     const discordMsgId = intent.getResponseMessageId();
                     if (discordMsgId && jobInfo?.messageId) {
                       discordMessageLinked = true;
-                      capabilitiesClient.linkDiscordMessage(jobInfo.messageId, discordMsgId).catch((err) => {
-                        logger.debug(`Failed to link Discord message [${shortId}]:`, err);
-                      });
+                      capabilitiesClient
+                        .linkDiscordMessage(jobInfo.messageId, discordMsgId)
+                        .catch((err) => {
+                          logger.debug(`Failed to link Discord message [${shortId}]:`, err);
+                        });
                     }
                   }
                 }

@@ -1,4 +1,10 @@
-import { logger, getDb, githubIdentityMappings, type GithubIdentityMapping, eq } from '@coachartie/shared';
+import {
+  logger,
+  getDb,
+  githubIdentityMappings,
+  type GithubIdentityMapping,
+  eq,
+} from '@coachartie/shared';
 import { RegisteredCapability } from '../services/capability/capability-registry.js';
 
 /**
@@ -67,8 +73,7 @@ async function learnMapping(
 
     if (existing.length > 0) {
       // Update if new source is manual or confidence is higher
-      const shouldUpdate =
-        source === 'manual' || confidence > (existing[0].confidence || 0);
+      const shouldUpdate = source === 'manual' || confidence > (existing[0].confidence || 0);
 
       if (shouldUpdate) {
         await getDb()

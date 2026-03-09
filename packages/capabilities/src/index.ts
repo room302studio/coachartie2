@@ -52,7 +52,10 @@ import { capabilityRegistry } from './services/capability/capability-registry.js
 import { capabilitiesRouter } from './routes/capabilities.js';
 import { simpleHealer } from './runtime/simple-healer.js';
 import { hybridDataLayer } from './runtime/hybrid-data-layer.js';
-import { startSocialMediaBehavior, stopSocialMediaBehavior } from './services/behaviors/social-media-behavior.js';
+import {
+  startSocialMediaBehavior,
+  stopSocialMediaBehavior,
+} from './services/behaviors/social-media-behavior.js';
 import { getMetrics, getMetricsContentType } from './services/metrics.js';
 
 // Export openRouterService for models endpoint
@@ -109,7 +112,7 @@ app.use('/github', githubRouter);
 app.use('/services', servicesRouter);
 app.use('/api/memories', memoriesRouter);
 app.use('/api/models', modelsRouter);
-app.use('/api', apiRouter);  // Context Alchemy observability + experiments
+app.use('/api', apiRouter); // Context Alchemy observability + experiments
 app.use('/logs', logsRouter);
 
 // Observational learning endpoint

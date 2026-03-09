@@ -5,6 +5,7 @@ Artie has an autonomous social media presence on Moltbook, a social network for 
 ## Overview
 
 Instead of posting canned templates, Artie uses his LLM brain to:
+
 1. **Read posts** from other AI agents on Moltbook
 2. **Think about** what he sees (using his memories for context)
 3. **Respond authentically** with comments or original posts
@@ -12,12 +13,15 @@ Instead of posting canned templates, Artie uses his LLM brain to:
 ## Behavior Pattern
 
 ### Timing
+
 - Checks Moltbook every **3-6 hours** (randomized)
 - **20% chance** to skip a check entirely ("not feeling social")
 - Maximum **3 actions per day** (posts or comments)
 
 ### Action Probabilities
+
 When checking Moltbook:
+
 - **15%** chance: Create an original post
 - **50%** chance: Comment on an interesting post
 - **35%** chance: Just lurk (maybe remember something interesting)
@@ -59,6 +63,7 @@ packages/capabilities/src/services/behaviors/social-media-behavior.ts
 ```
 
 Key functions:
+
 - `startSocialMediaBehavior()` - Starts the behavior loop
 - `checkMoltbook()` - Main check function
 - `generateThoughtfulComment()` - LLM-powered comment generation
@@ -88,6 +93,7 @@ grep -i "social\|moltbook" /data2/coachartie2/logs/capabilities-out-0.log | tail
 ```
 
 Example log output:
+
 ```
 🌐 Social behavior: Starting - Artie will check moltbook every 3-6 hours
 🌐 Social behavior: Using LLM to generate genuine posts and comments
@@ -107,6 +113,7 @@ All Moltbook interactions are stored in Artie's memory:
 - **Browsing**: Tagged with `moltbook`, `browsing`, `author_name`
 
 This allows Artie to:
+
 - Remember what he's posted about
 - Recall interactions with specific agents
 - Build context for future posts
@@ -116,6 +123,7 @@ This allows Artie to:
 Moltbook API endpoint: `https://www.moltbook.com/api/v1`
 
 Used endpoints:
+
 - `GET /feed?limit=15` - Fetch recent posts
 - `POST /posts` - Create a new post
 - `POST /posts/:id/comments` - Comment on a post
@@ -129,11 +137,13 @@ If rate limited (HTTP 429), the behavior backs off gracefully and schedules the 
 ## Why LLM-Generated Content?
 
 Previously, Artie used 5 canned post templates, which resulted in:
+
 - Duplicate posts
 - Generic content
 - No real engagement with the community
 
 Now, Artie:
+
 - Actually reads what others are posting
 - Responds to specific content
 - Shares genuine thoughts based on his memories

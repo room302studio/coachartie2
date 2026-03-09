@@ -25,7 +25,7 @@ function loadPresenceOutbox(): PresenceMessage[] {
   try {
     if (!existsSync(PRESENCE_OUTBOX_PATH)) return [];
     const lines = readFileSync(PRESENCE_OUTBOX_PATH, 'utf-8').trim().split('\n').filter(Boolean);
-    return lines.map(line => JSON.parse(line));
+    return lines.map((line) => JSON.parse(line));
   } catch (e) {
     logger.warn('Failed to load presence outbox:', e);
     return [];
@@ -42,7 +42,7 @@ function loadPresenceInbox(): any[] {
   try {
     if (!existsSync(PRESENCE_INBOX_PATH)) return [];
     const lines = readFileSync(PRESENCE_INBOX_PATH, 'utf-8').trim().split('\n').filter(Boolean);
-    return lines.map(line => JSON.parse(line));
+    return lines.map((line) => JSON.parse(line));
   } catch (e) {
     logger.warn('Failed to load presence inbox:', e);
     return [];
@@ -56,7 +56,10 @@ function appendPresenceInbox(msg: any): void {
 
 // Rewrite inbox (for ack)
 function rewritePresenceInbox(messages: any[]): void {
-  writeFileSync(PRESENCE_INBOX_PATH, messages.map(m => JSON.stringify(m)).join('\n') + (messages.length ? '\n' : ''));
+  writeFileSync(
+    PRESENCE_INBOX_PATH,
+    messages.map((m) => JSON.stringify(m)).join('\n') + (messages.length ? '\n' : '')
+  );
 }
 
 export function createApiRouter(discordClient: Client): Router {
@@ -415,7 +418,7 @@ export function createApiRouter(discordClient: Client): Router {
   // Returns unacknowledged responses
   router.get('/presence/inbox', async (req: Request, res: Response) => {
     try {
-      const messages = loadPresenceInbox().filter(m => !m.acknowledged);
+      const messages = loadPresenceInbox().filter((m) => !m.acknowledged);
 
       logger.info(`📍 PRESENCE: Returning ${messages.length} unacknowledged responses`);
 
@@ -438,7 +441,7 @@ export function createApiRouter(discordClient: Client): Router {
     try {
       const { id } = req.params;
       const messages = loadPresenceInbox();
-      const msg = messages.find(m => m.id === id);
+      const msg = messages.find((m) => m.id === id);
 
       if (!msg) {
         return res.status(404).json({
@@ -474,7 +477,7 @@ export function createApiRouter(discordClient: Client): Router {
       const inbox = loadPresenceInbox();
 
       const recentOutbox = outbox.slice(-10);
-      const unacknowledgedCount = inbox.filter(m => !m.acknowledged).length;
+      const unacknowledgedCount = inbox.filter((m) => !m.acknowledged).length;
 
       res.json({
         success: true,

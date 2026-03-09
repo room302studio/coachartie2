@@ -158,7 +158,7 @@ Format your response using XML tags:
 
       const emailDraftSystemPrompt =
         (await promptManager.getPrompt('PROMPT_EMAIL_DRAFT'))?.content ||
-        'You are Coach Artie, an AI assistant helping draft professional emails.';
+        'You are Coach Artie, helping draft professional emails.';
       const { messages } = await contextAlchemy.buildMessageChain(
         draftPrompt,
         message.userId,

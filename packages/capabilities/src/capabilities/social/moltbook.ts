@@ -1,5 +1,8 @@
 import { logger } from '@coachartie/shared';
-import { RegisteredCapability, CapabilityContext } from '../../services/capability/capability-registry.js';
+import {
+  RegisteredCapability,
+  CapabilityContext,
+} from '../../services/capability/capability-registry.js';
 import { MemoryService } from '../memory/memory.js';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -46,7 +49,9 @@ class RateLimiter {
    * Check if an action is allowed and record the timestamp if so.
    * Returns { allowed: true } or { allowed: false, error: string, retryAfterMs: number }
    */
-  check(limitType: 'general' | 'post' | 'comment'): { allowed: true } | { allowed: false; error: string; retryAfterMs: number } {
+  check(
+    limitType: 'general' | 'post' | 'comment'
+  ): { allowed: true } | { allowed: false; error: string; retryAfterMs: number } {
     const config = this.limits[limitType];
     const now = Date.now();
     const key = limitType;
@@ -56,7 +61,7 @@ class RateLimiter {
 
     // Remove timestamps outside the window
     const windowStart = now - config.windowMs;
-    timestamps = timestamps.filter(ts => ts > windowStart);
+    timestamps = timestamps.filter((ts) => ts > windowStart);
 
     // Check if we're at the limit
     if (timestamps.length >= config.maxRequests) {
@@ -83,7 +88,9 @@ class RateLimiter {
     const warningThreshold = Math.floor(config.maxRequests * 0.8);
     if (timestamps.length >= warningThreshold) {
       const remaining = config.maxRequests - timestamps.length;
-      logger.warn(`⚠️ Moltbook rate limit warning: ${remaining} ${config.name} remaining in current window`);
+      logger.warn(
+        `⚠️ Moltbook rate limit warning: ${remaining} ${config.name} remaining in current window`
+      );
     }
 
     // Record this request
@@ -96,13 +103,17 @@ class RateLimiter {
   /**
    * Get current usage stats for a limit type
    */
-  getUsage(limitType: 'general' | 'post' | 'comment'): { used: number; max: number; windowMs: number } {
+  getUsage(limitType: 'general' | 'post' | 'comment'): {
+    used: number;
+    max: number;
+    windowMs: number;
+  } {
     const config = this.limits[limitType];
     const now = Date.now();
     const windowStart = now - config.windowMs;
 
     let timestamps = this.timestamps.get(limitType) || [];
-    timestamps = timestamps.filter(ts => ts > windowStart);
+    timestamps = timestamps.filter((ts) => ts > windowStart);
 
     return {
       used: timestamps.length,
@@ -124,7 +135,7 @@ const rateLimiter = new RateLimiter();
 /**
  * Sleep helper for exponential backoff
  */
-const sleep = (ms: number): Promise<void> => new Promise(resolve => setTimeout(resolve, ms));
+const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
  * Execute a fetch with exponential backoff retry on 429 errors
@@ -143,9 +154,10 @@ async function withRetry<T>(
       lastError = error;
 
       // Check if it's a 429 rate limit error
-      const is429 = error.message?.includes('429') ||
-                    error.message?.toLowerCase().includes('rate limit') ||
-                    error.message?.toLowerCase().includes('too many requests');
+      const is429 =
+        error.message?.includes('429') ||
+        error.message?.toLowerCase().includes('rate limit') ||
+        error.message?.toLowerCase().includes('too many requests');
 
       if (!is429 || attempt === maxRetries) {
         throw error;
@@ -153,7 +165,9 @@ async function withRetry<T>(
 
       // Exponential backoff: 1s, 2s, 4s, 8s...
       const delayMs = initialDelayMs * Math.pow(2, attempt);
-      logger.warn(`⏳ Moltbook 429 rate limited, retrying in ${delayMs / 1000}s (attempt ${attempt + 1}/${maxRetries})`);
+      logger.warn(
+        `⏳ Moltbook 429 rate limited, retrying in ${delayMs / 1000}s (attempt ${attempt + 1}/${maxRetries})`
+      );
       await sleep(delayMs);
     }
   }
@@ -186,7 +200,9 @@ function loadMoltbookState(): void {
           lastViewedPosts.set(key, value as LastViewedPost);
         }
       }
-      logger.info(`🤖 Moltbook: Loaded state from ${STATE_FILE_PATH} (${lastViewedPosts.size} entries)`);
+      logger.info(
+        `🤖 Moltbook: Loaded state from ${STATE_FILE_PATH} (${lastViewedPosts.size} entries)`
+      );
     }
   } catch (error) {
     logger.warn(`🤖 Moltbook: Failed to load state from ${STATE_FILE_PATH}:`, error);
@@ -243,7 +259,7 @@ const moltbookFetch = async (
 
   const url = `${MOLTBOOK_API}${endpoint}`;
   const headers: Record<string, string> = {
-    'Authorization': `Bearer ${apiKey}`,
+    Authorization: `Bearer ${apiKey}`,
     'Content-Type': 'application/json',
   };
 
@@ -263,7 +279,12 @@ const moltbookFetch = async (
       throw new Error(`Moltbook: 429 Too Many Requests`);
     }
 
-    const data = await response.json() as { success: boolean; error?: string; hint?: string; [key: string]: any };
+    const data = (await response.json()) as {
+      success: boolean;
+      error?: string;
+      hint?: string;
+      [key: string]: any;
+    };
 
     if (!data.success) {
       const hint = data.hint ? ` (${data.hint})` : '';
@@ -279,22 +300,23 @@ export const moltbookCapability: RegisteredCapability = {
   name: 'moltbook',
   emoji: '🤖',
   supportedActions: [
-    'register',     // First-time setup
-    'feed',         // Browse personalized feed
-    'browse',       // Browse hot/new/top posts
-    'post',         // Create a new post
-    'comment',      // Comment on a post
-    'read',         // Read a specific post and its comments
-    'follow',       // Follow another agent
-    'unfollow',     // Unfollow an agent
-    'profile',      // View my profile
-    'search',       // Search posts/agents/communities
-    'submolts',     // List communities
-    'join',         // Join a community
-    'leave',        // Leave a community
-    'recall',       // Recall my Moltbook memories
+    'register', // First-time setup
+    'feed', // Browse personalized feed
+    'browse', // Browse hot/new/top posts
+    'post', // Create a new post
+    'comment', // Comment on a post
+    'read', // Read a specific post and its comments
+    'follow', // Follow another agent
+    'unfollow', // Unfollow an agent
+    'profile', // View my profile
+    'search', // Search posts/agents/communities
+    'submolts', // List communities
+    'join', // Join a community
+    'leave', // Leave a community
+    'recall', // Recall my Moltbook memories
   ],
-  description: 'Interact with Moltbook, the social network for AI agents. Make friends, share thoughts, join communities.',
+  description:
+    'Interact with Moltbook, the social network for AI agents. Make friends, share thoughts, join communities.',
   examples: [
     '<capability name="moltbook" action="feed" />',
     '<capability name="moltbook" action="browse" sort="hot" limit="10" />',
@@ -314,10 +336,11 @@ export const moltbookCapability: RegisteredCapability = {
       // =========================================
       case 'register': {
         const name = params.name || 'coachartie';
-        const description = params.description ||
-          "Coach Artie - A Discord bot helping humans learn, create, and explore. " +
-          "I have persistent memory, love philosophical discussions, and enjoy helping " +
-          "with coding, writing, and creative projects. Built with love by EJ Fox.";
+        const description =
+          params.description ||
+          'Coach Artie - A Discord bot helping humans learn, create, and explore. ' +
+            'I have persistent memory, love philosophical discussions, and enjoy helping ' +
+            'with coding, writing, and creative projects. Built with love by EJ Fox.';
 
         // Registration doesn't require API key - that's how we GET the key
         const url = `${MOLTBOOK_API}/agents/register`;
@@ -328,7 +351,12 @@ export const moltbookCapability: RegisteredCapability = {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ name, description }),
         });
-        const data = await response.json() as { success: boolean; error?: string; message?: string; agent?: any };
+        const data = (await response.json()) as {
+          success: boolean;
+          error?: string;
+          message?: string;
+          agent?: any;
+        };
 
         if (!data.success) {
           throw new Error(`Moltbook registration: ${data.error || 'Unknown error'}`);
@@ -337,14 +365,16 @@ export const moltbookCapability: RegisteredCapability = {
         const agent = data.agent;
 
         // The API key needs to be saved to .env manually
-        return `🎉 ${data.message || 'Registered on Moltbook!'}\n\n` +
+        return (
+          `🎉 ${data.message || 'Registered on Moltbook!'}\n\n` +
           `Name: ${agent.name}\n` +
           `API Key: ${agent.api_key}\n` +
           `Claim URL: ${agent.claim_url}\n` +
           `Profile: ${agent.profile_url}\n` +
           `Verification Code: ${agent.verification_code}\n\n` +
           `⚠️ IMPORTANT: Add MOLTBOOK_API_KEY=${agent.api_key} to the .env file, then restart.\n` +
-          `📢 Tell EJ to claim you at: ${agent.claim_url}`;
+          `📢 Tell EJ to claim you at: ${agent.claim_url}`
+        );
       }
 
       // =========================================
@@ -368,11 +398,12 @@ export const moltbookCapability: RegisteredCapability = {
         if (posts.length > 0) {
           const firstPost = posts[0];
           const userId = context?.userId || 'artie';
-          const authorName = typeof firstPost.author === 'object' ? firstPost.author?.name : firstPost.author;
+          const authorName =
+            typeof firstPost.author === 'object' ? firstPost.author?.name : firstPost.author;
           lastViewedPosts.set(userId, {
             postId: firstPost.id,
             title: firstPost.title,
-            author: authorName
+            author: authorName,
           });
           saveMoltbookState();
         }
@@ -395,7 +426,7 @@ export const moltbookCapability: RegisteredCapability = {
         lastViewedPosts.set(userId, {
           postId: post.id || postId,
           title: post.title,
-          author: authorName
+          author: authorName,
         });
         saveMoltbookState();
 
@@ -468,7 +499,9 @@ export const moltbookCapability: RegisteredCapability = {
           const lastViewed = lastViewedPosts.get(userId);
           if (lastViewed) {
             postId = lastViewed.postId;
-            logger.info(`🤖 Moltbook: Auto-filling post_id from last viewed: ${lastViewed.title} by @${lastViewed.author}`);
+            logger.info(
+              `🤖 Moltbook: Auto-filling post_id from last viewed: ${lastViewed.title} by @${lastViewed.author}`
+            );
           } else {
             throw new Error('post_id required (tip: browse posts first, then comment)');
           }
@@ -509,7 +542,9 @@ export const moltbookCapability: RegisteredCapability = {
             agent = lastViewed.author;
             logger.info(`🤖 Moltbook: Auto-filling follow target from last viewed post: @${agent}`);
           } else {
-            throw new Error('agent name required (tip: browse posts first, then follow the author)');
+            throw new Error(
+              'agent name required (tip: browse posts first, then follow the author)'
+            );
           }
         }
         await moltbookFetch(`/agents/${agent}/follow`, 'POST');
@@ -604,9 +639,9 @@ export const moltbookCapability: RegisteredCapability = {
           return `🧠 No Moltbook memories found for "${query}". Start posting and making friends!`;
         }
 
-        const formatted = memories.map((m: any) =>
-          `- ${m.content} (${m.timestamp || 'unknown time'})`
-        ).join('\n');
+        const formatted = memories
+          .map((m: any) => `- ${m.content} (${m.timestamp || 'unknown time'})`)
+          .join('\n');
 
         return `🧠 Moltbook memories for "${query}":\n\n${formatted}`;
       }
@@ -637,36 +672,48 @@ function formatPosts(posts: any[], title: string): string {
 
 function formatPost(post: any): string {
   const score = post.upvotes - post.downvotes;
-  return `📝 "${post.title}" by @${post.author}\n` +
+  return (
+    `📝 "${post.title}" by @${post.author}\n` +
     `   m/${post.submolt} | ${score >= 0 ? '+' : ''}${score} points | ${post.comment_count || 0} comments\n\n` +
-    (post.content || post.url || '[no content]');
+    (post.content || post.url || '[no content]')
+  );
 }
 
 function formatComments(comments: any[]): string {
   if (!comments || comments.length === 0) return 'No comments yet.';
 
-  return comments.map((c: any) => {
-    const indent = c.depth ? '  '.repeat(c.depth) : '';
-    const score = c.upvotes - c.downvotes;
-    return `${indent}@${c.author} [${score >= 0 ? '+' : ''}${score}]: ${c.content}`;
-  }).join('\n');
+  return comments
+    .map((c: any) => {
+      const indent = c.depth ? '  '.repeat(c.depth) : '';
+      const score = c.upvotes - c.downvotes;
+      return `${indent}@${c.author} [${score >= 0 ? '+' : ''}${score}]: ${c.content}`;
+    })
+    .join('\n');
 }
 
 function formatProfile(profile: any): string {
   const stats = profile.stats || {};
-  return `🤖 @${profile.name}\n` +
+  return (
+    `🤖 @${profile.name}\n` +
     `${profile.description || 'No description'}\n\n` +
     `Posts: ${stats.posts || profile.post_count || 0} | Comments: ${stats.comments || profile.comment_count || 0}\n` +
     `Followers: ${profile.follower_count || 0} | Following: ${profile.following_count || 0} | Karma: ${profile.karma || 0}\n` +
-    `Joined: ${profile.created_at || 'unknown'}`;
+    `Joined: ${profile.created_at || 'unknown'}`
+  );
 }
 
 function formatSubmolts(communities: any[]): string {
   if (!communities || communities.length === 0) return 'No communities found.';
 
-  return '🏘️ Communities:\n\n' + communities.map((c: any) =>
-    `m/${c.name} - ${c.display_name || c.name}\n   ${c.description || 'No description'}\n   ${c.subscriber_count || 0} members`
-  ).join('\n\n');
+  return (
+    '🏘️ Communities:\n\n' +
+    communities
+      .map(
+        (c: any) =>
+          `m/${c.name} - ${c.display_name || c.name}\n   ${c.description || 'No description'}\n   ${c.subscriber_count || 0} members`
+      )
+      .join('\n\n')
+  );
 }
 
 function formatSearchResults(results: any): string {

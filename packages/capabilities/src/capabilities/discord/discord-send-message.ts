@@ -6,7 +6,8 @@ import fetch from 'node-fetch';
 const WHITELISTED_GUILD_IDS = ['932719842522443928'];
 
 // Use docker service name when running in container, localhost otherwise
-const DISCORD_SERVICE_URL = process.env.DISCORD_SERVICE_URL ||
+const DISCORD_SERVICE_URL =
+  process.env.DISCORD_SERVICE_URL ||
   (process.env.DOCKER_ENV ? 'http://discord:47321' : 'http://localhost:47321');
 
 export const discordSendMessageCapability: RegisteredCapability = {

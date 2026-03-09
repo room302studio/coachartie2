@@ -1416,7 +1416,8 @@ ${channelPersona.systemPrompt}
             fullMessage,
             message.channelId,
             message.author.tag,
-            false // Don't respond, just observe
+            false, // Don't respond, just observe
+            message.guildId || undefined
           );
         } else {
           logger.debug(`👁️ Skipping observation (channel not whitelisted) [${shortId}]`, {

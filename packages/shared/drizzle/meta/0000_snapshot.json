@@ -79,17 +79,12 @@
       "indexes": {
         "capabilities_config_name_unique": {
           "name": "capabilities_config_name_unique",
-          "columns": [
-            "name"
-          ],
+          "columns": ["name"],
           "isUnique": true
         },
         "idx_capabilities_name_enabled": {
           "name": "idx_capabilities_name_enabled",
-          "columns": [
-            "name",
-            "is_enabled"
-          ],
+          "columns": ["name", "is_enabled"],
           "isUnique": false
         }
       },
@@ -149,9 +144,7 @@
       "indexes": {
         "config_config_key_unique": {
           "name": "config_config_key_unique",
-          "columns": [
-            "config_key"
-          ],
+          "columns": ["config_key"],
           "isUnique": true
         }
       },
@@ -226,10 +219,7 @@
       "indexes": {
         "idx_alerts_type_time": {
           "name": "idx_alerts_type_time",
-          "columns": [
-            "alert_type",
-            "created_at"
-          ],
+          "columns": ["alert_type", "created_at"],
           "isUnique": false
         }
       },
@@ -319,10 +309,7 @@
       "indexes": {
         "idx_credit_provider_time": {
           "name": "idx_credit_provider_time",
-          "columns": [
-            "provider",
-            "last_updated"
-          ],
+          "columns": ["provider", "last_updated"],
           "isUnique": false
         }
       },
@@ -425,39 +412,27 @@
       "indexes": {
         "idx_github_events_status": {
           "name": "idx_github_events_status",
-          "columns": [
-            "status"
-          ],
+          "columns": ["status"],
           "isUnique": false
         },
         "idx_github_events_repo": {
           "name": "idx_github_events_repo",
-          "columns": [
-            "repo"
-          ],
+          "columns": ["repo"],
           "isUnique": false
         },
         "idx_github_events_batch_key": {
           "name": "idx_github_events_batch_key",
-          "columns": [
-            "batch_key"
-          ],
+          "columns": ["batch_key"],
           "isUnique": false
         },
         "idx_github_events_scheduled": {
           "name": "idx_github_events_scheduled",
-          "columns": [
-            "scheduled_for"
-          ],
+          "columns": ["scheduled_for"],
           "isUnique": false
         },
         "idx_github_events_event_id": {
           "name": "idx_github_events_event_id",
-          "columns": [
-            "repo",
-            "event_type",
-            "event_id"
-          ],
+          "columns": ["repo", "event_type", "event_id"],
           "isUnique": false
         }
       },
@@ -541,23 +516,17 @@
       "indexes": {
         "github_identity_mappings_github_username_unique": {
           "name": "github_identity_mappings_github_username_unique",
-          "columns": [
-            "github_username"
-          ],
+          "columns": ["github_username"],
           "isUnique": true
         },
         "idx_github_identity_github": {
           "name": "idx_github_identity_github",
-          "columns": [
-            "github_username"
-          ],
+          "columns": ["github_username"],
           "isUnique": false
         },
         "idx_github_identity_discord": {
           "name": "idx_github_identity_discord",
-          "columns": [
-            "discord_user_id"
-          ],
+          "columns": ["discord_user_id"],
           "isUnique": false
         }
       },
@@ -648,31 +617,22 @@
       "indexes": {
         "idx_github_watches_repo": {
           "name": "idx_github_watches_repo",
-          "columns": [
-            "repo"
-          ],
+          "columns": ["repo"],
           "isUnique": false
         },
         "idx_github_watches_guild": {
           "name": "idx_github_watches_guild",
-          "columns": [
-            "guild_id"
-          ],
+          "columns": ["guild_id"],
           "isUnique": false
         },
         "idx_github_watches_channel": {
           "name": "idx_github_watches_channel",
-          "columns": [
-            "channel_id"
-          ],
+          "columns": ["channel_id"],
           "isUnique": false
         },
         "idx_github_watches_repo_channel": {
           "name": "idx_github_watches_repo_channel",
-          "columns": [
-            "repo",
-            "channel_id"
-          ],
+          "columns": ["repo", "channel_id"],
           "isUnique": false
         }
       },
@@ -780,23 +740,17 @@
       "indexes": {
         "github_sync_state_repo_unique": {
           "name": "github_sync_state_repo_unique",
-          "columns": [
-            "repo"
-          ],
+          "columns": ["repo"],
           "isUnique": true
         },
         "idx_github_sync_repo": {
           "name": "idx_github_sync_repo",
-          "columns": [
-            "repo"
-          ],
+          "columns": ["repo"],
           "isUnique": false
         },
         "idx_github_sync_last_polled": {
           "name": "idx_github_sync_last_polled",
-          "columns": [
-            "last_polled_at"
-          ],
+          "columns": ["last_polled_at"],
           "isUnique": false
         }
       },
@@ -1041,31 +995,22 @@
       "indexes": {
         "idx_goals_user_id": {
           "name": "idx_goals_user_id",
-          "columns": [
-            "user_id"
-          ],
+          "columns": ["user_id"],
           "isUnique": false
         },
         "idx_goals_status": {
           "name": "idx_goals_status",
-          "columns": [
-            "status"
-          ],
+          "columns": ["status"],
           "isUnique": false
         },
         "idx_goals_deadline": {
           "name": "idx_goals_deadline",
-          "columns": [
-            "deadline"
-          ],
+          "columns": ["deadline"],
           "isUnique": false
         },
         "idx_goals_user_status": {
           "name": "idx_goals_user_status",
-          "columns": [
-            "user_id",
-            "status"
-          ],
+          "columns": ["user_id", "status"],
           "isUnique": false
         }
       },
@@ -1164,32 +1109,22 @@
       "indexes": {
         "idx_learned_rules_type": {
           "name": "idx_learned_rules_type",
-          "columns": [
-            "rule_type"
-          ],
+          "columns": ["rule_type"],
           "isUnique": false
         },
         "idx_learned_rules_scope": {
           "name": "idx_learned_rules_scope",
-          "columns": [
-            "scope_id"
-          ],
+          "columns": ["scope_id"],
           "isUnique": false
         },
         "idx_learned_rules_active": {
           "name": "idx_learned_rules_active",
-          "columns": [
-            "is_active"
-          ],
+          "columns": ["is_active"],
           "isUnique": false
         },
         "idx_learned_rules_type_scope_active": {
           "name": "idx_learned_rules_type_scope_active",
-          "columns": [
-            "rule_type",
-            "scope_id",
-            "is_active"
-          ],
+          "columns": ["rule_type", "scope_id", "is_active"],
           "isUnique": false
         }
       },
@@ -1262,16 +1197,12 @@
       "indexes": {
         "idx_learned_rules_history_rule_id": {
           "name": "idx_learned_rules_history_rule_id",
-          "columns": [
-            "rule_id"
-          ],
+          "columns": ["rule_id"],
           "isUnique": false
         },
         "idx_learned_rules_history_created": {
           "name": "idx_learned_rules_history_created",
-          "columns": [
-            "created_at"
-          ],
+          "columns": ["created_at"],
           "isUnique": false
         }
       },
@@ -1280,12 +1211,8 @@
           "name": "learned_rules_history_rule_id_learned_rules_id_fk",
           "tableFrom": "learned_rules_history",
           "tableTo": "learned_rules",
-          "columnsFrom": [
-            "rule_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["rule_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -1337,23 +1264,17 @@
       "indexes": {
         "idx_logs_timestamp": {
           "name": "idx_logs_timestamp",
-          "columns": [
-            "timestamp"
-          ],
+          "columns": ["timestamp"],
           "isUnique": false
         },
         "idx_logs_level": {
           "name": "idx_logs_level",
-          "columns": [
-            "level"
-          ],
+          "columns": ["level"],
           "isUnique": false
         },
         "idx_logs_service": {
           "name": "idx_logs_service",
-          "columns": [
-            "service"
-          ],
+          "columns": ["service"],
           "isUnique": false
         }
       },
@@ -1421,9 +1342,7 @@
       "indexes": {
         "idx_meeting_participants_meeting_id": {
           "name": "idx_meeting_participants_meeting_id",
-          "columns": [
-            "meeting_id"
-          ],
+          "columns": ["meeting_id"],
           "isUnique": false
         }
       },
@@ -1432,12 +1351,8 @@
           "name": "meeting_participants_meeting_id_meetings_id_fk",
           "tableFrom": "meeting_participants",
           "tableTo": "meetings",
-          "columnsFrom": [
-            "meeting_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["meeting_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -1497,9 +1412,7 @@
       "indexes": {
         "idx_meeting_reminders_reminder_time": {
           "name": "idx_meeting_reminders_reminder_time",
-          "columns": [
-            "reminder_time"
-          ],
+          "columns": ["reminder_time"],
           "isUnique": false
         }
       },
@@ -1508,12 +1421,8 @@
           "name": "meeting_reminders_meeting_id_meetings_id_fk",
           "tableFrom": "meeting_reminders",
           "tableTo": "meetings",
-          "columnsFrom": [
-            "meeting_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["meeting_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -1620,23 +1529,17 @@
       "indexes": {
         "idx_meetings_user_id": {
           "name": "idx_meetings_user_id",
-          "columns": [
-            "user_id"
-          ],
+          "columns": ["user_id"],
           "isUnique": false
         },
         "idx_meetings_scheduled_time": {
           "name": "idx_meetings_scheduled_time",
-          "columns": [
-            "scheduled_time"
-          ],
+          "columns": ["scheduled_time"],
           "isUnique": false
         },
         "idx_meetings_status": {
           "name": "idx_meetings_status",
-          "columns": [
-            "status"
-          ],
+          "columns": ["status"],
           "isUnique": false
         }
       },
@@ -1756,30 +1659,22 @@
       "indexes": {
         "idx_memories_user_id": {
           "name": "idx_memories_user_id",
-          "columns": [
-            "user_id"
-          ],
+          "columns": ["user_id"],
           "isUnique": false
         },
         "idx_memories_timestamp": {
           "name": "idx_memories_timestamp",
-          "columns": [
-            "timestamp"
-          ],
+          "columns": ["timestamp"],
           "isUnique": false
         },
         "idx_memories_importance": {
           "name": "idx_memories_importance",
-          "columns": [
-            "importance"
-          ],
+          "columns": ["importance"],
           "isUnique": false
         },
         "idx_memories_guild_id": {
           "name": "idx_memories_guild_id",
-          "columns": [
-            "guild_id"
-          ],
+          "columns": ["guild_id"],
           "isUnique": false
         }
       },
@@ -1890,16 +1785,12 @@
       "indexes": {
         "idx_messages_user_id": {
           "name": "idx_messages_user_id",
-          "columns": [
-            "user_id"
-          ],
+          "columns": ["user_id"],
           "isUnique": false
         },
         "idx_messages_created_at": {
           "name": "idx_messages_created_at",
-          "columns": [
-            "created_at"
-          ],
+          "columns": ["created_at"],
           "isUnique": false
         }
       },
@@ -2046,25 +1937,17 @@
       "indexes": {
         "idx_usage_user_time": {
           "name": "idx_usage_user_time",
-          "columns": [
-            "user_id",
-            "timestamp"
-          ],
+          "columns": ["user_id", "timestamp"],
           "isUnique": false
         },
         "idx_usage_model_time": {
           "name": "idx_usage_model_time",
-          "columns": [
-            "model_name",
-            "timestamp"
-          ],
+          "columns": ["model_name", "timestamp"],
           "isUnique": false
         },
         "idx_usage_timestamp": {
           "name": "idx_usage_timestamp",
-          "columns": [
-            "timestamp"
-          ],
+          "columns": ["timestamp"],
           "isUnique": false
         }
       },
@@ -2152,17 +2035,12 @@
       "indexes": {
         "idx_oauth_user_provider": {
           "name": "idx_oauth_user_provider",
-          "columns": [
-            "user_id",
-            "provider"
-          ],
+          "columns": ["user_id", "provider"],
           "isUnique": false
         },
         "idx_oauth_expires": {
           "name": "idx_oauth_expires",
-          "columns": [
-            "expires_at"
-          ],
+          "columns": ["expires_at"],
           "isUnique": false
         }
       },
@@ -2231,12 +2109,8 @@
           "name": "prompt_history_prompt_id_prompts_id_fk",
           "tableFrom": "prompt_history",
           "tableTo": "prompts",
-          "columnsFrom": [
-            "prompt_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["prompt_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -2328,24 +2202,17 @@
       "indexes": {
         "prompts_name_unique": {
           "name": "prompts_name_unique",
-          "columns": [
-            "name"
-          ],
+          "columns": ["name"],
           "isUnique": true
         },
         "idx_prompts_name_active": {
           "name": "idx_prompts_name_active",
-          "columns": [
-            "name",
-            "is_active"
-          ],
+          "columns": ["name", "is_active"],
           "isUnique": false
         },
         "idx_prompts_category": {
           "name": "idx_prompts_category",
-          "columns": [
-            "category"
-          ],
+          "columns": ["category"],
           "isUnique": false
         }
       },
@@ -2466,30 +2333,22 @@
       "indexes": {
         "idx_queue_status": {
           "name": "idx_queue_status",
-          "columns": [
-            "status"
-          ],
+          "columns": ["status"],
           "isUnique": false
         },
         "idx_queue_created_at": {
           "name": "idx_queue_created_at",
-          "columns": [
-            "created_at"
-          ],
+          "columns": ["created_at"],
           "isUnique": false
         },
         "idx_queue_priority": {
           "name": "idx_queue_priority",
-          "columns": [
-            "priority"
-          ],
+          "columns": ["priority"],
           "isUnique": false
         },
         "idx_queue_task_type": {
           "name": "idx_queue_task_type",
-          "columns": [
-            "task_type"
-          ],
+          "columns": ["task_type"],
           "isUnique": false
         }
       },
@@ -2556,16 +2415,12 @@
       "indexes": {
         "idx_todo_items_list_id": {
           "name": "idx_todo_items_list_id",
-          "columns": [
-            "list_id"
-          ],
+          "columns": ["list_id"],
           "isUnique": false
         },
         "idx_todo_items_status": {
           "name": "idx_todo_items_status",
-          "columns": [
-            "status"
-          ],
+          "columns": ["status"],
           "isUnique": false
         }
       },
@@ -2574,12 +2429,8 @@
           "name": "todo_items_list_id_todo_lists_id_fk",
           "tableFrom": "todo_items",
           "tableTo": "todo_lists",
-          "columnsFrom": [
-            "list_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["list_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -2639,17 +2490,12 @@
       "indexes": {
         "idx_todo_lists_user_id": {
           "name": "idx_todo_lists_user_id",
-          "columns": [
-            "user_id"
-          ],
+          "columns": ["user_id"],
           "isUnique": false
         },
         "idx_todo_lists_user_name": {
           "name": "idx_todo_lists_user_name",
-          "columns": [
-            "user_id",
-            "name"
-          ],
+          "columns": ["user_id", "name"],
           "isUnique": false
         }
       },
@@ -2747,10 +2593,7 @@
       "indexes": {
         "idx_todos_user_status": {
           "name": "idx_todos_user_status",
-          "columns": [
-            "user_id",
-            "status"
-          ],
+          "columns": ["user_id", "status"],
           "isUnique": false
         }
       },
@@ -2833,44 +2676,32 @@
       "indexes": {
         "user_identities_discord_id_unique": {
           "name": "user_identities_discord_id_unique",
-          "columns": [
-            "discord_id"
-          ],
+          "columns": ["discord_id"],
           "isUnique": true
         },
         "user_identities_phone_number_unique": {
           "name": "user_identities_phone_number_unique",
-          "columns": [
-            "phone_number"
-          ],
+          "columns": ["phone_number"],
           "isUnique": true
         },
         "user_identities_email_unique": {
           "name": "user_identities_email_unique",
-          "columns": [
-            "email"
-          ],
+          "columns": ["email"],
           "isUnique": true
         },
         "idx_user_identities_discord_id": {
           "name": "idx_user_identities_discord_id",
-          "columns": [
-            "discord_id"
-          ],
+          "columns": ["discord_id"],
           "isUnique": false
         },
         "idx_user_identities_phone_number": {
           "name": "idx_user_identities_phone_number",
-          "columns": [
-            "phone_number"
-          ],
+          "columns": ["phone_number"],
           "isUnique": false
         },
         "idx_user_identities_email": {
           "name": "idx_user_identities_email",
-          "columns": [
-            "email"
-          ],
+          "columns": ["email"],
           "isUnique": false
         }
       },

@@ -51,7 +51,9 @@ export class ObservationalLearning {
     // - 'working' guilds with proactiveAnswering enabled (learn from communities we help)
     // - 'working' guilds with observationChannels explicitly configured
     const learningGuilds = Object.values(GUILD_CONFIGS).filter(
-      (g) => g.type === 'watching' || (g.type === 'working' && (g.proactiveAnswering || g.observationChannels !== undefined))
+      (g) =>
+        g.type === 'watching' ||
+        (g.type === 'working' && (g.proactiveAnswering || g.observationChannels !== undefined))
     );
 
     if (learningGuilds.length > 0) {
@@ -94,7 +96,9 @@ export class ObservationalLearning {
     }
 
     const learningGuilds = Object.values(GUILD_CONFIGS).filter(
-      (g) => g.type === 'watching' || (g.type === 'working' && (g.proactiveAnswering || g.observationChannels !== undefined))
+      (g) =>
+        g.type === 'watching' ||
+        (g.type === 'working' && (g.proactiveAnswering || g.observationChannels !== undefined))
     );
 
     for (const guildConfig of learningGuilds) {
@@ -175,17 +179,15 @@ export class ObservationalLearning {
           });
         }
       } else {
-        // First time processing this channel - fetch recent messages
-        const messages = await channel.messages.fetch(fetchOptions);
+        // First time processing this channel after boot - seed the cursor without summarizing
+        // This prevents duplicate observations when PM2 restarts
+        const messages = await channel.messages.fetch({ limit: 1 });
 
         if (messages.size === 0) {
           logger.debug(`👁️ No messages in ${guildName} #${channel.name}`);
           return;
         }
 
-        await this.summarizeAndStore(messages, guildId, guildName, channel.id, channel.name);
-
-        // Store the newest message ID for next time
         const newestMessage = messages.first();
         if (newestMessage) {
           this.processedChannels.set(channelKey, {
@@ -194,6 +196,7 @@ export class ObservationalLearning {
             lastMessageId: newestMessage.id,
             lastProcessedAt: new Date(),
           });
+          logger.info(`👁️ Seeded cursor for ${guildName} #${channel.name} (will observe new messages from here)`);
         }
       }
     } catch (error) {
@@ -346,7 +349,9 @@ Focus on patterns that would help understand this community's needs and interest
     }>;
   } {
     const learningGuilds = Object.values(GUILD_CONFIGS).filter(
-      (g) => g.type === 'watching' || (g.type === 'working' && (g.proactiveAnswering || g.observationChannels !== undefined))
+      (g) =>
+        g.type === 'watching' ||
+        (g.type === 'working' && (g.proactiveAnswering || g.observationChannels !== undefined))
     );
 
     const lastProcessedTimes = Array.from(this.processedChannels.values()).map((p) => {

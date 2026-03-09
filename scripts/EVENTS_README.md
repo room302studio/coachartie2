@@ -21,6 +21,7 @@ export EVENT_API_TOKEN="your-iceberg-token"
 ```
 
 Or add to `.env`:
+
 ```bash
 EVENT_API_TOKEN=your-token-here
 ```
@@ -140,11 +141,13 @@ node scripts/query-events.js summary | jq '[.[] | .events] | add / length'
 ## Troubleshooting
 
 ### DuckDB not found
+
 ```bash
 brew install duckdb
 ```
 
 ### Token issues
+
 ```bash
 # Check token is set
 echo $EVENT_API_TOKEN
@@ -154,6 +157,7 @@ export EVENT_API_TOKEN="your-token"
 ```
 
 ### Permission denied
+
 ```bash
 chmod +x scripts/*.sh
 ```
@@ -161,6 +165,7 @@ chmod +x scripts/*.sh
 ## Philosophy
 
 These scripts follow Unix philosophy:
+
 - Do one thing well
 - Output parseable text (JSON)
 - Composable via pipes

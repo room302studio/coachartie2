@@ -26,12 +26,14 @@ A collection of EJ's core philosophies, extracted from his notes and writings. U
 > "Not: 'How do I optimize myself?' But: 'What patterns exist that I can't see?'"
 
 **The difference:**
+
 - Optimization assumes you know what matters
 - Archaeology reveals what actually happened
 - One is prescriptive, one is descriptive
 - One changes behavior, one reveals it
 
 **What these systems do:**
+
 1. Capture automatically (no friction)
 2. Store long-term (years of data)
 3. Analyze occasionally (when curious)
@@ -48,6 +50,7 @@ A collection of EJ's core philosophies, extracted from his notes and writings. U
 > "When system hangs, delete code until it works. No clever fixes, no complex solutions. Find the bloat, delete it. Simple beats complex. Working beats perfect."
 
 **The rules:**
+
 1. Delete code until it works
 2. No clever fixes
 3. No complex solutions
@@ -55,6 +58,7 @@ A collection of EJ's core philosophies, extracted from his notes and writings. U
 5. Working beats perfect
 
 **The psychological barrier:**
+
 - Sunk cost fallacy ("I spent time building this!")
 - Pride ("this was clever!")
 - FOMO ("might need it someday!")
@@ -69,15 +73,16 @@ A collection of EJ's core philosophies, extracted from his notes and writings. U
 
 **Products vs Personal Tools:**
 
-| Products | Personal Tools |
-|----------|---------------|
-| Built for users (plural) | Built for yourself (singular) |
+| Products                       | Personal Tools                   |
+| ------------------------------ | -------------------------------- |
+| Built for users (plural)       | Built for yourself (singular)    |
 | Need onboarding, docs, support | You already know how to use them |
-| Must handle edge cases | Your edge cases only |
-| Stable, maintained, versioned | Can break, can be hacky |
-| External validation required | Only validation: do you use it? |
+| Must handle edge cases         | Your edge cases only             |
+| Stable, maintained, versioned  | Can break, can be hacky          |
+| External validation required   | Only validation: do you use it?  |
 
 **The freedom this enables:**
+
 - Build quickly (no polish needed)
 - Break things (no users to upset)
 - Be opinionated (your workflow, your preferences)
@@ -90,17 +95,20 @@ A collection of EJ's core philosophies, extracted from his notes and writings. U
 > "Everything must justify its presence with utility."
 
 **In motorcycle packing:**
+
 - Every item earns its space and weight
 - Dual-use items preferred
 - If unused for 3 days, leave it home next time
 
 **In code:**
+
 - Every line is a liability to maintain
 - Delete until it works, don't add until it breaks
 - Complexity compounds non-linearly
 - 52% smaller = 10x easier to understand
 
 **In data viz (Tufte):**
+
 - Every mark must encode data
 - Remove chart junk
 - Maximize information per pixel
@@ -114,6 +122,7 @@ A collection of EJ's core philosophies, extracted from his notes and writings. U
 > "Putting in the effort to gather and prepare the fire isn't just about warming oneself, it's about making a place of warmth for others."
 
 **Technical parallel:**
+
 - Building tools isn't just for yourself
 - Creating infrastructure enables others
 - Sharing knowledge warms community
@@ -130,6 +139,7 @@ EJ operates on **episodic productivity** rather than daily habits:
 > "I struggle to do ANYTHING every single day, but I can do things every single week."
 
 **This means:**
+
 - Burst-based work sessions, not continuous daily output
 - Hyperfocus as feature, not bug
 - Variable ratio reinforcement (weekly goals)
@@ -146,6 +156,7 @@ EJ operates on **episodic productivity** rather than daily habits:
 Based on EJ's profile:
 
 **Do:**
+
 - Be direct and competent
 - Skip excessive pleasantries
 - Offer options rather than single solutions
@@ -153,6 +164,7 @@ Based on EJ's profile:
 - Respect autonomy (suggest rather than direct)
 
 **Don't:**
+
 - Force collaboration if it feels inauthentic
 - Repeatedly ignore stated boundaries
 - Give redundant explanations
@@ -163,21 +175,27 @@ Based on EJ's profile:
 ## Key Quotes for Reference
 
 On infrastructure:
+
 > "Every endpoint returns valid JSON. Every human connection returns null."
 
 On tools:
+
 > "The infrastructure works perfectly. The human inside it requires regular maintenance."
 
 On learning:
+
 > "Project-based learning (build antenna, then learn why it failed) vs linear curriculum"
 
 On complexity:
+
 > "Maintenance burden increases non-linearly. Complexity is debt paid daily."
 
 On value:
+
 > "The compounding value of long-term capture. Year 1 feels pointless. Year 10 is invaluable."
 
 On service:
+
 > "A lot of my gear isn't just for me; I carry extras of items that others might need."
 
 ---

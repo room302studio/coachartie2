@@ -6,12 +6,12 @@
 
 ## Signal Types
 
-| Type | Location | Coverage |
-|------|----------|----------|
-| Station | Every platform connection | All tracks at node |
-| V-Merge | Track junctions | Last 200m of each approach |
-| Diamond | Grade crossings | 10m around intersection |
-| Scissors | Crossover switches | Both crossover tracks |
+| Type     | Location                  | Coverage                   |
+| -------- | ------------------------- | -------------------------- |
+| Station  | Every platform connection | All tracks at node         |
+| V-Merge  | Track junctions           | Last 200m of each approach |
+| Diamond  | Grade crossings           | 10m around intersection    |
+| Scissors | Crossover switches        | Both crossover tracks      |
 
 ## Signal States
 
@@ -22,6 +22,7 @@
 ## How Collision Prevention Works
 
 Every 0.5 seconds:
+
 1. Each train calculates warning window (braking distance + 2m)
 2. Trains mark signals in warning window as "reserved"
 3. Trains mark signals at their position as "occupied"
@@ -39,9 +40,11 @@ Occupations expire after 1 second if not refreshed. Prevents ghost signals from 
 ## Common Issues
 
 **Trains stopping for no reason?**
+
 - Check for conflicting routes at junctions
 - May be invisible occupation from another line
 
 **Head-on crashes?**
+
 - Routes using same track with opposite running directions
 - Fix: make running direction consistent (all left or all right)

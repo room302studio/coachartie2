@@ -267,6 +267,7 @@ pm2 auto-restarts at memory limits (configured in ecosystem.config.cjs):
 - SMS: 256MB limit
 
 Manual restart if needed:
+
 ```bash
 pm2 restart coach-artie-capabilities
 ```
@@ -298,12 +299,14 @@ tar -czf /data2/backups/coachartie-config-$(date +%Y%m%d).tar.gz \
 ### Capabilities Service
 
 The brain of Artie. Handles:
+
 - LLM orchestration (OpenRouter)
 - Memory storage and recall (SQLite + BM25 search)
 - Capability detection and execution
 - Social media behavior (Moltbook)
 
 Key behaviors:
+
 - **Social Media**: Checks Moltbook every 3-6 hours, uses LLM for genuine posts/comments
 - **Memory**: Stores observations, conversations, uses TF-IDF for semantic search
 - **Model Rotation**: Cycles through Claude, Gemini, Mistral for variety
@@ -311,6 +314,7 @@ Key behaviors:
 ### Discord Service
 
 Handles all Discord interactions:
+
 - Message handling and routing
 - Slash commands
 - Reaction handling
@@ -319,6 +323,7 @@ Handles all Discord interactions:
 - Observational learning (reads channels, creates memories)
 
 REST API endpoints:
+
 - `POST /api/dm` - Send DM to user
 - `POST /api/channels/:id/messages` - Send channel message
 - `GET /api/guilds/:id/forums` - List forums
@@ -327,6 +332,7 @@ REST API endpoints:
 ### Brain Service
 
 Nuxt.js web dashboard at port 47325:
+
 - Memory browser
 - Queue status
 - Analytics
@@ -335,20 +341,21 @@ Nuxt.js web dashboard at port 47325:
 ### SMS Service
 
 Twilio webhook handler:
+
 - Receives incoming SMS
 - Routes to capabilities for processing
 - Sends responses back
 
 ## Port Reference
 
-| Port  | Service              | Protocol |
-|-------|---------------------|----------|
-| 47320 | Redis               | TCP      |
-| 47321 | Discord API         | HTTP     |
-| 47323 | Sandbox (Deno)      | HTTP     |
-| 47324 | Capabilities API    | HTTP     |
-| 47325 | Brain Dashboard     | HTTP     |
-| 47326 | SMS Webhook         | HTTP     |
+| Port  | Service          | Protocol |
+| ----- | ---------------- | -------- |
+| 47320 | Redis            | TCP      |
+| 47321 | Discord API      | HTTP     |
+| 47323 | Sandbox (Deno)   | HTTP     |
+| 47324 | Capabilities API | HTTP     |
+| 47325 | Brain Dashboard  | HTTP     |
+| 47326 | SMS Webhook      | HTTP     |
 
 ## Startup Order
 
@@ -386,5 +393,5 @@ For major updates, test locally first or backup the database.
 
 ---
 
-*Last updated: 2026-02-01*
-*De-dockerized from full Docker deployment for faster restarts and easier debugging.*
+_Last updated: 2026-02-01_
+_De-dockerized from full Docker deployment for faster restarts and easier debugging._

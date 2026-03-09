@@ -100,10 +100,7 @@ export class ExperimentManager {
    * Get the variant assignment for a user
    * Returns consistent assignment based on user ID hash
    */
-  async getVariantForUser(
-    userId: string,
-    guildId?: string
-  ): Promise<VariantAssignment> {
+  async getVariantForUser(userId: string, guildId?: string): Promise<VariantAssignment> {
     const noExperiment: VariantAssignment = {
       experimentId: null,
       variantId: null,
@@ -495,9 +492,9 @@ export class ExperimentManager {
           impressions: v.impressions,
           positiveCount: v.positive_count,
           negativeCount: v.negative_count,
-          positiveRate: totalFeedback > 0 ? Math.round((v.positive_count / totalFeedback) * 100) : 0,
-          conversionRate:
-            v.impressions > 0 ? Math.round((totalFeedback / v.impressions) * 100) : 0,
+          positiveRate:
+            totalFeedback > 0 ? Math.round((v.positive_count / totalFeedback) * 100) : 0,
+          conversionRate: v.impressions > 0 ? Math.round((totalFeedback / v.impressions) * 100) : 0,
         };
       });
 
@@ -542,9 +539,7 @@ export class ExperimentManager {
 
     // Need minimum samples for significance
     const minSamples = 30;
-    const hasEnoughData = variants.every(
-      (v) => v.positiveCount + v.negativeCount >= minSamples
-    );
+    const hasEnoughData = variants.every((v) => v.positiveCount + v.negativeCount >= minSamples);
 
     if (!hasEnoughData) return 0;
 
@@ -610,9 +605,7 @@ export class ExperimentManager {
   /**
    * Get a single experiment by ID
    */
-  async getExperiment(
-    experimentId: string
-  ): Promise<{
+  async getExperiment(experimentId: string): Promise<{
     id: string;
     name: string;
     hypothesis: string | null;

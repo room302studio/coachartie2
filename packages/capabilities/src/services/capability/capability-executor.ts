@@ -26,30 +26,30 @@ import {
 
 // Capabilities that fetch external untrusted content - executing these taints the context
 const TAINTING_CAPABILITIES = new Set([
-  'moltbook',      // AI social network - prime injection target
-  'websearch',     // Web search results
-  'http',          // Raw HTTP fetches
-  'web',           // Web browsing
-  'n8n-browser',   // Browser automation
+  'moltbook', // AI social network - prime injection target
+  'websearch', // Web search results
+  'http', // Raw HTTP fetches
+  'web', // Web browsing
+  'n8n-browser', // Browser automation
 ]);
 
 // Capabilities that are dangerous when context is tainted by external content
 // These are blocked to prevent "rm -rf" style attacks via prompt injection
 const DANGEROUS_WHEN_TAINTED = new Set([
-  'shell',         // Command execution
-  'bash',          // Command execution
-  'filesystem',    // File operations (write/delete)
-  'git',           // Repository operations
-  'email',         // Sending emails (could exfiltrate data)
-  'sms',           // Sending SMS
-  'scheduler',     // Scheduling future actions
-  'n8n',           // Workflow automation
+  'shell', // Command execution
+  'bash', // Command execution
+  'filesystem', // File operations (write/delete)
+  'git', // Repository operations
+  'email', // Sending emails (could exfiltrate data)
+  'sms', // Sending SMS
+  'scheduler', // Scheduling future actions
+  'n8n', // Workflow automation
 ]);
 
 // Actions within dangerous capabilities that are safe even when tainted
 const SAFE_ACTIONS_WHEN_TAINTED: Record<string, Set<string>> = {
-  'filesystem': new Set(['read', 'list', 'exists']),  // Read-only is fine
-  'git': new Set(['status', 'log', 'diff', 'branch']), // Read-only git ops
+  filesystem: new Set(['read', 'list', 'exists']), // Read-only is fine
+  git: new Set(['status', 'log', 'diff', 'branch']), // Read-only git ops
 };
 
 // Callback types for dependencies the executor needs from orchestrator
@@ -99,10 +99,12 @@ function checkTaintBlock(
   }
 
   // Block the capability
-  return `🛡️ SECURITY: Capability "${capability.name}:${capability.action}" blocked. ` +
+  return (
+    `🛡️ SECURITY: Capability "${capability.name}:${capability.action}" blocked. ` +
     `Context is tainted by external content from "${context.taintSource}". ` +
     `Dangerous operations are disabled to prevent prompt injection attacks. ` +
-    `Safe read-only actions are still allowed.`;
+    `Safe read-only actions are still allowed.`
+  );
 }
 
 /**
@@ -155,7 +157,9 @@ export class CapabilityExecutor {
         // SECURITY: Check if capability is blocked due to taint
         const taintBlock = checkTaintBlock(capability, context);
         if (taintBlock) {
-          logger.warn(`🛡️ TAINT BLOCK: ${capability.name}:${capability.action} blocked (tainted by ${context.taintSource})`);
+          logger.warn(
+            `🛡️ TAINT BLOCK: ${capability.name}:${capability.action} blocked (tainted by ${context.taintSource})`
+          );
           context.results.push({
             capability,
             success: false,
@@ -206,7 +210,7 @@ export class CapabilityExecutor {
           context.taintSource = `${processedCapability.name}:${processedCapability.action}`;
           logger.warn(
             `🛡️ TAINT SET: Context now tainted by ${context.taintSource}. ` +
-            `Dangerous capabilities (shell, filesystem write, git, email) will be blocked.`
+              `Dangerous capabilities (shell, filesystem write, git, email) will be blocked.`
           );
         }
 
@@ -357,7 +361,9 @@ export class CapabilityExecutor {
       // SECURITY: Check if capability is blocked due to taint
       const taintBlock = checkTaintBlock(capability, context);
       if (taintBlock) {
-        logger.warn(`🛡️ TAINT BLOCK: ${capability.name}:${capability.action} blocked (tainted by ${context.taintSource})`);
+        logger.warn(
+          `🛡️ TAINT BLOCK: ${capability.name}:${capability.action} blocked (tainted by ${context.taintSource})`
+        );
         context.results.push({
           capability,
           success: false,
@@ -412,7 +418,7 @@ export class CapabilityExecutor {
           context.taintSource = `${processedCapability.name}:${processedCapability.action}`;
           logger.warn(
             `🛡️ TAINT SET: Context now tainted by ${context.taintSource}. ` +
-            `Dangerous capabilities (shell, filesystem write, git, email) will be blocked.`
+              `Dangerous capabilities (shell, filesystem write, git, email) will be blocked.`
           );
         }
 
@@ -556,6 +562,13 @@ export class CapabilityExecutor {
             ...capability.params,
             userId,
             messageId: context?.messageId,
+            // Inject guild/channel context so memories get scoped properly
+            ...(capabilityContext?.guildId && !capability.params.guildId
+              ? { guildId: capabilityContext.guildId }
+              : {}),
+            ...(capabilityContext?.channelId && !capability.params.channelId
+              ? { channelId: capabilityContext.channelId }
+              : {}),
           }
         : capability.name === 'meeting-scheduler'
           ? {

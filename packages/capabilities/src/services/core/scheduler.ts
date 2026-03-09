@@ -617,14 +617,23 @@ export class SchedulerService {
         { userId: userId as string }
       );
 
-      // Queue for delivery via Discord DM
-      if (this.discordQueue && (channel === 'discord' || channel === 'both')) {
-        await this.discordQueue.add('send-dm', {
-          userId,
-          content: briefing,
-          source: 'morning-briefing',
-        });
-        logger.info(`✅ Morning briefing queued for Discord delivery to ${userId}`);
+      // Deliver via Discord DM API (direct HTTP call avoids BullMQ consumer race)
+      if (channel === 'discord' || channel === 'both') {
+        try {
+          const resp = await fetch('http://127.0.0.1:47321/api/dm', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ userId, message: briefing }),
+            signal: AbortSignal.timeout(15000),
+          });
+          if (resp.ok) {
+            logger.info(`✅ Morning briefing sent via DM to ${userId}`);
+          } else {
+            logger.error(`❌ Morning briefing DM failed: ${resp.status} ${resp.statusText}`);
+          }
+        } catch (dmError) {
+          logger.error('❌ Morning briefing DM delivery failed:', dmError);
+        }
       }
 
       // TODO: Add SMS delivery when channel === 'sms' or 'both'

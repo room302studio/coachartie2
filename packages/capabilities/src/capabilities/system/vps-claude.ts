@@ -13,7 +13,10 @@
 import { logger } from '@coachartie/shared';
 import { readFileSync, readdirSync, statSync, existsSync } from 'fs';
 import { join } from 'path';
-import type { RegisteredCapability, CapabilityContext } from '../../services/capability/capability-registry.js';
+import type {
+  RegisteredCapability,
+  CapabilityContext,
+} from '../../services/capability/capability-registry.js';
 
 const CLAUDE_HOME = '/home/debian/claude';
 const BRIEFING_PATH = join(CLAUDE_HOME, 'briefing.md');
@@ -35,20 +38,24 @@ function readFileSafe(path: string): string | null {
   }
 }
 
-function getRecentFiles(dir: string, limit: number = 5): Array<{ name: string; modified: Date; preview: string }> {
+function getRecentFiles(
+  dir: string,
+  limit: number = 5
+): Array<{ name: string; modified: Date; preview: string }> {
   try {
     if (!existsSync(dir)) return [];
 
     const files = readdirSync(dir)
-      .filter(f => f.endsWith('.md') || f.endsWith('.txt'))
-      .map(f => {
+      .filter((f) => f.endsWith('.md') || f.endsWith('.txt'))
+      .map((f) => {
         const fullPath = join(dir, f);
         const stat = statSync(fullPath);
         const content = readFileSafe(fullPath) || '';
         return {
           name: f,
           modified: stat.mtime,
-          preview: content.slice(0, 200).replace(/\n/g, ' ').trim() + (content.length > 200 ? '...' : ''),
+          preview:
+            content.slice(0, 200).replace(/\n/g, ' ').trim() + (content.length > 200 ? '...' : ''),
         };
       })
       .sort((a, b) => b.modified.getTime() - a.modified.getTime())
@@ -60,7 +67,11 @@ function getRecentFiles(dir: string, limit: number = 5): Array<{ name: string; m
   }
 }
 
-async function handleVPSClaude(params: VPSClaudeParams, content?: string, ctx?: CapabilityContext): Promise<string> {
+async function handleVPSClaude(
+  params: VPSClaudeParams,
+  content?: string,
+  ctx?: CapabilityContext
+): Promise<string> {
   const { action } = params;
 
   logger.info(`🤖 VPS-Claude handler - Action: ${action}`);
@@ -81,7 +92,7 @@ async function handleVPSClaude(params: VPSClaudeParams, content?: string, ctx?: 
         return JSON.stringify({
           success: true,
           content: briefing,
-          note: 'This is VPS Claude\'s auto-generated status briefing',
+          note: "This is VPS Claude's auto-generated status briefing",
         });
       }
 
@@ -93,7 +104,7 @@ async function handleVPSClaude(params: VPSClaudeParams, content?: string, ctx?: 
         return JSON.stringify({
           success: true,
           count: notes.length,
-          notes: notes.map(n => ({
+          notes: notes.map((n) => ({
             name: n.name,
             modified: n.modified.toISOString(),
             preview: n.preview,
@@ -131,7 +142,7 @@ async function handleVPSClaude(params: VPSClaudeParams, content?: string, ctx?: 
         return JSON.stringify({
           success: true,
           count: projects.length,
-          projects: projects.map(p => ({
+          projects: projects.map((p) => ({
             name: p.name,
             modified: p.modified.toISOString(),
             preview: p.preview,
@@ -149,15 +160,18 @@ async function handleVPSClaude(params: VPSClaudeParams, content?: string, ctx?: 
         let briefingSummary = 'Briefing not available';
         if (briefing) {
           // Get first few lines as summary
-          const lines = briefing.split('\n').filter(l => l.trim()).slice(0, 5);
+          const lines = briefing
+            .split('\n')
+            .filter((l) => l.trim())
+            .slice(0, 5);
           briefingSummary = lines.join('\n');
         }
 
         return JSON.stringify({
           success: true,
           briefingSummary,
-          recentNotes: recentNotes.map(n => n.name),
-          recentProjects: recentProjects.map(p => p.name),
+          recentNotes: recentNotes.map((n) => n.name),
+          recentProjects: recentProjects.map((p) => p.name),
           note: 'Use briefing/notes/projects actions for full details',
         });
       }
@@ -181,7 +195,8 @@ export const vpsClaudeCapability: RegisteredCapability = {
   name: 'vps_claude',
   emoji: '🤖',
   supportedActions: ['briefing', 'notes', 'read_note', 'projects', 'status'],
-  description: 'Access VPS Claude\'s state - briefings, session notes, and project docs. Enables cross-agent awareness.',
+  description:
+    "Access VPS Claude's state - briefings, session notes, and project docs. Enables cross-agent awareness.",
   handler: handleVPSClaude,
   examples: [
     '<capability name="vps_claude" action="status" /> - Quick overview of VPS Claude state',

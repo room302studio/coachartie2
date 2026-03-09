@@ -330,7 +330,8 @@ export class RedditClient {
 
       const json = response.data?.json;
       const postId = json?.data?.id;
-      const permalink = json?.data?.url || (postId ? `https://reddit.com/comments/${postId}` : undefined);
+      const permalink =
+        json?.data?.url || (postId ? `https://reddit.com/comments/${postId}` : undefined);
 
       if (json?.errors?.length) {
         throw new Error(json.errors.map((e: any) => e.join(': ')).join('; '));
@@ -405,7 +406,9 @@ export class RedditClient {
     if (options.permalink) {
       const client = await this.ensureHttpClient();
       try {
-        const response = await client.get(`${options.permalink.replace(/^https?:\/\/[^/]+/, '')}.json`);
+        const response = await client.get(
+          `${options.permalink.replace(/^https?:\/\/[^/]+/, '')}.json`
+        );
         const postId = response.data?.[0]?.data?.children?.[0]?.data?.id;
         if (!postId) throw new Error('Unable to resolve permalink to a Reddit thing id');
         return this.normalizeThingId(postId, 't3');

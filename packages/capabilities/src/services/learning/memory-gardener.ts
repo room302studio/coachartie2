@@ -63,7 +63,13 @@ export class MemoryGardener {
   async garden(): Promise<GardeningResult> {
     if (this.isRunning) {
       logger.warn('[gardener] Already running, skipping');
-      return { memoriesLinked: 0, memoriesConsolidated: 0, memoriesPruned: 0, memoriesBoosted: 0, digestGenerated: false };
+      return {
+        memoriesLinked: 0,
+        memoriesConsolidated: 0,
+        memoriesPruned: 0,
+        memoriesBoosted: 0,
+        digestGenerated: false,
+      };
     }
 
     this.isRunning = true;
@@ -90,7 +96,9 @@ export class MemoryGardener {
       // Step 4: Boost forgotten but important memories
       result.memoriesBoosted = await this.surfaceForgottenGems();
 
-      logger.info(`[gardener] 🌱 Complete: linked=${result.memoriesLinked}, consolidated=${result.memoriesConsolidated}, pruned=${result.memoriesPruned}, boosted=${result.memoriesBoosted}`);
+      logger.info(
+        `[gardener] 🌱 Complete: linked=${result.memoriesLinked}, consolidated=${result.memoriesConsolidated}, pruned=${result.memoriesPruned}, boosted=${result.memoriesBoosted}`
+      );
 
       return result;
     } finally {
@@ -139,10 +147,10 @@ export class MemoryGardener {
       for (const [tag, memoryIds] of tagGroups) {
         if (memoryIds.length >= 2 && memoryIds.length <= 5) {
           for (const memId of memoryIds) {
-            const relatedIds = memoryIds.filter(id => id !== memId);
+            const relatedIds = memoryIds.filter((id) => id !== memId);
 
             // Update metadata with related memories
-            const existing = memoriesWithTags.find(m => m.id === memId);
+            const existing = memoriesWithTags.find((m) => m.id === memId);
             if (existing) {
               try {
                 const metadata = JSON.parse(existing.metadata || '{}');
@@ -160,10 +168,10 @@ export class MemoryGardener {
                   metadata.related_memories = Array.from(existingRelated);
                   metadata.last_linked = new Date().toISOString();
 
-                  db.run(
-                    'UPDATE memories SET metadata = ? WHERE id = ?',
-                    [JSON.stringify(metadata), memId]
-                  );
+                  db.run('UPDATE memories SET metadata = ? WHERE id = ?', [
+                    JSON.stringify(metadata),
+                    memId,
+                  ]);
                   linked += newLinks;
                 }
               } catch {
@@ -205,7 +213,8 @@ export class MemoryGardener {
 
       for (const pair of candidates) {
         // Keep the one with higher importance, mark other as consolidated
-        const keepId = (pair as any).imp1 >= (pair as any).imp2 ? (pair as any).id1 : (pair as any).id2;
+        const keepId =
+          (pair as any).imp1 >= (pair as any).imp2 ? (pair as any).id1 : (pair as any).id2;
         const removeId = keepId === (pair as any).id1 ? (pair as any).id2 : (pair as any).id1;
 
         // Don't delete - just reduce importance to 1 and mark as consolidated
@@ -299,58 +308,72 @@ export class MemoryGardener {
 
     try {
       // Get memory stats
-      const totalMemories = db.get<{ count: number }>('SELECT COUNT(*) as count FROM memories')?.count || 0;
+      const totalMemories =
+        db.get<{ count: number }>('SELECT COUNT(*) as count FROM memories')?.count || 0;
 
-      const newMemories = db.get<{ count: number }>(
-        `SELECT COUNT(*) as count FROM memories WHERE created_at > ?`,
-        [weekStart.toISOString()]
-      )?.count || 0;
+      const newMemories =
+        db.get<{ count: number }>(`SELECT COUNT(*) as count FROM memories WHERE created_at > ?`, [
+          weekStart.toISOString(),
+        ])?.count || 0;
 
       // Get top tags this week
-      const tagCounts = db.all<{ tag: string; count: number }>(`
+      const tagCounts = db.all<{ tag: string; count: number }>(
+        `
         SELECT value as tag, COUNT(*) as count
         FROM memories, json_each(memories.tags)
         WHERE created_at > ?
         GROUP BY value
         ORDER BY count DESC
         LIMIT 10
-      `, [weekStart.toISOString()]);
+      `,
+        [weekStart.toISOString()]
+      );
 
-      const topThemes = tagCounts.map(t => t.tag);
+      const topThemes = tagCounts.map((t) => t.tag);
 
       // Get notable interactions (high importance recent memories)
-      const notable = db.all<MemoryRecord>(`
+      const notable = db.all<MemoryRecord>(
+        `
         SELECT content FROM memories
         WHERE importance >= 7
           AND created_at > ?
         ORDER BY importance DESC
         LIMIT 5
-      `, [weekStart.toISOString()]);
+      `,
+        [weekStart.toISOString()]
+      );
 
-      const notableInteractions = notable.map(m =>
+      const notableInteractions = notable.map((m) =>
         m.content.length > 100 ? m.content.substring(0, 100) + '...' : m.content
       );
 
       // Get lessons learned (memories tagged with learning-related tags)
-      const lessons = db.all<MemoryRecord>(`
+      const lessons = db.all<MemoryRecord>(
+        `
         SELECT content FROM memories
         WHERE (tags LIKE '%lesson%' OR tags LIKE '%learned%' OR tags LIKE '%reflection%')
           AND created_at > ?
         ORDER BY importance DESC
         LIMIT 5
-      `, [weekStart.toISOString()]);
+      `,
+        [weekStart.toISOString()]
+      );
 
-      const lessonsLearned = lessons.map(m =>
+      const lessonsLearned = lessons.map((m) =>
         m.content.length > 100 ? m.content.substring(0, 100) + '...' : m.content
       );
 
       // Count memories that might need attention (low importance but recent)
-      const needingAttention = db.get<{ count: number }>(`
+      const needingAttention =
+        db.get<{ count: number }>(
+          `
         SELECT COUNT(*) as count FROM memories
         WHERE importance <= 3
           AND created_at > ?
           AND (metadata IS NULL OR json_extract(metadata, '$.reviewed') IS NULL)
-      `, [weekStart.toISOString()])?.count || 0;
+      `,
+          [weekStart.toISOString()]
+        )?.count || 0;
 
       const digest: WeeklyDigest = {
         weekOf: weekStart.toISOString().split('T')[0],
@@ -362,21 +385,26 @@ export class MemoryGardener {
         memoriesNeedingAttention: needingAttention,
       };
 
-      logger.info(`[gardener] 📋 Weekly digest: ${newMemories} new memories, top themes: ${topThemes.slice(0, 3).join(', ')}`);
+      logger.info(
+        `[gardener] 📋 Weekly digest: ${newMemories} new memories, top themes: ${topThemes.slice(0, 3).join(', ')}`
+      );
 
       // Store the digest as a memory itself
-      db.run(`
+      db.run(
+        `
         INSERT INTO memories (user_id, content, tags, context, timestamp, importance, metadata, created_at, updated_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
-      `, [
-        'artie-system',
-        `Weekly memory digest (${digest.weekOf}): ${newMemories} new memories. Top themes: ${topThemes.slice(0, 5).join(', ')}. Notable: ${notableInteractions.length} significant interactions. Lessons: ${lessonsLearned.length} learnings captured.`,
-        JSON.stringify(['weekly-digest', 'meta', 'gardening', ...topThemes.slice(0, 3)]),
-        'Automated weekly synthesis by memory gardener',
-        new Date().toISOString(),
-        6,
-        JSON.stringify({ digest, generated_by: 'memory-gardener' })
-      ]);
+      `,
+        [
+          'artie-system',
+          `Weekly memory digest (${digest.weekOf}): ${newMemories} new memories. Top themes: ${topThemes.slice(0, 5).join(', ')}. Notable: ${notableInteractions.length} significant interactions. Lessons: ${lessonsLearned.length} learnings captured.`,
+          JSON.stringify(['weekly-digest', 'meta', 'gardening', ...topThemes.slice(0, 3)]),
+          'Automated weekly synthesis by memory gardener',
+          new Date().toISOString(),
+          6,
+          JSON.stringify({ digest, generated_by: 'memory-gardener' }),
+        ]
+      );
 
       return digest;
     } catch (error) {
@@ -407,15 +435,17 @@ export class MemoryGardener {
 
     const total = db.get<{ count: number }>('SELECT COUNT(*) as count FROM memories')?.count || 0;
     const avgImp = db.get<{ avg: number }>('SELECT AVG(importance) as avg FROM memories')?.avg || 0;
-    const linked = db.get<{ count: number }>(
-      `SELECT COUNT(*) as count FROM memories WHERE metadata LIKE '%related_memories%'`
-    )?.count || 0;
-    const recent = db.get<{ count: number }>(
-      `SELECT COUNT(*) as count FROM memories WHERE created_at > datetime('now', '-7 days')`
-    )?.count || 0;
+    const linked =
+      db.get<{ count: number }>(
+        `SELECT COUNT(*) as count FROM memories WHERE metadata LIKE '%related_memories%'`
+      )?.count || 0;
+    const recent =
+      db.get<{ count: number }>(
+        `SELECT COUNT(*) as count FROM memories WHERE created_at > datetime('now', '-7 days')`
+      )?.count || 0;
 
     // Needs gardening if: many unlinked memories, low avg importance, or lots of recent activity
-    const needsGardening = (total - linked > 100) || (avgImp < 4) || (recent > 50);
+    const needsGardening = total - linked > 100 || avgImp < 4 || recent > 50;
 
     return {
       totalMemories: total,
@@ -432,13 +462,19 @@ export const memoryGardener = MemoryGardener.getInstance();
 /**
  * Convenience function to count recent negative feedback for emergency reflection
  */
-export async function countRecentNegativeFeedback(guildId: string, hours: number = 1): Promise<number> {
+export async function countRecentNegativeFeedback(
+  guildId: string,
+  hours: number = 1
+): Promise<number> {
   const db = getSyncDb();
-  const result = db.get<{ count: number }>(`
+  const result = db.get<{ count: number }>(
+    `
     SELECT COUNT(*) as count FROM memories
     WHERE guild_id = ?
       AND tags LIKE '%negative%'
       AND created_at > datetime('now', '-${hours} hours')
-  `, [guildId]);
+  `,
+    [guildId]
+  );
   return result?.count || 0;
 }

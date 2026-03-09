@@ -11,7 +11,10 @@
  */
 
 import { logger } from '@coachartie/shared';
-import type { RegisteredCapability, CapabilityContext } from '../../services/capability/capability-registry.js';
+import type {
+  RegisteredCapability,
+  CapabilityContext,
+} from '../../services/capability/capability-registry.js';
 import { researchQueueService } from '../../services/harnesses/research-queue.js';
 import { openaiResearchHarness } from '../../services/harnesses/openai-research.js';
 
@@ -27,7 +30,11 @@ interface DeepResearchParams {
 /**
  * Deep research capability handler
  */
-async function handleDeepResearch(params: DeepResearchParams, content?: string, ctx?: CapabilityContext): Promise<string> {
+async function handleDeepResearch(
+  params: DeepResearchParams,
+  content?: string,
+  ctx?: CapabilityContext
+): Promise<string> {
   const { action } = params;
   const userId = ctx?.userId || 'unknown-user';
 
@@ -105,12 +112,13 @@ async function handleDeepResearch(params: DeepResearchParams, content?: string, 
         }
 
         // List recent tasks for this user
-        const tasks = researchQueueService.listTasks(undefined, 10)
-          .filter(t => t.userId === userId);
+        const tasks = researchQueueService
+          .listTasks(undefined, 10)
+          .filter((t) => t.userId === userId);
 
         return JSON.stringify({
           success: true,
-          tasks: tasks.map(t => ({
+          tasks: tasks.map((t) => ({
             id: t.id,
             prompt: t.prompt.slice(0, 50) + '...',
             status: t.status,
@@ -193,7 +201,8 @@ export const deepResearchCapability: RegisteredCapability = {
   name: 'deep_research',
   emoji: '🔬',
   supportedActions: ['submit', 'status', 'results', 'harness_status'],
-  description: 'Submit complex research tasks to run in the background using specialized AI models (o4-mini-deep-research) with web search and code execution.',
+  description:
+    'Submit complex research tasks to run in the background using specialized AI models (o4-mini-deep-research) with web search and code execution.',
   handler: handleDeepResearch,
   examples: [
     '<capability name="deep_research" action="submit" topic="What are the latest developments in quantum computing?" />',

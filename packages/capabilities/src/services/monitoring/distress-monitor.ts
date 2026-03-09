@@ -7,18 +7,18 @@ import { costMonitor } from './cost-monitor.js';
  */
 
 export interface DistressSignals {
-  negativeReactionRate: number;  // negative / total in last hour
-  apiErrorRate: number;          // errors / calls in last hour
-  messageQueueDepth: number;     // pending messages
-  burnRate: number;              // $/hour API spend
+  negativeReactionRate: number; // negative / total in last hour
+  apiErrorRate: number; // errors / calls in last hour
+  messageQueueDepth: number; // pending messages
+  burnRate: number; // $/hour API spend
   timestamp: Date;
 }
 
 export interface DistressThresholds {
-  negativeReactionRate: number;  // 30% negative = distress
-  apiErrorRate: number;          // 10% errors = trouble
-  messageQueueDepth: number;     // 50+ backed up = overload
-  burnRate: number;              // $1.50/hr = high spend
+  negativeReactionRate: number; // 30% negative = distress
+  apiErrorRate: number; // 10% errors = trouble
+  messageQueueDepth: number; // 50+ backed up = overload
+  burnRate: number; // $1.50/hr = high spend
 }
 
 class DistressMonitor {
@@ -29,10 +29,10 @@ class DistressMonitor {
   private readonly CHECK_INTERVAL_MS = 15 * 60 * 1000; // 15 minutes
 
   private thresholds: DistressThresholds = {
-    negativeReactionRate: 0.3,   // 30% negative = distress
-    apiErrorRate: 0.1,           // 10% errors = trouble
-    messageQueueDepth: 50,       // 50+ backed up = overload
-    burnRate: 1.5,               // $1.50/hr = high spend
+    negativeReactionRate: 0.3, // 30% negative = distress
+    apiErrorRate: 0.1, // 10% errors = trouble
+    messageQueueDepth: 50, // 50+ backed up = overload
+    burnRate: 1.5, // $1.50/hr = high spend
   };
 
   private constructor() {
@@ -124,7 +124,9 @@ class DistressMonitor {
 
     // Check if any threshold exceeded
     if (signals.negativeReactionRate > this.thresholds.negativeReactionRate) {
-      logger.warn(`🆘 Distress: ${(signals.negativeReactionRate * 100).toFixed(0)}% negative reactions`);
+      logger.warn(
+        `🆘 Distress: ${(signals.negativeReactionRate * 100).toFixed(0)}% negative reactions`
+      );
       return signals;
     }
     if (signals.apiErrorRate > this.thresholds.apiErrorRate) {
@@ -268,10 +270,11 @@ class DistressMonitor {
 
     // Send to VPS alert system
     try {
-      const vpsAlertUrl = process.env.VPS_ALERT_WEBHOOK || 'http://localhost:7777/webhook/artie-distress';
+      const vpsAlertUrl =
+        process.env.VPS_ALERT_WEBHOOK || 'http://localhost:7777/webhook/artie-distress';
       await fetch(vpsAlertUrl, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Host': 'n8n.tools.ejfox.com' },
+        headers: { 'Content-Type': 'application/json', Host: 'n8n.tools.ejfox.com' },
         body: JSON.stringify({ signals, reasons }),
       });
       logger.info('🆘 Distress alert sent to VPS');
@@ -282,10 +285,13 @@ class DistressMonitor {
     // Record the distress event
     try {
       const db = getSyncDb();
-      db.run(`
+      db.run(
+        `
         INSERT INTO distress_events (signals, reasons, created_at)
         VALUES (?, ?, CURRENT_TIMESTAMP)
-      `, [JSON.stringify(signals), JSON.stringify(reasons)]);
+      `,
+        [JSON.stringify(signals), JSON.stringify(reasons)]
+      );
     } catch (error) {
       // Table might not exist, that's ok
       logger.debug('Failed to record distress event:', error);
@@ -326,7 +332,9 @@ class DistressMonitor {
       if (signals.negativeReactionRate > this.thresholds.negativeReactionRate * 0.7) {
         const pct = Math.round(signals.negativeReactionRate * 100);
         if (signals.negativeReactionRate > this.thresholds.negativeReactionRate) {
-          concerns.push(`${pct}% of recent reactions have been negative - I might be saying something wrong`);
+          concerns.push(
+            `${pct}% of recent reactions have been negative - I might be saying something wrong`
+          );
         } else {
           concerns.push(`${pct}% negative reactions lately`);
         }

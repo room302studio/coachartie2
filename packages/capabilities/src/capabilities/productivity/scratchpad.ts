@@ -1,5 +1,8 @@
 import { logger } from '@coachartie/shared';
-import { RegisteredCapability, CapabilityContext } from '../../services/capability/capability-registry.js';
+import {
+  RegisteredCapability,
+  CapabilityContext,
+} from '../../services/capability/capability-registry.js';
 import { readFile, writeFile, mkdir } from 'fs/promises';
 import { dirname, resolve } from 'path';
 import { existsSync } from 'fs';

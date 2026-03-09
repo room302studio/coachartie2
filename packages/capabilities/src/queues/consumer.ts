@@ -126,7 +126,8 @@ export async function startMessageConsumer(): Promise<Worker<IncomingMessage, vo
 
         // Store Artie's response for Discord messages (via API path)
         // Skip storing [SILENT] responses - they pollute conversation history
-        const isSilent = response.trim() === '[SILENT]' || response.trim().toLowerCase() === '[silent]';
+        const isSilent =
+          response.trim() === '[SILENT]' || response.trim().toLowerCase() === '[silent]';
         if (
           !isSilent &&
           (message.source === 'discord' ||
@@ -256,7 +257,9 @@ export async function startMessageConsumer(): Promise<Worker<IncomingMessage, vo
   return worker;
 }
 
-function getOutgoingQueueName(type: 'discord' | 'slack' | 'sms' | 'email' | 'api' | 'irc' | 'reddit'): string {
+function getOutgoingQueueName(
+  type: 'discord' | 'slack' | 'sms' | 'email' | 'api' | 'irc' | 'reddit'
+): string {
   switch (type) {
     case 'discord':
       return QUEUES.OUTGOING_DISCORD;

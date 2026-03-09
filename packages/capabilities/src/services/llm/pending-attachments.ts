@@ -89,7 +89,9 @@ ${summary}`;
 /**
  * Read the analysis for a user (returns null if none/expired)
  */
-export function readAnalysis(userId: string): { filename: string; summary: string; age: number } | null {
+export function readAnalysis(
+  userId: string
+): { filename: string; summary: string; age: number } | null {
   const filePath = getAnalysisPath(userId);
 
   if (!fs.existsSync(filePath)) {
@@ -111,7 +113,7 @@ export function readAnalysis(userId: string): { filename: string; summary: strin
 
     const content = fs.readFileSync(filePath, 'utf-8');
     const lines = content.split('\n');
-    const filenameLine = lines.find(l => l.startsWith('FILENAME:'));
+    const filenameLine = lines.find((l) => l.startsWith('FILENAME:'));
     const filename = filenameLine ? filenameLine.replace('FILENAME:', '').trim() : 'unknown';
 
     // Everything after the --- line is the summary
@@ -175,10 +177,22 @@ export interface StoredAnalyzedFile {
 export function getFileType(filename: string): string {
   const ext = filename.toLowerCase().split('.').pop() || '';
   const typeMap: Record<string, string> = {
-    metro: 'metro', csv: 'csv', json: 'json', md: 'markdown',
-    txt: 'text', log: 'text', ts: 'code', js: 'code', py: 'code',
-    png: 'image', jpg: 'image', jpeg: 'image', gif: 'image',
-    pdf: 'document', xml: 'xml', html: 'html',
+    metro: 'metro',
+    csv: 'csv',
+    json: 'json',
+    md: 'markdown',
+    txt: 'text',
+    log: 'text',
+    ts: 'code',
+    js: 'code',
+    py: 'code',
+    png: 'image',
+    jpg: 'image',
+    jpeg: 'image',
+    gif: 'image',
+    pdf: 'document',
+    xml: 'xml',
+    html: 'html',
   };
   return typeMap[ext] || 'file';
 }
@@ -205,7 +219,7 @@ export function getStoredFile(userId: string, _fileType?: string): StoredAnalyze
     filename: analysis.filename,
     summary: analysis.summary,
     fileType: getFileType(analysis.filename),
-    timestamp: Date.now() - (analysis.age * 60000),
+    timestamp: Date.now() - analysis.age * 60000,
   };
 }
 
@@ -223,11 +237,18 @@ export function getAllStoredFiles(userId: string): StoredAnalyzedFile[] {
 }
 
 // Metro-specific aliases
-export function storeAnalyzedMetroFile(userId: string, filename: string, buffer: Buffer, summary: string): void {
+export function storeAnalyzedMetroFile(
+  userId: string,
+  filename: string,
+  buffer: Buffer,
+  summary: string
+): void {
   saveAnalysis(userId, filename, summary, buffer);
 }
 
-export function getStoredMetroFile(userId: string): { buffer: Buffer; filename: string; summary: string } | null {
+export function getStoredMetroFile(
+  userId: string
+): { buffer: Buffer; filename: string; summary: string } | null {
   const analysis = readAnalysis(userId);
   if (!analysis) return null;
   return {

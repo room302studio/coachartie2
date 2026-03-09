@@ -3,6 +3,7 @@
 > 222 files | Tweet-length descriptions | Updated: 2025-11-26
 
 Legend:
+
 - [x] Documented
 - [D] DELETE candidate
 - [?] Needs investigation
@@ -21,11 +22,13 @@ Legend:
 **Purpose:** Nuxt 3 dashboard for monitoring bot activity. Visualizes memories, messages, queues with t-SNE/UMAP plots. Read-only admin tool running on port 47325.
 
 ### Config
+
 - [x] `app.config.ts` - Nuxt UI defaults: gray ghost buttons, dynamic icons. 14 lines.
 - [x] `nuxt.config.ts` - SPA mode, port 47325, Figtree font, SQLite excluded from Vite bundle. Uses @vueuse/nuxt.
 - [x] `database.types.ts` - Supabase-generated types for 8 tables: config, logs, memories, messages, prompts, queue, todos, user_identities. Includes DB functions like match_memories, get_next_task. 549 lines of types.
 
 ### Composables
+
 - [x] `composables/useClustering.ts` - K-means clustering via Turf.js. Takes embedding array, returns clusterMap with point-to-cluster assignments. 36 lines.
 - [D] `composables/useDatabase.ts` - DEAD CODE. Mock Supabase returning empty arrays. Comment says "should be replaced". 63 lines of nothing.
 - [D] `composables/useSupabaseClient.ts` - DEAD CODE. Another mock placeholder. 23 lines returning nulls.
@@ -33,9 +36,11 @@ Legend:
 - [x] `composables/useUmap.ts` - UMAP via umap-js. Uses requestAnimationFrame for animated stepping. 52 lines. Returns embeddingPositions ref.
 
 ### Lib
-- [D] `lib/database.ts` - DEPRECATED 910-line SQLite adapter. BrainDatabaseAdapter class with CRUD for all 8 tables. Creates brain_* tables with FTS5 search, triggers, indexes. REPLACED BY DRIZZLE - shared/db/schema.ts is source of truth now.
+
+- [D] `lib/database.ts` - DEPRECATED 910-line SQLite adapter. BrainDatabaseAdapter class with CRUD for all 8 tables. Creates brain\_\* tables with FTS5 search, triggers, indexes. REPLACED BY DRIZZLE - shared/db/schema.ts is source of truth now.
 
 ### API Routes
+
 - [x] `server/api/analytics.get.ts` - Dynamic query builder with SQL injection protection. Whitelist: messages/memories/meetings tables. Supports groupBy, aggregates (count/sum/avg/min/max), timeRange filters. 170 lines.
 - [x] `server/api/memories.get.ts` - Simple Drizzle query: `SELECT * FROM memories WHERE user_id=? ORDER BY created_at DESC LIMIT ?`. 48 lines.
 - [x] `server/api/memories.post.ts` - Insert memory with content, userId, tags, context, importance, timestamp. 42 lines.
@@ -57,6 +62,7 @@ Legend:
 **Purpose:** The heart of Coach Artie. 40+ tools in a ReAct loop. LLM picks capabilities, executes, iterates. Max 8 loops, 120s timeout.
 
 ### Entry Points
+
 - [x] `src/index.ts` - Express server on dynamic port. Routes: /health, /chat, /capabilities, /scheduler, /github, /services, /api/memories, /api/models, /logs. Starts queue workers, scheduler, simple healer. Graceful shutdown cleans up all services. 306 lines.
 - [x] `src/mcp-index.ts` - Standalone MCP server entry for Claude Desktop integration.
 - [x] `src/mcp-server.ts` - MCP server with SSE/HTTP transport. Exposes capabilities as MCP tools.
@@ -64,6 +70,7 @@ Legend:
 ### Capabilities (39 files)
 
 **Core Tools:**
+
 - [x] `capabilities/shell.ts` - **THE BIG ONE.** Executes bash in sandboxed Debian Docker container. Actions: exec (one-shot), send/read/split/list (persistent tmux sessions). Uses marked for markdown code extraction. Handles heredocs, environment variables. 547 lines.
 - [x] `capabilities/memory.ts` - Persistent storage via HybridDataLayer. remember() stores with auto-tags + semantic tagging. recall() searches by keyword. recallByTags() for filtered retrieval. Uses instant hot cache + async SQLite persistence.
 - [x] `capabilities/github.ts` - 11 actions: get_releases, get_recent_commits, get_deployment_stats, search_repositories, list_issues, search_issues, create_issue, update_issue, get_issues_by_label, get_issue_details, get_related_prs. Uses GITHUB_TOKEN.
@@ -72,6 +79,7 @@ Legend:
 - [x] `capabilities/web.ts` - DuckDuckGo search + HTML content fetching. Handles current events.
 
 **Discord Integration:**
+
 - [x] `capabilities/discord-channels.ts` - Fetch recent/pinned messages, search in channels.
 - [x] `capabilities/discord-forums.ts` - Traverse forums, read discussions, sync to GitHub issues.
 - [x] `capabilities/discord-threads.ts` - Create threads, get thread messages.
@@ -81,11 +89,13 @@ Legend:
 - [x] `capabilities/discord-issue-parser.ts` - Parse #123 GitHub issue references.
 
 **Communication:**
+
 - [x] `capabilities/ask-question.ts` - Multi-choice questions with buttons/selects. Works Discord & Slack.
 - [x] `capabilities/email.ts` - Send via n8n webhook, MailDev, or SMTP.
 - [x] `capabilities/slack-ui.ts` - Slack Block Kit: modals, buttons, menus.
 
 **External Services:**
+
 - [x] `capabilities/mcp-client.ts` - Connect to MCP servers (HTTP/stdio). JSON-RPC tool calls. 881 lines.
 - [x] `capabilities/embedded-mcp.ts` - Built-in MCP tools (Wikipedia, time, calc) - zero deps.
 - [x] `capabilities/mediawiki.ts` - Read/write MediaWiki pages.
@@ -93,6 +103,7 @@ Legend:
 - [x] `capabilities/wolfram.ts` - Wolfram Alpha for computation/finance.
 
 **System:**
+
 - [x] `capabilities/calculator.ts` - mathjs expression evaluation.
 - [x] `capabilities/environment.ts` - Env var CRUD with backup.
 - [x] `capabilities/system-installer.ts` - Install Chrome, Git, Docker, Node.
@@ -102,6 +113,7 @@ Legend:
 - [x] `capabilities/scheduler.ts` - Cron reminders and recurring tasks.
 
 **User State:**
+
 - [x] `capabilities/user-profile.ts` - Extensible profile linking any service.
 - [x] `capabilities/goal.ts` - Track user goals with priority/deadline.
 - [x] `capabilities/todo.ts` - Todo list management.
@@ -111,12 +123,14 @@ Legend:
 - [x] `capabilities/model-manager.ts` - Model pricing/recommendations.
 
 **Notes:**
+
 - [x] `capabilities/semantic-search.ts` - Vector embeddings. Kept as explicit tool for intentional similarity search.
 - [x] `capabilities/sequence.ts` - Explicit orchestration from management agents to subagents.
 
 ### Services (36 files)
 
 **Core Orchestration:**
+
 - [x] `services/capability-orchestrator.ts` - **GOSPEL ENTRY POINT.** orchestrateMessage() → createContext → assembleMessageOrchestration. Checks for email drafts first. Gets initial LLM response, extracts [LOOP] decision. If wantsLoop, enters ReAct loop via llmLoopService. Stores reflection memory. 302 lines.
 - [x] `services/capability-registry.ts` - **PLUGIN SYSTEM.** Map<name, RegisteredCapability>. register() validates, get() checks action support, execute() runs handler. generateInstructions() builds capability list for LLM. Auto-registers 16 capabilities at bottom of file. 696 lines.
 - [x] `services/llm-loop-service.ts` - **ReAct LOOP.** executeLLMDrivenLoop() iterates max 8 times with 120s global timeout. Each iteration: getLLMNextAction() → extract capabilities → execute → add system feedback. Circuit breaker after 5 failures per capability. 50% random continuation chance. 349 lines.
@@ -124,12 +138,14 @@ Legend:
 - [x] `services/llm-response-coordinator.ts` - Three-tier model strategy. extractLoopDecision() finds [LOOP] tag. truncateConversationHistory(). stripThinkingTags() for security.
 
 **Execution:**
+
 - [x] `services/capability-executor.ts` - Streaming execution with error recovery. substituteTemplateVariables().
 - [x] `services/capability-parser.ts` - XML extraction via fast-xml-parser. Generates helpful error messages.
 - [x] `services/capability-bootstrap.ts` - Initializes registry with all capabilities on startup.
 - [x] `services/capability-selector.ts` - Two-tier triage fallback. Used when DB prompts not found.
 
 **LLM & API:**
+
 - [x] `services/openrouter.ts` - OpenRouter client. generateFromMessageChain(), three-tier models (fast/main/fallback), streaming support.
 - [x] `services/openrouter-models.ts` - Live model info with 5-min cache. Pricing, context sizes.
 - [x] `services/prompt-manager.ts` - Loads prompts from DB with hot-reload. getCapabilityInstructions().
@@ -139,6 +155,7 @@ Legend:
 - [?] `services/conscience.ts` - Safety LLM review per capability. EXTRA CALL. Just put rules in prompt?
 
 **Memory:**
+
 - [x] `services/combined-memory-entourage.ts` - Multi-layered recall: semantic + temporal.
 - [x] `services/temporal-memory-entourage.ts` - Time-aware search prioritizing recency.
 - [?] `services/semantic-memory-entourage.ts` - OpenAI vector search. EXPENSIVE.
@@ -148,6 +165,7 @@ Legend:
 - [?] `services/llm-error-pattern-tracker.ts` - Learns from errors. Over-engineered?
 
 **External:**
+
 - [x] `services/email-drafting-service.ts` - AI email drafting with revision loop.
 - [x] `services/mediawiki-client.ts` - MediaWiki API client.
 - [x] `services/mediawiki-manager.ts` - Multiple wiki connections.
@@ -157,6 +175,7 @@ Legend:
 - [x] `services/mcp-process-manager.ts` - MCP server lifecycle.
 
 **Monitoring:**
+
 - [x] `services/job-tracker.ts` - Job state, results, Discord badges.
 - [x] `services/observation-handler.ts` - Passive Discord observation.
 - [x] `services/security-monitor.ts` - Detects info disclosure.
@@ -164,17 +183,21 @@ Legend:
 - [x] `services/database.ts` - Re-exports DB instance.
 
 ### Handlers
+
 - [x] `handlers/github-webhook.ts` - Handles GitHub webhook events for push, release, PR with wiki updates
 - [x] `handlers/process-message.ts` - Processes incoming messages with capability orchestration, job tracking
 
 ### Middleware
+
 - [x] `middleware/rate-limiter.ts` - In-memory rate limiting middleware with configurable requests/window
 
 ### Queues
+
 - [x] `queues/consumer.ts` - BullMQ worker consuming messages, executing capabilities, with global timeout
 - [x] `queues/publisher.ts` - Publishes messages to queue with Discord-specific context for processing
 
 ### Routes
+
 - [x] `routes/api.ts` - FastifyPluginAsync for memories, messages, stats, and error analytics
 - [x] `routes/capabilities.ts` - Express router for listing capabilities, testing execution, health checks
 - [x] `routes/chat.ts` - Chat endpoint with job tracking, result polling, cancellation, rate limiting
@@ -188,15 +211,18 @@ Legend:
 - [x] `routes/services.ts` - Service discovery routes listing available services and their URLs
 
 ### Runtime
+
 - [x] `runtime/embedded-mcp-runtime.ts` - Built-in MCP tools (Wikipedia, time, calc). Zero external deps.
 - [x] `runtime/hybrid-data-layer.ts` - **PERFORMANCE CRITICAL.** HotData Map (10k cap) + userIndex + AsyncQueue for serialized writes. Eliminates SQLite concurrency bottlenecks. 30s background sync. storeMemory() instant return. searchMemories() keyword+LIKE query.
 - [x] `runtime/simple-healer.ts` - 30s interval. Forces GC if heap > 200MB. Can restart Wikipedia MCP. 60 lines.
 
 ### Types
+
 - [x] `types/orchestration-types.ts` - Type definitions for orchestration context, capabilities, results
 - [x] `types/structured-errors.ts` - Structured error types and helpers for LLM-friendly error messages
 
 ### Utils
+
 - [x] `utils/context-alchemy-debugger.ts` - Debugging tool for Context Alchemy with session tracking, budgets
 - [x] `utils/discord-formatter.ts` - Discord formatting utilities for progress bars, status, alerts, dashboards
 - [x] `utils/error-utils.ts` - Error handling utilities for extracting messages, stacks, formatting errors
@@ -207,6 +233,7 @@ Legend:
 - [x] `utils/xml-parser.ts` - XML parser for capability tags supporting multiple formats with attributes
 
 ### Tests
+
 - [x] `src/test-capability-selector.ts` - Test file for capability selector
 - [x] `src/test/mcp-client.test.ts` - MCP client unit tests
 - [x] `src/test/xml-parser.test.ts` - XML parser unit tests
@@ -227,6 +254,7 @@ Legend:
 **Purpose:** Discord bot. Handles messages, slash commands, reactions, buttons, menus. Routes to capabilities service for AI processing.
 
 ### Root
+
 - [x] `features/messageHandler.ts` - Legacy message handler, validates and routes requests.
 - [x] `logger.ts` - Winston + Grafana Loki structured logging.
 - [x] `register-commands.ts` - REST API to register slash commands with Discord.
@@ -234,6 +262,7 @@ Legend:
 - [x] `types/errors.ts` - Custom error classes for capabilities, Discord, queue.
 
 ### Commands (12 files)
+
 - [x] `commands/bot-status.ts` - /bot-status: Health, user stats, system status with embeds.
 - [x] `commands/debug.ts` - /debug: Connection test, performance, caps check, diagnostics.
 - [x] `commands/link-email.ts` - /link-email: Validates email, stores via user profile capability.
@@ -248,24 +277,29 @@ Legend:
 - [x] `commands/verify-phone.ts` - /verify-phone: Verify SMS code to complete phone linking.
 
 ### Config
+
 - [x] `config/guild-whitelist.ts` - Whitelisted guild IDs, working/watching guild types
 - [x] `config/mention-proxy.ts` - Mention proxy rule interface with response modes and triggers
 
 ### Handlers
-- [x] `handlers/interaction-handler.ts` - **SLASH COMMANDS.** Map of 12 commands (link-*, verify-*, unlink-*, status, bot-status, models, memory, usage, debug, sync-discussions). handleSlashCommand() with correlation tracking. Buttons → processUserIntent(). 200 lines.
+
+- [x] `handlers/interaction-handler.ts` - **SLASH COMMANDS.** Map of 12 commands (link-_, verify-_, unlink-\*, status, bot-status, models, memory, usage, debug, sync-discussions). handleSlashCommand() with correlation tracking. Buttons → processUserIntent(). 200 lines.
 - [x] `handlers/message-handler.ts` - **CORE MESSAGE ROUTING.** Detects @mentions, DMs, robot channels. GitHub URL auto-expansion. Builds Discord context (guild, channel, mentions, attachments). Routes to processUserIntent(). Handles message chunking (2000 char limit). 1400 lines.
 - [x] `handlers/reaction-handler.ts` - Regenerate (🔄), positive (👍), negative (👎) feedback tracking.
 
 ### Queues
+
 - [x] `queues/consumer.ts` - BullMQ worker for outgoing Discord messages.
 - [x] `queues/outgoing-consumer.ts` - Async message sender with error handling.
 - [x] `queues/publisher.ts` - Publishes incoming messages to capabilities queue.
 
 ### Routes
+
 - [x] `routes/api.ts` - GET /forums, /forums/:id, /threads/:id for forum access.
 - [x] `routes/mention-proxy.ts` - CRUD for mention proxy rules.
 
 ### Services
+
 - [x] `services/api-server.ts` - Express on 47327 for forum API.
 - [x] `services/capabilities-client.ts` - **HTTP CLIENT TO CAPABILITIES.** submitJob() → POST /chat. checkJobStatus() → GET /chat/:id. cancelJob() → DELETE /chat/:id. 150 lines.
 - [x] `services/forum-traversal.ts` - getForumSummary(), getThreadDetails() for forum/thread data.
@@ -278,12 +312,14 @@ Legend:
 - [x] `services/user-intent-processor.ts` - **UNIFIED UX.** processUserIntent() handles all interaction types. Edit-based streaming (no spam). 500ms min between edits. shouldCreateThread() for long requests. capabilitiesClient.submitJob() → jobMonitor.monitorJob(). 587 lines.
 
 ### Utils
+
 - [x] `utils/correlation.ts` - Generates and tracks correlation IDs for request tracing
 - [x] `utils/email-lookup.ts` - Links/unlinks user emails via unified profile system
 - [x] `utils/path-resolver.ts` - Bulletproof path resolver for Docker and local development
 - [x] `utils/phone-lookup.ts` - Links/unlinks user phones via unified profile system
 
 ### Tests
+
 - [x] `tests/discussion-sync.test.ts` - Tests for discussion sync functionality
 - [x] `tests/status.spec.ts` - Status command tests
 
@@ -327,24 +363,30 @@ Legend:
 **Purpose:** Foundation. Database schema, Redis, logging, service discovery. All other packages depend on this.
 
 ### Config
+
 - [x] `drizzle.config.ts` - Drizzle ORM config: SQLite dialect, ./data/coachartie.db default.
 
 ### DB
+
 - [x] `src/db/client.ts` - **SINGLETON DB CONNECTION.** getDb() returns BetterSQLite3Database. Uses WAL mode for concurrent access. initializeDb() creates 15+ tables (memories, messages, prompts, queue, todos, meetings, oauth_tokens, credit_balance, model_usage_stats...). closeDb() for cleanup. 337 lines.
 - [x] `src/db/index.ts` - Re-exports client and schema.
 - [x] `src/db/schema.ts` - **SINGLE SOURCE OF TRUTH.** 15 Drizzle tables: memories (userId/content/tags/importance/embedding), messages (value/userId/channelId/guildId), prompts (name/version/content/category), promptHistory, queue (status/taskType/payload/result), todos, todoLists, todoItems, capabilitiesConfig, globalVariables, globalVariablesHistory, modelUsageStats, creditBalance, creditAlerts, oauthTokens, meetings, meetingParticipants, meetingReminders. Each with indexes.
 
 ### Services
+
 - [x] `src/services/index.ts` - Exports userProfile service.
 - [x] `src/services/user-profile.ts` - **REDIS USER PROFILES.** getProfile(), updateProfile(), linkEmail(), linkPhone(), linkService(). TTL: 86400s. contact info, preferences, linked services.
 
 ### Types
+
 - [x] `src/types/queue.ts` - IncomingMessage (message/userId/source/respondTo/context), OutgoingMessage (channel/userId/response).
 
 ### Constants
-- [x] `src/constants/queues.ts` - QUEUE_NAMES: incoming-messages, outgoing-messages, slack-*, irc-*, sms-*.
+
+- [x] `src/constants/queues.ts` - QUEUE_NAMES: incoming-messages, outgoing-messages, slack-_, irc-_, sms-\*.
 
 ### Utils
+
 - [D] `src/utils/database.ts` - DEPRECATED 510-line sql.js wrapper. Use client.ts instead.
 - [x] `src/utils/index.ts` - Re-exports all utilities.
 - [x] `src/utils/logger.ts` - Winston logger. Transports: Loki (if LOKI_URL), console (pretty), file (combined.log). Levels: error/warn/info/debug.
@@ -353,9 +395,11 @@ Legend:
 - [x] `src/utils/service-discovery.ts` - Redis-based service registry. registerService(), discoverService(), heartbeat every 30s.
 
 ### Index
+
 - [x] `src/index.ts` - Main package exports: logger, getDatabase (legacy), getDb (drizzle), queue types, IncomingMessage, redis utils.
 
 ### Tests
+
 - [x] `tests/integration.test.ts` - DB integration tests.
 - [x] `tests/queue-comprehensive.test.ts` - Queue edge case tests.
 - [x] `tests/redis.test.ts` - Redis connection tests.
@@ -411,12 +455,14 @@ Legend:
 **Note:** Migration scripts that have already been applied should be deleted.
 
 ### Keep
+
 - [x] `smart-dev.js` - npm run dev startup script. Starts services in order.
 - [x] `deploy.sh` - Production VPS deployment script.
 - [x] `rebuild.sh` - Docker rebuild with caching.
 - [x] `health-check.sh` - System diagnostics for networking.
 
 ### Delete (One-Off Migrations Already Applied)
+
 - [D] `add-discord-formatting.ts` - Already applied.
 - [D] `add-reality-anchor-ts.ts` - Already applied.
 - [D] `migrate-prompts-to-db.ts` - Already applied.
@@ -446,23 +492,23 @@ Legend:
 
 ## Summary
 
-| Category | Files | Documented | Delete |
-|----------|-------|------------|--------|
-| mcp-servers | 2 | 2 | 0 |
-| brain | 23 | 23 | 5 |
-| capabilities | 90 | 90 | 6 |
-| discord | 45 | 45 | 0 |
-| email | 6 | 6 | 0 |
-| irc | 4 | 4 | 0 |
-| mcp-calculator | 2 | 2 | 0 |
-| shared | 18 | 18 | 1 |
-| slack | 16 | 16 | 0 |
-| sms | 7 | 7 | 0 |
-| vue-tsne | ~~1~~ | DELETED | - |
-| scripts | 12 | 12 | 8 |
-| tools | 3 | 3 | 0 |
-| root | 1 | 1 | 0 |
-| **TOTAL** | **222** | **222** | **20** |
+| Category       | Files   | Documented | Delete |
+| -------------- | ------- | ---------- | ------ |
+| mcp-servers    | 2       | 2          | 0      |
+| brain          | 23      | 23         | 5      |
+| capabilities   | 90      | 90         | 6      |
+| discord        | 45      | 45         | 0      |
+| email          | 6       | 6          | 0      |
+| irc            | 4       | 4          | 0      |
+| mcp-calculator | 2       | 2          | 0      |
+| shared         | 18      | 18         | 1      |
+| slack          | 16      | 16         | 0      |
+| sms            | 7       | 7          | 0      |
+| vue-tsne       | ~~1~~   | DELETED    | -      |
+| scripts        | 12      | 12         | 8      |
+| tools          | 3       | 3          | 0      |
+| root           | 1       | 1          | 0      |
+| **TOTAL**      | **222** | **222**    | **20** |
 
 ---
 
@@ -471,14 +517,17 @@ Legend:
 **20 files to delete (~3500+ lines)**
 
 ### Packages Removed
+
 - ~~`packages/vue-tsne/` (1 file) - DELETED~~
 
 ### Packages Kept (Future Platforms)
+
 - `packages/email/` - Future email adapter
 - `packages/irc/` - Already deployed
 - `packages/sms/` - Already deployed
 
 ### Individual Files
+
 ```
 packages/brain/composables/useDatabase.ts
 packages/brain/composables/useSupabaseClient.ts
@@ -494,6 +543,7 @@ scripts/inject-message.js
 ```
 
 ### Files to Investigate (?)
+
 ```
 packages/capabilities/src/capabilities/semantic-search.ts - Over-engineered?
 packages/capabilities/src/capabilities/sequence.ts - Redundant with LLM loop?

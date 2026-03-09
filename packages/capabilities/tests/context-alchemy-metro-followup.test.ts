@@ -5,7 +5,8 @@ const { metroModulePath, memoryModulePath, processMetroAttachment, remember } = 
   process.env.OPENROUTER_MODELS = 'test/model';
   process.env.AUTO_VISION_EXTRACT = 'false';
   return {
-    metroModulePath: new URL('../src/services/monitoring/metro-doctor.js', import.meta.url).pathname,
+    metroModulePath: new URL('../src/services/monitoring/metro-doctor.js', import.meta.url)
+      .pathname,
     memoryModulePath: new URL('../src/capabilities/memory/memory.js', import.meta.url).pathname,
     processMetroAttachment: vi.fn(),
     remember: vi.fn(),

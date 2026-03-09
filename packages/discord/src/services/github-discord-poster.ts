@@ -42,15 +42,22 @@ const EVENT_EMOJI: Record<GitHubEventType, string> = {
 };
 
 // Labels that indicate important/breaking changes
-const IMPORTANT_LABELS = ['breaking-change', 'breaking', 'security', 'critical', 'urgent', 'hotfix'];
+const IMPORTANT_LABELS = [
+  'breaking-change',
+  'breaking',
+  'security',
+  'critical',
+  'urgent',
+  'hotfix',
+];
 const MINOR_LABELS = ['documentation', 'docs', 'chore', 'typo', 'style', 'refactor'];
 
 // Size thresholds for PR size badges (based on total lines changed)
 const SIZE_THRESHOLDS = {
-  XS: 10,    // Tiny fix
-  S: 50,     // Small change
-  M: 200,    // Medium feature
-  L: 500,    // Large feature
+  XS: 10, // Tiny fix
+  S: 50, // Small change
+  M: 200, // Medium feature
+  L: 500, // Large feature
   // XL: anything above L
 };
 
@@ -177,7 +184,9 @@ export class GitHubDiscordPoster {
           .setURL(event.data.prUrl || '')
           .setColor(sizeBadge.color)
           .setDescription(this.formatPrDescription(event))
-          .setFooter({ text: `${owner}/${repo} • ${this.formatSizeBadge(event.data.additions, event.data.deletions, event.data.changedFiles)}` });
+          .setFooter({
+            text: `${owner}/${repo} • ${this.formatSizeBadge(event.data.additions, event.data.deletions, event.data.changedFiles)}`,
+          });
 
         // Large PRs get extra visibility
         if (prSize === 'L' || prSize === 'XL') {
@@ -210,7 +219,9 @@ export class GitHubDiscordPoster {
           });
         }
 
-        embed.setFooter({ text: `${owner}/${repo} • ${this.formatSizeBadge(event.data.additions, event.data.deletions, event.data.changedFiles)}` });
+        embed.setFooter({
+          text: `${owner}/${repo} • ${this.formatSizeBadge(event.data.additions, event.data.deletions, event.data.changedFiles)}`,
+        });
         break;
       }
 
@@ -394,9 +405,7 @@ export class GitHubDiscordPoster {
     }
 
     if (this.config.showLineChanges && (event.data.additions || event.data.deletions)) {
-      parts.push(
-        `\n\`+${event.data.additions || 0}\` / \`-${event.data.deletions || 0}\``
-      );
+      parts.push(`\n\`+${event.data.additions || 0}\` / \`-${event.data.deletions || 0}\``);
     }
 
     if (this.config.showLabels && event.data.labels && event.data.labels.length > 0) {
@@ -424,9 +433,7 @@ export class GitHubDiscordPoster {
     }
 
     if (this.config.showLineChanges && (event.data.additions || event.data.deletions)) {
-      parts.push(
-        `\n\`+${event.data.additions || 0}\` / \`-${event.data.deletions || 0}\``
-      );
+      parts.push(`\n\`+${event.data.additions || 0}\` / \`-${event.data.deletions || 0}\``);
     }
 
     // Show labels on merges (especially useful for breaking changes, features, etc.)
@@ -546,9 +553,7 @@ export class GitHubDiscordPoster {
   private hasImportantLabel(labels?: string[]): boolean {
     if (!labels || labels.length === 0) return false;
     return labels.some((label) =>
-      IMPORTANT_LABELS.some((important) =>
-        label.toLowerCase().includes(important.toLowerCase())
-      )
+      IMPORTANT_LABELS.some((important) => label.toLowerCase().includes(important.toLowerCase()))
     );
   }
 
@@ -596,9 +601,7 @@ export function initializeDiscordPoster(
  */
 export function getDiscordPoster(): GitHubDiscordPoster {
   if (!posterInstance) {
-    throw new Error(
-      'GitHub Discord poster not initialized. Call initializeDiscordPoster first.'
-    );
+    throw new Error('GitHub Discord poster not initialized. Call initializeDiscordPoster first.');
   }
   return posterInstance;
 }

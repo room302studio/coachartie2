@@ -87,11 +87,13 @@ The bot will process your message through the capabilities system and respond!
 ## Health Check
 
 Check bot status:
+
 ```bash
 curl http://localhost:47327/health
 ```
 
 Returns:
+
 ```json
 {
   "status": "ok",

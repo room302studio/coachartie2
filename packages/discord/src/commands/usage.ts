@@ -1,5 +1,16 @@
 import { ChatInputCommandInteraction, SlashCommandBuilder, EmbedBuilder } from 'discord.js';
-import { logger, getDb, modelUsageStats, desc, eq, gte, count, sum, avg, sql } from '@coachartie/shared';
+import {
+  logger,
+  getDb,
+  modelUsageStats,
+  desc,
+  eq,
+  gte,
+  count,
+  sum,
+  avg,
+  sql,
+} from '@coachartie/shared';
 
 export const usageCommand = {
   data: new SlashCommandBuilder()

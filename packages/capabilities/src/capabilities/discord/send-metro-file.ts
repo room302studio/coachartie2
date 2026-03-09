@@ -37,10 +37,7 @@ export const sendMetroFileCapability: RegisteredCapability = {
   },
 };
 
-async function sendMetroFile(params: {
-  userId?: string;
-  message?: string;
-}): Promise<any> {
+async function sendMetroFile(params: { userId?: string; message?: string }): Promise<any> {
   const { userId, message } = params;
 
   if (!userId) {

@@ -3,6 +3,7 @@
 ## Station Requirements
 
 Station tracks MUST be:
+
 - **Straight** (no curves allowed)
 - **Level** (same elevation at both ends)
 - **Correct length**:
@@ -11,11 +12,11 @@ Station tracks MUST be:
 
 ## Track Types
 
-| Type | Description |
-|------|-------------|
-| Single | One track, bidirectional |
-| Parallel | Two tracks side-by-side |
-| Quad | Four tracks (express + local each direction) |
+| Type     | Description                                  |
+| -------- | -------------------------------------------- |
+| Single   | One track, bidirectional                     |
+| Parallel | Two tracks side-by-side                      |
+| Quad     | Four tracks (express + local each direction) |
 
 ## Station Track Nodes
 
@@ -26,10 +27,10 @@ Station tracks MUST be:
 ## Platform Widths
 
 | Track Config | Platform Width |
-|--------------|----------------|
-| Single | 11.5m |
-| Parallel | 15.5m |
-| Quad | 23.5m |
+| ------------ | -------------- |
+| Single       | 11.5m          |
+| Parallel     | 15.5m          |
+| Quad         | 23.5m          |
 
 ## Track Spacing
 

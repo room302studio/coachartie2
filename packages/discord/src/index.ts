@@ -184,13 +184,15 @@ async function start() {
       try {
         console.log('🔧 Checking GitHub Sync service...');
         if (process.env.GITHUB_TOKEN) {
-          initializeGitHubSync(client).then(() => {
-            logger.info('✅ GitHub Sync service enabled');
-            console.log('✅ GitHub Sync service enabled');
-          }).catch((err) => {
-            logger.warn('GitHub Sync initialization failed:', err);
-            console.error('❌ GitHub Sync init failed:', err);
-          });
+          initializeGitHubSync(client)
+            .then(() => {
+              logger.info('✅ GitHub Sync service enabled');
+              console.log('✅ GitHub Sync service enabled');
+            })
+            .catch((err) => {
+              logger.warn('GitHub Sync initialization failed:', err);
+              console.error('❌ GitHub Sync init failed:', err);
+            });
         } else {
           logger.info('ℹ️  GitHub Sync disabled (no GITHUB_TOKEN)');
           console.log('ℹ️  GitHub Sync disabled (no GITHUB_TOKEN)');

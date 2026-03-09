@@ -223,7 +223,7 @@ export class MediaWikiManager {
         availableWikis as [string, ...string[]],
         this.lastUsedWiki || availableWikis[0]
       );
-      return this.clients.has(result.result) ? result.result : (this.lastUsedWiki || 'default');
+      return this.clients.has(result.result) ? result.result : this.lastUsedWiki || 'default';
     } catch {
       // Fallback to last used or default
       return this.lastUsedWiki || 'default';

@@ -22,7 +22,8 @@ export async function publishMessage(
   message: string,
   channelId: string,
   userTag: string,
-  shouldRespond: boolean = true
+  shouldRespond: boolean = true,
+  guildId?: string
 ): Promise<void> {
   const queue = getMessageQueue();
 
@@ -42,6 +43,7 @@ export async function publishMessage(
       userTag,
       platform: 'discord',
       shouldRespond,
+      ...(guildId ? { guildId } : {}),
     },
     respondTo: {
       type: 'discord',

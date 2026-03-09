@@ -79,6 +79,7 @@ module.exports = {
       env: {
         ...env,
         DATABASE_PATH,
+        ENABLE_STARTUP_NOTIFICATION: 'false',
       },
       instances: 1,
       autorestart: true,

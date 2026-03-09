@@ -110,7 +110,7 @@ export async function quickAnalysis(message: string): Promise<PreflightAnalysis>
 
     logger.info(
       `[preflight] micro-llm: ${result.responseTier} (${result.responseTokens} tokens), ` +
-      `tone=${result.tone}, format=${result.format}, complexity=${result.complexity}`
+        `tone=${result.tone}, format=${result.format}, complexity=${result.complexity}`
     );
 
     return result;

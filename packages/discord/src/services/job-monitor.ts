@@ -103,7 +103,9 @@ export class JobMonitor {
 
     // Use SSE for real-time updates (no polling!)
     this.monitorJobWithSSE(jobId, callbacks).catch((err) => {
-      logger.warn(`⚠️ SSE monitoring failed for ${shortId}, falling back to polling: ${err.message}`);
+      logger.warn(
+        `⚠️ SSE monitoring failed for ${shortId}, falling back to polling: ${err.message}`
+      );
       // Fallback to polling if SSE fails
       this.pendingJobs.set(jobId, {
         ...callbacks,
@@ -140,7 +142,7 @@ export class JobMonitor {
 
       fetch(sseUrl, {
         signal: controller.signal,
-        headers: { 'Accept': 'text/event-stream' },
+        headers: { Accept: 'text/event-stream' },
       })
         .then(async (response) => {
           if (!response.ok) {

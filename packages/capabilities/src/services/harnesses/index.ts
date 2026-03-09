@@ -1,6 +1,6 @@
 /**
  * Model Harness Registry
- * 
+ *
  * Central registry for all model harnesses.
  * Use getHarness() to get a specific harness, or listHarnesses() to see available options.
  */
@@ -57,7 +57,7 @@ export function listHarnesses(): Array<{
   description: string;
   available: boolean;
 }> {
-  return Array.from(harnesses.values()).map(h => ({
+  return Array.from(harnesses.values()).map((h) => ({
     name: h.name,
     type: h.type,
     description: h.description,
@@ -68,7 +68,9 @@ export function listHarnesses(): Array<{
 /**
  * Get the best available harness for a task type
  */
-export function getHarnessForTask(taskType: 'chat' | 'research' | 'code'): ModelHarness | undefined {
+export function getHarnessForTask(
+  taskType: 'chat' | 'research' | 'code'
+): ModelHarness | undefined {
   switch (taskType) {
     case 'research':
       // Prefer deep research if available
@@ -77,7 +79,7 @@ export function getHarnessForTask(taskType: 'chat' | 'research' | 'code'): Model
       }
       // Fallback to OpenRouter (would need to wrap it)
       return undefined;
-    
+
     case 'chat':
     case 'code':
     default:

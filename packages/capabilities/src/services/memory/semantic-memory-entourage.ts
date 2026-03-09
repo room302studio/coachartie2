@@ -38,9 +38,21 @@ export class SemanticMemoryEntourage implements MemoryEntourageInterface {
     }
 
     try {
-      // Get recent memories for the user (using getRecentMemories to avoid empty query error)
-      const recentMemories = await this.memoryService.getRecentMemories(userId, 50);
-      const memories = recentMemories.map(m => ({
+      // Get recent memories for the user AND Artie's own memories (artie-social)
+      const userMemories = await this.memoryService.getRecentMemories(userId, 30);
+
+      // For Artie's own memories, get more and prioritize high-importance ones
+      let artieMemories: any[] = [];
+      if (userId !== 'artie-social') {
+        const allArtieMemories = await this.memoryService.getRecentMemories('artie-social', 150);
+        // Prioritize high-importance memories (importance >= 7) and include some recent ones
+        const highImportance = allArtieMemories.filter(m => (m.importance || 5) >= 7);
+        const recent = allArtieMemories.filter(m => (m.importance || 5) < 7).slice(0, 15);
+        artieMemories = [...highImportance, ...recent];
+      }
+
+      const allMemories = [...userMemories, ...artieMemories];
+      const memories = allMemories.map(m => ({
         content: m.content,
         importance: m.importance || 5,
         date: m.timestamp || new Date().toISOString(),
@@ -134,8 +146,9 @@ export class SemanticMemoryEntourage implements MemoryEntourageInterface {
       const memoryVector = this.createTfIdfVector(memory.content);
       const similarity = this.calculateCosineSimilarity(queryVector, memoryVector);
 
-      // Only include memories with meaningful semantic similarity
-      if (similarity > 0.1) {
+      // Lower threshold for high-importance memories to ensure they're included
+      const threshold = memory.importance >= 7 ? 0.02 : 0.08;
+      if (similarity > threshold) {
         matches.push({
           ...memory,
           semanticScore: similarity,
@@ -143,8 +156,15 @@ export class SemanticMemoryEntourage implements MemoryEntourageInterface {
       }
     }
 
-    // Sort by semantic score and apply limits
-    matches.sort((a, b) => b.semanticScore - a.semanticScore);
+    // Sort by weighted score: semantic similarity + importance boost
+    // High importance memories (7+) get a significant boost
+    matches.sort((a, b) => {
+      const importanceBoostA = a.importance >= 7 ? 0.3 : (a.importance >= 5 ? 0.1 : 0);
+      const importanceBoostB = b.importance >= 7 ? 0.3 : (b.importance >= 5 ? 0.1 : 0);
+      const scoreA = a.semanticScore + importanceBoostA;
+      const scoreB = b.semanticScore + importanceBoostB;
+      return scoreB - scoreA;
+    });
 
     const limit = this.getSemanticLimit(options);
     return matches.slice(0, limit);

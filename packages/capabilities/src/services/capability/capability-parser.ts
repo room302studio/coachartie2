@@ -3,10 +3,7 @@ import { openRouterService } from '../llm/openrouter.js';
 import { capabilityRegistry } from './capability-registry.js';
 import { capabilityXMLParser } from '../../utils/xml-parser.js';
 import { conscienceLLM } from '../monitoring/conscience.js';
-import {
-  ExtractedCapability,
-  OrchestrationContext,
-} from '../../types/orchestration-types.js';
+import { ExtractedCapability, OrchestrationContext } from '../../types/orchestration-types.js';
 
 // =====================================================
 // CAPABILITY PARSER SERVICE

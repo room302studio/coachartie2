@@ -1,0 +1,19 @@
+# Development override - use with: docker compose -f docker-compose.yml -f docker-compose.dev.yml up capabilities
+# Enables hot reload with tsx watch
+
+version: '3.8'
+
+services:
+  capabilities:
+    # Override to use tsx watch for hot reload
+    command: ["pnpm", "dev:tsx"]
+    # Mount source files for hot reload
+    volumes:
+      - ./data:/app/data:rw
+      - ./packages/capabilities/src:/app/packages/capabilities/src:rw
+      - ./packages/shared/src:/app/packages/shared/src:rw
+      - ./logs:/app/logs:rw
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - NODE_ENV=development
+      - LOG_LEVEL=debug

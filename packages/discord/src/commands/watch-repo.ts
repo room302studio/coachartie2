@@ -43,13 +43,17 @@ export const watchRepoCommand = {
       const repoRegex = /^[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+$/;
       if (!repoRegex.test(repo)) {
         return await interaction.reply({
-          content: '❌ Invalid repo format. Please use `owner/repo` format (e.g., `room302studio/coachartie2`).',
+          content:
+            '❌ Invalid repo format. Please use `owner/repo` format (e.g., `room302studio/coachartie2`).',
           ephemeral: true,
         });
       }
 
       // Parse events
-      const events = eventsStr.toLowerCase().split(',').map((e) => e.trim());
+      const events = eventsStr
+        .toLowerCase()
+        .split(',')
+        .map((e) => e.trim());
       const validEvents = ['pr', 'review', 'ci', 'all'];
       const invalidEvents = events.filter((e) => !validEvents.includes(e));
       if (invalidEvents.length > 0) {
@@ -83,7 +87,7 @@ export const watchRepoCommand = {
             inline: false,
           },
           {
-            name: '🔔 You\'ll be notified about',
+            name: "🔔 You'll be notified about",
             value: [
               '• New pull requests',
               '• PRs ready for review',

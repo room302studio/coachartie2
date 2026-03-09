@@ -27,6 +27,7 @@ Income randomly distributed (mean $60k/year). Higher income = value time more.
 ## RAPTOR Pathfinding
 
 Passengers use RAPTOR algorithm for optimal transit routes:
+
 - Max 3 transfers
 - Max 30-min walk to first station
 - Max 10-min walk between transfers
@@ -64,6 +65,7 @@ Returns up to 3 alternative paths.
 ## Affecting Ridership
 
 More ridership from:
+
 - Connecting residential to job areas
 - Shorter travel times
 - Lower fares

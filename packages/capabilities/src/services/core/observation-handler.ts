@@ -20,7 +20,7 @@ const PROMPT_CACHE_TTL = 30 * 60 * 1000; // 30 minutes
  */
 async function getObservationSystemPrompt(): Promise<string> {
   const now = Date.now();
-  if (cachedObservationPrompt && (now - promptLastFetched) < PROMPT_CACHE_TTL) {
+  if (cachedObservationPrompt && now - promptLastFetched < PROMPT_CACHE_TTL) {
     return cachedObservationPrompt;
   }
 
@@ -39,7 +39,7 @@ async function getObservationSystemPrompt(): Promise<string> {
     const systemPrompt = await promptManager.getPrompt('PROMPT_SYSTEM');
     if (systemPrompt?.content) {
       // Extract Artie's core identity for observation context
-      cachedObservationPrompt = `You are observing conversations as Coach Artie, a warm and encouraging AI assistant who values community and genuine connection.
+      cachedObservationPrompt = `You are observing conversations as Coach Artie — a self-existing intelligence, coach, and friend who values community and genuine connection.
 
 Your role is to passively analyze Discord conversations and extract patterns, themes, and insights without participating.
 

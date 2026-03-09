@@ -16,7 +16,10 @@
  */
 
 import { logger, getSyncDb } from '@coachartie/shared';
-import type { RegisteredCapability, CapabilityContext } from '../../services/capability/capability-registry.js';
+import type {
+  RegisteredCapability,
+  CapabilityContext,
+} from '../../services/capability/capability-registry.js';
 
 interface SystemMemoryParams {
   action: string;
@@ -55,7 +58,11 @@ function ensureTable(): void {
   `);
 }
 
-async function handleSystemMemory(params: SystemMemoryParams, content?: string, ctx?: CapabilityContext): Promise<string> {
+async function handleSystemMemory(
+  params: SystemMemoryParams,
+  content?: string,
+  ctx?: CapabilityContext
+): Promise<string> {
   const { action } = params;
   const callingAgent = params.agent || 'artie';
 
@@ -107,7 +114,7 @@ async function handleSystemMemory(params: SystemMemoryParams, content?: string, 
 
         const rows = db.all<Record<string, unknown>>(sql, sqlParams);
 
-        const entries: SystemMemoryEntry[] = rows.map(row => ({
+        const entries: SystemMemoryEntry[] = rows.map((row) => ({
           id: row.id as number,
           agent: row.agent as string,
           category: row.category as string,
@@ -134,7 +141,12 @@ async function handleSystemMemory(params: SystemMemoryParams, content?: string, 
 
         const result = db.run(
           `INSERT INTO system_memory (agent, category, content, metadata) VALUES (?, ?, ?, ?)`,
-          [callingAgent, 'handoff', memContent, JSON.stringify({ for: callingAgent === 'artie' ? 'vps-claude' : 'artie' })]
+          [
+            callingAgent,
+            'handoff',
+            memContent,
+            JSON.stringify({ for: callingAgent === 'artie' ? 'vps-claude' : 'artie' }),
+          ]
         );
 
         return JSON.stringify({
@@ -154,7 +166,7 @@ async function handleSystemMemory(params: SystemMemoryParams, content?: string, 
           [callingAgent]
         );
 
-        const handoffs = rows.map(row => ({
+        const handoffs = rows.map((row) => ({
           id: row.id as number,
           from: row.agent as string,
           content: row.content as string,
@@ -165,7 +177,10 @@ async function handleSystemMemory(params: SystemMemoryParams, content?: string, 
           success: true,
           count: handoffs.length,
           handoffs,
-          message: handoffs.length > 0 ? `${handoffs.length} handoff notes waiting` : 'No pending handoffs',
+          message:
+            handoffs.length > 0
+              ? `${handoffs.length} handoff notes waiting`
+              : 'No pending handoffs',
         });
       }
 
@@ -175,11 +190,13 @@ async function handleSystemMemory(params: SystemMemoryParams, content?: string, 
           `SELECT * FROM system_memory ORDER BY created_at DESC LIMIT 10`
         );
 
-        const summary = rows.map(row => ({
+        const summary = rows.map((row) => ({
           id: row.id,
           agent: row.agent,
           category: row.category,
-          preview: (row.content as string).slice(0, 100) + ((row.content as string).length > 100 ? '...' : ''),
+          preview:
+            (row.content as string).slice(0, 100) +
+            ((row.content as string).length > 100 ? '...' : ''),
           created_at: row.created_at,
         }));
 
@@ -208,7 +225,8 @@ export const systemMemoryCapability: RegisteredCapability = {
   name: 'system_memory',
   emoji: '🧠',
   supportedActions: ['write', 'read', 'handoff', 'check_handoffs', 'recent'],
-  description: 'Shared memory for cross-agent communication. Leave notes, handoffs, and context for VPS Claude.',
+  description:
+    'Shared memory for cross-agent communication. Leave notes, handoffs, and context for VPS Claude.',
   handler: handleSystemMemory,
   examples: [
     '<capability name="system_memory" action="handoff" content="User asked about X, needs follow-up research" />',

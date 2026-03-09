@@ -105,7 +105,7 @@ export async function pickOne<T extends string>(
     });
 
     const answer = response.choices[0]?.message?.content?.trim().toLowerCase() || '';
-    const match = options.find(opt => answer.includes(opt.toLowerCase()));
+    const match = options.find((opt) => answer.includes(opt.toLowerCase()));
 
     if (!match) {
       logger.debug(`[micro-llm] No match for "${answer}" in options, using default`);
@@ -155,9 +155,7 @@ export async function extract(
 /**
  * Estimate response length needed for a message
  */
-export async function estimateResponseLength(
-  userMessage: string
-): Promise<MicroDecision<number>> {
+export async function estimateResponseLength(userMessage: string): Promise<MicroDecision<number>> {
   try {
     const response = await getClient().chat.completions.create({
       model: MICRO_MODEL,
@@ -224,9 +222,7 @@ export async function detectIntent(
       return { result: null, fallback: false };
     }
 
-    const match = possibleIntents.find(intent =>
-      answer.includes(intent.toLowerCase())
-    );
+    const match = possibleIntents.find((intent) => answer.includes(intent.toLowerCase()));
 
     return { result: match || null, fallback: !match };
   } catch (error) {

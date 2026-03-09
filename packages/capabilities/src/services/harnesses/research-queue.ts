@@ -93,10 +93,7 @@ class ResearchQueueService {
   getTask(id: string): QueuedTask | null {
     this.ensureTable();
     const db = getSyncDb();
-    const row = db.get<Record<string, unknown>>(
-      'SELECT * FROM research_tasks WHERE id = ?',
-      [id]
-    );
+    const row = db.get<Record<string, unknown>>('SELECT * FROM research_tasks WHERE id = ?', [id]);
     if (!row) return null;
 
     return this.rowToTask(row);
@@ -221,10 +218,10 @@ class ResearchQueueService {
       logger.info(`🔬 Task ${task.id} submitted to ${handle.provider}`);
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error);
-      db.run(
-        `UPDATE research_tasks SET status = 'failed', error = ? WHERE id = ?`,
-        [errorMsg, task.id]
-      );
+      db.run(`UPDATE research_tasks SET status = 'failed', error = ? WHERE id = ?`, [
+        errorMsg,
+        task.id,
+      ]);
 
       logger.error(`🔬 Task ${task.id} failed to submit:`, error);
     }
@@ -261,10 +258,10 @@ class ResearchQueueService {
         // TODO: Write results to wiki, notify user
         await this.handleCompletion(task, result);
       } else if (status.status === 'failed') {
-        db.run(
-          `UPDATE research_tasks SET status = 'failed', error = ? WHERE id = ?`,
-          [status.error || 'Unknown error', task.id]
-        );
+        db.run(`UPDATE research_tasks SET status = 'failed', error = ? WHERE id = ?`, [
+          status.error || 'Unknown error',
+          task.id,
+        ]);
 
         logger.error(`🔬 Task ${task.id} failed: ${status.error}`);
       }

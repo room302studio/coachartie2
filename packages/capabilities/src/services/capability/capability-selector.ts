@@ -12,7 +12,7 @@ const INTRO_CACHE_TTL = 30 * 60 * 1000; // 30 minutes
  */
 async function getCapabilityIntro(): Promise<string> {
   const now = Date.now();
-  if (cachedCapabilityIntro && (now - introLastFetched) < INTRO_CACHE_TTL) {
+  if (cachedCapabilityIntro && now - introLastFetched < INTRO_CACHE_TTL) {
     return cachedCapabilityIntro;
   }
 
@@ -87,7 +87,11 @@ export class CapabilitySelector {
       .join('\n');
 
     // Build triage prompt (now async to load from database)
-    const triagePrompt = await this.buildTriagePrompt(userMessage, capabilityList, conversationContext);
+    const triagePrompt = await this.buildTriagePrompt(
+      userMessage,
+      capabilityList,
+      conversationContext
+    );
 
     try {
       // Use FAST_MODEL for cheap triage

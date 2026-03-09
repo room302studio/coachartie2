@@ -3,6 +3,7 @@
 ## Train Types
 
 ### Heavy Metro
+
 - Max speed: 55 mph (89 km/h)
 - Capacity: 240 passengers/car
 - Cars per train: 5-10
@@ -11,6 +12,7 @@
 - Operating: $500/hr + $50/hr per car
 
 ### Light Metro
+
 - Max speed: 62 mph (100 km/h)
 - Capacity: 200 passengers/car
 - Cars per train: 2-4
@@ -21,6 +23,7 @@
 ## Speed Limits
 
 Trains automatically slow for:
+
 - **Curves**: Tighter curves = slower speed (physics-based)
 - **Slopes**: 3-3.5% grade = 90% speed, 3.5-5% = 80% speed
 - **Stations**: All trains limited to ~29 mph through platforms
@@ -29,12 +32,12 @@ Max slope allowed: 4%
 
 ## Capacity Examples
 
-| Train | Cars | Capacity |
-|-------|------|----------|
-| Heavy Metro | 5 | 1,200 |
-| Heavy Metro | 10 | 2,400 |
-| Light Metro | 2 | 400 |
-| Light Metro | 4 | 800 |
+| Train       | Cars | Capacity |
+| ----------- | ---- | -------- |
+| Heavy Metro | 5    | 1,200    |
+| Heavy Metro | 10   | 2,400    |
+| Light Metro | 2    | 400      |
+| Light Metro | 4    | 800      |
 
 ## Boarding
 

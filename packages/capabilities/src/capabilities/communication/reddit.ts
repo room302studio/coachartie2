@@ -30,11 +30,12 @@ export const redditCapability: RegisteredCapability = {
 
     if (action === 'list-subreddits') {
       const allowlist = redditClient.getAllowedSubreddits();
-        return JSON.stringify({
-          success: true,
-          mode: allowlist.mode,
-          allowedSubreddits: allowlist.allowedSubreddits,
-          note: allowlist.mode === 'open' ? 'Allowlist not set; all subreddits permitted.' : undefined,
+      return JSON.stringify({
+        success: true,
+        mode: allowlist.mode,
+        allowedSubreddits: allowlist.allowedSubreddits,
+        note:
+          allowlist.mode === 'open' ? 'Allowlist not set; all subreddits permitted.' : undefined,
       });
     }
 

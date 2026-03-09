@@ -28,6 +28,7 @@ Example: 10-min route with 5 trains = 2-min headway = 30 TPH
 ## Train Scheduling
 
 Three demand levels per route:
+
 - **High**: Rush hours (7-9 AM, 5-7 PM)
 - **Medium**: Midday
 - **Low**: Night/early morning
@@ -37,6 +38,7 @@ Set different train counts for each level. Game smoothly ramps up/down.
 ## Editing Active Routes
 
 When you edit a route with trains running:
+
 - Game creates temporary routes to redirect trains
 - Trains finish current segment, then switch to updated route
 - No teleporting or stuck trains
@@ -45,6 +47,7 @@ When you edit a route with trains running:
 ## Route Variants
 
 Create express/local patterns:
+
 1. Click "Create Variant" on existing route
 2. Variant copies all stations
 3. Remove stops for skip-stop pattern

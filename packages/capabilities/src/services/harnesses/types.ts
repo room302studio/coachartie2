@@ -1,6 +1,6 @@
 /**
  * Model Harness Types
- * 
+ *
  * Abstraction layer for different LLM providers and specialized models.
  * Supports sync (OpenRouter), async/polling (o4-deep-research), and streaming.
  */
@@ -93,47 +93,47 @@ export interface UsageStats {
 
 /**
  * Core Model Harness Interface
- * 
+ *
  * All model providers implement this interface.
  */
 export interface ModelHarness {
   /** Unique harness name */
   name: string;
-  
+
   /** How this harness operates */
   type: HarnessType;
-  
+
   /** Human-readable description */
   description: string;
-  
+
   /** Check if harness is configured and ready */
   isAvailable(): boolean;
-  
+
   /** For sync/streaming models - direct generation */
   generate?(prompt: string, options?: GenerateOptions): Promise<string>;
-  
+
   /** For streaming models */
   generateStream?(
-    prompt: string, 
+    prompt: string,
     options?: GenerateOptions,
     onChunk?: (chunk: string) => void
   ): Promise<string>;
-  
+
   /** For async models - submit task */
   submitTask?(task: ResearchTask): Promise<TaskHandle>;
-  
+
   /** For async models - check status */
   pollTask?(handle: TaskHandle): Promise<TaskStatus>;
-  
+
   /** For async models - get completed result */
   getResult?(handle: TaskHandle): Promise<TaskResult>;
-  
+
   /** For async models - cancel in-progress task */
   cancelTask?(handle: TaskHandle): Promise<boolean>;
-  
+
   /** Estimate cost before running */
   estimateCost(task: ResearchTask): CostEstimate;
-  
+
   /** Get usage stats for this harness */
   getUsage(): UsageStats;
 }

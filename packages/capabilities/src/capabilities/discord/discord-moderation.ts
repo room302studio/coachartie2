@@ -3,7 +3,10 @@
  * Allows Artie to timeout users, add roles, and escalate to humans
  */
 
-import { RegisteredCapability, CapabilityContext } from '../../services/capability/capability-registry.js';
+import {
+  RegisteredCapability,
+  CapabilityContext,
+} from '../../services/capability/capability-registry.js';
 import { logger } from '@coachartie/shared';
 
 const ARTIE_ENEMY_ROLE_NAME = 'artie-enemy';
@@ -31,19 +34,30 @@ export const discordModerationCapability: RegisteredCapability = {
     switch (action) {
       case 'timeout':
         if (!guildId || !userId || !durationMinutes || !reason) {
-          return JSON.stringify({ success: false, error: 'Missing required: guildId, userId, durationMinutes, reason' });
+          return JSON.stringify({
+            success: false,
+            error: 'Missing required: guildId, userId, durationMinutes, reason',
+          });
         }
         try {
           const response = await fetch(`${DISCORD_SERVICE_URL}/api/moderation/timeout`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ guildId, userId, durationMinutes: Math.min(60, Math.max(1, durationMinutes)), reason }),
+            body: JSON.stringify({
+              guildId,
+              userId,
+              durationMinutes: Math.min(60, Math.max(1, durationMinutes)),
+              reason,
+            }),
           });
           if (!response.ok) {
             return JSON.stringify({ success: false, error: await response.text() });
           }
           logger.info(`[moderation] Timed out ${userId} for ${durationMinutes}min: ${reason}`);
-          return JSON.stringify({ success: true, message: `User timed out for ${durationMinutes} minutes` });
+          return JSON.stringify({
+            success: true,
+            message: `User timed out for ${durationMinutes} minutes`,
+          });
         } catch (error) {
           logger.error('[moderation] Timeout failed:', error);
           return JSON.stringify({ success: false, error: 'Timeout failed - may lack permissions' });
@@ -51,7 +65,10 @@ export const discordModerationCapability: RegisteredCapability = {
 
       case 'add_enemy_role':
         if (!guildId || !userId || !reason) {
-          return JSON.stringify({ success: false, error: 'Missing required: guildId, userId, reason' });
+          return JSON.stringify({
+            success: false,
+            error: 'Missing required: guildId, userId, reason',
+          });
         }
         try {
           const response = await fetch(`${DISCORD_SERVICE_URL}/api/moderation/add-role`, {
@@ -63,10 +80,16 @@ export const discordModerationCapability: RegisteredCapability = {
             return JSON.stringify({ success: false, error: await response.text() });
           }
           logger.info(`[moderation] Added ${ARTIE_ENEMY_ROLE_NAME} to ${userId}: ${reason}`);
-          return JSON.stringify({ success: true, message: `Marked user as ${ARTIE_ENEMY_ROLE_NAME}` });
+          return JSON.stringify({
+            success: true,
+            message: `Marked user as ${ARTIE_ENEMY_ROLE_NAME}`,
+          });
         } catch (error) {
           logger.error('[moderation] Add role failed:', error);
-          return JSON.stringify({ success: false, error: 'Add role failed - may lack permissions' });
+          return JSON.stringify({
+            success: false,
+            error: 'Add role failed - may lack permissions',
+          });
         }
 
       case 'remove_enemy_role':

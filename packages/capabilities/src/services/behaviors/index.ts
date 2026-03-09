@@ -2,5 +2,5 @@ export {
   startSocialMediaBehavior,
   stopSocialMediaBehavior,
   getSocialMediaStatus,
-  executeOnDemand as moltbookExecute
+  executeOnDemand as moltbookExecute,
 } from './social-media-behavior.js';

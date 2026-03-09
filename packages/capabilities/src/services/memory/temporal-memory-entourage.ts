@@ -41,9 +41,20 @@ export class TemporalMemoryEntourage implements MemoryEntourageInterface {
     try {
       logger.info('⏰ TemporalMemoryEntourage: Starting temporal pattern analysis');
 
-      // Get recent memories for temporal analysis (using getRecentMemories to avoid empty query error)
-      const recentMemories = await this.memoryService.getRecentMemories(userId, 100);
-      const memories = recentMemories.map(m => ({
+      // Get recent memories for temporal analysis AND Artie's own memories
+      const userMemories = await this.memoryService.getRecentMemories(userId, 60);
+
+      // For Artie's own memories, prioritize high-importance ones
+      let artieMemories: any[] = [];
+      if (userId !== 'artie-social') {
+        const allArtieMemories = await this.memoryService.getRecentMemories('artie-social', 150);
+        const highImportance = allArtieMemories.filter(m => (m.importance || 5) >= 7);
+        const recent = allArtieMemories.filter(m => (m.importance || 5) < 7).slice(0, 20);
+        artieMemories = [...highImportance, ...recent];
+      }
+
+      const allMemories = [...userMemories, ...artieMemories];
+      const memories = allMemories.map(m => ({
         content: m.content,
         importance: m.importance || 5,
         date: m.timestamp || new Date().toISOString(),

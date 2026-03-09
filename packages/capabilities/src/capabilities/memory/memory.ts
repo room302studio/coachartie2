@@ -76,7 +76,9 @@ export class MemoryService {
       trimmedContent.includes('[USER_MESSAGE]') ||
       trimmedContent.includes('[SYSTEM:')
     ) {
-      logger.debug(`⏭️ Skipping memory storage for internal marker: ${trimmedContent.substring(0, 30)}...`);
+      logger.debug(
+        `⏭️ Skipping memory storage for internal marker: ${trimmedContent.substring(0, 30)}...`
+      );
       return '⏭️ Skipped: Internal markers are not stored as memories';
     }
 
@@ -665,7 +667,7 @@ async function handleMemoryAction(params: MemoryParams, content?: string): Promi
     switch (action) {
       case 'remember': {
         const contentToRemember = params.content || content;
-        if (!contentToRemember) {
+        if (!contentToRemember || String(contentToRemember).trim() === 'undefined') {
           throw new Error('No content provided to remember');
         }
 
