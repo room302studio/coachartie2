@@ -96,21 +96,20 @@ export class LLMResponseCoordinator {
         }
       );
 
-      // THREE-TIER STRATEGY: Use FAST_MODEL for capability extraction
-      // Capability extraction is pattern matching - fast model saves time & cost
-      const fastModel = openRouterService.selectFastModel();
+      // Use SMART_MODEL for user-facing chat responses - personality & quality matter
+      const smartModel = openRouterService.selectSmartModel();
       const modelAwareMessages = messages.map((msg) => {
         if (msg.role === 'system') {
           return {
             ...msg,
-            content: modelAwarePrompter.generateCapabilityPrompt(fastModel, msg.content),
+            content: modelAwarePrompter.generateCapabilityPrompt(smartModel, msg.content),
           };
         }
         return msg;
       });
 
       logger.info(
-        `🎯 Using Context Alchemy with FAST_MODEL for capability extraction: ${fastModel} (${modelAwareMessages.length} messages)`
+        `🎯 Using Context Alchemy with SMART_MODEL for chat response: ${smartModel} (${modelAwareMessages.length} messages)`
       );
 
       // Use streaming if callback provided, otherwise regular generation
@@ -129,14 +128,14 @@ export class LLMResponseCoordinator {
             message.userId,
             onPartialResponse,
             message.id,
-            fastModel,
+            smartModel,
             generationOptions
           )
         : await openRouterService.generateFromMessageChain(
             modelAwareMessages,
             message.userId,
             message.id,
-            fastModel,
+            smartModel,
             generationOptions
           );
     } catch (error: any) {
