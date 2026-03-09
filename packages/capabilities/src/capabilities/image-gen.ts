@@ -49,7 +49,7 @@ async function handleImageGen(params: ImageGenParams): Promise<{
   }
 
   const baseURL = process.env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1';
-  const model = process.env.IMAGE_GEN_MODEL || 'google/gemini-2.5-flash-image';
+  const model = process.env.IMAGE_GEN_MODEL || 'google/gemini-3.1-flash-image-preview';
 
   logger.info(`Image generation: ${params.action} with model ${model}`);
 
