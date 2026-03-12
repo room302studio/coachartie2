@@ -8,6 +8,29 @@ export const sbatRouter: ReturnType<typeof Router> = Router();
 const SBAT_DISCORD_CHANNEL = '1480985884676587620'; // #subwaybuilder-sbat in Room 302
 const DISCORD_API = 'http://127.0.0.1:47321/api';
 
+const VALID_STATUSES = new Set(['open', 'in_progress', 'resolved', 'closed']);
+const VALID_PRIORITIES = new Set(['low', 'normal', 'high', 'urgent']);
+
+// Simple in-memory rate limiter for inbound endpoint
+const rateLimiter = {
+  timestamps: [] as number[],
+  maxPerMinute: 10,
+  check(): boolean {
+    const now = Date.now();
+    this.timestamps = this.timestamps.filter((t) => now - t < 60_000);
+    if (this.timestamps.length >= this.maxPerMinute) return false;
+    this.timestamps.push(now);
+    return true;
+  },
+};
+
+/**
+ * Validate ticket number format: SBAT-NNNN
+ */
+function isValidTicketNumber(tn: string): boolean {
+  return /^SBAT-\d{4,}$/.test(tn);
+}
+
 /**
  * Generate next ticket number: SBAT-0001, SBAT-0002, etc.
  */
@@ -61,10 +84,12 @@ try {
 }
 
 /**
- * Verify MailerSend webhook signature
+ * Verify MailerSend webhook signature (timing-safe)
  */
 function verifySignature(payload: string, signature: string, secret: string): boolean {
   const expected = crypto.createHmac('sha256', secret).update(payload).digest('hex');
+  // Length check first — timingSafeEqual throws on mismatched lengths
+  if (signature.length !== expected.length) return false;
   return crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected));
 }
 
@@ -102,48 +127,61 @@ function detectPriority(subject: string, body: string): string {
 sbatRouter.post('/inbound-email', async (req: Request, res: Response) => {
   const webhookSecret = process.env.SBAT_WEBHOOK_SECRET;
 
-  // Verify signature if secret is configured
-  if (webhookSecret) {
-    const signature = req.headers['x-mailersend-signature'] as string;
-    if (!signature) {
-      logger.warn('SBAT: Inbound email missing signature header');
-      return res.status(401).json({ error: 'Missing signature' });
-    }
+  // Require webhook secret in production — open endpoint is a spam vector
+  if (!webhookSecret) {
+    logger.warn('SBAT: Rejecting inbound email — SBAT_WEBHOOK_SECRET not configured');
+    return res.status(503).json({ error: 'Webhook not configured' });
+  }
 
-    const rawBody = JSON.stringify(req.body);
-    if (!verifySignature(rawBody, signature, webhookSecret)) {
-      logger.warn('SBAT: Inbound email signature verification failed');
-      return res.status(401).json({ error: 'Invalid signature' });
-    }
+  // Verify MailerSend signature
+  const signature = req.headers['x-mailersend-signature'] as string;
+  if (!signature) {
+    logger.warn('SBAT: Inbound email missing signature header');
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+
+  // Use raw body for signature verification when available, fall back to re-serialized
+  const rawBody = (req as any).rawBody || JSON.stringify(req.body);
+  if (!verifySignature(rawBody, signature, webhookSecret)) {
+    logger.warn('SBAT: Inbound email signature verification failed');
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+
+  // Rate limit
+  if (!rateLimiter.check()) {
+    logger.warn('SBAT: Rate limit exceeded on inbound email');
+    return res.status(429).json({ error: 'Too many requests' });
   }
 
   try {
-    // MailerSend inbound email payload
-    // Supports both MailerSend format and a simple generic format
     const data = req.body;
 
     const fromEmail =
       data.from?.email || data.sender?.email || data.from_email || '';
     const fromName =
       data.from?.name || data.sender?.name || data.from_name || '';
-    const subject = data.subject || '(no subject)';
-    const bodyText = data.text || data.body_text || data.body || '';
-    const bodyHtml = data.html || data.body_html || '';
+    const subject = (data.subject || '(no subject)').substring(0, 500);
+    const bodyText = (data.text || data.body_text || data.body || '').substring(0, 50_000);
+    const bodyHtml = (data.html || data.body_html || '').substring(0, 100_000);
 
     if (!fromEmail) {
       return res.status(400).json({ error: 'Missing sender email' });
     }
 
+    // Basic email format check
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(fromEmail)) {
+      return res.status(400).json({ error: 'Invalid sender email' });
+    }
+
     const ticketNumber = getNextTicketNumber();
     const priority = detectPriority(subject, bodyText);
 
-    // Store in DB
     const db = getSyncDb();
     db.run(
       `INSERT INTO support_tickets (ticket_number, from_email, from_name, subject, body_text, body_html, priority, metadata)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      [ticketNumber, fromEmail, fromName, subject, bodyText, bodyHtml, priority,
-       JSON.stringify({ raw: data, received_at: new Date().toISOString() })]
+      [ticketNumber, fromEmail, fromName.substring(0, 200), subject, bodyText, bodyHtml, priority,
+       JSON.stringify({ received_at: new Date().toISOString() })]
     );
 
     logger.info(
@@ -176,10 +214,7 @@ sbatRouter.post('/inbound-email', async (req: Request, res: Response) => {
     });
   } catch (error) {
     logger.error('SBAT: Failed to process inbound email:', error);
-    res.status(500).json({
-      error: 'Failed to process email',
-      details: error instanceof Error ? error.message : String(error),
-    });
+    res.status(500).json({ error: 'Internal error' });
   }
 });
 
@@ -193,22 +228,23 @@ sbatRouter.get('/tickets', async (req: Request, res: Response) => {
 
     let tickets;
     if (status) {
+      if (!VALID_STATUSES.has(status)) {
+        return res.status(400).json({ error: `Invalid status. Valid: ${[...VALID_STATUSES].join(', ')}` });
+      }
       tickets = db.all<Record<string, unknown>>(
-        'SELECT * FROM support_tickets WHERE status = ? ORDER BY created_at DESC LIMIT 50',
+        'SELECT id, ticket_number, from_email, from_name, subject, status, assignee, priority, created_at, updated_at, resolved_at FROM support_tickets WHERE status = ? ORDER BY created_at DESC LIMIT 50',
         [status]
       );
     } else {
       tickets = db.all<Record<string, unknown>>(
-        'SELECT * FROM support_tickets ORDER BY created_at DESC LIMIT 50'
+        'SELECT id, ticket_number, from_email, from_name, subject, status, assignee, priority, created_at, updated_at, resolved_at FROM support_tickets ORDER BY created_at DESC LIMIT 50'
       );
     }
 
     res.json({ success: true, count: tickets.length, tickets });
   } catch (error) {
-    res.status(500).json({
-      error: 'Failed to list tickets',
-      details: error instanceof Error ? error.message : String(error),
-    });
+    logger.error('SBAT: Failed to list tickets:', error);
+    res.status(500).json({ error: 'Internal error' });
   }
 });
 
@@ -217,6 +253,10 @@ sbatRouter.get('/tickets', async (req: Request, res: Response) => {
 // =============================================================================
 sbatRouter.get('/tickets/:ticketNumber', async (req: Request, res: Response) => {
   try {
+    if (!isValidTicketNumber(req.params.ticketNumber)) {
+      return res.status(400).json({ error: 'Invalid ticket number format' });
+    }
+
     const db = getSyncDb();
     const ticket = db.get<Record<string, unknown>>(
       'SELECT * FROM support_tickets WHERE ticket_number = ?',
@@ -229,10 +269,8 @@ sbatRouter.get('/tickets/:ticketNumber', async (req: Request, res: Response) => 
 
     res.json({ success: true, ticket });
   } catch (error) {
-    res.status(500).json({
-      error: 'Failed to get ticket',
-      details: error instanceof Error ? error.message : String(error),
-    });
+    logger.error('SBAT: Failed to get ticket:', error);
+    res.status(500).json({ error: 'Internal error' });
   }
 });
 
@@ -241,7 +279,23 @@ sbatRouter.get('/tickets/:ticketNumber', async (req: Request, res: Response) => 
 // =============================================================================
 sbatRouter.patch('/tickets/:ticketNumber', async (req: Request, res: Response) => {
   try {
+    if (!isValidTicketNumber(req.params.ticketNumber)) {
+      return res.status(400).json({ error: 'Invalid ticket number format' });
+    }
+
     const { status, assignee, priority } = req.body;
+
+    // Validate enum fields
+    if (status && !VALID_STATUSES.has(status)) {
+      return res.status(400).json({ error: `Invalid status. Valid: ${[...VALID_STATUSES].join(', ')}` });
+    }
+    if (priority && !VALID_PRIORITIES.has(priority)) {
+      return res.status(400).json({ error: `Invalid priority. Valid: ${[...VALID_PRIORITIES].join(', ')}` });
+    }
+    if (assignee !== undefined && typeof assignee !== 'string') {
+      return res.status(400).json({ error: 'Assignee must be a string or null' });
+    }
+
     const db = getSyncDb();
 
     const ticket = db.get<Record<string, unknown>>(
@@ -265,7 +319,7 @@ sbatRouter.patch('/tickets/:ticketNumber', async (req: Request, res: Response) =
     }
     if (assignee !== undefined) {
       updates.push('assignee = ?');
-      values.push(assignee);
+      values.push(assignee ? assignee.substring(0, 100) : null);
     }
     if (priority) {
       updates.push('priority = ?');
@@ -284,13 +338,11 @@ sbatRouter.patch('/tickets/:ticketNumber', async (req: Request, res: Response) =
       values as any[]
     );
 
-    logger.info(`📩 SBAT Ticket ${req.params.ticketNumber} updated: ${JSON.stringify(req.body)}`);
+    logger.info(`📩 SBAT Ticket ${req.params.ticketNumber} updated: status=${status || '-'}, priority=${priority || '-'}, assignee=${assignee ?? '-'}`);
 
     res.json({ success: true, message: `Ticket ${req.params.ticketNumber} updated` });
   } catch (error) {
-    res.status(500).json({
-      error: 'Failed to update ticket',
-      details: error instanceof Error ? error.message : String(error),
-    });
+    logger.error('SBAT: Failed to update ticket:', error);
+    res.status(500).json({ error: 'Internal error' });
   }
 });
