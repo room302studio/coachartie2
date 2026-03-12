@@ -1339,3 +1339,41 @@ export type NewErrorEvent = typeof errorEvents.$inferInsert;
 
 export type UserSession = typeof userSessions.$inferSelect;
 export type NewUserSession = typeof userSessions.$inferInsert;
+
+// ============================================================================
+// SBAT SUPPORT TICKETS
+// ============================================================================
+
+/**
+ * Support Tickets - Inbound email tickets for SBAT (Subway Builder Assistance Tool)
+ * Receives emails via MailerSend inbound webhook and tracks them as tickets.
+ */
+export const supportTickets = sqliteTable(
+  'support_tickets',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    ticketNumber: text('ticket_number').notNull().unique(), // e.g. SBAT-0001
+    fromEmail: text('from_email').notNull(),
+    fromName: text('from_name').default(''),
+    subject: text('subject').notNull(),
+    bodyText: text('body_text').default(''),
+    bodyHtml: text('body_html').default(''),
+    status: text('status').notNull().default('open'), // open, in_progress, resolved, closed
+    assignee: text('assignee'), // Discord username or null
+    discordThreadId: text('discord_thread_id'), // Thread created in Discord for this ticket
+    priority: text('priority').default('normal'), // low, normal, high, urgent
+    tags: text('tags').default('[]'), // JSON array
+    metadata: text('metadata').default('{}'), // JSON — raw MailerSend payload, attachments, etc.
+    createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
+    updatedAt: text('updated_at').default(sql`CURRENT_TIMESTAMP`),
+    resolvedAt: text('resolved_at'),
+  },
+  (table) => ({
+    ticketNumberIdx: index('idx_support_tickets_number').on(table.ticketNumber),
+    statusIdx: index('idx_support_tickets_status').on(table.status),
+    fromEmailIdx: index('idx_support_tickets_from_email').on(table.fromEmail),
+  })
+);
+
+export type SupportTicket = typeof supportTickets.$inferSelect;
+export type NewSupportTicket = typeof supportTickets.$inferInsert;
