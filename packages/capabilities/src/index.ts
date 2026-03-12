@@ -85,14 +85,7 @@ app.use(
     crossOriginResourcePolicy: false,
   })
 );
-app.use(express.json({
-  // Capture raw body for webhook signature verification (SBAT inbound email)
-  verify: (req, _res, buf) => {
-    if (req.headers['x-mailersend-signature']) {
-      (req as any).rawBody = buf.toString();
-    }
-  },
-}));
+app.use(express.json());
 app.use(createRequestLogger('capabilities'));
 
 // Test route
