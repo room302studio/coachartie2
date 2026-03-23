@@ -59,6 +59,7 @@ import { redditCapability } from '../../capabilities/communication/reddit.js';
 import { proactiveDMCapability } from '../../capabilities/communication/proactive-dm.js';
 // Analytics capabilities
 import { selfStatsCapability } from '../../capabilities/self-stats.js';
+import { communityAnalyticsCapability } from '../../capabilities/community-analytics.js';
 // Social capabilities
 import { moltbookCapability } from '../../capabilities/social/moltbook.js';
 // Research capabilities
@@ -248,6 +249,11 @@ export class CapabilityBootstrap {
       logger.info('📦 Registering self-stats (introspection)...');
       capabilityRegistry.register(selfStatsCapability);
       logger.info('✅ self-stats registered successfully');
+
+      // Register community-analytics capability
+      logger.info('📦 Registering community-analytics...');
+      capabilityRegistry.register(communityAnalyticsCapability);
+      logger.info('✅ community-analytics registered successfully');
 
       // Register context capability - situational awareness
       logger.info('📦 Registering context (situational awareness)...');
