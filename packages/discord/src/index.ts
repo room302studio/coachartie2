@@ -47,6 +47,7 @@ import './queues/outgoing-consumer.js';
 export const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildMembers,
     GatewayIntentBits.GuildMessages,
     GatewayIntentBits.MessageContent,
     GatewayIntentBits.DirectMessages,
@@ -61,6 +62,23 @@ client.on(Events.MessageCreate, (msg) => {
   console.log(
     `🔔 RAW MESSAGE: ${msg.author.tag} in ${msg.guild?.name || 'DM'}: "${msg.content.slice(0, 50)}..."`
   );
+
+  // Identity learning: check if message mentions GitHub activity
+  if (!msg.author.bot && msg.content.length > 5) {
+    const githubSignals = /(?:push|commit|pr|pull request|issue|merge|branch|github|my pr|just pushed|just merged|i opened|i filed)/i;
+    if (githubSignals.test(msg.content)) {
+      import('./services/github-identity-resolver.js').then(({ getIdentityResolver }) => {
+        const resolver = getIdentityResolver();
+        if (resolver) {
+          resolver.learnFromContext(
+            msg.author.id,
+            msg.author.displayName || msg.author.username,
+            msg.content
+          ).catch(() => {});
+        }
+      }).catch(() => {});
+    }
+  }
 });
 
 // Write status to shared file
@@ -178,6 +196,37 @@ async function start() {
       } catch (error) {
         logger.warn('Failed to initialize GitHub integration:', error);
         console.error('❌ GitHub integration init failed:', error);
+      }
+
+      // Initialize GitHub Identity Resolver (auto-maps GitHub → Discord users)
+      // Initialize GitHub Studio Manager (daily digests, stale PR nudges)
+      if (process.env.GITHUB_TOKEN) {
+        import('./services/github-identity-resolver.js').then(({ initializeIdentityResolver }) => {
+          initializeIdentityResolver(client);
+          logger.info('✅ GitHub identity resolver enabled');
+          console.log('✅ GitHub identity resolver enabled');
+        }).catch((error) => {
+          logger.warn('Failed to initialize identity resolver:', error);
+          console.error('❌ Identity resolver init failed:', error);
+        });
+
+        import('./services/github-studio-manager.js').then(({ initializeStudioManager }) => {
+          initializeStudioManager(client);
+          logger.info('✅ GitHub studio manager enabled');
+          console.log('✅ GitHub studio manager enabled');
+        }).catch((error) => {
+          logger.warn('Failed to initialize studio manager:', error);
+          console.error('❌ Studio manager init failed:', error);
+        });
+
+        import('./services/github-org-watcher.js').then(({ initializeOrgWatcher }) => {
+          initializeOrgWatcher(client);
+          logger.info('✅ GitHub org watcher enabled');
+          console.log('✅ GitHub org watcher enabled');
+        }).catch((error) => {
+          logger.warn('Failed to initialize org watcher:', error);
+          console.error('❌ Org watcher init failed:', error);
+        });
       }
 
       // Initialize GitHub Sync service (PR/CI notifications)

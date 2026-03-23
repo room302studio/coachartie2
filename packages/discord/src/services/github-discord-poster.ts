@@ -24,6 +24,14 @@ const EVENT_COLORS: Record<GitHubEventType, number> = {
   ci_success: 0x238636, // Green
   ci_failure: 0xda3633, // Red
   pr_stale: 0xda3633, // Red for stale
+  issue_opened: 0x238636, // Green
+  issue_closed: 0x8957e5, // Purple
+  issue_comment: 0x6e7681, // Gray
+  issue_labeled: 0xd29922, // Yellow
+  issue_assigned: 0x1f6feb, // Blue
+  pr_review_requested: 0xd29922, // Yellow
+  pr_draft: 0x6e7681, // Gray
+  push: 0x1f6feb, // Blue
 };
 
 // Emoji for event types
@@ -39,6 +47,14 @@ const EVENT_EMOJI: Record<GitHubEventType, string> = {
   ci_success: '✅',
   ci_failure: '❌',
   pr_stale: '⏰',
+  issue_opened: '📋',
+  issue_closed: '✅',
+  issue_comment: '💬',
+  issue_labeled: '🏷️',
+  issue_assigned: '👤',
+  pr_review_requested: '👀',
+  pr_draft: '📝',
+  push: '⬆️',
 };
 
 // Labels that indicate important/breaking changes
@@ -345,6 +361,96 @@ export class GitHubDiscordPoster {
         if (event.data.checkRunUrl) {
           embed.setURL(event.data.checkRunUrl);
         }
+        break;
+      }
+
+      case 'issue_opened': {
+        const issueLabels = event.data.issueLabels?.map((l) => `\`${l}\``).join(' ') || '';
+        const issueBody = event.data.issueBody
+          ? `\n\n${this.truncate(event.data.issueBody, 300)}`
+          : '';
+        embed
+          .setTitle(`${emoji} New Issue #${event.data.issueNumber}`)
+          .setURL(event.data.issueUrl || '')
+          .setDescription(`**${event.data.issueTitle}**\nBy **${event.data.issueAuthor}**${issueLabels ? `\n🏷️ ${issueLabels}` : ''}${issueBody}`)
+          .setFooter({ text: `${owner}/${repo}` });
+        break;
+      }
+
+      case 'issue_closed':
+        embed
+          .setTitle(`${emoji} Issue #${event.data.issueNumber} Closed`)
+          .setURL(event.data.issueUrl || '')
+          .setDescription(`**${event.data.issueTitle}**`)
+          .setFooter({ text: `${owner}/${repo}` });
+        break;
+
+      case 'issue_comment':
+        embed
+          .setTitle(`${emoji} Comment on Issue #${event.data.issueNumber}`)
+          .setURL(event.data.commentUrl || '')
+          .setDescription(this.truncate(event.data.commentBody || '', 400))
+          .addFields({
+            name: 'Author',
+            value: event.data.commentAuthor || 'Unknown',
+            inline: true,
+          })
+          .setFooter({ text: `${owner}/${repo}` });
+        break;
+
+      case 'issue_labeled':
+        embed
+          .setTitle(`${emoji} Label added to #${event.data.issueNumber}`)
+          .setURL(event.data.issueUrl || '')
+          .setDescription(`**${event.data.issueTitle}**\n\nLabel: \`${event.data.label}\``)
+          .addFields({
+            name: 'By',
+            value: event.data.commentAuthor || 'Unknown',
+            inline: true,
+          })
+          .setFooter({ text: `${owner}/${repo}` });
+        break;
+
+      case 'issue_assigned':
+        embed
+          .setTitle(`${emoji} #${event.data.issueNumber} assigned to ${event.data.assignee}`)
+          .setURL(event.data.issueUrl || '')
+          .setDescription(`**${event.data.issueTitle}**`)
+          .addFields({
+            name: 'Assigned by',
+            value: event.data.assignedBy || 'Unknown',
+            inline: true,
+          })
+          .setFooter({ text: `${owner}/${repo}` });
+        break;
+
+      case 'pr_review_requested': {
+        const reviewers = event.data.reviewers?.join(', ') || 'Unknown';
+        embed
+          .setTitle(`${emoji} Review requested on PR #${event.data.prNumber}`)
+          .setURL(event.data.prUrl || '')
+          .setDescription(`**${event.data.prTitle}**\n\nReviewer: **${reviewers}**`)
+          .addFields({
+            name: 'Requested by',
+            value: event.data.reviewRequestedBy || 'Unknown',
+            inline: true,
+          })
+          .setFooter({ text: `${owner}/${repo}` });
+        break;
+      }
+
+      case 'push': {
+        const commitCount = event.data.commitCount || 1;
+        const commits = event.data.commits || [];
+        const commitList = commits
+          .map((c: any) => `[\`${c.sha}\`](${c.url}) ${c.message} — ${c.author}`)
+          .join('\n');
+
+        embed
+          .setTitle(`${emoji} ${commitCount} commit${commitCount > 1 ? 's' : ''} pushed to ${event.data.branch || 'main'}`)
+          .setURL(event.data.commitUrl || '')
+          .setDescription(commitList || event.data.commitMessage || '')
+          .setFooter({ text: `${owner}/${repo}` });
         break;
       }
 

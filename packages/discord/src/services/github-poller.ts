@@ -30,7 +30,15 @@ export type GitHubEventType =
   | 'pr_review'
   | 'ci_success'
   | 'ci_failure'
-  | 'pr_stale';
+  | 'pr_stale'
+  | 'issue_opened'
+  | 'issue_closed'
+  | 'issue_comment'
+  | 'issue_labeled'
+  | 'issue_assigned'
+  | 'pr_review_requested'
+  | 'pr_draft'
+  | 'push';
 
 export interface GitHubSyncEvent {
   type: GitHubEventType;
@@ -49,6 +57,13 @@ export interface GitHubSyncEvent {
     commentBody?: string;
     commentAuthor?: string;
     commentUrl?: string;
+    issueNumber?: number;
+    issueTitle?: string;
+    issueUrl?: string;
+    issueAuthor?: string;
+    issueState?: string;
+    issueBody?: string;
+    issueLabels?: string[];
     reviewId?: number;
     reviewState?: string;
     reviewAuthor?: string;
@@ -64,6 +79,20 @@ export interface GitHubSyncEvent {
     reviewers?: string[];
     mergedBy?: string;
     changedFiles?: number;
+    // Label/assignment fields
+    label?: string;
+    assignee?: string;
+    assignedBy?: string;
+    reviewRequestedBy?: string;
+    milestone?: string;
+    // Push/commit fields
+    commitSha?: string;
+    commitMessage?: string;
+    commitAuthor?: string;
+    commitUrl?: string;
+    commitCount?: number;
+    branch?: string;
+    commits?: Array<{ sha: string; message: string; author: string; url: string }>;
     // Stale PR fields
     hoursWaiting?: number;
     staleSeverity?: 'warning' | 'critical';
@@ -240,6 +269,16 @@ export class GitHubPollerService extends EventEmitter {
       await this.pollPullRequests(owner, repo, watch, syncState);
     }
 
+    // Poll issues
+    if (shouldPollAll || events.includes('issues')) {
+      await this.pollIssues(owner, repo, watch, syncState);
+    }
+
+    // Poll commits (direct pushes to default branch)
+    if (shouldPollAll || events.includes('push')) {
+      await this.pollCommits(owner, repo, watch, syncState);
+    }
+
     // Poll check runs (CI)
     if (shouldPollAll || events.includes('ci')) {
       await this.pollCheckRuns(owner, repo, watch, syncState);
@@ -315,9 +354,9 @@ export class GitHubPollerService extends EventEmitter {
     const lastPolledAt = syncState.lastPolledAt ? new Date(syncState.lastPolledAt) : new Date(0);
 
     // Check if this is a new PR
-    if (prCreatedAt > lastPolledAt && !pr.draft) {
+    if (prCreatedAt > lastPolledAt) {
       this.emitEvent({
-        type: 'pr_opened',
+        type: pr.draft ? 'pr_draft' : 'pr_opened',
         repo: repoFullName,
         channelId: watch.channelId,
         guildId: watch.guildId,
@@ -373,6 +412,9 @@ export class GitHubPollerService extends EventEmitter {
 
     // Check for new comments
     await this.pollPrComments(owner, repo, pr.number, watch, syncState);
+
+    // Check timeline for review requests, labels, assignments
+    await this.pollIssueTimeline(owner, repo, pr.number, pr.title, pr.html_url, watch, syncState);
   }
 
   /**
@@ -486,6 +528,359 @@ export class GitHubPollerService extends EventEmitter {
   }
 
   /**
+   * Poll for new/updated issues
+   */
+  private async pollIssues(
+    owner: string,
+    repo: string,
+    watch: GithubRepoWatch,
+    syncState: GithubSyncState
+  ): Promise<void> {
+    try {
+      const metadata = syncState.metadata ? JSON.parse(syncState.metadata as string) : {};
+      const lastIssueUpdatedAt = metadata.lastIssueUpdatedAt
+        ? new Date(metadata.lastIssueUpdatedAt)
+        : new Date(0);
+
+      // Fetch recently updated issues (excluding PRs) — retry once on 500
+      let issues: any[];
+      try {
+        const resp = await this.octokit.issues.listForRepo({
+          owner, repo, state: 'all', sort: 'updated', direction: 'desc', per_page: 30,
+        });
+        issues = resp.data;
+      } catch (firstErr: any) {
+        if (firstErr?.status === 500) {
+          logger.debug(`GitHub 500 on issues for ${owner}/${repo}, retrying in 5s...`);
+          await new Promise((r) => setTimeout(r, 5000));
+          const resp = await this.octokit.issues.listForRepo({
+            owner, repo, state: 'all', sort: 'updated', direction: 'desc', per_page: 30,
+          });
+          issues = resp.data;
+        } else {
+          throw firstErr;
+        }
+      }
+
+      for (const issue of issues) {
+        // Skip pull requests (GitHub API returns PRs in issues endpoint)
+        if (issue.pull_request) {
+          continue;
+        }
+
+        const issueUpdatedAt = new Date(issue.updated_at);
+        if (issueUpdatedAt <= lastIssueUpdatedAt) {
+          continue;
+        }
+
+        const repoFullName = `${owner}/${repo}`;
+        const issueCreatedAt = new Date(issue.created_at);
+
+        // New issue — use lastIssueUpdatedAt as watermark (not lastPolledAt)
+        // because GitHub 500 errors can cause lastPolledAt to advance
+        // past issue creation times without the issues being processed
+        if (issueCreatedAt > lastIssueUpdatedAt) {
+          this.emitEvent({
+            type: 'issue_opened',
+            repo: repoFullName,
+            channelId: watch.channelId,
+            guildId: watch.guildId,
+            data: {
+              issueNumber: issue.number,
+              issueTitle: issue.title,
+              issueUrl: issue.html_url,
+              issueAuthor: issue.user?.login,
+              issueState: issue.state,
+              issueBody: issue.body || undefined,
+              issueLabels: issue.labels?.map((l: any) => typeof l === 'string' ? l : l.name) || [],
+            },
+            timestamp: issue.created_at,
+          });
+        }
+
+        // Closed issue
+        if (issue.state === 'closed' && issue.closed_at) {
+          const closedAt = new Date(issue.closed_at);
+          if (closedAt > lastIssueUpdatedAt) {
+            this.emitEvent({
+              type: 'issue_closed',
+              repo: repoFullName,
+              channelId: watch.channelId,
+              guildId: watch.guildId,
+              data: {
+                issueNumber: issue.number,
+                issueTitle: issue.title,
+                issueUrl: issue.html_url,
+                issueAuthor: issue.user?.login,
+                issueState: issue.state,
+              },
+              timestamp: issue.closed_at,
+            });
+          }
+        }
+
+        // For updated (not new) issues, check timeline for label/assignment changes
+        if (issueUpdatedAt > lastIssueUpdatedAt && issueCreatedAt <= lastIssueUpdatedAt) {
+          await this.pollIssueTimeline(owner, repo, issue.number, issue.title, issue.html_url, watch, syncState);
+          await this.pollIssueComments(owner, repo, issue.number, watch, syncState);
+        }
+      }
+
+      // Update last issue updated timestamp in metadata
+      if (issues.length > 0) {
+        const latestNonPR = issues.find(i => !i.pull_request);
+        if (latestNonPR) {
+          const updatedMetadata = { ...metadata, lastIssueUpdatedAt: latestNonPR.updated_at };
+          await this.updateSyncState(watch.repo, {
+            metadata: JSON.stringify(updatedMetadata),
+          });
+        }
+      }
+    } catch (error) {
+      logger.error(`Error polling issues for ${owner}/${repo}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Poll for new comments on an issue
+   */
+  private async pollIssueComments(
+    owner: string,
+    repo: string,
+    issueNumber: number,
+    watch: GithubRepoWatch,
+    syncState: GithubSyncState
+  ): Promise<void> {
+    try {
+      const { data: comments } = await this.octokit.issues.listComments({
+        owner,
+        repo,
+        issue_number: issueNumber,
+        per_page: 10,
+        sort: 'created',
+        direction: 'desc',
+      });
+
+      const lastCommentId = syncState.lastCommentId || 0;
+
+      for (const comment of comments) {
+        if (comment.id <= lastCommentId) {
+          continue;
+        }
+
+        // Skip bot comments
+        if (comment.user?.login?.includes('[bot]')) {
+          continue;
+        }
+
+        this.emitEvent({
+          type: 'issue_comment',
+          repo: `${owner}/${repo}`,
+          channelId: watch.channelId,
+          guildId: watch.guildId,
+          data: {
+            issueNumber,
+            commentId: comment.id,
+            commentBody: comment.body || '',
+            commentAuthor: comment.user?.login,
+            commentUrl: comment.html_url,
+          },
+          timestamp: comment.created_at,
+        });
+
+        if (comment.id > lastCommentId) {
+          await this.updateSyncState(watch.repo, { lastCommentId: comment.id });
+        }
+      }
+    } catch (error) {
+      logger.error(`Error polling comments for issue #${issueNumber} in ${owner}/${repo}:`, error);
+    }
+  }
+
+  /**
+   * Poll issue timeline for label/assignment/milestone changes
+   */
+  private async pollIssueTimeline(
+    owner: string,
+    repo: string,
+    issueNumber: number,
+    issueTitle: string,
+    issueUrl: string,
+    watch: GithubRepoWatch,
+    syncState: GithubSyncState
+  ): Promise<void> {
+    try {
+      const lastPolledAt = syncState.lastPolledAt ? new Date(syncState.lastPolledAt) : new Date(0);
+
+      const { data: events } = await this.octokit.issues.listEventsForTimeline({
+        owner,
+        repo,
+        issue_number: issueNumber,
+        per_page: 20,
+      });
+
+      const repoFullName = `${owner}/${repo}`;
+
+      for (const event of events) {
+        const eventDate = new Date((event as any).created_at || 0);
+        if (eventDate <= lastPolledAt) continue;
+
+        // Skip bot actors
+        const actor = (event as any).actor?.login || '';
+        if (actor.includes('[bot]')) continue;
+
+        if ((event as any).event === 'labeled') {
+          this.emitEvent({
+            type: 'issue_labeled',
+            repo: repoFullName,
+            channelId: watch.channelId,
+            guildId: watch.guildId,
+            data: {
+              issueNumber,
+              issueTitle,
+              issueUrl,
+              label: (event as any).label?.name,
+              commentAuthor: actor,
+            },
+            timestamp: (event as any).created_at,
+          });
+        }
+
+        if ((event as any).event === 'assigned') {
+          this.emitEvent({
+            type: 'issue_assigned',
+            repo: repoFullName,
+            channelId: watch.channelId,
+            guildId: watch.guildId,
+            data: {
+              issueNumber,
+              issueTitle,
+              issueUrl,
+              assignee: (event as any).assignee?.login,
+              assignedBy: actor,
+            },
+            timestamp: (event as any).created_at,
+          });
+        }
+
+        if ((event as any).event === 'review_requested') {
+          this.emitEvent({
+            type: 'pr_review_requested',
+            repo: repoFullName,
+            channelId: watch.channelId,
+            guildId: watch.guildId,
+            data: {
+              prNumber: issueNumber,
+              prTitle: issueTitle,
+              prUrl: issueUrl,
+              reviewers: [(event as any).requested_reviewer?.login].filter(Boolean),
+              reviewRequestedBy: actor,
+            },
+            timestamp: (event as any).created_at,
+          });
+        }
+      }
+    } catch (error) {
+      // Timeline API may not be available for all issues, fail silently
+      logger.debug(`Error polling timeline for issue #${issueNumber} in ${owner}/${repo}:`, error);
+    }
+  }
+
+  /**
+   * Poll for new commits pushed directly to the default branch
+   */
+  private async pollCommits(
+    owner: string,
+    repo: string,
+    watch: GithubRepoWatch,
+    syncState: GithubSyncState
+  ): Promise<void> {
+    try {
+      const metadata = syncState.metadata
+        ? JSON.parse(syncState.metadata)
+        : {};
+      const lastCommitSha = metadata.lastCommitSha || null;
+
+      // Fetch recent commits on default branch
+      const { data: commits } = await this.octokit.repos.listCommits({
+        owner,
+        repo,
+        per_page: 10,
+      });
+
+      if (commits.length === 0) return;
+
+      // On first run, just save the latest SHA without posting
+      if (!lastCommitSha) {
+        metadata.lastCommitSha = commits[0].sha;
+        await this.updateSyncState(watch.repo, {
+          metadata: JSON.stringify(metadata),
+        });
+        return;
+      }
+
+      // Find new commits since last known SHA
+      const newCommits: typeof commits = [];
+      for (const commit of commits) {
+        if (commit.sha === lastCommitSha) break;
+        newCommits.push(commit);
+      }
+
+      if (newCommits.length === 0) return;
+
+      // Skip bot commits
+      const BOTS = ['dependabot[bot]', 'github-actions[bot]', 'renovate[bot]'];
+      const humanCommits = newCommits.filter(
+        (c) => !BOTS.includes(c.author?.login || c.commit.author?.name || '')
+      );
+
+      if (humanCommits.length === 0) {
+        // Still update the SHA even for bot-only commits
+        metadata.lastCommitSha = commits[0].sha;
+        await this.updateSyncState(watch.repo, {
+          metadata: JSON.stringify(metadata),
+        });
+        return;
+      }
+
+      // Emit a single push event with all new commits
+      const repoFullName = `${owner}/${repo}`;
+      this.emitEvent({
+        type: 'push',
+        repo: repoFullName,
+        channelId: watch.channelId,
+        guildId: watch.guildId,
+        data: {
+          branch: 'main',
+          commitCount: humanCommits.length,
+          commitSha: humanCommits[0].sha,
+          commitMessage: humanCommits[0].commit.message,
+          commitAuthor: humanCommits[0].author?.login || humanCommits[0].commit.author?.name || 'unknown',
+          commitUrl: humanCommits[0].html_url,
+          commits: humanCommits.slice(0, 5).map((c) => ({
+            sha: c.sha.slice(0, 7),
+            message: c.commit.message.split('\n')[0].slice(0, 80),
+            author: c.author?.login || c.commit.author?.name || 'unknown',
+            url: c.html_url,
+          })),
+        },
+        timestamp: humanCommits[0].commit.author?.date || new Date().toISOString(),
+      });
+
+      // Update last commit SHA
+      metadata.lastCommitSha = commits[0].sha;
+      await this.updateSyncState(watch.repo, {
+        metadata: JSON.stringify(metadata),
+      });
+
+      logger.info(`Found ${humanCommits.length} new commits on ${repoFullName}`);
+    } catch (error) {
+      logger.error(`Error polling commits for ${owner}/${repo}:`, error);
+    }
+  }
+
+  /**
    * Poll for check runs (CI status)
    */
   private async pollCheckRuns(
@@ -551,6 +946,8 @@ export class GitHubPollerService extends EventEmitter {
    * Emit a GitHub sync event
    */
   private emitEvent(event: GitHubSyncEvent): void {
+    const summary = event.data.prTitle || event.data.issueTitle || event.data.commitMessage || '';
+    console.log(`📡 GitHub event: ${event.type} on ${event.repo} — ${summary.slice(0, 60)}`);
     logger.info('GitHub event detected', {
       type: event.type,
       repo: event.repo,

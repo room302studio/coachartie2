@@ -57,6 +57,8 @@ export class GitHubSyncService {
   private isInitialized = false;
   private pollCycleEventCount = 0;
   private pollCycleEvents: GitHubSyncEvent[] = [];
+  private draftQueue: GitHubSyncEvent[] = [];
+  private draftDigestTimer: NodeJS.Timeout | null = null;
 
   constructor(client: Client, config: GitHubSyncConfig = {}) {
     this.client = client;
@@ -127,7 +129,139 @@ export class GitHubSyncService {
     }
 
     this.poller?.start();
+
+    // Schedule daily draft digest at 9 AM ET (14:00 UTC)
+    this.scheduleDraftDigest();
+
     logger.info('GitHub sync service started');
+  }
+
+  /**
+   * Schedule daily draft PR digest
+   */
+  private scheduleDraftDigest(): void {
+    // Check every hour if it's time for the daily digest
+    this.draftDigestTimer = setInterval(async () => {
+      const now = new Date();
+      const utcHour = now.getUTCHours();
+      const utcMinute = now.getUTCMinutes();
+
+      // Post at 14:00 UTC (9 AM ET) — only in the first 3 minutes of the hour
+      if (utcHour === 14 && utcMinute < 3) {
+        await this.postDraftDigest();
+      }
+    }, 60 * 60 * 1000); // Check hourly
+
+    // Also do an initial check for any existing open drafts
+    setTimeout(() => this.collectOpenDrafts(), 30 * 1000);
+  }
+
+  /**
+   * Collect currently open draft PRs from all watched repos
+   */
+  private async collectOpenDrafts(): Promise<void> {
+    if (!this.poller) return;
+
+    try {
+      const db = getDb();
+      const watches = await db.select().from(githubRepoWatches).where(eq(githubRepoWatches.isActive, true));
+
+      for (const watch of watches) {
+        const [owner, repo] = watch.repo.split('/');
+        if (!owner || !repo) continue;
+
+        const { Octokit } = await import('@octokit/rest');
+        const octokit = new Octokit({ auth: process.env.GITHUB_TOKEN });
+
+        const { data: prs } = await octokit.pulls.list({
+          owner, repo, state: 'open', per_page: 20,
+        });
+
+        for (const pr of prs) {
+          if (!pr.draft) continue;
+
+          // Add to draft queue if not already there
+          const alreadyQueued = this.draftQueue.some(
+            (e) => e.data.prNumber === pr.number && e.repo === watch.repo
+          );
+          if (!alreadyQueued) {
+            this.draftQueue.push({
+              type: 'pr_draft',
+              repo: watch.repo,
+              channelId: watch.channelId,
+              guildId: watch.guildId,
+              data: {
+                prNumber: pr.number,
+                prTitle: pr.title,
+                prUrl: pr.html_url,
+                prAuthor: pr.user?.login,
+                prDraft: true,
+              },
+              timestamp: pr.created_at,
+            });
+          }
+        }
+      }
+
+      if (this.draftQueue.length > 0) {
+        console.log(`📝 Collected ${this.draftQueue.length} open draft PRs for daily digest`);
+      }
+    } catch (error) {
+      logger.error('Failed to collect open drafts:', error);
+    }
+  }
+
+  /**
+   * Post the daily draft PR digest
+   */
+  private async postDraftDigest(): Promise<void> {
+    if (this.draftQueue.length === 0) return;
+
+    // Group by channel
+    const byChannel = new Map<string, GitHubSyncEvent[]>();
+    for (const event of this.draftQueue) {
+      const existing = byChannel.get(event.channelId) || [];
+      existing.push(event);
+      byChannel.set(event.channelId, existing);
+    }
+
+    const { EmbedBuilder } = await import('discord.js');
+
+    for (const [channelId, drafts] of byChannel) {
+      const channel = this.client.channels.cache.get(channelId);
+      if (!channel || !channel.isTextBased()) continue;
+
+      // Dedupe by PR number
+      const seen = new Set<number>();
+      const uniqueDrafts = drafts.filter((d) => {
+        if (seen.has(d.data.prNumber!)) return false;
+        seen.add(d.data.prNumber!);
+        return true;
+      });
+
+      const draftList = uniqueDrafts
+        .map((d) => `• [#${d.data.prNumber}](${d.data.prUrl}) **${d.data.prTitle}** — ${d.data.prAuthor}`)
+        .join('\n');
+
+      const embed = new EmbedBuilder()
+        .setColor(0x6e7681)
+        .setTitle(`📝 ${uniqueDrafts.length} Draft PR${uniqueDrafts.length > 1 ? 's' : ''} In Progress`)
+        .setDescription(draftList)
+        .setFooter({ text: 'Daily draft digest — these PRs are being worked on' })
+        .setTimestamp();
+
+      try {
+        await (channel as any).send({ embeds: [embed] });
+        console.log(`📝 Posted draft digest: ${uniqueDrafts.length} drafts`);
+      } catch (error) {
+        logger.error('Failed to post draft digest:', error);
+      }
+    }
+
+    // Refresh the queue (don't clear — re-collect tomorrow)
+    this.draftQueue = [];
+    // Re-collect open drafts for tomorrow's digest
+    await this.collectOpenDrafts();
   }
 
   /**
@@ -157,7 +291,13 @@ export class GitHubSyncService {
     const processed = await this.processor.processEvent(event);
 
     if (!processed.shouldPost) {
-      logger.debug(`Event filtered: ${processed.skipReason}`);
+      // Queue draft PRs for daily digest instead of dropping them
+      if (processed.skipReason === 'draft_digest') {
+        this.draftQueue.push(event);
+        console.log(`📝 Draft PR queued for digest: #${event.data.prNumber} ${event.data.prTitle}`);
+      } else {
+        logger.debug(`Event filtered: ${processed.skipReason}`);
+      }
       return;
     }
 

@@ -41,6 +41,8 @@ const MENTION_EVENTS: GitHubEventType[] = [
   'pr_changes_requested',
   'pr_approved',
   'ci_failure',
+  'pr_review_requested',
+  'issue_assigned',
 ];
 
 export interface ProcessedEvent {
@@ -89,6 +91,9 @@ export class GitHubEventProcessor {
   private config: ProcessorConfig;
   private pendingBatches: Map<string, ProcessedEvent[]> = new Map();
   private batchTimers: Map<string, NodeJS.Timeout> = new Map();
+  // Dedup: track recently posted events to prevent duplicates across poller cycles
+  private recentEvents: Map<string, number> = new Map(); // eventKey -> timestamp
+  private static readonly DEDUP_WINDOW_MS = 30 * 60 * 1000; // 30 minutes
 
   constructor(config: Partial<ProcessorConfig> = {}) {
     this.config = { ...DEFAULT_CONFIG, ...config };
@@ -106,6 +111,13 @@ export class GitHubEventProcessor {
       priority: this.calculatePriority(event),
     };
 
+    // Dedup check (prevents duplicate posts across poll cycles and webhook+poller overlap)
+    if (this.isDuplicate(event)) {
+      processed.shouldPost = false;
+      processed.skipReason = 'Duplicate event (already posted recently)';
+      return processed;
+    }
+
     // Filter checks
     if (this.config.filterBots && this.isBotEvent(event)) {
       processed.shouldPost = false;
@@ -113,9 +125,10 @@ export class GitHubEventProcessor {
       return processed;
     }
 
-    if (this.config.filterDrafts && event.data.prDraft) {
+    // Draft PRs: don't post individually, queue for daily digest
+    if (event.type === 'pr_draft' || (this.config.filterDrafts && event.data.prDraft)) {
       processed.shouldPost = false;
-      processed.skipReason = 'Draft PR';
+      processed.skipReason = 'draft_digest';
       return processed;
     }
 
@@ -239,9 +252,49 @@ export class GitHubEventProcessor {
    * Check if event is from a bot
    */
   private isBotEvent(event: GitHubSyncEvent): boolean {
-    const author = event.data.prAuthor || event.data.commentAuthor || event.data.reviewAuthor || '';
+    const author = event.data.prAuthor || event.data.commentAuthor || event.data.reviewAuthor || event.data.issueAuthor || '';
 
     return BOT_USERNAMES.some((bot) => author.toLowerCase() === bot.toLowerCase());
+  }
+
+  /**
+   * Generate a unique key for dedup tracking
+   */
+  private getDedupeKey(event: GitHubSyncEvent): string {
+    if (event.data.commitSha) {
+      return `${event.type}:${event.repo}:commit-${event.data.commitSha}`;
+    }
+    if (event.data.issueNumber) {
+      return `${event.type}:${event.repo}:issue-${event.data.issueNumber}`;
+    }
+    if (event.data.prNumber) {
+      return `${event.type}:${event.repo}:pr-${event.data.prNumber}`;
+    }
+    if (event.data.commentId) {
+      return `${event.type}:${event.repo}:comment-${event.data.commentId}`;
+    }
+    return `${event.type}:${event.repo}:${event.timestamp}`;
+  }
+
+  /**
+   * Check if event was recently posted (dedup)
+   */
+  private isDuplicate(event: GitHubSyncEvent): boolean {
+    const key = this.getDedupeKey(event);
+    const now = Date.now();
+
+    // Clean up old entries
+    for (const [k, ts] of this.recentEvents) {
+      if (now - ts > GitHubEventProcessor.DEDUP_WINDOW_MS) {
+        this.recentEvents.delete(k);
+      }
+    }
+
+    if (this.recentEvents.has(key)) {
+      return true;
+    }
+    this.recentEvents.set(key, now);
+    return false;
   }
 
   /**
@@ -260,6 +313,14 @@ export class GitHubEventProcessor {
       ci_success: 2,
       pr_closed: 1,
       pr_stale: 1, // Disabled feature, kept for type compatibility
+      issue_opened: 6,
+      issue_closed: 4,
+      issue_comment: 3,
+      issue_labeled: 3,
+      issue_assigned: 5,
+      pr_review_requested: 7,
+      pr_draft: 2,
+      push: 5,
     };
 
     let priority = priorities[event.type] || 5;
@@ -294,6 +355,41 @@ export class GitHubEventProcessor {
       event.data.prNumber
     ) {
       return `reviews:${event.repo}:${event.data.prNumber}`;
+    }
+
+    // Issue comments on the same issue batch together
+    if (event.type === 'issue_comment' && event.data.issueNumber) {
+      return `issue-comments:${event.repo}:${event.data.issueNumber}`;
+    }
+
+    // Multiple issues opened in the same poll cycle batch together
+    if (event.type === 'issue_opened') {
+      return `issues:${event.repo}`;
+    }
+
+    // Multiple issues closed in the same poll cycle batch together
+    if (event.type === 'issue_closed') {
+      return `issues-closed:${event.repo}`;
+    }
+
+    // Pushes batch together per repo
+    if (event.type === 'push') {
+      return `push:${event.repo}`;
+    }
+
+    // Label changes batch together per issue
+    if (event.type === 'issue_labeled' && event.data.issueNumber) {
+      return `labels:${event.repo}:${event.data.issueNumber}`;
+    }
+
+    // Assignments are individual (important to see each one)
+    if (event.type === 'issue_assigned') {
+      return `assign:${event.repo}:${event.data.issueNumber}:${event.data.assignee}`;
+    }
+
+    // Review requests are individual
+    if (event.type === 'pr_review_requested') {
+      return `review-req:${event.repo}:${event.data.prNumber}`;
     }
 
     // Default: no batching
@@ -350,6 +446,22 @@ export class GitHubEventProcessor {
       return `PR #${firstEvent.data.prNumber}: ${parts.join(', ')}`;
     }
 
+    // Issues batch
+    if (firstEvent.type === 'issue_opened') {
+      const authors = [...new Set(events.map((e) => e.event.data.issueAuthor))];
+      return `${events.length} new issues opened by ${authors.join(', ')}`;
+    }
+
+    if (firstEvent.type === 'issue_closed') {
+      return `${events.length} issues closed`;
+    }
+
+    // Issue comments batch
+    if (firstEvent.type === 'issue_comment') {
+      const authors = [...new Set(events.map((e) => e.event.data.commentAuthor))];
+      return `${events.length} new comments on issue #${firstEvent.data.issueNumber} from ${authors.join(', ')}`;
+    }
+
     return `${events.length} events for ${firstEvent.repo}`;
   }
 
@@ -378,6 +490,22 @@ export class GitHubEventProcessor {
         return `CI passed: ${event.data.checkRunName}`;
       case 'ci_failure':
         return `CI failed: ${event.data.checkRunName}`;
+      case 'issue_opened':
+        return `New issue #${event.data.issueNumber}: ${event.data.issueTitle}`;
+      case 'issue_closed':
+        return `Issue #${event.data.issueNumber} closed`;
+      case 'issue_comment':
+        return `Comment on issue #${event.data.issueNumber} by ${event.data.commentAuthor}`;
+      case 'push':
+        return `${event.data.commitCount || 1} commit${(event.data.commitCount || 1) > 1 ? 's' : ''} pushed by ${event.data.commitAuthor}`;
+      case 'issue_labeled':
+        return `Label \`${event.data.label}\` added to #${event.data.issueNumber}`;
+      case 'issue_assigned':
+        return `#${event.data.issueNumber} assigned to ${event.data.assignee}`;
+      case 'pr_review_requested':
+        return `Review requested on PR #${event.data.prNumber} from ${event.data.reviewers?.join(', ')}`;
+      case 'pr_draft':
+        return `Draft PR #${event.data.prNumber}: ${event.data.prTitle} (by ${event.data.prAuthor})`;
       default:
         return `GitHub event: ${event.type}`;
     }
@@ -436,6 +564,36 @@ export class GitHubEventProcessor {
               type: 'user',
               id: discordUser.discordUserId!,
               reason: 'PR approved',
+            });
+          }
+        }
+        break;
+
+      case 'pr_review_requested':
+        // Mention requested reviewers
+        if (event.data.reviewers && event.data.reviewers.length > 0) {
+          for (const reviewer of event.data.reviewers) {
+            const discordUser = await this.resolveGitHubUser(reviewer);
+            if (discordUser) {
+              mentions.push({
+                type: 'user',
+                id: discordUser.discordUserId!,
+                reason: 'Review requested',
+              });
+            }
+          }
+        }
+        break;
+
+      case 'issue_assigned':
+        // Mention the person who was assigned
+        if (event.data.assignee) {
+          const discordUser = await this.resolveGitHubUser(event.data.assignee);
+          if (discordUser) {
+            mentions.push({
+              type: 'user',
+              id: discordUser.discordUserId!,
+              reason: 'Assigned to issue',
             });
           }
         }
