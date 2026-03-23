@@ -36,8 +36,30 @@ function formatNumber(n: number): string {
   return n.toLocaleString('en-US');
 }
 
+// Map guild IDs to names (messages table stores both formats)
+const GUILD_NAMES: Record<string, string> = {
+  '932719842522443928': 'Room 302 Studio',
+  '1420846272545296470': 'Subway Builder',
+};
+
+function getGuildVariants(guildId: string): string[] {
+  const variants = [guildId];
+  if (GUILD_NAMES[guildId]) variants.push(GUILD_NAMES[guildId]);
+  // Also check reverse (name → ID)
+  for (const [id, name] of Object.entries(GUILD_NAMES)) {
+    if (guildId.toLowerCase() === name.toLowerCase()) variants.push(id);
+  }
+  return [...new Set(variants)];
+}
+
+function guildWhere(variants: string[]): { clause: string; params: string[] } {
+  const placeholders = variants.map(() => '?').join(', ');
+  return { clause: `guild_id IN (${placeholders})`, params: variants };
+}
+
 function activityPatterns(db: any, guildId: string, timeRange: string): string {
   const interval = parseTimeRange(timeRange);
+  const gw = guildWhere(getGuildVariants(guildId));
   const lines: string[] = [`## Community Activity Patterns (Last ${timeRange})\n`];
 
   // Hour-of-day distribution
@@ -46,11 +68,11 @@ function activityPatterns(db: any, guildId: string, timeRange: string): string {
             COUNT(*) as message_count,
             COUNT(DISTINCT user_id) as unique_users
      FROM messages
-     WHERE (guild_id = ? OR guild_id = ?)
+     WHERE ${gw.clause}
        AND created_at > datetime('now', ?)
        AND role IS NULL
      GROUP BY hour ORDER BY message_count DESC`,
-    [guildId, guildId, interval]
+    [...gw.params, interval]
   );
 
   if (hourly.length > 0) {
@@ -72,11 +94,11 @@ function activityPatterns(db: any, guildId: string, timeRange: string): string {
             END as day_name,
             COUNT(*) as message_count
      FROM messages
-     WHERE (guild_id = ? OR guild_id = ?)
+     WHERE ${gw.clause}
        AND created_at > datetime('now', ?)
        AND role IS NULL
      GROUP BY day_num ORDER BY message_count DESC`,
-    [guildId, guildId, interval]
+    [...gw.params, interval]
   );
 
   if (daily.length > 0) {
@@ -92,10 +114,10 @@ function activityPatterns(db: any, guildId: string, timeRange: string): string {
             COUNT(DISTINCT user_id) as users,
             COUNT(DISTINCT channel_id) as channels
      FROM messages
-     WHERE (guild_id = ? OR guild_id = ?)
+     WHERE ${gw.clause}
        AND created_at > datetime('now', ?)
        AND role IS NULL`,
-    [guildId, guildId, interval]
+    [...gw.params, interval]
   );
 
   if (totals) {
@@ -107,6 +129,7 @@ function activityPatterns(db: any, guildId: string, timeRange: string): string {
 
 function topContributors(db: any, guildId: string, timeRange: string, limit: number): string {
   const interval = parseTimeRange(timeRange);
+  const gw = guildWhere(getGuildVariants(guildId));
   const lines: string[] = [`## Top Contributors (Last ${timeRange})\n`];
 
   const users: any[] = db.all(
@@ -116,13 +139,13 @@ function topContributors(db: any, guildId: string, timeRange: string, limit: num
             MIN(created_at) as first_seen,
             MAX(created_at) as last_seen
      FROM messages
-     WHERE (guild_id = ? OR guild_id = ?)
+     WHERE ${gw.clause}
        AND created_at > datetime('now', ?)
        AND role IS NULL
      GROUP BY user_id
      ORDER BY message_count DESC
      LIMIT ?`,
-    [guildId, guildId, interval, limit]
+    [...gw.params, interval, limit]
   );
 
   if (users.length === 0) {
@@ -141,6 +164,7 @@ function topContributors(db: any, guildId: string, timeRange: string, limit: num
 
 function channelStats(db: any, guildId: string, timeRange: string): string {
   const interval = parseTimeRange(timeRange);
+  const gw = guildWhere(getGuildVariants(guildId));
   const lines: string[] = [`## Channel Activity (Last ${timeRange})\n`];
 
   const channels: any[] = db.all(
@@ -149,11 +173,11 @@ function channelStats(db: any, guildId: string, timeRange: string): string {
             COUNT(DISTINCT user_id) as unique_users,
             MAX(created_at) as last_activity
      FROM messages
-     WHERE (guild_id = ? OR guild_id = ?)
+     WHERE ${gw.clause}
        AND created_at > datetime('now', ?)
      GROUP BY channel_id
      ORDER BY message_count DESC`,
-    [guildId, guildId, interval]
+    [...gw.params, interval]
   );
 
   if (channels.length === 0) {
@@ -215,6 +239,7 @@ function topicTrends(db: any, guildId: string, timeRange: string): string {
 }
 
 function userProfile(db: any, userId: string, guildId: string): string {
+  const gw = guildWhere(getGuildVariants(guildId));
   const lines: string[] = [`## User Profile: ${userId}\n`];
 
   const stats: any = db.get(
@@ -223,9 +248,9 @@ function userProfile(db: any, userId: string, guildId: string): string {
             MIN(created_at) as first_seen,
             MAX(created_at) as last_seen
      FROM messages
-     WHERE user_id = ? AND (guild_id = ? OR guild_id = ?)
+     WHERE user_id = ? AND ${gw.clause}
        AND role IS NULL`,
-    [userId, guildId, guildId]
+    [userId, ...gw.params]
   );
 
   if (!stats || stats.total_messages === 0) {
@@ -241,9 +266,9 @@ function userProfile(db: any, userId: string, guildId: string): string {
   const peakHour = db.get(
     `SELECT CAST(strftime('%H', created_at) AS INTEGER) as hour, COUNT(*) as count
      FROM messages
-     WHERE user_id = ? AND (guild_id = ? OR guild_id = ?) AND role IS NULL
+     WHERE user_id = ? AND ${gw.clause} AND role IS NULL
      GROUP BY hour ORDER BY count DESC LIMIT 1`,
-    [userId, guildId, guildId]
+    [userId, ...gw.params]
   );
 
   if (peakHour) {
@@ -256,9 +281,9 @@ function userProfile(db: any, userId: string, guildId: string): string {
   const topChannels = db.all(
     `SELECT channel_id, COUNT(*) as count
      FROM messages
-     WHERE user_id = ? AND (guild_id = ? OR guild_id = ?) AND role IS NULL
+     WHERE user_id = ? AND ${gw.clause} AND role IS NULL
      GROUP BY channel_id ORDER BY count DESC LIMIT 5`,
-    [userId, guildId, guildId]
+    [userId, ...gw.params]
   );
 
   if (topChannels.length > 0) {
@@ -296,6 +321,7 @@ function githubActivity(db: any, timeRange: string): string {
 
 function engagementSummary(db: any, guildId: string, timeRange: string): string {
   const interval = parseTimeRange(timeRange);
+  const gw = guildWhere(getGuildVariants(guildId));
   const lines: string[] = [`## Community Health (Last ${timeRange})\n`];
 
   // Daily active users
@@ -304,11 +330,11 @@ function engagementSummary(db: any, guildId: string, timeRange: string): string 
             COUNT(DISTINCT user_id) as dau,
             COUNT(*) as messages
      FROM messages
-     WHERE (guild_id = ? OR guild_id = ?)
+     WHERE ${gw.clause}
        AND created_at > datetime('now', ?)
        AND role IS NULL
      GROUP BY day ORDER BY day DESC LIMIT 14`,
-    [guildId, guildId, interval]
+    [...gw.params, interval]
   );
 
   if (dau.length === 0) {
@@ -339,12 +365,12 @@ function engagementSummary(db: any, guildId: string, timeRange: string): string 
      FROM (
        SELECT conversation_id, COUNT(*) as cnt
        FROM messages
-       WHERE (guild_id = ? OR guild_id = ?)
+       WHERE ${gw.clause}
          AND conversation_id IS NOT NULL
          AND created_at > datetime('now', ?)
        GROUP BY conversation_id
      )`,
-    [guildId, guildId, interval]
+    [...gw.params, interval]
   );
 
   if (convos && convos.total > 0) {
