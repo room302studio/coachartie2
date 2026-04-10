@@ -36,6 +36,8 @@ const DB_PATHS = {
   anomalywatch: '/opt/docker/smallweb/data/anomalywatch/data/anomalywatch.db',
   riverwatch: '/opt/docker/smallweb/data/riverwatch/data/riverwatch.db',
   health: '/opt/docker/smallweb/data/health-webhook/data/health.db',
+  entityhub: '/opt/docker/smallweb/data/entityhub/data/entityhub.db',
+  masintwatch: '/opt/docker/smallweb/data/masintwatch/data/masintwatch.db',
 } as const;
 
 const LOCATION_FILE = '/data2/owntracks/location-context.json';
@@ -250,7 +252,20 @@ async function generateSkywatchSection(): Promise<string> {
   const notableCount = queryDb(DB_PATHS.skywatch,
     "SELECT COUNT(*) FROM notable WHERE spotted_at >= datetime('now', '-24 hours')");
   const notableList = queryDb(DB_PATHS.skywatch,
-    "SELECT callsign || ' (' || reason || ')' FROM notable WHERE date(spotted_at) >= date('now', '-1 day') GROUP BY callsign ORDER BY MAX(spotted_at) DESC LIMIT 4");
+    `SELECT callsign || ' — ' || REPLACE(details, '; ', ' | ') FROM notable
+     WHERE date(spotted_at) >= date('now', '-1 day')
+     AND reason NOT LIKE '%low_altitude_military_zone%'
+     AND reason NOT LIKE '%new_aircraft%' OR reason NOT LIKE '%new_aircraft'
+     AND callsign NOT LIKE '0%'
+     GROUP BY callsign ORDER BY
+       CASE WHEN reason LIKE '%watchlist%' THEN 0
+            WHEN reason LIKE '%military%' THEN 1
+            WHEN reason LIKE '%foreign%' THEN 1
+            WHEN reason LIKE '%emergency%' THEN 0
+            WHEN reason LIKE '%plane_alert_db%' THEN 2
+            ELSE 3 END,
+       MAX(spotted_at) DESC
+     LIMIT 5`);
 
   const nc = parseInt(notableCount) || 0;
   const fc = parseInt(flightCount) || 0;
@@ -288,7 +303,7 @@ function generateCountySection(): string {
                  OR title LIKE '%indicted%' OR title LIKE '%charged%'
             THEN 0 ELSE 1 END ASC,
        first_seen DESC
-     LIMIT 4`);
+     LIMIT 3`);
 
   let result = `📰 **County** (${nc} new)`;
   if (topNews) {
@@ -343,7 +358,7 @@ function generateAnomalySection(): string {
   const anomalies = queryDb(DB_PATHS.anomalywatch,
     `SELECT title || ' [' || printf('%.1f', MAX(final_score)) || ']' FROM signals
      WHERE final_score > 4
-     AND ingested_at > datetime('now', '-3 days')
+     AND timestamp > datetime('now', '-3 days')
      AND title NOT LIKE '%TEST%'
      AND title NOT LIKE '%OSINT Health%'
      AND title NOT LIKE '%Health Check%'
@@ -371,7 +386,8 @@ function generateTasksSection(): string {
     const active = cards.filter((c: any) => c.lane === 'Active').slice(0, 3);
     const blocked = cards.filter((c: any) => c.lane === 'Blocked').slice(0, 2);
     const readyCount = cards.filter((c: any) => c.lane === 'Ready').length;
-    const suggested = cards.filter((c: any) => c.lane === 'Suggested').slice(0, 5);
+    const suggestedAll = cards.filter((c: any) => c.lane === 'Suggested');
+    const suggested = suggestedAll.slice(0, 3);
 
     if (active.length === 0 && blocked.length === 0 && suggested.length === 0) return '';
 
@@ -381,11 +397,11 @@ function generateTasksSection(): string {
       const reason = (c.blocked_reason || c.blockedReason || '').substring(0, 60);
       text += `\n  ⛔ ${c.title}${reason ? ' — ' + reason : ''}`;
     }
-    if (readyCount > 0) text += `\n  (${readyCount} ready in backlog)`;
+    if (readyCount > 0) text += `\n  (${readyCount} ready)`;
     if (suggested.length > 0) {
-      text += `\n\n  💡 **${suggested.length} cards need your review** (Suggested → Ready):`;
-      for (const c of suggested) text += `\n  • ${c.title}`;
-      text += `\n  → [Review on kanban](https://kanban.tools.ejfox.com)`;
+      const extra = suggestedAll.length > 3 ? ` (+${suggestedAll.length - 3} more)` : '';
+      text += `\n  💡 Review${extra}: ${suggested.map((c: any) => c.title.substring(0, 35)).join(' · ')}`;
+      text += `\n  → [kanban](https://kanban.tools.ejfox.com)`;
     }
     return text;
   } catch {
@@ -518,6 +534,409 @@ async function fetchHealthNarrative(): Promise<string> {
   }
 }
 
+function generateTensionSection(): string {
+  const tensions: string[] = [];
+
+  // PRIMARY sources — exclude aggregators (artie-digest, daily-briefing, claude)
+  const primaryList = "'skywatch','countywatch','contractwatch','donorwatch','filingwatch','changewatch','overwatch','masintwatch','redditwatch','riverwatch','honeypot','egoscan'";
+
+  // 1. VOLUME DIVERGENCE: Yesterday's military flights vs 7-day average
+  //    Use yesterday (complete day) to avoid partial-day false positives
+  const milYesterday = queryDb(DB_PATHS.skywatch,
+    "SELECT COALESCE(military_flights, 0) FROM daily_stats WHERE date = date('now', '-1 day')");
+  const milAvg = queryDb(DB_PATHS.skywatch,
+    "SELECT ROUND(AVG(military_flights), 0) FROM daily_stats WHERE date >= date('now', '-8 days') AND date < date('now', '-1 day')");
+  const mt = parseInt(milYesterday) || 0;
+  const ma = parseInt(milAvg) || 0;
+  if (ma > 5 && Math.abs(mt - ma) / ma >= 0.5) {
+    const dir = mt > ma ? '↑' : '↓';
+    const pct = Math.round(Math.abs(mt - ma) / ma * 100);
+    tensions.push(`Military flights yesterday: ${mt} vs ${ma} avg (${dir}${pct}%)`);
+  }
+
+  // Total flight volume divergence (yesterday vs avg)
+  const flightsYesterday = queryDb(DB_PATHS.skywatch,
+    "SELECT COALESCE(total_flights, 0) FROM daily_stats WHERE date = date('now', '-1 day')");
+  const flightsAvg = queryDb(DB_PATHS.skywatch,
+    "SELECT ROUND(AVG(total_flights), 0) FROM daily_stats WHERE date >= date('now', '-8 days') AND date < date('now', '-1 day')");
+  const ft = parseInt(flightsYesterday) || 0;
+  const fa = parseInt(flightsAvg) || 0;
+  if (fa > 100 && Math.abs(ft - fa) / fa >= 0.4) {
+    const dir = ft > fa ? '↑' : '↓';
+    const pct = Math.round(Math.abs(ft - fa) / fa * 100);
+    tensions.push(`Total flights yesterday: ${ft} vs ${fa} avg (${dir}${pct}%)`);
+  }
+
+  // 2. SINGLE-SOURCE HIGH SIGNALS: Score ≥6 signals from only one primary source
+  //    Find signals where no other primary source reported on the same investigation
+  const singleSource = queryDb(DB_PATHS.anomalywatch,
+    `SELECT s.source, SUBSTR(s.title, 1, 70), ROUND(s.final_score, 1)
+     FROM signals s
+     WHERE s.final_score >= 6
+       AND s.ingested_at >= datetime('now', '-48 hours')
+       AND s.source IN (${primaryList})
+       AND s.id NOT IN (
+         SELECT isig.signal_id FROM investigation_signals isig
+         JOIN investigation_signals isig2 ON isig.investigation_id = isig2.investigation_id
+         JOIN signals s2 ON isig2.signal_id = s2.id
+         WHERE s2.source != s.source AND s2.source IN (${primaryList})
+           AND s2.ingested_at >= datetime('now', '-48 hours')
+       )
+     ORDER BY s.final_score DESC
+     LIMIT 2`);
+
+  if (singleSource) {
+    for (const line of singleSource.split('\n').filter(Boolean)) {
+      const parts = line.split('|');
+      if (parts.length >= 3) {
+        tensions.push(`Single-source: ${parts[0]}: ${parts[1]} [${parts[2]}]`);
+      }
+    }
+  }
+
+  // 3. CROSS-SOURCE ENTITY TENSION: Same entity in 2+ DIFFERENT source types
+  // (countywatch+changewatch are same type — local gov; skywatch+overwatch are same — aviation)
+  // Only flag when entity bridges source families
+  const entityTension = queryDb(DB_PATHS.entityhub,
+    `SELECT sub.name, GROUP_CONCAT(sub.app, ', ') FROM (
+       SELECT DISTINCT e.canonical_name as name, em.app_name as app, e.id
+       FROM entities e
+       JOIN entity_mentions em ON e.id = em.entity_id
+       WHERE em.timestamp >= datetime('now', '-48 hours')
+         AND em.app_name IN (${primaryList})
+         AND LENGTH(e.canonical_name) > 5
+         AND e.canonical_name NOT LIKE '%Committee%'
+         AND e.canonical_name NOT LIKE '%Order %'
+         AND e.canonical_name NOT LIKE '%County%'
+         AND e.canonical_name NOT LIKE '%Board%'
+         AND e.entity_type IN ('person', 'organization', 'facility', 'government_agency')
+     ) sub
+     GROUP BY sub.id
+     HAVING COUNT(sub.app) >= 2
+     ORDER BY COUNT(sub.app) DESC
+     LIMIT 2`);
+
+  if (entityTension) {
+    for (const line of entityTension.split('\n').filter(Boolean)) {
+      const parts = line.split('|');
+      if (parts.length >= 2) {
+        tensions.push(`Multi-source: ${parts[0]} (${parts[1]})`);
+      }
+    }
+  }
+
+  // 4. EXPECTED SILENCE: Active investigations with no recent signals
+  const silentInvestigations = queryDb(DB_PATHS.anomalywatch,
+    `SELECT i.title
+     FROM investigations i
+     WHERE i.status = 'active'
+       AND i.id NOT IN (
+         SELECT isig.investigation_id FROM investigation_signals isig
+         JOIN signals s ON isig.signal_id = s.id
+         WHERE s.ingested_at >= datetime('now', '-48 hours')
+           AND s.source IN (${primaryList})
+       )
+     LIMIT 2`);
+
+  if (silentInvestigations) {
+    for (const line of silentInvestigations.split('\n').filter(Boolean)) {
+      tensions.push(`No signals 48h: ${line}`);
+    }
+  }
+
+  if (tensions.length === 0) return '';
+  return '🔀 **Tension**\n' + tensions.map(t => `  · ${t}`).join('\n');
+}
+
+function generateConfidenceMesh(): string {
+  // All primary watchers (exclude aggregators like artie-digest, daily-briefing, claude)
+  const primarySources = [
+    'skywatch', 'countywatch', 'contractwatch', 'donorwatch',
+    'filingwatch', 'changewatch', 'overwatch', 'masintwatch',
+    'redditwatch', 'riverwatch', 'egoscan',
+  ];
+
+  const meshLines: string[] = [];
+
+  // --- Part 1: Per-investigation source coverage ---
+  // For each active investigation, show which primary sources contributed recently vs silent
+  // Use subquery to dedupe sources — GROUP_CONCAT(DISTINCT x) not supported in all sqlite builds
+  const invData = queryDb(DB_PATHS.anomalywatch,
+    `SELECT sub.id, sub.title, GROUP_CONCAT(sub.source) FROM (
+       SELECT DISTINCT i.id, i.title, s.source
+       FROM investigations i
+       JOIN investigation_signals isig ON i.id = isig.investigation_id
+       JOIN signals s ON isig.signal_id = s.id
+       WHERE i.status = 'active'
+         AND s.ingested_at >= datetime('now', '-7 days')
+         AND s.source IN (${primarySources.map(s => `'${s}'`).join(',')})
+     ) sub
+     GROUP BY sub.id
+     ORDER BY COUNT(*) DESC`);
+
+  if (invData) {
+    for (const line of invData.split('\n').filter(Boolean)) {
+      const parts = line.split('|');
+      if (parts.length < 3) continue;
+      const invTitle = parts[1];
+      const activeSources = parts[2].split(',').filter(Boolean);
+      // Only show sources that COULD be relevant (have ever contributed to any investigation)
+      // Silent = primary source that hasn't reported on this investigation in 7 days
+      const silent = primarySources.filter(s =>
+        !activeSources.includes(s) &&
+        // Only flag silence from sources likely to have relevant data
+        // (skip masintwatch/riverwatch/egoscan for contract investigations, etc.)
+        isSourceRelevant(s, invTitle)
+      );
+
+      // Abbreviate investigation title for compactness
+      const shortTitle = invTitle.replace(/ Regional Activity| Detention Complex/g, '').substring(0, 25);
+      const activeStr = activeSources.map(s => shortenSource(s)).join(', ');
+      let entry = `${shortTitle}: ${activeStr}`;
+      if (silent.length > 0 && silent.length <= 4) {
+        entry += ` · silent: ${silent.map(s => shortenSource(s)).join(', ')}`;
+      }
+      meshLines.push(entry);
+    }
+  }
+
+  // --- Part 2: Top unlinked signals (high score, not in any investigation) ---
+  const orphanSignals = queryDb(DB_PATHS.anomalywatch,
+    `SELECT s.source, SUBSTR(s.title, 1, 45), ROUND(s.final_score, 1)
+     FROM signals s
+     WHERE s.final_score >= 5
+       AND s.ingested_at >= datetime('now', '-48 hours')
+       AND s.source IN (${primarySources.map(s => `'${s}'`).join(',')})
+       AND s.id NOT IN (SELECT signal_id FROM investigation_signals)
+       AND s.title NOT LIKE '%TEST%'
+       AND s.title NOT LIKE '%OSINT Health%'
+     ORDER BY s.final_score DESC
+     LIMIT 2`);
+
+  if (orphanSignals) {
+    for (const line of orphanSignals.split('\n').filter(Boolean)) {
+      const parts = line.split('|');
+      if (parts.length < 3) continue;
+      meshLines.push(`⚠ ${parts[1].trim()} [${shortenSource(parts[0])} only, ${parts[2]}]`);
+    }
+  }
+
+  // --- Part 3: Source liveness summary ---
+  // Which primary sources have reported in the last 24h vs gone dark
+  const activeLast24h = queryDb(DB_PATHS.anomalywatch,
+    `SELECT DISTINCT source FROM signals
+     WHERE ingested_at >= datetime('now', '-24 hours')
+       AND source IN (${primarySources.map(s => `'${s}'`).join(',')})`);
+
+  const activeSet = new Set(activeLast24h ? activeLast24h.split('\n').filter(Boolean) : []);
+  const darkSources = primarySources.filter(s =>
+    !activeSet.has(s) && !['honeypot', 'masintwatch'].includes(s) // these are low-volume by design
+  );
+
+  if (darkSources.length > 0) {
+    meshLines.push(`Dark 24h: ${darkSources.map(s => shortenSource(s)).join(', ')}`);
+  }
+
+  if (meshLines.length === 0) return '';
+  return '🔍 **Confidence**\n' + meshLines.map(l => `  · ${l}`).join('\n');
+}
+
+/** Shorten source names for compact display */
+function shortenSource(source: string): string {
+  const map: Record<string, string> = {
+    skywatch: 'sky', countywatch: 'county', contractwatch: 'contracts',
+    donorwatch: 'donors', filingwatch: 'filings', changewatch: 'changes',
+    overwatch: 'overwatch', masintwatch: 'masint', redditwatch: 'reddit',
+    riverwatch: 'river', egoscan: 'ego', honeypot: 'honeypot',
+  };
+  return map[source] || source;
+}
+
+/** Heuristic: is a given source relevant to an investigation? */
+function isSourceRelevant(source: string, invTitle: string): boolean {
+  const lower = invTitle.toLowerCase();
+  // Map sources to the investigation topics they'd plausibly cover
+  const relevanceMap: Record<string, string[]> = {
+    skywatch: ['flight', 'aircraft', 'military', 'ang', 'stewart', 'ice', 'corridor'],
+    countywatch: ['ice', 'detention', 'county', 'contract', 'hudson', 'chester'],
+    contractwatch: ['contract', 'federal', 'ice', 'dhs', 'detention'],
+    donorwatch: ['election', 'donor', 'campaign', 'political'],
+    filingwatch: ['sec', 'filing', 'corporate', 'contract', 'federal'],
+    changewatch: ['website', 'policy', 'ice', 'detention', 'county'],
+    overwatch: ['military', 'aircraft', 'stewart', 'flight', 'corridor', 'ice'],
+    redditwatch: ['stewart', 'military', 'ice', 'hudson', 'flight', 'detention'],
+    // These are rarely relevant to specific investigations
+    masintwatch: [],
+    riverwatch: ['river', 'vessel', 'waterway', 'ferry'],
+    egoscan: [],
+  };
+  const keywords = relevanceMap[source] || [];
+  return keywords.some(k => lower.includes(k));
+}
+
+// ---------------------------------------------------------------------------
+// Main briefing generator
+// ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// New data sections: MASINT + River
+// ---------------------------------------------------------------------------
+
+function generateRecentTrips(): string {
+  try {
+    // Check for ride logs from last 24h
+    const logDir = '/data2/owntracks/ride-logs';
+    if (!existsSync(logDir)) return '';
+    const files = readdirSync(logDir).filter(f => f.endsWith('.json')).sort().reverse();
+    const yesterday = new Date(Date.now() - 24 * 3600_000).toISOString().split('T')[0];
+    const recentFiles = files.filter(f => f >= yesterday);
+    if (recentFiles.length === 0) return '';
+
+    const trips: string[] = [];
+    for (const f of recentFiles.slice(0, 3)) {
+      try {
+        const log = JSON.parse(readFileSync(`${logDir}/${f}`, 'utf-8'));
+        const icon = log.motorcycle ? '🏍️' : '🗺️';
+        const hrs = Math.floor(log.durationMinutes / 60);
+        const mins = log.durationMinutes % 60;
+        const dur = hrs > 0 ? `${hrs}h${mins > 0 ? mins + 'm' : ''}` : `${mins}m`;
+        const counties = (log.countiesTraversed || []).join(' → ');
+        const elev = log.elevationGainFt > 100 ? ` ↑${log.elevationGainFt}ft` : '';
+        const pois = (log.nearbyPois || []).length > 0 ? ` · near ${log.nearbyPois.join(', ')}` : '';
+        trips.push(`${icon} ${dur}, ${log.distanceMiles}mi — ${counties}${elev}${pois}`);
+      } catch { /* skip bad files */ }
+    }
+
+    if (trips.length === 0) return '';
+    return `Recent trips:\n${trips.map(t => `  · ${t}`).join('\n')}`;
+  } catch { return ''; }
+}
+
+function generateMasintSection(): string {
+  const recentEvents = queryDb(DB_PATHS.masintwatch,
+    `SELECT source || ': ' || title FROM events
+     WHERE first_seen >= datetime('now', '-24 hours')
+     ORDER BY CASE severity WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END, first_seen DESC
+     LIMIT 5`);
+  if (!recentEvents) return '';
+
+  const count24h = queryDb(DB_PATHS.masintwatch,
+    "SELECT COUNT(*) FROM events WHERE first_seen >= datetime('now', '-24 hours')");
+  const count7d = queryDb(DB_PATHS.masintwatch,
+    "SELECT ROUND(COUNT(*) / 7.0) FROM events WHERE first_seen >= datetime('now', '-7 days')");
+
+  const n = parseInt(count24h) || 0;
+  const avg = parseInt(count7d) || 0;
+  const delta = avg > 0 ? ` (avg ${avg}/day)` : '';
+
+  let result = `MASINT: ${n} events${delta}`;
+  const items = recentEvents.split('\n').filter(Boolean);
+  for (const item of items) result += `\n  · ${item.substring(0, 120)}`;
+  return result;
+}
+
+function generateRiverwatchSection(): string {
+  const notableCount = queryDb(DB_PATHS.riverwatch,
+    "SELECT COUNT(*) FROM notable_vessels WHERE spotted_at >= datetime('now', '-24 hours')");
+  const nc = parseInt(notableCount) || 0;
+  if (nc === 0) return '';
+
+  const vessels = queryDb(DB_PATHS.riverwatch,
+    `SELECT name || ' (' || flag_reason || ')' FROM notable_vessels
+     WHERE spotted_at >= datetime('now', '-24 hours')
+     GROUP BY mmsi ORDER BY MAX(spotted_at) DESC LIMIT 3`);
+
+  let result = `River: ${nc} notable vessels`;
+  if (vessels) {
+    const items = vessels.split('\n').filter(Boolean);
+    for (const item of items) result += `\n  · ${item.substring(0, 100)}`;
+  }
+  return result;
+}
+
+// ---------------------------------------------------------------------------
+// Day-over-day deltas for OSINT sections
+// ---------------------------------------------------------------------------
+
+function deltaTag(current: number, avgPerDay: number): string {
+  if (avgPerDay <= 0) return '';
+  const pct = Math.round(((current - avgPerDay) / avgPerDay) * 100);
+  if (Math.abs(pct) < 15) return ' →';
+  return pct > 0 ? ` ↑${pct}%` : ` ↓${Math.abs(pct)}%`;
+}
+
+// ---------------------------------------------------------------------------
+// Editor pass — LLM synthesizes raw intel into a tight brief
+// ---------------------------------------------------------------------------
+
+const EDITOR_SYSTEM_PROMPT = `You are a concise intelligence briefing editor. You receive raw data sections from an OSINT monitoring system and must synthesize them into a single, well-written morning brief for a journalist/researcher.
+
+Rules:
+- Output must be under 1800 characters (hard limit — Discord message)
+- Use Discord markdown: **bold** for headers, · for bullets
+- Start with "**Morning Brief — {date}**"
+- End with the footer line exactly as provided
+- Lead with what MATTERS: anomalies, cross-source patterns, things that changed overnight
+- Health/weather: one line each, max. Only mention if notable.
+- Calendar: mention meetings, skip empty days
+- OSINT: synthesize across sources. If skywatch shows unusual military activity AND countywatch has a related story AND anomalywatch flagged it — say that once, not three times
+- Tension/mesh data is analytical gold — weave it into the narrative, don't list it separately
+- If a section has nothing interesting, skip it entirely
+- Use delta percentages (↑/↓) when volume diverges >15% from average
+- Never pad, never repeat, never explain what you're doing
+- NEVER guess or infer aircraft identity from callsign prefixes. Use ONLY the identity information provided in the details field. If details say "United Arab Emirates Air Force", write that — not "Ukrainian" or any other guess
+- Check the location_context section. If the user is AWAY from home base, lead with weather and local context for THAT location, then summarize HV monitoring as background. If home, lead with what matters locally.
+- Glider activity is fun/interesting — mention it casually if present, don't treat it as an anomaly
+- Write like a field intelligence officer: terse, precise, every word earns its place
+- Orphan signals (high score, not linked to any investigation) deserve a callout
+- If everything is quiet, say so in one line — don't manufacture drama`;
+
+async function editorPass(rawSections: Record<string, string>, dateStr: string, footer: string): Promise<string> {
+  try {
+    const { openRouterService } = await import('../../services/llm/openrouter.js');
+
+    const rawDump = Object.entries(rawSections)
+      .filter(([, v]) => v.length > 0)
+      .map(([k, v]) => `=== ${k} ===\n${v}`)
+      .join('\n\n');
+
+    const userPrompt = `Date: ${dateStr}
+
+Raw intelligence sections:
+
+${rawDump}
+
+Footer (include verbatim at end):
+${footer}
+
+Write the morning brief. Under 1800 characters total.`;
+
+    const messages = [
+      { role: 'system' as const, content: EDITOR_SYSTEM_PROMPT },
+      { role: 'user' as const, content: userPrompt },
+    ];
+
+    const model = process.env.SMART_MODEL || 'anthropic/claude-sonnet-4';
+    const result = await openRouterService.generateFromMessageChain(
+      messages,
+      'morning-briefing-editor',
+      undefined,
+      model,
+      { maxTokens: 2048 }
+    );
+
+    // Safety check — if LLM returned something too long, hard-truncate
+    if (result.length > 1950) {
+      return result.substring(0, 1947) + '...';
+    }
+
+    return result;
+  } catch (e) {
+    logger.error('Editor pass failed, falling back to raw assembly:', e);
+    return ''; // empty = caller falls back to raw assembly
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Main briefing generator
 // ---------------------------------------------------------------------------
@@ -530,77 +949,103 @@ async function generateBriefing(_config: BriefingConfig): Promise<string> {
     day: 'numeric',
   });
 
+  const footer = '─── [sky](https://skywatch.tools.ejfox.com) · [kanban](https://kanban.tools.ejfox.com) · [health](https://fitness.tools.ejfox.com/insights) · [intel](https://intel.tools.ejfox.com) · [briefings](https://briefings.tools.ejfox.com)';
+
+  // --- Read current location for context ---
+  const loc = readJson(LOCATION_FILE);
+  const currentLat = loc?.lat || 41.333;
+  const currentLon = loc?.lon || -73.885;
+  const currentTown = loc?.town?.replace(/^Town of /, '') || 'Putnam Valley';
+  const currentCounty = loc?.county || 'Putnam';
+  const currentState = loc?.state || 'New York';
+  // Check if we're outside Hudson Valley (roughly 40.5-42.5N, 75.5-73.5W)
+  const inHV = currentLat >= 40.5 && currentLat <= 42.5 && currentLon >= -75.5 && currentLon <= -73.5;
+  // Check ride state for overnight-away context
+  let rideStateStr = '';
+  try {
+    const rs = readJson('/data2/owntracks/ride-state.json');
+    if (rs?.state === 'away') {
+      rideStateStr = ` Woke up away from home (ride-state: away since ${rs.stateStartedAt?.slice(0, 10)}).`;
+    }
+  } catch { /* */ }
+
+  const locationContext = inHV
+    ? `Currently in ${currentTown}, ${currentCounty} Co. (Hudson Valley home base).${rideStateStr}`
+    : `Currently in ${currentTown}, ${currentState} — AWAY FROM HOME BASE.${rideStateStr} Adapt the briefing to this location. HV monitoring continues in background but lead with what's relevant HERE.`;
+
+  // --- Gather all raw data sections ---
+  const rawSections: Record<string, string> = {};
+  rawSections['location_context'] = locationContext;
+
+  rawSections['weather'] = await generateWeatherSection();
+  rawSections['health'] = generateHealthSection();
+
+  const narrative = await fetchHealthNarrative();
+  if (narrative) {
+    const paragraphs = narrative.split('\n\n').filter(p => p.length > 30 && !p.startsWith('**'));
+    rawSections['health_narrative'] = paragraphs[0] || '';
+  }
+
+  rawSections['calendar'] = await generateCalendarSection();
+  rawSections['mail'] = await generateMailSection();
+  rawSections['tasks'] = generateTasksSection();
+
+  // OSINT sections — with day-over-day deltas baked in
+  const skyRaw = await generateSkywatchSection();
+  const skyAvg = queryDb(DB_PATHS.skywatch,
+    "SELECT ROUND(AVG(total_flights)) FROM daily_stats WHERE date >= date('now', '-7 days') AND date < date('now')");
+  const skyToday = queryDb(DB_PATHS.skywatch,
+    "SELECT COUNT(*) FROM flights WHERE first_seen >= datetime('now', '-24 hours')");
+  if (skyRaw) {
+    const ft = parseInt(skyToday) || 0;
+    const fa = parseInt(skyAvg) || 0;
+    rawSections['skywatch'] = skyRaw + (fa > 0 ? `\n  Volume${deltaTag(ft, fa)} vs 7d avg` : '');
+  }
+
+  const countyRaw = generateCountySection();
+  const countyAvg = queryDb(DB_PATHS.countywatch,
+    "SELECT ROUND(COUNT(*) / 7.0) FROM news WHERE first_seen >= datetime('now', '-7 days')");
+  const countyToday = queryDb(DB_PATHS.countywatch,
+    "SELECT COUNT(*) FROM news WHERE first_seen >= datetime('now', '-24 hours')");
+  if (countyRaw) {
+    const ct = parseInt(countyToday) || 0;
+    const ca = parseInt(countyAvg) || 0;
+    rawSections['countywatch'] = countyRaw + (ca > 0 ? `\n  Volume${deltaTag(ct, ca)} vs 7d avg` : '');
+  }
+
+  rawSections['contracts'] = generateContractSection();
+  rawSections['donors'] = generateDonorSection();
+  rawSections['anomalies'] = generateAnomalySection();
+  rawSections['masint'] = generateMasintSection();
+  rawSections['riverwatch'] = generateRiverwatchSection();
+  rawSections['recent_trips'] = generateRecentTrips();
+  rawSections['tension'] = generateTensionSection();
+  rawSections['confidence_mesh'] = generateConfidenceMesh();
+  rawSections['latest_briefing'] = generateBriefingLink();
+
+  // --- Editor pass: LLM synthesizes raw data into a tight brief ---
+  const edited = await editorPass(rawSections, dateStr, footer);
+
+  if (edited && edited.length > 100) {
+    return edited;
+  }
+
+  // --- Fallback: raw assembly if editor fails ---
   const parts: string[] = [];
   parts.push(`**Morning Brief — ${dateStr}**`);
 
-  // Weather + location (async — needs fetch)
-  const weather = await generateWeatherSection();
-  if (weather) parts.push(weather);
-
-  // Health (sleep, HRV, steps, interventions)
-  const health = generateHealthSection();
-  if (health) parts.push(health);
-
-  // Health narrative (LLM-generated daily report) — just the first paragraph
-  const narrative = await fetchHealthNarrative();
-  if (narrative) {
-    // Grab first meaningful paragraph (skip the **Yesterday** header)
-    const paragraphs = narrative.split('\n\n').filter(p => p.length > 30 && !p.startsWith('**'));
-    const first = paragraphs[0] || '';
-    if (first.length > 30) {
-      const trimmed = first.length > 300 ? first.substring(0, 297) + '...' : first;
-      parts.push(`📝 ${trimmed}\n→ [full health report](https://fitness.tools.ejfox.com/insights)`);
-    }
+  for (const key of ['weather', 'health', 'calendar', 'mail', 'tasks',
+    'skywatch', 'countywatch', 'contracts', 'donors', 'anomalies',
+    'masint', 'riverwatch', 'tension', 'confidence_mesh', 'latest_briefing']) {
+    if (rawSections[key]) parts.push(rawSections[key]);
   }
-
-  // Calendar (async — needs fetch)
-  const calendar = await generateCalendarSection();
-  if (calendar) parts.push(calendar);
-
-  // Mail (async — needs fetch)
-  const mail = await generateMailSection();
-  if (mail) parts.push(mail);
-
-  // Tasks
-  const tasks = generateTasksSection();
-  if (tasks) parts.push(tasks);
-
-  // OSINT signals block
-  const osintSections = [
-    await generateSkywatchSection(),
-    generateCountySection(),
-    generateContractSection(),
-    generateDonorSection(),
-    generateAnomalySection(),
-  ].filter(Boolean);
-
-  if (osintSections.length > 0) {
-    parts.push(osintSections.join('\n'));
-  }
-
-  // Latest briefing link
-  const briefingLink = generateBriefingLink();
-  if (briefingLink) parts.push(briefingLink);
-
-  // Footer — compact links
-  parts.push('─── [sky](https://skywatch.tools.ejfox.com) · [kanban](https://kanban.tools.ejfox.com) · [health](https://fitness.tools.ejfox.com/insights) · [intel](https://intel.tools.ejfox.com) · [briefings](https://briefings.tools.ejfox.com)');
+  parts.push(footer);
 
   let result = parts.join('\n\n');
-
-  // Discord has a 2000 char limit — trim from the middle (OSINT sections) if needed
   if (result.length > 1950) {
-    // Drop the least critical sections until we fit
-    const dropOrder = ['briefingLink', 'mail'];
-    for (const key of dropOrder) {
-      if (result.length <= 1950) break;
-      const idx = parts.findIndex(p => {
-        if (key === 'briefingLink') return p.startsWith('📄');
-        if (key === 'mail') return p.startsWith('📧');
-        return false;
-      });
-      if (idx >= 0) parts.splice(idx, 1);
-    }
-    result = parts.join('\n\n');
+    // Last resort truncation — cut from the end, keep header + footer
+    const maxBody = 1950 - footer.length - 10;
+    result = result.substring(0, maxBody) + '\n\n' + footer;
   }
 
   return result;

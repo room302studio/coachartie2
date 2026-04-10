@@ -1,4 +1,5 @@
 import { logger } from '@coachartie/shared';
+import { readFileSync } from 'fs';
 
 /**
  * Embedded MCP Tool Interface
@@ -148,6 +149,61 @@ class CalculatorTool implements EmbeddedMCPTool {
 }
 
 /**
+ * Built-in OwnTracks Location Tool
+ */
+class OwnTracksLocationTool implements EmbeddedMCPTool {
+  name = 'owntracks_last_location';
+  description = "Get EJ's last known location from OwnTracks GPS tracker";
+  inputSchema = {
+    type: 'object',
+    properties: {
+      user: { type: 'string', description: 'User to look up (optional)' },
+    },
+  };
+
+  async execute(_args: Record<string, unknown>): Promise<string> {
+    try {
+      let authToken = '';
+      try {
+        authToken = readFileSync('/home/debian/services/owntracks/.env', 'utf-8')
+          .split('\n')
+          .find((l: string) => l.startsWith('OWNTRACKS_AUTH_TOKEN='))
+          ?.split('=')[1]?.trim() || '';
+      } catch { /* no token file */ }
+
+      const headers: Record<string, string> = {};
+      if (authToken) headers['Authorization'] = `Bearer ${authToken}`;
+
+      const response = await fetch('http://localhost:7785/latest', {
+        headers,
+        signal: AbortSignal.timeout(5000),
+      });
+
+      if (!response.ok) {
+        return `OwnTracks API error: ${response.status}`;
+      }
+
+      const data = (await response.json()) as { lat?: number; lon?: number; tst?: number; alt?: number; vel?: number };
+      if (!data.lat || !data.lon) {
+        return 'No location data available from OwnTracks';
+      }
+
+      const timestamp = data.tst ? new Date(data.tst * 1000).toISOString() : 'unknown';
+      return JSON.stringify({
+        lat: data.lat,
+        lon: data.lon,
+        altitude: data.alt || null,
+        velocity: data.vel || null,
+        timestamp,
+      });
+    } catch (error) {
+      logger.error('OwnTracks location fetch failed:', error);
+      return `OwnTracks location fetch failed: ${error instanceof Error ? error.message : 'Unknown error'}`;
+    }
+  }
+}
+
+/**
  * Embedded MCP Runtime - Zero External Dependencies
  *
  * This replaces the fragile external process spawning system with
@@ -164,7 +220,7 @@ export class EmbeddedMCPRuntime {
    * Initialize built-in tools that are always available
    */
   private initializeBuiltinTools(): void {
-    const builtinTools = [new WikipediaSearchTool(), new TimeProviderTool(), new CalculatorTool()];
+    const builtinTools = [new WikipediaSearchTool(), new TimeProviderTool(), new CalculatorTool(), new OwnTracksLocationTool()];
 
     for (const tool of builtinTools) {
       this.tools.set(tool.name, tool);

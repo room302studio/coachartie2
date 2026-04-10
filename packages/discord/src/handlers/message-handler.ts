@@ -900,7 +900,7 @@ export function setupMessageHandler(client: Client) {
     if (message.channel.isDMBased() && message.author.id === EJ_USER_ID) {
       try {
         const { appendFileSync } = await import('fs');
-        const PRESENCE_INBOX_PATH = '/app/data/presence-inbox.jsonl';
+        const PRESENCE_INBOX_PATH = '/data2/apps/coachartie2/data/presence-inbox.jsonl';
 
         const presenceResponse = {
           id: `response-${Date.now()}`,

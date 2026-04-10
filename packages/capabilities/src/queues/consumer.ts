@@ -1,6 +1,7 @@
 import {
   createWorker,
   createQueue,
+  createRedisConnection,
   QUEUES,
   IncomingMessage,
   OutgoingMessage,
@@ -12,6 +13,30 @@ import {
 import { processMessage } from '../handlers/process-message.js';
 import { jobTracker } from '../services/core/job-tracker.js';
 import type { Worker } from 'bullmq';
+
+// Per-user processing lock to prevent parallel responses to the same user
+const USER_LOCK_TTL_SEC = 300; // matches global job timeout
+const USER_LOCK_POLL_MS = 500;
+
+async function acquireUserLock(userId: string, timeoutMs: number = USER_LOCK_TTL_SEC * 1000): Promise<boolean> {
+  const redis = createRedisConnection();
+  const lockKey = `user-processing-lock:${userId}`;
+  const deadline = Date.now() + timeoutMs;
+
+  while (Date.now() < deadline) {
+    // SET NX EX — only succeeds if key doesn't exist
+    const result = await redis.set(lockKey, Date.now().toString(), 'EX', USER_LOCK_TTL_SEC, 'NX');
+    if (result === 'OK') return true;
+    await new Promise(r => setTimeout(r, USER_LOCK_POLL_MS));
+  }
+  return false;
+}
+
+async function releaseUserLock(userId: string): Promise<void> {
+  const redis = createRedisConnection();
+  const lockKey = `user-processing-lock:${userId}`;
+  await redis.del(lockKey);
+}
 
 export async function startMessageConsumer(): Promise<Worker<IncomingMessage, void> | null> {
   const redisHost = process.env.REDIS_HOST || 'localhost';
@@ -50,6 +75,12 @@ export async function startMessageConsumer(): Promise<Worker<IncomingMessage, vo
       source: message.source,
       messageLength: message.message.length,
     });
+
+    // Acquire per-user lock to prevent parallel responses to the same person
+    const lockAcquired = await acquireUserLock(message.userId);
+    if (!lockAcquired) {
+      logger.warn(`⏱️ Could not acquire user lock for ${message.userId} within timeout — processing anyway`);
+    }
 
     try {
       // Store message in database for context history (only for Discord messages)
@@ -237,6 +268,8 @@ export async function startMessageConsumer(): Promise<Worker<IncomingMessage, vo
       }
 
       throw error; // Let BullMQ handle retries
+    } finally {
+      await releaseUserLock(message.userId);
     }
   });
 
