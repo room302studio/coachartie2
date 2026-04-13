@@ -98,12 +98,12 @@ transports.push(
     maxFiles: 5,
   }),
 
-  // Combined log - all levels
+  // Combined log - all levels (kept for 30+ days for back-testing)
   new winston.transports.File({
     filename: path.join(logsDir, `${serviceName}-combined.log`),
     format: winston.format.combine(winston.format.timestamp(), winston.format.json()),
     maxsize: 10485760, // 10MB
-    maxFiles: 10,
+    maxFiles: 20, // ~200MB, covers ~30 days
   }),
 
   // Debug log - verbose output for debugging

@@ -23,16 +23,19 @@ export interface UsageStats {
   completion_tokens: number;
   total_tokens: number;
   estimated_cost: number;
+  step_type?: string; // 'response' | 'proactive_judgment' | 'observational_learning' | 'capability' | 'planning'
 }
 
-// Model pricing per 1K tokens (input/output) - OpenRouter pricing as of 2025
+// Model pricing per 1K tokens (input/output) - OpenRouter pricing as of 2026-04
 const MODEL_PRICING: Record<string, { input: number; output: number }> = {
   // Anthropic
   'anthropic/claude-3.5-sonnet': { input: 0.003, output: 0.015 },
   'anthropic/claude-sonnet-4': { input: 0.003, output: 0.015 },
   'anthropic/claude-sonnet-4.5': { input: 0.003, output: 0.015 },
+  'anthropic/claude-sonnet-4.6': { input: 0.003, output: 0.015 },
   'anthropic/claude-opus-4': { input: 0.015, output: 0.075 },
   'anthropic/claude-opus-4.5': { input: 0.015, output: 0.075 },
+  'anthropic/claude-opus-4.6': { input: 0.005, output: 0.025 },
   // OpenAI
   'openai/gpt-3.5-turbo': { input: 0.0005, output: 0.0015 },
   'openai/gpt-4': { input: 0.03, output: 0.06 },
@@ -81,8 +84,8 @@ export class UsageTracker {
           model_name, user_id, message_id, input_length, output_length,
           response_time_ms, capabilities_detected, capabilities_executed,
           capability_types, success, error_type, prompt_tokens,
-          completion_tokens, total_tokens, estimated_cost
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          completion_tokens, total_tokens, estimated_cost, step_type
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           stats.model_name || 'unknown',
           stats.user_id || 'unknown',
@@ -99,6 +102,7 @@ export class UsageTracker {
           stats.completion_tokens ?? 0,
           stats.total_tokens ?? 0,
           stats.estimated_cost ?? 0,
+          stats.step_type || 'response',
         ]
       );
 

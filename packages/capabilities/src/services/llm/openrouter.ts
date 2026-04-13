@@ -313,6 +313,7 @@ class OpenRouterService {
       traceId?: string | null;
       guildId?: string;
       maxTokens?: number; // Dynamic token limit from preflight analysis
+      stepType?: string; // Cost attribution: 'response' | 'observational_learning' | 'capability' | 'planning'
     }
   ): Promise<string> {
     // SHORT-CIRCUIT: If credits are exhausted, don't even try the API
@@ -465,6 +466,7 @@ class OpenRouterService {
             completion_tokens: usage.completion_tokens,
             total_tokens: usage.total_tokens,
             estimated_cost: estimatedCost,
+            step_type: options?.stepType || (userId === 'observational-system' ? 'observational_learning' : 'response'),
           }).catch((error) => {
             logger.error('Failed to record usage stats:', error);
           });
@@ -587,6 +589,7 @@ class OpenRouterService {
       traceId?: string | null;
       guildId?: string;
       maxTokens?: number; // Dynamic token limit from preflight analysis
+      stepType?: string; // Cost attribution: 'response' | 'observational_learning' | 'capability' | 'planning'
     }
   ): Promise<string> {
     if (messages.length === 0) {
@@ -750,6 +753,7 @@ class OpenRouterService {
             completion_tokens: usage.completion_tokens,
             total_tokens: usage.total_tokens,
             estimated_cost: estimatedCost,
+            step_type: options?.stepType || (userId === 'observational-system' ? 'observational_learning' : 'response'),
           }).catch((error) => {
             logger.error('Failed to record streaming usage stats:', error);
           });

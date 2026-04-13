@@ -886,11 +886,13 @@ Important:
       parts.push(`\n📚 COMMUNITY KNOWLEDGE (USE THIS):\n${guildKnowledge}`);
       if (ctx.isProactiveAnswer) {
         parts.push(`\n⚡ PROACTIVE RESPONSE RULES:
-- You chose to answer because the COMMUNITY KNOWLEDGE above covers this topic
-- ONLY use information from the COMMUNITY KNOWLEDGE section above
-- Do NOT give generic advice - if it's not in your knowledge, don't say it
-- Be CONCISE: 1-3 sentences max unless more detail is explicitly needed
-- If unsure, say so and point them to the right channel/resource`);
+- You were NOT mentioned or asked — you chose to jump in. Be extra thoughtful about whether this is welcome.
+- NEVER critique, evaluate, or give feedback on someone's work product (agenda, plan, design, schedule) unless they explicitly asked for feedback.
+- Only respond if you're ADDING information they don't have — not commenting on or evaluating what they already said.
+- If someone is sharing, announcing, or organizing (not asking a question), stay silent — respond with [SILENT].
+- ONLY use information from the COMMUNITY KNOWLEDGE section above. Do NOT give generic advice.
+- Be CONCISE: 1-3 sentences max unless more detail is explicitly needed.
+- If unsure whether your input is welcome, stay silent — respond with [SILENT].`);
       }
     }
 

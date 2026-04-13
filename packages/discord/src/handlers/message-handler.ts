@@ -10,7 +10,7 @@
  */
 
 import { Client, Events, Message, EmbedBuilder, AttachmentBuilder, ChannelType } from 'discord.js';
-import { logger, canDMForTasks, getDMPolicy, dmPairingService } from '@coachartie/shared';
+import { logger, canDMForTasks, getDMPolicy, dmPairingService, getSyncDb } from '@coachartie/shared';
 import { publishMessage } from '../queues/publisher.js';
 import { telemetry } from '../services/telemetry.js';
 import {
@@ -180,35 +180,84 @@ async function shouldProactivelyAnswer(
     // Debug: log what context we have
     logger.info(`🔍 Proactive judgment context length: ${guildContext?.length || 0} chars`);
 
-    const prompt = `You are a helper bot deciding whether to engage with a message. Be CONSERVATIVE - only answer clear help requests.
+    // Detect guild type for context-appropriate judgment
+    const guildId = message.guild?.id;
+    const isRoom302 = guildId === '932719842522443928';
+
+    // Fetch relationship context: what do we know about this person?
+    let relationshipContext = '';
+    try {
+      const brainUrl = process.env.BRAIN_URL || 'http://localhost:18239';
+      const username = message.author.username || message.author.displayName || 'unknown';
+      const memResponse = await fetch(
+        `${brainUrl}/api/memories?userId=${message.author.id}&search=${encodeURIComponent(username)}&limit=5`,
+        { signal: AbortSignal.timeout(2000) } // 2s timeout — don't block on this
+      );
+      if (memResponse.ok) {
+        const memories = (await memResponse.json()) as Array<{ content: string; tags?: string }>;
+        if (memories.length > 0) {
+          const snippets = memories
+            .slice(0, 3)
+            .map((m) => m.content?.substring(0, 150))
+            .filter(Boolean);
+          if (snippets.length > 0) {
+            relationshipContext = `\nRELATIONSHIP CONTEXT (what you know about @${username}):\n${snippets.join('\n')}\n\nUse this to calibrate: if past interactions suggest this person finds your unsolicited input annoying, set answer=false.`;
+          }
+        }
+      }
+    } catch {
+      // Non-fatal — proceed without relationship context
+    }
+
+    const helpCriteria = isRoom302
+      ? `Set answer=true ONLY if:
+- Someone is ASKING a direct question they need help answering
+- Someone describes a problem or blocker and is explicitly looking for solutions
+- Someone is confused or stuck and would welcome input
+- The message has substance (at least 8 words) and contains a clear question or request
+
+Set answer=false if:
+- Someone is SHARING an agenda, plan, update, or status — they're informing, not asking
+- Someone is posting their own work product (designs, schedules, lists, to-do items) — don't critique unless asked
+- The message is an announcement or statement, not a question
+- You'd be giving unsolicited feedback on someone else's decisions or plans
+- The person clearly has the situation handled and isn't asking for help
+- Someone is listing items, bullet points, or action items — that's organizing, not asking
+
+KEY TEST: Would a thoughtful coworker jump in here unprompted, or would they just nod and let the person continue? If "nod and listen" — set answer=false.
+
+This is a small working team. You're a teammate, not a supervisor. Respond to questions and requests for help. Do NOT volunteer opinions on other people's work unless asked.`
+      : `Set answer=true ONLY if:
+- They're clearly asking a SPECIFIC question about the game
+- They have a bug/issue AND are asking for help
+- Your knowledge base EXPLICITLY covers what they're asking about
+- The message is at least 10 words and contains a clear question`;
+
+    const prompt = `You are a helper bot deciding whether to engage with a message. Be CONSERVATIVE - only answer clear help requests or questions you can genuinely help with.
 
 YOUR KNOWLEDGE BASE:
 ${guildContext}
+${relationshipContext}
 
-USER MESSAGE:
+MESSAGE FROM @${message.author.username || message.author.displayName || 'unknown'}:
 "${message.content}"
 
 Respond with JSON only:
 {"answer": true/false, "confidence": 0.0-1.0, "reason": "brief explanation"}
 
-Set answer=true ONLY if:
-- They're clearly asking a SPECIFIC question about the game
-- They have a bug/issue AND are asking for help
-- Your knowledge base EXPLICITLY covers what they're asking about
-- The message is at least 10 words and contains a clear question
+${helpCriteria}
 
 Set answer=false if:
-- Short messages (under 10 words) - these are usually banter
+- Short messages (under 6 words) - these are usually banter
 - Just chatting/joking between users
 - Rhetorical questions or sarcasm ("askers?", "who asked?", etc.)
-- Off-topic discussion (not about the game)
 - Meta-discussion about the bot itself ("the bot should...", "limit when bot...")
 - Someone else already answered
 - They're responding to someone else (not asking the room)
 - One-word or two-word messages
 - Messages that are reactions/commentary ("lmao", "bro", "oh my god", etc.)
 
-CRITICAL: When in doubt, answer FALSE. It's better to miss a question than to interrupt conversations. Only engage when someone is CLEARLY asking for help with the game.
+CRITICAL: When in doubt, answer FALSE. It's better to miss a question than to interrupt conversations.
 
 JSON response:`;
 
@@ -241,8 +290,39 @@ JSON response:`;
 
     const openRouterResult = (await openRouterResponse.json()) as {
       choices?: Array<{ message?: { content?: string } }>;
+      usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number };
     };
     const rawResponse = openRouterResult.choices?.[0]?.message?.content || '';
+
+    // Track proactive judgment cost
+    const judgmentModel = process.env.PROACTIVE_JUDGMENT_MODEL || 'google/gemini-2.0-flash-001';
+    const usage = openRouterResult.usage;
+    if (usage) {
+      try {
+        const promptTokens = usage.prompt_tokens || 0;
+        const completionTokens = usage.completion_tokens || 0;
+        // Gemini Flash pricing: ~$0.0001/1K input, $0.0004/1K output
+        const estimatedCost = (promptTokens / 1000) * 0.0001 + (completionTokens / 1000) * 0.0004;
+        const db = getSyncDb();
+        db.run(
+          `INSERT INTO model_usage_stats (
+            model_name, user_id, message_id, input_length, output_length,
+            response_time_ms, capabilities_detected, capabilities_executed,
+            capability_types, success, prompt_tokens, completion_tokens,
+            total_tokens, estimated_cost, step_type
+          ) VALUES (?, ?, ?, ?, ?, ?, 0, 0, '', 1, ?, ?, ?, ?, ?)`,
+          [
+            judgmentModel, message.author.id, message.id,
+            prompt.length, rawResponse.length, 0,
+            promptTokens, completionTokens, promptTokens + completionTokens,
+            estimatedCost, 'proactive_judgment',
+          ]
+        );
+        logger.info(`📊 Proactive judgment cost: ${judgmentModel} - ${promptTokens + completionTokens} tokens - $${estimatedCost.toFixed(6)}`);
+      } catch (costError) {
+        // Non-fatal
+      }
+    }
 
     // Parse JSON response
     try {
@@ -1139,14 +1219,24 @@ export function setupMessageHandler(client: Client) {
     let proactiveAnswerContext: string | undefined;
     const channelNameDebug = ('name' in message.channel ? message.channel.name : 'DM') || 'unknown';
 
-    // Basic sanity check - at least 3 words to avoid reacting to "lol" or "ok"
-    // But let the LLM judgment decide whether to actually respond
+    // Pre-filter: basic sanity + cheap heuristics before expensive LLM judgment
     const wordCount = message.content.trim().split(/\s+/).length;
     const meetsMinimumLength = wordCount >= 3;
-    const isQuestion = meetsMinimumLength; // Let LLM decide, don't regex-gatekeep
+
+    // Cheap heuristic: detect announcements/agendas/status updates
+    // These are sharing, not asking — skip LLM judgment entirely
+    const contentLower = message.content.toLowerCase().trim();
+    const hasBulletPoints = /^[\s]*[*\-•]\s/m.test(message.content) || /\n[\s]*[*\-•]\s/m.test(message.content);
+    const hasNumberedList = /^[\s]*\d+[.)]\s/m.test(message.content) || /\n[\s]*\d+[.)]\s/m.test(message.content);
+    const hasQuestionMark = message.content.includes('?');
+    const startsWithAnnouncement = /^(agenda|update|fyi|heads up|reminder|note|announcement|schedule|plan)\b/i.test(contentLower);
+    const looksLikeAnnouncement = (hasBulletPoints || hasNumberedList) && !hasQuestionMark;
+    const isStatusUpdate = startsWithAnnouncement || looksLikeAnnouncement;
+
+    const isQuestion = meetsMinimumLength && !isStatusUpdate;
 
     logger.info(
-      `🔍 Proactive check: guild=${guildConfig?.name || 'none'}, channel=#${channelNameDebug}, proactive=${guildConfig?.proactiveAnswering}, wordCount=${wordCount}, looksLikeQuestion=${isQuestion}, mentioned=${responseConditions.botMentioned} [${shortId}]`
+      `🔍 Proactive check: guild=${guildConfig?.name || 'none'}, channel=#${channelNameDebug}, proactive=${guildConfig?.proactiveAnswering}, wordCount=${wordCount}, looksLikeQuestion=${isQuestion}, isStatusUpdate=${isStatusUpdate}, mentioned=${responseConditions.botMentioned} [${shortId}]`
     );
 
     if (
