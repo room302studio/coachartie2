@@ -184,29 +184,16 @@ async function shouldProactivelyAnswer(
     const guildId = message.guild?.id;
     const isRoom302 = guildId === '932719842522443928';
 
-    // Fetch relationship context: what do we know about this person?
+    // Fetch user profile: what do we know about this person?
     let relationshipContext = '';
     try {
-      const brainUrl = process.env.BRAIN_URL || 'http://localhost:18239';
-      const username = message.author.username || message.author.displayName || 'unknown';
-      const memResponse = await fetch(
-        `${brainUrl}/api/memories?userId=${message.author.id}&search=${encodeURIComponent(username)}&limit=5`,
-        { signal: AbortSignal.timeout(2000) } // 2s timeout — don't block on this
-      );
-      if (memResponse.ok) {
-        const memories = (await memResponse.json()) as Array<{ content: string; tags?: string }>;
-        if (memories.length > 0) {
-          const snippets = memories
-            .slice(0, 3)
-            .map((m) => m.content?.substring(0, 150))
-            .filter(Boolean);
-          if (snippets.length > 0) {
-            relationshipContext = `\nRELATIONSHIP CONTEXT (what you know about @${username}):\n${snippets.join('\n')}\n\nUse this to calibrate: if past interactions suggest this person finds your unsolicited input annoying, set answer=false.`;
-          }
-        }
+      const { ObservationalLearning } = await import('../services/observational-learning.js');
+      const profile = ObservationalLearning.getUserProfile(message.author.id, guildId || '');
+      if (profile) {
+        relationshipContext = `\n${profile}\n\nUse this profile to calibrate: if this person has pushed back on unsolicited input before, set answer=false.`;
       }
     } catch {
-      // Non-fatal — proceed without relationship context
+      // Non-fatal — proceed without profile
     }
 
     const helpCriteria = isRoom302

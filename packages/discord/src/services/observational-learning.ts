@@ -1,4 +1,4 @@
-import { logger } from '@coachartie/shared';
+import { logger, getSyncDb } from '@coachartie/shared';
 import { Client, TextChannel, Message, Collection } from 'discord.js';
 import fetch from 'node-fetch';
 import { getGuildConfig, GUILD_CONFIGS, GuildType } from '../config/guild-whitelist.js';
@@ -168,6 +168,9 @@ export class ObservationalLearning {
 
         await this.summarizeAndStore(messages, guildId, guildName, channel.id, channel.name);
 
+        // Update user profiles for anyone who spoke in this batch
+        await this.updateUserProfiles(messages, guildId, guildName);
+
         // Update last processed message
         const newestMessage = messages.first();
         if (newestMessage) {
@@ -333,6 +336,153 @@ Focus on patterns that would help understand this community's needs and interest
       }
     } catch (error) {
       logger.error('👁️ Failed to store observational memory:', error);
+    }
+  }
+
+  /**
+   * Update user profiles for everyone who spoke in a batch of messages.
+   * Profiles are stored as memories with tag 'user-profile' — one per user per guild.
+   */
+  private async updateUserProfiles(
+    messages: Collection<string, Message>,
+    guildId: string,
+    guildName: string
+  ): Promise<void> {
+    // Extract unique human users from this batch
+    const users = new Map<string, { id: string; username: string; displayName: string }>();
+    for (const [, msg] of messages) {
+      if (!msg.author.bot && !users.has(msg.author.id)) {
+        users.set(msg.author.id, {
+          id: msg.author.id,
+          username: msg.author.username,
+          displayName: msg.author.displayName || msg.author.username,
+        });
+      }
+    }
+
+    if (users.size === 0) return;
+
+    const db = getSyncDb();
+
+    for (const [userId, user] of users) {
+      try {
+        // Get existing profile
+        const existingProfile = db.get(
+          `SELECT id, content FROM memories
+           WHERE user_id = ? AND guild_id = ? AND tags LIKE '%user-profile%'
+           ORDER BY updated_at DESC LIMIT 1`,
+          [userId, guildId]
+        ) as { id: number; content: string } | undefined;
+
+        // Get recent memories about this user (last 10)
+        const recentMemories = db.all(
+          `SELECT content FROM memories
+           WHERE (user_id = ? OR content LIKE ?)
+           AND guild_id = ? AND tags NOT LIKE '%user-profile%'
+           ORDER BY created_at DESC LIMIT 10`,
+          [userId, `%${user.username}%`, guildId]
+        ) as Array<{ content: string }>;
+
+        // Get recent messages from this user in the current batch
+        const userMessages = messages
+          .filter((m) => m.author.id === userId)
+          .sort((a, b) => a.createdTimestamp - b.createdTimestamp)
+          .map((m) => m.content.substring(0, 200));
+
+        if (recentMemories.length === 0 && userMessages.length === 0) continue;
+
+        // Build context for profile synthesis
+        const memorySnippets = recentMemories
+          .map((m) => m.content.substring(0, 200))
+          .join('\n');
+
+        const currentProfile = existingProfile?.content || '(no existing profile)';
+
+        const profilePrompt = `You maintain a brief profile of Discord users to help calibrate how to interact with them.
+
+USER: @${user.username} (display: ${user.displayName}) in ${guildName}
+
+CURRENT PROFILE:
+${currentProfile}
+
+RECENT MEMORIES ABOUT THEM:
+${memorySnippets || '(none)'}
+
+THEIR RECENT MESSAGES:
+${userMessages.join('\n') || '(none in this batch)'}
+
+Write an updated profile in 3-5 bullet points. Include:
+- Their role/what they do (if known)
+- Communication style (direct? casual? verbose?)
+- How they interact with Artie (positive? annoyed? neutral? never interacted directly?)
+- Any preferences or boundaries they've expressed
+- Topics they care about
+
+Keep it factual and short. If the current profile is good and nothing new emerged, return it unchanged. Do NOT invent details — only include what's evidenced above.`;
+
+        const response = await fetch(`${this.CAPABILITIES_URL}/api/observe`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            prompt: profilePrompt,
+            guildId,
+            channelId: 'profile-synthesis',
+            messageCount: userMessages.length,
+          }),
+        });
+
+        if (!response.ok) continue;
+
+        const result = (await response.json()) as { summary: string; cost: number };
+        if (!result.summary) continue;
+
+        const profileContent = `[User Profile: @${user.username} in ${guildName}]\n${result.summary}`;
+
+        if (existingProfile) {
+          // Update existing profile
+          db.run(
+            `UPDATE memories SET content = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+            [profileContent, existingProfile.id]
+          );
+          logger.info(`👤 Updated profile for @${user.username} in ${guildName}`);
+        } else {
+          // Create new profile
+          db.run(
+            `INSERT INTO memories (user_id, content, tags, context, timestamp, importance, guild_id, metadata)
+             VALUES (?, ?, ?, ?, datetime('now'), 8, ?, ?)`,
+            [
+              userId,
+              profileContent,
+              JSON.stringify(['user-profile', guildName.toLowerCase().replace(/\s+/g, '-')]),
+              `Profile for @${user.username} in ${guildName}`,
+              guildId,
+              JSON.stringify({ username: user.username, displayName: user.displayName, profileVersion: 1 }),
+            ]
+          );
+          logger.info(`👤 Created profile for @${user.username} in ${guildName}`);
+        }
+      } catch (error) {
+        logger.warn(`👤 Failed to update profile for @${user.username}:`, error);
+        // Non-fatal — continue with other users
+      }
+    }
+  }
+
+  /**
+   * Get a user's profile for a given guild (used by proactive judgment)
+   */
+  static getUserProfile(userId: string, guildId: string): string | null {
+    try {
+      const db = getSyncDb();
+      const profile = db.get(
+        `SELECT content FROM memories
+         WHERE user_id = ? AND guild_id = ? AND tags LIKE '%user-profile%'
+         ORDER BY updated_at DESC LIMIT 1`,
+        [userId, guildId]
+      ) as { content: string } | undefined;
+      return profile?.content || null;
+    } catch {
+      return null;
     }
   }
 
