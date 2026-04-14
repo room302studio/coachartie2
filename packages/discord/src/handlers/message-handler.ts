@@ -283,32 +283,31 @@ JSON response:`;
 
     // Track proactive judgment cost
     const judgmentModel = process.env.PROACTIVE_JUDGMENT_MODEL || 'google/gemini-2.0-flash-001';
-    const usage = openRouterResult.usage;
-    if (usage) {
-      try {
-        const promptTokens = usage.prompt_tokens || 0;
-        const completionTokens = usage.completion_tokens || 0;
-        // Gemini Flash pricing: ~$0.0001/1K input, $0.0004/1K output
-        const estimatedCost = (promptTokens / 1000) * 0.0001 + (completionTokens / 1000) * 0.0004;
-        const db = getSyncDb();
-        db.run(
-          `INSERT INTO model_usage_stats (
-            model_name, user_id, message_id, input_length, output_length,
-            response_time_ms, capabilities_detected, capabilities_executed,
-            capability_types, success, prompt_tokens, completion_tokens,
-            total_tokens, estimated_cost, step_type
-          ) VALUES (?, ?, ?, ?, ?, ?, 0, 0, '', 1, ?, ?, ?, ?, ?)`,
-          [
-            judgmentModel, message.author.id, message.id,
-            prompt.length, rawResponse.length, 0,
-            promptTokens, completionTokens, promptTokens + completionTokens,
-            estimatedCost, 'proactive_judgment',
-          ]
-        );
-        logger.info(`📊 Proactive judgment cost: ${judgmentModel} - ${promptTokens + completionTokens} tokens - $${estimatedCost.toFixed(6)}`);
-      } catch (costError) {
-        // Non-fatal
-      }
+    try {
+      const usage = openRouterResult.usage;
+      // Estimate tokens from char length if API doesn't return usage
+      const promptTokens = usage?.prompt_tokens || Math.ceil(prompt.length / 4);
+      const completionTokens = usage?.completion_tokens || Math.ceil(rawResponse.length / 4);
+      // Gemini Flash pricing: ~$0.0001/1K input, $0.0004/1K output
+      const estimatedCost = (promptTokens / 1000) * 0.0001 + (completionTokens / 1000) * 0.0004;
+      const db = getSyncDb();
+      db.run(
+        `INSERT INTO model_usage_stats (
+          model_name, user_id, message_id, input_length, output_length,
+          response_time_ms, capabilities_detected, capabilities_executed,
+          capability_types, success, prompt_tokens, completion_tokens,
+          total_tokens, estimated_cost, step_type
+        ) VALUES (?, ?, ?, ?, ?, ?, 0, 0, '', 1, ?, ?, ?, ?, ?)`,
+        [
+          judgmentModel, message.author.id, message.id,
+          prompt.length, rawResponse.length, 0,
+          promptTokens, completionTokens, promptTokens + completionTokens,
+          estimatedCost, 'proactive_judgment',
+        ]
+      );
+      logger.info(`📊 Proactive judgment cost: ${judgmentModel} - ${promptTokens + completionTokens} tokens - $${estimatedCost.toFixed(6)}`);
+    } catch (costError) {
+      logger.warn(`📊 Failed to record proactive judgment cost:`, costError);
     }
 
     // Parse JSON response
