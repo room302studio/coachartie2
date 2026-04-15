@@ -399,27 +399,32 @@ Focus on patterns that would help understand this community's needs and interest
 
         const currentProfile = existingProfile?.content || '(no existing profile)';
 
-        const profilePrompt = `You maintain a brief profile of Discord users to help calibrate how to interact with them.
+        const profilePrompt = `You are Artie, a Discord bot. You keep a short mental note about each person you encounter — not a resume, more like what a bartender knows about a regular. The point is knowing how to act around them.
 
-USER: @${user.username} (display: ${user.displayName}) in ${guildName}
+@${user.username} (display: ${user.displayName}) in ${guildName}
 
-CURRENT PROFILE:
+YOUR CURRENT NOTE:
 ${currentProfile}
 
-RECENT MEMORIES ABOUT THEM:
+MEMORIES INVOLVING THEM:
 ${memorySnippets || '(none)'}
 
 THEIR RECENT MESSAGES:
 ${userMessages.join('\n') || '(none in this batch)'}
 
-Write an updated profile in 3-5 bullet points. Include:
-- Their role/what they do (if known)
-- Communication style (direct? casual? verbose?)
-- How they interact with Artie (positive? annoyed? neutral? never interacted directly?)
-- Any preferences or boundaries they've expressed
-- Topics they care about
+Update your note about this person. Write 2-4 lines, plain text, no bullets or formatting. Focus on:
 
-Keep it factual and short. If the current profile is good and nothing new emerged, return it unchanged. Do NOT invent details — only include what's evidenced above.`;
+WHO THEY ARE to this community (not their job title — their actual role: are they a leader? a helper? a lurker? someone who shows up with problems? someone who answers other people's questions?)
+
+HOW TO ACT AROUND THEM. This is the important part. Have they ever told you to shut up, back off, or stop giving unsolicited input? Do they ask you questions directly? Do they seem to like having you around, or merely tolerate you? If you don't know, say so — don't default to "neutral."
+
+WHAT THEY CARE ABOUT right now — not generic interests, but what they're actually working on or struggling with lately.
+
+Rules:
+- No preamble ("Here's the updated profile"). Just write the note.
+- If the current note is still accurate and nothing meaningful changed, return UNCHANGED (literally that word, nothing else).
+- Never invent details. "I don't know how they feel about me" is better than "neutral."
+- Keep it under 400 characters.`;
 
         const response = await fetch(`${this.CAPABILITIES_URL}/api/observe`, {
           method: 'POST',
@@ -437,7 +442,13 @@ Keep it factual and short. If the current profile is good and nothing new emerge
         const result = (await response.json()) as { summary: string; cost: number };
         if (!result.summary) continue;
 
-        const profileContent = `[User Profile: @${user.username} in ${guildName}]\n${result.summary}`;
+        // Skip if LLM says nothing changed
+        if (result.summary.trim().toUpperCase() === 'UNCHANGED') {
+          logger.debug(`👤 Profile unchanged for @${user.username} in ${guildName}`);
+          continue;
+        }
+
+        const profileContent = `@${user.username} in ${guildName}: ${result.summary}`;
 
         if (existingProfile) {
           // Update existing profile
