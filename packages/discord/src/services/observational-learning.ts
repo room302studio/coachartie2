@@ -375,12 +375,13 @@ Focus on patterns that would help understand this community's needs and interest
         ) as { id: number; content: string } | undefined;
 
         // Get recent memories about this user (last 10)
+        // Search across all guilds — interaction memories often have no guild_id
         const recentMemories = db.all(
           `SELECT content FROM memories
            WHERE (user_id = ? OR content LIKE ?)
-           AND guild_id = ? AND tags NOT LIKE '%user-profile%'
+           AND tags NOT LIKE '%user-profile%'
            ORDER BY created_at DESC LIMIT 10`,
-          [userId, `%${user.username}%`, guildId]
+          [userId, `%${user.username}%`]
         ) as Array<{ content: string }>;
 
         // Get recent messages from this user in the current batch
