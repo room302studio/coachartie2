@@ -180,17 +180,28 @@ class DMPairingService {
 
   /**
    * Check if a user is on the allowlist
+   * Forces a fresh read to ensure cross-process writes are visible
+   * (approval may come from capabilities service or manual CLI)
    */
   isAllowed(platform: string, userId: string): boolean {
     this.initialize();
     const db = getSyncDb();
+
+    // Force SQLite to see latest disk state — critical for cross-process visibility
+    // In DELETE journal mode, a long-lived connection can miss writes from other processes
+    try { db.run(`SELECT 1 FROM dm_allowlist LIMIT 0`); } catch { /* ignore */ }
 
     const entry = db.get<{ id: number }>(
       `SELECT id FROM dm_allowlist WHERE platform = ? AND user_id = ? AND status = 'active'`,
       [platform, userId]
     );
 
-    return !!entry;
+    const allowed = !!entry;
+    if (!allowed) {
+      logger.debug(`🔐 DM allowlist check: ${platform}:${userId} = NOT ALLOWED`);
+    }
+
+    return allowed;
   }
 
   /**
