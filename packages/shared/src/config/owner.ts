@@ -5,6 +5,8 @@
  * Other users can gain DM access via the pairing system.
  */
 
+import { dmPairingService } from '../services/dm-pairing.js';
+
 // EJ's Discord user ID - the owner of Coach Artie
 export const OWNER_USER_ID = '688448399879438340';
 
@@ -18,14 +20,8 @@ export const ADMIN_USERS = new Set([
  * Owner always can, others need to be on allowlist
  */
 export function canReceiveProactiveDMs(userId: string): boolean {
-  // Owner always receives proactive DMs
   if (userId === OWNER_USER_ID) return true;
-
-  // For others, check allowlist via pairing service
-  // This is a lazy import to avoid circular deps
   try {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const { dmPairingService } = require('../services/dm-pairing.js');
     return dmPairingService.isAllowed('discord', userId);
   } catch {
     return false;
@@ -37,13 +33,8 @@ export function canReceiveProactiveDMs(userId: string): boolean {
  * Owner always can, others checked against pairing allowlist
  */
 export function canDMForTasks(userId: string): boolean {
-  // Owner always has DM access
   if (userId === OWNER_USER_ID) return true;
-
-  // For others, check allowlist
   try {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const { dmPairingService } = require('../services/dm-pairing.js');
     return dmPairingService.isAllowed('discord', userId);
   } catch {
     return false;
@@ -69,8 +60,6 @@ export function isOwner(userId: string): boolean {
  */
 export function getDMPolicy(platform: string = 'discord'): { policy: 'pairing' | 'open' | 'closed'; codeExpiryMinutes: number } {
   try {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const { dmPairingService } = require('../services/dm-pairing.js');
     return dmPairingService.getPolicy(platform);
   } catch {
     return { policy: 'pairing', codeExpiryMinutes: 60 };

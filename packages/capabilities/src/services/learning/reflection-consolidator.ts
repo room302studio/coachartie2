@@ -524,7 +524,7 @@ Rules should be concise (1-2 sentences) and actionable.`,
         messages,
         'reflection-consolidator',
         undefined,
-        process.env.FAST_MODEL || 'openai/gpt-4o-mini' // Use fast model for cost efficiency
+        process.env.BACKGROUND_MODEL || process.env.FAST_MODEL || 'google/gemini-2.0-flash-001' // Use background model for cost efficiency
       );
 
       // Parse the response

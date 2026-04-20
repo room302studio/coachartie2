@@ -114,8 +114,8 @@ export class HealthServer {
       }
     });
 
-    this.server.listen(this.port, () => {
-      logger.info(`🩺 Health server running on port ${this.port}`);
+    this.server.listen(this.port, '127.0.0.1', () => {
+      logger.info(`🩺 Health server running on 127.0.0.1:${this.port}`);
     });
 
     this.server.on('error', (error: Error) => {

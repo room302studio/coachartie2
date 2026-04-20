@@ -242,6 +242,16 @@ export function createApiRouter(discordClient: Client): Router {
   // POST /api/dm - Send a direct message to a user
   router.post('/dm', async (req: Request, res: Response) => {
     try {
+      // Require Bearer token auth to prevent unauthorized DM sending
+      const authHeader = req.headers.authorization;
+      const expectedToken = process.env.DM_API_TOKEN || process.env.ARTIE_API_TOKEN;
+      if (!expectedToken || !authHeader || authHeader !== `Bearer ${expectedToken}`) {
+        return res.status(401).json({
+          success: false,
+          error: 'Unauthorized — Bearer token required',
+        });
+      }
+
       const { userId, message, fileBase64, fileName } = req.body;
 
       if (!userId) {

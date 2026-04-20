@@ -68,6 +68,7 @@ import { trendWatcherCapability } from '../../capabilities/research/trend-watche
 // Cross-agent capabilities
 import { kanbanCapability } from '../../capabilities/system/kanban.js';
 import { vpsClaudeCapability } from '../../capabilities/system/vps-claude.js';
+import { hermesCapability } from '../../capabilities/system/hermes.js';
 import { systemMemoryCapability } from '../../capabilities/system/system-memory.js';
 import { walletCapability } from '../../capabilities/system/wallet.js';
 import { osintLookupCapability } from '../../capabilities/system/osint-lookup.js';
@@ -342,6 +343,7 @@ export class CapabilityBootstrap {
 
       logger.info('📦 Registering vps_claude (cross-agent awareness)...');
       capabilityRegistry.register(vpsClaudeCapability);
+      capabilityRegistry.register(hermesCapability);
       logger.info('✅ vps_claude registered successfully');
 
       logger.info('📦 Registering system_memory (cross-agent communication)...');

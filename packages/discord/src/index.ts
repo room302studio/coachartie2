@@ -267,6 +267,15 @@ async function start() {
         guilds: client.guilds.cache.size,
         permissions: client.user?.flags?.bitfield || 'none',
       });
+
+      // Refresh status file every 30 minutes so other processes get live guild counts
+      setInterval(() => {
+        writeStatus('ready', {
+          username: client.user?.tag,
+          guilds: client.guilds.cache.size,
+          permissions: client.user?.flags?.bitfield || 'none',
+        });
+      }, 30 * 60 * 1000);
     });
 
     client.on(Events.Error, (error) => {

@@ -135,6 +135,7 @@ export class LLMLoopService {
     }
 
     let iterationCount = 0;
+    let lastLLMResponse = ''; // Track last meaningful LLM response for fallback
     const maxIterations = parseInt(process.env.EXPLORATION_MAX_ITERATIONS || '8'); // Reduced from 24 to save costs
     const minIterations = parseInt(process.env.EXPLORATION_MIN_ITERATIONS || '1'); // Reduced from 3 - simple messages don't need iteration
 
@@ -157,36 +158,7 @@ export class LLMLoopService {
       const capabilities = capabilityParser.extractCapabilities(nextAction);
 
       if (capabilities.length === 0) {
-        // LLM wants to stop - check if minimum depth reached
-        if (iterationCount < minIterations) {
-          logger.warn(
-            `⚠️ LLM tried to stop at iteration ${iterationCount} but minimum is ${minIterations} - forcing continuation`
-          );
-          conversationHistory.push(`Assistant: ${nextAction}`);
-          conversationHistory.push(
-            `[SYSTEM: Minimum exploration depth not reached. Continue analysis with suggested actions.]`
-          );
-          continue; // Force loop to continue
-        }
-
-        // EXPERIMENTAL: Random auto-loop continuation (~50% chance)
-        // This encourages more exploration even when LLM wants to stop
-        const randomContinueChance = 0.5; // 50% probability
-        const shouldRandomlyContinue = Math.random() < randomContinueChance;
-
-        if (shouldRandomlyContinue && iterationCount < 6) {
-          // Only randomly continue if we haven't already done too many iterations
-          logger.info(
-            `🎲 RANDOM LOOP ACTIVATION: LLM wanted to stop at iteration ${iterationCount}, but random dice favors more exploration!`
-          );
-          conversationHistory.push(`Assistant: ${nextAction}`);
-          conversationHistory.push(
-            `[SYSTEM: Random exploration boost activated! You're on a roll - dig deeper. What else could you explore? Any edge cases, patterns, or anomalies worth investigating?]`
-          );
-          continue; // Force loop to continue
-        }
-
-        // Minimum depth reached and no random boost, allow stopping
+        // LLM wants to stop - this is its final answer, allow it
         logger.info(
           `🏁 LLM provided final response without capabilities after ${iterationCount} iterations: "${nextAction.substring(0, 100)}..."`
         );
@@ -204,6 +176,9 @@ export class LLMLoopService {
         conversationHistory.push(`Assistant: ${nextAction}`);
         return nextAction;
       }
+
+      // Track last LLM response as fallback if we hit max iterations
+      lastLLMResponse = nextAction;
 
       // Stream the LLM's response (shows user what's about to happen)
       logger.info(
@@ -332,7 +307,18 @@ export class LLMLoopService {
     }
 
     logger.warn(`⚠️ LLM-driven loop reached maximum iterations (${maxIterations}) - ending`);
-    return "I've completed the available steps for your request.";
+    // Return the last meaningful LLM response instead of a generic canned message
+    if (lastLLMResponse) {
+      const cleanResponse = llmResponseCoordinator.stripThinkingTags(
+        lastLLMResponse,
+        context.userId,
+        context.messageId
+      );
+      if (cleanResponse.trim()) {
+        return cleanResponse;
+      }
+    }
+    return "I wasn't able to find the right tools to help with that — could you rephrase or try a different question?";
   }
 
   /**

@@ -26,19 +26,19 @@ export const MODEL_TIERS: Record<ModelTier, ModelConfig> = {
   simple: {
     tier: 'simple',
     model: 'anthropic/claude-3-5-haiku',
-    maxTokens: 1024,
+    maxTokens: 2048,
     description: 'Quick responses, simple tasks, lookups',
   },
   medium: {
     tier: 'medium',
     model: 'anthropic/claude-sonnet-4',
-    maxTokens: 4096,
+    maxTokens: 8192,
     description: 'Normal conversation, moderate complexity',
   },
   complex: {
     tier: 'complex',
     model: 'anthropic/claude-opus-4',
-    maxTokens: 8192,
+    maxTokens: 16384,
     description: 'Deep reasoning, complex analysis, creative work',
   },
 };
@@ -75,7 +75,7 @@ const CAPABILITY_TIERS: Record<string, ModelTier> = {
   'quests.complete': 'medium',
   'memory.store': 'medium',
   'trend-watcher.overview': 'medium',
-  'morning-briefing.show': 'medium',
+  'morning-briefing.show': 'complex',
   'shell.execute': 'medium',
 
   // Complex tier - analysis and creation

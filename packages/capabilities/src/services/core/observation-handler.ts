@@ -105,12 +105,12 @@ export class ObservationHandler {
         { role: 'user' as const, content: prompt },
       ];
 
-      // Use FAST_MODEL for cost efficiency
+      // Use BACKGROUND_MODEL for cost efficiency — observations are passive, don't need frontier models
       const response = await openRouterService.generateFromMessageChain(
         messages,
         'observational-system', // Special system user for observations
         undefined, // messageId (optional)
-        process.env.FAST_MODEL || 'openai/gpt-4o-mini'
+        process.env.BACKGROUND_MODEL || process.env.FAST_MODEL || 'google/gemini-2.0-flash-001'
       );
 
       // Estimate cost (GPT-4o-mini: ~$0.15/1M input, $0.60/1M output)

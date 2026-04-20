@@ -43,6 +43,25 @@ interface GitHubWebhookPayload {
       ref: string;
     };
   };
+  issue?: {
+    number: number;
+    title: string;
+    body: string | null;
+    user: {
+      login: string;
+    };
+    html_url: string;
+    state: string;
+    labels: Array<{ name: string }>;
+  };
+  comment?: {
+    id: number;
+    body: string;
+    user: {
+      login: string;
+    };
+    html_url: string;
+  };
   pusher?: {
     name: string;
   };
@@ -118,6 +137,43 @@ interface GitHubReleasePayload {
   };
 }
 
+// Dedup for webhook events — prevents duplicate posts if webhook fires multiple times
+// or if the poller also catches the same event
+const recentWebhookEvents = new Map<string, number>(); // eventKey -> timestamp
+const WEBHOOK_DEDUP_WINDOW_MS = 30 * 60 * 1000; // 30 minutes
+const WEBHOOK_RATE_LIMIT_WINDOW_MS = 60 * 1000; // 1 minute
+let webhookPostCount = 0;
+let webhookRateLimitResetAt = 0;
+const WEBHOOK_MAX_POSTS_PER_MINUTE = 5;
+
+function isWebhookDuplicate(key: string): boolean {
+  const now = Date.now();
+  // Clean old entries
+  for (const [k, ts] of recentWebhookEvents) {
+    if (now - ts > WEBHOOK_DEDUP_WINDOW_MS) {
+      recentWebhookEvents.delete(k);
+    }
+  }
+  if (recentWebhookEvents.has(key)) {
+    return true;
+  }
+  recentWebhookEvents.set(key, now);
+  return false;
+}
+
+function isWebhookRateLimited(): boolean {
+  const now = Date.now();
+  if (now > webhookRateLimitResetAt) {
+    webhookPostCount = 0;
+    webhookRateLimitResetAt = now + WEBHOOK_RATE_LIMIT_WINDOW_MS;
+  }
+  if (webhookPostCount >= WEBHOOK_MAX_POSTS_PER_MINUTE) {
+    return true;
+  }
+  webhookPostCount++;
+  return false;
+}
+
 // Wiki update configuration - can be extended via environment variables
 const WIKI_UPDATE_CONFIG: Record<string, WikiUpdateRule> = loadWikiUpdateRules();
 
@@ -189,6 +245,14 @@ export async function handleGitHubWebhook(
 
     case 'pull_request':
       await handlePullRequestEvent(payload);
+      break;
+
+    case 'issues':
+      await handleIssueEvent(payload);
+      break;
+
+    case 'issue_comment':
+      await handleIssueCommentEvent(payload);
       break;
 
     default:
@@ -406,6 +470,102 @@ async function handlePullRequestEvent(payload: GitHubWebhookPayload): Promise<vo
   const celebrationMessage = generatePRCelebration(payload);
 
   await publishMessage('github-bot', celebrationMessage, 'general', 'GitHub Bot', true);
+}
+
+async function handleIssueEvent(payload: GitHubWebhookPayload): Promise<void> {
+  const { action, issue, repository } = payload;
+
+  if (!issue || !repository) {
+    logger.warn('Missing issue or repository data');
+    return;
+  }
+
+  // Handle opened, closed, reopened
+  if (!['opened', 'closed', 'reopened'].includes(action || '')) {
+    logger.info(`📝 Skipping issue action: ${action}`);
+    return;
+  }
+
+  // Dedup check
+  const dedupeKey = `issue:${action}:${repository.full_name}:${issue.number}`;
+  if (isWebhookDuplicate(dedupeKey)) {
+    logger.info(`📝 Skipping duplicate issue event: ${dedupeKey}`);
+    return;
+  }
+
+  // Rate limit check
+  if (isWebhookRateLimited()) {
+    logger.warn(`⚠️ Webhook rate limited, dropping issue event: ${dedupeKey}`);
+    return;
+  }
+
+  // Skip bot-created issues
+  if (issue.user.login.includes('[bot]') || issue.user.login === 'github-actions') {
+    logger.info(`📝 Skipping bot-created issue by ${issue.user.login}`);
+    return;
+  }
+
+  const emoji = action === 'opened' ? '📋' : action === 'closed' ? '✅' : '🔄';
+  const labels = issue.labels?.map((l) => `\`${l.name}\``).join(' ') || '';
+
+  let message = `${emoji} **Issue #${issue.number} ${action}** in **${repository.name}**\n\n`;
+  message += `📝 **${issue.title}**\n`;
+  message += `👤 By **${issue.user.login}**\n`;
+  if (labels) {
+    message += `🏷️ ${labels}\n`;
+  }
+  if (action === 'opened' && issue.body) {
+    const truncatedBody = issue.body.length > 300 ? issue.body.slice(0, 300) + '...' : issue.body;
+    message += `\n${truncatedBody}\n`;
+  }
+  message += `🔗 [View issue](${issue.html_url})`;
+
+  logger.info(`📋 Issue #${issue.number} ${action}`, {
+    repo: repository.full_name,
+    author: issue.user.login,
+  });
+
+  // Post to the subwaybuilder-engineering channel
+  await publishMessage('github-bot', message, '1480600810743267420', 'GitHub Bot', true);
+}
+
+async function handleIssueCommentEvent(payload: GitHubWebhookPayload): Promise<void> {
+  const { action, issue, comment, repository } = payload;
+
+  if (!issue || !comment || !repository || action !== 'created') {
+    return;
+  }
+
+  // Skip bot comments
+  if (comment.user.login.includes('[bot]') || comment.user.login === 'github-actions') {
+    return;
+  }
+
+  // Dedup check
+  const dedupeKey = `issue-comment:${repository.full_name}:${comment.id}`;
+  if (isWebhookDuplicate(dedupeKey)) {
+    logger.info(`📝 Skipping duplicate issue comment: ${dedupeKey}`);
+    return;
+  }
+
+  // Rate limit check
+  if (isWebhookRateLimited()) {
+    logger.warn(`⚠️ Webhook rate limited, dropping issue comment event`);
+    return;
+  }
+
+  const truncatedBody = comment.body.length > 400 ? comment.body.slice(0, 400) + '...' : comment.body;
+
+  let message = `💬 **${comment.user.login}** commented on issue #${issue.number} in **${repository.name}**\n\n`;
+  message += `> ${truncatedBody}\n\n`;
+  message += `🔗 [View comment](${comment.html_url})`;
+
+  logger.info(`💬 Issue comment on #${issue.number}`, {
+    repo: repository.full_name,
+    author: comment.user.login,
+  });
+
+  await publishMessage('github-bot', message, '1480600810743267420', 'GitHub Bot', true);
 }
 
 function generatePushCelebration(payload: GitHubPushPayload): string {

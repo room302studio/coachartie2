@@ -90,6 +90,10 @@ export const GUILD_CONFIGS: Record<string, GuildConfig> = {
     scratchpadPath: 'reference-docs/guild-notes/room302studio.md',
     // Observe ALL channels for memory formation (empty array = all channels)
     observationChannels: [],
+    // Proactively jump in when Artie can be helpful
+    proactiveAnswering: true,
+    proactiveChannels: [],  // Empty = all channels
+    proactiveCooldownSeconds: 120,  // 2 min between proactive responses
     githubSync: {
       enabled: true,
       defaultPollIntervalMinutes: 3,
@@ -130,12 +134,11 @@ Use <read>path/to/file.md</read> to look up info before answering questions abou
     id: '1420846272545296470',
     type: 'working',
     name: 'Subwaybuilder',
-    proactiveAnswering: false, // DISABLED - only respond when directly @mentioned
-    proactiveChannels: ['litigation'], // Only proactive in litigation court (Judge Artie)
-    proactiveCooldownSeconds: 120, // 2 minutes - don't spam the channel
-    // Only respond when directly @mentioned (not role mentions, not @everyone)
+    proactiveAnswering: true,
+    proactiveChannels: ['mods', 'modders'],
+    proactiveCooldownSeconds: 180, // 3 minutes - big server, don't spam
     restrictToRobotChannelsOnly: false,
-    responseChannels: ['litigation'], // Only auto-respond in litigation court (Judge Artie)
+    responseChannels: [], // Can respond in any channel when mentioned
     // Only observe/learn from these channels (saves API costs)
     observationChannels: [
       'subway-builder-help',

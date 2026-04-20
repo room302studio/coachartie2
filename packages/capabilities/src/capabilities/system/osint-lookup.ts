@@ -10,12 +10,16 @@
  * actual data instead of guessing from training data.
  */
 
-import { logger } from '@coachartie/shared';
+import { logger, isOwner } from '@coachartie/shared';
 import type {
   RegisteredCapability,
   CapabilityContext,
 } from '../../services/capability/capability-registry.js';
 import { readFileSync } from 'fs';
+
+// Default coordinates are only used for owner — never exposed to other users
+const DEFAULT_LAT = 41.75;
+const DEFAULT_LON = -73.95;
 
 const OSINT_APIS = {
   anomalywatch: 'https://anomalywatch.tools.ejfox.com',
@@ -193,6 +197,90 @@ async function handleOsintLookup(
         return JSON.stringify({ success: true, anomalies: data });
       }
 
+      // ── live aircraft (adsb.lol) ───────────────────────
+      case 'nearby-aircraft': {
+        // Location-sensitive: only owner can use default/live location
+        const callerId = ctx?.userId;
+        if (!callerId || !isOwner(callerId)) {
+          return JSON.stringify({
+            success: false,
+            error: 'This capability requires location access and is restricted to the server owner.',
+          });
+        }
+
+        let lat = params.lat ? Number(params.lat) : null;
+        let lon = params.lon ? Number(params.lon) : null;
+
+        // If no explicit coords, try OwnTracks for live location
+        if (!lat || !lon) {
+          try {
+            let otAuthToken = '';
+            try {
+              otAuthToken = readFileSync('/home/debian/services/owntracks/.env', 'utf-8')
+                .split('\n')
+                .find((l: string) => l.startsWith('OWNTRACKS_AUTH_TOKEN='))
+                ?.split('=')[1]?.trim() || '';
+            } catch { /* no token file */ }
+
+            const otHeaders: Record<string, string> = {};
+            if (otAuthToken) otHeaders['Authorization'] = `Bearer ${otAuthToken}`;
+
+            const otResponse = await fetch('http://localhost:7785/latest', {
+              headers: otHeaders,
+              signal: AbortSignal.timeout(5000),
+            });
+            if (otResponse.ok) {
+              const otData: any = await otResponse.json();
+              if (otData.lat && otData.lon) {
+                lat = otData.lat;
+                lon = otData.lon;
+                logger.info(`📍 Using OwnTracks live location: ${lat}, ${lon}`);
+              }
+            }
+          } catch (e) {
+            logger.warn('OwnTracks location fetch failed, using default', e);
+          }
+        }
+
+        // Final fallback to default coords
+        if (!lat || !lon) {
+          lat = DEFAULT_LAT;
+          lon = DEFAULT_LON;
+          logger.info('📍 Using default Hudson Valley coordinates');
+        }
+
+        const dist = params.dist || 25; // nautical miles
+        const response = await fetch(
+          `https://api.adsb.lol/v2/lat/${lat}/lon/${lon}/dist/${dist}`,
+          { signal: AbortSignal.timeout(10000) }
+        );
+        if (!response.ok) throw new Error(`adsb.lol API error: ${response.status}`);
+        const adsbData: any = await response.json();
+        const aircraft = (adsbData.ac || [])
+          .filter((a: any) => a.alt_baro && a.alt_baro !== 'ground')
+          .sort((a: any, b: any) => (a.alt_baro || 99999) - (b.alt_baro || 99999))
+          .slice(0, 10)
+          .map((a: any) => ({
+            callsign: (a.flight || '').trim(),
+            type: a.t || 'unknown',
+            altitude_ft: a.alt_baro,
+            speed_kts: a.gs,
+            lat: a.lat,
+            lon: a.lon,
+            hex: a.hex,
+            squawk: a.squawk,
+            category: a.category,
+          }));
+        return JSON.stringify({
+          success: true,
+          center: { lat, lon },
+          radius_nm: dist,
+          count: aircraft.length,
+          total_in_range: (adsbData.ac || []).length,
+          aircraft,
+        });
+      }
+
       // ── entityhub entities ────────────────────────────
       case 'lookup-entity': {
         const id = params.entity_id;
@@ -271,7 +359,7 @@ async function handleOsintLookup(
       default:
         return JSON.stringify({
           success: false,
-          error: `Unknown action: ${action}. Available: recent-signals, lookup-signal, search-signals, investigations, lookup-flight, recent-flights, military-activity, flight-anomalies, lookup-entity, explain`,
+          error: `Unknown action: ${action}. Available: recent-signals, lookup-signal, search-signals, investigations, lookup-flight, recent-flights, military-activity, flight-anomalies, nearby-aircraft, lookup-entity, explain`,
         });
     }
   } catch (error) {
@@ -295,11 +383,12 @@ export const osintLookupCapability: RegisteredCapability = {
     'recent-flights',
     'military-activity',
     'flight-anomalies',
+    'nearby-aircraft',
     'lookup-entity',
     'explain',
   ],
   description:
-    'Query the OSINT monitoring stack (anomalywatch, skywatch, entityhub). Use this when EJ asks about alerts, flights, signals, entities, or investigations. The "explain" action searches all sources at once for a term.',
+    'Query the OSINT monitoring stack (anomalywatch, skywatch, entityhub) and live aircraft data. Use this when EJ asks about alerts, flights, signals, entities, investigations, or what planes are nearby/overhead. The "nearby-aircraft" action queries live ADS-B data. The "explain" action searches all sources at once for a term.',
   handler: handleOsintLookup,
   examples: [
     '<capability name="osint" action="explain" query="PAT691" /> - Look up a callsign/term across all OSINT sources',
@@ -310,6 +399,8 @@ export const osintLookupCapability: RegisteredCapability = {
     '<capability name="osint" action="lookup-signal" signal_id="sig-abc123" /> - Get full signal details',
     '<capability name="osint" action="investigations" /> - List active investigations',
     '<capability name="osint" action="military-activity" /> - Recent military flight analysis',
+    '<capability name="osint" action="nearby-aircraft" /> - Live aircraft overhead right now (defaults to Hudson Valley)',
+    '<capability name="osint" action="nearby-aircraft" lat="40.7" lon="-74.0" dist="10" /> - Live aircraft near specific coordinates',
     '<capability name="osint" action="lookup-entity" query="Stewart ANG" /> - Look up entity in entityhub',
   ],
 };

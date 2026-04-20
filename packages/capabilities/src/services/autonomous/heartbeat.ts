@@ -430,23 +430,8 @@ export async function executeHeartbeat(): Promise<{
       // Don't spam - just log. Owner sees these in briefing.
     }
 
-    // 5. Daily insights - aggregate across all systems (9 AM and 6 PM UTC)
-    const hour = new Date().getUTCHours();
-    if (hour === 9 || hour === 18) {
-      const insight = await generateDailyInsights(OWNER_USER_ID);
-      if (insight) {
-        try {
-          const sent = await sendDiscordDM(OWNER_USER_ID, insight, 'daily-insight');
-          if (sent) {
-            stats.insightsDelivered++;
-            logger.info(`Heartbeat: Sent daily insight to owner`);
-          }
-        } catch (error) {
-          logger.error(`Heartbeat: Failed to send insight to owner:`, error);
-          stats.errors++;
-        }
-      }
-    }
+    // 5. Daily insights — DISABLED: redundant with artie-digest.ts (8:45 AM cron)
+    // Was sending low-value "Captured N memories" DMs at 9 AM / 6 PM UTC
 
     logger.info(`Heartbeat complete: ${stats.questNudges} quest nudges, ${stats.todoNudges} todo nudges, ${stats.goalNudges} goal nudges, ${stats.insightsDelivered} insights, ${stats.errors} errors`);
     return stats;

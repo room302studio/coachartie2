@@ -302,8 +302,8 @@ async function start() {
     console.log(`🎲 Selected port: ${PORT}`);
 
     // Start HTTP server
-    console.log(`🌐 Starting HTTP server on 0.0.0.0:${PORT}...`);
-    const server = app.listen(PORT, '0.0.0.0', async () => {
+    console.log(`🌐 Starting HTTP server on 127.0.0.1:${PORT}...`);
+    const server = app.listen(PORT, '127.0.0.1', async () => {
       console.log(`✅ HTTP SERVER LISTENING - SNUCKS ARE JUCKED!`);
       logger.info(
         `✅ capabilities: ${PORT} [${stats.totalCapabilities} caps, ${stats.totalActions} actions]`

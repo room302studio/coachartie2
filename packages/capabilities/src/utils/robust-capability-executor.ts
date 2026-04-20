@@ -275,7 +275,8 @@ export class RobustCapabilityExecutor {
       capability.name,
       capability.action,
       paramsWithContext,
-      interpolatedContent
+      interpolatedContent,
+      { userId: context.userId, messageId: context.messageId }
     );
   }
 

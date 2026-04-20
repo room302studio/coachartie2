@@ -40,8 +40,8 @@ export class ApiServer {
       logger.warn('⚠️ API server starting without Discord client - routes may not work');
     }
 
-    this.server = this.app.listen(this.port, () => {
-      logger.info(`🌐 Discord API server running on port ${this.port}`);
+    this.server = this.app.listen(this.port, '0.0.0.0', () => {
+      logger.info(`🌐 Discord API server running on 0.0.0.0:${this.port}`);
     });
 
     this.server.on('error', (error: Error) => {

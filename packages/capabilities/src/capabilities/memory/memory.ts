@@ -493,9 +493,12 @@ Example: ["food", "pizza", "italian", "preference", "like"]`;
         baseSystemPrompt
       );
 
+      // Use BACKGROUND_MODEL for cost efficiency — tagging is a background task
       const response = await openRouterService.generateFromMessageChain(
         messages,
-        'memory-tagging-system'
+        'memory-tagging-system',
+        undefined,
+        process.env.BACKGROUND_MODEL || process.env.FAST_MODEL || 'google/gemini-2.0-flash-001'
       );
       const tags = this.parseTagsFromResponse(response);
 
@@ -559,7 +562,9 @@ Example: ["food", "pizza", "italian", "preference", "like"]`;
 
       const response = await openRouterService.generateFromMessageChain(
         messages,
-        'memory-tagging-system'
+        'memory-tagging-system',
+        undefined,
+        process.env.BACKGROUND_MODEL || process.env.FAST_MODEL || 'google/gemini-2.0-flash-001'
       );
 
       // Parse the tags from LLM response
