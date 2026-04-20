@@ -329,10 +329,22 @@ export class GitHubStudioManager {
       parts.push(`\nNothing blocking — keep building! 🚇`);
     }
 
+    // Discord embed description limit is 4096 chars — truncate at line boundaries
+    let description = parts.join('\n');
+    if (description.length > 4096) {
+      const lines = description.split('\n');
+      let truncated = '';
+      for (const line of lines) {
+        if ((truncated + line + '\n').length > 4000) break;
+        truncated += line + '\n';
+      }
+      description = truncated.trimEnd() + '\n\n...(truncated — full digest too long for embed)';
+    }
+
     const embed = new EmbedBuilder()
       .setColor(0xf59e0b) // Amber
       .setTitle(`📋 Morning Standup — ${repo}`)
-      .setDescription(parts.join('\n'))
+      .setDescription(description)
       .setFooter({ text: 'Daily digest from Coach Artie' })
       .setTimestamp();
 

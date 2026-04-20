@@ -46,11 +46,18 @@ export interface ProcessorOptions {
 }
 
 /**
- * Minimal text cleanup - trust the LLM to output clean Discord-ready content
- * Prompting > regex hacks
+ * Strip LLM system/capability tags that should never reach Discord.
+ * The LLM sometimes emits these despite prompting — belt and suspenders.
  */
 function cleanCapabilityTags(text: string): string {
-  return text.trim();
+  return text
+    .replace(/<capability\b[^>]*\/>/gs, '')
+    .replace(/<capability\b[^>]*>[\s\S]*?<\/capability>/gs, '')
+    .replace(/<wants_loop>[^<]*<\/wants_loop>/gs, '')
+    .replace(/<think>[\s\S]*?<\/think>/gs, '')
+    .replace(/<system-reminder>[\s\S]*?<\/system-reminder>/gs, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
 }
 
 /**
