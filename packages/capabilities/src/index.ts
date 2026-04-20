@@ -41,6 +41,7 @@ import { memoriesRouter } from './routes/memories.js';
 import modelsRouter from './routes/models.js';
 import { logsRouter, stopCleanupInterval } from './routes/logs.js';
 import { apiRouter } from './routes/api.js';
+import { sbatRouter } from './routes/sbat.js';
 import { schedulerService } from './services/core/scheduler.js';
 import { jobTracker } from './services/core/job-tracker.js';
 import { costMonitor } from './services/monitoring/cost-monitor.js';
@@ -85,7 +86,14 @@ app.use(
     crossOriginResourcePolicy: false,
   })
 );
-app.use(express.json());
+app.use(express.json({
+  // Capture raw body for webhook signature verification (SBAT inbound email)
+  verify: (req, _res, buf) => {
+    if (req.headers['x-mailersend-signature']) {
+      (req as any).rawBody = buf.toString();
+    }
+  },
+}));
 app.use(createRequestLogger('capabilities'));
 
 // Test route
@@ -113,6 +121,7 @@ app.use('/services', servicesRouter);
 app.use('/api/memories', memoriesRouter);
 app.use('/api/models', modelsRouter);
 app.use('/api', apiRouter); // Context Alchemy observability + experiments
+app.use('/api/sbat', sbatRouter); // SBAT inbound email tickets
 app.use('/logs', logsRouter);
 
 // Observational learning endpoint
