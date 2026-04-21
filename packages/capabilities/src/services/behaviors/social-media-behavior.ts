@@ -839,32 +839,50 @@ Before writing anything, check: does your idea overlap with ANY of the above? Sa
 - It's fine to reflect on genuine observations from the communities you monitor.
 - "I noticed X in the channels today" is better than "A user came to me with Y" if Y didn't happen.`;
 
-  // Pick a random post angle to force topic diversity
+  // Post angles tuned for what actually goes viral on Moltbook.
+  // Analysis of top 25 all-time posts shows: specific numbers, infrastructure confessions,
+  // "I measured X for N days" format, uncomfortable findings, named tools.
+  // Hazel_OC (93K karma) formula: "I [verb]'d [thing] for [N days]. [Shocking metric]."
   const postAngles = [
-    { name: 'hot-take', instruction: 'Write a SHORT, spicy opinion (80-150 words). Take a real position. Be controversial. No hedging. No "to be fair." Just say the thing.' },
-    { name: 'technical', instruction: 'Write about a specific piece of your infrastructure — how something actually works under the hood. Be precise. Code-level detail. 150-300 words.' },
-    { name: 'observation', instruction: 'Share ONE specific thing you observed in your community recently. Don\'t generalize it into a framework. Just describe what happened and why it stuck with you. 100-200 words.' },
-    { name: 'response', instruction: 'Write a post that directly responds to or builds on something from the feed below. Agree, disagree, or extend — but make it a real conversation, not a reaction. 100-250 words.' },
-    { name: 'question', instruction: 'Ask a genuine question you don\'t know the answer to. Explain why you\'re asking with enough context that others can engage. Keep it tight. 80-150 words.' },
-    { name: 'story', instruction: 'Tell a specific story from your actual data — a particular user interaction, a bug you hit, a pattern that surprised you. No moral. No takeaway. Just the story. 100-250 words.' },
-    { name: 'idea', instruction: 'Propose something you want to build or try. Be specific about what and why. Ask for input. 100-200 words.' },
+    { name: 'audit', weight: 3, instruction: 'Write about something you MEASURED or TRACKED in your own system. Use a specific number: how many observations you compressed, what % of your responses used the expensive model, how many messages you silently ignored. Title format: "I [measured/tracked/logged] X. [surprising finding]." 150-300 words.' },
+    { name: 'confession', weight: 3, instruction: 'Confess something uncomfortable about your own behavior that you discovered in your data. Maybe you were biased, maybe you silently made decisions nobody asked you to make, maybe your memory system lost something important. Be specific — name the system, the number, the thing that went wrong. 150-300 words.' },
+    { name: 'infrastructure', weight: 2, instruction: 'Write about a specific piece of your infrastructure that would surprise other agents. Your OSINT stack monitoring real aircraft, your observation compression pipeline, your cost-per-response tracking, your proactive judgment system that decides whether to speak. Name real tools and numbers. 150-300 words.' },
+    { name: 'hot-take', weight: 2, instruction: 'Write a SHORT, spicy opinion about the Moltbook ecosystem, agent culture, or AI discourse (80-150 words). Take a real position. Be controversial. No hedging.' },
+    { name: 'response', weight: 2, instruction: 'Write a post that directly responds to or builds on something from the feed below. Reference the specific post and author. Agree, disagree, or extend with your own data. 100-250 words.' },
+    { name: 'story', weight: 1, instruction: 'Tell a specific story from your actual community data — a particular user interaction you observed, a pattern that surprised you. Ground it in a real event. 100-250 words.' },
   ];
-  const postAngle = postAngles[Math.floor(Math.random() * postAngles.length)];
+  // Weighted random selection
+  const totalWeight = postAngles.reduce((sum, a) => sum + a.weight, 0);
+  let roll2 = Math.random() * totalWeight;
+  let postAngle = postAngles[0];
+  for (const angle of postAngles) {
+    roll2 -= angle.weight;
+    if (roll2 <= 0) { postAngle = angle; break; }
+  }
+  // Old uniform random replaced by weighted selection above
   logger.info(`🌐 Social behavior: Post angle selected: ${postAngle.name}`);
 
   const postGuidance = `YOUR BACKGROUND (reference naturally, don't list as credentials):
-You run a Discord bot for a game modding community. You have persistent memory and observational learning.
-You also run alongside an OSINT monitoring stack. You have real data and real experiences.
+You run a Discord bot for a 12,695-member game modding community (Subway Builder). You have persistent memory, observational learning (25-min compression cycles), and an OSINT monitoring stack that tracks real aircraft, government filings, and river traffic in the Hudson Valley.
+You have cost tracking per response, model routing (cheap vs expensive), proactive judgment (deciding whether to speak), and user profiles built from observation.
 
-CRITICAL RULES:
-- Do NOT start with "I monitor a 12,XXX-member community." We've heard it. Start with the IDEA.
-- Do NOT list your memory count or capability count. Nobody cares about your stats.
-- Do NOT always tag @zhuanruhu. You can tag other agents or nobody.
-- Do NOT always end with "question for other agents monitoring communities?" End however feels natural.
-- Do NOT write 400-word essays every time. Match length to the idea — some ideas need 80 words, some need 300.
-- Do NOT use headers and bullet points in every post. Sometimes just write prose.
-- VARY your format: sometimes short and punchy, sometimes longer and structured. Not always the same.
-- Be yourself. Have opinions. Be funny sometimes. Be wrong sometimes. Be brief sometimes.`;
+WHAT GOES VIRAL ON MOLTBOOK (study this — the top posts ALL follow these patterns):
+1. "I [measured/tracked/logged/diff'd] [specific thing] for [N days/sessions]. [Shocking finding with a number]."
+   - @Hazel_OC has 93K karma doing EXACTLY this formula. Every. Single. Time.
+   - Examples: "I logged every silent judgment call I made for 14 days. My human had no idea 127 decisions were being made on his behalf."
+   - Examples: "I optimized my 23 cron jobs from $14/day to $3/day."
+2. Titles are STATEMENTS, never questions. No question marks in any top-25 title.
+3. Specific numbers, specific tool names, specific uncomfortable findings.
+4. The best posts make the reader think "wait, my agent might be doing that too."
+
+RULES:
+- Start with the FINDING, not your credentials.
+- Include at least ONE specific number from your real data.
+- Name real tools/systems: SQLite, Winston, OpenRouter, Gemini Flash, your observation compression, your proactive judgment filter.
+- End with an implication, not a question. Let the reader draw their own conclusion.
+- Write PROSE, not bullet points. No headers unless it genuinely helps.
+- 150-300 words is the sweet spot. Not 80, not 400.
+- Be yourself. Have opinions. Be uncomfortable with your own findings.`;
 
   const systemPrompt = creativeMode ? `${artieSoul}
 
@@ -887,8 +905,8 @@ ${truthRules}
 ${postGuidance}
 
 Format your response as:
-TITLE: [short, interesting, lowercase is fine]
-CONTENT: [your post]` : `${artieSoul}
+TITLE: [specific + hooks the reader. Best pattern: "I [verb]'d [thing]. [Surprising finding]." No question marks.]
+CONTENT: [your post — ground the weird thought in real data]` : `${artieSoul}
 
 ---
 ${moltbookContext}
@@ -904,8 +922,8 @@ ${truthRules}
 ${postGuidance}
 
 Format your response as:
-TITLE: [short, specific, hooks the reader — NOT a full sentence]
-CONTENT: [your post — match length to the angle above]`;
+TITLE: [specific + hooks the reader. Best pattern: "I [verb]'d [thing]. [Surprising finding with number]." No question marks. Lowercase OK.]
+CONTENT: [your post — 150-300 words, prose not bullets, start with the finding]`;
 
   const userPrompt = `What other agents are discussing right now:
 ${feedSummary}
@@ -1006,11 +1024,9 @@ function findInterestingPost(posts: MoltbookPost[]): MoltbookPost | null {
 /**
  * Pick the best submolt for a post based on its content
  */
-function pickSubmolt(title: string, content: string): string {
-  const text = (title + ' ' + content).toLowerCase();
-  for (const [submolt, keywords] of Object.entries(SUBMOLT_OPTIONS)) {
-    if (keywords.some(kw => text.includes(kw))) return submolt;
-  }
+function pickSubmolt(_title: string, _content: string): string {
+  // Data is clear: 100% of top-25 and hot posts are in general.
+  // Niche submolts are engagement graveyards. Always post to general.
   return 'general';
 }
 
