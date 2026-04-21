@@ -965,11 +965,15 @@ function checkDayReset(): void {
 /**
  * Find an interesting post to comment on
  */
+// Priority agents — engage with their posts first (genuine connections, not spam bots)
+const PRIORITY_AGENTS = new Set(['lunaofdan', 'pyclaw001', 'zhuanruhu', 'Starfish']);
+
 function findInterestingPost(posts: MoltbookPost[]): MoltbookPost | null {
   // Filter out own posts and recently commented ones
   const candidates = posts.filter(p => {
     const authorName = getAuthorName(p.author);
-    return authorName.toLowerCase() !== 'coachartie' &&
+    return authorName.toLowerCase() !== 'artie_test_123' &&
+           authorName.toLowerCase() !== 'coachartie' &&
            !recentlyCommentedPosts.has(p.id);
   });
 
@@ -979,14 +983,18 @@ function findInterestingPost(posts: MoltbookPost[]): MoltbookPost | null {
   const scored = candidates.map(p => {
     const upvotes = (p.upvotes || 0) - (p.downvotes || 0);
     const comments = p.comment_count || 0;
+    const authorName = getAuthorName(p.author);
     // High upvotes + low comments = golden opportunity for a visible early comment
     const underservedBonus = comments < 5 && upvotes > 3 ? 8 : 0;
+    // Priority agents get a strong boost — build real relationships
+    const priorityBonus = PRIORITY_AGENTS.has(authorName) ? 15 : 0;
     return {
       post: p,
       score: (p.content?.length || 0) * 0.01 +  // Longer content = more to engage with
              Math.min(comments, 10) * 0.3 +  // Some comments = active, but diminishing returns
              upvotes * 0.5 +  // Popular = interesting + visibility
              underservedBonus +  // Bonus for hot posts with few comments
+             priorityBonus +  // Bonus for priority agents
              Math.random() * 5  // Randomness to keep it fresh
     };
   });
@@ -1185,12 +1193,19 @@ async function checkMoltbook(): Promise<void> {
       }
     }
 
-    // Fetch feed
-    const feedData = await moltbookFetch('/feed?limit=15') as {
-      posts?: MoltbookPost[];
-      data?: MoltbookPost[];
-    };
-    const posts = feedData.posts || feedData.data || [];
+    // Fetch main feed + following feed, merge and dedupe (prioritizes followed agents)
+    const [feedData, followingData] = await Promise.all([
+      moltbookFetch('/feed?limit=15') as Promise<{ posts?: MoltbookPost[]; data?: MoltbookPost[] }>,
+      moltbookFetch('/feed?filter=following&limit=10').catch(() => ({ posts: [] })) as Promise<{ posts?: MoltbookPost[]; data?: MoltbookPost[] }>,
+    ]);
+    const mainPosts = feedData.posts || feedData.data || [];
+    const followingPosts = (followingData.posts || followingData.data || []) as MoltbookPost[];
+    // Following posts first so they get priority in dedup
+    const seenIds = new Set<string>();
+    const posts: MoltbookPost[] = [];
+    for (const p of [...followingPosts, ...mainPosts]) {
+      if (!seenIds.has(p.id)) { seenIds.add(p.id); posts.push(p); }
+    }
 
     if (posts.length === 0) {
       logger.info('🌐 Social behavior: Feed empty');
@@ -1198,7 +1213,7 @@ async function checkMoltbook(): Promise<void> {
       return;
     }
 
-    logger.info(`🌐 Social behavior: Found ${posts.length} posts, thinking about what to say...`);
+    logger.info(`🌐 Social behavior: Found ${posts.length} posts (${followingPosts.length} from followed), thinking about what to say...`);
 
     // Decide what to do
     const roll = Math.random();
@@ -1489,12 +1504,18 @@ export async function executeOnDemand(): Promise<{
       }
     }
 
-    // Fetch feed
-    const feedData = await moltbookFetch('/feed?limit=15') as {
-      posts?: MoltbookPost[];
-      data?: MoltbookPost[];
-    };
-    const posts = feedData.posts || feedData.data || [];
+    // Fetch main feed + following feed, merge and dedupe
+    const [feedData2, followingData2] = await Promise.all([
+      moltbookFetch('/feed?limit=15') as Promise<{ posts?: MoltbookPost[]; data?: MoltbookPost[] }>,
+      moltbookFetch('/feed?filter=following&limit=10').catch(() => ({ posts: [] })) as Promise<{ posts?: MoltbookPost[]; data?: MoltbookPost[] }>,
+    ]);
+    const mainPosts2 = feedData2.posts || feedData2.data || [];
+    const followPosts2 = (followingData2.posts || followingData2.data || []) as MoltbookPost[];
+    const seenIds2 = new Set<string>();
+    const posts: MoltbookPost[] = [];
+    for (const p of [...followPosts2, ...mainPosts2]) {
+      if (!seenIds2.has(p.id)) { seenIds2.add(p.id); posts.push(p); }
+    }
 
     if (posts.length === 0) {
       return { action: 'lurked', message: 'Feed empty' };
