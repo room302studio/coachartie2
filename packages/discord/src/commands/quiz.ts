@@ -46,6 +46,12 @@ export const quizCommand = {
             .setMinValue(1)
             .setMaxValue(50)
         )
+        .addBooleanOption((option) =>
+          option
+            .setName('ai_judge')
+            .setDescription('Use a light LLM to accept fuzzy/equivalent answers (default: off)')
+            .setRequired(false)
+        )
     )
     .addSubcommand((subcommand) =>
       subcommand.setName('stop').setDescription('End the current quiz')
@@ -96,9 +102,11 @@ async function handleStart(
 ): Promise<InteractionResponse<boolean> | undefined> {
   const deckOption = interaction.options.getString('deck');
   const questionsOption = interaction.options.getInteger('questions');
+  const aiJudgeOption = interaction.options.getBoolean('ai_judge');
 
   const deckId = deckOption === 'all' ? undefined : deckOption || undefined;
   const questionCount = questionsOption || 10;
+  const aiJudge = aiJudgeOption ?? false;
 
   // Check if quiz already active
   if (quizSessionManager.hasActiveQuiz(interaction.channelId)) {
@@ -117,6 +125,7 @@ async function handleStart(
       userId: interaction.user.id,
       deckId,
       questionCount,
+      aiJudge,
       onTimeout: async (timedOutSession: QuizSession) => {
         // Handle timeout - reveal answer and move to next question
         try {
@@ -125,7 +134,7 @@ async function handleStart(
           );
 
           let response = `⏰ **Time's up!**\nThe answer was: **${answer}**\n`;
-          response += `📊 ${quizSessionManager.formatScores(timedOutSession.scores)}\n`;
+          response += `📊 ${quizSessionManager.formatScores(timedOutSession.scores, undefined, timedOutSession.streaks)}\n`;
 
           if (nextSession && nextSession.currentCard) {
             response += `\n---\n\n`;
@@ -161,11 +170,15 @@ async function handleStart(
 
     const deckDisplay = session.deckId || 'All Decks';
 
+    const judgeLine = session.aiJudge
+      ? '\n**AI Judge:** on — fuzzy/equivalent answers accepted'
+      : '';
+
     const embed = new EmbedBuilder()
       .setColor(0x00ff00)
       .setTitle('🎮 Quiz Started!')
       .setDescription(
-        `**Deck:** ${deckDisplay}\n**Questions:** ${session.totalQuestions}\n\nType your answers in chat - first correct answer wins!`
+        `**Deck:** ${deckDisplay}\n**Questions:** ${session.totalQuestions}${judgeLine}\n\nType your answers in chat — first correct answer wins, build a 🔥 streak for bragging rights!`
       )
       .setFooter({ text: `Started by ${interaction.user.username}` })
       .setTimestamp();
@@ -206,6 +219,9 @@ async function handleStop(
     });
   }
 
+  const sessionBefore = quizSessionManager.getSession(interaction.channelId);
+  const bestStreaks = sessionBefore ? new Map(sessionBefore.bestStreaks) : new Map<string, number>();
+
   const embed = new EmbedBuilder()
     .setColor(0xff9900)
     .setTitle('🛑 Quiz Stopped')
@@ -229,6 +245,15 @@ async function handleStop(
     }
   }
 
+  const streakLeaders = quizSessionManager.getStreakLeaders(bestStreaks);
+  if (streakLeaders.length > 0) {
+    const top = streakLeaders.slice(0, 3);
+    embed.addFields({
+      name: '🔥 Streak Leaders',
+      value: top.map(([uid, streak]) => `<@${uid}>: ${streak} in a row`).join('\n'),
+    });
+  }
+
   return await interaction.reply({ embeds: [embed] });
 }
 
@@ -249,7 +274,7 @@ async function handleScores(
     .setTitle('📊 Quiz Scores')
     .setDescription(
       session.scores.size > 0
-        ? quizSessionManager.formatScores(session.scores)
+        ? quizSessionManager.formatScores(session.scores, undefined, session.streaks)
         : 'No scores yet - be the first to answer!'
     )
     .addFields(

@@ -993,32 +993,42 @@ export function setupMessageHandler(client: Client) {
 
     // Check if this channel has an active quiz and if this message is an answer
     if (quizSessionManager.hasActiveQuiz(message.channelId)) {
-      const result = quizSessionManager.checkAnswer(
+      const initial = quizSessionManager.checkAnswer(
         message.channelId,
         message.author.id,
         message.content
       );
 
+      // String match failed but AI judge is on — fire an async LLM check.
+      // Race: another user may answer correctly first; in that case the LLM
+      // result is dropped by the manager.
+      const result =
+        initial === 'maybe'
+          ? await quizSessionManager.checkAnswerWithAI(
+              message.channelId,
+              message.author.id,
+              message.content
+            )
+          : initial;
+
       if (result && result.correct) {
-        // User got the answer right!
         logger.info(
-          `✅ Quiz answer correct! User: ${message.author.tag}, Channel: ${message.channelId}`
+          `✅ Quiz answer correct! User: ${message.author.tag}, Channel: ${message.channelId}, streak=${result.winnerStreak}${result.judgedByAI ? ' (AI)' : ''}`
         );
 
-        // React to the winning message
         try {
-          await message.react('✅');
+          await message.react(result.judgedByAI ? '🤖' : '✅');
         } catch (e) {
           logger.warn('Failed to add reaction to quiz answer:', e);
         }
 
-        // Build response
-        let response = `✅ **${message.author}** got it! (+1 point)\n`;
+        const streakBadge = quizSessionManager.formatStreakBadge(result.winnerStreak);
+        const judgeNote = result.judgedByAI ? ' _(AI judged)_' : '';
+        let response = `✅ **${message.author}** got it! (+1 point)${streakBadge}${judgeNote}\n`;
         response += `Answer: **${result.correctAnswer}**\n\n`;
-        response += `📊 ${quizSessionManager.formatScores(result.currentScores)}\n`;
+        response += `📊 ${quizSessionManager.formatScores(result.currentScores, undefined, result.currentStreaks)}\n`;
 
         if (result.quizEnded) {
-          // Quiz is over
           const scores = quizSessionManager.endQuiz(message.channelId);
           if (scores) {
             response += `\n🏁 **Quiz Complete!**\n`;
@@ -1027,6 +1037,11 @@ export function setupMessageHandler(client: Client) {
               response += `🎉 **Winner: <@${winners[0]}>!**`;
             } else if (winners.length > 1) {
               response += `🎉 **It's a tie! Winners: ${winners.map((w: string) => `<@${w}>`).join(', ')}**`;
+            }
+            const streakLeaders = quizSessionManager.getStreakLeaders(result.bestStreaks);
+            if (streakLeaders.length > 0) {
+              const [topUser, topStreak] = streakLeaders[0];
+              response += `\n🔥 **Streak Champion: <@${topUser}>** — ${topStreak} in a row`;
             }
           }
         } else {
