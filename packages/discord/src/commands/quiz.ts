@@ -1,20 +1,12 @@
 import {
   SlashCommandBuilder,
   ChatInputCommandInteraction,
-  EmbedBuilder,
   InteractionResponse,
-  TextChannel,
+  Channel,
 } from 'discord.js';
 import { logger } from '@coachartie/shared';
 import { quizSessionManager, QuizSession } from '../services/quiz-session-manager.js';
-
-const AVAILABLE_DECKS = [
-  'COMPUTERS',
-  'ELECTRICAL_AND_RADIO',
-  'POLITICS',
-  'RUBIKS_2x2',
-  'SAR_AND_WILDERNESS',
-];
+import { buildLiveQuizMessage, buildQuizSummary } from '../services/quiz-embed.js';
 
 export const quizCommand = {
   data: new SlashCommandBuilder()
@@ -97,6 +89,50 @@ export const quizCommand = {
   },
 };
 
+/**
+ * Edit the live quiz embed in place. Falls back to a new message if the
+ * tracked host message is gone.
+ */
+export async function refreshLiveQuiz(channel: Channel, session: QuizSession): Promise<void> {
+  if (!('send' in channel) || !channel.isTextBased()) return;
+  const payload = buildLiveQuizMessage(session);
+
+  if (session.questionMessageId) {
+    try {
+      const existing = await channel.messages.fetch(session.questionMessageId);
+      await existing.edit(payload);
+      return;
+    } catch (e) {
+      logger.warn('Quiz embed message gone, re-posting:', e);
+    }
+  }
+  const sent = await channel.send(payload);
+  quizSessionManager.setQuestionMessage(session.channelId, sent.id);
+}
+
+/**
+ * End the quiz, replace the live embed with a shareable summary card.
+ */
+export async function postQuizSummary(channel: Channel, channelId: string): Promise<void> {
+  if (!('send' in channel) || !channel.isTextBased()) return;
+  const session = quizSessionManager.getSession(channelId);
+  const finalScores = quizSessionManager.endQuiz(channelId);
+  if (!session || !finalScores) return;
+
+  const payload = buildQuizSummary(session, finalScores);
+
+  if (session.questionMessageId) {
+    try {
+      const existing = await channel.messages.fetch(session.questionMessageId);
+      await existing.edit(payload);
+      return;
+    } catch (e) {
+      logger.warn('Quiz host message missing for summary, posting fresh:', e);
+    }
+  }
+  await channel.send(payload);
+}
+
 async function handleStart(
   interaction: ChatInputCommandInteraction
 ): Promise<InteractionResponse<boolean> | undefined> {
@@ -108,7 +144,6 @@ async function handleStart(
   const questionCount = questionsOption || 10;
   const aiJudge = aiJudgeOption ?? false;
 
-  // Check if quiz already active
   if (quizSessionManager.hasActiveQuiz(interaction.channelId)) {
     return await interaction.reply({
       content: '❌ A quiz is already active in this channel! Use `/quiz stop` to end it first.',
@@ -116,7 +151,6 @@ async function handleStart(
     });
   }
 
-  // Defer reply since starting quiz might take a moment
   await interaction.deferReply();
 
   try {
@@ -127,40 +161,20 @@ async function handleStart(
       questionCount,
       aiJudge,
       onTimeout: async (timedOutSession: QuizSession) => {
-        // Handle timeout - reveal answer and move to next question
         try {
           const { answer, nextSession } = await quizSessionManager.handleTimeout(
             interaction.channelId
           );
+          quizSessionManager.setBanner(
+            interaction.channelId,
+            `⏰ Time's up! The answer was **${answer}**`
+          );
 
-          let response = `⏰ **Time's up!**\nThe answer was: **${answer}**\n`;
-          response += `📊 ${quizSessionManager.formatScores(timedOutSession.scores, undefined, timedOutSession.streaks)}\n`;
-
-          if (nextSession && nextSession.currentCard) {
-            response += `\n---\n\n`;
-            response += `**Question ${nextSession.questionNumber}/${nextSession.totalQuestions}**\n`;
-            response += nextSession.currentCard.front;
-            if (nextSession.currentCard.hints.length > 0) {
-              response += `\n\n_💡 Hints available: ${nextSession.currentCard.hints.length}_`;
-            }
+          if (!interaction.channel) return;
+          if (nextSession) {
+            await refreshLiveQuiz(interaction.channel, nextSession);
           } else {
-            // Quiz ended
-            const scores = quizSessionManager.endQuiz(interaction.channelId);
-            if (scores && scores.size > 0) {
-              response += `\n🏁 **Quiz Complete!**\n`;
-              const winners = quizSessionManager.getWinners(scores);
-              if (winners.length === 1) {
-                response += `🎉 **Winner: <@${winners[0]}>!**`;
-              } else if (winners.length > 1) {
-                response += `🎉 **It's a tie! Winners: ${winners.map((w: string) => `<@${w}>`).join(', ')}**`;
-              }
-            } else {
-              response += `\n🏁 **Quiz Complete!** No one scored any points.`;
-            }
-          }
-
-          if (interaction.channel && 'send' in interaction.channel) {
-            await interaction.channel.send(response);
+            await postQuizSummary(interaction.channel, interaction.channelId);
           }
         } catch (e) {
           logger.error('Failed to handle quiz timeout:', e);
@@ -168,34 +182,15 @@ async function handleStart(
       },
     });
 
-    const deckDisplay = session.deckId || 'All Decks';
+    quizSessionManager.rememberUsername(
+      interaction.channelId,
+      interaction.user.id,
+      interaction.user.username
+    );
 
-    const judgeLine = session.aiJudge
-      ? '\n**AI Judge:** on — fuzzy/equivalent answers accepted'
-      : '';
-
-    const embed = new EmbedBuilder()
-      .setColor(0x00ff00)
-      .setTitle('🎮 Quiz Started!')
-      .setDescription(
-        `**Deck:** ${deckDisplay}\n**Questions:** ${session.totalQuestions}${judgeLine}\n\nType your answers in chat — first correct answer wins, build a 🔥 streak for bragging rights!`
-      )
-      .setFooter({ text: `Started by ${interaction.user.username}` })
-      .setTimestamp();
-
-    await interaction.editReply({ embeds: [embed] });
-
-    // Send first question as a separate message
-    if (session.currentCard) {
-      let questionMsg = `**Question 1/${session.totalQuestions}**\n`;
-      questionMsg += session.currentCard.front;
-      if (session.currentCard.hints.length > 0) {
-        questionMsg += `\n\n_💡 Hints available: ${session.currentCard.hints.length}_`;
-      }
-      if (interaction.channel && 'send' in interaction.channel) {
-        await interaction.channel.send(questionMsg);
-      }
-    }
+    const payload = buildLiveQuizMessage(session);
+    const sent = await interaction.editReply(payload);
+    quizSessionManager.setQuestionMessage(interaction.channelId, sent.id);
 
     return undefined;
   } catch (error) {
@@ -210,51 +205,20 @@ async function handleStart(
 async function handleStop(
   interaction: ChatInputCommandInteraction
 ): Promise<InteractionResponse<boolean> | undefined> {
-  const scores = quizSessionManager.endQuiz(interaction.channelId);
-
-  if (!scores) {
+  const session = quizSessionManager.getSession(interaction.channelId);
+  if (!session) {
     return await interaction.reply({
       content: '❌ No active quiz in this channel.',
       ephemeral: true,
     });
   }
 
-  const sessionBefore = quizSessionManager.getSession(interaction.channelId);
-  const bestStreaks = sessionBefore ? new Map(sessionBefore.bestStreaks) : new Map<string, number>();
-
-  const embed = new EmbedBuilder()
-    .setColor(0xff9900)
-    .setTitle('🛑 Quiz Stopped')
-    .setDescription(
-      scores.size > 0
-        ? `**Final Scores:**\n${quizSessionManager.formatScores(scores)}`
-        : 'No scores recorded.'
-    )
-    .setFooter({ text: `Stopped by ${interaction.user.username}` })
-    .setTimestamp();
-
-  if (scores.size > 0) {
-    const winners = quizSessionManager.getWinners(scores);
-    if (winners.length === 1) {
-      embed.addFields({ name: '🏆 Winner', value: `<@${winners[0]}>` });
-    } else if (winners.length > 1) {
-      embed.addFields({
-        name: '🏆 Tied Winners',
-        value: winners.map((w: string) => `<@${w}>`).join(', '),
-      });
-    }
+  await interaction.deferReply();
+  if (interaction.channel) {
+    await postQuizSummary(interaction.channel, interaction.channelId);
   }
-
-  const streakLeaders = quizSessionManager.getStreakLeaders(bestStreaks);
-  if (streakLeaders.length > 0) {
-    const top = streakLeaders.slice(0, 3);
-    embed.addFields({
-      name: '🔥 Streak Leaders',
-      value: top.map(([uid, streak]) => `<@${uid}>: ${streak} in a row`).join('\n'),
-    });
-  }
-
-  return await interaction.reply({ embeds: [embed] });
+  await interaction.editReply({ content: `🛑 Quiz ended by ${interaction.user.username}.` });
+  return undefined;
 }
 
 async function handleScores(
@@ -269,29 +233,8 @@ async function handleScores(
     });
   }
 
-  const embed = new EmbedBuilder()
-    .setColor(0x0099ff)
-    .setTitle('📊 Quiz Scores')
-    .setDescription(
-      session.scores.size > 0
-        ? quizSessionManager.formatScores(session.scores, undefined, session.streaks)
-        : 'No scores yet - be the first to answer!'
-    )
-    .addFields(
-      {
-        name: 'Progress',
-        value: `Question ${session.questionNumber}/${session.totalQuestions}`,
-        inline: true,
-      },
-      {
-        name: 'Deck',
-        value: session.deckId || 'All Decks',
-        inline: true,
-      }
-    )
-    .setTimestamp();
-
-  return await interaction.reply({ embeds: [embed] });
+  const payload = buildLiveQuizMessage(session);
+  return await interaction.reply({ ...payload, ephemeral: true });
 }
 
 async function handleSkip(
@@ -306,40 +249,19 @@ async function handleSkip(
     });
   }
 
-  await interaction.reply({
-    content: `⏭️ **Question skipped!**\nThe answer was: **${skippedAnswer}**`,
-  });
+  await interaction.deferReply({ ephemeral: true });
+  quizSessionManager.setBanner(
+    interaction.channelId,
+    `⏭️ Skipped by ${interaction.user.username}. Answer was **${skippedAnswer}**`
+  );
 
-  if (session && session.currentCard) {
-    // Send next question
-    let questionMsg = `\n**Question ${session.questionNumber}/${session.totalQuestions}**\n`;
-    questionMsg += session.currentCard.front;
-    if (session.currentCard.hints.length > 0) {
-      questionMsg += `\n\n_💡 Hints available: ${session.currentCard.hints.length}_`;
-    }
-    if (interaction.channel && 'send' in interaction.channel) {
-      await interaction.channel.send(questionMsg);
-    }
-  } else {
-    // Quiz ended
-    const scores = quizSessionManager.getScores(interaction.channelId);
-    if (scores) {
-      const finalScores = quizSessionManager.endQuiz(interaction.channelId);
-      if (finalScores && finalScores.size > 0) {
-        let endMsg = `🏁 **Quiz Complete!**\n`;
-        endMsg += quizSessionManager.formatScores(finalScores);
-        const winners = quizSessionManager.getWinners(finalScores);
-        if (winners.length === 1) {
-          endMsg += `\n\n🎉 **Winner: <@${winners[0]}>!**`;
-        } else if (winners.length > 1) {
-          endMsg += `\n\n🎉 **It's a tie! Winners: ${winners.map((w: string) => `<@${w}>`).join(', ')}**`;
-        }
-        if (interaction.channel && 'send' in interaction.channel) {
-          await interaction.channel.send(endMsg);
-        }
-      }
+  if (interaction.channel) {
+    if (session) {
+      await refreshLiveQuiz(interaction.channel, session);
+    } else {
+      await postQuizSummary(interaction.channel, interaction.channelId);
     }
   }
-
+  await interaction.editReply({ content: '⏭️ Skipped.' });
   return undefined;
 }

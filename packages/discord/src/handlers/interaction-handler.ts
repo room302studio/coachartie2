@@ -19,7 +19,9 @@ import { memoryCommand } from '../commands/memory.js';
 import { usageCommand } from '../commands/usage.js';
 import { debugCommand } from '../commands/debug.js';
 import * as syncDiscussionsCommand from '../commands/sync-discussions.js';
-import { quizCommand } from '../commands/quiz.js';
+import { quizCommand, refreshLiveQuiz, postQuizSummary } from '../commands/quiz.js';
+import { parseQuizButtonId } from '../services/quiz-embed.js';
+import { quizSessionManager } from '../services/quiz-session-manager.js';
 import { watchRepoCommand } from '../commands/watch-repo.js';
 import { unwatchRepoCommand } from '../commands/unwatch-repo.js';
 import { listWatchesCommand } from '../commands/list-watches.js';
@@ -182,6 +184,14 @@ async function handleSlashCommand(interaction: ChatInputCommandInteraction) {
 async function handleButtonInteraction(interaction: ButtonInteraction) {
   const buttonText = (interaction.component as any)?.label || interaction.customId;
 
+  // Quiz buttons own the live embed — handle them before the generic intent
+  // processor so we don't accidentally send "Hint" / "Skip" to the LLM.
+  const quizAction = parseQuizButtonId(interaction.customId);
+  if (quizAction) {
+    await handleQuizButton(interaction, quizAction);
+    return;
+  }
+
   // Check if this is an ask-question response
   if (interaction.customId.startsWith('ask_')) {
     await handleAskQuestionResponse(interaction);
@@ -243,6 +253,108 @@ async function handleSelectMenuInteraction(interaction: SelectMenuInteraction) {
       await interaction.editReply(`🔄 **${selectedLabel}**\n\n${status}`);
     },
   });
+}
+
+/**
+ * Handle the action buttons on the live quiz embed (Hint / Skip / End /
+ * Play Again). Each action mutates the session, then re-renders the embed
+ * in place — the Wordle-style "one host message" pattern.
+ */
+async function handleQuizButton(
+  interaction: ButtonInteraction,
+  action: ReturnType<typeof parseQuizButtonId>
+): Promise<void> {
+  const channelId = interaction.channelId;
+  const channel = interaction.channel;
+  if (!channel) {
+    await interaction.reply({ content: 'No channel context.', ephemeral: true });
+    return;
+  }
+
+  quizSessionManager.rememberUsername(
+    channelId,
+    interaction.user.id,
+    interaction.user.username
+  );
+
+  try {
+    switch (action) {
+      case 'hint': {
+        const session = quizSessionManager.getSession(channelId);
+        if (!session) {
+          await interaction.reply({ content: 'No active quiz.', ephemeral: true });
+          return;
+        }
+        const hint = quizSessionManager.revealHint(channelId);
+        if (!hint) {
+          await interaction.reply({ content: 'No more hints available.', ephemeral: true });
+          return;
+        }
+        await interaction.deferUpdate();
+        await refreshLiveQuiz(channel, session);
+        return;
+      }
+
+      case 'skip': {
+        const session = quizSessionManager.getSession(channelId);
+        if (!session) {
+          await interaction.reply({ content: 'No active quiz.', ephemeral: true });
+          return;
+        }
+        await interaction.deferUpdate();
+        const { skippedAnswer, session: next } =
+          await quizSessionManager.skipQuestion(channelId);
+        quizSessionManager.setBanner(
+          channelId,
+          `⏭️ Skipped by ${interaction.user.username}. Answer was **${skippedAnswer}**`
+        );
+        if (next) {
+          await refreshLiveQuiz(channel, next);
+        } else {
+          await postQuizSummary(channel, channelId);
+        }
+        return;
+      }
+
+      case 'end': {
+        const session = quizSessionManager.getSession(channelId);
+        if (!session) {
+          await interaction.reply({ content: 'No active quiz.', ephemeral: true });
+          return;
+        }
+        await interaction.deferUpdate();
+        quizSessionManager.setBanner(
+          channelId,
+          `🛑 Ended by ${interaction.user.username}`
+        );
+        await postQuizSummary(channel, channelId);
+        return;
+      }
+
+      case 'again': {
+        // Lightweight hint to re-run /quiz start — re-launching a quiz needs
+        // the original options (deck, count, ai_judge) so we don't auto-start
+        // with stale parameters.
+        await interaction.reply({
+          content: '🔁 Run `/quiz start` to play another round!',
+          ephemeral: true,
+        });
+        return;
+      }
+    }
+  } catch (error) {
+    logger.error('Quiz button error:', error);
+    try {
+      if (!interaction.replied && !interaction.deferred) {
+        await interaction.reply({
+          content: '❌ Something went wrong handling that button.',
+          ephemeral: true,
+        });
+      }
+    } catch {
+      // already replied
+    }
+  }
 }
 
 /**

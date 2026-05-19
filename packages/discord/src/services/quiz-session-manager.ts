@@ -17,6 +17,8 @@ export interface FlashcardResponse {
   course: string;
 }
 
+export type QuestionOutcome = 'correct' | 'missed' | 'current' | 'upcoming';
+
 export interface QuizSession {
   channelId: string;
   deckId?: string;
@@ -36,6 +38,16 @@ export interface QuizSession {
   attemptedThisQuestion: Set<string>;
   // In-flight LLM judgements so we don't fire duplicate calls per user/question
   pendingJudgements: Set<string>;
+  // Hints revealed for the current question (count)
+  hintsRevealed: number;
+  // Per-question outcome for the progress bar
+  progress: QuestionOutcome[];
+  // Discord message id we update in place — Wordle-style single embed
+  questionMessageId?: string;
+  // Username cache so we can render mentions without re-fetching members
+  usernames: Map<string, string>;
+  // Last answer-result banner to render at the top of the embed
+  lastBanner?: string;
 }
 
 export interface QuizStartOptions {
@@ -171,6 +183,38 @@ Answer (yes/no):`;
 }
 
 /**
+ * Build the initial per-question outcome array — first slot is "current",
+ * the rest are "upcoming". Wordle-style empty squares until played.
+ */
+export function buildInitialProgress(total: number): QuestionOutcome[] {
+  const arr: QuestionOutcome[] = [];
+  for (let i = 0; i < total; i++) {
+    arr.push(i === 0 ? 'current' : 'upcoming');
+  }
+  return arr;
+}
+
+/**
+ * Render a Wordle-style emoji progress bar from a list of outcomes.
+ */
+export function renderProgressBar(progress: QuestionOutcome[]): string {
+  return progress
+    .map((o) => {
+      switch (o) {
+        case 'correct':
+          return '🟩';
+        case 'missed':
+          return '⬛';
+        case 'current':
+          return '🟨';
+        case 'upcoming':
+          return '⬜';
+      }
+    })
+    .join(' ');
+}
+
+/**
  * Fetch a random flashcard from the API
  */
 async function fetchRandomCard(deckId?: string): Promise<FlashcardResponse> {
@@ -230,6 +274,9 @@ export const quizSessionManager = {
       startedAt: new Date(),
       attemptedThisQuestion: new Set(),
       pendingJudgements: new Set(),
+      hintsRevealed: 0,
+      progress: buildInitialProgress(questionCount),
+      usernames: new Map(),
       onTimeout: onTimeout ? () => onTimeout(session) : undefined,
     };
 
@@ -367,6 +414,9 @@ export const quizSessionManager = {
       }
     }
 
+    // Mark this question correct in the Wordle-style progress bar
+    session.progress[session.questionNumber - 1] = 'correct';
+
     const quizEnded = session.questionNumber >= session.totalQuestions;
 
     logger.info(
@@ -412,6 +462,9 @@ export const quizSessionManager = {
     session.answered = false;
     session.attemptedThisQuestion = new Set();
     session.pendingJudgements = new Set();
+    session.hintsRevealed = 0;
+    // The slot we just moved into is now the current question
+    session.progress[session.questionNumber - 1] = 'current';
 
     // Set new timeout
     if (session.onTimeout) {
@@ -454,6 +507,7 @@ export const quizSessionManager = {
     for (const attemptedId of session.attemptedThisQuestion) {
       session.streaks.set(attemptedId, 0);
     }
+    session.progress[session.questionNumber - 1] = 'missed';
 
     // Move to next question or end
     const nextSession = await this.nextQuestion(channelId);
@@ -479,6 +533,7 @@ export const quizSessionManager = {
     for (const attemptedId of session.attemptedThisQuestion) {
       session.streaks.set(attemptedId, 0);
     }
+    session.progress[session.questionNumber - 1] = 'missed';
 
     // Move to next question
     const nextSession = await this.nextQuestion(channelId);
@@ -517,6 +572,47 @@ export const quizSessionManager = {
   getScores(channelId: string): Map<string, number> | null {
     const session = activeSessions.get(channelId);
     return session ? new Map(session.scores) : null;
+  },
+
+  /**
+   * Cache a userId → displayName mapping so we can render @-free names in
+   * shareable end cards without re-fetching members.
+   */
+  rememberUsername(channelId: string, userId: string, displayName: string): void {
+    const session = activeSessions.get(channelId);
+    if (!session) return;
+    session.usernames.set(userId, displayName);
+  },
+
+  /**
+   * Track which Discord message hosts the live quiz embed so callers can
+   * edit it in place.
+   */
+  setQuestionMessage(channelId: string, messageId: string): void {
+    const session = activeSessions.get(channelId);
+    if (session) session.questionMessageId = messageId;
+  },
+
+  /**
+   * Reveal the next available hint for the current question. Returns the hint
+   * text, or null if there are no more hints / no active question.
+   */
+  revealHint(channelId: string): string | null {
+    const session = activeSessions.get(channelId);
+    if (!session?.currentCard) return null;
+    const hints = session.currentCard.hints;
+    if (session.hintsRevealed >= hints.length) return null;
+    const hint = hints[session.hintsRevealed];
+    session.hintsRevealed++;
+    return hint;
+  },
+
+  /**
+   * Update the top banner that the embed renders (e.g. "✅ alice got it!").
+   */
+  setBanner(channelId: string, banner: string | undefined): void {
+    const session = activeSessions.get(channelId);
+    if (session) session.lastBanner = banner;
   },
 
   /**
