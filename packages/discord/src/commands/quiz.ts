@@ -7,6 +7,18 @@ import {
 import { logger } from '@coachartie/shared';
 import { quizSessionManager, QuizSession } from '../services/quiz-session-manager.js';
 import { buildLiveQuizMessage, buildQuizSummary } from '../services/quiz-embed.js';
+import {
+  ensureDailyQuizTables,
+  getOrCreateDailyPuzzle,
+  getUserPlay,
+  startUserPlay,
+  todayKey,
+  DAILY_QUESTION_COUNT,
+} from '../services/daily-quiz.js';
+import {
+  buildDailyGameMessage,
+  buildDailyResultMessage,
+} from '../services/daily-quiz-embed.js';
 
 export const quizCommand = {
   data: new SlashCommandBuilder()
@@ -53,6 +65,25 @@ export const quizCommand = {
     )
     .addSubcommand((subcommand) =>
       subcommand.setName('skip').setDescription('Skip the current question')
+    )
+    .addSubcommand((subcommand) =>
+      subcommand
+        .setName('daily')
+        .setDescription("Play today's solo daily quiz (Wordle-style — share your result after)")
+        .addStringOption((option) =>
+          option
+            .setName('deck')
+            .setDescription('Which deck to play today (default: all)')
+            .setRequired(false)
+            .addChoices(
+              { name: 'All Decks (Random)', value: 'all' },
+              { name: 'Computers', value: 'COMPUTERS' },
+              { name: 'Electrical & Radio', value: 'ELECTRICAL_AND_RADIO' },
+              { name: 'Politics', value: 'POLITICS' },
+              { name: "Rubik's 2x2", value: 'RUBIKS_2x2' },
+              { name: 'Search & Rescue', value: 'SAR_AND_WILDERNESS' }
+            )
+        )
     ),
 
   async execute(
@@ -70,6 +101,8 @@ export const quizCommand = {
           return await handleScores(interaction);
         case 'skip':
           return await handleSkip(interaction);
+        case 'daily':
+          return await handleDaily(interaction);
         default:
           return await interaction.reply({
             content: 'Unknown subcommand',
@@ -263,5 +296,58 @@ async function handleSkip(
     }
   }
   await interaction.editReply({ content: '⏭️ Skipped.' });
+  return undefined;
+}
+
+/**
+ * Solo, async, once-per-day quiz. Ephemeral — only the invoker sees their
+ * game state. Wordle-style: everyone gets the same N cards for the day,
+ * play whenever, opt-in share to the channel.
+ */
+async function handleDaily(
+  interaction: ChatInputCommandInteraction
+): Promise<InteractionResponse<boolean> | undefined> {
+  const deckOption = interaction.options.getString('deck');
+  const deck = deckOption && deckOption !== 'all' ? deckOption : '';
+  const date = todayKey();
+
+  await interaction.deferReply({ ephemeral: true });
+  ensureDailyQuizTables();
+
+  let puzzle;
+  try {
+    puzzle = await getOrCreateDailyPuzzle(date, deck);
+  } catch (e) {
+    logger.error('Failed to fetch daily puzzle:', e);
+    await interaction.editReply({
+      content: '❌ Failed to load today\'s puzzle. Try again in a minute.',
+    });
+    return undefined;
+  }
+
+  if (!puzzle || puzzle.cards.length === 0) {
+    await interaction.editReply({
+      content: '❌ Could not load today\'s puzzle. The flashcard API may be down.',
+    });
+    return undefined;
+  }
+
+  let play = getUserPlay(interaction.user.id, date, deck);
+  if (!play) {
+    play = startUserPlay(interaction.user.id, interaction.user.username, date, deck);
+  }
+
+  if (play.completed) {
+    const payload = buildDailyResultMessage(play, puzzle, interaction.user.username);
+    await interaction.editReply(payload);
+    return undefined;
+  }
+
+  // Truncate cards array to the question count we're enforcing — guards
+  // against any oddness in cached puzzles from earlier versions.
+  puzzle.cards = puzzle.cards.slice(0, DAILY_QUESTION_COUNT);
+
+  const payload = buildDailyGameMessage(play, puzzle);
+  await interaction.editReply(payload);
   return undefined;
 }

@@ -88,9 +88,10 @@ function normalizeAnswer(text: string): string {
 }
 
 /**
- * Check if user's answer matches the correct answer
+ * Check if user's answer matches the correct answer (fast string-based check).
+ * Exported so the daily-quiz flow can reuse the same matching rules.
  */
-function isCorrectAnswer(userAnswer: string, correctAnswer: string): boolean {
+export function isCorrectAnswer(userAnswer: string, correctAnswer: string): boolean {
   const userNorm = normalizeAnswer(userAnswer);
   const correctNorm = normalizeAnswer(correctAnswer);
 

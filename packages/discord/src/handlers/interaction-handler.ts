@@ -5,6 +5,7 @@ import {
   ChatInputCommandInteraction,
   ButtonInteraction,
   SelectMenuInteraction,
+  ModalSubmitInteraction,
 } from 'discord.js';
 import { logger } from '@coachartie/shared';
 import { linkPhoneCommand } from '../commands/link-phone.js';
@@ -21,7 +22,23 @@ import { debugCommand } from '../commands/debug.js';
 import * as syncDiscussionsCommand from '../commands/sync-discussions.js';
 import { quizCommand, refreshLiveQuiz, postQuizSummary } from '../commands/quiz.js';
 import { parseQuizButtonId } from '../services/quiz-embed.js';
-import { quizSessionManager } from '../services/quiz-session-manager.js';
+import { quizSessionManager, isCorrectAnswer } from '../services/quiz-session-manager.js';
+import {
+  parseDailyCustomId,
+  buildDailyGameMessage,
+  buildDailyResultMessage,
+  buildDailyShareMessage,
+  buildGuessModal,
+  DAILY_MODAL_INPUT,
+} from '../services/daily-quiz-embed.js';
+import {
+  getOrCreateDailyPuzzle,
+  getUserPlay,
+  recordGuess,
+  markCompleted,
+  markShared,
+  DAILY_QUESTION_COUNT,
+} from '../services/daily-quiz.js';
 import { watchRepoCommand } from '../commands/watch-repo.js';
 import { unwatchRepoCommand } from '../commands/unwatch-repo.js';
 import { listWatchesCommand } from '../commands/list-watches.js';
@@ -61,6 +78,8 @@ export function setupInteractionHandler(client: Client) {
       await handleButtonInteraction(interaction);
     } else if (interaction.isStringSelectMenu()) {
       await handleSelectMenuInteraction(interaction);
+    } else if (interaction.isModalSubmit()) {
+      await handleModalSubmit(interaction);
     }
   });
 
@@ -189,6 +208,13 @@ async function handleButtonInteraction(interaction: ButtonInteraction) {
   const quizAction = parseQuizButtonId(interaction.customId);
   if (quizAction) {
     await handleQuizButton(interaction, quizAction);
+    return;
+  }
+
+  // Daily-quiz buttons (Guess opens modal, Share posts public card).
+  const dailyId = parseDailyCustomId(interaction.customId);
+  if (dailyId) {
+    await handleDailyQuizButton(interaction, dailyId);
     return;
   }
 
@@ -353,6 +379,166 @@ async function handleQuizButton(
       }
     } catch {
       // already replied
+    }
+  }
+}
+
+/**
+ * Daily quiz button dispatcher. Guess → opens a modal. Share → posts the
+ * public emoji-grid card and disables the share button on the ephemeral.
+ */
+async function handleDailyQuizButton(
+  interaction: ButtonInteraction,
+  parsed: NonNullable<ReturnType<typeof parseDailyCustomId>>
+): Promise<void> {
+  const { action, date, deck } = parsed;
+  const userId = interaction.user.id;
+
+  try {
+    if (action === 'guess') {
+      const play = getUserPlay(userId, date, deck);
+      if (!play || play.completed) {
+        await interaction.reply({
+          content: '⚠️ This game is finished. Start tomorrow\'s with `/quiz daily`.',
+          ephemeral: true,
+        });
+        return;
+      }
+      await interaction.showModal(buildGuessModal(date, deck, play.currentQuestion + 1));
+      return;
+    }
+
+    if (action === 'share') {
+      const play = getUserPlay(userId, date, deck);
+      if (!play || !play.completed) {
+        await interaction.reply({
+          content: '⚠️ Finish the quiz first.',
+          ephemeral: true,
+        });
+        return;
+      }
+      if (play.shared) {
+        await interaction.reply({ content: 'Already shared today.', ephemeral: true });
+        return;
+      }
+
+      await interaction.deferUpdate();
+
+      if (interaction.channel && 'send' in interaction.channel) {
+        await interaction.channel.send(buildDailyShareMessage(play, interaction.user.username));
+      }
+      markShared(userId, date, deck);
+
+      const puzzle = await getOrCreateDailyPuzzle(date, deck);
+      if (puzzle) {
+        const refreshed = getUserPlay(userId, date, deck);
+        if (refreshed) {
+          await interaction.editReply(
+            buildDailyResultMessage(refreshed, puzzle, interaction.user.username)
+          );
+        }
+      }
+      return;
+    }
+
+    // replay or unknown: just acknowledge
+    await interaction.reply({
+      content: '🔁 Come back tomorrow for the next daily!',
+      ephemeral: true,
+    });
+  } catch (error) {
+    logger.error('Daily quiz button error:', error);
+    try {
+      if (!interaction.replied && !interaction.deferred) {
+        await interaction.reply({
+          content: '❌ Something went wrong with that action.',
+          ephemeral: true,
+        });
+      }
+    } catch {
+      // already responded
+    }
+  }
+}
+
+/**
+ * Modal submit dispatcher. Only handles the daily quiz answer modal for now.
+ */
+async function handleModalSubmit(interaction: ModalSubmitInteraction): Promise<void> {
+  const parsed = parseDailyCustomId(interaction.customId);
+  if (!parsed || parsed.action !== 'modal') {
+    await interaction.reply({
+      content: '⚠️ Unknown modal submission.',
+      ephemeral: true,
+    });
+    return;
+  }
+
+  const { date, deck } = parsed;
+  const userId = interaction.user.id;
+  const guess = interaction.fields.getTextInputValue(DAILY_MODAL_INPUT).trim();
+
+  try {
+    const puzzle = await getOrCreateDailyPuzzle(date, deck);
+    const play = getUserPlay(userId, date, deck);
+    if (!puzzle || !play) {
+      await interaction.reply({
+        content: '⚠️ No active daily quiz for you. Run `/quiz daily` to start.',
+        ephemeral: true,
+      });
+      return;
+    }
+    if (play.completed) {
+      await interaction.reply({
+        content: '⚠️ Today\'s game is already finished.',
+        ephemeral: true,
+      });
+      return;
+    }
+
+    const card = puzzle.cards[play.currentQuestion];
+    if (!card) {
+      await interaction.reply({
+        content: '⚠️ Out of questions — finishing up.',
+        ephemeral: true,
+      });
+      return;
+    }
+
+    const correct = isCorrectAnswer(guess, card.back);
+    let updatedPlay = recordGuess(userId, date, deck, guess, correct);
+    if (!updatedPlay) {
+      await interaction.reply({ content: '❌ Failed to record guess.', ephemeral: true });
+      return;
+    }
+
+    const isLast = updatedPlay.currentQuestion >= DAILY_QUESTION_COUNT;
+    if (isLast) {
+      updatedPlay = markCompleted(userId, date, deck) ?? updatedPlay;
+    }
+    const payload = isLast
+      ? buildDailyResultMessage(updatedPlay, puzzle, interaction.user.username)
+      : buildDailyGameMessage(updatedPlay, puzzle);
+
+    // Edit the ephemeral message the Guess button lived on. Only available
+    // when the modal was launched from a message component (which it was —
+    // we showed it from a button). Falls back to a fresh ephemeral reply.
+    if (interaction.isFromMessage()) {
+      await interaction.update(payload);
+    } else {
+      await interaction.reply({ ...payload, ephemeral: true });
+    }
+  } catch (error) {
+    logger.error('Daily quiz modal submit error:', error);
+    try {
+      if (!interaction.replied && !interaction.deferred) {
+        await interaction.reply({
+          content: '❌ Failed to record your guess.',
+          ephemeral: true,
+        });
+      }
+    } catch {
+      // already responded
     }
   }
 }
