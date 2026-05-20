@@ -8,17 +8,22 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { getSyncDb } from '@coachartie/shared';
 import {
+  ACHIEVEMENTS,
   DAILY_QUESTION_COUNT,
   attachPollMessage,
   castDeckVote,
   closeDeckPoll,
+  computeAchievements,
   computeDayStreaks,
+  computeUserStats,
+  diffAchievements,
   ensureDailyQuizTables,
   getDailyLeaderboard,
   getDeckPoll,
   getDeckPollById,
   getDeckVoteTallies,
   getGuildConfig,
+  getMostRecentCompletedPlay,
   getOrCreateDailyPuzzle,
   getOrCreateDeckPoll,
   getServerLeaderboard,
@@ -36,9 +41,12 @@ import {
   todayKey,
   tomorrowKey,
   type DailyOutcome,
+  type UserStats,
 } from '../src/services/daily-quiz';
 import type { FlashcardResponse } from '../src/services/quiz-session-manager';
 import {
+  buildAchievementUnlockMessage,
+  buildChallengeMessage,
   buildDailyGameMessage,
   buildDailyResultMessage,
   buildDailyShareMessage,
@@ -46,6 +54,7 @@ import {
   buildGuessModal,
   buildGuildConfigEmbed,
   buildLeaderboardMessage,
+  buildProfileMessage,
   buildScheduleDraftMessage,
   dailyCustomId,
   parseDailyCustomId,
@@ -805,5 +814,170 @@ describe('deck vote', () => {
     const closedPoll = getDeckPollById(poll.id)!;
     const { embeds } = buildDeckVoteMessage(closedPoll, tallies, { winningDeck });
     expect(embeds[0].toJSON().fields?.[0].name).toBe('🤷 No winner');
+  });
+});
+
+describe('user stats + achievements', () => {
+  beforeEach(() => {
+    clearDailyTables();
+  });
+
+  function completedPlay(
+    userId: string,
+    guildId: string,
+    date: string,
+    deck: string,
+    correctCount: number
+  ) {
+    startUserPlay(userId, userId, date, deck, guildId);
+    for (let i = 0; i < DAILY_QUESTION_COUNT; i++) {
+      recordGuess(userId, date, deck, 'x', i < correctCount);
+    }
+    markCompleted(userId, date, deck);
+  }
+
+  it('computeUserStats aggregates points / perfects / plays correctly', () => {
+    completedPlay('alice', 'g1', '2026-05-17', '', 5);
+    completedPlay('alice', 'g1', '2026-05-18', '', 3);
+    completedPlay('alice', 'g1', '2026-05-19', '', 5);
+    const stats = computeUserStats('alice', 'g1');
+    expect(stats.totalPlays).toBe(3);
+    expect(stats.totalCorrect).toBe(13);
+    expect(stats.perfectDays).toBe(2);
+    expect(stats.recentResults).toHaveLength(3);
+    // Recent newest-first
+    expect(stats.recentResults[0].date).toBe('2026-05-19');
+  });
+
+  it('computeUserStats scopes to a guild', () => {
+    // Note: the current schema's UNIQUE(user_id, date, deck) doesn't include
+    // guild_id, so two guilds with the same user + deck + date would collide.
+    // Use different decks to exercise the scoping in a realistic way.
+    completedPlay('alice', 'g1', '2026-05-19', 'POLITICS', 5);
+    completedPlay('alice', 'g2', '2026-05-19', 'COMPUTERS', 4);
+    const g1 = computeUserStats('alice', 'g1');
+    const g2 = computeUserStats('alice', 'g2');
+    expect(g1.totalCorrect).toBe(5);
+    expect(g2.totalCorrect).toBe(4);
+  });
+
+  it('zero-play user has all-zeros stats and no badges', () => {
+    const stats = computeUserStats('ghost', 'g1');
+    expect(stats.totalPlays).toBe(0);
+    expect(computeAchievements(stats).size).toBe(0);
+  });
+
+  it('achievements unlock once their predicate flips true', () => {
+    const empty: UserStats = {
+      userId: 'a',
+      guildId: 'g1',
+      totalPlays: 0,
+      totalCorrect: 0,
+      perfectDays: 0,
+      currentStreak: 0,
+      bestStreak: 0,
+      recentResults: [],
+    };
+    expect(computeAchievements(empty).size).toBe(0);
+
+    const oneDay: UserStats = { ...empty, totalPlays: 1, totalCorrect: 5, perfectDays: 1, bestStreak: 1, currentStreak: 1 };
+    const got = computeAchievements(oneDay);
+    expect(got.has('first_blood')).toBe(true);
+    expect(got.has('perfect_1')).toBe(true);
+    expect(got.has('streak_3')).toBe(false);
+  });
+
+  it('diffAchievements returns only newly-unlocked badges', () => {
+    const before: UserStats = {
+      userId: 'a', guildId: 'g1', totalPlays: 2, totalCorrect: 9, perfectDays: 1,
+      currentStreak: 2, bestStreak: 2, recentResults: [],
+    };
+    const after: UserStats = { ...before, totalPlays: 3, totalCorrect: 14, perfectDays: 2, currentStreak: 3, bestStreak: 3 };
+    const newly = diffAchievements(before, after);
+    const ids = newly.map((a) => a.id);
+    expect(ids).toContain('streak_3');
+    expect(ids).not.toContain('first_blood'); // already had
+    expect(ids).not.toContain('perfect_1'); // already had
+  });
+
+  it('getMostRecentCompletedPlay returns the latest completed play in scope', () => {
+    completedPlay('alice', 'g1', '2026-05-17', 'POLITICS', 3);
+    completedPlay('alice', 'g1', '2026-05-19', 'COMPUTERS', 5);
+    const recent = getMostRecentCompletedPlay('alice', 'g1');
+    expect(recent?.date).toBe('2026-05-19');
+    expect(recent?.deck).toBe('COMPUTERS');
+  });
+
+  it('profile embed renders headline metrics and last-7 grid', () => {
+    completedPlay('alice', 'g1', '2026-05-17', '', 5);
+    completedPlay('alice', 'g1', '2026-05-18', '', 3);
+    const stats = computeUserStats('alice', 'g1');
+    const earned = ACHIEVEMENTS.filter((a) => computeAchievements(stats).has(a.id));
+    const { embeds } = buildProfileMessage({ id: 'alice', username: 'Alice' }, stats, earned);
+    const embed = embeds[0].toJSON();
+    expect(embed.title).toContain('Alice');
+    // fields contain Current Streak, Best Streak, Perfect Days, Days Played, Last 7 Days, Badges
+    const names = embed.fields?.map((f) => f.name);
+    expect(names).toEqual(
+      expect.arrayContaining(['Current Streak', 'Best Streak', 'Perfect Days', 'Days Played', 'Last 7 Days', 'Badges'])
+    );
+    const last7 = embed.fields?.find((f) => f.name === 'Last 7 Days');
+    expect(last7?.value).toMatch(/🟩|🟨|🟥/);
+  });
+
+  it('challenge embed mentions target + shows caller\'s score grid', () => {
+    completedPlay('alice', 'g1', todayKey(), '', 4);
+    const recent = getMostRecentCompletedPlay('alice', 'g1');
+    const { content, embeds } = buildChallengeMessage(
+      { id: 'alice', username: 'Alice' },
+      { id: 'bob' },
+      recent,
+      todayKey(),
+      'good luck'
+    );
+    expect(content).toContain('<@bob>');
+    expect(content).toContain('<@alice>');
+    const embed = embeds[0].toJSON();
+    expect(embed.description).toContain(`4/${DAILY_QUESTION_COUNT}`);
+    expect(embed.description).toContain('good luck');
+  });
+
+  it('challenge embed degrades gracefully when caller has no recent play', () => {
+    const { content, embeds } = buildChallengeMessage(
+      { id: 'alice', username: 'Alice' },
+      { id: 'bob' },
+      null,
+      todayKey()
+    );
+    expect(content).toContain('<@bob>');
+    expect(embeds[0].toJSON().description).toContain('/quiz daily');
+  });
+
+  it('achievement-unlock message tags the user and lists badges', () => {
+    const { content, embeds } = buildAchievementUnlockMessage(
+      { id: 'alice', username: 'Alice' },
+      [ACHIEVEMENTS[0], ACHIEVEMENTS[2]]
+    );
+    expect(content).toBe('<@alice>');
+    const embed = embeds[0].toJSON();
+    expect(embed.title).toContain('Achievements unlocked');
+    expect(embed.description).toContain(ACHIEVEMENTS[0].label);
+    expect(embed.description).toContain(ACHIEVEMENTS[2].label);
+  });
+
+  it('achievement-unlock message uses singular header for one badge', () => {
+    const { embeds } = buildAchievementUnlockMessage(
+      { id: 'alice', username: 'Alice' },
+      [ACHIEVEMENTS[0]]
+    );
+    expect(embeds[0].toJSON().title).toContain('Achievement unlocked');
+  });
+
+  it('achievement-unlock message is empty when no badges unlocked', () => {
+    const out = buildAchievementUnlockMessage(
+      { id: 'alice', username: 'Alice' },
+      []
+    );
+    expect(out.embeds).toHaveLength(0);
   });
 });

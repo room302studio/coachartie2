@@ -869,6 +869,199 @@ export function closeDeckPoll(pollId: number, choices: string[]): CloseDeckPollR
   return { winningDeck: winner, tallies };
 }
 
+// ---------------------------------------------------------------------------
+// Per-user stats + achievements (growth: profile cards, social-proof badges).
+// ---------------------------------------------------------------------------
+
+export interface UserStats {
+  userId: string;
+  guildId: string | null;
+  totalPlays: number;
+  totalCorrect: number;
+  perfectDays: number;
+  currentStreak: number;
+  bestStreak: number;
+  recentResults: { date: string; score: number; total: number }[]; // newest first
+}
+
+/**
+ * Compute aggregate stats for one user, scoped to a guild (or globally when
+ * guildId is null). All numbers come from completed plays only.
+ */
+export function computeUserStats(userId: string, guildId: string | null): UserStats {
+  ensureDailyQuizTables();
+  const db = getSyncDb();
+  const where = guildId ? 'user_id = ? AND guild_id = ? AND completed = 1' : 'user_id = ? AND completed = 1';
+  const params = guildId ? [userId, guildId] : [userId];
+
+  const rows = db.all<{ date: string; results: string }>(
+    `SELECT date, results FROM daily_quiz_plays
+       WHERE ${where}
+       ORDER BY date ASC`,
+    params
+  );
+
+  let totalCorrect = 0;
+  let perfectDays = 0;
+  const dates: string[] = [];
+  for (const row of rows) {
+    const r = safeJsonArray<DailyOutcome>(row.results);
+    const score = r.filter((o) => o === 'correct').length;
+    totalCorrect += score;
+    if (score === DAILY_QUESTION_COUNT) perfectDays += 1;
+    dates.push(row.date);
+  }
+
+  const { currentStreak, bestStreak } = computeDayStreaks(dates, todayKey());
+
+  // Newest-first recent results (capped at 7 — enough for the profile grid).
+  const recentRows = [...rows].reverse().slice(0, 7);
+  const recentResults = recentRows.map((row) => {
+    const r = safeJsonArray<DailyOutcome>(row.results);
+    return { date: row.date, score: r.filter((o) => o === 'correct').length, total: r.length };
+  });
+
+  return {
+    userId,
+    guildId,
+    totalPlays: rows.length,
+    totalCorrect,
+    perfectDays,
+    currentStreak,
+    bestStreak,
+    recentResults,
+  };
+}
+
+/**
+ * Look up a user's most recent completed play (any deck) — used by the
+ * /quiz challenge callout so we can flex their score at the target.
+ */
+export function getMostRecentCompletedPlay(
+  userId: string,
+  guildId: string | null,
+  onOrAfter?: string
+): DailyPlay | null {
+  ensureDailyQuizTables();
+  const db = getSyncDb();
+  const conditions: string[] = ['user_id = ?', 'completed = 1'];
+  const params: (string | number)[] = [userId];
+  if (guildId) {
+    conditions.push('guild_id = ?');
+    params.push(guildId);
+  }
+  if (onOrAfter) {
+    conditions.push('date >= ?');
+    params.push(onOrAfter);
+  }
+  const row = db.get<any>(
+    `SELECT user_id, username, guild_id, date, deck, current_question, results, guesses,
+            completed, shared, started_at, completed_at
+       FROM daily_quiz_plays
+      WHERE ${conditions.join(' AND ')}
+      ORDER BY date DESC, completed_at DESC
+      LIMIT 1`,
+    params
+  );
+  if (!row) return null;
+  return {
+    userId: row.user_id,
+    username: row.username,
+    guildId: row.guild_id,
+    date: row.date,
+    deck: row.deck,
+    currentQuestion: row.current_question,
+    results: safeJsonArray<DailyOutcome>(row.results),
+    guesses: safeJsonArray<string>(row.guesses),
+    completed: row.completed === 1,
+    shared: row.shared === 1,
+    startedAt: row.started_at,
+    completedAt: row.completed_at,
+  };
+}
+
+export interface Achievement {
+  id: string;
+  emoji: string;
+  label: string;
+  description: string;
+  test: (stats: UserStats) => boolean;
+}
+
+export const ACHIEVEMENTS: Achievement[] = [
+  {
+    id: 'first_blood',
+    emoji: '🎯',
+    label: 'First Blood',
+    description: 'Completed your first daily quiz',
+    test: (s) => s.totalPlays >= 1,
+  },
+  {
+    id: 'perfect_1',
+    emoji: '⭐',
+    label: 'Perfect',
+    description: `Score ${DAILY_QUESTION_COUNT}/${DAILY_QUESTION_COUNT} on a daily`,
+    test: (s) => s.perfectDays >= 1,
+  },
+  {
+    id: 'streak_3',
+    emoji: '🔥',
+    label: 'On Fire',
+    description: '3-day streak',
+    test: (s) => s.bestStreak >= 3,
+  },
+  {
+    id: 'streak_7',
+    emoji: '💎',
+    label: 'Week Warrior',
+    description: '7-day streak',
+    test: (s) => s.bestStreak >= 7,
+  },
+  {
+    id: 'streak_30',
+    emoji: '👑',
+    label: 'Habitual',
+    description: '30-day streak',
+    test: (s) => s.bestStreak >= 30,
+  },
+  {
+    id: 'perfect_10',
+    emoji: '🌟',
+    label: 'Stellar',
+    description: '10 perfect days',
+    test: (s) => s.perfectDays >= 10,
+  },
+  {
+    id: 'points_25',
+    emoji: '🏅',
+    label: 'Quarter Century',
+    description: '25 lifetime points',
+    test: (s) => s.totalCorrect >= 25,
+  },
+  {
+    id: 'points_100',
+    emoji: '🏆',
+    label: 'Centurion',
+    description: '100 lifetime points',
+    test: (s) => s.totalCorrect >= 100,
+  },
+];
+
+export function computeAchievements(stats: UserStats): Set<string> {
+  return new Set(ACHIEVEMENTS.filter((a) => a.test(stats)).map((a) => a.id));
+}
+
+/**
+ * Achievements newly unlocked between two stat snapshots. Used for the
+ * "just unlocked" celebratory post that drops in channel after a user
+ * finishes their daily.
+ */
+export function diffAchievements(before: UserStats, after: UserStats): Achievement[] {
+  const beforeSet = computeAchievements(before);
+  const afterSet = computeAchievements(after);
+  return ACHIEVEMENTS.filter((a) => !beforeSet.has(a.id) && afterSet.has(a.id));
+}
+
 function safeJsonArray<T>(raw: string): T[] {
   try {
     const parsed = JSON.parse(raw);

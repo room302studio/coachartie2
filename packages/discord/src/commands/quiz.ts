@@ -16,11 +16,15 @@ import {
   getGuildConfig,
   getOrCreateDailyPuzzle,
   getOrCreateDeckPoll,
+  getMostRecentCompletedPlay,
   getServerLeaderboard,
   getUserPlay,
   isDeckAllowedForGuild,
   KNOWN_DECKS,
   attachPollMessage,
+  ACHIEVEMENTS,
+  computeAchievements,
+  computeUserStats,
   setGuildAllowedDecks,
   setGuildDefaultDeck,
   startUserPlay,
@@ -30,11 +34,13 @@ import {
   type LeaderboardScope,
 } from '../services/daily-quiz.js';
 import {
+  buildChallengeMessage,
   buildDailyGameMessage,
   buildDailyResultMessage,
   buildDeckVoteMessage,
   buildGuildConfigEmbed,
   buildLeaderboardMessage,
+  buildProfileMessage,
   buildScheduleDraftMessage,
 } from '../services/daily-quiz-embed.js';
 
@@ -174,6 +180,25 @@ export const quizCommand = {
         .setName('vote')
         .setDescription("(Admin) Open a poll: members vote for tomorrow's deck")
     )
+    .addSubcommand((subcommand) =>
+      subcommand
+        .setName('me')
+        .setDescription('Show your (or another player\'s) daily-quiz profile')
+        .addUserOption((option) =>
+          option.setName('user').setDescription('Whose profile to view').setRequired(false)
+        )
+    )
+    .addSubcommand((subcommand) =>
+      subcommand
+        .setName('challenge')
+        .setDescription('Challenge a friend to beat your daily quiz score')
+        .addUserOption((option) =>
+          option.setName('user').setDescription('Who to challenge').setRequired(true)
+        )
+        .addStringOption((option) =>
+          option.setName('note').setDescription('Optional trash talk').setRequired(false)
+        )
+    )
     .addSubcommandGroup((group) =>
       group
         .setName('config')
@@ -233,6 +258,10 @@ export const quizCommand = {
           return await handleSchedule(interaction);
         case 'vote':
           return await handleVote(interaction);
+        case 'me':
+          return await handleMe(interaction);
+        case 'challenge':
+          return await handleChallenge(interaction);
         default:
           return await interaction.reply({
             content: 'Unknown subcommand',
@@ -673,6 +702,54 @@ async function handleVote(
   const sent = await interaction.reply({ ...payload, fetchReply: true });
   attachPollMessage(poll.id, interaction.channelId, sent.id);
   return undefined;
+}
+
+/**
+ * Public profile card — flexes lifetime stats + badges. Designed to be
+ * screenshotted and shared elsewhere ("oh, what bot is that?").
+ */
+async function handleMe(
+  interaction: ChatInputCommandInteraction
+): Promise<InteractionResponse<boolean> | undefined> {
+  ensureDailyQuizTables();
+  const targetUser = interaction.options.getUser('user') || interaction.user;
+  const stats = computeUserStats(targetUser.id, interaction.guildId);
+  const earned = ACHIEVEMENTS.filter((a) => computeAchievements(stats).has(a.id));
+  const payload = buildProfileMessage(targetUser, stats, earned);
+  return await interaction.reply(payload);
+}
+
+/**
+ * Tag a friend with a "beat my score" public callout. The caller's most
+ * recent completed play (any deck) is included so the target sees what
+ * they're up against.
+ */
+async function handleChallenge(
+  interaction: ChatInputCommandInteraction
+): Promise<InteractionResponse<boolean> | undefined> {
+  const target = interaction.options.getUser('user', true);
+  if (target.id === interaction.user.id) {
+    return await interaction.reply({
+      content: '⚠️ You can\'t challenge yourself!',
+      ephemeral: true,
+    });
+  }
+  if (target.bot) {
+    return await interaction.reply({
+      content: '⚠️ Bots don\'t play the daily quiz.',
+      ephemeral: true,
+    });
+  }
+  const note = interaction.options.getString('note') || undefined;
+  const recentPlay = getMostRecentCompletedPlay(interaction.user.id, interaction.guildId);
+  const payload = buildChallengeMessage(
+    interaction.user,
+    target,
+    recentPlay,
+    todayKey(),
+    note
+  );
+  return await interaction.reply(payload);
 }
 
 /**

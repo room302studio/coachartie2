@@ -21,8 +21,10 @@ import {
   TextInputStyle,
 } from 'discord.js';
 import {
+  ACHIEVEMENTS,
   DAILY_QUESTION_COUNT,
   renderEmojiGrid,
+  type Achievement,
   type DailyPlay,
   type DailyPuzzle,
   type DeckPoll,
@@ -30,6 +32,7 @@ import {
   type GuildQuizConfig,
   type LeaderboardScope,
   type ServerLeaderboardRow,
+  type UserStats,
 } from './daily-quiz.js';
 import type { FlashcardResponse } from './quiz-session-manager.js';
 
@@ -427,6 +430,130 @@ export function buildDeckVoteMessage(
   );
 
   return { embeds: [embed], components: [voteRow, closeRow] };
+}
+
+// ---------------------------------------------------------------------------
+// Growth: shareable /quiz me profile, challenge callout, achievement unlock.
+// ---------------------------------------------------------------------------
+
+function scoreEmoji(score: number, total: number): string {
+  if (total === 0 || score === 0) return '🟥';
+  if (score === total) return '🟩';
+  return '🟨';
+}
+
+/**
+ * Public profile card — designed to be screenshottable and tweeted.
+ * Surfaces the metrics that compound into "I want to play this": streak,
+ * perfect days, total points, and the trailing 7-day grid.
+ */
+export function buildProfileMessage(
+  user: { id: string; username: string },
+  stats: UserStats,
+  earnedAchievements: Achievement[]
+): { embeds: EmbedBuilder[] } {
+  const winRate =
+    stats.totalPlays > 0
+      ? Math.round((stats.totalCorrect / (stats.totalPlays * DAILY_QUESTION_COUNT)) * 100)
+      : 0;
+  const recentGrid = stats.recentResults
+    .map((r) => scoreEmoji(r.score, r.total))
+    .join(' ');
+  const recentLine = recentGrid || '_No daily plays yet — run `/quiz daily` to start._';
+
+  const badgesField =
+    earnedAchievements.length > 0
+      ? earnedAchievements
+          .map((a) => `${a.emoji} **${a.label}** — _${a.description}_`)
+          .join('\n')
+      : '_No badges yet. Play a daily to earn your first._';
+
+  const headline =
+    stats.totalPlays === 0
+      ? 'No plays yet — share this command with the channel to get rolling.'
+      : `${stats.totalCorrect} lifetime points · ${winRate}% win rate`;
+
+  const embed = new EmbedBuilder()
+    .setColor(0x5865f2)
+    .setTitle(`📈 ${user.username} · Daily Quiz Profile`)
+    .setDescription(headline)
+    .addFields(
+      { name: 'Current Streak', value: `🔥 **${stats.currentStreak}**`, inline: true },
+      { name: 'Best Streak', value: `🏔️ **${stats.bestStreak}**`, inline: true },
+      { name: 'Perfect Days', value: `⭐ **${stats.perfectDays}**`, inline: true },
+      { name: 'Days Played', value: `**${stats.totalPlays}**`, inline: true },
+      { name: 'Last 7 Days', value: recentLine, inline: false },
+      { name: 'Badges', value: badgesField, inline: false }
+    )
+    .setFooter({ text: `Play your own: /quiz daily · Compare: /quiz leaderboard` });
+
+  return { embeds: [embed] };
+}
+
+/**
+ * Public challenge callout. Tags the target user, optionally includes the
+ * caller's most recent score as a flex/baseline to beat.
+ */
+export function buildChallengeMessage(
+  caller: { id: string; username: string },
+  target: { id: string },
+  callerRecent: DailyPlay | null,
+  todayDate: string,
+  note?: string
+): { content: string; embeds: EmbedBuilder[] } {
+  const score = callerRecent
+    ? callerRecent.results.filter((o) => o === 'correct').length
+    : null;
+  const grid =
+    callerRecent !== null
+      ? renderEmojiGrid(callerRecent.results, DAILY_QUESTION_COUNT)
+      : null;
+
+  const lines: string[] = [];
+  if (score !== null) {
+    lines.push(`**${caller.username}** dropped **${score}/${DAILY_QUESTION_COUNT}**`);
+    if (grid) lines.push(grid);
+  } else {
+    lines.push(`**${caller.username}** wants to know if you've got it.`);
+  }
+  lines.push('');
+  lines.push(`Run \`/quiz daily\` to play today's puzzle.`);
+  if (note) {
+    lines.push('');
+    lines.push(`_"${note}"_`);
+  }
+
+  const embed = new EmbedBuilder()
+    .setColor(0xed4245)
+    .setTitle(`🎯 Daily Quiz Challenge · ${todayDate}`)
+    .setDescription(lines.join('\n'));
+
+  return { content: `<@${target.id}> — you've been challenged by <@${caller.id}>`, embeds: [embed] };
+}
+
+/**
+ * Tiny celebration card auto-posted when a player just unlocked a badge.
+ * Mentions the player so other members see the social proof.
+ */
+export function buildAchievementUnlockMessage(
+  user: { id: string; username: string },
+  unlocked: Achievement[]
+): { content: string; embeds: EmbedBuilder[] } {
+  if (unlocked.length === 0) {
+    return { content: '', embeds: [] };
+  }
+  const header = unlocked.length === 1 ? 'Achievement unlocked!' : 'Achievements unlocked!';
+  const lines = unlocked
+    .map((a) => `${a.emoji} **${a.label}** — _${a.description}_`)
+    .join('\n');
+
+  const embed = new EmbedBuilder()
+    .setColor(0xfee75c)
+    .setTitle(`🎉 ${header}`)
+    .setDescription(lines)
+    .setFooter({ text: 'See your full profile: /quiz me' });
+
+  return { content: `<@${user.id}>`, embeds: [embed] };
 }
 
 const SCOPE_LABEL: Record<LeaderboardScope, string> = {

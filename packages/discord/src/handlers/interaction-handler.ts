@@ -36,6 +36,7 @@ import {
   parseDailyCustomId,
   parseScheduleCustomId,
   parseVoteCustomId,
+  buildAchievementUnlockMessage,
   buildDailyGameMessage,
   buildDailyResultMessage,
   buildDailyShareMessage,
@@ -47,6 +48,8 @@ import {
 import {
   castDeckVote,
   closeDeckPoll,
+  computeUserStats,
+  diffAchievements,
   fetchUniqueCards,
   getDeckPollById,
   getDeckVoteTallies,
@@ -718,9 +721,17 @@ async function handleModalSubmit(interaction: ModalSubmitInteraction): Promise<v
     }
 
     const isLast = updatedPlay.currentQuestion >= DAILY_QUESTION_COUNT;
+
+    // Diff achievements across the markCompleted boundary so we can post a
+    // celebratory message in channel for any badges this play unlocked.
+    let unlockedAchievements: ReturnType<typeof diffAchievements> = [];
     if (isLast) {
+      const before = computeUserStats(userId, interaction.guildId);
       updatedPlay = markCompleted(userId, date, deck) ?? updatedPlay;
+      const after = computeUserStats(userId, interaction.guildId);
+      unlockedAchievements = diffAchievements(before, after);
     }
+
     const payload = isLast
       ? buildDailyResultMessage(updatedPlay, puzzle, interaction.user.username)
       : buildDailyGameMessage(updatedPlay, puzzle);
@@ -732,6 +743,18 @@ async function handleModalSubmit(interaction: ModalSubmitInteraction): Promise<v
       await interaction.update(payload);
     } else {
       await interaction.reply({ ...payload, ephemeral: true });
+    }
+
+    // Public celebration — drops in the same channel where they ran /quiz daily.
+    // Social proof + tags the player so it surfaces in their notifications.
+    if (unlockedAchievements.length > 0 && interaction.channel && 'send' in interaction.channel) {
+      try {
+        await interaction.channel.send(
+          buildAchievementUnlockMessage(interaction.user, unlockedAchievements)
+        );
+      } catch (e) {
+        logger.warn('Failed to post achievement unlock:', e);
+      }
     }
   } catch (error) {
     logger.error('Daily quiz modal submit error:', error);
