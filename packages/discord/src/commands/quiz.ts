@@ -10,14 +10,17 @@ import { buildLiveQuizMessage, buildQuizSummary } from '../services/quiz-embed.j
 import {
   ensureDailyQuizTables,
   getOrCreateDailyPuzzle,
+  getServerLeaderboard,
   getUserPlay,
   startUserPlay,
   todayKey,
   DAILY_QUESTION_COUNT,
+  type LeaderboardScope,
 } from '../services/daily-quiz.js';
 import {
   buildDailyGameMessage,
   buildDailyResultMessage,
+  buildLeaderboardMessage,
 } from '../services/daily-quiz-embed.js';
 
 export const quizCommand = {
@@ -84,6 +87,22 @@ export const quizCommand = {
               { name: 'Search & Rescue', value: 'SAR_AND_WILDERNESS' }
             )
         )
+    )
+    .addSubcommand((subcommand) =>
+      subcommand
+        .setName('leaderboard')
+        .setDescription("This server's daily-quiz leaderboard")
+        .addStringOption((option) =>
+          option
+            .setName('scope')
+            .setDescription('Time range (default: all-time)')
+            .setRequired(false)
+            .addChoices(
+              { name: "Today's Daily", value: 'today' },
+              { name: 'This Week', value: 'week' },
+              { name: 'All-Time', value: 'alltime' }
+            )
+        )
     ),
 
   async execute(
@@ -103,6 +122,8 @@ export const quizCommand = {
           return await handleSkip(interaction);
         case 'daily':
           return await handleDaily(interaction);
+        case 'leaderboard':
+          return await handleLeaderboard(interaction);
         default:
           return await interaction.reply({
             content: 'Unknown subcommand',
@@ -334,7 +355,13 @@ async function handleDaily(
 
   let play = getUserPlay(interaction.user.id, date, deck);
   if (!play) {
-    play = startUserPlay(interaction.user.id, interaction.user.username, date, deck);
+    play = startUserPlay(
+      interaction.user.id,
+      interaction.user.username,
+      date,
+      deck,
+      interaction.guildId
+    );
   }
 
   if (play.completed) {
@@ -350,4 +377,25 @@ async function handleDaily(
   const payload = buildDailyGameMessage(play, puzzle);
   await interaction.editReply(payload);
   return undefined;
+}
+
+/**
+ * Public server leaderboard for the daily quiz.
+ */
+async function handleLeaderboard(
+  interaction: ChatInputCommandInteraction
+): Promise<InteractionResponse<boolean> | undefined> {
+  if (!interaction.guildId) {
+    return await interaction.reply({
+      content: '⚠️ Run this in a server channel — DMs don\'t have a leaderboard.',
+      ephemeral: true,
+    });
+  }
+
+  const scopeOption = (interaction.options.getString('scope') as LeaderboardScope) || 'alltime';
+  ensureDailyQuizTables();
+  const rows = getServerLeaderboard(interaction.guildId, scopeOption);
+  const guildName = interaction.guild?.name || 'This server';
+  const payload = buildLeaderboardMessage(rows, scopeOption, guildName);
+  return await interaction.reply(payload);
 }

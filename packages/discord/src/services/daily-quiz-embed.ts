@@ -25,6 +25,8 @@ import {
   renderEmojiGrid,
   type DailyPlay,
   type DailyPuzzle,
+  type LeaderboardScope,
+  type ServerLeaderboardRow,
 } from './daily-quiz.js';
 
 export const DAILY_PREFIX = 'quiz:daily:';
@@ -176,6 +178,45 @@ export function buildDailyShareMessage(
     .setDescription([`**${username}** — **${score}/${DAILY_QUESTION_COUNT}**`, grid].join('\n'))
     .setFooter({ text: 'Try it: /quiz daily' });
 
+  return { embeds: [embed] };
+}
+
+const SCOPE_LABEL: Record<LeaderboardScope, string> = {
+  today: "Today's Daily",
+  week: 'This Week',
+  alltime: 'All-Time',
+};
+
+/**
+ * Server leaderboard card. Mirrors the share grid's visual style and surfaces
+ * the three Wordle-style metrics: total correct, perfect days (Wordles),
+ * current streak.
+ */
+export function buildLeaderboardMessage(
+  rows: ServerLeaderboardRow[],
+  scope: LeaderboardScope,
+  guildName: string
+): { embeds: EmbedBuilder[] } {
+  const embed = new EmbedBuilder()
+    .setColor(0xfee75c)
+    .setTitle(`🏆 ${guildName} · Daily Quiz Leaderboard`)
+    .setFooter({ text: `${SCOPE_LABEL[scope]} · ranked by total correct, then perfect days` });
+
+  if (rows.length === 0) {
+    embed.setDescription(
+      '_No completed daily quizzes yet — be the first with `/quiz daily`!_'
+    );
+    return { embeds: [embed] };
+  }
+
+  const lines = rows.map((row, i) => {
+    const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i + 1}.`;
+    const perfect = row.perfectDays > 0 ? ` · ⭐${row.perfectDays}` : '';
+    const streak = row.currentStreak >= 2 ? ` · 🔥${row.currentStreak}` : '';
+    return `${medal} <@${row.userId}> — **${row.totalCorrect}** pts across ${row.plays} day${row.plays === 1 ? '' : 's'}${perfect}${streak}`;
+  });
+
+  embed.setDescription(lines.join('\n'));
   return { embeds: [embed] };
 }
 

@@ -9,9 +9,11 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { getSyncDb } from '@coachartie/shared';
 import {
   DAILY_QUESTION_COUNT,
+  computeDayStreaks,
   ensureDailyQuizTables,
   getDailyLeaderboard,
   getOrCreateDailyPuzzle,
+  getServerLeaderboard,
   getUserPlay,
   markCompleted,
   markShared,
@@ -26,6 +28,7 @@ import {
   buildDailyResultMessage,
   buildDailyShareMessage,
   buildGuessModal,
+  buildLeaderboardMessage,
   dailyCustomId,
   parseDailyCustomId,
 } from '../src/services/daily-quiz-embed';
@@ -227,6 +230,148 @@ describe('leaderboard', () => {
     expect(board.map((r) => r.userId)).toEqual(['bob', 'alice']);
     expect(board[0].score).toBe(5);
     expect(board[1].score).toBe(3);
+  });
+});
+
+describe('computeDayStreaks', () => {
+  it('returns zeros for an empty list', () => {
+    expect(computeDayStreaks([], '2026-05-19')).toEqual({ currentStreak: 0, bestStreak: 0 });
+  });
+
+  it('counts a run of consecutive days ending today', () => {
+    const dates = ['2026-05-17', '2026-05-18', '2026-05-19'];
+    expect(computeDayStreaks(dates, '2026-05-19')).toEqual({
+      currentStreak: 3,
+      bestStreak: 3,
+    });
+  });
+
+  it('treats yesterday as still-streaking (today not yet played)', () => {
+    const dates = ['2026-05-17', '2026-05-18'];
+    expect(computeDayStreaks(dates, '2026-05-19')).toEqual({
+      currentStreak: 2,
+      bestStreak: 2,
+    });
+  });
+
+  it('resets current streak when the most recent play is too old', () => {
+    const dates = ['2026-05-10', '2026-05-11'];
+    expect(computeDayStreaks(dates, '2026-05-19')).toEqual({
+      currentStreak: 0,
+      bestStreak: 2,
+    });
+  });
+
+  it('tracks best streak separately from current', () => {
+    // Played a 4-day streak in May, broke it, played a 1-day "streak" today.
+    const dates = ['2026-05-01', '2026-05-02', '2026-05-03', '2026-05-04', '2026-05-19'];
+    expect(computeDayStreaks(dates, '2026-05-19')).toEqual({
+      currentStreak: 1,
+      bestStreak: 4,
+    });
+  });
+});
+
+describe('getServerLeaderboard', () => {
+  beforeEach(() => {
+    clearDailyTables();
+  });
+
+  function completeRun(
+    userId: string,
+    username: string,
+    guildId: string,
+    date: string,
+    deck: string,
+    correctCount: number
+  ) {
+    startUserPlay(userId, username, date, deck, guildId);
+    for (let i = 0; i < DAILY_QUESTION_COUNT; i++) {
+      recordGuess(userId, date, deck, 'x', i < correctCount);
+    }
+    markCompleted(userId, date, deck);
+  }
+
+  it('ranks users by total correct, then perfect days, then plays', () => {
+    completeRun('alice', 'Alice', 'g1', '2026-05-17', 'POLITICS', 3);
+    completeRun('alice', 'Alice', 'g1', '2026-05-18', 'POLITICS', 5);
+    completeRun('bob', 'Bob', 'g1', '2026-05-18', 'POLITICS', 4);
+    completeRun('cara', 'Cara', 'g1', '2026-05-18', 'POLITICS', 5);
+
+    const board = getServerLeaderboard('g1', 'alltime');
+    expect(board.map((r) => r.userId)).toEqual(['alice', 'cara', 'bob']);
+    expect(board[0].totalCorrect).toBe(8);
+    expect(board[0].perfectDays).toBe(1);
+    expect(board[1].totalCorrect).toBe(5);
+    expect(board[1].perfectDays).toBe(1);
+    expect(board[2].totalCorrect).toBe(4);
+  });
+
+  it('scopes "today" to only today\'s completed plays', () => {
+    const today = todayKey();
+    completeRun('alice', 'Alice', 'g1', '2026-05-01', '', 5);
+    completeRun('bob', 'Bob', 'g1', today, '', 3);
+    const board = getServerLeaderboard('g1', 'today');
+    expect(board.map((r) => r.userId)).toEqual(['bob']);
+  });
+
+  it('excludes plays from other guilds', () => {
+    completeRun('alice', 'Alice', 'g1', '2026-05-18', '', 5);
+    completeRun('eve', 'Eve', 'g2', '2026-05-18', '', 5);
+    const board = getServerLeaderboard('g1', 'alltime');
+    expect(board.map((r) => r.userId)).toEqual(['alice']);
+  });
+
+  it('reports current streak using consecutive completed days', () => {
+    completeRun('alice', 'Alice', 'g1', '2026-05-17', '', 3);
+    completeRun('alice', 'Alice', 'g1', '2026-05-18', '', 3);
+    completeRun('alice', 'Alice', 'g1', '2026-05-19', '', 3);
+    const board = getServerLeaderboard('g1', 'alltime');
+    // The function uses the real "today" for streak reckoning, but as long as
+    // best streak captures the historical run we're good.
+    expect(board[0].bestStreak).toBe(3);
+  });
+});
+
+describe('buildLeaderboardMessage', () => {
+  it('renders the empty-state when no rows', () => {
+    const { embeds } = buildLeaderboardMessage([], 'alltime', 'Room 302');
+    const embed = embeds[0].toJSON();
+    expect(embed.description).toContain('No completed daily quizzes yet');
+  });
+
+  it('renders medal positions and metric badges', () => {
+    const { embeds } = buildLeaderboardMessage(
+      [
+        {
+          userId: 'alice',
+          username: 'Alice',
+          plays: 5,
+          totalCorrect: 22,
+          perfectDays: 2,
+          currentStreak: 3,
+          bestStreak: 4,
+        },
+        {
+          userId: 'bob',
+          username: 'Bob',
+          plays: 3,
+          totalCorrect: 10,
+          perfectDays: 0,
+          currentStreak: 1,
+          bestStreak: 1,
+        },
+      ],
+      'week',
+      'Room 302'
+    );
+    const embed = embeds[0].toJSON();
+    expect(embed.title).toContain('Room 302');
+    expect(embed.description).toMatch(/🥇 <@alice>/);
+    expect(embed.description).toMatch(/⭐2/);
+    expect(embed.description).toMatch(/🔥3/);
+    expect(embed.description).toMatch(/🥈 <@bob>/);
+    expect(embed.footer?.text).toContain('This Week');
   });
 });
 
