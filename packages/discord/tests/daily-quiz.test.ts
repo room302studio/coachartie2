@@ -9,16 +9,24 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { getSyncDb } from '@coachartie/shared';
 import {
   DAILY_QUESTION_COUNT,
+  attachPollMessage,
+  castDeckVote,
+  closeDeckPoll,
   computeDayStreaks,
   ensureDailyQuizTables,
   getDailyLeaderboard,
+  getDeckPoll,
+  getDeckPollById,
+  getDeckVoteTallies,
   getGuildConfig,
   getOrCreateDailyPuzzle,
+  getOrCreateDeckPoll,
   getServerLeaderboard,
   getUserPlay,
   isDeckAllowedForGuild,
   markCompleted,
   markShared,
+  pickWinningDeck,
   recordGuess,
   renderEmojiGrid,
   scheduleDailyPuzzle,
@@ -34,6 +42,7 @@ import {
   buildDailyGameMessage,
   buildDailyResultMessage,
   buildDailyShareMessage,
+  buildDeckVoteMessage,
   buildGuessModal,
   buildGuildConfigEmbed,
   buildLeaderboardMessage,
@@ -41,7 +50,9 @@ import {
   dailyCustomId,
   parseDailyCustomId,
   parseScheduleCustomId,
+  parseVoteCustomId,
   scheduleCustomId,
+  voteCustomId,
 } from '../src/services/daily-quiz-embed';
 
 function clearDailyTables() {
@@ -50,6 +61,8 @@ function clearDailyTables() {
   db.exec('DELETE FROM daily_quiz_plays');
   db.exec('DELETE FROM daily_quiz_puzzles');
   db.exec('DELETE FROM daily_quiz_guild_config');
+  db.exec('DELETE FROM daily_quiz_deck_votes');
+  db.exec('DELETE FROM daily_quiz_deck_polls');
 }
 
 function fakeCard(id: string, front: string, back: string): FlashcardResponse {
@@ -651,5 +664,146 @@ describe('admin scheduling', () => {
   it('tomorrowKey returns the day after today (UTC)', () => {
     expect(tomorrowKey(new Date('2026-05-19T12:00:00Z'))).toBe('2026-05-20');
     expect(tomorrowKey(new Date('2026-12-31T12:00:00Z'))).toBe('2027-01-01');
+  });
+});
+
+describe('deck vote', () => {
+  beforeEach(() => {
+    clearDailyTables();
+  });
+
+  it('getOrCreateDeckPoll is idempotent on (guild, date)', () => {
+    const a = getOrCreateDeckPoll('g1', '2026-05-20', 'admin');
+    const b = getOrCreateDeckPoll('g1', '2026-05-20', 'admin');
+    expect(b.id).toBe(a.id);
+    expect(b.status).toBe('open');
+  });
+
+  it('castDeckVote records a vote and allows the user to change it', () => {
+    const poll = getOrCreateDeckPoll('g1', '2026-05-20', 'admin');
+    castDeckVote(poll.id, 'alice', 'POLITICS');
+    castDeckVote(poll.id, 'bob', 'POLITICS');
+    castDeckVote(poll.id, 'cara', 'COMPUTERS');
+
+    let t = getDeckVoteTallies(poll.id, ['POLITICS', 'COMPUTERS']);
+    expect(t).toEqual([
+      { deck: 'POLITICS', votes: 2 },
+      { deck: 'COMPUTERS', votes: 1 },
+    ]);
+
+    castDeckVote(poll.id, 'alice', 'COMPUTERS'); // change vote
+    t = getDeckVoteTallies(poll.id, ['POLITICS', 'COMPUTERS']);
+    expect(t).toEqual([
+      { deck: 'POLITICS', votes: 1 },
+      { deck: 'COMPUTERS', votes: 2 },
+    ]);
+  });
+
+  it('castDeckVote is a no-op once the poll is closed', () => {
+    const poll = getOrCreateDeckPoll('g1', '2026-05-20', 'admin');
+    castDeckVote(poll.id, 'alice', 'POLITICS');
+    closeDeckPoll(poll.id, ['POLITICS']);
+    castDeckVote(poll.id, 'bob', 'POLITICS');
+    const t = getDeckVoteTallies(poll.id, ['POLITICS']);
+    expect(t[0].votes).toBe(1);
+  });
+
+  it('pickWinningDeck picks the highest count with deterministic tie-break', () => {
+    expect(
+      pickWinningDeck([
+        { deck: 'A', votes: 2 },
+        { deck: 'B', votes: 5 },
+        { deck: 'C', votes: 5 },
+      ])
+    ).toBe('B'); // first one matching the max in input order
+    expect(pickWinningDeck([{ deck: 'A', votes: 0 }])).toBeNull();
+  });
+
+  it('closeDeckPoll stamps the winner on the poll row', () => {
+    const poll = getOrCreateDeckPoll('g1', '2026-05-20', 'admin');
+    castDeckVote(poll.id, 'a', 'POLITICS');
+    castDeckVote(poll.id, 'b', 'POLITICS');
+    castDeckVote(poll.id, 'c', 'COMPUTERS');
+    const result = closeDeckPoll(poll.id, ['POLITICS', 'COMPUTERS']);
+    expect(result.winningDeck).toBe('POLITICS');
+
+    const reread = getDeckPollById(poll.id);
+    expect(reread?.status).toBe('closed');
+    expect(reread?.winningDeck).toBe('POLITICS');
+    expect(reread?.closedAt).not.toBeNull();
+  });
+
+  it('attachPollMessage stores the public message reference', () => {
+    const poll = getOrCreateDeckPoll('g1', '2026-05-20', 'admin');
+    attachPollMessage(poll.id, 'chan-1', 'msg-1');
+    const reread = getDeckPollById(poll.id);
+    expect(reread?.channelId).toBe('chan-1');
+    expect(reread?.messageId).toBe('msg-1');
+  });
+
+  it('voteCustomId round-trips cast + close', () => {
+    expect(parseVoteCustomId(voteCustomId('cast', 7, 'POLITICS'))).toEqual({
+      action: 'cast',
+      pollId: 7,
+      deck: 'POLITICS',
+    });
+    expect(parseVoteCustomId(voteCustomId('close', 7))).toEqual({
+      action: 'close',
+      pollId: 7,
+      deck: '',
+    });
+    expect(parseVoteCustomId('quiz:daily:guess:x:y')).toBeNull();
+    expect(parseVoteCustomId('quiz:vote:cast:not-a-number:POLITICS')).toBeNull();
+  });
+
+  it('voteCustomId encodes the empty-deck sentinel as "all"', () => {
+    expect(voteCustomId('cast', 1, '')).toBe('quiz:vote:cast:1:all');
+    expect(parseVoteCustomId('quiz:vote:cast:1:all')).toEqual({
+      action: 'cast',
+      pollId: 1,
+      deck: '',
+    });
+  });
+
+  it('open-poll embed renders one button per deck + a Close row', () => {
+    const poll = getOrCreateDeckPoll('g1', '2026-05-20', 'admin');
+    castDeckVote(poll.id, 'a', 'POLITICS');
+    const tallies = getDeckVoteTallies(poll.id, ['POLITICS', 'COMPUTERS']);
+    const { embeds, components } = buildDeckVoteMessage(poll, tallies);
+    expect(embeds[0].toJSON().description).toContain('POLITICS');
+
+    expect(components).toHaveLength(2);
+    const voteIds = components[0].toJSON().components.map((c: any) => c.custom_id);
+    expect(voteIds).toEqual([
+      `quiz:vote:cast:${poll.id}:POLITICS`,
+      `quiz:vote:cast:${poll.id}:COMPUTERS`,
+    ]);
+    const closeIds = components[1].toJSON().components.map((c: any) => c.custom_id);
+    expect(closeIds).toEqual([`quiz:vote:close:${poll.id}`]);
+  });
+
+  it('closed-poll embed shows the winner and drops the buttons', () => {
+    const poll = getOrCreateDeckPoll('g1', '2026-05-20', 'admin');
+    castDeckVote(poll.id, 'a', 'POLITICS');
+    const { winningDeck, tallies } = closeDeckPoll(poll.id, ['POLITICS', 'COMPUTERS']);
+    const closedPoll = getDeckPollById(poll.id)!;
+    const { embeds, components } = buildDeckVoteMessage(closedPoll, tallies, {
+      winningDeck,
+      scheduledOk: true,
+    });
+    expect(components).toHaveLength(0);
+    const embed = embeds[0].toJSON();
+    expect(embed.fields?.[0].name).toBe('🏆 Winner');
+    expect(embed.fields?.[0].value).toContain('POLITICS');
+    expect(embed.fields?.[0].value).toContain('scheduled');
+  });
+
+  it('closed-poll embed handles the no-votes case gracefully', () => {
+    const poll = getOrCreateDeckPoll('g1', '2026-05-20', 'admin');
+    const { winningDeck, tallies } = closeDeckPoll(poll.id, ['POLITICS']);
+    expect(winningDeck).toBeNull();
+    const closedPoll = getDeckPollById(poll.id)!;
+    const { embeds } = buildDeckVoteMessage(closedPoll, tallies, { winningDeck });
+    expect(embeds[0].toJSON().fields?.[0].name).toBe('🤷 No winner');
   });
 });

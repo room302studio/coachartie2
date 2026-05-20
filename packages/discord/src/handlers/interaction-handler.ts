@@ -28,21 +28,28 @@ import {
   getScheduleDraft,
   setScheduleDraft,
   clearScheduleDraft,
+  getBallotDecks,
 } from '../commands/quiz.js';
 import { parseQuizButtonId } from '../services/quiz-embed.js';
 import { quizSessionManager, isCorrectAnswer } from '../services/quiz-session-manager.js';
 import {
   parseDailyCustomId,
   parseScheduleCustomId,
+  parseVoteCustomId,
   buildDailyGameMessage,
   buildDailyResultMessage,
   buildDailyShareMessage,
+  buildDeckVoteMessage,
   buildGuessModal,
   buildScheduleDraftMessage,
   DAILY_MODAL_INPUT,
 } from '../services/daily-quiz-embed.js';
 import {
+  castDeckVote,
+  closeDeckPoll,
   fetchUniqueCards,
+  getDeckPollById,
+  getDeckVoteTallies,
   getOrCreateDailyPuzzle,
   getUserPlay,
   recordGuess,
@@ -234,6 +241,13 @@ async function handleButtonInteraction(interaction: ButtonInteraction) {
   const scheduleId = parseScheduleCustomId(interaction.customId);
   if (scheduleId) {
     await handleScheduleButton(interaction, scheduleId);
+    return;
+  }
+
+  // Deck vote buttons (Cast / Close).
+  const voteId = parseVoteCustomId(interaction.customId);
+  if (voteId) {
+    await handleVoteButton(interaction, voteId);
     return;
   }
 
@@ -551,6 +565,103 @@ async function handleScheduleButton(
       }
     } catch {
       // already replied
+    }
+  }
+}
+
+/**
+ * Deck vote buttons. Cast records/updates a member's vote; Close (admin only)
+ * tallies, picks the winner, fetches cards, and schedules tomorrow's puzzle.
+ */
+async function handleVoteButton(
+  interaction: ButtonInteraction,
+  parsed: NonNullable<ReturnType<typeof parseVoteCustomId>>
+): Promise<void> {
+  const poll = getDeckPollById(parsed.pollId);
+  if (!poll) {
+    await interaction.reply({ content: '⚠️ Poll not found.', ephemeral: true });
+    return;
+  }
+
+  // The ballot at vote time is whatever the guild's current allow-list says.
+  // Stored votes for since-removed decks still tally; the embed just won't
+  // render them. Good enough.
+  const ballot = getBallotDecks(poll.guildId);
+
+  try {
+    if (parsed.action === 'cast') {
+      if (poll.status !== 'open') {
+        await interaction.reply({
+          content: '⚠️ Voting is closed for this poll.',
+          ephemeral: true,
+        });
+        return;
+      }
+      await interaction.deferUpdate();
+      castDeckVote(poll.id, interaction.user.id, parsed.deck);
+      const tallies = getDeckVoteTallies(poll.id, ballot);
+      await interaction.editReply(buildDeckVoteMessage(poll, tallies));
+      return;
+    }
+
+    if (parsed.action === 'close') {
+      if (!interaction.memberPermissions?.has(PermissionsBitField.Flags.ManageGuild)) {
+        await interaction.reply({
+          content: '🚫 Only admins can close the vote.',
+          ephemeral: true,
+        });
+        return;
+      }
+      if (poll.status === 'closed') {
+        await interaction.reply({
+          content: '⚠️ Vote is already closed.',
+          ephemeral: true,
+        });
+        return;
+      }
+
+      await interaction.deferUpdate();
+      const { winningDeck, tallies } = closeDeckPoll(poll.id, ballot);
+
+      // Auto-schedule the winning deck's cards as tomorrow's puzzle. If the
+      // fetch fails or there were no votes, we still publish the closed
+      // embed — admin can `/quiz schedule` manually.
+      let scheduledOk = false;
+      if (winningDeck) {
+        try {
+          const cards = await fetchUniqueCards(winningDeck, DAILY_QUESTION_COUNT);
+          if (cards.length > 0) {
+            scheduleDailyPuzzle(
+              poll.targetDate,
+              winningDeck,
+              poll.guildId,
+              cards,
+              interaction.user.id
+            );
+            scheduledOk = true;
+          }
+        } catch (e) {
+          logger.warn('Vote close: failed to fetch cards for winning deck:', e);
+        }
+      }
+
+      const refreshed = getDeckPollById(poll.id) ?? poll;
+      await interaction.editReply(
+        buildDeckVoteMessage(refreshed, tallies, { winningDeck, scheduledOk })
+      );
+      return;
+    }
+  } catch (error) {
+    logger.error('Vote button error:', error);
+    try {
+      if (!interaction.replied && !interaction.deferred) {
+        await interaction.reply({
+          content: '❌ Something went wrong handling that vote.',
+          ephemeral: true,
+        });
+      }
+    } catch {
+      // already responded
     }
   }
 }

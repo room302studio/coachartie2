@@ -11,12 +11,16 @@ import { buildLiveQuizMessage, buildQuizSummary } from '../services/quiz-embed.j
 import {
   ensureDailyQuizTables,
   fetchUniqueCards,
+  getDeckPoll,
+  getDeckVoteTallies,
   getGuildConfig,
   getOrCreateDailyPuzzle,
+  getOrCreateDeckPoll,
   getServerLeaderboard,
   getUserPlay,
   isDeckAllowedForGuild,
   KNOWN_DECKS,
+  attachPollMessage,
   setGuildAllowedDecks,
   setGuildDefaultDeck,
   startUserPlay,
@@ -28,6 +32,7 @@ import {
 import {
   buildDailyGameMessage,
   buildDailyResultMessage,
+  buildDeckVoteMessage,
   buildGuildConfigEmbed,
   buildLeaderboardMessage,
   buildScheduleDraftMessage,
@@ -164,6 +169,11 @@ export const quizCommand = {
             .addChoices(...DECK_CHOICES)
         )
     )
+    .addSubcommand((subcommand) =>
+      subcommand
+        .setName('vote')
+        .setDescription("(Admin) Open a poll: members vote for tomorrow's deck")
+    )
     .addSubcommandGroup((group) =>
       group
         .setName('config')
@@ -221,6 +231,8 @@ export const quizCommand = {
           return await handleLeaderboard(interaction);
         case 'schedule':
           return await handleSchedule(interaction);
+        case 'vote':
+          return await handleVote(interaction);
         default:
           return await interaction.reply({
             content: 'Unknown subcommand',
@@ -602,6 +614,65 @@ async function handleConfig(
   }
 
   return await interaction.reply({ content: 'Unknown config subcommand', ephemeral: true });
+}
+
+/**
+ * Compute the ballot for a guild's deck vote. Prefer the guild's allow-list;
+ * fall back to all named decks. Excludes the '' "all decks" sentinel because
+ * picking "all" defeats the point of voting on a deck.
+ */
+export function getBallotDecks(guildId: string): string[] {
+  const cfg = getGuildConfig(guildId);
+  const candidates = cfg.allowedDecks.length > 0 ? cfg.allowedDecks : (KNOWN_DECKS as readonly string[]);
+  return candidates.filter((d) => d !== '');
+}
+
+/**
+ * Admin: open a deck vote for tomorrow. Posts a public embed in the channel.
+ */
+async function handleVote(
+  interaction: ChatInputCommandInteraction
+): Promise<InteractionResponse<boolean> | undefined> {
+  if (!interaction.guildId) {
+    return await interaction.reply({
+      content: '⚠️ Run this in a server channel.',
+      ephemeral: true,
+    });
+  }
+  if (!ensureAdmin(interaction)) {
+    return await interaction.reply({
+      content: '🚫 Need **Manage Server** permission to start a vote.',
+      ephemeral: true,
+    });
+  }
+
+  ensureDailyQuizTables();
+  const date = tomorrowKey();
+  const ballot = getBallotDecks(interaction.guildId);
+  if (ballot.length === 0) {
+    return await interaction.reply({
+      content: '⚠️ No decks available to vote on. Add some with `/quiz config allow-decks`.',
+      ephemeral: true,
+    });
+  }
+
+  const existing = getDeckPoll(interaction.guildId, date);
+  if (existing && existing.status === 'closed') {
+    return await interaction.reply({
+      content: `⚠️ Tomorrow's vote is already closed (winner: **${existing.winningDeck || 'none'}**). Try again tomorrow.`,
+      ephemeral: true,
+    });
+  }
+
+  const poll = getOrCreateDeckPoll(interaction.guildId, date, interaction.user.id);
+  const tallies = getDeckVoteTallies(poll.id, ballot);
+  const payload = buildDeckVoteMessage(poll, tallies);
+
+  // Reply publicly so members can vote, then record the message id so the
+  // button handlers know which message to edit.
+  const sent = await interaction.reply({ ...payload, fetchReply: true });
+  attachPollMessage(poll.id, interaction.channelId, sent.id);
+  return undefined;
 }
 
 /**

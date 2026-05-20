@@ -116,6 +116,35 @@ export function ensureDailyQuizTables(): void {
     `CREATE INDEX IF NOT EXISTS idx_daily_quiz_plays_guild_user ON daily_quiz_plays(guild_id, user_id)`
   );
 
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS daily_quiz_deck_polls (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      guild_id TEXT NOT NULL,
+      target_date TEXT NOT NULL,
+      channel_id TEXT,
+      message_id TEXT,
+      status TEXT NOT NULL DEFAULT 'open',
+      winning_deck TEXT,
+      created_by TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      closed_at DATETIME,
+      UNIQUE(guild_id, target_date)
+    )
+  `);
+  db.exec(
+    `CREATE TABLE IF NOT EXISTS daily_quiz_deck_votes (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      poll_id INTEGER NOT NULL,
+      user_id TEXT NOT NULL,
+      deck TEXT NOT NULL,
+      cast_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(poll_id, user_id)
+    )`
+  );
+  db.exec(
+    `CREATE INDEX IF NOT EXISTS idx_daily_quiz_deck_votes_poll ON daily_quiz_deck_votes(poll_id)`
+  );
+
   tablesInitialized = true;
 }
 
@@ -674,6 +703,170 @@ export function isDeckAllowedForGuild(guildId: string | null, deck: string): boo
   const config = getGuildConfig(guildId);
   if (config.allowedDecks.length === 0) return true;
   return config.allowedDecks.includes(deck);
+}
+
+// ---------------------------------------------------------------------------
+// Deck votes: group-decided deck for tomorrow's daily puzzle.
+// ---------------------------------------------------------------------------
+
+export type PollStatus = 'open' | 'closed';
+
+export interface DeckPoll {
+  id: number;
+  guildId: string;
+  targetDate: string;
+  channelId: string | null;
+  messageId: string | null;
+  status: PollStatus;
+  winningDeck: string | null;
+  createdBy: string | null;
+  createdAt: string;
+  closedAt: string | null;
+}
+
+export interface DeckTally {
+  deck: string;
+  votes: number;
+}
+
+function rowToPoll(row: any): DeckPoll {
+  return {
+    id: row.id,
+    guildId: row.guild_id,
+    targetDate: row.target_date,
+    channelId: row.channel_id,
+    messageId: row.message_id,
+    status: row.status,
+    winningDeck: row.winning_deck,
+    createdBy: row.created_by,
+    createdAt: row.created_at,
+    closedAt: row.closed_at,
+  };
+}
+
+/**
+ * Open a deck poll for (guildId, targetDate) if none exists yet. Returns
+ * the poll either way.
+ */
+export function getOrCreateDeckPoll(
+  guildId: string,
+  targetDate: string,
+  createdBy: string
+): DeckPoll {
+  ensureDailyQuizTables();
+  const db = getSyncDb();
+  db.run(
+    `INSERT OR IGNORE INTO daily_quiz_deck_polls
+       (guild_id, target_date, status, created_by)
+       VALUES (?, ?, 'open', ?)`,
+    [guildId, targetDate, createdBy]
+  );
+  const row = db.get<any>(
+    `SELECT * FROM daily_quiz_deck_polls WHERE guild_id = ? AND target_date = ?`,
+    [guildId, targetDate]
+  );
+  if (!row) throw new Error('Failed to create deck poll');
+  return rowToPoll(row);
+}
+
+export function getDeckPoll(guildId: string, targetDate: string): DeckPoll | null {
+  ensureDailyQuizTables();
+  const db = getSyncDb();
+  const row = db.get<any>(
+    `SELECT * FROM daily_quiz_deck_polls WHERE guild_id = ? AND target_date = ?`,
+    [guildId, targetDate]
+  );
+  return row ? rowToPoll(row) : null;
+}
+
+export function getDeckPollById(pollId: number): DeckPoll | null {
+  ensureDailyQuizTables();
+  const db = getSyncDb();
+  const row = db.get<any>(`SELECT * FROM daily_quiz_deck_polls WHERE id = ?`, [pollId]);
+  return row ? rowToPoll(row) : null;
+}
+
+/**
+ * Record where the public poll embed lives so we can refresh it from
+ * button handlers without keeping a per-poll in-memory reference.
+ */
+export function attachPollMessage(pollId: number, channelId: string, messageId: string): void {
+  const db = getSyncDb();
+  db.run(
+    `UPDATE daily_quiz_deck_polls SET channel_id = ?, message_id = ? WHERE id = ?`,
+    [channelId, messageId, pollId]
+  );
+}
+
+/**
+ * Cast (or change) a user's vote in an open poll. No-op if the poll is closed.
+ */
+export function castDeckVote(pollId: number, userId: string, deck: string): void {
+  ensureDailyQuizTables();
+  const db = getSyncDb();
+  const poll = getDeckPollById(pollId);
+  if (!poll || poll.status !== 'open') return;
+  db.run(
+    `INSERT INTO daily_quiz_deck_votes (poll_id, user_id, deck)
+       VALUES (?, ?, ?)
+       ON CONFLICT(poll_id, user_id) DO UPDATE SET deck = excluded.deck, cast_at = CURRENT_TIMESTAMP`,
+    [pollId, userId, deck]
+  );
+}
+
+/**
+ * Tallies for a poll, preserving the order of `choices`. Decks with no votes
+ * still appear (zeroed) so the embed bars line up.
+ */
+export function getDeckVoteTallies(pollId: number, choices: string[]): DeckTally[] {
+  ensureDailyQuizTables();
+  const db = getSyncDb();
+  const rows = db.all<{ deck: string; votes: number }>(
+    `SELECT deck, COUNT(*) AS votes
+       FROM daily_quiz_deck_votes
+      WHERE poll_id = ?
+      GROUP BY deck`,
+    [pollId]
+  );
+  const map = new Map(rows.map((r) => [r.deck, r.votes]));
+  return choices.map((d) => ({ deck: d, votes: map.get(d) ?? 0 }));
+}
+
+/**
+ * Pick the winner from a tally array. Highest vote count wins; ties break by
+ * the order the deck appears in `choices` (deterministic, matches the
+ * button order so the leftmost option wins ties).
+ */
+export function pickWinningDeck(tallies: DeckTally[]): string | null {
+  const max = Math.max(0, ...tallies.map((t) => t.votes));
+  if (max === 0) return null;
+  return tallies.find((t) => t.votes === max)?.deck ?? null;
+}
+
+export interface CloseDeckPollResult {
+  winningDeck: string | null;
+  tallies: DeckTally[];
+}
+
+/**
+ * Close a poll and stamp the winning deck. Does NOT fetch cards / schedule
+ * — that's the caller's job (so it can pass the result through fetchUniqueCards
+ * + scheduleDailyPuzzle).
+ */
+export function closeDeckPoll(pollId: number, choices: string[]): CloseDeckPollResult {
+  ensureDailyQuizTables();
+  const db = getSyncDb();
+  const tallies = getDeckVoteTallies(pollId, choices);
+  const winner = pickWinningDeck(tallies);
+  db.run(
+    `UPDATE daily_quiz_deck_polls
+        SET status = 'closed',
+            winning_deck = ?,
+            closed_at = CURRENT_TIMESTAMP
+      WHERE id = ?`,
+    [winner, pollId]
+  );
+  return { winningDeck: winner, tallies };
 }
 
 function safeJsonArray<T>(raw: string): T[] {

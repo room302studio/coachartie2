@@ -25,6 +25,8 @@ import {
   renderEmojiGrid,
   type DailyPlay,
   type DailyPuzzle,
+  type DeckPoll,
+  type DeckTally,
   type GuildQuizConfig,
   type LeaderboardScope,
   type ServerLeaderboardRow,
@@ -34,9 +36,11 @@ import type { FlashcardResponse } from './quiz-session-manager.js';
 export const DAILY_PREFIX = 'quiz:daily:';
 export const DAILY_MODAL_INPUT = 'answer';
 export const SCHEDULE_PREFIX = 'quiz:schedule:';
+export const VOTE_PREFIX = 'quiz:vote:';
 
 export type DailyAction = 'guess' | 'modal' | 'share' | 'replay';
 export type ScheduleAction = 'shuffle' | 'save' | 'cancel';
+export type VoteAction = 'cast' | 'close';
 
 export function dailyCustomId(action: DailyAction, date: string, deck: string): string {
   return `${DAILY_PREFIX}${action}:${date}:${deck || 'all'}`;
@@ -301,6 +305,128 @@ export function buildGuildConfigEmbed(
     )
     .setFooter({ text: 'Use /quiz config decks set ... to change' });
   return { embeds: [embed] };
+}
+
+// ---------------------------------------------------------------------------
+// Deck vote (group picks tomorrow's deck).
+// ---------------------------------------------------------------------------
+
+/**
+ * Encoded as `quiz:vote:cast:<pollId>:<deck>` and `quiz:vote:close:<pollId>`.
+ * pollId is the autoincrement id from daily_quiz_deck_polls so we don't have
+ * to plumb guild/date through every interaction.
+ */
+export function voteCustomId(action: VoteAction, pollId: number, deck?: string): string {
+  if (action === 'cast') {
+    return `${VOTE_PREFIX}cast:${pollId}:${deck === '' ? 'all' : deck}`;
+  }
+  return `${VOTE_PREFIX}close:${pollId}`;
+}
+
+export interface ParsedVoteId {
+  action: VoteAction;
+  pollId: number;
+  deck: string; // '' for the "all decks" sentinel; '' on close-action too
+}
+
+export function parseVoteCustomId(customId: string): ParsedVoteId | null {
+  if (!customId.startsWith(VOTE_PREFIX)) return null;
+  const rest = customId.slice(VOTE_PREFIX.length);
+  const parts = rest.split(':');
+  if (parts.length < 2) return null;
+  const action = parts[0];
+  const pollId = Number(parts[1]);
+  if (!Number.isFinite(pollId)) return null;
+  if (action === 'close') return { action: 'close', pollId, deck: '' };
+  if (action === 'cast' && parts.length >= 3) {
+    const deckRaw = parts.slice(2).join(':');
+    return { action: 'cast', pollId, deck: deckRaw === 'all' ? '' : deckRaw };
+  }
+  return null;
+}
+
+function deckButtonLabel(deck: string): string {
+  return deck === '' ? 'All Decks' : deck.replace(/_/g, ' ');
+}
+
+function renderTallyBar(votes: number, max: number): string {
+  if (max === 0) return '░░░░░░';
+  const filled = Math.round((votes / max) * 6);
+  return '█'.repeat(filled) + '░'.repeat(6 - filled);
+}
+
+/**
+ * Live vote embed (open) or final-tally embed (closed). The closed variant
+ * also reports the winning deck and that cards have been scheduled.
+ */
+export function buildDeckVoteMessage(
+  poll: DeckPoll,
+  tallies: DeckTally[],
+  options: { winningDeck?: string | null; scheduledOk?: boolean } = {}
+): { embeds: EmbedBuilder[]; components: ActionRowBuilder<ButtonBuilder>[] } {
+  const isClosed = poll.status === 'closed';
+  const maxVotes = Math.max(0, ...tallies.map((t) => t.votes));
+  const totalVotes = tallies.reduce((sum, t) => sum + t.votes, 0);
+
+  const lines = tallies.map((t) => {
+    const bar = renderTallyBar(t.votes, maxVotes);
+    const label = deckButtonLabel(t.deck);
+    const marker = isClosed && t.deck === options.winningDeck ? '🏆 ' : '';
+    return `${marker}**${label}** ${bar} ${t.votes}`;
+  });
+
+  const description = [
+    isClosed
+      ? `🔒 Voting closed — picking tomorrow's deck.`
+      : `One vote each — change anytime. Admin can close when ready.`,
+    '',
+    ...lines,
+    '',
+    `_${totalVotes} vote${totalVotes === 1 ? '' : 's'} cast_`,
+  ].join('\n');
+
+  const embed = new EmbedBuilder()
+    .setColor(isClosed ? 0xfee75c : 0x5865f2)
+    .setTitle(`🗳️ Vote · Tomorrow's Deck · ${poll.targetDate}`)
+    .setDescription(description);
+
+  if (isClosed) {
+    if (options.winningDeck) {
+      embed.addFields({
+        name: '🏆 Winner',
+        value: `**${deckButtonLabel(options.winningDeck)}** — ${
+          options.scheduledOk
+            ? `cards scheduled for ${poll.targetDate}. Run \`/quiz daily\` tomorrow to play.`
+            : '⚠️ Could not fetch cards; admin may need to `/quiz schedule` manually.'
+        }`,
+      });
+    } else {
+      embed.addFields({
+        name: '🤷 No winner',
+        value: 'No votes were cast. Tomorrow\'s daily will be a random pull.',
+      });
+    }
+    return { embeds: [embed], components: [] };
+  }
+
+  // Open poll: render one row of deck buttons + a separate row with the
+  // Close button. Discord caps an action row at 5 components so we slice.
+  const buttons = tallies.slice(0, 5).map((t) =>
+    new ButtonBuilder()
+      .setCustomId(voteCustomId('cast', poll.id, t.deck))
+      .setLabel(deckButtonLabel(t.deck))
+      .setStyle(ButtonStyle.Primary)
+  );
+  const voteRow = new ActionRowBuilder<ButtonBuilder>().addComponents(...buttons);
+  const closeRow = new ActionRowBuilder<ButtonBuilder>().addComponents(
+    new ButtonBuilder()
+      .setCustomId(voteCustomId('close', poll.id))
+      .setLabel('Close vote')
+      .setEmoji('🔒')
+      .setStyle(ButtonStyle.Secondary)
+  );
+
+  return { embeds: [embed], components: [voteRow, closeRow] };
 }
 
 const SCOPE_LABEL: Record<LeaderboardScope, string> = {
