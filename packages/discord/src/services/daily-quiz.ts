@@ -47,14 +47,40 @@ export function ensureDailyQuizTables(): void {
   if (tablesInitialized) return;
   const db = getSyncDb();
 
+  // The legacy puzzle table had UNIQUE(date, deck), which blocks per-guild
+  // scheduling. If we detect the legacy schema (no guild_id column), rebuild
+  // the table — it's only a fetch cache, so dropping it is safe.
+  const legacyCols = db.all<{ name: string }>(`PRAGMA table_info(daily_quiz_puzzles)`);
+  const hasGuildId = legacyCols.some((c) => c.name === 'guild_id');
+  if (legacyCols.length > 0 && !hasGuildId) {
+    db.exec(`DROP TABLE daily_quiz_puzzles`);
+  }
+
   db.exec(`
     CREATE TABLE IF NOT EXISTS daily_quiz_puzzles (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
+      guild_id TEXT,
       date TEXT NOT NULL,
       deck TEXT NOT NULL,
       cards_json TEXT NOT NULL,
+      scheduled_by TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+  // Per-guild uniqueness via expression index — NULL guild_id coalesces to ''
+  // so the global cache row coexists with per-guild rows for the same date+deck.
+  db.exec(
+    `CREATE UNIQUE INDEX IF NOT EXISTS idx_daily_puzzles_scope
+       ON daily_quiz_puzzles(COALESCE(guild_id, ''), date, deck)`
+  );
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS daily_quiz_guild_config (
+      guild_id TEXT PRIMARY KEY,
+      allowed_decks TEXT NOT NULL DEFAULT '[]',
+      default_deck TEXT,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      UNIQUE(date, deck)
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )
   `);
 
@@ -102,36 +128,17 @@ export function todayKey(now: Date = new Date()): string {
 }
 
 /**
- * Get today's puzzle for a deck, creating + caching it on first call.
+ * Fetch up to `count` unique cards from the flashcard API for a deck.
+ * Deduped by card id. Used by both the on-demand puzzle creator and the
+ * admin scheduler preview.
  */
-export async function getOrCreateDailyPuzzle(
-  date: string,
-  deck: string
-): Promise<DailyPuzzle | null> {
-  ensureDailyQuizTables();
-  const db = getSyncDb();
-
-  const existing = db.get<{ cards_json: string }>(
-    `SELECT cards_json FROM daily_quiz_puzzles WHERE date = ? AND deck = ?`,
-    [date, deck]
-  );
-  if (existing) {
-    try {
-      const cards = JSON.parse(existing.cards_json) as FlashcardResponse[];
-      return { date, deck, cards };
-    } catch (e) {
-      logger.warn('Daily puzzle JSON parse failed; refetching:', e);
-    }
-  }
-
-  // Fetch cards, dedupe by id, stop once we have DAILY_QUESTION_COUNT unique.
+export async function fetchUniqueCards(
+  deck: string,
+  count: number = DAILY_QUESTION_COUNT
+): Promise<FlashcardResponse[]> {
   const seen = new Set<string>();
   const cards: FlashcardResponse[] = [];
-  for (
-    let attempt = 0;
-    attempt < MAX_FETCH_ATTEMPTS && cards.length < DAILY_QUESTION_COUNT;
-    attempt++
-  ) {
+  for (let attempt = 0; attempt < MAX_FETCH_ATTEMPTS && cards.length < count; attempt++) {
     try {
       const url = deck
         ? `${FLASHCARD_API_BASE}/random/${deck}`
@@ -150,24 +157,103 @@ export async function getOrCreateDailyPuzzle(
       logger.warn('Daily puzzle fetch failed:', e);
     }
   }
+  return cards;
+}
 
+/**
+ * Get today's puzzle for a (guild, deck), creating + caching it on first call.
+ * Falls back to a shared global puzzle (guild_id IS NULL) when a guild hasn't
+ * scheduled its own — keeps the original "one daily for everyone" mode
+ * working alongside the per-guild admin scheduler.
+ */
+export async function getOrCreateDailyPuzzle(
+  date: string,
+  deck: string,
+  guildId: string | null = null
+): Promise<DailyPuzzle | null> {
+  ensureDailyQuizTables();
+  const db = getSyncDb();
+
+  // Prefer a guild-scoped puzzle (admin scheduled or auto-cached), fall back
+  // to a global one if this guild hasn't cached anything yet.
+  const existing = db.get<{ cards_json: string }>(
+    `SELECT cards_json FROM daily_quiz_puzzles
+      WHERE date = ? AND deck = ?
+        AND (guild_id = ? OR (? IS NULL AND guild_id IS NULL))
+      ORDER BY (guild_id IS NULL) ASC
+      LIMIT 1`,
+    [date, deck, guildId, guildId]
+  );
+  if (existing) {
+    try {
+      const cards = JSON.parse(existing.cards_json) as FlashcardResponse[];
+      return { date, deck, cards };
+    } catch (e) {
+      logger.warn('Daily puzzle JSON parse failed; refetching:', e);
+    }
+  }
+
+  const cards = await fetchUniqueCards(deck, DAILY_QUESTION_COUNT);
   if (cards.length === 0) return null;
 
   db.run(
-    `INSERT OR IGNORE INTO daily_quiz_puzzles (date, deck, cards_json) VALUES (?, ?, ?)`,
-    [date, deck, JSON.stringify(cards)]
+    `INSERT OR IGNORE INTO daily_quiz_puzzles (guild_id, date, deck, cards_json) VALUES (?, ?, ?, ?)`,
+    [guildId, date, deck, JSON.stringify(cards)]
   );
 
   // Re-read in case a concurrent insert won the race — keeps everyone on the
   // same cards.
   const row = db.get<{ cards_json: string }>(
-    `SELECT cards_json FROM daily_quiz_puzzles WHERE date = ? AND deck = ?`,
-    [date, deck]
+    `SELECT cards_json FROM daily_quiz_puzzles
+      WHERE date = ? AND deck = ?
+        AND (guild_id = ? OR (? IS NULL AND guild_id IS NULL))
+      ORDER BY (guild_id IS NULL) ASC
+      LIMIT 1`,
+    [date, deck, guildId, guildId]
   );
   if (row) {
     return { date, deck, cards: JSON.parse(row.cards_json) as FlashcardResponse[] };
   }
   return { date, deck, cards };
+}
+
+/**
+ * Pre-create (or replace) tomorrow's puzzle for a specific guild. Used by
+ * the admin scheduler. Throws on collision-then-overwrite of an already
+ * played-against puzzle? We don't enforce that — admins overwriting an
+ * un-played future date is fine, and overwriting today's is allowed too
+ * (their call).
+ */
+export function scheduleDailyPuzzle(
+  date: string,
+  deck: string,
+  guildId: string,
+  cards: FlashcardResponse[],
+  scheduledBy: string
+): void {
+  ensureDailyQuizTables();
+  const db = getSyncDb();
+  const cardsJson = JSON.stringify(cards.slice(0, DAILY_QUESTION_COUNT));
+  // INSERT or UPDATE depending on existence — SQLite's UPSERT keeps it
+  // atomic against the unique index on (guild_id, date, deck).
+  db.run(
+    `INSERT INTO daily_quiz_puzzles (guild_id, date, deck, cards_json, scheduled_by)
+     VALUES (?, ?, ?, ?, ?)
+     ON CONFLICT(COALESCE(guild_id, ''), date, deck)
+     DO UPDATE SET cards_json = excluded.cards_json,
+                   scheduled_by = excluded.scheduled_by,
+                   created_at = CURRENT_TIMESTAMP`,
+    [guildId, date, deck, cardsJson, scheduledBy]
+  );
+}
+
+/**
+ * "Tomorrow" in UTC.
+ */
+export function tomorrowKey(now: Date = new Date()): string {
+  const next = new Date(now);
+  next.setUTCDate(next.getUTCDate() + 1);
+  return next.toISOString().slice(0, 10);
 }
 
 export function getUserPlay(
@@ -510,6 +596,84 @@ export function renderEmojiGrid(results: DailyOutcome[], total: number): string 
     }
   }
   return cells.join(' ');
+}
+
+/**
+ * The canonical deck list. The flashcard API exposes more, but these are the
+ * ones we surface in slash-command choices. `''` means "all decks (random)".
+ */
+export const KNOWN_DECKS = [
+  '',
+  'COMPUTERS',
+  'ELECTRICAL_AND_RADIO',
+  'POLITICS',
+  'RUBIKS_2x2',
+  'SAR_AND_WILDERNESS',
+] as const;
+
+export interface GuildQuizConfig {
+  guildId: string;
+  allowedDecks: string[]; // empty array = all known decks allowed
+  defaultDeck: string | null;
+}
+
+export function getGuildConfig(guildId: string): GuildQuizConfig {
+  ensureDailyQuizTables();
+  const db = getSyncDb();
+  const row = db.get<{ guild_id: string; allowed_decks: string; default_deck: string | null }>(
+    `SELECT guild_id, allowed_decks, default_deck FROM daily_quiz_guild_config WHERE guild_id = ?`,
+    [guildId]
+  );
+  if (!row) {
+    return { guildId, allowedDecks: [], defaultDeck: null };
+  }
+  return {
+    guildId: row.guild_id,
+    allowedDecks: safeJsonArray<string>(row.allowed_decks),
+    defaultDeck: row.default_deck,
+  };
+}
+
+export function setGuildAllowedDecks(guildId: string, decks: string[]): GuildQuizConfig {
+  ensureDailyQuizTables();
+  const db = getSyncDb();
+  // De-dupe + normalize (treat null/undefined as 'all' sentinel)
+  const normalized = [...new Set(decks)].filter((d) => KNOWN_DECKS.includes(d as any));
+  db.run(
+    `INSERT INTO daily_quiz_guild_config (guild_id, allowed_decks, default_deck)
+       VALUES (?, ?, NULL)
+       ON CONFLICT(guild_id) DO UPDATE SET
+         allowed_decks = excluded.allowed_decks,
+         updated_at = CURRENT_TIMESTAMP`,
+    [guildId, JSON.stringify(normalized)]
+  );
+  return getGuildConfig(guildId);
+}
+
+export function setGuildDefaultDeck(guildId: string, deck: string | null): GuildQuizConfig {
+  ensureDailyQuizTables();
+  const db = getSyncDb();
+  const normalized = deck && KNOWN_DECKS.includes(deck as any) ? deck : null;
+  db.run(
+    `INSERT INTO daily_quiz_guild_config (guild_id, allowed_decks, default_deck)
+       VALUES (?, '[]', ?)
+       ON CONFLICT(guild_id) DO UPDATE SET
+         default_deck = excluded.default_deck,
+         updated_at = CURRENT_TIMESTAMP`,
+    [guildId, normalized]
+  );
+  return getGuildConfig(guildId);
+}
+
+/**
+ * Is this deck allowed in this guild? An empty allowed list (or no config row)
+ * means "no restriction — anything goes" so the feature defaults to open.
+ */
+export function isDeckAllowedForGuild(guildId: string | null, deck: string): boolean {
+  if (!guildId) return true;
+  const config = getGuildConfig(guildId);
+  if (config.allowedDecks.length === 0) return true;
+  return config.allowedDecks.includes(deck);
 }
 
 function safeJsonArray<T>(raw: string): T[] {

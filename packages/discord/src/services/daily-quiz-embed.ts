@@ -25,14 +25,18 @@ import {
   renderEmojiGrid,
   type DailyPlay,
   type DailyPuzzle,
+  type GuildQuizConfig,
   type LeaderboardScope,
   type ServerLeaderboardRow,
 } from './daily-quiz.js';
+import type { FlashcardResponse } from './quiz-session-manager.js';
 
 export const DAILY_PREFIX = 'quiz:daily:';
 export const DAILY_MODAL_INPUT = 'answer';
+export const SCHEDULE_PREFIX = 'quiz:schedule:';
 
 export type DailyAction = 'guess' | 'modal' | 'share' | 'replay';
+export type ScheduleAction = 'shuffle' | 'save' | 'cancel';
 
 export function dailyCustomId(action: DailyAction, date: string, deck: string): string {
   return `${DAILY_PREFIX}${action}:${date}:${deck || 'all'}`;
@@ -178,6 +182,124 @@ export function buildDailyShareMessage(
     .setDescription([`**${username}** — **${score}/${DAILY_QUESTION_COUNT}**`, grid].join('\n'))
     .setFooter({ text: 'Try it: /quiz daily' });
 
+  return { embeds: [embed] };
+}
+
+export function scheduleCustomId(action: ScheduleAction, date: string, deck: string): string {
+  return `${SCHEDULE_PREFIX}${action}:${date}:${deck || 'all'}`;
+}
+
+export interface ParsedScheduleId {
+  action: ScheduleAction;
+  date: string;
+  deck: string;
+}
+
+export function parseScheduleCustomId(customId: string): ParsedScheduleId | null {
+  if (!customId.startsWith(SCHEDULE_PREFIX)) return null;
+  const rest = customId.slice(SCHEDULE_PREFIX.length);
+  const parts = rest.split(':');
+  if (parts.length < 3) return null;
+  const [action, date, ...deckParts] = parts;
+  if (action !== 'shuffle' && action !== 'save' && action !== 'cancel') return null;
+  const deckRaw = deckParts.join(':');
+  return { action, date, deck: deckRaw === 'all' ? '' : deckRaw };
+}
+
+/**
+ * Admin schedule-preview card. Shows the proposed 5 cards for tomorrow with
+ * Shuffle / Use these / Cancel buttons. Lives in an ephemeral message.
+ */
+export function buildScheduleDraftMessage(
+  date: string,
+  deck: string,
+  cards: FlashcardResponse[],
+  options: { saved?: boolean; cancelled?: boolean } = {}
+): { embeds: EmbedBuilder[]; components: ActionRowBuilder<ButtonBuilder>[] } {
+  const status = options.saved
+    ? '✅ Saved as tomorrow\'s puzzle.'
+    : options.cancelled
+      ? '❌ Cancelled.'
+      : '🪄 Preview — these are the cards your members will see.';
+
+  const embed = new EmbedBuilder()
+    .setColor(options.saved ? 0x57f287 : options.cancelled ? 0xed4245 : 0x5865f2)
+    .setTitle(`🗓️ Schedule Daily Quiz · ${date} · ${deck || 'All Decks'}`)
+    .setDescription(status);
+
+  if (cards.length > 0) {
+    embed.addFields({
+      name: `Cards (${cards.length})`,
+      value: cards
+        .map((c, i) => {
+          const front = c.front.length > 80 ? c.front.slice(0, 77) + '…' : c.front;
+          return `**${i + 1}.** ${front}\n   → _${c.back}_`;
+        })
+        .join('\n'),
+    });
+  } else {
+    embed.addFields({
+      name: 'No cards',
+      value: '_The API didn\'t hand back any cards for this deck — try again._',
+    });
+  }
+
+  if (options.saved || options.cancelled) {
+    return { embeds: [embed], components: [] };
+  }
+
+  const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
+    new ButtonBuilder()
+      .setCustomId(scheduleCustomId('shuffle', date, deck))
+      .setLabel('Shuffle')
+      .setEmoji('🔀')
+      .setStyle(ButtonStyle.Secondary)
+      .setDisabled(cards.length === 0),
+    new ButtonBuilder()
+      .setCustomId(scheduleCustomId('save', date, deck))
+      .setLabel('Use these')
+      .setEmoji('✅')
+      .setStyle(ButtonStyle.Success)
+      .setDisabled(cards.length === 0),
+    new ButtonBuilder()
+      .setCustomId(scheduleCustomId('cancel', date, deck))
+      .setLabel('Cancel')
+      .setStyle(ButtonStyle.Danger)
+  );
+
+  return { embeds: [embed], components: [row] };
+}
+
+/**
+ * Per-server config readout. Shows allowed decks + default.
+ */
+export function buildGuildConfigEmbed(
+  config: GuildQuizConfig,
+  guildName: string
+): { embeds: EmbedBuilder[] } {
+  const allowed =
+    config.allowedDecks.length === 0
+      ? '_All decks (no restriction)_'
+      : config.allowedDecks
+          .map((d) => `• ${d === '' ? 'All Decks (Random)' : d}`)
+          .join('\n');
+
+  const embed = new EmbedBuilder()
+    .setColor(0x5865f2)
+    .setTitle(`⚙️ Daily Quiz Config · ${guildName}`)
+    .addFields(
+      { name: 'Allowed Decks', value: allowed, inline: false },
+      {
+        name: 'Default Deck',
+        value: config.defaultDeck === null
+          ? '_None_'
+          : config.defaultDeck === ''
+            ? 'All Decks (Random)'
+            : config.defaultDeck,
+        inline: false,
+      }
+    )
+    .setFooter({ text: 'Use /quiz config decks set ... to change' });
   return { embeds: [embed] };
 }
 

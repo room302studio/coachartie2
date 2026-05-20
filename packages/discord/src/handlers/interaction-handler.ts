@@ -6,6 +6,7 @@ import {
   ButtonInteraction,
   SelectMenuInteraction,
   ModalSubmitInteraction,
+  PermissionsBitField,
 } from 'discord.js';
 import { logger } from '@coachartie/shared';
 import { linkPhoneCommand } from '../commands/link-phone.js';
@@ -20,23 +21,34 @@ import { memoryCommand } from '../commands/memory.js';
 import { usageCommand } from '../commands/usage.js';
 import { debugCommand } from '../commands/debug.js';
 import * as syncDiscussionsCommand from '../commands/sync-discussions.js';
-import { quizCommand, refreshLiveQuiz, postQuizSummary } from '../commands/quiz.js';
+import {
+  quizCommand,
+  refreshLiveQuiz,
+  postQuizSummary,
+  getScheduleDraft,
+  setScheduleDraft,
+  clearScheduleDraft,
+} from '../commands/quiz.js';
 import { parseQuizButtonId } from '../services/quiz-embed.js';
 import { quizSessionManager, isCorrectAnswer } from '../services/quiz-session-manager.js';
 import {
   parseDailyCustomId,
+  parseScheduleCustomId,
   buildDailyGameMessage,
   buildDailyResultMessage,
   buildDailyShareMessage,
   buildGuessModal,
+  buildScheduleDraftMessage,
   DAILY_MODAL_INPUT,
 } from '../services/daily-quiz-embed.js';
 import {
+  fetchUniqueCards,
   getOrCreateDailyPuzzle,
   getUserPlay,
   recordGuess,
   markCompleted,
   markShared,
+  scheduleDailyPuzzle,
   DAILY_QUESTION_COUNT,
 } from '../services/daily-quiz.js';
 import { watchRepoCommand } from '../commands/watch-repo.js';
@@ -215,6 +227,13 @@ async function handleButtonInteraction(interaction: ButtonInteraction) {
   const dailyId = parseDailyCustomId(interaction.customId);
   if (dailyId) {
     await handleDailyQuizButton(interaction, dailyId);
+    return;
+  }
+
+  // Admin scheduler buttons (Shuffle / Use / Cancel).
+  const scheduleId = parseScheduleCustomId(interaction.customId);
+  if (scheduleId) {
+    await handleScheduleButton(interaction, scheduleId);
     return;
   }
 
@@ -457,6 +476,81 @@ async function handleDailyQuizButton(
       }
     } catch {
       // already responded
+    }
+  }
+}
+
+/**
+ * Admin scheduler buttons. Shuffle re-rolls the draft cards; Use these saves
+ * the draft as tomorrow's puzzle for this guild; Cancel discards the draft.
+ */
+async function handleScheduleButton(
+  interaction: ButtonInteraction,
+  parsed: NonNullable<ReturnType<typeof parseScheduleCustomId>>
+): Promise<void> {
+  if (!interaction.guildId) {
+    await interaction.reply({ content: 'Run this in a server.', ephemeral: true });
+    return;
+  }
+  const perms = interaction.memberPermissions;
+  if (!perms?.has(PermissionsBitField.Flags.ManageGuild)) {
+    await interaction.reply({
+      content: '🚫 Need **Manage Server** permission.',
+      ephemeral: true,
+    });
+    return;
+  }
+
+  const { action, date, deck } = parsed;
+  const userId = interaction.user.id;
+  const guildId = interaction.guildId;
+
+  try {
+    if (action === 'shuffle') {
+      await interaction.deferUpdate();
+      const cards = await fetchUniqueCards(deck, DAILY_QUESTION_COUNT);
+      setScheduleDraft(userId, guildId, date, deck, cards);
+      await interaction.editReply(buildScheduleDraftMessage(date, deck, cards));
+      return;
+    }
+
+    if (action === 'save') {
+      const draft = getScheduleDraft(userId, guildId, date, deck);
+      if (!draft || draft.length === 0) {
+        await interaction.reply({
+          content: '⚠️ Draft expired — re-run `/quiz schedule`.',
+          ephemeral: true,
+        });
+        return;
+      }
+      await interaction.deferUpdate();
+      scheduleDailyPuzzle(date, deck, guildId, draft, userId);
+      clearScheduleDraft(userId, guildId, date, deck);
+      await interaction.editReply(
+        buildScheduleDraftMessage(date, deck, draft, { saved: true })
+      );
+      return;
+    }
+
+    if (action === 'cancel') {
+      await interaction.deferUpdate();
+      clearScheduleDraft(userId, guildId, date, deck);
+      await interaction.editReply(
+        buildScheduleDraftMessage(date, deck, [], { cancelled: true })
+      );
+      return;
+    }
+  } catch (error) {
+    logger.error('Schedule button error:', error);
+    try {
+      if (!interaction.replied && !interaction.deferred) {
+        await interaction.reply({
+          content: '❌ Something went wrong.',
+          ephemeral: true,
+        });
+      }
+    } catch {
+      // already replied
     }
   }
 }

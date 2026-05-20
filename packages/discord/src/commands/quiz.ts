@@ -3,25 +3,73 @@ import {
   ChatInputCommandInteraction,
   InteractionResponse,
   Channel,
+  PermissionsBitField,
 } from 'discord.js';
 import { logger } from '@coachartie/shared';
 import { quizSessionManager, QuizSession } from '../services/quiz-session-manager.js';
 import { buildLiveQuizMessage, buildQuizSummary } from '../services/quiz-embed.js';
 import {
   ensureDailyQuizTables,
+  fetchUniqueCards,
+  getGuildConfig,
   getOrCreateDailyPuzzle,
   getServerLeaderboard,
   getUserPlay,
+  isDeckAllowedForGuild,
+  KNOWN_DECKS,
+  setGuildAllowedDecks,
+  setGuildDefaultDeck,
   startUserPlay,
   todayKey,
+  tomorrowKey,
   DAILY_QUESTION_COUNT,
   type LeaderboardScope,
 } from '../services/daily-quiz.js';
 import {
   buildDailyGameMessage,
   buildDailyResultMessage,
+  buildGuildConfigEmbed,
   buildLeaderboardMessage,
+  buildScheduleDraftMessage,
 } from '../services/daily-quiz-embed.js';
+
+const DECK_CHOICES = [
+  { name: 'All Decks (Random)', value: 'all' },
+  { name: 'Computers', value: 'COMPUTERS' },
+  { name: 'Electrical & Radio', value: 'ELECTRICAL_AND_RADIO' },
+  { name: 'Politics', value: 'POLITICS' },
+  { name: "Rubik's 2x2", value: 'RUBIKS_2x2' },
+  { name: 'Search & Rescue', value: 'SAR_AND_WILDERNESS' },
+];
+
+const SCHEDULE_DRAFTS = new Map<string, import('../services/quiz-session-manager.js').FlashcardResponse[]>();
+const draftKey = (userId: string, guildId: string, date: string, deck: string) =>
+  `${userId}:${guildId}:${date}:${deck}`;
+export function getScheduleDraft(
+  userId: string,
+  guildId: string,
+  date: string,
+  deck: string
+): import('../services/quiz-session-manager.js').FlashcardResponse[] | undefined {
+  return SCHEDULE_DRAFTS.get(draftKey(userId, guildId, date, deck));
+}
+export function setScheduleDraft(
+  userId: string,
+  guildId: string,
+  date: string,
+  deck: string,
+  cards: import('../services/quiz-session-manager.js').FlashcardResponse[]
+): void {
+  SCHEDULE_DRAFTS.set(draftKey(userId, guildId, date, deck), cards);
+}
+export function clearScheduleDraft(
+  userId: string,
+  guildId: string,
+  date: string,
+  deck: string
+): void {
+  SCHEDULE_DRAFTS.delete(draftKey(userId, guildId, date, deck));
+}
 
 export const quizCommand = {
   data: new SlashCommandBuilder()
@@ -103,14 +151,61 @@ export const quizCommand = {
               { name: 'All-Time', value: 'alltime' }
             )
         )
+    )
+    .addSubcommand((subcommand) =>
+      subcommand
+        .setName('schedule')
+        .setDescription("(Admin) Hand-pick tomorrow's daily quiz cards for this server")
+        .addStringOption((option) =>
+          option
+            .setName('deck')
+            .setDescription('Deck to pull candidate cards from')
+            .setRequired(false)
+            .addChoices(...DECK_CHOICES)
+        )
+    )
+    .addSubcommandGroup((group) =>
+      group
+        .setName('config')
+        .setDescription('(Admin) Per-server quiz settings')
+        .addSubcommand((subcommand) =>
+          subcommand.setName('show').setDescription("Show this server's quiz config")
+        )
+        .addSubcommand((subcommand) =>
+          subcommand
+            .setName('allow-decks')
+            .setDescription('Set the allow-list of decks (empty = all). Comma-separated.')
+            .addStringOption((option) =>
+              option
+                .setName('decks')
+                .setDescription('e.g. POLITICS,COMPUTERS — leave blank to allow all')
+                .setRequired(false)
+            )
+        )
+        .addSubcommand((subcommand) =>
+          subcommand
+            .setName('default-deck')
+            .setDescription('Set the default deck for /quiz daily (clears if omitted)')
+            .addStringOption((option) =>
+              option
+                .setName('deck')
+                .setDescription('Deck id')
+                .setRequired(false)
+                .addChoices(...DECK_CHOICES)
+            )
+        )
     ),
 
   async execute(
     interaction: ChatInputCommandInteraction
   ): Promise<InteractionResponse<boolean> | undefined> {
+    const group = interaction.options.getSubcommandGroup(false);
     const subcommand = interaction.options.getSubcommand();
 
     try {
+      if (group === 'config') {
+        return await handleConfig(interaction, subcommand);
+      }
       switch (subcommand) {
         case 'start':
           return await handleStart(interaction);
@@ -124,6 +219,8 @@ export const quizCommand = {
           return await handleDaily(interaction);
         case 'leaderboard':
           return await handleLeaderboard(interaction);
+        case 'schedule':
+          return await handleSchedule(interaction);
         default:
           return await interaction.reply({
             content: 'Unknown subcommand',
@@ -329,7 +426,23 @@ async function handleDaily(
   interaction: ChatInputCommandInteraction
 ): Promise<InteractionResponse<boolean> | undefined> {
   const deckOption = interaction.options.getString('deck');
-  const deck = deckOption && deckOption !== 'all' ? deckOption : '';
+  let deck: string;
+  if (deckOption === null && interaction.guildId) {
+    // No explicit pick → fall back to the guild's configured default.
+    const cfg = getGuildConfig(interaction.guildId);
+    deck = cfg.defaultDeck ?? '';
+  } else {
+    deck = deckOption && deckOption !== 'all' ? deckOption : '';
+  }
+
+  if (interaction.guildId && !isDeckAllowedForGuild(interaction.guildId, deck)) {
+    const cfg = getGuildConfig(interaction.guildId);
+    return await interaction.reply({
+      content: `❌ The **${deck || 'All Decks'}** deck isn't enabled on this server.\nAllowed: ${cfg.allowedDecks.map((d) => `\`${d || 'all'}\``).join(', ')}`,
+      ephemeral: true,
+    });
+  }
+
   const date = todayKey();
 
   await interaction.deferReply({ ephemeral: true });
@@ -337,7 +450,7 @@ async function handleDaily(
 
   let puzzle;
   try {
-    puzzle = await getOrCreateDailyPuzzle(date, deck);
+    puzzle = await getOrCreateDailyPuzzle(date, deck, interaction.guildId);
   } catch (e) {
     logger.error('Failed to fetch daily puzzle:', e);
     await interaction.editReply({
@@ -377,6 +490,118 @@ async function handleDaily(
   const payload = buildDailyGameMessage(play, puzzle);
   await interaction.editReply(payload);
   return undefined;
+}
+
+function ensureAdmin(interaction: ChatInputCommandInteraction): boolean {
+  if (!interaction.guildId) return false;
+  const perms = interaction.memberPermissions;
+  if (!perms) return false;
+  return perms.has(PermissionsBitField.Flags.ManageGuild);
+}
+
+/**
+ * Admin: pre-pick tomorrow's daily puzzle. Ephemeral preview with shuffle /
+ * use / cancel buttons.
+ */
+async function handleSchedule(
+  interaction: ChatInputCommandInteraction
+): Promise<InteractionResponse<boolean> | undefined> {
+  if (!interaction.guildId) {
+    return await interaction.reply({
+      content: '⚠️ Run this in a server channel.',
+      ephemeral: true,
+    });
+  }
+  if (!ensureAdmin(interaction)) {
+    return await interaction.reply({
+      content: '🚫 Need **Manage Server** permission to schedule daily quizzes.',
+      ephemeral: true,
+    });
+  }
+
+  const deckOption = interaction.options.getString('deck');
+  const deck = deckOption && deckOption !== 'all' ? deckOption : '';
+  const date = tomorrowKey();
+
+  if (!isDeckAllowedForGuild(interaction.guildId, deck)) {
+    return await interaction.reply({
+      content: `❌ That deck isn't in this server's allow-list. See \`/quiz config show\`.`,
+      ephemeral: true,
+    });
+  }
+
+  await interaction.deferReply({ ephemeral: true });
+  ensureDailyQuizTables();
+
+  let cards: import('../services/quiz-session-manager.js').FlashcardResponse[] = [];
+  try {
+    cards = await fetchUniqueCards(deck, DAILY_QUESTION_COUNT);
+  } catch (e) {
+    logger.error('Schedule preview fetch failed:', e);
+  }
+
+  setScheduleDraft(interaction.user.id, interaction.guildId, date, deck, cards);
+  const payload = buildScheduleDraftMessage(date, deck, cards);
+  await interaction.editReply(payload);
+  return undefined;
+}
+
+/**
+ * Admin: per-server quiz config (allow-list, default deck).
+ */
+async function handleConfig(
+  interaction: ChatInputCommandInteraction,
+  subcommand: string
+): Promise<InteractionResponse<boolean> | undefined> {
+  if (!interaction.guildId) {
+    return await interaction.reply({
+      content: '⚠️ Run this in a server channel.',
+      ephemeral: true,
+    });
+  }
+
+  if (subcommand !== 'show' && !ensureAdmin(interaction)) {
+    return await interaction.reply({
+      content: '🚫 Need **Manage Server** permission to change quiz config.',
+      ephemeral: true,
+    });
+  }
+
+  ensureDailyQuizTables();
+  const guildName = interaction.guild?.name || 'This server';
+
+  if (subcommand === 'show') {
+    const cfg = getGuildConfig(interaction.guildId);
+    return await interaction.reply({ ...buildGuildConfigEmbed(cfg, guildName), ephemeral: true });
+  }
+
+  if (subcommand === 'allow-decks') {
+    const raw = interaction.options.getString('decks') || '';
+    // Parse comma-separated deck IDs; "all" is the empty-deck sentinel.
+    const tokens = raw
+      .split(',')
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0)
+      .map((s) => (s.toLowerCase() === 'all' ? '' : s.toUpperCase()));
+    const unknown = tokens.filter((t) => !KNOWN_DECKS.includes(t as any));
+    if (unknown.length > 0) {
+      return await interaction.reply({
+        content: `❌ Unknown deck(s): ${unknown.map((u) => `\`${u}\``).join(', ')}\nKnown: ${KNOWN_DECKS.map((d) => d || 'all').join(', ')}`,
+        ephemeral: true,
+      });
+    }
+    const cfg = setGuildAllowedDecks(interaction.guildId, tokens);
+    return await interaction.reply({ ...buildGuildConfigEmbed(cfg, guildName), ephemeral: true });
+  }
+
+  if (subcommand === 'default-deck') {
+    const deckOption = interaction.options.getString('deck');
+    const deck = deckOption === null ? null : deckOption === 'all' ? '' : deckOption;
+    const cfg = setGuildDefaultDeck(interaction.guildId, deck);
+    return await interaction.reply({ ...buildGuildConfigEmbed(cfg, guildName), ephemeral: true });
+  }
+
+  return await interaction.reply({ content: 'Unknown config subcommand', ephemeral: true });
 }
 
 /**

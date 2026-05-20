@@ -12,25 +12,36 @@ import {
   computeDayStreaks,
   ensureDailyQuizTables,
   getDailyLeaderboard,
+  getGuildConfig,
   getOrCreateDailyPuzzle,
   getServerLeaderboard,
   getUserPlay,
+  isDeckAllowedForGuild,
   markCompleted,
   markShared,
   recordGuess,
   renderEmojiGrid,
+  scheduleDailyPuzzle,
+  setGuildAllowedDecks,
+  setGuildDefaultDeck,
   startUserPlay,
   todayKey,
+  tomorrowKey,
   type DailyOutcome,
 } from '../src/services/daily-quiz';
+import type { FlashcardResponse } from '../src/services/quiz-session-manager';
 import {
   buildDailyGameMessage,
   buildDailyResultMessage,
   buildDailyShareMessage,
   buildGuessModal,
+  buildGuildConfigEmbed,
   buildLeaderboardMessage,
+  buildScheduleDraftMessage,
   dailyCustomId,
   parseDailyCustomId,
+  parseScheduleCustomId,
+  scheduleCustomId,
 } from '../src/services/daily-quiz-embed';
 
 function clearDailyTables() {
@@ -38,6 +49,19 @@ function clearDailyTables() {
   const db = getSyncDb();
   db.exec('DELETE FROM daily_quiz_plays');
   db.exec('DELETE FROM daily_quiz_puzzles');
+  db.exec('DELETE FROM daily_quiz_guild_config');
+}
+
+function fakeCard(id: string, front: string, back: string): FlashcardResponse {
+  return {
+    id,
+    front,
+    back,
+    hints: [],
+    deckId: 'TEST',
+    deckName: 'Test',
+    course: 'test',
+  };
 }
 
 function mockFlashcards(cards: { id: string; front: string; back: string }[]) {
@@ -464,5 +488,168 @@ describe('embed builders', () => {
     expect(modal.title).toContain('Question 3');
     const row = modal.components[0] as any;
     expect(row.components[0].custom_id).toBe('answer');
+  });
+});
+
+describe('guild config', () => {
+  beforeEach(() => {
+    clearDailyTables();
+  });
+
+  it('returns sane defaults when no config row exists', () => {
+    const cfg = getGuildConfig('g1');
+    expect(cfg).toEqual({ guildId: 'g1', allowedDecks: [], defaultDeck: null });
+  });
+
+  it('persists allowed-decks and dedupes / normalizes input', () => {
+    const cfg = setGuildAllowedDecks('g1', ['POLITICS', 'POLITICS', 'COMPUTERS']);
+    expect(cfg.allowedDecks).toEqual(['POLITICS', 'COMPUTERS']);
+    const reread = getGuildConfig('g1');
+    expect(reread.allowedDecks).toEqual(['POLITICS', 'COMPUTERS']);
+  });
+
+  it('drops unknown decks from the allow-list', () => {
+    const cfg = setGuildAllowedDecks('g1', ['POLITICS', 'NOT_A_DECK']);
+    expect(cfg.allowedDecks).toEqual(['POLITICS']);
+  });
+
+  it('setGuildDefaultDeck stores and clears the default', () => {
+    setGuildDefaultDeck('g1', 'POLITICS');
+    expect(getGuildConfig('g1').defaultDeck).toBe('POLITICS');
+    setGuildDefaultDeck('g1', null);
+    expect(getGuildConfig('g1').defaultDeck).toBeNull();
+  });
+
+  it('isDeckAllowedForGuild defaults to open (no config = anything)', () => {
+    expect(isDeckAllowedForGuild('g1', 'POLITICS')).toBe(true);
+    expect(isDeckAllowedForGuild('g1', '')).toBe(true);
+  });
+
+  it('isDeckAllowedForGuild enforces the allow-list when set', () => {
+    setGuildAllowedDecks('g1', ['POLITICS']);
+    expect(isDeckAllowedForGuild('g1', 'POLITICS')).toBe(true);
+    expect(isDeckAllowedForGuild('g1', 'COMPUTERS')).toBe(false);
+  });
+
+  it('renders config embed with allow-list and default deck', () => {
+    setGuildAllowedDecks('g1', ['POLITICS', 'COMPUTERS']);
+    setGuildDefaultDeck('g1', 'POLITICS');
+    const cfg = getGuildConfig('g1');
+    const embed = buildGuildConfigEmbed(cfg, 'Test Server').embeds[0].toJSON();
+    expect(embed.title).toContain('Test Server');
+    const allowedField = embed.fields?.find((f) => f.name === 'Allowed Decks');
+    expect(allowedField?.value).toContain('POLITICS');
+    expect(allowedField?.value).toContain('COMPUTERS');
+    const defaultField = embed.fields?.find((f) => f.name === 'Default Deck');
+    expect(defaultField?.value).toBe('POLITICS');
+  });
+});
+
+describe('admin scheduling', () => {
+  beforeEach(() => {
+    clearDailyTables();
+  });
+
+  it('scheduleDailyPuzzle inserts a per-guild puzzle for tomorrow', () => {
+    const date = tomorrowKey();
+    const cards = [
+      fakeCard('1', 'q1', 'a1'),
+      fakeCard('2', 'q2', 'a2'),
+      fakeCard('3', 'q3', 'a3'),
+      fakeCard('4', 'q4', 'a4'),
+      fakeCard('5', 'q5', 'a5'),
+    ];
+
+    scheduleDailyPuzzle(date, 'POLITICS', 'g1', cards, 'admin-1');
+
+    // No API calls should happen — we should read the scheduled rows.
+    global.fetch = vi.fn(async () => {
+      throw new Error('fetch should not be called');
+    }) as unknown as typeof fetch;
+
+    const puzzle = (async () =>
+      await getOrCreateDailyPuzzle(date, 'POLITICS', 'g1'))();
+    return puzzle.then((p) => {
+      expect(p?.cards.map((c) => c.id)).toEqual(['1', '2', '3', '4', '5']);
+    });
+  });
+
+  it('replaces an existing scheduled puzzle on second call (upsert)', () => {
+    const date = tomorrowKey();
+    scheduleDailyPuzzle(
+      date,
+      'POLITICS',
+      'g1',
+      [fakeCard('a', 'qa', 'aa')],
+      'admin-1'
+    );
+    scheduleDailyPuzzle(
+      date,
+      'POLITICS',
+      'g1',
+      [fakeCard('b', 'qb', 'ab')],
+      'admin-2'
+    );
+
+    global.fetch = vi.fn(async () => {
+      throw new Error('fetch should not be called');
+    }) as unknown as typeof fetch;
+
+    return getOrCreateDailyPuzzle(date, 'POLITICS', 'g1').then((p) => {
+      expect(p?.cards.map((c) => c.id)).toEqual(['b']);
+    });
+  });
+
+  it('isolates scheduled puzzles between guilds', async () => {
+    const date = tomorrowKey();
+    scheduleDailyPuzzle(date, '', 'g1', [fakeCard('g1c', 'q', 'a')], 'admin-1');
+    scheduleDailyPuzzle(date, '', 'g2', [fakeCard('g2c', 'q', 'a')], 'admin-2');
+
+    global.fetch = vi.fn(async () => {
+      throw new Error('fetch should not be called');
+    }) as unknown as typeof fetch;
+
+    const a = await getOrCreateDailyPuzzle(date, '', 'g1');
+    const b = await getOrCreateDailyPuzzle(date, '', 'g2');
+    expect(a?.cards[0].id).toBe('g1c');
+    expect(b?.cards[0].id).toBe('g2c');
+  });
+
+  it('schedule customId round-trips', () => {
+    const id = scheduleCustomId('save', '2026-05-20', 'POLITICS');
+    expect(id).toBe('quiz:schedule:save:2026-05-20:POLITICS');
+    expect(parseScheduleCustomId(id)).toEqual({
+      action: 'save',
+      date: '2026-05-20',
+      deck: 'POLITICS',
+    });
+    expect(parseScheduleCustomId('quiz:daily:guess:x:y')).toBeNull();
+  });
+
+  it('schedule draft preview shows shuffle/save/cancel buttons', () => {
+    const { components } = buildScheduleDraftMessage('2026-05-20', 'POLITICS', [
+      fakeCard('1', 'q', 'a'),
+    ]);
+    const ids = components[0].toJSON().components.map((c: any) => c.custom_id);
+    expect(ids).toEqual([
+      'quiz:schedule:shuffle:2026-05-20:POLITICS',
+      'quiz:schedule:save:2026-05-20:POLITICS',
+      'quiz:schedule:cancel:2026-05-20:POLITICS',
+    ]);
+  });
+
+  it('schedule draft after save strips action buttons', () => {
+    const { components } = buildScheduleDraftMessage(
+      '2026-05-20',
+      'POLITICS',
+      [fakeCard('1', 'q', 'a')],
+      { saved: true }
+    );
+    expect(components).toHaveLength(0);
+  });
+
+  it('tomorrowKey returns the day after today (UTC)', () => {
+    expect(tomorrowKey(new Date('2026-05-19T12:00:00Z'))).toBe('2026-05-20');
+    expect(tomorrowKey(new Date('2026-12-31T12:00:00Z'))).toBe('2027-01-01');
   });
 });
