@@ -489,3 +489,60 @@ export function getProactiveCooldownRemaining(guildId: string, cooldownSeconds: 
 export function updateProactiveCooldown(guildId: string): void {
   proactiveCooldownCache.set(guildId, Date.now());
 }
+
+/** Default cooldown between respondToAll persona responses, if not overridden per-persona */
+export const RESPOND_TO_ALL_COOLDOWN_SECONDS = 45;
+
+// ---------------------------------------------------------------------------
+// AMBIENT RESPONSE BUDGET
+// ---------------------------------------------------------------------------
+// Hard cap on how many *ambient* responses (proactive answers, respondToAll personas,
+// robot-channel chatter — anything the bot decides to say WITHOUT being @-mentioned or
+// DMed) Artie may send per rolling hour. Explicit mentions/DMs are never counted or
+// blocked. This is the backstop that prevents a feedback loop or misconfiguration from
+// exhausting OpenRouter credits again. Tune via AMBIENT_RESPONSE_HOURLY_CAP.
+export const AMBIENT_RESPONSE_HOURLY_CAP = parseInt(
+  process.env.AMBIENT_RESPONSE_HOURLY_CAP || '40',
+  10
+);
+const AMBIENT_WINDOW_MS = 60 * 60 * 1000;
+const ambientResponseTimestamps: number[] = [];
+
+/** True if the ambient hourly budget is spent. Explicit mentions/DMs should bypass this. */
+export function isAmbientBudgetExhausted(): boolean {
+  const cutoff = Date.now() - AMBIENT_WINDOW_MS;
+  while (ambientResponseTimestamps.length && ambientResponseTimestamps[0] < cutoff) {
+    ambientResponseTimestamps.shift();
+  }
+  return ambientResponseTimestamps.length >= AMBIENT_RESPONSE_HOURLY_CAP;
+}
+
+/** Record that an ambient response was sent (counts against the hourly budget). */
+export function recordAmbientResponse(): void {
+  ambientResponseTimestamps.push(Date.now());
+}
+
+/** How many ambient responses have fired in the current rolling hour. */
+export function getAmbientResponseCount(): number {
+  const cutoff = Date.now() - AMBIENT_WINDOW_MS;
+  return ambientResponseTimestamps.filter((t) => t >= cutoff).length;
+}
+
+/** respondToAll persona cooldown cache (channelId -> lastResponseTimestamp) */
+export const channelResponseCooldownCache = new Map<string, number>();
+
+/**
+ * Check if a respondToAll channel is on cooldown. Prevents personas like Judge Artie
+ * from replying to literally every message (and burning a full LLM call each time).
+ */
+export function isChannelResponseOnCooldown(channelId: string, cooldownSeconds: number): boolean {
+  const last = channelResponseCooldownCache.get(channelId) || 0;
+  return (Date.now() - last) / 1000 < cooldownSeconds;
+}
+
+/**
+ * Update the respondToAll cooldown timestamp for a channel.
+ */
+export function updateChannelResponseCooldown(channelId: string): void {
+  channelResponseCooldownCache.set(channelId, Date.now());
+}

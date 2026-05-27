@@ -28,6 +28,7 @@ import {
   getGuildConfig,
   getChannelPersona,
   shouldRespondToAllInChannel,
+  isChannelAllowedForResponse,
   GuildConfig,
 } from '../config/guild-whitelist.js';
 import { getGitHubIntegrationSafe, isGitHubIntegrationReady } from '../services/github-integration.js';
@@ -49,6 +50,13 @@ import {
   isProactiveOnCooldown,
   getProactiveCooldownRemaining,
   updateProactiveCooldown,
+  isChannelResponseOnCooldown,
+  updateChannelResponseCooldown,
+  RESPOND_TO_ALL_COOLDOWN_SECONDS,
+  isAmbientBudgetExhausted,
+  recordAmbientResponse,
+  getAmbientResponseCount,
+  AMBIENT_RESPONSE_HOURLY_CAP,
 } from './message-utils.js';
 
 import {
@@ -372,11 +380,18 @@ export function setupMessageHandler(client: Client) {
     let proactiveAnswerContext: string | undefined;
     const channelNameDebug = ('name' in message.channel ? message.channel.name : 'DM') || 'unknown';
 
-    // Basic sanity check - at least 3 words to avoid reacting to "lol" or "ok"
-    // But let the LLM judgment decide whether to actually respond
+    // Cheap pre-filter BEFORE spending an LLM judgment call. Require both a minimum
+    // length AND an actual question signal (a "?" or a leading question word). This stops
+    // us from burning a judgment call on every statement; the LLM only adjudicates things
+    // that genuinely look like questions, and still answers conservatively from there.
     const wordCount = message.content.trim().split(/\s+/).length;
-    const meetsMinimumLength = wordCount >= 3;
-    const isQuestion = meetsMinimumLength; // Let LLM decide, don't regex-gatekeep
+    const meetsMinimumLength = wordCount >= 5; // questions worth answering are rarely 3-4 words
+    const hasQuestionMark = message.content.includes('?');
+    const startsWithQuestionWord =
+      /^\s*(who|what|when|where|why|how|is|are|can|could|should|would|does|do|did|will|any(one|body)|has|have)\b/i.test(
+        message.content
+      );
+    const isQuestion = meetsMinimumLength && (hasQuestionMark || startsWithQuestionWord);
 
     logger.info(
       `🔍 Proactive check: guild=${guildConfig?.name || 'none'}, channel=#${channelNameDebug}, proactive=${guildConfig?.proactiveAnswering}, wordCount=${wordCount}, looksLikeQuestion=${isQuestion}, mentioned=${responseConditions.botMentioned} [${shortId}]`
@@ -464,18 +479,67 @@ export function setupMessageHandler(client: Client) {
         ? message.channel.name
         : '';
     const channelPersona = getChannelPersona(message.guildId, channelName);
-    const isRespondToAllChannel = shouldRespondToAllInChannel(message.guildId, channelName);
+    let isRespondToAllChannel = shouldRespondToAllInChannel(message.guildId, channelName);
+
+    // Throttle respondToAll personas (e.g. Judge Artie) so they don't reply to every single
+    // message and burn a full LLM call each time. Mentions still bypass this via
+    // explicitlyAddressed below. Skip trivial banter and enforce a per-channel cooldown.
+    if (isRespondToAllChannel && !responseConditions.botMentioned && channelPersona) {
+      const minWords = channelPersona.respondToAllMinWords ?? 2;
+      const cooldownSeconds =
+        channelPersona.respondToAllCooldownSeconds ?? RESPOND_TO_ALL_COOLDOWN_SECONDS;
+      const personaWordCount = message.content.trim().split(/\s+/).filter(Boolean).length;
+
+      if (personaWordCount < minWords) {
+        logger.info(`⚖️ respondToAll skipped - message too short (${personaWordCount}w) [${shortId}]`);
+        isRespondToAllChannel = false;
+      } else if (isChannelResponseOnCooldown(message.channelId, cooldownSeconds)) {
+        logger.info(`⚖️ respondToAll skipped - channel on cooldown (${cooldownSeconds}s) [${shortId}]`);
+        isRespondToAllChannel = false;
+      }
+    }
 
     if (isRespondToAllChannel && channelPersona) {
       logger.info(`⚖️ Channel persona active: ${channelPersona.personaName} in #${channelName} [${shortId}]`);
     }
 
-    const shouldRespond =
-      responseConditions.botMentioned ||
-      responseConditions.isDM ||
+    // Explicit triggers: the user deliberately addressed the bot, so always respond
+    // regardless of channel whitelist.
+    const explicitlyAddressed = responseConditions.botMentioned || responseConditions.isDM;
+
+    // Ambient triggers: the bot decided to speak up on its own (robot channel, proactive
+    // judgment, or a respondToAll persona). These MUST respect the channel whitelist so
+    // Artie can't barge into channels he isn't allowed in. Previously the whitelist
+    // (responseChannels / restrictToRobotChannelsOnly) was dead config and never enforced.
+    const ambientTrigger =
       shouldRespondInRobotChannel ||
       responseConditions.isProactiveAnswer ||
-      isRespondToAllChannel; // NEW: Respond to all in channels with respondToAll personas
+      isRespondToAllChannel;
+    const ambientAllowed =
+      ambientTrigger &&
+      isChannelAllowedForResponse(
+        message.guildId,
+        channelName,
+        responseConditions.isRobotChannel,
+        responseConditions.isDM
+      );
+
+    if (ambientTrigger && !ambientAllowed) {
+      logger.info(
+        `🚫 Ambient trigger suppressed - channel #${channelName} not in response whitelist [${shortId}]`
+      );
+    }
+
+    // Hourly budget backstop: never let autonomous (non-mention) chatter run away with
+    // OpenRouter credits. Explicit mentions/DMs always bypass this.
+    const ambientBudgetBlocked = ambientAllowed && !explicitlyAddressed && isAmbientBudgetExhausted();
+    if (ambientBudgetBlocked) {
+      logger.warn(
+        `💸 Ambient response suppressed - hourly budget reached (${getAmbientResponseCount()}/${AMBIENT_RESPONSE_HOURLY_CAP}) [${shortId}]`
+      );
+    }
+
+    const shouldRespond = explicitlyAddressed || (ambientAllowed && !ambientBudgetBlocked);
 
     try {
       // -------------------------------------------------------------------------
@@ -510,6 +574,16 @@ export function setupMessageHandler(client: Client) {
               : isRespondToAllChannel
                 ? `channel_persona:${channelPersona?.personaName || 'unknown'}`
                 : 'robot_channel';
+
+        // Record respondToAll cooldown so the persona doesn't fire on the next message too
+        if (isRespondToAllChannel && !responseConditions.botMentioned) {
+          updateChannelResponseCooldown(message.channelId);
+        }
+
+        // Count autonomous (non-mention/DM) responses against the hourly budget
+        if (!explicitlyAddressed) {
+          recordAmbientResponse();
+        }
 
         logger.info(`🤖 Will respond to message [${shortId}] (trigger: ${triggerType})`, {
           correlationId,

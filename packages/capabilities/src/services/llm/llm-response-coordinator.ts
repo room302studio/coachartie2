@@ -325,7 +325,7 @@ Please provide a helpful response to the user that:
             baseSystemPrompt
           );
 
-          const _model = process.env.SMART_MODEL || 'openai/gpt-4o';
+          const _model = process.env.SMART_MODEL || 'anthropic/claude-sonnet-4.6';
           const response = await openRouterService.generateFromMessageChain(
             messages,
             context.userId

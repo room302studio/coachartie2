@@ -12,7 +12,11 @@ import { readFileSync, existsSync } from 'fs';
 import { join } from 'path';
 import Chance from 'chance';
 import { GuildConfig } from '../config/guild-whitelist.js';
-import { MIN_CHANNEL_HISTORY, MAX_CHANNEL_HISTORY } from './message-utils.js';
+import {
+  MIN_CHANNEL_HISTORY,
+  MAX_CHANNEL_HISTORY,
+  isAmbientBudgetExhausted,
+} from './message-utils.js';
 
 const chance = new Chance();
 
@@ -637,6 +641,13 @@ export async function shouldProactivelyAnswer(
   correlationId: string
 ): Promise<boolean> {
   try {
+    // Don't spend a judgment LLM call if we couldn't act on a "yes" anyway — the ambient
+    // hourly budget is already exhausted.
+    if (isAmbientBudgetExhausted()) {
+      logger.warn('💸 Skipping proactive judgment - ambient response budget exhausted');
+      return false;
+    }
+
     // Use fetch directly to call the capabilities service
     const capabilitiesUrl = process.env.CAPABILITIES_URL || 'http://localhost:47324';
 

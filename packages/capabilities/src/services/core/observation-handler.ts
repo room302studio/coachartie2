@@ -55,7 +55,7 @@ Be concise (2-3 sentences) and factual. Don't make assumptions beyond what's dir
         messages,
         'observational-system', // Special system user for observations
         undefined, // messageId (optional)
-        process.env.FAST_MODEL || 'openai/gpt-4o-mini'
+        process.env.FAST_MODEL || 'anthropic/claude-haiku-4.5'
       );
 
       // Estimate cost (GPT-4o-mini: ~$0.15/1M input, $0.60/1M output)

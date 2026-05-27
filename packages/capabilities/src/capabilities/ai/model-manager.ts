@@ -20,9 +20,9 @@ export const modelManagerCapability: RegisteredCapability = {
       case 'list_models':
         try {
           // Get configured model tiers from environment
-          const fastModel = process.env.FAST_MODEL || 'google/gemini-2.5-flash';
-          const smartModel = process.env.SMART_MODEL || 'anthropic/claude-sonnet-4.5';
-          const managerModel = process.env.MANAGER_MODEL || 'anthropic/claude-opus-4';
+          const fastModel = process.env.FAST_MODEL || 'anthropic/claude-haiku-4.5';
+          const smartModel = process.env.SMART_MODEL || 'anthropic/claude-sonnet-4.6';
+          const managerModel = process.env.MANAGER_MODEL || 'anthropic/claude-opus-4.7';
 
           const modelIds = [fastModel, smartModel, managerModel];
           const modelInfo = await openRouterModelsService.getModelInfo(modelIds);

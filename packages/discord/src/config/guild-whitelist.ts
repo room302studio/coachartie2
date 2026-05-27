@@ -47,6 +47,14 @@ export interface ChannelPersona {
   systemPrompt: string;
   /** If true, respond to ALL messages in this channel (not just mentions) */
   respondToAll?: boolean;
+  /**
+   * Minimum seconds between respondToAll responses in this channel. Prevents the
+   * persona from replying to every single message (and burning an LLM call each time).
+   * Defaults to RESPOND_TO_ALL_COOLDOWN_SECONDS if unset.
+   */
+  respondToAllCooldownSeconds?: number;
+  /** Skip respondToAll for messages shorter than this many words (banter like "lol"). Default 2. */
+  respondToAllMinWords?: number;
 }
 
 export interface GuildConfig {
@@ -184,6 +192,8 @@ RULINGS:
 
 Remember: The courtroom is YOUR domain. Command respect, deliver justice, create drama.`,
         respondToAll: true, // Respond to all messages in this channel
+        respondToAllCooldownSeconds: 45, // ...but at most once every 45s, so he doesn't reply to every line
+        respondToAllMinWords: 2, // ignore one-word reactions ("lol", "objection!" still counts via mention)
       },
     },
   },

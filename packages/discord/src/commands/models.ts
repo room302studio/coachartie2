@@ -95,7 +95,7 @@ async function createModelsListEmbed(): Promise<EmbedBuilder> {
       })
       .addFields({
         name: '📝 Example',
-        value: '`OPENROUTER_MODELS=anthropic/claude-3.5-sonnet,openai/gpt-4o`',
+        value: '`OPENROUTER_MODELS=anthropic/claude-haiku-4.5,anthropic/claude-sonnet-4.6,anthropic/claude-opus-4.7`',
         inline: false,
       });
 
