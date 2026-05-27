@@ -47,6 +47,10 @@ export interface ChannelPersona {
   systemPrompt: string;
   /** If true, respond to ALL messages in this channel (not just mentions) */
   respondToAll?: boolean;
+  /** Min seconds between respondToAll responses in this channel (prevents replying to every line). */
+  respondToAllCooldownSeconds?: number;
+  /** Skip respondToAll for messages shorter than this many words. Default 2. */
+  respondToAllMinWords?: number;
 }
 
 export interface GuildConfig {
@@ -187,6 +191,8 @@ RULINGS:
 
 Remember: The courtroom is YOUR domain. Command respect, deliver justice, create drama.`,
         respondToAll: true, // Respond to all messages in this channel
+        respondToAllCooldownSeconds: 45, // ...but at most once every 45s, not every line
+        respondToAllMinWords: 2, // ignore one-word reactions ("lol", "objection!" still hits via mention)
       },
     },
   },

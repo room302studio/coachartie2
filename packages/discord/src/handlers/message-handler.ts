@@ -25,6 +25,7 @@ import {
   getGuildConfig,
   getChannelPersona,
   shouldRespondToAllInChannel,
+  isChannelAllowedForResponse,
   GuildConfig,
 } from '../config/guild-whitelist.js';
 import {
@@ -109,6 +110,38 @@ const MESSAGE_CACHE_TTL = 10000; // 10 seconds TTL
 // Proactive answering cooldown cache (guildId -> lastProactiveAnswerTimestamp)
 const proactiveCooldownCache = new Map<string, number>();
 
+// respondToAll persona cooldown cache (channelId -> lastResponseTimestamp).
+// Stops personas like Judge Artie from replying to every single message (and burning
+// a full LLM call each time). Mentions still bypass this.
+const RESPOND_TO_ALL_COOLDOWN_SECONDS = 45;
+const channelResponseCooldownCache = new Map<string, number>();
+
+// Ambient response budget: a hard cap on how many responses the bot sends per rolling
+// hour WITHOUT being @-mentioned or DMed (proactive answers, respondToAll personas,
+// robot-channel chatter). Explicit mentions/DMs are never counted or blocked. This is the
+// backstop that prevents a misconfiguration or feedback loop from exhausting OpenRouter
+// credits. Tune via AMBIENT_RESPONSE_HOURLY_CAP.
+const AMBIENT_RESPONSE_HOURLY_CAP = parseInt(process.env.AMBIENT_RESPONSE_HOURLY_CAP || '40', 10);
+const AMBIENT_WINDOW_MS = 60 * 60 * 1000;
+const ambientResponseTimestamps: number[] = [];
+
+function isAmbientBudgetExhausted(): boolean {
+  const cutoff = Date.now() - AMBIENT_WINDOW_MS;
+  while (ambientResponseTimestamps.length && ambientResponseTimestamps[0] < cutoff) {
+    ambientResponseTimestamps.shift();
+  }
+  return ambientResponseTimestamps.length >= AMBIENT_RESPONSE_HOURLY_CAP;
+}
+
+function recordAmbientResponse(): void {
+  ambientResponseTimestamps.push(Date.now());
+}
+
+function getAmbientResponseCount(): number {
+  const cutoff = Date.now() - AMBIENT_WINDOW_MS;
+  return ambientResponseTimestamps.filter((t) => t >= cutoff).length;
+}
+
 // Discord API limits and timeouts
 const TYPING_REFRESH_INTERVAL = 8000; // Refresh typing every 8s (Discord typing lasts 10s)
 const CHUNK_RATE_LIMIT_DELAY = 200; // 200ms delay between message chunks
@@ -174,6 +207,13 @@ async function shouldProactivelyAnswer(
   correlationId: string
 ): Promise<boolean> {
   try {
+    // Don't spend a judgment LLM call if we couldn't act on a "yes" anyway — the ambient
+    // hourly budget is already exhausted.
+    if (isAmbientBudgetExhausted()) {
+      logger.warn('💸 Skipping proactive judgment - ambient response budget exhausted');
+      return false;
+    }
+
     // Use fetch directly to call the capabilities service
     const capabilitiesUrl = process.env.CAPABILITIES_URL || 'http://localhost:47324';
 
@@ -1207,7 +1247,13 @@ export function setupMessageHandler(client: Client) {
 
     // Pre-filter: basic sanity + cheap heuristics before expensive LLM judgment
     const wordCount = message.content.trim().split(/\s+/).length;
-    const meetsMinimumLength = wordCount >= 3;
+    const meetsMinimumLength = wordCount >= 5; // real questions worth answering are rarely <5 words
+
+    // If the message @mentions another human (not the bot), it's directed at that person,
+    // not asking the room — don't barge in. This is the main "stop interrupting" guard.
+    const mentionsAnotherHuman = message.mentions.users.some(
+      (u) => u.id !== client.user?.id && !u.bot
+    );
 
     // Cheap heuristic: detect announcements/agendas/status updates
     // These are sharing, not asking — skip LLM judgment entirely
@@ -1219,7 +1265,17 @@ export function setupMessageHandler(client: Client) {
     const looksLikeAnnouncement = (hasBulletPoints || hasNumberedList) && !hasQuestionMark;
     const isStatusUpdate = startsWithAnnouncement || looksLikeAnnouncement;
 
-    const isQuestion = meetsMinimumLength && !isStatusUpdate;
+    // Require an actual question signal before spending an LLM judgment call: a "?" or a
+    // leading question word. A plain statement no longer triggers the judgment call.
+    const startsWithQuestionWord =
+      /^\s*(who|what|when|where|why|how|is|are|can|could|should|would|does|do|did|will|any(one|body)|has|have)\b/i.test(
+        contentLower
+      );
+    const isQuestion =
+      meetsMinimumLength &&
+      !isStatusUpdate &&
+      !mentionsAnotherHuman &&
+      (hasQuestionMark || startsWithQuestionWord);
 
     logger.info(
       `🔍 Proactive check: guild=${guildConfig?.name || 'none'}, channel=#${channelNameDebug}, proactive=${guildConfig?.proactiveAnswering}, wordCount=${wordCount}, looksLikeQuestion=${isQuestion}, isStatusUpdate=${isStatusUpdate}, mentioned=${responseConditions.botMentioned} [${shortId}]`
@@ -1308,7 +1364,27 @@ export function setupMessageHandler(client: Client) {
         ? message.channel.name
         : '';
     const channelPersona = getChannelPersona(message.guildId, channelName);
-    const isRespondToAllChannel = shouldRespondToAllInChannel(message.guildId, channelName);
+    let isRespondToAllChannel = shouldRespondToAllInChannel(message.guildId, channelName);
+
+    // Throttle respondToAll personas (e.g. Judge Artie) so they don't reply to every single
+    // message and burn an LLM call each time. Mentions still bypass this. Skip trivial banter
+    // and enforce a per-channel cooldown.
+    if (isRespondToAllChannel && !responseConditions.botMentioned && channelPersona) {
+      const minWords = channelPersona.respondToAllMinWords ?? 2;
+      const cooldownSeconds =
+        channelPersona.respondToAllCooldownSeconds ?? RESPOND_TO_ALL_COOLDOWN_SECONDS;
+      const personaWordCount = message.content.trim().split(/\s+/).filter(Boolean).length;
+      const lastResponse = channelResponseCooldownCache.get(message.channelId) || 0;
+      const onCooldown = (Date.now() - lastResponse) / 1000 < cooldownSeconds;
+
+      if (personaWordCount < minWords) {
+        logger.info(`⚖️ respondToAll skipped - message too short (${personaWordCount}w) [${shortId}]`);
+        isRespondToAllChannel = false;
+      } else if (onCooldown) {
+        logger.info(`⚖️ respondToAll skipped - channel on cooldown (${cooldownSeconds}s) [${shortId}]`);
+        isRespondToAllChannel = false;
+      }
+    }
 
     if (isRespondToAllChannel && channelPersona) {
       logger.info(
@@ -1359,12 +1435,43 @@ export function setupMessageHandler(client: Client) {
     const dmPolicy = responseConditions.isDM ? getDMPolicy('discord') : null;
     const isDMAllowed = isDMFromAuthorizedUser || (responseConditions.isDM && dmPolicy?.policy === 'open');
 
-    const shouldRespond =
-      responseConditions.botMentioned ||
-      isDMAllowed || // Respond to authorized DMs or open policy DMs
+    // Explicit triggers: the user deliberately addressed the bot — always respond,
+    // regardless of channel whitelist or budget.
+    const explicitlyAddressed = responseConditions.botMentioned || isDMAllowed;
+
+    // Ambient triggers: the bot decided to speak up on its own (robot channel, proactive
+    // judgment, or a respondToAll persona). These MUST respect the channel whitelist
+    // (responseChannels / restrictToRobotChannelsOnly), which was previously dead config
+    // and never enforced — letting Artie barge into channels he wasn't allowed in.
+    const ambientTrigger =
       shouldRespondInRobotChannel ||
       responseConditions.isProactiveAnswer ||
-      isRespondToAllChannel; // Respond to all in channels with respondToAll personas
+      isRespondToAllChannel;
+    const ambientAllowed =
+      ambientTrigger &&
+      isChannelAllowedForResponse(
+        message.guildId,
+        channelName,
+        responseConditions.isRobotChannel,
+        responseConditions.isDM
+      );
+
+    if (ambientTrigger && !ambientAllowed) {
+      logger.info(
+        `🚫 Ambient trigger suppressed - channel #${channelName} not in response whitelist [${shortId}]`
+      );
+    }
+
+    // Hourly budget backstop: never let autonomous (non-mention) chatter run away with
+    // OpenRouter credits. Explicit mentions/DMs always bypass this.
+    const ambientBudgetBlocked = ambientAllowed && !explicitlyAddressed && isAmbientBudgetExhausted();
+    if (ambientBudgetBlocked) {
+      logger.warn(
+        `💸 Ambient response suppressed - hourly budget reached (${getAmbientResponseCount()}/${AMBIENT_RESPONSE_HOURLY_CAP}) [${shortId}]`
+      );
+    }
+
+    const shouldRespond = explicitlyAddressed || (ambientAllowed && !ambientBudgetBlocked);
 
     try {
       // -------------------------------------------------------------------------
@@ -1413,6 +1520,15 @@ export function setupMessageHandler(client: Client) {
               : isRespondToAllChannel
                 ? `channel_persona:${channelPersona?.personaName || 'unknown'}`
                 : 'robot_channel';
+
+        // Record respondToAll cooldown so the persona doesn't fire on the next message too,
+        // and count autonomous (non-mention/DM) responses against the hourly budget.
+        if (!explicitlyAddressed) {
+          if (isRespondToAllChannel) {
+            channelResponseCooldownCache.set(message.channelId, Date.now());
+          }
+          recordAmbientResponse();
+        }
 
         logger.info(`🤖 Will respond to message [${shortId}] (trigger: ${triggerType})`, {
           correlationId,
