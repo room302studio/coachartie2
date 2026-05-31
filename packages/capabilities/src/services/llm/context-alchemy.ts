@@ -196,11 +196,8 @@ interface ContextBudget {
  * 4. Assembles optimal context for the LLM
  */
 // Re-export pending attachment functions for backwards compatibility
-export {
-  PendingAttachment,
-  addPendingAttachment,
-  getPendingAttachments,
-} from './pending-attachments.js';
+export type { PendingAttachment } from './pending-attachments.js';
+export { addPendingAttachment, getPendingAttachments } from './pending-attachments.js';
 
 export class ContextAlchemy {
   private static instance: ContextAlchemy;

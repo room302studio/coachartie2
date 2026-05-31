@@ -7,9 +7,10 @@ export class WolframService {
   constructor() {
     this.apiKey = process.env.WOLFRAM_APP_ID || '';
     if (!this.apiKey) {
-      throw new Error('WOLFRAM_APP_ID environment variable is required');
+      logger.warn('WOLFRAM_APP_ID not set — Wolfram Alpha capability disabled');
+    } else {
+      logger.info('Wolfram Alpha service initialized');
     }
-    logger.info('Wolfram Alpha service initialized');
   }
 
   async query(input: string): Promise<string> {
