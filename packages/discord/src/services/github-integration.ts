@@ -6,6 +6,7 @@
  */
 
 import { Octokit } from '@octokit/rest';
+import { delay } from '@coachartie/shared';
 import { logger } from '@coachartie/shared';
 import type { ForumThreadData, ThreadMessageData } from './forum-traversal.js';
 
@@ -247,7 +248,7 @@ export class GitHubIntegrationService {
 
       // Rate limiting: wait 1 second between issue creations
       if (i < threads.length - 1) {
-        await new Promise((resolve) => setTimeout(resolve, 1000));
+        await delay(1000);
       }
     }
 

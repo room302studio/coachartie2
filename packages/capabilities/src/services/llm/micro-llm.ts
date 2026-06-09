@@ -192,49 +192,9 @@ export async function estimateResponseLength(userMessage: string): Promise<Micro
   }
 }
 
-/**
- * Detect user intent for routing decisions
- */
-export async function detectIntent(
-  userMessage: string,
-  possibleIntents: string[]
-): Promise<MicroDecision<string | null>> {
-  try {
-    const response = await getClient().chat.completions.create({
-      model: MICRO_MODEL,
-      messages: [
-        {
-          role: 'system',
-          content: `What is the user's intent? Pick from: ${possibleIntents.join(', ')}, or NONE if none apply. Reply with just the intent.`,
-        },
-        {
-          role: 'user',
-          content: userMessage.substring(0, 300),
-        },
-      ],
-      max_tokens: 20,
-      temperature: 0,
-    });
-
-    const answer = response.choices[0]?.message?.content?.trim().toLowerCase() || '';
-
-    if (answer === 'none' || answer.includes('none')) {
-      return { result: null, fallback: false };
-    }
-
-    const match = possibleIntents.find((intent) => answer.includes(intent.toLowerCase()));
-
-    return { result: match || null, fallback: !match };
-  } catch (error) {
-    logger.debug(`[micro-llm] Error detecting intent:`, error);
-    return { result: null, fallback: true };
-  }
-}
-
 export const microLLM = {
   askYesNo,
   pickOne,
   extract,
   estimateResponseLength,
-  detectIntent,
 };

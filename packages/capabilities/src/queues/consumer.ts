@@ -1,4 +1,5 @@
 import {
+  delay,
   createWorker,
   createQueue,
   createRedisConnection,
@@ -27,7 +28,7 @@ async function acquireUserLock(userId: string, timeoutMs: number = USER_LOCK_TTL
     // SET NX EX — only succeeds if key doesn't exist
     const result = await redis.set(lockKey, Date.now().toString(), 'EX', USER_LOCK_TTL_SEC, 'NX');
     if (result === 'OK') return true;
-    await new Promise(r => setTimeout(r, USER_LOCK_POLL_MS));
+    await delay(USER_LOCK_POLL_MS);
   }
   return false;
 }

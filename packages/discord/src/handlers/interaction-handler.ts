@@ -7,11 +7,6 @@ import {
   SelectMenuInteraction,
 } from 'discord.js';
 import { logger } from '@coachartie/shared';
-import { linkPhoneCommand } from '../commands/link-phone.js';
-import { verifyPhoneCommand } from '../commands/verify-phone.js';
-import { unlinkPhoneCommand } from '../commands/unlink-phone.js';
-import { linkEmailCommand } from '../commands/link-email.js';
-import { unlinkEmailCommand } from '../commands/unlink-email.js';
 import { statusCommand } from '../commands/status.js';
 import { botStatusCommand } from '../commands/bot-status.js';
 import { modelsCommand } from '../commands/models.js';
@@ -32,11 +27,6 @@ import {
 import { processUserIntent } from '../services/user-intent-processor.js';
 
 const commands = new Map([
-  ['link-phone', linkPhoneCommand],
-  ['verify-phone', verifyPhoneCommand],
-  ['unlink-phone', unlinkPhoneCommand],
-  ['link-email', linkEmailCommand],
-  ['unlink-email', unlinkEmailCommand],
   ['status', statusCommand],
   ['bot-status', botStatusCommand],
   ['models', modelsCommand],

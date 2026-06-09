@@ -6,6 +6,7 @@
  */
 
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
+import { delay } from '@coachartie/shared';
 import { join, dirname } from 'path';
 import { logger } from '@coachartie/shared';
 import {
@@ -421,7 +422,7 @@ Answer with ONLY one word: either "SKIP" or "RESPOND"
 
       // Poll for result (max 3 seconds)
       for (let i = 0; i < 6; i++) {
-        await new Promise((resolve) => setTimeout(resolve, 500));
+        await delay(500);
 
         const statusResponse = await axios.get(`${CAPABILITIES_URL}/chat/${response.data.jobId}`);
 

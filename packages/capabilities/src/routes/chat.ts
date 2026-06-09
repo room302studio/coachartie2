@@ -1,4 +1,5 @@
 import { Router, Request, Response } from 'express';
+import { delay } from '@coachartie/shared';
 import { logger, createQueue, QUEUES, IncomingMessage } from '@coachartie/shared';
 import { v4 as uuidv4 } from 'uuid';
 import { rateLimiter } from '../middleware/rate-limiter.js';
@@ -157,7 +158,7 @@ router.post('/', rateLimiter(50, 60000), async (req: Request, res: Response) => 
           }
 
           // Wait before next poll
-          await new Promise((resolve) => setTimeout(resolve, pollInterval));
+          await delay(pollInterval);
         }
 
         // Timeout - return pending status

@@ -141,26 +141,5 @@ module.exports = {
       log_date_format: 'YYYY-MM-DD HH:mm:ss',
     },
 
-    // -------------------------------------------------------------------------
-    // SMS SERVICE
-    // Twilio webhook handler for SMS conversations
-    // -------------------------------------------------------------------------
-    {
-      name: 'coach-artie-sms',
-      cwd: path.join(__dirname, 'packages/sms'),
-      script: 'dist/index.js',
-      env: {
-        ...env,
-        SMS_PORT: 47326,
-        CAPABILITIES_URL: 'http://localhost:47324',
-      },
-      instances: 1,
-      autorestart: true,
-      watch: false,
-      max_memory_restart: '256M',
-      error_file: path.join(LOGS_DIR, 'sms-error.log'),
-      out_file: path.join(LOGS_DIR, 'sms-out.log'),
-      log_date_format: 'YYYY-MM-DD HH:mm:ss',
-    },
   ],
 };

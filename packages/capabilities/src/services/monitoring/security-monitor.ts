@@ -32,54 +32,6 @@ export class SecurityMonitor {
   private patternCounts = new Map<string, number>();
 
   /**
-   * Analyze and log a security incident where internal information was exposed
-   */
-  logSanitizationEvent(
-    originalContent: string,
-    sanitizedContent: string,
-    userId: string,
-    messageId: string
-  ): void {
-    const detectedPatterns = this.analyzeSecurityPatterns(originalContent);
-
-    if (detectedPatterns.length === 0) {
-      return; // No security patterns detected
-    }
-
-    const reductionPercent = Math.round(
-      ((originalContent.length - sanitizedContent.length) / originalContent.length) * 100
-    );
-    const severity = this.calculateSeverity(detectedPatterns, reductionPercent);
-
-    const incident: SecurityIncident = {
-      timestamp: new Date(),
-      userId,
-      messageId,
-      incidentType: this.categorizeIncident(detectedPatterns),
-      patterns: detectedPatterns,
-      originalLength: originalContent.length,
-      sanitizedLength: sanitizedContent.length,
-      reductionPercent,
-      severity,
-    };
-
-    this.incidents.push(incident);
-
-    // Update pattern counters for trend analysis
-    detectedPatterns.forEach((pattern) => {
-      this.patternCounts.set(pattern, (this.patternCounts.get(pattern) || 0) + 1);
-    });
-
-    // Log based on severity
-    this.logIncident(incident, originalContent.substring(0, 200));
-
-    // Keep only last 1000 incidents to prevent memory bloat
-    if (this.incidents.length > 1000) {
-      this.incidents = this.incidents.slice(-1000);
-    }
-  }
-
-  /**
    * Analyze content for security-sensitive patterns
    */
   private analyzeSecurityPatterns(content: string): string[] {

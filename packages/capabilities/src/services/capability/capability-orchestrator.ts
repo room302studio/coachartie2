@@ -11,7 +11,7 @@ import { llmLoopService } from '../llm/llm-loop-service.js';
 
 // Import Context Alchemy observability
 import { traceManager } from '../context-alchemy/index.js';
-import { sessionManager } from '../observability/index.js';
+import { sessionManager } from '../observability/session-manager.js';
 
 // Import shared types
 import { OrchestrationContext } from '../../types/orchestration-types.js';
@@ -278,68 +278,57 @@ export class CapabilityOrchestrator {
   ): string {
     const errorMessage = getErrorMessage(error);
 
-    // Check for credit/billing errors
+    // IMPORTANT: whatever this returns is posted verbatim into the channel that triggered
+    // the failure — which may be public or a *client-facing* channel. Never leak billing,
+    // auth, or internal debug detail to users. Log the real diagnostics server-side and
+    // either stay silent (return '') or reply with a short, internals-free human line.
+    // (An empty response is treated as "nothing to say" and is not posted.)
+
+    // Billing / credit exhaustion — operator concern only. Stay silent in the channel.
     if (
       errorMessage.includes('OUT OF CREDITS') ||
       errorMessage.includes('credit') ||
       errorMessage.includes('402')
     ) {
-      return `💳 **OpenRouter Credits Exhausted**
-
-I'm unable to respond right now because the API credits have run out.
-
-**To fix this:**
-Add more credits at https://openrouter.ai/settings/credits
-
-*Message ID: ${message.id}*`;
+      logger.error(
+        `🔇 Credits/billing failure suppressed from channel (source=${message.source}, ` +
+          `msg=${message.id}, user=${message.userId}): ${errorMessage}`
+      );
+      return '';
     }
 
-    // Check for rate limiting
-    if (errorMessage.includes('RATE LIMITED') || errorMessage.includes('429')) {
-      return `⏱️ **Rate Limited**
-
-Too many requests - please wait a moment and try again.
-
-*Message ID: ${message.id}*`;
-    }
-
-    // Check for server errors
-    if (errorMessage.includes('SERVER ERROR') || errorMessage.includes('50')) {
-      return `🔧 **Service Temporarily Unavailable**
-
-The AI service is experiencing issues. Please try again in a few minutes.
-
-*Message ID: ${message.id}*`;
-    }
-
-    // Check for auth errors
+    // Auth / API-key problems — also operator-only. Stay silent in the channel.
     if (
       errorMessage.includes('AUTH ERROR') ||
       errorMessage.includes('401') ||
       errorMessage.includes('403')
     ) {
-      return `🔑 **Authentication Error**
-
-There's an issue with the API configuration. Please check the API keys.
-
-*Message ID: ${message.id}*`;
+      logger.error(
+        `🔇 Auth failure suppressed from channel (source=${message.source}, ` +
+          `msg=${message.id}, user=${message.userId}): ${errorMessage}`
+      );
+      return '';
     }
 
-    // For other errors, provide debug information
-    return `🚨 ORCHESTRATION FAILURE DEBUG 🚨
-Message ID: ${message.id}
-User ID: ${message.userId}
-Original Message: "${message.message}"
-Source: ${message.source}
-Orchestration Error: ${errorMessage}
-Stack: ${getErrorStack(error)}
-Capabilities Found: ${context.capabilities.length}
-Capability Details: ${context.capabilities.map((c) => `${c.name}:${c.action}`).join(', ')}
-Results Generated: ${context.results.length}
-Result Details: ${context.results.map((r) => `${r.capability.name}:${r.success ? 'SUCCESS' : 'FAILED'}`).join(', ')}
-Current Step: ${context.currentStep}
-Registry Stats: ${capabilityRegistry.getStats().totalCapabilities} capabilities, ${capabilityRegistry.getStats().totalActions} actions
-Timestamp: ${new Date().toISOString()}`;
+    // Transient, user-retryable conditions — a short, friendly line is fine (no internals).
+    if (errorMessage.includes('RATE LIMITED') || errorMessage.includes('429')) {
+      return `⏱️ One sec — I'm getting a lot of requests right now. Try me again in a moment.`;
+    }
+    if (errorMessage.includes('SERVER ERROR') || errorMessage.includes('50')) {
+      return `🔧 I'm having a brief hiccup — give it a few minutes and try again.`;
+    }
+
+    // Anything else: keep the full diagnostic detail in the logs, say nothing publicly.
+    logger.error(
+      `🚨 Orchestration failure (suppressed from channel) for message ${message.id}\n` +
+        `  user=${message.userId} source=${message.source} msg="${message.message}"\n` +
+        `  error=${errorMessage}\n` +
+        `  capabilities=[${context.capabilities.map((c) => `${c.name}:${c.action}`).join(', ')}]\n` +
+        `  results=[${context.results.map((r) => `${r.capability.name}:${r.success ? 'OK' : 'FAIL'}`).join(', ')}]\n` +
+        `  step=${context.currentStep} registry=${capabilityRegistry.getStats().totalCapabilities}cap/${capabilityRegistry.getStats().totalActions}act\n` +
+        `  stack=${getErrorStack(error)}`
+    );
+    return '';
   }
 
   /**

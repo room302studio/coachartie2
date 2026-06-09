@@ -10,6 +10,8 @@
  */
 
 import { Client, Events, Message, EmbedBuilder, AttachmentBuilder, ChannelType } from 'discord.js';
+import { delay } from '@coachartie/shared';
+import { estimateTokens } from '@coachartie/shared';
 import { logger, canDMForTasks, getDMPolicy, dmPairingService, getSyncDb } from '@coachartie/shared';
 import { publishMessage } from '../queues/publisher.js';
 import { telemetry } from '../services/telemetry.js';
@@ -326,8 +328,8 @@ JSON response:`;
     try {
       const usage = openRouterResult.usage;
       // Estimate tokens from char length if API doesn't return usage
-      const promptTokens = usage?.prompt_tokens || Math.ceil(prompt.length / 4);
-      const completionTokens = usage?.completion_tokens || Math.ceil(rawResponse.length / 4);
+      const promptTokens = usage?.prompt_tokens || estimateTokens(prompt);
+      const completionTokens = usage?.completion_tokens || estimateTokens(rawResponse);
       // Gemini Flash pricing: ~$0.0001/1K input, $0.0004/1K output
       const estimatedCost = (promptTokens / 1000) * 0.0001 + (completionTokens / 1000) * 0.0004;
       const db = getSyncDb();
@@ -669,7 +671,7 @@ async function sendMessageChunks(
 
     // Rate limiting: prevent Discord API abuse
     if (currentChunkCount + chunksAdded > 1) {
-      await new Promise((resolve) => setTimeout(resolve, CHUNK_RATE_LIMIT_DELAY));
+      await delay(CHUNK_RATE_LIMIT_DELAY);
     }
   }
 
@@ -1284,6 +1286,7 @@ export function setupMessageHandler(client: Client) {
     if (
       guildConfig?.proactiveAnswering &&
       guildConfig.context &&
+      responseConditions.isRobotChannel && // HARD GATE: proactive answering only in robot channels — also avoids burning an LLM judgment call anywhere else
       !responseConditions.botMentioned && // Don't need proactive check if already mentioned
       !responseConditions.isDM &&
       isQuestion
@@ -1449,6 +1452,11 @@ export function setupMessageHandler(client: Client) {
       isRespondToAllChannel;
     const ambientAllowed =
       ambientTrigger &&
+      // HARD GATE (EJ): Artie may speak UNPROMPTED only in robot channels — never barge into
+      // general conversations in ANY server. This overrides all per-guild config
+      // (proactiveAnswering, proactiveChannels, respondToAll personas, etc.) so it cannot be
+      // misconfigured while unattended. Direct @mentions and DMs are unaffected (explicitlyAddressed).
+      responseConditions.isRobotChannel &&
       isChannelAllowedForResponse(
         message.guildId,
         channelName,
@@ -2179,7 +2187,7 @@ async function handleMessageAsIntent(
             if ('send' in message.channel) {
               logger.info(`📨 DISCORD: Sending chunk ${i + 1}/${chunks.length} [${shortId}]`);
               await (message.channel as any).send(chunks[i]);
-              await new Promise((resolve) => setTimeout(resolve, CHUNK_RATE_LIMIT_DELAY));
+              await delay(CHUNK_RATE_LIMIT_DELAY);
             }
           }
 

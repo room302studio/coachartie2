@@ -1,4 +1,5 @@
 import { logger } from '@coachartie/shared';
+import { delay } from '@coachartie/shared';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import { RegisteredCapability } from '../../services/capability/capability-registry.js';
@@ -282,7 +283,7 @@ Use an explicit heredoc in your command instead.`;
 
           const escapedCommand = command.replace(/"/g, '\\"');
           await execInContainer(`tmux send-keys -t ${target} "${escapedCommand}" Enter`, timeout);
-          await new Promise((resolve) => setTimeout(resolve, 100));
+          await delay(100);
 
           // Return simple confirmation
           return `Sent to ${target}: ${command}

@@ -1,4 +1,5 @@
 import OpenAI from 'openai';
+import { estimateTokens } from '@coachartie/shared';
 import { config } from 'dotenv';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
@@ -110,13 +111,10 @@ class OpenRouterService {
       logger.error('❌ Failed to validate models on startup:', err);
     });
 
-    // Check credit balance on startup
+    // Check credit balance on startup, then poll every 30 min so the operator gets a
+    // low-balance DM warning BEFORE credits run dry (not just on a live 402).
     import('../monitoring/credit-monitor.js').then(({ creditMonitor }) => {
-      creditMonitor.proactiveBalanceCheck().then((result) => {
-        if (result.error) {
-          logger.debug(`Credit check on startup: ${result.error}`);
-        }
-      });
+      creditMonitor.startPeriodicBalanceCheck();
     });
   }
 
@@ -286,22 +284,6 @@ class OpenRouterService {
     if (model.includes('opus') || model.includes('4o') || model.includes('large')) return 'manager';
 
     return 'smart'; // Default tier
-  }
-
-  async generateResponse(
-    _userMessage: string,
-    _userId: string,
-    _context?: string,
-    _messageId?: string
-  ): Promise<string> {
-    // DEPRECATED: This method should NOT exist - OpenRouter should be PURE
-    // All message building should happen in Context Alchemy
-    logger.error(
-      '🚨 generateResponse should NOT be used - OpenRouter must be PURE. Use Context Alchemy!'
-    );
-    throw new Error(
-      'DEPRECATED: Use Context Alchemy to build messages, then call generateFromMessageChain directly'
-    );
   }
 
   async generateFromMessageChain(
@@ -713,7 +695,7 @@ class OpenRouterService {
           const estimatedPromptTokens = Math.ceil(
             messages.reduce((total, msg) => total + msg.content.length, 0) / 4
           );
-          const estimatedCompletionTokens = Math.ceil(fullResponse.length / 4);
+          const estimatedCompletionTokens = estimateTokens(fullResponse);
           usage = {
             prompt_tokens: estimatedPromptTokens,
             completion_tokens: estimatedCompletionTokens,
@@ -828,27 +810,6 @@ class OpenRouterService {
     throw new Error('❌ All LLM models failed. Check OpenRouter status and credits.');
   }
 
-  async isHealthy(): Promise<boolean> {
-    try {
-      // Simple health check - try the first model
-      const completion = await this.client.chat.completions.create({
-        model: this.models[0],
-        messages: [
-          {
-            role: 'user',
-            content: 'Say "OK" if you can respond.',
-          },
-        ],
-        max_tokens: 5,
-        temperature: 0,
-      });
-
-      return !!completion.choices[0]?.message?.content;
-    } catch (error) {
-      logger.error('OpenRouter health check failed:', error);
-      return false;
-    }
-  }
 }
 
 // Export singleton instance

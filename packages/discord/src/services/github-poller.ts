@@ -6,6 +6,7 @@
  */
 
 import { Octokit } from '@octokit/rest';
+import { delay } from '@coachartie/shared';
 import {
   logger,
   getDb,
@@ -552,7 +553,7 @@ export class GitHubPollerService extends EventEmitter {
       } catch (firstErr: any) {
         if (firstErr?.status === 500) {
           logger.debug(`GitHub 500 on issues for ${owner}/${repo}, retrying in 5s...`);
-          await new Promise((r) => setTimeout(r, 5000));
+          await delay(5000);
           const resp = await this.octokit.issues.listForRepo({
             owner, repo, state: 'all', sort: 'updated', direction: 'desc', per_page: 30,
           });

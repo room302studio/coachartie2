@@ -33,6 +33,15 @@ export class CreditMonitor {
   private creditsExhaustedAt: Date | null = null;
   private static EXHAUSTION_COOLDOWN_MS = 5 * 60 * 1000; // 5 minutes before retrying
 
+  // Throttle operator DMs so we don't spam on every check/cooldown cycle
+  private lastExhaustionAlertAt: Date | null = null;
+  private lastLowBalanceAlertAt: Date | null = null;
+  private static EXHAUSTION_ALERT_THROTTLE_MS = 60 * 60 * 1000; // 1 hour
+  private static LOW_BALANCE_ALERT_THROTTLE_MS = 6 * 60 * 60 * 1000; // 6 hours
+
+  // Periodic balance polling
+  private balanceCheckTimer: ReturnType<typeof setInterval> | null = null;
+
   private constructor() {}
 
   /**
@@ -41,6 +50,88 @@ export class CreditMonitor {
   markCreditsExhausted(): void {
     this.creditsExhaustedAt = new Date();
     logger.warn('💳 Credits marked as EXHAUSTED - will skip API calls for 5 minutes');
+    // DM the operator (never the channel that hit the error), throttled to 1/hr.
+    const now = Date.now();
+    if (
+      !this.lastExhaustionAlertAt ||
+      now - this.lastExhaustionAlertAt.getTime() >= CreditMonitor.EXHAUSTION_ALERT_THROTTLE_MS
+    ) {
+      this.lastExhaustionAlertAt = new Date();
+      void this.sendOperatorDM(
+        `💳 **Heads up — I'm out of OpenRouter credits.**\n\n` +
+          `I've gone quiet in every channel (no error spam this time). ` +
+          `Top up to bring me back: https://openrouter.ai/settings/credits`,
+        'credit-monitor-exhausted'
+      );
+    }
+  }
+
+  /**
+   * Start polling the balance every 30 min (plus an immediate check). Lets us warn the
+   * operator BEFORE credits run dry instead of only catching a live 402.
+   */
+  startPeriodicBalanceCheck(intervalMs: number = 30 * 60 * 1000): void {
+    if (this.balanceCheckTimer) {
+      return; // already running
+    }
+    void this.proactiveBalanceCheck();
+    this.balanceCheckTimer = setInterval(() => {
+      void this.proactiveBalanceCheck();
+    }, intervalMs);
+    this.balanceCheckTimer.unref?.(); // don't keep the event loop alive for this
+  }
+
+  /**
+   * DM the operator a low-balance warning, throttled to once per 6 hours.
+   */
+  private maybeAlertLowBalance(balance: number, critical: boolean): void {
+    const now = Date.now();
+    if (
+      this.lastLowBalanceAlertAt &&
+      now - this.lastLowBalanceAlertAt.getTime() < CreditMonitor.LOW_BALANCE_ALERT_THROTTLE_MS
+    ) {
+      return;
+    }
+    this.lastLowBalanceAlertAt = new Date();
+    const emoji = critical ? '🚨' : '⚠️';
+    void this.sendOperatorDM(
+      `${emoji} **OpenRouter balance low: $${balance.toFixed(2)}**\n\n` +
+        `Top up before I go quiet: https://openrouter.ai/settings/credits`,
+      'credit-monitor-low-balance'
+    );
+  }
+
+  /**
+   * Privately DM the operator (ADMIN_DISCORD_ID). This is the ONLY place users should
+   * learn about billing — a DM to the owner, never a public/client channel. No-op if
+   * ADMIN_DISCORD_ID isn't configured. Never throws.
+   */
+  private async sendOperatorDM(content: string, source: string): Promise<void> {
+    try {
+      // Kill switch: when the account is knowingly dry / Artie is paused, the
+      // operator doesn't need a credit nag every hour. Silences ALL credit DMs
+      // (exhausted + low-balance) while keeping server-side logging + the
+      // areCreditsExhausted() gate intact. Unset CREDIT_ALERTS_DISABLED in .env
+      // (then pm2 restart coach-artie-capabilities) to bring alerts back.
+      if (process.env.CREDIT_ALERTS_DISABLED === 'true') {
+        logger.info(`💳 Credit alert suppressed (CREDIT_ALERTS_DISABLED): ${source}`);
+        return;
+      }
+      const adminDiscordId = process.env.ADMIN_DISCORD_ID;
+      if (!adminDiscordId) {
+        return; // Nobody to tell; the public-channel leak is already suppressed upstream.
+      }
+      const outgoingQueue = createQueue('coachartie-discord-outgoing');
+      await outgoingQueue.add('send-message', {
+        userId: adminDiscordId, // DM only — no channelId
+        content,
+        source,
+      });
+      logger.info(`💳 Sent operator DM (${source}) to ${adminDiscordId}`);
+    } catch (error) {
+      logger.error('❌ Failed to send operator DM:', error);
+      // Never throw — alerting must not break the LLM path.
+    }
   }
 
   /**
@@ -88,23 +179,27 @@ export class CreditMonitor {
     }
 
     try {
-      // Try to get credits/balance from the API
-      const response = await fetch(`${baseURL.replace('/v1', '')}/api/v1/auth/key`, {
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-        },
+      // /api/v1/credits reports total_credits + total_usage for the whole account and
+      // works even for keys with no per-key limit set (unlike /auth/key, which returns
+      // limit:null and makes the balance undetectable).
+      const root = baseURL.replace(/\/api\/v1\/?$/, '').replace(/\/v1\/?$/, '');
+      const response = await fetch(`${root}/api/v1/credits`, {
+        headers: { Authorization: `Bearer ${apiKey}` },
       });
 
       if (!response.ok) {
-        // If auth/key endpoint doesn't exist, try a minimal completion to get usage info
         logger.debug(`Credit check endpoint returned ${response.status}, balance unknown`);
         return { balance: null, error: `API returned ${response.status}` };
       }
 
-      const data = (await response.json()) as { data?: { limit?: number; usage?: number } };
+      const data = (await response.json()) as {
+        data?: { total_credits?: number; total_usage?: number };
+      };
+      const totalCredits = data.data?.total_credits;
+      const totalUsage = data.data?.total_usage;
 
-      if (data.data?.limit !== undefined && data.data?.usage !== undefined) {
-        const balance = data.data.limit - data.data.usage;
+      if (totalCredits !== undefined && totalUsage !== undefined) {
+        const balance = totalCredits - totalUsage;
 
         // Log and alert based on balance
         if (balance <= 0) {
@@ -115,8 +210,10 @@ export class CreditMonitor {
           this.markCreditsExhausted();
         } else if (balance <= this.alertThresholds.low_balance_critical) {
           logger.error(`🚨 CRITICAL: Only $${balance.toFixed(2)} credits remaining!`);
+          this.maybeAlertLowBalance(balance, true);
         } else if (balance <= this.alertThresholds.low_balance_warning) {
           logger.warn(`⚠️ LOW CREDITS: $${balance.toFixed(2)} remaining`);
+          this.maybeAlertLowBalance(balance, false);
         } else {
           logger.info(`💳 Credit balance: $${balance.toFixed(2)}`);
         }
