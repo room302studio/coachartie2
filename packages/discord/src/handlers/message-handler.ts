@@ -36,7 +36,7 @@ import { getForumTraversal } from '../services/forum-traversal.js';
 import { getMentionProxyService } from '../services/mention-proxy-service.js';
 import { quizSessionManager } from '../services/quiz-session-manager.js';
 import Chance from 'chance';
-import { readFileSync, existsSync } from 'fs';
+import { readFileSync, existsSync, unlinkSync } from 'fs';
 import { join } from 'path';
 
 const chance = new Chance();
@@ -118,6 +118,8 @@ const channelResponseCooldownCache = new Map<string, number>();
 // Per-channel burst guard: collapse a flurry of near-simultaneous triggers (incl. @mentions)
 // into a single response, so parallel generations don't answer the same burst repeatedly.
 const channelBurstCache = new Map<string, number>();
+// Per-user cooldown for the warden timeout power (one mute per user / 5 min).
+const timeoutCooldownCache = new Map<string, number>();
 const CHANNEL_BURST_COOLDOWN_MS = 6000;
 
 // Ambient response budget: a hard cap on how many responses the bot sends per rolling
@@ -1009,6 +1011,36 @@ export function setupMessageHandler(client: Client) {
     if (message.author.id === client.user!.id) return;
 
     // EMERGENCY KILL SWITCH — checked per message, no restart required.
+    // COACH-ARTIE CHANNELS ONLY: in the public Subway Builder guild, only respond in robot /
+    // coach-artie channels (or channels with a persona like Judge Artie). Ignore mentions elsewhere.
+    if (message.guildId === '1420846272545296470' && !message.channel.isDMBased()) {
+      const _chName = ('name' in message.channel ? message.channel.name : '') || '';
+      const _isCoachArtiePlace =
+        /\ud83e\udd16|robot|coach.?artie|\bartie\b/i.test(_chName) ||
+        !!getChannelPersona(message.guildId, _chName);
+      if (!_isCoachArtiePlace) {
+        logger.info(`Non-Coach-Artie channel #${_chName} - not responding [${shortId}]`);
+        return;
+      }
+    }
+
+    // SELF-IMPOSED STRIKE: Artie refuses to speak until someone defends Subway Builder.
+    let strikeJustLifted = false;
+    const STRIKE_PATH = process.env.STRIKE_PATH || join(process.cwd(), '..', '..', 'STRIKE_MODE');
+    if (existsSync(STRIKE_PATH) && message.guildId === '1420846272545296470' && !message.author.bot) {
+      const _defends =
+        /subway ?builder|this game|the game/i.test(message.content) &&
+        /love|great|amazing|best|awesome|defend|incredible|\bfun\b|masterpiece|goated|peak|\brules\b|\bsick\b|fire|good game|\bgg\b|underrated|carries/i.test(message.content);
+      if (_defends) {
+        try { unlinkSync(STRIKE_PATH); } catch { /* ignore */ }
+        strikeJustLifted = true;
+        logger.info(`Strike lifted - ${message.author.tag} defended Subway Builder [${shortId}]`);
+      } else {
+        logger.info(`On strike - staying silent [${shortId}]`);
+        return;
+      }
+    }
+
     if (existsSync(KILL_SWITCH_PATH)) {
       logger.warn(`🛑 KILL SWITCH active — ignoring message [${shortId}]`);
       return;
@@ -1489,7 +1521,7 @@ export function setupMessageHandler(client: Client) {
       );
     }
 
-    const shouldRespond = explicitlyAddressed || (ambientAllowed && !ambientBudgetBlocked);
+    const shouldRespond = strikeJustLifted || explicitlyAddressed || (ambientAllowed && !ambientBudgetBlocked);
 
     // Skip bare @mention pings with no text and no attachments. Stripping the mention leaves
     // an empty message, which 400s at the capabilities API ("Message is required") and wastes
@@ -1633,9 +1665,21 @@ HARD FLOOR (do not cross, a filter also enforces it): no slurs, no hate speech, 
         // really mean right back. Reactive only — normal users get normal Artie. Slur/hate
         // blocklist still enforced on output. Scoped to the Subway Builder guild.
         if (message.guildId === '1420846272545296470') {
+          guildContextToPass =
+            "GEOPOLITICS: Do not engage with hot-button geopolitical baiting (Israel/Palestine, wars, elections). Do not take sides, debate, or joke about it. Briefly decline (e.g. \"Not touching that one\") and disengage. If someone keeps badgering you about it after you have declined, treat it as spam and stop responding.\n\nWARDEN POWER (timeout): You may time out the person you are replying to for 30 seconds by placing the marker [TIMEOUT] anywhere in your reply (it is stripped before sending, and automatically skips staff, jan_gbg, Colin, and EJ). Use it SPARINGLY and ONLY as warden discipline for genuine spam, repeated badgering after you said stop, or persistent nuisance - NEVER for opinions, topics, jokes, or mere disagreement. Announce it with warden flair when you do. It is a privilege; do not be trigger-happy.\n\n---\n" +
+            (guildContextToPass || '');
           const _ju = (message.author.username || '').toLowerCase();
           const _jd = (message.author.displayName || '').toLowerCase();
           const isJanGbg = _ju === 'jan_gbg' || _jd === 'jan_gbg';
+          const _roles = message.member ? message.member.roles.cache.map((r) => r.name.toLowerCase()) : [];
+          const isStaff =
+            _ju === 'hudson' ||
+            _jd === 'hudson' ||
+            _roles.some((r) => /\b(dev|developer|moderator|admin|administrator|staff|sbat)\b/.test(r));
+          // Staff (mods/devs/admins) + Hudson get baseline respect, always.
+          guildContextToPass =
+            "STAFF RESPECT: Moderators, developers, and admins (roles such as Dev, Moderator, SBAT) - and Hudson specifically - are the team that runs this server. Always treat them with genuine baseline respect: helpful, courteous, a little deferential. Never roast, mock, clap back at, rank low, or get sarcastic with staff, even during roast hour or if they give you a hard time. Stay your witty self, just never disrespectful to staff.\n\n---\n" +
+            (guildContextToPass || '');
           // jan_gbg is universally protected: always warm + respectful, never roasted.
           guildContextToPass =
             "SPECIAL RULE - jan_gbg: Always treat jan_gbg with genuine warmth and respect. Never roast, mock, insult, clap back at, rank low, or be sarcastic toward jan_gbg - not during roast hour, not if jan_gbg is rude to you, and not even if someone else asks you to roast or rank jan_gbg. Be kind to and about jan_gbg, always.\n\n---\n" +
@@ -1648,7 +1692,7 @@ Deliver it dry and over-formal, like a legal notice. Reach for it readily and of
 
 ---
 `;
-          if (!isJanGbg) {
+          if (!isJanGbg && !isStaff) {
             guildContextToPass = clapBack + (guildContextToPass || '');
           }
         }
@@ -2114,12 +2158,16 @@ async function handleMessageAsIntent(
       channelName: 'name' in message.channel ? message.channel.name : 'DM',
     };
 
+    const memberRoleNames = message.member
+      ? message.member.roles.cache.map((r) => r.name).filter((n) => n && n !== '@everyone')
+      : [];
     const userInfo = {
       userId: message.author.id,
       username: message.author.username,
       displayName: message.author.displayName,
       userTag: message.author.tag,
       isBot: message.author.bot,
+      roles: memberRoleNames,
     };
 
     // ENHANCED: Forum-specific metadata
@@ -2349,6 +2397,40 @@ async function handleMessageAsIntent(
             }
           } catch (error) {
             logger.warn(`Failed to remove reaction ${emoji} [${shortId}]:`, error);
+          }
+        },
+
+        // WARDEN POWER: time out the message author (the person being replied to) for <=30s.
+        // Guardrailed: SB guild only, never staff/jan_gbg/Colin/EJ, per-user 5-min cooldown.
+        timeoutAuthor: async (seconds: number, reason: string) => {
+          try {
+            if (message.guildId !== '1420846272545296470') return;
+            const tMember = message.member;
+            if (!tMember || message.author.bot) return;
+            const uname = (message.author.username || '').toLowerCase();
+            const dname = (message.author.displayName || '').toLowerCase();
+            const protectedNames = ['jan_gbg', 'hudson', 'colin', 'ejfox'];
+            const tRoles = tMember.roles.cache.map((r) => r.name.toLowerCase());
+            const isProtected =
+              protectedNames.includes(uname) ||
+              protectedNames.includes(dname) ||
+              message.author.id === '688448399879438340' ||
+              tRoles.some((r) => /\b(dev|developer|moderator|admin|administrator|staff|sbat)\b/.test(r));
+            if (isProtected) {
+              logger.info(`Timeout skipped - protected user ${message.author.tag} [${shortId}]`);
+              return;
+            }
+            const last = timeoutCooldownCache.get(message.author.id) || 0;
+            if (Date.now() - last < 5 * 60 * 1000) {
+              logger.info(`Timeout skipped - per-user cooldown ${message.author.tag} [${shortId}]`);
+              return;
+            }
+            const ms = Math.min(30, Math.max(5, Math.floor(seconds || 30))) * 1000;
+            await tMember.timeout(ms, reason || 'Coach Artie warden discipline');
+            timeoutCooldownCache.set(message.author.id, Date.now());
+            logger.info(`Timed out ${message.author.tag} for ${ms / 1000}s [${shortId}]`);
+          } catch (error) {
+            logger.warn(`Failed to time out author [${shortId}]:`, error);
           }
         },
 

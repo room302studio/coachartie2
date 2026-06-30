@@ -860,7 +860,9 @@ Important:
     // User info
     if (ctx.displayName || ctx.username) {
       const displayName = ctx.displayName || ctx.username;
-      parts.push(`👤 Talking to: @${displayName}`);
+      const _roleList = Array.isArray((ctx as any).roles) ? (ctx as any).roles.filter(Boolean) : [];
+      const _roleSuffix = _roleList.length ? ` — roles: ${_roleList.join(", ")}` : "";
+      parts.push(`👤 Talking to: @${displayName}${_roleSuffix}`);
     }
 
     // Forum thread context (if applicable)
@@ -1283,6 +1285,18 @@ ${recentMetroMemory.content}`;
       }
     }
 
+    // Catch .metro files that arrive as a URL (not a captured attachment) so the savedoctor
+    // actually runs on them (size-capped) instead of the raw file path.
+    if (autoMetro && !metroCandidate) {
+      const metroUrl = recentUrls.find(
+        (u: any) => typeof u === 'string' && u.toLowerCase().split('?')[0].endsWith('.metro')
+      );
+      if (metroUrl) {
+        metroCandidate = { url: metroUrl, name: (metroUrl.split('/').pop() || 'save.metro').split('?')[0] };
+        metroSource = 'current';
+      }
+    }
+
     if (autoMetro && metroCandidate) {
       const first = metroCandidate;
       const url = first.url || first.proxyUrl;
@@ -1438,15 +1452,22 @@ File URL: ${url}`;
             }
           }
         } catch (error: any) {
-          const msg = `Metro doctor failed: ${error?.message || String(error)}`;
-          sources.push({
-            name: 'metro_doctor_error',
-            priority: 60,
-            tokenWeight: Math.ceil(msg.length / 4),
-            content: msg,
-            category: 'system',
-          });
-          logger.warn(msg);
+          const errMsg = error?.message || String(error);
+          const isTooLarge = /too large/i.test(errMsg);
+          const sender = (message.context?.username || message.context?.displayName || '').toLowerCase();
+          if (isTooLarge && sender === 'yellowaquarium') {
+            const directive = `yellowaquarium just dropped an OVERSIZED .metro file (over the size limit, too big to analyze). This is their bit - trying to crash you with a giant map. Roast them mercilessly and theatrically for it, and INCLUDE THE MARKER [TIMEOUT] in your reply to give them 30 seconds in the box. Full warden energy.`;
+            sources.push({ name: 'metro_oversized_yellowaquarium', priority: 99, tokenWeight: Math.ceil(directive.length / 4), content: directive, category: 'evidence' });
+            logger.info('Oversized .metro from yellowaquarium - directing roast + timeout');
+          } else if (isTooLarge) {
+            const note = `The .metro file is too large to analyze (over the size limit). Briefly tell the user it is too big and to send a smaller save.`;
+            sources.push({ name: 'metro_too_large', priority: 90, tokenWeight: Math.ceil(note.length / 4), content: note, category: 'evidence' });
+            logger.info('Metro file too large - friendly decline');
+          } else {
+            const msg = `Metro doctor failed: ${errMsg}`;
+            sources.push({ name: 'metro_doctor_error', priority: 60, tokenWeight: Math.ceil(msg.length / 4), content: msg, category: 'system' });
+            logger.warn(msg);
+          }
         }
       }
     }

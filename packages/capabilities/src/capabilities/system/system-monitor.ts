@@ -110,9 +110,9 @@ export const systemMonitorCapability: RegisteredCapability = {
           for (const service of services) {
             try {
               const { stdout } = await execAsync(
-                `lsof -i :${service.port} -sTCP:LISTEN -t 2>/dev/null || echo ""`
+                `timeout 1 bash -c "exec 3<>/dev/tcp/127.0.0.1/${service.port}" 2>/dev/null && echo open || echo ""`
               );
-              const isRunning = stdout.trim().length > 0;
+              const isRunning = stdout.trim() === 'open';
 
               serviceStatus.push({
                 name: service.name,
@@ -262,9 +262,9 @@ export const systemMonitorCapability: RegisteredCapability = {
           for (const service of services) {
             try {
               const { stdout } = await execAsync(
-                `lsof -i :${service.port} -sTCP:LISTEN -t 2>/dev/null || echo ""`
+                `timeout 1 bash -c "exec 3<>/dev/tcp/127.0.0.1/${service.port}" 2>/dev/null && echo open || echo ""`
               );
-              if (stdout.trim().length > 0) runningServices++;
+              if (stdout.trim() === 'open') runningServices++;
             } catch {
               // Service check failed
             }

@@ -20,6 +20,11 @@ import { generateCorrelationId, getShortCorrelationId } from '../utils/correlati
 const OUTPUT_SLUR_BLOCKLIST =
   /\b(n[i1]gg(?:er|a|ah)|f[a4]gg?(?:ot|y)?|retard(?:ed|s)?|k[i1]ke|sp[i1]c|ch[i1]nk|g[o0]ok|tr[a4]nny|wetback|coon|beaner|dyke|sand[\s-]?n[i1]gg|porch[\s-]?monkey)\b/i;
 
+// OUTPUT SAFETY: never let prompt scaffolding / internal context leak into a channel message.
+// (He once dumped "Pinned memory:", his instruction text, and the [CURRENT MESSAGE] wrapper.)
+const INTERNAL_LEAK_BLOCKLIST =
+  /\[CURRENT MESSAGE\]|Remember:\s*You are Coach Artie|Pinned memory:|Don.?t echo any XML|\(ID:\s*\d{5,}\)|<\/?capability\b|<calc\b/i;
+
 export interface UserIntent {
   content: string;
   userId: string;
@@ -33,6 +38,7 @@ export interface UserIntent {
   // ENHANCED: Discord-native features
   addReaction?: (emoji: string) => Promise<void>;
   removeReaction?: (emoji: string) => Promise<void>;
+  timeoutAuthor?: (seconds: number, reason: string) => Promise<void>;
   editResponse?: (content: string) => Promise<void>;
   createThread?: (name: string) => Promise<any>;
   sendEmbed?: (embed: any) => Promise<void>;
@@ -480,7 +486,15 @@ export async function processUserIntent(
         try {
           // Clean the response of capability tags.
           // GUARDRAIL: no "No response received" fallback — empty stays empty so we can stay silent.
-          const cleanResult = cleanCapabilityTags(result || '');
+          let cleanResult = cleanCapabilityTags(result || '');
+          // WARDEN TIMEOUT: if Artie marked [TIMEOUT] / [TIMEOUT:NN], time out the person he is
+          // replying to (guardrails enforced in intent.timeoutAuthor), then strip the marker.
+          const _toMatch = cleanResult.match(/\[TIMEOUT(?::(\d{1,3}))?\]/i);
+          if (_toMatch && typeof (intent as any).timeoutAuthor === 'function') {
+            const _secs = Math.min(30, Math.max(5, parseInt(_toMatch[1] || '30', 10) || 30));
+            void (intent as any).timeoutAuthor(_secs, 'Coach Artie warden discipline');
+            cleanResult = cleanResult.replace(/\[TIMEOUT(?::\d{1,3})?\]/gi, '').trim();
+          }
 
           logger.info(`📝 FINAL RESPONSE DELIVERY [${shortId}]:`, {
             cleanResultLength: cleanResult.length,
@@ -494,7 +508,8 @@ export async function processUserIntent(
           // GUARDRAIL: never deliver an empty/failed generation, and never deliver a slur/hate
           // term (even in roast mode). Either case → stay silent instead of posting.
           const containsSlur = OUTPUT_SLUR_BLOCKLIST.test(cleanResult);
-          if (!cleanResult.trim() || containsSlur) {
+          const leaksInternals = INTERNAL_LEAK_BLOCKLIST.test(cleanResult);
+          if (!cleanResult.trim() || containsSlur || leaksInternals) {
             logger.warn(
               containsSlur
                 ? `🛑 Output blocked by slur blacklist [${shortId}] — staying silent`
