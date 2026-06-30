@@ -4,7 +4,12 @@ import { ForumTraversalService } from '../services/forum-traversal.js';
 import { GitHubIntegrationService } from '../services/github-integration.js';
 import { Client, AttachmentBuilder } from 'discord.js';
 import { mentionProxyRouter } from './mention-proxy.js';
-import { readFileSync, writeFileSync, existsSync, appendFileSync } from 'fs';
+import { readFileSync, writeFileSync, existsSync, appendFileSync, unlinkSync } from 'fs';
+import { join } from 'path';
+
+// Emergency kill switch file (presence of file = Artie muted globally). See message-handler.ts.
+const KILL_SWITCH_PATH =
+  process.env.KILL_SWITCH_PATH || join(process.cwd(), '..', '..', 'KILL_SWITCH');
 
 // Presence system constants
 const EJ_USER_ID = '688448399879438340';
@@ -69,6 +74,36 @@ export function createApiRouter(discordClient: Client): Router {
 
   // Mount mention proxy routes
   router.use('/mention-proxy', mentionProxyRouter);
+
+  // ============================================================================
+  // EMERGENCY KILL SWITCH
+  // GET  /api/killswitch            -> { muted: boolean }
+  // POST /api/killswitch {enabled}  -> set muted on/off (creates/removes KILL_SWITCH file)
+  // When muted, message-handler ignores ALL incoming messages (checked per message).
+  // ============================================================================
+  router.get('/killswitch', (_req: Request, res: Response) => {
+    res.json({ muted: existsSync(KILL_SWITCH_PATH), path: KILL_SWITCH_PATH });
+  });
+
+  router.post('/killswitch', (req: Request, res: Response) => {
+    try {
+      const enabled = req.body?.enabled === true || req.body?.enabled === 'true';
+      if (enabled) {
+        writeFileSync(KILL_SWITCH_PATH, `muted at ${new Date().toISOString()}\n`);
+        logger.warn('🛑 KILL SWITCH ENABLED via API — Artie is now muted globally');
+      } else if (existsSync(KILL_SWITCH_PATH)) {
+        unlinkSync(KILL_SWITCH_PATH);
+        logger.warn('✅ KILL SWITCH DISABLED via API — Artie is responding again');
+      }
+      res.json({ success: true, muted: existsSync(KILL_SWITCH_PATH) });
+    } catch (error) {
+      logger.error('Failed to toggle kill switch:', error);
+      res.status(500).json({
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  });
 
   // GET /api/guilds/:guildId/forums - List forums in a guild
   router.get('/guilds/:guildId/forums', async (req: Request, res: Response) => {

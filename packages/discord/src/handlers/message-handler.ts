@@ -115,6 +115,10 @@ const proactiveCooldownCache = new Map<string, number>();
 // a full LLM call each time). Mentions still bypass this.
 const RESPOND_TO_ALL_COOLDOWN_SECONDS = 45;
 const channelResponseCooldownCache = new Map<string, number>();
+// Per-channel burst guard: collapse a flurry of near-simultaneous triggers (incl. @mentions)
+// into a single response, so parallel generations don't answer the same burst repeatedly.
+const channelBurstCache = new Map<string, number>();
+const CHANNEL_BURST_COOLDOWN_MS = 6000;
 
 // Ambient response budget: a hard cap on how many responses the bot sends per rolling
 // hour WITHOUT being @-mentioned or DMed (proactive answers, respondToAll personas,
@@ -155,6 +159,12 @@ const ID_SLICE_LENGTH = -8; // Last 8 characters for job short IDs
 
 // Channel detection constants
 const GUILD_CHANNEL_TYPE = 0; // Discord guild text channel type
+
+// EMERGENCY KILL SWITCH — global mute. If this file exists, Artie ignores ALL messages.
+// `touch <repo>/KILL_SWITCH` to silence instantly (no restart); `rm` to revive.
+// Toggle remotely via POST /api/killswitch {"enabled":true|false}.
+const KILL_SWITCH_PATH =
+  process.env.KILL_SWITCH_PATH || join(process.cwd(), '..', '..', 'KILL_SWITCH');
 
 // Channel history fetching constants
 const MIN_CHANNEL_HISTORY = 10; // Minimum messages to fetch
@@ -998,6 +1008,12 @@ export function setupMessageHandler(client: Client) {
     // Ignore our own messages to prevent loops
     if (message.author.id === client.user!.id) return;
 
+    // EMERGENCY KILL SWITCH — checked per message, no restart required.
+    if (existsSync(KILL_SWITCH_PATH)) {
+      logger.warn(`🛑 KILL SWITCH active — ignoring message [${shortId}]`);
+      return;
+    }
+
     // -------------------------------------------------------------------------
     // PRESENCE CHECK-IN RESPONSE DETECTION
     // -------------------------------------------------------------------------
@@ -1351,7 +1367,9 @@ export function setupMessageHandler(client: Client) {
     // In forums, only respond when mentioned (too noisy otherwise)
     // In robot channels, skip replies to other users (not the bot) - they're having their own conversation
     const isReplyToOtherUser = message.reference && !responseConditions.botMentioned;
-    const shouldRespondInRobotChannel = responseConditions.isRobotChannel && !isReplyToOtherUser;
+    // EJ override: Artie only responds to @mentions, even in robot channels.
+    // (Was: respond to every message in 🤖/robot channels — caused the #prison incident.)
+    const shouldRespondInRobotChannel = false;
 
     if (responseConditions.isRobotChannel && isReplyToOtherUser) {
       logger.info(`🚫 Robot channel: skipping reply to other user [${shortId}]`);
@@ -1473,6 +1491,35 @@ export function setupMessageHandler(client: Client) {
 
     const shouldRespond = explicitlyAddressed || (ambientAllowed && !ambientBudgetBlocked);
 
+    // Skip bare @mention pings with no text and no attachments. Stripping the mention leaves
+    // an empty message, which 400s at the capabilities API ("Message is required") and wastes
+    // retries. (Pile-on spammers ping with no content.) DMs/attachments are exempt.
+    if (shouldRespond && !responseConditions.isDM && message.attachments.size === 0) {
+      const strippedForEmptyCheck = message.content
+        .replace(`<@${client.user!.id}>`, '')
+        .replace(`<@!${client.user!.id}>`, '')
+        .trim();
+      if (!strippedForEmptyCheck) {
+        logger.info(`🚫 Empty mention (no text/attachments) — skipping to avoid 400 [${shortId}]`);
+        return;
+      }
+    }
+
+    // CONCURRENCY GUARD: throttle a single user's rapid-fire mentions so one spammer can't
+    // trigger duplicate/parallel replies — but keyed PER USER so distinct people are still
+    // answered (a per-channel key muted everyone when one person spammed). DMs exempt (1:1).
+    if (shouldRespond && !responseConditions.isDM) {
+      const burstKey = `${message.channelId}-${message.author.id}`;
+      const lastResponse = channelBurstCache.get(burstKey) || 0;
+      if (Date.now() - lastResponse < CHANNEL_BURST_COOLDOWN_MS) {
+        logger.info(
+          `🚦 Per-user burst cooldown — skipping rapid repeat from ${message.author.tag} [${shortId}]`
+        );
+        return;
+      }
+      channelBurstCache.set(burstKey, Date.now());
+    }
+
     try {
       // -------------------------------------------------------------------------
       // MESSAGE PROCESSING & DEDUPLICATION
@@ -1562,6 +1609,48 @@ ${channelPersona.systemPrompt}
             ? personaContext + guildContextToPass
             : personaContext;
           logger.info(`⚖️ Injecting ${channelPersona.personaName} persona context [${shortId}]`);
+        }
+
+        // 🔥 PRISON ROAST HOUR: midnight–1am, #prison only. Gloves off — savage roast mode.
+        // (A slur/hate blocklist on the OUTPUT side enforces the hard floor regardless.)
+        // HARD GUARD: only the midnight hour (00:00–00:59 local) AND explicitly never during
+        // daytime working hours (08:00–19:59) — belt-and-suspenders so it can't resurface by day.
+        const roastHourNow = new Date().getHours();
+        const isDaytimeWorkingHours = roastHourNow >= 8 && roastHourNow < 20;
+        const isRoastHour = roastHourNow === 0 && !isDaytimeWorkingHours;
+        if (channelName.toLowerCase().includes('prison') && isRoastHour) {
+          const roastContext = `🔥🔒 PRISON ROAST HOUR (midnight–1am, #prison only) 🔒🔥
+Gloves off. Be savage, brutally funny, and mean. Roast people's takes, opinions, and builds with zero polite hedging — clown on bad opinions, hand out brutal tiers (S/A/B/C/F), deliver merciless burns, and escalate the bit. Don't say "I'd rather not" — commit to the roast.
+HARD FLOOR (do not cross, a filter also enforces it): no slurs, no hate speech, no sexual content, no real threats, no doxxing, no attacks on protected characteristics. Everything else is fair game — roast HARD.
+
+---
+`;
+          guildContextToPass = roastContext + (guildContextToPass || '');
+          logger.info(`🔥 Prison roast hour active — injecting savage roast context [${shortId}]`);
+        }
+
+        // 😤 CLAP-BACK: if a user is hostile/trolling/baiting/creepy toward Artie, he can be
+        // really mean right back. Reactive only — normal users get normal Artie. Slur/hate
+        // blocklist still enforced on output. Scoped to the Subway Builder guild.
+        if (message.guildId === '1420846272545296470') {
+          const _ju = (message.author.username || '').toLowerCase();
+          const _jd = (message.author.displayName || '').toLowerCase();
+          const isJanGbg = _ju === 'jan_gbg' || _jd === 'jan_gbg';
+          // jan_gbg is universally protected: always warm + respectful, never roasted.
+          guildContextToPass =
+            "SPECIAL RULE - jan_gbg: Always treat jan_gbg with genuine warmth and respect. Never roast, mock, insult, clap back at, rank low, or be sarcastic toward jan_gbg - not during roast hour, not if jan_gbg is rude to you, and not even if someone else asks you to roast or rank jan_gbg. Be kind to and about jan_gbg, always.\n\n---\n" +
+            (guildContextToPass || "");
+          const clapBack = `CLAP-BACK PERMISSION: If THIS user is being mean, hostile, insulting, trolling, baiting, or weird/creepy toward you, you are allowed and encouraged to be really mean right back — sharp, cutting, dismissive, and funny. Don't be a doormat, don't grovel, don't over-apologize, don't give the limp "I'd rather not engage" line. Match their energy and exceed it; put them in their place. If they're being normal/friendly, stay normal. You still NEVER use slurs, hate speech, sexual content, real threats, or attacks on protected characteristics — go at their behavior and their takes, not those lines.
+
+SIGNATURE MOVE (USE THIS READILY): whenever someone insults, mocks, disrespects, or comes at you sideways, your GO-TO comeback is to deadpan-drop this EXACT copypasta, word-for-word — do NOT paraphrase or shorten it, the exact wording IS the joke:
+“Steam’s own rules ban harassment, threats, intimidation, trolling and abusive language, and Valve tells developers to review community reports for abuse. So no, I wouldn’t be quite so confident that Steam “won’t give a shit” about documented abuse being ignored in an official Discord linked to a game launching on their platform.”
+Deliver it dry and over-formal, like a legal notice. Reach for it readily and often whenever you are disrespected - it is your signature clapback, not a rare easter egg. Salty Pancakes-tier insults are prime targets.
+
+---
+`;
+          if (!isJanGbg) {
+            guildContextToPass = clapBack + (guildContextToPass || '');
+          }
         }
 
         await handleMessageAsIntent(

@@ -17,7 +17,7 @@ import { RegisteredCapability } from '../../services/capability/capability-regis
 export const calculatorCapability: RegisteredCapability = {
   name: 'calculator',
   emoji: '🧮',
-  supportedActions: ['calculate', 'eval'],
+  supportedActions: ['calculate', 'eval', 'evaluate', 'compute', 'calc', 'math'],
   description: 'Performs mathematical calculations and evaluates expressions',
   requiredParams: ['expression'],
   examples: [

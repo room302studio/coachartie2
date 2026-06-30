@@ -56,6 +56,9 @@ export const client = new Client({
     GatewayIntentBits.GuildMessageReactions,
   ],
   partials: [Partials.Message, Partials.Channel, Partials.User, Partials.Reaction],
+  // SAFETY: never let Artie ping @everyone/@here or roles, no matter what text he posts.
+  // Only user mentions resolve. (Users tricked him into echoing "@everyone" — this neuters it.)
+  allowedMentions: { parse: ['users'] },
 });
 
 // DEBUG: Raw message listener to verify events are coming through

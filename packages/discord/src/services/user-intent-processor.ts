@@ -13,6 +13,13 @@ import { jobMonitor } from './job-monitor.js';
 import { telemetry } from './telemetry.js';
 import { generateCorrelationId, getShortCorrelationId } from '../utils/correlation.js';
 
+// OUTPUT SAFETY FLOOR: genuine slurs / hate terms that must NEVER reach a channel, even in
+// roast mode. If a reply matches, the message is suppressed (Artie stays silent) rather than
+// posted. Word-boundaried + case-insensitive. Profanity is intentionally NOT here — roasts can
+// swear; this is only the "bad ones."
+const OUTPUT_SLUR_BLOCKLIST =
+  /\b(n[i1]gg(?:er|a|ah)|f[a4]gg?(?:ot|y)?|retard(?:ed|s)?|k[i1]ke|sp[i1]c|ch[i1]nk|g[o0]ok|tr[a4]nny|wetback|coon|beaner|dyke|sand[\s-]?n[i1]gg|porch[\s-]?monkey)\b/i;
+
 export interface UserIntent {
   content: string;
   userId: string;
@@ -471,8 +478,9 @@ export async function processUserIntent(
         }
 
         try {
-          // Clean the response of capability tags
-          const cleanResult = cleanCapabilityTags(result || 'No response received');
+          // Clean the response of capability tags.
+          // GUARDRAIL: no "No response received" fallback — empty stays empty so we can stay silent.
+          const cleanResult = cleanCapabilityTags(result || '');
 
           logger.info(`📝 FINAL RESPONSE DELIVERY [${shortId}]:`, {
             cleanResultLength: cleanResult.length,
@@ -483,8 +491,18 @@ export async function processUserIntent(
             streamedChunks,
           });
 
+          // GUARDRAIL: never deliver an empty/failed generation, and never deliver a slur/hate
+          // term (even in roast mode). Either case → stay silent instead of posting.
+          const containsSlur = OUTPUT_SLUR_BLOCKLIST.test(cleanResult);
+          if (!cleanResult.trim() || containsSlur) {
+            logger.warn(
+              containsSlur
+                ? `🛑 Output blocked by slur blacklist [${shortId}] — staying silent`
+                : `🛑 Empty/failed generation [${shortId}] — staying silent (no fallback message sent)`
+            );
+          }
           // ENHANCED: Handle final response with edit-based streaming
-          if (enableEditing && streamingMessage && lastSentContent) {
+          else if (enableEditing && streamingMessage && lastSentContent) {
             // For edit-based streaming, ensure final content is properly set
             const trimmedResult = cleanResult.trim();
             const trimmedSent = lastSentContent.trim();

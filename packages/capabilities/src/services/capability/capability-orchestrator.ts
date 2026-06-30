@@ -325,21 +325,14 @@ There's an issue with the API configuration. Please check the API keys.
 *Message ID: ${message.id}*`;
     }
 
-    // For other errors, provide debug information
-    return `🚨 ORCHESTRATION FAILURE DEBUG 🚨
-Message ID: ${message.id}
-User ID: ${message.userId}
-Original Message: "${message.message}"
-Source: ${message.source}
-Orchestration Error: ${errorMessage}
-Stack: ${getErrorStack(error)}
-Capabilities Found: ${context.capabilities.length}
-Capability Details: ${context.capabilities.map((c) => `${c.name}:${c.action}`).join(', ')}
-Results Generated: ${context.results.length}
-Result Details: ${context.results.map((r) => `${r.capability.name}:${r.success ? 'SUCCESS' : 'FAILED'}`).join(', ')}
-Current Step: ${context.currentStep}
-Registry Stats: ${capabilityRegistry.getStats().totalCapabilities} capabilities, ${capabilityRegistry.getStats().totalActions} actions
-Timestamp: ${new Date().toISOString()}`;
+    // Internal failure: log server-side, stay SILENT in-channel.
+    // (Never post stack traces / debug dumps to users; discord guardrail suppresses empty.)
+    logger.error(`Orchestration failure (suppressed from channel) [${message.id}]: ${errorMessage}`, {
+      stack: getErrorStack(error),
+      capabilities: context.capabilities.length,
+      results: context.results.length,
+    });
+    return '';
   }
 
   /**
