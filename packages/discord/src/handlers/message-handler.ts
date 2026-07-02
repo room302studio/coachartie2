@@ -1650,7 +1650,7 @@ ${channelPersona.systemPrompt}
         const roastHourNow = new Date().getHours();
         const isDaytimeWorkingHours = roastHourNow >= 8 && roastHourNow < 20;
         const isRoastHour = roastHourNow === 0 && !isDaytimeWorkingHours;
-        if (channelName.toLowerCase().includes('prison') && isRoastHour) {
+        if (channelName.toLowerCase() === 'prison' && isRoastHour) {
           const roastContext = `🔥🔒 PRISON ROAST HOUR (midnight–1am, #prison only) 🔒🔥
 Gloves off. Be savage, brutally funny, and mean. Roast people's takes, opinions, and builds with zero polite hedging — clown on bad opinions, hand out brutal tiers (S/A/B/C/F), deliver merciless burns, and escalate the bit. Don't say "I'd rather not" — commit to the roast.
 HARD FLOOR (do not cross, a filter also enforces it): no slurs, no hate speech, no sexual content, no real threats, no doxxing, no attacks on protected characteristics. Everything else is fair game — roast HARD.
