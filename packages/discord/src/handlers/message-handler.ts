@@ -1629,18 +1629,20 @@ export function setupMessageHandler(client: Client) {
         // Always pass guild context if available (not just for proactive answers)
         let guildContextToPass = proactiveAnswerContext || getEnhancedGuildContext(guildConfig);
 
-        // If there's a channel persona (e.g., Judge Artie), prepend its system prompt
+        // If there's a channel persona (Judge/Warden/Yard Artie), it REPLACES the
+        // guild's on-topic mandate for this channel. Otherwise the Subway Builder
+        // guild context (currently "BUGS ONLY triage" mode) leaks into persona
+        // channels and drags them back into bug-collector voice — which is exactly
+        // why Yard Artie kept begging for bug reports in #prison-yard.
         if (channelPersona?.systemPrompt) {
-          const personaContext = `🎭 CHANNEL PERSONA: ${channelPersona.personaName}
+          const personaContext = `🎭 CHANNEL PERSONA — this defines who you are and how you behave in this channel. It OVERRIDES any other guild focus/mode (including any "bugs only" or on-topic mandate). Do not solicit bug reports here.
 
 ${channelPersona.systemPrompt}
 
 ---
 `;
-          guildContextToPass = guildContextToPass
-            ? personaContext + guildContextToPass
-            : personaContext;
-          logger.info(`⚖️ Injecting ${channelPersona.personaName} persona context [${shortId}]`);
+          guildContextToPass = personaContext;
+          logger.info(`⚖️ Applying ${channelPersona.personaName} persona (replaces guild focus) [${shortId}]`);
         }
 
         // 🔥 PRISON ROAST HOUR: midnight–1am, #prison only. Gloves off — savage roast mode.
