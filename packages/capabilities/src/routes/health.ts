@@ -3,6 +3,7 @@ import { createRedisConnection } from '@coachartie/shared';
 import { access } from 'fs/promises';
 import { logger } from '@coachartie/shared';
 import os from 'os';
+import { creditMonitor } from '../services/monitoring/credit-monitor.js';
 
 export const healthRouter: ExpressRouter = Router();
 
@@ -164,5 +165,29 @@ healthRouter.get('/live', (req, res) => {
     status: 'alive',
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
+  });
+});
+
+// Admin: Clear credit exhaustion flag (call when credits are re-added)
+healthRouter.post('/admin/clear-credit-flag', (req, res) => {
+  // Simple auth check - expects Authorization header or secret
+  const auth = req.headers.authorization;
+  const expectedSecret = process.env.ADMIN_SECRET || 'admin-secret';
+
+  if (!auth || auth !== `Bearer ${expectedSecret}`) {
+    logger.warn('❌ Unauthorized attempt to clear credit flag');
+    return res.status(401).json({
+      error: 'Unauthorized',
+      message: 'Missing or invalid Authorization header',
+    });
+  }
+
+  creditMonitor.clearExhaustedFlag();
+  logger.info('✅ Credit exhaustion flag cleared via admin endpoint');
+
+  res.json({
+    status: 'success',
+    message: '💳 Credit exhaustion flag cleared. LLM calls will resume immediately.',
+    timestamp: new Date().toISOString(),
   });
 });
