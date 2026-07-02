@@ -69,7 +69,7 @@ export const githubCapability: RegisteredCapability = {
       case 'search_issues':
         return JSON.stringify(await githubActions.search_issues(params));
       case 'create_issue':
-        return JSON.stringify(await githubActions.create_issue(params));
+        return JSON.stringify(await githubActions.create_issue(params, _content));
       case 'update_issue':
         return JSON.stringify(await githubActions.update_issue(params));
       case 'get_issues_by_label':
@@ -492,15 +492,26 @@ const githubActions = {
     }
   },
 
-  create_issue: async (params: {
-    repo?: string;
-    query?: string;
-    title?: string;
-    body?: string;
-    labels?: string[];
-  }) => {
+  create_issue: async (
+    params: {
+      repo?: string;
+      query?: string;
+      project?: string;
+      repository?: string;
+      title?: string;
+      body?: string;
+      description?: string;
+      labels?: string[];
+    },
+    content?: string
+  ) => {
     try {
-      const repoName = params.repo || params.query;
+      // The LLM frequently reaches for synonyms (project/repository for repo,
+      // description for body) or dumps the whole body into the tag's content.
+      // Accept all of those instead of failing with "missing parameter".
+      const repoName = params.repo || params.repository || params.project || params.query;
+      const title = params.title;
+      const body = params.body || params.description || content;
 
       logger.info(`📝 Creating GitHub issue for ${repoName}`);
 
@@ -510,11 +521,11 @@ const githubActions = {
         );
       }
 
-      if (!params.title) {
+      if (!title) {
         throw new Error('Missing required parameter "title".');
       }
 
-      if (!params.body) {
+      if (!body) {
         throw new Error('Missing required parameter "body".');
       }
 
@@ -527,8 +538,8 @@ const githubActions = {
         body: string;
         labels?: string[];
       } = {
-        title: params.title,
-        body: params.body,
+        title: title,
+        body: body,
       };
 
       if (params.labels && params.labels.length > 0) {
