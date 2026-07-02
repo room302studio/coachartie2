@@ -30,6 +30,7 @@ import { setupMessageHandler } from './handlers/message-handler.js';
 import { setupInteractionHandler } from './handlers/interaction-handler.js';
 import { setupReactionHandler } from './handlers/reaction-handler.js';
 import { startResponseConsumer } from './queues/consumer.js';
+import { publishMessage } from './queues/publisher.js';
 import { writeFileSync } from 'fs';
 import { join } from 'path';
 import { telemetry } from './services/telemetry.js';
@@ -267,6 +268,28 @@ async function start() {
         guilds: client.guilds.cache.size,
         permissions: client.user?.flags?.bitfield || 'none',
       });
+
+      // Autonomous announcement: Artie jumps into #prison on startup (async, non-blocking)
+      (async () => {
+        try {
+          const prisonChannelId = '1480602234867212321';
+          const prisonChannel = await client.channels.fetch(prisonChannelId).catch(() => null);
+          if (prisonChannel && prisonChannel.isTextBased()) {
+            logger.info('🚀 Triggering Artie\'s autonomous announcement in #prison');
+            await publishMessage(
+              'artie-system',
+              '[AUTONOMOUS] Jump into #prison, read the recent channel context, and announce your presence with your new BUGS ONLY vibe for the day.',
+              prisonChannelId,
+              'artie',
+              true,
+              '1420846272545296470'
+            );
+            logger.info('✅ Autonomous announcement triggered');
+          }
+        } catch (error) {
+          logger.warn('Failed to trigger autonomous announcement:', error);
+        }
+      })();
 
       // Refresh status file every 30 minutes so other processes get live guild counts
       setInterval(() => {
