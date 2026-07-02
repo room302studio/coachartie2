@@ -246,7 +246,10 @@ Use an explicit heredoc in your command instead.`;
           }
 
           const containerName = process.env.SANDBOX_CONTAINER_NAME || 'coachartie-sandbox';
-          const dockerCommand = `docker exec -w ${cwd} -e GITHUB_TOKEN=${process.env.GITHUB_TOKEN || ''} -e OPENAI_API_KEY=${process.env.OPENAI_API_KEY || ''} ${containerName} /bin/bash -c ${JSON.stringify(execCommand)}`;
+          // SECURITY: pass secrets by NAME only (-e VAR, no =value). Docker pulls
+          // the values from this process's env (passed as env below), so the token
+          // values never appear in the command string — which gets logged on failure.
+          const dockerCommand = `docker exec -w ${cwd} -e GITHUB_TOKEN -e OPENAI_API_KEY ${containerName} /bin/bash -c ${JSON.stringify(execCommand)}`;
 
           const { stdout, stderr } = await execAsync(dockerCommand, {
             timeout,
