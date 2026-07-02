@@ -2,6 +2,7 @@ import { logger } from '@coachartie/shared';
 import { openRouterService } from '../llm/openrouter.js';
 import { MemoryService } from '../../capabilities/memory/memory.js';
 import * as fs from 'fs';
+import { exec } from 'node:child_process';
 
 // =========================================
 // PII SCRUBBING
@@ -1036,7 +1037,6 @@ function pickSubmolt(_title: string, _content: string): string {
 function noteViralPost(postTitle: string, postId: string, upvotes: number, comments: number): void {
   const url = `https://www.moltbook.com/post/${postId}`;
   logger.info(`🚀 VIRAL: "${postTitle}" — +${upvotes} upvotes, ${comments} comments — ${url}`);
-  const { exec } = require('child_process');
   const msg = `Artie went viral on Moltbook! "${postTitle}" — +${upvotes} upvotes, ${comments} comments ${url}`;
   exec(`/home/debian/scripts/alert.sh moltbook info "${msg.replace(/"/g, '\\"')}"`, (err: Error | null) => {
     if (err) logger.warn(`🔔 Alert pipeline error: ${err.message}`);
