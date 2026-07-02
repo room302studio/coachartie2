@@ -270,11 +270,16 @@ async function start() {
       });
 
       // Autonomous announcement: Artie jumps into #prison on startup (async, non-blocking)
+      console.log('🚀 ABOUT TO TRIGGER ANNOUNCEMENT');
       (async () => {
         try {
+          console.log('🚀 INSIDE ASYNC IIFE');
           const prisonChannelId = '1480602234867212321';
-          const prisonChannel = await client.channels.fetch(prisonChannelId).catch(() => null);
+          console.log('🚀 FETCHING CHANNEL:', prisonChannelId);
+          const prisonChannel = await client.channels.fetch(prisonChannelId);
+          console.log('🚀 CHANNEL FETCHED:', !!prisonChannel);
           if (prisonChannel && prisonChannel.isTextBased()) {
+            console.log('🚀 CHANNEL IS TEXT-BASED, PUBLISHING MESSAGE');
             logger.info('🚀 Triggering Artie\'s autonomous announcement in #prison');
             await publishMessage(
               'artie-system',
@@ -284,9 +289,13 @@ async function start() {
               true,
               '1420846272545296470'
             );
+            console.log('✅ MESSAGE PUBLISHED');
             logger.info('✅ Autonomous announcement triggered');
+          } else {
+            console.log('❌ CHANNEL NOT TEXT-BASED OR NOT FOUND');
           }
         } catch (error) {
+          console.log('❌ ERROR IN ANNOUNCEMENT:', error);
           logger.warn('Failed to trigger autonomous announcement:', error);
         }
       })();
