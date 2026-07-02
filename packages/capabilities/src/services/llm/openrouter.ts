@@ -368,6 +368,13 @@ class OpenRouterService {
     // Try each model starting from current rotation position (or just the selected model)
     const modelsToTry = useSpecificModel ? [effectiveModel] : this.models;
 
+    // When OpenRouter returns a 402 of the form "you requested up to X tokens,
+    // but can only afford Y", it means there IS still balance — just not enough
+    // for this request's max_tokens. We cap max_tokens to what's affordable and
+    // retry the SAME model once, instead of freezing all calls for 5 minutes.
+    let affordabilityCap: number | undefined;
+    let affordabilityRetried = false;
+
     for (let i = 0; i < modelsToTry.length; i++) {
       const model = useSpecificModel
         ? effectiveModel
@@ -379,7 +386,11 @@ class OpenRouterService {
         );
 
         // Use dynamic maxTokens from preflight analysis, or fall back to env default
-        const maxTokens = options?.maxTokens || parseInt(process.env.LLM_MAX_TOKENS || '400', 10);
+        let maxTokens = options?.maxTokens || parseInt(process.env.LLM_MAX_TOKENS || '400', 10);
+        if (affordabilityCap !== undefined && affordabilityCap < maxTokens) {
+          logger.warn(`📏 Capping max_tokens ${maxTokens} → ${affordabilityCap} (affordability)`);
+          maxTokens = affordabilityCap;
+        }
         logger.debug(
           `📏 Using max_tokens: ${maxTokens}${options?.maxTokens ? ' (preflight)' : ' (default)'}`
         );
@@ -510,6 +521,14 @@ class OpenRouterService {
           errorMessage.includes('quota') ||
           errorStatus === 402;
 
+        // A 402 that mentions "afford" / "fewer max_tokens" means there IS still
+        // balance — the request just asked for more tokens than it can cover.
+        // Parse the affordable token count so we can retry with a smaller cap.
+        const affordMatch = errorMessage.match(/can only afford (\d+)/i);
+        const isAffordabilityError =
+          errorStatus === 402 &&
+          (affordMatch !== null || /fewer max_tokens/i.test(errorMessage));
+
         const isLastModel = i === modelsToTry.length - 1;
 
         // Detect specific error types and throw clear errors on last model
@@ -526,15 +545,33 @@ class OpenRouterService {
               `🚨 MODEL NOT FOUND: "${model}" does not exist. Check https://openrouter.ai/models`
             );
           }
+        } else if (isAffordabilityError && !affordabilityRetried) {
+          // Retry the SAME model once with max_tokens capped to what's affordable.
+          // Leave a 10% safety margin so token-estimation drift doesn't re-trip it.
+          const affordable = affordMatch ? parseInt(affordMatch[1], 10) : 256;
+          affordabilityCap = Math.max(64, Math.floor(affordable * 0.9));
+          affordabilityRetried = true;
+          logger.warn(
+            `💳 402 affordability limit — retrying ${model} with max_tokens=${affordabilityCap} ` +
+              `(balance is low but not exhausted)`
+          );
+          i--; // retry the same model
+          continue;
         } else if (isCreditError) {
           logger.info(
             '💳 Billing/credit error detected' + (isLastModel ? '' : ', trying next model...')
           );
-          // Mark credits as exhausted to prevent repeated API calls
-          creditMonitor.markCreditsExhausted();
+          // Only freeze all API calls if the REAL balance confirms we're actually
+          // out — a near-threshold 402 shouldn't lock Artie out while funds remain.
+          const froze = await creditMonitor.markCreditsExhaustedIfConfirmed();
           if (isLastModel) {
+            if (froze) {
+              throw new Error(
+                '💳 OUT OF CREDITS: OpenRouter account needs more credits. Visit https://openrouter.ai/settings/credits to add funds.'
+              );
+            }
             throw new Error(
-              '💳 OUT OF CREDITS: OpenRouter account needs more credits. Visit https://openrouter.ai/settings/credits to add funds.'
+              `❌ LLM billing error (balance still positive): ${errorMessage.substring(0, 160)}`
             );
           }
         } else if (errorStatus === 429) {

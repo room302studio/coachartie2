@@ -32,6 +32,9 @@ export class CreditMonitor {
   // Track credit exhaustion to avoid repeated API calls when out of credits
   private creditsExhaustedAt: Date | null = null;
   private static EXHAUSTION_COOLDOWN_MS = 5 * 60 * 1000; // 5 minutes before retrying
+  // Below this real balance ($) we treat a 402 as true exhaustion and freeze calls.
+  // Above it, a 402 is almost certainly a per-request max_tokens affordability limit.
+  private static TRUE_EXHAUSTION_THRESHOLD = 0.25;
 
   private constructor() {}
 
@@ -68,6 +71,66 @@ export class CreditMonitor {
     logger.info('💳 Credit exhaustion flag cleared');
   }
 
+  /**
+   * Fetch the REAL remaining credit balance from OpenRouter's /credits endpoint.
+   * Works for pay-as-you-go / credit-based accounts (where /auth/key returns
+   * limit=null). Returns dollars remaining, or null if it can't be determined.
+   */
+  async getRemainingBalance(): Promise<number | null> {
+    const baseURL = process.env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1';
+    const apiKey = process.env.OPENROUTER_API_KEY;
+    if (!apiKey) return null;
+
+    try {
+      const response = await fetch(`${baseURL.replace('/v1', '')}/api/v1/credits`, {
+        headers: { Authorization: `Bearer ${apiKey}` },
+      });
+      if (!response.ok) return null;
+      const data = (await response.json()) as {
+        data?: { total_credits?: number; total_usage?: number };
+      };
+      const total = data.data?.total_credits;
+      const used = data.data?.total_usage;
+      if (typeof total === 'number' && typeof used === 'number') {
+        return total - used;
+      }
+      return null;
+    } catch (error) {
+      logger.debug(`getRemainingBalance failed: ${error}`);
+      return null;
+    }
+  }
+
+  /**
+   * Called when a 402 looks like a genuine credit problem. Confirms against the
+   * REAL balance before freezing all API calls, so a transient/near-threshold
+   * 402 doesn't lock Artie out while there's still usable balance.
+   * Returns true if credits were actually marked exhausted.
+   */
+  async markCreditsExhaustedIfConfirmed(): Promise<boolean> {
+    const balance = await this.getRemainingBalance();
+
+    // If we can't read the balance, fall back to the old conservative behavior
+    // (assume the 402 is real) rather than risk hammering a truly-empty account.
+    if (balance === null) {
+      logger.warn('💳 402 received and balance unknown — marking exhausted (conservative)');
+      this.markCreditsExhausted();
+      return true;
+    }
+
+    if (balance <= CreditMonitor.TRUE_EXHAUSTION_THRESHOLD) {
+      logger.error(`🚨 Confirmed out of credits — $${balance.toFixed(2)} remaining`);
+      this.markCreditsExhausted();
+      return true;
+    }
+
+    logger.warn(
+      `💳 Got a 402 but $${balance.toFixed(2)} still remains — NOT freezing calls ` +
+        `(likely a per-request max_tokens affordability limit, not true exhaustion)`
+    );
+    return false;
+  }
+
   static getInstance(): CreditMonitor {
     if (!CreditMonitor.instance) {
       CreditMonitor.instance = new CreditMonitor();
@@ -88,23 +151,30 @@ export class CreditMonitor {
     }
 
     try {
-      // Try to get credits/balance from the API
-      const response = await fetch(`${baseURL.replace('/v1', '')}/api/v1/auth/key`, {
+      // Use the /credits endpoint, which reports total_credits/total_usage for
+      // credit-based (pay-as-you-go) accounts. The old /auth/key path returns
+      // limit=null for these accounts, which made `limit - usage` evaluate to
+      // NaN and silently report a bogus "$NaN" balance.
+      const response = await fetch(`${baseURL.replace('/v1', '')}/api/v1/credits`, {
         headers: {
           Authorization: `Bearer ${apiKey}`,
         },
       });
 
       if (!response.ok) {
-        // If auth/key endpoint doesn't exist, try a minimal completion to get usage info
         logger.debug(`Credit check endpoint returned ${response.status}, balance unknown`);
         return { balance: null, error: `API returned ${response.status}` };
       }
 
-      const data = (await response.json()) as { data?: { limit?: number; usage?: number } };
+      const data = (await response.json()) as {
+        data?: { total_credits?: number; total_usage?: number };
+      };
 
-      if (data.data?.limit !== undefined && data.data?.usage !== undefined) {
-        const balance = data.data.limit - data.data.usage;
+      if (
+        typeof data.data?.total_credits === 'number' &&
+        typeof data.data?.total_usage === 'number'
+      ) {
+        const balance = data.data.total_credits - data.data.total_usage;
 
         // Log and alert based on balance
         if (balance <= 0) {
