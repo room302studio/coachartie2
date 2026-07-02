@@ -53,6 +53,22 @@ export interface CapabilityValidationError {
  * the capability orchestrator. Each capability can support multiple actions and
  * define required parameters for validation.
  */
+/**
+ * Curated action aliases: common synonyms the LLM reaches for that mean an
+ * existing action. Keep these UNAMBIGUOUS — only map when the alias clearly
+ * means the same thing (don't map across different intents). Silently
+ * normalizing these saves a wasted loop iteration + paid LLM call per miss.
+ */
+const ACTION_ALIASES: Record<string, Record<string, string>> = {
+  memory: {
+    store: 'remember',
+    save: 'remember',
+    add: 'remember',
+    retrieve: 'recall',
+    get: 'recall',
+  },
+};
+
 export class CapabilityRegistry {
   private capabilities = new Map<string, RegisteredCapability>();
   private mcpTools = new Map<string, { connectionId: string; command: string; tool: any }>();
@@ -283,6 +299,16 @@ export class CapabilityRegistry {
 
     if (!capability) {
       throw new Error(`Capability '${name}' not found in registry`);
+    }
+
+    // Auto-correct known action synonyms before validating, so a wrong-but-clear
+    // action name (e.g. memory:store) just works instead of erroring + retrying.
+    if (!capability.supportedActions.includes(action)) {
+      const aliased = ACTION_ALIASES[name]?.[action];
+      if (aliased && capability.supportedActions.includes(aliased)) {
+        logger.info(`🔀 Aliased ${name}:${action} → ${name}:${aliased}`);
+        action = aliased;
+      }
     }
 
     // Validate action is supported

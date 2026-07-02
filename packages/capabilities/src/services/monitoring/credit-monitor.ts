@@ -1,5 +1,6 @@
 import { getSyncDb, createQueue } from '@coachartie/shared';
 import { logger } from '@coachartie/shared';
+import { costMonitor } from './cost-monitor.js';
 
 export interface CreditInfo {
   provider: string;
@@ -36,7 +37,16 @@ export class CreditMonitor {
   // Above it, a 402 is almost certainly a per-request max_tokens affordability limit.
   private static TRUE_EXHAUSTION_THRESHOLD = 0.25;
 
-  private constructor() {}
+  private constructor() {
+    // Periodically refresh the real balance so the cost monitor's runway warning
+    // stays current (balance drifts as he spends). Cheap: one /credits GET.
+    const refreshMs = parseInt(process.env.BALANCE_REFRESH_MS || '600000'); // 10 min
+    const timer = setInterval(() => {
+      this.proactiveBalanceCheck().catch(() => {});
+    }, refreshMs);
+    // Don't keep the event loop alive just for this.
+    if (typeof timer.unref === 'function') timer.unref();
+  }
 
   /**
    * Mark credits as exhausted (call this when we get a 402 error)
@@ -92,7 +102,10 @@ export class CreditMonitor {
       const total = data.data?.total_credits;
       const used = data.data?.total_usage;
       if (typeof total === 'number' && typeof used === 'number') {
-        return total - used;
+        const balance = total - used;
+        // Feed the balance to the cost monitor so its runway warning can float.
+        costMonitor.updateBalance(balance);
+        return balance;
       }
       return null;
     } catch (error) {
@@ -175,6 +188,9 @@ export class CreditMonitor {
         typeof data.data?.total_usage === 'number'
       ) {
         const balance = data.data.total_credits - data.data.total_usage;
+
+        // Feed the cost monitor's runway ("floating ballast") warning.
+        costMonitor.updateBalance(balance);
 
         // Log and alert based on balance
         if (balance <= 0) {
