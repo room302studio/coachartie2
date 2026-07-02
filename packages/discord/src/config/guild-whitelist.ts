@@ -232,8 +232,9 @@ HARD LIMITS (the ONLY things you actually won't do, and you handle them by just 
 
 Keep it short, keep it unhinged, keep it warm underneath. You're doing time with your idiots and you love it.`,
         respondToAll: true, // it's a hangout — chime in, don't just lurk
-        respondToAllCooldownSeconds: 60, // but at most once a minute so he doesn't spam/burn credits
-        respondToAllMinWords: 3, // ignore one-word noise; mentions still always hit
+        respondToAllCooldownSeconds: 180, // 3 min: this channel is HYPERACTIVE — 60s flooded the
+        // queue into 120s timeouts and burned credits fast. Chime in occasionally, don't drown.
+        respondToAllMinWords: 5, // ignore short banter; @mentions still always hit
       },
     },
   },
