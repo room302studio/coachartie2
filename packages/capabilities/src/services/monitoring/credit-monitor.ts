@@ -82,7 +82,7 @@ export class CreditMonitor {
     if (!apiKey) return null;
 
     try {
-      const response = await fetch(`${baseURL.replace('/v1', '')}/api/v1/credits`, {
+      const response = await fetch(`${baseURL.replace(/\/+$/, '')}/credits`, {
         headers: { Authorization: `Bearer ${apiKey}` },
       });
       if (!response.ok) return null;
@@ -155,7 +155,7 @@ export class CreditMonitor {
       // credit-based (pay-as-you-go) accounts. The old /auth/key path returns
       // limit=null for these accounts, which made `limit - usage` evaluate to
       // NaN and silently report a bogus "$NaN" balance.
-      const response = await fetch(`${baseURL.replace('/v1', '')}/api/v1/credits`, {
+      const response = await fetch(`${baseURL.replace(/\/+$/, '')}/credits`, {
         headers: {
           Authorization: `Bearer ${apiKey}`,
         },
@@ -261,17 +261,36 @@ export class CreditMonitor {
       const db = getSyncDb();
 
       const result = db.get(`
-        SELECT * FROM credit_balance 
-        WHERE provider = 'openrouter' 
-        ORDER BY last_updated DESC 
+        SELECT * FROM credit_balance
+        WHERE provider = 'openrouter'
+        ORDER BY last_updated DESC
         LIMIT 1
       `);
 
-      if (!result) {
-        return null;
+      // The credit_balance table is only populated from completion responses,
+      // which OpenRouter usually omits — so it's frequently empty. Fall back to
+      // a live /credits fetch so the credit_status tool can still answer.
+      if (!result || result.credits_remaining === null || result.credits_remaining === undefined) {
+        const liveBalance = await this.getRemainingBalance();
+        if (liveBalance === null) {
+          return result ? this.rowToCreditInfo(result) : null;
+        }
+        return {
+          ...(result ? this.rowToCreditInfo(result) : { provider: 'openrouter' }),
+          credits_remaining: liveBalance,
+        };
       }
 
-      return {
+      return this.rowToCreditInfo(result);
+    } catch (error) {
+      logger.error('❌ Failed to get current balance:', error);
+      return null;
+    }
+  }
+
+  /** Map a credit_balance DB row to a CreditInfo object. */
+  private rowToCreditInfo(result: any): CreditInfo {
+    return {
         provider: result.provider,
         credits_remaining: result.credits_remaining,
         credits_used: result.credits_used,
@@ -279,11 +298,7 @@ export class CreditMonitor {
         monthly_spend: result.monthly_spend,
         rate_limit_remaining: result.rate_limit_remaining,
         rate_limit_reset: result.rate_limit_reset ? new Date(result.rate_limit_reset) : undefined,
-      };
-    } catch (error) {
-      logger.error('❌ Failed to get current balance:', error);
-      return null;
-    }
+    };
   }
 
   /**
