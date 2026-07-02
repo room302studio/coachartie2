@@ -269,37 +269,6 @@ async function start() {
         permissions: client.user?.flags?.bitfield || 'none',
       });
 
-      // Autonomous announcement: Artie jumps into #prison on startup (async, non-blocking)
-      console.log('🚀 ABOUT TO TRIGGER ANNOUNCEMENT');
-      (async () => {
-        try {
-          console.log('🚀 INSIDE ASYNC IIFE');
-          const prisonChannelId = '1480602234867212321';
-          console.log('🚀 FETCHING CHANNEL:', prisonChannelId);
-          const prisonChannel = await client.channels.fetch(prisonChannelId);
-          console.log('🚀 CHANNEL FETCHED:', !!prisonChannel);
-          if (prisonChannel && prisonChannel.isTextBased()) {
-            console.log('🚀 CHANNEL IS TEXT-BASED, PUBLISHING MESSAGE');
-            logger.info('🚀 Triggering Artie\'s autonomous announcement in #prison');
-            await publishMessage(
-              'artie-system',
-              '[AUTONOMOUS] Jump into #prison, read the recent channel context, and announce your presence with your new BUGS ONLY vibe for the day.',
-              prisonChannelId,
-              'artie',
-              true,
-              '1420846272545296470'
-            );
-            console.log('✅ MESSAGE PUBLISHED');
-            logger.info('✅ Autonomous announcement triggered');
-          } else {
-            console.log('❌ CHANNEL NOT TEXT-BASED OR NOT FOUND');
-          }
-        } catch (error) {
-          console.log('❌ ERROR IN ANNOUNCEMENT:', error);
-          logger.warn('Failed to trigger autonomous announcement:', error);
-        }
-      })();
-
       // Refresh status file every 30 minutes so other processes get live guild counts
       setInterval(() => {
         writeStatus('ready', {
