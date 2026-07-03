@@ -69,6 +69,17 @@ const ACTION_ALIASES: Record<string, Record<string, string>> = {
   },
 };
 
+/**
+ * Params that are NOT part of the `data` blob the LLM writes — they arrive
+ * separately: `action` is the tag attribute, and channelId/guildId are injected
+ * downstream from the Discord context by the executor. Listing them in a
+ * capability's requiredParams caused a premature "Missing required parameters"
+ * rejection at parse time (before injection), which silently broke github,
+ * discord-channels/threads/user-history, etc. Exclude them from the missing
+ * check everywhere; if truly absent the handler surfaces a specific error.
+ */
+export const AUTO_INJECTED_PARAMS = new Set(['action', 'channelId', 'guildId']);
+
 export class CapabilityRegistry {
   private capabilities = new Map<string, RegisteredCapability>();
   private mcpTools = new Map<string, { connectionId: string; command: string; tool: any }>();
@@ -320,7 +331,9 @@ export class CapabilityRegistry {
 
     // Validate required parameters
     if (capability.requiredParams && capability.requiredParams.length > 0) {
-      const missingParams = capability.requiredParams.filter((param) => !(param in params));
+      const missingParams = capability.requiredParams.filter(
+        (param) => !AUTO_INJECTED_PARAMS.has(param) && !(param in params)
+      );
 
       if (missingParams.length > 0) {
         // Special case: If only one param is required and content is provided, allow it
@@ -683,27 +696,17 @@ Available: `;
 // Export singleton instance
 export const capabilityRegistry = new CapabilityRegistry();
 
-// Auto-register AI capabilities
+// Module-load registrations for capabilities that are NOT registered by
+// capability-bootstrap.ts. Everything bootstrap handles (memory, web,
+// n8n-browser, discord-forums, email, user-profile, variable-store, shell,
+// filesystem) was removed from here — registering them in both places logged a
+// "⚠️ Overwriting existing capability" warning on every boot. Keep this list in
+// sync: only caps that bootstrap does NOT register belong here.
 import { embeddedMCPCapability } from '../../capabilities/ai/embedded-mcp.js';
 capabilityRegistry.register(embeddedMCPCapability);
 
-// Auto-register Memory capabilities
-import { memoryCapability } from '../../capabilities/memory/memory.js';
-capabilityRegistry.register(memoryCapability);
-
 import { scrapbookCapability } from '../../capabilities/memory/scrapbook.js';
 capabilityRegistry.register(scrapbookCapability);
-
-// Auto-register Web capabilities
-import { webCapability } from '../../capabilities/web/web.js';
-capabilityRegistry.register(webCapability);
-
-import { n8nBrowserCapability } from '../../capabilities/web/n8n-browser.js';
-capabilityRegistry.register(n8nBrowserCapability);
-
-// Auto-register Discord capabilities
-import { discordForumsCapability } from '../../capabilities/discord/discord-forums.js';
-capabilityRegistry.register(discordForumsCapability);
 
 import { discordChannelsCapability } from '../../capabilities/discord/discord-channels.js';
 capabilityRegistry.register(discordChannelsCapability);
@@ -722,24 +725,6 @@ capabilityRegistry.register(discordSendMessageCapability);
 
 import { sendMetroFileCapability } from '../../capabilities/discord/send-metro-file.js';
 capabilityRegistry.register(sendMetroFileCapability);
-
-// Auto-register Communication capabilities
-import { emailCapability } from '../../capabilities/communication/email.js';
-capabilityRegistry.register(emailCapability);
-
-// Auto-register System capabilities
-import { userProfileCapability } from '../../capabilities/system/user-profile.js';
-capabilityRegistry.register(userProfileCapability);
-
-import { variableStoreCapability } from '../../capabilities/system/variable-store.js';
-capabilityRegistry.register(variableStoreCapability);
-
-// Auto-register Development capabilities
-import { shellCapability } from '../../capabilities/development/shell.js';
-capabilityRegistry.register(shellCapability);
-
-import { filesystemCapability } from '../../capabilities/development/filesystem.js';
-capabilityRegistry.register(filesystemCapability);
 
 // Log all successfully registered capabilities on startup
 logger.info(

@@ -80,7 +80,7 @@ export const githubCapability: RegisteredCapability = {
         return JSON.stringify(await githubActions.get_related_prs(params));
       default:
         throw new Error(
-          `Unknown github action: ${action}. Available actions: get_releases, get_recent_commits, get_deployment_stats, search_repositories, list_issues, search_issues, create_issue, update_issue, get_issues_by_label, get_issue_details, get_related_prs`
+          `Missing or unknown github "action" (you sent action="${action ?? '(none)'}"). You MUST include an action attribute, e.g. <capability name="github" action="create_issue" repo="owner/repo" title="Bug title" body="Details" />. Available actions: get_releases, get_recent_commits, get_deployment_stats, search_repositories, list_issues, search_issues, create_issue, update_issue, get_issues_by_label, get_issue_details, get_related_prs`
         );
     }
   },
