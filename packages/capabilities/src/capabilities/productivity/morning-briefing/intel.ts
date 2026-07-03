@@ -130,7 +130,7 @@ export function confidence(): string {
   const orph = q(DB.anomaly, `SELECT s.source,SUBSTR(s.title,1,45),ROUND(s.final_score,1) FROM signals s WHERE s.final_score>=5 AND s.ingested_at>=datetime('now','-48 hours') AND s.source IN (${sl}) AND s.id NOT IN (SELECT signal_id FROM investigation_signals) AND s.title NOT LIKE '%TEST%' AND s.title NOT LIKE '%OSINT Health%' ORDER BY s.final_score DESC LIMIT 2`);
   if (orph) for (const l of orph.split('\n').filter(Boolean)) { const p=l.split('|'); if (p.length>=3) lines.push(`⚠ ${p[1].trim()} [${ssrc(p[0])} only, ${p[2]}]`); }
   // New entities
-  const ne = q(DB.entity, `SELECT e.canonical_name,e.entity_type,COUNT(em.id),GROUP_CONCAT(DISTINCT em.app_name) FROM entities e JOIN entity_mentions em ON e.id=em.entity_id WHERE e.first_seen>=datetime('now','-48 hours') ${ENT_FILTER} GROUP BY e.id HAVING COUNT(em.id)>=2 ORDER BY COUNT(em.id) DESC LIMIT 3`);
+  const ne = q(DB.entity, `SELECT e.canonical_name,e.entity_type,COUNT(em.id),GROUP_CONCAT(DISTINCT em.app_name) FROM entities e JOIN entity_mentions em ON e.id=em.entity_id WHERE e.created_at>=datetime('now','-48 hours') ${ENT_FILTER} GROUP BY e.id HAVING COUNT(em.id)>=2 ORDER BY COUNT(em.id) DESC LIMIT 3`);
   if (ne) for (const l of ne.split('\n').filter(Boolean)) { const p=l.split('|'); if (p.length>=4) lines.push(`New ${p[1].trim()}: ${p[0].trim()} (${p[2].trim()} mentions — ${p[3].trim()})`); }
   // Source liveness
   const alive = new Set((q(DB.anomaly, `SELECT DISTINCT source FROM signals WHERE ingested_at>=datetime('now','-24 hours') AND source IN (${sl})`)||'').split('\n').filter(Boolean));
@@ -203,7 +203,7 @@ export function locationIntel(town: string, county: string, inHV: boolean): stri
     const parts: string[] = [];
     const news = q(DB.county, `SELECT title,source FROM news WHERE first_seen>=datetime('now','-48 hours') AND (title LIKE '%${tc}%' OR title LIKE '%${county}%') ORDER BY first_seen DESC LIMIT 3`);
     if (news) for (const l of news.split('\n').filter(Boolean)) parts.push(`· ${l.substring(0,120)}`);
-    const sig = q(DB.anomaly, `SELECT title FROM signals WHERE created_at>=datetime('now','-48 hours') AND (title LIKE '%${tc}%' OR title LIKE '%${county}%') AND final_score>=2.0 ORDER BY final_score DESC LIMIT 2`);
+    const sig = q(DB.anomaly, `SELECT title FROM signals WHERE ingested_at>=datetime('now','-48 hours') AND (title LIKE '%${tc}%' OR title LIKE '%${county}%') AND final_score>=2.0 ORDER BY final_score DESC LIMIT 2`);
     if (sig) for (const l of sig.split('\n').filter(Boolean)) parts.push(`· ${l.substring(0,120)}`);
     if (!inHV) { const c=q(DB.contract, `SELECT title FROM contracts WHERE first_seen>=datetime('now','-7 days') AND (title LIKE '%${county}%' OR title LIKE '%${tc}%') LIMIT 2`); if (c) for (const l of c.split('\n').filter(Boolean)) parts.push(`· ${l.substring(0,120)}`); }
     return parts.length ? `📍 **Near you (${tc})**\n${parts.join('\n')}` : '';
