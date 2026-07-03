@@ -670,6 +670,11 @@ async function handleMemoryAction(params: MemoryParams, content?: string): Promi
 
   try {
     switch (action) {
+      // Accept common synonyms Artie reaches for instead of 'remember'
+      // (was a chronic ACTION_NOT_FOUND_005 retry loop that burned cost + hit the 120s timeout)
+      case 'store':
+      case 'save':
+      case 'add':
       case 'remember': {
         const contentToRemember = params.content || content;
         if (!contentToRemember || String(contentToRemember).trim() === 'undefined') {
@@ -771,7 +776,7 @@ async function handleMemoryAction(params: MemoryParams, content?: string): Promi
 export const memoryCapability: RegisteredCapability = {
   name: 'memory',
   emoji: '🧠',
-  supportedActions: ['remember', 'recall', 'search', 'stats', 'recent', 'pin'],
+  supportedActions: ['remember', 'store', 'save', 'add', 'recall', 'search', 'stats', 'recent', 'pin'],
   description:
     'Persistent memory system for storing and retrieving information across conversations. Use "pin" action to mark important tool learnings (sets importance to 10).',
   handler: handleMemoryAction,
