@@ -405,15 +405,42 @@ class OpenRouterService {
           temperature,
         });
 
-        const response = completion.choices[0]?.message?.content;
-
-        logger.info(
-          `✅ MODEL RESPONSE: ${model} generated ${response?.length || 0} chars successfully`
-        );
+        const choice = completion.choices?.[0];
+        const response = choice?.message?.content;
 
         if (!response) {
-          throw new Error('No response generated');
+          // OpenRouter can return HTTP 200 with an embedded error body, a
+          // reasoning/thinking-only turn (content: null), or a length-truncated
+          // completion. Surface the REAL reason instead of a bare
+          // "No response generated" so the catch-block classifier (402/429/etc.)
+          // and the logs can act on it. Logged at warn so it reaches the PM2 log
+          // file (CONSOLE_LOG_LEVEL=warn suppresses info).
+          const finishReason = choice?.finish_reason;
+          const embeddedError =
+            (completion as any)?.error?.message ||
+            (choice as any)?.error?.message ||
+            (completion as any)?.error;
+          const reasoningOnly = (choice?.message as any)?.reasoning
+            ? ' (reasoning-only, no text block)'
+            : '';
+          logger.warn(`⚠️ Empty completion from ${model}`, {
+            finishReason,
+            embeddedError,
+            hasChoices: (completion.choices?.length ?? 0) > 0,
+            id: completion.id,
+          });
+          if (embeddedError) {
+            // Re-throw the upstream error so 402/429/etc. get classified below.
+            throw new Error(String(embeddedError));
+          }
+          throw new Error(
+            `Empty completion (finish_reason=${finishReason ?? 'unknown'})${reasoningOnly}`
+          );
         }
+
+        logger.info(
+          `✅ MODEL RESPONSE: ${model} generated ${response.length} chars successfully`
+        );
 
         const responseTime = Date.now() - startTime;
 
