@@ -94,9 +94,10 @@ export const GUILD_CONFIGS: Record<string, GuildConfig> = {
     scratchpadPath: 'reference-docs/guild-notes/room302studio.md',
     // Observe ALL channels for memory formation (empty array = all channels)
     observationChannels: [],
-    // Proactively jump in when Artie can be helpful
-    proactiveAnswering: true,
-    proactiveChannels: [],  // Empty = all channels
+    // Mention-only: Artie responds when @mentioned or DMed, not to un-addressed questions.
+    // (Was proactiveAnswering:true/all-channels — he kept jumping into questions not aimed at him.)
+    proactiveAnswering: false,
+    proactiveChannels: [],  // Empty = all channels (only relevant if proactiveAnswering re-enabled)
     proactiveCooldownSeconds: 120,  // 2 min between proactive responses
     githubSync: {
       enabled: true,
