@@ -947,7 +947,10 @@ Important:
     }
 
     const reply = ctx.replyContext;
-    const content = `💬 Replying to @${reply.author}: "${reply.content}"`;
+    // The person in <user_message> is pointing AT this earlier message — it's context they're
+    // referencing, NOT the person to answer. Framing it as "Replying to @X" made Artie answer
+    // @X (the previous speaker) instead of whoever actually just messaged him.
+    const content = `💬 The person messaging you (see <user_message>) is referencing an earlier message from @${reply.author}: "${reply.content}". Treat that quoted message as CONTEXT only — respond to the person who just messaged you, not to @${reply.author}.`;
 
     sources.push({
       name: 'reply_context',
