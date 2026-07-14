@@ -3,6 +3,7 @@ import { openRouterService } from '../services/llm/openrouter.js';
 import { capabilityOrchestrator } from '../services/capability/capability-orchestrator.js';
 import { capabilityRegistry } from '../services/capability/capability-registry.js';
 import { costMonitor } from '../services/monitoring/cost-monitor.js';
+import { updateUserScoresFromMessage } from '../services/user-scores.js';
 
 export async function processMessage(
   message: IncomingMessage,
@@ -35,6 +36,15 @@ export async function processMessage(
         message,
         onPartialResponse
       );
+
+      // Ongoing per-user "vibe" scores — fire-and-forget so it never adds latency or
+      // touches the response model. Scored on the cheap background model.
+      try {
+        const guildId = (message.context as { guildId?: string } | undefined)?.guildId || '';
+        void updateUserScoresFromMessage(message.userId, guildId, message.message);
+      } catch {
+        // scoring must never affect the actual response
+      }
 
       // Check if we should auto-check credits
       const autoCheckEvery = parseInt(process.env.AUTO_CHECK_CREDITS_EVERY || '50');

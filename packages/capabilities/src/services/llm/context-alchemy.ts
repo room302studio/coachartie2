@@ -14,6 +14,7 @@ import { join } from 'path';
 
 // Context Alchemy observability
 import { traceManager } from '../context-alchemy/index.js';
+import { getUserScores, formatUserScores } from '../user-scores.js';
 
 // Guild ID to context path mapping (mirrors Discord guild-whitelist.ts)
 const GUILD_CONTEXT_PATHS: Record<string, string> = {
@@ -518,6 +519,9 @@ Important:
     // Reply context - the message being replied to (if any)
     await this.addReplyContext(message, sources);
 
+    // Ongoing per-user "vibe" profile — what Artie has learned about this speaker
+    await this.addUserScores(message, sources);
+
     // Attachment context (includes URLs for vision/OCR or user follow-up)
     await this.addAttachmentContext(message, sources);
 
@@ -940,6 +944,32 @@ Important:
    * Add reply context - the message being replied to
    * Helps the LLM understand what the user is responding to
    */
+  /**
+   * Inject the ongoing per-user vibe profile so Artie's tone can adapt to who he's
+   * talking to. Only added once the user has enough history to be meaningful.
+   */
+  private async addUserScores(message: IncomingMessage, sources: ContextSource[]): Promise<void> {
+    try {
+      const userId = message.userId;
+      if (!userId) return;
+      const guildId = (message.context as { guildId?: string } | undefined)?.guildId || '';
+      const scores = getUserScores(userId, guildId);
+      if (!scores || scores.interactions < 2) return; // wait for a little signal first
+
+      sources.push({
+        name: 'user_vibe_profile',
+        priority: 55, // background flavor — informs tone, not a headline
+        tokenWeight: 40,
+        content: `👤 What you've learned about this person over ${scores.interactions} chats: ${formatUserScores(
+          scores
+        )}. Let it subtly inform your tone — don't recite these numbers back robotically.`,
+        category: 'user_state',
+      });
+    } catch (error) {
+      logger.warn('Failed to add user vibe scores:', error);
+    }
+  }
+
   private async addReplyContext(message: IncomingMessage, sources: ContextSource[]): Promise<void> {
     const ctx = message.context;
     if (!ctx || !ctx.replyContext) {
