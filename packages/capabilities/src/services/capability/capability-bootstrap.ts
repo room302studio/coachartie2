@@ -52,6 +52,14 @@ import { discordModerationCapability } from '../../capabilities/discord/discord-
 import { discordPollCapability } from '../../capabilities/discord/discord-poll.js';
 import { discordReactionCapability } from '../../capabilities/discord/discord-reaction.js';
 import { stripePaymentsCapability } from '../../capabilities/finance/stripe-payment-links.js';
+import { discordNicknameCapability } from '../../capabilities/discord/discord-nickname.js';
+import { discordThreadsCapability } from '../../capabilities/discord/discord-threads.js';
+import { discordSendMessageCapability } from '../../capabilities/discord/discord-send-message.js';
+import { discordChannelsCapability } from '../../capabilities/discord/discord-channels.js';
+import { discordUserHistoryCapability } from '../../capabilities/discord/discord-user-history.js';
+import { discordIssueParserCapability } from '../../capabilities/discord/discord-issue-parser.js';
+import { sendMetroFileCapability } from '../../capabilities/discord/send-metro-file.js';
+import { githubIdentityCapability } from '../../capabilities/github-identity.js';
 // Slack capabilities
 import { slackUICapability } from '../../capabilities/slack/slack-ui.js';
 // Communication capabilities
@@ -199,6 +207,18 @@ export class CapabilityBootstrap {
       logger.info('📦 Registering stripe (payment links)...');
       capabilityRegistry.register(stripePaymentsCapability);
       logger.info('✅ stripe registered successfully');
+
+      // Register previously-inert Discord/utility capabilities (were defined but never wired)
+      logger.info('📦 Registering previously-inert capabilities (nickname/threads/channels/etc)...');
+      capabilityRegistry.register(discordNicknameCapability);
+      capabilityRegistry.register(discordThreadsCapability);
+      capabilityRegistry.register(discordSendMessageCapability);
+      capabilityRegistry.register(discordChannelsCapability);
+      capabilityRegistry.register(discordUserHistoryCapability);
+      capabilityRegistry.register(discordIssueParserCapability);
+      capabilityRegistry.register(sendMetroFileCapability);
+      capabilityRegistry.register(githubIdentityCapability);
+      logger.info('✅ previously-inert capabilities registered successfully');
 
       // Register Mention Proxy capability for user representation
       logger.info('📦 Registering mention-proxy...');
