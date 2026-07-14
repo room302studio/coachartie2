@@ -1,6 +1,5 @@
 import winston from 'winston';
 import LokiTransport from 'winston-loki';
-import TransportStream from 'winston-transport';
 import path from 'path';
 import fs from 'fs';
 
@@ -12,23 +11,6 @@ const lokiUrl = process.env.LOKI_URL || 'http://localhost:3100';
 const logsDir = process.env.LOGS_DIR || './logs';
 if (!fs.existsSync(logsDir)) {
   fs.mkdirSync(logsDir, { recursive: true });
-}
-
-// SQLite transport for local log storage
-class SQLiteTransport extends TransportStream {
-  constructor(opts: any = {}) {
-    super(opts);
-  }
-
-  log(info: any, callback: () => void) {
-    setImmediate(() => {
-      this.emit('logged', info);
-    });
-
-    // For now, just emit the logged event
-    // SQLite integration will be added later to avoid circular dependencies
-    callback();
-  }
 }
 
 // Create base logger with multiple transports
@@ -61,9 +43,6 @@ const transports: winston.transport[] = [
       })
     ),
   }),
-
-  // SQLite transport for local storage
-  new SQLiteTransport({}),
 ];
 
 // Add Loki transport if URL is configured

@@ -1,6 +1,5 @@
 import { logger } from '@coachartie/shared';
 import { execSync } from 'child_process';
-import { resolve } from 'path';
 
 const DB_PATH = '/data2/apps/coachartie2/packages/discord/data/coachartie.db';
 
@@ -32,22 +31,6 @@ export class ModerationService {
       );
     } catch (error) {
       logger.error('[moderation-audit] Failed to log action:', error);
-    }
-  }
-
-  /**
-   * Get active moderation actions for a user
-   */
-  getActiveActions(userId: string) {
-    try {
-      const result = execSync(
-        `sqlite3 ${DB_PATH} "SELECT * FROM moderation_audit WHERE target_user_id = '${userId}' AND status = 'active' ORDER BY created_at DESC"`,
-        { encoding: 'utf-8' }
-      );
-      return result;
-    } catch (error) {
-      logger.debug('[moderation-audit] Get actions failed:', error);
-      return '';
     }
   }
 

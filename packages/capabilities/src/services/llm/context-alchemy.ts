@@ -2157,67 +2157,6 @@ ${analysis.summary}`;
   }
 
   /**
-   * Add capability-specific learnings when using capabilities
-   * Retrieves reflections from past tool usage to improve execution
-   */
-  private async addCapabilityLearnings(
-    message: IncomingMessage,
-    sources: ContextSource[],
-    capabilityNames?: string[]
-  ): Promise<void> {
-    try {
-      // Only fetch capability learnings if we know which capabilities are being used
-      if (!capabilityNames || capabilityNames.length === 0) {
-        return;
-      }
-
-      const { MemoryService } = await import('../../capabilities/memory/memory.js');
-      const memoryService = MemoryService.getInstance();
-
-      // Retrieve memories tagged with capability names
-      const tags = [...capabilityNames, 'capability-reflection'];
-      const capabilityMemories = await memoryService.recallByTags(message.userId, tags, 5);
-
-      if (capabilityMemories.length > 0) {
-        // Format capability learnings for context
-        const learningsContent = `📚 Capability Learnings (from past usage):
-
-${capabilityMemories
-  .map(
-    (memory, i) =>
-      `${i + 1}. [${memory.tags.filter((t) => t !== 'capability-reflection').join(', ')}] ${memory.content}`
-  )
-  .join('\n\n')}
-
-💡 Use these learnings to improve your capability usage. Remember what worked, what didn't, and apply those lessons!`;
-
-        sources.push({
-          name: 'capability_learnings',
-          priority: 85, // High priority - directly relevant to task execution
-          tokenWeight: Math.ceil(learningsContent.length / 4),
-          content: learningsContent,
-          category: 'memory',
-        });
-
-        if (DEBUG) {
-          logger.info(
-            `🔧 Capability learnings: ${capabilityMemories.length} found for ${capabilityNames.join(',')}`
-          );
-        }
-      } else {
-        if (DEBUG) {
-          logger.info(
-            `🔧 Capability learnings: none found for ${capabilityNames.join(',')} (first time?)`
-          );
-        }
-      }
-    } catch (error) {
-      logger.warn('Failed to add capability learnings:', error);
-      // Graceful degradation - continue without capability learnings
-    }
-  }
-
-  /**
    * Add capability manifest to message context (COMPRESSED format - saves ~800 tokens!)
    */
   private async addCapabilityManifest(sources: ContextSource[]): Promise<void> {

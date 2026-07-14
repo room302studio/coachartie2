@@ -176,11 +176,6 @@ const KILL_SWITCH_PATH =
 const MIN_CHANNEL_HISTORY = 10; // Minimum messages to fetch
 const MAX_CHANNEL_HISTORY = 25; // Maximum messages to fetch
 
-// Status emojis
-const STATUS_EMOJI_PROCESSING = '🔄';
-const STATUS_EMOJI_THINKING = '🤔';
-const STREAM_EMOJI = '📡';
-
 // =============================================================================
 // MESSAGE CHUNKING UTILITIES
 // =============================================================================
@@ -650,94 +645,6 @@ function chunkMessage(text: string, maxLength: number = DISCORD_MESSAGE_LIMIT): 
   }
 
   return chunks.length > 0 ? chunks : [text];
-}
-
-/**
- * Check if we should stream this partial response
- */
-function shouldStreamPartialResponse(
-  status: any,
-  lastSentContent: string,
-  channel: Message['channel']
-): boolean {
-  return !!(
-    status.partialResponse &&
-    status.partialResponse !== lastSentContent &&
-    'send' in channel &&
-    typeof channel.send === 'function'
-  );
-}
-
-/**
- * Send message chunks with rate limiting
- */
-async function sendMessageChunks(
-  content: string,
-  channel: Message['channel'],
-  currentChunkCount: number
-): Promise<number> {
-  const chunks = chunkMessage(content);
-  let chunksAdded = 0;
-
-  for (const chunk of chunks) {
-    await (channel as any).send(chunk);
-    chunksAdded++;
-
-    // Rate limiting: prevent Discord API abuse
-    if (currentChunkCount + chunksAdded > 1) {
-      await new Promise((resolve) => setTimeout(resolve, CHUNK_RATE_LIMIT_DELAY));
-    }
-  }
-
-  return chunksAdded;
-}
-
-/**
- * Check if status message should be updated
- */
-function shouldUpdateStatus(
-  currentStatus: string,
-  lastStatus: string,
-  updateCount: number
-): boolean {
-  return currentStatus !== lastStatus || updateCount % STATUS_UPDATE_INTERVAL === 0;
-}
-
-/**
- * Update the status message with current progress
- */
-async function updateStatusMessage(
-  statusMessage: Message,
-  status: any,
-  streamedChunks: number,
-  shortId: string,
-  jobShortId: string
-): Promise<void> {
-  const statusEmoji =
-    status.status === 'processing' ? STATUS_EMOJI_PROCESSING : STATUS_EMOJI_THINKING;
-  const streamEmoji = streamedChunks > 0 ? ` ${STREAM_EMOJI}` : '';
-
-  // Human-friendly status messages without technical clutter
-  let statusText = status.status === 'processing' ? 'Processing' : 'Working on it';
-  const statusContent = `${statusEmoji}${streamEmoji} ${statusText}...`;
-
-  await statusMessage.edit(statusContent);
-}
-
-/**
- * Send complete response in chunks
- */
-async function sendCompleteResponse(message: Message, result: string): Promise<number> {
-  const chunks = chunkMessage(result);
-  await message.reply(chunks[0]);
-
-  for (let i = 1; i < chunks.length; i++) {
-    if ('send' in message.channel) {
-      await (message.channel as any).send(chunks[i]);
-    }
-  }
-
-  return chunks.length;
 }
 
 // =============================================================================
@@ -1403,9 +1310,6 @@ export function setupMessageHandler(client: Client) {
     // In forums, only respond when mentioned (too noisy otherwise)
     // In robot channels, skip replies to other users (not the bot) - they're having their own conversation
     const isReplyToOtherUser = message.reference && !responseConditions.botMentioned;
-    // EJ override: Artie only responds to @mentions, even in robot channels.
-    // (Was: respond to every message in 🤖/robot channels — caused the #prison incident.)
-    const shouldRespondInRobotChannel = false;
 
     if (responseConditions.isRobotChannel && isReplyToOtherUser) {
       logger.info(`🚫 Robot channel: skipping reply to other user [${shortId}]`);
@@ -1498,7 +1402,6 @@ export function setupMessageHandler(client: Client) {
     // (responseChannels / restrictToRobotChannelsOnly), which was previously dead config
     // and never enforced — letting Artie barge into channels he wasn't allowed in.
     const ambientTrigger =
-      shouldRespondInRobotChannel ||
       responseConditions.isProactiveAnswer ||
       isRespondToAllChannel;
     const ambientAllowed =
@@ -2089,7 +1992,6 @@ async function handleMessageAsIntent(
   isProactiveAnswer: boolean = false
 ): Promise<void> {
   const shortId = getShortCorrelationId(correlationId);
-  let statusMessage: Message | null = null;
   let streamingMessage: Message | null = null;
 
   try {
@@ -2391,12 +2293,7 @@ async function handleMessageAsIntent(
           }
         },
 
-        updateProgress: statusMessage
-          ? async (status: string) => {
-              const msg = statusMessage as Message;
-              await msg.edit(status);
-            }
-          : undefined,
+        updateProgress: undefined,
 
         sendTyping:
           'sendTyping' in message.channel
@@ -2539,25 +2436,7 @@ async function handleMessageAsIntent(
           }
         },
 
-        updateProgressEmbed: statusMessage
-          ? async (embedData: any) => {
-              try {
-                const msg = statusMessage as Message;
-                const embed = new EmbedBuilder(embedData);
-                await msg.edit({ embeds: [embed] });
-                telemetry.logEvent(
-                  'embed_updated',
-                  {
-                    title: embedData.title,
-                  },
-                  correlationId,
-                  message.author.id
-                );
-              } catch (error) {
-                logger.warn(`Failed to update progress embed [${shortId}]:`, error);
-              }
-            }
-          : undefined,
+        updateProgressEmbed: undefined,
 
         // Context Alchemy: Get the Discord message ID for the response (for feedback correlation)
         getResponseMessageId: () => streamingMessage?.id,
@@ -2579,7 +2458,6 @@ async function handleMessageAsIntent(
 
     // Fallback error handling
     try {
-      // statusMessage is always null in current implementation
       await message.reply(`❌ Sorry, I couldn't process your message`);
     } catch (replyError) {
       logger.error(`Failed to send error reply [${shortId}]:`, replyError);
