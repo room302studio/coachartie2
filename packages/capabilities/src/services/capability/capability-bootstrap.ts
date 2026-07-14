@@ -51,6 +51,7 @@ import { discordForumsCapability } from '../../capabilities/discord/discord-foru
 import { discordModerationCapability } from '../../capabilities/discord/discord-moderation.js';
 import { discordPollCapability } from '../../capabilities/discord/discord-poll.js';
 import { discordReactionCapability } from '../../capabilities/discord/discord-reaction.js';
+import { stripePaymentsCapability } from '../../capabilities/finance/stripe-payment-links.js';
 // Slack capabilities
 import { slackUICapability } from '../../capabilities/slack/slack-ui.js';
 // Communication capabilities
@@ -193,6 +194,11 @@ export class CapabilityBootstrap {
       logger.info('📦 Registering discord-reaction...');
       capabilityRegistry.register(discordReactionCapability);
       logger.info('✅ discord-reaction registered successfully');
+
+      // Register Stripe payment-link capability (needs STRIPE_RESTRICTED_KEY in env to function)
+      logger.info('📦 Registering stripe (payment links)...');
+      capabilityRegistry.register(stripePaymentsCapability);
+      logger.info('✅ stripe registered successfully');
 
       // Register Mention Proxy capability for user representation
       logger.info('📦 Registering mention-proxy...');
