@@ -509,6 +509,35 @@ export function createApiRouter(discordClient: Client): Router {
     }
   });
 
+  // POST /api/channels/:channelId/messages/:messageId/reactions - add an emoji reaction
+  router.post('/channels/:channelId/messages/:messageId/reactions', async (req: Request, res: Response) => {
+    try {
+      const { channelId, messageId } = req.params;
+      const emoji = String((req.body as { emoji?: string }).emoji || '').trim();
+      // Unicode emoji, or a custom emoji ref like <:name:id> / name:id. Keep it short.
+      if (!emoji || emoji.length > 64) {
+        return res.status(400).json({ success: false, error: 'a single emoji is required' });
+      }
+
+      const channel = await discordClient.channels.fetch(channelId);
+      if (!channel || !channel.isTextBased() || !('messages' in channel)) {
+        return res.status(404).json({ success: false, error: `Channel ${channelId} not usable` });
+      }
+      const msg = await (channel as any).messages.fetch(messageId);
+      if (!msg) {
+        return res.status(404).json({ success: false, error: 'message not found' });
+      }
+      await msg.react(emoji);
+      logger.info(`😶 Reacted ${emoji} to message ${messageId} in ${channelId}`);
+      res.json({ success: true, emoji, messageId });
+    } catch (error) {
+      // Unknown/invalid emoji is the common failure — report it softly, don't 500 the loop.
+      const message = error instanceof Error ? error.message : String(error);
+      logger.warn(`Reaction failed (${message})`);
+      res.status(422).json({ success: false, error: `could not react (bad/unknown emoji?): ${message}` });
+    }
+  });
+
   // ============================================================================
   // PRESENCE CHECK-IN SYSTEM
   // Two-way contextual check-ins via Discord DM

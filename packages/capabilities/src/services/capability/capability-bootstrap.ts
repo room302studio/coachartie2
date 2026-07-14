@@ -50,6 +50,7 @@ import { discordUICapability } from '../../capabilities/discord/discord-ui.js';
 import { discordForumsCapability } from '../../capabilities/discord/discord-forums.js';
 import { discordModerationCapability } from '../../capabilities/discord/discord-moderation.js';
 import { discordPollCapability } from '../../capabilities/discord/discord-poll.js';
+import { discordReactionCapability } from '../../capabilities/discord/discord-reaction.js';
 // Slack capabilities
 import { slackUICapability } from '../../capabilities/slack/slack-ui.js';
 // Communication capabilities
@@ -187,6 +188,11 @@ export class CapabilityBootstrap {
       logger.info('📦 Registering discord-poll...');
       capabilityRegistry.register(discordPollCapability);
       logger.info('✅ discord-poll registered successfully');
+
+      // Register Discord Reaction capability (emoji reactions on messages)
+      logger.info('📦 Registering discord-reaction...');
+      capabilityRegistry.register(discordReactionCapability);
+      logger.info('✅ discord-reaction registered successfully');
 
       // Register Mention Proxy capability for user representation
       logger.info('📦 Registering mention-proxy...');
