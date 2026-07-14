@@ -43,7 +43,8 @@ export const discordPollCapability: RegisteredCapability = {
 
   handler: async (params: any, _content: string | undefined, context?: CapabilityContext) => {
     const action = params.action;
-    const channelId = context?.channelId;
+    // channelId is auto-injected into params (like discord-threads); context is a fallback.
+    const channelId = params.channelId || context?.channelId;
 
     if (!channelId) {
       return JSON.stringify({

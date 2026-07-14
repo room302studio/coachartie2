@@ -29,7 +29,8 @@ export const discordReactionCapability: RegisteredCapability = {
   ],
 
   handler: async (params: any, _content: string | undefined, context?: CapabilityContext) => {
-    const channelId = context?.channelId;
+    // channelId is auto-injected into params (like discord-threads); context is a fallback.
+    const channelId = params.channelId || context?.channelId;
     const messageId = params.message_id || context?.messageId;
     const emoji = String(params.emoji || '').trim();
 
