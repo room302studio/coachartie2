@@ -12,8 +12,9 @@ Reference documents for Discord bot. Each file covers one topic.
 | signals.md     | Automatic signals, collision prevention           |
 | economy.md     | Fares, construction costs, operating costs, bonds |
 | passengers.md  | Demand, mode choice, RAPTOR pathfinding           |
-| progression.md | Career mode, stars, challenges, unlocks           |
-| faq.md         | Common questions with direct answers              |
+| faq.md         | In-game mechanics Q&A (trains/signals/passengers) |
+| store-faq.md   | Website FAQ: price, platforms, Steam, license, languages |
+| modding.md     | Mod API, manifest.json, index.js, install & share |
 
 ## Quick Lookups
 
@@ -21,5 +22,6 @@ Reference documents for Discord bot. Each file covers one topic.
 - How much does X cost? → economy.md
 - Why won't passengers board? → passengers.md or trains.md (capacity)
 - Trains crashing? → signals.md or routes.md (running direction)
-- How to unlock cities? → progression.md
 - Track requirements? → tracks.md
+- Price / what OS / Steam / languages / multi-device? → store-faq.md
+- How do I make or install a mod? Modding API? → modding.md
