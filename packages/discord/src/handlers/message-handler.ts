@@ -18,7 +18,10 @@ import {
   generateCorrelationId,
   getShortCorrelationId,
 } from '../utils/correlation.js';
-import { processUserIntent } from '../services/user-intent-processor.js';
+import { processUserIntent, violatesOutputSafety } from '../services/user-intent-processor.js';
+
+// Staff roles that earn the [staff] tag in history labels (mirrors the current-speaker check).
+const HISTORY_STAFF_ROLE_RE = /\b(dev|developer|moderator|admin|administrator|staff|sbat)\b/i;
 import {
   isGuildWhitelisted,
   isWorkingGuild,
@@ -1858,15 +1861,34 @@ async function fetchChannelHistory(message: Message): Promise<
     // Fetch messages before the current one
     const messages = await message.channel.messages.fetch({ limit, before: message.id });
 
-    // Convert to simple format for context
+    // Convert to context format, enriching the speaker label so Artie can tell people apart
+    // and knows who's staff even from history (the staff-respect rule otherwise only saw the
+    // current speaker). Names are run through the output floor so a slur-username can't ride
+    // into every prompt (closes the known username-injection gap; floor was the only backstop).
     return Array.from(messages.values())
       .reverse() // Chronological order (oldest first)
-      .map((msg) => ({
-        author: msg.author.displayName || msg.author.username,
-        content: msg.content,
-        timestamp: msg.createdAt.toISOString(),
-        isBot: msg.author.bot,
-      }));
+      .map((msg) => {
+        const display = msg.author.displayName || msg.author.username;
+        const uname = msg.author.username;
+        const roles = msg.member?.roles?.cache; // cached only — no extra fetch in the hot path
+        const isStaff = roles ? roles.some((r) => HISTORY_STAFF_ROLE_RE.test(r.name)) : false;
+
+        const safeDisplay = violatesOutputSafety(display) ? '[name hidden]' : display;
+        const safeUname = violatesOutputSafety(uname) ? 'hidden' : uname;
+        let label = safeDisplay;
+        if (safeUname && safeUname.toLowerCase() !== safeDisplay.toLowerCase()) {
+          label += ` (@${safeUname})`;
+        }
+        if (msg.author.bot) label += ' [bot]';
+        else if (isStaff) label += ' [staff]';
+
+        return {
+          author: label,
+          content: msg.content,
+          timestamp: msg.createdAt.toISOString(),
+          isBot: msg.author.bot,
+        };
+      });
   } catch (error) {
     logger.error('Failed to fetch channel history:', error);
     return [];
