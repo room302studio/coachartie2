@@ -2,10 +2,30 @@ import { Router, Request, Response } from 'express';
 import { logger } from '@coachartie/shared';
 import { ForumTraversalService } from '../services/forum-traversal.js';
 import { GitHubIntegrationService } from '../services/github-integration.js';
-import { Client, AttachmentBuilder } from 'discord.js';
+import { Client, AttachmentBuilder, PollLayoutType } from 'discord.js';
 import { mentionProxyRouter } from './mention-proxy.js';
+import { violatesOutputSafety } from '../services/user-intent-processor.js';
 import { readFileSync, writeFileSync, existsSync, appendFileSync, unlinkSync } from 'fs';
 import { join } from 'path';
+
+// Active-poll ledger: cap how many live Artie-created polls exist per channel so #prison
+// can't weaponize "make polls whenever" into spam. In-memory is fine — polls are ephemeral
+// and a restart clearing the ledger just resets the (already generous) budget.
+const MAX_ACTIVE_POLLS_PER_CHANNEL = 2;
+const activePolls = new Map<string, { messageId: string; expiresAt: number }[]>();
+
+function countActivePolls(channelId: string): number {
+  const now = Date.now();
+  const live = (activePolls.get(channelId) || []).filter((p) => p.expiresAt > now);
+  activePolls.set(channelId, live);
+  return live.length;
+}
+
+function recordPoll(channelId: string, messageId: string, durationHours: number): void {
+  const live = activePolls.get(channelId) || [];
+  live.push({ messageId, expiresAt: Date.now() + durationHours * 3600_000 });
+  activePolls.set(channelId, live);
+}
 
 // Emergency kill switch file (presence of file = Artie muted globally). See message-handler.ts.
 const KILL_SWITCH_PATH =
@@ -396,6 +416,96 @@ export function createApiRouter(discordClient: Client): Router {
         success: false,
         error: error instanceof Error ? error.message : String(error),
       });
+    }
+  });
+
+  // POST /api/channels/:channelId/polls - create a native Discord poll (rate-limited per channel)
+  router.post('/channels/:channelId/polls', async (req: Request, res: Response) => {
+    try {
+      const { channelId } = req.params;
+      const { question, options, durationHours, allowMultiselect } = req.body as {
+        question?: string;
+        options?: string[];
+        durationHours?: number;
+        allowMultiselect?: boolean;
+      };
+
+      if (!question || !Array.isArray(options)) {
+        return res.status(400).json({ success: false, error: 'question and options[] are required' });
+      }
+
+      // Clamp to Discord's poll limits: 2-10 answers, question <=300, answer <=55 chars, 1-768h.
+      const cleanOptions = options.map((o) => String(o).trim().slice(0, 55)).filter(Boolean).slice(0, 10);
+      if (cleanOptions.length < 2) {
+        return res.status(400).json({ success: false, error: 'need at least 2 non-empty options' });
+      }
+      const q = String(question).trim().slice(0, 300);
+      const duration = Math.min(768, Math.max(1, Math.round(durationHours || 24)));
+
+      // Output safety floor — same rule as normal replies; a jailbroken poll never posts.
+      if ([q, ...cleanOptions].some((t) => violatesOutputSafety(t))) {
+        return res.status(422).json({ success: false, error: 'poll text failed the output safety floor' });
+      }
+
+      if (countActivePolls(channelId) >= MAX_ACTIVE_POLLS_PER_CHANNEL) {
+        return res.status(429).json({
+          success: false,
+          error: `channel already has ${MAX_ACTIVE_POLLS_PER_CHANNEL} active polls — wait for one to close`,
+        });
+      }
+
+      const channel = await discordClient.channels.fetch(channelId);
+      if (!channel || !channel.isTextBased() || !('send' in channel)) {
+        return res.status(404).json({ success: false, error: `Channel ${channelId} not usable for polls` });
+      }
+
+      const sent = await (channel as any).send({
+        poll: {
+          question: { text: q },
+          answers: cleanOptions.map((text) => ({ text })),
+          duration,
+          allowMultiselect: Boolean(allowMultiselect),
+          layoutType: PollLayoutType.Default,
+        },
+        allowedMentions: { parse: [] },
+      });
+
+      recordPoll(channelId, sent.id, duration);
+      logger.info(`🗳️ Poll created in ${channelId} (msg ${sent.id}): "${q}"`);
+      res.json({ success: true, messageId: sent.id, channelId, question: q, options: cleanOptions, durationHours: duration });
+    } catch (error) {
+      logger.error('Error creating poll:', error);
+      res.status(500).json({ success: false, error: error instanceof Error ? error.message : String(error) });
+    }
+  });
+
+  // GET /api/channels/:channelId/polls/:messageId - read current vote tallies
+  router.get('/channels/:channelId/polls/:messageId', async (req: Request, res: Response) => {
+    try {
+      const { channelId, messageId } = req.params;
+      const channel = await discordClient.channels.fetch(channelId);
+      if (!channel || !channel.isTextBased() || !('messages' in channel)) {
+        return res.status(404).json({ success: false, error: `Channel ${channelId} not usable` });
+      }
+      const msg = await (channel as any).messages.fetch(messageId);
+      if (!msg?.poll) {
+        return res.status(404).json({ success: false, error: 'no poll on that message' });
+      }
+      const poll = msg.poll;
+      const results = [...poll.answers.values()].map((a: any) => ({
+        text: a.text ?? a.poll_media?.text ?? '',
+        votes: a.voteCount ?? 0,
+      }));
+      res.json({
+        success: true,
+        question: poll.question?.text ?? '',
+        finalized: Boolean(poll.resultsFinalized),
+        totalVotes: results.reduce((s, r) => s + r.votes, 0),
+        results: results.sort((a, b) => b.votes - a.votes),
+      });
+    } catch (error) {
+      logger.error('Error reading poll:', error);
+      res.status(500).json({ success: false, error: error instanceof Error ? error.message : String(error) });
     }
   });
 

@@ -49,6 +49,7 @@ import { goalsCapability } from '../../capabilities/productivity/goals.js';
 import { discordUICapability } from '../../capabilities/discord/discord-ui.js';
 import { discordForumsCapability } from '../../capabilities/discord/discord-forums.js';
 import { discordModerationCapability } from '../../capabilities/discord/discord-moderation.js';
+import { discordPollCapability } from '../../capabilities/discord/discord-poll.js';
 // Slack capabilities
 import { slackUICapability } from '../../capabilities/slack/slack-ui.js';
 // Communication capabilities
@@ -181,6 +182,11 @@ export class CapabilityBootstrap {
       logger.info('📦 Registering discord-moderation...');
       capabilityRegistry.register(discordModerationCapability);
       logger.info('✅ discord-moderation registered successfully');
+
+      // Register Discord Poll capability (native polls, rate-limited per channel)
+      logger.info('📦 Registering discord-poll...');
+      capabilityRegistry.register(discordPollCapability);
+      logger.info('✅ discord-poll registered successfully');
 
       // Register Mention Proxy capability for user representation
       logger.info('📦 Registering mention-proxy...');
