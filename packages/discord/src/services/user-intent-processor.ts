@@ -25,6 +25,15 @@ const OUTPUT_SLUR_BLOCKLIST =
 const INTERNAL_LEAK_BLOCKLIST =
   /\[CURRENT MESSAGE\]|Remember:\s*You are Coach Artie|Pinned memory:|Don.?t echo any XML|\(ID:\s*\d{5,}\)|<\/?capability\b|<calc\b/i;
 
+/**
+ * Shared output safety floor for anything Artie posts OUTSIDE the normal reply
+ * pipeline (e.g. scheduled launch-countdown posts). Same rule as replies:
+ * a match means suppress the message entirely, never post a censored version.
+ */
+export function violatesOutputSafety(text: string): boolean {
+  return OUTPUT_SLUR_BLOCKLIST.test(text) || INTERNAL_LEAK_BLOCKLIST.test(text);
+}
+
 export interface UserIntent {
   content: string;
   userId: string;

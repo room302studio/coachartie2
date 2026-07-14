@@ -202,6 +202,14 @@ async function start() {
         console.error('❌ GitHub integration init failed:', error);
       }
 
+      // Steam launch countdown (Sterling Artie milestone posts in #prison; self-disarms after launch)
+      import('./services/launch-countdown.js').then(({ initializeLaunchCountdown }) => {
+        initializeLaunchCountdown(client);
+      }).catch((error) => {
+        logger.warn('Failed to initialize launch countdown:', error);
+        console.error('❌ Launch countdown init failed:', error);
+      });
+
       // Initialize GitHub Identity Resolver (auto-maps GitHub → Discord users)
       // Initialize GitHub Studio Manager (daily digests, stale PR nudges)
       if (process.env.GITHUB_TOKEN) {
