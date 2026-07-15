@@ -146,6 +146,15 @@ const BLOCKED_USER_IDS = new Set<string>([
   '1064472458448617502', // yellowaquarium — banned 2026-07-15 for burning credits with hour-long troll spam
 ]);
 
+// Blocked users get a 💔 instead of words. Words cost credits — the exact thing that got them
+// banned — but a reaction is free, and it reads as "I see you, and no" rather than a void the
+// troll can keep poking. Per-user cooldown so the heartbreak can't itself be farmed: spam
+// forty messages, get one 💔. Keyed by author id (the immutable snowflake), so renames don't
+// reset it.
+const BLOCKED_REACTION = '💔';
+const BLOCKED_REACTION_COOLDOWN_MS = 5 * 60 * 1000;
+const lastBlockedReactionAt = new Map<string, number>();
+
 // Tight-leash list: specific EJ-curated trolls to THROTTLE (not ban). No automated signal
 // cleanly separates them (they out-post fans and score mid on warmth), so it's a manual list.
 // Leashed users get curt brush-offs from the 2nd reply and go silent fast.
@@ -724,8 +733,20 @@ export function setupMessageHandler(client: Client) {
     if (message.author.id === client.user!.id) return;
 
     // Hard ban: users banned from using Artie entirely. Dropped before any processing —
-    // no response, no LLM call, no cost. (EJ-curated.)
-    if (BLOCKED_USER_IDS.has(message.author.id)) return;
+    // no response, no LLM call, no cost. (EJ-curated.) They get a rate-limited 💔 and nothing else.
+    if (BLOCKED_USER_IDS.has(message.author.id)) {
+      const now = Date.now();
+      const lastReaction = lastBlockedReactionAt.get(message.author.id) ?? 0;
+      if (now - lastReaction >= BLOCKED_REACTION_COOLDOWN_MS) {
+        // Stamp before awaiting: a burst of spam arrives faster than the API round-trip, and
+        // an unstamped window would let the whole burst through the cooldown check at once.
+        lastBlockedReactionAt.set(message.author.id, now);
+        message
+          .react(BLOCKED_REACTION)
+          .catch((err) => logger.debug(`Failed to 💔 blocked user ${message.author.tag}:`, err));
+      }
+      return;
+    }
 
     // EMERGENCY KILL SWITCH — checked per message, no restart required.
     // COACH-ARTIE CHANNELS ONLY: in the public Subway Builder guild, only respond in robot /

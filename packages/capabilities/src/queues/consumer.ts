@@ -119,7 +119,11 @@ export async function startMessageConsumer(): Promise<Worker<IncomingMessage, vo
 
       // CRITICAL: Global timeout to prevent infinite loops at ANY level
       // This catches hangs in capability retries, LLM loops, or any other processing
-      const GLOBAL_TIMEOUT_MS = 120000; // 2 minutes - stuck jobs free up fast instead of hanging a worker
+      // Must stay ABOVE (models tried * PER_REQUEST_TIMEOUT_MS) or the fallback chain gets
+      // guillotined mid-retry and the user gets silence. At 120s it was BELOW the chain's
+      // worst case, so a single hung model (opus-4.8) killed every reply for hours.
+      // See PER_REQUEST_TIMEOUT_MS in services/llm/openrouter.ts before changing this.
+      const GLOBAL_TIMEOUT_MS = 180000; // 3 minutes - stuck jobs free up without cutting off fallback
       const timeoutPromise = new Promise<never>((_, reject) => {
         setTimeout(() => {
           const errorMsg = `Global job timeout after ${GLOBAL_TIMEOUT_MS / 1000}s - prevents infinite loops and resource exhaustion`;

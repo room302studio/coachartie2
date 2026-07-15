@@ -17,6 +17,19 @@ import { costMonitor } from '../monitoring/cost-monitor.js';
 // Context Alchemy observability
 import { traceManager, experimentManager } from '../context-alchemy/index.js';
 
+/**
+ * Hard ceiling on ONE model attempt. The whole fallback chain has to finish inside the
+ * consumer's GLOBAL_TIMEOUT_MS, so this must satisfy:
+ *
+ *   (number of models to try) * PER_REQUEST_TIMEOUT_MS  <  GLOBAL_TIMEOUT_MS
+ *
+ * Today that's 3 models * 45s = 135s against a 180s budget. If you add models to
+ * OPENROUTER_MODELS or lower the global timeout, redo that arithmetic — when it stops
+ * holding, the failure is not a slow reply, it's total silence: the job is killed
+ * mid-fallback and the timeout path sends nothing at all.
+ */
+export const PER_REQUEST_TIMEOUT_MS = 45_000;
+
 class OpenRouterService {
   private client: OpenAI;
   private models: string[];
@@ -98,6 +111,14 @@ class OpenRouterService {
     this.client = new OpenAI({
       apiKey,
       baseURL,
+      // A wedged provider must never eat the whole job budget. The SDK defaults to a 600s
+      // timeout with 2 internal retries — worst case 30 minutes against a 120s job budget —
+      // so when opus-4.8 started hanging without ever returning, EVERY reply died on the
+      // global timeout and Artie went silent for hours while looking perfectly healthy.
+      // Bound each attempt well under the budget; the model-fallback loop below IS the retry,
+      // so SDK-level retries would only multiply the latency that caused the outage.
+      timeout: PER_REQUEST_TIMEOUT_MS,
+      maxRetries: 0,
       defaultHeaders: {
         'HTTP-Referer': 'https://coach-artie.local',
         'X-Title': 'Coach Artie',
