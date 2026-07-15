@@ -138,12 +138,16 @@ const ANTIBODY_WINDOW_MS = 30 * 60 * 1000; // 30-minute rolling window
 const ANTIBODY_HARD_CAP = 80; // replies in-window before Artie goes silent on them
 const ANTIBODY_BREVITY_AT = 50; // start shrinking replies once they've had this many
 
-// Tight-leash list: specific EJ-curated trolls. No automated signal cleanly separates them
-// (they out-post fans and score mid on warmth), so this is a manual naughty-list. Leashed users
-// get curt brush-offs from the 2nd reply and go silent fast.
-const TIGHT_LEASH_IDS = new Set<string>([
-  '1064472458448617502', // yellowaquarium — hour-long impersonation/social-engineering spam 2026-07-15
+// Hard ban: users who get NO response from Artie at all (dropped before any processing).
+// EJ-curated. Supersedes the tight-leash list.
+const BLOCKED_USER_IDS = new Set<string>([
+  '1064472458448617502', // yellowaquarium — banned 2026-07-15 for burning credits with hour-long troll spam
 ]);
+
+// Tight-leash list: specific EJ-curated trolls to THROTTLE (not ban). No automated signal
+// cleanly separates them (they out-post fans and score mid on warmth), so it's a manual list.
+// Leashed users get curt brush-offs from the 2nd reply and go silent fast.
+const TIGHT_LEASH_IDS = new Set<string>([]);
 const LEASH_BREVITY_AT = 2;
 const LEASH_HARD_CAP = 8;
 
@@ -954,6 +958,10 @@ export function setupMessageHandler(client: Client) {
 
     // Ignore our own messages to prevent loops
     if (message.author.id === client.user!.id) return;
+
+    // Hard ban: users banned from using Artie entirely. Dropped before any processing —
+    // no response, no LLM call, no cost. (EJ-curated.)
+    if (BLOCKED_USER_IDS.has(message.author.id)) return;
 
     // EMERGENCY KILL SWITCH — checked per message, no restart required.
     // COACH-ARTIE CHANNELS ONLY: in the public Subway Builder guild, only respond in robot /
