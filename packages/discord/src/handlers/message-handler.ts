@@ -155,6 +155,79 @@ const BLOCKED_REACTION = '💔';
 const BLOCKED_REACTION_COOLDOWN_MS = 5 * 60 * 1000;
 const lastBlockedReactionAt = new Map<string, number>();
 
+// Ambient reactions: Artie sometimes just reacts to a message instead of staying silent.
+// Free (no LLM call, no tokens) and it makes him feel present in a channel without him
+// barging into conversations he wasn't invited to — the exact thing we spent a week making
+// him stop doing. The whole point is that it's RARE: the wrong emoji on the right message is
+// only funny because he doesn't do it every time. Roll the dice, mostly lose.
+const AMBIENT_REACTION_LIKELIHOOD = parseInt(process.env.AMBIENT_REACTION_LIKELIHOOD || '4'); // percent
+const AMBIENT_REACTION_COOLDOWN_MS = parseInt(
+  process.env.AMBIENT_REACTION_COOLDOWN_MS || '90000'
+); // per channel
+const AMBIENT_REACTION_MIN_WORDS = 4; // one-word chatter isn't worth a reaction
+const lastAmbientReactionAt = new Map<string, number>();
+
+// Artie's emoji vocabulary is CONTENT, not code: it lives in the prompts table under
+// AMBIENT_REACTION_EMOJI (whitespace-separated), so retuning what he's allowed to say costs
+// a sqlite UPDATE instead of a build + deploy + restart. Same rule as PROMPT_SYSTEM — if
+// you're about to paste personality into a .ts file, it belongs in the DB instead.
+// Cached 30s to match promptManager, so an edit shows up within half a minute.
+const AMBIENT_EMOJI_PROMPT = 'AMBIENT_REACTION_EMOJI';
+const EMOJI_CACHE_MS = 30_000;
+let emojiCache: { at: number; emoji: string[] } | null = null;
+let warnedNoPalette = false;
+
+function getAmbientEmoji(): string[] {
+  const now = Date.now();
+  if (emojiCache && now - emojiCache.at < EMOJI_CACHE_MS) {
+    return emojiCache.emoji;
+  }
+  try {
+    const row = getSyncDb().get<{ content?: string }>(
+      `SELECT content FROM prompts WHERE name = ? AND is_active = 1`,
+      [AMBIENT_EMOJI_PROMPT]
+    );
+    const emoji = (row?.content ?? '').split(/\s+/).filter(Boolean);
+    emojiCache = { at: now, emoji };
+    // No palette means the feature is silently off, which is exactly the kind of quiet
+    // nothing that took hours to find last time. Say it out loud, once.
+    if (emoji.length === 0 && !warnedNoPalette) {
+      warnedNoPalette = true;
+      logger.warn(
+        `No ${AMBIENT_EMOJI_PROMPT} palette in the prompts table — ambient reactions are OFF. ` +
+          `Add a row with whitespace-separated emoji to turn them back on.`
+      );
+    }
+    return emoji;
+  } catch (err) {
+    logger.warn('Could not read ambient emoji palette:', err);
+    return [];
+  }
+}
+
+/**
+ * Roll for an ambient reaction. Per-CHANNEL cooldown (not per-user): the spam risk is a
+ * channel full of emoji, and one busy user shouldn't be able to soak up every roll.
+ */
+function maybeAmbientReact(message: Message): void {
+  if (message.author.bot) return;
+  if (message.content.trim().split(/\s+/).length < AMBIENT_REACTION_MIN_WORDS) return;
+
+  const now = Date.now();
+  const last = lastAmbientReactionAt.get(message.channelId) ?? 0;
+  if (now - last < AMBIENT_REACTION_COOLDOWN_MS) return;
+  if (!chance.bool({ likelihood: AMBIENT_REACTION_LIKELIHOOD })) return;
+
+  const palette = getAmbientEmoji();
+  if (palette.length === 0) return;
+
+  // Stamp before the await so a burst can't slip several reactions through at once.
+  lastAmbientReactionAt.set(message.channelId, now);
+  message
+    .react(chance.pickone(palette))
+    .catch((err) => logger.debug('Ambient reaction failed:', err));
+}
+
 // Tight-leash list: specific EJ-curated trolls to THROTTLE (not ban). No automated signal
 // cleanly separates them (they out-post fans and score mid on warmth), so it's a manual list.
 // Leashed users get curt brush-offs from the 2nd reply and go silent fast.
@@ -747,6 +820,10 @@ export function setupMessageHandler(client: Client) {
       }
       return;
     }
+
+    // Roll for a free, wordless reaction. Independent of whether he ends up replying — the
+    // point is presence without barging in, and it costs no tokens.
+    maybeAmbientReact(message);
 
     // EMERGENCY KILL SWITCH — checked per message, no restart required.
     // COACH-ARTIE CHANNELS ONLY: in the public Subway Builder guild, only respond in robot /
