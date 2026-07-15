@@ -33,6 +33,18 @@ export interface OrchestrationContext {
   capabilityFailureCount: Map<string, number>; // Circuit breaker: track failures per capability
   discord_context?: any; // Discord-specific context for mention resolution, etc.
 
+  /**
+   * Absolute wall-clock ms (Date.now()) by which this job must produce words.
+   *
+   * An absolute deadline rather than a duration, because durations measured from different
+   * zero points silently overrun: the loop's own "150s budget" started when the LOOP started,
+   * while the consumer's 180s kill started when the JOB started. Everything before the loop —
+   * context building, the first LLM call, capability execution — was free time the loop never
+   * counted, so its soft deadline could land AFTER the hard kill and never fire. A deadline
+   * every component compares against has one zero point and can't drift.
+   */
+  deadlineAt?: number;
+
   // Security: Taint tracking for external content
   // When true, dangerous capabilities (shell, fs write, git) are blocked
   // to prevent prompt injection from external sources like moltbook

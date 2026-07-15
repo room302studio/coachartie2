@@ -60,7 +60,12 @@ export class LLMLoopService {
     // that one just kills the job. See config/timeouts.ts for the invariant.
     const GLOBAL_TIMEOUT_MS = LLM_LOOP_TIMEOUT_MS;
     const startTime = Date.now();
-    const outOfTime = () => Date.now() - startTime > GLOBAL_TIMEOUT_MS;
+    // Prefer the job-wide deadline stamped when the job began. Measuring our own window from
+    // the moment THIS loop happened to start ignores everything that ran before it, which is
+    // how a "soft" deadline ended up landing after the hard kill and never firing.
+    // Fall back to the relative window only when there's no deadline in context.
+    const deadlineAt = context.deadlineAt ?? startTime + GLOBAL_TIMEOUT_MS;
+    const outOfTime = () => Date.now() >= deadlineAt;
 
     // (The old throwing checkTimeout() lived here. It was the ONLY thing standing between a
     // slow reply and a silent one: nothing caught what it threw, so the whole job died and
@@ -324,9 +329,9 @@ export class LLMLoopService {
 
     logger.warn(
       outOfTime()
-        ? `⏱️ LLM-driven loop hit the ${GLOBAL_TIMEOUT_MS / 1000}s soft deadline at iteration ` +
-            `${iterationCount}/${maxIterations} - returning best answer so far` +
-            `${lastLLMResponse ? '' : ' (and there ISN\'T one — user gets the canned line)'}`
+        ? `⏱️ LLM-driven loop hit the soft deadline at iteration ${iterationCount}/${maxIterations} ` +
+            `after ${((Date.now() - startTime) / 1000).toFixed(1)}s in-loop - returning best answer so far` +
+            `${lastLLMResponse ? '' : " (and there ISN'T one — user gets the canned line)"}`
         : `⚠️ LLM-driven loop reached maximum iterations (${maxIterations}) - ending`
     );
     // Return the last meaningful LLM response instead of a generic canned message

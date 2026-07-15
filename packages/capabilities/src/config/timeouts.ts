@@ -26,3 +26,18 @@
 export const PER_REQUEST_TIMEOUT_MS = 45_000;
 export const LLM_LOOP_TIMEOUT_MS = 150_000;
 export const JOB_TIMEOUT_MS = 180_000;
+
+/**
+ * How far AHEAD of the hard JOB kill the soft deadline sits (context.deadlineAt).
+ *
+ * A duration alone wasn't enough: LLM_LOOP_TIMEOUT_MS was measured from when the LOOP
+ * started, while JOB_TIMEOUT_MS was measured from when the JOB started. The gap between
+ * those two zero points (context building, first LLM call, capability execution) meant the
+ * "soft" deadline could land after the hard one and never fire at all — observed in prod:
+ * a job died on the 180s kill having never once logged the soft deadline.
+ *
+ * So the deadline is absolute and stamped at job start. This reserve is the headroom left
+ * to actually deliver the salvaged answer — finish the in-flight call, strip tags, enqueue
+ * the reply — after we stop starting new work.
+ */
+export const SOFT_DEADLINE_RESERVE_MS = 30_000;

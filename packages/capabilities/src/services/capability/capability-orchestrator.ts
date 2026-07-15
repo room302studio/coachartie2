@@ -8,6 +8,7 @@ import { llmResponseCoordinator } from '../llm/llm-response-coordinator.js';
 import { capabilityBootstrap } from './capability-bootstrap.js';
 import { memoryOrchestration } from '../memory/memory-orchestration.js';
 import { llmLoopService } from '../llm/llm-loop-service.js';
+import { JOB_TIMEOUT_MS, SOFT_DEADLINE_RESERVE_MS } from '../../config/timeouts.js';
 
 // Import Context Alchemy observability
 import { traceManager } from '../context-alchemy/index.js';
@@ -240,6 +241,10 @@ export class CapabilityOrchestrator {
       capabilityFailureCount: new Map(), // Circuit breaker
       discord_context: message.context, // Pass through Discord context for mention resolution
       traceId, // Context Alchemy: Link to generation trace
+      // Stamp the deadline as early as possible: it has to cover the work that happens
+      // BEFORE the loop too, since that's exactly the time the loop used to ignore.
+      // SOFT_DEADLINE_RESERVE_MS leaves room to actually send the answer we salvage.
+      deadlineAt: Date.now() + JOB_TIMEOUT_MS - SOFT_DEADLINE_RESERVE_MS,
     };
   }
 
