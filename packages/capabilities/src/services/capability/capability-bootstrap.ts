@@ -65,6 +65,7 @@ import { mentionProxyCapability } from '../../capabilities/communication/mention
 import { emailCapability } from '../../capabilities/communication/email.js';
 import { redditCapability } from '../../capabilities/communication/reddit.js';
 import { proactiveDMCapability } from '../../capabilities/communication/proactive-dm.js';
+import { relayCapability } from '../../capabilities/communication/relay.js';
 // Analytics capabilities
 import { selfStatsCapability } from '../../capabilities/self-stats.js';
 import { communityAnalyticsCapability } from '../../capabilities/community-analytics.js';
@@ -131,6 +132,7 @@ export class CapabilityBootstrap {
         discordReactionCapability, stripePaymentsCapability, discordNicknameCapability,
         discordThreadsCapability, discordSendMessageCapability, discordChannelsCapability,
         discordUserHistoryCapability, discordIssueParserCapability, sendMetroFileCapability,
+        relayCapability,
       ];
       for (const capability of ALL_CAPABILITIES) {
         capabilityRegistry.register(capability);

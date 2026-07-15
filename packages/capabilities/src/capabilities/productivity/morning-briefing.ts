@@ -18,6 +18,10 @@
  */
 
 import { logger } from '@coachartie/shared';
+import {
+  getPendingRelaysForBriefing,
+  markRelaysDelivered,
+} from '../communication/relay.js';
 import type {
   RegisteredCapability,
   CapabilityContext,
@@ -1457,7 +1461,8 @@ WRITING STYLE:
 - Gliders are fun — mention casually, don't treat as anomaly
 - Body readiness is your LEAD PERSONAL INDICATOR. Weave it naturally into the opening — don't just report the number, interpret what it means for the day ahead
 - ALWAYS include the tasks section if present — blocked items are urgent, suggested items are the backlog. Never drop this section. Format: "📋 **Tasks** — ⛔ [blocked item] | 💡 [top suggested]". If there are 10+ suggested cards, call that out explicitly ("15 in backlog").
-- Skip a section entirely if it has nothing interesting — except tasks, always keep tasks
+- ALWAYS include the relays section if present — these are messages real people asked you to pass along, and dropping one means a human's message never arrived. Attribute each to its sender verbatim; do not merge, summarize away, or editorialize them. Format: "📮 **Passed along** — [name]: [message]".
+- Skip a section entirely if it has nothing interesting — except tasks and relays, always keep those
 - If everything is genuinely quiet, make it the shortest brief you've ever written`;
 
 async function editorPass(rawSections: Record<string, string>, dateStr: string, footer: string): Promise<string> {
@@ -1586,6 +1591,11 @@ async function generateBriefing(_config: BriefingConfig): Promise<string> {
   rawSections['mail'] = await generateMailSection();
   rawSections['tasks'] = generateTasksSection();
 
+  // Messages people asked Artie to pass along. Held pending until the brief actually
+  // goes out, so a failed editor pass doesn't swallow them.
+  const relays = getPendingRelaysForBriefing();
+  rawSections['relays'] = relays.text;
+
   // OSINT sections — with day-over-day deltas baked in
   const skyRaw = await generateSkywatchSection();
   const skyAvg = queryDb(DB_PATHS.skywatch,
@@ -1645,6 +1655,9 @@ async function generateBriefing(_config: BriefingConfig): Promise<string> {
   const edited = await editorPass(rawSections, dateStr, footer);
 
   if (edited && edited.length > 100) {
+    // The brief carried the relays, so retire them. On the fallback path below they stay
+    // pending and ride along tomorrow instead of vanishing into a brief that never landed.
+    markRelaysDelivered(relays.ids);
     return edited;
   }
 
