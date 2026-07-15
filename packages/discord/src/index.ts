@@ -43,7 +43,6 @@ import { initializeGitHubIntegration } from './services/github-integration.js';
 import { initializeMentionProxyService } from './services/mention-proxy-service.js';
 import { initializeGitHubSync } from './services/github-sync.js';
 import { observationalLearning } from './services/observational-learning.js';
-import './queues/outgoing-consumer.js';
 
 export const client = new Client({
   intents: [

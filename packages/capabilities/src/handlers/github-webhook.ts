@@ -278,7 +278,7 @@ async function handlePushEvent(payload: GitHubPushPayload): Promise<void> {
 
   const celebrationMessage = generatePushCelebration(payload);
 
-  await publishMessage('github-bot', celebrationMessage, 'general', 'GitHub Bot', true);
+  await publishMessage('github-bot', celebrationMessage, GITHUB_FEED_CHANNEL_ID, 'GitHub Bot', true);
 }
 
 async function handleReleaseEvent(payload: GitHubReleasePayload): Promise<void> {
@@ -314,7 +314,7 @@ Please announce this release in the appropriate Discord channel.`;
   await publishMessage(
     'github-webhook-release',
     artieMessage,
-    'general', // Default channel, but Artie can override via capabilities
+    GITHUB_FEED_CHANNEL_ID, // Artie can still override via capabilities
     'GitHub Webhook',
     false // Don't skip capability extraction
   );
@@ -469,7 +469,7 @@ async function handlePullRequestEvent(payload: GitHubWebhookPayload): Promise<vo
 
   const celebrationMessage = generatePRCelebration(payload);
 
-  await publishMessage('github-bot', celebrationMessage, 'general', 'GitHub Bot', true);
+  await publishMessage('github-bot', celebrationMessage, GITHUB_FEED_CHANNEL_ID, 'GitHub Bot', true);
 }
 
 async function handleIssueEvent(payload: GitHubWebhookPayload): Promise<void> {

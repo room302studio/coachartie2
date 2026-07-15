@@ -56,9 +56,21 @@ function unmarkSent(key: string): void {
   recentlySent.delete(key);
 }
 
+/**
+ * What actually lands on the discord outgoing queue: a proper OutgoingMessage from the
+ * capabilities consumer, OR the looser {userId, content, channelId?} that proactive DMs,
+ * meeting reminders and delivery fallbacks publish directly. Modelled here so one worker
+ * can serve both instead of two racing workers each half-understanding the traffic.
+ */
+type DiscordOutgoingJob = OutgoingMessage & {
+  content?: string;
+  channelId?: string;
+  source?: string;
+};
+
 export async function startResponseConsumer(
   client: Client
-): Promise<Worker<OutgoingMessage> | null> {
+): Promise<Worker<DiscordOutgoingJob> | null> {
   // Check Redis availability first
   const redisOk = await testRedisConnection();
   if (!redisOk) {
@@ -68,7 +80,7 @@ export async function startResponseConsumer(
 
   logger.info('✅ Discord response consumer: Redis available - starting worker');
 
-  const worker = createWorker<OutgoingMessage, void>(QUEUES.OUTGOING_DISCORD, async (job) => {
+  const worker = createWorker<DiscordOutgoingJob, void>(QUEUES.OUTGOING_DISCORD, async (job) => {
     const response = job.data;
 
     // Idempotency: under load a job can exceed the 120s timeout and get resubmitted/retried,
@@ -82,10 +94,36 @@ export async function startResponseConsumer(
     }
 
     try {
-      // Get channel ID from the response metadata
-      const channelId = response.metadata?.channelId;
+      // Two shapes arrive on this queue. The capabilities consumer emits a real
+      // OutgoingMessage ({message, metadata.channelId}); proactive DMs, meeting reminders and
+      // delivery fallbacks emit {userId, content, channelId?}. They used to be served by TWO
+      // workers racing on the SAME queue name, so each job went to whichever grabbed it first:
+      // DM-shaped jobs hitting this worker threw "No channelId in response metadata" (164 in
+      // prod) and replies hitting the other read content=undefined and silently sent nothing.
+      // One worker now understands both.
+      const text = response.message ?? response.content ?? '';
+      const channelId = response.metadata?.channelId ?? response.channelId;
+
+      // DM path: no channel, but we know who to reach.
       if (!channelId) {
-        throw new Error('No channelId in response metadata');
+        if (!response.userId) {
+          throw new Error('Outgoing discord job has neither a channelId nor a userId');
+        }
+
+        const dmChunks = chunkMessage(resolveKnownMentions(text));
+        if (dmChunks.length === 0) {
+          if (dedupeKey) unmarkSent(dedupeKey);
+          logger.warn(`🔇 Empty DM for user ${response.userId} — nothing sent.`);
+          return;
+        }
+
+        if (dedupeKey) markSent(dedupeKey);
+        const user = await client.users.fetch(response.userId);
+        for (const chunk of dmChunks) {
+          await user.send(chunk);
+        }
+        logger.info(`✅ DM sent to ${response.userId} (${dmChunks.length} chunks)`);
+        return;
       }
 
       // Find the channel
@@ -100,8 +138,8 @@ export async function startResponseConsumer(
       if (dedupeKey) markSent(dedupeKey);
 
       // Check if this is a special Discord UI response
-      if (response.message.startsWith('DISCORD_UI:')) {
-        await handleDiscordUIResponse(channel, response.message);
+      if (text.startsWith('DISCORD_UI:')) {
+        await handleDiscordUIResponse(channel, text);
       } else {
         // Send regular text message (only if channel supports it)
         if ('send' in channel) {
@@ -113,7 +151,7 @@ export async function startResponseConsumer(
 
           // Chunk the message to preserve formatting and respect Discord limits.
           // Resolve known plain-text @names to real pings so e.g. "@ejfox" actually notifies.
-          const chunks = chunkMessage(resolveKnownMentions(response.message + debugInfo));
+          const chunks = chunkMessage(resolveKnownMentions(text + debugInfo));
 
           // chunkMessage returns [] for empty input, so the loop below sends NOTHING while
           // the code after it still logs a successful send and the dedupe claim sticks —
