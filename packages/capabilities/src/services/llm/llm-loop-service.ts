@@ -8,6 +8,7 @@ import { capabilityExecutor } from '../capability/capability-executor.js';
 import { llmResponseCoordinator } from './llm-response-coordinator.js';
 import { getErrorMessage } from '../../utils/error-utils.js';
 import { OrchestrationContext, CapabilityResult } from '../../types/orchestration-types.js';
+import { LLM_LOOP_TIMEOUT_MS } from '../../config/timeouts.js';
 
 /**
  * ONE source of truth for the loop bounds, because the loop and the prompt that DESCRIBES
@@ -54,22 +55,17 @@ export class LLMLoopService {
 
     logger.info(`🤖 STARTING LLM-DRIVEN EXECUTION LOOP - This confirms new system is active!`);
 
-    // CRITICAL: Global timeout to prevent hung jobs
-    const GLOBAL_TIMEOUT_MS = 120000; // 2 minutes
+    // SOFT deadline. This is the limit that should actually fire, and it must fire FIRST —
+    // before the consumer's hard JOB_TIMEOUT_MS — because this one still produces words and
+    // that one just kills the job. See config/timeouts.ts for the invariant.
+    const GLOBAL_TIMEOUT_MS = LLM_LOOP_TIMEOUT_MS;
     const startTime = Date.now();
+    const outOfTime = () => Date.now() - startTime > GLOBAL_TIMEOUT_MS;
 
-    const checkTimeout = () => {
-      const elapsed = Date.now() - startTime;
-      if (elapsed > GLOBAL_TIMEOUT_MS) {
-        const elapsedSeconds = (elapsed / 1000).toFixed(1);
-        logger.warn(
-          `⏱️ Orchestration timeout after ${elapsedSeconds}s (limit: ${GLOBAL_TIMEOUT_MS / 1000}s)`
-        );
-        throw new Error(
-          `Orchestration timeout after ${elapsedSeconds}s - this prevents infinite loops and resource exhaustion`
-        );
-      }
-    };
+    // (The old throwing checkTimeout() lived here. It was the ONLY thing standing between a
+    // slow reply and a silent one: nothing caught what it threw, so the whole job died and
+    // the user got nothing. Replaced by outOfTime() above, which ends the loop gracefully and
+    // returns the best answer we already have. Don't reintroduce a throw on this path.)
 
     // Build the conversation history for the loop
     const conversationHistory = [
@@ -156,8 +152,11 @@ export class LLMLoopService {
     const maxIterations = explorationMaxIterations(); // Reduced from 24 to save costs
     const minIterations = explorationMinIterations(); // Reduced from 3 - simple messages don't need iteration
 
-    while (iterationCount < maxIterations) {
-      checkTimeout(); // Check timeout before each iteration
+    // Stop STARTING new work when out of time, and fall through to the same graceful exit
+    // that max-iterations uses. Previously this called a checkTimeout() that THREW: nothing
+    // caught it, so it surfaced as a dead job and total silence — while `lastLLMResponse`
+    // sat right here holding a perfectly good answer we simply threw away.
+    while (iterationCount < maxIterations && !outOfTime()) {
       iterationCount++;
       logger.info(
         `🔄 LLM LOOP ITERATION ${iterationCount}/${maxIterations} - RECURSIVE EXECUTION IN PROGRESS`
@@ -323,7 +322,13 @@ export class LLMLoopService {
       }
     }
 
-    logger.warn(`⚠️ LLM-driven loop reached maximum iterations (${maxIterations}) - ending`);
+    logger.warn(
+      outOfTime()
+        ? `⏱️ LLM-driven loop hit the ${GLOBAL_TIMEOUT_MS / 1000}s soft deadline at iteration ` +
+            `${iterationCount}/${maxIterations} - returning best answer so far` +
+            `${lastLLMResponse ? '' : ' (and there ISN\'T one — user gets the canned line)'}`
+        : `⚠️ LLM-driven loop reached maximum iterations (${maxIterations}) - ending`
+    );
     // Return the last meaningful LLM response instead of a generic canned message
     if (lastLLMResponse) {
       const cleanResponse = llmResponseCoordinator.stripThinkingTags(

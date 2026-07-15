@@ -12,6 +12,7 @@ import {
   testRedisConnection,
 } from '@coachartie/shared';
 import { processMessage } from '../handlers/process-message.js';
+import { JOB_TIMEOUT_MS } from '../config/timeouts.js';
 import { jobTracker } from '../services/core/job-tracker.js';
 import type { Worker } from 'bullmq';
 
@@ -119,11 +120,10 @@ export async function startMessageConsumer(): Promise<Worker<IncomingMessage, vo
 
       // CRITICAL: Global timeout to prevent infinite loops at ANY level
       // This catches hangs in capability retries, LLM loops, or any other processing
-      // Must stay ABOVE (models tried * PER_REQUEST_TIMEOUT_MS) or the fallback chain gets
-      // guillotined mid-retry and the user gets silence. At 120s it was BELOW the chain's
-      // worst case, so a single hung model (opus-4.8) killed every reply for hours.
-      // See PER_REQUEST_TIMEOUT_MS in services/llm/openrouter.ts before changing this.
-      const GLOBAL_TIMEOUT_MS = 180000; // 3 minutes - stuck jobs free up without cutting off fallback
+      // HARD backstop only. The LLM loop's own soft deadline should always fire first and
+      // return words; if we get here, something is genuinely wedged and the user gets nothing.
+      // See config/timeouts.ts for the invariant tying this to the loop and per-request limits.
+      const GLOBAL_TIMEOUT_MS = JOB_TIMEOUT_MS;
       const timeoutPromise = new Promise<never>((_, reject) => {
         setTimeout(() => {
           const errorMsg = `Global job timeout after ${GLOBAL_TIMEOUT_MS / 1000}s - prevents infinite loops and resource exhaustion`;

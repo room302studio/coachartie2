@@ -17,18 +17,11 @@ import { costMonitor } from '../monitoring/cost-monitor.js';
 // Context Alchemy observability
 import { traceManager, experimentManager } from '../context-alchemy/index.js';
 
-/**
- * Hard ceiling on ONE model attempt. The whole fallback chain has to finish inside the
- * consumer's GLOBAL_TIMEOUT_MS, so this must satisfy:
- *
- *   (number of models to try) * PER_REQUEST_TIMEOUT_MS  <  GLOBAL_TIMEOUT_MS
- *
- * Today that's 3 models * 45s = 135s against a 180s budget. If you add models to
- * OPENROUTER_MODELS or lower the global timeout, redo that arithmetic — when it stops
- * holding, the failure is not a slow reply, it's total silence: the job is killed
- * mid-fallback and the timeout path sends nothing at all.
- */
-export const PER_REQUEST_TIMEOUT_MS = 45_000;
+// Hard ceiling on ONE model attempt. Lives in config/timeouts.ts with the rest of the reply
+// budget and the invariant tying them together — see that file before changing it.
+import { PER_REQUEST_TIMEOUT_MS } from '../../config/timeouts.js';
+
+export { PER_REQUEST_TIMEOUT_MS };
 
 class OpenRouterService {
   private client: OpenAI;
