@@ -708,23 +708,12 @@ capabilityRegistry.register(embeddedMCPCapability);
 import { scrapbookCapability } from '../../capabilities/memory/scrapbook.js';
 capabilityRegistry.register(scrapbookCapability);
 
-import { discordChannelsCapability } from '../../capabilities/discord/discord-channels.js';
-capabilityRegistry.register(discordChannelsCapability);
-
-import { discordThreadsCapability } from '../../capabilities/discord/discord-threads.js';
-capabilityRegistry.register(discordThreadsCapability);
-
-import { discordUserHistoryCapability } from '../../capabilities/discord/discord-user-history.js';
-capabilityRegistry.register(discordUserHistoryCapability);
-
-import { discordIssueParserCapability } from '../../capabilities/discord/discord-issue-parser.js';
-capabilityRegistry.register(discordIssueParserCapability);
-
-import { discordSendMessageCapability } from '../../capabilities/discord/discord-send-message.js';
-capabilityRegistry.register(discordSendMessageCapability);
-
-import { sendMetroFileCapability } from '../../capabilities/discord/send-metro-file.js';
-capabilityRegistry.register(sendMetroFileCapability);
+// (discord-channels, discord-threads, discord-user-history, discord-issue-parser,
+// discord-send-message and send-metro-file were registered here too, which is exactly the
+// double-registration the comment above warns about — they're all in bootstrap's
+// ALL_CAPABILITIES. That drifted back out of sync and logged 6 "Overwriting existing
+// capability" warnings on every single boot. Bootstrap owns them; this list must stay
+// limited to capabilities bootstrap does NOT touch.)
 
 // Log all successfully registered capabilities on startup
 logger.info(

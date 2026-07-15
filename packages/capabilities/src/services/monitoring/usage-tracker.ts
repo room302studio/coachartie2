@@ -36,6 +36,13 @@ const MODEL_PRICING: Record<string, { input: number; output: number }> = {
   'anthropic/claude-opus-4': { input: 0.015, output: 0.075 },
   'anthropic/claude-opus-4.5': { input: 0.015, output: 0.075 },
   'anthropic/claude-opus-4.6': { input: 0.005, output: 0.025 },
+  // The models actually in rotation (OPENROUTER_MODELS + SMART_MODEL). All three were
+  // MISSING, so calculateCost returned 0 for literally every call we made — cost tracking
+  // reported $0.00 for 100% of traffic. Rates read from the live OpenRouter /models API
+  // (per-token there, per-1K here), not estimated.
+  'anthropic/claude-haiku-4.5': { input: 0.001, output: 0.005 },
+  'anthropic/claude-sonnet-5': { input: 0.002, output: 0.01 },
+  'anthropic/claude-opus-4.8': { input: 0.005, output: 0.025 },
   // OpenAI
   'openai/gpt-3.5-turbo': { input: 0.0005, output: 0.0015 },
   'openai/gpt-4': { input: 0.03, output: 0.06 },
@@ -53,15 +60,26 @@ const MODEL_PRICING: Record<string, { input: number; output: number }> = {
   'google/gemma-2-9b-it:free': { input: 0, output: 0 },
 };
 
+// What we charge ourselves for a model we don't recognise. Deliberately the priciest tier we
+// use, so an untracked model reads as expensive rather than free.
+const UNKNOWN_MODEL_PRICING = { input: 0.015, output: 0.075 };
+
 export class UsageTracker {
   /**
    * Calculate estimated cost based on token usage and model
    */
   static calculateCost(modelName: string, usage: TokenUsage): number {
-    const pricing = MODEL_PRICING[modelName];
-    if (!pricing) {
-      logger.warn(`⚠️ No pricing info for model: ${modelName}`);
-      return 0;
+    const pricing = MODEL_PRICING[modelName] ?? UNKNOWN_MODEL_PRICING;
+    if (!MODEL_PRICING[modelName]) {
+      // Returning 0 here (the old behaviour) doesn't mean "unknown", it means "FREE" — and
+      // every downstream credit guard and cost report believed it. Whenever a model got
+      // swapped in that nobody added below, spend silently vanished from the books. Assume
+      // top-tier rates instead: over-reporting makes a budget alarm fire early, which is
+      // recoverable; under-reporting hides the burn until the credits are gone.
+      logger.warn(
+        `⚠️ No pricing info for model: ${modelName} — billing it at top-tier rates. ` +
+          `Add it to MODEL_PRICING (rates: openrouter.ai/api/v1/models) to track it accurately.`
+      );
     }
 
     const inputCost = (usage.prompt_tokens / 1000) * pricing.input;
