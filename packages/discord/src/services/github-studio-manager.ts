@@ -50,7 +50,13 @@ export class GitHubStudioManager {
     }, 30 * 60 * 1000);
 
     // Initial check after 60 seconds
-    setTimeout(() => this.checkAndPostDigest().catch(() => {}), 60 * 1000);
+    setTimeout(
+      () =>
+        this.checkAndPostDigest().catch((err) =>
+          logger.error('Studio manager initial digest error:', err)
+        ),
+      60 * 1000
+    );
 
 
     logger.info('GitHub studio manager started');

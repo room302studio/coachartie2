@@ -183,10 +183,34 @@ export const createQueue = <T = any>(name: string): Queue<T> => {
   return queue;
 };
 
+/**
+ * Queues that already have a worker in THIS process. Two workers on one queue are BullMQ
+ * "competing consumers": each job goes to whichever grabs it first. That's a legitimate
+ * scaling pattern when they agree about the payload — and silently destructive when they
+ * don't. The discord outgoing queue had exactly that (a typed OutgoingMessage worker plus
+ * a raw {userId, content} one), so traffic split at random between a working path and one
+ * that read undefined and sent nothing.
+ *
+ * Warn rather than throw: deliberate concurrency is real (see the "concurrent workers on
+ * the same queue" test). But a SECOND worker is nearly always someone bolting a new
+ * consumer onto a queue that already has one, so say so at startup — that's when it's
+ * cheap to notice, versus at 3am via a user saying "he ignored me".
+ */
+const workersByQueue = new Set<string>();
+
 export const createWorker = <T = any, R = any>(
   name: string,
   processor: (job: Job<T>) => Promise<R>
 ): Worker<T, R> => {
+  if (workersByQueue.has(name)) {
+    logger.warn(
+      `⚠️ Second worker registered for queue "${name}" in this process. Jobs will be split ` +
+        `between them at random — intended for concurrency, a silent bug if the two expect ` +
+        `different payload shapes (this is exactly how discord replies used to vanish).`
+    );
+  }
+  workersByQueue.add(name);
+
   const worker = new Worker<T, R>(name, processor, {
     connection: getBullMQConnectionConfig(),
     concurrency: parseInt(process.env.WORKER_CONCURRENCY || '5'),

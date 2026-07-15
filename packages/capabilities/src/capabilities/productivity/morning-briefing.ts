@@ -17,7 +17,8 @@
  *   - n8n calendar/email (when configured)
  */
 
-import { logger } from '@coachartie/shared';
+import { logger, getDb, errorEvents } from '@coachartie/shared';
+import { desc, gte, sql } from 'drizzle-orm';
 import {
   getPendingRelaysForBriefing,
   markRelaysDelivered,
@@ -438,6 +439,49 @@ function generateAnomalySection(): string {
   const items = anomalies.split('\n').filter(Boolean).map(l => `  · ${l}`);
   result += '\n' + items.join('\n');
   return result;
+}
+
+/** Below this, a day's errors are background noise not worth briefing words. */
+const ERROR_BRIEF_THRESHOLD = parseInt(process.env.ERROR_BRIEF_THRESHOLD || '5');
+
+/**
+ * Error rate over the last 24h, grouped by type.
+ *
+ * This section exists because the signal was never the problem. ~102 "402 insufficient
+ * credits" and 164 "No channelId in response metadata" errors sat in the logs (and in
+ * error_events) for WEEKS while Artie silently failed to answer people — every one of
+ * them recorded, none of them read. Nobody greps a log they have no reason to suspect.
+ * The briefing is somewhere a human actually looks, so the errors come here instead.
+ */
+function generateErrorSection(): string {
+  try {
+    const rows = getDb()
+      .select({
+        type: errorEvents.errorType,
+        service: errorEvents.service,
+        count: sql<number>`COUNT(*)`,
+      })
+      .from(errorEvents)
+      .where(gte(errorEvents.createdAt, sql`datetime('now', '-1 day')`))
+      .groupBy(errorEvents.errorType, errorEvents.service)
+      .orderBy(desc(sql`COUNT(*)`))
+      .limit(5)
+      .all();
+
+    const total = rows.reduce((n, r) => n + Number(r.count), 0);
+    if (total < ERROR_BRIEF_THRESHOLD) {
+      return '';
+    }
+
+    let text = `🩺 **Errors (24h)** — ${total} total`;
+    for (const r of rows) {
+      text += `\n  · ${r.count}× ${r.type} (${r.service})`;
+    }
+    return text;
+  } catch (error) {
+    logger.warn('Failed to build error section:', error);
+    return '';
+  }
 }
 
 function generateTasksSection(): string {
@@ -1462,7 +1506,8 @@ WRITING STYLE:
 - Body readiness is your LEAD PERSONAL INDICATOR. Weave it naturally into the opening — don't just report the number, interpret what it means for the day ahead
 - ALWAYS include the tasks section if present — blocked items are urgent, suggested items are the backlog. Never drop this section. Format: "📋 **Tasks** — ⛔ [blocked item] | 💡 [top suggested]". If there are 10+ suggested cards, call that out explicitly ("15 in backlog").
 - ALWAYS include the relays section if present — these are messages real people asked you to pass along, and dropping one means a human's message never arrived. Attribute each to its sender verbatim; do not merge, summarize away, or editorialize them. Format: "📮 **Passed along** — [name]: [message]".
-- Skip a section entirely if it has nothing interesting — except tasks and relays, always keep those
+- ALWAYS include the errors section if present — it only appears when something is genuinely broken, and it is the one signal that tells EJ Artie is failing silently. One line, verbatim counts, no reassurance. Format: "🩺 **Errors (24h)** — [n] total · [top type]".
+- Skip a section entirely if it has nothing interesting — except tasks, relays and errors, always keep those
 - If everything is genuinely quiet, make it the shortest brief you've ever written`;
 
 async function editorPass(rawSections: Record<string, string>, dateStr: string, footer: string): Promise<string> {
@@ -1590,6 +1635,7 @@ async function generateBriefing(_config: BriefingConfig): Promise<string> {
   rawSections['calendar'] = await generateCalendarSection();
   rawSections['mail'] = await generateMailSection();
   rawSections['tasks'] = generateTasksSection();
+  rawSections['errors'] = generateErrorSection();
 
   // Messages people asked Artie to pass along. Held pending until the brief actually
   // goes out, so a failed editor pass doesn't swallow them.

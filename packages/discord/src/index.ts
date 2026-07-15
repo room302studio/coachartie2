@@ -70,16 +70,22 @@ client.on(Events.MessageCreate, (msg) => {
   if (!msg.author.bot && msg.content.length > 5) {
     const githubSignals = /(?:push|commit|pr|pull request|issue|merge|branch|github|my pr|just pushed|just merged|i opened|i filed)/i;
     if (githubSignals.test(msg.content)) {
-      import('./services/github-identity-resolver.js').then(({ getIdentityResolver }) => {
-        const resolver = getIdentityResolver();
-        if (resolver) {
-          resolver.learnFromContext(
-            msg.author.id,
-            msg.author.displayName || msg.author.username,
-            msg.content
-          ).catch(() => {});
-        }
-      }).catch(() => {});
+      import('./services/github-identity-resolver.js')
+        .then(({ getIdentityResolver }) => {
+          const resolver = getIdentityResolver();
+          if (resolver) {
+            // Best-effort, but not invisible: a resolver that silently never learns looks
+            // identical to one that has nothing to learn.
+            resolver
+              .learnFromContext(
+                msg.author.id,
+                msg.author.displayName || msg.author.username,
+                msg.content
+              )
+              .catch((err) => logger.debug('Identity learning failed:', err));
+          }
+        })
+        .catch((err) => logger.warn('Identity resolver unavailable:', err));
     }
   }
 });

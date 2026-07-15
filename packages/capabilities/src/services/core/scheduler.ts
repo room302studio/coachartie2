@@ -2,6 +2,7 @@ import { Queue, Worker } from 'bullmq';
 import {
   logger,
   createRedisConnection,
+  createWorker,
   getSyncDb,
   IncomingMessage,
   QUEUES,
@@ -116,14 +117,11 @@ export class SchedulerService {
         connection,
       });
 
-      // Create worker to process scheduled jobs
-      this.worker = new Worker(
-        'coachartie-scheduler',
-        async (job) => {
-          await this.executeScheduledJob(job);
-        },
-        { connection }
-      );
+      // Via the shared helper, not a raw Worker: it's the only thing that can detect a
+      // second worker sneaking onto a queue that already has one.
+      this.worker = createWorker('coachartie-scheduler', async (job) => {
+        await this.executeScheduledJob(job);
+      });
 
       // Handle worker events
       this.worker.on('ready', () => {
