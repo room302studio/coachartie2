@@ -114,6 +114,20 @@ export async function startResponseConsumer(
           // Chunk the message to preserve formatting and respect Discord limits.
           // Resolve known plain-text @names to real pings so e.g. "@ejfox" actually notifies.
           const chunks = chunkMessage(resolveKnownMentions(response.message + debugInfo));
+
+          // chunkMessage returns [] for empty input, so the loop below sends NOTHING while
+          // the code after it still logs a successful send and the dedupe claim sticks —
+          // the reply is swallowed, the logs claim it landed, and a retry can't rescue it.
+          // That combination is why "Artie just ignored me" was invisible for weeks.
+          if (chunks.length === 0) {
+            if (dedupeKey) unmarkSent(dedupeKey);
+            logger.warn(
+              `🔇 Empty response for message ${response.inReplyTo} — nothing sent to channel ${channelId}. ` +
+                `Upstream generated no text; check the capabilities log at this timestamp for the real cause.`
+            );
+            return;
+          }
+
           for (const chunk of chunks) {
             await channel.send(chunk);
           }
