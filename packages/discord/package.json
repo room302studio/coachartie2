@@ -13,7 +13,6 @@
   },
   "dependencies": {
     "@coachartie/shared": "workspace:*",
-    "@coachartie/sms": "workspace:*",
     "@octokit/rest": "^22.0.0",
     "@supabase/supabase-js": "^2.49.4",
     "@types/node-fetch": "^2.6.12",
