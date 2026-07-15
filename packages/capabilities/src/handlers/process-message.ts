@@ -31,20 +31,22 @@ export async function processMessage(
     if (enableCapabilities) {
       logger.info(`🎬 Processing message with capability orchestration: ${message.id}`);
 
-      // Use capability orchestrator for full pipeline with streaming support
-      const orchestratedResponse = await capabilityOrchestrator.orchestrateMessage(
-        message,
-        onPartialResponse
-      );
-
-      // Ongoing per-user "vibe" scores — fire-and-forget so it never adds latency or
-      // touches the response model. Scored on the cheap background model.
+      // Ongoing per-user "vibe" scores — fire-and-forget on the cheap background model.
+      // Fired BEFORE orchestration (not after) so it scores the incoming message even when
+      // the response times out — otherwise a spammer's worst messages (which are exactly the
+      // ones that hit the 120s timeout) never get scored and their profile stays stale.
       try {
         const guildId = (message.context as { guildId?: string } | undefined)?.guildId || '';
         void updateUserScoresFromMessage(message.userId, guildId, message.message);
       } catch {
         // scoring must never affect the actual response
       }
+
+      // Use capability orchestrator for full pipeline with streaming support
+      const orchestratedResponse = await capabilityOrchestrator.orchestrateMessage(
+        message,
+        onPartialResponse
+      );
 
       // Check if we should auto-check credits
       const autoCheckEvery = parseInt(process.env.AUTO_CHECK_CREDITS_EVERY || '50');
