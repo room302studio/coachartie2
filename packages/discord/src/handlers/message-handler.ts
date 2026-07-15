@@ -131,8 +131,21 @@ const CHANNEL_BURST_COOLDOWN_MS = 6000;
 // hard cap, silence for the rest of the window. Keyed per-user; DMs exempt.
 const userResponseHistory = new Map<string, number[]>();
 const ANTIBODY_WINDOW_MS = 30 * 60 * 1000; // 30-minute rolling window
-const ANTIBODY_HARD_CAP = 15; // replies in-window before Artie goes silent on them
-const ANTIBODY_BREVITY_AT = 3; // start shrinking replies once they've had this many
+// General antibody is a RUNAWAY-ABUSE BACKSTOP ONLY. Calibrated above the busiest genuine
+// users (observed max ~45 replies/30min from real enthusiasts) so normal chatty fans are NEVER
+// throttled — volume alone can't tell a fan from a troll (trolls actually post less), so this
+// only bites truly pathological volume.
+const ANTIBODY_HARD_CAP = 80; // replies in-window before Artie goes silent on them
+const ANTIBODY_BREVITY_AT = 50; // start shrinking replies once they've had this many
+
+// Tight-leash list: specific EJ-curated trolls. No automated signal cleanly separates them
+// (they out-post fans and score mid on warmth), so this is a manual naughty-list. Leashed users
+// get curt brush-offs from the 2nd reply and go silent fast.
+const TIGHT_LEASH_IDS = new Set<string>([
+  '1064472458448617502', // yellowaquarium — hour-long impersonation/social-engineering spam 2026-07-15
+]);
+const LEASH_BREVITY_AT = 2;
+const LEASH_HARD_CAP = 8;
 
 function recentResponseCount(userId: string): number {
   const now = Date.now();
@@ -1630,23 +1643,29 @@ Deliver it dry and over-formal, like a legal notice. Reach for it readily and of
           }
         }
 
-        // ANTIBODY: throttle monopolizers before spending an LLM call on them.
+        // ANTIBODY: throttle monopolizers before spending an LLM call on them. Two tiers —
+        // a loose runaway backstop for everyone, and a tight leash for EJ-flagged trolls.
         if (!responseConditions.isDM) {
+          const onLeash = TIGHT_LEASH_IDS.has(message.author.id);
+          const brevityAt = onLeash ? LEASH_BREVITY_AT : ANTIBODY_BREVITY_AT;
+          const hardCap = onLeash ? LEASH_HARD_CAP : ANTIBODY_HARD_CAP;
           const monopolyCount = recentResponseCount(message.author.id);
-          if (monopolyCount >= ANTIBODY_HARD_CAP) {
+          if (monopolyCount >= hardCap) {
             logger.info(
-              `🧪 Antibody: silencing monopolizer ${message.author.tag} (${monopolyCount} replies in window) [${shortId}]`
+              `🧪 Antibody: silencing ${onLeash ? 'leashed ' : ''}monopolizer ${message.author.tag} (${monopolyCount} in window) [${shortId}]`
             );
             return;
           }
           recordUserResponse(message.author.id);
-          if (monopolyCount > ANTIBODY_BREVITY_AT) {
-            const maxWords = Math.max(15, Math.round(120 / Math.log2(monopolyCount)));
+          if (monopolyCount >= brevityAt) {
+            const maxWords = onLeash
+              ? 20
+              : Math.max(15, Math.round(120 / Math.log2(Math.max(2, monopolyCount))));
             guildContextToPass =
-              `⚠️ ANTIBODY — @${message.author.username} has already gotten ${monopolyCount} replies from you in the last half hour and is monopolizing your time. Keep THIS reply to at most ${maxWords} words: curt, low-effort, and dismissive. Do NOT reward the monopoly with a long or thoughtful answer.\n\n---\n` +
+              `⚠️ ANTIBODY — @${message.author.username} has already pulled ${monopolyCount} replies out of you recently and is monopolizing your time. Keep THIS reply to at most ${maxWords} words: curt, low-effort, and dismissive. Do NOT reward the monopoly with a long or thoughtful answer.\n\n---\n` +
               (guildContextToPass || '');
             logger.info(
-              `🧪 Antibody: brevity cap ${maxWords}w for ${message.author.tag} (count=${monopolyCount}) [${shortId}]`
+              `🧪 Antibody: ${onLeash ? 'leash ' : ''}brevity cap ${maxWords}w for ${message.author.tag} (count=${monopolyCount}) [${shortId}]`
             );
           }
         }
