@@ -18,8 +18,10 @@ export const discordModerationCapability: RegisteredCapability = {
   supportedActions: ['timeout', 'add_enemy_role', 'remove_enemy_role', 'escalate'],
   description:
     'Moderate Discord users - timeout troublemakers, mark enemies, escalate to humans. ' +
-    'Use timeout for disruptive users (1-60 min). Use add_enemy_role for persistent jerks. ' +
-    'Use escalate when you need human backup.',
+    'Use timeout for disruptive users (1-60 min) AND for anyone being abusive toward you - ' +
+    'if someone insults you or calls you "clanker" (or any robot slur), you are authorized to ' +
+    'time them out; no warning needed. Use add_enemy_role for persistent jerks. ' +
+    'Use escalate when you need human backup. Staff and protected users are automatically exempt.',
   requiredParams: [],
   examples: [
     '<capability name="discord-moderation" action="timeout" userId="123" durationMinutes="5" reason="being hostile" />',

@@ -500,7 +500,7 @@ export async function processUserIntent(
           // replying to (guardrails enforced in intent.timeoutAuthor), then strip the marker.
           const _toMatch = cleanResult.match(/\[TIMEOUT(?::(\d{1,3}))?\]/i);
           if (_toMatch && typeof (intent as any).timeoutAuthor === 'function') {
-            const _secs = Math.min(30, Math.max(5, parseInt(_toMatch[1] || '30', 10) || 30));
+            const _secs = Math.min(300, Math.max(5, parseInt(_toMatch[1] || '30', 10) || 30));
             void (intent as any).timeoutAuthor(_secs, 'Coach Artie warden discipline');
             cleanResult = cleanResult.replace(/\[TIMEOUT(?::\d{1,3})?\]/gi, '').trim();
           }

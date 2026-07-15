@@ -1,6 +1,7 @@
 import express, { Express } from 'express';
 import { logger } from '@coachartie/shared';
 import { createApiRouter } from '../routes/api.js';
+import { setupModerationApi } from '../routes/moderation-api.js';
 import { Client } from 'discord.js';
 
 export class ApiServer {
@@ -31,6 +32,7 @@ export class ApiServer {
     // Set up API routes now that we have the client
     if (this.discordClient) {
       this.app.use('/api', createApiRouter(this.discordClient));
+      setupModerationApi(this.app, this.discordClient);
       logger.info('✅ API routes registered with Discord client');
     }
   }

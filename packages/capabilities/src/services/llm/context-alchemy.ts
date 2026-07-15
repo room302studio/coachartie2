@@ -652,7 +652,15 @@ Important:
       const displayName = ctx.displayName || ctx.username;
       const _roleList = Array.isArray((ctx as any).roles) ? (ctx as any).roles.filter(Boolean) : [];
       const _roleSuffix = _roleList.length ? ` — roles: ${_roleList.join(", ")}` : "";
-      parts.push(`👤 Talking to: @${displayName}${_roleSuffix}`);
+      // Include the username when it differs so the speaker maps unambiguously onto
+      // channel-history labels ("Display (@username)") — Artie was mixing people up
+      const _unameSuffix =
+        ctx.username && ctx.username.toLowerCase() !== String(displayName).toLowerCase()
+          ? ` (@${ctx.username})`
+          : '';
+      parts.push(
+        `👤 Talking to: @${displayName}${_unameSuffix}${_roleSuffix} — this is the ONE person you are replying to; do not attribute other people's messages from the history to them.`
+      );
     }
 
     // Forum thread context (if applicable)
