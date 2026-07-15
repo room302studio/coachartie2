@@ -464,6 +464,25 @@ export function initializeDb(dbPath?: string): BetterSQLite3Database<typeof sche
     `CREATE INDEX IF NOT EXISTS idx_github_events_batch_key ON github_events_queue(batch_key)`
   );
 
+  raw.exec(`
+    CREATE TABLE IF NOT EXISTS relays (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      from_user_id TEXT NOT NULL,
+      from_display TEXT NOT NULL,
+      to_user_id TEXT NOT NULL,
+      content TEXT NOT NULL,
+      guild_id TEXT,
+      channel_id TEXT,
+      status TEXT NOT NULL DEFAULT 'pending',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      delivered_at DATETIME
+    )
+  `);
+  raw.exec(`CREATE INDEX IF NOT EXISTS idx_relays_to_status ON relays(to_user_id, status)`);
+  raw.exec(
+    `CREATE INDEX IF NOT EXISTS idx_relays_from_created ON relays(from_user_id, created_at)`
+  );
+
   return database;
 }
 

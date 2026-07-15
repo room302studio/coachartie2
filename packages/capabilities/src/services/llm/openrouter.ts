@@ -1,4 +1,5 @@
 import OpenAI from 'openai';
+import { estimateTokens } from '@coachartie/shared';
 import { config } from 'dotenv';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
@@ -110,13 +111,10 @@ class OpenRouterService {
       logger.error('❌ Failed to validate models on startup:', err);
     });
 
-    // Check credit balance on startup
+    // Check credit balance on startup, then poll every 30 min so the operator gets a
+    // low-balance DM warning BEFORE credits run dry (not just on a live 402).
     import('../monitoring/credit-monitor.js').then(({ creditMonitor }) => {
-      creditMonitor.proactiveBalanceCheck().then((result) => {
-        if (result.error) {
-          logger.debug(`Credit check on startup: ${result.error}`);
-        }
-      });
+      creditMonitor.startPeriodicBalanceCheck();
     });
   }
 
@@ -288,22 +286,6 @@ class OpenRouterService {
     return 'smart'; // Default tier
   }
 
-  async generateResponse(
-    _userMessage: string,
-    _userId: string,
-    _context?: string,
-    _messageId?: string
-  ): Promise<string> {
-    // DEPRECATED: This method should NOT exist - OpenRouter should be PURE
-    // All message building should happen in Context Alchemy
-    logger.error(
-      '🚨 generateResponse should NOT be used - OpenRouter must be PURE. Use Context Alchemy!'
-    );
-    throw new Error(
-      'DEPRECATED: Use Context Alchemy to build messages, then call generateFromMessageChain directly'
-    );
-  }
-
   async generateFromMessageChain(
     messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>,
     userId: string,
@@ -365,8 +347,13 @@ class OpenRouterService {
     const useSpecificModel = effectiveModel && effectiveModel.trim().length > 0;
     const startIndex = this.currentModelIndex;
 
-    // Try each model starting from current rotation position (or just the selected model)
-    const modelsToTry = useSpecificModel ? [effectiveModel] : this.models;
+    // Try each model starting from current rotation position. A specifically-requested
+    // model (three-tier strategy) is tried FIRST but still falls back to the rotation:
+    // with a bare [effectiveModel] a single transient provider error on SMART_MODEL left
+    // nothing to retry with, the orchestration failed, and Artie silently said nothing.
+    const modelsToTry = useSpecificModel
+      ? [effectiveModel, ...this.models.filter((m) => m !== effectiveModel)]
+      : this.models;
 
     // When OpenRouter returns a 402 of the form "you requested up to X tokens,
     // but can only afford Y", it means there IS still balance — just not enough
@@ -377,12 +364,12 @@ class OpenRouterService {
 
     for (let i = 0; i < modelsToTry.length; i++) {
       const model = useSpecificModel
-        ? effectiveModel
+        ? modelsToTry[i]
         : this.models[(startIndex + i) % this.models.length];
 
       try {
         logger.info(
-          `🤖 MODEL SELECTION: Using ${model} ${useSpecificModel ? '(SPECIFIC)' : `(${i + 1}/${modelsToTry.length})`} for ${messages.length} messages`
+          `🤖 MODEL SELECTION: Using ${model} ${useSpecificModel && i === 0 ? '(SPECIFIC)' : `(${i + 1}/${modelsToTry.length})`} for ${messages.length} messages`
         );
 
         // Use dynamic maxTokens from preflight analysis, or fall back to env default
@@ -699,8 +686,11 @@ class OpenRouterService {
     const useSpecificModel = effectiveModel && effectiveModel.trim().length > 0;
     const startIndex = this.currentModelIndex;
 
-    // Try each model starting from current rotation position (or just the selected model)
-    const modelsToTry = useSpecificModel ? [effectiveModel] : this.models;
+    // Specifically-requested model first, then the rotation as fallback (see the
+    // non-streaming path — a bare [effectiveModel] turns one transient error into silence).
+    const modelsToTry = useSpecificModel
+      ? [effectiveModel, ...this.models.filter((m) => m !== effectiveModel)]
+      : this.models;
 
     logger.info(
       `🤖 Starting streaming generation for user ${userId} ${useSpecificModel ? `using SPECIFIC model ${effectiveModel}` : `using model rotation`}`
@@ -708,7 +698,7 @@ class OpenRouterService {
 
     for (let i = 0; i < modelsToTry.length; i++) {
       const model = useSpecificModel
-        ? effectiveModel
+        ? modelsToTry[i]
         : this.models[(startIndex + i) % this.models.length];
 
       try {
@@ -777,7 +767,7 @@ class OpenRouterService {
           const estimatedPromptTokens = Math.ceil(
             messages.reduce((total, msg) => total + msg.content.length, 0) / 4
           );
-          const estimatedCompletionTokens = Math.ceil(fullResponse.length / 4);
+          const estimatedCompletionTokens = estimateTokens(fullResponse);
           usage = {
             prompt_tokens: estimatedPromptTokens,
             completion_tokens: estimatedCompletionTokens,
@@ -892,27 +882,6 @@ class OpenRouterService {
     throw new Error('❌ All LLM models failed. Check OpenRouter status and credits.');
   }
 
-  async isHealthy(): Promise<boolean> {
-    try {
-      // Simple health check - try the first model
-      const completion = await this.client.chat.completions.create({
-        model: this.models[0],
-        messages: [
-          {
-            role: 'user',
-            content: 'Say "OK" if you can respond.',
-          },
-        ],
-        max_tokens: 5,
-        temperature: 0,
-      });
-
-      return !!completion.choices[0]?.message?.content;
-    } catch (error) {
-      logger.error('OpenRouter health check failed:', error);
-      return false;
-    }
-  }
 }
 
 // Export singleton instance

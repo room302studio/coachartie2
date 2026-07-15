@@ -1,4 +1,5 @@
 import { logger } from '@coachartie/shared';
+import { delay, withRetry } from '@coachartie/shared';
 import {
   RegisteredCapability,
   CapabilityContext,
@@ -132,47 +133,22 @@ class RateLimiter {
 // Global rate limiter instance
 const rateLimiter = new RateLimiter();
 
-/**
- * Sleep helper for exponential backoff
- */
-const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+/** Moltbook only retries 429 / rate-limit errors — the policy; the backoff loop is shared. */
+const is429 = (error: any): boolean =>
+  error?.message?.includes('429') ||
+  error?.message?.toLowerCase().includes('rate limit') ||
+  error?.message?.toLowerCase().includes('too many requests');
 
-/**
- * Execute a fetch with exponential backoff retry on 429 errors
- */
-async function withRetry<T>(
-  fn: () => Promise<T>,
-  maxRetries: number = 3,
-  initialDelayMs: number = 1000
-): Promise<T> {
-  let lastError: Error | null = null;
-
-  for (let attempt = 0; attempt <= maxRetries; attempt++) {
-    try {
-      return await fn();
-    } catch (error: any) {
-      lastError = error;
-
-      // Check if it's a 429 rate limit error
-      const is429 =
-        error.message?.includes('429') ||
-        error.message?.toLowerCase().includes('rate limit') ||
-        error.message?.toLowerCase().includes('too many requests');
-
-      if (!is429 || attempt === maxRetries) {
-        throw error;
-      }
-
-      // Exponential backoff: 1s, 2s, 4s, 8s...
-      const delayMs = initialDelayMs * Math.pow(2, attempt);
+function withMoltbookRetry<T>(fn: () => Promise<T>, maxRetries = 3): Promise<T> {
+  return withRetry(fn, {
+    maxRetries,
+    initialDelayMs: 1000,
+    shouldRetry: is429,
+    onRetry: (attempt, ms) =>
       logger.warn(
-        `⏳ Moltbook 429 rate limited, retrying in ${delayMs / 1000}s (attempt ${attempt + 1}/${maxRetries})`
-      );
-      await sleep(delayMs);
-    }
-  }
-
-  throw lastError;
+        `⏳ Moltbook 429 rate limited, retrying in ${ms / 1000}s (attempt ${attempt}/${maxRetries})`
+      ),
+  });
 }
 
 // Persistent state file path
@@ -270,8 +246,8 @@ const moltbookFetch = async (
 
   logger.info(`🤖 Moltbook ${method} ${endpoint}`);
 
-  // Use withRetry for exponential backoff on 429 responses
-  return withRetry(async () => {
+  // Retry on 429 responses with the shared backoff loop
+  return withMoltbookRetry(async () => {
     const response = await fetch(url, options);
 
     // Check for 429 status and throw a recognizable error for retry logic

@@ -1417,6 +1417,11 @@ async function loadMyRecentPosts(): Promise<void> {
  * Start the social media behavior
  */
 export function startSocialMediaBehavior(): void {
+  if (process.env.AUTONOMOUS_PAUSED === 'true') {
+    logger.info('🌐 Social behavior: Disabled (AUTONOMOUS_PAUSED)');
+    return;
+  }
+
   const apiKey = process.env.MOLTBOOK_API_KEY;
   if (!apiKey) {
     logger.info('🌐 Social behavior: Disabled (no MOLTBOOK_API_KEY)');

@@ -1,4 +1,5 @@
 import { logger } from '@coachartie/shared';
+import { delay } from '@coachartie/shared';
 import { ParsedCapability } from './xml-parser.js';
 import { capabilityRegistry } from '../services/capability/capability-registry.js';
 import { GlobalVariableStore } from '../capabilities/system/variable-store.js';
@@ -80,8 +81,8 @@ export class RobustCapabilityExecutor {
 
         // Wait with exponential backoff (but not on last attempt)
         if (attempt < maxRetries) {
-          const delay = 100 * Math.pow(2, attempt - 1); // 100ms, 200ms, 400ms
-          await this.sleep(delay);
+          const backoffMs = 100 * Math.pow(2, attempt - 1); // 100ms, 200ms, 400ms
+          await delay(backoffMs);
         }
       }
     }
@@ -544,12 +545,6 @@ export class RobustCapabilityExecutor {
     return `I encountered an issue with the ${baseName} ${action} operation: ${errorMsg}. ${suggestion}`;
   }
 
-  /**
-   * Sleep utility for retry delays
-   */
-  private sleep(ms: number): Promise<void> {
-    return new Promise((resolve) => setTimeout(resolve, ms));
-  }
 }
 
 // Export singleton

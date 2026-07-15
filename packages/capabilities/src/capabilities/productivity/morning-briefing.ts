@@ -18,6 +18,10 @@
  */
 
 import { logger } from '@coachartie/shared';
+import {
+  getPendingRelaysForBriefing,
+  markRelaysDelivered,
+} from '../communication/relay.js';
 import type {
   RegisteredCapability,
   CapabilityContext,
@@ -305,17 +309,21 @@ async function generateSkywatchSection(): Promise<string> {
   const notableList = queryDb(DB_PATHS.skywatch,
     `SELECT callsign || ' — ' || REPLACE(details, '; ', ' | ') FROM notable
      WHERE date(spotted_at) >= date('now', '-1 day')
+     AND reason NOT LIKE '%glider_activity%'
      AND reason NOT LIKE '%low_altitude_military_zone%'
-     AND reason NOT LIKE '%new_aircraft%' OR reason NOT LIKE '%new_aircraft'
-     AND callsign NOT LIKE '0%'
+     AND reason NOT LIKE '%near_military%'
+     AND callsign != '' AND callsign NOT LIKE '0%'
      AND callsign NOT LIKE 'EPIC%'
+     AND (reason LIKE '%emergency%' OR reason LIKE '%watchlist%' OR reason LIKE '%foreign_military%'
+          OR reason LIKE '%plane_alert_db%' OR reason LIKE '%special_squawk%'
+          OR reason LIKE '%law_enforcement%' OR reason LIKE '%unidentified%'
+          OR reason LIKE '%callsign_suppression%' OR reason LIKE '%military%')
      GROUP BY callsign ORDER BY
-       CASE WHEN reason LIKE '%watchlist%' THEN 0
-            WHEN reason LIKE '%military%' THEN 1
-            WHEN reason LIKE '%foreign%' THEN 1
-            WHEN reason LIKE '%emergency%' THEN 0
-            WHEN reason LIKE '%plane_alert_db%' THEN 2
-            ELSE 3 END,
+       CASE WHEN reason LIKE '%emergency%' THEN 0
+            WHEN reason LIKE '%watchlist%' THEN 1
+            WHEN reason LIKE '%foreign_military%' THEN 2
+            WHEN reason LIKE '%plane_alert_db%' THEN 3
+            ELSE 4 END,
        MAX(spotted_at) DESC
      LIMIT 5`);
 
@@ -443,13 +451,12 @@ function generateTasksSection(): string {
 
     const cards = JSON.parse(result || '[]');
     const active = cards.filter((c: any) => c.lane === 'Active').slice(0, 3);
-    const blocked = cards.filter((c: any) => c.lane === 'Blocked').slice(0, 2);
+    const blocked = cards.filter((c: any) => c.lane === 'Blocked').slice(0, 3);
     const readyCount = cards.filter((c: any) => c.lane === 'Ready').length;
     const suggestedAll = cards.filter((c: any) => c.lane === 'Suggested');
-    const suggested = suggestedAll.slice(0, 3);
+    const suggested = suggestedAll.slice(0, 5);
 
-    if (active.length === 0 && blocked.length === 0 && suggested.length === 0) return '';
-
+    // Always return something — even if quiet, the backlog count is useful
     let text = '📋 **Tasks**';
     for (const c of active) text += `\n  → ${c.title}`;
     for (const c of blocked) {
@@ -457,9 +464,8 @@ function generateTasksSection(): string {
       text += `\n  ⛔ ${c.title}${reason ? ' — ' + reason : ''}`;
     }
     if (readyCount > 0) text += `\n  (${readyCount} ready)`;
-    if (suggested.length > 0) {
-      const extra = suggestedAll.length > 3 ? ` (+${suggestedAll.length - 3} more)` : '';
-      text += `\n  💡 Review${extra}: ${suggested.map((c: any) => c.title.substring(0, 35)).join(' · ')}`;
+    if (suggestedAll.length > 0) {
+      text += `\n  💡 Backlog (${suggestedAll.length}): ${suggested.map((c: any) => c.title.substring(0, 40)).join(' · ')}`;
       text += `\n  → [kanban](https://kanban.tools.ejfox.com)`;
     }
     return text;
@@ -1446,10 +1452,17 @@ WRITING STYLE:
 - Delta percentages (↑/↓) when volume diverges >15% from average
 - Be direct. "Leidos PAC got three $88 donations — coordinated bundling signal" not "there were some donations worth monitoring"
 - NEVER ask questions ("what's driving this?"). You are reporting, not asking
+- State every finding as a declarative. NEVER ask a question — not rhetorical, not self-directed. Wrong: "able12 popped — first appearance or new callsign?" Right: "able12 — not seen in prior 7 days, unconfirmed."
+- If something is unresolved, FLAG it flatly ("unverified", "no prior record") — never pose it as a question to yourself or assign yourself follow-up
+- Banned filler: "worth tracking", "worth watching", "need to see", "check if", "keep an eye on", "could connect", "might be". Report what IS, with the data on hand
+- One line per signal — no speculative paragraph per aircraft/filing
 - NEVER guess aircraft identity from callsigns. Use only the details field
 - If the user is AWAY from home, lead with local context, HV monitoring in background
 - Gliders are fun — mention casually, don't treat as anomaly
 - Body readiness is your LEAD PERSONAL INDICATOR. Weave it naturally into the opening — don't just report the number, interpret what it means for the day ahead
+- ALWAYS include the tasks section if present — blocked items are urgent, suggested items are the backlog. Never drop this section. Format: "📋 **Tasks** — ⛔ [blocked item] | 💡 [top suggested]". If there are 10+ suggested cards, call that out explicitly ("15 in backlog").
+- ALWAYS include the relays section if present — these are messages real people asked you to pass along, and dropping one means a human's message never arrived. Attribute each to its sender verbatim; do not merge, summarize away, or editorialize them. Format: "📮 **Passed along** — [name]: [message]".
+- Skip a section entirely if it has nothing interesting — except tasks and relays, always keep those
 - If everything is genuinely quiet, make it the shortest brief you've ever written`;
 
 async function editorPass(rawSections: Record<string, string>, dateStr: string, footer: string): Promise<string> {
@@ -1578,6 +1591,11 @@ async function generateBriefing(_config: BriefingConfig): Promise<string> {
   rawSections['mail'] = await generateMailSection();
   rawSections['tasks'] = generateTasksSection();
 
+  // Messages people asked Artie to pass along. Held pending until the brief actually
+  // goes out, so a failed editor pass doesn't swallow them.
+  const relays = getPendingRelaysForBriefing();
+  rawSections['relays'] = relays.text;
+
   // OSINT sections — with day-over-day deltas baked in
   const skyRaw = await generateSkywatchSection();
   const skyAvg = queryDb(DB_PATHS.skywatch,
@@ -1637,48 +1655,17 @@ async function generateBriefing(_config: BriefingConfig): Promise<string> {
   const edited = await editorPass(rawSections, dateStr, footer);
 
   if (edited && edited.length > 100) {
+    // The brief carried the relays, so retire them. On the fallback path below they stay
+    // pending and ride along tomorrow instead of vanishing into a brief that never landed.
+    markRelaysDelivered(relays.ids);
     return edited;
   }
 
-  // --- Fallback: raw assembly if editor fails ---
-  const parts: string[] = [];
-  parts.push(`**Morning Brief — ${dateStr}**`);
-
-  // Sections ordered by priority; skip empty or low-value ones aggressively
-  // to keep the fallback readable within Discord's character limit
-  const fallbackSections = ['weather', 'health', 'calendar', 'mail', 'tasks',
-    'skywatch', 'countywatch', 'contracts', 'donors', 'anomalies',
-    'masint', 'riverwatch', 'tension', 'confidence_mesh', 'latest_briefing',
-    'source_health'];
-
-  // Sections that often return empty or trivially short content —
-  // in fallback mode, skip them unless they have substantial data
-  const lowValueIfShort: Record<string, number> = {
-    health: 30,
-    calendar: 20,
-    mail: 20,
-    masint: 20,
-    riverwatch: 20,
-    health_narrative: 50,
-  };
-
-  for (const key of fallbackSections) {
-    const val = rawSections[key];
-    if (!val) continue;
-    const minLen = lowValueIfShort[key] || 0;
-    if (val.length < minLen) continue;
-    parts.push(val);
-  }
-  parts.push(footer);
-
-  let result = parts.join('\n\n');
-  if (result.length > 1950) {
-    // Last resort truncation — cut from the end, keep header + footer
-    const maxBody = 1950 - footer.length - 10;
-    result = result.substring(0, maxBody) + '\n\n' + footer;
-  }
-
-  return result;
+  // --- Fallback: editor failed (LLM down / no credits) ---
+  // Do NOT dump the raw, unedited sections — that's the rambling slop we want to avoid.
+  // Send a short honest line instead; the raw data is in the logs for debugging.
+  logger.warn('Morning briefing: editor pass returned empty — sending minimal fallback, not raw dump');
+  return `**Morning Brief — ${dateStr}**\n\n_Brief unavailable — the editor pass couldn't run (LLM/credits). Raw intel is in the logs._\n\n${footer}`;
 }
 
 // ---------------------------------------------------------------------------

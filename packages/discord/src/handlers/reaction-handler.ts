@@ -15,7 +15,7 @@ import {
   PartialMessageReaction,
   PartialUser,
 } from 'discord.js';
-import { logger } from '@coachartie/shared';
+import { delay, logger } from '@coachartie/shared';
 import { telemetry } from '../services/telemetry.js';
 import { generateCorrelationId, getShortCorrelationId } from '../utils/correlation.js';
 import { processUserIntent } from '../services/user-intent-processor.js';
@@ -393,7 +393,7 @@ async function handleRegenerateReaction(
           for (let i = 1; i < chunks.length; i++) {
             if ('send' in botMessage.channel) {
               await (botMessage.channel as any).send(chunks[i]);
-              await new Promise((resolve) => setTimeout(resolve, 200));
+              await delay(200);
             }
           }
 

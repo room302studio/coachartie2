@@ -623,6 +623,30 @@ export const githubEventsQueue = sqliteTable(
   })
 );
 
+/**
+ * Relays - messages people ask Artie to pass along to someone ("tell EJ the deploy is green").
+ * Stacked here instead of interrupting, then drained into that person's morning briefing.
+ */
+export const relays = sqliteTable(
+  'relays',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    fromUserId: text('from_user_id').notNull(),
+    fromDisplay: text('from_display').notNull(),
+    toUserId: text('to_user_id').notNull(),
+    content: text('content').notNull(),
+    guildId: text('guild_id'),
+    channelId: text('channel_id'),
+    status: text('status').notNull().default('pending'), // pending | delivered
+    createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
+    deliveredAt: text('delivered_at'),
+  },
+  (table) => ({
+    recipientIdx: index('idx_relays_to_status').on(table.toUserId, table.status),
+    senderIdx: index('idx_relays_from_created').on(table.fromUserId, table.createdAt),
+  })
+);
+
 // ============================================================================
 // TYPE EXPORTS
 // ============================================================================
@@ -1339,3 +1363,6 @@ export type NewErrorEvent = typeof errorEvents.$inferInsert;
 
 export type UserSession = typeof userSessions.$inferSelect;
 export type NewUserSession = typeof userSessions.$inferInsert;
+
+export type Relay = typeof relays.$inferSelect;
+export type NewRelay = typeof relays.$inferInsert;

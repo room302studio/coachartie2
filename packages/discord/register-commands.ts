@@ -6,11 +6,6 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 config({ path: resolve(__dirname, '../../.env') });
 
 import { REST, Routes } from 'discord.js';
-import { linkPhoneCommand } from './src/commands/link-phone.js';
-import { verifyPhoneCommand } from './src/commands/verify-phone.js';
-import { unlinkPhoneCommand } from './src/commands/unlink-phone.js';
-import { linkEmailCommand } from './src/commands/link-email.js';
-import { unlinkEmailCommand } from './src/commands/unlink-email.js';
 import { statusCommand } from './src/commands/status.js';
 import { botStatusCommand } from './src/commands/bot-status.js';
 import { modelsCommand } from './src/commands/models.js';
@@ -23,11 +18,6 @@ import { unwatchRepoCommand } from './src/commands/unwatch-repo.js';
 import { listWatchesCommand } from './src/commands/list-watches.js';
 
 const commands = [
-  linkPhoneCommand.data.toJSON(),
-  verifyPhoneCommand.data.toJSON(),
-  unlinkPhoneCommand.data.toJSON(),
-  linkEmailCommand.data.toJSON(),
-  unlinkEmailCommand.data.toJSON(),
   statusCommand.data.toJSON(),
   botStatusCommand.data.toJSON(),
   modelsCommand.data.toJSON(),

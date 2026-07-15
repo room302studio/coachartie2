@@ -1,52 +1,6 @@
 import { logger } from '@coachartie/shared';
 
-export interface ModelCapabilities {
-  supportsXML: boolean;
-  prefersSimpleSyntax: boolean;
-  needsExplicitExamples: boolean;
-  maxComplexity: 'low' | 'medium' | 'high';
-  isWeakModel: boolean;
-}
-
 export class ModelAwarePrompter {
-  /**
-   * Get model capabilities based on model name
-   */
-  getModelCapabilities(modelName: string): ModelCapabilities {
-    const name = modelName.toLowerCase();
-
-    // Free/weak models
-    if (this.isWeakModel(name)) {
-      return {
-        supportsXML: false,
-        prefersSimpleSyntax: true,
-        needsExplicitExamples: true,
-        maxComplexity: 'low',
-        isWeakModel: true,
-      };
-    }
-
-    // Strong models (Claude, GPT-4, etc.)
-    if (this.isStrongModel(name)) {
-      return {
-        supportsXML: true,
-        prefersSimpleSyntax: false,
-        needsExplicitExamples: false,
-        maxComplexity: 'high',
-        isWeakModel: false,
-      };
-    }
-
-    // Medium models (GPT-3.5, etc.)
-    return {
-      supportsXML: true,
-      prefersSimpleSyntax: false,
-      needsExplicitExamples: true,
-      maxComplexity: 'medium',
-      isWeakModel: false,
-    };
-  }
-
   /**
    * Generate capability instruction prompt based on model capabilities
    */
@@ -204,71 +158,6 @@ The system will respect your decision - if you don't signal wants_loop, you get 
     ];
 
     return strongModels.some((strong) => modelName.includes(strong));
-  }
-
-  /**
-   * Generate error recovery prompt for failed capability extraction
-   */
-  generateRecoveryPrompt(
-    originalMessage: string,
-    modelName: string,
-    missingCapability: { type: 'math' | 'memory' | 'search' | 'web' | 'time'; content: string }
-  ): string {
-    const capabilities = this.getModelCapabilities(modelName);
-
-    if (capabilities.isWeakModel) {
-      return this.generateWeakModelRecoveryPrompt(originalMessage, missingCapability);
-    } else {
-      return this.generateStrongModelRecoveryPrompt(originalMessage, missingCapability);
-    }
-  }
-
-  /**
-   * Recovery prompt for weak models
-   */
-  private generateWeakModelRecoveryPrompt(
-    originalMessage: string,
-    missing: { type: 'math' | 'memory' | 'search' | 'web' | 'time'; content: string }
-  ): string {
-    const formatExamples = {
-      math: '**CALCULATE:** 42 * 42',
-      memory: '**REMEMBER:** User likes pizza',
-      search: '**SEARCH:** pizza preferences',
-      web: '**WEB:** Docker tips',
-      time: '**TIME**',
-    };
-
-    return `You received: "${originalMessage}"
-
-This requires a ${missing.type} operation. Please respond again using this EXACT format:
-
-${formatExamples[missing.type]}
-
-Then provide your response. Use the exact format shown above.`;
-  }
-
-  /**
-   * Recovery prompt for strong models
-   */
-  private generateStrongModelRecoveryPrompt(
-    originalMessage: string,
-    missing: { type: 'math' | 'memory' | 'search' | 'web' | 'time'; content: string }
-  ): string {
-    const examples = {
-      math: '<calculate>42 * 42</calculate>',
-      memory: '<remember>Important information</remember>',
-      search: '<search>search terms</search>',
-      web: '<web>search query</web>',
-      time: '<get-current-time/>',
-    };
-
-    return `The user asked: "${originalMessage}"
-
-This requires a ${missing.type} capability. Please include this capability in your response:
-
-${examples[missing.type]}
-
-Then provide a natural response incorporating the results.`;
   }
 
   // NOTE: detectNeededCapabilities() was removed - regex heuristics for understanding

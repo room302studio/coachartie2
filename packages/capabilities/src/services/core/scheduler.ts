@@ -300,6 +300,24 @@ export class SchedulerService {
       // Determine job type: use job.name first, fall back to job.data.type for dynamic names
       const jobType = job.name || job.data.type;
 
+      // Pause switch: when AUTONOMOUS_PAUSED=true, skip every unprompted/outbound job
+      // (briefings, heartbeat, social, digests, reddit) while leaving internal maintenance
+      // (memory, cleanup, reflection, summarization) and user-requested reminders running.
+      // Reversible — just unset the env var and restart.
+      const PROACTIVE_JOB_TYPES = new Set([
+        'daily-summary',
+        'reddit-mentions',
+        'moltbook-social',
+        'morning-briefing',
+        'trend-digest',
+        'heartbeat',
+        'delivery-retries', // also gated: don't flush queued proactive DMs while paused
+      ]);
+      if (process.env.AUTONOMOUS_PAUSED === 'true' && PROACTIVE_JOB_TYPES.has(jobType as string)) {
+        logger.info(`⏸️  AUTONOMOUS_PAUSED — skipping proactive job "${jobType}" (ID: ${taskId})`);
+        return;
+      }
+
       // Handle different types of scheduled jobs
       switch (jobType) {
         case 'health-check':

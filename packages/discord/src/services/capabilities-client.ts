@@ -1,4 +1,5 @@
 import { logger } from '@coachartie/shared';
+import { delay } from '@coachartie/shared';
 
 /**
  * Retry a function with exponential backoff
@@ -27,11 +28,14 @@ async function withRetry<T>(
       }
 
       // Exponential backoff with jitter
-      const delay = Math.min(baseDelay * Math.pow(2, attempt - 1) + Math.random() * 500, maxDelay);
-      logger.warn(
-        `${name} failed (attempt ${attempt}/${maxRetries}), retrying in ${Math.round(delay)}ms: ${lastError.message}`
+      const backoffMs = Math.min(
+        baseDelay * Math.pow(2, attempt - 1) + Math.random() * 500,
+        maxDelay
       );
-      await new Promise((resolve) => setTimeout(resolve, delay));
+      logger.warn(
+        `${name} failed (attempt ${attempt}/${maxRetries}), retrying in ${Math.round(backoffMs)}ms: ${lastError.message}`
+      );
+      await delay(backoffMs);
     }
   }
 
