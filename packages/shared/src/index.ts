@@ -13,6 +13,9 @@ export * from './db/index.js';
 // Owner/Admin configuration
 export * from './config/owner.js';
 
+// Well-known Discord channels
+export * from './config/channels.js';
+
 // DM Pairing service
 export * from './services/dm-pairing.js';
 

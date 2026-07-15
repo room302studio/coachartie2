@@ -1,5 +1,5 @@
 import * as crypto from 'crypto';
-import { logger } from '@coachartie/shared';
+import { logger, GITHUB_FEED_CHANNEL_ID } from '@coachartie/shared';
 import { publishMessage } from '../queues/publisher.js';
 import { mediaWikiManager } from '../services/external/mediawiki-manager.js';
 
@@ -526,7 +526,7 @@ async function handleIssueEvent(payload: GitHubWebhookPayload): Promise<void> {
   });
 
   // Post to the subwaybuilder-engineering channel
-  await publishMessage('github-bot', message, '1480600810743267420', 'GitHub Bot', true);
+  await publishMessage('github-bot', message, GITHUB_FEED_CHANNEL_ID, 'GitHub Bot', true);
 }
 
 async function handleIssueCommentEvent(payload: GitHubWebhookPayload): Promise<void> {
@@ -565,7 +565,7 @@ async function handleIssueCommentEvent(payload: GitHubWebhookPayload): Promise<v
     author: comment.user.login,
   });
 
-  await publishMessage('github-bot', message, '1480600810743267420', 'GitHub Bot', true);
+  await publishMessage('github-bot', message, GITHUB_FEED_CHANNEL_ID, 'GitHub Bot', true);
 }
 
 function generatePushCelebration(payload: GitHubPushPayload): string {

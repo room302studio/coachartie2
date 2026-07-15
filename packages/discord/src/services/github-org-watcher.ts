@@ -12,6 +12,7 @@ import { Client, TextChannel } from 'discord.js';
 import { Octokit } from '@octokit/rest';
 import {
   logger,
+  GITHUB_FEED_CHANNEL_ID,
   getDb,
   githubRepoWatches,
   eq,
@@ -30,12 +31,12 @@ const ORG_CONFIGS: OrgWatchConfig[] = [
   {
     org: 'Subway-Builder',
     guildId: '932719842522443928', // Room 302
-    defaultChannelId: '1480600810743267420', // #subwaybuilder-robot
+    defaultChannelId: GITHUB_FEED_CHANNEL_ID,
   },
   {
     org: 'room302studio',
     guildId: '932719842522443928', // Room 302
-    defaultChannelId: '1088992214853615626', // #studio-github
+    defaultChannelId: GITHUB_FEED_CHANNEL_ID,
   },
 ];
 
