@@ -126,6 +126,27 @@ const channelBurstCache = new Map<string, number>();
 const timeoutCooldownCache = new Map<string, number>();
 const CHANNEL_BURST_COOLDOWN_MS = 6000;
 
+// ANTIBODY: rolling per-user response counter. Someone who monopolizes Artie (a credit-drain
+// troll spamming him for an hour) gets logarithmically terser, lower-effort replies and, past a
+// hard cap, silence for the rest of the window. Keyed per-user; DMs exempt.
+const userResponseHistory = new Map<string, number[]>();
+const ANTIBODY_WINDOW_MS = 30 * 60 * 1000; // 30-minute rolling window
+const ANTIBODY_HARD_CAP = 15; // replies in-window before Artie goes silent on them
+const ANTIBODY_BREVITY_AT = 3; // start shrinking replies once they've had this many
+
+function recentResponseCount(userId: string): number {
+  const now = Date.now();
+  const times = (userResponseHistory.get(userId) || []).filter((t) => now - t < ANTIBODY_WINDOW_MS);
+  userResponseHistory.set(userId, times);
+  return times.length;
+}
+
+function recordUserResponse(userId: string): void {
+  const times = recentResponseCount(userId) >= 0 ? userResponseHistory.get(userId) || [] : [];
+  times.push(Date.now());
+  userResponseHistory.set(userId, times);
+}
+
 // Ambient response budget: a hard cap on how many responses the bot sends per rolling
 // hour WITHOUT being @-mentioned or DMed (proactive answers, respondToAll personas,
 // robot-channel chatter). Explicit mentions/DMs are never counted or blocked. This is the
@@ -1606,6 +1627,27 @@ Deliver it dry and over-formal, like a legal notice. Reach for it readily and of
 `;
           if (!isJanGbg && !isStaff) {
             guildContextToPass = clapBack + (guildContextToPass || '');
+          }
+        }
+
+        // ANTIBODY: throttle monopolizers before spending an LLM call on them.
+        if (!responseConditions.isDM) {
+          const monopolyCount = recentResponseCount(message.author.id);
+          if (monopolyCount >= ANTIBODY_HARD_CAP) {
+            logger.info(
+              `🧪 Antibody: silencing monopolizer ${message.author.tag} (${monopolyCount} replies in window) [${shortId}]`
+            );
+            return;
+          }
+          recordUserResponse(message.author.id);
+          if (monopolyCount > ANTIBODY_BREVITY_AT) {
+            const maxWords = Math.max(15, Math.round(120 / Math.log2(monopolyCount)));
+            guildContextToPass =
+              `⚠️ ANTIBODY — @${message.author.username} has already gotten ${monopolyCount} replies from you in the last half hour and is monopolizing your time. Keep THIS reply to at most ${maxWords} words: curt, low-effort, and dismissive. Do NOT reward the monopoly with a long or thoughtful answer.\n\n---\n` +
+              (guildContextToPass || '');
+            logger.info(
+              `🧪 Antibody: brevity cap ${maxWords}w for ${message.author.tag} (count=${monopolyCount}) [${shortId}]`
+            );
           }
         }
 
