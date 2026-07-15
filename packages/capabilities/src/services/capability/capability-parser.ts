@@ -1,6 +1,6 @@
 import { logger, IncomingMessage } from '@coachartie/shared';
 import { openRouterService } from '../llm/openrouter.js';
-import { capabilityRegistry } from './capability-registry.js';
+import { capabilityRegistry, AUTO_INJECTED_PARAMS } from './capability-registry.js';
 import { capabilityXMLParser } from '../../utils/xml-parser.js';
 import { conscienceLLM } from '../monitoring/conscience.js';
 import { ExtractedCapability, OrchestrationContext } from '../../types/orchestration-types.js';
@@ -90,7 +90,8 @@ export class CapabilityParser {
     // Check for missing required parameters
     if (registryCapability?.requiredParams?.length) {
       const missingParams = registryCapability.requiredParams.filter(
-        (param) => !capability.params[param] && !capability.content
+        (param) =>
+          !AUTO_INJECTED_PARAMS.has(param) && !capability.params[param] && !capability.content
       );
 
       if (missingParams.length > 0) {

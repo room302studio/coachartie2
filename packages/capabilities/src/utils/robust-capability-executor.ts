@@ -463,9 +463,6 @@ export class RobustCapabilityExecutor {
     throw new Error('Complex mathematical expressions not supported in fallback mode');
   }
 
-  // NOTE: inferMCPToolName() was removed - regex heuristics for understanding
-  // intent are an anti-pattern. The LLM should specify the tool name explicitly.
-
   /**
    * Detect if error is a structured error from registry
    */

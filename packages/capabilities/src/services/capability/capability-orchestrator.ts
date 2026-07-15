@@ -332,14 +332,6 @@ export class CapabilityOrchestrator {
   }
 
   /**
-   * Get available MCP tools from all connected servers
-   * MCP client was removed - this now returns empty array
-   */
-  private getAvailableMCPTools(): Array<{ name: string; description?: string }> {
-    return [];
-  }
-
-  /**
    * Get orchestration context for a message (for debugging)
    */
   getContext(messageId: string): OrchestrationContext | undefined {

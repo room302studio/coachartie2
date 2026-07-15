@@ -1,48 +1,18 @@
 /**
  * Metro Doctor Service for Coach Artie
  *
- * Uses the official metro-savefile-doctor repo for loading, analyzing,
- * and repairing .metro save files. The repair script is loaded from
- * the official repo, not hardcoded here.
+ * Orchestrates analysis/repair of .metro save files. The heavy lifting
+ * (decompress + parse + repair, which can hold hundreds of MB in memory and
+ * block the event loop) is delegated to a short-lived CHILD PROCESS
+ * (metro-analyzer-child.js). This keeps a malformed or huge save from OOM-ing
+ * or freezing the main capabilities process, which serves every message.
  */
 
 import { mkdir, writeFile, readFile } from 'fs/promises';
 import { join, basename, dirname } from 'path';
-import { createRequire } from 'module';
+import { fileURLToPath } from 'url';
+import { spawn } from 'child_process';
 import { logger } from '@coachartie/shared';
-import { analyzeMetroGeo, formatGeoInsights } from '../metro-geo-analysis.js';
-
-// Import from official metro-savefile-doctor repo
-import {
-  readMetroSave,
-  writeMetroSave,
-  type MetroSaveData,
-} from 'metro-savefile-doctor/metro-loader';
-import { runJSScriptString, type SaveData } from 'metro-savefile-doctor/js-script-runner';
-
-// Resolve path to the official repair script from metro-savefile-doctor
-// Use createRequire to find the package location reliably
-const require = createRequire(import.meta.url);
-const metroLoaderPath = require.resolve('metro-savefile-doctor/metro-loader');
-// metro-loader resolves to .../dist/metro-loader.js, go up twice to package root
-const metroSavefileDoctorPath = dirname(dirname(metroLoaderPath));
-const REPAIR_SCRIPT_PATH = join(metroSavefileDoctorPath, 'scripts', 'repair-save.js');
-
-// Cache for the repair script
-let cachedRepairScript: string | null = null;
-
-async function getRepairScript(): Promise<string> {
-  if (cachedRepairScript) return cachedRepairScript;
-
-  try {
-    cachedRepairScript = await readFile(REPAIR_SCRIPT_PATH, 'utf-8');
-    logger.info(`🩺 Metro doctor: loaded repair script from ${REPAIR_SCRIPT_PATH}`);
-    return cachedRepairScript;
-  } catch (err) {
-    logger.error(`🩺 Metro doctor: failed to load repair script from ${REPAIR_SCRIPT_PATH}`, err);
-    throw new Error(`Failed to load repair script: ${(err as Error).message}`);
-  }
-}
 
 interface MetroAnalysis {
   valid: boolean;
@@ -63,16 +33,52 @@ interface MetroAnalysis {
   summary: string;
 }
 
+/** Shape written by metro-analyzer-child.ts to its output JSON file. */
+interface ChildAnalysisResult {
+  name: string;
+  cityCode: string;
+  timestamp: number;
+  stats: {
+    stations: number;
+    routes: number;
+    trains: number;
+    money: number;
+    elapsedSeconds?: number;
+  };
+  autosaveCount: number;
+  errors: string[];
+  warnings: string[];
+  summary: string;
+  stuckTrainCount: number;
+  repairedFilePath: string | null;
+  repairedFileSizeBytes: number | null;
+}
+
 function getWorkDir(): string {
   return process.env.METRO_DOCTOR_WORKDIR || '/tmp/metro-doctor';
 }
 
 async function downloadMetro(url: string): Promise<Buffer> {
   const maxMb = Number(process.env.METRO_DOCTOR_MAX_MB || 50);
+  const timeoutMs = Number(process.env.METRO_DOCTOR_DOWNLOAD_TIMEOUT_MS || 30_000);
 
   logger.info(`🩺 Metro doctor: downloading from ${url}`);
 
-  const res = await fetch(url);
+  // Bound the download so a slow/hung host can't wedge the request forever.
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  let res: Response;
+  try {
+    res = await fetch(url, { signal: controller.signal });
+  } catch (err) {
+    if ((err as Error).name === 'AbortError') {
+      throw new Error(`Download timed out after ${(timeoutMs / 1000).toFixed(0)}s`);
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
+
   if (!res.ok || !res.body) {
     throw new Error(`Failed to download: ${res.status} ${res.statusText}`);
   }
@@ -88,126 +94,78 @@ async function downloadMetro(url: string): Promise<Buffer> {
   return buf;
 }
 
-function _formatPlaytime(seconds: number | undefined): string {
-  if (!seconds) return 'Unknown';
-  const hours = Math.floor(seconds / 3600);
-  const minutes = Math.floor((seconds % 3600) / 60);
-  return `${hours}h ${minutes}m`;
+// Serialize analyzer children so a burst of large uploads can't spawn several
+// multi-GB processes at once and trip the kernel OOM-killer on a shared box.
+// Only one heavy child runs at a time; the rest queue behind it.
+let analyzerChain: Promise<unknown> = Promise.resolve();
+
+function runAnalyzerChild(
+  inputPath: string,
+  outputJsonPath: string
+): Promise<{ code: number | null; stdout: string; stderr: string; timedOut: boolean }> {
+  const run = analyzerChain
+    .catch(() => {})
+    .then(() => spawnAnalyzerChild(inputPath, outputJsonPath));
+  // Keep the chain alive regardless of individual success/failure.
+  analyzerChain = run.catch(() => {});
+  return run;
 }
 
-function formatMoney(amount: number): string {
-  if (amount >= 1_000_000_000) return `$${(amount / 1_000_000_000).toFixed(1)}B`;
-  if (amount >= 1_000_000) return `$${(amount / 1_000_000).toFixed(1)}M`;
-  if (amount >= 1_000) return `$${(amount / 1_000).toFixed(1)}K`;
-  return `$${amount}`;
-}
+/**
+ * Run the heavy parse/analyze/repair in an isolated child process with a
+ * memory cap and a hard timeout. The child never shares the main process heap,
+ * so an OOM or infinite loop kills only the child — the bot stays up.
+ *
+ * The 512MB default was far too small for real saves (a 28MB Tokyo save needs
+ * ~2GB once decompressed + JSON-parsed + cloned by the repair pass), so it
+ * OOM'd on every large file. Default is now 2GB, still bounded and overridable.
+ */
+function spawnAnalyzerChild(
+  inputPath: string,
+  outputJsonPath: string
+): Promise<{ code: number | null; stdout: string; stderr: string; timedOut: boolean }> {
+  const childPath = join(dirname(fileURLToPath(import.meta.url)), 'metro-analyzer-child.js');
+  const maxOldSpaceMb = Number(process.env.METRO_DOCTOR_MAX_OLD_SPACE_MB || 2048);
+  const timeoutMs = Number(process.env.METRO_DOCTOR_TIMEOUT_MS || 90_000);
 
-function buildAnalysisSummary(
-  saveData: MetroSaveData,
-  originalSize: number,
-  warnings: string[],
-  errors: string[]
-): string {
-  const stats = saveData.stats;
-  const data = saveData.data || {};
+  return new Promise((resolve) => {
+    const child = spawn(
+      process.execPath,
+      [`--max-old-space-size=${maxOldSpaceMb}`, childPath, inputPath, outputJsonPath],
+      { stdio: ['ignore', 'pipe', 'pipe'] }
+    );
 
-  const actualStations = Array.isArray(data.stations) ? data.stations.length : stats.stations;
-  const actualRoutes = Array.isArray(data.routes) ? data.routes.length : stats.routes;
-  const actualTrains = Array.isArray(data.trains) ? data.trains.length : stats.trains;
-  const money = formatMoney(stats.money || data.money || 0);
-  const sizeMb = (originalSize / (1024 * 1024)).toFixed(1);
+    let stdout = '';
+    let stderr = '';
+    let timedOut = false;
+    let settled = false;
 
-  const statusEmoji = errors.length === 0 ? '✅' : '❌';
+    const finish = (code: number | null) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve({ code, stdout, stderr, timedOut });
+    };
 
-  // Build detailed analysis
-  let summary = `${statusEmoji} **${saveData.name}** (${saveData.cityCode || '?'})\n`;
-  summary += `📊 **Stats:** ${actualStations} stations, ${actualRoutes} routes, ${actualTrains} trains | ${money} | ${sizeMb}MB\n`;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      logger.warn(`🩺 Metro doctor: analyzer child timed out after ${timeoutMs}ms — killing`);
+      child.kill('SIGKILL');
+    }, timeoutMs);
 
-  // Add route analysis
-  if (Array.isArray(data.routes) && data.routes.length > 0) {
-    const routeDetails: string[] = [];
-    const routesByType: Record<string, number> = {};
-
-    for (const route of data.routes) {
-      const routeType = route.bullet || 'Unknown';
-      routesByType[routeType] = (routesByType[routeType] || 0) + 1;
-    }
-
-    for (const [type, count] of Object.entries(routesByType)) {
-      routeDetails.push(`${type}: ${count}`);
-    }
-
-    if (routeDetails.length > 0) {
-      summary += `🚇 **Routes:** ${routeDetails.join(', ')}\n`;
-    }
-  }
-
-  // Add train analysis
-  if (Array.isArray(data.trains) && data.trains.length > 0) {
-    const currentTime = data.elapsedSeconds || 0;
-    let movingTrains = 0;
-    let stoppedTrains = 0;
-    let stuckTrains = 0;
-
-    for (const train of data.trains) {
-      if (train.motion?.speed > 0) {
-        movingTrains++;
-      } else if (train.stuckDetection) {
-        const timeSinceMove = currentTime - train.stuckDetection.lastMovementTime;
-        if (timeSinceMove > 60) {
-          stuckTrains++;
-        } else {
-          stoppedTrains++;
-        }
-      } else {
-        stoppedTrains++;
-      }
-    }
-
-    summary += `🚂 **Trains:** ${movingTrains} moving, ${stoppedTrains} stopped`;
-    if (stuckTrains > 0) {
-      summary += `, 🔧 ${stuckTrains} stuck (will fix)`;
-    }
-    summary += '\n';
-  }
-
-  // Add station analysis
-  if (Array.isArray(data.stations) && data.stations.length > 0) {
-    let overcrowdedStations = 0;
-    let emptyStations = 0;
-
-    for (const station of data.stations) {
-      const passengers = station.passengers?.length || 0;
-      if (passengers > 50) overcrowdedStations++;
-      if (passengers === 0) emptyStations++;
-    }
-
-    if (overcrowdedStations > 0 || emptyStations > 5) {
-      summary += `🏢 **Stations:** ${overcrowdedStations} overcrowded, ${emptyStations} empty\n`;
-    }
-  }
-
-  // Geographic analysis with Turf.js
-  try {
-    const geoResult = analyzeMetroGeo(data);
-    const geoInsights = formatGeoInsights(geoResult);
-    if (geoInsights) {
-      summary += `\n${geoInsights}\n`;
-    }
-  } catch (e) {
-    // Skip geo analysis if it fails
-    logger.warn('🩺 Metro doctor: geo analysis failed', e);
-  }
-
-  if (warnings.length > 0) {
-    summary += `⚠️ **Issues found:** ${warnings.join('; ')}\n`;
-  }
-
-  if (errors.length > 0) {
-    summary += `❌ **Errors:** ${errors.join('; ')}\n`;
-  }
-
-  return summary;
+    // Cap captured output so a chatty/looping child can't balloon memory here.
+    child.stdout?.on('data', (d) => {
+      stdout = (stdout + d.toString()).slice(-100_000);
+    });
+    child.stderr?.on('data', (d) => {
+      stderr = (stderr + d.toString()).slice(-100_000);
+    });
+    child.on('error', (err) => {
+      stderr += `\nspawn error: ${err.message}`;
+      finish(null);
+    });
+    child.on('close', (code) => finish(code));
+  });
 }
 
 export async function processMetroAttachment(
@@ -255,133 +213,75 @@ export async function processMetroAttachment(
   await writeFile(inputPath, originalBuffer);
 
   const errors: string[] = [];
-  const warnings: string[] = [];
 
   try {
-    // Use official metro-savefile-doctor to read the save
-    const saveData = await readMetroSave(inputPath);
+    // Delegate all heavy work to the isolated child process.
+    const outputJsonPath = join(workDir, `analysis_${filename}.json`);
+    const { code, stderr, timedOut } = await runAnalyzerChild(inputPath, outputJsonPath);
 
-    logger.info(`🩺 Metro doctor: loaded save "${saveData.name}" from ${saveData.cityCode}`);
-
-    // Check for potential issues in game data
-    const data = saveData.data || {};
-
-    // Track fixable issues (stuck trains) vs observations (everything else)
-    let stuckTrainCount = 0;
-
-    if (Array.isArray(data.trains)) {
-      // Train structure: motion.speed, stuckDetection.lastMovementTime
-      const currentTime = data.elapsedSeconds || 0;
-      const stuckTrains = data.trains.filter((t: any) => {
-        if (!t.motion || !t.stuckDetection) return false;
-        const isStationary = t.motion.speed === 0;
-        const timeSinceMove = currentTime - t.stuckDetection.lastMovementTime;
-        return isStationary && timeSinceMove > 60; // Stuck for >60 seconds
-      });
-      stuckTrainCount = stuckTrains.length;
-      if (stuckTrainCount > 0) {
-        // This IS auto-fixable
-        warnings.push(`🔧 ${stuckTrainCount} stuck trains (will nudge)`);
-      }
+    if (timedOut) {
+      throw new Error('Analysis timed out — the save is too large or complex to process');
     }
-
-    if (Array.isArray(data.routes)) {
-      // Routes use stNodes (station nodes), not stops
-      // Trunk routes (name contains "Trunk") have 0 stNodes intentionally - don't warn
-      const brokenRoutes = data.routes.filter((r: any) => {
-        const hasStations = r.stNodes && r.stNodes.length >= 2;
-        const isTrunkRoute = r.bullet && r.bullet.toLowerCase().includes('trunk');
-        return !hasStations && !isTrunkRoute;
-      });
-      if (brokenRoutes.length > 0) {
-        // NOT auto-fixable - just an observation
-        warnings.push(`📋 ${brokenRoutes.length} routes have no stations (check in-game)`);
-      }
-    }
-
-    if (data.money < 0) {
-      // NOT auto-fixable
-      warnings.push(`📋 Negative balance: ${formatMoney(data.money)} (you're in debt)`);
-    }
-
-    // Run repair script only if there are stuck trains to fix
-    let resultBuffer = originalBuffer;
-    let repairLog: string[] = [];
-
-    if (stuckTrainCount > 0) {
-      logger.info(`🩺 Metro doctor: running repair script to fix ${stuckTrainCount} stuck trains`);
-
-      // Convert to SaveData format for script runner
-      const scriptSaveData: SaveData = {
-        id: saveData.gameSessionId,
-        name: saveData.name,
-        timestamp: saveData.timestamp,
-        version: 1,
-        cityCode: saveData.cityCode,
-        data: saveData.data,
-      };
-
-      const repairScript = await getRepairScript();
-      const scriptResult = runJSScriptString(repairScript, scriptSaveData);
-
-      if (scriptResult.success) {
-        repairLog = scriptResult.logs;
-        logger.info(`🩺 Metro doctor: repair complete - ${repairLog.length} log entries`);
-
-        // Update save data with repaired data
-        saveData.data = scriptResult.save.data;
-
-        // Write repaired file
-        const repairedPath = join(workDir, `repaired_${filename}`);
-        await writeMetroSave(repairedPath, saveData);
-
-        // Read back the repaired buffer
-        resultBuffer = await readFile(repairedPath);
-
-        logger.info(
-          `🩺 Metro doctor: repaired file size ${(resultBuffer.length / (1024 * 1024)).toFixed(2)} MB (was ${(originalSize / (1024 * 1024)).toFixed(2)} MB)`
+    if (code !== 0) {
+      // Detect an out-of-memory kill (SIGABRT / heap limit) and report it plainly
+      // instead of dumping a native V8 stack trace at the user.
+      if (
+        code === 134 ||
+        /heap out of memory|Allocation failed|Reached heap limit/i.test(stderr)
+      ) {
+        throw new Error(
+          'Save too large to analyze — it exceeded the memory budget. ' +
+            '(Raise METRO_DOCTOR_MAX_OLD_SPACE_MB if the server has headroom.)'
         );
-      } else {
-        errors.push(...scriptResult.errors);
-        logger.error(`🩺 Metro doctor: repair failed - ${scriptResult.errors.join(', ')}`);
       }
+      // Otherwise surface the child's own human-readable error line.
+      const lastLine = stderr.trim().split('\n').filter(Boolean).pop();
+      throw new Error(lastLine || `Analyzer exited with code ${code}`);
     }
 
-    // Build summary
-    const summary = buildAnalysisSummary(saveData, originalSize, warnings, errors);
+    let child: ChildAnalysisResult;
+    try {
+      child = JSON.parse(await readFile(outputJsonPath, 'utf-8')) as ChildAnalysisResult;
+    } catch {
+      throw new Error('Analyzer produced no readable result');
+    }
 
-    // Track if actual repairs were made (repair script ran and succeeded)
-    // NOTE: Don't use buffer size comparison - it's unreliable since JSON can serialize to same size
-    const actualRepairsMade = stuckTrainCount > 0 && resultBuffer !== originalBuffer;
+    logger.info(`🩺 Metro doctor: analyzed "${child.name}" (${child.cityCode || '?'}) via child`);
 
-    // Add repair info if repairs were made
-    let finalSummary = summary;
-    if (actualRepairsMade) {
-      finalSummary += `\n🔧 **Fixed:** Nudged ${stuckTrainCount} stuck trains - download the repaired save below`;
-    } else if (stuckTrainCount === 0 && warnings.length > 0) {
-      finalSummary += `\n📋 _No auto-fixes needed. The issues above require manual changes in-game._`;
+    // Read the repaired buffer if the child produced one; fall back to original.
+    let resultBuffer = originalBuffer;
+    let outputPath: string | undefined;
+    let outFilename = filename;
+    if (child.repairedFilePath) {
+      try {
+        resultBuffer = await readFile(child.repairedFilePath);
+        outputPath = child.repairedFilePath;
+        outFilename = `repaired_${filename}`;
+      } catch (e) {
+        logger.warn(`🩺 Metro doctor: repaired file missing, using original: ${String(e)}`);
+      }
     }
 
     const analysis: MetroAnalysis = {
-      valid: errors.length === 0,
-      name: saveData.name,
-      cityCode: saveData.cityCode,
-      timestamp: saveData.timestamp,
-      stats: saveData.stats,
-      autosaveCount: saveData._autosaveIndex?.length || 0,
+      valid: child.errors.length === 0,
+      name: child.name,
+      cityCode: child.cityCode,
+      timestamp: child.timestamp,
+      stats: child.stats,
+      autosaveCount: child.autosaveCount,
       fileSizeBytes: resultBuffer.length,
-      errors,
-      warnings,
-      summary: finalSummary,
+      errors: child.errors,
+      warnings: child.warnings,
+      summary: child.summary,
     };
 
     return {
       inputPath,
-      outputPath: actualRepairsMade ? join(workDir, `repaired_${filename}`) : undefined,
-      stdout: finalSummary,
-      stderr: errors.join('\n'),
-      buffer: resultBuffer, // Return repaired buffer if repairs were made
-      filename: actualRepairsMade ? `repaired_${filename}` : filename,
+      outputPath,
+      stdout: child.summary,
+      stderr: child.errors.join('\n'),
+      buffer: resultBuffer,
+      filename: outFilename,
       analysis,
     };
   } catch (err: any) {
@@ -400,7 +300,7 @@ export async function processMetroAttachment(
     } else if (err.message.includes('ENOENT')) {
       friendlyError = 'Could not read the file';
       helpText = 'Please try uploading again.';
-    } else if (err.message.includes('too large')) {
+    } else if (err.message.includes('too large') || err.message.includes('timed out')) {
       friendlyError = err.message;
       helpText = 'Try sharing a smaller save file.';
     }

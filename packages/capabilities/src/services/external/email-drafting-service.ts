@@ -62,68 +62,6 @@ export class EmailDraftingService {
   }
 
   /**
-   * Extract email address from text given the @ position (no regex)
-   */
-  private extractEmailAddress(text: string, atIndex: number): string | null {
-    // Find start of email (walk backwards from @)
-    let start = atIndex;
-    while (start > 0) {
-      const char = text[start - 1];
-      if (char === ' ' || char === '<' || char === '(' || char === '\n') break;
-      start--;
-    }
-
-    // Find end of email (walk forwards from @)
-    let end = atIndex;
-    while (end < text.length) {
-      const char = text[end];
-      if (
-        char === ' ' ||
-        char === '>' ||
-        char === ')' ||
-        char === '\n' ||
-        char === ',' ||
-        char === ';'
-      )
-        break;
-      end++;
-    }
-
-    const candidate = text.substring(start, end);
-
-    // Basic validation: must have @ with text on both sides and a dot after @
-    const parts = candidate.split('@');
-    if (parts.length !== 2 || parts[0].length === 0 || parts[1].length === 0) return null;
-    if (!parts[1].includes('.')) return null;
-
-    return candidate;
-  }
-
-  /**
-   * Extract "about X" topic from message (no regex)
-   */
-  private extractAboutTopic(message: string): string | undefined {
-    const lowerMessage = message.toLowerCase();
-    const aboutIndex = lowerMessage.indexOf(' about ');
-    if (aboutIndex === -1) return undefined;
-
-    // Get text after "about "
-    const afterAbout = message.substring(aboutIndex + 7);
-
-    // Find first sentence-ending punctuation
-    let endIndex = -1;
-    for (let i = 0; i < afterAbout.length; i++) {
-      const char = afterAbout[i];
-      if (char === '.' || char === '!' || char === '?' || char === '\n') {
-        endIndex = i;
-        break;
-      }
-    }
-
-    return endIndex === -1 ? afterAbout.trim() : afterAbout.substring(0, endIndex).trim();
-  }
-
-  /**
    * Handle email writing mode - creates initial draft
    */
   async handleEmailWritingMode(

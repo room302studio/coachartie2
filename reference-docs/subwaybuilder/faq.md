@@ -73,11 +73,3 @@ A: You don't. 100% automatic. Game places all signals.
 
 **Q: Can I remove signals?**
 A: No. They regenerate automatically with track changes.
-
-## Career
-
-**Q: How do I unlock new cities?**
-A: Earn stars. 4 stars = Growth tier. 10 stars = Mega tier.
-
-**Q: Do I lose stars if conditions stop being met?**
-A: No. Stars are permanent once earned.

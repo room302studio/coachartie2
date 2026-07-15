@@ -7,11 +7,7 @@ import { modelAwarePrompter } from '../../utils/model-aware-prompter.js';
 import { preflightAnalyzer } from './preflight-analyzer.js';
 import { experimentManager } from '../context-alchemy/index.js';
 import { errorTracker, ERROR_TYPES } from '../observability/error-tracker.js';
-import {
-  ExtractedCapability,
-  CapabilityResult,
-  OrchestrationContext,
-} from '../../types/orchestration-types.js';
+import { CapabilityResult, OrchestrationContext } from '../../types/orchestration-types.js';
 
 // =====================================================
 // LLM RESPONSE COORDINATOR

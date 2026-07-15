@@ -49,6 +49,16 @@ import { goalsCapability } from '../../capabilities/productivity/goals.js';
 import { discordUICapability } from '../../capabilities/discord/discord-ui.js';
 import { discordForumsCapability } from '../../capabilities/discord/discord-forums.js';
 import { discordModerationCapability } from '../../capabilities/discord/discord-moderation.js';
+import { discordPollCapability } from '../../capabilities/discord/discord-poll.js';
+import { discordReactionCapability } from '../../capabilities/discord/discord-reaction.js';
+import { stripePaymentsCapability } from '../../capabilities/finance/stripe-payment-links.js';
+import { discordNicknameCapability } from '../../capabilities/discord/discord-nickname.js';
+import { discordThreadsCapability } from '../../capabilities/discord/discord-threads.js';
+import { discordSendMessageCapability } from '../../capabilities/discord/discord-send-message.js';
+import { discordChannelsCapability } from '../../capabilities/discord/discord-channels.js';
+import { discordUserHistoryCapability } from '../../capabilities/discord/discord-user-history.js';
+import { discordIssueParserCapability } from '../../capabilities/discord/discord-issue-parser.js';
+import { sendMetroFileCapability } from '../../capabilities/discord/send-metro-file.js';
 // Communication capabilities
 import { askQuestionCapability } from '../../capabilities/communication/ask-question.js';
 import { mentionProxyCapability } from '../../capabilities/communication/mention-proxy.js';
@@ -117,7 +127,10 @@ export class CapabilityBootstrap {
         quizGameCapability, redditCapability, moltbookCapability, deepResearchCapability,
         trendWatcherCapability, questsCapability, taskStatusCapability, morningBriefingCapability,
         goalsCapability, kanbanCapability, vpsClaudeCapability, hermesCapability,
-        systemMemoryCapability, osintLookupCapability,
+        systemMemoryCapability, osintLookupCapability, discordPollCapability,
+        discordReactionCapability, stripePaymentsCapability, discordNicknameCapability,
+        discordThreadsCapability, discordSendMessageCapability, discordChannelsCapability,
+        discordUserHistoryCapability, discordIssueParserCapability, sendMetroFileCapability,
       ];
       for (const capability of ALL_CAPABILITIES) {
         capabilityRegistry.register(capability);

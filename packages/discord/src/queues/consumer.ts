@@ -14,6 +14,48 @@ import {
 } from '@coachartie/shared';
 import type { Worker } from 'bullmq';
 
+// Known users Artie often means to actually PING but writes as plain text ("@ejfox"),
+// which doesn't notify anyone. Convert those to real Discord mentions on the way out.
+// (allowedMentions parse:['users'] on the client means <@id> genuinely notifies them.)
+const KNOWN_MENTIONS: Record<string, string> = {
+  ejfox: '688448399879438340',
+};
+
+function resolveKnownMentions(text: string): string {
+  // Match @name not already part of a <@id> mention or a word/email.
+  return text.replace(/(?<![<\w/])@([a-z0-9_]+)/gi, (whole, name: string) => {
+    const id = KNOWN_MENTIONS[name.toLowerCase()];
+    return id ? `<@${id}>` : whole;
+  });
+}
+
+// De-duplication ledger for outbound sends, keyed by inbound message id (inReplyTo).
+// Bounded + time-windowed: resubmits arrive within seconds/minutes of the original.
+const SENT_TTL_MS = 10 * 60 * 1000; // 10 min covers any timeout-driven resubmit
+const recentlySent = new Map<string, number>(); // inReplyTo -> sent timestamp
+
+function pruneSent(now: number): void {
+  if (recentlySent.size < 1000) return;
+  for (const [k, t] of recentlySent) {
+    if (now - t > SENT_TTL_MS) recentlySent.delete(k);
+  }
+}
+
+function wasRecentlySent(key: string): boolean {
+  const t = recentlySent.get(key);
+  return t !== undefined && Date.now() - t < SENT_TTL_MS;
+}
+
+function markSent(key: string): void {
+  const now = Date.now();
+  pruneSent(now);
+  recentlySent.set(key, now);
+}
+
+function unmarkSent(key: string): void {
+  recentlySent.delete(key);
+}
+
 export async function startResponseConsumer(
   client: Client
 ): Promise<Worker<OutgoingMessage> | null> {
@@ -29,6 +71,16 @@ export async function startResponseConsumer(
   const worker = createWorker<OutgoingMessage, void>(QUEUES.OUTGOING_DISCORD, async (job) => {
     const response = job.data;
 
+    // Idempotency: under load a job can exceed the 120s timeout and get resubmitted/retried,
+    // producing a second OutgoingMessage for the SAME inbound message → the reply posts twice.
+    // Suppress a send whose inReplyTo we already answered recently. (Keyed on inReplyTo, which
+    // is unique per inbound message; skipped when absent so proactive/scheduled posts are unaffected.)
+    const dedupeKey = response.inReplyTo;
+    if (dedupeKey && wasRecentlySent(dedupeKey)) {
+      logger.warn(`🛑 Duplicate response suppressed for message ${dedupeKey} (already answered)`);
+      return;
+    }
+
     try {
       // Get channel ID from the response metadata
       const channelId = response.metadata?.channelId;
@@ -43,6 +95,10 @@ export async function startResponseConsumer(
         throw new Error(`Invalid channel: ${channelId}`);
       }
 
+      // Claim this message right before sending; released on failure so a real send error
+      // can still retry (only a successful send stays deduped).
+      if (dedupeKey) markSent(dedupeKey);
+
       // Check if this is a special Discord UI response
       if (response.message.startsWith('DISCORD_UI:')) {
         await handleDiscordUIResponse(channel, response.message);
@@ -55,8 +111,9 @@ export async function startResponseConsumer(
               ? `\n\n_[${process.env.INSTANCE_NAME || 'unknown'}]_`
               : '';
 
-          // Chunk the message to preserve formatting and respect Discord limits
-          const chunks = chunkMessage(response.message + debugInfo);
+          // Chunk the message to preserve formatting and respect Discord limits.
+          // Resolve known plain-text @names to real pings so e.g. "@ejfox" actually notifies.
+          const chunks = chunkMessage(resolveKnownMentions(response.message + debugInfo));
           for (const chunk of chunks) {
             await channel.send(chunk);
           }
@@ -67,6 +124,8 @@ export async function startResponseConsumer(
 
       logger.info(`Response sent to Discord channel ${channelId}`);
     } catch (error) {
+      // Send failed — release the dedupe claim so a legitimate retry can go through.
+      if (dedupeKey) unmarkSent(dedupeKey);
       logger.error(`Failed to send Discord response for message ${response.inReplyTo}:`, error);
       throw error; // Let BullMQ handle retries
     }

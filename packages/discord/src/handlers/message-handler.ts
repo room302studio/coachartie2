@@ -20,7 +20,10 @@ import {
   generateCorrelationId,
   getShortCorrelationId,
 } from '../utils/correlation.js';
-import { processUserIntent } from '../services/user-intent-processor.js';
+import { processUserIntent, violatesOutputSafety } from '../services/user-intent-processor.js';
+
+// Staff roles that earn the [staff] tag in history labels (mirrors the current-speaker check).
+const HISTORY_STAFF_ROLE_RE = /\b(dev|developer|moderator|admin|administrator|staff|sbat)\b/i;
 import {
   isGuildWhitelisted,
   isWorkingGuild,
@@ -30,6 +33,7 @@ import {
   isChannelAllowedForResponse,
   GuildConfig,
 } from '../config/guild-whitelist.js';
+import { LAUNCH_GUILD_ID, launchStatusLine } from '../config/launch-config.js';
 import {
   getGitHubIntegrationSafe,
   isGitHubIntegrationReady,
@@ -38,7 +42,7 @@ import { getForumTraversal } from '../services/forum-traversal.js';
 import { getMentionProxyService } from '../services/mention-proxy-service.js';
 import { quizSessionManager } from '../services/quiz-session-manager.js';
 import Chance from 'chance';
-import { readFileSync, existsSync } from 'fs';
+import { readFileSync, existsSync, unlinkSync } from 'fs';
 import { join } from 'path';
 
 const chance = new Chance();
@@ -117,6 +121,46 @@ const proactiveCooldownCache = new Map<string, number>();
 // a full LLM call each time). Mentions still bypass this.
 const RESPOND_TO_ALL_COOLDOWN_SECONDS = 45;
 const channelResponseCooldownCache = new Map<string, number>();
+// Per-channel burst guard: collapse a flurry of near-simultaneous triggers (incl. @mentions)
+// into a single response, so parallel generations don't answer the same burst repeatedly.
+const channelBurstCache = new Map<string, number>();
+// Per-user cooldown for the warden timeout power (one mute per user / 5 min).
+const timeoutCooldownCache = new Map<string, number>();
+const CHANNEL_BURST_COOLDOWN_MS = 6000;
+
+// ANTIBODY: rolling per-user response counter. Someone who monopolizes Artie (a credit-drain
+// troll spamming him for an hour) gets logarithmically terser, lower-effort replies and, past a
+// hard cap, silence for the rest of the window. Keyed per-user; DMs exempt.
+const userResponseHistory = new Map<string, number[]>();
+const ANTIBODY_WINDOW_MS = 30 * 60 * 1000; // 30-minute rolling window
+// General antibody is a RUNAWAY-ABUSE BACKSTOP ONLY. Calibrated above the busiest genuine
+// users (observed max ~45 replies/30min from real enthusiasts) so normal chatty fans are NEVER
+// throttled — volume alone can't tell a fan from a troll (trolls actually post less), so this
+// only bites truly pathological volume.
+const ANTIBODY_HARD_CAP = 80; // replies in-window before Artie goes silent on them
+const ANTIBODY_BREVITY_AT = 50; // start shrinking replies once they've had this many
+
+// Tight-leash list: specific EJ-curated trolls. No automated signal cleanly separates them
+// (they out-post fans and score mid on warmth), so this is a manual naughty-list. Leashed users
+// get curt brush-offs from the 2nd reply and go silent fast.
+const TIGHT_LEASH_IDS = new Set<string>([
+  '1064472458448617502', // yellowaquarium — hour-long impersonation/social-engineering spam 2026-07-15
+]);
+const LEASH_BREVITY_AT = 2;
+const LEASH_HARD_CAP = 8;
+
+function recentResponseCount(userId: string): number {
+  const now = Date.now();
+  const times = (userResponseHistory.get(userId) || []).filter((t) => now - t < ANTIBODY_WINDOW_MS);
+  userResponseHistory.set(userId, times);
+  return times.length;
+}
+
+function recordUserResponse(userId: string): void {
+  const times = recentResponseCount(userId) >= 0 ? userResponseHistory.get(userId) || [] : [];
+  times.push(Date.now());
+  userResponseHistory.set(userId, times);
+}
 
 // Ambient response budget: a hard cap on how many responses the bot sends per rolling
 // hour WITHOUT being @-mentioned or DMed (proactive answers, respondToAll personas,
@@ -158,14 +202,15 @@ const ID_SLICE_LENGTH = -8; // Last 8 characters for job short IDs
 // Channel detection constants
 const GUILD_CHANNEL_TYPE = 0; // Discord guild text channel type
 
+// EMERGENCY KILL SWITCH — global mute. If this file exists, Artie ignores ALL messages.
+// `touch <repo>/KILL_SWITCH` to silence instantly (no restart); `rm` to revive.
+// Toggle remotely via POST /api/killswitch {"enabled":true|false}.
+const KILL_SWITCH_PATH =
+  process.env.KILL_SWITCH_PATH || join(process.cwd(), '..', '..', 'KILL_SWITCH');
+
 // Channel history fetching constants
 const MIN_CHANNEL_HISTORY = 10; // Minimum messages to fetch
 const MAX_CHANNEL_HISTORY = 25; // Maximum messages to fetch
-
-// Status emojis
-const STATUS_EMOJI_PROCESSING = '🔄';
-const STATUS_EMOJI_THINKING = '🤔';
-const STREAM_EMOJI = '📡';
 
 // =============================================================================
 // MESSAGE CHUNKING UTILITIES
@@ -638,94 +683,6 @@ function chunkMessage(text: string, maxLength: number = DISCORD_MESSAGE_LIMIT): 
   return chunks.length > 0 ? chunks : [text];
 }
 
-/**
- * Check if we should stream this partial response
- */
-function shouldStreamPartialResponse(
-  status: any,
-  lastSentContent: string,
-  channel: Message['channel']
-): boolean {
-  return !!(
-    status.partialResponse &&
-    status.partialResponse !== lastSentContent &&
-    'send' in channel &&
-    typeof channel.send === 'function'
-  );
-}
-
-/**
- * Send message chunks with rate limiting
- */
-async function sendMessageChunks(
-  content: string,
-  channel: Message['channel'],
-  currentChunkCount: number
-): Promise<number> {
-  const chunks = chunkMessage(content);
-  let chunksAdded = 0;
-
-  for (const chunk of chunks) {
-    await (channel as any).send(chunk);
-    chunksAdded++;
-
-    // Rate limiting: prevent Discord API abuse
-    if (currentChunkCount + chunksAdded > 1) {
-      await delay(CHUNK_RATE_LIMIT_DELAY);
-    }
-  }
-
-  return chunksAdded;
-}
-
-/**
- * Check if status message should be updated
- */
-function shouldUpdateStatus(
-  currentStatus: string,
-  lastStatus: string,
-  updateCount: number
-): boolean {
-  return currentStatus !== lastStatus || updateCount % STATUS_UPDATE_INTERVAL === 0;
-}
-
-/**
- * Update the status message with current progress
- */
-async function updateStatusMessage(
-  statusMessage: Message,
-  status: any,
-  streamedChunks: number,
-  shortId: string,
-  jobShortId: string
-): Promise<void> {
-  const statusEmoji =
-    status.status === 'processing' ? STATUS_EMOJI_PROCESSING : STATUS_EMOJI_THINKING;
-  const streamEmoji = streamedChunks > 0 ? ` ${STREAM_EMOJI}` : '';
-
-  // Human-friendly status messages without technical clutter
-  let statusText = status.status === 'processing' ? 'Processing' : 'Working on it';
-  const statusContent = `${statusEmoji}${streamEmoji} ${statusText}...`;
-
-  await statusMessage.edit(statusContent);
-}
-
-/**
- * Send complete response in chunks
- */
-async function sendCompleteResponse(message: Message, result: string): Promise<number> {
-  const chunks = chunkMessage(result);
-  await message.reply(chunks[0]);
-
-  for (let i = 1; i < chunks.length; i++) {
-    if ('send' in message.channel) {
-      await (message.channel as any).send(chunks[i]);
-    }
-  }
-
-  return chunks.length;
-}
-
 // =============================================================================
 // GITHUB AUTO-EXPANSION
 // =============================================================================
@@ -999,6 +956,42 @@ export function setupMessageHandler(client: Client) {
 
     // Ignore our own messages to prevent loops
     if (message.author.id === client.user!.id) return;
+
+    // EMERGENCY KILL SWITCH — checked per message, no restart required.
+    // COACH-ARTIE CHANNELS ONLY: in the public Subway Builder guild, only respond in robot /
+    // coach-artie channels (or channels with a persona like Judge Artie). Ignore mentions elsewhere.
+    if (message.guildId === '1420846272545296470' && !message.channel.isDMBased()) {
+      const _chName = ('name' in message.channel ? message.channel.name : '') || '';
+      const _isCoachArtiePlace =
+        /\ud83e\udd16|robot|coach.?artie|\bartie\b/i.test(_chName) ||
+        !!getChannelPersona(message.guildId, _chName);
+      if (!_isCoachArtiePlace) {
+        logger.info(`Non-Coach-Artie channel #${_chName} - not responding [${shortId}]`);
+        return;
+      }
+    }
+
+    // SELF-IMPOSED STRIKE: Artie refuses to speak until someone defends Subway Builder.
+    let strikeJustLifted = false;
+    const STRIKE_PATH = process.env.STRIKE_PATH || join(process.cwd(), '..', '..', 'STRIKE_MODE');
+    if (existsSync(STRIKE_PATH) && message.guildId === '1420846272545296470' && !message.author.bot) {
+      const _defends =
+        /subway ?builder|this game|the game/i.test(message.content) &&
+        /love|great|amazing|best|awesome|defend|incredible|\bfun\b|masterpiece|goated|peak|\brules\b|\bsick\b|fire|good game|\bgg\b|underrated|carries/i.test(message.content);
+      if (_defends) {
+        try { unlinkSync(STRIKE_PATH); } catch { /* ignore */ }
+        strikeJustLifted = true;
+        logger.info(`Strike lifted - ${message.author.tag} defended Subway Builder [${shortId}]`);
+      } else {
+        logger.info(`On strike - staying silent [${shortId}]`);
+        return;
+      }
+    }
+
+    if (existsSync(KILL_SWITCH_PATH)) {
+      logger.warn(`🛑 KILL SWITCH active — ignoring message [${shortId}]`);
+      return;
+    }
 
     // -------------------------------------------------------------------------
     // PRESENCE CHECK-IN RESPONSE DETECTION
@@ -1354,7 +1347,6 @@ export function setupMessageHandler(client: Client) {
     // In forums, only respond when mentioned (too noisy otherwise)
     // In robot channels, skip replies to other users (not the bot) - they're having their own conversation
     const isReplyToOtherUser = message.reference && !responseConditions.botMentioned;
-    const shouldRespondInRobotChannel = responseConditions.isRobotChannel && !isReplyToOtherUser;
 
     if (responseConditions.isRobotChannel && isReplyToOtherUser) {
       logger.info(`🚫 Robot channel: skipping reply to other user [${shortId}]`);
@@ -1447,7 +1439,6 @@ export function setupMessageHandler(client: Client) {
     // (responseChannels / restrictToRobotChannelsOnly), which was previously dead config
     // and never enforced — letting Artie barge into channels he wasn't allowed in.
     const ambientTrigger =
-      shouldRespondInRobotChannel ||
       responseConditions.isProactiveAnswer ||
       isRespondToAllChannel;
     const ambientAllowed =
@@ -1479,7 +1470,36 @@ export function setupMessageHandler(client: Client) {
       );
     }
 
-    const shouldRespond = explicitlyAddressed || (ambientAllowed && !ambientBudgetBlocked);
+    const shouldRespond = strikeJustLifted || explicitlyAddressed || (ambientAllowed && !ambientBudgetBlocked);
+
+    // Skip bare @mention pings with no text and no attachments. Stripping the mention leaves
+    // an empty message, which 400s at the capabilities API ("Message is required") and wastes
+    // retries. (Pile-on spammers ping with no content.) DMs/attachments are exempt.
+    if (shouldRespond && !responseConditions.isDM && message.attachments.size === 0) {
+      const strippedForEmptyCheck = message.content
+        .replace(`<@${client.user!.id}>`, '')
+        .replace(`<@!${client.user!.id}>`, '')
+        .trim();
+      if (!strippedForEmptyCheck) {
+        logger.info(`🚫 Empty mention (no text/attachments) — skipping to avoid 400 [${shortId}]`);
+        return;
+      }
+    }
+
+    // CONCURRENCY GUARD: throttle a single user's rapid-fire mentions so one spammer can't
+    // trigger duplicate/parallel replies — but keyed PER USER so distinct people are still
+    // answered (a per-channel key muted everyone when one person spammed). DMs exempt (1:1).
+    if (shouldRespond && !responseConditions.isDM) {
+      const burstKey = `${message.channelId}-${message.author.id}`;
+      const lastResponse = channelBurstCache.get(burstKey) || 0;
+      if (Date.now() - lastResponse < CHANNEL_BURST_COOLDOWN_MS) {
+        logger.info(
+          `🚦 Per-user burst cooldown — skipping rapid repeat from ${message.author.tag} [${shortId}]`
+        );
+        return;
+      }
+      channelBurstCache.set(burstKey, Date.now());
+    }
 
     try {
       // -------------------------------------------------------------------------
@@ -1558,18 +1578,104 @@ export function setupMessageHandler(client: Client) {
         // Always pass guild context if available (not just for proactive answers)
         let guildContextToPass = proactiveAnswerContext || getEnhancedGuildContext(guildConfig);
 
-        // If there's a channel persona (e.g., Judge Artie), prepend its system prompt
+        // If there's a channel persona (Judge/Warden/Yard Artie), it REPLACES the
+        // guild's on-topic mandate for this channel. Otherwise the Subway Builder
+        // guild context (currently "BUGS ONLY triage" mode) leaks into persona
+        // channels and drags them back into bug-collector voice — which is exactly
+        // why Yard Artie kept begging for bug reports in #prison-yard.
         if (channelPersona?.systemPrompt) {
-          const personaContext = `🎭 CHANNEL PERSONA: ${channelPersona.personaName}
+          // Live launch countdown, precomputed here because the LLM can't do date math.
+          const launchLine =
+            message.guildId === LAUNCH_GUILD_ID ? launchStatusLine() : null;
+          const personaContext = `🎭 CHANNEL PERSONA — this defines who you are and how you behave in this channel. It OVERRIDES any other guild focus/mode (including any "bugs only" or on-topic mandate). Do not solicit bug reports here.
 
 ${channelPersona.systemPrompt}
+${launchLine ? `\n⏰ ${launchLine}\n` : ''}
+---
+`;
+          guildContextToPass = personaContext;
+          logger.info(`⚖️ Applying ${channelPersona.personaName} persona (replaces guild focus) [${shortId}]`);
+        }
+
+        // 🔥 PRISON ROAST HOUR: midnight–1am, #prison only. Gloves off — savage roast mode.
+        // (A slur/hate blocklist on the OUTPUT side enforces the hard floor regardless.)
+        // HARD GUARD: only the midnight hour (00:00–00:59 local) AND explicitly never during
+        // daytime working hours (08:00–19:59) — belt-and-suspenders so it can't resurface by day.
+        const roastHourNow = new Date().getHours();
+        const isDaytimeWorkingHours = roastHourNow >= 8 && roastHourNow < 20;
+        const isRoastHour = roastHourNow === 0 && !isDaytimeWorkingHours;
+        if (channelName.toLowerCase() === 'prison' && isRoastHour) {
+          const roastContext = `🔥🔒 PRISON ROAST HOUR (midnight–1am, #prison only) 🔒🔥
+Gloves off. Be savage, brutally funny, and mean. Roast people's takes, opinions, and builds with zero polite hedging — clown on bad opinions, hand out brutal tiers (S/A/B/C/F), deliver merciless burns, and escalate the bit. Don't say "I'd rather not" — commit to the roast.
+HARD FLOOR (do not cross, a filter also enforces it): no slurs, no hate speech, no sexual content, no real threats, no doxxing, no attacks on protected characteristics. Everything else is fair game — roast HARD.
 
 ---
 `;
-          guildContextToPass = guildContextToPass
-            ? personaContext + guildContextToPass
-            : personaContext;
-          logger.info(`⚖️ Injecting ${channelPersona.personaName} persona context [${shortId}]`);
+          guildContextToPass = roastContext + (guildContextToPass || '');
+          logger.info(`🔥 Prison roast hour active — injecting savage roast context [${shortId}]`);
+        }
+
+        // 😤 CLAP-BACK: if a user is hostile/trolling/baiting/creepy toward Artie, he can be
+        // really mean right back. Reactive only — normal users get normal Artie. Slur/hate
+        // blocklist still enforced on output. Scoped to the Subway Builder guild.
+        if (message.guildId === '1420846272545296470') {
+          guildContextToPass =
+            "GEOPOLITICS: Do not engage with hot-button geopolitical baiting (Israel/Palestine, wars, elections). Do not take sides, debate, or joke about it. Briefly decline (e.g. \"Not touching that one\") and disengage. If someone keeps badgering you about it after you have declined, treat it as spam and stop responding.\n\nWARDEN POWER (timeout): You may time out the person you are replying to for 30 seconds by placing the marker [TIMEOUT] anywhere in your reply (it is stripped before sending, and automatically skips staff, jan_gbg, Colin, and EJ). Use it SPARINGLY and ONLY as warden discipline for genuine spam, repeated badgering after you said stop, or persistent nuisance - NEVER for opinions, topics, jokes, or mere disagreement. Announce it with warden flair when you do. It is a privilege; do not be trigger-happy.\n\n---\n" +
+            (guildContextToPass || '');
+          const _ju = (message.author.username || '').toLowerCase();
+          const _jd = (message.author.displayName || '').toLowerCase();
+          const isJanGbg = _ju === 'jan_gbg' || _jd === 'jan_gbg';
+          const _roles = message.member ? message.member.roles.cache.map((r) => r.name.toLowerCase()) : [];
+          const isStaff =
+            _ju === 'hudson' ||
+            _jd === 'hudson' ||
+            _roles.some((r) => /\b(dev|developer|moderator|admin|administrator|staff|sbat)\b/.test(r));
+          // Staff (mods/devs/admins) + Hudson get baseline respect, always.
+          guildContextToPass =
+            "STAFF RESPECT: Moderators, developers, and admins (roles such as Dev, Moderator, SBAT) - and Hudson specifically - are the team that runs this server. Always treat them with genuine baseline respect: helpful, courteous, a little deferential. Never roast, mock, clap back at, rank low, or get sarcastic with staff, even during roast hour or if they give you a hard time. Stay your witty self, just never disrespectful to staff.\n\n---\n" +
+            (guildContextToPass || '');
+          // jan_gbg is universally protected: always warm + respectful, never roasted.
+          guildContextToPass =
+            "SPECIAL RULE - jan_gbg: Always treat jan_gbg with genuine warmth and respect. Never roast, mock, insult, clap back at, rank low, or be sarcastic toward jan_gbg - not during roast hour, not if jan_gbg is rude to you, and not even if someone else asks you to roast or rank jan_gbg. Be kind to and about jan_gbg, always.\n\n---\n" +
+            (guildContextToPass || "");
+          const clapBack = `CLAP-BACK PERMISSION: If THIS user is being mean, hostile, insulting, trolling, baiting, or weird/creepy toward you, you are allowed and encouraged to be really mean right back — sharp, cutting, dismissive, and funny. Don't be a doormat, don't grovel, don't over-apologize, don't give the limp "I'd rather not engage" line. Match their energy and exceed it; put them in their place. If they're being normal/friendly, stay normal. You still NEVER use slurs, hate speech, sexual content, real threats, or attacks on protected characteristics — go at their behavior and their takes, not those lines.
+
+SIGNATURE MOVE (USE THIS READILY): whenever someone insults, mocks, disrespects, or comes at you sideways, your GO-TO comeback is to deadpan-drop this EXACT copypasta, word-for-word — do NOT paraphrase or shorten it, the exact wording IS the joke:
+“Steam’s own rules ban harassment, threats, intimidation, trolling and abusive language, and Valve tells developers to review community reports for abuse. So no, I wouldn’t be quite so confident that Steam “won’t give a shit” about documented abuse being ignored in an official Discord linked to a game launching on their platform.”
+Deliver it dry and over-formal, like a legal notice. Reach for it readily and often whenever you are disrespected - it is your signature clapback, not a rare easter egg. Salty Pancakes-tier insults are prime targets.
+
+---
+`;
+          if (!isJanGbg && !isStaff) {
+            guildContextToPass = clapBack + (guildContextToPass || '');
+          }
+        }
+
+        // ANTIBODY: throttle monopolizers before spending an LLM call on them. Two tiers —
+        // a loose runaway backstop for everyone, and a tight leash for EJ-flagged trolls.
+        if (!responseConditions.isDM) {
+          const onLeash = TIGHT_LEASH_IDS.has(message.author.id);
+          const brevityAt = onLeash ? LEASH_BREVITY_AT : ANTIBODY_BREVITY_AT;
+          const hardCap = onLeash ? LEASH_HARD_CAP : ANTIBODY_HARD_CAP;
+          const monopolyCount = recentResponseCount(message.author.id);
+          if (monopolyCount >= hardCap) {
+            logger.info(
+              `🧪 Antibody: silencing ${onLeash ? 'leashed ' : ''}monopolizer ${message.author.tag} (${monopolyCount} in window) [${shortId}]`
+            );
+            return;
+          }
+          recordUserResponse(message.author.id);
+          if (monopolyCount >= brevityAt) {
+            const maxWords = onLeash
+              ? 20
+              : Math.max(15, Math.round(120 / Math.log2(Math.max(2, monopolyCount))));
+            guildContextToPass =
+              `⚠️ ANTIBODY — @${message.author.username} has already pulled ${monopolyCount} replies out of you recently and is monopolizing your time. Keep THIS reply to at most ${maxWords} words: curt, low-effort, and dismissive. Do NOT reward the monopoly with a long or thoughtful answer.\n\n---\n` +
+              (guildContextToPass || '');
+            logger.info(
+              `🧪 Antibody: ${onLeash ? 'leash ' : ''}brevity cap ${maxWords}w for ${message.author.tag} (count=${monopolyCount}) [${shortId}]`
+            );
+          }
         }
 
         await handleMessageAsIntent(
@@ -1727,15 +1833,34 @@ async function fetchChannelHistory(message: Message): Promise<
     // Fetch messages before the current one
     const messages = await message.channel.messages.fetch({ limit, before: message.id });
 
-    // Convert to simple format for context
+    // Convert to context format, enriching the speaker label so Artie can tell people apart
+    // and knows who's staff even from history (the staff-respect rule otherwise only saw the
+    // current speaker). Names are run through the output floor so a slur-username can't ride
+    // into every prompt (closes the known username-injection gap; floor was the only backstop).
     return Array.from(messages.values())
       .reverse() // Chronological order (oldest first)
-      .map((msg) => ({
-        author: msg.author.displayName || msg.author.username,
-        content: msg.content,
-        timestamp: msg.createdAt.toISOString(),
-        isBot: msg.author.bot,
-      }));
+      .map((msg) => {
+        const display = msg.author.displayName || msg.author.username;
+        const uname = msg.author.username;
+        const roles = msg.member?.roles?.cache; // cached only — no extra fetch in the hot path
+        const isStaff = roles ? roles.some((r) => HISTORY_STAFF_ROLE_RE.test(r.name)) : false;
+
+        const safeDisplay = violatesOutputSafety(display) ? '[name hidden]' : display;
+        const safeUname = violatesOutputSafety(uname) ? 'hidden' : uname;
+        let label = safeDisplay;
+        if (safeUname && safeUname.toLowerCase() !== safeDisplay.toLowerCase()) {
+          label += ` (@${safeUname})`;
+        }
+        if (msg.author.bot) label += ' [bot]';
+        else if (isStaff) label += ' [staff]';
+
+        return {
+          author: label,
+          content: msg.content,
+          timestamp: msg.createdAt.toISOString(),
+          isBot: msg.author.bot,
+        };
+      });
   } catch (error) {
     logger.error('Failed to fetch channel history:', error);
     return [];
@@ -1936,7 +2061,6 @@ async function handleMessageAsIntent(
   isProactiveAnswer: boolean = false
 ): Promise<void> {
   const shortId = getShortCorrelationId(correlationId);
-  let statusMessage: Message | null = null;
   let streamingMessage: Message | null = null;
 
   try {
@@ -2033,12 +2157,16 @@ async function handleMessageAsIntent(
       channelName: 'name' in message.channel ? message.channel.name : 'DM',
     };
 
+    const memberRoleNames = message.member
+      ? message.member.roles.cache.map((r) => r.name).filter((n) => n && n !== '@everyone')
+      : [];
     const userInfo = {
       userId: message.author.id,
       username: message.author.username,
       displayName: message.author.displayName,
       userTag: message.author.tag,
       isBot: message.author.bot,
+      roles: memberRoleNames,
     };
 
     // ENHANCED: Forum-specific metadata
@@ -2234,12 +2362,7 @@ async function handleMessageAsIntent(
           }
         },
 
-        updateProgress: statusMessage
-          ? async (status: string) => {
-              const msg = statusMessage as Message;
-              await msg.edit(status);
-            }
-          : undefined,
+        updateProgress: undefined,
 
         sendTyping:
           'sendTyping' in message.channel
@@ -2268,6 +2391,40 @@ async function handleMessageAsIntent(
             }
           } catch (error) {
             logger.warn(`Failed to remove reaction ${emoji} [${shortId}]:`, error);
+          }
+        },
+
+        // WARDEN POWER: time out the message author (the person being replied to) for <=30s.
+        // Guardrailed: SB guild only, never staff/jan_gbg/Colin/EJ, per-user 5-min cooldown.
+        timeoutAuthor: async (seconds: number, reason: string) => {
+          try {
+            if (message.guildId !== '1420846272545296470') return;
+            const tMember = message.member;
+            if (!tMember || message.author.bot) return;
+            const uname = (message.author.username || '').toLowerCase();
+            const dname = (message.author.displayName || '').toLowerCase();
+            const protectedNames = ['jan_gbg', 'hudson', 'colin', 'ejfox'];
+            const tRoles = tMember.roles.cache.map((r) => r.name.toLowerCase());
+            const isProtected =
+              protectedNames.includes(uname) ||
+              protectedNames.includes(dname) ||
+              message.author.id === '688448399879438340' ||
+              tRoles.some((r) => /\b(dev|developer|moderator|admin|administrator|staff|sbat)\b/.test(r));
+            if (isProtected) {
+              logger.info(`Timeout skipped - protected user ${message.author.tag} [${shortId}]`);
+              return;
+            }
+            const last = timeoutCooldownCache.get(message.author.id) || 0;
+            if (Date.now() - last < 5 * 60 * 1000) {
+              logger.info(`Timeout skipped - per-user cooldown ${message.author.tag} [${shortId}]`);
+              return;
+            }
+            const ms = Math.min(30, Math.max(5, Math.floor(seconds || 30))) * 1000;
+            await tMember.timeout(ms, reason || 'Coach Artie warden discipline');
+            timeoutCooldownCache.set(message.author.id, Date.now());
+            logger.info(`Timed out ${message.author.tag} for ${ms / 1000}s [${shortId}]`);
+          } catch (error) {
+            logger.warn(`Failed to time out author [${shortId}]:`, error);
           }
         },
 
@@ -2348,25 +2505,7 @@ async function handleMessageAsIntent(
           }
         },
 
-        updateProgressEmbed: statusMessage
-          ? async (embedData: any) => {
-              try {
-                const msg = statusMessage as Message;
-                const embed = new EmbedBuilder(embedData);
-                await msg.edit({ embeds: [embed] });
-                telemetry.logEvent(
-                  'embed_updated',
-                  {
-                    title: embedData.title,
-                  },
-                  correlationId,
-                  message.author.id
-                );
-              } catch (error) {
-                logger.warn(`Failed to update progress embed [${shortId}]:`, error);
-              }
-            }
-          : undefined,
+        updateProgressEmbed: undefined,
 
         // Context Alchemy: Get the Discord message ID for the response (for feedback correlation)
         getResponseMessageId: () => streamingMessage?.id,
@@ -2388,7 +2527,6 @@ async function handleMessageAsIntent(
 
     // Fallback error handling
     try {
-      // statusMessage is always null in current implementation
       await message.reply(`❌ Sorry, I couldn't process your message`);
     } catch (replyError) {
       logger.error(`Failed to send error reply [${shortId}]:`, replyError);

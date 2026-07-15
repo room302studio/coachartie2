@@ -2,7 +2,7 @@ import { logger } from '@coachartie/shared';
 import { estimateTokens } from '@coachartie/shared';
 import { CreditMonitor } from '../../monitoring/credit-monitor.js';
 import { distressMonitor } from '../../monitoring/distress-monitor.js';
-import { ContextSource, DEBUG } from './types.js';
+import { ContextSource } from './types.js';
 
 /**
  * Add credit/balance warnings so Artie knows to switch to cheaper models.
@@ -10,61 +10,33 @@ import { ContextSource, DEBUG } from './types.js';
 export async function addCreditWarnings(sources: ContextSource[]): Promise<void> {
   try {
     const creditMonitor = CreditMonitor.getInstance();
-    const [creditInfo, alerts] = await Promise.all([
-      creditMonitor.getCurrentBalance(),
-      creditMonitor.getActiveAlerts(),
-    ]);
+    const creditInfo = await creditMonitor.getCurrentBalance();
 
-    // Build credit warning message if we have alerts or low balance
-    const warningParts: string[] = [];
+    // Credit awareness is CRITICAL-ONLY by design. Injecting balance/burn into
+    // Artie's context every turn made him fixate on money and read his whole
+    // setup as intrusive ("$X hovering in my context is like taping your bank
+    // balance to your forehead") — A/B tested: with the warning ~75% of reflective
+    // replies flagged the setup as intrusive; without it, 0%. So above the
+    // critical floor, cost is the system's job (logs + model selection), NOT
+    // something Artie has to carry. He only hears about it when he must act.
+    const balance = creditInfo?.credits_remaining;
+    const CRITICAL_BALANCE = parseFloat(process.env.CREDIT_CRITICAL_BALANCE || '5');
 
-    // Add active alerts
-    if (alerts.length > 0) {
-      warningParts.push(...alerts.map((a) => a.message));
-    }
-
-    // Add balance info if available
-    if (creditInfo?.credits_remaining !== undefined) {
-      const balance = creditInfo.credits_remaining;
-
-      // Critical warning (<$5)
-      if (balance < 5) {
-        warningParts.push(`🤖💸 "I'm faddddingggg..." - Only $${balance.toFixed(2)} credits left!`);
-        warningParts.push(
-          '⚡ SWITCH TO CHEAPER MODELS IMMEDIATELY (use Haiku/Gemini Flash for non-critical tasks)'
-        );
-      }
-      // Warning (<$25)
-      else if (balance < 25) {
-        warningParts.push(`⚠️ Low credit balance: $${balance.toFixed(2)} remaining`);
-        warningParts.push('💡 Consider using cheaper models for simple tasks');
-      }
-      // Info (just show balance if we have it)
-      else {
-        warningParts.push(`💰 Current balance: $${balance.toFixed(2)}`);
-      }
-    }
-
-    // Add daily spend warning if high
-    if (creditInfo?.daily_spend !== undefined && creditInfo.daily_spend > 10) {
-      warningParts.push(`📊 Today's spend: $${creditInfo.daily_spend.toFixed(2)}`);
-    }
-
-    // Only add to context if we have warnings
-    if (warningParts.length > 0) {
-      const content = warningParts.join('\n');
-
+    if (typeof balance === 'number' && balance < CRITICAL_BALANCE) {
+      const content = `⚠️ Credits are critically low ($${balance.toFixed(2)} left). Prefer cheaper models (Haiku/Flash) for non-critical work until topped up.`;
       sources.push({
         name: 'credit_status',
-        priority: 95, // Very high priority - Artie needs to know this!
+        priority: 95,
         tokenWeight: estimateTokens(content),
         content,
         category: 'user_state',
       });
-
-      if (DEBUG || (creditInfo?.credits_remaining && creditInfo.credits_remaining < 25)) {
-        logger.warn(`💰 Credit warning added to context: ${warningParts[0]}`);
-      }
+      logger.warn(`💰 Critical credit warning injected into context: $${balance.toFixed(2)}`);
+    } else if (typeof balance === 'number') {
+      // Not critical — keep it out of his head; log only for observability.
+      logger.info(
+        `💰 Balance $${balance.toFixed(2)} — not injected (above $${CRITICAL_BALANCE} critical floor)`
+      );
     }
   } catch (error) {
     logger.warn('Failed to add credit warnings:', error);

@@ -285,6 +285,16 @@ class DistressMonitor {
     // Record the distress event
     try {
       const db = getSyncDb();
+      // Ensure the table exists — otherwise every distress INSERT fails and the
+      // DB layer logs it at ERROR level (pure log noise, 12+ times/day).
+      db.run(`
+        CREATE TABLE IF NOT EXISTS distress_events (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          signals TEXT,
+          reasons TEXT,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+      `);
       db.run(
         `
         INSERT INTO distress_events (signals, reasons, created_at)

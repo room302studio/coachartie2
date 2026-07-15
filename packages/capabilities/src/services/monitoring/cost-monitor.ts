@@ -13,6 +13,11 @@ class CostMonitor {
   private messageCount = 0;
   private statsInterval: NodeJS.Timeout | null = null;
 
+  // "Floating ballast" state: the latest known real balance (fed by the credit
+  // monitor) and the last time we emitted a runway warning (for throttling).
+  private lastKnownBalance: number | null = null;
+  private lastRunwayWarnAt = 0;
+
   // Approximate pricing for Claude 3.5 Sonnet (update these as needed)
   private readonly INPUT_COST_PER_MILLION = 3.0; // $3 per 1M input tokens
   private readonly OUTPUT_COST_PER_MILLION = 15.0; // $15 per 1M output tokens
@@ -55,6 +60,14 @@ class CostMonitor {
       this.statsInterval = null;
       logger.info('💰 Cost Monitor shutdown: stats interval cleared');
     }
+  }
+
+  /**
+   * Feed the latest real credit balance in (called by the credit monitor).
+   * This is the "ballast" the runway warning floats on.
+   */
+  updateBalance(balance: number | null): void {
+    this.lastKnownBalance = balance;
   }
 
   /**
@@ -101,25 +114,27 @@ class CostMonitor {
       warnings.push(warning);
     }
 
-    // Check cost per hour limit
+    // Floating ballast: instead of a hard $/hr alarm that fires on every call
+    // (and gets injected into Artie's context, making him fixate on money), warn
+    // based on RUNWAY — how long the real balance lasts at the current burn rate.
+    // This self-adjusts: a fat balance stays quiet even at high burn; a thin one
+    // warns early. Gated on a stable sample + throttled so it can't spam.
     const stats = this.getStats();
-    if (stats.costPerHour > this.maxCostPerHour) {
-      const warning = `🚨 High burn rate: $${stats.costPerHour.toFixed(2)}/hour (limit: $${this.maxCostPerHour}/hr)`;
-      logger.error(warning);
-      warnings.push(warning);
-    }
+    const uptimeHours = (Date.now() - this.startTime) / 3_600_000;
+    const MIN_SAMPLE_HOURS = 0.25; // ignore burn rate in the first 15 min (tiny sample skews it)
+    if (uptimeHours >= MIN_SAMPLE_HOURS && this.lastKnownBalance !== null && stats.costPerHour > 0) {
+      const runwayHours = this.lastKnownBalance / stats.costPerHour;
+      const warnHours = parseFloat(process.env.RUNWAY_WARN_HOURS || '24');
+      const critHours = parseFloat(process.env.RUNWAY_CRITICAL_HOURS || '6');
+      const throttleMs = parseInt(process.env.RUNWAY_WARN_THROTTLE_MS || '600000'); // 10 min
 
-    // Legacy hard-coded alerts
-    if (totalCost > 5.0 && this.totalCalls % 10 === 0) {
-      logger.warn(
-        `⚠️ High API costs detected: $${totalCost.toFixed(2)} across ${this.totalCalls} calls`
-      );
-    }
-
-    if (totalCost > 20.0 && this.totalCalls % 5 === 0) {
-      logger.error(
-        `🚨 VERY HIGH API COSTS: $${totalCost.toFixed(2)} - Consider adding rate limits!`
-      );
+      if (runwayHours < warnHours && Date.now() - this.lastRunwayWarnAt > throttleMs) {
+        this.lastRunwayWarnAt = Date.now();
+        const sev = runwayHours < critHours ? '🚨' : '⚠️';
+        const warning = `${sev} ~${runwayHours.toFixed(1)}h of credit left at current burn ($${stats.costPerHour.toFixed(2)}/hr, $${this.lastKnownBalance.toFixed(2)} balance)`;
+        logger.warn(warning);
+        warnings.push(warning);
+      }
     }
 
     // Check if we should auto-check credits

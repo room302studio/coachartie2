@@ -30,6 +30,7 @@ import { setupMessageHandler } from './handlers/message-handler.js';
 import { setupInteractionHandler } from './handlers/interaction-handler.js';
 import { setupReactionHandler } from './handlers/reaction-handler.js';
 import { startResponseConsumer } from './queues/consumer.js';
+import { publishMessage } from './queues/publisher.js';
 import { writeFileSync } from 'fs';
 import { join } from 'path';
 import { telemetry } from './services/telemetry.js';
@@ -55,6 +56,9 @@ export const client = new Client({
     GatewayIntentBits.GuildMessageReactions,
   ],
   partials: [Partials.Message, Partials.Channel, Partials.User, Partials.Reaction],
+  // SAFETY: never let Artie ping @everyone/@here or roles, no matter what text he posts.
+  // Only user mentions resolve. (Users tricked him into echoing "@everyone" — this neuters it.)
+  allowedMentions: { parse: ['users'] },
 });
 
 // DEBUG: Raw message listener to verify events are coming through
@@ -197,6 +201,14 @@ async function start() {
         logger.warn('Failed to initialize GitHub integration:', error);
         console.error('❌ GitHub integration init failed:', error);
       }
+
+      // Steam launch countdown (Sterling Artie milestone posts in #prison; self-disarms after launch)
+      import('./services/launch-countdown.js').then(({ initializeLaunchCountdown }) => {
+        initializeLaunchCountdown(client);
+      }).catch((error) => {
+        logger.warn('Failed to initialize launch countdown:', error);
+        console.error('❌ Launch countdown init failed:', error);
+      });
 
       // Initialize GitHub Identity Resolver (auto-maps GitHub → Discord users)
       // Initialize GitHub Studio Manager (daily digests, stale PR nudges)

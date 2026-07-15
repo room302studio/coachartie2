@@ -190,6 +190,12 @@ export const createWorker = <T = any, R = any>(
   const worker = new Worker<T, R>(name, processor, {
     connection: getBullMQConnectionConfig(),
     concurrency: parseInt(process.env.WORKER_CONCURRENCY || '5'),
+    // Long-running LLM jobs exceeded BullMQ's 30s default lock under load, so the queue
+    // marked them 'stalled' and REPROCESSED them -> duplicate responses + timeouts.
+    // Lock longer than the 300s job timeout, and never auto-reprocess a stalled job.
+    lockDuration: 330000,
+    stalledInterval: 60000,
+    maxStalledCount: 0,
   });
 
   // Suppress error events on the worker's connection

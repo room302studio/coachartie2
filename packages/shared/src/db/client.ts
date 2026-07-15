@@ -467,20 +467,6 @@ export function initializeDb(dbPath?: string): BetterSQLite3Database<typeof sche
   return database;
 }
 
-/**
- * Check if running in an environment that requires sql.js (browser/worker)
- * In those cases, use the legacy database.ts utilities
- */
-export function requiresSqlJs(): boolean {
-  // Check for browser environment
-  if (typeof globalThis !== 'undefined' && 'window' in globalThis) return true;
-
-  // Check for Cloudflare Workers
-  if (typeof globalThis !== 'undefined' && 'caches' in globalThis) return true;
-
-  return false;
-}
-
 // Export the drizzle instance type for use in other packages
 export type DbClient = BetterSQLite3Database<typeof schema>;
 

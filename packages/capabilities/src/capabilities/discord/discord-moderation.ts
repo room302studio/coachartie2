@@ -124,5 +124,3 @@ export const discordModerationCapability: RegisteredCapability = {
     }
   },
 };
-
-export default discordModerationCapability;
