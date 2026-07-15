@@ -347,8 +347,13 @@ class OpenRouterService {
     const useSpecificModel = effectiveModel && effectiveModel.trim().length > 0;
     const startIndex = this.currentModelIndex;
 
-    // Try each model starting from current rotation position (or just the selected model)
-    const modelsToTry = useSpecificModel ? [effectiveModel] : this.models;
+    // Try each model starting from current rotation position. A specifically-requested
+    // model (three-tier strategy) is tried FIRST but still falls back to the rotation:
+    // with a bare [effectiveModel] a single transient provider error on SMART_MODEL left
+    // nothing to retry with, the orchestration failed, and Artie silently said nothing.
+    const modelsToTry = useSpecificModel
+      ? [effectiveModel, ...this.models.filter((m) => m !== effectiveModel)]
+      : this.models;
 
     // When OpenRouter returns a 402 of the form "you requested up to X tokens,
     // but can only afford Y", it means there IS still balance — just not enough
@@ -359,12 +364,12 @@ class OpenRouterService {
 
     for (let i = 0; i < modelsToTry.length; i++) {
       const model = useSpecificModel
-        ? effectiveModel
+        ? modelsToTry[i]
         : this.models[(startIndex + i) % this.models.length];
 
       try {
         logger.info(
-          `🤖 MODEL SELECTION: Using ${model} ${useSpecificModel ? '(SPECIFIC)' : `(${i + 1}/${modelsToTry.length})`} for ${messages.length} messages`
+          `🤖 MODEL SELECTION: Using ${model} ${useSpecificModel && i === 0 ? '(SPECIFIC)' : `(${i + 1}/${modelsToTry.length})`} for ${messages.length} messages`
         );
 
         // Use dynamic maxTokens from preflight analysis, or fall back to env default
@@ -681,8 +686,11 @@ class OpenRouterService {
     const useSpecificModel = effectiveModel && effectiveModel.trim().length > 0;
     const startIndex = this.currentModelIndex;
 
-    // Try each model starting from current rotation position (or just the selected model)
-    const modelsToTry = useSpecificModel ? [effectiveModel] : this.models;
+    // Specifically-requested model first, then the rotation as fallback (see the
+    // non-streaming path — a bare [effectiveModel] turns one transient error into silence).
+    const modelsToTry = useSpecificModel
+      ? [effectiveModel, ...this.models.filter((m) => m !== effectiveModel)]
+      : this.models;
 
     logger.info(
       `🤖 Starting streaming generation for user ${userId} ${useSpecificModel ? `using SPECIFIC model ${effectiveModel}` : `using model rotation`}`
@@ -690,7 +698,7 @@ class OpenRouterService {
 
     for (let i = 0; i < modelsToTry.length; i++) {
       const model = useSpecificModel
-        ? effectiveModel
+        ? modelsToTry[i]
         : this.models[(startIndex + i) % this.models.length];
 
       try {

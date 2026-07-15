@@ -314,6 +314,12 @@ export class CapabilityOrchestrator {
     if (errorMessage.includes('RATE LIMITED') || errorMessage.includes('429')) {
       return `⏱️ One sec — I'm getting a lot of requests right now. Try me again in a moment.`;
     }
+    // A 400 that survived the whole model fallback chain is the provider rejecting the
+    // request, not a user error. Worth a word: silence here reads as being ignored, and
+    // that is exactly how these went unnoticed in the channel for weeks.
+    if (errorMessage.includes('400')) {
+      return `🔧 The model provider bounced that one — try me again in a moment.`;
+    }
     if (errorMessage.includes('SERVER ERROR') || errorMessage.includes('50')) {
       return `🔧 I'm having a brief hiccup — give it a few minutes and try again.`;
     }
