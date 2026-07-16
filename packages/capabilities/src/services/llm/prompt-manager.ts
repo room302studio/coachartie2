@@ -119,6 +119,13 @@ export class PromptManager {
           logger.info(`📝 Appended CAPABILITY_PROMPT_INTRO to PROMPT_SYSTEM`);
         }
 
+        // Append the live capability roster. CAPABILITY_PROMPT_INTRO teaches the
+        // XML format but only name-drops three example tools — on this (the
+        // production) path the registry was never consulted, so the model had no
+        // idea what capabilities exist unless the user typed their exact names.
+        // Compact one-liners keep it ~2k tokens for the full registry.
+        instructions += '\n\n' + (await this.buildCapabilityRoster());
+
         logger.info(`🎯 Using rich PROMPT_SYSTEM from database (v${systemPrompt.version})`);
         return instructions;
       } else {
@@ -168,6 +175,20 @@ export class PromptManager {
 
       return instructions;
     }
+  }
+
+  /**
+   * Compact roster of every registered capability: name, actions, and the first
+   * line of its description. Detail lives in the full descriptions (registry
+   * fallback path / examples); this just makes the tools discoverable.
+   */
+  private async buildCapabilityRoster(): Promise<string> {
+    const { capabilityRegistry } = await import('../capability/capability-registry.js');
+    const lines = capabilityRegistry.list().map((cap) => {
+      const firstLine = (cap.description || '').split('\n')[0].slice(0, 140);
+      return `- ${cap.name} [${cap.supportedActions.join(', ')}]: ${firstLine}`;
+    });
+    return `## Your capability roster\nThese are the ONLY capabilities that exist. Invoke with the XML format above (name + action must match exactly):\n${lines.join('\n')}`;
   }
 
   /**
