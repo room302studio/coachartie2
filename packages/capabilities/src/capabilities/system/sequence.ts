@@ -62,15 +62,19 @@ export const sequenceCapability: RegisteredCapability = {
         );
 
         // Add userId and messageId to step params
+        const stepAction = action || stepParams.action;
         const enrichedParams = {
           ...stepParams,
           userId,
           messageId,
-          action: action || stepParams.action,
+          action: stepAction,
         };
 
-        // Execute the capability through the registry
-        const result = await capabilityRegistry.execute(name, enrichedParams, '');
+        // Execute the capability through the registry.
+        // Signature is (name, action, params, content) — this used to pass the
+        // params OBJECT as `action`, so every sequence step failed with
+        // "attemptedAction.toLowerCase is not a function".
+        const result = await capabilityRegistry.execute(name, stepAction, enrichedParams, '');
 
         results.push({
           step: stepNum,

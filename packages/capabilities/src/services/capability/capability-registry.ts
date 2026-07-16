@@ -309,7 +309,19 @@ export class CapabilityRegistry {
     const capability = this.capabilities.get(name);
 
     if (!capability) {
-      throw new Error(`Capability '${name}' not found in registry`);
+      // The model often knows the ACTION but invents the capability name (e.g.
+      // "Dev Support:create_payment_link" — the product name, not the tool name).
+      // If exactly the requested action exists elsewhere, say where, so the
+      // retry loop can self-correct instead of burning three blind attempts.
+      const owner = Array.from(this.capabilities.values()).find((c) =>
+        c.supportedActions.includes(action)
+      );
+      throw new Error(
+        `Capability '${name}' not found in registry.` +
+          (owner
+            ? ` The action "${action}" belongs to capability "${owner.name}" — use <capability name="${owner.name}" action="${action}" ... />`
+            : '')
+      );
     }
 
     // Auto-correct known action synonyms before validating, so a wrong-but-clear
@@ -478,8 +490,9 @@ export class CapabilityRegistry {
   ): StructuredCapabilityError {
     const available = capability.supportedActions;
 
-    // Find best match
-    const target = attemptedAction.toLowerCase();
+    // Find best match. Coerce defensively — a caller bug once passed an object
+    // here and the error-builder itself became the crash.
+    const target = String(attemptedAction ?? '').toLowerCase();
     const match = available.find((action) => {
       const actionLower = action.toLowerCase();
       return (
