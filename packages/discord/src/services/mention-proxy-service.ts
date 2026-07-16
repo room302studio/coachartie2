@@ -355,13 +355,18 @@ class MentionProxyService {
       const recentMessages = await channel.messages.fetch({ limit: 15 });
       const messageArray = Array.from(recentMessages.values()).reverse();
 
-      // If the target user spoke within the last 5 messages, they are RIGHT THERE —
-      // never answer for them, and don't burn an LLM call deciding.
-      const userIsPresent = messageArray
-        .slice(-5)
-        .some((msg: any) => msg.author.id === rule.targetUserId);
+      // If the target user spoke recently — by TIME, not message count (a busy channel
+      // pushes 5 messages in seconds) — they are RIGHT THERE. Never answer for them,
+      // and don't burn an LLM call deciding.
+      const PRESENCE_WINDOW_MS = 15 * 60 * 1000;
+      const now = Date.now();
+      const userIsPresent = messageArray.some(
+        (msg: any) =>
+          msg.author.id === rule.targetUserId &&
+          now - (msg.createdTimestamp ?? 0) < PRESENCE_WINDOW_MS
+      );
       if (userIsPresent) {
-        logger.info('⚖️ Judgment: Target user active in last 5 messages - SKIP');
+        logger.info('⚖️ Judgment: Target user spoke within the last 15 min - SKIP');
         return false;
       }
 
