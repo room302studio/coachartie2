@@ -821,10 +821,6 @@ export function setupMessageHandler(client: Client) {
       return;
     }
 
-    // Roll for a free, wordless reaction. Independent of whether he ends up replying — the
-    // point is presence without barging in, and it costs no tokens.
-    maybeAmbientReact(message);
-
     // EMERGENCY KILL SWITCH — checked per message, no restart required.
     // COACH-ARTIE CHANNELS ONLY: in the public Subway Builder guild, only respond in robot /
     // coach-artie channels (or channels with a persona like Judge Artie). Ignore mentions elsewhere.
@@ -838,6 +834,11 @@ export function setupMessageHandler(client: Client) {
         return;
       }
     }
+
+    // Roll for a free, wordless reaction. Independent of whether he ends up replying — the
+    // point is presence without barging in, and it costs no tokens. Must stay BELOW the
+    // channel gate: above it he was reacting to random people in every channel guild-wide.
+    maybeAmbientReact(message);
 
     // SELF-IMPOSED STRIKE: Artie refuses to speak until someone defends Subway Builder.
     let strikeJustLifted = false;
