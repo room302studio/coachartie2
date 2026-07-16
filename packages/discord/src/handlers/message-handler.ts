@@ -1755,6 +1755,7 @@ async function fetchChannelHistory(message: Message): Promise<
     content: string;
     timestamp: string;
     isBot: boolean;
+    isSelf: boolean;
   }>
 > {
   try {
@@ -1795,6 +1796,9 @@ async function fetchChannelHistory(message: Message): Promise<
           content: msg.cleanContent || msg.content,
           timestamp: msg.createdAt.toISOString(),
           isBot: msg.author.bot,
+          // Only Artie's OWN messages become assistant turns downstream. Without this,
+          // every webhook/other-bot message read as something Artie himself said.
+          isSelf: msg.author.id === message.client.user?.id,
         };
       });
   } catch (error) {

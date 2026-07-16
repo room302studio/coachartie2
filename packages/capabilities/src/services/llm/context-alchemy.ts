@@ -139,6 +139,7 @@ export class ContextAlchemy {
         content: string;
         timestamp: string;
         isBot: boolean;
+        isSelf?: boolean; // true only for Artie's own messages (optional for rolling deploys)
       }>;
       // Full Discord context (for guild knowledge, proactive answering, etc.)
       discordContext?: Record<string, any>;
@@ -601,6 +602,7 @@ Important:
       content: string;
       timestamp: string;
       isBot: boolean;
+      isSelf?: boolean;
     }>,
     limit: number
   ): Array<{ role: 'user' | 'assistant'; content: string }> {
@@ -610,16 +612,23 @@ Important:
 
     return recentHistory
       .filter((msg) => msg.content && msg.content.trim().length > 0)
-      .map((msg) => ({
-        // Bot messages (including webhook/n8n) are assistant, human messages are user
-        role: msg.isBot ? ('assistant' as const) : ('user' as const),
-        // Sanitize assistant messages; PREFIX human messages with the author name so Artie can
-        // tell who said what (without this, every user collapses into anonymous 'user' turns
-        // and he mis-attributes who did/said what in the channel).
-        content: msg.isBot
-          ? this.sanitizeAssistantMessage(msg.content)
-          : `${msg.author}: ${msg.content}`,
-      }));
+      .map((msg) => {
+        // Only Artie's OWN messages become assistant turns. Other bots/webhooks used to be
+        // mapped to assistant too, which put words in Artie's mouth — he'd "remember" saying
+        // things another bot said (and repeat/contradict himself accordingly). When isSelf is
+        // absent (payload from an older discord build), fall back to the old isBot behavior.
+        const isOwnMessage = msg.isSelf ?? msg.isBot;
+        return {
+          role: isOwnMessage ? ('assistant' as const) : ('user' as const),
+          // Sanitize assistant messages; PREFIX human messages with the author name so Artie can
+          // tell who said what (without this, every user collapses into anonymous 'user' turns
+          // and he mis-attributes who did/said what in the channel). Other bots keep their
+          // author label too (it already carries a [bot] tag from the discord side).
+          content: isOwnMessage
+            ? this.sanitizeAssistantMessage(msg.content)
+            : `${msg.author}: ${msg.content}`,
+        };
+      });
   }
 
   /**
