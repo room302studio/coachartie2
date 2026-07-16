@@ -129,9 +129,16 @@ export async function analyze(
     useMicroLLM?: boolean;
   }
 ): Promise<PreflightAnalysis> {
-  // For very short messages, just use defaults (not worth the API call)
+  // For very short messages, skip the micro-LLM entirely — a one-liner never needs
+  // Opus-level reasoning, and this is the bulk of busy-channel banter. Classifying it
+  // 'moderate' (the old default) sent every "lol nice" to the smart model.
   if (message.length < 20) {
-    return getDefaultAnalysis();
+    return {
+      ...getDefaultAnalysis(),
+      complexity: 'simple',
+      responseTokens: 300,
+      responseTier: 'short',
+    };
   }
 
   // Use micro LLM for smart analysis

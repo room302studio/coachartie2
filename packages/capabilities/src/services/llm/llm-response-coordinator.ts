@@ -99,7 +99,7 @@ export class LLMResponseCoordinator {
       // 180s job deadline kept killing replies. Simple banter now takes a fast-but-good
       // model; anything moderate/complex (or unclassified) keeps the smart model.
       const simpleChatModel = process.env.SIMPLE_CHAT_MODEL || 'anthropic/claude-sonnet-5';
-      const routeSimple = preflight.source === 'micro-llm' && preflight.complexity === 'simple';
+      const routeSimple = preflight.complexity === 'simple';
       const smartModel = routeSimple ? simpleChatModel : openRouterService.selectSmartModel();
       const modelAwareMessages = messages.map((msg) => {
         if (msg.role === 'system') {
