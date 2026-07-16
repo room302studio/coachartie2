@@ -144,7 +144,7 @@ export class LLMResponseCoordinator {
         maxTokens,
       };
 
-      return onPartialResponse
+      const generated = onPartialResponse
         ? await openRouterService.generateFromMessageChainStreaming(
             modelAwareMessages,
             message.userId,
@@ -160,6 +160,21 @@ export class LLMResponseCoordinator {
             smartModel,
             generationOptions
           );
+
+      // WARDEN DISARM: the [TIMEOUT] marker is a live moderation weapon that the
+      // model wields at its own judgment. Under brownout that judgment belongs to
+      // a token-capped budget model — which timed out a friendly user for asking a
+      // question (rhodie3587, 2026-07-16). Degraded cognition ≠ moderation duty:
+      // strip the marker before it reaches the discord side unless we're in
+      // normal mode on the full model.
+      if (brownout.mode !== 'normal' && generated && /\[TIMEOUT(?::\d{1,3})?\]/i.test(generated)) {
+        logger.warn(
+          `🕯️ Brownout ${brownout.mode}: discarding [TIMEOUT] marker from ${smartModel} — degraded models don't get warden powers`
+        );
+        return generated.replace(/\[TIMEOUT(?::\d{1,3})?\]/gi, '').trim();
+      }
+
+      return generated;
     } catch (error: any) {
       const errorMessage = error?.message || String(error);
       const traceId = message.context?.traceId;
