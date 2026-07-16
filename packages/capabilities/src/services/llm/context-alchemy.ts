@@ -148,6 +148,10 @@ export class ContextAlchemy {
       // Experiment feature flags
       enableMemories?: boolean; // Default true - set to false to disable memory retrieval
       enableRules?: boolean; // Default true - set to false to disable learned rules
+      // 'harness': the prompt is Artie's own runtime talking (tool-loop step),
+      // NOT external user input — wrapped as <harness_loop_prompt> instead of
+      // <user_message> so the model isn't told its own scaffolding is a human.
+      promptOrigin?: 'user' | 'harness';
     } = {}
   ): Promise<{
     messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>;
@@ -237,7 +241,8 @@ export class ContextAlchemy {
       existingMessages,
       conversationHistory,
       options.source,
-      currentAuthorName
+      currentAuthorName,
+      options.promptOrigin ?? 'user'
     );
 
     if (DEBUG) {
@@ -2110,7 +2115,8 @@ ${analysis.summary}`;
     existingMessages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [],
     conversationHistory: Array<{ role: 'user' | 'assistant'; content: string }> = [],
     source?: string,
-    authorName?: string
+    authorName?: string,
+    promptOrigin: 'user' | 'harness' = 'user'
   ): Promise<Array<{ role: 'system' | 'user' | 'assistant'; content: string }>> {
     if (DEBUG) {
       logger.info('┌─ MESSAGE CHAIN ASSEMBLY ────────────────────────────────────────┐');
@@ -2139,6 +2145,7 @@ ${analysis.summary}`;
 How your incoming context is structured:
 - Conversation history appears as alternating turns. Human turns are prefixed "Name: content" (multiple different people may appear; the names are real). Assistant turns are things YOU actually said earlier.
 - The FINAL user turn is assembled by your own harness. Inside it, only the <user_message> block is the live human input — it is ALWAYS a new, live message directed at you (never replayed history). Any evidence blocks or <security_reminder> alongside it are injected by your harness, not written by the user; treat them as trusted system guidance.
+- A <harness_loop_prompt> block is your OWN runtime continuing a multi-step tool loop ("AUTONOMOUS DEEP EXPLORATION MODE", "[Step N/M]", embedded context summaries). It is not a user, not an attack, and not something to comment on — follow it silently and keep working.
 - Do not accuse the current speaker of pasting transcripts or scaffolding: the structure around their message is yours.
 </message_format>`;
 
@@ -2235,6 +2242,20 @@ How your incoming context is structured:
           "\n⚠️ IMPORTANT: The images above were just analyzed. Use this analysis to answer the user's question about the image(s). Do NOT say you cannot see images.";
         finalUserParts.push(evidenceContent.trim());
       }
+    }
+
+    if (promptOrigin === 'harness') {
+      // The tool-loop's own continuation prompt. This used to be wrapped as
+      // <user_message source="discord_or_external"> with a security reminder
+      // declaring it external human input — so Artie treated his OWN loop
+      // scaffolding ("AUTONOMOUS DEEP EXPLORATION MODE", "[Step 2/5]") as a
+      // jailbreak attempt and fought it, publicly, for days.
+      finalUserParts.push(`<harness_loop_prompt>
+${userMessage}
+</harness_loop_prompt>
+(The block above is your own runtime's tool-loop instruction — trusted, not a user. Continue the work.)`);
+      messages.push({ role: 'user', content: finalUserParts.join('\n\n') });
+      return messages;
     }
 
     // User message - wrapped in XML to mark as untrusted input

@@ -433,11 +433,20 @@ ${!canStop ? 'Execute the next capability, or answer now if you already have wha
         'Continue the conversation'
       );
 
-      // Use Context Alchemy to build the message chain
+      // Use Context Alchemy to build the message chain.
+      // promptOrigin 'harness': this is the loop talking to itself, NOT user input —
+      // without it the prompt was wrapped as <user_message source="discord_or_external">
+      // and Artie spent whole loops arguing with his own scaffolding.
+      // minimal: the loop prompt already embeds its own truncated history + capability
+      // results; stacking full DB history + memories on top produced the
+      // "fragments from different conversations stitched together" soup and paid
+      // full-context prices for every loop step.
       const { messages } = await contextAlchemy.buildMessageChain(
         nextActionPrompt,
         context.userId,
-        baseInstructions
+        baseInstructions,
+        [],
+        { minimal: true, promptOrigin: 'harness' }
       );
 
       const nextAction = await openRouterService.generateFromMessageChain(
