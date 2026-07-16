@@ -2150,13 +2150,10 @@ async function handleMessageAsIntent(
 
         // Response handlers
         respond: async (content: string): Promise<void> => {
-          // Check if LLM chose to stay silent
+          // Check if LLM chose to stay silent — a leading [SILENT] counts even if
+          // chatter follows, so a proxy prefix can never resurrect a silent reply
           const trimmedContent = content.trim();
-          if (
-            !trimmedContent ||
-            trimmedContent === '[SILENT]' ||
-            trimmedContent.toLowerCase() === '[silent]'
-          ) {
+          if (!trimmedContent || /^\[SILENT\]/i.test(trimmedContent)) {
             logger.info(`🤫 DISCORD: LLM chose to stay silent [${shortId}]`);
             return;
           }
@@ -2243,6 +2240,19 @@ async function handleMessageAsIntent(
           } catch (error) {
             logger.error(`❌ DISCORD: Failed to edit message [${shortId}]:`, error);
             throw error;
+          }
+        },
+
+        // Pull back a partially-streamed message whose final content got suppressed
+        // ([SILENT], slur floor, empty generation) — otherwise the fragment stays up.
+        deleteResponse: async () => {
+          if (!streamingMessage) return;
+          try {
+            await streamingMessage.delete();
+            logger.info(`🗑️ DISCORD: Deleted suppressed streaming message [${shortId}]`);
+            streamingMessage = null;
+          } catch (error) {
+            logger.warn(`Failed to delete streaming message [${shortId}]:`, error);
           }
         },
 

@@ -348,12 +348,22 @@ class MentionProxyService {
       // Fetch recent messages from the channel (last 15 messages)
       const channel = await client.channels.fetch(message.channelId);
       if (!channel || !('messages' in channel)) {
-        logger.warn('Cannot fetch messages for judgment - not a text channel');
-        return true; // Default to responding
+        logger.warn('Cannot fetch messages for judgment - not a text channel - SKIP');
+        return false; // FAIL CLOSED: can't see the conversation, don't speak for them
       }
 
       const recentMessages = await channel.messages.fetch({ limit: 15 });
       const messageArray = Array.from(recentMessages.values()).reverse();
+
+      // If the target user spoke within the last 5 messages, they are RIGHT THERE —
+      // never answer for them, and don't burn an LLM call deciding.
+      const userIsPresent = messageArray
+        .slice(-5)
+        .some((msg: any) => msg.author.id === rule.targetUserId);
+      if (userIsPresent) {
+        logger.info('⚖️ Judgment: Target user active in last 5 messages - SKIP');
+        return false;
+      }
 
       // Check if target user has sent messages recently (last 10 messages)
       const last10Messages = messageArray.slice(-10);
@@ -416,8 +426,11 @@ Answer with ONLY one word: either "SKIP" or "RESPOND"
       );
 
       if (!response.data?.jobId) {
-        logger.warn('⚖️ Judgment: No job ID returned - defaulting to RESPOND');
-        return true;
+        // FAIL CLOSED: if we can't judge, don't speak for someone. Defaulting to
+        // RESPOND here meant every LLM outage (e.g. out of credits) made the proxy
+        // MORE trigger-happy, answering for people mid-conversation.
+        logger.warn('⚖️ Judgment: No job ID returned - defaulting to SKIP');
+        return false;
       }
 
       // Poll for result (max 3 seconds)
@@ -428,19 +441,20 @@ Answer with ONLY one word: either "SKIP" or "RESPOND"
 
         if (statusResponse.data?.status === 'completed' && statusResponse.data.response) {
           const judgment = statusResponse.data.response.toUpperCase();
-          const shouldRespond = judgment.includes('RESPOND');
+          // SKIP wins over RESPOND so "DO NOT RESPOND"-style answers parse correctly
+          const shouldRespond = !judgment.includes('SKIP') && judgment.includes('RESPOND');
 
           logger.info(`⚖️ Judgment result: ${judgment} -> ${shouldRespond ? 'PROCEED' : 'SKIP'}`);
           return shouldRespond;
         }
       }
 
-      // Timeout - default to responding
-      logger.warn('⚖️ Judgment: Timeout - defaulting to RESPOND');
-      return true;
+      // FAIL CLOSED on timeout — see above
+      logger.warn('⚖️ Judgment: Timeout - defaulting to SKIP');
+      return false;
     } catch (error) {
       logger.error('⚖️ Judgment layer error:', error);
-      return true; // Default to responding on error
+      return false; // FAIL CLOSED on error — see above
     }
   }
 }

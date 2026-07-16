@@ -48,6 +48,7 @@ export interface UserIntent {
   addReaction?: (emoji: string) => Promise<void>;
   removeReaction?: (emoji: string) => Promise<void>;
   timeoutAuthor?: (seconds: number, reason: string) => Promise<void>;
+  deleteResponse?: () => Promise<void>;
   editResponse?: (content: string) => Promise<void>;
   createThread?: (name: string) => Promise<any>;
   sendEmbed?: (embed: any) => Promise<void>;
@@ -339,8 +340,13 @@ export async function processUserIntent(
             status.partialResponse &&
             status.partialResponse !== lastSentContent
           ) {
-            // Clean capability tags before streaming
-            const cleanedResponse = cleanCapabilityTags(status.partialResponse);
+            // Clean capability tags before streaming. Also scrub control markers:
+            // strip complete [SILENT]/[TIMEOUT] tokens and hold back a possibly
+            // incomplete marker at the tail so "[SILEN"/"[TIMEO" never gets posted
+            // mid-stream (that's how literal "[SILENT]" leaked into the channel).
+            const cleanedResponse = cleanCapabilityTags(status.partialResponse)
+              .replace(/\[(?:SILENT|TIMEOUT(?::\d{1,3})?)\]/gi, '')
+              .replace(/\[[A-Za-z]{0,8}(?::\d{0,3})?$/, '');
             const newContent = cleanedResponse.slice(lastSentContent.length);
 
             if (newContent.trim()) {
@@ -504,6 +510,14 @@ export async function processUserIntent(
             void (intent as any).timeoutAuthor(_secs, 'Coach Artie warden discipline');
             cleanResult = cleanResult.replace(/\[TIMEOUT(?::\d{1,3})?\]/gi, '').trim();
           }
+          // [SILENT] handling: a leading marker means "stay silent" even if chatter
+          // follows it; a stray embedded marker gets stripped so it never reaches
+          // the channel (with a proxy prefix it was posting verbatim).
+          if (/^\s*\[SILENT\]/i.test(cleanResult)) {
+            cleanResult = '';
+          } else {
+            cleanResult = cleanResult.replace(/\[SILENT\]/gi, '').trim();
+          }
 
           logger.info(`📝 FINAL RESPONSE DELIVERY [${shortId}]:`, {
             cleanResultLength: cleanResult.length,
@@ -524,6 +538,15 @@ export async function processUserIntent(
                 ? `🛑 Output blocked by slur blacklist [${shortId}] — staying silent`
                 : `🛑 Empty/failed generation [${shortId}] — staying silent (no fallback message sent)`
             );
+            // If a partial message already streamed out, pull it back — otherwise the
+            // suppressed content stays half-posted in the channel.
+            if (streamedChunks > 0 && typeof (intent as any).deleteResponse === 'function') {
+              try {
+                await (intent as any).deleteResponse();
+              } catch {
+                // best effort — the partial staying up is not worth crashing delivery
+              }
+            }
           }
           // ENHANCED: Handle final response with edit-based streaming
           else if (enableEditing && streamingMessage && lastSentContent) {
