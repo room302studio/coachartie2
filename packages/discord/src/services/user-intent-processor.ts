@@ -7,7 +7,7 @@
  * - Provides consistent UX across all interaction types
  */
 
-import { logger } from '@coachartie/shared';
+import { logger, scrubBlockedUserMentions } from '@coachartie/shared';
 import { capabilitiesClient } from './capabilities-client.js';
 import { jobMonitor } from './job-monitor.js';
 import { telemetry } from './telemetry.js';
@@ -518,6 +518,10 @@ export async function processUserIntent(
           } else {
             cleanResult = cleanResult.replace(/\[SILENT\]/gi, '').trim();
           }
+          // Banned users may be referenced but never named or @-pinged. The prompt
+          // rule handles this most of the time; this is the insurance for when a
+          // budget model slips.
+          cleanResult = scrubBlockedUserMentions(cleanResult);
 
           logger.info(`📝 FINAL RESPONSE DELIVERY [${shortId}]:`, {
             cleanResultLength: cleanResult.length,

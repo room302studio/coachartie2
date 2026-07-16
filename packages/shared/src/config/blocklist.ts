@@ -15,9 +15,13 @@ export const BLOCKED_USERS: BlockedUser[] = [
   {
     // banned 2026-07-15 for burning credits with hour-long troll spam
     id: '1064472458448617502',
-    names: ['yellowaquarium'],
+    names: ['yellowaquarium', 'yellow aquarium'],
   },
 ];
+
+// What Artie calls a blocked user when one comes up. Policy (EJ, 2026-07-16):
+// mentioning them is fine, naming or @-pinging them is not.
+export const BLOCKED_USER_EPITHET = 'the banned one';
 
 export const BLOCKED_USER_IDS: ReadonlySet<string> = new Set(BLOCKED_USERS.map((u) => u.id));
 
@@ -40,4 +44,28 @@ export function mentionsBlockedUser(text?: string | null): boolean {
     BLOCKED_NAME_PATTERNS.some((name) => lower.includes(name)) ||
     BLOCKED_USERS.some((u) => lower.includes(u.id))
   );
+}
+
+function escapeRegex(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * Replace blocked users' names and @-mentions in OUTBOUND text with a neutral
+ * epithet. Referring to them is allowed; naming or pinging them is not. This is
+ * the output-side guarantee — names can still reach Artie's context via other
+ * people's messages, but they can't leave his mouth.
+ */
+export function scrubBlockedUserMentions(text: string): string {
+  if (!text) return text;
+  let out = text;
+  for (const u of BLOCKED_USERS) {
+    out = out.replace(new RegExp(`<@!?${u.id}>`, 'g'), BLOCKED_USER_EPITHET);
+    out = out.replace(new RegExp(u.id, 'g'), BLOCKED_USER_EPITHET);
+    for (const name of u.names) {
+      // "@name" and possessives read fine after replacement ("the banned one's")
+      out = out.replace(new RegExp(`@?${escapeRegex(name)}`, 'gi'), BLOCKED_USER_EPITHET);
+    }
+  }
+  return out;
 }

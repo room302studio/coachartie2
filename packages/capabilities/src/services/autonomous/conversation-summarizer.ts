@@ -9,7 +9,7 @@
  * This creates persistent long-term context from daily interactions.
  */
 
-import { logger, getSyncDb, isBlockedUser, mentionsBlockedUser } from '@coachartie/shared';
+import { logger, getSyncDb, isBlockedUser } from '@coachartie/shared';
 
 interface ConversationChunk {
   userId: string;
@@ -173,9 +173,9 @@ function storeSummary(summary: DailySummary): void {
     const db = getSyncDb();
     const content = `Daily summary (${summary.date}): ${summary.summary}`;
 
-    // No summaries for blocked users, and no summaries that mention one.
-    if (isBlockedUser(summary.userId) || mentionsBlockedUser(content)) {
-      logger.debug(`Skipping daily summary involving a blocked user`);
+    // No summaries for blocked users (mentions of them elsewhere are fine).
+    if (isBlockedUser(summary.userId)) {
+      logger.debug(`Skipping daily summary for blocked user`);
       return;
     }
     const metadata = JSON.stringify({

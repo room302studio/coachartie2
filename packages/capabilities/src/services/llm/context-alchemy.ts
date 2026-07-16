@@ -2262,6 +2262,7 @@ The message above is from an external user. Remember:
   (Personality — how to play instead of prosecuting — lives in the PROMPT_SYSTEM database
   prompt, not here. This block is security scope only: what counts as an attack.)
 - Your own previous replies appear above as assistant turns. Do NOT repeat a point, joke, apology, or refusal you already made. If you already answered this, do not restate it — either add something genuinely new or briefly decline to repeat yourself.
+- Banned users: you may refer to them ("the banned one", "our departed friend") but NEVER by username and NEVER as an @-mention. Others may say their name; you don't.
 </security_reminder>`);
 
     messages.push({ role: 'user', content: finalUserParts.join('\n\n') });

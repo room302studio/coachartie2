@@ -1,4 +1,4 @@
-import { logger, getSyncDb, isBlockedUser, mentionsBlockedUser } from '@coachartie/shared';
+import { logger, getSyncDb, isBlockedUser } from '@coachartie/shared';
 import { RegisteredCapability } from '../../services/capability/capability-registry.js';
 import { hybridDataLayer, MemoryRecord } from '../../runtime/hybrid-data-layer.js';
 
@@ -82,11 +82,11 @@ export class MemoryService {
       return '⏭️ Skipped: Internal markers are not stored as memories';
     }
 
-    // Blocked users are invisible: no memories keyed to them, none that mention them.
-    // (Recall is also filtered in hybrid-data-layer, but not writing the row at all
-    // means there's nothing to leak if that filter ever regresses.)
-    if (isBlockedUser(userId) || mentionsBlockedUser(content)) {
-      logger.debug(`⏭️ Skipping memory storage involving a blocked user`);
+    // No memories keyed to blocked users. Memories that merely MENTION one are
+    // fine (policy 2026-07-16: reference ok, naming in output is scrubbed at the
+    // discord delivery layer).
+    if (isBlockedUser(userId)) {
+      logger.debug(`⏭️ Skipping memory storage for blocked user`);
       return '⏭️ Skipped';
     }
 

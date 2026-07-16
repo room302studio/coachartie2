@@ -368,15 +368,17 @@ export function createApiRouter(discordClient: Client): Router {
   });
 
   // POST /api/channels/:channelId/messages - Send a message to a channel
+  // Optional fileBase64 + fileName attach a file (same contract as /dm) —
+  // added for the TTS capability to post voice notes.
   router.post('/channels/:channelId/messages', async (req: Request, res: Response) => {
     try {
       const { channelId } = req.params;
-      const { content } = req.body;
+      const { content, fileBase64, fileName } = req.body;
 
-      if (!content) {
+      if (!content && !(fileBase64 && fileName)) {
         return res.status(400).json({
           success: false,
-          error: 'content is required',
+          error: 'content or fileBase64+fileName is required',
         });
       }
 
@@ -400,7 +402,13 @@ export function createApiRouter(discordClient: Client): Router {
       }
 
       // Send the message (narrowed to channels with send method)
-      const sentMessage = await (channel as any).send(content);
+      const channelMessageOptions: { content?: string; files?: AttachmentBuilder[] } = {};
+      if (content) channelMessageOptions.content = content;
+      if (fileBase64 && fileName) {
+        const buffer = Buffer.from(fileBase64, 'base64');
+        channelMessageOptions.files = [new AttachmentBuilder(buffer, { name: fileName })];
+      }
+      const sentMessage = await (channel as any).send(channelMessageOptions);
 
       logger.info(`✅ Message sent to channel ${channelId} (message ID: ${sentMessage.id})`);
 
@@ -408,7 +416,8 @@ export function createApiRouter(discordClient: Client): Router {
         success: true,
         id: sentMessage.id,
         channelId,
-        content: content.substring(0, 100) + (content.length > 100 ? '...' : ''),
+        content: content ? content.substring(0, 100) + (content.length > 100 ? '...' : '') : null,
+        file: fileName || null,
       });
     } catch (error) {
       logger.error('Error sending channel message:', error);

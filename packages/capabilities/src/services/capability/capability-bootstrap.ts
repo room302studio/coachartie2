@@ -71,6 +71,8 @@ import { selfStatsCapability } from '../../capabilities/self-stats.js';
 import { communityAnalyticsCapability } from '../../capabilities/community-analytics.js';
 // Social capabilities
 import { moltbookCapability } from '../../capabilities/social/moltbook.js';
+// Media capabilities
+import { ttsCapability } from '../../capabilities/media/tts.js';
 // Research capabilities
 import { deepResearchCapability } from '../../capabilities/research/deep-research.js';
 import { trendWatcherCapability } from '../../capabilities/research/trend-watcher.js';
@@ -132,7 +134,7 @@ export class CapabilityBootstrap {
         discordReactionCapability, stripePaymentsCapability, discordNicknameCapability,
         discordThreadsCapability, discordSendMessageCapability, discordChannelsCapability,
         discordUserHistoryCapability, discordIssueParserCapability, sendMetroFileCapability,
-        relayCapability,
+        relayCapability, ttsCapability,
       ];
       for (const capability of ALL_CAPABILITIES) {
         capabilityRegistry.register(capability);

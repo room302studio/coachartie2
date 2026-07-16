@@ -1,16 +1,10 @@
-import {
-  logger,
-  getSyncDb,
-  type SyncDbWrapper,
-  isBlockedUser,
-  mentionsBlockedUser,
-} from '@coachartie/shared';
+import { logger, getSyncDb, type SyncDbWrapper, isBlockedUser } from '@coachartie/shared';
 
-// Blocked users must not exist in Artie's memory: nothing keyed to them, nothing
-// that mentions them, may ever surface in recall. Applied at every read path so a
-// stray row (pre-ban, or written by a path that missed the write guard) stays buried.
+// Memories keyed to blocked users never surface in recall. Memories that merely
+// mention one are allowed (policy 2026-07-16: Artie may reference banned users;
+// the no-name rule is enforced at the discord output layer).
 function isRecallable(memory: MemoryRecord): boolean {
-  return !isBlockedUser(memory.user_id) && !mentionsBlockedUser(memory.content);
+  return !isBlockedUser(memory.user_id);
 }
 
 /**
