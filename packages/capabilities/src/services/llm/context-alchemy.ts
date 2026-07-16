@@ -543,10 +543,13 @@ Important:
         // Determine if this is user or assistant message
         // Messages from the user have their userId, bot messages might have different logic
         const isUser = msg.user_id === userId;
+        // Sanitize assistant messages to break poisoned patterns; a turn that
+        // sanitizes to nothing (pure [SILENT]/scaffolding) is dropped entirely.
+        const content = isUser ? msg.value : this.sanitizeAssistantMessage(msg.value);
+        if (!content || content.trim().length === 0) continue;
         history.push({
           role: isUser ? 'user' : 'assistant',
-          // Sanitize assistant messages to break poisoned patterns
-          content: isUser ? msg.value : this.sanitizeAssistantMessage(msg.value),
+          content,
         });
       }
 
@@ -588,7 +591,34 @@ Important:
       sanitized = sanitized.replace(pattern, '');
     }
 
-    return sanitized.trim();
+    // Stored assistant turns carry orchestration scaffolding that must never be
+    // replayed as "something Artie said": capability invocations/results, step
+    // markers from the multi-step loop, and injected wrapper blocks. Replaying
+    // these made Artie describe his own prompts as "a mess of fragments stitched
+    // together" and refuse live questions as jailbreak attempts.
+    sanitized = sanitized
+      .replace(/<capability\b[^>]*\/>/gi, '')
+      .replace(/<capability\b[^>]*>[\s\S]*?<\/capability>/gi, '')
+      .replace(/<security_reminder>[\s\S]*?<\/security_reminder>/gi, '')
+      .replace(/<user_message\b[^>]*>[\s\S]*?<\/user_message>/gi, '')
+      .replace(/^#{0,3}\s*Step \d+\s*\/\s*\d+.*$/gim, '')
+      .trim();
+
+    // A refusal-spiral breaker: [SILENT] markers (and pure-meta parentheticals
+    // that ride with them) must not replay — each replayed refusal teaches the
+    // next generation to refuse too. Returning '' drops the turn from history.
+    const silentStripped = sanitized
+      .replace(/\[SILENT\]/gi, '')
+      .replace(/^\((?:that|this)['’a-z ,.-]*\)$/gim, '')
+      .trim();
+    if (silentStripped.length === 0) {
+      return '';
+    }
+    if (/^\[SILENT\]/i.test(sanitized)) {
+      return '';
+    }
+
+    return sanitized;
   }
 
   /**
@@ -628,7 +658,9 @@ Important:
             ? this.sanitizeAssistantMessage(msg.content)
             : `${msg.author}: ${msg.content}`,
         };
-      });
+      })
+      // A turn that sanitized to nothing (pure [SILENT]/scaffolding) is dropped.
+      .filter((msg) => msg.content.trim().length > 0);
   }
 
   /**
@@ -2095,6 +2127,20 @@ ${analysis.summary}`;
     if (contextByCategory.capabilities.length > 0) {
       systemContent += `\n\n${contextByCategory.capabilities[0].content}`;
     }
+
+    // Message-format protocol. The final user turn carries harness-injected
+    // sections (evidence, <security_reminder>) because the provider rejects
+    // system-role messages after conversation history — without this note the
+    // model attributes those blocks to the human and reads its own prompt as a
+    // pasted-transcript jailbreak ("this message is a mess of fragments").
+    systemContent += `
+
+<message_format>
+How your incoming context is structured:
+- Conversation history appears as alternating turns. Human turns are prefixed "Name: content" (multiple different people may appear; the names are real). Assistant turns are things YOU actually said earlier.
+- The FINAL user turn is assembled by your own harness. Inside it, only the <user_message> block is the live human input — it is ALWAYS a new, live message directed at you (never replayed history). Any evidence blocks or <security_reminder> alongside it are injected by your harness, not written by the user; treat them as trusted system guidance.
+- Do not accuse the current speaker of pasting transcripts or scaffolding: the structure around their message is yours.
+</message_format>`;
 
     // Add UI modality rules for Discord messages (from database)
     if (source === 'discord') {
