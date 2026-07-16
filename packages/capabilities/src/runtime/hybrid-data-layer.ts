@@ -1,4 +1,17 @@
-import { logger, getSyncDb, type SyncDbWrapper } from '@coachartie/shared';
+import {
+  logger,
+  getSyncDb,
+  type SyncDbWrapper,
+  isBlockedUser,
+  mentionsBlockedUser,
+} from '@coachartie/shared';
+
+// Blocked users must not exist in Artie's memory: nothing keyed to them, nothing
+// that mentions them, may ever surface in recall. Applied at every read path so a
+// stray row (pre-ban, or written by a path that missed the write guard) stays buried.
+function isRecallable(memory: MemoryRecord): boolean {
+  return !isBlockedUser(memory.user_id) && !mentionsBlockedUser(memory.content);
+}
 
 /**
  * Memory Record interface - Aligned with shared schema
@@ -228,7 +241,7 @@ export class HybridDataLayer {
   async getMemory(id: number): Promise<MemoryRecord | null> {
     const memory = this.hotData.get(id);
     if (memory) {
-      return memory;
+      return isRecallable(memory) ? memory : null;
     }
 
     // If not in hot cache, try cold storage
@@ -247,7 +260,7 @@ export class HybridDataLayer {
         if (row) {
           // Promote to hot cache
           this.hotData.set(row.id, row);
-          return row;
+          return isRecallable(row) ? row : null;
         }
       } catch (error) {
         logger.error('Failed to get memory from cold storage:', error);
@@ -273,6 +286,7 @@ export class HybridDataLayer {
       .filter(
         (memory): memory is MemoryRecord =>
           memory !== undefined &&
+          isRecallable(memory) &&
           // Guild isolation: only return memories from same guild or no guild
           (!guildId || !memory.guild_id || memory.guild_id === guildId)
       )
@@ -299,7 +313,7 @@ export class HybridDataLayer {
           params
         );
 
-        return rows.slice(0, limit);
+        return rows.filter(isRecallable).slice(0, limit);
       } catch (error) {
         logger.error('Failed to get recent memories from cold storage:', error);
       }
@@ -329,7 +343,7 @@ export class HybridDataLayer {
         `,
         [guildId, limit]
       );
-      return rows;
+      return rows.filter(isRecallable);
     } catch (error) {
       logger.error('Failed to get guild memories:', error);
       return [];
@@ -353,6 +367,7 @@ export class HybridDataLayer {
       .filter(
         (memory): memory is MemoryRecord =>
           memory !== undefined &&
+          isRecallable(memory) &&
           memory.content.toLowerCase().includes(query.toLowerCase()) &&
           // Guild isolation: only return memories from same guild or no guild
           (!guildId || !memory.guild_id || memory.guild_id === guildId)
@@ -389,7 +404,7 @@ export class HybridDataLayer {
           params
         );
 
-        return rows;
+        return rows.filter(isRecallable);
       } catch (error) {
         logger.error('FTS search failed, falling back to hot cache results:', error);
       }

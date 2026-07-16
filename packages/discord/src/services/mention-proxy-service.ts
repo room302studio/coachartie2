@@ -8,7 +8,7 @@
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
 import { delay } from '@coachartie/shared';
 import { join, dirname } from 'path';
-import { logger } from '@coachartie/shared';
+import { logger, isBlockedUser } from '@coachartie/shared';
 import {
   MentionProxyRule,
   MentionProxyConfig,
@@ -353,7 +353,10 @@ class MentionProxyService {
       }
 
       const recentMessages = await channel.messages.fetch({ limit: 15 });
-      const messageArray = Array.from(recentMessages.values()).reverse();
+      // Blocked users are stripped before this context reaches the judgment LLM.
+      const messageArray = Array.from(recentMessages.values())
+        .reverse()
+        .filter((msg: any) => !isBlockedUser(msg.author?.id));
 
       // If the target user spoke recently — by TIME, not message count (a busy channel
       // pushes 5 messages in seconds) — they are RIGHT THERE. Never answer for them,

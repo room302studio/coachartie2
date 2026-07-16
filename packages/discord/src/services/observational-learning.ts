@@ -1,4 +1,4 @@
-import { logger, getSyncDb } from '@coachartie/shared';
+import { logger, getSyncDb, isBlockedUser } from '@coachartie/shared';
 import { Client, TextChannel, Message, Collection } from 'discord.js';
 import fetch from 'node-fetch';
 import { getGuildConfig, GUILD_CONFIGS, GuildType } from '../config/guild-whitelist.js';
@@ -217,9 +217,10 @@ export class ObservationalLearning {
     channelId: string,
     channelName: string
   ): Promise<void> {
-    // Filter out bot messages and sort chronologically
+    // Filter out bot messages and blocked users (no memories may form about them),
+    // then sort chronologically
     const humanMessages = messages
-      .filter((m) => !m.author.bot)
+      .filter((m) => !m.author.bot && !isBlockedUser(m.author.id))
       .sort((a, b) => a.createdTimestamp - b.createdTimestamp);
 
     if (humanMessages.size === 0) {
@@ -351,6 +352,8 @@ Focus on patterns that would help understand this community's needs and interest
     // Extract unique human users from this batch
     const users = new Map<string, { id: string; username: string; displayName: string }>();
     for (const [, msg] of messages) {
+      // Blocked users get no profile — Artie keeps no mental note about them at all.
+      if (isBlockedUser(msg.author.id)) continue;
       if (!msg.author.bot && !users.has(msg.author.id)) {
         users.set(msg.author.id, {
           id: msg.author.id,

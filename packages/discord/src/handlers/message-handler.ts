@@ -13,6 +13,7 @@ import { Client, Events, Message, EmbedBuilder, AttachmentBuilder, ChannelType }
 import { delay, chunkMessage } from '@coachartie/shared';
 import { estimateTokens } from '@coachartie/shared';
 import { logger, canDMForTasks, getDMPolicy, dmPairingService, getSyncDb } from '@coachartie/shared';
+import { BLOCKED_USER_IDS, isBlockedUser } from '@coachartie/shared';
 import { publishMessage } from '../queues/publisher.js';
 import { telemetry } from '../services/telemetry.js';
 import {
@@ -142,10 +143,11 @@ const ANTIBODY_HARD_CAP = 80; // replies in-window before Artie goes silent on t
 const ANTIBODY_BREVITY_AT = 50; // start shrinking replies once they've had this many
 
 // Hard ban: users who get NO response from Artie at all (dropped before any processing).
-// EJ-curated. Supersedes the tight-leash list.
-const BLOCKED_USER_IDS = new Set<string>([
-  '1064472458448617502', // yellowaquarium — banned 2026-07-15 for burning credits with hour-long troll spam
-]);
+// EJ-curated. Supersedes the tight-leash list. The list itself lives in
+// @coachartie/shared (config/blocklist.ts) because capabilities enforces it too:
+// blocked users are also stripped from channel-history context, reply context,
+// observational learning, and memory formation/recall — Artie shouldn't even
+// mention them.
 
 // Blocked users get a 💔 instead of words. Words cost credits — the exact thing that got them
 // banned — but a reaction is free, and it reads as "I see you, and no" rather than a void the
@@ -1721,7 +1723,9 @@ async function fetchReplyContext(message: Message): Promise<{
     // Fetch the referenced message
     const referencedMessage = await message.channel.messages.fetch(message.reference.messageId);
 
-    if (!referencedMessage) {
+    // Blocked users are invisible to Artie — a reply to one of their messages
+    // gets no reply context rather than smuggling their words into the prompt.
+    if (!referencedMessage || isBlockedUser(referencedMessage.author.id)) {
       return null;
     }
 
@@ -1766,6 +1770,9 @@ async function fetchChannelHistory(message: Message): Promise<
     // into every prompt (closes the known username-injection gap; floor was the only backstop).
     return Array.from(messages.values())
       .reverse() // Chronological order (oldest first)
+      // Blocked users don't exist as far as Artie is concerned: their messages
+      // never enter his context, so he can't quote, answer, or mention them.
+      .filter((msg) => !isBlockedUser(msg.author.id))
       .map((msg) => {
         const display = msg.author.displayName || msg.author.username;
         const uname = msg.author.username;
@@ -1830,6 +1837,7 @@ async function fetchRecentAttachments(message: Message): Promise<
     }> = [];
 
     for (const msg of messages.values()) {
+      if (isBlockedUser(msg.author.id)) continue; // invisible: their uploads don't reach context
       if (!msg.attachments || msg.attachments.size === 0) continue;
 
       msg.attachments.forEach((att) => {
@@ -1866,7 +1874,7 @@ async function fetchRecentUrls(message: Message): Promise<string[]> {
     const urls: string[] = [];
 
     for (const msg of messages.values()) {
-      if (msg.author.bot) continue;
+      if (msg.author.bot || isBlockedUser(msg.author.id)) continue;
       const tokens = msg.content.split(/\s+/);
 
       // Collect URLs from message content

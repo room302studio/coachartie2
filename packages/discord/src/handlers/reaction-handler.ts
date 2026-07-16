@@ -15,7 +15,7 @@ import {
   PartialMessageReaction,
   PartialUser,
 } from 'discord.js';
-import { delay, logger, chunkMessage } from '@coachartie/shared';
+import { delay, logger, chunkMessage, isBlockedUser } from '@coachartie/shared';
 import { telemetry } from '../services/telemetry.js';
 import { generateCorrelationId, getShortCorrelationId } from '../utils/correlation.js';
 import { processUserIntent } from '../services/user-intent-processor.js';
@@ -125,6 +125,13 @@ export function setupReactionHandler(client: Client) {
         // Ignore bot reactions
         if (user.bot) {
           logger.debug(`Ignoring bot reaction [${shortId}]`);
+          return;
+        }
+
+        // Blocked users can't trigger anything — a 🔄 regenerate is an LLM call,
+        // which is exactly the credit burn that got them banned.
+        if (isBlockedUser(user.id)) {
+          logger.debug(`Ignoring reaction from blocked user [${shortId}]`);
           return;
         }
 

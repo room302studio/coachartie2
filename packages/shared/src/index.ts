@@ -16,6 +16,9 @@ export * from './config/owner.js';
 // Well-known Discord channels
 export * from './config/channels.js';
 
+// Hard-banned users (dropped at intake, invisible in context and memory)
+export * from './config/blocklist.js';
+
 // DM Pairing service
 export * from './services/dm-pairing.js';
 
