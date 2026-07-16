@@ -141,7 +141,7 @@ export async function startMessageConsumer(): Promise<Worker<IncomingMessage, vo
       });
 
       // Always process the message for capability extraction and memory formation
-      const response = await Promise.race([processingPromise, timeoutPromise]);
+      let response = await Promise.race([processingPromise, timeoutPromise]);
 
       // Check if we should respond (from context.shouldRespond)
       const shouldRespond = message.context?.shouldRespond !== false;
@@ -197,7 +197,15 @@ export async function startMessageConsumer(): Promise<Worker<IncomingMessage, vo
         // Mark job as complete
         jobTracker.completeJob(message.id, response);
         logger.info(`📊 Job ${message.id} marked as complete`);
+      } else if (/^\s*\[SILENT\]/i.test(response)) {
+        // [SILENT] means stay silent — never enqueue it for delivery. The discord-side
+        // respond path already guards this, but this queue path shipped the raw response
+        // verbatim, which is how literal "[SILENT]" messages reached channels.
+        logger.warn(`🤫 [consumer] [SILENT] response for ${message.id} — nothing queued`);
+        jobTracker.completeJob(message.id, response);
       } else {
+        // Strip any stray embedded [SILENT] marker before delivery
+        response = response.replace(/\[SILENT\]/gi, '').trim();
         // Determine which outgoing queue to use for other types
         const outgoingQueueName = getOutgoingQueueName(message.respondTo.type);
         const outgoingQueue = createQueue<OutgoingMessage>(outgoingQueueName);

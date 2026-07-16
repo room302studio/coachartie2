@@ -102,7 +102,14 @@ export async function startResponseConsumer(
       // DM-shaped jobs hitting this worker threw "No channelId in response metadata" (164 in
       // prod) and replies hitting the other read content=undefined and silently sent nothing.
       // One worker now understands both.
-      const text = response.message ?? response.content ?? '';
+      const rawText = response.message ?? response.content ?? '';
+      // Last line of defense: [SILENT] means silence, never a literal post. A leading
+      // marker suppresses the whole send; a stray embedded one is stripped.
+      if (/^\s*\[SILENT\]/i.test(rawText)) {
+        logger.warn(`🤫 [SILENT] response suppressed at delivery (inReplyTo=${response.inReplyTo ?? 'n/a'})`);
+        return;
+      }
+      const text = rawText.replace(/\[SILENT\]/gi, '').trim();
       const channelId = response.metadata?.channelId ?? response.channelId;
 
       // DM path: no channel, but we know who to reach.
