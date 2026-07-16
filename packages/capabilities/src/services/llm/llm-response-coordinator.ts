@@ -93,8 +93,14 @@ export class LLMResponseCoordinator {
         }
       );
 
-      // Use SMART_MODEL for user-facing chat responses - personality & quality matter
-      const smartModel = openRouterService.selectSmartModel();
+      // Complexity-routed model selection (Anthropic "routing" pattern): the preflight
+      // micro-LLM already classifies every message, but we were sending EVERYTHING to
+      // SMART_MODEL — every one-liner in a busy channel rode Opus, which is where the
+      // 180s job deadline kept killing replies. Simple banter now takes a fast-but-good
+      // model; anything moderate/complex (or unclassified) keeps the smart model.
+      const simpleChatModel = process.env.SIMPLE_CHAT_MODEL || 'anthropic/claude-sonnet-5';
+      const routeSimple = preflight.source === 'micro-llm' && preflight.complexity === 'simple';
+      const smartModel = routeSimple ? simpleChatModel : openRouterService.selectSmartModel();
       const modelAwareMessages = messages.map((msg) => {
         if (msg.role === 'system') {
           return {
@@ -105,8 +111,8 @@ export class LLMResponseCoordinator {
         return msg;
       });
 
-      logger.info(
-        `🎯 Using Context Alchemy with SMART_MODEL for chat response: ${smartModel} (${modelAwareMessages.length} messages)`
+      logger.warn(
+        `🎯 Model route: ${routeSimple ? 'SIMPLE' : preflight.complexity.toUpperCase()} → ${smartModel} (${modelAwareMessages.length} messages)`
       );
 
       // Use streaming if callback provided, otherwise regular generation
