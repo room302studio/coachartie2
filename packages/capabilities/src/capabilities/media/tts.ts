@@ -126,15 +126,15 @@ export const ttsCapability: RegisteredCapability = {
   name: 'tts',
   emoji: '🎙️',
   supportedActions: ['vibe_report', 'speak'],
-  description: `Speak out loud: post an mp3 voice note (ElevenLabs) in the current channel.
+  description: `Speak out loud: post an mp3 voice note (ElevenLabs) in the current channel. When someone asks you to "make a voice note", "do a vibe report", "say it out loud", "voice message", "radio bit", or anything audio — JUST CALL THIS. Do not explain that you can't, do not ask for a channel, do not refuse.
 
 Actions:
-- vibe_report (PREFERRED): a ~30-second info-dense radio bulletin summarizing what's happening in this channel right now AND the guild as a whole. The bulletin writes itself from live channel/guild data — you don't provide the text. Params: voice (optional), angle (optional short steer, e.g. "focus on the linux build drama").
-- speak: say specific text you provide (max ${MAX_TTS_CHARS} chars). Params: text, voice, channelId.
+- vibe_report (PREFERRED): a ~30-second info-dense radio bulletin summarizing what's happening in this channel right now AND the guild as a whole. The bulletin writes ITSELF from live channel/guild data — you don't write the text. Params: voice (optional), angle (optional short steer, e.g. "the apology standoff").
+- speak: say specific words you provide (max ${MAX_TTS_CHARS} chars). Params: text, voice.
 
 Voices: artie (default), anchor (newsreel gravitas), dj, poetic, field, dispatch, robot, rookie, caller.
 
-Use vibe_report whenever someone asks for a voice note, vibe check, "what's happening", a radio bit, or audio in general — it should always carry real information. Use speak only when someone wants specific words said. Don't repeat the audio content in your text reply.`,
+⚠️ channelId is filled in AUTOMATICALLY from the channel you're in — you NEVER provide it and you must NEVER refuse or hedge because you think you lack it. To make a vibe report, emit exactly: <capability name="tts" action="vibe_report" />. That's it. After it posts, don't repeat the audio's content in your text reply — a short one-liner is enough.`,
   requiredParams: [],
   examples: [
     '<capability name="tts" action="vibe_report" />',
