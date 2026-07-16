@@ -14,8 +14,10 @@ export class ApiServer {
     this.port = port;
     this.app = express();
 
-    // Middleware
-    this.app.use(express.json({ limit: '1mb' }));
+    // Middleware. 12mb: base64-encoded voice notes ride through /channels/:id/messages
+    // and /dm (a ~60s ElevenLabs mp3 is ~1MB raw → ~1.3MB encoded; Discord's own
+    // upload cap for bots is 10MB, so match that with encoding overhead).
+    this.app.use(express.json({ limit: '12mb' }));
 
     // CORS
     this.app.use((req, res, next) => {
