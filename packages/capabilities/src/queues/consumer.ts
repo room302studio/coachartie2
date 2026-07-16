@@ -124,8 +124,14 @@ export async function startMessageConsumer(): Promise<Worker<IncomingMessage, vo
       // return words; if we get here, something is genuinely wedged and the user gets nothing.
       // See config/timeouts.ts for the invariant tying this to the loop and per-request limits.
       const GLOBAL_TIMEOUT_MS = JOB_TIMEOUT_MS;
+      // The timer MUST be cleared when processing wins the race. Before this,
+      // every job — including ones that completed and replied in seconds —
+      // logged a phantom "⏱️ TIMEOUT" 180s after queueing (and left an
+      // unhandled rejection behind). That inflated the vitals deadlineKills
+      // metric with false positives and buried the genuinely hung jobs.
+      let globalTimeoutHandle: NodeJS.Timeout | undefined;
       const timeoutPromise = new Promise<never>((_, reject) => {
-        setTimeout(() => {
+        globalTimeoutHandle = setTimeout(() => {
           const errorMsg = `Global job timeout after ${GLOBAL_TIMEOUT_MS / 1000}s - prevents infinite loops and resource exhaustion`;
           logger.error(`⏱️ TIMEOUT: ${errorMsg} for message ${message.id}`);
           reject(new Error(errorMsg));
@@ -141,7 +147,12 @@ export async function startMessageConsumer(): Promise<Worker<IncomingMessage, vo
       });
 
       // Always process the message for capability extraction and memory formation
-      let response = await Promise.race([processingPromise, timeoutPromise]);
+      let response: string;
+      try {
+        response = await Promise.race([processingPromise, timeoutPromise]);
+      } finally {
+        clearTimeout(globalTimeoutHandle);
+      }
 
       // Check if we should respond (from context.shouldRespond)
       const shouldRespond = message.context?.shouldRespond !== false;
