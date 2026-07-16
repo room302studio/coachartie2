@@ -846,12 +846,26 @@ export function setupMessageHandler(client: Client) {
     // Ignore our own messages to prevent loops
     if (message.author.id === client.user!.id) return;
 
+    // COACH-ARTIE CHANNELS ONLY: in the public Subway Builder guild, Artie is only visibly
+    // active (replies AND reactions) in robot / coach-artie channels or channels with a
+    // persona like Judge Artie. Computed up front so every reaction path respects it —
+    // the 💔 was firing guild-wide when this check lived below it.
+    let isCoachArtiePlace = true;
+    if (message.guildId === '1420846272545296470' && !message.channel.isDMBased()) {
+      const _chName = ('name' in message.channel ? message.channel.name : '') || '';
+      isCoachArtiePlace =
+        /🤖|robot|coach.?artie|\bartie\b/i.test(_chName) ||
+        !!getChannelPersona(message.guildId, _chName);
+    }
+
     // Hard ban: users banned from using Artie entirely. Dropped before any processing —
-    // no response, no LLM call, no cost. (EJ-curated.) They get a rate-limited 💔 and nothing else.
+    // no response, no LLM call, no cost. (EJ-curated.) In coach-artie channels they get a
+    // rate-limited 💔 so poking the bot isn't a confusing void; everywhere else, nothing —
+    // 💔-ing someone's normal chat in normal channels reads as harassment, not moderation.
     if (BLOCKED_USER_IDS.has(message.author.id)) {
       const now = Date.now();
       const lastReaction = lastBlockedReactionAt.get(message.author.id) ?? 0;
-      if (now - lastReaction >= BLOCKED_REACTION_COOLDOWN_MS) {
+      if (isCoachArtiePlace && now - lastReaction >= BLOCKED_REACTION_COOLDOWN_MS) {
         // Stamp before awaiting: a burst of spam arrives faster than the API round-trip, and
         // an unstamped window would let the whole burst through the cooldown check at once.
         lastBlockedReactionAt.set(message.author.id, now);
@@ -863,17 +877,10 @@ export function setupMessageHandler(client: Client) {
     }
 
     // EMERGENCY KILL SWITCH — checked per message, no restart required.
-    // COACH-ARTIE CHANNELS ONLY: in the public Subway Builder guild, only respond in robot /
-    // coach-artie channels (or channels with a persona like Judge Artie). Ignore mentions elsewhere.
-    if (message.guildId === '1420846272545296470' && !message.channel.isDMBased()) {
+    if (!isCoachArtiePlace) {
       const _chName = ('name' in message.channel ? message.channel.name : '') || '';
-      const _isCoachArtiePlace =
-        /\ud83e\udd16|robot|coach.?artie|\bartie\b/i.test(_chName) ||
-        !!getChannelPersona(message.guildId, _chName);
-      if (!_isCoachArtiePlace) {
-        logger.info(`Non-Coach-Artie channel #${_chName} - not responding [${shortId}]`);
-        return;
-      }
+      logger.info(`Non-Coach-Artie channel #${_chName} - not responding [${shortId}]`);
+      return;
     }
 
     // Roll for a free, wordless reaction. Independent of whether he ends up replying — the
