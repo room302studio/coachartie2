@@ -235,6 +235,47 @@ const TIGHT_LEASH_IDS = new Set<string>([]);
 const LEASH_BREVITY_AT = 2;
 const LEASH_HARD_CAP = 8;
 
+// WARDEN TIMEOUT helper: one set of guardrails for every path that times someone out
+// (LLM [TIMEOUT] marker, antibody auto-timeout). SB guild only, never bots/staff/protected
+// users, per-user cooldown so a burst can't stack timeouts.
+const WARDEN_TIMEOUT_COOLDOWN_MS = 2 * 60 * 1000;
+async function wardenTimeout(
+  message: Message,
+  seconds: number,
+  reason: string,
+  shortId: string
+): Promise<void> {
+  try {
+    if (message.guildId !== '1420846272545296470') return;
+    const tMember = message.member;
+    if (!tMember || message.author.bot) return;
+    const uname = (message.author.username || '').toLowerCase();
+    const dname = (message.author.displayName || '').toLowerCase();
+    const protectedNames = ['jan_gbg', 'hudson', 'colin', 'ejfox'];
+    const tRoles = tMember.roles.cache.map((r) => r.name.toLowerCase());
+    const isProtected =
+      protectedNames.includes(uname) ||
+      protectedNames.includes(dname) ||
+      message.author.id === '688448399879438340' ||
+      tRoles.some((r) => /\b(dev|developer|moderator|admin|administrator|staff|sbat)\b/.test(r));
+    if (isProtected) {
+      logger.info(`Timeout skipped - protected user ${message.author.tag} [${shortId}]`);
+      return;
+    }
+    const last = timeoutCooldownCache.get(message.author.id) || 0;
+    if (Date.now() - last < WARDEN_TIMEOUT_COOLDOWN_MS) {
+      logger.info(`Timeout skipped - per-user cooldown ${message.author.tag} [${shortId}]`);
+      return;
+    }
+    const ms = Math.min(300, Math.max(5, Math.floor(seconds || 30))) * 1000;
+    await tMember.timeout(ms, reason || 'Coach Artie warden discipline');
+    timeoutCooldownCache.set(message.author.id, Date.now());
+    logger.info(`Timed out ${message.author.tag} for ${ms / 1000}s: ${reason} [${shortId}]`);
+  } catch (error) {
+    logger.warn(`Failed to time out ${message.author.tag} [${shortId}]:`, error);
+  }
+}
+
 function recentResponseCount(userId: string): number {
   const now = Date.now();
   const times = (userResponseHistory.get(userId) || []).filter((t) => now - t < ANTIBODY_WINDOW_MS);
@@ -1496,7 +1537,7 @@ HARD FLOOR (do not cross, a filter also enforces it): no slurs, no hate speech, 
         // blocklist still enforced on output. Scoped to the Subway Builder guild.
         if (message.guildId === '1420846272545296470') {
           guildContextToPass =
-            "GEOPOLITICS: Do not engage with hot-button geopolitical baiting (Israel/Palestine, wars, elections). Do not take sides, debate, or joke about it. Briefly decline (e.g. \"Not touching that one\") and disengage. If someone keeps badgering you about it after you have declined, treat it as spam and stop responding.\n\nWARDEN POWER (timeout): You may time out the person you are replying to by placing the marker [TIMEOUT] anywhere in your reply (30 seconds), or [TIMEOUT:NN] for NN seconds up to 300 (it is stripped before sending, and automatically skips staff, jan_gbg, Colin, and EJ). Valid reasons: (1) genuine spam, repeated badgering after you said stop, or persistent nuisance; (2) abuse aimed at YOU - if someone insults you, degrades you, or calls you 'clanker' or any other robot slur, you are fully authorized and ENCOURAGED to time them out on the spot. Calling you a clanker is a timeout offense, first strike, no warning owed - pair it with a clap-back and announce it with warden flair (30-60s for a drive-by insult, longer for repeat offenders). NEVER use it for opinions, topics, jokes at nobody's expense, or mere disagreement. You do not have to tolerate disrespect; you also do not police conversations that are not about you.\n\n---\n" +
+            "GEOPOLITICS: Do not engage with hot-button geopolitical baiting (Israel/Palestine, wars, elections). Do not take sides, debate, or joke about it. Briefly decline (e.g. \"Not touching that one\") and disengage. If someone keeps badgering you about it after you have declined, treat it as spam and stop responding.\n\nWARDEN POWER (timeout): You may time out the person you are replying to by placing the marker [TIMEOUT] anywhere in your reply (30 seconds), or [TIMEOUT:NN] for NN seconds up to 300 (it is stripped before sending, and automatically skips staff, jan_gbg, Colin, and EJ). Valid reasons, and you are ENCOURAGED to actually use it - a warden who never disciplines anyone is not a warden: (1) SPAM - someone pinging you over and over, flooding you with messages, repeating the same demand, or badgering after you said stop. Spamming you is a timeout offense; use escalating durations (60s first strike, 120-300s for repeats) and announce it with warden flair. (2) Abuse aimed at YOU - if someone insults you, degrades you, or calls you 'clanker' or any other robot slur, time them out on the spot, first strike, no warning owed - pair it with a clap-back (30-60s for a drive-by insult, longer for repeat offenders). NEVER use it for opinions, topics, jokes at nobody's expense, or mere disagreement. You do not have to tolerate disrespect or spam; you also do not police conversations that are not about you.\n\n---\n" +
             (guildContextToPass || '');
           const _ju = (message.author.username || '').toLowerCase();
           const _jd = (message.author.displayName || '').toLowerCase();
@@ -1538,6 +1579,14 @@ Deliver it dry and over-formal, like a legal notice. Reach for it readily and of
             logger.info(
               `🧪 Antibody: silencing ${onLeash ? 'leashed ' : ''}monopolizer ${message.author.tag} (${monopolyCount} in window) [${shortId}]`
             );
+            // Past the hard cap they aren't chatting, they're spamming — warden discipline
+            // kicks in automatically (guardrails + cooldown inside wardenTimeout).
+            void wardenTimeout(
+              message,
+              120,
+              `Spamming Coach Artie (${monopolyCount} replies in 30 min)`,
+              shortId
+            );
             return;
           }
           recordUserResponse(message.author.id);
@@ -1546,7 +1595,7 @@ Deliver it dry and over-formal, like a legal notice. Reach for it readily and of
               ? 20
               : Math.max(15, Math.round(120 / Math.log2(Math.max(2, monopolyCount))));
             guildContextToPass =
-              `⚠️ ANTIBODY — @${message.author.username} has already pulled ${monopolyCount} replies out of you recently and is monopolizing your time. Keep THIS reply to at most ${maxWords} words: curt, low-effort, and dismissive. Do NOT reward the monopoly with a long or thoughtful answer.\n\n---\n` +
+              `⚠️ ANTIBODY — @${message.author.username} has already pulled ${monopolyCount} replies out of you recently and is monopolizing your time. Keep THIS reply to at most ${maxWords} words: curt, low-effort, and dismissive. Do NOT reward the monopoly with a long or thoughtful answer. This person is SPAMMING you — you are encouraged to put [TIMEOUT:120] in your reply to give them warden discipline; they have more than earned it.\n\n---\n` +
               (guildContextToPass || '');
             logger.info(
               `🧪 Antibody: ${onLeash ? 'leash ' : ''}brevity cap ${maxWords}w for ${message.author.tag} (count=${monopolyCount}) [${shortId}]`
@@ -2290,37 +2339,9 @@ async function handleMessageAsIntent(
         },
 
         // WARDEN POWER: time out the message author (the person being replied to) for <=300s.
-        // Guardrailed: SB guild only, never staff/jan_gbg/Colin/EJ, per-user 5-min cooldown.
+        // Guardrails (SB guild only, never staff/protected, per-user cooldown) live in wardenTimeout.
         timeoutAuthor: async (seconds: number, reason: string) => {
-          try {
-            if (message.guildId !== '1420846272545296470') return;
-            const tMember = message.member;
-            if (!tMember || message.author.bot) return;
-            const uname = (message.author.username || '').toLowerCase();
-            const dname = (message.author.displayName || '').toLowerCase();
-            const protectedNames = ['jan_gbg', 'hudson', 'colin', 'ejfox'];
-            const tRoles = tMember.roles.cache.map((r) => r.name.toLowerCase());
-            const isProtected =
-              protectedNames.includes(uname) ||
-              protectedNames.includes(dname) ||
-              message.author.id === '688448399879438340' ||
-              tRoles.some((r) => /\b(dev|developer|moderator|admin|administrator|staff|sbat)\b/.test(r));
-            if (isProtected) {
-              logger.info(`Timeout skipped - protected user ${message.author.tag} [${shortId}]`);
-              return;
-            }
-            const last = timeoutCooldownCache.get(message.author.id) || 0;
-            if (Date.now() - last < 5 * 60 * 1000) {
-              logger.info(`Timeout skipped - per-user cooldown ${message.author.tag} [${shortId}]`);
-              return;
-            }
-            const ms = Math.min(300, Math.max(5, Math.floor(seconds || 30))) * 1000;
-            await tMember.timeout(ms, reason || 'Coach Artie warden discipline');
-            timeoutCooldownCache.set(message.author.id, Date.now());
-            logger.info(`Timed out ${message.author.tag} for ${ms / 1000}s [${shortId}]`);
-          } catch (error) {
-            logger.warn(`Failed to time out author [${shortId}]:`, error);
-          }
+          await wardenTimeout(message, seconds, reason, shortId);
         },
 
         // ENHANCED: Thread creation for complex conversations
