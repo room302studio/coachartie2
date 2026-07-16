@@ -39,6 +39,7 @@ import {
   isGitHubIntegrationReady,
 } from '../services/github-integration.js';
 import { getForumTraversal } from '../services/forum-traversal.js';
+import { checkOutbound } from '../services/outbound-gate.js';
 import { getMentionProxyService } from '../services/mention-proxy-service.js';
 import { quizSessionManager } from '../services/quiz-session-manager.js';
 import Chance from 'chance';
@@ -210,6 +211,9 @@ function getAmbientEmoji(): string[] {
  * channel full of emoji, and one busy user shouldn't be able to soak up every roll.
  */
 function maybeAmbientReact(message: Message): void {
+  // Structural channel check — do NOT rely on this being called below the gate in
+  // the handler; ordering is exactly what broke twice. (Routine denial, no log.)
+  if (!checkOutbound('reaction', message).allowed) return;
   if (message.author.bot) return;
   if (message.content.trim().split(/\s+/).length < AMBIENT_REACTION_MIN_WORDS) return;
 
@@ -236,8 +240,9 @@ const LEASH_BREVITY_AT = 2;
 const LEASH_HARD_CAP = 8;
 
 // WARDEN TIMEOUT helper: one set of guardrails for every path that times someone out
-// (LLM [TIMEOUT] marker, antibody auto-timeout). SB guild only, never bots/staff/protected
-// users, per-user cooldown so a burst can't stack timeouts.
+// (LLM [TIMEOUT] marker, antibody auto-timeout). The permission invariants (SB guild
+// only, never bots/staff/protected users) live in the outbound gate; only the per-user
+// cooldown stays here — that's rate-limiting, not permission.
 const WARDEN_TIMEOUT_COOLDOWN_MS = 2 * 60 * 1000;
 async function wardenTimeout(
   message: Message,
@@ -246,22 +251,9 @@ async function wardenTimeout(
   shortId: string
 ): Promise<void> {
   try {
-    if (message.guildId !== '1420846272545296470') return;
+    if (!checkOutbound('timeout', message).allowed) return; // gate logs the denial
     const tMember = message.member;
-    if (!tMember || message.author.bot) return;
-    const uname = (message.author.username || '').toLowerCase();
-    const dname = (message.author.displayName || '').toLowerCase();
-    const protectedNames = ['jan_gbg', 'hudson', 'colin', 'ejfox'];
-    const tRoles = tMember.roles.cache.map((r) => r.name.toLowerCase());
-    const isProtected =
-      protectedNames.includes(uname) ||
-      protectedNames.includes(dname) ||
-      message.author.id === '688448399879438340' ||
-      tRoles.some((r) => /\b(dev|developer|moderator|admin|administrator|staff|sbat)\b/.test(r));
-    if (isProtected) {
-      logger.info(`Timeout skipped - protected user ${message.author.tag} [${shortId}]`);
-      return;
-    }
+    if (!tMember) return; // gate guarantees this; kept for the type narrowing
     const last = timeoutCooldownCache.get(message.author.id) || 0;
     if (Date.now() - last < WARDEN_TIMEOUT_COOLDOWN_MS) {
       logger.info(`Timeout skipped - per-user cooldown ${message.author.tag} [${shortId}]`);
@@ -270,7 +262,8 @@ async function wardenTimeout(
     const ms = Math.min(300, Math.max(5, Math.floor(seconds || 30))) * 1000;
     await tMember.timeout(ms, reason || 'Coach Artie warden discipline');
     timeoutCooldownCache.set(message.author.id, Date.now());
-    logger.info(`Timed out ${message.author.tag} for ${ms / 1000}s: ${reason} [${shortId}]`);
+    // warn, not info: prod console level is warn, and the vitals monitor counts this line
+    logger.warn(`Timed out ${message.author.tag} for ${ms / 1000}s: ${reason} [${shortId}]`);
   } catch (error) {
     logger.warn(`Failed to time out ${message.author.tag} [${shortId}]:`, error);
   }
@@ -848,15 +841,9 @@ export function setupMessageHandler(client: Client) {
 
     // COACH-ARTIE CHANNELS ONLY: in the public Subway Builder guild, Artie is only visibly
     // active (replies AND reactions) in robot / coach-artie channels or channels with a
-    // persona like Judge Artie. Computed up front so every reaction path respects it —
-    // the 💔 was firing guild-wide when this check lived below it.
-    let isCoachArtiePlace = true;
-    if (message.guildId === '1420846272545296470' && !message.channel.isDMBased()) {
-      const _chName = ('name' in message.channel ? message.channel.name : '') || '';
-      isCoachArtiePlace =
-        /🤖|robot|coach.?artie|\bartie\b/i.test(_chName) ||
-        !!getChannelPersona(message.guildId, _chName);
-    }
+    // persona like Judge Artie. The invariant itself lives in outbound-gate.ts — every
+    // action path re-checks the gate itself, so this flow variable is routing, not policy.
+    const isCoachArtiePlace = checkOutbound('reply', message).allowed;
 
     // Hard ban: users banned from using Artie entirely. Dropped before any processing —
     // no response, no LLM call, no cost. (EJ-curated.) In coach-artie channels they get a
@@ -865,7 +852,10 @@ export function setupMessageHandler(client: Client) {
     if (BLOCKED_USER_IDS.has(message.author.id)) {
       const now = Date.now();
       const lastReaction = lastBlockedReactionAt.get(message.author.id) ?? 0;
-      if (isCoachArtiePlace && now - lastReaction >= BLOCKED_REACTION_COOLDOWN_MS) {
+      if (
+        checkOutbound('reaction', message).allowed &&
+        now - lastReaction >= BLOCKED_REACTION_COOLDOWN_MS
+      ) {
         // Stamp before awaiting: a burst of spam arrives faster than the API round-trip, and
         // an unstamped window would let the whole burst through the cooldown check at once.
         lastBlockedReactionAt.set(message.author.id, now);
@@ -1110,6 +1100,9 @@ export function setupMessageHandler(client: Client) {
           correlationId,
           message.author.id
         );
+
+        // warn, not info: prod console level is warn, and the vitals monitor counts this line
+        logger.warn(`📣 Proxying for @${matchedRule.targetUsername} [${shortId}]`);
 
         // Get the clean message (remove mentions)
         const cleanMessage = message.content

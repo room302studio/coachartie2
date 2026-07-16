@@ -46,6 +46,7 @@ import { schedulerService } from './services/core/scheduler.js';
 import { jobTracker } from './services/core/job-tracker.js';
 import { costMonitor } from './services/monitoring/cost-monitor.js';
 import { distressMonitor } from './services/monitoring/distress-monitor.js';
+import { vitalsMonitor } from './services/monitoring/vitals-monitor.js';
 import { GlobalVariableStore } from './capabilities/system/variable-store.js';
 // Import orchestrator FIRST to trigger capability registration
 import './services/capability/capability-orchestrator.js';
@@ -297,6 +298,10 @@ async function start() {
     // Start distress monitor (detects when Artie needs help)
     console.log('🆘 Starting distress monitor...');
     distressMonitor.start();
+
+    // Start vitals monitor (hourly self-audit of prod logs + operator alarms)
+    console.log('🩺 Starting vitals monitor...');
+    vitalsMonitor.start();
 
     console.log('🔍 Parsing port configuration...');
     console.log('  - CAPABILITIES_PORT env:', process.env.CAPABILITIES_PORT);

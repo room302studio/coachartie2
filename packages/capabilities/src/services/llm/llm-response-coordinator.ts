@@ -5,6 +5,7 @@ import { promptManager } from './prompt-manager.js';
 import { contextAlchemy } from './context-alchemy.js';
 import { modelAwarePrompter } from '../../utils/model-aware-prompter.js';
 import { preflightAnalyzer } from './preflight-analyzer.js';
+import { getBrownoutMode } from './brownout.js';
 import { experimentManager } from '../context-alchemy/index.js';
 import { errorTracker, ERROR_TYPES } from '../observability/error-tracker.js';
 import { CapabilityResult, OrchestrationContext } from '../../types/orchestration-types.js';
@@ -100,7 +101,25 @@ export class LLMResponseCoordinator {
       // model; anything moderate/complex (or unclassified) keeps the smart model.
       const simpleChatModel = process.env.SIMPLE_CHAT_MODEL || 'anthropic/claude-sonnet-5';
       const routeSimple = preflight.complexity === 'simple';
-      const smartModel = routeSimple ? simpleChatModel : openRouterService.selectSmartModel();
+      let smartModel = routeSimple ? simpleChatModel : openRouterService.selectSmartModel();
+
+      // Brownout override (see brownout.ts): when credit runway shrinks, step
+      // down to cheaper models + shorter replies instead of going silent.
+      // 'normal' mode leaves the complexity route above completely untouched.
+      const brownout = await getBrownoutMode();
+      let maxTokens = preflight.responseTokens;
+      if (brownout.mode === 'lean') {
+        smartModel = simpleChatModel;
+        maxTokens = Math.min(maxTokens, 500);
+      } else if (brownout.mode === 'critical') {
+        smartModel = process.env.BROWNOUT_CRITICAL_MODEL || 'anthropic/claude-haiku-4.5';
+        maxTokens = Math.min(maxTokens, 250);
+      }
+      if (brownout.mode !== 'normal') {
+        logger.warn(
+          `🕯️ Brownout ${brownout.mode.toUpperCase()} (runway ${brownout.runwayHours?.toFixed(1) ?? '?'}h) → ${smartModel}, maxTokens ${maxTokens}`
+        );
+      }
       const modelAwareMessages = messages.map((msg) => {
         if (msg.role === 'system') {
           return {
@@ -122,7 +141,7 @@ export class LLMResponseCoordinator {
       const generationOptions = {
         traceId: message.context?.traceId,
         guildId: message.context?.guildId,
-        maxTokens: preflight.responseTokens,
+        maxTokens,
       };
 
       return onPartialResponse
