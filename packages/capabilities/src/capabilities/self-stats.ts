@@ -1,4 +1,4 @@
-import { logger } from '@coachartie/shared';
+import { logger, getSyncDb, isBlockedUser } from '@coachartie/shared';
 import { RegisteredCapability } from '../services/capability/capability-registry.js';
 import { metricsRegistry } from '../services/metrics.js';
 
@@ -14,8 +14,91 @@ import { metricsRegistry } from '../services/metrics.js';
  */
 
 interface SelfStatsParams {
-  action: 'overview' | 'costs' | 'capabilities' | 'health' | 'errors';
+  action: 'overview' | 'costs' | 'capabilities' | 'health' | 'errors' | 'user_costs' | 'top_spenders';
   timeRange?: string; // e.g., '1h', '24h', '7d'
+  user_id?: string; // for user_costs — defaults to whoever is asking
+  limit?: number; // for top_spenders
+}
+
+// ── Per-user cost accounting (model_usage_stats) ──────────────────────────
+// Answers "how much money have I cost EJ?" with receipts instead of an empty
+// generation. Blocked users are redacted, not shown — they don't exist.
+
+function redactUser(userId: string): string {
+  return isBlockedUser(userId) ? '[banned user]' : `<@${userId}>`;
+}
+
+function userCostsReport(db: ReturnType<typeof getSyncDb>, userId: string): string {
+  if (isBlockedUser(userId)) {
+    return 'No usage data available for that user.';
+  }
+  const total = db.get<{ calls: number; tokens: number; cost: number }>(
+    `SELECT COUNT(*) AS calls, COALESCE(SUM(total_tokens),0) AS tokens,
+            COALESCE(SUM(estimated_cost),0) AS cost
+     FROM model_usage_stats WHERE user_id = ?`,
+    [userId]
+  );
+  if (!total || total.calls === 0) {
+    return `No LLM usage recorded for user ${userId}. They're free (so far).`;
+  }
+  const topDays = db.all<{ day: string; calls: number; cost: number }>(
+    `SELECT date(timestamp) AS day, COUNT(*) AS calls, SUM(estimated_cost) AS cost
+     FROM model_usage_stats WHERE user_id = ?
+     GROUP BY day ORDER BY cost DESC LIMIT 3`,
+    [userId]
+  );
+  const today = db.get<{ calls: number; cost: number }>(
+    `SELECT COUNT(*) AS calls, COALESCE(SUM(estimated_cost),0) AS cost
+     FROM model_usage_stats WHERE user_id = ? AND date(timestamp) = date('now')`,
+    [userId]
+  );
+  // Rank among all users by lifetime cost (blocked users still occupy ranks;
+  // we just never name them).
+  const rank = db.get<{ rank: number }>(
+    `SELECT COUNT(*) + 1 AS rank FROM (
+       SELECT user_id, SUM(estimated_cost) AS c FROM model_usage_stats
+       GROUP BY user_id HAVING c > (
+         SELECT SUM(estimated_cost) FROM model_usage_stats WHERE user_id = ?
+       )
+     )`,
+    [userId]
+  );
+
+  const lines = [
+    `## Cost report for <@${userId}>`,
+    `**Lifetime:** $${total.cost.toFixed(2)} — ${total.calls} LLM calls, ${total.tokens.toLocaleString()} tokens`,
+    `**Server rank:** #${rank?.rank ?? '?'} by lifetime cost`,
+    `**Today:** $${(today?.cost ?? 0).toFixed(2)} (${today?.calls ?? 0} calls)`,
+    '',
+    '**Most expensive days:**',
+    ...topDays.map((d) => `- ${d.day}: $${d.cost.toFixed(2)} (${d.calls} calls)`),
+  ];
+  return lines.join('\n');
+}
+
+function topSpendersReport(db: ReturnType<typeof getSyncDb>, limit: number): string {
+  const rows = db.all<{ user_id: string; calls: number; cost: number }>(
+    `SELECT user_id, COUNT(*) AS calls, SUM(estimated_cost) AS cost
+     FROM model_usage_stats
+     GROUP BY user_id ORDER BY cost DESC LIMIT ?`,
+    [Math.min(limit, 25)]
+  );
+  if (rows.length === 0) return 'No usage recorded yet.';
+  const serverTotal = db.get<{ cost: number }>(
+    `SELECT COALESCE(SUM(estimated_cost),0) AS cost FROM model_usage_stats`
+  );
+  const lines = [
+    `## Top ${rows.length} credit consumers (lifetime)`,
+    `Server total: $${(serverTotal?.cost ?? 0).toFixed(2)}`,
+    '',
+    ...rows.map(
+      (r, i) =>
+        `${i + 1}. ${redactUser(r.user_id)} — $${r.cost.toFixed(2)} (${r.calls} calls)`
+    ),
+    '',
+    '_Note: <@id> mentions ping people — consider paraphrasing names instead of pasting raw._',
+  ];
+  return lines.join('\n');
 }
 
 // Parse Prometheus metrics text format
@@ -63,8 +146,16 @@ function formatUptime(seconds: number): string {
 export const selfStatsCapability: RegisteredCapability = {
   name: 'self-stats',
   emoji: '📊',
-  supportedActions: ['overview', 'costs', 'capabilities', 'health', 'errors'],
-  description: `Check your own stats, health, and metrics. Use this to understand how you're doing.
+  supportedActions: [
+    'overview',
+    'costs',
+    'capabilities',
+    'health',
+    'errors',
+    'user_costs',
+    'top_spenders',
+  ],
+  description: `Check your own stats, health, and metrics — including what specific users have cost in LLM credits. Use this to understand how you're doing.
 
 Actions:
 - overview: Quick summary of everything
@@ -72,20 +163,43 @@ Actions:
 - capabilities: Which capabilities you've used most
 - health: Memory, CPU, uptime
 - errors: Recent errors (if any)
+- user_costs: How much a specific user has cost in credits (lifetime, today, rank, worst days). Defaults to whoever is asking. Use when someone asks "how much money have I cost?", "what's my bill?", "how much have I spent?"
+- top_spenders: Leaderboard of the biggest credit consumers. Use when someone asks who costs the most / top spenders / biggest credit users.
 
-Use this when you want to reflect on your performance or check if something's wrong.`,
+Use this when you want to reflect on your performance, check if something's wrong, or answer questions about who is costing what.`,
   requiredParams: [],
   examples: [
     '<capability name="self-stats" action="overview" />',
     '<capability name="self-stats" action="costs" />',
     '<capability name="self-stats" action="capabilities" />',
     '<capability name="self-stats" action="health" />',
+    '<capability name="self-stats" action="user_costs" />',
+    '<capability name="self-stats" action="user_costs" data=\'{"user_id":"703107274293641266"}\' />',
+    '<capability name="self-stats" action="top_spenders" data=\'{"limit":10}\' />',
   ],
 
   handler: async (params: any) => {
     const { action = 'overview' } = params as SelfStatsParams;
 
     logger.info(`📊 Self-stats: ${action}`);
+
+    // DB-backed actions don't need the metrics registry — handle them first.
+    if (action === 'user_costs' || action === 'top_spenders') {
+      try {
+        const db = getSyncDb();
+        if (action === 'user_costs') {
+          const targetId = params.user_id || params.userId;
+          if (!targetId || targetId === 'unknown-user') {
+            return 'No user id available — pass user_id explicitly.';
+          }
+          return userCostsReport(db, String(targetId));
+        }
+        return topSpendersReport(db, Number(params.limit) || 10);
+      } catch (error: any) {
+        logger.error(`Self-stats ${action} error:`, error);
+        return `Error running ${action}: ${error.message}`;
+      }
+    }
 
     try {
       const metricsText = await metricsRegistry.metrics();
