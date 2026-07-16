@@ -1,5 +1,6 @@
 import { logger } from '@coachartie/shared';
 import { CreditMonitor } from '../monitoring/credit-monitor.js';
+import { costMonitor } from '../monitoring/cost-monitor.js';
 
 // =====================================================
 // BROWNOUT CONTROLLER
@@ -51,13 +52,37 @@ export async function getBrownoutMode(): Promise<BrownoutStatus> {
   return cached?.status ?? { mode: 'normal', runwayHours: null };
 }
 
+// Runway = balance ÷ burn rate. The burn rate must reflect what Artie is ACTUALLY
+// spending, not a fixed guess. For months this used a hardcoded $1.5/hr constant while
+// the real burn was $0.3–0.6/hr, so a healthy balance looked like ~4h of runway and
+// pinned Artie in CRITICAL (Haiku, 250 tokens) all day — the root cause of most
+// "he's acting dumb" reports. We now read the measured burn from the cost monitor and
+// only fall back to the constant when the sample is too fresh to trust (right after a
+// restart). The fallback default is also lowered to a realistic 0.75/hr.
+function currentBurnPerHour(): number {
+  const floor = envNumber('BROWNOUT_BURN_FLOOR', 0.15); // never divide by ~0 → false infinite runway
+  const fallback = envNumber('BROWNOUT_BURN_PER_HOUR', 0.75);
+  try {
+    const stats = costMonitor.getStats();
+    const uptimeHours = stats.uptime / 3_600_000;
+    // Need a stable sample: at least 15 min of uptime and some real spend. A fresh
+    // process (post-deploy) hasn't spent enough to estimate — use the fallback.
+    if (uptimeHours >= 0.25 && stats.costPerHour > 0) {
+      return Math.max(floor, stats.costPerHour);
+    }
+  } catch {
+    // cost monitor unavailable → fallback below
+  }
+  return Math.max(floor, fallback);
+}
+
 async function refresh(now: number): Promise<void> {
   let runwayHours: number | null = null;
   try {
     const balance = await CreditMonitor.getInstance().getCurrentBalance();
     const credits = balance?.credits_remaining;
     if (typeof credits === 'number' && Number.isFinite(credits)) {
-      runwayHours = credits / envNumber('BROWNOUT_BURN_PER_HOUR', 1.5);
+      runwayHours = credits / currentBurnPerHour();
     }
   } catch (error) {
     logger.error('🕯️ Brownout: balance check failed, staying in normal mode', error);
