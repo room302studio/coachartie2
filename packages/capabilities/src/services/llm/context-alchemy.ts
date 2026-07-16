@@ -165,6 +165,11 @@ export class ContextAlchemy {
 
     let selectedContext: ContextSource[] = [];
     let conversationHistory: Array<{ role: 'user' | 'assistant'; content: string }> = [];
+    // For Discord group chats we render history as ONE labeled transcript instead of
+    // role-alternating turns (see renderDiscordTranscript) — a weak model can't keep
+    // multiple speakers straight across a flat user/assistant list, and Artie's own
+    // past turns lose their addressee, so he pins one person's history on another.
+    let groupTranscript = '';
 
     if (!options.minimal) {
       // 1. Calculate token budget
@@ -177,13 +182,15 @@ export class ContextAlchemy {
 
       // Prefer Discord channel history when available (source of truth - includes webhook/n8n messages)
       if (options.discordChannelHistory && options.discordChannelHistory.length > 0) {
-        conversationHistory = this.convertDiscordHistoryToMessages(
+        // Group chat → single labeled transcript, NOT role-alternating turns.
+        groupTranscript = this.renderDiscordTranscript(
           options.discordChannelHistory,
           historyLimit
         );
+        conversationHistory = [];
         if (DEBUG) {
           logger.info(
-            `│ 📜 Using Discord channel history (${conversationHistory.length} messages)`
+            `│ 📜 Using Discord channel transcript (${options.discordChannelHistory.length} msgs)`
           );
         }
       } else {
@@ -242,7 +249,8 @@ export class ContextAlchemy {
       conversationHistory,
       options.source,
       currentAuthorName,
-      options.promptOrigin ?? 'user'
+      options.promptOrigin ?? 'user',
+      groupTranscript
     );
 
     if (DEBUG) {
@@ -631,6 +639,37 @@ Important:
    * Discord history is the source of truth - includes webhook/n8n messages
    * Applies sanitization to break poisoned response patterns
    */
+  /**
+   * Render Discord channel history as ONE labeled transcript. Every line names its
+   * speaker — including Artie's own lines ("Coach Artie (you)") — so a weak model can
+   * tell a group chat apart and never attributes one person's history to another.
+   */
+  private renderDiscordTranscript(
+    discordHistory: Array<{
+      author: string;
+      content: string;
+      timestamp: string;
+      isBot: boolean;
+      isSelf?: boolean;
+    }>,
+    limit: number
+  ): string {
+    const recent = discordHistory.slice(-(limit * 2));
+    const lines = recent
+      .filter((msg) => msg.content && msg.content.trim().length > 0)
+      .map((msg) => {
+        const isSelf = msg.isSelf ?? msg.isBot;
+        if (isSelf) {
+          return `Coach Artie (you): ${this.sanitizeAssistantMessage(msg.content)}`;
+        }
+        // msg.author already carries "Display (@username)[staff]/[bot]" labeling
+        // from the discord side.
+        return `${msg.author}: ${msg.content}`;
+      })
+      .filter((l) => l.split(': ').slice(1).join(': ').trim().length > 0);
+    return lines.join('\n');
+  }
+
   private convertDiscordHistoryToMessages(
     discordHistory: Array<{
       author: string;
@@ -2116,7 +2155,8 @@ ${analysis.summary}`;
     conversationHistory: Array<{ role: 'user' | 'assistant'; content: string }> = [],
     source?: string,
     authorName?: string,
-    promptOrigin: 'user' | 'harness' = 'user'
+    promptOrigin: 'user' | 'harness' = 'user',
+    groupTranscript = ''
   ): Promise<Array<{ role: 'system' | 'user' | 'assistant'; content: string }>> {
     if (DEBUG) {
       logger.info('┌─ MESSAGE CHAIN ASSEMBLY ────────────────────────────────────────┐');
@@ -2191,8 +2231,16 @@ How your incoming context is structured:
       messages.push({ role: 'system', content: contextContent.trim() });
     }
 
-    // 3. Add conversation history
-    if (conversationHistory.length > 0) {
+    // 3. Add conversation history.
+    // Discord group chats come as a single labeled transcript (system block) so the
+    // model can attribute every line to the right speaker. Everything else (DMs from
+    // the DB path) still uses natural role-alternating turns.
+    if (groupTranscript) {
+      messages.push({
+        role: 'system',
+        content: `RECENT CHANNEL TRANSCRIPT (most recent last). This is a MULTI-PERSON group chat — each line is prefixed with WHO said it. Different people are talking; keep them straight. Lines marked "Coach Artie (you)" are things YOU said earlier, and each was aimed at whoever you were replying to at that moment — do NOT assume they were all aimed at, or about, the person speaking now. Only reply to the single live message in the <user_message> block below.\n\n${groupTranscript}`,
+      });
+    } else if (conversationHistory.length > 0) {
       if (DEBUG) {
         logger.info(`│ 💬 Adding ${conversationHistory.length} messages from conversation history`);
       }
