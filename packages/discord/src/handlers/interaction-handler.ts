@@ -5,6 +5,8 @@ import {
   ChatInputCommandInteraction,
   ButtonInteraction,
   SelectMenuInteraction,
+  ModalSubmitInteraction,
+  PermissionsBitField,
 } from 'discord.js';
 import { logger } from '@coachartie/shared';
 import { statusCommand } from '../commands/status.js';
@@ -14,7 +16,46 @@ import { memoryCommand } from '../commands/memory.js';
 import { usageCommand } from '../commands/usage.js';
 import { debugCommand } from '../commands/debug.js';
 import * as syncDiscussionsCommand from '../commands/sync-discussions.js';
-import { quizCommand } from '../commands/quiz.js';
+import {
+  quizCommand,
+  refreshLiveQuiz,
+  postQuizSummary,
+  getScheduleDraft,
+  setScheduleDraft,
+  clearScheduleDraft,
+  getBallotDecks,
+} from '../commands/quiz.js';
+import { parseQuizButtonId } from '../services/quiz-embed.js';
+import { quizSessionManager, isCorrectAnswer } from '../services/quiz-session-manager.js';
+import {
+  parseDailyCustomId,
+  parseScheduleCustomId,
+  parseVoteCustomId,
+  buildAchievementUnlockMessage,
+  buildDailyGameMessage,
+  buildDailyResultMessage,
+  buildDailyShareMessage,
+  buildDeckVoteMessage,
+  buildGuessModal,
+  buildScheduleDraftMessage,
+  DAILY_MODAL_INPUT,
+} from '../services/daily-quiz-embed.js';
+import {
+  castDeckVote,
+  closeDeckPoll,
+  computeUserStats,
+  diffAchievements,
+  fetchUniqueCards,
+  getDeckPollById,
+  getDeckVoteTallies,
+  getOrCreateDailyPuzzle,
+  getUserPlay,
+  recordGuess,
+  markCompleted,
+  markShared,
+  scheduleDailyPuzzle,
+  DAILY_QUESTION_COUNT,
+} from '../services/daily-quiz.js';
 import { watchRepoCommand } from '../commands/watch-repo.js';
 import { unwatchRepoCommand } from '../commands/unwatch-repo.js';
 import { listWatchesCommand } from '../commands/list-watches.js';
@@ -49,6 +90,8 @@ export function setupInteractionHandler(client: Client) {
       await handleButtonInteraction(interaction);
     } else if (interaction.isStringSelectMenu()) {
       await handleSelectMenuInteraction(interaction);
+    } else if (interaction.isModalSubmit()) {
+      await handleModalSubmit(interaction);
     }
   });
 
@@ -172,6 +215,35 @@ async function handleSlashCommand(interaction: ChatInputCommandInteraction) {
 async function handleButtonInteraction(interaction: ButtonInteraction) {
   const buttonText = (interaction.component as any)?.label || interaction.customId;
 
+  // Quiz buttons own the live embed — handle them before the generic intent
+  // processor so we don't accidentally send "Hint" / "Skip" to the LLM.
+  const quizAction = parseQuizButtonId(interaction.customId);
+  if (quizAction) {
+    await handleQuizButton(interaction, quizAction);
+    return;
+  }
+
+  // Daily-quiz buttons (Guess opens modal, Share posts public card).
+  const dailyId = parseDailyCustomId(interaction.customId);
+  if (dailyId) {
+    await handleDailyQuizButton(interaction, dailyId);
+    return;
+  }
+
+  // Admin scheduler buttons (Shuffle / Use / Cancel).
+  const scheduleId = parseScheduleCustomId(interaction.customId);
+  if (scheduleId) {
+    await handleScheduleButton(interaction, scheduleId);
+    return;
+  }
+
+  // Deck vote buttons (Cast / Close).
+  const voteId = parseVoteCustomId(interaction.customId);
+  if (voteId) {
+    await handleVoteButton(interaction, voteId);
+    return;
+  }
+
   // Check if this is an ask-question response
   if (interaction.customId.startsWith('ask_')) {
     await handleAskQuestionResponse(interaction);
@@ -233,6 +305,460 @@ async function handleSelectMenuInteraction(interaction: SelectMenuInteraction) {
       await interaction.editReply(`🔄 **${selectedLabel}**\n\n${status}`);
     },
   });
+}
+
+/**
+ * Handle the action buttons on the live quiz embed (Hint / Skip / End /
+ * Play Again). Each action mutates the session, then re-renders the embed
+ * in place — the Wordle-style "one host message" pattern.
+ */
+async function handleQuizButton(
+  interaction: ButtonInteraction,
+  action: ReturnType<typeof parseQuizButtonId>
+): Promise<void> {
+  const channelId = interaction.channelId;
+  const channel = interaction.channel;
+  if (!channel) {
+    await interaction.reply({ content: 'No channel context.', ephemeral: true });
+    return;
+  }
+
+  quizSessionManager.rememberUsername(
+    channelId,
+    interaction.user.id,
+    interaction.user.username
+  );
+
+  try {
+    switch (action) {
+      case 'hint': {
+        const session = quizSessionManager.getSession(channelId);
+        if (!session) {
+          await interaction.reply({ content: 'No active quiz.', ephemeral: true });
+          return;
+        }
+        const hint = quizSessionManager.revealHint(channelId);
+        if (!hint) {
+          await interaction.reply({ content: 'No more hints available.', ephemeral: true });
+          return;
+        }
+        await interaction.deferUpdate();
+        await refreshLiveQuiz(channel, session);
+        return;
+      }
+
+      case 'skip': {
+        const session = quizSessionManager.getSession(channelId);
+        if (!session) {
+          await interaction.reply({ content: 'No active quiz.', ephemeral: true });
+          return;
+        }
+        await interaction.deferUpdate();
+        const { skippedAnswer, session: next } =
+          await quizSessionManager.skipQuestion(channelId);
+        quizSessionManager.setBanner(
+          channelId,
+          `⏭️ Skipped by ${interaction.user.username}. Answer was **${skippedAnswer}**`
+        );
+        if (next) {
+          await refreshLiveQuiz(channel, next);
+        } else {
+          await postQuizSummary(channel, channelId);
+        }
+        return;
+      }
+
+      case 'end': {
+        const session = quizSessionManager.getSession(channelId);
+        if (!session) {
+          await interaction.reply({ content: 'No active quiz.', ephemeral: true });
+          return;
+        }
+        await interaction.deferUpdate();
+        quizSessionManager.setBanner(
+          channelId,
+          `🛑 Ended by ${interaction.user.username}`
+        );
+        await postQuizSummary(channel, channelId);
+        return;
+      }
+
+      case 'again': {
+        // Lightweight hint to re-run /quiz start — re-launching a quiz needs
+        // the original options (deck, count, ai_judge) so we don't auto-start
+        // with stale parameters.
+        await interaction.reply({
+          content: '🔁 Run `/quiz start` to play another round!',
+          ephemeral: true,
+        });
+        return;
+      }
+    }
+  } catch (error) {
+    logger.error('Quiz button error:', error);
+    try {
+      if (!interaction.replied && !interaction.deferred) {
+        await interaction.reply({
+          content: '❌ Something went wrong handling that button.',
+          ephemeral: true,
+        });
+      }
+    } catch {
+      // already replied
+    }
+  }
+}
+
+/**
+ * Daily quiz button dispatcher. Guess → opens a modal. Share → posts the
+ * public emoji-grid card and disables the share button on the ephemeral.
+ */
+async function handleDailyQuizButton(
+  interaction: ButtonInteraction,
+  parsed: NonNullable<ReturnType<typeof parseDailyCustomId>>
+): Promise<void> {
+  const { action, date, deck } = parsed;
+  const userId = interaction.user.id;
+
+  try {
+    if (action === 'guess') {
+      const play = getUserPlay(userId, date, deck);
+      if (!play || play.completed) {
+        await interaction.reply({
+          content: '⚠️ This game is finished. Start tomorrow\'s with `/quiz daily`.',
+          ephemeral: true,
+        });
+        return;
+      }
+      await interaction.showModal(buildGuessModal(date, deck, play.currentQuestion + 1));
+      return;
+    }
+
+    if (action === 'share') {
+      const play = getUserPlay(userId, date, deck);
+      if (!play || !play.completed) {
+        await interaction.reply({
+          content: '⚠️ Finish the quiz first.',
+          ephemeral: true,
+        });
+        return;
+      }
+      if (play.shared) {
+        await interaction.reply({ content: 'Already shared today.', ephemeral: true });
+        return;
+      }
+
+      await interaction.deferUpdate();
+
+      if (interaction.channel && 'send' in interaction.channel) {
+        await interaction.channel.send(buildDailyShareMessage(play, interaction.user.username));
+      }
+      markShared(userId, date, deck);
+
+      const puzzle = await getOrCreateDailyPuzzle(date, deck);
+      if (puzzle) {
+        const refreshed = getUserPlay(userId, date, deck);
+        if (refreshed) {
+          await interaction.editReply(
+            buildDailyResultMessage(refreshed, puzzle, interaction.user.username)
+          );
+        }
+      }
+      return;
+    }
+
+    // replay or unknown: just acknowledge
+    await interaction.reply({
+      content: '🔁 Come back tomorrow for the next daily!',
+      ephemeral: true,
+    });
+  } catch (error) {
+    logger.error('Daily quiz button error:', error);
+    try {
+      if (!interaction.replied && !interaction.deferred) {
+        await interaction.reply({
+          content: '❌ Something went wrong with that action.',
+          ephemeral: true,
+        });
+      }
+    } catch {
+      // already responded
+    }
+  }
+}
+
+/**
+ * Admin scheduler buttons. Shuffle re-rolls the draft cards; Use these saves
+ * the draft as tomorrow's puzzle for this guild; Cancel discards the draft.
+ */
+async function handleScheduleButton(
+  interaction: ButtonInteraction,
+  parsed: NonNullable<ReturnType<typeof parseScheduleCustomId>>
+): Promise<void> {
+  if (!interaction.guildId) {
+    await interaction.reply({ content: 'Run this in a server.', ephemeral: true });
+    return;
+  }
+  const perms = interaction.memberPermissions;
+  if (!perms?.has(PermissionsBitField.Flags.ManageGuild)) {
+    await interaction.reply({
+      content: '🚫 Need **Manage Server** permission.',
+      ephemeral: true,
+    });
+    return;
+  }
+
+  const { action, date, deck } = parsed;
+  const userId = interaction.user.id;
+  const guildId = interaction.guildId;
+
+  try {
+    if (action === 'shuffle') {
+      await interaction.deferUpdate();
+      const cards = await fetchUniqueCards(deck, DAILY_QUESTION_COUNT);
+      setScheduleDraft(userId, guildId, date, deck, cards);
+      await interaction.editReply(buildScheduleDraftMessage(date, deck, cards));
+      return;
+    }
+
+    if (action === 'save') {
+      const draft = getScheduleDraft(userId, guildId, date, deck);
+      if (!draft || draft.length === 0) {
+        await interaction.reply({
+          content: '⚠️ Draft expired — re-run `/quiz schedule`.',
+          ephemeral: true,
+        });
+        return;
+      }
+      await interaction.deferUpdate();
+      scheduleDailyPuzzle(date, deck, guildId, draft, userId);
+      clearScheduleDraft(userId, guildId, date, deck);
+      await interaction.editReply(
+        buildScheduleDraftMessage(date, deck, draft, { saved: true })
+      );
+      return;
+    }
+
+    if (action === 'cancel') {
+      await interaction.deferUpdate();
+      clearScheduleDraft(userId, guildId, date, deck);
+      await interaction.editReply(
+        buildScheduleDraftMessage(date, deck, [], { cancelled: true })
+      );
+      return;
+    }
+  } catch (error) {
+    logger.error('Schedule button error:', error);
+    try {
+      if (!interaction.replied && !interaction.deferred) {
+        await interaction.reply({
+          content: '❌ Something went wrong.',
+          ephemeral: true,
+        });
+      }
+    } catch {
+      // already replied
+    }
+  }
+}
+
+/**
+ * Deck vote buttons. Cast records/updates a member's vote; Close (admin only)
+ * tallies, picks the winner, fetches cards, and schedules tomorrow's puzzle.
+ */
+async function handleVoteButton(
+  interaction: ButtonInteraction,
+  parsed: NonNullable<ReturnType<typeof parseVoteCustomId>>
+): Promise<void> {
+  const poll = getDeckPollById(parsed.pollId);
+  if (!poll) {
+    await interaction.reply({ content: '⚠️ Poll not found.', ephemeral: true });
+    return;
+  }
+
+  // The ballot at vote time is whatever the guild's current allow-list says.
+  // Stored votes for since-removed decks still tally; the embed just won't
+  // render them. Good enough.
+  const ballot = getBallotDecks(poll.guildId);
+
+  try {
+    if (parsed.action === 'cast') {
+      if (poll.status !== 'open') {
+        await interaction.reply({
+          content: '⚠️ Voting is closed for this poll.',
+          ephemeral: true,
+        });
+        return;
+      }
+      await interaction.deferUpdate();
+      castDeckVote(poll.id, interaction.user.id, parsed.deck);
+      const tallies = getDeckVoteTallies(poll.id, ballot);
+      await interaction.editReply(buildDeckVoteMessage(poll, tallies));
+      return;
+    }
+
+    if (parsed.action === 'close') {
+      if (!interaction.memberPermissions?.has(PermissionsBitField.Flags.ManageGuild)) {
+        await interaction.reply({
+          content: '🚫 Only admins can close the vote.',
+          ephemeral: true,
+        });
+        return;
+      }
+      if (poll.status === 'closed') {
+        await interaction.reply({
+          content: '⚠️ Vote is already closed.',
+          ephemeral: true,
+        });
+        return;
+      }
+
+      await interaction.deferUpdate();
+      const { winningDeck, tallies } = closeDeckPoll(poll.id, ballot);
+
+      // Auto-schedule the winning deck's cards as tomorrow's puzzle. If the
+      // fetch fails or there were no votes, we still publish the closed
+      // embed — admin can `/quiz schedule` manually.
+      let scheduledOk = false;
+      if (winningDeck) {
+        try {
+          const cards = await fetchUniqueCards(winningDeck, DAILY_QUESTION_COUNT);
+          if (cards.length > 0) {
+            scheduleDailyPuzzle(
+              poll.targetDate,
+              winningDeck,
+              poll.guildId,
+              cards,
+              interaction.user.id
+            );
+            scheduledOk = true;
+          }
+        } catch (e) {
+          logger.warn('Vote close: failed to fetch cards for winning deck:', e);
+        }
+      }
+
+      const refreshed = getDeckPollById(poll.id) ?? poll;
+      await interaction.editReply(
+        buildDeckVoteMessage(refreshed, tallies, { winningDeck, scheduledOk })
+      );
+      return;
+    }
+  } catch (error) {
+    logger.error('Vote button error:', error);
+    try {
+      if (!interaction.replied && !interaction.deferred) {
+        await interaction.reply({
+          content: '❌ Something went wrong handling that vote.',
+          ephemeral: true,
+        });
+      }
+    } catch {
+      // already responded
+    }
+  }
+}
+
+/**
+ * Modal submit dispatcher. Only handles the daily quiz answer modal for now.
+ */
+async function handleModalSubmit(interaction: ModalSubmitInteraction): Promise<void> {
+  const parsed = parseDailyCustomId(interaction.customId);
+  if (!parsed || parsed.action !== 'modal') {
+    await interaction.reply({
+      content: '⚠️ Unknown modal submission.',
+      ephemeral: true,
+    });
+    return;
+  }
+
+  const { date, deck } = parsed;
+  const userId = interaction.user.id;
+  const guess = interaction.fields.getTextInputValue(DAILY_MODAL_INPUT).trim();
+
+  try {
+    const puzzle = await getOrCreateDailyPuzzle(date, deck);
+    const play = getUserPlay(userId, date, deck);
+    if (!puzzle || !play) {
+      await interaction.reply({
+        content: '⚠️ No active daily quiz for you. Run `/quiz daily` to start.',
+        ephemeral: true,
+      });
+      return;
+    }
+    if (play.completed) {
+      await interaction.reply({
+        content: '⚠️ Today\'s game is already finished.',
+        ephemeral: true,
+      });
+      return;
+    }
+
+    const card = puzzle.cards[play.currentQuestion];
+    if (!card) {
+      await interaction.reply({
+        content: '⚠️ Out of questions — finishing up.',
+        ephemeral: true,
+      });
+      return;
+    }
+
+    const correct = isCorrectAnswer(guess, card.back);
+    let updatedPlay = recordGuess(userId, date, deck, guess, correct);
+    if (!updatedPlay) {
+      await interaction.reply({ content: '❌ Failed to record guess.', ephemeral: true });
+      return;
+    }
+
+    const isLast = updatedPlay.currentQuestion >= DAILY_QUESTION_COUNT;
+
+    // Diff achievements across the markCompleted boundary so we can post a
+    // celebratory message in channel for any badges this play unlocked.
+    let unlockedAchievements: ReturnType<typeof diffAchievements> = [];
+    if (isLast) {
+      const before = computeUserStats(userId, interaction.guildId);
+      updatedPlay = markCompleted(userId, date, deck) ?? updatedPlay;
+      const after = computeUserStats(userId, interaction.guildId);
+      unlockedAchievements = diffAchievements(before, after);
+    }
+
+    const payload = isLast
+      ? buildDailyResultMessage(updatedPlay, puzzle, interaction.user.username)
+      : buildDailyGameMessage(updatedPlay, puzzle);
+
+    // Edit the ephemeral message the Guess button lived on. Only available
+    // when the modal was launched from a message component (which it was —
+    // we showed it from a button). Falls back to a fresh ephemeral reply.
+    if (interaction.isFromMessage()) {
+      await interaction.update(payload);
+    } else {
+      await interaction.reply({ ...payload, ephemeral: true });
+    }
+
+    // Public celebration — drops in the same channel where they ran /quiz daily.
+    // Social proof + tags the player so it surfaces in their notifications.
+    if (unlockedAchievements.length > 0 && interaction.channel && 'send' in interaction.channel) {
+      try {
+        await interaction.channel.send(
+          buildAchievementUnlockMessage(interaction.user, unlockedAchievements)
+        );
+      } catch (e) {
+        logger.warn('Failed to post achievement unlock:', e);
+      }
+    }
+  } catch (error) {
+    logger.error('Daily quiz modal submit error:', error);
+    try {
+      if (!interaction.replied && !interaction.deferred) {
+        await interaction.reply({
+          content: '❌ Failed to record your guess.',
+          ephemeral: true,
+        });
+      }
+    } catch {
+      // already responded
+    }
+  }
 }
 
 /**

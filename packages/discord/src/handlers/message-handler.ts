@@ -43,6 +43,7 @@ import { getForumTraversal } from '../services/forum-traversal.js';
 import { checkOutbound } from '../services/outbound-gate.js';
 import { getMentionProxyService } from '../services/mention-proxy-service.js';
 import { quizSessionManager } from '../services/quiz-session-manager.js';
+import { refreshLiveQuiz, postQuizSummary } from '../commands/quiz.js';
 import Chance from 'chance';
 import { readFileSync, existsSync, unlinkSync } from 'fs';
 import { join } from 'path';
@@ -937,59 +938,58 @@ export function setupMessageHandler(client: Client) {
 
     // Check if this channel has an active quiz and if this message is an answer
     if (quizSessionManager.hasActiveQuiz(message.channelId)) {
-      const result = quizSessionManager.checkAnswer(
+      const initial = quizSessionManager.checkAnswer(
         message.channelId,
         message.author.id,
         message.content
       );
 
+      // String match failed but AI judge is on — fire an async LLM check.
+      // Race: another user may answer correctly first; in that case the LLM
+      // result is dropped by the manager.
+      const result =
+        initial === 'maybe'
+          ? await quizSessionManager.checkAnswerWithAI(
+              message.channelId,
+              message.author.id,
+              message.content
+            )
+          : initial;
+
       if (result && result.correct) {
-        // User got the answer right!
         logger.info(
-          `✅ Quiz answer correct! User: ${message.author.tag}, Channel: ${message.channelId}`
+          `✅ Quiz answer correct! User: ${message.author.tag}, Channel: ${message.channelId}, streak=${result.winnerStreak}${result.judgedByAI ? ' (AI)' : ''}`
         );
 
-        // React to the winning message
+        // React on the user's answer message — the live embed updates separately.
         try {
-          await message.react('✅');
+          await message.react(result.judgedByAI ? '🤖' : '✅');
         } catch (e) {
           logger.warn('Failed to add reaction to quiz answer:', e);
         }
 
-        // Build response
-        let response = `✅ **${message.author}** got it! (+1 point)\n`;
-        response += `Answer: **${result.correctAnswer}**\n\n`;
-        response += `📊 ${quizSessionManager.formatScores(result.currentScores)}\n`;
+        quizSessionManager.rememberUsername(
+          message.channelId,
+          message.author.id,
+          message.author.username
+        );
+
+        const streakBadge = quizSessionManager.formatStreakBadge(result.winnerStreak);
+        const judgeNote = result.judgedByAI ? ' _(AI judged)_' : '';
+        const banner = `✅ **${message.author.username}** got it!${streakBadge}${judgeNote} · Answer: **${result.correctAnswer}**`;
+        quizSessionManager.setBanner(message.channelId, banner);
 
         if (result.quizEnded) {
-          // Quiz is over
-          const scores = quizSessionManager.endQuiz(message.channelId);
-          if (scores) {
-            response += `\n🏁 **Quiz Complete!**\n`;
-            const winners = quizSessionManager.getWinners(scores);
-            if (winners.length === 1) {
-              response += `🎉 **Winner: <@${winners[0]}>!**`;
-            } else if (winners.length > 1) {
-              response += `🎉 **It's a tie! Winners: ${winners.map((w: string) => `<@${w}>`).join(', ')}**`;
-            }
-          }
+          await postQuizSummary(message.channel, message.channelId);
         } else {
-          // Move to next question
           const nextSession = await quizSessionManager.nextQuestion(message.channelId);
-          if (nextSession && nextSession.currentCard) {
-            response += `\n---\n\n`;
-            response += `**Question ${nextSession.questionNumber}/${nextSession.totalQuestions}**\n`;
-            response += nextSession.currentCard.front;
-            if (nextSession.currentCard.hints.length > 0) {
-              response += `\n\n_💡 Hints available: ${nextSession.currentCard.hints.length}_`;
-            }
+          if (nextSession) {
+            await refreshLiveQuiz(message.channel, nextSession);
+          } else {
+            await postQuizSummary(message.channel, message.channelId);
           }
         }
-
-        if ('send' in message.channel) {
-          await message.channel.send(response);
-        }
-        return; // Don't process this message further
+        return;
       }
     }
 
