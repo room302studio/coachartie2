@@ -35,6 +35,7 @@ import {
   GuildConfig,
 } from '../config/guild-whitelist.js';
 import { LAUNCH_GUILD_ID, launchStatusLine } from '../config/launch-config.js';
+import { getReviewTallyLine } from '../services/steam-review-notes.js';
 import {
   getGitHubIntegrationSafe,
   isGitHubIntegrationReady,
@@ -1503,13 +1504,16 @@ export function setupMessageHandler(client: Client) {
         // channels and drags them back into bug-collector voice — which is exactly
         // why Yard Artie kept begging for bug reports in #prison-yard.
         if (channelPersona?.systemPrompt) {
-          // Live launch countdown, precomputed here because the LLM can't do date math.
+          // Live launch countdown + review tally, precomputed here because the LLM
+          // can't do date math and doesn't get to invent review numbers.
           const launchLine =
             message.guildId === LAUNCH_GUILD_ID ? launchStatusLine() : null;
+          const tallyLine =
+            message.guildId === LAUNCH_GUILD_ID ? getReviewTallyLine() : null;
           const personaContext = `🎭 CHANNEL PERSONA — this defines who you are and how you behave in this channel. It OVERRIDES any other guild focus/mode (including any "bugs only" or on-topic mandate). Do not solicit bug reports here.
 
 ${channelPersona.systemPrompt}
-${launchLine ? `\n⏰ ${launchLine}\n` : ''}
+${launchLine ? `\n⏰ ${launchLine}\n` : ''}${tallyLine ? `\n📊 ${tallyLine}\n` : ''}
 ---
 `;
           guildContextToPass = personaContext;

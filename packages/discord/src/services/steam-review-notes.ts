@@ -366,3 +366,27 @@ Output ONLY the markdown body of the section — no top-level heading, no code f
 }
 
 export const steamReviewNotes = SteamReviewNotes.getInstance();
+
+/**
+ * One-line live review tally for prompt injection (Sterling Artie's anxiety metric).
+ * Same precomputed-number rule as launchStatusLine: LLMs don't get to invent stats.
+ * Cached 60s; returns null until the notes doc has a real tally.
+ */
+let tallyLineCache: { at: number; line: string | null } | null = null;
+export function getReviewTallyLine(): string | null {
+  const now = Date.now();
+  if (tallyLineCache && now - tallyLineCache.at < 60_000) return tallyLineCache.line;
+  let line: string | null = null;
+  try {
+    const notes = readFileSync(join(process.cwd(), '..', '..', NOTES_PATH), 'utf-8');
+    const m = notes.match(/^\*\*Tally:\*\* (.+)$/m);
+    if (m && !m[1].startsWith('(')) {
+      const tally = m[1].replace(/_\(auto-counted.*$/, '').trim();
+      line = `LIVE STEAM REVIEW TALLY: ${tally} This number is real and precomputed — quote it exactly, never invent or recompute it.`;
+    }
+  } catch {
+    // notes doc not created yet — no tally line
+  }
+  tallyLineCache = { at: now, line };
+  return line;
+}
