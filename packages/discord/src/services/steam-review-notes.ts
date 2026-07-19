@@ -200,7 +200,10 @@ export class SteamReviewNotes {
         : '❓';
     const field = (name: RegExp): string =>
       embed.fields.find((f) => name.test(f.name))?.value || '?';
-    const text = (embed.description || '(no text)').replace(/\s+/g, ' ').trim();
+    // Essay-length reviews get truncated in the log — a handful of untruncated ones
+    // blew the analysis prompt past the capabilities body limit (413).
+    let text = (embed.description || '(no text)').replace(/\s+/g, ' ').trim();
+    if (text.length > 600) text = text.slice(0, 600) + '… [truncated]';
     const d = msg.createdAt.toISOString();
     return {
       date: `${d.slice(0, 10)} ${d.slice(11, 16)}`,
@@ -287,13 +290,24 @@ export class SteamReviewNotes {
   }
 
   private async refreshAnalysis(notes: string): Promise<void> {
-    const log = this.getLogSection(notes);
+    const fullLog = this.getLogSection(notes);
+    // Hard cap the prompt: express.json() on capabilities defaults to a 100kb body limit,
+    // and the log grows forever. Older reviews live on in the tally + previous analysis.
+    const LOG_PROMPT_MAX = 60_000;
+    const log =
+      fullLog.length > LOG_PROMPT_MAX
+        ? '(…earlier reviews omitted — totals are in the tally, themes carried in previous analysis)\n' +
+          fullLog.slice(fullLog.length - LOG_PROMPT_MAX).replace(/^[^\n]*\n/, '')
+        : fullLog;
+    const tally = notes.match(/^\*\*Tally:\*\*.*$/m)?.[0] || '';
     const prev = this.getAnalysisSection(notes);
     const chatter = this.chatterBuffer.join('\n') || '(none captured this window)';
 
     const prompt = `You are Artie, keeping a private intelligence notebook on how Subway Builder's Steam launch (Jul 17 2026) is being received. This document is for EJ and Colin — be honest, specific, and useful, not promotional.
 
-COMPLETE REVIEW LOG (every Steam review so far, oldest first):
+${tally}
+
+REVIEW LOG (oldest first):
 ${log || '(empty)'}
 
 RECENT COMMUNITY DISCUSSION in #steam-reviews (players reacting to the reviews):

@@ -1789,11 +1789,27 @@ async function fetchChannelHistory(message: Message): Promise<
         if (msg.author.bot) label += ' [bot]';
         else if (isStaff) label += ' [staff]';
 
+        // Embeds are where bots keep their actual content (Steamy's Steam reviews, GitHub
+        // events) — msg.content is empty for those, so every such post read as a blank
+        // line and Artie couldn't discuss the review right above him. Render them as text.
+        let content = msg.cleanContent || msg.content;
+        if (msg.embeds.length > 0) {
+          const embedText = msg.embeds
+            .map((e) => {
+              const fields = (e.fields || []).map((f) => `${f.name}: ${f.value}`).join('; ');
+              return [e.title, e.description, fields].filter(Boolean).join(' — ');
+            })
+            .filter(Boolean)
+            .join(' | ')
+            .slice(0, 600);
+          if (embedText) content = content ? `${content}\n[embed] ${embedText}` : `[embed] ${embedText}`;
+        }
+
         return {
           author: label,
           // cleanContent resolves <@id> mentions to readable @names — raw IDs in
           // history were making Artie mix up who said what to whom
-          content: msg.cleanContent || msg.content,
+          content,
           timestamp: msg.createdAt.toISOString(),
           isBot: msg.author.bot,
           // Only Artie's OWN messages become assistant turns downstream. Without this,
