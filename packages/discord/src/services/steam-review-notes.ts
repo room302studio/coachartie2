@@ -113,7 +113,10 @@ export class SteamReviewNotes {
   // ---------------------------------------------------------------------------
 
   private notesFullPath(): string {
-    return join(process.cwd(), NOTES_PATH);
+    // Repo root, not package cwd: pm2 runs this service with cwd packages/discord, but the
+    // <readfile> capability (packages/capabilities/src/capabilities/development/filesystem.ts)
+    // resolves paths from resolve(cwd, '../..') — the doc must land where Artie can read it.
+    return join(process.cwd(), '..', '..', NOTES_PATH);
   }
 
   private readNotes(): string {
