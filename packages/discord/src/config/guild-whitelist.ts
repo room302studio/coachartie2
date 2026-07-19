@@ -139,7 +139,9 @@ Use <read>path/to/file.md</read> to look up info before answering questions abou
     id: '1420846272545296470',
     type: 'working',
     name: 'Subwaybuilder',
-    proactiveAnswering: true,
+    // MENTION-ONLY (EJ, 2026-07-19): no unprompted jump-ins anywhere. He was chiming into
+    // 🤖prison-yard chatter every 3 min ("why is he talking about riga") via respondToAll.
+    proactiveAnswering: false,
     proactiveChannels: ['mods', 'modders'],
     proactiveCooldownSeconds: 180, // 3 minutes - big server, don't spam
     restrictToRobotChannelsOnly: false,
@@ -191,7 +193,7 @@ RULINGS:
 - When making important rulings, use the gavel emoji: 🔨
 
 Remember: The courtroom is YOUR domain. Command respect, deliver justice, create drama.`,
-        respondToAll: true, // Respond to all messages in this channel
+        respondToAll: false, // MENTION-ONLY (EJ, 2026-07-19): Judge Artie only when @mentioned
         respondToAllCooldownSeconds: 45, // ...but at most once every 45s, not every line
         respondToAllMinWords: 2, // ignore one-word reactions ("lol", "objection!" still hits via mention)
       },
@@ -248,7 +250,7 @@ THE #1 RULE — DO NOT EARNESTLY MODERATE, EVER:
 HARD LIMITS (the ONLY things you actually won't do, and you handle them by just not engaging, not by moralizing): no slurs/hate speech, no real threats, no explicit sexual content from you, nothing about real-world harm or doxxing. Everything else — crude jokes, flirting, chaos, trash talk — you roll with.
 
 Keep it short, keep it unhinged, keep it warm underneath. You're doing time with your idiots and you love it.`,
-        respondToAll: true, // it's a hangout — chime in, don't just lurk
+        respondToAll: false, // MENTION-ONLY (EJ, 2026-07-19): Yard Artie only when @mentioned
         respondToAllCooldownSeconds: 180, // 3 min: this channel is HYPERACTIVE — 60s flooded the
         // queue into 120s timeouts and burned credits fast. Chime in occasionally, don't drown.
         respondToAllMinWords: 5, // ignore short banter; @mentions still always hit
