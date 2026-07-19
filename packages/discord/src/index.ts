@@ -43,6 +43,7 @@ import { initializeGitHubIntegration } from './services/github-integration.js';
 import { initializeMentionProxyService } from './services/mention-proxy-service.js';
 import { initializeGitHubSync } from './services/github-sync.js';
 import { observationalLearning } from './services/observational-learning.js';
+import { steamReviewNotes } from './services/steam-review-notes.js';
 
 export const client = new Client({
   intents: [
@@ -279,6 +280,16 @@ async function start() {
         console.error('❌ Observational learning init failed:', error);
       }
 
+      // Initialize Steam review note-taking (#steam-reviews → ongoing situation doc)
+      try {
+        steamReviewNotes.initialize(client);
+        logger.info('✅ Steam review notes enabled');
+        console.log('✅ Steam review notes enabled');
+      } catch (error) {
+        logger.warn('Failed to initialize Steam review notes:', error);
+        console.error('❌ Steam review notes init failed:', error);
+      }
+
       writeStatus('ready', {
         username: client.user?.tag,
         guilds: client.guilds.cache.size,
@@ -358,6 +369,7 @@ process.on('SIGTERM', async () => {
   apiServer.stop();
   jobMonitor.stopMonitoring();
   observationalLearning.shutdown();
+  steamReviewNotes.shutdown();
   client.destroy();
   process.exit(0);
 });
@@ -371,6 +383,7 @@ process.on('SIGINT', async () => {
   apiServer.stop();
   jobMonitor.stopMonitoring();
   observationalLearning.shutdown();
+  steamReviewNotes.shutdown();
   client.destroy();
   process.exit(0);
 });

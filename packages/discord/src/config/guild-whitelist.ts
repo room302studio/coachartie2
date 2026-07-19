@@ -155,6 +155,8 @@ Use <read>path/to/file.md</read> to look up info before answering questions abou
       'bug-reports',
       'litigation', // Observe the courtroom drama
       'robot', // Learn from robot channel interactions (especially reactions/feedback)
+      'steam-reviews', // Community reaction to Steam reviews (the reviews themselves are
+      // bot embeds handled by the dedicated steam-review-notes service)
     ],
     contentModeration: 'strict',
     scratchpadPath: 'reference-docs/guild-notes/subwaybuilder.md',
