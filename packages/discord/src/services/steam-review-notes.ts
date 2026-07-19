@@ -75,6 +75,9 @@ export class SteamReviewNotes {
   private timer: NodeJS.Timeout | null = null;
   private running = false;
   private lastAnalysisAt = 0;
+  // True when the log has entries the analysis hasn't seen. Starts true so the first
+  // cycle after a restart reconciles any refresh that failed before the restart.
+  private analysisPending = true;
   private chatterBuffer: string[] = [];
   private readonly CAPABILITIES_URL = process.env.CAPABILITIES_URL || 'http://localhost:47324';
 
@@ -252,7 +255,6 @@ export class SteamReviewNotes {
       let notes = this.readNotes();
       const cursor = this.getCursor(notes);
       const messages = await this.fetchNewMessages(channel, cursor);
-      if (messages.length === 0) return;
 
       const reviews: ReviewEntry[] = [];
       for (const msg of messages) {
@@ -277,11 +279,14 @@ export class SteamReviewNotes {
         // warn-level: prod console hides info, and new reviews are worth seeing in the log
         logger.warn(`📓 Logged ${reviews.length} new Steam review(s) (${messages.length} msgs scanned)`);
       }
-      notes = this.setCursor(notes, messages[messages.length - 1].id);
-      writeFileSync(this.notesFullPath(), notes, 'utf-8');
+      if (messages.length > 0) {
+        notes = this.setCursor(notes, messages[messages.length - 1].id);
+        writeFileSync(this.notesFullPath(), notes, 'utf-8');
+      }
 
+      if (reviews.length > 0) this.analysisPending = true;
       const analysisDue = Date.now() - this.lastAnalysisAt > ANALYSIS_MIN_INTERVAL_MS;
-      if (reviews.length > 0 && analysisDue) {
+      if (this.analysisPending && analysisDue && this.getLogSection(notes)) {
         await this.refreshAnalysis(notes);
       }
     } finally {
@@ -351,6 +356,7 @@ Output ONLY the markdown body of the section — no top-level heading, no code f
       const fresh = this.readNotes();
       writeFileSync(this.notesFullPath(), this.replaceAnalysis(fresh, stamped), 'utf-8');
       this.lastAnalysisAt = Date.now();
+      this.analysisPending = false;
       this.chatterBuffer = [];
       logger.warn(`📓 Steam review situation analysis refreshed (est. $${result.cost?.toFixed(4)})`);
     } catch (error) {
