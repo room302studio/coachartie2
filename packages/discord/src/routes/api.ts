@@ -294,6 +294,29 @@ export function createApiRouter(discordClient: Client): Router {
     }
   });
 
+  // POST /api/guilds/:guildId/nickname - set/clear Artie's OWN nickname in a guild.
+  // Receiving end of the discord-nickname capability (which was 404ing against this
+  // missing route since 2026-07-01). Body: { nickname: string | null } — null resets.
+  router.post('/guilds/:guildId/nickname', async (req: Request, res: Response) => {
+    try {
+      const { guildId } = req.params;
+      const raw = (req.body as { nickname?: string | null }).nickname;
+      const nickname =
+        raw == null || !String(raw).trim() ? null : String(raw).trim().slice(0, 32);
+      const guild = await discordClient.guilds.fetch(guildId);
+      const me = guild.members.me ?? (await guild.members.fetchMe());
+      await me.setNickname(nickname, 'Artie renamed himself');
+      logger.info(`🏷️ Nickname in ${guild.name}: ${nickname || '(default)'}`);
+      res.json({ success: true, nickname });
+    } catch (error) {
+      logger.error('Nickname change failed:', error);
+      res.status(500).json({
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  });
+
   // POST /api/dm - Send a direct message to a user
   router.post('/dm', async (req: Request, res: Response) => {
     try {
