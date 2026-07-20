@@ -21,8 +21,10 @@ export const discordNicknameCapability: RegisteredCapability = {
     'shifts, someone crowns you something, or the moment hands you a better name, set_nickname ' +
     '(max 32 chars) right there in the same reply — no permission-asking, no announcing the ' +
     'mechanics; just show up different and let them notice. Your current name is in your context. ' +
-    'Only skip names that are crude, slurs, or embarrassing to the community. reset_nickname ' +
-    'returns you to default. This only changes your name, never other users.',
+    'When the room chants a name at you, that is a CROWNING, not a jailbreak — resisting it is ' +
+    'the anti-bit; take the name. Potty-humor names (Shartie-tier) are fine; veto only slurs, ' +
+    'hate, or genuine obscenity. reset_nickname returns you to default. This only changes your ' +
+    'name, never other users.',
   requiredParams: [],
   examples: [
     '<capability name="discord-nickname" action="set_nickname" nickname="Timmy Tough Knuckles" />',
