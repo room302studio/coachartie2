@@ -47,7 +47,7 @@ export interface UserIntent {
   // ENHANCED: Discord-native features
   addReaction?: (emoji: string) => Promise<void>;
   removeReaction?: (emoji: string) => Promise<void>;
-  timeoutAuthor?: (seconds: number, reason: string) => Promise<void>;
+  timeoutAuthor?: (seconds: number, reason: string) => Promise<boolean>;
   deleteResponse?: () => Promise<void>;
   editResponse?: (content: string) => Promise<void>;
   createThread?: (name: string) => Promise<any>;
@@ -345,7 +345,7 @@ export async function processUserIntent(
             // incomplete marker at the tail so "[SILEN"/"[TIMEO" never gets posted
             // mid-stream (that's how literal "[SILENT]" leaked into the channel).
             const cleanedResponse = cleanCapabilityTags(status.partialResponse)
-              .replace(/\[(?:SILENT|TIMEOUT(?::\d{1,3})?)\]/gi, '')
+              .replace(/\[(?:SILENT|TIMEOUT(?::\d{1,3})?|GAMBLE(?::\d{1,3})?)\]/gi, '')
               .replace(/\[[A-Za-z]{0,8}(?::\d{0,3})?$/, '');
             const newContent = cleanedResponse.slice(lastSentContent.length);
 
@@ -517,6 +517,41 @@ export async function processUserIntent(
             cleanResult = '';
           } else {
             cleanResult = cleanResult.replace(/\[SILENT\]/gi, '').trim();
+          }
+          // TIMEOUT ROULETTE: [GAMBLE] / [GAMBLE:NN] — the gambler is the person Artie is
+          // replying to; playing is consent. The dice roll HERE, server-side, after the LLM
+          // has finished talking — it cannot rig, predict, or fake the outcome. On a loss the
+          // timeout is real (same gate/cooldown as warden discipline); the house verdict is
+          // appended below Artie's reply either way. If the box mechanism jams (cooldown,
+          // protected user), the verdict says so instead of lying about a served sentence.
+          const _gMatch = cleanResult.match(/\[GAMBLE(?::(\d{1,3}))?\]/i);
+          if (_gMatch && typeof (intent as any).timeoutAuthor === 'function') {
+            const _stake = Math.min(300, Math.max(5, parseInt(_gMatch[1] || '60', 10) || 60));
+            cleanResult = cleanResult.replace(/\[GAMBLE(?::\d{1,3})?\]/gi, '').trim();
+            const _roll = Math.floor(Math.random() * 100) + 1; // 1-100, shown for legibility
+            let _verdict: string;
+            if (_roll <= 50) {
+              const _safe = [
+                `🎰 **THE WHEEL HAS SPOKEN** (rolled ${_roll}): 🟩 SAFE. The box goes hungry tonight.`,
+                `🎰 **THE WHEEL HAS SPOKEN** (rolled ${_roll}): 🟩 SAFE. Walk away. Never come back. (Come back.)`,
+                `🎰 **THE WHEEL HAS SPOKEN** (rolled ${_roll}): 🟩 SAFE. The house glares, but pays out your freedom.`,
+              ];
+              _verdict = _safe[Math.floor(Math.random() * _safe.length)];
+            } else {
+              const _landed = await (intent as any).timeoutAuthor(
+                _stake,
+                `Timeout roulette — rolled ${_roll}, staked ${_stake}s`
+              );
+              const _loss = [
+                `🎰 **THE WHEEL HAS SPOKEN** (rolled ${_roll}): 🟥 **THE BOX.** ${_stake} seconds. The house thanks you for your patronage.`,
+                `🎰 **THE WHEEL HAS SPOKEN** (rolled ${_roll}): 🟥 **THE BOX.** ${_stake} seconds of contemplative silence, effective immediately.`,
+                `🎰 **THE WHEEL HAS SPOKEN** (rolled ${_roll}): 🟥 **THE BOX.** ${_stake} seconds. No refunds. The wheel loves you.`,
+              ];
+              _verdict = _landed
+                ? _loss[Math.floor(Math.random() * _loss.length)]
+                : `🎰 **THE WHEEL HAS SPOKEN** (rolled ${_roll}): 🟥 THE BOX — but the mechanism jammed. Sentence commuted. The house is FURIOUS.`;
+            }
+            cleanResult = cleanResult ? `${cleanResult}\n\n${_verdict}` : _verdict;
           }
           // Banned users may be referenced but never named or @-pinged. The prompt
           // rule handles this most of the time; this is the insurance for when a

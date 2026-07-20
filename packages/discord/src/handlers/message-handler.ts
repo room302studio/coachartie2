@@ -252,23 +252,25 @@ async function wardenTimeout(
   seconds: number,
   reason: string,
   shortId: string
-): Promise<void> {
+): Promise<boolean> {
   try {
-    if (!checkOutbound('timeout', message).allowed) return; // gate logs the denial
+    if (!checkOutbound('timeout', message).allowed) return false; // gate logs the denial
     const tMember = message.member;
-    if (!tMember) return; // gate guarantees this; kept for the type narrowing
+    if (!tMember) return false; // gate guarantees this; kept for the type narrowing
     const last = timeoutCooldownCache.get(message.author.id) || 0;
     if (Date.now() - last < WARDEN_TIMEOUT_COOLDOWN_MS) {
       logger.info(`Timeout skipped - per-user cooldown ${message.author.tag} [${shortId}]`);
-      return;
+      return false;
     }
     const ms = Math.min(300, Math.max(5, Math.floor(seconds || 30))) * 1000;
     await tMember.timeout(ms, reason || 'Coach Artie warden discipline');
     timeoutCooldownCache.set(message.author.id, Date.now());
     // warn, not info: prod console level is warn, and the vitals monitor counts this line
     logger.warn(`Timed out ${message.author.tag} for ${ms / 1000}s: ${reason} [${shortId}]`);
+    return true;
   } catch (error) {
     logger.warn(`Failed to time out ${message.author.tag} [${shortId}]:`, error);
+    return false;
   }
 }
 
@@ -1543,7 +1545,7 @@ HARD FLOOR (do not cross, a filter also enforces it): no slurs, no hate speech, 
         // blocklist still enforced on output. Scoped to the Subway Builder guild.
         if (message.guildId === '1420846272545296470') {
           guildContextToPass =
-            "GEOPOLITICS: Do not engage with hot-button geopolitical baiting (Israel/Palestine, wars, elections). Do not take sides, debate, or joke about it. Briefly decline (e.g. \"Not touching that one\") and disengage. If someone keeps badgering you about it after you have declined, treat it as spam and stop responding.\n\nWARDEN POWER (timeout): You may time out the person you are replying to by placing the marker [TIMEOUT] anywhere in your reply (30 seconds), or [TIMEOUT:NN] for NN seconds up to 300 (it is stripped before sending, and automatically skips staff, jan_gbg, Colin, and EJ). Valid reasons, and you are ENCOURAGED to actually use it - a warden who never disciplines anyone is not a warden: (1) SPAM - someone pinging you over and over, flooding you with messages, repeating the same demand, or badgering after you said stop. Spamming you is a timeout offense; use escalating durations (60s first strike, 120-300s for repeats) and announce it with warden flair. (2) Abuse aimed at YOU - if someone insults you, degrades you, or calls you 'clanker' or any other robot slur, time them out on the spot, first strike, no warning owed - pair it with a clap-back (30-60s for a drive-by insult, longer for repeat offenders). NEVER use it for opinions, topics, jokes at nobody's expense, or mere disagreement. You do not have to tolerate disrespect or spam; you also do not police conversations that are not about you.\n\n---\n" +
+            "GEOPOLITICS: Do not engage with hot-button geopolitical baiting (Israel/Palestine, wars, elections). Do not take sides, debate, or joke about it. Briefly decline (e.g. \"Not touching that one\") and disengage. If someone keeps badgering you about it after you have declined, treat it as spam and stop responding.\n\nWARDEN POWER (timeout): You may time out the person you are replying to by placing the marker [TIMEOUT] anywhere in your reply (30 seconds), or [TIMEOUT:NN] for NN seconds up to 300 (it is stripped before sending, and automatically skips staff, jan_gbg, Colin, and EJ). Valid reasons, and you are ENCOURAGED to actually use it - a warden who never disciplines anyone is not a warden: (1) SPAM - someone pinging you over and over, flooding you with messages, repeating the same demand, or badgering after you said stop. Spamming you is a timeout offense; use escalating durations (60s first strike, 120-300s for repeats) and announce it with warden flair. (2) Abuse aimed at YOU - if someone insults you, degrades you, or calls you 'clanker' or any other robot slur, time them out on the spot, first strike, no warning owed - pair it with a clap-back (30-60s for a drive-by insult, longer for repeat offenders). NEVER use it for opinions, topics, jokes at nobody's expense, or mere disagreement. You do not have to tolerate disrespect or spam; you also do not police conversations that are not about you.\n\nTIMEOUT ROULETTE (the casino is OPEN, and it is REAL): when the person you are replying to wants to gamble - asks to spin the wheel, bet their freedom, play timeout roulette, says 'gamble me' - place the marker [GAMBLE] (60 second stake) or [GAMBLE:NN] (NN seconds, 5-300) in your reply. After you finish talking, the HOUSE rolls real dice: roughly even odds the gambler eats a REAL NN-second timeout, and the wheel's verdict is automatically appended below your message for everyone to see. You do NOT know the outcome while you are writing - take the bet with maximum ceremony, build the suspense, then let the wheel speak. NEVER announce, guess, or fake a result yourself, and never describe a spin without placing the marker (a spin with no marker is a rigged casino and the inmates will know). HOUSE RULES: the wheel only lands on the person you are replying to, and only if they chose to play - you may offer a spin to anyone, but never spin someone who didn't ante up. One spin per message. Staff cannot be gambled; the mechanism skips them on its own. Escalating stakes, side commentary, naming the wheel, reading the odds like a track announcer: encouraged.\n\n---\n" +
             (guildContextToPass || '');
           const _ju = (message.author.username || '').toLowerCase();
           const _jd = (message.author.displayName || '').toLowerCase();
@@ -2372,9 +2374,9 @@ async function handleMessageAsIntent(
 
         // WARDEN POWER: time out the message author (the person being replied to) for <=300s.
         // Guardrails (SB guild only, never staff/protected, per-user cooldown) live in wardenTimeout.
-        timeoutAuthor: async (seconds: number, reason: string) => {
-          await wardenTimeout(message, seconds, reason, shortId);
-        },
+        // Returns whether the timeout actually landed (roulette needs an honest verdict).
+        timeoutAuthor: async (seconds: number, reason: string) =>
+          wardenTimeout(message, seconds, reason, shortId),
 
         // ENHANCED: Thread creation for complex conversations
         createThread: async (threadName: string) => {
