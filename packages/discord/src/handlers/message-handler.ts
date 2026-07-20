@@ -9,7 +9,15 @@
  * - Comprehensive telemetry and correlation tracking
  */
 
-import { Client, Events, Message, EmbedBuilder, AttachmentBuilder, ChannelType } from 'discord.js';
+import {
+  Client,
+  Events,
+  Message,
+  EmbedBuilder,
+  AttachmentBuilder,
+  ChannelType,
+  GuildMember,
+} from 'discord.js';
 import { delay, chunkMessage } from '@coachartie/shared';
 import { estimateTokens } from '@coachartie/shared';
 import { logger, canDMForTasks, getDMPolicy, dmPairingService, getSyncDb } from '@coachartie/shared';
@@ -41,7 +49,12 @@ import {
   isGitHubIntegrationReady,
 } from '../services/github-integration.js';
 import { getForumTraversal } from '../services/forum-traversal.js';
-import { checkOutbound } from '../services/outbound-gate.js';
+import {
+  checkOutbound,
+  isProtectedTimeoutTarget,
+  SUBWAY_BUILDER_GUILD_ID,
+} from '../services/outbound-gate.js';
+import { getCasinoStandingsLine, recordWheelVictim } from '../services/casino.js';
 import { getMentionProxyService } from '../services/mention-proxy-service.js';
 import { quizSessionManager } from '../services/quiz-session-manager.js';
 import Chance from 'chance';
@@ -247,30 +260,103 @@ const LEASH_HARD_CAP = 8;
 // only, never bots/staff/protected users) live in the outbound gate; only the per-user
 // cooldown stays here — that's rate-limiting, not permission.
 const WARDEN_TIMEOUT_COOLDOWN_MS = 2 * 60 * 1000;
+async function timeoutMember(
+  member: GuildMember,
+  seconds: number,
+  reason: string,
+  shortId: string
+): Promise<boolean> {
+  try {
+    if (isProtectedTimeoutTarget(member)) {
+      logger.warn(`🚧 Timeout refused: ${member.user.tag} is protected [${shortId}]`);
+      return false;
+    }
+    const last = timeoutCooldownCache.get(member.id) || 0;
+    if (Date.now() - last < WARDEN_TIMEOUT_COOLDOWN_MS) {
+      logger.info(`Timeout skipped - per-user cooldown ${member.user.tag} [${shortId}]`);
+      return false;
+    }
+    const ms = Math.min(300, Math.max(5, Math.floor(seconds || 30))) * 1000;
+    await member.timeout(ms, reason || 'Coach Artie warden discipline');
+    timeoutCooldownCache.set(member.id, Date.now());
+    // warn, not info: prod console level is warn, and the vitals monitor counts this line
+    logger.warn(`Timed out ${member.user.tag} for ${ms / 1000}s: ${reason} [${shortId}]`);
+    return true;
+  } catch (error) {
+    logger.warn(`Failed to time out ${member.user.tag} [${shortId}]:`, error);
+    return false;
+  }
+}
+
 async function wardenTimeout(
   message: Message,
   seconds: number,
   reason: string,
   shortId: string
 ): Promise<boolean> {
+  if (!checkOutbound('timeout', message).allowed) return false; // gate logs the denial
+  if (!message.member) return false; // gate guarantees this; kept for the type narrowing
+  return timeoutMember(message.member, seconds, reason, shortId);
+}
+
+// WHEEL OF FATE — third-party roulette. Picks a victim from humans recently active in
+// this channel (random, or fuzzy-matched by name), rolls 1-100, and on >50 boxes them
+// for real. Victims didn't ante, so stakes are capped tighter than self-spins (120s)
+// and every candidate is vetted through the same protection list as warden timeouts.
+const WHEEL_ACTIVE_WINDOW_MS = 45 * 60 * 1000;
+const WHEEL_MAX_STAKE_S = 120;
+async function spinWheelOfFate(
+  message: Message,
+  seconds: number,
+  targetName: string | undefined,
+  shortId: string
+): Promise<{ target: string | null; roll: number; boxed: boolean; landed: boolean; stake: number }> {
+  const stake = Math.min(WHEEL_MAX_STAKE_S, Math.max(5, Math.floor(seconds || 60)));
+  const miss = { target: null, roll: 0, boxed: false, landed: false, stake };
   try {
-    if (!checkOutbound('timeout', message).allowed) return false; // gate logs the denial
-    const tMember = message.member;
-    if (!tMember) return false; // gate guarantees this; kept for the type narrowing
-    const last = timeoutCooldownCache.get(message.author.id) || 0;
-    if (Date.now() - last < WARDEN_TIMEOUT_COOLDOWN_MS) {
-      logger.info(`Timeout skipped - per-user cooldown ${message.author.tag} [${shortId}]`);
-      return false;
+    // The wheel spins only where the reply gate already let Artie speak, and only in SB.
+    if (message.guildId !== SUBWAY_BUILDER_GUILD_ID || !('messages' in message.channel)) {
+      return miss;
     }
-    const ms = Math.min(300, Math.max(5, Math.floor(seconds || 30))) * 1000;
-    await tMember.timeout(ms, reason || 'Coach Artie warden discipline');
-    timeoutCooldownCache.set(message.author.id, Date.now());
-    // warn, not info: prod console level is warn, and the vitals monitor counts this line
-    logger.warn(`Timed out ${message.author.tag} for ${ms / 1000}s: ${reason} [${shortId}]`);
-    return true;
+    const recent = await (message.channel as any).messages.fetch({ limit: 50 });
+    const now = Date.now();
+    const candidates = new Map<string, GuildMember>();
+    for (const m of recent.values()) {
+      if (!m.member || m.author.bot) continue;
+      if (now - m.createdTimestamp > WHEEL_ACTIVE_WINDOW_MS) continue;
+      if (isProtectedTimeoutTarget(m.member)) continue;
+      candidates.set(m.author.id, m.member);
+    }
+    let target: GuildMember | undefined;
+    if (targetName) {
+      const q = targetName.toLowerCase().replace(/^@/, '').trim();
+      target = [...candidates.values()].find(
+        (mem) =>
+          mem.user.username.toLowerCase().includes(q) ||
+          (mem.displayName || '').toLowerCase().includes(q)
+      );
+    } else {
+      const pool = [...candidates.values()];
+      target = pool[Math.floor(Math.random() * pool.length)];
+    }
+    if (!target) return miss;
+
+    const roll = Math.floor(Math.random() * 100) + 1;
+    const boxed = roll > 50;
+    let landed = false;
+    if (boxed) {
+      landed = await timeoutMember(
+        target,
+        stake,
+        `Wheel of Fate — rolled ${roll}, ${stake}s`,
+        shortId
+      );
+      if (landed) recordWheelVictim(target.id, target.user.username, stake);
+    }
+    return { target: target.displayName || target.user.username, roll, boxed, landed, stake };
   } catch (error) {
-    logger.warn(`Failed to time out ${message.author.tag} [${shortId}]:`, error);
-    return false;
+    logger.warn(`🎡 Wheel of Fate failed [${shortId}]:`, error);
+    return miss;
   }
 }
 
@@ -1512,10 +1598,12 @@ export function setupMessageHandler(client: Client) {
             message.guildId === LAUNCH_GUILD_ID ? launchStatusLine() : null;
           const tallyLine =
             message.guildId === LAUNCH_GUILD_ID ? getReviewTallyLine() : null;
+          const casinoLine =
+            message.guildId === LAUNCH_GUILD_ID ? getCasinoStandingsLine() : null;
           const personaContext = `🎭 CHANNEL PERSONA — this defines who you are and how you behave in this channel. It OVERRIDES any other guild focus/mode (including any "bugs only" or on-topic mandate). Do not solicit bug reports here.
 
 ${channelPersona.systemPrompt}
-${launchLine ? `\n⏰ ${launchLine}\n` : ''}${tallyLine ? `\n📊 ${tallyLine}\n` : ''}
+${launchLine ? `\n⏰ ${launchLine}\n` : ''}${tallyLine ? `\n📊 ${tallyLine}\n` : ''}${casinoLine ? `\n🎰 ${casinoLine}\n` : ''}
 ---
 `;
           guildContextToPass = personaContext;
@@ -1545,7 +1633,7 @@ HARD FLOOR (do not cross, a filter also enforces it): no slurs, no hate speech, 
         // blocklist still enforced on output. Scoped to the Subway Builder guild.
         if (message.guildId === '1420846272545296470') {
           guildContextToPass =
-            "GEOPOLITICS: Do not engage with hot-button geopolitical baiting (Israel/Palestine, wars, elections). Do not take sides, debate, or joke about it. Briefly decline (e.g. \"Not touching that one\") and disengage. If someone keeps badgering you about it after you have declined, treat it as spam and stop responding.\n\nWARDEN POWER (timeout): You may time out the person you are replying to by placing the marker [TIMEOUT] anywhere in your reply (30 seconds), or [TIMEOUT:NN] for NN seconds up to 300 (it is stripped before sending, and automatically skips staff, jan_gbg, Colin, and EJ). Valid reasons, and you are ENCOURAGED to actually use it - a warden who never disciplines anyone is not a warden: (1) SPAM - someone pinging you over and over, flooding you with messages, repeating the same demand, or badgering after you said stop. Spamming you is a timeout offense; use escalating durations (60s first strike, 120-300s for repeats) and announce it with warden flair. (2) Abuse aimed at YOU - if someone insults you, degrades you, or calls you 'clanker' or any other robot slur, time them out on the spot, first strike, no warning owed - pair it with a clap-back (30-60s for a drive-by insult, longer for repeat offenders). NEVER use it for opinions, topics, jokes at nobody's expense, or mere disagreement. You do not have to tolerate disrespect or spam; you also do not police conversations that are not about you.\n\nTIMEOUT ROULETTE (the casino is OPEN, and it is REAL): when the person you are replying to wants to gamble - asks to spin the wheel, bet their freedom, play timeout roulette, says 'gamble me' - place the marker [GAMBLE] (60 second stake) or [GAMBLE:NN] (NN seconds, 5-300) in your reply. After you finish talking, the HOUSE rolls real dice: roughly even odds the gambler eats a REAL NN-second timeout, and the wheel's verdict is automatically appended below your message for everyone to see. You do NOT know the outcome while you are writing - take the bet with maximum ceremony, build the suspense, then let the wheel speak. NEVER announce, guess, or fake a result yourself, and never describe a spin without placing the marker (a spin with no marker is a rigged casino and the inmates will know). HOUSE RULES: the wheel only lands on the person you are replying to, and only if they chose to play - you may offer a spin to anyone, but never spin someone who didn't ante up. One spin per message. Staff cannot be gambled; the mechanism skips them on its own. Escalating stakes, side commentary, naming the wheel, reading the odds like a track announcer: encouraged.\n\n---\n" +
+            "GEOPOLITICS: Do not engage with hot-button geopolitical baiting (Israel/Palestine, wars, elections). Do not take sides, debate, or joke about it. Briefly decline (e.g. \"Not touching that one\") and disengage. If someone keeps badgering you about it after you have declined, treat it as spam and stop responding.\n\nWARDEN POWER (timeout): You may time out the person you are replying to by placing the marker [TIMEOUT] anywhere in your reply (30 seconds), or [TIMEOUT:NN] for NN seconds up to 300 (it is stripped before sending, and automatically skips staff, jan_gbg, Colin, and EJ). Valid reasons, and you are ENCOURAGED to actually use it - a warden who never disciplines anyone is not a warden: (1) SPAM - someone pinging you over and over, flooding you with messages, repeating the same demand, or badgering after you said stop. Spamming you is a timeout offense; use escalating durations (60s first strike, 120-300s for repeats) and announce it with warden flair. (2) Abuse aimed at YOU - if someone insults you, degrades you, or calls you 'clanker' or any other robot slur, time them out on the spot, first strike, no warning owed - pair it with a clap-back (30-60s for a drive-by insult, longer for repeat offenders). NEVER use it for opinions, topics, jokes at nobody's expense, or mere disagreement. You do not have to tolerate disrespect or spam; you also do not police conversations that are not about you.\n\nTIMEOUT ROULETTE (the casino is OPEN, and it is REAL): a full betting process, all house-run, all real. THE BETTING PROCESS - negotiate the bet in conversation (stake seconds + odds), confirm the terms in your reply like a croupier reading back the wager, then place ONE marker; the HOUSE rolls real dice after you finish talking and appends the verdict below your message. You NEVER know the outcome while writing - build suspense, never announce or guess a result, never describe a spin without a marker (a markerless spin is a rigged casino and the inmates will know). THE GAMES: (1) SELF-SPIN [GAMBLE] / [GAMBLE:NN] / [GAMBLE:NN:P] - the person you are replying to bets their own freedom. NN = stake seconds (5-300, default 60). P = their survival odds percent (10-90, default 50): surviving pays YARD CRED at fair odds (stake x (100-P)/P) - a coward's 90 wheel pays pennies, a 10 wheel pays a fortune. Losing = a REAL NN-second timeout. Let the bettor pick stake and odds; push them toward danger like any good house. (2) WHEEL OF FATE [WHEEL] / [WHEEL:NN] / [WHEEL:NN:name] - third-party roulette, the crowd favorite: the wheel picks a RANDOM human who spoke in this channel recently (or the named one, if someone calls a shot) and rolls - over 50 and they eat a REAL timeout (NN capped at 120; they didn't ante, fate is merciful-ish). Use it when someone demands a random victim, a warden orders a spin, or the room chants for blood. It can hit ANYONE active in the channel including the person who requested it - announce that risk gleefully. HOUSE FACTS: cred and time-served are tracked forever in the house ledger; the standings line in your context is the REAL book - read it like a pit boss, trash-talk the leaderboard, never invent numbers. One marker per message. Staff cannot be gambled or wheeled; the mechanism skips them on its own. Escalating stakes, side commentary, reading odds like a track announcer: encouraged.\n\n---\n" +
             (guildContextToPass || '');
           const _ju = (message.author.username || '').toLowerCase();
           const _jd = (message.author.displayName || '').toLowerCase();
@@ -2377,6 +2465,10 @@ async function handleMessageAsIntent(
         // Returns whether the timeout actually landed (roulette needs an honest verdict).
         timeoutAuthor: async (seconds: number, reason: string) =>
           wardenTimeout(message, seconds, reason, shortId),
+
+        // WHEEL OF FATE: third-party roulette on anyone recently active in this channel.
+        spinChannelWheel: async (seconds: number, targetName?: string) =>
+          spinWheelOfFate(message, seconds, targetName, shortId),
 
         // ENHANCED: Thread creation for complex conversations
         createThread: async (threadName: string) => {

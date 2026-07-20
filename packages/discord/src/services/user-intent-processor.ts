@@ -9,6 +9,7 @@
 
 import { logger, scrubBlockedUserMentions } from '@coachartie/shared';
 import { capabilitiesClient } from './capabilities-client.js';
+import { recordSelfSpin } from './casino.js';
 import { jobMonitor } from './job-monitor.js';
 import { telemetry } from './telemetry.js';
 import { generateCorrelationId, getShortCorrelationId } from '../utils/correlation.js';
@@ -48,6 +49,10 @@ export interface UserIntent {
   addReaction?: (emoji: string) => Promise<void>;
   removeReaction?: (emoji: string) => Promise<void>;
   timeoutAuthor?: (seconds: number, reason: string) => Promise<boolean>;
+  spinChannelWheel?: (
+    seconds: number,
+    targetName?: string
+  ) => Promise<{ target: string | null; roll: number; boxed: boolean; landed: boolean; stake: number }>;
   deleteResponse?: () => Promise<void>;
   editResponse?: (content: string) => Promise<void>;
   createThread?: (name: string) => Promise<any>;
@@ -345,8 +350,8 @@ export async function processUserIntent(
             // incomplete marker at the tail so "[SILEN"/"[TIMEO" never gets posted
             // mid-stream (that's how literal "[SILENT]" leaked into the channel).
             const cleanedResponse = cleanCapabilityTags(status.partialResponse)
-              .replace(/\[(?:SILENT|TIMEOUT(?::\d{1,3})?|GAMBLE(?::\d{1,3})?)\]/gi, '')
-              .replace(/\[[A-Za-z]{0,8}(?::\d{0,3})?$/, '');
+              .replace(/\[(?:SILENT|TIMEOUT(?::\d{1,3})?|GAMBLE(?::\d{1,3}){0,2}|WHEEL(?::[^\]\n]{1,40})?)\]/gi, '')
+              .replace(/\[[A-Za-z]{0,8}(?::[^\]\n]{0,40})?$/, '');
             const newContent = cleanedResponse.slice(lastSentContent.length);
 
             if (newContent.trim()) {
@@ -518,38 +523,76 @@ export async function processUserIntent(
           } else {
             cleanResult = cleanResult.replace(/\[SILENT\]/gi, '').trim();
           }
-          // TIMEOUT ROULETTE: [GAMBLE] / [GAMBLE:NN] — the gambler is the person Artie is
-          // replying to; playing is consent. The dice roll HERE, server-side, after the LLM
-          // has finished talking — it cannot rig, predict, or fake the outcome. On a loss the
-          // timeout is real (same gate/cooldown as warden discipline); the house verdict is
-          // appended below Artie's reply either way. If the box mechanism jams (cooldown,
-          // protected user), the verdict says so instead of lying about a served sentence.
-          const _gMatch = cleanResult.match(/\[GAMBLE(?::(\d{1,3}))?\]/i);
+          // TIMEOUT ROULETTE — SELF-SPIN: [GAMBLE] / [GAMBLE:NN] / [GAMBLE:NN:P]. The gambler
+          // is the person Artie is replying to; playing is consent. The dice roll HERE,
+          // server-side, after the LLM has finished talking — it cannot rig, predict, or fake
+          // the outcome. P = survival odds percent (10-90); surviving pays yard cred at fair
+          // odds (stake × (100−P)/P) into the persistent house ledger. On a loss the timeout
+          // is real (same gate/cooldown as warden discipline). If the box mechanism jams
+          // (cooldown, protected user), the verdict says so instead of lying about a served
+          // sentence — and the ledger doesn't record time that wasn't served.
+          const _gMatch = cleanResult.match(/\[GAMBLE(?::(\d{1,3})(?::(\d{1,2}))?)?\]/i);
           if (_gMatch && typeof (intent as any).timeoutAuthor === 'function') {
             const _stake = Math.min(300, Math.max(5, parseInt(_gMatch[1] || '60', 10) || 60));
-            cleanResult = cleanResult.replace(/\[GAMBLE(?::\d{1,3})?\]/gi, '').trim();
+            const _odds = Math.min(90, Math.max(10, parseInt(_gMatch[2] || '50', 10) || 50));
+            cleanResult = cleanResult.replace(/\[GAMBLE(?::\d{1,3}){0,2}\]/gi, '').trim();
             const _roll = Math.floor(Math.random() * 100) + 1; // 1-100, shown for legibility
+            const _won = _roll <= _odds;
+            const _payout = Math.max(1, Math.round((_stake * (100 - _odds)) / _odds));
             let _verdict: string;
-            if (_roll <= 50) {
+            if (_won) {
+              const _e = recordSelfSpin(intent.userId, intent.username || 'gambler', true, _payout, 0);
               const _safe = [
-                `🎰 **THE WHEEL HAS SPOKEN** (rolled ${_roll}): 🟩 SAFE. The box goes hungry tonight.`,
-                `🎰 **THE WHEEL HAS SPOKEN** (rolled ${_roll}): 🟩 SAFE. Walk away. Never come back. (Come back.)`,
-                `🎰 **THE WHEEL HAS SPOKEN** (rolled ${_roll}): 🟩 SAFE. The house glares, but pays out your freedom.`,
+                `The box goes hungry tonight.`,
+                `Walk away. Never come back. (Come back.)`,
+                `The house glares, but pays.`,
               ];
-              _verdict = _safe[Math.floor(Math.random() * _safe.length)];
+              _verdict =
+                `🎰 **THE WHEEL** — roll ${_roll}/100, survive ≤${_odds}: 🟩 **SAFE.** ` +
+                `${_safe[Math.floor(Math.random() * _safe.length)]} ` +
+                `Payout **+${_payout} cred** → ${_e.cred} cred (${_e.streak > 1 ? `W${_e.streak} streak` : 'fresh win'}).`;
             } else {
               const _landed = await (intent as any).timeoutAuthor(
                 _stake,
-                `Timeout roulette — rolled ${_roll}, staked ${_stake}s`
+                `Timeout roulette — rolled ${_roll} vs ${_odds}, staked ${_stake}s`
               );
-              const _loss = [
-                `🎰 **THE WHEEL HAS SPOKEN** (rolled ${_roll}): 🟥 **THE BOX.** ${_stake} seconds. The house thanks you for your patronage.`,
-                `🎰 **THE WHEEL HAS SPOKEN** (rolled ${_roll}): 🟥 **THE BOX.** ${_stake} seconds of contemplative silence, effective immediately.`,
-                `🎰 **THE WHEEL HAS SPOKEN** (rolled ${_roll}): 🟥 **THE BOX.** ${_stake} seconds. No refunds. The wheel loves you.`,
-              ];
-              _verdict = _landed
-                ? _loss[Math.floor(Math.random() * _loss.length)]
-                : `🎰 **THE WHEEL HAS SPOKEN** (rolled ${_roll}): 🟥 THE BOX — but the mechanism jammed. Sentence commuted. The house is FURIOUS.`;
+              if (_landed) {
+                const _e = recordSelfSpin(intent.userId, intent.username || 'gambler', false, 0, _stake);
+                const _loss = [
+                  `The house thanks you for your patronage.`,
+                  `${_stake} seconds of contemplative silence, effective immediately.`,
+                  `No refunds. The wheel loves you.`,
+                ];
+                _verdict =
+                  `🎰 **THE WHEEL** — roll ${_roll}/100, survive ≤${_odds}: 🟥 **THE BOX. ${_stake}s.** ` +
+                  `${_loss[Math.floor(Math.random() * _loss.length)]} ` +
+                  `(${_e.cred} cred, ${_e.served}s lifetime served${_e.streak < -1 ? `, L${-_e.streak} skid` : ''})`;
+              } else {
+                _verdict = `🎰 **THE WHEEL** — roll ${_roll}/100, survive ≤${_odds}: 🟥 THE BOX — but the mechanism jammed. Sentence commuted. The house is FURIOUS.`;
+              }
+            }
+            cleanResult = cleanResult ? `${cleanResult}\n\n${_verdict}` : _verdict;
+          }
+          // WHEEL OF FATE — THIRD-PARTY SPIN: [WHEEL] / [WHEEL:NN] / [WHEEL:NN:name]. The
+          // victim pool is humans recently active in the channel (vetted through the same
+          // protection list as warden timeouts); target picking, the roll, and the real
+          // timeout all happen in the discord handler — server-side, unriggable.
+          const _wMatch = cleanResult.match(/\[WHEEL(?::(\d{1,3}))?(?::([^\]\n]{1,32}))?\]/i);
+          if (_wMatch && typeof (intent as any).spinChannelWheel === 'function') {
+            cleanResult = cleanResult.replace(/\[WHEEL(?::[^\]\n]{1,40})?\]/gi, '').trim();
+            const _spin = await (intent as any).spinChannelWheel(
+              parseInt(_wMatch[1] || '60', 10) || 60,
+              _wMatch[2]?.trim() || undefined
+            );
+            let _verdict: string;
+            if (!_spin.target) {
+              _verdict = `🎡 **WHEEL OF FATE** — the wheel spun, wobbled, and found no one it could legally eat. The house files a formal complaint.`;
+            } else if (!_spin.boxed) {
+              _verdict = `🎡 **WHEEL OF FATE** — the wheel scans the room... locks onto **${_spin.target}**... roll ${_spin.roll}/100 (box on 51+): 🟩 **SPARED.** The wheel is merciful. Today.`;
+            } else if (_spin.landed) {
+              _verdict = `🎡 **WHEEL OF FATE** — the wheel scans the room... locks onto **${_spin.target}**... roll ${_spin.roll}/100 (box on 51+): 🟥 **THE BOX. ${_spin.stake}s.** Fate sends its regards.`;
+            } else {
+              _verdict = `🎡 **WHEEL OF FATE** — the wheel locks onto **${_spin.target}**... roll ${_spin.roll}/100: 🟥 THE BOX — but the mechanism jammed. **${_spin.target}** walks. The house is FURIOUS.`;
             }
             cleanResult = cleanResult ? `${cleanResult}\n\n${_verdict}` : _verdict;
           }

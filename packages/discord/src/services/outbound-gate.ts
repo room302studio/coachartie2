@@ -15,7 +15,7 @@
  * checks inline somewhere, the check belongs HERE instead.
  */
 
-import { Message } from 'discord.js';
+import { GuildMember, Message } from 'discord.js';
 import { logger } from '@coachartie/shared';
 import { getChannelPersona } from '../config/guild-whitelist.js';
 
@@ -23,7 +23,7 @@ export type OutboundAction = 'reply' | 'reaction' | 'timeout' | 'proxy-reply';
 
 // Subway Builder — the public guild where Artie is only allowed to be visibly
 // active in coach-artie places. Other guilds (Room 302 etc.) and DMs are open.
-const SUBWAY_BUILDER_GUILD_ID = '1420846272545296470';
+export const SUBWAY_BUILDER_GUILD_ID = '1420846272545296470';
 
 // What counts as a coach-artie place: robot-ish channel names, or a channel
 // with a configured persona (Judge Artie in #litigation, etc.). This is the
@@ -81,24 +81,27 @@ export function checkOutbound(
     if (message.guildId !== SUBWAY_BUILDER_GUILD_ID) {
       return deny(action, message, 'timeouts are Subway Builder only');
     }
-    if (message.author.bot) {
-      return deny(action, message, 'target is a bot');
-    }
     if (!message.member) {
       return deny(action, message, 'no guild member on message');
     }
-    const uname = (message.author.username || '').toLowerCase();
-    const dname = (message.author.displayName || '').toLowerCase();
-    const roles = message.member.roles.cache.map((r) => r.name.toLowerCase());
-    if (
-      PROTECTED_NAMES.has(uname) ||
-      PROTECTED_NAMES.has(dname) ||
-      PROTECTED_USER_IDS.has(message.author.id) ||
-      roles.some((r) => PROTECTED_ROLE_RE.test(r))
-    ) {
+    if (isProtectedTimeoutTarget(message.member)) {
       return deny(action, message, `protected user ${message.author.tag}`);
     }
   }
 
   return { allowed: true, reason: 'ok' };
+}
+
+/**
+ * The ONE copy of "who can never be timed out": bots, staff-shaped roles, and
+ * the protected-name/id lists. Used by the reply-target gate above and by the
+ * Wheel of Fate (third-party roulette), which vets arbitrary channel members.
+ */
+export function isProtectedTimeoutTarget(member: GuildMember): boolean {
+  if (member.user.bot) return true;
+  const uname = (member.user.username || '').toLowerCase();
+  const dname = (member.displayName || '').toLowerCase();
+  if (PROTECTED_NAMES.has(uname) || PROTECTED_NAMES.has(dname)) return true;
+  if (PROTECTED_USER_IDS.has(member.id)) return true;
+  return member.roles.cache.map((r) => r.name.toLowerCase()).some((r) => PROTECTED_ROLE_RE.test(r));
 }
