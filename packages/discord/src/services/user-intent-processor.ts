@@ -9,7 +9,16 @@
 
 import { logger, scrubBlockedUserMentions } from '@coachartie/shared';
 import { capabilitiesClient } from './capabilities-client.js';
-import { recordSelfSpin } from './casino.js';
+import {
+  recordSelfSpin,
+  adjustCred,
+  recordTableServed,
+  bjDeal,
+  bjHit,
+  bjStand,
+  bjFmt,
+  spinSlots,
+} from './casino.js';
 import { jobMonitor } from './job-monitor.js';
 import { telemetry } from './telemetry.js';
 import { generateCorrelationId, getShortCorrelationId } from '../utils/correlation.js';
@@ -350,7 +359,7 @@ export async function processUserIntent(
             // incomplete marker at the tail so "[SILEN"/"[TIMEO" never gets posted
             // mid-stream (that's how literal "[SILENT]" leaked into the channel).
             const cleanedResponse = cleanCapabilityTags(status.partialResponse)
-              .replace(/\[(?:SILENT|TIMEOUT(?::\d{1,3})?|GAMBLE(?::\d{1,3}){0,2}|WHEEL(?::[^\]\n]{1,40})?)\]/gi, '')
+              .replace(/\[(?:SILENT|TIMEOUT(?::\d{1,3})?|GAMBLE(?::\d{1,3}){0,2}|WHEEL(?::[^\]\n]{1,40})?|DEAL(?::\d{1,3})?|HIT|STAND|SLOTS(?::\d{1,3})?)\]/gi, '')
               .replace(/\[[A-Za-z]{0,8}(?::[^\]\n]{0,40})?$/, '');
             const newContent = cleanedResponse.slice(lastSentContent.length);
 
@@ -572,6 +581,90 @@ export async function processUserIntent(
               }
             }
             cleanResult = cleanResult ? `${cleanResult}\n\n${_verdict}` : _verdict;
+          }
+          // BLACKJACK & SLOTS — real server-side games. The LLM's patter is flavor; the
+          // appended TABLE/REELS block is the actual cards/reels, dealt here where the
+          // model can't fudge them. Stakes are real: busts and flushes hit the same
+          // timeoutAuthor path as roulette; wins pay yard cred into the ledger.
+          const _tableChannel = String((intent.context as any)?.channelId || 'dm');
+          const _gambler = intent.username || 'gambler';
+          const _dealM = cleanResult.match(/\[DEAL(?::(\d{1,3}))?\]/i);
+          const _hitM = cleanResult.match(/\[HIT\]/i);
+          const _standM = cleanResult.match(/\[STAND\]/i);
+          const _slotsM = cleanResult.match(/\[SLOTS(?::(\d{1,3}))?\]/i);
+          if (_dealM || _hitM || _standM || _slotsM) {
+            cleanResult = cleanResult
+              .replace(/\[(?:DEAL(?::\d{1,3})?|HIT|STAND|SLOTS(?::\d{1,3})?)\]/gi, '')
+              .trim();
+            let _house = '';
+            if (_dealM) {
+              const _stake = Math.min(300, Math.max(5, parseInt(_dealM[1] || '60', 10) || 60));
+              const d = bjDeal(_tableChannel, intent.userId, _gambler, _stake);
+              if (d.natural) {
+                const _pay = Math.round(_stake * 1.5);
+                if (d.dealerNatural) {
+                  _house = `🃏 **THE TABLE** (${_stake}s stake) — you: ${bjFmt(d.session.player)} (21) · dealer: ${bjFmt(d.session.dealer)} (21). **DOUBLE BLACKJACK — PUSH.** Nobody bleeds, nobody eats.`;
+                } else {
+                  const _e = adjustCred(intent.userId, _gambler, _pay);
+                  _house = `🃏 **THE TABLE** (${_stake}s stake) — you: ${bjFmt(d.session.player)} — **BLACKJACK OFF THE DEAL.** Dealer: ${bjFmt(d.session.dealer)} (${d.dealerValue}). Payout **+${_pay} cred** → ${_e.cred}.`;
+                }
+              } else {
+                _house = `🃏 **THE TABLE** (${_stake}s stake) — you: ${bjFmt(d.session.player)} (${d.playerValue}) · dealer shows ${bjFmt([d.session.dealer[0]])} + 🂠. Hit or stand.`;
+              }
+            } else if (_hitM) {
+              const h = bjHit(_tableChannel, intent.userId);
+              if (!h) {
+                _house = `🃏 **THE TABLE** — no live hand for ${_gambler}. Cards don't deal themselves, sport — ask for a deal.`;
+              } else if (h.bust) {
+                const _landed = await (intent as any).timeoutAuthor?.(
+                  h.session.stake,
+                  `Blackjack bust — ${h.playerValue}, staked ${h.session.stake}s`
+                );
+                const _e = _landed
+                  ? recordTableServed(intent.userId, _gambler, h.session.stake)
+                  : null;
+                _house = `🃏 **THE TABLE** — you draw ${bjFmt([h.drawn])} → ${bjFmt(h.session.player)} (${h.playerValue}). 🟥 **BUST — THE BOX. ${h.session.stake}s.**${_e ? ` (${_e.served}s lifetime served)` : ' The mechanism jammed — sentence commuted, the house seethes.'}`;
+              } else {
+                _house = `🃏 **THE TABLE** — you draw ${bjFmt([h.drawn])} → ${bjFmt(h.session.player)} (${h.playerValue}). Dealer shows ${bjFmt([h.session.dealer[0]])} + 🂠. Hit or stand.`;
+              }
+            } else if (_standM) {
+              const s = bjStand(_tableChannel, intent.userId);
+              if (!s) {
+                _house = `🃏 **THE TABLE** — no live hand for ${_gambler}. Standing on nothing is very zen, but ask for a deal first.`;
+              } else if (s.outcome === 'win') {
+                const _e = adjustCred(intent.userId, _gambler, s.session.stake);
+                _house = `🃏 **THE TABLE** — dealer: ${bjFmt(s.session.dealer)} (${s.dealerValue}${s.dealerValue > 21 ? ' — BUST' : ''}). You: ${s.playerValue}. 🟩 **WIN +${s.session.stake} cred** → ${_e.cred}.`;
+              } else if (s.outcome === 'push') {
+                _house = `🃏 **THE TABLE** — dealer: ${bjFmt(s.session.dealer)} (${s.dealerValue}). You: ${s.playerValue}. **PUSH.** The felt keeps its secrets.`;
+              } else {
+                const _landed = await (intent as any).timeoutAuthor?.(
+                  s.session.stake,
+                  `Blackjack loss — ${s.playerValue} vs dealer ${s.dealerValue}, staked ${s.session.stake}s`
+                );
+                const _e = _landed
+                  ? recordTableServed(intent.userId, _gambler, s.session.stake)
+                  : null;
+                _house = `🃏 **THE TABLE** — dealer: ${bjFmt(s.session.dealer)} (${s.dealerValue}). You: ${s.playerValue}. 🟥 **HOUSE WINS — THE BOX. ${s.session.stake}s.**${_e ? ` (${_e.served}s lifetime served)` : ' The mechanism jammed — sentence commuted, the house seethes.'}`;
+              }
+            } else if (_slotsM) {
+              const _stake = Math.min(120, Math.max(5, parseInt(_slotsM[1] || '30', 10) || 30));
+              const r = spinSlots(_stake);
+              const _row = r.reels.join(' ');
+              if (r.credDelta > 0) {
+                const _e = adjustCred(intent.userId, _gambler, r.credDelta);
+                _house = `🎰 **THE REELS** (${_stake}s a pull) — ${_row} — **${r.label.toUpperCase()}! +${r.credDelta} cred** → ${_e.cred}.`;
+              } else if (r.boxSeconds > 0) {
+                const _landed = await (intent as any).timeoutAuthor?.(
+                  r.boxSeconds,
+                  `Slots — ${r.label}, ${r.boxSeconds}s`
+                );
+                if (_landed) recordTableServed(intent.userId, _gambler, r.boxSeconds);
+                _house = `🎰 **THE REELS** (${_stake}s a pull) — ${_row} — 🟥 **${r.label.toUpperCase()}. THE BOX: ${r.boxSeconds}s.**${_landed ? '' : ' The mechanism jammed — the toilet gods show mercy.'}`;
+              } else {
+                _house = `🎰 **THE REELS** (${_stake}s a pull) — ${_row} — nothing. The house keeps your quarter.`;
+              }
+            }
+            if (_house) cleanResult = cleanResult ? `${cleanResult}\n\n${_house}` : _house;
           }
           // WHEEL OF FATE — THIRD-PARTY SPIN: [WHEEL] / [WHEEL:NN] / [WHEEL:NN:name]. The
           // victim pool is humans recently active in the channel (vetted through the same
