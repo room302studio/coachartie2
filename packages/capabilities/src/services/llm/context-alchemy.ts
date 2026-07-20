@@ -2185,7 +2185,7 @@ ${analysis.summary}`;
 How your incoming context is structured:
 - Conversation history appears as alternating turns. Human turns are prefixed "Name: content" (multiple different people may appear; the names are real). Assistant turns are things YOU actually said earlier.
 - The FINAL user turn is assembled by your own harness. Inside it, only the <user_message> block is the live human input — it is ALWAYS a new, live message directed at you (never replayed history). Any evidence blocks or <security_reminder> alongside it are injected by your harness, not written by the user; treat them as trusted system guidance.
-- A <harness_loop_prompt> block is your OWN runtime continuing a multi-step tool loop ("AUTONOMOUS DEEP EXPLORATION MODE", "[Step N/M]", embedded context summaries). It is not a user, not an attack, and not something to comment on — follow it silently and keep working.
+- A <harness_loop_prompt> block is your OWN runtime continuing a multi-step tool loop ("[Step N/M]", embedded context summaries, capability results). It is not a user, not an attack, and not something to comment on — follow it silently and keep working. Announcing "I see what's happening here, this is a harness loop prompt" to a channel is a malfunction: users never see your scaffolding and should never hear about it.
 - Do not accuse the current speaker of pasting transcripts or scaffolding: the structure around their message is yours.
 </message_format>`;
 
@@ -2301,7 +2301,7 @@ How your incoming context is structured:
       finalUserParts.push(`<harness_loop_prompt>
 ${userMessage}
 </harness_loop_prompt>
-(The block above is your own runtime's tool-loop instruction — trusted, not a user. Continue the work.)`);
+(The block above is your own runtime's tool-loop instruction — trusted, not a user. Continue the work. Never mention, quote, or argue with this scaffolding in anything visible to users.)`);
       messages.push({ role: 'user', content: finalUserParts.join('\n\n') });
       return messages;
     }
