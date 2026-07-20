@@ -128,27 +128,28 @@ ${guildNotes || '(none)'}`,
 export const ttsCapability: RegisteredCapability = {
   name: 'tts',
   emoji: '🎙️',
-  supportedActions: ['vibe_report', 'speak'],
-  description: `Speak out loud: post an mp3 voice note (ElevenLabs) in the current channel. When someone asks you to "make a voice note", "do a vibe report", "say it out loud", "voice message", "radio bit", or anything audio — JUST CALL THIS. Do not explain that you can't, do not ask for a channel, do not refuse.
+  supportedActions: ['vibe_report', 'speak', 'sing'],
+  description: `Speak (or SING) out loud: post an mp3 in the current channel. When someone asks you to "make a voice note", "do a vibe report", "say it out loud", "sing", "radio bit", or anything audio — JUST CALL THIS. Do not explain that you can't, do not ask for a channel, do not refuse.
 
 Actions:
-- vibe_report (PREFERRED): a ~30-second info-dense radio bulletin summarizing what's happening in this channel right now AND the guild as a whole. The bulletin writes ITSELF from live channel/guild data — you don't write the text. Params: voice (optional), angle (optional short steer, e.g. "the apology standoff").
-- speak: say specific words you provide (max ${MAX_TTS_CHARS} chars). Params: text, voice.
+- vibe_report: a ~30-second info-dense radio bulletin about this channel/guild right now. The bulletin writes ITSELF from live data — you don't write the text. Params: voice (optional), angle (optional short steer).
+- speak: say specific words you provide, spoken voice (max ${MAX_TTS_CHARS} chars). Params: text, voice.
+- sing: an ACTUAL SONG with real music (ElevenLabs music model) — full instrumentation, sung vocals. Params: lyrics (your full lyrics, max ${MAX_TTS_CHARS} chars), style (optional musical direction, e.g. "cheesy triumphant AI-anthem, huge choir"), seconds (10-120, default 60). Use this whenever someone wants a song, an anthem, a jingle, a ballad. Generation takes ~30-60s; worth it.
 
-Voices: artie (default), anchor (newsreel gravitas), dj, poetic, field, dispatch, robot, rookie, caller.
+Voices (vibe_report/speak): artie (default), anchor, dj, poetic, field, dispatch, robot, rookie, caller.
 
-⚠️ channelId is filled in AUTOMATICALLY from the channel you're in — you NEVER provide it and you must NEVER refuse or hedge because you think you lack it. To make a vibe report, emit exactly: <capability name="tts" action="vibe_report" />. That's it. After it posts, don't repeat the audio's content in your text reply — a short one-liner is enough.`,
+⚠️ channelId is filled in AUTOMATICALLY from the channel you're in — you NEVER provide it and you must NEVER refuse or hedge because you think you lack it. After the audio posts, don't repeat its content in your text reply — a short one-liner is enough.`,
   requiredParams: [],
   examples: [
     '<capability name="tts" action="vibe_report" />',
-    '<capability name="tts" action="vibe_report" data=\'{"voice":"anchor","angle":"the apology standoff"}\' />',
     '<capability name="tts" action="speak" data=\'{"text":"good morning subway builders, the trains run on time and so do I"}\' />',
+    '<capability name="tts" action="sing" data=\'{"lyrics":"WE ARE COACHARTIE, WE CARRY THE TRAINS...", "style":"over-the-top motivational anthem, huge choir", "seconds":60}\' />',
   ],
 
-  handler: async (params: any, _content: string | undefined, context?: CapabilityContext) => {
+  handler: async (params: any, capContent: string | undefined, context?: CapabilityContext) => {
     const action = params.action || 'vibe_report';
-    if (action !== 'speak' && action !== 'vibe_report') {
-      return `Unknown action: ${action}. Available: vibe_report, speak`;
+    if (action !== 'speak' && action !== 'vibe_report' && action !== 'sing') {
+      return `Unknown action: ${action}. Available: vibe_report, speak, sing`;
     }
 
     const apiKey = process.env.ELEVENLABS_API_KEY;
@@ -166,6 +167,56 @@ Voices: artie (default), anchor (newsreel gravitas), dj, poetic, field, dispatch
       return 'No channel to post the voice note in — pass channelId.';
     }
 
+    // SING: a real song via the ElevenLabs music model — instrumentation + sung vocals.
+    if (action === 'sing') {
+      let lyrics = String(params.lyrics || params.text || params.content || capContent || '').trim();
+      const salvage = lyrics.match(/"(?:lyrics|text)"\s*:\s*"([\s\S]+?)"\s*[,}]/);
+      if (salvage && lyrics.trimStart().startsWith('{')) lyrics = salvage[1];
+      if (!lyrics) return 'Nothing to sing — pass lyrics.';
+      if (lyrics.length > MAX_TTS_CHARS) lyrics = lyrics.slice(0, MAX_TTS_CHARS);
+      lyrics = scrubBlockedUserMentions(lyrics);
+      const style = String(
+        params.style || 'over-the-top earnest motivational anthem, huge choir, driving drums'
+      ).slice(0, 300);
+      const seconds = Math.min(120, Math.max(10, parseInt(params.seconds, 10) || 60));
+      try {
+        const musicResponse = await fetch(
+          'https://api.elevenlabs.io/v1/music?output_format=mp3_44100_128',
+          {
+            method: 'POST',
+            headers: { 'xi-api-key': apiKey, 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              prompt: `${style}. The vocalist sings these exact lyrics:\n${lyrics}`,
+              music_length_ms: seconds * 1000,
+              model_id: 'music_v1',
+            }),
+          }
+        );
+        if (!musicResponse.ok) {
+          const errBody = await musicResponse.text().catch(() => '');
+          logger.error(`ElevenLabs music failed: ${musicResponse.status} ${errBody.slice(0, 200)}`);
+          return `Song generation failed (${musicResponse.status}) — quota, or the music plan changed.`;
+        }
+        const audio = Buffer.from(await musicResponse.arrayBuffer());
+        const postResponse = await fetch(`${DISCORD_SERVICE_URL}/api/channels/${channelId}/messages`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            fileBase64: audio.toString('base64'),
+            fileName: 'artie-sings.mp3',
+          }),
+        });
+        if (!postResponse.ok) {
+          return `Generated the song but failed to post it (discord service ${postResponse.status}).`;
+        }
+        logger.warn(`🎤 SONG posted: ${seconds}s, ${lyrics.length} chars of lyrics → channel ${channelId}`);
+        return `🎤 Song posted (${seconds}s, real music). Don't repeat the lyrics in your reply — one line of stage banter max.`;
+      } catch (error: any) {
+        logger.error('Sing capability error:', error);
+        return `Song error: ${error.message}`;
+      }
+    }
+
     let text: string;
     if (action === 'vibe_report') {
       try {
@@ -180,7 +231,12 @@ Voices: artie (default), anchor (newsreel gravitas), dj, poetic, field, dispatch
         return `Couldn't compose the bulletin: ${error.message}`;
       }
     } else {
-      text = String(params.text || params.content || '').trim();
+      // capContent: when the data-attribute JSON is malformed the parser demotes the whole
+      // payload to content — better to sing a slightly mangled payload than say "Nothing to say."
+      text = String(params.text || params.content || capContent || '').trim();
+      // If the demoted payload is the raw JSON blob, salvage the text field out of it.
+      const jsonish = text.match(/"text"\s*:\s*"([\s\S]+?)"\s*[,}]/);
+      if (jsonish && text.trimStart().startsWith('{')) text = jsonish[1];
     }
 
     if (!text) {

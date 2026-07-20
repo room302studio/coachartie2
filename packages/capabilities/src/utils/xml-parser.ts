@@ -2,6 +2,22 @@ import { XMLParser } from 'fast-xml-parser';
 import { logger } from '@coachartie/shared';
 import { capabilityRegistry } from '../services/capability/capability-registry.js';
 
+/**
+ * LLMs write multi-line strings (song lyrics, poems) inside data='{"text":"..."}' with
+ * LITERAL newlines/tabs, which are illegal in JSON string literals and blow up JSON.parse
+ * ("Bad control character") — demoting the whole payload to content and losing the text.
+ * Raw control chars are never valid JSON anyway, so escaping them globally is safe.
+ */
+function sanitizeJsonControlChars(raw: string): string {
+  return raw
+    .replace(/\r\n/g, '\\n')
+    .replace(/\n/g, '\\n')
+    .replace(/\r/g, '\\n')
+    .replace(/\t/g, '\\t')
+    // eslint-disable-next-line no-control-regex
+    .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, '');
+}
+
 export interface ParsedCapability {
   name: string;
   action: string;
@@ -90,7 +106,7 @@ export class CapabilityXMLParser {
       // Special handling for 'data' attribute: parse as JSON and merge into params
       if (params.data && typeof params.data === 'string') {
         try {
-          const parsedData = JSON.parse(params.data);
+          const parsedData = JSON.parse(sanitizeJsonControlChars(params.data));
           logger.info(
             `🔍 XML PARSER: Parsed data attribute as JSON: ${JSON.stringify(parsedData)}`
           );
@@ -205,7 +221,7 @@ export class CapabilityXMLParser {
             const dataStr = String(params.data);
             logger.info(`🔍 XML PARSER: Attempting to parse data attribute: "${dataStr}"`);
 
-            const parsedData = JSON.parse(dataStr);
+            const parsedData = JSON.parse(sanitizeJsonControlChars(dataStr));
 
             if (typeof parsedData !== 'object' || parsedData === null) {
               logger.warn(`⚠️ XML PARSER: Parsed data is not an object: ${typeof parsedData}`);
