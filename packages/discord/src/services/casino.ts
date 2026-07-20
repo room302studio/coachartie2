@@ -15,6 +15,10 @@ import { logger } from '@coachartie/shared';
 const LEDGER_PATH =
   process.env.CASINO_LEDGER_PATH || join(process.cwd(), 'data', 'casino-ledger.json');
 
+// CLOSED by management order (EJ, 2026-07-20). Flip CASINO_OPEN=true to reopen the
+// floor — the ledger, the melt state, and the games are all preserved under the tarp.
+export const CASINO_OPEN = process.env.CASINO_OPEN === 'true';
+
 export interface CasinoEntry {
   name: string;
   spins: number;

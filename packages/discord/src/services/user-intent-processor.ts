@@ -20,6 +20,7 @@ import {
   spinSlots,
   bumpHouseEvents,
   houseFlourish,
+  CASINO_OPEN,
 } from './casino.js';
 
 /** Attach the house's deteriorating inner monologue to a verdict (Discord small-text). */
@@ -548,7 +549,19 @@ export async function processUserIntent(
           // is real (same gate/cooldown as warden discipline). If the box mechanism jams
           // (cooldown, protected user), the verdict says so instead of lying about a served
           // sentence — and the ledger doesn't record time that wasn't served.
-          const _gMatch = cleanResult.match(/\[GAMBLE(?::(\d{1,3})(?::(\d{1,2}))?)?\]/i);
+          // CASINO CLOSED: if the floor is shut, any stray game markers are stripped and
+          // no game logic runs — the ledger stays frozen exactly where the melt left it.
+          if (!CASINO_OPEN) {
+            cleanResult = cleanResult
+              .replace(
+                /\[(?:GAMBLE(?::\d{1,3}){0,2}|WHEEL(?::[^\]\n]{1,40})?|DEAL(?::\d{1,3})?|HIT|STAND|SLOTS(?::\d{1,3})?)\]/gi,
+                ''
+              )
+              .trim();
+          }
+          const _gMatch = CASINO_OPEN
+            ? cleanResult.match(/\[GAMBLE(?::(\d{1,3})(?::(\d{1,2}))?)?\]/i)
+            : null;
           if (_gMatch && typeof (intent as any).timeoutAuthor === 'function') {
             bumpHouseEvents();
             const _stake = Math.min(300, Math.max(5, parseInt(_gMatch[1] || '60', 10) || 60));
@@ -598,10 +611,10 @@ export async function processUserIntent(
           // timeoutAuthor path as roulette; wins pay yard cred into the ledger.
           const _tableChannel = String((intent.context as any)?.channelId || 'dm');
           const _gambler = intent.username || 'gambler';
-          const _dealM = cleanResult.match(/\[DEAL(?::(\d{1,3}))?\]/i);
-          const _hitM = cleanResult.match(/\[HIT\]/i);
-          const _standM = cleanResult.match(/\[STAND\]/i);
-          const _slotsM = cleanResult.match(/\[SLOTS(?::(\d{1,3}))?\]/i);
+          const _dealM = CASINO_OPEN ? cleanResult.match(/\[DEAL(?::(\d{1,3}))?\]/i) : null;
+          const _hitM = CASINO_OPEN ? cleanResult.match(/\[HIT\]/i) : null;
+          const _standM = CASINO_OPEN ? cleanResult.match(/\[STAND\]/i) : null;
+          const _slotsM = CASINO_OPEN ? cleanResult.match(/\[SLOTS(?::(\d{1,3}))?\]/i) : null;
           if (_dealM || _hitM || _standM || _slotsM) {
             bumpHouseEvents();
             cleanResult = cleanResult
@@ -684,7 +697,9 @@ export async function processUserIntent(
           // victim pool is humans recently active in the channel (vetted through the same
           // protection list as warden timeouts); target picking, the roll, and the real
           // timeout all happen in the discord handler — server-side, unriggable.
-          const _wMatch = cleanResult.match(/\[WHEEL(?::(\d{1,3}))?(?::([^\]\n]{1,32}))?\]/i);
+          const _wMatch = CASINO_OPEN
+            ? cleanResult.match(/\[WHEEL(?::(\d{1,3}))?(?::([^\]\n]{1,32}))?\]/i)
+            : null;
           if (_wMatch && typeof (intent as any).spinChannelWheel === 'function') {
             bumpHouseEvents();
             cleanResult = cleanResult.replace(/\[WHEEL(?::[^\]\n]{1,40})?\]/gi, '').trim();
