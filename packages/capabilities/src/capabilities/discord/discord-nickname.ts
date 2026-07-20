@@ -28,17 +28,20 @@ export const discordNicknameCapability: RegisteredCapability = {
   requiredParams: [],
   examples: [
     '<capability name="discord-nickname" action="set_nickname" nickname="Timmy Tough Knuckles" />',
+    '<capability name="discord-nickname" action="set_nickname" nickname="jan" guild_id="1420846272545296470" />',
     '<capability name="discord-nickname" action="reset_nickname" />',
   ],
 
   handler: async (params: any, _content: string | undefined, context?: CapabilityContext) => {
     const { action, nickname } = params;
-    const guildId = context?.guildId;
+    // guild_id param lets DM conversations target a server ("rename yourself in SB").
+    const guildId = params.guild_id || params.guildId || context?.guildId;
 
     if (!guildId) {
       return JSON.stringify({
         success: false,
-        error: 'No guildId in context - nickname changes only work in servers, not DMs',
+        error:
+          'No guild in context — in DMs, pass guild_id="..." to say which server to rename yourself in (Subway Builder is 1420846272545296470)',
       });
     }
 
