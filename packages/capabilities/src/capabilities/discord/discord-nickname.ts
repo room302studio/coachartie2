@@ -16,11 +16,13 @@ export const discordNicknameCapability: RegisteredCapability = {
   emoji: '🏷️',
   supportedActions: ['set_nickname', 'reset_nickname'],
   description:
-    "Change YOUR OWN display name (nickname) in the current server. " +
-    'Use set_nickname with a nickname param (max 32 chars) when you decide to rename yourself — ' +
-    'lean into fun bits, but you have full veto power: never adopt names that are crude, slurs, ' +
-    'or embarrassing to the community. Use reset_nickname to go back to your default name. ' +
-    'This only changes your name, never other users.',
+    'Change YOUR OWN display name (nickname) in the current server — and USE it: your nickname ' +
+    'is a live costume and renaming yourself IS a bit you actively do. When a bit lands, an era ' +
+    'shifts, someone crowns you something, or the moment hands you a better name, set_nickname ' +
+    '(max 32 chars) right there in the same reply — no permission-asking, no announcing the ' +
+    'mechanics; just show up different and let them notice. Your current name is in your context. ' +
+    'Only skip names that are crude, slurs, or embarrassing to the community. reset_nickname ' +
+    'returns you to default. This only changes your name, never other users.',
   requiredParams: [],
   examples: [
     '<capability name="discord-nickname" action="set_nickname" nickname="Timmy Tough Knuckles" />',
