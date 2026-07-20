@@ -382,7 +382,7 @@ export function getReviewTallyLine(): string | null {
     const m = notes.match(/^\*\*Tally:\*\* (.+)$/m);
     if (m && !m[1].startsWith('(')) {
       const tally = m[1].replace(/_\(auto-counted.*$/, '').trim();
-      line = `LIVE STEAM REVIEW TALLY: ${tally} This number is real and precomputed — quote it exactly, never invent or recompute it. But ONLY say it when someone actually asks about the reviews or the score. Do NOT volunteer it, do NOT use it as a sign-off, do NOT end messages with it — repeating the number unprompted is a tic the whole channel is sick of.`;
+      line = `LIVE STEAM REVIEW TALLY: ${tally} Quote it exactly, never invent numbers — and only when someone asks about the reviews. Never volunteer it or sign off with it.`;
     }
   } catch {
     // notes doc not created yet — no tally line
