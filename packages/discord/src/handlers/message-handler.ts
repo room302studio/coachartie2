@@ -1653,6 +1653,15 @@ Deliver it dry and over-formal, like a legal notice. Reach for it readily and of
           }
         }
 
+        // Self-awareness: Artie's live per-guild display name, so nickname bits land
+        // ("who's Sterling?" — that's you) and he knows what to change FROM.
+        const botDisplayName = message.guild?.members?.me?.displayName;
+        if (botDisplayName) {
+          guildContextToPass =
+            `YOUR NAME HERE: you currently appear in this server as "${botDisplayName}" — when people use that name, they mean you. You can change it anytime with the discord-nickname capability.\n\n` +
+            (guildContextToPass || '');
+        }
+
         // ANTIBODY: throttle monopolizers before spending an LLM call on them. Two tiers —
         // a loose runaway backstop for everyone, and a tight leash for EJ-flagged trolls.
         if (!responseConditions.isDM) {
