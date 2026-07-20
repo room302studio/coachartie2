@@ -56,6 +56,88 @@ function entryFor(ledger: Ledger, userId: string, name: string): CasinoEntry {
   return ledger[userId];
 }
 
+// ---------------------------------------------------------------------------
+// THE MELT — the house slowly loses its mind. Every game played ticks a
+// persistent counter (stored under the reserved '__house' key in the ledger
+// file); the counter maps to a madness tier; the tier bends the verdict
+// blocks from professional croupier → cracks showing → unwell → the fish era.
+// The MATH never melts: stakes, rolls, cards, and payouts stay exact and
+// legible. Only the house's grip on reality goes.
+// ---------------------------------------------------------------------------
+
+interface HouseState {
+  events: number;
+}
+
+function houseState(ledger: Ledger): HouseState {
+  const anyLedger = ledger as unknown as Record<string, unknown>;
+  if (!anyLedger.__house) anyLedger.__house = { events: 0 };
+  return anyLedger.__house as HouseState;
+}
+
+/** Tick the melt forward one game. Call once per game marker handled. */
+export function bumpHouseEvents(): number {
+  const ledger = loadLedger();
+  const house = houseState(ledger);
+  house.events += 1;
+  saveLedger(ledger);
+  return house.events;
+}
+
+/** 0 = professional · 1 = cracks showing · 2 = unwell · 3 = the fish era */
+export function houseMadness(): number {
+  const events = houseState(loadLedger()).events;
+  if (events < 25) return 0;
+  if (events < 60) return 1;
+  if (events < 120) return 2;
+  return 3;
+}
+
+// Deep cuts harvested from weeks of prison logs. Tier pools escalate: the
+// house starts citing the lore, then living in it.
+const LORE_T1 = [
+  'The wheel would like it noted that it has never been to gloxenville.',
+  'This result has been entered in the document. The good half.',
+  'Somewhere, a man is tunneling toward a fish. The house respects that.',
+  'The house is legally required to disclose that the tutorial is non existant.',
+  'The napkin has been updated.',
+  'The felt was tested for petplay compliance. It passed. Nobody is sure what the test was.',
+];
+const LORE_T2 = [
+  'The hole card smelled faintly of the Gulf of Riga.',
+  'Winnings may be redeemed for one (1) wet tile. There is one wet tile. It is not for sale.',
+  'The reels are 40km from the fish and closing.',
+  'The napkin has been notarized. The notary was also a napkin.',
+  'im bilding it. im bilding it so hard.',
+  'A conductor cat crossed the felt mid-hand. Play continued. It always does.',
+  'The dealer heard the Cucurella song once and now shuffles to it.',
+  'jan_gbg verified the helicopter. The house has no further comment on the helicopter.',
+];
+const LORE_T3 = [
+  'THE HOUSE HAS SEEN THE FISH. THE FISH HAS SEEN THE HOUSE.',
+  'Vade retro satana. The dealer whispers it before every shuffle now. We let him.',
+  'The wheel eats a paella. The wheel drinks a star.',
+  'No viable path was found to your money.',
+  'The drills are singing hymns under the felt.',
+  'Colin brought his own chair to this table. Security did nothing. Security is also a napkin.',
+  'All debts are payable in wet tiles at the current exchange rate (1 tile = the dream).',
+  'The pit boss is fifteen transit agencies wearing a trench coat.',
+  'A man named Coochiefarter once tipped the house $1000. We built this wing with it. This is the wing.',
+];
+
+/**
+ * A small italic aside the house mutters under a verdict. Empty string at
+ * tier 0; increasingly frequent and unhinged as the melt progresses.
+ */
+export function houseFlourish(): string {
+  const tier = houseMadness();
+  if (tier === 0) return '';
+  const odds = tier === 1 ? 0.35 : tier === 2 ? 0.6 : 0.9;
+  if (Math.random() > odds) return '';
+  const pool = tier === 1 ? LORE_T1 : tier === 2 ? [...LORE_T1, ...LORE_T2] : [...LORE_T2, ...LORE_T3];
+  return pool[Math.floor(Math.random() * pool.length)];
+}
+
 /** Record a self-spin (the gambler anted up). Returns the updated entry for the verdict line. */
 export function recordSelfSpin(
   userId: string,
@@ -225,14 +307,18 @@ export function bjStand(
 const SLOT_SYMBOLS: Array<[string, number]> = [
   ['🚇', 30], ['🛗', 20], ['🎫', 20], ['🐀', 15], ['🚽', 15],
 ];
+// Once the house is unwell (madness ≥2), the fish surfaces on the reels.
+// Kaicardenas2 has been tunneling toward it for weeks; it was inevitable.
+const SLOT_SYMBOLS_MELTED: Array<[string, number]> = [...SLOT_SYMBOLS, ['🐟', 6]];
 
-function slotReel(): string {
-  let roll = Math.random() * 100;
-  for (const [sym, weight] of SLOT_SYMBOLS) {
+function slotReel(symbols: Array<[string, number]>): string {
+  const total = symbols.reduce((s, [, w]) => s + w, 0);
+  let roll = Math.random() * total;
+  for (const [sym, weight] of symbols) {
     roll -= weight;
     if (roll <= 0) return sym;
   }
-  return SLOT_SYMBOLS[0][0];
+  return symbols[0][0];
 }
 
 export interface SlotResult {
@@ -243,17 +329,25 @@ export interface SlotResult {
 }
 
 export function spinSlots(stake: number): SlotResult {
-  const reels = [slotReel(), slotReel(), slotReel()];
+  const symbols = houseMadness() >= 2 ? SLOT_SYMBOLS_MELTED : SLOT_SYMBOLS;
+  const reels = [slotReel(symbols), slotReel(symbols), slotReel(symbols)];
   const count = (sym: string) => reels.filter((r) => r === sym).length;
   const trains = count('🚇');
   const toilets = count('🚽');
+  const fish = count('🐟');
+  if (fish === 3)
+    return { reels, credDelta: stake * 40, boxSeconds: 0, label: 'THE FISH HAS BEEN REACHED' };
   if (trains === 3) return { reels, credDelta: stake * 10, boxSeconds: 0, label: 'FULL SERVICE — JACKPOT' };
   if (toilets === 3) return { reels, credDelta: 0, boxSeconds: stake, label: 'THE FLUSH' };
   if (reels[0] === reels[1] && reels[1] === reels[2])
     return { reels, credDelta: stake * 4, boxSeconds: 0, label: 'triple' };
+  if (fish === 2)
+    return { reels, credDelta: stake * 2, boxSeconds: 0, label: 'two fish — the drills sing' };
   if (toilets === 2)
     return { reels, credDelta: 0, boxSeconds: Math.max(5, Math.floor(stake / 2)), label: 'half flush' };
   if (trains === 2) return { reels, credDelta: stake, boxSeconds: 0, label: 'two trains' };
+  if (fish === 1)
+    return { reels, credDelta: 0, boxSeconds: 0, label: 'one fish — 40km closer' };
   return { reels, credDelta: 0, boxSeconds: 0, label: 'nothing' };
 }
 

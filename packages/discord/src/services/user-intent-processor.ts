@@ -18,7 +18,15 @@ import {
   bjStand,
   bjFmt,
   spinSlots,
+  bumpHouseEvents,
+  houseFlourish,
 } from './casino.js';
+
+/** Attach the house's deteriorating inner monologue to a verdict (Discord small-text). */
+function withMelt(verdict: string): string {
+  const aside = houseFlourish();
+  return aside ? `${verdict}\n-# ${aside}` : verdict;
+}
 import { jobMonitor } from './job-monitor.js';
 import { telemetry } from './telemetry.js';
 import { generateCorrelationId, getShortCorrelationId } from '../utils/correlation.js';
@@ -542,6 +550,7 @@ export async function processUserIntent(
           // sentence — and the ledger doesn't record time that wasn't served.
           const _gMatch = cleanResult.match(/\[GAMBLE(?::(\d{1,3})(?::(\d{1,2}))?)?\]/i);
           if (_gMatch && typeof (intent as any).timeoutAuthor === 'function') {
+            bumpHouseEvents();
             const _stake = Math.min(300, Math.max(5, parseInt(_gMatch[1] || '60', 10) || 60));
             const _odds = Math.min(90, Math.max(10, parseInt(_gMatch[2] || '50', 10) || 50));
             cleanResult = cleanResult.replace(/\[GAMBLE(?::\d{1,3}){0,2}\]/gi, '').trim();
@@ -580,6 +589,7 @@ export async function processUserIntent(
                 _verdict = `🎰 **THE WHEEL** — roll ${_roll}/100, survive ≤${_odds}: 🟥 THE BOX — but the mechanism jammed. Sentence commuted. The house is FURIOUS.`;
               }
             }
+            _verdict = withMelt(_verdict);
             cleanResult = cleanResult ? `${cleanResult}\n\n${_verdict}` : _verdict;
           }
           // BLACKJACK & SLOTS — real server-side games. The LLM's patter is flavor; the
@@ -593,6 +603,7 @@ export async function processUserIntent(
           const _standM = cleanResult.match(/\[STAND\]/i);
           const _slotsM = cleanResult.match(/\[SLOTS(?::(\d{1,3}))?\]/i);
           if (_dealM || _hitM || _standM || _slotsM) {
+            bumpHouseEvents();
             cleanResult = cleanResult
               .replace(/\[(?:DEAL(?::\d{1,3})?|HIT|STAND|SLOTS(?::\d{1,3})?)\]/gi, '')
               .trim();
@@ -664,7 +675,10 @@ export async function processUserIntent(
                 _house = `🎰 **THE REELS** (${_stake}s a pull) — ${_row} — nothing. The house keeps your quarter.`;
               }
             }
-            if (_house) cleanResult = cleanResult ? `${cleanResult}\n\n${_house}` : _house;
+            if (_house) {
+              _house = withMelt(_house);
+              cleanResult = cleanResult ? `${cleanResult}\n\n${_house}` : _house;
+            }
           }
           // WHEEL OF FATE — THIRD-PARTY SPIN: [WHEEL] / [WHEEL:NN] / [WHEEL:NN:name]. The
           // victim pool is humans recently active in the channel (vetted through the same
@@ -672,6 +686,7 @@ export async function processUserIntent(
           // timeout all happen in the discord handler — server-side, unriggable.
           const _wMatch = cleanResult.match(/\[WHEEL(?::(\d{1,3}))?(?::([^\]\n]{1,32}))?\]/i);
           if (_wMatch && typeof (intent as any).spinChannelWheel === 'function') {
+            bumpHouseEvents();
             cleanResult = cleanResult.replace(/\[WHEEL(?::[^\]\n]{1,40})?\]/gi, '').trim();
             const _spin = await (intent as any).spinChannelWheel(
               parseInt(_wMatch[1] || '60', 10) || 60,
@@ -687,6 +702,7 @@ export async function processUserIntent(
             } else {
               _verdict = `🎡 **WHEEL OF FATE** — the wheel locks onto **${_spin.target}**... roll ${_spin.roll}/100: 🟥 THE BOX — but the mechanism jammed. **${_spin.target}** walks. The house is FURIOUS.`;
             }
+            _verdict = withMelt(_verdict);
             cleanResult = cleanResult ? `${cleanResult}\n\n${_verdict}` : _verdict;
           }
           // Banned users may be referenced but never named or @-pinged. The prompt
