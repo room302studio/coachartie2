@@ -42,8 +42,6 @@ import {
   isChannelAllowedForResponse,
   GuildConfig,
 } from '../config/guild-whitelist.js';
-import { LAUNCH_GUILD_ID, launchStatusLine } from '../config/launch-config.js';
-import { getReviewTallyLine } from '../services/steam-review-notes.js';
 import {
   getGitHubIntegrationSafe,
   isGitHubIntegrationReady,
@@ -54,7 +52,7 @@ import {
   isProtectedTimeoutTarget,
   SUBWAY_BUILDER_GUILD_ID,
 } from '../services/outbound-gate.js';
-import { getCasinoStandingsLine, recordWheelVictim, CASINO_OPEN } from '../services/casino.js';
+import { recordWheelVictim } from '../services/casino.js';
 import { getMentionProxyService } from '../services/mention-proxy-service.js';
 import { quizSessionManager } from '../services/quiz-session-manager.js';
 import Chance from 'chance';
@@ -1592,18 +1590,9 @@ export function setupMessageHandler(client: Client) {
         // channels and drags them back into bug-collector voice — which is exactly
         // why Yard Artie kept begging for bug reports in #prison-yard.
         if (channelPersona?.systemPrompt) {
-          // Live launch countdown + review tally, precomputed here because the LLM
-          // can't do date math and doesn't get to invent review numbers.
-          const launchLine =
-            message.guildId === LAUNCH_GUILD_ID ? launchStatusLine() : null;
-          const tallyLine =
-            message.guildId === LAUNCH_GUILD_ID ? getReviewTallyLine() : null;
-          const casinoLine =
-            CASINO_OPEN && message.guildId === LAUNCH_GUILD_ID ? getCasinoStandingsLine() : null;
-          const personaContext = `🎭 CHANNEL PERSONA — this defines who you are and how you behave in this channel. It OVERRIDES any other guild focus/mode (including any "bugs only" or on-topic mandate). Do not solicit bug reports here.
+          const personaContext = `🎭 CHANNEL PERSONA — this defines who you are and how you behave in this channel. It OVERRIDES any other guild focus/mode.
 
 ${channelPersona.systemPrompt}
-${launchLine ? `\n⏰ ${launchLine}\n` : ''}${tallyLine ? `\n📊 ${tallyLine}\n` : ''}${casinoLine ? `\n🎰 ${casinoLine}\n` : ''}
 ---
 `;
           guildContextToPass = personaContext;
