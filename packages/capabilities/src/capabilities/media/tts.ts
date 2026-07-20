@@ -1,5 +1,8 @@
 import { logger, getSyncDb, scrubBlockedUserMentions } from '@coachartie/shared';
-import { RegisteredCapability } from '../../services/capability/capability-registry.js';
+import {
+  RegisteredCapability,
+  CapabilityContext,
+} from '../../services/capability/capability-registry.js';
 import { openRouterService } from '../../services/llm/openrouter.js';
 
 /**
@@ -142,7 +145,7 @@ Voices: artie (default), anchor (newsreel gravitas), dj, poetic, field, dispatch
     '<capability name="tts" action="speak" data=\'{"text":"good morning subway builders, the trains run on time and so do I"}\' />',
   ],
 
-  handler: async (params: any) => {
+  handler: async (params: any, _content: string | undefined, context?: CapabilityContext) => {
     const action = params.action || 'vibe_report';
     if (action !== 'speak' && action !== 'vibe_report') {
       return `Unknown action: ${action}. Available: vibe_report, speak`;
@@ -153,7 +156,12 @@ Voices: artie (default), anchor (newsreel gravitas), dj, poetic, field, dispatch
       return 'TTS unavailable: ELEVENLABS_API_KEY is not configured.';
     }
 
-    const channelId = params.channelId || params.channel_id || params.context?.channelId;
+    // channelId promises "automatic" in the prompt, but the executor only injects it
+    // into params for a whitelist of capabilities that never included tts — the real
+    // channel lives on the context arg this handler used to ignore. That gap is why
+    // Artie wrote a whole song, generated the audio twice, and had nowhere to post it.
+    const channelId =
+      params.channelId || params.channel_id || context?.channelId || params.context?.channelId;
     if (!channelId) {
       return 'No channel to post the voice note in — pass channelId.';
     }
@@ -163,9 +171,9 @@ Voices: artie (default), anchor (newsreel gravitas), dj, poetic, field, dispatch
       try {
         text = await composeBulletin(
           channelId,
-          params.guildId || params.guild_id || params.context?.guildId,
+          params.guildId || params.guild_id || context?.guildId || params.context?.guildId,
           params.angle,
-          params.userId || 'vibe-report'
+          params.userId || context?.userId || 'vibe-report'
         );
       } catch (error: any) {
         logger.error('Vibe bulletin composition failed:', error);
