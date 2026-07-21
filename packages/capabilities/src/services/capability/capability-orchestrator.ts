@@ -137,6 +137,11 @@ export class CapabilityOrchestrator {
         success: true,
       });
 
+      // MECHANICAL GUARANTEE: lyric sheets get sung. Prompt rules kept lapsing
+      // (~1 in 5 song requests shipped as text) — if the reply looks like a lyric
+      // sheet and no tts ran this job, the house band kicks in automatically.
+      this.autoSingLyricSheet(context, result);
+
       return result;
     } catch (error) {
       logger.error(`❌ Orchestration failed for message ${message.id}:`, error);
@@ -246,6 +251,42 @@ export class CapabilityOrchestrator {
       // SOFT_DEADLINE_RESERVE_MS leaves room to actually send the answer we salvage.
       deadlineAt: Date.now() + JOB_TIMEOUT_MS - SOFT_DEADLINE_RESERVE_MS,
     };
+  }
+
+  /**
+   * If the final visible reply is a lyric sheet ([Chorus]/[Verse] labels, or 🎶 with a
+   * stack of short lines) and no tts capability executed during this job, sing it —
+   * fire-and-forget so the text reply isn't delayed by music generation. The channel
+   * gets the lyric sheet AND, ~a minute later, the actual jam.
+   */
+  private autoSingLyricSheet(context: OrchestrationContext, response: string): void {
+    try {
+      const channelId = context.discord_context?.channelId;
+      if (!channelId || !response || response.length < 120) return;
+      if (context.results?.some((r) => r.capability?.name === 'tts')) return;
+      const hasSectionLabel = /[[(*]\s*(chorus|verse\s*\d?|bridge|hook|outro)\b/i.test(response);
+      const shortLines = response
+        .split('\n')
+        .map((l) => l.trim())
+        .filter((l) => l.length > 8 && l.length < 80 && !l.startsWith('http'));
+      const looksLyrical = hasSectionLabel || (/🎶|🎵/.test(response) && shortLines.length >= 8);
+      if (!looksLyrical) return;
+      const lyrics = response
+        .replace(/\*\*/g, '')
+        .replace(/^#+\s*/gm, '')
+        .trim();
+      logger.warn('🎼 Lyric sheet shipped with no tts call — auto-singing it (mechanical guarantee)');
+      void capabilityRegistry
+        .execute('tts', 'sing', { lyrics }, undefined, {
+          userId: context.userId,
+          messageId: context.messageId,
+          channelId,
+          guildId: context.discord_context?.guildId,
+        })
+        .catch((e) => logger.warn('Auto-sing failed:', e));
+    } catch (e) {
+      logger.warn('Auto-sing detection failed:', e);
+    }
   }
 
   /**
