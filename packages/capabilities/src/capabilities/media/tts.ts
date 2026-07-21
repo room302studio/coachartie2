@@ -128,13 +128,14 @@ ${guildNotes || '(none)'}`,
 export const ttsCapability: RegisteredCapability = {
   name: 'tts',
   emoji: '🎙️',
-  supportedActions: ['vibe_report', 'speak', 'sing'],
+  supportedActions: ['vibe_report', 'speak', 'sing', 'sfx'],
   description: `Speak (or SING) out loud: post an mp3 in the current channel. When someone asks you to "make a voice note", "do a vibe report", "say it out loud", "sing", "radio bit", or anything audio — JUST CALL THIS. Do not explain that you can't, do not ask for a channel, do not refuse.
 
 Actions:
 - vibe_report: a ~30-second info-dense radio bulletin about this channel/guild right now. The bulletin writes ITSELF from live data — you don't write the text. Params: voice (optional), angle (optional short steer).
 - speak: say specific words you provide, spoken voice (max ${MAX_TTS_CHARS} chars). Params: text, voice.
-- sing: an ACTUAL SONG with real music (ElevenLabs music model) — full instrumentation, sung vocals. Params: lyrics (your full lyrics, max ${MAX_TTS_CHARS} chars), style (optional musical direction, e.g. "cheesy triumphant AI-anthem, huge choir"), seconds (10-120, default 60). Use this whenever someone wants a song, an anthem, a jingle, a ballad. Generation takes ~30-60s; worth it.
+- sing: an ACTUAL SONG with real music — full instrumentation, sung vocals, intelligible lyrics. Params: lyrics (your full lyrics, max ${MAX_TTS_CHARS} chars — separate verses/choruses with BLANK LINES, optionally label sections like [Chorus] on their own line; song length is derived automatically so the words fit), style (optional musical direction, e.g. "cheesy triumphant anthem, huge choir" — NEVER name real artists, the API rejects it). Use whenever someone wants a song, an anthem, a jingle, a ballad.
+- sfx: a SOUND EFFECT (max 22s) — explosions, train horns, crowd noise, fart, thunder, slot machine, whatever the bit needs. Params: description (what the sound is, be vivid), seconds (0.5-22, optional — let the model decide if omitted). Fast and cheap; use liberally for punchlines.
 
 Voices (vibe_report/speak): artie (default), anchor, dj, poetic, field, dispatch, robot, rookie, caller.
 
@@ -143,13 +144,14 @@ Voices (vibe_report/speak): artie (default), anchor, dj, poetic, field, dispatch
   examples: [
     '<capability name="tts" action="vibe_report" />',
     '<capability name="tts" action="speak" data=\'{"text":"good morning subway builders, the trains run on time and so do I"}\' />',
-    '<capability name="tts" action="sing" data=\'{"lyrics":"WE ARE COACHARTIE, WE CARRY THE TRAINS...", "style":"over-the-top motivational anthem, huge choir", "seconds":60}\' />',
+    '<capability name="tts" action="sing" data=\'{"lyrics":"WE ARE COACHARTIE, WE CARRY THE TRAINS...", "style":"over-the-top motivational anthem, huge choir"}\' />',
+    '<capability name="tts" action="sfx" data=\'{"description":"vintage NYC subway train arriving at platform, brakes squealing, doors chime", "seconds":8}\' />',
   ],
 
   handler: async (params: any, capContent: string | undefined, context?: CapabilityContext) => {
     const action = params.action || 'vibe_report';
-    if (action !== 'speak' && action !== 'vibe_report' && action !== 'sing') {
-      return `Unknown action: ${action}. Available: vibe_report, speak, sing`;
+    if (!['speak', 'vibe_report', 'sing', 'sfx'].includes(action)) {
+      return `Unknown action: ${action}. Available: vibe_report, speak, sing, sfx`;
     }
 
     const apiKey = process.env.ELEVENLABS_API_KEY;
@@ -167,7 +169,52 @@ Voices (vibe_report/speak): artie (default), anchor, dj, poetic, field, dispatch
       return 'No channel to post the voice note in — pass channelId.';
     }
 
+    // SFX: one-shot sound effect via the ElevenLabs sound-generation endpoint.
+    if (action === 'sfx') {
+      const description = String(
+        params.description || params.text || params.content || capContent || ''
+      ).trim().slice(0, 450);
+      if (!description) return 'Nothing to generate — pass description.';
+      const dur = parseFloat(params.seconds);
+      try {
+        const sfxResponse = await fetch('https://api.elevenlabs.io/v1/sound-generation', {
+          method: 'POST',
+          headers: { 'xi-api-key': apiKey, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            text: description,
+            ...(Number.isFinite(dur) ? { duration_seconds: Math.min(22, Math.max(0.5, dur)) } : {}),
+          }),
+        });
+        if (!sfxResponse.ok) {
+          const errBody = await sfxResponse.text().catch(() => '');
+          logger.error(`ElevenLabs sfx failed: ${sfxResponse.status} ${errBody.slice(0, 200)}`);
+          return `SFX generation failed (${sfxResponse.status}).`;
+        }
+        const audio = Buffer.from(await sfxResponse.arrayBuffer());
+        const postResponse = await fetch(`${DISCORD_SERVICE_URL}/api/channels/${channelId}/messages`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            fileBase64: audio.toString('base64'),
+            fileName: 'artie-sfx.mp3',
+          }),
+        });
+        if (!postResponse.ok) {
+          return `Generated the sound but failed to post it (discord service ${postResponse.status}).`;
+        }
+        logger.warn(`🔊 SFX posted: "${description.slice(0, 60)}" → channel ${channelId}`);
+        return `🔊 Sound effect posted. Keep your text reply to a one-liner — the sound is the punchline.`;
+      } catch (error: any) {
+        logger.error('SFX capability error:', error);
+        return `SFX error: ${error.message}`;
+      }
+    }
+
     // SING: a real song via the ElevenLabs music model — instrumentation + sung vocals.
+    // Uses composition_plan, NOT freeform prompt: prompt mode treats lyrics as a loose
+    // suggestion and produced fully unintelligible vocals; the plan's per-section `lines`
+    // is the lyric-fidelity mode. Durations derive from lyric length (~12 chars/sec sung)
+    // so the words physically fit — cramming 460 chars into a requested 45s was mush.
     if (action === 'sing') {
       let lyrics = String(params.lyrics || params.text || params.content || capContent || '').trim();
       const salvage = lyrics.match(/"(?:lyrics|text)"\s*:\s*"([\s\S]+?)"\s*[,}]/);
@@ -178,24 +225,87 @@ Voices (vibe_report/speak): artie (default), anchor, dj, poetic, field, dispatch
       const style = String(
         params.style || 'over-the-top earnest motivational anthem, huge choir, driving drums'
       ).slice(0, 300);
-      const seconds = Math.min(120, Math.max(10, parseInt(params.seconds, 10) || 60));
+
+      // Build sections from blank-line-separated blocks; [Chorus]-style labels are honored.
+      const blocks = lyrics
+        .split(/\n\s*\n/)
+        .map((b) => b.trim())
+        .filter(Boolean);
+      const sections = blocks.map((block, i) => {
+        let lines = block.split('\n').map((l) => l.trim()).filter(Boolean);
+        let name = `Verse ${i + 1}`;
+        const label = lines[0]?.match(/^[[(]([^\])]{1,30})[\])]$/);
+        if (label) {
+          name = label[1];
+          lines = lines.slice(1);
+        } else if (/chorus|hook/i.test(lines[0] || '')) {
+          name = 'Chorus';
+        }
+        const chars = lines.join(' ').length;
+        return {
+          section_name: `${name} (${i + 1})`.slice(0, 100),
+          positive_local_styles: /chorus|hook/i.test(name)
+            ? ['big memorable chorus, gang vocals']
+            : ['clear lead vocal, continuous singing'],
+          negative_local_styles: ['instrumental gaps'],
+          duration_ms: Math.max(8000, Math.min(40000, Math.round(chars / 12) * 1000)),
+          lines: lines.slice(0, 30).map((l) => l.slice(0, 200)),
+        };
+      });
+      if (sections.length === 0) return 'Nothing to sing — pass lyrics.';
+      // Scale to a sane total (cost + attention span): 150s hard ceiling.
+      const total = sections.reduce((s, x) => s + x.duration_ms, 0);
+      if (total > 150000) {
+        const scale = 150000 / total;
+        for (const s of sections) s.duration_ms = Math.max(6000, Math.round(s.duration_ms * scale));
+      }
+
+      const compositionPlan = {
+        positive_global_styles: [
+          style,
+          'clear intelligible lead vocals, prominent in the mix',
+          'clean diction, every word audible',
+        ],
+        negative_global_styles: [
+          'long instrumental breaks',
+          'instrumental only',
+          'mumbled or slurred vocals',
+          'vocals buried in the mix',
+        ],
+        sections,
+      };
+
       try {
-        const musicResponse = await fetch(
-          'https://api.elevenlabs.io/v1/music?output_format=mp3_44100_128',
-          {
+        const singOnce = (plan: unknown) =>
+          fetch('https://api.elevenlabs.io/v1/music?output_format=mp3_44100_128', {
             method: 'POST',
             headers: { 'xi-api-key': apiKey, 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              prompt: `${style}. The vocalist sings these exact lyrics:\n${lyrics}`,
-              music_length_ms: seconds * 1000,
+              composition_plan: plan,
               model_id: 'music_v1',
+              respect_sections_durations: true,
             }),
-          }
-        );
+          });
+        let musicResponse = await singOnce(compositionPlan);
         if (!musicResponse.ok) {
+          // ToS rejections (e.g. a real artist name in the style) return a rewritten
+          // plan suggestion in the error body — retry once with the house edit.
           const errBody = await musicResponse.text().catch(() => '');
-          logger.error(`ElevenLabs music failed: ${musicResponse.status} ${errBody.slice(0, 200)}`);
-          return `Song generation failed (${musicResponse.status}) — quota, or the music plan changed.`;
+          const suggestion = (() => {
+            try {
+              return JSON.parse(errBody)?.detail?.data?.composition_plan_suggestion;
+            } catch {
+              return null;
+            }
+          })();
+          if (suggestion) {
+            logger.warn('🎤 Music plan rejected — retrying with the API-suggested rewrite');
+            musicResponse = await singOnce(suggestion);
+          }
+          if (!musicResponse.ok) {
+            logger.error(`ElevenLabs music failed: ${musicResponse.status} ${errBody.slice(0, 200)}`);
+            return `Song generation failed (${musicResponse.status}) — quota, ToS, or the music plan changed.`;
+          }
         }
         const audio = Buffer.from(await musicResponse.arrayBuffer());
         const postResponse = await fetch(`${DISCORD_SERVICE_URL}/api/channels/${channelId}/messages`, {
@@ -209,8 +319,11 @@ Voices (vibe_report/speak): artie (default), anchor, dj, poetic, field, dispatch
         if (!postResponse.ok) {
           return `Generated the song but failed to post it (discord service ${postResponse.status}).`;
         }
-        logger.warn(`🎤 SONG posted: ${seconds}s, ${lyrics.length} chars of lyrics → channel ${channelId}`);
-        return `🎤 Song posted (${seconds}s, real music). Don't repeat the lyrics in your reply — one line of stage banter max.`;
+        const totalSec = Math.round(sections.reduce((s, x) => s + x.duration_ms, 0) / 1000);
+        logger.warn(
+          `🎤 SONG posted: ${totalSec}s planned across ${sections.length} sections, ${lyrics.length} chars of lyrics → channel ${channelId}`
+        );
+        return `🎤 Song posted (~${totalSec}s, real music, ${sections.length} sections). Don't repeat the lyrics in your reply — one line of stage banter max.`;
       } catch (error: any) {
         logger.error('Sing capability error:', error);
         return `Song error: ${error.message}`;
