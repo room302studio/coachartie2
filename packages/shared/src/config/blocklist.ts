@@ -12,11 +12,9 @@ export interface BlockedUser {
 }
 
 export const BLOCKED_USERS: BlockedUser[] = [
-  {
-    // banned 2026-07-15 for burning credits with hour-long troll spam
-    id: '1064472458448617502',
-    names: ['yellowaquarium', 'yellow aquarium'],
-  },
+  // yellowaquarium (id 1064472458448617502) — banned 2026-07-15 for burning credits
+  // with hour-long troll spam; served their sentence, unblocked 2026-07-21 as a
+  // (nearly) model citizen. Empty list = nobody is invisible and no 💔 reactions fire.
 ];
 
 // What Artie calls a blocked user when one comes up. Policy (EJ, 2026-07-16):
