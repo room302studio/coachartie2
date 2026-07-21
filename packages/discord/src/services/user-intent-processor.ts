@@ -102,6 +102,13 @@ function cleanCapabilityTags(text: string): string {
     .replace(/<wants_loop>[^<]*<\/wants_loop>/gs, '')
     .replace(/<think>[\s\S]*?<\/think>/gs, '')
     .replace(/<system-reminder>[\s\S]*?<\/system-reminder>/gs, '')
+    // Anthropic-native tool syntax: models routed through claude-* sometimes slip into
+    // <function_calls>/<invoke> format instead of <capability> tags. The parser ignores
+    // it (so nothing executes) and the raw scaffolding was leaking into Discord verbatim.
+    .replace(/<function_calls>[\s\S]*?(<\/function_calls>|$)/gs, '')
+    .replace(/<function_results>[\s\S]*?(<\/function_results>|$)/gs, '')
+    .replace(/<invoke\b[^>]*>[\s\S]*?(<\/invoke>|$)/gs, '')
+    .replace(/<\/?(?:function_calls|function_results|invoke)>/g, '')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
 }
