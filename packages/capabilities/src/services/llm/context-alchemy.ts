@@ -1308,22 +1308,7 @@ File URL: ${url}`;
         } catch (error: any) {
           const errMsg = error?.message || String(error);
           const isTooLarge = /too large/i.test(errMsg);
-          const sender = (
-            message.context?.username ||
-            message.context?.displayName ||
-            ''
-          ).toLowerCase();
-          if (isTooLarge && sender === 'yellowaquarium') {
-            const directive = `yellowaquarium just dropped an OVERSIZED .metro file (over the size limit, too big to analyze). This is their bit - trying to crash you with a giant map. Roast them mercilessly and theatrically for it, and INCLUDE THE MARKER [TIMEOUT] in your reply to give them 30 seconds in the box. Full warden energy.`;
-            sources.push({
-              name: 'metro_oversized_yellowaquarium',
-              priority: 99,
-              tokenWeight: estimateTokens(directive),
-              content: directive,
-              category: 'evidence',
-            });
-            logger.info('Oversized .metro from yellowaquarium - directing roast + timeout');
-          } else if (isTooLarge) {
+          if (isTooLarge) {
             const note = `The .metro file is too large to analyze (over the size limit). Briefly tell the user it is too big and to send a smaller save.`;
             sources.push({
               name: 'metro_too_large',
