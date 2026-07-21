@@ -105,7 +105,13 @@ export class LLMLoopService {
 
           const robustResult = await robustExecutor.executeWithRetry(
             capabilityForExecution,
-            { userId: context.userId, messageId: context.messageId, traceId: context.traceId || undefined },
+            {
+              userId: context.userId,
+              messageId: context.messageId,
+              traceId: context.traceId || undefined,
+              channelId: context.discord_context?.channelId,
+              guildId: context.discord_context?.guildId,
+            },
             3
           );
 
@@ -251,7 +257,13 @@ export class LLMLoopService {
 
           const robustResult = await robustExecutor.executeWithRetry(
             capabilityForExecution,
-            { userId: context.userId, messageId: context.messageId, traceId: context.traceId || undefined },
+            {
+              userId: context.userId,
+              messageId: context.messageId,
+              traceId: context.traceId || undefined,
+              channelId: context.discord_context?.channelId,
+              guildId: context.discord_context?.guildId,
+            },
             3
           );
 

@@ -27,7 +27,16 @@ export class RobustCapabilityExecutor {
    */
   async executeWithRetry(
     capability: ParsedCapability,
-    context: { userId: string; messageId: string; traceId?: string },
+    context: {
+      userId: string;
+      messageId: string;
+      traceId?: string;
+      // Channel/guild MUST flow through here: capabilities executed from the ReAct loop
+      // used to lose them entirely, so tts/discord capabilities failed with "no channel"
+      // on every self-initiated multi-step attempt while direct executions worked.
+      channelId?: string;
+      guildId?: string;
+    },
     maxRetries = capability.name === 'mcp_auto_installer' ? 1 : 3 // No retries for MCP installs
   ): Promise<CapabilityResult> {
     logger.info(
@@ -234,7 +243,7 @@ export class RobustCapabilityExecutor {
 
   private async tryRegistryExecution(
     capability: ParsedCapability,
-    context: { userId: string; messageId: string }
+    context: { userId: string; messageId: string; channelId?: string; guildId?: string }
   ): Promise<unknown> {
     // Inject userId and messageId into params for capabilities that need context
     let paramsWithContext = ['scheduler', 'memory', 'image_gen'].includes(capability.name)
@@ -277,7 +286,12 @@ export class RobustCapabilityExecutor {
       capability.action,
       paramsWithContext,
       interpolatedContent,
-      { userId: context.userId, messageId: context.messageId }
+      {
+        userId: context.userId,
+        messageId: context.messageId,
+        channelId: context.channelId,
+        guildId: context.guildId,
+      }
     );
   }
 

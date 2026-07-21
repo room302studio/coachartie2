@@ -189,7 +189,12 @@ export class CapabilityExecutor {
 
         const robustResult = await robustExecutor.executeWithRetry(
           capabilityForExecution,
-          { userId: context.userId, messageId: context.messageId },
+          {
+            userId: context.userId,
+            messageId: context.messageId,
+            channelId: context.discord_context?.channelId,
+            guildId: context.discord_context?.guildId,
+          },
           3
         );
 
