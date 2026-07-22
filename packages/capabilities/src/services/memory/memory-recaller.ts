@@ -57,8 +57,8 @@ export class MemoryRecaller implements MemoryEntourageInterface {
     }
 
     try {
-      const budget = this.tokenBudget(options.maxTokens, !!options.guildId);
-      const candidates = await this.fetchCandidates(userId);
+      const budget = this.tokenBudget(options.maxTokens);
+      const candidates = await this.fetchCandidates(userId, options.guildId);
 
       const semantic =
         candidates.length > 0
@@ -68,11 +68,8 @@ export class MemoryRecaller implements MemoryEntourageInterface {
         candidates.length > 0
           ? this.temporalLayer(userMessage, candidates, options.priority, budget.temporal)
           : empty(['no_memories']);
-      const guild = options.guildId
-        ? await this.guildLayer(options.guildId, budget.guild)
-        : undefined;
 
-      return this.fuse(semantic, temporal, guild);
+      return this.fuse(semantic, temporal);
     } catch (error) {
       logger.error('❌ MemoryRecaller failed:', error);
       return empty(['error']);
@@ -82,7 +79,7 @@ export class MemoryRecaller implements MemoryEntourageInterface {
   // --------------------------------------------------------------------------
   // Candidate fetch (single pass — superset of what the old two layers pulled)
   // --------------------------------------------------------------------------
-  private async fetchCandidates(userId: string): Promise<Candidate[]> {
+  private async fetchCandidates(userId: string, guildId?: string): Promise<Candidate[]> {
     const userMemories = await this.memoryService.getRecentMemories(userId, 60);
 
     let artieMemories: any[] = [];
@@ -93,7 +90,19 @@ export class MemoryRecaller implements MemoryEntourageInterface {
       artieMemories = [...highImportance, ...recent];
     }
 
-    return [...userMemories, ...artieMemories].map((m) => ({
+    // Community/guild memories now join the SAME candidate pool that gets semantically
+    // ranked below — that's the whole recall fix. They used to be a separate "5 most
+    // recent, no relevance matching" guild layer, so Artie could only ever recall the
+    // last 5 things that happened in the server, never the memory that actually matched
+    // the question ("who is yellowaquarium?" → couldn't find it). Now they're ranked by
+    // TF-IDF relevance like everything else. Pull a recency-bounded window as candidates
+    // (same idea as user memories being capped at 60); the top-K selection stays tiny.
+    let guildMemories: any[] = [];
+    if (guildId) {
+      guildMemories = await hybridDataLayer.getGuildMemories(guildId, 400);
+    }
+
+    return [...userMemories, ...artieMemories, ...guildMemories].map((m) => ({
       content: m.content,
       importance: m.importance || 5,
       date: m.timestamp || new Date().toISOString(),
@@ -101,21 +110,10 @@ export class MemoryRecaller implements MemoryEntourageInterface {
     }));
   }
 
-  private tokenBudget(
-    maxTokens?: number,
-    includeGuild?: boolean
-  ): { semantic: number; temporal: number; guild: number } {
+  private tokenBudget(maxTokens?: number): { semantic: number; temporal: number } {
     const total = maxTokens || 800;
-    if (includeGuild) {
-      // 45% semantic, 30% temporal, 25% guild
-      return {
-        semantic: Math.floor(total * 0.45),
-        temporal: Math.floor(total * 0.3),
-        guild: Math.floor(total * 0.25),
-      };
-    }
-    // 60% semantic, 40% temporal
-    return { semantic: Math.floor(total * 0.6), temporal: Math.floor(total * 0.4), guild: 0 };
+    // 60% semantic, 40% temporal (guild memories now flow through both, no separate slice)
+    return { semantic: Math.floor(total * 0.6), temporal: Math.floor(total * 0.4) };
   }
 
   private layerLimit(
@@ -498,41 +496,13 @@ export class MemoryRecaller implements MemoryEntourageInterface {
   }
 
   // --------------------------------------------------------------------------
-  // Guild layer (community knowledge)
-  // --------------------------------------------------------------------------
-  private async guildLayer(guildId: string, _maxTokens: number): Promise<MemoryEntourageResult> {
-    try {
-      const guildMemories = await hybridDataLayer.getGuildMemories(guildId, 5);
-      if (guildMemories.length === 0) {
-        return empty(['guild']);
-      }
-      const formatted = guildMemories.map((m) => {
-        const bracketEnd = m.content.indexOf('] ');
-        const content = bracketEnd > 0 ? m.content.substring(bracketEnd + 2) : m.content;
-        return content.substring(0, 300) + (content.length > 300 ? '...' : '');
-      });
-      return {
-        content: `🏠 Community knowledge:\n${formatted.map((m) => `• ${m}`).join('\n')}`,
-        confidence: 0.8,
-        memoryCount: guildMemories.length,
-        categories: ['guild', 'community'],
-        memoryIds: guildMemories.map((m) => String(m.id)),
-      };
-    } catch (error) {
-      logger.warn('Failed to get guild memories:', error);
-      return empty(['guild', 'error']);
-    }
-  }
-
-  // --------------------------------------------------------------------------
   // Fusion (concat layers, weighted confidence, merge categories/ids)
   // --------------------------------------------------------------------------
   private fuse(
     semantic: MemoryEntourageResult,
-    temporal: MemoryEntourageResult,
-    guild?: MemoryEntourageResult
+    temporal: MemoryEntourageResult
   ): MemoryEntourageResult {
-    const totalCount = semantic.memoryCount + temporal.memoryCount + (guild?.memoryCount || 0);
+    const totalCount = semantic.memoryCount + temporal.memoryCount;
     if (totalCount === 0) {
       return empty(['no_matches']);
     }
@@ -543,9 +513,6 @@ export class MemoryRecaller implements MemoryEntourageInterface {
     }
     if (temporal.memoryCount > 0) {
       active.push({ name: 'temporal', result: temporal });
-    }
-    if (guild && guild.memoryCount > 0) {
-      active.push({ name: 'guild', result: guild });
     }
 
     if (active.length === 1) {
@@ -560,8 +527,8 @@ export class MemoryRecaller implements MemoryEntourageInterface {
       .filter((c) => c)
       .join('\n\n');
 
-    // Weighted confidence: semantic 0.4, temporal 0.3, guild 0.3 (normalized over active).
-    const weights: Record<string, number> = { semantic: 0.4, temporal: 0.3, guild: 0.3 };
+    // Weighted confidence: semantic 0.4, temporal 0.3 (normalized over active).
+    const weights: Record<string, number> = { semantic: 0.4, temporal: 0.3 };
     let weightedConfidence = 0;
     let totalWeight = 0;
     for (const { name, result } of active) {
