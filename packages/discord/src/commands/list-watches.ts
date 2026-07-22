@@ -1,4 +1,4 @@
-import { SlashCommandBuilder, ChatInputCommandInteraction, EmbedBuilder } from 'discord.js';
+import { MessageFlags, SlashCommandBuilder, ChatInputCommandInteraction, EmbedBuilder } from 'discord.js';
 import { logger } from '@coachartie/shared';
 import { getGitHubPoller } from '../services/github-poller.js';
 
@@ -22,7 +22,7 @@ export const listWatchesCommand = {
       if (!guildId) {
         return await interaction.reply({
           content: '❌ This command can only be used in a server.',
-          ephemeral: true,
+          flags: MessageFlags.Ephemeral,
         });
       }
 
@@ -36,7 +36,7 @@ export const listWatchesCommand = {
         logger.warn('GitHub poller not initialized');
         return await interaction.reply({
           content: '❌ GitHub sync is not currently active.',
-          ephemeral: true,
+          flags: MessageFlags.Ephemeral,
         });
       }
 
@@ -45,7 +45,7 @@ export const listWatchesCommand = {
           content: channelOnly
             ? '📭 No repos are being watched in this channel. Use `/watch-repo` to add one!'
             : '📭 No repos are being watched in this server. Use `/watch-repo` to add one!',
-          ephemeral: true,
+          flags: MessageFlags.Ephemeral,
         });
       }
 
@@ -82,13 +82,13 @@ export const listWatchesCommand = {
 
       await interaction.reply({
         embeds: [embed],
-        ephemeral: true,
+        flags: MessageFlags.Ephemeral,
       });
     } catch (error) {
       logger.error('Error in list-watches command:', error);
       await interaction.reply({
         content: '❌ An error occurred while listing watches. Please try again.',
-        ephemeral: true,
+        flags: MessageFlags.Ephemeral,
       });
     }
   },

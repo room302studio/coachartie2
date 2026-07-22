@@ -1,4 +1,5 @@
 import {
+  MessageFlags,
   SlashCommandBuilder,
   ChatInputCommandInteraction,
   EmbedBuilder,
@@ -29,7 +30,7 @@ export const unwatchRepoCommand = {
       if (!repoRegex.test(repo)) {
         return await interaction.reply({
           content: '❌ Invalid repo format. Please use `owner/repo` format.',
-          ephemeral: true,
+          flags: MessageFlags.Ephemeral,
         });
       }
 
@@ -64,7 +65,7 @@ export const unwatchRepoCommand = {
       logger.error('Error in unwatch-repo command:', error);
       await interaction.reply({
         content: '❌ An error occurred while removing the repo watch. Please try again.',
-        ephemeral: true,
+        flags: MessageFlags.Ephemeral,
       });
     }
   },

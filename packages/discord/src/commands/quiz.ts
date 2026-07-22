@@ -1,4 +1,5 @@
 import {
+  MessageFlags,
   SlashCommandBuilder,
   ChatInputCommandInteraction,
   EmbedBuilder,
@@ -75,7 +76,7 @@ export const quizCommand = {
         default:
           return await interaction.reply({
             content: 'Unknown subcommand',
-            ephemeral: true,
+            flags: MessageFlags.Ephemeral,
           });
       }
     } catch (error) {
@@ -85,7 +86,7 @@ export const quizCommand = {
 
       return await interaction.reply({
         content: `❌ ${errorMessage}`,
-        ephemeral: true,
+        flags: MessageFlags.Ephemeral,
       });
     }
   },
@@ -104,7 +105,7 @@ async function handleStart(
   if (quizSessionManager.hasActiveQuiz(interaction.channelId)) {
     return await interaction.reply({
       content: '❌ A quiz is already active in this channel! Use `/quiz stop` to end it first.',
-      ephemeral: true,
+      flags: MessageFlags.Ephemeral,
     });
   }
 
@@ -202,7 +203,7 @@ async function handleStop(
   if (!scores) {
     return await interaction.reply({
       content: '❌ No active quiz in this channel.',
-      ephemeral: true,
+      flags: MessageFlags.Ephemeral,
     });
   }
 
@@ -240,7 +241,7 @@ async function handleScores(
   if (!session) {
     return await interaction.reply({
       content: '❌ No active quiz in this channel.',
-      ephemeral: true,
+      flags: MessageFlags.Ephemeral,
     });
   }
 
@@ -277,7 +278,7 @@ async function handleSkip(
   if (!skippedAnswer) {
     return await interaction.reply({
       content: '❌ No active quiz or no current question to skip.',
-      ephemeral: true,
+      flags: MessageFlags.Ephemeral,
     });
   }
 

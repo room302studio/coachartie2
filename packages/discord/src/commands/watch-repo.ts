@@ -1,4 +1,5 @@
 import {
+  MessageFlags,
   SlashCommandBuilder,
   ChatInputCommandInteraction,
   EmbedBuilder,
@@ -35,7 +36,7 @@ export const watchRepoCommand = {
       if (!guildId) {
         return await interaction.reply({
           content: '❌ This command can only be used in a server.',
-          ephemeral: true,
+          flags: MessageFlags.Ephemeral,
         });
       }
 
@@ -45,7 +46,7 @@ export const watchRepoCommand = {
         return await interaction.reply({
           content:
             '❌ Invalid repo format. Please use `owner/repo` format (e.g., `room302studio/coachartie2`).',
-          ephemeral: true,
+          flags: MessageFlags.Ephemeral,
         });
       }
 
@@ -59,7 +60,7 @@ export const watchRepoCommand = {
       if (invalidEvents.length > 0) {
         return await interaction.reply({
           content: `❌ Invalid events: ${invalidEvents.join(', ')}. Valid options: pr, review, ci, all`,
-          ephemeral: true,
+          flags: MessageFlags.Ephemeral,
         });
       }
 
@@ -115,7 +116,7 @@ export const watchRepoCommand = {
       logger.error('Error in watch-repo command:', error);
       await interaction.reply({
         content: '❌ An error occurred while setting up the repo watch. Please try again.',
-        ephemeral: true,
+        flags: MessageFlags.Ephemeral,
       });
     }
   },

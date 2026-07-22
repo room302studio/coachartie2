@@ -1,4 +1,5 @@
 import {
+  MessageFlags,
   SlashCommandBuilder,
   ChatInputCommandInteraction,
   EmbedBuilder,
@@ -48,7 +49,7 @@ export const statusCommand = {
 
         return await interaction.reply({
           embeds: [embed],
-          ephemeral: true,
+          flags: MessageFlags.Ephemeral,
         });
       }
 
@@ -99,7 +100,7 @@ export const statusCommand = {
 
       return await interaction.reply({
         embeds: [embed],
-        ephemeral: true,
+        flags: MessageFlags.Ephemeral,
       });
     } catch (error) {
       logger.error('Failed to fetch model status:', error);
@@ -112,7 +113,7 @@ export const statusCommand = {
 
       return await interaction.reply({
         embeds: [errorEmbed],
-        ephemeral: true,
+        flags: MessageFlags.Ephemeral,
       });
     }
   },

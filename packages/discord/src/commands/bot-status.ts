@@ -1,4 +1,4 @@
-import { ChatInputCommandInteraction, SlashCommandBuilder, EmbedBuilder } from 'discord.js';
+import { MessageFlags, ChatInputCommandInteraction, SlashCommandBuilder, EmbedBuilder } from 'discord.js';
 import { logger, testRedisConnection } from '@coachartie/shared';
 import { telemetry } from '../services/telemetry.js';
 import { capabilitiesClient } from '../services/capabilities-client.js';
@@ -21,7 +21,7 @@ export const botStatusCommand = {
     ),
 
   async execute(interaction: ChatInputCommandInteraction) {
-    await interaction.deferReply({ ephemeral: true });
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
     try {
       const statusType = (interaction.options.get('type')?.value as string) || 'all';

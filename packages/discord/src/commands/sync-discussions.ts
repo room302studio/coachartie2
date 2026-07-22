@@ -4,7 +4,7 @@
  * Usage: /sync-discussions repo:owner/repo [forum:channel_id]
  */
 
-import { SlashCommandBuilder, ChatInputCommandInteraction, ChannelType } from 'discord.js';
+import { MessageFlags, SlashCommandBuilder, ChatInputCommandInteraction, ChannelType } from 'discord.js';
 import { logger } from '@coachartie/shared';
 import { getForumTraversal } from '../services/forum-traversal.js';
 import { getGitHubIntegration } from '../services/github-integration.js';
@@ -36,7 +36,7 @@ export async function execute(interaction: ChatInputCommandInteraction) {
       await interaction.reply({
         content:
           '❌ GitHub integration is not configured. Please set GITHUB_TOKEN environment variable.',
-        ephemeral: true,
+        flags: MessageFlags.Ephemeral,
       });
       return;
     }
@@ -52,7 +52,7 @@ export async function execute(interaction: ChatInputCommandInteraction) {
       if (!forum || forum.type !== ChannelType.GuildForum) {
         await interaction.reply({
           content: '❌ Invalid forum channel specified.',
-          ephemeral: true,
+          flags: MessageFlags.Ephemeral,
         });
         return;
       }
@@ -78,7 +78,7 @@ export async function execute(interaction: ChatInputCommandInteraction) {
           await interaction.reply({
             content:
               '❌ This thread is not in a forum channel. Please run this command in a forum or specify a forum.',
-            ephemeral: true,
+            flags: MessageFlags.Ephemeral,
           });
           return;
         }
@@ -88,7 +88,7 @@ export async function execute(interaction: ChatInputCommandInteraction) {
         await interaction.reply({
           content:
             '❌ Please run this command in a forum channel or specify a forum using the `forum` option.',
-          ephemeral: true,
+          flags: MessageFlags.Ephemeral,
         });
         return;
       }
@@ -199,7 +199,7 @@ export async function execute(interaction: ChatInputCommandInteraction) {
     } else {
       await interaction.reply({
         content: `❌ Sync failed: ${errorMessage}`,
-        ephemeral: true,
+        flags: MessageFlags.Ephemeral,
       });
     }
   }

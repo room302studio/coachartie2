@@ -1,4 +1,5 @@
 import {
+  MessageFlags,
   Client,
   Events,
   Interaction,
@@ -152,9 +153,9 @@ async function handleSlashCommand(interaction: ChatInputCommandInteraction) {
 
     try {
       if (interaction.replied || interaction.deferred) {
-        await interaction.followUp({ content: errorMessage, ephemeral: true });
+        await interaction.followUp({ content: errorMessage, flags: MessageFlags.Ephemeral });
       } else {
-        await interaction.reply({ content: errorMessage, ephemeral: true });
+        await interaction.reply({ content: errorMessage, flags: MessageFlags.Ephemeral });
       }
     } catch (replyError) {
       logger.error(`Failed to send error reply [${shortId}]:`, {
@@ -277,7 +278,7 @@ async function handleAskQuestionResponse(interaction: ButtonInteraction | Select
     // Acknowledge the interaction
     await interaction.reply({
       content: `✅ You selected: **${answerLabel}**`,
-      ephemeral: true,
+      flags: MessageFlags.Ephemeral,
     });
 
     telemetry.logEvent(
@@ -304,7 +305,7 @@ async function handleAskQuestionResponse(interaction: ButtonInteraction | Select
       if (!interaction.replied) {
         await interaction.reply({
           content: `❌ Failed to process your selection [${shortId}]`,
-          ephemeral: true,
+          flags: MessageFlags.Ephemeral,
         });
       }
     } catch (replyError) {
