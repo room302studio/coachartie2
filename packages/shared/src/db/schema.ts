@@ -70,6 +70,12 @@ export const messages = sqliteTable(
   (table) => ({
     userIdIdx: index('idx_messages_user_id').on(table.userId),
     createdAtIdx: index('idx_messages_created_at').on(table.createdAt),
+    // Composite indexes for the per-message context hot path: every message runs
+    // channel/guild-scoped recency queries (vibes COUNT, recent-channel/guild history)
+    // that previously fell back to a full scan of idx_messages_created_at across ALL
+    // channels. These make them covering-index SEARCHes.
+    channelCreatedIdx: index('idx_messages_channel_created').on(table.channelId, table.createdAt),
+    guildCreatedIdx: index('idx_messages_guild_created').on(table.guildId, table.createdAt),
   })
 );
 

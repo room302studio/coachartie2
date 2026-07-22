@@ -38,8 +38,12 @@ export function getDb(dbPath?: string): BetterSQLite3Database<typeof schema> {
   rawDb.pragma('journal_mode = DELETE');
   // Wait up to 30 seconds for locks (prevents SQLITE_BUSY errors)
   rawDb.pragma('busy_timeout = 30000');
-  // Use FULL synchronous mode for maximum crash safety
-  rawDb.pragma('synchronous = FULL');
+  // NORMAL (not FULL) synchronous: with DELETE journaling this is still crash-safe
+  // against app crashes (only the last txn is at risk on OS/power loss), and it roughly
+  // halves the fsync cost per write. Four PM2 processes writing this DB were serializing
+  // on the write lock through a full fsync each — the historical SQLITE_BUSY "database is
+  // locked" source. FULL was overkill for a chat bot's message/analytics writes.
+  rawDb.pragma('synchronous = NORMAL');
 
   db = drizzle(rawDb, { schema });
   return db;

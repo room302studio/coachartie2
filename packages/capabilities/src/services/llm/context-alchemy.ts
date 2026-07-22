@@ -1528,7 +1528,7 @@ ${analysis.summary}`;
       // Fetch recent messages from this guild (deduplicated)
       const recentGuildMessages = await database.all(
         `
-        SELECT DISTINCT value, user_id, created_at
+        SELECT value, user_id, created_at
         FROM messages
         WHERE guild_id = ?
           AND user_id != ?
@@ -1669,7 +1669,7 @@ ${analysis.summary}`;
       // Fetch recent messages from this channel (deduplicated)
       const recentChannelMessages = await database.all(
         `
-        SELECT DISTINCT value, user_id, created_at
+        SELECT value, user_id, created_at
         FROM messages
         WHERE channel_id = ?
           AND user_id != ?
@@ -2214,14 +2214,21 @@ How your incoming context is structured:
     ) {
       let contextContent = 'Relevant context:\n';
 
+      // Render EVERY selected source in each bucket, not just [0]. These sources already
+      // passed budget selection (selectOptimalContext) — they were computed AND paid for.
+      // Emitting only the top-priority one silently discarded the rest: long-term memory
+      // recall (memory_context, lost to community_feedback), reply-target disambiguation
+      // and attachment URLs (reply_context/attachments, lost to discord_situational), the
+      // per-user vibe profile, and more. Sources are already priority-ordered within each
+      // bucket, so joining preserves that order. Same bug the 'system' bucket had.
       if (contextByCategory.memory.length > 0) {
-        contextContent += `${contextByCategory.memory[0].content}\n`;
+        contextContent += `${contextByCategory.memory.map((s) => s.content).join('\n')}\n`;
       }
       if (contextByCategory.goals.length > 0) {
-        contextContent += `${contextByCategory.goals[0].content}\n`;
+        contextContent += `${contextByCategory.goals.map((s) => s.content).join('\n')}\n`;
       }
       if (contextByCategory.user_state.length > 0) {
-        contextContent += `${contextByCategory.user_state[0].content}\n`;
+        contextContent += `${contextByCategory.user_state.map((s) => s.content).join('\n')}\n`;
       }
       // 'system' category (e.g. self_awareness distress notes) was previously
       // grouped but never read — it silently vanished from every prompt.
