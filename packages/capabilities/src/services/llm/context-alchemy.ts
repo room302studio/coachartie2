@@ -2042,12 +2042,6 @@ ${analysis.summary}`;
       );
       const searchTime = Date.now() - startTime;
 
-      if (message.userId === 'audit-probe') {
-        logger.warn(
-          `[PROBE] tokens=[${participantTokens.join('|')}] guild=${message.context?.guildId || 'none'} → ${memoryResult.memoryCount} :: ${memoryResult.content.slice(0, 450)}`
-        );
-      }
-
       // Only add memory context if we actually have useful content
       if (memoryResult.content && memoryResult.content.trim().length > 0) {
         sources.push({
