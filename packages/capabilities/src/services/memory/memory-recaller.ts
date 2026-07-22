@@ -29,6 +29,7 @@ interface RecallOptions {
   priority?: 'speed' | 'accuracy' | 'comprehensive';
   minimal?: boolean;
   guildId?: string;
+  participants?: string[]; // lowercased name tokens of people present in the conversation
 }
 
 const empty = (categories: string[], confidence = 0): MemoryEntourageResult => ({
@@ -62,7 +63,13 @@ export class MemoryRecaller implements MemoryEntourageInterface {
 
       const semantic =
         candidates.length > 0
-          ? this.semanticLayer(userMessage, candidates, options.priority, budget.semantic)
+          ? this.semanticLayer(
+              userMessage,
+              candidates,
+              options.priority,
+              budget.semantic,
+              options.participants
+            )
           : empty(['no_memories']);
       const temporal =
         candidates.length > 0
@@ -147,16 +154,27 @@ export class MemoryRecaller implements MemoryEntourageInterface {
     userMessage: string,
     candidates: Candidate[],
     priority: RecallOptions['priority'],
-    maxTokens: number
+    maxTokens: number,
+    participants?: string[]
   ): MemoryEntourageResult {
     const queryVector = this.tfidfVector(userMessage);
+    const people = (participants || []).filter((p) => p.length >= 4);
     const matches: SemanticMatch[] = [];
 
     for (const memory of candidates) {
       const similarity = this.cosineSimilarity(queryVector, this.tfidfVector(memory.content));
+      // A memory that names one of the people present is relevant to a conversation
+      // ABOUT those people (rankings, roasts, "what's X been up to") even when the raw
+      // query text barely overlaps it. Pull it in regardless of threshold and rank it up,
+      // so recall reflects who's actually here instead of whoever's memory is most generic.
+      const mentionsParticipant =
+        people.length > 0 && people.some((p) => memory.content.toLowerCase().includes(p));
       const threshold = memory.importance >= 7 ? 0.02 : 0.08;
-      if (similarity > threshold) {
-        matches.push({ ...memory, semanticScore: similarity });
+      if (similarity > threshold || mentionsParticipant) {
+        matches.push({
+          ...memory,
+          semanticScore: similarity + (mentionsParticipant ? 0.5 : 0),
+        });
       }
     }
 

@@ -29,6 +29,8 @@ export interface MemoryEntourageInterface {
       priority?: 'speed' | 'accuracy' | 'comprehensive';
       minimal?: boolean; // Match Context Alchemy's minimal mode
       guildId?: string; // Discord guild scope - include guild-level memories
+      participants?: string[]; // Name tokens of people in the conversation — memories
+      // mentioning them are pulled in and ranked up (person-aware recall)
     }
   ): Promise<MemoryEntourageResult>;
 }

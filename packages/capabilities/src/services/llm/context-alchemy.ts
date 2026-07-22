@@ -2009,6 +2009,17 @@ ${analysis.summary}`;
       // relevance threshold keeps this from polluting non-people questions: a metro-cost
       // query won't clear threshold on a person-memory just because a name rode along.
       const participants = this.extractParticipants(message);
+      // Distinctive name tokens for scoring (jan_gbg, legalmexicanalien, yellowaquarium).
+      // These let the recaller pull in AND rank up memories that mention the people
+      // actually present — the query-text append alone was too weak a signal to beat
+      // generic memories, so "rank the crew" surfaced whoever was most recent, not who's here.
+      const participantTokens = Array.from(
+        new Set(
+          participants
+            .flatMap((p) => p.toLowerCase().split(/[^a-z0-9_]+/))
+            .filter((t) => t.length >= 4)
+        )
+      );
       if (participants.length > 0) {
         searchQuery = `${searchQuery} [people here: ${participants.join(', ')}]`;
       }
@@ -2026,9 +2037,16 @@ ${analysis.summary}`;
           priority: 'speed', // Default to speed for responsive interactions
           minimal: false,
           guildId: message.context?.guildId, // Include guild-scoped memories when in a guild
+          participants: participantTokens, // Person-aware recall: rank up who's here
         }
       );
       const searchTime = Date.now() - startTime;
+
+      if (message.userId === 'audit-probe') {
+        logger.warn(
+          `[PROBE] tokens=[${participantTokens.join('|')}] guild=${message.context?.guildId || 'none'} → ${memoryResult.memoryCount} :: ${memoryResult.content.slice(0, 450)}`
+        );
+      }
 
       // Only add memory context if we actually have useful content
       if (memoryResult.content && memoryResult.content.trim().length > 0) {
