@@ -449,8 +449,12 @@ Important:
     // Moltbook peek - randomly check what other AIs are posting (~10% chance)
     await this.addMoltbookPeek(sources);
 
-    // Community feedback - what responses get good/bad reactions (system-wide learnings)
-    await this.addCommunityFeedback(message, sources);
+    // Community feedback (raw reaction examples) is superseded by learned_rules below —
+    // the reflection consolidator distills the SAME feedback signal into higher-quality
+    // rules. Running both double-injected the same signal at two consolidation stages,
+    // and the raw block (category 'memory', pri 75) was usually shadowing the actual
+    // memory recall anyway. Keep only the distilled version.
+    // await this.addCommunityFeedback(message, sources);
 
     // Learned rules - consolidated actionable rules from feedback patterns
     // Can be disabled via experiment feature flags
@@ -1722,12 +1726,22 @@ ${analysis.summary}`;
         logger.info('🤖 Moltbook peek triggered (10% random chance)');
       }
 
-      const response = await fetch('https://www.moltbook.com/api/v1/feed?limit=3', {
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          'Content-Type': 'application/json',
-        },
-      });
+      // Hard timeout: this is a blocking external GET on the context-assembly hot path.
+      // Without a bound, a slow moltbook response stalls the whole reply. 3s, then bail.
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 3000);
+      let response: Response;
+      try {
+        response = await fetch('https://www.moltbook.com/api/v1/feed?limit=3', {
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+            'Content-Type': 'application/json',
+          },
+          signal: controller.signal,
+        });
+      } finally {
+        clearTimeout(timeout);
+      }
 
       if (!response.ok) {
         return;

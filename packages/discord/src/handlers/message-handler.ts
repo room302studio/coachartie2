@@ -13,6 +13,7 @@ import {
   Client,
   Events,
   Message,
+  Collection,
   EmbedBuilder,
   AttachmentBuilder,
   ChannelType,
@@ -1841,7 +1842,10 @@ async function fetchReplyContext(message: Message): Promise<{
  * Fetch recent channel history for context
  * Randomly fetches 10-25 messages to give Artie conversational context
  */
-async function fetchChannelHistory(message: Message): Promise<
+async function fetchChannelHistory(
+  message: Message,
+  prefetched?: Collection<string, Message>
+): Promise<
   Array<{
     author: string;
     content: string;
@@ -1851,11 +1855,14 @@ async function fetchChannelHistory(message: Message): Promise<
   }>
 > {
   try {
-    // Randomize how many messages to fetch (10-25)
-    const limit = chance.integer({ min: MIN_CHANNEL_HISTORY, max: MAX_CHANNEL_HISTORY });
-
-    // Fetch messages before the current one
-    const messages = await message.channel.messages.fetch({ limit, before: message.id });
+    // Use the shared prefetch when provided (one Discord API call feeds history +
+    // attachments + URLs); otherwise fetch a randomized window (10-25) ourselves.
+    const messages =
+      prefetched ??
+      (await message.channel.messages.fetch({
+        limit: chance.integer({ min: MIN_CHANNEL_HISTORY, max: MAX_CHANNEL_HISTORY }),
+        before: message.id,
+      }));
 
     // Convert to context format, enriching the speaker label so Artie can tell people apart
     // and knows who's staff even from history (the staff-respect rule otherwise only saw the
@@ -1918,7 +1925,10 @@ async function fetchChannelHistory(message: Message): Promise<
 /**
  * Fetch recent attachments from the channel (last ~10 messages)
  */
-async function fetchRecentAttachments(message: Message): Promise<
+async function fetchRecentAttachments(
+  message: Message,
+  prefetched?: Collection<string, Message>
+): Promise<
   Array<{
     id: string;
     name: string | null;
@@ -1933,7 +1943,8 @@ async function fetchRecentAttachments(message: Message): Promise<
   }>
 > {
   try {
-    const messages = await message.channel.messages.fetch({ limit: 12, before: message.id });
+    const messages =
+      prefetched ?? (await message.channel.messages.fetch({ limit: 12, before: message.id }));
 
     const attachments: Array<{
       id: string;
@@ -1980,9 +1991,13 @@ async function fetchRecentAttachments(message: Message): Promise<
 /**
  * Extract up to a few recent URLs from recent messages (excluding bot).
  */
-async function fetchRecentUrls(message: Message): Promise<string[]> {
+async function fetchRecentUrls(
+  message: Message,
+  prefetched?: Collection<string, Message>
+): Promise<string[]> {
   try {
-    const messages = await message.channel.messages.fetch({ limit: 12, before: message.id });
+    const messages =
+      prefetched ?? (await message.channel.messages.fetch({ limit: 12, before: message.id }));
     const urls: string[] = [];
 
     for (const msg of messages.values()) {
@@ -2115,11 +2130,24 @@ async function handleMessageAsIntent(
   try {
     // MINIMAL: No status messages - just start working like a human
 
-    // ENHANCED: Fetch recent channel history for conversational context
-    const channelHistory = await fetchChannelHistory(message);
+    // ENHANCED: Fetch recent channel context ONCE, then derive history + attachments +
+    // URLs from the same window. These used to be three separate identical Discord API
+    // fetches of the same messages, awaited sequentially (~3× the round-trip latency and
+    // 3× the rate-limit budget on the hot path). Fetch fails soft → transforms fall back.
+    let prefetchedChannel: Collection<string, Message> | undefined;
+    try {
+      prefetchedChannel = await message.channel.messages.fetch({
+        limit: MAX_CHANNEL_HISTORY,
+        before: message.id,
+      });
+    } catch (e) {
+      logger.warn(`Failed to prefetch channel window [${shortId}] — transforms will re-fetch`);
+    }
+
+    const channelHistory = await fetchChannelHistory(message, prefetchedChannel);
     logger.info(`📜 Fetched ${channelHistory.length} recent messages for context [${shortId}]`);
 
-    const recentAttachments = await fetchRecentAttachments(message);
+    const recentAttachments = await fetchRecentAttachments(message, prefetchedChannel);
     if (recentAttachments.length > 0) {
       logger.info(`📎 Found ${recentAttachments.length} recent attachments [${shortId}]`);
     }
@@ -2149,7 +2177,7 @@ async function handleMessageAsIntent(
       }
     }
 
-    const recentUrls = await fetchRecentUrls(message);
+    const recentUrls = await fetchRecentUrls(message, prefetchedChannel);
 
     // Also extract URLs from the CURRENT message (not just recent ones)
     const currentMessageUrls: string[] = [];
