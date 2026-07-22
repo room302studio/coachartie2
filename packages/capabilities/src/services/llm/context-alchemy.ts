@@ -221,6 +221,9 @@ export class ContextAlchemy {
         {
           enableMemories: options.enableMemories ?? true, // Default to true
           enableRules: options.enableRules ?? true, // Default to true
+          hasDiscordTranscript: !!(
+            options.discordChannelHistory && options.discordChannelHistory.length > 0
+          ),
         }
       );
 
@@ -402,7 +405,11 @@ Important:
     message: IncomingMessage,
     capabilityContext?: string[],
     includeCapabilities: boolean = true,
-    featureFlags: { enableMemories?: boolean; enableRules?: boolean } = {}
+    featureFlags: {
+      enableMemories?: boolean;
+      enableRules?: boolean;
+      hasDiscordTranscript?: boolean;
+    } = {}
   ): Promise<ContextSource[]> {
     if (DEBUG) {
       logger.info(`📝 Assembling message context for <${message.userId}> message`);
@@ -453,11 +460,20 @@ Important:
       logger.info('🧪 Experiment: Learned rules DISABLED');
     }
 
-    // Recent channel messages - immediate conversational context (what just happened)
-    await this.addRecentChannelMessages(message, sources);
-
-    // Recent guild messages - broader Discord server context (what's happening elsewhere)
-    await this.addRecentGuildMessages(message, sources);
+    // Recent channel/guild messages — a LEGACY DB-based path for conversational context.
+    // When a live Discord transcript is present it's the source of truth (correctly
+    // labeled per-speaker, includes webhook/n8n msgs); these DB copies just re-inject the
+    // same recent messages in a second, truncated format — pure token waste and duplicate
+    // context that muddies the model. Only fall back to them when there's NO transcript
+    // (non-Discord surfaces, or the live history fetch came back empty).
+    if (!featureFlags.hasDiscordTranscript) {
+      await this.addRecentChannelMessages(message, sources);
+      await this.addRecentGuildMessages(message, sources);
+    } else if (DEBUG) {
+      logger.info(
+        '│ ⏭️  Skipping DB channel/guild copies — live Discord transcript is the source of truth'
+      );
+    }
 
     // Relevant memories - long-term context from memory system (what we remember)
     // This now includes guild-scoped memories automatically when guildId is present
