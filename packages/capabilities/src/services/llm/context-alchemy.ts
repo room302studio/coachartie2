@@ -1958,6 +1958,31 @@ ${analysis.summary}`;
   }
 
   /**
+   * The distinct people active in this conversation — pulled from the live Discord
+   * transcript's speaker labels plus the current speaker. Used to steer memory recall
+   * toward the people actually present (see addRelevantMemories). Excludes Artie himself
+   * and bots; caps the list so the recall query stays lean. Returns [] off-Discord.
+   */
+  private extractParticipants(message: IncomingMessage): string[] {
+    const names = new Set<string>();
+    const history = (message.context as any)?.channelHistory;
+    if (Array.isArray(history)) {
+      for (const h of history) {
+        if (!h || h.isSelf || h.isBot) continue; // not Artie, not other bots
+        const author = typeof h.author === 'string' ? h.author : '';
+        // "Rebecka (@rebecka) [staff]" -> "Rebecka (@rebecka)" — keep display + handle
+        // (both are how memories name people), drop the role/bot tags.
+        const cleaned = author.replace(/\s*\[(bot|staff)\]/gi, '').trim();
+        if (cleaned) names.add(cleaned);
+      }
+    }
+    const speaker =
+      (message.context as any)?.displayName || (message.context as any)?.username;
+    if (speaker) names.add(String(speaker));
+    return Array.from(names).slice(0, 12);
+  }
+
+  /**
    * Add relevant memories to message context (matches assembleMessagePreamble pattern)
    */
   private async addRelevantMemories(
@@ -1976,6 +2001,18 @@ ${analysis.summary}`;
         }
       }
 
+      // Enrich the query with WHO is actually in this conversation. Memory recall is
+      // TF-IDF over the query text — so "rank the crew" or "who's been up to what" can't
+      // match a memory about a specific person by name, and the recall comes back empty
+      // (why his rankings were just recaps of the last 20 messages). Appending the active
+      // participants' names/handles makes recall pull each person's real history. The
+      // relevance threshold keeps this from polluting non-people questions: a metro-cost
+      // query won't clear threshold on a person-memory just because a name rode along.
+      const participants = this.extractParticipants(message);
+      if (participants.length > 0) {
+        searchQuery = `${searchQuery} [people here: ${participants.join(', ')}]`;
+      }
+
       // Calculate available token budget for memory context
       const contextSize = parseInt(process.env.CONTEXT_WINDOW_SIZE || '32000', 10);
       const maxTokensForMemory = Math.max(800, Math.floor(contextSize * 0.15)); // Minimum 800, scales with context
@@ -1992,6 +2029,12 @@ ${analysis.summary}`;
         }
       );
       const searchTime = Date.now() - startTime;
+
+      if (message.userId === 'audit-probe') {
+        logger.warn(
+          `[PROBE] participants=[${participants.join('|')}] guild=${message.context?.guildId || 'none'} → ${memoryResult.memoryCount} memories :: ${memoryResult.content.slice(0, 400)}`
+        );
+      }
 
       // Only add memory context if we actually have useful content
       if (memoryResult.content && memoryResult.content.trim().length > 0) {
