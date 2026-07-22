@@ -69,7 +69,11 @@ export class MemoryRecaller implements MemoryEntourageInterface {
           ? this.temporalLayer(userMessage, candidates, options.priority, budget.temporal)
           : empty(['no_memories']);
 
-      return this.fuse(semantic, temporal);
+      const fused = this.fuse(semantic, temporal);
+      logger.warn(
+        `[RECALL-DEBUG] user=${userId} guild=${options.guildId || 'none'} candidates=${candidates.length} semanticMatches=${semantic.memoryCount} → result=${fused.memoryCount} conf=${fused.confidence.toFixed(2)}`
+      );
+      return fused;
     } catch (error) {
       logger.error('❌ MemoryRecaller failed:', error);
       return empty(['error']);
@@ -101,6 +105,9 @@ export class MemoryRecaller implements MemoryEntourageInterface {
     if (guildId) {
       guildMemories = await hybridDataLayer.getGuildMemories(guildId, 400);
     }
+    logger.warn(
+      `[RECALL-DEBUG] fetchCandidates user=${userId} → userMem=${userMemories.length} artieMem=${artieMemories.length} guildMem=${guildMemories.length}`
+    );
 
     return [...userMemories, ...artieMemories, ...guildMemories].map((m) => ({
       content: m.content,
