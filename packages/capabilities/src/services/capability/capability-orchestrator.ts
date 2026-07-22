@@ -269,7 +269,14 @@ export class CapabilityOrchestrator {
         .split('\n')
         .map((l) => l.trim())
         .filter((l) => l.length > 8 && l.length < 80 && !l.startsWith('http'));
-      const looksLyrical = hasSectionLabel || (/🎶|🎵/.test(response) && shortLines.length >= 8);
+      // Musical intent signal: 🎵/🎶 markers wrapping bars. A formatted lyric sheet has
+      // 8+ short lines; a loose freestyle (Artie raps a 4-line verse then trails into prose)
+      // has fewer lines but multiple notes — catch both so freestyles don't ship as text.
+      const musicNotes = (response.match(/🎶|🎵/g) || []).length;
+      const looksLyrical =
+        hasSectionLabel ||
+        (/🎶|🎵/.test(response) && shortLines.length >= 8) ||
+        (musicNotes >= 2 && shortLines.length >= 4);
       if (!looksLyrical) return;
       const lyrics = response
         .replace(/\*\*/g, '')
