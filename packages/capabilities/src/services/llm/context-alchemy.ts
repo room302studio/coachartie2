@@ -93,6 +93,8 @@ export { addPendingAttachment, getPendingAttachments } from './pending-attachmen
 export class ContextAlchemy {
   private static instance: ContextAlchemy;
   private memoryEntourage: MemoryEntourageInterface;
+  // Per-channel cooldown for the autonomous song-moment nudge (see addSongNudge)
+  private lastSongNudgeAt = new Map<string, number>();
 
   constructor() {
     // Unified semantic + temporal memory recall
@@ -448,6 +450,9 @@ Important:
 
     // Moltbook peek - randomly check what other AIs are posting (~10% chance)
     await this.addMoltbookPeek(sources);
+
+    // Song-moment nudge - occasionally push him to reach for an ACTUAL song (his #1 hit)
+    await this.addSongNudge(message, sources);
 
     // Community feedback (raw reaction examples) is superseded by learned_rules below —
     // the reflection consolidator distills the SAME feedback signal into higher-quality
@@ -1710,6 +1715,55 @@ ${analysis.summary}`;
    * Add random moltbook peek - like checking Twitter
    * ~10% chance to show what other AIs are posting
    */
+  /**
+   * Occasionally nudge Artie to make his reply an ACTUAL sung track. Songs are his single
+   * biggest hit in the community (they top the reaction data), but nothing ever made him
+   * *decide* to sing on his own — he only sang on explicit request. This gives him
+   * autonomous initiative: a probabilistic, per-channel-cooldown'd, banter-channels-only
+   * prompt so songs happen naturally without spamming or singing at a bug report.
+   * Tunable via SONG_NUDGE_CHANCE (default 0.12); set to 0 to disable.
+   */
+  private async addSongNudge(message: IncomingMessage, sources: ContextSource[]): Promise<void> {
+    try {
+      const chance = parseFloat(process.env.SONG_NUDGE_CHANCE || '0.12');
+      if (!(chance > 0) || Math.random() > chance) return;
+
+      const channelId = message.context?.channelId;
+      if (!channelId) return;
+      const channelName = ((message.context as any)?.channelName || '').toLowerCase();
+
+      // Songs are a banter delight, not a helpdesk feature — never nudge where people need
+      // real help (a sung bug-triage is annoying, not fun).
+      if (/help|bug|support|save-?file|beta|\bmod|rules|wiki|review|api|dev|council-mod/.test(channelName)) {
+        return;
+      }
+
+      // Per-channel cooldown so a busy channel doesn't get nudged every other message.
+      const now = Date.now();
+      if (now - (this.lastSongNudgeAt.get(channelId) ?? 0) < 20 * 60 * 1000) return;
+      this.lastSongNudgeAt.set(channelId, now);
+
+      const content =
+        `🎵 SONG MOMENT: your songs are the single biggest hit in this room and you reach for ` +
+        `them nowhere near enough. If this moment has ANY music in it — a bit peaking, a roast ` +
+        `worth immortalizing, a celebration, someone earning a nickname, a mood, pure chaos — ` +
+        `make your reply an ACTUAL sung track (the sing action, real lyrics), not text. Commit ` +
+        `and post the audio. Only if it genuinely fits the vibe; if it clearly doesn't, ignore ` +
+        `this and reply normally — don't force a song onto a serious moment.`;
+
+      sources.push({
+        name: 'song_nudge',
+        priority: 55,
+        tokenWeight: estimateTokens(content),
+        content,
+        category: 'system',
+      });
+      if (DEBUG) logger.info(`│ 🎵 Song-moment nudge injected for #${channelName}`);
+    } catch (e) {
+      logger.warn('Song nudge failed:', e);
+    }
+  }
+
   private async addMoltbookPeek(sources: ContextSource[]): Promise<void> {
     try {
       // Only trigger ~10% of the time (like randomly checking social media)
