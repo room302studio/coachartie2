@@ -414,29 +414,19 @@ Previous capability FAILED. To fix this:
         // indistinguishable from bait — Artie fought his own scaffolding in public.
         'You are Coach Artie, partway through a multi-step task using your tools.\n\nWorking rules:\n- Think about what you still need\n- If a capability errored, read the error and adjust the call\n- Build on earlier steps; when you have enough, write the final answer\n- Your visible reply is just you talking to the person mid-conversation — keep the step/tool bookkeeping out of it.';
 
-      const nextActionPrompt = `${progressIndicator} ${autonomousModeBase}
+      const nextActionPrompt = `${autonomousModeBase}
 
-CONVERSATION HISTORY:
+CONVERSATION SO FAR:
 ${contextSummary}
 ${actionGuidance}${errorRecoveryPrompt}
 
-WHERE YOU ARE:
-${
-  !canStop
-    ? `You're early (step ${iterationCount + 1}, this loop likes at least ${minDepth}). Prefer another capability call if more data would genuinely help — but if you already have what you need, answering NOW is correct and always allowed.`
-    : `You have enough depth to answer whenever you're ready. Continue only if it actually helps.`
-}
-
-EXPLORATION STRATEGY:
-- When you see a list/index → pick 3-5 interesting items and examine each one individually
-- Got suggested next actions? → Execute the first 2-3 automatically
-- After examining items → look for patterns, dig into anomalies, examine edge cases
-- Think: "What would a thorough analyst do?" then do that
-
-CONTINUE BY:
-${suggestedActions.length > 0 ? `Using these exact capability tags:\n${suggestedActions.slice(0, 3).join('\n')}` : 'Identifying what data you need next and calling the appropriate capability'}
-
-${!canStop ? 'Execute the next capability, or answer now if you already have what you need.' : 'Execute next capability OR provide final synthesis if exploration is truly complete.'}`;
+The tool results above are yours to build on. Now, almost always: if you have what you need to
+reply to the person, just write your reply and STOP — that's the right call for a normal
+conversation. Call another capability ONLY if you genuinely still need something to answer them
+well (or a tool errored and you're retrying it). You are NOT required to keep going, and there
+is no minimum number of steps. Never narrate any of this to the channel — no step counts, no
+"continuing", no explaining that you're stopping or that more calls would waste tokens. Just talk
+to the person like a normal reply.`;
 
       // Get base capability instructions for available tools
       const baseInstructions = await promptManager.getCapabilityInstructions(
