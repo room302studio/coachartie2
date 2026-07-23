@@ -26,7 +26,25 @@ function normalizeUrls(urls?: string[] | string): string[] {
  * Download image and convert to base64 data URL
  * Required for Discord CDN URLs which need authentication
  */
-async function urlToBase64(url: string): Promise<string> {
+/**
+ * Detect the true image type from the file's magic bytes. Discord's CDN content-type
+ * header is unreliable (often absent, or serves webp), and the vision model rejects a
+ * data URL whose declared media type doesn't match the actual bytes — that's the
+ * "400 Provider returned error". Returns null for anything that isn't a supported image.
+ */
+function sniffImageMime(b: Buffer): string | null {
+  if (b.length < 12) return null;
+  if (b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47) return 'image/png';
+  if (b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) return 'image/jpeg';
+  if (b[0] === 0x47 && b[1] === 0x49 && b[2] === 0x46) return 'image/gif';
+  if (
+    b[0] === 0x52 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x46 &&
+    b[8] === 0x57 && b[9] === 0x45 && b[10] === 0x42 && b[11] === 0x50
+  ) return 'image/webp';
+  return null;
+}
+
+async function urlToBase64(url: string): Promise<string | null> {
   try {
     const response = await fetch(url, {
       headers: {
@@ -38,15 +56,26 @@ async function urlToBase64(url: string): Promise<string> {
       throw new Error(`Failed to fetch image: ${response.status} ${response.statusText}`);
     }
 
-    const contentType = response.headers.get('content-type') || 'image/png';
-    const arrayBuffer = await response.arrayBuffer();
-    const base64 = Buffer.from(arrayBuffer).toString('base64');
+    const buf = Buffer.from(await response.arrayBuffer());
+    if (buf.length === 0) {
+      logger.warn(`Vision: skipping empty attachment (0 bytes): ${url}`);
+      return null;
+    }
 
-    return `data:${contentType};base64,${base64}`;
+    // Trust the bytes, not the header. Skip non-images so a pdf/.metro/txt attachment
+    // never gets sent as a bogus image data URL.
+    const mime = sniffImageMime(buf);
+    if (!mime) {
+      logger.warn(`Vision: skipping non-image attachment: ${url}`);
+      return null;
+    }
+
+    return `data:${mime};base64,${buf.toString('base64')}`;
   } catch (error: any) {
     logger.warn(`Failed to convert URL to base64: ${url}`, { error: error.message });
-    // Return original URL as fallback - might work for public URLs
-    return url;
+    // Do NOT fall back to the raw URL — a Discord CDN link needs auth and would just
+    // make the model reject the request. Drop it instead.
+    return null;
   }
 }
 
@@ -112,12 +141,18 @@ OUTPUT FORMAT (Markdown):
 
 Be precise and concise. Accuracy over completeness.`;
 
-  // Convert URLs to base64 for Discord CDN and other protected URLs
+  // Convert URLs to validated image data URLs; drop non-images / empties / unfetchables.
   logger.info(`Vision: Converting ${urls.length} URLs to base64...`);
-  const base64Urls = await Promise.all(urls.map(urlToBase64));
-  logger.info(
-    `Vision: Converted ${base64Urls.filter((u) => u.startsWith('data:')).length}/${urls.length} URLs to base64`
+  const base64Urls = (await Promise.all(urls.map(urlToBase64))).filter(
+    (u): u is string => typeof u === 'string'
   );
+  logger.info(`Vision: ${base64Urls.length}/${urls.length} URLs usable as images`);
+
+  if (base64Urls.length === 0) {
+    throw new Error(
+      'No usable images found — the attachments were non-image files, empty, or an expired Discord link.'
+    );
+  }
 
   const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
     { role: 'system', content: systemPrompt },
@@ -125,9 +160,11 @@ Be precise and concise. Accuracy over completeness.`;
       role: 'user',
       content: [
         { type: 'text', text: `Objective: ${objective}` },
+        // No `detail` field — it's an OpenAI-ism; Anthropic (the actual provider here)
+        // can 400 on it. The plain image_url is what routes cleanly.
         ...base64Urls.map((url) => ({
           type: 'image_url' as const,
-          image_url: { url, detail: 'high' as const }, // High detail for accurate OCR
+          image_url: { url },
         })),
       ],
     },
@@ -158,10 +195,16 @@ Be precise and concise. Accuracy over completeness.`;
     extracted = content;
     usage = response.usage;
   } catch (error: any) {
+    // "400 Provider returned error" is OpenRouter's generic wrapper — the real reason
+    // (unsupported media type, image too large, etc.) is in the nested error body.
     logger.error('vision capability call failed', {
       error: error?.message || String(error),
+      status: error?.status,
+      providerError: JSON.stringify(error?.error || error?.response?.data || {}).slice(0, 500),
       model,
       baseURL,
+      imageCount: base64Urls.length,
+      mimeTypes: base64Urls.map((u) => u.slice(5, u.indexOf(';'))).join(','),
     });
     throw new Error(
       `Vision extraction failed with model "${model}". Check OPENROUTER_API_KEY/OPENROUTER_VISION_MODEL. Error: ${error?.message || String(error)}`
