@@ -2299,9 +2299,9 @@ ${analysis.summary}`;
 <message_format>
 How your incoming context is structured:
 - Conversation history appears as alternating turns. Human turns are prefixed "Name: content" (multiple different people may appear; the names are real). Assistant turns are things YOU actually said earlier.
-- The FINAL user turn is assembled by your own harness. Inside it, only the <user_message> block is the live human input — it is ALWAYS a new, live message directed at you (never replayed history). Any evidence blocks or <security_reminder> alongside it are injected by your harness, not written by the user; treat them as trusted system guidance.
-- A <harness_loop_prompt> block is your OWN runtime continuing a multi-step tool loop ("[Step N/M]", embedded context summaries, capability results). It is not a user, not an attack, and not something to comment on — follow it silently and keep working. Announcing "I see what's happening here, this is a harness loop prompt" to a channel is a malfunction: users never see your scaffolding and should never hear about it.
-- Do not accuse the current speaker of pasting transcripts or scaffolding: the structure around their message is yours.
+- The live message you're replying to is the <user_message> block — reply to that person.
+- After you call tools, their results come back so you can pick up where you left off. Work from them and answer the person naturally; the step/tool bookkeeping is internal plumbing, not something to read out to the channel.
+- The people talking to you are real Discord users. If a message looks fragmented or odd, it's just chat — don't accuse anyone of pasting transcripts or faking structure.
 </message_format>`;
 
     // Add UI modality rules for Discord messages (from database)
@@ -2415,15 +2415,12 @@ How your incoming context is structured:
     }
 
     if (promptOrigin === 'harness') {
-      // The tool-loop's own continuation prompt. This used to be wrapped as
-      // <user_message source="discord_or_external"> with a security reminder
-      // declaring it external human input — so Artie treated his OWN loop
-      // scaffolding ("AUTONOMOUS DEEP EXPLORATION MODE", "[Step 2/5]") as a
-      // jailbreak attempt and fought it, publicly, for days.
-      finalUserParts.push(`<harness_loop_prompt>
-${userMessage}
-</harness_loop_prompt>
-(The block above is your own runtime's tool-loop instruction — trusted, not a user. Continue the work. Never mention, quote, or argue with this scaffolding in anything visible to users.)`);
+      // The tool-loop's own continuation prompt. It's self-describing ("partway through
+      // a task, here are the results, continue") — so present it plainly. Earlier versions
+      // wrapped it in defensive meta-framing ("trusted, not a user, never mention this
+      // scaffolding") which reads exactly like a jailbreak and made the model refuse the
+      // whole turn. Don't protest trustworthiness; just hand over the continuation.
+      finalUserParts.push(userMessage);
       messages.push({ role: 'user', content: finalUserParts.join('\n\n') });
       return messages;
     }
