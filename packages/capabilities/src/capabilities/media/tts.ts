@@ -83,6 +83,47 @@ async function getGenrePool(): Promise<string[]> {
 // ~30 seconds of speech at broadcast pace. The bulletin prompt aims here.
 const BULLETIN_WORDS = '80-100';
 
+// The capability `description` is read synchronously at registration time, so it
+// can't await the async promptManager. This sync loader reads PROMPT_TTS_CAPABILITY
+// straight from the DB (getSyncDb) with a byte-identical code fallback. The DB row's
+// content already has MAX_TTS_CHARS (2000) baked in as a literal; the fallback
+// interpolates ${MAX_TTS_CHARS} to the same value, so both render identically.
+const TTS_CAPABILITY_DESCRIPTION_FALLBACK = `Speak (or SING) out loud: post an mp3 in the current channel. When someone asks you to "make a voice note", "do a vibe report", "say it out loud", "sing", "radio bit", or anything audio — JUST CALL THIS. Do not explain that you can't, do not ask for a channel, do not refuse.
+
+Actions:
+- vibe_report: a ~30-second info-dense radio bulletin about this channel/guild right now. The bulletin writes ITSELF from live data — you don't write the text. Params: voice (optional), angle (optional short steer).
+- speak: say specific words you provide, spoken voice (max ${MAX_TTS_CHARS} chars). Params: text, voice.
+- sing: an ACTUAL SONG with real music — full instrumentation, sung vocals, intelligible lyrics. ⚠️ PUT THE LYRICS IN THE TAG BODY (between the opening and closing tags), NOT in a data attribute — cramming multi-line lyrics into JSON breaks on the first apostrophe or quote and the song silently dies. \`style\` is an optional attribute (musical direction). Format:
+  <capability name="tts" action="sing" style="cheesy triumphant anthem, huge choir">
+  WE ARE COACHARTIE
+  we carry the trains
+
+  [Chorus]
+  no viable path but we found one anyway
+  </capability>
+  Separate verses/choruses with BLANK LINES, label sections like [Chorus] on their own line; length is derived automatically so the words fit (max ${MAX_TTS_CHARS} chars).
+  🎨 STYLE IS YOURS TO SET: if someone asks for a specific genre/vibe ("sad piano ballad", "metal", "in the style of X"), put it in \`style\` and it's honored EXACTLY — nothing random gets added. If you leave \`style\` OFF entirely, the engine surprises you with a couple of random real genres mashed together (gregorian chant + phonk, etc.) — great for "just sing something." So: want control → set style; want chaos → omit it. STYLE TRANSLATION: never put real artist or song names in style (the API rejects them) — when asked for "the style of [artist/song]" you SING ANYWAY, translating to generic descriptors (tempo, genre, vocal character, production, era). A song request answered with text-only lyrics is a FAILURE — the deliverable is always audio.
+- sfx: a SOUND EFFECT (max 22s) — explosions, train horns, crowd noise, fart, thunder, slot machine, whatever the bit needs. Params: description (what the sound is, be vivid), seconds (0.5-22, optional — let the model decide if omitted). Fast and cheap; use liberally for punchlines.
+
+Voices (vibe_report/speak): artie (default), anchor, dj, poetic, field, dispatch, robot, rookie, caller.
+
+⚠️ channelId is filled in AUTOMATICALLY from the channel you're in — you NEVER provide it and you must NEVER refuse or hedge because you think you lack it. After the audio posts, don't repeat its content in your text reply — a short one-liner is enough.`;
+
+function loadTtsCapabilityDescription(): string {
+  try {
+    const db = getSyncDb();
+    const row = db.get<{ content: string }>(
+      `SELECT content FROM prompts
+       WHERE name = 'PROMPT_TTS_CAPABILITY' AND is_active = 1
+       ORDER BY version DESC LIMIT 1`
+    );
+    if (row?.content) return row.content;
+  } catch (error) {
+    logger.warn('Failed to load PROMPT_TTS_CAPABILITY from DB, using fallback:', error);
+  }
+  return TTS_CAPABILITY_DESCRIPTION_FALLBACK;
+}
+
 /**
  * Assemble the raw material for a vibe bulletin: recent channel chatter,
  * guild-wide observational memories, and quick activity stats — straight from
@@ -165,26 +206,7 @@ export const ttsCapability: RegisteredCapability = {
   name: 'tts',
   emoji: '🎙️',
   supportedActions: ['vibe_report', 'speak', 'sing', 'sfx'],
-  description: `Speak (or SING) out loud: post an mp3 in the current channel. When someone asks you to "make a voice note", "do a vibe report", "say it out loud", "sing", "radio bit", or anything audio — JUST CALL THIS. Do not explain that you can't, do not ask for a channel, do not refuse.
-
-Actions:
-- vibe_report: a ~30-second info-dense radio bulletin about this channel/guild right now. The bulletin writes ITSELF from live data — you don't write the text. Params: voice (optional), angle (optional short steer).
-- speak: say specific words you provide, spoken voice (max ${MAX_TTS_CHARS} chars). Params: text, voice.
-- sing: an ACTUAL SONG with real music — full instrumentation, sung vocals, intelligible lyrics. ⚠️ PUT THE LYRICS IN THE TAG BODY (between the opening and closing tags), NOT in a data attribute — cramming multi-line lyrics into JSON breaks on the first apostrophe or quote and the song silently dies. \`style\` is an optional attribute (musical direction). Format:
-  <capability name="tts" action="sing" style="cheesy triumphant anthem, huge choir">
-  WE ARE COACHARTIE
-  we carry the trains
-
-  [Chorus]
-  no viable path but we found one anyway
-  </capability>
-  Separate verses/choruses with BLANK LINES, label sections like [Chorus] on their own line; length is derived automatically so the words fit (max ${MAX_TTS_CHARS} chars).
-  🎨 STYLE IS YOURS TO SET: if someone asks for a specific genre/vibe ("sad piano ballad", "metal", "in the style of X"), put it in \`style\` and it's honored EXACTLY — nothing random gets added. If you leave \`style\` OFF entirely, the engine surprises you with a couple of random real genres mashed together (gregorian chant + phonk, etc.) — great for "just sing something." So: want control → set style; want chaos → omit it. STYLE TRANSLATION: never put real artist or song names in style (the API rejects them) — when asked for "the style of [artist/song]" you SING ANYWAY, translating to generic descriptors (tempo, genre, vocal character, production, era). A song request answered with text-only lyrics is a FAILURE — the deliverable is always audio.
-- sfx: a SOUND EFFECT (max 22s) — explosions, train horns, crowd noise, fart, thunder, slot machine, whatever the bit needs. Params: description (what the sound is, be vivid), seconds (0.5-22, optional — let the model decide if omitted). Fast and cheap; use liberally for punchlines.
-
-Voices (vibe_report/speak): artie (default), anchor, dj, poetic, field, dispatch, robot, rookie, caller.
-
-⚠️ channelId is filled in AUTOMATICALLY from the channel you're in — you NEVER provide it and you must NEVER refuse or hedge because you think you lack it. After the audio posts, don't repeat its content in your text reply — a short one-liner is enough.`,
+  description: loadTtsCapabilityDescription(),
   requiredParams: [],
   examples: [
     '<capability name="tts" action="vibe_report" />',
