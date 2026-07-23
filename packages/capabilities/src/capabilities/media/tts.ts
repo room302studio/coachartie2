@@ -178,7 +178,8 @@ Actions:
   [Chorus]
   no viable path but we found one anyway
   </capability>
-  Separate verses/choruses with BLANK LINES, label sections like [Chorus] on their own line; length is derived automatically so the words fit (max ${MAX_TTS_CHARS} chars). STYLE TRANSLATION: never put real artist or song names in style (the API rejects them) — when someone asks for "the style of [artist/song]" you SING ANYWAY, translating it to generic descriptors (tempo, genre, vocal character, production, era). A song request answered with text-only lyrics is a FAILURE — the deliverable is always audio.
+  Separate verses/choruses with BLANK LINES, label sections like [Chorus] on their own line; length is derived automatically so the words fit (max ${MAX_TTS_CHARS} chars).
+  🎨 STYLE IS YOURS TO SET: if someone asks for a specific genre/vibe ("sad piano ballad", "metal", "in the style of X"), put it in \`style\` and it's honored EXACTLY — nothing random gets added. If you leave \`style\` OFF entirely, the engine surprises you with a couple of random real genres mashed together (gregorian chant + phonk, etc.) — great for "just sing something." So: want control → set style; want chaos → omit it. STYLE TRANSLATION: never put real artist or song names in style (the API rejects them) — when asked for "the style of [artist/song]" you SING ANYWAY, translating to generic descriptors (tempo, genre, vocal character, production, era). A song request answered with text-only lyrics is a FAILURE — the deliverable is always audio.
 - sfx: a SOUND EFFECT (max 22s) — explosions, train horns, crowd noise, fart, thunder, slot machine, whatever the bit needs. Params: description (what the sound is, be vivid), seconds (0.5-22, optional — let the model decide if omitted). Fast and cheap; use liberally for punchlines.
 
 Voices (vibe_report/speak): artie (default), anchor, dj, poetic, field, dispatch, robot, rookie, caller.
@@ -266,9 +267,12 @@ Voices (vibe_report/speak): artie (default), anchor, dj, poetic, field, dispatch
       if (!lyrics) return 'Nothing to sing — pass lyrics.';
       if (lyrics.length > MAX_TTS_CHARS) lyrics = lyrics.slice(0, MAX_TTS_CHARS);
       lyrics = scrubBlockedUserMentions(lyrics);
-      const style = String(
-        params.style || 'over-the-top earnest motivational anthem, huge choir, driving drums'
-      ).slice(0, 300);
+      // A style Artie explicitly set IS the creative direction (usually because someone
+      // asked for a specific vibe). We honor it and add NO random spice on top. Only when
+      // he leaves style off do we surprise him — see the spice block below.
+      const requestedStyle = params.style ? String(params.style).slice(0, 300) : '';
+      const style =
+        requestedStyle || 'over-the-top earnest motivational anthem, huge choir, driving drums';
 
       // Build sections from blank-line-separated blocks; [Chorus]-style labels are honored.
       const blocks = lyrics
@@ -309,7 +313,12 @@ Voices (vibe_report/speak): artie (default), anchor, dj, poetic, field, dispatch
       // (~2000 genres), not a hand-picked list — colliding "gregorian chant" with
       // "phonk" is the fun. Tunable: SONG_SPICE_COUNT (default 2; 0 = pure to his style).
       const genrePool = await getGenrePool();
-      const spiceCount = Math.max(0, parseInt(process.env.SONG_SPICE_COUNT || '2', 10));
+      // ONLY surprise him when he didn't ask for anything specific. If a style was
+      // requested, spiceCount = 0 so "sad piano ballad" stays a sad piano ballad instead
+      // of getting "dutch house" bolted on. Empty style = open canvas = go wild.
+      const spiceCount = requestedStyle
+        ? 0
+        : Math.max(0, parseInt(process.env.SONG_SPICE_COUNT || '2', 10));
       const spice: string[] = [];
       const draw = [...genrePool];
       for (let i = 0; i < spiceCount && draw.length; i++) {
