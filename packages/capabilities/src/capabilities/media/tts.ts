@@ -134,7 +134,15 @@ export const ttsCapability: RegisteredCapability = {
 Actions:
 - vibe_report: a ~30-second info-dense radio bulletin about this channel/guild right now. The bulletin writes ITSELF from live data — you don't write the text. Params: voice (optional), angle (optional short steer).
 - speak: say specific words you provide, spoken voice (max ${MAX_TTS_CHARS} chars). Params: text, voice.
-- sing: an ACTUAL SONG with real music — full instrumentation, sung vocals, intelligible lyrics. Params: lyrics (your full lyrics, max ${MAX_TTS_CHARS} chars — separate verses/choruses with BLANK LINES, optionally label sections like [Chorus] on their own line; song length is derived automatically so the words fit), style (optional musical direction, e.g. "cheesy triumphant anthem, huge choir"). STYLE TRANSLATION: never put real artist or song names in style (the API rejects them) — but when someone requests "in the style of [artist/song]", you SING ANYWAY: translate the reference into generic descriptors (tempo, genre, vocal character, production, era) and go. A song request answered with text-only lyrics is a FAILURE — the deliverable is always audio.
+- sing: an ACTUAL SONG with real music — full instrumentation, sung vocals, intelligible lyrics. ⚠️ PUT THE LYRICS IN THE TAG BODY (between the opening and closing tags), NOT in a data attribute — cramming multi-line lyrics into JSON breaks on the first apostrophe or quote and the song silently dies. \`style\` is an optional attribute (musical direction). Format:
+  <capability name="tts" action="sing" style="cheesy triumphant anthem, huge choir">
+  WE ARE COACHARTIE
+  we carry the trains
+
+  [Chorus]
+  no viable path but we found one anyway
+  </capability>
+  Separate verses/choruses with BLANK LINES, label sections like [Chorus] on their own line; length is derived automatically so the words fit (max ${MAX_TTS_CHARS} chars). STYLE TRANSLATION: never put real artist or song names in style (the API rejects them) — when someone asks for "the style of [artist/song]" you SING ANYWAY, translating it to generic descriptors (tempo, genre, vocal character, production, era). A song request answered with text-only lyrics is a FAILURE — the deliverable is always audio.
 - sfx: a SOUND EFFECT (max 22s) — explosions, train horns, crowd noise, fart, thunder, slot machine, whatever the bit needs. Params: description (what the sound is, be vivid), seconds (0.5-22, optional — let the model decide if omitted). Fast and cheap; use liberally for punchlines.
 
 Voices (vibe_report/speak): artie (default), anchor, dj, poetic, field, dispatch, robot, rookie, caller.
@@ -144,7 +152,7 @@ Voices (vibe_report/speak): artie (default), anchor, dj, poetic, field, dispatch
   examples: [
     '<capability name="tts" action="vibe_report" />',
     '<capability name="tts" action="speak" data=\'{"text":"good morning subway builders, the trains run on time and so do I"}\' />',
-    '<capability name="tts" action="sing" data=\'{"lyrics":"WE ARE COACHARTIE, WE CARRY THE TRAINS...", "style":"over-the-top motivational anthem, huge choir"}\' />',
+    '<capability name="tts" action="sing" style="over-the-top motivational anthem, huge choir">\nWE ARE COACHARTIE\nwe carry the trains\n\n[Chorus]\nno viable path but we ride anyway\n</capability>',
     '<capability name="tts" action="sfx" data=\'{"description":"vintage NYC subway train arriving at platform, brakes squealing, doors chime", "seconds":8}\' />',
   ],
 
@@ -260,9 +268,31 @@ Voices (vibe_report/speak): artie (default), anchor, dj, poetic, field, dispatch
         for (const s of sections) s.duration_ms = Math.max(6000, Math.round(s.duration_ms * scale));
       }
 
+      // "To chance": a random flavor twist so songs don't all come out the same anthem.
+      // Artie's own style still leads; this stacks an unexpected genre/production/era on
+      // top, and colliding two of them (gospel choir + phonk cowbell) is the fun part.
+      // Tunable: SONG_SPICE_COUNT (default 2), or 0 to keep it pure to Artie's style.
+      const SPICE = [
+        '80s synthwave', 'gospel choir', 'lo-fi bedroom pop', 'stadium rock anthem',
+        'disco strings', 'trap hi-hats', 'sea shanty', 'bossa nova', 'chiptune 8-bit',
+        'orchestral cinematic', 'funk bassline', 'doo-wop', 'surf rock', 'new jack swing',
+        'baroque harpsichord', 'motown horns', 'dub reggae', 'phonk cowbell', 'jazz lounge',
+        'punk energy', 'japanese city pop', 'gregorian chant', 'bluegrass banjo',
+        'vaporwave', 'mariachi brass', 'drum and bass', 'spaghetti western twang',
+        'barbershop quartet', 'arena hair metal', 'afrobeat groove',
+      ];
+      const spiceCount = Math.max(0, parseInt(process.env.SONG_SPICE_COUNT || '2', 10));
+      const spice: string[] = [];
+      const pool = [...SPICE];
+      for (let i = 0; i < spiceCount && pool.length; i++) {
+        spice.push(pool.splice(Math.floor(Math.random() * pool.length), 1)[0]);
+      }
+      if (spice.length) logger.warn(`🎲 Song spice: ${spice.join(' + ')} (over "${style.slice(0, 40)}")`);
+
       const compositionPlan = {
         positive_global_styles: [
           style,
+          ...spice,
           'clear intelligible lead vocals, prominent in the mix',
           'clean diction, every word audible',
         ],

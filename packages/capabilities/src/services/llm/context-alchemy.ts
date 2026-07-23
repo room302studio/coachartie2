@@ -1730,13 +1730,10 @@ ${analysis.summary}`;
 
       const channelId = message.context?.channelId;
       if (!channelId) return;
-      const channelName = ((message.context as any)?.channelName || '').toLowerCase();
 
-      // Songs are a banter delight, not a helpdesk feature — never nudge where people need
-      // real help (a sung bug-triage is annoying, not fun).
-      if (/help|bug|support|save-?file|beta|\bmod|rules|wiki|review|api|dev|council-mod/.test(channelName)) {
-        return;
-      }
+      // No channel-name gating — the nudge itself tells Artie "only if it genuinely fits;
+      // don't force a song onto a serious moment," and he's better at reading whether a
+      // bug report wants a song than any keyword list would be. Trust his judgment.
 
       // Per-channel cooldown so a busy channel doesn't get nudged every other message.
       const now = Date.now();
