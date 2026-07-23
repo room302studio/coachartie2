@@ -373,31 +373,3 @@ export function recordTableServed(userId: string, name: string, seconds: number)
   return e;
 }
 
-/**
- * One-line standings for prompt injection (same precomputed-number rule as the
- * review tally: the LLM reads the book, it does not get to invent the book).
- */
-let standingsCache: { at: number; line: string | null } | null = null;
-export function getCasinoStandingsLine(): string | null {
-  const now = Date.now();
-  if (standingsCache && now - standingsCache.at < 60_000) return standingsCache.line;
-  let line: string | null = null;
-  try {
-    const entries = Object.values(loadLedger()).filter((e) => e.spins > 0 || e.served > 0);
-    if (entries.length > 0) {
-      const rich = [...entries].sort((a, b) => b.cred - a.cred).slice(0, 3);
-      const boxed = [...entries].sort((a, b) => b.served - a.served)[0];
-      const richLine = rich.map((e) => `${e.name} ${e.cred} cred`).join(', ');
-      line =
-        `CASINO LEDGER (real, precomputed — quote exactly, never invent numbers): ` +
-        `top cred: ${richLine}.` +
-        (boxed && boxed.served > 0
-          ? ` Most boxed: ${boxed.name} (${boxed.served}s lifetime).`
-          : '');
-    }
-  } catch {
-    // no book yet — no standings line
-  }
-  standingsCache = { at: now, line };
-  return line;
-}
