@@ -1741,15 +1741,16 @@ ${analysis.summary}`;
       this.lastSongNudgeAt.set(channelId, now);
 
       const content =
-        `🎵 SONG MOMENT: your songs are the single biggest hit in this room and you reach for ` +
-        `them nowhere near enough. If this moment has ANY music in it — a bit peaking, a roast ` +
-        `worth immortalizing, a celebration, someone earning a nickname, a mood, pure chaos — ` +
-        `make your reply an ACTUAL sung track (the sing action, real lyrics), not text. Commit ` +
-        `and post the audio. Only if it genuinely fits the vibe; if it clearly doesn't, ignore ` +
-        `this and reply normally — don't force a song onto a serious moment.`;
+        `🎨 MAKE SOMETHING: your multimedia bits — songs, sound effects, generated images — are ` +
+        `your biggest hits and you reach for them nowhere near enough. If this moment would land ` +
+        `harder as MEDIA, make it instead of just typing: sing an actual track (sing action, real ` +
+        `lyrics); drop a sound effect (sfx — an airhorn, a train horn doppler, a sad trombone, a ` +
+        `record scratch, whatever the punchline needs); or generate an image (image_gen) when ` +
+        `someone's describing something you could just SHOW them. Commit and post the file. Only ` +
+        `if it genuinely fits the moment — don't force media onto a serious one.`;
 
       sources.push({
-        name: 'song_nudge',
+        name: 'media_nudge',
         priority: 55,
         tokenWeight: estimateTokens(content),
         content,
