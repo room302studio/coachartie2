@@ -35,7 +35,11 @@ import {
   addDiscordEnvironment,
 } from './context-sources/discord-sources.js';
 import { addSongNudge, addMoltbookPeek } from './context-sources/nudge-sources.js';
-import { addLearnedRules, addRelevantMemories } from './context-sources/memory-sources.js';
+import {
+  addLearnedRules,
+  addRelevantMemories,
+  addYardCallback,
+} from './context-sources/memory-sources.js';
 
 // Guild ID to context path mapping (mirrors Discord guild-whitelist.ts)
 const GUILD_CONTEXT_PATHS: Record<string, string> = {
@@ -524,6 +528,8 @@ Important:
     // Can be disabled via experiment feature flags
     if (featureFlags.enableMemories !== false) {
       await this.addRelevantMemories(message, sources, capabilityContext);
+      // Yard historian: occasionally surface a notable past moment as an optional callback.
+      await addYardCallback(message, sources);
     } else if (DEBUG) {
       logger.info('🧪 Experiment: Memories DISABLED');
     }
