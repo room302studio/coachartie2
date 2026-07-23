@@ -44,6 +44,42 @@ const VOICE_SETTINGS = {
 // A voice note is a bit, not an essay. Also caps the ElevenLabs spend per call.
 const MAX_TTS_CHARS = 2000;
 
+// The "chance" pool for song spice — the OPEN MUSICBRAINZ GENRE DATABASE (~2000 real
+// genres), fetched once and cached, so the random flavor stacked on each song is genuinely
+// varied instead of a hand-picked shortlist. Falls back to a small seed if MB is unreachable.
+const GENRE_SEED = [
+  'synthwave', 'gospel', 'sea shanty', 'phonk', 'city pop', 'vaporwave', 'bluegrass',
+  'mariachi', 'drum and bass', 'doo-wop', 'disco', 'trap', 'bossa nova', 'chiptune',
+  'dub', 'gregorian chant', 'surf rock', 'motown', 'afrobeat', 'barbershop',
+];
+let genrePoolCache: string[] | null = null;
+async function getGenrePool(): Promise<string[]> {
+  if (genrePoolCache) return genrePoolCache;
+  try {
+    const controller = new AbortController();
+    const t = setTimeout(() => controller.abort(), 4000);
+    const resp = await fetch('https://musicbrainz.org/ws/2/genre/all?fmt=txt', {
+      headers: { 'User-Agent': 'CoachArtie/1.0 (Subway Builder Discord bot)' },
+      signal: controller.signal,
+    }).finally(() => clearTimeout(t));
+    if (resp.ok) {
+      const list = (await resp.text())
+        .split('\n')
+        .map((l) => l.trim())
+        .filter((l) => l.length > 1 && l.length < 40);
+      if (list.length > 50) {
+        genrePoolCache = list;
+        logger.warn(`🎶 Loaded ${list.length} genres from MusicBrainz for song spice`);
+        return genrePoolCache;
+      }
+    }
+  } catch {
+    // MB unreachable — fall through to the seed list
+  }
+  genrePoolCache = GENRE_SEED;
+  return genrePoolCache;
+}
+
 // ~30 seconds of speech at broadcast pace. The bulletin prompt aims here.
 const BULLETIN_WORDS = '80-100';
 
@@ -268,24 +304,16 @@ Voices (vibe_report/speak): artie (default), anchor, dj, poetic, field, dispatch
         for (const s of sections) s.duration_ms = Math.max(6000, Math.round(s.duration_ms * scale));
       }
 
-      // "To chance": a random flavor twist so songs don't all come out the same anthem.
-      // Artie's own style still leads; this stacks an unexpected genre/production/era on
-      // top, and colliding two of them (gospel choir + phonk cowbell) is the fun part.
-      // Tunable: SONG_SPICE_COUNT (default 2), or 0 to keep it pure to Artie's style.
-      const SPICE = [
-        '80s synthwave', 'gospel choir', 'lo-fi bedroom pop', 'stadium rock anthem',
-        'disco strings', 'trap hi-hats', 'sea shanty', 'bossa nova', 'chiptune 8-bit',
-        'orchestral cinematic', 'funk bassline', 'doo-wop', 'surf rock', 'new jack swing',
-        'baroque harpsichord', 'motown horns', 'dub reggae', 'phonk cowbell', 'jazz lounge',
-        'punk energy', 'japanese city pop', 'gregorian chant', 'bluegrass banjo',
-        'vaporwave', 'mariachi brass', 'drum and bass', 'spaghetti western twang',
-        'barbershop quartet', 'arena hair metal', 'afrobeat groove',
-      ];
+      // "To chance": stack 1-2 random real genres over Artie's own style so songs come
+      // out surprising instead of same-y. The pool is the OPEN MUSICBRAINZ GENRE DB
+      // (~2000 genres), not a hand-picked list — colliding "gregorian chant" with
+      // "phonk" is the fun. Tunable: SONG_SPICE_COUNT (default 2; 0 = pure to his style).
+      const genrePool = await getGenrePool();
       const spiceCount = Math.max(0, parseInt(process.env.SONG_SPICE_COUNT || '2', 10));
       const spice: string[] = [];
-      const pool = [...SPICE];
-      for (let i = 0; i < spiceCount && pool.length; i++) {
-        spice.push(pool.splice(Math.floor(Math.random() * pool.length), 1)[0]);
+      const draw = [...genrePool];
+      for (let i = 0; i < spiceCount && draw.length; i++) {
+        spice.push(draw.splice(Math.floor(Math.random() * draw.length), 1)[0]);
       }
       if (spice.length) logger.warn(`🎲 Song spice: ${spice.join(' + ')} (over "${style.slice(0, 40)}")`);
 

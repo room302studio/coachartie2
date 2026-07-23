@@ -1755,7 +1755,7 @@ ${analysis.summary}`;
         content,
         category: 'system',
       });
-      if (DEBUG) logger.info(`│ 🎵 Song-moment nudge injected for #${channelName}`);
+      if (DEBUG) logger.info(`│ 🎵 Song-moment nudge injected for channel ${channelId}`);
     } catch (e) {
       logger.warn('Song nudge failed:', e);
     }
