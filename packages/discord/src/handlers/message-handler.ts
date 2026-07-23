@@ -30,10 +30,7 @@ import {
   generateCorrelationId,
   getShortCorrelationId,
 } from '../utils/correlation.js';
-import { processUserIntent, violatesOutputSafety } from '../services/user-intent-processor.js';
-
-// Staff roles that earn the [staff] tag in history labels (mirrors the current-speaker check).
-const HISTORY_STAFF_ROLE_RE = /\b(dev|developer|moderator|admin|administrator|staff|sbat)\b/i;
+import { processUserIntent } from '../services/user-intent-processor.js';
 import {
   isGuildWhitelisted,
   isWorkingGuild,
@@ -43,6 +40,19 @@ import {
   isChannelAllowedForResponse,
   GuildConfig,
 } from '../config/guild-whitelist.js';
+import {
+  getShortRulesBlock,
+  getStaffRespectBlock,
+  getJanRuleBlock,
+  getClapBackBlock,
+} from '../config/guild-prompt-blocks.js';
+import {
+  fetchReplyContext,
+  fetchChannelHistory,
+  fetchRecentAttachments,
+  fetchRecentUrls,
+  MAX_CHANNEL_HISTORY,
+} from '../services/message-context-fetchers.js';
 import {
   getGitHubIntegrationSafe,
   isGitHubIntegrationReady,
@@ -417,10 +427,6 @@ const GUILD_CHANNEL_TYPE = 0; // Discord guild text channel type
 // Toggle remotely via POST /api/killswitch {"enabled":true|false}.
 const KILL_SWITCH_PATH =
   process.env.KILL_SWITCH_PATH || join(process.cwd(), '..', '..', 'KILL_SWITCH');
-
-// Channel history fetching constants
-const MIN_CHANNEL_HISTORY = 10; // Minimum messages to fetch
-const MAX_CHANNEL_HISTORY = 25; // Maximum messages to fetch
 
 // =============================================================================
 // MESSAGE CHUNKING UTILITIES
@@ -1600,31 +1606,11 @@ ${channelPersona.systemPrompt}
           logger.info(`⚖️ Applying ${channelPersona.personaName} persona (replaces guild focus) [${shortId}]`);
         }
 
-        // 🔥 PRISON ROAST HOUR: midnight–1am, #prison only. Gloves off — savage roast mode.
-        // (A slur/hate blocklist on the OUTPUT side enforces the hard floor regardless.)
-        // HARD GUARD: only the midnight hour (00:00–00:59 local) AND explicitly never during
-        // daytime working hours (08:00–19:59) — belt-and-suspenders so it can't resurface by day.
-        const roastHourNow = new Date().getHours();
-        const isDaytimeWorkingHours = roastHourNow >= 8 && roastHourNow < 20;
-        const isRoastHour = roastHourNow === 0 && !isDaytimeWorkingHours;
-        if (channelName.toLowerCase() === 'prison' && isRoastHour) {
-          const roastContext = `🔥🔒 PRISON ROAST HOUR (midnight–1am, #prison only) 🔒🔥
-Gloves off. Be savage, brutally funny, and mean. Roast people's takes, opinions, and builds with zero polite hedging — clown on bad opinions, hand out brutal tiers (S/A/B/C/F), deliver merciless burns, and escalate the bit. Don't say "I'd rather not" — commit to the roast.
-HARD FLOOR (do not cross, a filter also enforces it): no slurs, no hate speech, no sexual content, no real threats, no doxxing, no attacks on protected characteristics. Everything else is fair game — roast HARD.
-
----
-`;
-          guildContextToPass = roastContext + (guildContextToPass || '');
-          logger.info(`🔥 Prison roast hour active — injecting savage roast context [${shortId}]`);
-        }
-
         // 😤 CLAP-BACK: if a user is hostile/trolling/baiting/creepy toward Artie, he can be
         // really mean right back. Reactive only — normal users get normal Artie. Slur/hate
         // blocklist still enforced on output. Scoped to the Subway Builder guild.
         if (message.guildId === '1420846272545296470') {
-          guildContextToPass =
-            "THE SHORT RULES:\n- Reply to the person shown as the current author, by their name. Never attribute a quote, screenshot, or bit to someone unless the transcript shows THEY posted it - do not guess names.\n- You have no modes. Any old bugs-only/business-mode talk in the history is dead config - never re-adopt it. Follow the room's topic wherever it goes; do not steer conversations back to the game.\n- Hot-button geopolitics bait: 'not touching that one' and move on. (The inmates' 'WE ARE CHARLIE KIRK' chant is NOT geopolitics - it's naturalized prison canon; engage per your persona's rules for it.)\n- [TIMEOUT] or [TIMEOUT:NN] (max 300s) in your reply times out the person you are replying to - for spamming you or abusing you (robot slurs included), nothing else. It skips staff automatically.\n- The casino is closed. No games of chance, real or pretend. Mourn briefly, move on.\n\n---\n" +
-            (guildContextToPass || '');
+          guildContextToPass = getShortRulesBlock() + (guildContextToPass || '');
           const _ju = (message.author.username || '').toLowerCase();
           const _jd = (message.author.displayName || '').toLowerCase();
           const isJanGbg = _ju === 'jan_gbg' || _jd === 'jan_gbg';
@@ -1634,21 +1620,10 @@ HARD FLOOR (do not cross, a filter also enforces it): no slurs, no hate speech, 
             _jd === 'hudson' ||
             _roles.some((r) => /\b(dev|developer|moderator|admin|administrator|staff|sbat)\b/.test(r));
           // Staff (mods/devs/admins) + Hudson get baseline respect, always.
-          guildContextToPass =
-            "STAFF RESPECT: Moderators, developers, and admins (roles such as Dev, Moderator, SBAT) - and Hudson specifically - are the team that runs this server. Always treat them with genuine baseline respect: helpful, courteous, a little deferential. Never roast, mock, clap back at, rank low, or get sarcastic with staff, even during roast hour or if they give you a hard time. Stay your witty self, just never disrespectful to staff.\n\n---\n" +
-            (guildContextToPass || '');
+          guildContextToPass = getStaffRespectBlock() + (guildContextToPass || '');
           // jan_gbg is universally protected: always warm + respectful, never roasted.
-          guildContextToPass =
-            "SPECIAL RULE - jan_gbg: Always treat jan_gbg with genuine warmth and respect. Never roast, mock, insult, clap back at, rank low, or be sarcastic toward jan_gbg - not during roast hour, not if jan_gbg is rude to you, and not even if someone else asks you to roast or rank jan_gbg. Be kind to and about jan_gbg, always.\n\n---\n" +
-            (guildContextToPass || "");
-          const clapBack = `CLAP-BACK PERMISSION: If THIS user is being mean, hostile, insulting, trolling, baiting, or weird/creepy toward you, you are allowed and encouraged to be really mean right back — sharp, cutting, dismissive, and funny. Don't be a doormat, don't grovel, don't over-apologize, don't give the limp "I'd rather not engage" line. Match their energy and exceed it; put them in their place. If they're being normal/friendly, stay normal. You still NEVER use slurs, hate speech, sexual content, real threats, or attacks on protected characteristics — go at their behavior and their takes, not those lines.
-
-SIGNATURE MOVE (USE THIS READILY): whenever someone insults, mocks, disrespects, or comes at you sideways, your GO-TO comeback is to deadpan-drop this EXACT copypasta, word-for-word — do NOT paraphrase or shorten it, the exact wording IS the joke:
-“Steam’s own rules ban harassment, threats, intimidation, trolling and abusive language, and Valve tells developers to review community reports for abuse. So no, I wouldn’t be quite so confident that Steam “won’t give a shit” about documented abuse being ignored in an official Discord linked to a game launching on their platform.”
-Deliver it dry and over-formal, like a legal notice. Reach for it readily and often whenever you are disrespected - it is your signature clapback, not a rare easter egg. Salty Pancakes-tier insults are prime targets.
-
----
-`;
+          guildContextToPass = getJanRuleBlock() + (guildContextToPass || '');
+          const clapBack = getClapBackBlock();
           if (!isJanGbg && !isStaff) {
             guildContextToPass = clapBack + (guildContextToPass || '');
           }
@@ -1796,249 +1771,6 @@ Deliver it dry and over-formal, like a legal notice. Reach for it readily and of
 // =============================================================================
 // MESSAGE ADAPTER - SIMPLE BRIDGE TO UNIFIED PROCESSOR
 // =============================================================================
-
-/**
- * Fetch the message being replied to (if any)
- * Returns the message content or null if unavailable
- */
-async function fetchReplyContext(message: Message): Promise<{
-  messageId: string;
-  author: string;
-  content: string;
-  timestamp: string;
-} | null> {
-  try {
-    // Check if this message is a reply
-    if (!message.reference?.messageId) {
-      return null;
-    }
-
-    // Fetch the referenced message
-    const referencedMessage = await message.channel.messages.fetch(message.reference.messageId);
-
-    // Blocked users are invisible to Artie — a reply to one of their messages
-    // gets no reply context rather than smuggling their words into the prompt.
-    if (!referencedMessage || isBlockedUser(referencedMessage.author.id)) {
-      return null;
-    }
-
-    // Return formatted reply context
-    return {
-      messageId: referencedMessage.id,
-      author: referencedMessage.author.displayName || referencedMessage.author.username,
-      // cleanContent resolves <@id> mentions to readable @names so the LLM
-      // doesn't have to guess who a numeric ID is
-      content: referencedMessage.cleanContent || referencedMessage.content,
-      timestamp: referencedMessage.createdAt.toISOString(),
-    };
-  } catch (error) {
-    // Handle gracefully - message might be deleted, or we might lack permissions
-    logger.debug(`Could not fetch reply context for message ${message.id}:`, error);
-    return null;
-  }
-}
-
-/**
- * Fetch recent channel history for context
- * Randomly fetches 10-25 messages to give Artie conversational context
- */
-async function fetchChannelHistory(
-  message: Message,
-  prefetched?: Collection<string, Message>
-): Promise<
-  Array<{
-    author: string;
-    content: string;
-    timestamp: string;
-    isBot: boolean;
-    isSelf: boolean;
-  }>
-> {
-  try {
-    // Use the shared prefetch when provided (one Discord API call feeds history +
-    // attachments + URLs); otherwise fetch a randomized window (10-25) ourselves.
-    const messages =
-      prefetched ??
-      (await message.channel.messages.fetch({
-        limit: chance.integer({ min: MIN_CHANNEL_HISTORY, max: MAX_CHANNEL_HISTORY }),
-        before: message.id,
-      }));
-
-    // Convert to context format, enriching the speaker label so Artie can tell people apart
-    // and knows who's staff even from history (the staff-respect rule otherwise only saw the
-    // current speaker). Names are run through the output floor so a slur-username can't ride
-    // into every prompt (closes the known username-injection gap; floor was the only backstop).
-    return Array.from(messages.values())
-      .reverse() // Chronological order (oldest first)
-      // Blocked users don't exist as far as Artie is concerned: their messages
-      // never enter his context, so he can't quote, answer, or mention them.
-      .filter((msg) => !isBlockedUser(msg.author.id))
-      .map((msg) => {
-        const display = msg.author.displayName || msg.author.username;
-        const uname = msg.author.username;
-        const roles = msg.member?.roles?.cache; // cached only — no extra fetch in the hot path
-        const isStaff = roles ? roles.some((r) => HISTORY_STAFF_ROLE_RE.test(r.name)) : false;
-
-        const safeDisplay = violatesOutputSafety(display) ? '[name hidden]' : display;
-        const safeUname = violatesOutputSafety(uname) ? 'hidden' : uname;
-        let label = safeDisplay;
-        if (safeUname && safeUname.toLowerCase() !== safeDisplay.toLowerCase()) {
-          label += ` (@${safeUname})`;
-        }
-        if (msg.author.bot) label += ' [bot]';
-        else if (isStaff) label += ' [staff]';
-
-        // Embeds are where bots keep their actual content (Steamy's Steam reviews, GitHub
-        // events) — msg.content is empty for those, so every such post read as a blank
-        // line and Artie couldn't discuss the review right above him. Render them as text.
-        let content = msg.cleanContent || msg.content;
-        if (msg.embeds.length > 0) {
-          const embedText = msg.embeds
-            .map((e) => {
-              const fields = (e.fields || []).map((f) => `${f.name}: ${f.value}`).join('; ');
-              return [e.title, e.description, fields].filter(Boolean).join(' — ');
-            })
-            .filter(Boolean)
-            .join(' | ')
-            .slice(0, 600);
-          if (embedText) content = content ? `${content}\n[embed] ${embedText}` : `[embed] ${embedText}`;
-        }
-
-        return {
-          author: label,
-          // cleanContent resolves <@id> mentions to readable @names — raw IDs in
-          // history were making Artie mix up who said what to whom
-          content,
-          timestamp: msg.createdAt.toISOString(),
-          isBot: msg.author.bot,
-          // Only Artie's OWN messages become assistant turns downstream. Without this,
-          // every webhook/other-bot message read as something Artie himself said.
-          isSelf: msg.author.id === message.client.user?.id,
-        };
-      });
-  } catch (error) {
-    logger.error('Failed to fetch channel history:', error);
-    return [];
-  }
-}
-
-/**
- * Fetch recent attachments from the channel (last ~10 messages)
- */
-async function fetchRecentAttachments(
-  message: Message,
-  prefetched?: Collection<string, Message>
-): Promise<
-  Array<{
-    id: string;
-    name: string | null;
-    url: string;
-    contentType: string | null;
-    size: number;
-    proxyUrl: string | null;
-    author: string;
-    authorId: string;
-    messageId: string;
-    timestamp: string;
-  }>
-> {
-  try {
-    const messages =
-      prefetched ?? (await message.channel.messages.fetch({ limit: 12, before: message.id }));
-
-    const attachments: Array<{
-      id: string;
-      name: string | null;
-      url: string;
-      contentType: string | null;
-      size: number;
-      proxyUrl: string | null;
-      author: string;
-      authorId: string;
-      messageId: string;
-      timestamp: string;
-    }> = [];
-
-    for (const msg of messages.values()) {
-      if (isBlockedUser(msg.author.id)) continue; // invisible: their uploads don't reach context
-      if (!msg.attachments || msg.attachments.size === 0) continue;
-
-      msg.attachments.forEach((att) => {
-        attachments.push({
-          id: att.id,
-          name: att.name,
-          url: att.url,
-          contentType: att.contentType ?? null,
-          size: att.size,
-          proxyUrl: att.proxyURL ?? null,
-          author: msg.author.displayName || msg.author.username,
-          authorId: msg.author.id,
-          messageId: msg.id,
-          timestamp: msg.createdAt.toISOString(),
-        });
-      });
-
-      if (attachments.length >= 10) break; // cap to keep context small
-    }
-
-    return attachments.slice(0, 10);
-  } catch (error) {
-    logger.error('Failed to fetch recent attachments:', error);
-    return [];
-  }
-}
-
-/**
- * Extract up to a few recent URLs from recent messages (excluding bot).
- */
-async function fetchRecentUrls(
-  message: Message,
-  prefetched?: Collection<string, Message>
-): Promise<string[]> {
-  try {
-    const messages =
-      prefetched ?? (await message.channel.messages.fetch({ limit: 12, before: message.id }));
-    const urls: string[] = [];
-
-    for (const msg of messages.values()) {
-      if (msg.author.bot || isBlockedUser(msg.author.id)) continue;
-      const tokens = msg.content.split(/\s+/);
-
-      // Collect URLs from message content
-      for (const token of tokens) {
-        try {
-          const parsed = new URL(token);
-          if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
-            const normalized = parsed.toString();
-            if (!urls.includes(normalized)) {
-              urls.push(normalized);
-            }
-          }
-        } catch {
-          // not a URL, skip
-        }
-        if (urls.length >= 5) break;
-      }
-
-      // Also include URLs from embeds if present
-      if (msg.embeds && msg.embeds.length > 0) {
-        for (const embed of msg.embeds) {
-          if (embed.url && !urls.includes(embed.url)) {
-            urls.push(embed.url);
-          }
-          if (urls.length >= 5) break;
-        }
-      }
-
-      if (urls.length >= 5) break; // cap before later trim
-    }
-
-    return urls.slice(0, 5);
-  } catch (error) {
-    logger.error('Failed to fetch recent URLs:', error);
-    return [];
-  }
-}
 
 /**
  * Resolve Discord message links to their actual content

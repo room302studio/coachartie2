@@ -20,6 +20,13 @@ import {
   addSelfAwareness,
 } from './context-providers/system-context.js';
 import { getUserScores, formatUserScores } from '../user-scores.js';
+import {
+  sanitizeAssistantMessage,
+  renderDiscordTranscript,
+  formatLearnedRulesForContext,
+  extractParticipants,
+  groupContextByCategory,
+} from './context-sources/transcript-helpers.js';
 
 // Guild ID to context path mapping (mirrors Discord guild-whitelist.ts)
 const GUILD_CONTEXT_PATHS: Record<string, string> = {
@@ -185,7 +192,7 @@ export class ContextAlchemy {
       // Prefer Discord channel history when available (source of truth - includes webhook/n8n messages)
       if (options.discordChannelHistory && options.discordChannelHistory.length > 0) {
         // Group chat → single labeled transcript, NOT role-alternating turns.
-        groupTranscript = this.renderDiscordTranscript(
+        groupTranscript = renderDiscordTranscript(
           options.discordChannelHistory,
           historyLimit
         );
@@ -583,7 +590,7 @@ Important:
         const isUser = msg.user_id === userId;
         // Sanitize assistant messages to break poisoned patterns; a turn that
         // sanitizes to nothing (pure [SILENT]/scaffolding) is dropped entirely.
-        const content = isUser ? msg.value : this.sanitizeAssistantMessage(msg.value);
+        const content = isUser ? msg.value : sanitizeAssistantMessage(msg.value);
         if (!content || content.trim().length === 0) continue;
         history.push({
           role: isUser ? 'user' : 'assistant',
@@ -600,136 +607,6 @@ Important:
       logger.warn('Failed to load conversation history:', error);
       return []; // Graceful degradation
     }
-  }
-
-  /**
-   * Sanitize assistant message content to break poisoned patterns
-   * Removes problematic prefixes and formatting that could train bad behavior
-   */
-  private sanitizeAssistantMessage(content: string): string {
-    // Patterns that indicate conversation history poisoning
-    // These are formats the model should NEVER use, so strip them from history
-    const poisonedPrefixes = [
-      /^\*\*Me:\*\*\s*/i,
-      /^\*\*Artie:\*\*\s*/i,
-      /^\*\*Coach Artie:\*\*\s*/i,
-      /^\*\*Response:\*\*\s*/i,
-      /^\*\*Reply:\*\*\s*/i,
-      /^\*\*Review:\*\*\s*/i,
-      /^\*\*Analysis:\*\*\s*/i,
-      /^\*\*Answer:\*\*\s*/i,
-      /^\*\*Explanation:\*\*\s*/i,
-      /^Response to (your |the )?message:\s*/i,
-      /^Response to user:\s*/i,
-      /^Here's my response:\s*/i,
-    ];
-
-    let sanitized = content;
-    for (const pattern of poisonedPrefixes) {
-      sanitized = sanitized.replace(pattern, '');
-    }
-
-    // Stored assistant turns carry orchestration scaffolding that must never be
-    // replayed as "something Artie said": capability invocations/results, step
-    // markers from the multi-step loop, and injected wrapper blocks. Replaying
-    // these made Artie describe his own prompts as "a mess of fragments stitched
-    // together" and refuse live questions as jailbreak attempts.
-    sanitized = sanitized
-      .replace(/<capability\b[^>]*\/>/gi, '')
-      .replace(/<capability\b[^>]*>[\s\S]*?<\/capability>/gi, '')
-      .replace(/<security_reminder>[\s\S]*?<\/security_reminder>/gi, '')
-      .replace(/<user_message\b[^>]*>[\s\S]*?<\/user_message>/gi, '')
-      .replace(/^#{0,3}\s*Step \d+\s*\/\s*\d+.*$/gim, '')
-      .trim();
-
-    // A refusal-spiral breaker: [SILENT] markers (and pure-meta parentheticals
-    // that ride with them) must not replay — each replayed refusal teaches the
-    // next generation to refuse too. Returning '' drops the turn from history.
-    const silentStripped = sanitized
-      .replace(/\[SILENT\]/gi, '')
-      .replace(/^\((?:that|this)['’a-z ,.-]*\)$/gim, '')
-      .trim();
-    if (silentStripped.length === 0) {
-      return '';
-    }
-    if (/^\[SILENT\]/i.test(sanitized)) {
-      return '';
-    }
-
-    return sanitized;
-  }
-
-  /**
-   * Convert Discord channel history to message format
-   * Discord history is the source of truth - includes webhook/n8n messages
-   * Applies sanitization to break poisoned response patterns
-   */
-  /**
-   * Render Discord channel history as ONE labeled transcript. Every line names its
-   * speaker — including Artie's own lines ("Coach Artie (you)") — so a weak model can
-   * tell a group chat apart and never attributes one person's history to another.
-   */
-  private renderDiscordTranscript(
-    discordHistory: Array<{
-      author: string;
-      content: string;
-      timestamp: string;
-      isBot: boolean;
-      isSelf?: boolean;
-    }>,
-    limit: number
-  ): string {
-    const recent = discordHistory.slice(-(limit * 2));
-    const lines = recent
-      .filter((msg) => msg.content && msg.content.trim().length > 0)
-      .map((msg) => {
-        const isSelf = msg.isSelf ?? msg.isBot;
-        if (isSelf) {
-          return `Coach Artie (you): ${this.sanitizeAssistantMessage(msg.content)}`;
-        }
-        // msg.author already carries "Display (@username)[staff]/[bot]" labeling
-        // from the discord side.
-        return `${msg.author}: ${msg.content}`;
-      })
-      .filter((l) => l.split(': ').slice(1).join(': ').trim().length > 0);
-    return lines.join('\n');
-  }
-
-  private convertDiscordHistoryToMessages(
-    discordHistory: Array<{
-      author: string;
-      content: string;
-      timestamp: string;
-      isBot: boolean;
-      isSelf?: boolean;
-    }>,
-    limit: number
-  ): Array<{ role: 'user' | 'assistant'; content: string }> {
-    // Discord history comes in chronological order (oldest first)
-    // Take the most recent messages up to limit * 2 (pairs)
-    const recentHistory = discordHistory.slice(-(limit * 2));
-
-    return recentHistory
-      .filter((msg) => msg.content && msg.content.trim().length > 0)
-      .map((msg) => {
-        // Only Artie's OWN messages become assistant turns. Other bots/webhooks used to be
-        // mapped to assistant too, which put words in Artie's mouth — he'd "remember" saying
-        // things another bot said (and repeat/contradict himself accordingly). When isSelf is
-        // absent (payload from an older discord build), fall back to the old isBot behavior.
-        const isOwnMessage = msg.isSelf ?? msg.isBot;
-        return {
-          role: isOwnMessage ? ('assistant' as const) : ('user' as const),
-          // Sanitize assistant messages; PREFIX human messages with the author name so Artie can
-          // tell who said what (without this, every user collapses into anonymous 'user' turns
-          // and he mis-attributes who did/said what in the channel). Other bots keep their
-          // author label too (it already carries a [bot] tag from the discord side).
-          content: isOwnMessage
-            ? this.sanitizeAssistantMessage(msg.content)
-            : `${msg.author}: ${msg.content}`,
-        };
-      })
-      // A turn that sanitized to nothing (pure [SILENT]/scaffolding) is dropped.
-      .filter((msg) => msg.content.trim().length > 0);
   }
 
   /**
@@ -1937,7 +1814,7 @@ ${analysis.summary}`;
       }
 
       // Format rules for context injection
-      const rulesContent = this.formatLearnedRulesForContext(allRules, guildId);
+      const rulesContent = formatLearnedRulesForContext(allRules, guildId);
 
       sources.push({
         name: 'learned_rules',
@@ -2060,7 +1937,7 @@ ${analysis.summary}`;
       // participants' names/handles makes recall pull each person's real history. The
       // relevance threshold keeps this from polluting non-people questions: a metro-cost
       // query won't clear threshold on a person-memory just because a name rode along.
-      const participants = this.extractParticipants(message);
+      const participants = extractParticipants(message);
       // Distinctive name tokens for scoring (jan_gbg, legalmexicanalien, yellowaquarium).
       // These let the recaller pull in AND rank up memories that mention the people
       // actually present — the query-text append alone was too weak a signal to beat
@@ -2278,7 +2155,7 @@ ${analysis.summary}`;
       logger.info('┌─ MESSAGE CHAIN ASSEMBLY ────────────────────────────────────────┐');
     }
 
-    const contextByCategory = this.groupContextByCategory(contextSources);
+    const contextByCategory = groupContextByCategory(contextSources);
     const messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [];
 
     // 1. System message with temporal context + capabilities
