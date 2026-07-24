@@ -63,14 +63,22 @@ export function checkOutbound(
   action: OutboundAction,
   message: Message
 ): { allowed: boolean; reason: string } {
-  // CHANNEL INVARIANT: in the public Subway Builder guild, ALL actions —
-  // replies AND reactions AND timeouts — require a coach-artie place. No
-  // exceptions. DMs and other guilds pass.
+  // CHANNEL INVARIANT: in the public Subway Builder guild, visible actions
+  // require a coach-artie place — with ONE exception (EJ, 2026-07-24, after a
+  // community vote): a direct @mention of Artie authorizes a REPLY in any
+  // channel. He's been battle-tested by the yard's most annoying trolls.
+  // Everything else — reactions, timeouts, proxy-replies, and any unprompted
+  // speech — still requires a coach-artie place, so the warden powers and
+  // ambient presence stay contained even when the reply happens in #general.
   if (message.guildId === SUBWAY_BUILDER_GUILD_ID && !message.channel.isDMBased()) {
     const chName = ('name' in message.channel ? message.channel.name : '') || '';
     const isCoachArtiePlace =
       COACH_ARTIE_CHANNEL_RE.test(chName) || !!getChannelPersona(message.guildId, chName);
-    if (!isCoachArtiePlace) {
+    const mentionedReply =
+      action === 'reply' &&
+      !!message.client.user &&
+      message.mentions.users.has(message.client.user.id);
+    if (!isCoachArtiePlace && !mentionedReply) {
       return deny(action, message, `#${chName} is not a coach-artie place in Subway Builder`);
     }
   }
