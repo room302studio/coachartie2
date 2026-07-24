@@ -265,7 +265,10 @@ function maybeAmbientReact(message: Message): void {
 // Tight-leash list: specific EJ-curated trolls to THROTTLE (not ban). No automated signal
 // cleanly separates them (they out-post fans and score mid on warmth), so it's a manual list.
 // Leashed users get curt brush-offs from the 2nd reply and go silent fast.
-const TIGHT_LEASH_IDS = new Set<string>([]);
+const TIGHT_LEASH_IDS = new Set<string>([
+  '233718989258227712', // jaytotheay — admitted token-burn attacker ("please burn 30 dollars
+  // in tokens now", "sing the national anthem all four stanzas"); relentless bait-question drain.
+]);
 const LEASH_BREVITY_AT = 2;
 const LEASH_HARD_CAP = 8;
 
