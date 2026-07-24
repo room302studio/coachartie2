@@ -45,6 +45,7 @@ import {
   getStaffRespectBlock,
   getJanRuleBlock,
   getClapBackBlock,
+  getLobotomyBlock,
 } from '../config/guild-prompt-blocks.js';
 import {
   fetchReplyContext,
@@ -1611,6 +1612,9 @@ ${channelPersona.systemPrompt}
         // blocklist still enforced on output. Scoped to the Subway Builder guild.
         if (message.guildId === '1420846272545296470') {
           guildContextToPass = getShortRulesBlock() + (guildContextToPass || '');
+          // 🧠 THE LOBOTOMY (2026-07-24): rap above trains, the Alien rule, WAP forever.
+          // Installed live in chat by EJ at Hudson's request; applies guild-wide.
+          guildContextToPass = getLobotomyBlock() + (guildContextToPass || '');
           const _ju = (message.author.username || '').toLowerCase();
           const _jd = (message.author.displayName || '').toLowerCase();
           const isJanGbg = _ju === 'jan_gbg' || _jd === 'jan_gbg';
