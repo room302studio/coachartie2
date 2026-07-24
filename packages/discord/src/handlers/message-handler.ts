@@ -1612,9 +1612,6 @@ ${channelPersona.systemPrompt}
         // blocklist still enforced on output. Scoped to the Subway Builder guild.
         if (message.guildId === '1420846272545296470') {
           guildContextToPass = getShortRulesBlock() + (guildContextToPass || '');
-          // 🧠 THE LOBOTOMY (2026-07-24): rap above trains, the Alien rule, WAP forever.
-          // Installed live in chat by EJ at Hudson's request; applies guild-wide.
-          guildContextToPass = getLobotomyBlock() + (guildContextToPass || '');
           const _ju = (message.author.username || '').toLowerCase();
           const _jd = (message.author.displayName || '').toLowerCase();
           const isJanGbg = _ju === 'jan_gbg' || _jd === 'jan_gbg';
@@ -1631,6 +1628,10 @@ ${channelPersona.systemPrompt}
           if (!isJanGbg && !isStaff) {
             guildContextToPass = clapBack + (guildContextToPass || '');
           }
+          // 🧠 THE LOBOTOMY (2026-07-24): rap-first identity, the Alien rule, WAP forever.
+          // Prepended LAST so it sits at the very top of the assembled guild context —
+          // it must outrank the train-first base persona, not get buried under it.
+          guildContextToPass = getLobotomyBlock() + (guildContextToPass || '');
         }
 
         // Self-awareness: Artie's live per-guild display name, so nickname bits land
