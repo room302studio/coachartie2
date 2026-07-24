@@ -159,12 +159,16 @@ const CHANNEL_BURST_COOLDOWN_MS = 6000;
 // hard cap, silence for the rest of the window. Keyed per-user; DMs exempt.
 const userResponseHistory = new Map<string, number[]>();
 const ANTIBODY_WINDOW_MS = 30 * 60 * 1000; // 30-minute rolling window
-// General antibody is a RUNAWAY-ABUSE BACKSTOP ONLY. Calibrated above the busiest genuine
-// users (observed max ~45 replies/30min from real enthusiasts) so normal chatty fans are NEVER
-// throttled — volume alone can't tell a fan from a troll (trolls actually post less), so this
-// only bites truly pathological volume.
+// Two-stage antibody:
+//  - BREVITY (soft, early): starts gently shrinking replies once someone has pulled a handful
+//    out of him in the window. The log curve (120/log2(count), floored) means the FIRST couple
+//    replies to anyone are still full-length Artie; it only tightens as one person keeps firing.
+//    This is the token-cost control for bait-question trolls who never hit the old 50 gate.
+//  - HARD CAP (backstop): past this, truly pathological volume gets silence for the rest of the
+//    window. Calibrated well above the busiest genuine enthusiast (~45 replies/30min observed).
 const ANTIBODY_HARD_CAP = 80; // replies in-window before Artie goes silent on them
-const ANTIBODY_BREVITY_AT = 50; // start shrinking replies once they've had this many
+const ANTIBODY_BREVITY_AT = 6; // start gently shrinking replies once they've had this many
+const ANTIBODY_BREVITY_FLOOR = 25; // never shrink a normal user below this many words
 
 // Hard ban: users who get NO response from Artie at all (dropped before any processing).
 // EJ-curated. Supersedes the tight-leash list. The list itself lives in
@@ -1668,10 +1672,17 @@ ${channelPersona.systemPrompt}
           if (monopolyCount >= brevityAt) {
             const maxWords = onLeash
               ? 20
-              : Math.max(15, Math.round(120 / Math.log2(Math.max(2, monopolyCount))));
-            guildContextToPass =
-              `⚠️ ANTIBODY — @${message.author.username} has already pulled ${monopolyCount} replies out of you recently and is monopolizing your time. Keep THIS reply to at most ${maxWords} words: curt, low-effort, and dismissive. Do NOT reward the monopoly with a long or thoughtful answer. This person is SPAMMING you — you are encouraged to put [TIMEOUT:120] in your reply to give them warden discipline; they have more than earned it.\n\n---\n` +
-              (guildContextToPass || '');
+              : Math.max(
+                  ANTIBODY_BREVITY_FLOOR,
+                  Math.round(120 / Math.log2(Math.max(2, monopolyCount)))
+                );
+            // Tone scales with volume: a merely-chatty user (just over the gate) gets a light
+            // "keep it short" nudge; a persistent monopolizer gets the dismissive + timeout push.
+            const heavy = onLeash || monopolyCount >= 20;
+            const nudge = heavy
+              ? `⚠️ ANTIBODY — @${message.author.username} has pulled ${monopolyCount} replies out of you recently and is monopolizing your time. Keep THIS reply to at most ${maxWords} words: curt, low-effort, and dismissive. Do NOT reward the monopoly with a long or thoughtful answer. If this reads like spam/baiting, you are encouraged to put [TIMEOUT:120] in your reply — they have earned it.`
+              : `⚠️ BREVITY — @${message.author.username} has already pulled ${monopolyCount} replies out of you recently. Keep THIS reply to at most ${maxWords} words: tight and punchy, one thought, no preamble or wind-down. Still be yourself, just brief.`;
+            guildContextToPass = `${nudge}\n\n---\n` + (guildContextToPass || '');
             logger.info(
               `🧪 Antibody: ${onLeash ? 'leash ' : ''}brevity cap ${maxWords}w for ${message.author.tag} (count=${monopolyCount}) [${shortId}]`
             );
