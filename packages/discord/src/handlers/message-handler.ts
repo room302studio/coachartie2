@@ -77,14 +77,33 @@ const chance = new Chance();
  * Load guild context with scratchpad notes
  * Returns the base context plus any notes from the guild's scratchpad file
  */
+/**
+ * Resolve the repo root that holds reference-docs/. Under PM2 there is no APP_ROOT and the
+ * process cwd is packages/discord, so the old `APP_ROOT || '/app'` default pointed at a Docker
+ * path that doesn't exist — silently dropping the whole guild persona file. Probe the real
+ * candidates and return the first that actually contains reference-docs/ (mirrors the fallback
+ * list capabilities/context-alchemy already uses).
+ */
+function resolveRepoRoot(): string {
+  const candidates = [
+    process.env.APP_ROOT,
+    '/app',
+    join(process.cwd(), '..', '..'), // packages/discord -> repo root
+    process.cwd(),
+  ].filter(Boolean) as string[];
+  for (const dir of candidates) {
+    if (existsSync(join(dir, 'reference-docs'))) return dir;
+  }
+  return process.env.APP_ROOT || '/app';
+}
+
 function getEnhancedGuildContext(guildConfig: GuildConfig | null | undefined): string | undefined {
   // Load context from file if contextPath is set, otherwise use inline context
   let baseContext: string | undefined;
 
   if (guildConfig?.contextPath) {
     try {
-      // Use /app as base in Docker, or process.cwd() locally
-      const baseDir = process.env.APP_ROOT || '/app';
+      const baseDir = resolveRepoRoot();
       const contextFullPath = join(baseDir, guildConfig.contextPath);
       if (existsSync(contextFullPath)) {
         baseContext = readFileSync(contextFullPath, 'utf-8');
@@ -107,7 +126,7 @@ function getEnhancedGuildContext(guildConfig: GuildConfig | null | undefined): s
   // Load scratchpad if configured (guildConfig is guaranteed to exist if we have baseContext from it)
   if (guildConfig?.scratchpadPath) {
     try {
-      const scratchpadFullPath = join(process.cwd(), guildConfig.scratchpadPath);
+      const scratchpadFullPath = join(resolveRepoRoot(), guildConfig.scratchpadPath);
       if (existsSync(scratchpadFullPath)) {
         const scratchpadContent = readFileSync(scratchpadFullPath, 'utf-8');
         fullContext += `
