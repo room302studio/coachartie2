@@ -32,6 +32,7 @@ echo "=== Prompt cache, last ${HOURS}h ==="
 sqlite3 -header -column "$DB" "
   SELECT
     model_name,
+    step_type,
     COUNT(*)                                             AS calls,
     ROUND(AVG(prompt_tokens))                            AS avg_in,
     ROUND(AVG(cached_tokens))                            AS avg_cached,
@@ -39,7 +40,9 @@ sqlite3 -header -column "$DB" "
     ROUND(SUM(estimated_cost), 4)                        AS cost
   FROM model_usage_stats
   WHERE timestamp > datetime('now', '-${HOURS} hours')
-  GROUP BY model_name
+  -- Split by step_type too: a per-call-varying side prompt (preflight, steam-review
+  -- analysis) that never caches would otherwise hide behind the main path's hits.
+  GROUP BY model_name, step_type
   ORDER BY cost DESC;
 "
 

@@ -73,16 +73,23 @@ class CostMonitor {
   /**
    * Track an API call
    */
+  /**
+   * @param cachedTokens Prompt tokens served from the prompt cache — a SUBSET of
+   * inputTokens, billed at ~0.1x. This is not cosmetic: the brownout ladder steps Artie
+   * down off Opus using the burn rate measured here, so billing cached tokens at full
+   * price would make a working cache look like a spending spike and demote him for it.
+   */
   trackCall(
     inputTokens: number,
     outputTokens: number,
-    model: string
+    model: string,
+    cachedTokens = 0
   ): { shouldCheckCredits: boolean; warnings: string[] } {
     this.totalInputTokens += inputTokens;
     this.totalOutputTokens += outputTokens;
     this.totalCalls++;
 
-    const estimatedCost = this.calculateCost(inputTokens, outputTokens);
+    const estimatedCost = this.calculateCost(inputTokens, outputTokens, cachedTokens);
     const totalCost = this.getTotalEstimatedCost();
     const callTokens = inputTokens + outputTokens;
     const warnings: string[] = [];
@@ -163,8 +170,13 @@ class CostMonitor {
   /**
    * Calculate cost for a single call
    */
-  private calculateCost(inputTokens: number, outputTokens: number): number {
-    const inputCost = (inputTokens / 1_000_000) * this.INPUT_COST_PER_MILLION;
+  private calculateCost(inputTokens: number, outputTokens: number, cachedTokens = 0): number {
+    // Cache reads bill at ~0.1x base input. cachedTokens is a subset of inputTokens.
+    const cached = Math.min(Math.max(cachedTokens, 0), inputTokens);
+    const uncached = inputTokens - cached;
+    const inputCost =
+      (uncached / 1_000_000) * this.INPUT_COST_PER_MILLION +
+      (cached / 1_000_000) * this.INPUT_COST_PER_MILLION * 0.1;
     const outputCost = (outputTokens / 1_000_000) * this.OUTPUT_COST_PER_MILLION;
     return inputCost + outputCost;
   }

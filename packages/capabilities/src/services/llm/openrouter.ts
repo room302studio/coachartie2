@@ -491,7 +491,8 @@ class OpenRouterService {
         const { warnings } = costMonitor.trackCall(
           usage.prompt_tokens,
           usage.completion_tokens,
-          model
+          model,
+          usage.cached_tokens ?? 0
         );
 
         // Log warnings if any
@@ -823,7 +824,8 @@ class OpenRouterService {
         const { warnings: streamWarnings } = costMonitor.trackCall(
           usage.prompt_tokens,
           usage.completion_tokens,
-          model
+          model,
+          usage.cached_tokens ?? 0
         );
 
         // Log warnings if any

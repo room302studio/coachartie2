@@ -41,7 +41,24 @@ const CACHE_MIN_TOKENS: Record<string, number> = {
  */
 const UNKNOWN_ANTHROPIC_MIN = 4096;
 
-export type WireContent = string | Array<{ type: 'text'; text: string; cache_control?: { type: 'ephemeral' } }>;
+/**
+ * Cache TTL. A read refreshes the entry's timer for free, so with continuous traffic the
+ * 5-minute entry stays warm indefinitely and the 1-hour TTL buys nothing but a 2x write
+ * premium. Measured over July (the last representative month) 96% of Subway Builder's
+ * Opus requests started within 5 minutes of the previous one, so 5m is the default.
+ *
+ * Set PROMPT_CACHE_TTL=1h if traffic goes quiet — at low volume most gaps land in the
+ * 5-60 minute band, where the doubled write is the only thing that pays off.
+ */
+function cacheTtl(): { type: 'ephemeral'; ttl?: '1h' } {
+  return process.env.PROMPT_CACHE_TTL === '1h'
+    ? { type: 'ephemeral', ttl: '1h' }
+    : { type: 'ephemeral' };
+}
+
+export type WireContent =
+  | string
+  | Array<{ type: 'text'; text: string; cache_control?: { type: 'ephemeral'; ttl?: '1h' } }>;
 export interface WireMessage {
   role: 'system' | 'user' | 'assistant';
   content: WireContent;
@@ -100,7 +117,7 @@ export function applyCacheControl(
     i === firstSystemIndex
       ? {
           role: m.role,
-          content: [{ type: 'text' as const, text: prefix, cache_control: { type: 'ephemeral' as const } }],
+          content: [{ type: 'text' as const, text: prefix, cache_control: cacheTtl() }],
         }
       : { role: m.role, content: m.content }
   );

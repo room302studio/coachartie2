@@ -219,9 +219,15 @@ export class ContextAlchemy {
       const budget = this.calculateTokenBudget(userMessage, baseSystemPrompt);
 
       // 2. Load conversation history (if available)
-      // Scale conversation history with context window size (minimum 2 pairs, scales up)
-      const contextSize = parseInt(process.env.CONTEXT_WINDOW_SIZE || '32000', 10);
-      const historyLimit = Math.max(2, Math.floor((contextSize / 8000) * 3));
+      //
+      // Deliberately NOT derived from CONTEXT_WINDOW_SIZE any more. It used to be
+      // floor((contextSize/8000)*3), which silently halved the channel transcript from 24
+      // messages to 12 the moment CONTEXT_WINDOW_SIZE was lowered — re-introducing exactly
+      // the message-count cap that TRANSCRIPT_MAX_TOKENS exists to replace, and hitting
+      // Room 302 (78-char messages) as hard as Subway Builder (269-char), which is the
+      // whole reason counting messages is the wrong unit. 12 keeps the historical default
+      // (12 * 2 = 24 messages); the token cap is what should bind.
+      const historyLimit = Math.max(2, parseInt(process.env.CHANNEL_HISTORY_PAIRS || '12', 10));
 
       // Prefer Discord channel history when available (source of truth - includes webhook/n8n messages)
       if (options.discordChannelHistory && options.discordChannelHistory.length > 0) {
