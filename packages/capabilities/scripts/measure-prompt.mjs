@@ -66,13 +66,13 @@ const db = getSyncDb();
 
 // Real recent channel traffic — the transcript is the block that was never token-capped,
 // so measuring it against synthetic messages would miss the entire point.
-const rows = db
-  .prepare(
-    `SELECT value, user_id, created_at FROM messages
-     WHERE guild_id = ? AND value IS NOT NULL AND length(trim(value)) > 0
-     ORDER BY created_at DESC LIMIT 50`
-  )
-  .all(guildId);
+// getSyncDb() is a wrapper (get/all/run taking a params array), not raw better-sqlite3.
+const rows = db.all(
+  `SELECT value, user_id, created_at FROM messages
+   WHERE guild_id = ? AND value IS NOT NULL AND length(trim(value)) > 0
+   ORDER BY created_at DESC LIMIT 50`,
+  [guildId]
+);
 
 if (rows.length === 0) {
   console.error(`No messages found for guild ${guildId}`);
