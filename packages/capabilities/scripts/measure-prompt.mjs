@@ -33,10 +33,18 @@ config({ path: resolve(REPO, '.env') });
 // or this dies on import with an ENOENT that has nothing to do with the measurement.
 process.env.LOGS_DIR = process.env.LOGS_DIR || tmpdir();
 
-// DATABASE_PATH defaults to './data/coachartie.db' — relative to cwd, which works for the
-// PM2 services and nothing else. Pin it to the real file so this runs from any directory.
-if (!process.env.DATABASE_PATH || !isAbsolute(process.env.DATABASE_PATH)) {
-  process.env.DATABASE_PATH = resolve(REPO, 'data/coachartie.db');
+// Finding the DB is fiddlier than it should be. The default is './data/coachartie.db',
+// relative to cwd; .env on the VPS still carries a stale Docker-era '/app/data/...'; and
+// what production actually uses is neither — ecosystem.config.cjs computes an absolute path
+// and PM2's env overrides .env. So: trust the configured value only if it exists, and
+// otherwise fall back to the real file next to the repo.
+const repoDb = resolve(REPO, 'data/coachartie.db');
+const configured = process.env.DATABASE_PATH;
+if (!configured || !isAbsolute(configured) || !existsSync(configured)) {
+  if (configured && !existsSync(configured)) {
+    console.warn(`  (ignoring DATABASE_PATH=${configured} — no such file)`);
+  }
+  process.env.DATABASE_PATH = repoDb;
 }
 if (!existsSync(process.env.DATABASE_PATH)) {
   console.error(`No database at ${process.env.DATABASE_PATH} — set DATABASE_PATH.`);
