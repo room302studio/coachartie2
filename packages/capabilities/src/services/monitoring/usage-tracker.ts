@@ -5,6 +5,13 @@ export interface TokenUsage {
   prompt_tokens: number;
   completion_tokens: number;
   total_tokens: number;
+  /**
+   * Prompt tokens served from the Anthropic prompt cache. OpenRouter reports this on the
+   * OpenAI shape as usage.prompt_tokens_details.cached_tokens, and it is a SUBSET of
+   * prompt_tokens, not an addition to it. Zero across repeated requests with the same
+   * prefix means a silent cache invalidator — see context-alchemy's static system block.
+   */
+  cached_tokens?: number;
 }
 
 export interface UsageStats {
@@ -22,6 +29,7 @@ export interface UsageStats {
   prompt_tokens: number;
   completion_tokens: number;
   total_tokens: number;
+  cached_tokens?: number;
   estimated_cost: number;
   step_type?: string; // 'response' | 'proactive_judgment' | 'observational_learning' | 'capability' | 'planning'
 }
@@ -82,7 +90,13 @@ export class UsageTracker {
       );
     }
 
-    const inputCost = (usage.prompt_tokens / 1000) * pricing.input;
+    // Cache reads bill at ~0.1x base input. cached_tokens is a subset of prompt_tokens, so
+    // the uncached remainder is the difference — charging the full prompt at list price
+    // would hide exactly the saving prompt caching exists to produce.
+    const cached = Math.min(usage.cached_tokens ?? 0, usage.prompt_tokens);
+    const uncached = usage.prompt_tokens - cached;
+
+    const inputCost = (uncached / 1000) * pricing.input + (cached / 1000) * pricing.input * 0.1;
     const outputCost = (usage.completion_tokens / 1000) * pricing.output;
 
     return inputCost + outputCost;
@@ -102,8 +116,8 @@ export class UsageTracker {
           model_name, user_id, message_id, input_length, output_length,
           response_time_ms, capabilities_detected, capabilities_executed,
           capability_types, success, error_type, prompt_tokens,
-          completion_tokens, total_tokens, estimated_cost, step_type
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          completion_tokens, total_tokens, cached_tokens, estimated_cost, step_type
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           stats.model_name || 'unknown',
           stats.user_id || 'unknown',
@@ -119,13 +133,21 @@ export class UsageTracker {
           stats.prompt_tokens ?? 0,
           stats.completion_tokens ?? 0,
           stats.total_tokens ?? 0,
+          stats.cached_tokens ?? 0,
           stats.estimated_cost ?? 0,
           stats.step_type || 'response',
         ]
       );
 
+      // Cache hit rate is logged at INFO deliberately: DEBUG is off in production, and a
+      // silently-zero cache is the failure mode that costs money without raising anything.
+      const cachedTok = stats.cached_tokens ?? 0;
+      const cacheNote =
+        stats.prompt_tokens > 0
+          ? ` - cache ${cachedTok}/${stats.prompt_tokens} (${Math.round((cachedTok / stats.prompt_tokens) * 100)}%)`
+          : '';
       logger.info(
-        `📊 Usage recorded: ${stats.model_name} - ${stats.total_tokens} tokens - $${stats.estimated_cost.toFixed(4)}`
+        `📊 Usage recorded: ${stats.model_name} - ${stats.total_tokens} tokens${cacheNote} - $${stats.estimated_cost.toFixed(4)}`
       );
     } catch (error) {
       logger.error('❌ Failed to record usage stats:', error);

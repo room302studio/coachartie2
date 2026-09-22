@@ -184,10 +184,16 @@ export class PromptManager {
    */
   private async buildCapabilityRoster(): Promise<string> {
     const { capabilityRegistry } = await import('../capability/capability-registry.js');
-    const lines = capabilityRegistry.list().map((cap) => {
-      const firstLine = (cap.description || '').split('\n')[0].slice(0, 140);
-      return `- ${cap.name} [${cap.supportedActions.join(', ')}]: ${firstLine}`;
-    });
+    // Sorted, not registration-ordered. This roster sits inside the cached system prefix, and
+    // prompt caching is a byte-exact prefix match — if registration order shifts between
+    // restarts (it has: see the double-registration fix in b46d9814f) the whole prefix stops
+    // matching and silently re-bills at full price. Sorting costs nothing and pins the bytes.
+    const lines = [...capabilityRegistry.list()]
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .map((cap) => {
+        const firstLine = (cap.description || '').split('\n')[0].slice(0, 140);
+        return `- ${cap.name} [${[...cap.supportedActions].sort().join(', ')}]: ${firstLine}`;
+      });
     return `## Your capability roster\nThese are the ONLY capabilities that exist. Invoke with the XML format above (name + action must match exactly):\n${lines.join('\n')}`;
   }
 

@@ -199,6 +199,27 @@ export function initializeDb(dbPath?: string): BetterSQLite3Database<typeof sche
     )
   `);
 
+/**
+ * Add a column to an existing table when it isn't there yet. SQLite has no
+ * ADD COLUMN IF NOT EXISTS, and a duplicate ADD COLUMN throws, so check PRAGMA first.
+ */
+function addColumnIfMissing(
+  raw: Database.Database,
+  table: string,
+  column: string,
+  definition: string
+): void {
+  try {
+    const columns = raw.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
+    if (columns.some((c) => c.name === column)) return;
+    raw.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+    console.log(`🧱 Added missing column ${table}.${column}`);
+  } catch (error) {
+    // A failed additive migration must not stop the service from booting.
+    console.warn(`Failed to add column ${table}.${column}: ${error}`);
+  }
+}
+
   // Model usage stats table
   raw.exec(`
     CREATE TABLE IF NOT EXISTS model_usage_stats (
@@ -217,6 +238,7 @@ export function initializeDb(dbPath?: string): BetterSQLite3Database<typeof sche
       prompt_tokens INTEGER DEFAULT 0,
       completion_tokens INTEGER DEFAULT 0,
       total_tokens INTEGER DEFAULT 0,
+      cached_tokens INTEGER DEFAULT 0,
       estimated_cost REAL DEFAULT 0.0,
       timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
     )
@@ -228,6 +250,11 @@ export function initializeDb(dbPath?: string): BetterSQLite3Database<typeof sche
     `CREATE INDEX IF NOT EXISTS idx_usage_model_time ON model_usage_stats(model_name, timestamp)`
   );
   raw.exec(`CREATE INDEX IF NOT EXISTS idx_usage_timestamp ON model_usage_stats(timestamp)`);
+
+  // CREATE TABLE IF NOT EXISTS silently skips a table that already exists, so columns added
+  // after the first ship never land on a live DB. (step_type reached production by a manual
+  // ALTER for exactly this reason.) Additive columns go here instead.
+  addColumnIfMissing(raw, 'model_usage_stats', 'cached_tokens', 'INTEGER DEFAULT 0');
 
   // Credit balance table
   raw.exec(`

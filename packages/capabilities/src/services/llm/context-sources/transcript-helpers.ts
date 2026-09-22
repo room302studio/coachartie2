@@ -7,6 +7,7 @@
  * private methods — do not change wording, regexes, or output shape.
  */
 
+import { estimateTokens } from '@coachartie/shared';
 import type { IncomingMessage } from '@coachartie/shared';
 import type { ContextSource } from '../context-providers/types.js';
 
@@ -76,14 +77,25 @@ export function sanitizeAssistantMessage(content: string): string {
   return sanitized;
 }
 
+/** Token ceiling for the rendered transcript. See the note in renderDiscordTranscript. */
+export const DEFAULT_TRANSCRIPT_MAX_TOKENS = 2000;
+
 /**
  * Render Discord channel history as ONE labeled transcript. Every line names its
  * speaker — including Artie's own lines ("Coach Artie (you)") — so a weak model can
  * tell a group chat apart and never attributes one person's history to another.
+ *
+ * Capped by TOKENS, not just message count. A count-only cap prices the transcript in
+ * whatever people happened to type: Subway Builder averages 269 chars per message against
+ * Room 302's 78, with single messages up to 6K chars, so the same "50 messages" was worth
+ * ~3.4K tokens in one guild and ~1K in another — and a few pasted walls of text could blow
+ * past both. This block is also appended after the context budget has already been spent,
+ * so nothing downstream would catch it. Newest messages are kept; oldest are dropped first.
  */
 export function renderDiscordTranscript(
   discordHistory: DiscordHistoryEntry[],
-  limit: number
+  limit: number,
+  maxTokens: number = DEFAULT_TRANSCRIPT_MAX_TOKENS
 ): string {
   const recent = discordHistory.slice(-(limit * 2));
   const lines = recent
@@ -98,7 +110,28 @@ export function renderDiscordTranscript(
       return `${msg.author}: ${msg.content}`;
     })
     .filter((l) => l.split(': ').slice(1).join(': ').trim().length > 0);
-  return lines.join('\n');
+
+  if (maxTokens <= 0) {
+    return lines.join('\n');
+  }
+
+  // Walk backwards from the most recent line, keeping what fits. A single line longer than
+  // the whole budget is truncated rather than dropped — losing the message that was just
+  // sent would be worse than shortening it.
+  const kept: string[] = [];
+  let used = 0;
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const cost = estimateTokens(lines[i]);
+    if (used + cost > maxTokens) {
+      if (kept.length === 0) {
+        kept.unshift(`${lines[i].slice(0, maxTokens * 4)}…`);
+      }
+      break;
+    }
+    kept.unshift(lines[i]);
+    used += cost;
+  }
+  return kept.join('\n');
 }
 
 /**

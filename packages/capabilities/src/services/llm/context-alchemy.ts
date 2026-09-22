@@ -18,6 +18,7 @@ import {
 import {
   sanitizeAssistantMessage,
   renderDiscordTranscript,
+  DEFAULT_TRANSCRIPT_MAX_TOKENS,
   groupContextByCategory,
 } from './context-sources/transcript-helpers.js';
 // Extracted context-source builders (behavior-identical; see each module header).
@@ -225,9 +226,19 @@ export class ContextAlchemy {
       // Prefer Discord channel history when available (source of truth - includes webhook/n8n messages)
       if (options.discordChannelHistory && options.discordChannelHistory.length > 0) {
         // Group chat → single labeled transcript, NOT role-alternating turns.
+        // The transcript rides OUTSIDE selectOptimalContext (it's pushed straight into
+        // messages[] below), so this cap is the only thing bounding it.
+        const transcriptMaxTokens = parseInt(
+          process.env.TRANSCRIPT_MAX_TOKENS || String(DEFAULT_TRANSCRIPT_MAX_TOKENS),
+          10
+        );
         groupTranscript = renderDiscordTranscript(
           options.discordChannelHistory,
-          historyLimit
+          historyLimit,
+          transcriptMaxTokens
+        );
+        logger.info(
+          `📜 Transcript: ${estimateTokens(groupTranscript)}tok from ${options.discordChannelHistory.length} msgs (cap ${transcriptMaxTokens})`
         );
         conversationHistory = [];
         if (DEBUG) {
@@ -997,11 +1008,17 @@ Important:
     const contextByCategory = groupContextByCategory(contextSources);
     const messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [];
 
-    // 1. System message with temporal context + capabilities
+    // 1. System message: persona + capabilities. Deliberately STATIC.
+    //
+    // ⚠️ PROMPT-CACHE BOUNDARY. This message is the cached prefix (prompt-cache.ts puts the
+    // breakpoint on it), and caching is a prefix match — one changed byte here re-bills the
+    // whole thing at full price. Temporal context used to be PREPENDED right here, and since
+    // it carries the current minute, it invalidated the cache on literally every request.
+    // It now rides in the final user turn with the other per-message content.
+    //
+    // Anything added here must be identical call to call. Per-message content goes in the
+    // "Relevant context" block or the final user turn, never above this line.
     let systemContent = baseSystemPrompt;
-    if (contextByCategory.temporal.length > 0) {
-      systemContent = `${contextByCategory.temporal[0].content}\n\n${systemContent}`;
-    }
     if (contextByCategory.capabilities.length > 0) {
       systemContent += `\n\n${contextByCategory.capabilities[0].content}`;
     }
@@ -1102,6 +1119,14 @@ Important:
     // the model ladder. Everything after history must ride INSIDE the user turn;
     // recency placement is preserved, only the role changed.
     const finalUserParts: string[] = [];
+
+    // Temporal context leads the user turn. It used to sit at the head of the system prompt,
+    // where its per-minute timestamp invalidated the prompt cache on every single call. The
+    // string itself is unchanged, so relative-time behaviour in PROMPT_SYSTEM is unaffected —
+    // only its position moved, to after the cache breakpoint.
+    if (contextByCategory.temporal.length > 0) {
+      finalUserParts.push(contextByCategory.temporal[0].content);
+    }
 
     if (contextByCategory.evidence.length > 0) {
       // Separate metro doctor evidence from image/vision evidence

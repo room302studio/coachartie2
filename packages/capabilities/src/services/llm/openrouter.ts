@@ -11,6 +11,7 @@ config({ path: resolve(__dirname, '../../.env') });
 
 import { logger } from '@coachartie/shared';
 import { UsageTracker, TokenUsage } from '../monitoring/usage-tracker.js';
+import { applyCacheControl, readCachedTokens, wireContentLength } from './prompt-cache.js';
 import { creditMonitor } from '../monitoring/credit-monitor.js';
 import { costMonitor } from '../monitoring/cost-monitor.js';
 
@@ -399,9 +400,18 @@ class OpenRouterService {
         // Use experiment temperature if set, otherwise default
         const temperature = variantTemperature ?? 0.7;
 
+        // Mark the static system prefix cacheable. No-op for non-Anthropic models and for
+        // prefixes under the model's minimum — see prompt-cache.ts for why both matter.
+        const cache = applyCacheControl(messages, model);
+        logger.info(
+          cache.applied
+            ? `🗄️ Prompt cache: breakpoint on ${cache.prefixTokens}tok system prefix (${model})`
+            : `🗄️ Prompt cache: not applied — ${cache.reason}`
+        );
+
         const completion = await this.client.chat.completions.create({
           model,
-          messages,
+          messages: cache.messages as never,
           max_tokens: maxTokens,
           temperature,
         });
@@ -450,6 +460,7 @@ class OpenRouterService {
           prompt_tokens: completion.usage?.prompt_tokens || 0,
           completion_tokens: completion.usage?.completion_tokens || 0,
           total_tokens: completion.usage?.total_tokens || 0,
+          cached_tokens: readCachedTokens(completion.usage),
         };
 
         // Check for credit/billing info in OpenRouter response
@@ -494,7 +505,10 @@ class OpenRouterService {
             model_name: model,
             user_id: userId,
             message_id: messageId,
-            input_length: messages.reduce((total, msg) => total + msg.content.length, 0),
+            input_length: cache.messages.reduce(
+              (total, msg) => total + wireContentLength(msg.content),
+              0
+            ),
             output_length: response.length,
             response_time_ms: responseTime,
             capabilities_detected: 0, // Will be updated by orchestrator
@@ -504,6 +518,7 @@ class OpenRouterService {
             prompt_tokens: usage.prompt_tokens,
             completion_tokens: usage.completion_tokens,
             total_tokens: usage.total_tokens,
+            cached_tokens: usage.cached_tokens ?? 0,
             estimated_cost: estimatedCost,
             step_type: options?.stepType || (userId === 'observational-system' ? 'observational_learning' : 'response'),
           }).catch((error) => {
@@ -724,9 +739,17 @@ class OpenRouterService {
         const maxTokens = requestedMaxTokens || parseInt(process.env.LLM_MAX_TOKENS || '400', 10);
         const temperature = variantTemperature ?? 0.7;
 
+        // Same breakpoint as the non-streaming path — this is the one Discord actually uses.
+        const cache = applyCacheControl(messages, model);
+        logger.info(
+          cache.applied
+            ? `🗄️ Prompt cache: breakpoint on ${cache.prefixTokens}tok system prefix (${model}, streaming)`
+            : `🗄️ Prompt cache: not applied — ${cache.reason}`
+        );
+
         const completion = await this.client.chat.completions.create({
           model,
-          messages,
+          messages: cache.messages as never,
           max_tokens: maxTokens,
           temperature,
           stream: true, // Enable streaming
@@ -769,6 +792,7 @@ class OpenRouterService {
               prompt_tokens: chunk.usage.prompt_tokens || 0,
               completion_tokens: chunk.usage.completion_tokens || 0,
               total_tokens: chunk.usage.total_tokens || 0,
+              cached_tokens: readCachedTokens(chunk.usage),
             };
           }
         }
@@ -779,13 +803,16 @@ class OpenRouterService {
         if (!usage) {
           logger.warn('⚠️ No usage data received from streaming API, estimating tokens');
           const estimatedPromptTokens = Math.ceil(
-            messages.reduce((total, msg) => total + msg.content.length, 0) / 4
+            cache.messages.reduce((total, msg) => total + wireContentLength(msg.content), 0) / 4
           );
           const estimatedCompletionTokens = estimateTokens(fullResponse);
           usage = {
             prompt_tokens: estimatedPromptTokens,
             completion_tokens: estimatedCompletionTokens,
             total_tokens: estimatedPromptTokens + estimatedCompletionTokens,
+            // Estimated, so cache activity is unknown — 0 here means "unmeasured", not "no
+            // cache hit". Only trust cached_tokens on rows where the API reported usage.
+            cached_tokens: 0,
           };
         }
 
@@ -810,7 +837,10 @@ class OpenRouterService {
             model_name: model,
             user_id: userId,
             message_id: messageId,
-            input_length: messages.reduce((total, msg) => total + msg.content.length, 0),
+            input_length: cache.messages.reduce(
+              (total, msg) => total + wireContentLength(msg.content),
+              0
+            ),
             output_length: fullResponse.length,
             response_time_ms: responseTime,
             capabilities_detected: 0,
@@ -820,6 +850,7 @@ class OpenRouterService {
             prompt_tokens: usage.prompt_tokens,
             completion_tokens: usage.completion_tokens,
             total_tokens: usage.total_tokens,
+            cached_tokens: usage.cached_tokens ?? 0,
             estimated_cost: estimatedCost,
             step_type: options?.stepType || (userId === 'observational-system' ? 'observational_learning' : 'response'),
           }).catch((error) => {
