@@ -1,11 +1,19 @@
 /**
  * Anthropic prompt caching, applied at the OpenRouter boundary.
  *
- * Every reply ships a large system prefix that is byte-identical call to call: PROMPT_SYSTEM,
- * the guild persona file, the capability manifest, the message-format protocol. Measured
- * 2026-09-22 that prefix was roughly 8.8K of a ~20K prompt, re-billed at full price on all
- * 15,122 calls in the table. Cache reads bill at ~0.1x, so marking it is the single biggest
- * lever on spend that changes nothing about what the model sees.
+ * Every reply ships a system prefix that is byte-identical call to call: PROMPT_SYSTEM, the
+ * capability intro, the capability manifest and the message-format protocol. Measured
+ * 2026-09-22 it is ~12,400 chars — about 4,600 real tokens for Opus/Sonnet, whose observed
+ * ratio is ~2.7 chars/token, NOT the ~3,100 that estimateTokens' chars/4 heuristic reports.
+ * Cache reads bill at ~0.1x, so marking it is the biggest lever on spend that changes
+ * nothing about what the model sees.
+ *
+ * It does NOT contain the guild persona. `📚 COMMUNITY KNOWLEDGE` (subwaybuilder.md, 8.5KB)
+ * is a `user_state` context source and lands in the SECOND system message, below the
+ * breakpoint, re-billed in full on every Subway Builder call. That is the single largest
+ * remaining win — and moving it up here would reorder where the persona sits in the prompt,
+ * so it is a deliberate behavioural decision, not a free optimisation. The upside of the
+ * status quo: messages[0] is guild-independent, so every guild shares one cache entry.
  *
  * Three rules make or break this, all of them silent when violated:
  *
@@ -19,11 +27,20 @@
  *     must keep the plain-string message shape.
  *
  * Verify with cached_tokens in model_usage_stats, never by reading the code and assuming.
+ * Note that a cache WRITE and a silent no-op both report cached_tokens = 0 — they are told
+ * apart by cache_write_tokens, which readCachedTokens also returns.
  */
 
 import { estimateTokens } from '@coachartie/shared';
 
-/** Minimum cacheable prefix, in tokens, keyed by OpenRouter model id. */
+/**
+ * Minimum cacheable prefix, in tokens, keyed by OpenRouter model id.
+ *
+ * These come from Anthropic's own prompt-caching docs, which state the minimums apply on
+ * every platform the model is served from. OpenRouter's table disagrees (it lists Opus 4.8
+ * as 4096 and omits Sonnet 5 entirely) but Anthropic is the one enforcing it, so Anthropic
+ * governs and OpenRouter's page is stale. Do not "correct" these against OpenRouter's docs.
+ */
 const CACHE_MIN_TOKENS: Record<string, number> = {
   'anthropic/claude-opus-4.8': 1024,
   'anthropic/claude-sonnet-5': 1024,
@@ -42,18 +59,29 @@ const CACHE_MIN_TOKENS: Record<string, number> = {
 const UNKNOWN_ANTHROPIC_MIN = 4096;
 
 /**
- * Cache TTL. A read refreshes the entry's timer for free, so with continuous traffic the
- * 5-minute entry stays warm indefinitely and the 1-hour TTL buys nothing but a 2x write
- * premium. Measured over July (the last representative month) 96% of Subway Builder's
- * Opus requests started within 5 minutes of the previous one, so 5m is the default.
+ * Cache TTL — 1 hour by default, on measured evidence.
  *
- * Set PROMPT_CACHE_TTL=1h if traffic goes quiet — at low volume most gaps land in the
- * 5-60 minute band, where the doubled write is the only thing that pays off.
+ * An earlier version defaulted to 5 minutes citing "96% of July requests came <5min apart".
+ * That number was real but came from claude-opus-4.6, which was retired on 2026-07-15 and
+ * is no longer in the rotation. Recomputed per-model over live traffic since that date, the
+ * consecutive-request gap is:
+ *
+ *   sonnet-5    73.9% within 5min, 92.4% within 60min
+ *   opus-4.8    78.7% / 94.3%
+ *   haiku-4.5   73.2% / 93.6%
+ *
+ * Expected cost of the prefix is 0.1h + W(1-h), with W = 1.25 at 5m and 2.0 at 1h. For
+ * opus-4.8 that is 0.345 at 5m against 0.208 at 1h; for sonnet-5, 0.400 against 0.244.
+ * The 1-hour entry is ~40% cheaper on every model actually in rotation, because a quarter
+ * of requests miss the 5-minute window and pay a full write.
+ *
+ * Set PROMPT_CACHE_TTL=5m to go back if traffic ever becomes dense enough that nearly every
+ * request lands inside 5 minutes, where the cheaper write wins.
  */
 function cacheTtl(): { type: 'ephemeral'; ttl?: '1h' } {
-  return process.env.PROMPT_CACHE_TTL === '1h'
-    ? { type: 'ephemeral', ttl: '1h' }
-    : { type: 'ephemeral' };
+  return process.env.PROMPT_CACHE_TTL === '5m'
+    ? { type: 'ephemeral' }
+    : { type: 'ephemeral', ttl: '1h' };
 }
 
 export type WireContent =
@@ -133,19 +161,31 @@ export function applyCacheControl(
  * spell it cache_read_input_tokens, so accept both rather than silently reading zero.
  */
 export function readCachedTokens(usage: unknown): number {
-  if (!usage || typeof usage !== 'object') return 0;
+  return readCacheUsage(usage).read;
+}
+
+/**
+ * Cache reads AND writes.
+ *
+ * Both matter for diagnosis, because `read === 0` is ambiguous on its own: it means either
+ * "we just wrote the entry" (working, first call) or "nothing cached at all" (broken). Only
+ * a non-zero write distinguishes them. OpenRouter reports writes as
+ * prompt_tokens_details.cache_write_tokens; Anthropic-native names are accepted too.
+ */
+export function readCacheUsage(usage: unknown): { read: number; write: number } {
+  if (!usage || typeof usage !== 'object') return { read: 0, write: 0 };
   const u = usage as Record<string, unknown>;
+  const details = (u.prompt_tokens_details ?? {}) as Record<string, unknown>;
 
-  const details = u.prompt_tokens_details;
-  if (details && typeof details === 'object') {
-    const cached = (details as Record<string, unknown>).cached_tokens;
-    if (typeof cached === 'number') return cached;
-  }
+  const num = (...candidates: unknown[]): number => {
+    for (const c of candidates) if (typeof c === 'number') return c;
+    return 0;
+  };
 
-  const direct = u.cache_read_input_tokens;
-  if (typeof direct === 'number') return direct;
-
-  return 0;
+  return {
+    read: num(details.cached_tokens, u.cache_read_input_tokens),
+    write: num(details.cache_write_tokens, u.cache_creation_input_tokens),
+  };
 }
 
 /** Character length of a wire message, for input_length accounting. */

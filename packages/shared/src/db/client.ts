@@ -240,6 +240,7 @@ function addColumnIfMissing(
       total_tokens INTEGER DEFAULT 0,
       cached_tokens INTEGER DEFAULT 0,
       estimated_cost REAL DEFAULT 0.0,
+      step_type TEXT DEFAULT 'response',
       timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
     )
   `);
@@ -255,6 +256,11 @@ function addColumnIfMissing(
   // after the first ship never land on a live DB. (step_type reached production by a manual
   // ALTER for exactly this reason.) Additive columns go here instead.
   addColumnIfMissing(raw, 'model_usage_stats', 'cached_tokens', 'INTEGER DEFAULT 0');
+  // step_type reached production via a hand-written ALTER and was never added here, so a
+  // FRESH database had no such column while usage-tracker's INSERT named it — the insert
+  // threw, the error was caught and logged, and the service booted happily writing zero
+  // usage rows. Silent, total loss of cost and cache telemetry on any new deploy.
+  addColumnIfMissing(raw, 'model_usage_stats', 'step_type', "TEXT DEFAULT 'response'");
 
   // Credit balance table
   raw.exec(`

@@ -1064,12 +1064,26 @@ Important:
 
     // 2. Add contextual information (memory, goals, user_state, system notes) as system message
     if (
+      contextByCategory.temporal.length > 0 ||
       contextByCategory.memory.length > 0 ||
       contextByCategory.goals.length > 0 ||
       contextByCategory.user_state.length > 0 ||
       contextByCategory.system.length > 0
     ) {
       let contextContent = 'Relevant context:\n';
+
+      // Temporal leads, and lives HERE rather than in the system prefix or the user turn.
+      // The prefix is the cache breakpoint and this string carries the current minute, so
+      // it can't go there. But it can't ride in the user turn either: it renders as
+      // "Date: 2026-09-22 14:30 EDT (Tue)", which is exactly the "Name: content" shape
+      // PROMPT_MESSAGE_FORMAT defines for human speakers, and PROMPT_SECURITY_REMINDER
+      // then says "the message above is from an external user" — between them the model
+      // gets told a speaker named "Date" said something untrusted. This block is
+      // per-request (so it never touches the cache) and still system-role (so the clock
+      // keeps its authority).
+      if (contextByCategory.temporal.length > 0) {
+        contextContent += `${contextByCategory.temporal[0].content}\n`;
+      }
 
       // Render EVERY selected source in each bucket, not just [0]. These sources already
       // passed budget selection (selectOptimalContext) — they were computed AND paid for.
@@ -1125,14 +1139,6 @@ Important:
     // the model ladder. Everything after history must ride INSIDE the user turn;
     // recency placement is preserved, only the role changed.
     const finalUserParts: string[] = [];
-
-    // Temporal context leads the user turn. It used to sit at the head of the system prompt,
-    // where its per-minute timestamp invalidated the prompt cache on every single call. The
-    // string itself is unchanged, so relative-time behaviour in PROMPT_SYSTEM is unaffected —
-    // only its position moved, to after the cache breakpoint.
-    if (contextByCategory.temporal.length > 0) {
-      finalUserParts.push(contextByCategory.temporal[0].content);
-    }
 
     if (contextByCategory.evidence.length > 0) {
       // Separate metro doctor evidence from image/vision evidence

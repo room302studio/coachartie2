@@ -673,7 +673,15 @@ Available capabilities:
    * Only show format once, list capabilities concisely
    */
   generateCompressedInstructions(): string {
-    const capabilities = Array.from(this.capabilities.values());
+    // Sorted, not Map-insertion-ordered. This string is appended into the FIRST system
+    // message by context-alchemy, which is the prompt-cache breakpoint — a byte-exact
+    // prefix match. If capability registration order shifts between restarts (it has),
+    // the whole cached prefix stops matching and silently re-bills at full price.
+    // buildCapabilityRoster in prompt-manager.ts was sorted for the same reason; this is
+    // the second listing that lands in the same prefix.
+    const capabilities = Array.from(this.capabilities.values()).sort((a, b) =>
+      a.name.localeCompare(b.name)
+    );
 
     // SIMPLE SYNTAX FIRST - this is what we want the LLM to use
     let instructions = `SIMPLE SHORTCUTS (preferred):
@@ -695,7 +703,7 @@ Available: `;
     // Compressed list: "calculator(calculate), web(search|fetch), ..."
     const capList = capabilities
       .map((cap) => {
-        const actions = cap.supportedActions.join('|');
+        const actions = [...cap.supportedActions].sort().join('|');
         return `${cap.name}(${actions})`;
       })
       .join(', ');

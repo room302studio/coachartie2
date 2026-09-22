@@ -11,7 +11,7 @@ config({ path: resolve(__dirname, '../../.env') });
 
 import { logger } from '@coachartie/shared';
 import { UsageTracker, TokenUsage } from '../monitoring/usage-tracker.js';
-import { applyCacheControl, readCachedTokens, wireContentLength } from './prompt-cache.js';
+import { applyCacheControl, readCacheUsage, wireContentLength } from './prompt-cache.js';
 import { creditMonitor } from '../monitoring/credit-monitor.js';
 import { costMonitor } from '../monitoring/cost-monitor.js';
 
@@ -116,6 +116,16 @@ class OpenRouterService {
       defaultHeaders: {
         'HTTP-Referer': 'https://coach-artie.local',
         'X-Title': 'Coach Artie',
+        // Pin us to one provider endpoint so the prompt cache can actually be hit.
+        // Anthropic's cache is per provider endpoint, and OpenRouter fronts 10-11 of them
+        // for sonnet-5/opus-4.8 (Anthropic, Bedrock, Google, Azure, ...). Its own sticky
+        // routing keys on the first system message plus the first NON-system message —
+        // ours is the final user turn, which is unique every request — and without a
+        // session id stickiness only engages AFTER a hit is detected, which can't happen
+        // if we keep landing on different endpoints. This breaks that circle.
+        // Preferred over provider.order + allow_fallbacks:false, which would re-create the
+        // opus-4.8 hang that PER_REQUEST_TIMEOUT_MS exists to contain.
+        'x-session-id': process.env.OPENROUTER_SESSION_ID || 'coachartie',
       },
     });
 
@@ -460,8 +470,13 @@ class OpenRouterService {
           prompt_tokens: completion.usage?.prompt_tokens || 0,
           completion_tokens: completion.usage?.completion_tokens || 0,
           total_tokens: completion.usage?.total_tokens || 0,
-          cached_tokens: readCachedTokens(completion.usage),
+          cached_tokens: readCacheUsage(completion.usage).read,
         };
+        const cacheUsage = readCacheUsage(completion.usage);
+        // read AND write, because read=0 alone can't tell "just warmed it" from "broken".
+        logger.info(
+          `🗄️ Cache usage: read ${cacheUsage.read}, write ${cacheUsage.write} of ${usage.prompt_tokens} prompt tokens (${model})`
+        );
 
         // Check for credit/billing info in OpenRouter response
         const creditInfo = {
@@ -793,8 +808,12 @@ class OpenRouterService {
               prompt_tokens: chunk.usage.prompt_tokens || 0,
               completion_tokens: chunk.usage.completion_tokens || 0,
               total_tokens: chunk.usage.total_tokens || 0,
-              cached_tokens: readCachedTokens(chunk.usage),
+              cached_tokens: readCacheUsage(chunk.usage).read,
             };
+            const cu = readCacheUsage(chunk.usage);
+            logger.info(
+              `🗄️ Cache usage: read ${cu.read}, write ${cu.write} of ${usage.prompt_tokens} prompt tokens (${model}, streaming)`
+            );
           }
         }
 

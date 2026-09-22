@@ -1,5 +1,6 @@
 import { logger } from '@coachartie/shared';
 import { recordApiCall } from '../metrics.js';
+import { UsageTracker } from './usage-tracker.js';
 
 /**
  * Simple cost monitoring service to track OpenRouter API usage
@@ -8,6 +9,14 @@ import { recordApiCall } from '../metrics.js';
 class CostMonitor {
   private totalInputTokens = 0;
   private totalOutputTokens = 0;
+  private totalCachedTokens = 0;
+  /**
+   * Running real cost. Accumulated per call at that call's OWN model rate, because the
+   * brownout ladder demotes Artie off Opus based on this number and recomputing it from
+   * flat totals got both halves wrong: it priced every model at Sonnet 3.5's $3/$15 while
+   * SMART_MODEL is opus-4.8 ($5/$25), and it could not see cache discounts at all.
+   */
+  private totalCost = 0;
   private totalCalls = 0;
   private startTime = Date.now();
   private messageCount = 0;
@@ -18,9 +27,10 @@ class CostMonitor {
   private lastKnownBalance: number | null = null;
   private lastRunwayWarnAt = 0;
 
-  // Approximate pricing for Claude 3.5 Sonnet (update these as needed)
-  private readonly INPUT_COST_PER_MILLION = 3.0; // $3 per 1M input tokens
-  private readonly OUTPUT_COST_PER_MILLION = 15.0; // $15 per 1M output tokens
+  // Pricing lives in UsageTracker.MODEL_PRICING (one table, per model, rates from the live
+  // OpenRouter /models API). The flat $3/$15 Sonnet-3.5 constants that used to sit here
+  // under-reported every Opus call by ~40% on input and ~40% on output, which means every
+  // runway estimate and every brownout decision was made on a number that was too small.
 
   // Tunable limits from env vars
   private readonly maxCostPerHour: number;
@@ -87,9 +97,11 @@ class CostMonitor {
   ): { shouldCheckCredits: boolean; warnings: string[] } {
     this.totalInputTokens += inputTokens;
     this.totalOutputTokens += outputTokens;
+    this.totalCachedTokens += Math.min(Math.max(cachedTokens, 0), inputTokens);
     this.totalCalls++;
 
-    const estimatedCost = this.calculateCost(inputTokens, outputTokens, cachedTokens);
+    const estimatedCost = this.calculateCost(inputTokens, outputTokens, cachedTokens, model);
+    this.totalCost += estimatedCost;
     const totalCost = this.getTotalEstimatedCost();
     const callTokens = inputTokens + outputTokens;
     const warnings: string[] = [];
@@ -170,22 +182,30 @@ class CostMonitor {
   /**
    * Calculate cost for a single call
    */
-  private calculateCost(inputTokens: number, outputTokens: number, cachedTokens = 0): number {
-    // Cache reads bill at ~0.1x base input. cachedTokens is a subset of inputTokens.
-    const cached = Math.min(Math.max(cachedTokens, 0), inputTokens);
-    const uncached = inputTokens - cached;
-    const inputCost =
-      (uncached / 1_000_000) * this.INPUT_COST_PER_MILLION +
-      (cached / 1_000_000) * this.INPUT_COST_PER_MILLION * 0.1;
-    const outputCost = (outputTokens / 1_000_000) * this.OUTPUT_COST_PER_MILLION;
-    return inputCost + outputCost;
+  private calculateCost(
+    inputTokens: number,
+    outputTokens: number,
+    cachedTokens = 0,
+    model = 'unknown'
+  ): number {
+    // Delegated so there is exactly one pricing table. UsageTracker.calculateCost already
+    // applies the per-model rate and the 0.1x cache-read discount, and bills an unknown
+    // model at top-tier rates rather than free.
+    return UsageTracker.calculateCost(model, {
+      prompt_tokens: inputTokens,
+      completion_tokens: outputTokens,
+      total_tokens: inputTokens + outputTokens,
+      cached_tokens: cachedTokens,
+    });
   }
 
   /**
    * Get total estimated cost
    */
   getTotalEstimatedCost(): number {
-    return this.calculateCost(this.totalInputTokens, this.totalOutputTokens);
+    // The running sum, NOT a recomputation from totals — totals have no model and no cache
+    // information, so recomputing silently discards both.
+    return this.totalCost;
   }
 
   /**
@@ -200,6 +220,7 @@ class CostMonitor {
       totalInputTokens: this.totalInputTokens,
       totalOutputTokens: this.totalOutputTokens,
       totalTokens: this.totalInputTokens + this.totalOutputTokens,
+      totalCachedTokens: this.totalCachedTokens,
       estimatedCost: this.getTotalEstimatedCost(),
       costPerHour: hours > 0 ? this.getTotalEstimatedCost() / hours : 0,
       uptime: uptime,
@@ -215,6 +236,8 @@ class CostMonitor {
     );
     this.totalInputTokens = 0;
     this.totalOutputTokens = 0;
+    this.totalCachedTokens = 0;
+    this.totalCost = 0;
     this.totalCalls = 0;
     this.messageCount = 0;
     this.startTime = Date.now();
