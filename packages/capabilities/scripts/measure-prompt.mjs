@@ -17,9 +17,10 @@
  */
 
 import { config } from 'dotenv';
-import { resolve, dirname } from 'path';
+import { resolve, dirname, isAbsolute } from 'path';
 import { fileURLToPath } from 'url';
 import { tmpdir } from 'os';
+import { existsSync } from 'fs';
 
 // __dirname doesn't exist in ESM; derive it so this works from any cwd.
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -31,6 +32,16 @@ config({ path: resolve(REPO, '.env') });
 // that only exists on the VPS. Point it somewhere real before importing anything shared,
 // or this dies on import with an ENOENT that has nothing to do with the measurement.
 process.env.LOGS_DIR = process.env.LOGS_DIR || tmpdir();
+
+// DATABASE_PATH defaults to './data/coachartie.db' — relative to cwd, which works for the
+// PM2 services and nothing else. Pin it to the real file so this runs from any directory.
+if (!process.env.DATABASE_PATH || !isAbsolute(process.env.DATABASE_PATH)) {
+  process.env.DATABASE_PATH = resolve(REPO, 'data/coachartie.db');
+}
+if (!existsSync(process.env.DATABASE_PATH)) {
+  console.error(`No database at ${process.env.DATABASE_PATH} — set DATABASE_PATH.`);
+  process.exit(1);
+}
 
 const SB_GUILD = '1420846272545296470';
 const guildId = process.argv.find((a) => /^\d{17,20}$/.test(a)) || SB_GUILD;
