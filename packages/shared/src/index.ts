@@ -33,3 +33,4 @@ export * from './utils/service-discovery.js';
 export * from './utils/text.js';
 export * from './utils/async.js';
 export * from './utils/discord-chunks.js';
+export * from './capability-xml-strip.js';

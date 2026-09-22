@@ -12,6 +12,7 @@ import {
   logger,
   testRedisConnection,
   chunkMessage,
+  stripCapabilityXML,
 } from '@coachartie/shared';
 import type { Worker } from 'bullmq';
 
@@ -175,7 +176,9 @@ export async function startResponseConsumer(
           }
 
           for (const chunk of chunks) {
-            await channel.send(chunk);
+            // CRITICAL: Strip capability XML before sending to Discord
+            const safeChunk = stripCapabilityXML(chunk);
+            await channel.send(safeChunk);
           }
         } else {
           throw new Error(`Channel type does not support sending messages: ${channel.type}`);
@@ -242,7 +245,7 @@ async function handleDiscordUIResponse(channel: any, message: string): Promise<v
       default:
         logger.warn(`Unknown Discord UI type: ${type}`);
         if ('send' in channel) {
-          await channel.send(userMessage);
+          await channel.send(stripCapabilityXML(userMessage));
         }
     }
 
@@ -252,7 +255,7 @@ async function handleDiscordUIResponse(channel: any, message: string): Promise<v
     // Fallback: send the user message part
     const fallbackMessage = message.split(':').pop() || 'Discord UI component created!';
     if ('send' in channel) {
-      await channel.send(fallbackMessage);
+      await channel.send(stripCapabilityXML(fallbackMessage));
     }
   }
 }
