@@ -65,10 +65,15 @@ function currentBurnPerHour(): number {
   try {
     const stats = costMonitor.getStats();
     const uptimeHours = stats.uptime / 3_600_000;
-    // Need a stable sample: at least 15 min of uptime and some real spend. A fresh
-    // process (post-deploy) hasn't spent enough to estimate — use the fallback.
-    if (uptimeHours >= 0.25 && stats.costPerHour > 0) {
-      return Math.max(floor, stats.costPerHour);
+    // Use the ROLLING burn, not costPerHour. costPerHour is cost-since-boot over
+    // hours-since-boot — a cumulative average that divides a post-restart burst by a tiny
+    // uptime and reads enormous. Measured over July it ran a median $11.39/hr against a real
+    // $0.26/hr, roughly 40x, which is exactly the kind of overstatement that pins Artie in
+    // CRITICAL and produces the "he's acting dumb" reports this function was written to fix.
+    const recent = stats.recentBurnPerHour;
+    // Still need a stable sample: a fresh process hasn't spent enough to estimate.
+    if (uptimeHours >= 0.25 && typeof recent === 'number' && recent > 0) {
+      return Math.max(floor, recent);
     }
   } catch {
     // cost monitor unavailable → fallback below

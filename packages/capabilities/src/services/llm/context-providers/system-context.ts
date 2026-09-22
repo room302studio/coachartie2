@@ -22,7 +22,16 @@ export async function addCreditWarnings(sources: ContextSource[]): Promise<void>
     const balance = creditInfo?.credits_remaining;
     const CRITICAL_BALANCE = parseFloat(process.env.CREDIT_CRITICAL_BALANCE || '5');
 
-    if (typeof balance === 'number' && balance < CRITICAL_BALANCE) {
+    // Below zero there is nothing left to conserve and no advice the model can act on —
+    // the next call fails regardless, and the brownout ladder has already taken over model
+    // selection. Injecting here fired 1,131+ times historically, 134 of them quoting a
+    // NEGATIVE balance, which means prompts grew precisely when money was tightest. The
+    // band worth warning in is "low but still spendable".
+    if (typeof balance === 'number' && balance <= 0) {
+      logger.warn(
+        `💰 Balance $${balance.toFixed(2)} — out of credits, not injected (nothing to conserve; brownout handles model choice)`
+      );
+    } else if (typeof balance === 'number' && balance < CRITICAL_BALANCE) {
       const content = `⚠️ Credits are critically low ($${balance.toFixed(2)} left). Prefer cheaper models (Haiku/Flash) for non-critical work until topped up.`;
       sources.push({
         name: 'credit_status',

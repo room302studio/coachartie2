@@ -11,6 +11,18 @@ class CostMonitor {
   private totalOutputTokens = 0;
   private totalCachedTokens = 0;
   /**
+   * Rolling window of recent spend, for the burn RATE (as distinct from the total).
+   *
+   * costPerHour used to be total-cost-since-boot / hours-since-boot, which is a cumulative
+   * average, not a rate. Right after a restart it divides a burst by a tiny uptime and reads
+   * enormous; after a long quiet uptime it stays stale. Measured over July it reported a
+   * median of $11.39/hr during a month that averaged $0.26/hr — a ~40x overstatement, which
+   * is why the vitals alarm got tuned out entirely. The brownout ladder divides the credit
+   * balance by this number, so an inflated rate demotes Artie off Opus for no reason.
+   */
+  private recentCalls: Array<{ at: number; cost: number }> = [];
+  private readonly burnWindowMs: number;
+  /**
    * Running real cost. Accumulated per call at that call's OWN model rate, because the
    * brownout ladder demotes Artie off Opus based on this number and recomputing it from
    * flat totals got both halves wrong: it priced every model at Sonnet 3.5's $3/$15 while
@@ -41,6 +53,7 @@ class CostMonitor {
     this.maxCostPerHour = parseFloat(process.env.MAX_COST_PER_HOUR || '10.0');
     this.maxTokensPerCall = parseInt(process.env.MAX_TOKENS_PER_CALL || '8000');
     this.autoCheckCreditsEvery = parseInt(process.env.AUTO_CHECK_CREDITS_EVERY || '50');
+    this.burnWindowMs = parseInt(process.env.BURN_RATE_WINDOW_MINUTES || '60', 10) * 60_000;
 
     logger.info('💰 Cost Monitor initialized with limits:', {
       maxCostPerHour: `$${this.maxCostPerHour}/hr`,
@@ -102,6 +115,10 @@ class CostMonitor {
 
     const estimatedCost = this.calculateCost(inputTokens, outputTokens, cachedTokens, model);
     this.totalCost += estimatedCost;
+
+    const now = Date.now();
+    this.recentCalls.push({ at: now, cost: estimatedCost });
+    this.pruneRecentCalls(now);
     const totalCost = this.getTotalEstimatedCost();
     const callTokens = inputTokens + outputTokens;
     const warnings: string[] = [];
@@ -202,6 +219,41 @@ class CostMonitor {
   /**
    * Get total estimated cost
    */
+  /** Drop calls that have aged out of the burn window. */
+  private pruneRecentCalls(now: number): void {
+    const cutoff = now - this.burnWindowMs;
+    let i = 0;
+    while (i < this.recentCalls.length && this.recentCalls[i].at < cutoff) i++;
+    if (i > 0) this.recentCalls.splice(0, i);
+  }
+
+  /**
+   * Spend rate over the recent window, in dollars per hour.
+   *
+   * Divides by the elapsed time actually covered — capped at the window, floored at the
+   * process uptime — so a 10-minute-old process reporting $0.05 of spend reads $0.30/hr,
+   * not $3/hr. Returns null when there is too little to say anything honest, and callers
+   * fall back to a configured estimate rather than acting on noise.
+   */
+  getRecentBurnPerHour(): number | null {
+    const now = Date.now();
+    this.pruneRecentCalls(now);
+    if (this.recentCalls.length === 0) return null;
+
+    // Refuse to extrapolate from too short an observation. A burst in the first seconds of
+    // uptime divided by that elapsed time produces an enormous number that is arithmetically
+    // true and completely useless — the old cumulative version reported $264,000/hr on a
+    // 20-call burst in a test. Returning null makes callers use their configured fallback,
+    // which is a far better estimate than a spike.
+    const uptimeMs = now - this.startTime;
+    const minObservationMs = Math.min(this.burnWindowMs, 5 * 60_000);
+    if (uptimeMs < minObservationMs) return null;
+
+    const coveredMs = Math.min(this.burnWindowMs, uptimeMs);
+    const windowCost = this.recentCalls.reduce((total, c) => total + c.cost, 0);
+    return windowCost / (coveredMs / 3_600_000);
+  }
+
   getTotalEstimatedCost(): number {
     // The running sum, NOT a recomputation from totals — totals have no model and no cache
     // information, so recomputing silently discards both.
@@ -222,7 +274,11 @@ class CostMonitor {
       totalTokens: this.totalInputTokens + this.totalOutputTokens,
       totalCachedTokens: this.totalCachedTokens,
       estimatedCost: this.getTotalEstimatedCost(),
+      // Cumulative average since boot. Kept for reporting; NOT a rate — see
+      // getRecentBurnPerHour, which is what anything making a decision should use.
       costPerHour: hours > 0 ? this.getTotalEstimatedCost() / hours : 0,
+      recentBurnPerHour: this.getRecentBurnPerHour(),
+      burnWindowMinutes: this.burnWindowMs / 60_000,
       uptime: uptime,
     };
   }
@@ -238,6 +294,7 @@ class CostMonitor {
     this.totalOutputTokens = 0;
     this.totalCachedTokens = 0;
     this.totalCost = 0;
+    this.recentCalls = [];
     this.totalCalls = 0;
     this.messageCount = 0;
     this.startTime = Date.now();

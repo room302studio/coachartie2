@@ -777,10 +777,22 @@ Important:
       return null;
     }
 
-    // Try multiple base directories (Docker vs PM2)
-    const baseDirs = [process.env.APP_ROOT, '/app', '/data2/coachartie2', process.cwd()].filter(
-      Boolean
-    ) as string[];
+    // Try multiple base directories (Docker vs PM2).
+    //
+    // ORDER MATTERS, and it used to be wrong. '/data2/coachartie2' sat ahead of cwd and
+    // holds a 1,591-char February copy of subwaybuilder.md, so it shadowed the live
+    // 8,543-char file in the actual repo — a 5x smaller persona, loaded silently. The
+    // running repo now comes first, and the legacy Docker//data2 paths are last-resort.
+    // Under PM2 the cwd is packages/<name>, hence the ../.. candidate.
+    const cwd = process.cwd();
+    const baseDirs = [
+      process.env.APP_ROOT,
+      cwd,
+      join(cwd, '..', '..'),
+      '/data2/apps/coachartie2',
+      '/data2/coachartie2',
+      '/app',
+    ].filter(Boolean) as string[];
 
     for (const baseDir of baseDirs) {
       try {
@@ -791,6 +803,12 @@ Important:
           logger.info(
             `📚 Loaded guild prompt for ${guildId} from ${fullPath} (${content.length} chars)`
           );
+          if (baseDir === '/data2/coachartie2' || baseDir === '/app') {
+            logger.warn(
+              `⚠️ Guild prompt came from a LEGACY path (${baseDir}) — likely a stale copy. ` +
+                `The live file should be under the running repo.`
+            );
+          }
           return content;
         }
       } catch {

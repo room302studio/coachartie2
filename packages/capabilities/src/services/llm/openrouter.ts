@@ -573,6 +573,36 @@ class OpenRouterService {
           totalModels: modelsToTry.length,
         });
 
+        // Record the FAILED attempt. Every one of the 15,122 historical rows has
+        // success = 1, because recordUsage was only ever reached on the success path —
+        // so the fallback ladder's retries were invisible and any error rate computed
+        // from this table was a fake 0%. A failed attempt still consumed billed input
+        // tokens in most cases; prompt_tokens is an estimate here since the API returned
+        // no usage object, which is why it is flagged via error_type rather than trusted.
+        if (messageId) {
+          UsageTracker.recordUsage({
+            model_name: model,
+            user_id: userId,
+            message_id: messageId,
+            input_length: messages.reduce((total, msg) => total + msg.content.length, 0),
+            output_length: 0,
+            response_time_ms: Date.now() - startTime,
+            capabilities_detected: 0,
+            capabilities_executed: 0,
+            capability_types: '',
+            success: false,
+            error_type: errorStatus ? `http_${errorStatus}` : errorMessage.slice(0, 80),
+            prompt_tokens: 0,
+            completion_tokens: 0,
+            total_tokens: 0,
+            cached_tokens: 0,
+            estimated_cost: 0,
+            step_type: options?.stepType || 'response',
+          }).catch(() => {
+            // Never let telemetry failure mask the real error we're handling.
+          });
+        }
+
         // Track if this is a credit/billing error
         const isCreditError =
           errorMessage.includes('credit') ||

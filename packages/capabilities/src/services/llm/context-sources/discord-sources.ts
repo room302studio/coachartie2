@@ -225,7 +225,12 @@ export async function addCapabilityManifest(sources: ContextSource[]): Promise<v
 
     sources.push({
       name: 'capability_context',
-      priority: 30, // Lower priority - capabilities can be learned
+      // High priority, despite reading like optional context. This source's content is
+      // concatenated into the FIRST system message, which is the prompt-cache breakpoint.
+      // At priority 30 a budget squeeze could drop it, which both removes the capability
+      // roster AND changes the cached prefix's bytes — a budget-dependent value inside a
+      // byte-exact prefix. Keep it in, or caching silently stops paying off under load.
+      priority: 96,
       tokenWeight: estimateTokens(content),
       content,
       category: 'capabilities',
