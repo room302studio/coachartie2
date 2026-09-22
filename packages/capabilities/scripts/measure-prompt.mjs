@@ -62,6 +62,29 @@ const { contextAlchemy } = await import(`file://${CAPS}/context-alchemy.js`);
 const { promptManager } = await import(`file://${CAPS}/prompt-manager.js`);
 const { applyCacheControl, cacheMinimumFor } = await import(`file://${CAPS}/prompt-cache.js`);
 
+// ── Make the harness look like production, or it measures a fiction ────────────────────
+// Two omissions here previously understated the prompt by ~8,000 tokens and produced a
+// "68% smaller" result that was entirely instrument error.
+
+// 1. The capability registry. Production bootstraps 72 capabilities; an un-bootstrapped
+//    import holds 2. The roster is verbatim text inside the system prompt, so without this
+//    the measured prefix is less than half its real size.
+const { capabilityBootstrap } = await import(
+  `file://${resolve(HERE, '../dist/services/capability/capability-bootstrap.js')}`
+);
+capabilityBootstrap.initializeCapabilityRegistry();
+
+// 2. Guild knowledge. The discord package assembles the persona file + scratchpad + the
+//    SB prompt blocks and passes it in as `guildKnowledge`. Without it context-alchemy falls
+//    through to loadGuildPrompt, which resolves a stale 1,591-char February copy that
+//    shadows the live 8,543-char file — so the persona silently shrank 5x in the measurement.
+const { getEnhancedGuildContext } = await import(
+  `file://${resolve(REPO, 'packages/discord/dist/handlers/message-handler.js')}`
+);
+const { getGuildConfig } = await import(
+  `file://${resolve(REPO, 'packages/discord/dist/config/guild-whitelist.js')}`
+);
+
 const db = getSyncDb();
 
 // Real recent channel traffic — the transcript is the block that was never token-capped,
@@ -95,6 +118,13 @@ const avgChars = Math.round(
 
 const userMessage = 'hey artie what do you think about the new express tracks';
 
+const guildConfig = getGuildConfig(guildId);
+const guildKnowledge = getEnhancedGuildContext(guildConfig);
+console.log(
+  `registry: ${(await import(`file://${resolve(HERE, '../dist/services/capability/capability-registry.js')}`)).capabilityRegistry.list().length} capabilities | ` +
+    `guildKnowledge: ${guildKnowledge ? guildKnowledge.length + ' chars' : 'MISSING'}`
+);
+
 async function build() {
   const baseSystemPrompt = await promptManager.getCapabilityInstructions(userMessage);
   const { messages } = await contextAlchemy.buildMessageChain(
@@ -105,7 +135,12 @@ async function build() {
     {
       source: 'discord',
       discordChannelHistory,
-      discordContext: { platform: 'discord', guildId, channelName: 'general' },
+      discordContext: {
+        platform: 'discord',
+        guildId,
+        channelName: 'general',
+        guildKnowledge,
+      },
     }
   );
   return messages;
@@ -129,7 +164,13 @@ messages.forEach((m, i) => {
 });
 
 console.log('  ' + '-'.repeat(72));
-console.log(`  TOTAL INPUT: ${total} tokens`);
+const totalChars = messages.reduce((t, m) => t + m.content.length, 0);
+console.log(`  TOTAL INPUT: ${total} est tokens / ${totalChars} chars`);
+// chars/4 is ~49% low on opus-4.8 and sonnet-5, whose real ratio is ~2.7 chars/token
+// (measured from context_snapshots joined to API-reported prompt_tokens). Comparing an
+// estimate against a billed figure is what made the earlier claim wrong; show both.
+console.log(`  BILLED ESTIMATE at 2.7 chars/tok (opus-4.8 / sonnet-5): ~${Math.round(totalChars / 2.7)} tokens`);
+console.log(`  Compare against model_usage_stats.input_length (chars), not prompt_tokens.`);
 
 console.log('\n=== Prompt cache ===');
 for (const model of [
@@ -161,7 +202,13 @@ const warm = (uncached / 1e6) * IN_PER_M + (cachedTok / 1e6) * IN_PER_M * 0.1;
 console.log(`  uncached (today):  $${cold.toFixed(5)} / call`);
 console.log(`  cached (warm):     $${warm.toFixed(5)} / call`);
 console.log(`  saving:            ${Math.round((1 - warm / cold) * 100)}% of input cost`);
-console.log(`\n  vs Sept measured:  20,109 tokens/call → this build is ${total} (${Math.round((1 - total / 20109) * 100)}% smaller)`);
+// September's real average: 20,109 billed prompt_tokens on 54,980 chars of input_length.
+// Compare chars to chars — that is the only apples-to-apples pair available.
+const SEPT_CHARS = 54980;
+const deltaPct = Math.round((1 - totalChars / SEPT_CHARS) * 100);
+console.log(
+  `\n  vs Sept real call: ${SEPT_CHARS} chars → this build ${totalChars} chars (${deltaPct >= 0 ? deltaPct + '% smaller' : Math.abs(deltaPct) + '% LARGER'})`
+);
 
 if (doStability) {
   console.log('\n=== Prefix byte-stability (the invalidator test) ===');

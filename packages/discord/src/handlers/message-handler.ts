@@ -97,7 +97,13 @@ function resolveRepoRoot(): string {
   return process.env.APP_ROOT || '/app';
 }
 
-function getEnhancedGuildContext(guildConfig: GuildConfig | null | undefined): string | undefined {
+// Exported so the prompt-measurement harness can build the REAL guild context. Measuring
+// without it understated the prompt by ~4,000 tokens and produced a 68%-reduction claim that
+// was pure instrument error — the harness was reading a February fallback file instead of the
+// live 8.5KB persona this assembles.
+export function getEnhancedGuildContext(
+  guildConfig: GuildConfig | null | undefined
+): string | undefined {
   // Load context from file if contextPath is set, otherwise use inline context
   let baseContext: string | undefined;
 
