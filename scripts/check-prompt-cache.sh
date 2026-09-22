@@ -17,6 +17,17 @@ if [ ! -f "$DB" ]; then
   exit 1
 fi
 
+# The column is added at service boot (addColumnIfMissing in shared/db/client.ts). If the
+# service hasn't started since the caching change shipped, say so rather than dying on a
+# bare SQL error.
+if ! sqlite3 "$DB" "PRAGMA table_info(model_usage_stats);" | grep -q '|cached_tokens|'; then
+  echo "model_usage_stats has no cached_tokens column yet."
+  echo "It is added on boot — start coach-artie-capabilities once, then re-run this."
+  echo "To add it by hand:"
+  echo "  sqlite3 $DB 'ALTER TABLE model_usage_stats ADD COLUMN cached_tokens INTEGER DEFAULT 0;'"
+  exit 1
+fi
+
 echo "=== Prompt cache, last ${HOURS}h ==="
 sqlite3 -header -column "$DB" "
   SELECT
