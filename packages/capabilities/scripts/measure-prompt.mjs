@@ -9,21 +9,28 @@
  * It also renders the chain twice and diffs the cached prefix byte-for-byte, which is the
  * only way to prove no invalidator remains without paying for two live calls.
  *
- * Deps resolve from packages/capabilities (the repo root has no node_modules), so run it
- * from there — paths below are all script-relative, so cwd doesn't otherwise matter:
- *   cd packages/capabilities && node ../../scripts/measure-prompt.mjs [guildId]
- *   cd packages/capabilities && node ../../scripts/measure-prompt.mjs --stability
+ * Lives under packages/capabilities because ESM resolves bare specifiers (dotenv,
+ * @coachartie/shared) relative to the FILE, not the cwd — and the repo root has no
+ * node_modules. Run from anywhere:
+ *   node packages/capabilities/scripts/measure-prompt.mjs [guildId]
+ *   node packages/capabilities/scripts/measure-prompt.mjs --stability
  */
 
 import { config } from 'dotenv';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
+import { tmpdir } from 'os';
 
 // __dirname doesn't exist in ESM; derive it so this works from any cwd.
 const HERE = dirname(fileURLToPath(import.meta.url));
-const REPO = resolve(HERE, '..');
+const REPO = resolve(HERE, '../../..');
 
 config({ path: resolve(REPO, '.env') });
+
+// The shared logger mkdir's its log dir at import time and defaults to a relative './logs'
+// that only exists on the VPS. Point it somewhere real before importing anything shared,
+// or this dies on import with an ENOENT that has nothing to do with the measurement.
+process.env.LOGS_DIR = process.env.LOGS_DIR || tmpdir();
 
 const SB_GUILD = '1420846272545296470';
 const guildId = process.argv.find((a) => /^\d{17,20}$/.test(a)) || SB_GUILD;
@@ -31,7 +38,7 @@ const doStability = process.argv.includes('--stability');
 
 const { getSyncDb } = await import('@coachartie/shared');
 const { estimateTokens } = await import('@coachartie/shared');
-const CAPS = resolve(REPO, 'packages/capabilities/dist/services/llm');
+const CAPS = resolve(HERE, '../dist/services/llm');
 const { contextAlchemy } = await import(`file://${CAPS}/context-alchemy.js`);
 const { promptManager } = await import(`file://${CAPS}/prompt-manager.js`);
 const { applyCacheControl, cacheMinimumFor } = await import(`file://${CAPS}/prompt-cache.js`);
