@@ -9,15 +9,21 @@
  * It also renders the chain twice and diffs the cached prefix byte-for-byte, which is the
  * only way to prove no invalidator remains without paying for two live calls.
  *
- * Usage (from repo root, on the VPS):
- *   node scripts/measure-prompt.mjs [guildId]
- *   node scripts/measure-prompt.mjs --stability   # also run the two-render byte diff
+ * Deps resolve from packages/capabilities (the repo root has no node_modules), so run it
+ * from there — paths below are all script-relative, so cwd doesn't otherwise matter:
+ *   cd packages/capabilities && node ../../scripts/measure-prompt.mjs [guildId]
+ *   cd packages/capabilities && node ../../scripts/measure-prompt.mjs --stability
  */
 
 import { config } from 'dotenv';
-import { resolve } from 'path';
+import { resolve, dirname } from 'path';
+import { fileURLToPath } from 'url';
 
-config({ path: resolve(process.cwd(), '.env') });
+// __dirname doesn't exist in ESM; derive it so this works from any cwd.
+const HERE = dirname(fileURLToPath(import.meta.url));
+const REPO = resolve(HERE, '..');
+
+config({ path: resolve(REPO, '.env') });
 
 const SB_GUILD = '1420846272545296470';
 const guildId = process.argv.find((a) => /^\d{17,20}$/.test(a)) || SB_GUILD;
@@ -25,11 +31,10 @@ const doStability = process.argv.includes('--stability');
 
 const { getSyncDb } = await import('@coachartie/shared');
 const { estimateTokens } = await import('@coachartie/shared');
-const { contextAlchemy } = await import('../packages/capabilities/dist/services/llm/context-alchemy.js');
-const { promptManager } = await import('../packages/capabilities/dist/services/llm/prompt-manager.js');
-const { applyCacheControl, cacheMinimumFor } = await import(
-  '../packages/capabilities/dist/services/llm/prompt-cache.js'
-);
+const CAPS = resolve(REPO, 'packages/capabilities/dist/services/llm');
+const { contextAlchemy } = await import(`file://${CAPS}/context-alchemy.js`);
+const { promptManager } = await import(`file://${CAPS}/prompt-manager.js`);
+const { applyCacheControl, cacheMinimumFor } = await import(`file://${CAPS}/prompt-cache.js`);
 
 const db = getSyncDb();
 
