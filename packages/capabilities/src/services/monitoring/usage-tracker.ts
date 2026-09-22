@@ -34,7 +34,11 @@ export interface UsageStats {
   step_type?: string; // 'response' | 'proactive_judgment' | 'observational_learning' | 'capability' | 'planning'
 }
 
-// Model pricing per 1K tokens (input/output) - OpenRouter pricing as of 2026-04
+// Model pricing per 1K tokens (input/output). Verified against the live OpenRouter
+// /api/v1/models endpoint on 2026-09-22 — re-check there rather than trusting this comment:
+//   curl -s https://openrouter.ai/api/v1/models | jq '.data[] | select(.id=="<model>") | .pricing'
+// That endpoint also confirms cache reads bill at exactly 0.1x prompt and writes at 1.25x
+// (2x for the 1h TTL) on every Anthropic model, which is what calculateCost assumes below.
 const MODEL_PRICING: Record<string, { input: number; output: number }> = {
   // Anthropic
   'anthropic/claude-3.5-sonnet': { input: 0.003, output: 0.015 },
@@ -42,7 +46,10 @@ const MODEL_PRICING: Record<string, { input: number; output: number }> = {
   'anthropic/claude-sonnet-4.5': { input: 0.003, output: 0.015 },
   'anthropic/claude-sonnet-4.6': { input: 0.003, output: 0.015 },
   'anthropic/claude-opus-4': { input: 0.015, output: 0.075 },
-  'anthropic/claude-opus-4.5': { input: 0.015, output: 0.075 },
+  // $15/$75 here was the Opus 4 / 4.1 tier copied forward. 4.5 is $5/$25 like 4.6 and 4.8,
+  // so 1,972 historical calls were booked at 3x — $141.90 recorded against ~$47.30 actual,
+  // roughly $95 of phantom spend in the all-time total.
+  'anthropic/claude-opus-4.5': { input: 0.005, output: 0.025 },
   'anthropic/claude-opus-4.6': { input: 0.005, output: 0.025 },
   // The models actually in rotation (OPENROUTER_MODELS + SMART_MODEL). All three were
   // MISSING, so calculateCost returned 0 for literally every call we made — cost tracking
@@ -55,10 +62,11 @@ const MODEL_PRICING: Record<string, { input: number; output: number }> = {
   'openai/gpt-3.5-turbo': { input: 0.0005, output: 0.0015 },
   'openai/gpt-4': { input: 0.03, output: 0.06 },
   'openai/gpt-4-turbo': { input: 0.01, output: 0.03 },
-  'openai/gpt-4o': { input: 0.005, output: 0.015 },
+  'openai/gpt-4o': { input: 0.0025, output: 0.01 }, // was 2x over
   'openai/gpt-4o-mini': { input: 0.00015, output: 0.0006 },
   // Google
-  'google/gemini-2.5-flash': { input: 0.00015, output: 0.0006 },
+  // Was gpt-4o-mini's rate; flash is 2x that on input and 4x on output.
+  'google/gemini-2.5-flash': { input: 0.0003, output: 0.0025 },
   'google/gemini-2.0-flash': { input: 0.0001, output: 0.0004 },
   'google/gemini-pro': { input: 0.00025, output: 0.0005 },
   // Free models
