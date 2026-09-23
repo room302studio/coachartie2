@@ -515,6 +515,13 @@ export class CreditMonitor {
    */
   private async sendDiscordNotification(alert: CreditAlert): Promise<void> {
     try {
+      // Honour the same kill switch the throttled alerts use. This path did not, so
+      // CREDIT_ALERTS_DISABLED silenced one credit-alert route and left this one live.
+      if (process.env.CREDIT_ALERTS_DISABLED === 'true') {
+        logger.info('💳 Credit alert suppressed (CREDIT_ALERTS_DISABLED=true)');
+        return;
+      }
+
       // Get admin Discord ID from environment
       const adminDiscordId = process.env.ADMIN_DISCORD_ID;
       const adminChannelId = process.env.ADMIN_CHANNEL_ID;
@@ -532,17 +539,25 @@ export class CreditMonitor {
 
 This is an automated alert from the credit monitoring system.`;
 
-      // Send directly to Discord outgoing queue (bypass processing)
+      // Send directly to Discord outgoing queue (bypass processing).
+      //
+      // ONE destination, DM preferred. Passing userId AND channelId together risked sending
+      // the same alert twice, and the channel variant is how 73 "Credits Exhausted" posts
+      // landed in a public channel over three days in June/July — an operator problem
+      // broadcast to everyone, repeatedly, because each user reacting to the failure
+      // triggered another failure. A credit alert is for the operator; it goes to the DM
+      // when there is one, and only falls back to a channel when there is not.
       const outgoingQueue = createQueue('coachartie-discord-outgoing');
 
       await outgoingQueue.add('send-message', {
-        userId: adminDiscordId,
-        channelId: adminChannelId,
+        ...(adminDiscordId ? { userId: adminDiscordId } : { channelId: adminChannelId }),
         content: notificationMessage,
         source: 'credit-monitor',
       });
 
-      logger.info(`💳 Critical credit alert sent to Discord (${adminDiscordId || adminChannelId})`);
+      logger.info(
+        `💳 Critical credit alert sent to Discord (${adminDiscordId ? `DM ${adminDiscordId}` : `channel ${adminChannelId}`})`
+      );
     } catch (error) {
       logger.error('❌ Failed to send Discord notification:', error);
       // Don't throw - notification failure shouldn't break credit monitoring

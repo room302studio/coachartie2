@@ -34,6 +34,17 @@ const ANALYSIS_MIN_INTERVAL_MS = parseInt(process.env.STEAM_REVIEW_ANALYSIS_MIN_
 const MAX_MESSAGES_PER_CYCLE = 1000;
 const CHATTER_BUFFER_MAX = 80; // recent human lines carried into the next analysis
 
+// Consecutive-failure backoff for the analysis refresh.
+//
+// This ran every 10 minutes for 8 consecutive days in August failing with the same
+// 500, logging 1,126 identical "Analysis refresh failed" lines and never backing off,
+// never giving up and never telling anyone. Level-triggered retry with no memory: the
+// condition held, so it re-fired forever.
+const ANALYSIS_MAX_BACKOFF_MS = parseInt(
+  process.env.STEAM_REVIEW_ANALYSIS_MAX_BACKOFF_MS || '21600000', // 6h
+  10
+);
+
 const CURSOR_RE = /<!-- cursor:(\d+) -->/;
 const ANALYSIS_START = '<!-- analysis:start -->';
 const ANALYSIS_END = '<!-- analysis:end -->';
@@ -75,6 +86,9 @@ export class SteamReviewNotes {
   private timer: NodeJS.Timeout | null = null;
   private running = false;
   private lastAnalysisAt = 0;
+  /** Consecutive analysis-refresh failures, and when the backoff permits another attempt. */
+  private analysisFailures = 0;
+  private analysisRetryAfter = 0;
   // True when the log has entries the analysis hasn't seen. Starts true so the first
   // cycle after a restart reconciles any refresh that failed before the restart.
   private analysisPending = true;
@@ -285,7 +299,11 @@ export class SteamReviewNotes {
       }
 
       if (reviews.length > 0) this.analysisPending = true;
-      const analysisDue = Date.now() - this.lastAnalysisAt > ANALYSIS_MIN_INTERVAL_MS;
+      // Respect the failure backoff as well as the normal cadence, or a persistent 500
+      // gets retried every single poll tick regardless of how long it has been failing.
+      const analysisDue =
+        Date.now() - this.lastAnalysisAt > ANALYSIS_MIN_INTERVAL_MS &&
+        Date.now() >= this.analysisRetryAfter;
       if (this.analysisPending && analysisDue && this.getLogSection(notes)) {
         await this.refreshAnalysis(notes);
       }
@@ -343,9 +361,26 @@ Output ONLY the markdown body of the section — no top-level heading, no code f
         }),
       });
       if (!response.ok) {
-        logger.warn(`📓 Analysis refresh failed: ${response.status} ${response.statusText}`);
+        this.analysisFailures++;
+        // Exponential backoff, capped. Log loudly only on the first failure and then at
+        // widening intervals, so a persistent outage is visible once instead of 144x/day.
+        const backoffMs = Math.min(
+          ANALYSIS_MAX_BACKOFF_MS,
+          POLL_INTERVAL_MS * Math.pow(2, this.analysisFailures - 1)
+        );
+        this.analysisRetryAfter = Date.now() + backoffMs;
+        const level = this.analysisFailures === 1 || this.analysisFailures % 10 === 0 ? 'warn' : 'debug';
+        logger[level](
+          `📓 Analysis refresh failed: ${response.status} ${response.statusText} ` +
+            `(failure #${this.analysisFailures}, backing off ${Math.round(backoffMs / 60000)}min)`
+        );
         return;
       }
+      if (this.analysisFailures > 0) {
+        logger.info(`📓 Analysis refresh recovered after ${this.analysisFailures} failures`);
+      }
+      this.analysisFailures = 0;
+      this.analysisRetryAfter = 0;
       const result = (await response.json()) as { summary: string; cost: number };
       if (!result.summary?.trim()) {
         logger.warn('📓 Analysis refresh returned empty summary — keeping previous analysis');

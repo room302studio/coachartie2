@@ -270,6 +270,23 @@ async function handlePushEvent(payload: GitHubPushPayload): Promise<void> {
     return;
   }
 
+  // Dedup + rate limit. These two checks guarded the issue and issue-comment handlers but
+  // not push or pull_request, so those two could post unbounded — and the 3-minute poller
+  // targets the SAME channel with its own separate dedup map in a different process, so a
+  // duplicate here is not hypothetical. Keyed on the head commit, which is what makes a
+  // push distinct; a redelivered webhook carries the same one.
+  // GitHub orders push commits oldest-first, so the last one is the head.
+  const headCommit = commits[commits.length - 1]?.id ?? ref;
+  const dedupeKey = `push:${repository.full_name}:${headCommit}`;
+  if (isWebhookDuplicate(dedupeKey)) {
+    logger.info(`📝 Skipping duplicate push event: ${dedupeKey}`);
+    return;
+  }
+  if (isWebhookRateLimited()) {
+    logger.warn(`⚠️ Webhook rate limited, dropping push event: ${dedupeKey}`);
+    return;
+  }
+
   logger.info(`🚀 Main branch push detected`, {
     repo: repository.full_name,
     pusher: pusher.name,
@@ -458,6 +475,17 @@ async function handlePullRequestEvent(payload: GitHubWebhookPayload): Promise<vo
 
   // Only celebrate merged PRs to main
   if (action !== 'closed' || !pull_request.merged || pull_request.base?.ref !== 'main') {
+    return;
+  }
+
+  // Same guards as the issue handlers — see the note in handlePushEvent.
+  const dedupeKey = `pr-merged:${repository.full_name}:${pull_request.number}`;
+  if (isWebhookDuplicate(dedupeKey)) {
+    logger.info(`📝 Skipping duplicate PR-merged event: ${dedupeKey}`);
+    return;
+  }
+  if (isWebhookRateLimited()) {
+    logger.warn(`⚠️ Webhook rate limited, dropping PR-merged event: ${dedupeKey}`);
     return;
   }
 

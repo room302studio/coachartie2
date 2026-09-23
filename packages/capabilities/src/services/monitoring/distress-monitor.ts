@@ -221,8 +221,14 @@ class DistressMonitor {
    */
   private getBurnRate(): number {
     try {
-      const stats = costMonitor.getStats();
-      return stats.costPerHour;
+      // The ROLLING burn, not costPerHour. costPerHour is cost-since-boot over
+      // hours-since-boot — a cumulative average, not a rate — and it is why 39 of the 45
+      // distress events ever recorded (87%) were burn-rate trips with every other signal at
+      // zero. Recorded values ran $1.65-$8.77/hr against a real monthly average of $0.26/hr,
+      // against a $1.50 threshold, so it fired essentially always and made the operator DM
+      // channel untrustworthy. Returns 0 when there is not enough observation to be honest,
+      // which reads as "no distress" rather than inventing one.
+      return costMonitor.getRecentBurnPerHour() ?? 0;
     } catch (error) {
       logger.debug('Failed to get burn rate:', error);
       return 0;
