@@ -315,133 +315,66 @@ export class MemoryService {
     }
   }
 
+  /**
+   * Extract keyword tags for immediate storage (before async semantic tagging).
+   *
+   * These tags are FTS index keys, and the previous version made them useless: it split the
+   * text, dropped a short stopword list, and took the FIRST FIVE survivors. Because memories
+   * are written as third-person narration ("Subway Builder — the main topic discussed is…"),
+   * the keys it produced were narration vocabulary. Measured across 20,157 live memories:
+   *   ["subway","builder","main","topic","discussed"]        x1031
+   *   ["subway","builder","conversation","primarily","revolves"] x397
+   *   ["subway","builder","main","topics","discussed"]        x207
+   * Thousands of memories were therefore indistinguishable to search, which is a large part
+   * of why 98% of them have never been recalled.
+   *
+   * Two changes: narration words are stopped, and selection is by DISTINCTIVENESS (longest,
+   * deduped, position-independent) rather than by position. Returning fewer — or zero — tags
+   * is better than returning noise, because noise actively poisons the index.
+   */
   private extractBasicTags(content: string, _context: string): string[] {
-    // Basic keyword extraction for immediate storage
-    const words = content.toLowerCase().split(/\s+/);
-    const basicTags = [];
-
-    // Extract obvious content words (3+ letters, not common words)
-    const commonWords = new Set([
-      'the',
-      'and',
-      'for',
-      'are',
-      'but',
-      'not',
-      'you',
-      'all',
-      'can',
-      'had',
-      'her',
-      'was',
-      'one',
-      'our',
-      'out',
-      'day',
-      'get',
-      'has',
-      'him',
-      'his',
-      'how',
-      'its',
-      'may',
-      'new',
-      'now',
-      'old',
-      'see',
-      'two',
-      'way',
-      'who',
-      'boy',
-      'did',
-      'man',
-      'end',
-      'few',
-      'got',
-      'lot',
-      'own',
-      'say',
-      'she',
-      'use',
-      'her',
-      'now',
-      'find',
-      'only',
-      'come',
-      'made',
-      'over',
-      'such',
-      'take',
-      'than',
-      'them',
-      'well',
-      'were',
-      'what',
-      'your',
-      'work',
-      'life',
-      'only',
-      'then',
-      'first',
-      'would',
-      'there',
-      'could',
-      'water',
-      'after',
-      'where',
-      'think',
-      'being',
-      'every',
-      'these',
-      'those',
-      'their',
-      'said',
-      'each',
-      'which',
-      'much',
-      'very',
-      'when',
-      'need',
-      'said',
-      'each',
-      'which',
-      'into',
-      'that',
-      'have',
-      'from',
-      'they',
-      'know',
-      'want',
-      'been',
-      'good',
-      'much',
-      'some',
-      'time',
-      'very',
-      'when',
-      'come',
-      'here',
-      'just',
-      'like',
-      'long',
-      'make',
-      'many',
-      'over',
-      'such',
-      'take',
-      'than',
-      'them',
-      'well',
-      'were',
+    // Stopwords that matter here are not the usual English ones — they are the vocabulary of
+    // LLM-written summaries, which is what memory content actually is.
+    const NARRATION_WORDS = new Set([
+      'main', 'topic', 'topics', 'discussed', 'discussion', 'discusses', 'discussing',
+      'conversation', 'conversations', 'revolves', 'revolved', 'around', 'primarily',
+      'centers', 'centered', 'centres', 'regarding', 'concerning', 'context', 'suggests',
+      'suggested', 'indicates', 'indicated', 'appears', 'appeared', 'mentioned', 'mentions',
+      'expressed', 'expresses', 'stated', 'states', 'noted', 'notes', 'observation',
+      'observations', 'summary', 'summarized', 'message', 'messages', 'user', 'users',
+      'previous', 'recent', 'dialogue', 'exchange', 'interaction', 'response', 'responded',
+      'request', 'requested', 'asked', 'asks', 'theme', 'themes', 'key', 'features',
+      'involves', 'involved', 'related', 'relates', 'highlighting', 'highlights',
+      'information', 'details', 'specific', 'general', 'various', 'several', 'overall',
+      'following', 'includes', 'including', 'provided', 'provides', 'seems', 'likely',
+      'artie', 'coach', 'assistant', 'system', 'channel',
+      // ordinary high-frequency English
+      'that', 'this', 'with', 'from', 'have', 'they', 'their', 'there', 'these', 'those',
+      'them', 'then', 'than', 'been', 'being', 'were', 'what', 'when', 'which', 'while',
+      'would', 'could', 'should', 'about', 'into', 'over', 'also', 'just', 'like', 'some',
+      'more', 'most', 'other', 'such', 'very', 'will', 'your', 'ours', 'because', 'after',
+      'before', 'between', 'during', 'where', 'here', 'both', 'each', 'only', 'same',
+      'said', 'says', 'make', 'made', 'take', 'takes', 'come', 'comes', 'time', 'times',
+      'work', 'working', 'thing', 'things', 'want', 'wants', 'need', 'needs', 'know',
+      'think', 'well', 'good', 'back', 'still', 'even', 'much', 'many', 'lot',
     ]);
 
-    for (const word of words) {
-      if (word.length >= 3 && !commonWords.has(word) && /^[a-zA-Z]+$/.test(word)) {
-        basicTags.push(word);
-      }
+    const seen = new Set<string>();
+    const candidates: string[] = [];
+    for (const raw of content.toLowerCase().split(/[^a-z0-9_-]+/)) {
+      const word = raw.replace(/^[-_]+|[-_]+$/g, '');
+      // 4+ chars: 3-letter words are almost never distinctive in this corpus.
+      if (word.length < 4 || word.length > 30) continue;
+      if (NARRATION_WORDS.has(word)) continue;
+      if (!/[a-z]/.test(word)) continue;
+      if (seen.has(word)) continue;
+      seen.add(word);
+      candidates.push(word);
     }
 
-    return basicTags.slice(0, 5); // Limit to first 5 basic tags
+    // Longest-first is a cheap, corpus-free proxy for specificity: "electrification" is a
+    // better index key than "trains", and both beat "topic".
+    return candidates.sort((a, b) => b.length - a.length).slice(0, 5);
   }
 
   private formatHybridRecallResults(memories: MemoryRecord[], query: string): string {
