@@ -43,7 +43,10 @@ async function main() {
   console.log(`✅ Registered ${body.length} global commands.`);
 }
 
-main().catch((error) => {
-  console.error('❌ Error registering commands:', error);
-  process.exit(1);
-});
+// Explicit exit: importing the commands opens DB handles that would keep the process alive.
+main()
+  .then(() => process.exit(0))
+  .catch((error) => {
+    console.error('❌ Error registering commands:', error);
+    process.exit(1);
+  });
