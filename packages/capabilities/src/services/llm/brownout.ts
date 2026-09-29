@@ -1,6 +1,7 @@
 import { logger } from '@coachartie/shared';
 import { CreditMonitor } from '../monitoring/credit-monitor.js';
 import { costMonitor } from '../monitoring/cost-monitor.js';
+import { getDailyBudgetUsd, getTodaySpendUsd } from '../monitoring/daily-budget.js';
 
 // =====================================================
 // BROWNOUT CONTROLLER
@@ -11,6 +12,13 @@ import { costMonitor } from '../monitoring/cost-monitor.js';
 // runway shrinks we step down to cheaper models and
 // shorter replies instead of going dark. Visibility is
 // LOGS ONLY — the vitals monitor owns operator comms.
+//
+// Two signals, and the MORE conservative one wins:
+//  - runway: credit balance ÷ measured burn (below)
+//  - daily:  today's ET-day spend as a fraction of
+//            DAILY_BUDGET_USD, so Artie tapers through
+//            the day instead of running full-Opus into the
+//            hard budget mute (daily-budget.ts) at 100%.
 // =====================================================
 
 export type BrownoutMode = 'normal' | 'lean' | 'critical';
@@ -18,6 +26,82 @@ export type BrownoutMode = 'normal' | 'lean' | 'critical';
 export interface BrownoutStatus {
   mode: BrownoutMode;
   runwayHours: number | null;
+  /** Mode from credit runway alone. */
+  runwayMode?: BrownoutMode;
+  /** Mode from today's spend vs DAILY_BUDGET_USD alone. */
+  dailyMode?: BrownoutMode;
+  /** Today's spend ÷ daily budget; null when unknown or the cap is off. */
+  dailySpendFraction?: number | null;
+}
+
+const MODE_RANK: Record<BrownoutMode, number> = { normal: 0, lean: 1, critical: 2 };
+
+export function moreConservative(a: BrownoutMode, b: BrownoutMode): BrownoutMode {
+  return MODE_RANK[a] >= MODE_RANK[b] ? a : b;
+}
+
+function envFraction(name: string, fallback: number): number {
+  const parsed = parseFloat(process.env[name] || '');
+  return Number.isFinite(parsed) && parsed > 0 && parsed <= 1 ? parsed : fallback;
+}
+
+/**
+ * Daily-budget rung. At 100% the hard budget mute takes over (nothing generates), so this
+ * never needs a rung above critical.
+ */
+export function dailyBudgetMode(fraction: number | null): BrownoutMode {
+  if (fraction === null || !Number.isFinite(fraction)) return 'normal';
+  if (fraction >= envFraction('BROWNOUT_DAILY_CRITICAL_FRACTION', 0.85)) return 'critical';
+  if (fraction >= envFraction('BROWNOUT_DAILY_LEAN_FRACTION', 0.6)) return 'lean';
+  return 'normal';
+}
+
+export function runwayMode(runwayHours: number | null): BrownoutMode {
+  if (runwayHours === null) return 'normal';
+  if (runwayHours < envNumber('BROWNOUT_CRITICAL_HOURS', 6)) return 'critical';
+  if (runwayHours < envNumber('BROWNOUT_LEAN_HOURS', 24)) return 'lean';
+  return 'normal';
+}
+
+/**
+ * Today's spend as a fraction of the daily budget, or null (cap off, or lookup failed).
+ * Null means "no opinion" — it fails toward normal, and the runway signal still applies.
+ */
+export function readDailySpendFraction(
+  spend: () => number = getTodaySpendUsd,
+  budget: number | null = getDailyBudgetUsd()
+): number | null {
+  if (budget === null) return null;
+  try {
+    return spend() / budget;
+  } catch (error) {
+    logger.warn('🕯️ Brownout: daily spend lookup failed — using runway signal only', error);
+    return null;
+  }
+}
+
+/** Combine both signals. Pure, so the precedence is testable. */
+export function deriveBrownoutStatus(
+  runwayHours: number | null,
+  dailySpendFraction: number | null
+): BrownoutStatus {
+  const rMode = runwayMode(runwayHours);
+  const dMode = dailyBudgetMode(dailySpendFraction);
+  return {
+    mode: moreConservative(rMode, dMode),
+    runwayHours,
+    runwayMode: rMode,
+    dailyMode: dMode,
+    dailySpendFraction,
+  };
+}
+
+/** Which signal put us in this mode — for the one transition log line. */
+export function brownoutDriver(status: BrownoutStatus): string {
+  if (status.mode === 'normal') return 'none';
+  const r = status.runwayMode === status.mode;
+  const d = status.dailyMode === status.mode;
+  return r && d ? 'runway+daily' : d ? 'daily' : 'runway';
 }
 
 // Balance lookups can hit OpenRouter's /credits endpoint — cache so we
@@ -93,29 +177,76 @@ async function refresh(now: number): Promise<void> {
     logger.error('🕯️ Brownout: balance check failed, staying in normal mode', error);
   }
 
-  // Unknown balance → normal. Fail toward full service: the credit
-  // monitor already guards true exhaustion, so a flaky balance lookup
-  // shouldn't lobotomize Artie.
-  let mode: BrownoutMode = 'normal';
-  if (runwayHours !== null) {
-    if (runwayHours < envNumber('BROWNOUT_CRITICAL_HOURS', 6)) {
-      mode = 'critical';
-    } else if (runwayHours < envNumber('BROWNOUT_LEAN_HOURS', 24)) {
-      mode = 'lean';
-    }
-  }
+  // Unknown balance → runway says normal. Fail toward full service: the credit monitor
+  // already guards true exhaustion, and the daily budget has its own hard mute.
+  const status = deriveBrownoutStatus(runwayHours, readDailySpendFraction());
+  const mode = status.mode;
 
   if (mode !== lastMode) {
+    const pct =
+      typeof status.dailySpendFraction === 'number'
+        ? `${Math.round(status.dailySpendFraction * 100)}% of daily budget`
+        : 'daily budget n/a';
+    const runway = runwayHours === null ? 'runway ?' : `~${runwayHours.toFixed(1)}h runway`;
     if (mode !== 'normal') {
       logger.error(
         `🚨🕯️ BROWNOUT ENGAGED: ${lastMode} → ${mode.toUpperCase()} ` +
-          `(~${runwayHours?.toFixed(1)}h of credit runway left)`
+          `(driven by ${brownoutDriver(status)}: ${runway}, ${pct})`
       );
     } else {
-      logger.warn(`🕯️ Brownout cleared: ${lastMode} → normal (runway recovered)`);
+      logger.warn(`🕯️ Brownout cleared: ${lastMode} → normal (${runway}, ${pct})`);
     }
     lastMode = mode;
   }
 
-  cached = { status: { mode, runwayHours }, fetchedAt: now };
+  cached = { status, fetchedAt: now };
+}
+
+// =====================================================
+// BROWNOUT BREVITY
+// Under lean/critical the reply is token-capped. Without
+// telling the model, it writes a normal-length answer and
+// the cap truncates it mid-sentence. This note asks for a
+// COMPLETE short reply that fits instead. Length and word
+// choice only — voice, persona and [SILENT] are untouched.
+// =====================================================
+
+const BREVITY_NOTES: Record<Exclude<BrownoutMode, 'normal'>, string> = {
+  lean:
+    'Length note: keep this reply brief — a few short sentences, plain small words. ' +
+    'Your voice and everything else (including choosing [SILENT]) is unchanged.',
+  critical:
+    'Length note: reply in one or two short sentences, simple words. ' +
+    'Your voice and everything else (including choosing [SILENT]) is unchanged.',
+};
+
+export function brevityNoteFor(mode: BrownoutMode): string | null {
+  return mode === 'normal' ? null : BREVITY_NOTES[mode];
+}
+
+/** max_tokens cap per mode (BROWNOUT_LEAN_MAX_TOKENS 500, BROWNOUT_CRITICAL_MAX_TOKENS 250). */
+export function brownoutMaxTokens(mode: BrownoutMode, requested: number): number {
+  if (mode === 'lean') return Math.min(requested, envNumber('BROWNOUT_LEAN_MAX_TOKENS', 500));
+  if (mode === 'critical') return Math.min(requested, envNumber('BROWNOUT_CRITICAL_MAX_TOKENS', 250));
+  return requested;
+}
+
+/**
+ * Insert the brevity note as its own system message immediately AFTER the first system
+ * message — i.e. after the prompt-cache breakpoint (prompt-cache.ts marks messages[first
+ * system] and nothing else). The cached prefix stays byte-identical across normal/lean/
+ * critical, so a brownout never costs a cache miss. Placing it here (not at the tail) also
+ * respects the Anthropic role-ordering rule: no system message may follow an assistant turn,
+ * and this position always precedes any history. Normal mode returns the input unchanged.
+ */
+export function applyBrevityNote<T extends { role: 'system' | 'user' | 'assistant'; content: string }>(
+  messages: T[],
+  mode: BrownoutMode
+): T[] {
+  const note = brevityNoteFor(mode);
+  if (!note) return messages;
+  const first = messages.findIndex((m) => m.role === 'system');
+  const at = first === -1 ? 0 : first + 1;
+  const noteMessage = { role: 'system', content: note } as T;
+  return [...messages.slice(0, at), noteMessage, ...messages.slice(at)];
 }

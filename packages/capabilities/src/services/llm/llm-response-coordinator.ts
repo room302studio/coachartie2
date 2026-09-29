@@ -5,7 +5,7 @@ import { promptManager } from './prompt-manager.js';
 import { contextAlchemy } from './context-alchemy.js';
 import { modelAwarePrompter } from '../../utils/model-aware-prompter.js';
 import { preflightAnalyzer } from './preflight-analyzer.js';
-import { getBrownoutMode } from './brownout.js';
+import { getBrownoutMode, applyBrevityNote, brownoutMaxTokens } from './brownout.js';
 import { experimentManager } from '../context-alchemy/index.js';
 import { errorTracker, ERROR_TYPES } from '../observability/error-tracker.js';
 import { CapabilityResult, OrchestrationContext } from '../../types/orchestration-types.js';
@@ -106,29 +106,38 @@ export class LLMResponseCoordinator {
       // Brownout override (see brownout.ts): when credit runway shrinks, step
       // down to cheaper models + shorter replies instead of going silent.
       // 'normal' mode leaves the complexity route above completely untouched.
+      // The mode is the more conservative of credit runway and today's spend vs
+      // DAILY_BUDGET_USD — see brownout.ts.
       const brownout = await getBrownoutMode();
-      let maxTokens = preflight.responseTokens;
+      const maxTokens = brownoutMaxTokens(brownout.mode, preflight.responseTokens);
       if (brownout.mode === 'lean') {
         smartModel = simpleChatModel;
-        maxTokens = Math.min(maxTokens, 500);
       } else if (brownout.mode === 'critical') {
         smartModel = process.env.BROWNOUT_CRITICAL_MODEL || 'anthropic/claude-haiku-4.5';
-        maxTokens = Math.min(maxTokens, 250);
       }
       if (brownout.mode !== 'normal') {
+        const daily =
+          typeof brownout.dailySpendFraction === 'number'
+            ? `${Math.round(brownout.dailySpendFraction * 100)}% of daily budget`
+            : 'daily n/a';
         logger.warn(
-          `🕯️ Brownout ${brownout.mode.toUpperCase()} (runway ${brownout.runwayHours?.toFixed(1) ?? '?'}h) → ${smartModel}, maxTokens ${maxTokens}`
+          `🕯️ Brownout ${brownout.mode.toUpperCase()} (runway ${brownout.runwayHours?.toFixed(1) ?? '?'}h, ${daily}) → ${smartModel}, maxTokens ${maxTokens}`
         );
       }
-      const modelAwareMessages = messages.map((msg) => {
-        if (msg.role === 'system') {
-          return {
-            ...msg,
-            content: modelAwarePrompter.generateCapabilityPrompt(smartModel, msg.content),
-          };
-        }
-        return msg;
-      });
+      const modelAwareMessages = applyBrevityNote(
+        messages.map((msg) => {
+          if (msg.role === 'system') {
+            return {
+              ...msg,
+              content: modelAwarePrompter.generateCapabilityPrompt(smartModel, msg.content),
+            };
+          }
+          return msg;
+        }),
+        // Lean/critical cap max_tokens; ask for a complete short reply that fits rather than
+        // a normal one that gets cut off. Inserted after the cache breakpoint.
+        brownout.mode
+      );
 
       logger.warn(
         `🎯 Model route: ${routeSimple ? 'SIMPLE' : preflight.complexity.toUpperCase()} → ${smartModel} (${modelAwareMessages.length} messages)`
