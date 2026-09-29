@@ -9,7 +9,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 config({ path: resolve(__dirname, '../../../../.env') });
 config({ path: resolve(__dirname, '../../.env') });
 
-import { logger, assertGenerationAllowed, resolveModelSpec, isAutoRouted } from '@coachartie/shared';
+import { logger, assertGenerationAllowed, assertGuildBudget, resolveModelSpec, isAutoRouted } from '@coachartie/shared';
 import { UsageTracker, TokenUsage } from '../monitoring/usage-tracker.js';
 import { applyCacheControl, readCacheUsage, wireContentLength } from './prompt-cache.js';
 import { creditMonitor } from '../monitoring/credit-monitor.js';
@@ -341,6 +341,8 @@ class OpenRouterService {
   ): Promise<string> {
     // KILL SWITCH (manual or daily-budget mute): nothing generates, whoever is asking.
     assertGenerationAllowed(`generation for ${userId}`);
+    // Per-guild share of the daily budget (guild-budget.ts) — silent in that guild once spent.
+    assertGuildBudget(options?.guildId, `generation for ${userId}`);
 
     // SHORT-CIRCUIT: If credits are exhausted, don't even try the API
     if (creditMonitor.areCreditsExhausted()) {
@@ -560,6 +562,7 @@ class OpenRouterService {
         {
           UsageTracker.recordUsage({
             model_name: billedModel,
+            guild_id: options?.guildId ?? null,
             user_id: userId,
             message_id: messageId ?? '',
             input_length: cache.messages.reduce(
@@ -766,6 +769,7 @@ class OpenRouterService {
     }
     // KILL SWITCH (manual or daily-budget mute): nothing generates, whoever is asking.
     assertGenerationAllowed(`streaming generation for ${userId}`);
+    assertGuildBudget(options?.guildId, `streaming generation for ${userId}`);
 
     const startTime = Date.now();
     const traceId = options?.traceId;
@@ -954,6 +958,7 @@ class OpenRouterService {
         {
           UsageTracker.recordUsage({
             model_name: billedModel,
+            guild_id: options?.guildId ?? null,
             user_id: userId,
             message_id: messageId ?? '',
             input_length: cache.messages.reduce(

@@ -28,6 +28,7 @@ export * from './utils/logger.js';
 export * from './utils/eastern-day.js';
 export * from './utils/anomalywatch.js';
 export * from './utils/model-spec.js';
+export * from './utils/guild-budget.js';
 export * from './utils/kill-switch.js';
 // DEPRECATED: Use db/client.ts instead (Drizzle ORM)
 // This module uses sql.js which is being phased out

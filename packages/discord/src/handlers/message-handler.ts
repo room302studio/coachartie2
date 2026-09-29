@@ -19,7 +19,14 @@ import {
   ChannelType,
   GuildMember,
 } from 'discord.js';
-import { delay, chunkMessage, resolveModelSpec, isAutoRouted } from '@coachartie/shared';
+import {
+  delay,
+  chunkMessage,
+  resolveModelSpec,
+  isAutoRouted,
+  checkGuildBudget,
+  reportGuildBudgetSpent,
+} from '@coachartie/shared';
 import { estimateTokens } from '@coachartie/shared';
 import { logger, canDMForTasks, getDMPolicy, dmPairingService, getSyncDb } from '@coachartie/shared';
 import {
@@ -690,13 +697,13 @@ JSON response:`;
           model_name, user_id, message_id, input_length, output_length,
           response_time_ms, capabilities_detected, capabilities_executed,
           capability_types, success, prompt_tokens, completion_tokens,
-          total_tokens, estimated_cost, step_type
-        ) VALUES (?, ?, ?, ?, ?, ?, 0, 0, '', 1, ?, ?, ?, ?, ?)`,
+          total_tokens, estimated_cost, step_type, guild_id
+        ) VALUES (?, ?, ?, ?, ?, ?, 0, 0, '', 1, ?, ?, ?, ?, ?, ?)`,
         [
           judgmentModelId, message.author.id, message.id,
           prompt.length, rawResponse.length, 0,
           promptTokens, completionTokens, promptTokens + completionTokens,
-          estimatedCost, 'proactive_judgment',
+          estimatedCost, 'proactive_judgment', message.guildId ?? null,
         ]
       );
       logger.info(`📊 Proactive judgment cost: ${judgmentModelId} - ${promptTokens + completionTokens} tokens - $${estimatedCost.toFixed(6)}`);
@@ -1084,6 +1091,17 @@ export function setupMessageHandler(client: Client) {
 
     if (isGenerationMuted(KILL_SWITCH_PATH)) {
       logger.warn(`🛑 KILL SWITCH active — ignoring message [${shortId}]`);
+      return;
+    }
+
+    // Per-guild share of the daily budget (shared guild-budget.ts): once a guild's share is
+    // spent, stay silent there for the rest of the ET day. Other guilds and DMs unaffected.
+    const guildBudget = checkGuildBudget(message.guildId);
+    if (guildBudget?.over) {
+      reportGuildBudgetSpent(guildBudget);
+      logger.warn(
+        `💸 Guild budget share spent ($${guildBudget.spentUsd.toFixed(2)}/$${guildBudget.capUsd.toFixed(2)}) — silent in ${message.guildId} [${shortId}]`
+      );
       return;
     }
 

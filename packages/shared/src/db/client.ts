@@ -264,6 +264,8 @@ function addColumnIfMissing(
   // Cache WRITES, so a cold cache (first call per prefix: write > 0, read = 0) can be told
   // apart from a broken one (both 0) in the table, not just in the logs.
   addColumnIfMissing(raw, 'model_usage_stats', 'cache_write_tokens', 'INTEGER DEFAULT 0');
+  // Per-guild budget shares (guild-budget.ts) sum spend by guild.
+  addColumnIfMissing(raw, 'model_usage_stats', 'guild_id', 'TEXT');
 
   // Credit balance table
   raw.exec(`

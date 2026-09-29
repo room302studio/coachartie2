@@ -1,4 +1,5 @@
 import {
+  readDailyBudgetUsd,
   logger,
   getSyncDb,
   easternDayKey,
@@ -27,17 +28,12 @@ import {
  * the mute at midnight, and what catches spend written directly by the discord process).
  */
 
-export const DEFAULT_DAILY_BUDGET_USD = 3;
+export { DEFAULT_DAILY_BUDGET_USD } from '@coachartie/shared';
 export const BUDGET_ALERT_KIND = 'daily-budget-mute';
 
 /** DAILY_BUDGET_USD, default 3. 0, a negative number or "off" disables the cap. */
 export function getDailyBudgetUsd(): number | null {
-  const raw = (process.env.DAILY_BUDGET_USD ?? '').trim().toLowerCase();
-  if (raw === 'off') return null;
-  if (raw === '') return DEFAULT_DAILY_BUDGET_USD;
-  const parsed = parseFloat(raw);
-  if (!Number.isFinite(parsed)) return DEFAULT_DAILY_BUDGET_USD;
-  return parsed > 0 ? parsed : null;
+  return readDailyBudgetUsd();
 }
 
 /**

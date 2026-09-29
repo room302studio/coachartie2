@@ -44,6 +44,7 @@ export interface UsageStats {
   cached_tokens?: number;
   cache_write_tokens?: number;
   estimated_cost: number;
+  guild_id?: string | null; // per-guild budget shares (shared guild-budget.ts)
   step_type?: string; // 'response' | 'proactive_judgment' | 'observational_learning' | 'capability' | 'planning'
 }
 
@@ -147,8 +148,8 @@ export class UsageTracker {
           response_time_ms, capabilities_detected, capabilities_executed,
           capability_types, success, error_type, prompt_tokens,
           completion_tokens, total_tokens, cached_tokens, cache_write_tokens,
-          estimated_cost, step_type
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          estimated_cost, step_type, guild_id
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           stats.model_name || 'unknown',
           stats.user_id || 'unknown',
@@ -168,6 +169,7 @@ export class UsageTracker {
           stats.cache_write_tokens ?? 0,
           stats.estimated_cost ?? 0,
           stats.step_type || 'response',
+          stats.guild_id ?? null,
         ]
       );
 
