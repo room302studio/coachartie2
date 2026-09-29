@@ -15,6 +15,7 @@ import {
 import { processMessage } from '../handlers/process-message.js';
 import { JOB_TIMEOUT_MS } from '../config/timeouts.js';
 import { jobTracker } from '../services/core/job-tracker.js';
+import { shouldSkipPassiveGeneration } from './passive-observation.js';
 import type { Worker } from 'bullmq';
 
 // Per-user processing lock to prevent parallel responses to the same user
@@ -121,6 +122,12 @@ export async function startMessageConsumer(): Promise<Worker<IncomingMessage, vo
           logger.warn('Failed to store message in database:', dbError);
           // Continue processing even if storage fails
         }
+      }
+
+      // Passive Discord observation: stored above for history, never generated on (#88).
+      if (shouldSkipPassiveGeneration(message)) {
+        logger.info(`👁️ Passive Discord message ${message.id} stored — no generation`);
+        return;
       }
 
       // Update job status to processing (if it's from API)

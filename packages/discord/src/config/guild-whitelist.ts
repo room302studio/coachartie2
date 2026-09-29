@@ -81,6 +81,13 @@ export interface GuildConfig {
   githubSync?: GitHubSyncConfig;
   /** Channel-specific personas (key is channel name pattern) */
   channelPersonas?: Record<string, ChannelPersona>;
+  /**
+   * Unprompted speech (see services/speak-gate.ts). The persona model only runs when Artie is
+   * @mentioned, replied to, or DMed. 'gated' (default): anything else the routing would answer
+   * must first pass the cheap "should I speak?" judgment, and a judgment error means silence.
+   * 'never': strictly mention/reply/DM — the judgment isn't consulted at all.
+   */
+  ambientMode?: 'gated' | 'never';
 }
 
 /**

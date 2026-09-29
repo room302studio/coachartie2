@@ -29,6 +29,7 @@ import {
   getKillSwitchPath,
   isGenerationMuted,
 } from '@coachartie/shared';
+import { decideSpeakRoute, runSpeakGate, resolveAmbientMode, isReplyToBot } from '../services/speak-gate.js';
 import { publishMessage } from '../queues/publisher.js';
 import { telemetry } from '../services/telemetry.js';
 import {
@@ -500,6 +501,31 @@ async function isForumThread(message: Message): Promise<boolean> {
 }
 
 /**
+ * The cheap "should I speak?" model. Same fallback chain the repo uses for every cheap
+ * background call (memory tagging, observation, user scores), with PROACTIVE_JUDGMENT_MODEL
+ * as the specific override — no model id is introduced here.
+ */
+function judgmentModel(): string {
+  return (
+    process.env.PROACTIVE_JUDGMENT_MODEL ||
+    process.env.BACKGROUND_MODEL ||
+    process.env.FAST_MODEL ||
+    'google/gemini-2.0-flash-001'
+  );
+}
+
+// Per-1K-token rates (input, output) for the judgment row in model_usage_stats. Mirrors the
+// capabilities MODEL_PRICING for the cheap models; an unknown model is booked high, not free.
+const JUDGMENT_PRICING: Record<string, [number, number]> = {
+  'google/gemini-2.0-flash-001': [0.0001, 0.0004],
+  'google/gemini-2.0-flash': [0.0001, 0.0004],
+  'google/gemini-2.5-flash': [0.0003, 0.0025],
+  'openai/gpt-4o-mini': [0.00015, 0.0006],
+  'anthropic/claude-haiku-4.5': [0.001, 0.005],
+};
+const UNKNOWN_JUDGMENT_PRICING: [number, number] = [0.005, 0.025];
+
+/**
  * Use LLM to judge if Artie should proactively answer a question
  * Based on the guild context and message content
  */
@@ -604,7 +630,14 @@ JSON response:`;
       return false;
     }
 
-    const openRouterResponse = await fetch('https://router.tools.ejfox.com/v1/chat/completions', {
+    // Same base-URL convention as every other call site (was hardcoded to a separate router;
+    // set PROACTIVE_JUDGMENT_BASE_URL=https://router.tools.ejfox.com/v1 to go back to it).
+    const judgmentBaseUrl = (
+      process.env.PROACTIVE_JUDGMENT_BASE_URL ||
+      process.env.OPENROUTER_BASE_URL ||
+      'https://openrouter.ai/api/v1'
+    ).replace(/\/+$/, '');
+    const openRouterResponse = await fetch(`${judgmentBaseUrl}/chat/completions`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -613,7 +646,7 @@ JSON response:`;
         'X-Title': 'Coach Artie Proactive Judgment',
       },
       body: JSON.stringify({
-        model: process.env.PROACTIVE_JUDGMENT_MODEL || 'google/gemini-2.0-flash-001',
+        model: judgmentModel(),
         messages: [{ role: 'user', content: prompt }],
         max_tokens: 200, // Small response - just need yes/no JSON
       }),
@@ -630,14 +663,14 @@ JSON response:`;
     const rawResponse = openRouterResult.choices?.[0]?.message?.content || '';
 
     // Track proactive judgment cost
-    const judgmentModel = process.env.PROACTIVE_JUDGMENT_MODEL || 'google/gemini-2.0-flash-001';
+    const judgmentModelId = judgmentModel();
     try {
       const usage = openRouterResult.usage;
       // Estimate tokens from char length if API doesn't return usage
       const promptTokens = usage?.prompt_tokens || estimateTokens(prompt);
       const completionTokens = usage?.completion_tokens || estimateTokens(rawResponse);
-      // Gemini Flash pricing: ~$0.0001/1K input, $0.0004/1K output
-      const estimatedCost = (promptTokens / 1000) * 0.0001 + (completionTokens / 1000) * 0.0004;
+      const [inRate, outRate] = JUDGMENT_PRICING[judgmentModelId] ?? UNKNOWN_JUDGMENT_PRICING;
+      const estimatedCost = (promptTokens / 1000) * inRate + (completionTokens / 1000) * outRate;
       const db = getSyncDb();
       db.run(
         `INSERT INTO model_usage_stats (
@@ -647,13 +680,13 @@ JSON response:`;
           total_tokens, estimated_cost, step_type
         ) VALUES (?, ?, ?, ?, ?, ?, 0, 0, '', 1, ?, ?, ?, ?, ?)`,
         [
-          judgmentModel, message.author.id, message.id,
+          judgmentModelId, message.author.id, message.id,
           prompt.length, rawResponse.length, 0,
           promptTokens, completionTokens, promptTokens + completionTokens,
           estimatedCost, 'proactive_judgment',
         ]
       );
-      logger.info(`📊 Proactive judgment cost: ${judgmentModel} - ${promptTokens + completionTokens} tokens - $${estimatedCost.toFixed(6)}`);
+      logger.info(`📊 Proactive judgment cost: ${judgmentModelId} - ${promptTokens + completionTokens} tokens - $${estimatedCost.toFixed(6)}`);
     } catch (costError) {
       logger.warn(`📊 Failed to record proactive judgment cost:`, costError);
     }
@@ -1279,8 +1312,12 @@ export function setupMessageHandler(client: Client) {
       !message.mentions.everyone && // Exclude @everyone and @here
       !message.content.includes(`<@&`); // Exclude role mentions (format: <@&ROLE_ID>)
 
+    // A Discord reply to one of Artie's messages addresses him even without a ping (#88).
+    const repliedToBot = !isDirectBotMention && (await isReplyToBot(message, client.user!.id));
+
     const responseConditions = {
       botMentioned: isDirectBotMention,
+      repliedToBot,
       isDM: message.channel.isDMBased(),
       isRobotChannel: isRobotChannelName(message.channel),
       isForumThread: isForum,
@@ -1332,6 +1369,7 @@ export function setupMessageHandler(client: Client) {
       guildConfig.context &&
       responseConditions.isRobotChannel && // HARD GATE: proactive answering only in robot channels — also avoids burning an LLM judgment call anywhere else
       !responseConditions.botMentioned && // Don't need proactive check if already mentioned
+      !responseConditions.repliedToBot &&
       !responseConditions.isDM &&
       isQuestion
     ) {
@@ -1397,7 +1435,8 @@ export function setupMessageHandler(client: Client) {
     // Determine response mode: active response vs passive observation
     // In forums, only respond when mentioned (too noisy otherwise)
     // In robot channels, skip replies to other users (not the bot) - they're having their own conversation
-    const isReplyToOtherUser = message.reference && !responseConditions.botMentioned;
+    const isReplyToOtherUser =
+      message.reference && !responseConditions.botMentioned && !responseConditions.repliedToBot;
 
     if (responseConditions.isRobotChannel && isReplyToOtherUser) {
       logger.info(`🚫 Robot channel: skipping reply to other user [${shortId}]`);
@@ -1415,7 +1454,12 @@ export function setupMessageHandler(client: Client) {
     // Throttle respondToAll personas (e.g. Judge Artie) so they don't reply to every single
     // message and burn an LLM call each time. Mentions still bypass this. Skip trivial banter
     // and enforce a per-channel cooldown.
-    if (isRespondToAllChannel && !responseConditions.botMentioned && channelPersona) {
+    if (
+      isRespondToAllChannel &&
+      !responseConditions.botMentioned &&
+      !responseConditions.repliedToBot &&
+      channelPersona
+    ) {
       const minWords = channelPersona.respondToAllMinWords ?? 2;
       const cooldownSeconds =
         channelPersona.respondToAllCooldownSeconds ?? RESPOND_TO_ALL_COOLDOWN_SECONDS;
@@ -1481,9 +1525,10 @@ export function setupMessageHandler(client: Client) {
     const dmPolicy = responseConditions.isDM ? getDMPolicy('discord') : null;
     const isDMAllowed = isDMFromAuthorizedUser || (responseConditions.isDM && dmPolicy?.policy === 'open');
 
-    // Explicit triggers: the user deliberately addressed the bot — always respond,
-    // regardless of channel whitelist or budget.
-    const explicitlyAddressed = responseConditions.botMentioned || isDMAllowed;
+    // Explicit triggers: the user deliberately addressed the bot (@mention, reply, DM) —
+    // always respond, regardless of channel whitelist or budget.
+    const explicitlyAddressed =
+      responseConditions.botMentioned || responseConditions.repliedToBot || isDMAllowed;
 
     // Ambient triggers: the bot decided to speak up on its own (robot channel, proactive
     // judgment, or a respondToAll persona). These MUST respect the channel whitelist
@@ -1521,7 +1566,32 @@ export function setupMessageHandler(client: Client) {
       );
     }
 
-    const shouldRespond = strikeJustLifted || explicitlyAddressed || (ambientAllowed && !ambientBudgetBlocked);
+    // SPEAK GATE (#88/#89, services/speak-gate.ts): the persona model runs only when Artie was
+    // addressed. Anything the routing above would answer unprompted — a proactive answer, a
+    // respondToAll persona, the strike-lift bit — needs a YES from the cheap judgment first
+    // (the proactive path already got one), and a judgment error means silence.
+    const ambientCandidate = strikeJustLifted || (ambientAllowed && !ambientBudgetBlocked);
+    const speakRoute = decideSpeakRoute({
+      botMentioned: responseConditions.botMentioned,
+      repliedToBot: responseConditions.repliedToBot,
+      isDMAllowed,
+      ambientCandidate,
+      gateAlreadyPassed: responseConditions.isProactiveAnswer,
+      ambientMode: resolveAmbientMode(guildConfig),
+    });
+    let shouldRespond =
+      speakRoute.route === 'addressed' || speakRoute.route === 'ambient-approved';
+    if (speakRoute.route === 'gate') {
+      const gateContext = channelPersona?.systemPrompt || guildConfig?.context || '';
+      shouldRespond = await runSpeakGate(() =>
+        shouldProactivelyAnswer(message, gateContext, correlationId)
+      );
+      logger.info(
+        `🤐 Speak gate (cheap judgment) → ${shouldRespond ? 'SPEAK' : 'stay quiet'} [${shortId}]`
+      );
+    } else if (speakRoute.route === 'silent' && ambientCandidate) {
+      logger.info(`🤐 Unprompted reply suppressed — ${speakRoute.reason} [${shortId}]`);
+    }
 
     // Skip bare @mention pings with no text and no attachments. Stripping the mention leaves
     // an empty message, which 400s at the capabilities API ("Message is required") and wastes
@@ -1599,7 +1669,9 @@ export function setupMessageHandler(client: Client) {
         // ACTIVE RESPONSE: Bot will generate and send a response
         const triggerType = responseConditions.botMentioned
           ? 'mention'
-          : responseConditions.isDM
+          : responseConditions.repliedToBot
+            ? 'reply'
+            : responseConditions.isDM
             ? 'dm'
             : responseConditions.isProactiveAnswer
               ? 'proactive_answer'
