@@ -46,6 +46,44 @@ Your pairing code is: **{CODE}** (expires in {EXPIRY})
 Ask my owner to approve you with: \`pairing approve {CODE}\``;
 
 /**
+ * Every DM access decision, as one structured log line (EJ, 2026-09-29: only people he
+ * verifies may DM Artie, and it must be thoroughly logged + on his dashboards).
+ * Lands in Loki as {service="coachartie"} with a `dmGate` field — the Coach Artie Command
+ * Center "DM Gate" row queries `| json | dmGate != ""`. Blocked attempts log at warn so they
+ * also reach pm2 stdout (console level is warn in prod).
+ */
+export type DMGateDecision =
+  | 'owner'
+  | 'allowed'
+  | 'open'
+  | 'blocked_pairing'
+  | 'blocked_closed'
+  | 'blocked_command'
+  | 'approved'
+  | 'denied'
+  | 'revoked'
+  | 'added'
+  | 'policy_changed';
+
+export function logDMGate(
+  decision: DMGateDecision,
+  fields: {
+    platform?: string;
+    userId?: string;
+    username?: string | null;
+    by?: string;
+    code?: string;
+    detail?: string;
+  }
+): void {
+  const who = fields.username ? `${fields.username} (${fields.userId})` : fields.userId || '';
+  const line = `🔐 DM gate: ${decision} ${who}${fields.detail ? ` — ${fields.detail}` : ''}`;
+  const meta = { dmGate: decision, platform: fields.platform || 'discord', ...fields };
+  if (decision.startsWith('blocked')) logger.warn(line, meta);
+  else logger.info(line, meta);
+}
+
+/**
  * Generate a random 6-digit pairing code
  */
 function generateCode(): string {
@@ -175,7 +213,7 @@ class DMPairingService {
       [platform, policy, policy]
     );
 
-    logger.info(`DM policy for ${platform} set to: ${policy}`);
+    logDMGate('policy_changed', { platform, detail: `policy set to ${policy}` });
   }
 
   /**
@@ -316,7 +354,14 @@ class DMPairingService {
       [pending.platform, pending.user_id, pending.username, approvedBy, reason]
     );
 
-    logger.info(`Approved pairing code ${code} for ${pending.platform}:${pending.user_id} by ${approvedBy}`);
+    logDMGate('approved', {
+      platform: pending.platform,
+      userId: pending.user_id,
+      username: pending.username,
+      by: approvedBy,
+      code,
+      detail: reason,
+    });
 
     return {
       success: true,
@@ -342,7 +387,7 @@ class DMPairingService {
       return { success: false, error: 'Pairing code not found or already processed' };
     }
 
-    logger.info(`Denied pairing code ${code} by ${deniedBy}`);
+    logDMGate('denied', { by: deniedBy, code });
     return { success: true };
   }
 
@@ -363,7 +408,7 @@ class DMPairingService {
       return { success: false, error: 'User not found on allowlist' };
     }
 
-    logger.info(`Revoked DM access for ${platform}:${userId} by ${revokedBy}`);
+    logDMGate('revoked', { platform, userId, by: revokedBy });
     return { success: true };
   }
 
@@ -475,7 +520,7 @@ class DMPairingService {
       );
     }
 
-    logger.info(`Added ${platform}:${userId} to DM allowlist by ${addedBy}`);
+    logDMGate('added', { platform, userId, username, by: addedBy, detail: reason });
   }
 }
 

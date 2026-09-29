@@ -9,7 +9,7 @@ import {
   ModalSubmitInteraction,
   PermissionsBitField,
 } from 'discord.js';
-import { logger } from '@coachartie/shared';
+import { logger, canDMForTasks, logDMGate } from '@coachartie/shared';
 import { statusCommand } from '../commands/status.js';
 import { botStatusCommand } from '../commands/bot-status.js';
 import { modelsCommand } from '../commands/models.js';
@@ -84,6 +84,28 @@ const commands = new Map([
 
 export function setupInteractionHandler(client: Client) {
   client.on(Events.InteractionCreate, async (interaction: Interaction) => {
+    // DM gate: outside a guild, only EJ and people he has verified (pairing allowlist) may use
+    // commands/buttons — the same rule as DM messages (message-handler.ts).
+    if (!interaction.guildId && !canDMForTasks(interaction.user.id)) {
+      logDMGate('blocked_command', {
+        userId: interaction.user.id,
+        username: interaction.user.username,
+        detail: interaction.isChatInputCommand()
+          ? `/${interaction.commandName}`
+          : `interaction type ${interaction.type}`,
+      });
+      if (interaction.isRepliable()) {
+        await interaction
+          .reply({
+            content:
+              "I only chat in DMs with people I've been introduced to. Send me a message to get a pairing code.",
+            ephemeral: true,
+          })
+          .catch(() => {});
+      }
+      return;
+    }
+
     // Handle different types of interactions
     if (interaction.isChatInputCommand()) {
       await handleSlashCommand(interaction);

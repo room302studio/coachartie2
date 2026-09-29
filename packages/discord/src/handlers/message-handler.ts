@@ -29,7 +29,15 @@ import {
   reportGuildBudgetSpent,
 } from '@coachartie/shared';
 import { estimateTokens } from '@coachartie/shared';
-import { logger, canDMForTasks, getDMPolicy, dmPairingService, getSyncDb } from '@coachartie/shared';
+import {
+  logger,
+  canDMForTasks,
+  getDMPolicy,
+  dmPairingService,
+  getSyncDb,
+  isOwner,
+  logDMGate,
+} from '@coachartie/shared';
 import {
   BLOCKED_USER_IDS,
   isBlockedUser,
@@ -1518,16 +1526,24 @@ export function setupMessageHandler(client: Client) {
     // For DMs, check authorization via pairing system
     // OpenClaw-compatible: unknown users get pairing code
     const isDMFromAuthorizedUser = responseConditions.isDM && canDMForTasks(message.author.id);
+    const dmWho = { userId: message.author.id, username: message.author.username };
+
+    if (isDMFromAuthorizedUser) {
+      logDMGate(isOwner(message.author.id) ? 'owner' : 'allowed', { ...dmWho, detail: `[${shortId}]` });
+    }
 
     if (responseConditions.isDM && !isDMFromAuthorizedUser) {
       const policy = getDMPolicy('discord');
 
       if (policy.policy === 'open') {
         // Open mode: treat as authorized
-        logger.info(`🔓 DM from ${message.author.id} - open policy [${shortId}]`);
+        logDMGate('open', { ...dmWho, detail: `open policy [${shortId}]` });
       } else if (policy.policy === 'pairing') {
         // Pairing mode: send pairing code
-        logger.info(`🔐 DM from unknown user ${message.author.id} - sending pairing code [${shortId}]`);
+        logDMGate('blocked_pairing', {
+          ...dmWho,
+          detail: `unverified, sent pairing code: "${message.content.slice(0, 80)}" [${shortId}]`,
+        });
 
         try {
           const { code, expiresAt, isNew } = dmPairingService.getOrCreatePairingCode(
@@ -1549,7 +1565,7 @@ export function setupMessageHandler(client: Client) {
         return; // Don't process the message further
       } else {
         // Closed mode: silent ignore (current behavior)
-        logger.info(`🚫 DM from non-whitelisted user ${message.author.id} - closed policy [${shortId}]`);
+        logDMGate('blocked_closed', { ...dmWho, detail: `closed policy, ignored [${shortId}]` });
         return;
       }
     }
