@@ -335,6 +335,7 @@ class OpenRouterService {
       traceId?: string | null;
       guildId?: string;
       maxTokens?: number; // Dynamic token limit from preflight analysis
+      plugins?: unknown[]; // OpenRouter plugins, e.g. [{ id: 'auto-router', cost_tier: 'low' }]
       stepType?: string; // Cost attribution: 'response' | 'observational_learning' | 'capability' | 'planning'
     }
   ): Promise<string> {
@@ -437,12 +438,18 @@ class OpenRouterService {
             : `🗄️ Prompt cache: not applied — ${cache.reason}`
         );
 
+        // OpenRouter-only extras (auto-router plugins) aren't in the OpenAI SDK's types.
+        const extraBody: Record<string, unknown> = options?.plugins ? { plugins: options.plugins } : {};
         const completion = await this.client.chat.completions.create({
           model,
           messages: cache.messages as never,
           max_tokens: maxTokens,
           temperature,
+          ...extraBody,
         });
+        // openrouter/auto picks the model; bill what was actually served, or the unknown-model
+        // fallback ($15/$75) would trip the daily cap early. Other models bill as requested.
+        const billedModel = model === 'openrouter/auto' && completion.model ? completion.model : model;
 
         const choice = completion.choices?.[0];
         const response = choice?.message?.content;
@@ -519,13 +526,13 @@ class OpenRouterService {
         }
 
         // Calculate cost and record usage
-        const estimatedCost = UsageTracker.calculateCost(model, usage);
+        const estimatedCost = UsageTracker.calculateCost(billedModel, usage);
 
         // Track costs in real-time cost monitor
         const { warnings } = costMonitor.trackCall(
           usage.prompt_tokens,
           usage.completion_tokens,
-          model,
+          billedModel,
           usage.cached_tokens ?? 0
         );
 
@@ -537,7 +544,7 @@ class OpenRouterService {
         // Record usage statistics (don't await to avoid blocking)
         {
           UsageTracker.recordUsage({
-            model_name: model,
+            model_name: billedModel,
             user_id: userId,
             message_id: messageId ?? '',
             input_length: cache.messages.reduce(
@@ -735,6 +742,7 @@ class OpenRouterService {
       traceId?: string | null;
       guildId?: string;
       maxTokens?: number; // Dynamic token limit from preflight analysis
+      plugins?: unknown[]; // OpenRouter plugins, e.g. [{ id: 'auto-router', cost_tier: 'low' }]
       stepType?: string; // Cost attribution: 'response' | 'observational_learning' | 'capability' | 'planning'
     }
   ): Promise<string> {
@@ -815,6 +823,7 @@ class OpenRouterService {
             : `🗄️ Prompt cache: not applied — ${cache.reason}`
         );
 
+        const extraBody: Record<string, unknown> = options?.plugins ? { plugins: options.plugins } : {};
         const completion = await this.client.chat.completions.create({
           model,
           messages: cache.messages as never,
@@ -822,7 +831,9 @@ class OpenRouterService {
           temperature,
           stream: true, // Enable streaming
           stream_options: { include_usage: true }, // Request usage data in stream
+          ...extraBody,
         });
+        let servedModel: string | undefined; // openrouter/auto reports its pick on each chunk
 
         let fullResponse = '';
         let lastSentLength = 0;
@@ -830,6 +841,7 @@ class OpenRouterService {
 
         // Process streaming chunks - send new paragraphs as they complete
         for await (const chunk of completion) {
+          if (chunk.model) servedModel = chunk.model;
           const delta = chunk.choices[0]?.delta?.content;
           if (delta) {
             fullResponse += delta;
@@ -890,13 +902,14 @@ class OpenRouterService {
         }
 
         // Calculate cost and track usage
-        const estimatedCost = UsageTracker.calculateCost(model, usage);
+        const billedModel = model === 'openrouter/auto' && servedModel ? servedModel : model;
+        const estimatedCost = UsageTracker.calculateCost(billedModel, usage);
 
         // Track costs in real-time cost monitor
         const { warnings: streamWarnings } = costMonitor.trackCall(
           usage.prompt_tokens,
           usage.completion_tokens,
-          model,
+          billedModel,
           usage.cached_tokens ?? 0
         );
 
@@ -908,7 +921,7 @@ class OpenRouterService {
         // Record usage statistics (don't await to avoid blocking)
         {
           UsageTracker.recordUsage({
-            model_name: model,
+            model_name: billedModel,
             user_id: userId,
             message_id: messageId ?? '',
             input_length: cache.messages.reduce(

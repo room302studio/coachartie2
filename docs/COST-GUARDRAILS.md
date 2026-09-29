@@ -157,3 +157,21 @@ It's priced in `usage-tracker.ts` MODEL_PRICING — required: unknown models bil
 ($15/$75), which would have tripped the $3 cap after ~$0.80 of real spend. Its cache minimum
 falls back to the conservative 4096-token default in `prompt-cache.ts` (the static prefix is
 ~7.2k tokens, so it still caches).
+
+### Final third → OpenRouter auto-router (supersedes "never swap models", same day)
+
+EJ: in the final third of either tank, hand model choice to OpenRouter's auto-router so no
+hardcoded "cheap model" needs updating. `brownoutRoute()`:
+
+| Condition | Route |
+|---|---|
+| daily spend < 67% of `DAILY_BUDGET_USD` and balance runway normal | persona model (`SMART_MODEL`) |
+| daily spend ≥ `BROWNOUT_DAILY_AUTO_FRACTION` (0.67) **or** runway lean/critical | `openrouter/auto` + `plugins: [{id:'auto-router', cost_tier: BROWNOUT_AUTO_COST_TIER ('low')}]` |
+| daily spend ≥ 100% | budget mute until ET midnight |
+
+Length tapering (lean 60% / critical 85%, brevity note after the cache breakpoint) applies on top.
+`BROWNOUT_AUTO_ALLOWED_MODELS` (comma wildcards, e.g. `anthropic/*,google/*`) sets a quality
+floor; unset = the auto-router's own pool. "Total tank" = balance runway (Artie can't know what
+a full OpenRouter balance was). Auto-routed calls are billed at the **served** model
+(`completion.model` / the stream chunks' `model`), not `openrouter/auto` — otherwise the
+unknown-model fallback ($15/$75) would trip the daily cap early. Docs: openrouter.ai/docs/guides/routing/routers/auto-router

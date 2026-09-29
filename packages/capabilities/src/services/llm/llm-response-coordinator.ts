@@ -5,7 +5,7 @@ import { promptManager } from './prompt-manager.js';
 import { contextAlchemy } from './context-alchemy.js';
 import { modelAwarePrompter } from '../../utils/model-aware-prompter.js';
 import { preflightAnalyzer } from './preflight-analyzer.js';
-import { getBrownoutMode, applyBrevityNote, brownoutMaxTokens, brownoutModel } from './brownout.js';
+import { getBrownoutMode, applyBrevityNote, brownoutMaxTokens, brownoutRoute } from './brownout.js';
 import { experimentManager } from '../context-alchemy/index.js';
 import { errorTracker, ERROR_TYPES } from '../observability/error-tracker.js';
 import { CapabilityResult, OrchestrationContext } from '../../types/orchestration-types.js';
@@ -108,10 +108,12 @@ export class LLMResponseCoordinator {
       // 'normal' mode leaves the complexity route above completely untouched.
       // The mode is the more conservative of credit runway and today's spend vs
       // DAILY_BUDGET_USD — see brownout.ts.
-      // Taper is by length, not model (see brownoutModel) — his voice stays his voice.
+      // His persona model until the final third of either tank, then OpenRouter's auto-router
+      // at a low cost tier (see brownoutRoute). Length tapering applies throughout.
       const brownout = await getBrownoutMode();
       const maxTokens = brownoutMaxTokens(brownout.mode, preflight.responseTokens);
-      smartModel = brownoutModel(brownout, smartModel);
+      const route = brownoutRoute(brownout, smartModel);
+      smartModel = route.model;
       if (brownout.mode !== 'normal') {
         const daily =
           typeof brownout.dailySpendFraction === 'number'
@@ -148,6 +150,7 @@ export class LLMResponseCoordinator {
         traceId: message.context?.traceId,
         guildId: message.context?.guildId,
         maxTokens,
+        plugins: route.plugins,
       };
 
       const generated = onPartialResponse

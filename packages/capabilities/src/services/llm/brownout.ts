@@ -232,11 +232,43 @@ export function brevityNoteFor(mode: BrownoutMode): string | null {
  * keeps him answering instead of failing. Daily-budget pressure never swaps models — the
  * budget mute handles the end of the day.
  */
-export function brownoutModel(status: BrownoutStatus, persona: string): string {
-  if (status.mode === 'critical' && status.runwayMode === 'critical') {
-    return process.env.BROWNOUT_CRITICAL_MODEL || 'anthropic/claude-haiku-4.5';
-  }
-  return persona;
+export interface BrownoutRoute {
+  model: string;
+  /** OpenRouter plugins for the request (the auto-router's cost tier lives here). */
+  plugins?: unknown[];
+}
+
+/**
+ * The final third of either tank goes to OpenRouter's auto-router at a low cost tier
+ * (EJ, 2026-09-29: "if we're in our final 33% of tokens, daily or total, revert to
+ * openrouter auto-routing" — it tracks the cheapest capable models, so nobody has to keep a
+ * hardcoded "cheap model" current). Daily: spend >= BROWNOUT_DAILY_AUTO_FRACTION (0.67) of
+ * DAILY_BUDGET_USD. Total: the balance runway is lean or critical — Artie can't know what a
+ * "full" OpenRouter tank was, so runway (balance ÷ measured burn, < BROWNOUT_LEAN_HOURS) is
+ * the proxy. Before that, his persona model answers — length tapering still applies.
+ * BROWNOUT_AUTO_COST_TIER (low) and BROWNOUT_AUTO_ALLOWED_MODELS (comma-separated wildcards,
+ * e.g. "anthropic/*,google/*"; unset = auto-router's own pool) keep a quality floor.
+ */
+export function brownoutRoute(status: BrownoutStatus, persona: string): BrownoutRoute {
+  const fraction = status.dailySpendFraction;
+  const dailyLow =
+    typeof fraction === 'number' && fraction >= envNumber('BROWNOUT_DAILY_AUTO_FRACTION', 0.67);
+  const totalLow = status.runwayMode === 'lean' || status.runwayMode === 'critical';
+  if (!dailyLow && !totalLow) return { model: persona };
+  const allowed = (process.env.BROWNOUT_AUTO_ALLOWED_MODELS || '')
+    .split(',')
+    .map((m) => m.trim())
+    .filter(Boolean);
+  return {
+    model: 'openrouter/auto',
+    plugins: [
+      {
+        id: 'auto-router',
+        cost_tier: process.env.BROWNOUT_AUTO_COST_TIER || 'low',
+        ...(allowed.length ? { allowed_models: allowed } : {}),
+      },
+    ],
+  };
 }
 
 /** max_tokens cap per mode (BROWNOUT_LEAN_MAX_TOKENS 500, BROWNOUT_CRITICAL_MAX_TOKENS 250). */

@@ -7,7 +7,7 @@ import {
   brownoutDriver,
   readDailySpendFraction,
   brownoutMaxTokens,
-  brownoutModel,
+  brownoutRoute,
   applyBrevityNote,
   brevityNoteFor,
   type BrownoutMode,
@@ -163,24 +163,40 @@ describe('brevity note', () => {
   });
 });
 
-describe('brownoutModel — taper by length, never swap his voice', () => {
+describe('brownoutRoute — persona model until the final third, then OpenRouter auto', () => {
   const persona = 'anthropic/claude-opus-5.5';
-  const st = (mode: BrownoutMode, runway: BrownoutMode, daily: BrownoutMode) =>
-    ({ mode, runwayMode: runway, dailyMode: daily, runwayHours: null } as any);
-
-  it('keeps the persona model in normal and lean, whatever drove it', () => {
-    expect(brownoutModel(st('normal', 'normal', 'normal'), persona)).toBe(persona);
-    expect(brownoutModel(st('lean', 'normal', 'lean'), persona)).toBe(persona);
-    expect(brownoutModel(st('lean', 'lean', 'normal'), persona)).toBe(persona);
+  const st = (runway: BrownoutMode, fraction: number | null) =>
+    ({ mode: 'normal', runwayMode: runway, dailyMode: 'normal', runwayHours: null, dailySpendFraction: fraction } as any);
+  afterEach(() => {
+    delete process.env.BROWNOUT_DAILY_AUTO_FRACTION;
+    delete process.env.BROWNOUT_AUTO_COST_TIER;
+    delete process.env.BROWNOUT_AUTO_ALLOWED_MODELS;
   });
 
-  it('keeps the persona model when critical comes from the daily budget', () => {
-    expect(brownoutModel(st('critical', 'normal', 'critical'), persona)).toBe(persona);
+  it('keeps the persona model (no plugins) before the final third', () => {
+    expect(brownoutRoute(st('normal', 0), persona)).toEqual({ model: persona });
+    expect(brownoutRoute(st('normal', 0.66), persona)).toEqual({ model: persona });
+    expect(brownoutRoute(st('normal', null), persona)).toEqual({ model: persona });
   });
 
-  it('falls back to the cheap model only when the balance runway is critical', () => {
-    delete process.env.BROWNOUT_CRITICAL_MODEL;
-    expect(brownoutModel(st('critical', 'critical', 'normal'), persona)).toBe('anthropic/claude-haiku-4.5');
-    expect(brownoutModel(st('critical', 'critical', 'critical'), persona)).toBe('anthropic/claude-haiku-4.5');
+  it('routes to openrouter/auto at a low cost tier in the final third of the DAILY tank', () => {
+    const r = brownoutRoute(st('normal', 0.67), persona);
+    expect(r.model).toBe('openrouter/auto');
+    expect(r.plugins).toEqual([{ id: 'auto-router', cost_tier: 'low' }]);
+  });
+
+  it('routes to openrouter/auto when the TOTAL (balance runway) tank is low', () => {
+    expect(brownoutRoute(st('lean', 0.1), persona).model).toBe('openrouter/auto');
+    expect(brownoutRoute(st('critical', null), persona).model).toBe('openrouter/auto');
+  });
+
+  it('honours the cost tier, allowed-models floor, and threshold env vars', () => {
+    process.env.BROWNOUT_AUTO_COST_TIER = 'medium';
+    process.env.BROWNOUT_AUTO_ALLOWED_MODELS = 'anthropic/*, google/*';
+    process.env.BROWNOUT_DAILY_AUTO_FRACTION = '0.5';
+    expect(brownoutRoute(st('normal', 0.55), persona)).toEqual({
+      model: 'openrouter/auto',
+      plugins: [{ id: 'auto-router', cost_tier: 'medium', allowed_models: ['anthropic/*', 'google/*'] }],
+    });
   });
 });
