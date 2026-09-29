@@ -71,6 +71,9 @@ const MODEL_PRICING: Record<string, { input: number; output: number }> = {
   'anthropic/claude-haiku-4.5': { input: 0.001, output: 0.005 },
   'anthropic/claude-sonnet-5': { input: 0.002, output: 0.01 },
   'anthropic/claude-opus-4.8': { input: 0.005, output: 0.025 },
+  // Persona model from 2026-09-29. Its cache reads list at $0.20/M (0.05x), cheaper than the
+  // 0.1x calculateCost assumes, so cached calls read slightly high — the safe direction.
+  'anthropic/claude-opus-5.5': { input: 0.004, output: 0.02 },
   // OpenAI
   'openai/gpt-3.5-turbo': { input: 0.0005, output: 0.0015 },
   'openai/gpt-4': { input: 0.03, output: 0.06 },

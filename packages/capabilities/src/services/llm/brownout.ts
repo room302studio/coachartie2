@@ -224,6 +224,21 @@ export function brevityNoteFor(mode: BrownoutMode): string | null {
   return mode === 'normal' ? null : BREVITY_NOTES[mode];
 }
 
+/**
+ * Which model answers under brownout. EJ's call (2026-09-29): Artie's voice IS the persona
+ * model — swapping to a cheaper one "loses his creativity and flavor". So the taper is by
+ * LENGTH only (max_tokens + brevity note) and the model never changes, with one exception:
+ * when the OpenRouter balance itself is nearly gone (runway-driven critical), a cheap model
+ * keeps him answering instead of failing. Daily-budget pressure never swaps models — the
+ * budget mute handles the end of the day.
+ */
+export function brownoutModel(status: BrownoutStatus, persona: string): string {
+  if (status.mode === 'critical' && status.runwayMode === 'critical') {
+    return process.env.BROWNOUT_CRITICAL_MODEL || 'anthropic/claude-haiku-4.5';
+  }
+  return persona;
+}
+
 /** max_tokens cap per mode (BROWNOUT_LEAN_MAX_TOKENS 500, BROWNOUT_CRITICAL_MAX_TOKENS 250). */
 export function brownoutMaxTokens(mode: BrownoutMode, requested: number): number {
   if (mode === 'lean') return Math.min(requested, envNumber('BROWNOUT_LEAN_MAX_TOKENS', 500));

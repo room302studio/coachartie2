@@ -138,3 +138,22 @@ WHERE timestamp >= <ET midnight in UTC> AND timestamp < <next ET midnight in UTC
 - **Alerts:** revert the commit to restore Discord DMs. Not recommended.
 - **Observation:** set `OBSERVATIONAL_LEARNING_ENABLED=true`.
 - **Caching fixes:** revert the individual commits. The `cache_write_tokens` column is additive and harmless to leave.
+
+## Voice: taper by length, never by model (2026-09-29)
+
+EJ's call: Artie's persona model *is* his voice — cheaper models lose his creativity and flavor.
+So brownout (lean/critical, from either signal) shortens replies (max_tokens + brevity note) but
+keeps the persona model. The single exception: when the OpenRouter **balance** runway itself is
+critical, `brownoutModel()` falls back to `BROWNOUT_CRITICAL_MODEL` (default Haiku 4.5) so he keeps
+answering instead of failing. Daily-budget pressure never swaps models; the budget mute ends the day.
+
+**Persona model: `anthropic/claude-opus-5.5`** — newest flagship and cheaper than opus-4.8
+($4/$20 per M vs $5/$25; cache reads $0.20/M vs $0.50/M, per OpenRouter's live /api/v1/models).
+On deploy set in `.env.production`:
+
+    SMART_MODEL=anthropic/claude-opus-5.5
+
+It's priced in `usage-tracker.ts` MODEL_PRICING — required: unknown models bill at top-tier rates
+($15/$75), which would have tripped the $3 cap after ~$0.80 of real spend. Its cache minimum
+falls back to the conservative 4096-token default in `prompt-cache.ts` (the static prefix is
+~7.2k tokens, so it still caches).

@@ -7,6 +7,7 @@ import {
   brownoutDriver,
   readDailySpendFraction,
   brownoutMaxTokens,
+  brownoutModel,
   applyBrevityNote,
   brevityNoteFor,
   type BrownoutMode,
@@ -159,5 +160,27 @@ describe('brevity note', () => {
       expect(note).toMatch(/short/);
       expect(note).toMatch(/\[SILENT\]/); // restraint is explicitly preserved
     }
+  });
+});
+
+describe('brownoutModel — taper by length, never swap his voice', () => {
+  const persona = 'anthropic/claude-opus-5.5';
+  const st = (mode: BrownoutMode, runway: BrownoutMode, daily: BrownoutMode) =>
+    ({ mode, runwayMode: runway, dailyMode: daily, runwayHours: null } as any);
+
+  it('keeps the persona model in normal and lean, whatever drove it', () => {
+    expect(brownoutModel(st('normal', 'normal', 'normal'), persona)).toBe(persona);
+    expect(brownoutModel(st('lean', 'normal', 'lean'), persona)).toBe(persona);
+    expect(brownoutModel(st('lean', 'lean', 'normal'), persona)).toBe(persona);
+  });
+
+  it('keeps the persona model when critical comes from the daily budget', () => {
+    expect(brownoutModel(st('critical', 'normal', 'critical'), persona)).toBe(persona);
+  });
+
+  it('falls back to the cheap model only when the balance runway is critical', () => {
+    delete process.env.BROWNOUT_CRITICAL_MODEL;
+    expect(brownoutModel(st('critical', 'critical', 'normal'), persona)).toBe('anthropic/claude-haiku-4.5');
+    expect(brownoutModel(st('critical', 'critical', 'critical'), persona)).toBe('anthropic/claude-haiku-4.5');
   });
 });

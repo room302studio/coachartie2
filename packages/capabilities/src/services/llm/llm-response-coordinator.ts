@@ -5,7 +5,7 @@ import { promptManager } from './prompt-manager.js';
 import { contextAlchemy } from './context-alchemy.js';
 import { modelAwarePrompter } from '../../utils/model-aware-prompter.js';
 import { preflightAnalyzer } from './preflight-analyzer.js';
-import { getBrownoutMode, applyBrevityNote, brownoutMaxTokens } from './brownout.js';
+import { getBrownoutMode, applyBrevityNote, brownoutMaxTokens, brownoutModel } from './brownout.js';
 import { experimentManager } from '../context-alchemy/index.js';
 import { errorTracker, ERROR_TYPES } from '../observability/error-tracker.js';
 import { CapabilityResult, OrchestrationContext } from '../../types/orchestration-types.js';
@@ -108,13 +108,10 @@ export class LLMResponseCoordinator {
       // 'normal' mode leaves the complexity route above completely untouched.
       // The mode is the more conservative of credit runway and today's spend vs
       // DAILY_BUDGET_USD — see brownout.ts.
+      // Taper is by length, not model (see brownoutModel) — his voice stays his voice.
       const brownout = await getBrownoutMode();
       const maxTokens = brownoutMaxTokens(brownout.mode, preflight.responseTokens);
-      if (brownout.mode === 'lean') {
-        smartModel = simpleChatModel;
-      } else if (brownout.mode === 'critical') {
-        smartModel = process.env.BROWNOUT_CRITICAL_MODEL || 'anthropic/claude-haiku-4.5';
-      }
+      smartModel = brownoutModel(brownout, smartModel);
       if (brownout.mode !== 'normal') {
         const daily =
           typeof brownout.dailySpendFraction === 'number'
