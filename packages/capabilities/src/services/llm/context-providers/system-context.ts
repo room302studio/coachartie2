@@ -32,15 +32,12 @@ export async function addCreditWarnings(sources: ContextSource[]): Promise<void>
         `💰 Balance $${balance.toFixed(2)} — out of credits, not injected (nothing to conserve; brownout handles model choice)`
       );
     } else if (typeof balance === 'number' && balance < CRITICAL_BALANCE) {
-      const content = `⚠️ Credits are critically low ($${balance.toFixed(2)} left). Prefer cheaper models (Haiku/Flash) for non-critical work until topped up.`;
-      sources.push({
-        name: 'credit_status',
-        priority: 95,
-        tokenWeight: estimateTokens(content),
-        content,
-        category: 'user_state',
-      });
-      logger.warn(`💰 Critical credit warning injected into context: $${balance.toFixed(2)}`);
+      // No longer injected. Anything about money in the prompt is something Artie can repeat
+      // to a channel, and credit talk is operator-only (anomalywatch). The brownout ladder
+      // already moves him to cheaper models on low runway, so the prompt note was redundant.
+      logger.warn(
+        `💰 Balance $${balance.toFixed(2)} below $${CRITICAL_BALANCE} critical floor — not injected (operator alert + brownout own this)`
+      );
     } else if (typeof balance === 'number') {
       // Not critical — keep it out of his head; log only for observability.
       logger.info(

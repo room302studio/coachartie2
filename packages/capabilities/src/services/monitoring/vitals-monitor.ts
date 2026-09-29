@@ -1,6 +1,6 @@
 import { promises as fs } from 'node:fs';
 import { join } from 'node:path';
-import { createQueue, logger } from '@coachartie/shared';
+import { logger, reportToAnomalywatch } from '@coachartie/shared';
 import { CreditMonitor } from './credit-monitor.js';
 
 /**
@@ -10,8 +10,8 @@ import { CreditMonitor } from './credit-monitor.js';
  * credits hit $0 silently; the warden-timeout feature never fired once and
  * nothing flagged it. The operator was learning about fevers from Discord
  * vibes. Every tick this greps the same log tails a human would have tailed,
- * logger.warn's a one-line summary (the vitals feed), and DMs the operator
- * when a threshold is breached. Deliberately dumb: no DB, no metrics pipeline.
+ * logger.warn's a one-line summary (the vitals feed), and alerts the operator
+ * via anomalywatch (never Discord) when a threshold is breached. Deliberately dumb: no DB, no metrics pipeline.
  */
 
 const SIGNALS = [
@@ -38,25 +38,6 @@ const LOG_PREFIXES = ['capabilities-out', 'discord-out'];
 function envNum(name: string, fallback: number): number {
   const n = Number(process.env[name]);
   return Number.isFinite(n) && n > 0 ? n : fallback;
-}
-
-// One queue for all operator DMs — createQueue opens a fresh redis connection
-// per call and nothing closes it, so hoist instead of leaking one per DM.
-let dmQueue: ReturnType<typeof createQueue> | null = null;
-
-async function sendOperatorDM(content: string, source: string): Promise<void> {
-  try {
-    const adminDiscordId = process.env.ADMIN_DISCORD_ID;
-    if (!adminDiscordId) {
-      logger.warn(`🩺 Vitals: no ADMIN_DISCORD_ID configured — dropping DM (${source})`);
-      return;
-    }
-    dmQueue ??= createQueue('coachartie-discord-outgoing');
-    await dmQueue.add('send-message', { userId: adminDiscordId, content, source });
-    logger.warn(`🩺 Vitals: sent operator DM (${source})`);
-  } catch (error) {
-    logger.error(`❌ Vitals: failed to send operator DM (${source}):`, error);
-  }
 }
 
 export class VitalsMonitor {
@@ -242,11 +223,11 @@ export class VitalsMonitor {
       return;
     }
     this.lastAlarmAt = now;
-    await sendOperatorDM(
-      `🚨 **Vitals alarm — I'm running a fever.**\n\n` +
-        breaches.map((b) => `• ${b}`).join('\n') +
-        `\n\nCheck \`pm2 logs coach-artie-capabilities coach-artie-discord\` on the VPS.`,
-      'vitals-monitor-alarm'
+    // Operator alert via anomalywatch — never a Discord DM. Also capped at one per ET day.
+    await reportToAnomalywatch(
+      'warning',
+      `Vitals alarm: ${breaches.join('; ')} — check pm2 logs coach-artie-capabilities coach-artie-discord`,
+      { kind: 'vitals-monitor-alarm' }
     );
   }
 }

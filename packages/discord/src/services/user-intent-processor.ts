@@ -7,7 +7,7 @@
  * - Provides consistent UX across all interaction types
  */
 
-import { logger, scrubBlockedUserMentions } from '@coachartie/shared';
+import { logger, scrubBlockedUserMentions, isOperatorOnlyError } from '@coachartie/shared';
 import { capabilitiesClient } from './capabilities-client.js';
 import {
   recordSelfSpin,
@@ -892,6 +892,13 @@ export async function processUserIntent(
           }
         }
 
+        // Billing / credits / budget / kill-switch failures are operator-only (they reach EJ
+        // via anomalywatch). Echoing them here is how credit trouble ended up in channels.
+        if (isOperatorOnlyError(error)) {
+          logger.warn(`🔇 Operator-only failure not echoed to ${intent.source} [${shortId}]`);
+          return;
+        }
+
         try {
           // ENHANCED: User-friendly error messages while staying transparent
           const userFriendlyError =
@@ -944,6 +951,10 @@ export async function processUserIntent(
     );
 
     try {
+      if (isOperatorOnlyError(error)) {
+        logger.warn(`🔇 Operator-only setup failure not echoed to ${intent.source} [${shortId}]`);
+        return;
+      }
       await intent.respond(
         `Failed to process your ${intent.source}: ${error instanceof Error ? error.message : String(error)}`
       );

@@ -1,4 +1,4 @@
-import { getSyncDb, createQueue, logger } from '@coachartie/shared';
+import { getSyncDb, createQueue, logger, reportToAnomalywatch } from '@coachartie/shared';
 import { costMonitor } from './cost-monitor.js';
 
 /**
@@ -236,7 +236,7 @@ class DistressMonitor {
   }
 
   /**
-   * Send distress alert to EJ via Discord DM and VPS alert system
+   * Send distress alert to the operator via anomalywatch
    */
   private async sendDistressAlert(signals: DistressSignals): Promise<void> {
     const reasons: string[] = [];
@@ -254,39 +254,14 @@ class DistressMonitor {
       reasons.push(`$${signals.burnRate.toFixed(2)}/hr burn rate`);
     }
 
-    const message = `**Artie needs help**\n${reasons.join('\n')}\n\nCheck: https://brain.coachartiebot.com`;
-
     logger.error(`🆘 DISTRESS ALERT: ${reasons.join(', ')}`);
 
-    // Send Discord DM to admin
-    try {
-      const adminDiscordId = process.env.ADMIN_DISCORD_ID;
-      if (adminDiscordId) {
-        const outgoingQueue = createQueue('coachartie-discord-outgoing');
-        await outgoingQueue.add('send-message', {
-          userId: adminDiscordId,
-          content: `🆘 ${message}`,
-          source: 'distress-monitor',
-        });
-        logger.info('🆘 Distress alert sent to Discord');
-      }
-    } catch (error) {
-      logger.error('Failed to send Discord distress alert:', error);
-    }
-
-    // Send to VPS alert system
-    try {
-      const vpsAlertUrl =
-        process.env.VPS_ALERT_WEBHOOK || 'http://localhost:7777/webhook/artie-distress';
-      await fetch(vpsAlertUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Host: 'n8n.tools.ejfox.com' },
-        body: JSON.stringify({ signals, reasons }),
-      });
-      logger.info('🆘 Distress alert sent to VPS');
-    } catch (error) {
-      logger.debug('Failed to send VPS distress alert (non-critical):', error);
-    }
+    // Operator alert via anomalywatch only — never a Discord DM. (This used to DM the admin
+    // AND post to an n8n webhook; 87% of distress DMs ever sent were false burn-rate trips.)
+    // reportToAnomalywatch rate-limits to one distress alert per ET day.
+    await reportToAnomalywatch('warning', `Artie distress: ${reasons.join('; ')}`, {
+      kind: 'distress-monitor',
+    });
 
     // Record the distress event
     try {
@@ -369,9 +344,9 @@ class DistressMonitor {
         }
       }
 
-      if (signals.burnRate > this.thresholds.burnRate * 0.8) {
-        concerns.push(`spending $${signals.burnRate.toFixed(2)}/hr on API calls`);
-      }
+      // Burn rate is deliberately NOT surfaced here. This note is injected into the prompt,
+      // and anything about money in the prompt is something Artie can say out loud in a
+      // channel. Spend is the operator's concern (anomalywatch + brownout), not the room's.
 
       if (concerns.length === 0) {
         return '';

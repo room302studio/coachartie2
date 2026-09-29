@@ -22,7 +22,7 @@ import {
 import { delay, chunkMessage } from '@coachartie/shared';
 import { estimateTokens } from '@coachartie/shared';
 import { logger, canDMForTasks, getDMPolicy, dmPairingService, getSyncDb } from '@coachartie/shared';
-import { BLOCKED_USER_IDS, isBlockedUser } from '@coachartie/shared';
+import { BLOCKED_USER_IDS, isBlockedUser, isOperatorOnlyError } from '@coachartie/shared';
 import { publishMessage } from '../queues/publisher.js';
 import { telemetry } from '../services/telemetry.js';
 import {
@@ -1795,6 +1795,12 @@ ${channelPersona.systemPrompt}
         undefined,
         false
       );
+
+      // Billing / credits / budget / kill-switch failures are operator-only — never reply.
+      if (isOperatorOnlyError(error)) {
+        logger.warn(`🔇 Operator-only failure not echoed to channel [${shortId}]`);
+        return;
+      }
 
       // ENHANCED: User-friendly error with transparency
       const errorMsg =

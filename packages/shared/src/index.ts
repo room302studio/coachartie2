@@ -25,6 +25,8 @@ export * from './services/dm-pairing.js';
 // Utilities
 export * from './utils/redis.js';
 export * from './utils/logger.js';
+export * from './utils/eastern-day.js';
+export * from './utils/anomalywatch.js';
 // DEPRECATED: Use db/client.ts instead (Drizzle ORM)
 // This module uses sql.js which is being phased out
 export * from './utils/database.js';

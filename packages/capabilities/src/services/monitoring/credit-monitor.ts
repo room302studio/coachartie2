@@ -1,4 +1,4 @@
-import { getSyncDb, createQueue } from '@coachartie/shared';
+import { getSyncDb, reportToAnomalywatch, AnomalywatchLevel } from '@coachartie/shared';
 import { logger } from '@coachartie/shared';
 import { costMonitor } from './cost-monitor.js';
 
@@ -61,11 +61,12 @@ export class CreditMonitor {
       now - this.lastExhaustionAlertAt.getTime() >= CreditMonitor.EXHAUSTION_ALERT_THROTTLE_MS
     ) {
       this.lastExhaustionAlertAt = new Date();
-      void this.sendOperatorDM(
-        `💳 **Heads up — I'm out of OpenRouter credits.**\n\n` +
-          `I've gone quiet in every channel (no error spam this time). ` +
-          `Top up to bring me back: https://openrouter.ai/settings/credits`,
-        'credit-monitor-exhausted'
+      // A real outage — Artie cannot generate at all — so this is the one credit alert that
+      // is level 'error'.
+      void this.sendOperatorAlert(
+        `Out of OpenRouter credits — Artie is silent everywhere until topped up: https://openrouter.ai/settings/credits`,
+        'credit-monitor-exhausted',
+        'error'
       );
     }
   }
@@ -97,45 +98,31 @@ export class CreditMonitor {
       return;
     }
     this.lastLowBalanceAlertAt = new Date();
-    const emoji = critical ? '🚨' : '⚠️';
-    void this.sendOperatorDM(
-      `${emoji} **OpenRouter balance low: $${balance.toFixed(2)}**\n\n` +
-        `Top up before I go quiet: https://openrouter.ai/settings/credits`,
-      'credit-monitor-low-balance'
+    void this.sendOperatorAlert(
+      `OpenRouter balance ${critical ? 'critically ' : ''}low: $${balance.toFixed(2)} — top up: https://openrouter.ai/settings/credits`,
+      critical ? 'credit-monitor-low-balance-critical' : 'credit-monitor-low-balance',
+      'warning'
     );
   }
 
   /**
-   * Privately DM the operator (ADMIN_DISCORD_ID). This is the ONLY place users should
-   * learn about billing — a DM to the owner, never a public/client channel. No-op if
-   * ADMIN_DISCORD_ID isn't configured. Never throws.
+   * Tell the operator — via anomalywatch, NEVER Discord. Credit alerts used to be DMs and at
+   * times public-channel posts (73 "Credits Exhausted" posts in one channel over three days);
+   * anomalywatch is the alert brain that decides what reaches a phone. Rate-limited to one
+   * per kind per ET day by reportToAnomalywatch itself. Never throws.
    */
-  private async sendOperatorDM(content: string, source: string): Promise<void> {
-    try {
-      // Kill switch: when the account is knowingly dry / Artie is paused, the
-      // operator doesn't need a credit nag every hour. Silences ALL credit DMs
-      // (exhausted + low-balance) while keeping server-side logging + the
-      // areCreditsExhausted() gate intact. Unset CREDIT_ALERTS_DISABLED in .env
-      // (then pm2 restart coach-artie-capabilities) to bring alerts back.
-      if (process.env.CREDIT_ALERTS_DISABLED === 'true') {
-        logger.info(`💳 Credit alert suppressed (CREDIT_ALERTS_DISABLED): ${source}`);
-        return;
-      }
-      const adminDiscordId = process.env.ADMIN_DISCORD_ID;
-      if (!adminDiscordId) {
-        return; // Nobody to tell; the public-channel leak is already suppressed upstream.
-      }
-      const outgoingQueue = createQueue('coachartie-discord-outgoing');
-      await outgoingQueue.add('send-message', {
-        userId: adminDiscordId, // DM only — no channelId
-        content,
-        source,
-      });
-      logger.info(`💳 Sent operator DM (${source}) to ${adminDiscordId}`);
-    } catch (error) {
-      logger.error('❌ Failed to send operator DM:', error);
-      // Never throw — alerting must not break the LLM path.
+  private async sendOperatorAlert(
+    content: string,
+    source: string,
+    level: AnomalywatchLevel
+  ): Promise<void> {
+    // CREDIT_ALERTS_DISABLED still silences every credit alert (e.g. while the account is
+    // knowingly dry), keeping server-side logging and the areCreditsExhausted() gate intact.
+    if (process.env.CREDIT_ALERTS_DISABLED === 'true') {
+      logger.info(`💳 Credit alert suppressed (CREDIT_ALERTS_DISABLED): ${source}`);
+      return;
     }
+    await reportToAnomalywatch(level, content, { kind: source });
   }
 
   /**
@@ -501,9 +488,9 @@ export class CreditMonitor {
       const emoji = alert.severity === 'critical' ? '🚨' : '⚠️';
       logger.warn(`${emoji} Credit Alert: ${alert.message}`);
 
-      // Send Discord notification for critical alerts
+      // Critical alerts reach the operator through anomalywatch, never Discord.
       if (alert.severity === 'critical') {
-        await this.sendDiscordNotification(alert);
+        await this.sendCriticalAlert(alert);
       }
     } catch (error) {
       logger.error('❌ Failed to create alert:', error);
@@ -511,57 +498,16 @@ export class CreditMonitor {
   }
 
   /**
-   * Send Discord notification for critical alerts
+   * Critical credit alerts go to anomalywatch (see sendOperatorAlert). This used to enqueue a
+   * Discord DM — or a channel post when only ADMIN_CHANNEL_ID was set, which is the shape
+   * that broadcast credit trouble into a public channel.
    */
-  private async sendDiscordNotification(alert: CreditAlert): Promise<void> {
-    try {
-      // Honour the same kill switch the throttled alerts use. This path did not, so
-      // CREDIT_ALERTS_DISABLED silenced one credit-alert route and left this one live.
-      if (process.env.CREDIT_ALERTS_DISABLED === 'true') {
-        logger.info('💳 Credit alert suppressed (CREDIT_ALERTS_DISABLED=true)');
-        return;
-      }
-
-      // Get admin Discord ID from environment
-      const adminDiscordId = process.env.ADMIN_DISCORD_ID;
-      const adminChannelId = process.env.ADMIN_CHANNEL_ID;
-
-      if (!adminDiscordId && !adminChannelId) {
-        logger.warn(
-          '⚠️ No ADMIN_DISCORD_ID or ADMIN_CHANNEL_ID configured - skipping Discord notification'
-        );
-        return;
-      }
-
-      const notificationMessage = `${alert.message}
-
-**Add credits here:** https://openrouter.ai/settings/credits
-
-This is an automated alert from the credit monitoring system.`;
-
-      // Send directly to Discord outgoing queue (bypass processing).
-      //
-      // ONE destination, DM preferred. Passing userId AND channelId together risked sending
-      // the same alert twice, and the channel variant is how 73 "Credits Exhausted" posts
-      // landed in a public channel over three days in June/July — an operator problem
-      // broadcast to everyone, repeatedly, because each user reacting to the failure
-      // triggered another failure. A credit alert is for the operator; it goes to the DM
-      // when there is one, and only falls back to a channel when there is not.
-      const outgoingQueue = createQueue('coachartie-discord-outgoing');
-
-      await outgoingQueue.add('send-message', {
-        ...(adminDiscordId ? { userId: adminDiscordId } : { channelId: adminChannelId }),
-        content: notificationMessage,
-        source: 'credit-monitor',
-      });
-
-      logger.info(
-        `💳 Critical credit alert sent to Discord (${adminDiscordId ? `DM ${adminDiscordId}` : `channel ${adminChannelId}`})`
-      );
-    } catch (error) {
-      logger.error('❌ Failed to send Discord notification:', error);
-      // Don't throw - notification failure shouldn't break credit monitoring
-    }
+  private async sendCriticalAlert(alert: CreditAlert): Promise<void> {
+    await this.sendOperatorAlert(
+      `${alert.message} — top up: https://openrouter.ai/settings/credits`,
+      `credit-alert-${alert.alert_type}`,
+      'warning'
+    );
   }
 
   /**
