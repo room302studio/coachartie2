@@ -2,69 +2,80 @@ import {
   MessageFlags,
   SlashCommandBuilder,
   ChatInputCommandInteraction,
+  AutocompleteInteraction,
   EmbedBuilder,
   PermissionFlagsBits,
 } from 'discord.js';
 import { logger } from '@coachartie/shared';
-import { getGitHubPoller } from '../services/github-poller.js';
+import { REPO_PATTERN, pauseWatch, suggestRepos } from '../services/github-watches.js';
 
 export const unwatchRepoCommand = {
   data: new SlashCommandBuilder()
     .setName('unwatch-repo')
-    .setDescription('Stop watching a GitHub repo in this channel')
+    .setDescription('Pause a GitHub repo watch in this server (resume with /watch-repo)')
     .addStringOption((option) =>
       option
         .setName('repo')
-        .setDescription('GitHub repo to stop watching (owner/repo format)')
+        .setDescription('owner/repo to pause')
         .setRequired(true)
+        .setAutocomplete(true)
     )
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageChannels),
 
-  async execute(interaction: ChatInputCommandInteraction) {
-    try {
-      const repo = interaction.options.getString('repo', true);
-      const channelId = interaction.channelId;
+  async autocomplete(interaction: AutocompleteInteraction) {
+    if (!interaction.guildId) return interaction.respond([]);
+    const typed = String(interaction.options.getFocused() ?? '');
+    await interaction.respond(suggestRepos(interaction.guildId, typed).map((r) => ({ name: r, value: r })));
+  },
 
-      // Validate repo format
-      const repoRegex = /^[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+$/;
-      if (!repoRegex.test(repo)) {
-        return await interaction.reply({
-          content: '❌ Invalid repo format. Please use `owner/repo` format.',
+  async execute(interaction: ChatInputCommandInteraction) {
+    const repo = interaction.options.getString('repo', true).trim();
+    const guildId = interaction.guildId;
+    if (!guildId) {
+      return interaction.reply({
+        content: '❌ This command only works in a server.',
+        flags: MessageFlags.Ephemeral,
+      });
+    }
+    if (!REPO_PATTERN.test(repo)) {
+      return interaction.reply({
+        content: '❌ Use `owner/repo` format.',
+        flags: MessageFlags.Ephemeral,
+      });
+    }
+
+    try {
+      const { paused, found } = pauseWatch(repo, guildId);
+      if (found === 0) {
+        return interaction.reply({
+          content: `ℹ️ \`${repo}\` isn't watched in this server. \`/list-watches\` shows what is.`,
           flags: MessageFlags.Ephemeral,
         });
       }
-
-      // Remove the watch
-      try {
-        const poller = getGitHubPoller();
-        await poller.removeWatch(repo, channelId);
-      } catch (error) {
-        logger.warn('GitHub poller not initialized, watch removed from database only');
+      if (paused === 0) {
+        return interaction.reply({
+          content: `ℹ️ \`${repo}\` is already paused. \`/watch-repo\` resumes it.`,
+          flags: MessageFlags.Ephemeral,
+        });
       }
-
       const embed = new EmbedBuilder()
         .setColor(0xda3633)
-        .setTitle('🔕 Stopped Watching Repository')
-        .setDescription(`This channel will no longer receive notifications for **${repo}**`)
-        .addFields(
-          { name: '📦 Repository', value: `\`${repo}\``, inline: true },
-          { name: '📺 Channel', value: `<#${channelId}>`, inline: true }
+        .setTitle(`⏸️ Paused ${repo}`)
+        .setDescription(
+          'No more posts for this repo in this server. It stays paused: the org auto-watcher ' +
+            "won't re-add it."
         )
-        .setFooter({ text: 'Use /watch-repo to start watching again' });
-
-      await interaction.reply({
-        embeds: [embed],
-      });
-
-      logger.info('Removed repo watch via command', {
+        .setFooter({ text: '/watch-repo resumes it' });
+      await interaction.reply({ embeds: [embed] });
+      logger.info('GitHub watch paused via /unwatch-repo', {
         repo,
-        channelId,
+        guildId,
         userId: interaction.user.id,
       });
     } catch (error) {
       logger.error('Error in unwatch-repo command:', error);
       await interaction.reply({
-        content: '❌ An error occurred while removing the repo watch. Please try again.',
+        content: '❌ Could not pause the watch (nothing changed). Check the logs.',
         flags: MessageFlags.Ephemeral,
       });
     }
