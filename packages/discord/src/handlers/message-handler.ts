@@ -24,6 +24,7 @@ import {
   chunkMessage,
   resolveModelSpec,
   isAutoRouted,
+  autoReasoningFor,
   checkGuildBudget,
   reportGuildBudgetSpent,
 } from '@coachartie/shared';
@@ -658,7 +659,7 @@ JSON response:`;
         ...(() => {
           const r = resolveModelSpec(judgmentModel());
           return isAutoRouted(r.model)
-            ? { model: r.model, plugins: r.plugins, usage: { include: true } }
+            ? { model: r.model, plugins: r.plugins, usage: { include: true }, reasoning: autoReasoningFor(r.plugins) }
             : { model: r.model };
         })(),
         messages: [{ role: 'user', content: prompt }],

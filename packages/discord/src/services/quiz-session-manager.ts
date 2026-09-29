@@ -4,6 +4,7 @@ import {
   checkGuildBudget,
   resolveModelSpec,
   isAutoRouted,
+  autoReasoningFor,
   getSyncDb,
 } from '@coachartie/shared';
 
@@ -178,7 +179,7 @@ Answer (yes/no):`;
       },
       body: JSON.stringify({
         model: judge.model,
-        ...(isAutoRouted(judge.model) ? { plugins: judge.plugins } : {}),
+        ...(isAutoRouted(judge.model) ? { plugins: judge.plugins, reasoning: autoReasoningFor(judge.plugins) } : {}),
         usage: { include: true }, // OpenRouter reports the exact USD cost
         messages: [{ role: 'user', content: prompt }],
         max_tokens: 5,

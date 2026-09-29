@@ -9,7 +9,14 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 config({ path: resolve(__dirname, '../../../../.env') });
 config({ path: resolve(__dirname, '../../.env') });
 
-import { logger, assertGenerationAllowed, assertGuildBudget, resolveModelSpec, isAutoRouted } from '@coachartie/shared';
+import {
+  logger,
+  assertGenerationAllowed,
+  assertGuildBudget,
+  resolveModelSpec,
+  isAutoRouted,
+  autoReasoningFor,
+} from '@coachartie/shared';
 import { UsageTracker, TokenUsage } from '../monitoring/usage-tracker.js';
 import { applyCacheControl, readCacheUsage, wireContentLength } from './prompt-cache.js';
 import { creditMonitor } from '../monitoring/credit-monitor.js';
@@ -417,6 +424,7 @@ class OpenRouterService {
       const resolved = resolveModelSpec(modelSpec);
       const model = resolved.model;
       const plugins = options?.plugins ?? resolved.plugins;
+      let attemptUsage: { billed: string; usage: TokenUsage; cost: number } | undefined;
 
       try {
         logger.info(
@@ -451,6 +459,7 @@ class OpenRouterService {
           // Auto-routed picks may be models we have no price for (billed at $15/$75 by
           // default); OpenRouter's usage accounting reports the exact USD cost instead.
           ...(isAutoRouted(model) ? { usage: { include: true } } : {}),
+          ...(isAutoRouted(model) && autoReasoningFor(plugins) ? { reasoning: autoReasoningFor(plugins) } : {}),
         };
         const completion = await this.client.chat.completions.create({
           model,
@@ -467,6 +476,23 @@ class OpenRouterService {
         const response = choice?.message?.content;
 
         if (!response) {
+          // Still billed (e.g. reasoning tokens that hit max_tokens) — keep the real usage and
+          // cost for the failure row below instead of booking the attempt at $0.
+          const failedUsage: TokenUsage = {
+            prompt_tokens: completion.usage?.prompt_tokens || 0,
+            completion_tokens: completion.usage?.completion_tokens || 0,
+            total_tokens: completion.usage?.total_tokens || 0,
+            cached_tokens: readCacheUsage(completion.usage).read,
+            cache_write_tokens: readCacheUsage(completion.usage).write,
+          };
+          const failedReported = Number((completion.usage as { cost?: unknown } | undefined)?.cost);
+          attemptUsage = {
+            billed: billedModel,
+            usage: failedUsage,
+            cost: isAutoRouted(model) && Number.isFinite(failedReported)
+              ? failedReported
+              : UsageTracker.calculateCost(billedModel, failedUsage),
+          };
           // OpenRouter can return HTTP 200 with an embedded error body, a
           // reasoning/thinking-only turn (content: null), or a length-truncated
           // completion. Surface the REAL reason instead of a bare
@@ -626,7 +652,8 @@ class OpenRouterService {
         // no usage object, which is why it is flagged via error_type rather than trusted.
         {
           UsageTracker.recordUsage({
-            model_name: model,
+            model_name: attemptUsage?.billed ?? model,
+            guild_id: options?.guildId ?? null,
             user_id: userId,
             message_id: messageId ?? '',
             input_length: messages.reduce((total, msg) => total + msg.content.length, 0),
@@ -637,11 +664,11 @@ class OpenRouterService {
             capability_types: '',
             success: false,
             error_type: errorStatus ? `http_${errorStatus}` : errorMessage.slice(0, 80),
-            prompt_tokens: 0,
-            completion_tokens: 0,
-            total_tokens: 0,
-            cached_tokens: 0,
-            estimated_cost: 0,
+            prompt_tokens: attemptUsage?.usage.prompt_tokens ?? 0,
+            completion_tokens: attemptUsage?.usage.completion_tokens ?? 0,
+            total_tokens: attemptUsage?.usage.total_tokens ?? 0,
+            cached_tokens: attemptUsage?.usage.cached_tokens ?? 0,
+            estimated_cost: attemptUsage?.cost ?? 0,
             step_type: stepTypeFor(userId, messageId, options?.stepType),
           }).catch(() => {
             // Never let telemetry failure mask the real error we're handling.
@@ -852,6 +879,7 @@ class OpenRouterService {
           // Auto-routed picks may be models we have no price for (billed at $15/$75 by
           // default); OpenRouter's usage accounting reports the exact USD cost instead.
           ...(isAutoRouted(model) ? { usage: { include: true } } : {}),
+          ...(isAutoRouted(model) && autoReasoningFor(plugins) ? { reasoning: autoReasoningFor(plugins) } : {}),
         };
         const completion = await this.client.chat.completions.create({
           model,

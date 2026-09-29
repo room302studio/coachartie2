@@ -31,6 +31,17 @@ export function resolveModelSpec(spec: string): ResolvedModel {
   };
 }
 
+/**
+ * Reasoning setting for an auto-routed request. At low/medium tiers the auto-router can pick a
+ * reasoning model that spends the whole max_tokens budget thinking and returns no text — paid
+ * and useless (seen 2026-09-29 on a background summary). `effort: "none"` stops reasoning being
+ * generated or billed; `exclude: true` would only hide it. High+ tiers keep reasoning (planning).
+ */
+export function autoReasoningFor(plugins?: unknown[]): { effort: 'none' } | undefined {
+  const tier = (plugins?.[0] as { cost_tier?: string } | undefined)?.cost_tier ?? 'low';
+  return tier === 'low' || tier === 'medium' ? { effort: 'none' } : undefined;
+}
+
 /** True when a request went to the auto-router, so billing must use the served model. */
 export function isAutoRouted(model: string): boolean {
   return model === 'openrouter/auto';

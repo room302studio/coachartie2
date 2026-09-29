@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { resolveModelSpec, isAutoRouted } from '../src/utils/model-spec.js';
+import { resolveModelSpec, isAutoRouted, autoReasoningFor } from '../src/utils/model-spec.js';
 
 describe('resolveModelSpec', () => {
   it('passes concrete model ids through untouched', () => {
@@ -32,5 +32,15 @@ describe('resolveModelSpec', () => {
   it('knows when billing must use the served model', () => {
     expect(isAutoRouted('openrouter/auto')).toBe(true);
     expect(isAutoRouted('anthropic/claude-opus-5.5')).toBe(false);
+  });
+});
+
+describe('autoReasoningFor', () => {
+  it('turns reasoning off for low/medium auto tiers, keeps it for high+', () => {
+    expect(autoReasoningFor(resolveModelSpec('auto:low').plugins)).toEqual({ effort: 'none' });
+    expect(autoReasoningFor(resolveModelSpec('auto:medium:anthropic/*').plugins)).toEqual({ effort: 'none' });
+    expect(autoReasoningFor(resolveModelSpec('auto:high').plugins)).toBeUndefined();
+    expect(autoReasoningFor(resolveModelSpec('auto:max').plugins)).toBeUndefined();
+    expect(autoReasoningFor(undefined)).toEqual({ effort: 'none' }); // no plugins = auto default (low)
   });
 });
