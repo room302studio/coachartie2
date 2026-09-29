@@ -6,59 +6,44 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 config({ path: resolve(__dirname, '../../.env') });
 
 import { REST, Routes } from 'discord.js';
-import { statusCommand } from './src/commands/status.js';
-import { botStatusCommand } from './src/commands/bot-status.js';
-import { modelsCommand } from './src/commands/models.js';
-import { memoryCommand } from './src/commands/memory.js';
-import { usageCommand } from './src/commands/usage.js';
-import { debugCommand } from './src/commands/debug.js';
-import { data as syncDiscussionsData } from './src/commands/sync-discussions.js';
-import { watchRepoCommand } from './src/commands/watch-repo.js';
-import { unwatchRepoCommand } from './src/commands/unwatch-repo.js';
-import { listWatchesCommand } from './src/commands/list-watches.js';
+import { globalCommands } from './src/commands/registry.js';
 
-const commands = [
-  statusCommand.data.toJSON(),
-  botStatusCommand.data.toJSON(),
-  modelsCommand.data.toJSON(),
-  memoryCommand.data.toJSON(),
-  usageCommand.data.toJSON(),
-  debugCommand.data.toJSON(),
-  syncDiscussionsData.toJSON(),
-  watchRepoCommand.data.toJSON(),
-  unwatchRepoCommand.data.toJSON(),
-  listWatchesCommand.data.toJSON(),
-];
-
+/**
+ * Publish Artie's global slash commands from src/commands/registry.ts (the same list the
+ * interaction handler routes from). This REPLACES the whole global set, so it prints the diff
+ * against what Discord has first. `--dry-run` stops there.
+ *
+ *   npx tsx packages/discord/register-commands.ts --dry-run
+ *   npx tsx packages/discord/register-commands.ts
+ *
+ * Guild-only commands (/stack-talk → register-stack-talk.ts) are unaffected.
+ */
+const dryRun = process.argv.includes('--dry-run');
+const appId = process.env.DISCORD_CLIENT_ID!;
 const rest = new REST().setToken(process.env.DISCORD_TOKEN!);
+const body = globalCommands.map((c) => c.data.toJSON());
 
-async function registerCommands() {
-  try {
-    console.log('🚀 Started refreshing Discord application (/) commands...');
+async function main() {
+  const live = (await rest.get(Routes.applicationCommands(appId))) as Array<{ name: string }>;
+  const liveNames = new Set(live.map((c) => c.name));
+  const wanted = new Set(body.map((c) => c.name));
 
-    // Register commands globally
-    await rest.put(Routes.applicationCommands(process.env.DISCORD_CLIENT_ID!), { body: commands });
-
-    console.log('✅ Successfully reloaded Discord application (/) commands!');
-    console.log('📱 Registered commands:');
-    console.log('  - /link-phone - Link phone number for SMS notifications');
-    console.log('  - /verify-phone - Verify phone number with code');
-    console.log('  - /unlink-phone - Remove linked phone number');
-    console.log('  - /link-email - Link email address for email features');
-    console.log('  - /unlink-email - Remove linked email address');
-    console.log('  - /status - Show LLM model used for most recent message');
-    console.log('  - /bot-status - Check bot health and system status');
-    console.log('  - /models - List available AI models');
-    console.log('  - /memory - Search and manage conversation memories');
-    console.log('  - /usage - View AI usage statistics and costs');
-    console.log('  - /debug - Troubleshoot connection and performance issues');
-    console.log('  - /sync-discussions - Sync Discord forum discussions to GitHub issues');
-    console.log('  - /watch-repo - Watch a GitHub repo for PR and CI activity');
-    console.log('  - /unwatch-repo - Stop watching a GitHub repo');
-    console.log('  - /list-watches - List all watched GitHub repos');
-  } catch (error) {
-    console.error('❌ Error registering commands:', error);
+  console.log(`Discord has ${live.length} global commands; registry has ${body.length}.`);
+  for (const c of body) {
+    const perms = c.default_member_permissions ? ` (default perms ${c.default_member_permissions})` : '';
+    console.log(`  ${liveNames.has(c.name) ? '~' : '+'} /${c.name}${perms}`);
   }
+  for (const name of liveNames) if (!wanted.has(name)) console.log(`  - /${name} (removed)`);
+
+  if (dryRun) {
+    console.log('Dry run: nothing changed.');
+    return;
+  }
+  await rest.put(Routes.applicationCommands(appId), { body });
+  console.log(`✅ Registered ${body.length} global commands.`);
 }
 
-registerCommands();
+main().catch((error) => {
+  console.error('❌ Error registering commands:', error);
+  process.exit(1);
+});

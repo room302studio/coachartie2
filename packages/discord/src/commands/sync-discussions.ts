@@ -4,7 +4,13 @@
  * Usage: /sync-discussions repo:owner/repo [forum:channel_id]
  */
 
-import { MessageFlags, SlashCommandBuilder, ChatInputCommandInteraction, ChannelType } from 'discord.js';
+import {
+  MessageFlags,
+  SlashCommandBuilder,
+  ChatInputCommandInteraction,
+  ChannelType,
+  PermissionFlagsBits,
+} from 'discord.js';
 import { logger } from '@coachartie/shared';
 import { getForumTraversal } from '../services/forum-traversal.js';
 import { getGitHubIntegration } from '../services/github-integration.js';
@@ -12,6 +18,8 @@ import { getGitHubIntegration } from '../services/github-integration.js';
 export const data = new SlashCommandBuilder()
   .setName('sync-discussions')
   .setDescription('Sync Discord forum discussions to GitHub issues')
+  // Files real GitHub issues with Artie's token, so server managers only (was open to anyone).
+  .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
   .addStringOption((option) =>
     option.setName('repo').setDescription('GitHub repository (owner/repo or URL)').setRequired(true)
   )

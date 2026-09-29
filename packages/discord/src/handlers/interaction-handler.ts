@@ -10,15 +10,8 @@ import {
   PermissionsBitField,
 } from 'discord.js';
 import { logger, canDMForTasks, logDMGate } from '@coachartie/shared';
-import { statusCommand } from '../commands/status.js';
-import { botStatusCommand } from '../commands/bot-status.js';
-import { modelsCommand } from '../commands/models.js';
-import { memoryCommand } from '../commands/memory.js';
-import { usageCommand } from '../commands/usage.js';
-import { debugCommand } from '../commands/debug.js';
-import * as syncDiscussionsCommand from '../commands/sync-discussions.js';
+import { globalCommands } from '../commands/registry.js';
 import {
-  quizCommand,
   refreshLiveQuiz,
   postQuizSummary,
   getScheduleDraft,
@@ -57,9 +50,6 @@ import {
   scheduleDailyPuzzle,
   DAILY_QUESTION_COUNT,
 } from '../services/daily-quiz.js';
-import { watchRepoCommand } from '../commands/watch-repo.js';
-import { unwatchRepoCommand } from '../commands/unwatch-repo.js';
-import { listWatchesCommand } from '../commands/list-watches.js';
 import { telemetry } from '../services/telemetry.js';
 import {
   CorrelationContext,
@@ -68,19 +58,8 @@ import {
 } from '../utils/correlation.js';
 import { processUserIntent } from '../services/user-intent-processor.js';
 
-const commands = new Map([
-  ['status', statusCommand],
-  ['bot-status', botStatusCommand],
-  ['models', modelsCommand],
-  ['memory', memoryCommand],
-  ['usage', usageCommand],
-  ['debug', debugCommand],
-  ['sync-discussions', syncDiscussionsCommand],
-  ['quiz', quizCommand],
-  ['watch-repo', watchRepoCommand],
-  ['unwatch-repo', unwatchRepoCommand],
-  ['list-watches', listWatchesCommand],
-] as any);
+// Routed from the same registry register-commands.ts publishes (commands/registry.ts).
+const commands = new Map<string, any>(globalCommands.map((c) => [c.data.name, c]));
 
 export function setupInteractionHandler(client: Client) {
   client.on(Events.InteractionCreate, async (interaction: Interaction) => {
@@ -109,6 +88,11 @@ export function setupInteractionHandler(client: Client) {
     // Handle different types of interactions
     if (interaction.isChatInputCommand()) {
       await handleSlashCommand(interaction);
+    } else if (interaction.isAutocomplete()) {
+      const command = commands.get(interaction.commandName);
+      await command?.autocomplete?.(interaction).catch((error: unknown) => {
+        logger.warn(`Autocomplete failed for /${interaction.commandName}:`, error);
+      });
     } else if (interaction.isButton()) {
       await handleButtonInteraction(interaction);
     } else if (interaction.isStringSelectMenu()) {

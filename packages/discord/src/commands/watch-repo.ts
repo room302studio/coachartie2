@@ -2,120 +2,118 @@ import {
   MessageFlags,
   SlashCommandBuilder,
   ChatInputCommandInteraction,
+  AutocompleteInteraction,
   EmbedBuilder,
   PermissionFlagsBits,
 } from 'discord.js';
 import { logger } from '@coachartie/shared';
-import { getGitHubPoller } from '../services/github-poller.js';
+import {
+  REPO_PATTERN,
+  WATCH_EVENTS,
+  parseWatchEvents,
+  suggestRepos,
+  upsertWatch,
+} from '../services/github-watches.js';
+
+const EVENT_HELP: Record<string, string> = {
+  all: 'everything below',
+  pr: 'new / ready / merged PRs',
+  review: 'reviews, approvals, review requests',
+  issues: 'issues opened, closed, assigned',
+  push: 'direct pushes to the default branch',
+  ci: 'CI failures',
+};
 
 export const watchRepoCommand = {
   data: new SlashCommandBuilder()
     .setName('watch-repo')
-    .setDescription('Start watching a GitHub repo for PR and CI activity in this channel')
+    .setDescription('Watch a GitHub repo in this channel, or change what an existing watch posts')
     .addStringOption((option) =>
       option
         .setName('repo')
-        .setDescription('GitHub repo in owner/repo format (e.g., room302studio/coachartie2)')
+        .setDescription('owner/repo, e.g. room302studio/coachartie2')
         .setRequired(true)
+        .setAutocomplete(true)
     )
     .addStringOption((option) =>
       option
         .setName('events')
-        .setDescription('Events to watch (comma-separated: pr,review,ci or "all")')
+        .setDescription(`Comma-separated: ${WATCH_EVENTS.join(', ')} (default: all)`)
         .setRequired(false)
     )
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageChannels),
 
+  async autocomplete(interaction: AutocompleteInteraction) {
+    if (!interaction.guildId) return interaction.respond([]);
+    const typed = String(interaction.options.getFocused() ?? '');
+    await interaction.respond(suggestRepos(interaction.guildId, typed).map((r) => ({ name: r, value: r })));
+  },
+
   async execute(interaction: ChatInputCommandInteraction) {
+    const repo = interaction.options.getString('repo', true).trim();
+    const guildId = interaction.guildId;
+    const channelId = interaction.channelId;
+
+    if (!guildId) {
+      return interaction.reply({
+        content: '❌ This command only works in a server.',
+        flags: MessageFlags.Ephemeral,
+      });
+    }
+    if (!REPO_PATTERN.test(repo)) {
+      return interaction.reply({
+        content: '❌ Use `owner/repo` format, e.g. `room302studio/coachartie2`.',
+        flags: MessageFlags.Ephemeral,
+      });
+    }
+    const { events, invalid } = parseWatchEvents(interaction.options.getString('events'));
+    if (invalid.length > 0) {
+      return interaction.reply({
+        content: `❌ Unknown events: ${invalid.join(', ')}. Valid: ${WATCH_EVENTS.join(', ')}`,
+        flags: MessageFlags.Ephemeral,
+      });
+    }
+
     try {
-      const repo = interaction.options.getString('repo', true);
-      const eventsStr = interaction.options.getString('events') || 'all';
-      const channelId = interaction.channelId;
-      const guildId = interaction.guildId;
-
-      if (!guildId) {
-        return await interaction.reply({
-          content: '❌ This command can only be used in a server.',
-          flags: MessageFlags.Ephemeral,
-        });
-      }
-
-      // Validate repo format
-      const repoRegex = /^[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+$/;
-      if (!repoRegex.test(repo)) {
-        return await interaction.reply({
-          content:
-            '❌ Invalid repo format. Please use `owner/repo` format (e.g., `room302studio/coachartie2`).',
-          flags: MessageFlags.Ephemeral,
-        });
-      }
-
-      // Parse events
-      const events = eventsStr
-        .toLowerCase()
-        .split(',')
-        .map((e) => e.trim());
-      const validEvents = ['pr', 'review', 'ci', 'all'];
-      const invalidEvents = events.filter((e) => !validEvents.includes(e));
-      if (invalidEvents.length > 0) {
-        return await interaction.reply({
-          content: `❌ Invalid events: ${invalidEvents.join(', ')}. Valid options: pr, review, ci, all`,
-          flags: MessageFlags.Ephemeral,
-        });
-      }
-
-      // Add the watch
-      try {
-        const poller = getGitHubPoller();
-        await poller.addWatch(repo, guildId, channelId, events, interaction.user.id);
-      } catch (error) {
-        // Poller might not be initialized yet
-        logger.warn('GitHub poller not initialized, watch added to database only');
-      }
-
+      const { outcome, previousChannelId } = upsertWatch(
+        repo,
+        guildId,
+        channelId,
+        events,
+        interaction.user.id
+      );
+      const title = {
+        created: '👀 Now watching',
+        updated: '⚙️ Watch updated',
+        resumed: '▶️ Watch resumed',
+      }[outcome];
       const embed = new EmbedBuilder()
         .setColor(0x238636)
-        .setTitle('👀 Now Watching Repository')
-        .setDescription(`This channel will receive notifications for **${repo}**`)
+        .setTitle(`${title} ${repo}`)
         .addFields(
-          { name: '📦 Repository', value: `\`${repo}\``, inline: true },
           { name: '📺 Channel', value: `<#${channelId}>`, inline: true },
           {
-            name: '📋 Events',
-            value: events.includes('all')
-              ? 'All events (PRs, reviews, CI)'
-              : events.map((e) => `\`${e}\``).join(', '),
-            inline: false,
-          },
-          {
-            name: "🔔 You'll be notified about",
-            value: [
-              '• New pull requests',
-              '• PRs ready for review',
-              '• Reviews and approvals',
-              '• CI status changes',
-              '• PR merges',
-            ].join('\n'),
+            name: '📋 Posts',
+            value: events.map((e) => `\`${e}\` ${EVENT_HELP[e]}`).join('\n'),
             inline: false,
           }
         )
-        .setFooter({ text: 'Use /unwatch-repo to stop watching' });
-
-      await interaction.reply({
-        embeds: [embed],
-      });
-
-      logger.info('Added repo watch via command', {
+        .setFooter({ text: 'Run again to change it · /unwatch-repo pauses · /list-watches' });
+      if (previousChannelId) {
+        embed.setDescription(`Moved here from <#${previousChannelId}>.`);
+      }
+      await interaction.reply({ embeds: [embed] });
+      logger.info(`GitHub watch ${outcome} via /watch-repo`, {
         repo,
-        channelId,
         guildId,
+        channelId,
         events,
         userId: interaction.user.id,
       });
     } catch (error) {
       logger.error('Error in watch-repo command:', error);
       await interaction.reply({
-        content: '❌ An error occurred while setting up the repo watch. Please try again.',
+        content: '❌ Could not save the watch (nothing changed). Check the logs.',
         flags: MessageFlags.Ephemeral,
       });
     }

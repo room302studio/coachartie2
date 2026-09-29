@@ -1566,7 +1566,7 @@ export function setupMessageHandler(client: Client) {
           if (isNew) {
             void reportToAnomalywatch(
               'warning',
-              `DM pairing request: ${message.author.username} (${message.author.id}) wants to DM Artie: "${message.content.slice(0, 120)}". To approve, tell Artie: pairing approve ${code} (expires in ${expiresInMinutes}m)`,
+              `DM pairing request: ${message.author.username} (${message.author.id}) wants to DM Artie: "${message.content.slice(0, 120)}". Approve with /pairing approve code:${code} (expires in ${expiresInMinutes}m)`,
               {
                 kind: `dm-pairing:${message.author.id}`,
                 alertType: 'dm_pairing_request',
