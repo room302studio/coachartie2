@@ -43,6 +43,7 @@ import { logsRouter, stopCleanupInterval } from './routes/logs.js';
 import { apiRouter } from './routes/api.js';
 import { securityRouter } from './routes/security.js';
 import { sbatRouter } from './routes/sbat.js';
+import { stackTalkRouter } from './routes/stack-talk.js';
 import { schedulerService } from './services/core/scheduler.js';
 import { jobTracker } from './services/core/job-tracker.js';
 import { costMonitor } from './services/monitoring/cost-monitor.js';
@@ -126,6 +127,7 @@ app.use('/api/memories', memoriesRouter);
 app.use('/api/models', modelsRouter);
 app.use('/api', apiRouter); // Context Alchemy observability + experiments
 app.use('/api/sbat', sbatRouter); // SBAT inbound email tickets
+app.use('/stack-talk', stackTalkRouter); // owner-only: cheap long-context Q&A over memories
 app.use('/logs', logsRouter);
 
 // Observational learning endpoint

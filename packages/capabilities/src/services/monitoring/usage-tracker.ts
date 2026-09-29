@@ -98,6 +98,11 @@ const MODEL_PRICING: Record<string, { input: number; output: number }> = {
 const UNKNOWN_MODEL_PRICING = { input: 0.015, output: 0.075 };
 
 export class UsageTracker {
+  /** True when MODEL_PRICING has a row for this model (else it bills at top-tier rates). */
+  static hasPricing(modelName: string): boolean {
+    return modelName in MODEL_PRICING;
+  }
+
   /**
    * Calculate estimated cost based on token usage and model
    */
