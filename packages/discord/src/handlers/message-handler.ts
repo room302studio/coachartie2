@@ -1155,7 +1155,8 @@ export function setupMessageHandler(client: Client) {
           ? await quizSessionManager.checkAnswerWithAI(
               message.channelId,
               message.author.id,
-              message.content
+              message.content,
+              message.guildId
             )
           : initial;
 

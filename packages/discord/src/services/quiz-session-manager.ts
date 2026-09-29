@@ -1,11 +1,23 @@
-import { logger } from '@coachartie/shared';
+import {
+  logger,
+  isGenerationMuted,
+  checkGuildBudget,
+  resolveModelSpec,
+  isAutoRouted,
+  getSyncDb,
+} from '@coachartie/shared';
 
 const FLASHCARD_API_BASE = 'https://ejfox.com/api/flashcards';
 const DEFAULT_QUESTION_COUNT = 10;
 const QUESTION_TIMEOUT_MS = 30000; // 30 seconds per question
 const AI_JUDGE_MODEL = process.env.QUIZ_JUDGE_MODEL || 'google/gemini-2.0-flash-001';
+// Same base-URL convention as the speak gate (QUIZ_JUDGE_URL overrides, e.g. the old
+// https://router.tools.ejfox.com/v1/chat/completions).
 const AI_JUDGE_URL =
-  process.env.QUIZ_JUDGE_URL || 'https://router.tools.ejfox.com/v1/chat/completions';
+  process.env.QUIZ_JUDGE_URL ||
+  `${(process.env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1').replace(/\/+$/, '')}/chat/completions`;
+// Conservative per-1K rates when OpenRouter doesn't report a cost: book high, never free.
+const JUDGE_FALLBACK_RATES = { input: 0.015, output: 0.075 };
 
 export interface FlashcardResponse {
   id: string;
@@ -131,12 +143,19 @@ export function looksLikeAnswerAttempt(text: string): boolean {
 export async function verifyAnswerWithLLM(
   question: string,
   correctAnswer: string,
-  userAnswer: string
+  userAnswer: string,
+  ctx: { guildId?: string | null; userId?: string } = {}
 ): Promise<boolean | null> {
   const apiKey = process.env.OPENROUTER_API_KEY;
   if (!apiKey) {
     return null;
   }
+  // Same guards as every paid call (kill switch / daily budget mute, per-guild share). This
+  // judge shipped as a direct fetch that bypassed them and recorded no usage at all.
+  if (isGenerationMuted() || checkGuildBudget(ctx.guildId)?.over) {
+    return null;
+  }
+  const judge = resolveModelSpec(AI_JUDGE_MODEL);
 
   const prompt = `You are grading a flashcard quiz answer. Reply with ONLY "yes" or "no".
 
@@ -158,7 +177,9 @@ Answer (yes/no):`;
         'X-Title': 'Coach Artie Quiz Judge',
       },
       body: JSON.stringify({
-        model: AI_JUDGE_MODEL,
+        model: judge.model,
+        ...(isAutoRouted(judge.model) ? { plugins: judge.plugins } : {}),
+        usage: { include: true }, // OpenRouter reports the exact USD cost
         messages: [{ role: 'user', content: prompt }],
         max_tokens: 5,
         temperature: 0,
@@ -171,8 +192,33 @@ Answer (yes/no):`;
     }
 
     const data = (await response.json()) as {
+      model?: string;
       choices?: Array<{ message?: { content?: string } }>;
+      usage?: { prompt_tokens?: number; completion_tokens?: number; cost?: number };
     };
+    try {
+      const promptTokens = data.usage?.prompt_tokens ?? Math.ceil(prompt.length / 3);
+      const completionTokens = data.usage?.completion_tokens ?? 1;
+      const cost =
+        typeof data.usage?.cost === 'number'
+          ? data.usage.cost
+          : (promptTokens / 1000) * JUDGE_FALLBACK_RATES.input +
+            (completionTokens / 1000) * JUDGE_FALLBACK_RATES.output;
+      getSyncDb().run(
+        `INSERT INTO model_usage_stats (
+          model_name, user_id, message_id, input_length, output_length, response_time_ms,
+          capabilities_detected, capabilities_executed, capability_types, success,
+          prompt_tokens, completion_tokens, total_tokens, estimated_cost, step_type, guild_id
+        ) VALUES (?, ?, '', ?, 0, 0, 0, 0, '', 1, ?, ?, ?, ?, 'quiz_judge', ?)`,
+        [
+          data.model || judge.model, ctx.userId ?? 'unknown', prompt.length,
+          promptTokens, completionTokens, promptTokens + completionTokens, cost,
+          ctx.guildId ?? null,
+        ]
+      );
+    } catch (usageError) {
+      logger.warn('Quiz LLM judge: failed to record usage', usageError);
+    }
     const raw = (data.choices?.[0]?.message?.content || '').toLowerCase().trim();
     if (raw.startsWith('yes')) return true;
     if (raw.startsWith('no')) return false;
@@ -359,7 +405,8 @@ export const quizSessionManager = {
   async checkAnswerWithAI(
     channelId: string,
     userId: string,
-    answer: string
+    answer: string,
+    guildId?: string | null
   ): Promise<AnswerResult | null> {
     const session = activeSessions.get(channelId);
     if (!session || !session.currentCard || session.answered || !session.aiJudge) {
@@ -373,7 +420,7 @@ export const quizSessionManager = {
     session.pendingJudgements.add(judgementKey);
 
     const card = session.currentCard;
-    const verdict = await verifyAnswerWithLLM(card.front, card.back, answer);
+    const verdict = await verifyAnswerWithLLM(card.front, card.back, answer, { guildId, userId });
 
     // Re-fetch — the session may have ended while we awaited the LLM.
     const fresh = activeSessions.get(channelId);
