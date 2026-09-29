@@ -9,7 +9,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 config({ path: resolve(__dirname, '../../../../.env') });
 config({ path: resolve(__dirname, '../../.env') });
 
-import { logger, assertGenerationAllowed } from '@coachartie/shared';
+import { logger, assertGenerationAllowed, resolveModelSpec, isAutoRouted } from '@coachartie/shared';
 import { UsageTracker, TokenUsage } from '../monitoring/usage-tracker.js';
 import { applyCacheControl, readCacheUsage, wireContentLength } from './prompt-cache.js';
 import { creditMonitor } from '../monitoring/credit-monitor.js';
@@ -407,9 +407,14 @@ class OpenRouterService {
     let affordabilityRetried = false;
 
     for (let i = 0; i < modelsToTry.length; i++) {
-      const model = useSpecificModel
+      const modelSpec = useSpecificModel
         ? modelsToTry[i]
         : this.models[(startIndex + i) % this.models.length];
+      // "auto:<tier>[:allowed]" specs → openrouter/auto + the auto-router plugin (model-spec.ts);
+      // plugins passed in by the caller (brownout's final-third route) take precedence.
+      const resolved = resolveModelSpec(modelSpec);
+      const model = resolved.model;
+      const plugins = options?.plugins ?? resolved.plugins;
 
       try {
         logger.info(
@@ -439,7 +444,12 @@ class OpenRouterService {
         );
 
         // OpenRouter-only extras (auto-router plugins) aren't in the OpenAI SDK's types.
-        const extraBody: Record<string, unknown> = options?.plugins ? { plugins: options.plugins } : {};
+        const extraBody: Record<string, unknown> = {
+          ...(plugins ? { plugins } : {}),
+          // Auto-routed picks may be models we have no price for (billed at $15/$75 by
+          // default); OpenRouter's usage accounting reports the exact USD cost instead.
+          ...(isAutoRouted(model) ? { usage: { include: true } } : {}),
+        };
         const completion = await this.client.chat.completions.create({
           model,
           messages: cache.messages as never,
@@ -449,7 +459,7 @@ class OpenRouterService {
         });
         // openrouter/auto picks the model; bill what was actually served, or the unknown-model
         // fallback ($15/$75) would trip the daily cap early. Other models bill as requested.
-        const billedModel = model === 'openrouter/auto' && completion.model ? completion.model : model;
+        const billedModel = isAutoRouted(model) && completion.model ? completion.model : model;
 
         const choice = completion.choices?.[0];
         const response = choice?.message?.content;
@@ -526,14 +536,19 @@ class OpenRouterService {
         }
 
         // Calculate cost and record usage
-        const estimatedCost = UsageTracker.calculateCost(billedModel, usage);
+        const reportedCost = Number((completion.usage as { cost?: unknown } | undefined)?.cost);
+        const estimatedCost =
+          isAutoRouted(model) && Number.isFinite(reportedCost)
+            ? reportedCost
+            : UsageTracker.calculateCost(billedModel, usage);
 
         // Track costs in real-time cost monitor
         const { warnings } = costMonitor.trackCall(
           usage.prompt_tokens,
           usage.completion_tokens,
           billedModel,
-          usage.cached_tokens ?? 0
+          usage.cached_tokens ?? 0,
+          isAutoRouted(model) && Number.isFinite(reportedCost) ? reportedCost : undefined
         );
 
         // Log warnings if any
@@ -802,9 +817,14 @@ class OpenRouterService {
     );
 
     for (let i = 0; i < modelsToTry.length; i++) {
-      const model = useSpecificModel
+      const modelSpec = useSpecificModel
         ? modelsToTry[i]
         : this.models[(startIndex + i) % this.models.length];
+      // "auto:<tier>[:allowed]" specs → openrouter/auto + the auto-router plugin (model-spec.ts);
+      // plugins passed in by the caller (brownout's final-third route) take precedence.
+      const resolved = resolveModelSpec(modelSpec);
+      const model = resolved.model;
+      const plugins = options?.plugins ?? resolved.plugins;
 
       try {
         logger.info(
@@ -823,7 +843,12 @@ class OpenRouterService {
             : `🗄️ Prompt cache: not applied — ${cache.reason}`
         );
 
-        const extraBody: Record<string, unknown> = options?.plugins ? { plugins: options.plugins } : {};
+        const extraBody: Record<string, unknown> = {
+          ...(plugins ? { plugins } : {}),
+          // Auto-routed picks may be models we have no price for (billed at $15/$75 by
+          // default); OpenRouter's usage accounting reports the exact USD cost instead.
+          ...(isAutoRouted(model) ? { usage: { include: true } } : {}),
+        };
         const completion = await this.client.chat.completions.create({
           model,
           messages: cache.messages as never,
@@ -834,6 +859,7 @@ class OpenRouterService {
           ...extraBody,
         });
         let servedModel: string | undefined; // openrouter/auto reports its pick on each chunk
+        let reportedCost: number | undefined; // usage accounting, final chunk (auto-routed only)
 
         let fullResponse = '';
         let lastSentLength = 0;
@@ -868,6 +894,8 @@ class OpenRouterService {
 
           // Capture usage data from final chunk (OpenRouter sends it at the end)
           if (chunk.usage) {
+            const c = Number((chunk.usage as { cost?: unknown }).cost);
+            if (Number.isFinite(c)) reportedCost = c;
             usage = {
               prompt_tokens: chunk.usage.prompt_tokens || 0,
               completion_tokens: chunk.usage.completion_tokens || 0,
@@ -902,15 +930,19 @@ class OpenRouterService {
         }
 
         // Calculate cost and track usage
-        const billedModel = model === 'openrouter/auto' && servedModel ? servedModel : model;
-        const estimatedCost = UsageTracker.calculateCost(billedModel, usage);
+        const billedModel = isAutoRouted(model) && servedModel ? servedModel : model;
+        const estimatedCost =
+          isAutoRouted(model) && reportedCost !== undefined
+            ? reportedCost
+            : UsageTracker.calculateCost(billedModel, usage);
 
         // Track costs in real-time cost monitor
         const { warnings: streamWarnings } = costMonitor.trackCall(
           usage.prompt_tokens,
           usage.completion_tokens,
           billedModel,
-          usage.cached_tokens ?? 0
+          usage.cached_tokens ?? 0,
+          isAutoRouted(model) ? reportedCost : undefined
         );
 
         // Log warnings if any

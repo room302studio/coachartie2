@@ -106,14 +106,19 @@ class CostMonitor {
     inputTokens: number,
     outputTokens: number,
     model: string,
-    cachedTokens = 0
+    cachedTokens = 0,
+    /** Exact USD from OpenRouter usage accounting (auto-routed calls); overrides the table. */
+    reportedCost?: number
   ): { shouldCheckCredits: boolean; warnings: string[] } {
     this.totalInputTokens += inputTokens;
     this.totalOutputTokens += outputTokens;
     this.totalCachedTokens += Math.min(Math.max(cachedTokens, 0), inputTokens);
     this.totalCalls++;
 
-    const estimatedCost = this.calculateCost(inputTokens, outputTokens, cachedTokens, model);
+    const estimatedCost =
+      reportedCost !== undefined && Number.isFinite(reportedCost)
+        ? reportedCost
+        : this.calculateCost(inputTokens, outputTokens, cachedTokens, model);
     this.totalCost += estimatedCost;
 
     const now = Date.now();

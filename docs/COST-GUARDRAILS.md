@@ -175,3 +175,24 @@ floor; unset = the auto-router's own pool. "Total tank" = balance runway (Artie 
 a full OpenRouter balance was). Auto-routed calls are billed at the **served** model
 (`completion.model` / the stream chunks' `model`), not `openrouter/auto` — otherwise the
 unknown-model fallback ($15/$75) would trip the daily cap early. Docs: openrouter.ai/docs/guides/routing/routers/auto-router
+
+## Model roles and `auto:<tier>` specs (2026-09-29)
+
+Any `*_MODEL` setting may be a concrete OpenRouter id or `auto:<tier>[:<allowed,...>]`
+(`packages/shared/src/utils/model-spec.ts`), which becomes `openrouter/auto` + the auto-router
+plugin — the role tracks the current best model for its tier with no id to maintain. Resolved in
+both `openrouter.ts` paths and the Discord speak gate. Auto-routed calls request OpenRouter usage
+accounting (`usage: {include: true}`) and record the **reported USD cost** and the **served
+model** — auto picks are often models with no pricing row, which would otherwise book at
+$15/$75 and trip the daily cap within hours.
+
+Deploy values (`.env.production` — also delete the duplicate FAST_MODEL / MANAGER_MODEL lines):
+
+| Role | Setting | Why |
+|---|---|---|
+| His voice | `SMART_MODEL=anthropic/claude-opus-5.5` | pinned — creativity/flavor (auto only in the final third via brownoutRoute) |
+| Simple one-liners | `SIMPLE_CHAT_MODEL=auto:medium:anthropic/*` | current Anthropic model, voice-adjacent |
+| Planning / reasoning | `MANAGER_MODEL=auto:high` | was pinned to an old opus-4.7 |
+| Background chores | `BACKGROUND_MODEL=auto:low` | grunt work: cheapest capable |
+| Speak gate | `PROACTIVE_JUDGMENT_MODEL=auto:low` | yes/no JSON judgment |
+| Capability triage | `FAST_MODEL=nousresearch/hermes-4-70b` | pinned — EJ's Mar 29 eval: 2.7x faster, 20x cheaper |

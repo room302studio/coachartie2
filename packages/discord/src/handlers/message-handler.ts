@@ -19,7 +19,7 @@ import {
   ChannelType,
   GuildMember,
 } from 'discord.js';
-import { delay, chunkMessage } from '@coachartie/shared';
+import { delay, chunkMessage, resolveModelSpec, isAutoRouted } from '@coachartie/shared';
 import { estimateTokens } from '@coachartie/shared';
 import { logger, canDMForTasks, getDMPolicy, dmPairingService, getSyncDb } from '@coachartie/shared';
 import {
@@ -646,7 +646,13 @@ JSON response:`;
         'X-Title': 'Coach Artie Proactive Judgment',
       },
       body: JSON.stringify({
-        model: judgmentModel(),
+        // judgmentModel() may be an "auto:<tier>" spec — see shared model-spec.ts
+        ...(() => {
+          const r = resolveModelSpec(judgmentModel());
+          return isAutoRouted(r.model)
+            ? { model: r.model, plugins: r.plugins, usage: { include: true } }
+            : { model: r.model };
+        })(),
         messages: [{ role: 'user', content: prompt }],
         max_tokens: 200, // Small response - just need yes/no JSON
       }),
@@ -657,20 +663,27 @@ JSON response:`;
     }
 
     const openRouterResult = (await openRouterResponse.json()) as {
+      model?: string;
       choices?: Array<{ message?: { content?: string } }>;
-      usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number };
+      usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number; cost?: number };
     };
     const rawResponse = openRouterResult.choices?.[0]?.message?.content || '';
 
     // Track proactive judgment cost
-    const judgmentModelId = judgmentModel();
+    // Auto-routed: record the model OpenRouter actually served, not "openrouter/auto".
+    const judgmentModelId = openRouterResult.model || resolveModelSpec(judgmentModel()).model;
     try {
       const usage = openRouterResult.usage;
       // Estimate tokens from char length if API doesn't return usage
       const promptTokens = usage?.prompt_tokens || estimateTokens(prompt);
       const completionTokens = usage?.completion_tokens || estimateTokens(rawResponse);
       const [inRate, outRate] = JUDGMENT_PRICING[judgmentModelId] ?? UNKNOWN_JUDGMENT_PRICING;
-      const estimatedCost = (promptTokens / 1000) * inRate + (completionTokens / 1000) * outRate;
+      // Prefer OpenRouter's reported USD cost (usage accounting) — auto-router picks are often
+      // models with no row in JUDGMENT_PRICING, which would book at the high unknown rate.
+      const estimatedCost =
+        typeof usage?.cost === 'number'
+          ? usage.cost
+          : (promptTokens / 1000) * inRate + (completionTokens / 1000) * outRate;
       const db = getSyncDb();
       db.run(
         `INSERT INTO model_usage_stats (
