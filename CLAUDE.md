@@ -29,11 +29,13 @@ Two paths, both active:
 - `services/github-poller.ts` — polls PRs, reviews, comments, CI, issues
 - `services/github-event-processor.ts` — batches, dedupes (30-min window), filters bots/drafts
 - `services/github-discord-poster.ts` — formats embeds, resolves @mentions
-- Watch config in `github_repo_watches` table. Currently: `Subway-Builder/metro-maker4` → channel `1480600810743267420`
+- Watch config in `github_repo_watches` table: metro-maker4 + 6 room302studio repos → #🤖robot in Room 302 (`1086329744762622023`)
+- @mentions (via `github_identity_mappings`) only on review requested / ready for review / approved / changes requested / CI failure / issue assigned — new PRs ping nobody, by design
+- Morning standup digest per repo at ~09:22 ET
 
 **Webhook** (capabilities package):
 - `handlers/github-webhook.ts` — handles push, release, pull_request, issues, issue_comment
-- Posts to channel `1480600810743267420` (sb robot) for issues
+- Posts to `GITHUB_FEED_CHANNEL_ID` (`packages/shared/src/config/channels.ts`, same #🤖robot channel). The old sb-robot channel `1480600810743267420` is deleted.
 - Rate limited: 5 posts/min, 30-min dedup window
 - Bot-authored events filtered
 
