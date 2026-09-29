@@ -26,6 +26,7 @@ import {
   clearScheduleDraft,
   getBallotDecks,
 } from '../commands/quiz.js';
+import { stackTalkCommand } from '../commands/stack-talk.js';
 import { parseQuizButtonId } from '../services/quiz-embed.js';
 import { quizSessionManager, isCorrectAnswer } from '../services/quiz-session-manager.js';
 import {
@@ -80,6 +81,7 @@ const commands = new Map([
   ['watch-repo', watchRepoCommand],
   ['unwatch-repo', unwatchRepoCommand],
   ['list-watches', listWatchesCommand],
+  ['stack-talk', stackTalkCommand],
 ] as any);
 
 export function setupInteractionHandler(client: Client) {

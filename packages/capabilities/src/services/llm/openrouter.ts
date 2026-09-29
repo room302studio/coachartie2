@@ -49,6 +49,16 @@ export function stickyRotationIndex(key: string, size: number): number {
 }
 
 /**
+ * Bill this call at OpenRouter's reported USD cost (`usage: { include: true }`) instead of
+ * MODEL_PRICING. Auto-routed calls need it (the served model isn't known up front), and so
+ * does any model with no pricing row: those book at top-tier $15/$75, so one 200k-token
+ * stack-talk call on a 45¢/M model would be recorded at ~$3 and trip the daily cap.
+ */
+function wantsReportedCost(model: string): boolean {
+  return isAutoRouted(model) || !UsageTracker.hasPricing(model);
+}
+
+/**
  * Cost attribution for a model_usage_stats row.
  *
  * Usage used to be recorded ONLY when the caller passed a messageId, so every background call
@@ -362,6 +372,11 @@ class OpenRouterService {
       plugins?: unknown[]; // OpenRouter plugins, e.g. [{ id: 'auto-router', cost_tier: 'low' }]
       rotationKey?: string; // sticky rotation per conversation (see stickyRotationIndex)
       stepType?: string; // Cost attribution: 'response' | 'observational_learning' | 'capability' | 'planning'
+      // Models to try after selectedModel, INSTEAD of the rotation. For huge prompts (stack-talk)
+      // a fallback onto the Haiku/Sonnet rotation would cost dollars; [] = no fallback at all.
+      fallbackModels?: string[];
+      reasoning?: Record<string, unknown>; // OpenRouter reasoning setting, e.g. { effort: 'none' }
+      timeoutMs?: number; // per-attempt timeout override (default PER_REQUEST_TIMEOUT_MS)
     }
   ): Promise<string> {
     // KILL SWITCH (manual or daily-budget mute): nothing generates, whoever is asking.
@@ -425,7 +440,10 @@ class OpenRouterService {
     // with a bare [effectiveModel] a single transient provider error on SMART_MODEL left
     // nothing to retry with, the orchestration failed, and Artie silently said nothing.
     const modelsToTry = useSpecificModel
-      ? [effectiveModel, ...this.models.filter((m) => m !== effectiveModel)]
+      ? [
+          effectiveModel,
+          ...(options?.fallbackModels ?? this.models).filter((m) => m !== effectiveModel),
+        ]
       : this.models;
 
     // When OpenRouter returns a 402 of the form "you requested up to X tokens,
@@ -478,18 +496,22 @@ class OpenRouterService {
           ...(plugins ? { plugins } : {}),
           // Auto-routed picks may be models we have no price for (billed at $15/$75 by
           // default); OpenRouter's usage accounting reports the exact USD cost instead.
-          ...(isAutoRouted(model) ? { usage: { include: true } } : {}),
+          ...(wantsReportedCost(model) ? { usage: { include: true } } : {}),
           ...(isAutoRouted(model) && autoReasoningFor(plugins)
             ? { reasoning: autoReasoningFor(plugins) }
             : {}),
+          ...(options?.reasoning ? { reasoning: options.reasoning } : {}),
         };
-        const completion = await this.client.chat.completions.create({
-          model,
-          messages: cache.messages as never,
-          max_tokens: maxTokens,
-          temperature,
-          ...extraBody,
-        });
+        const completion = await this.client.chat.completions.create(
+          {
+            model,
+            messages: cache.messages as never,
+            max_tokens: maxTokens,
+            temperature,
+            ...extraBody,
+          },
+          options?.timeoutMs ? { timeout: options.timeoutMs } : undefined
+        );
         // openrouter/auto picks the model; bill what was actually served, or the unknown-model
         // fallback ($15/$75) would trip the daily cap early. Other models bill as requested.
         const billedModel = isAutoRouted(model) && completion.model ? completion.model : model;
@@ -512,7 +534,7 @@ class OpenRouterService {
             billed: billedModel,
             usage: failedUsage,
             cost:
-              isAutoRouted(model) && Number.isFinite(failedReported)
+              wantsReportedCost(model) && Number.isFinite(failedReported)
                 ? failedReported
                 : UsageTracker.calculateCost(billedModel, failedUsage),
           };
@@ -587,7 +609,7 @@ class OpenRouterService {
         // Calculate cost and record usage
         const reportedCost = Number((completion.usage as { cost?: unknown } | undefined)?.cost);
         const estimatedCost =
-          isAutoRouted(model) && Number.isFinite(reportedCost)
+          wantsReportedCost(model) && Number.isFinite(reportedCost)
             ? reportedCost
             : UsageTracker.calculateCost(billedModel, usage);
 
@@ -597,7 +619,7 @@ class OpenRouterService {
           usage.completion_tokens,
           billedModel,
           usage.cached_tokens ?? 0,
-          isAutoRouted(model) && Number.isFinite(reportedCost) ? reportedCost : undefined
+          wantsReportedCost(model) && Number.isFinite(reportedCost) ? reportedCost : undefined
         );
 
         // Log warnings if any
@@ -901,7 +923,7 @@ class OpenRouterService {
           ...(plugins ? { plugins } : {}),
           // Auto-routed picks may be models we have no price for (billed at $15/$75 by
           // default); OpenRouter's usage accounting reports the exact USD cost instead.
-          ...(isAutoRouted(model) ? { usage: { include: true } } : {}),
+          ...(wantsReportedCost(model) ? { usage: { include: true } } : {}),
           ...(isAutoRouted(model) && autoReasoningFor(plugins)
             ? { reasoning: autoReasoningFor(plugins) }
             : {}),
@@ -989,7 +1011,7 @@ class OpenRouterService {
         // Calculate cost and track usage
         const billedModel = isAutoRouted(model) && servedModel ? servedModel : model;
         const estimatedCost =
-          isAutoRouted(model) && reportedCost !== undefined
+          wantsReportedCost(model) && reportedCost !== undefined
             ? reportedCost
             : UsageTracker.calculateCost(billedModel, usage);
 
@@ -999,7 +1021,7 @@ class OpenRouterService {
           usage.completion_tokens,
           billedModel,
           usage.cached_tokens ?? 0,
-          isAutoRouted(model) ? reportedCost : undefined
+          wantsReportedCost(model) ? reportedCost : undefined
         );
 
         // Log warnings if any
