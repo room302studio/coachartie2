@@ -22,7 +22,13 @@ import {
 import { delay, chunkMessage } from '@coachartie/shared';
 import { estimateTokens } from '@coachartie/shared';
 import { logger, canDMForTasks, getDMPolicy, dmPairingService, getSyncDb } from '@coachartie/shared';
-import { BLOCKED_USER_IDS, isBlockedUser, isOperatorOnlyError } from '@coachartie/shared';
+import {
+  BLOCKED_USER_IDS,
+  isBlockedUser,
+  isOperatorOnlyError,
+  getKillSwitchPath,
+  isGenerationMuted,
+} from '@coachartie/shared';
 import { publishMessage } from '../queues/publisher.js';
 import { telemetry } from '../services/telemetry.js';
 import {
@@ -458,8 +464,8 @@ const GUILD_CHANNEL_TYPE = 0; // Discord guild text channel type
 // EMERGENCY KILL SWITCH — global mute. If this file exists, Artie ignores ALL messages.
 // `touch <repo>/KILL_SWITCH` to silence instantly (no restart); `rm` to revive.
 // Toggle remotely via POST /api/killswitch {"enabled":true|false}.
-const KILL_SWITCH_PATH =
-  process.env.KILL_SWITCH_PATH || join(process.cwd(), '..', '..', 'KILL_SWITCH');
+// Also set automatically by the daily spend cap (capabilities daily-budget.ts).
+const KILL_SWITCH_PATH = getKillSwitchPath();
 
 // =============================================================================
 // MESSAGE CHUNKING UTILITIES
@@ -583,6 +589,12 @@ Set answer=false if:
 CRITICAL: When in doubt, answer FALSE. It's better to miss a question than to interrupt conversations.
 
 JSON response:`;
+
+    // Belt and braces: the handler already returned if muted, but this is a direct paid call.
+    if (isGenerationMuted(KILL_SWITCH_PATH)) {
+      logger.warn('🛑 Kill switch active — skipping proactive judgment');
+      return false;
+    }
 
     // Use direct OpenRouter call to avoid capability orchestration
     // The full chat endpoint includes email/calendar capabilities that can hijack the response
@@ -1024,7 +1036,7 @@ export function setupMessageHandler(client: Client) {
       }
     }
 
-    if (existsSync(KILL_SWITCH_PATH)) {
+    if (isGenerationMuted(KILL_SWITCH_PATH)) {
       logger.warn(`🛑 KILL SWITCH active — ignoring message [${shortId}]`);
       return;
     }

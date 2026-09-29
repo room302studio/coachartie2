@@ -17,7 +17,7 @@
  *   - n8n calendar/email (when configured)
  */
 
-import { logger, getDb, errorEvents } from '@coachartie/shared';
+import { logger, getDb, errorEvents, isGenerationMuted } from '@coachartie/shared';
 import { desc, gte, sql } from 'drizzle-orm';
 import {
   getPendingRelaysForBriefing,
@@ -1551,7 +1551,9 @@ Write the morning brief. Under 1800 characters total.`;
   }
 
   // Attempt 2: OpenAI direct (bypasses OpenRouter credit issues)
-  if (!result && process.env.OPENAI_API_KEY) {
+  // Not while muted: the OpenRouter attempt above threw BECAUSE of the kill switch, and this
+  // fallback would otherwise route straight around it on a different bill.
+  if (!result && process.env.OPENAI_API_KEY && !isGenerationMuted()) {
     try {
       const OpenAI = (await import('openai')).default;
       const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });

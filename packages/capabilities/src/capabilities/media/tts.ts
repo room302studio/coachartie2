@@ -1,4 +1,4 @@
-import { logger, getSyncDb, scrubBlockedUserMentions } from '@coachartie/shared';
+import { logger, getSyncDb, scrubBlockedUserMentions, assertGenerationAllowed } from '@coachartie/shared';
 import {
   RegisteredCapability,
   CapabilityContext,
@@ -216,6 +216,8 @@ export const ttsCapability: RegisteredCapability = {
   ],
 
   handler: async (params: any, capContent: string | undefined, context?: CapabilityContext) => {
+    // ElevenLabs is paid too — nothing speaks while the kill switch / budget mute is on.
+    assertGenerationAllowed('tts');
     const action = params.action || 'vibe_report';
     if (!['speak', 'vibe_report', 'sing', 'sfx'].includes(action)) {
       return `Unknown action: ${action}. Available: vibe_report, speak, sing, sfx`;

@@ -10,6 +10,7 @@ import {
   queueLogger,
   performanceLogger,
   testRedisConnection,
+  isGenerationMuted,
 } from '@coachartie/shared';
 import { processMessage } from '../handlers/process-message.js';
 import { JOB_TIMEOUT_MS } from '../config/timeouts.js';
@@ -58,6 +59,16 @@ export async function startMessageConsumer(): Promise<Worker<IncomingMessage, vo
 
   const worker = createWorker<IncomingMessage, void>(QUEUES.INCOMING_MESSAGES, async (job) => {
     const message = job.data;
+
+    // KILL SWITCH (manual or daily-budget mute): drop the job before any context building or
+    // model call. Completed, not failed — a BullMQ retry would only re-run it into the mute.
+    if (isGenerationMuted()) {
+      logger.warn(`🛑 Kill switch active — dropping job ${job.id} (${message.source}) unprocessed`);
+      if (message.source === 'api' && message.respondTo.type === 'api') {
+        jobTracker.failJob(message.id, 'GENERATION MUTED (kill switch active)');
+      }
+      return;
+    }
 
     logger.info(`🔄 WORKER: Job ${job.id} pulled from queue:`, {
       jobId: job.id,

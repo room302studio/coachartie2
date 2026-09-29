@@ -337,8 +337,10 @@ export class CapabilityOrchestrator {
     // either stay silent (return '') or reply with a short, internals-free human line.
     // (An empty response is treated as "nothing to say" and is not posted.)
 
-    // Billing / credit exhaustion — operator concern only. Stay silent in the channel.
+    // Billing / credit exhaustion / kill switch (incl. the daily budget mute) — operator
+    // concern only. Stay silent in the channel.
     if (
+      errorMessage.includes('GENERATION MUTED') ||
       errorMessage.includes('OUT OF CREDITS') ||
       errorMessage.includes('credit') ||
       errorMessage.includes('402')

@@ -47,6 +47,7 @@ import { jobTracker } from './services/core/job-tracker.js';
 import { costMonitor } from './services/monitoring/cost-monitor.js';
 import { distressMonitor } from './services/monitoring/distress-monitor.js';
 import { vitalsMonitor } from './services/monitoring/vitals-monitor.js';
+import { startDailyBudgetWatch } from './services/monitoring/daily-budget.js';
 import { GlobalVariableStore } from './capabilities/system/variable-store.js';
 // Import orchestrator FIRST to trigger capability registration
 import './services/capability/capability-orchestrator.js';
@@ -282,6 +283,11 @@ async function start() {
     // Start queue workers first
     console.log('👷 Starting queue workers...');
     await startQueueWorkers();
+
+    // Daily spend cap FIRST, before anything that can generate: it lifts a stale budget mute
+    // from a previous ET day and trips the mute if today's spend is already over the cap.
+    console.log('💸 Starting daily budget watch...');
+    startDailyBudgetWatch();
 
     // Start scheduler
     console.log('⏰ Starting scheduler...');

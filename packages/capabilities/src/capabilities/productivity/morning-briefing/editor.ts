@@ -1,4 +1,4 @@
-import { logger } from '@coachartie/shared';
+import { logger, isGenerationMuted } from '@coachartie/shared';
 
 const PROMPT = `You are an intelligence briefing editor for a journalist monitoring Hudson Valley OSINT. Synthesize raw data into a tight morning brief.
 
@@ -34,7 +34,7 @@ export async function editorPass(raw: Record<string,string>, dateStr: string, fo
     const { openRouterService } = await import('../../../services/llm/openrouter.js');
     result = await openRouterService.generateFromMessageChain(messages, 'morning-briefing-editor', undefined, process.env.SMART_MODEL || 'anthropic/claude-sonnet-4', { maxTokens: 2048 });
   } catch (e) { logger.warn('Editor OpenRouter failed:', e); }
-  if (!result && process.env.OPENAI_API_KEY) {
+  if (!result && process.env.OPENAI_API_KEY && !isGenerationMuted()) { // never route around the kill switch
     try {
       const openai = new (await import('openai')).default({ apiKey: process.env.OPENAI_API_KEY });
       const c = await openai.chat.completions.create({ model: 'gpt-4o-mini', messages, max_tokens: 2048, temperature: 0.7 });

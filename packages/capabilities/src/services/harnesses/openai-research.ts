@@ -10,7 +10,7 @@
  * - Code interpreter: $0.03 per session
  */
 
-import { logger } from '@coachartie/shared';
+import { logger, assertGenerationAllowed } from '@coachartie/shared';
 import type {
   ModelHarness,
   ResearchTask,
@@ -81,6 +81,7 @@ export class OpenAIResearchHarness implements ModelHarness {
   }
 
   async submitTask(task: ResearchTask): Promise<TaskHandle> {
+    assertGenerationAllowed('openai-research');
     if (!this.isAvailable()) {
       throw new Error('OpenAI Research Harness not configured - missing OPENAI_API_KEY');
     }

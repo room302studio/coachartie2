@@ -7,7 +7,7 @@
  * Uses the fastest/cheapest available model (haiku-class or free tier).
  */
 
-import { logger } from '@coachartie/shared';
+import { logger, assertGenerationAllowed } from '@coachartie/shared';
 import OpenAI from 'openai';
 
 // Micro LLM config - fast and cheap
@@ -18,6 +18,9 @@ const MICRO_TIMEOUT_MS = 3000; // Fail fast
 let client: OpenAI | null = null;
 
 function getClient(): OpenAI {
+  // Kill switch: throwing here lands in each helper's catch, which returns its default —
+  // so a muted Artie makes no micro calls and callers still get a sane answer.
+  assertGenerationAllowed('micro-llm');
   if (!client) {
     client = new OpenAI({
       baseURL: 'https://openrouter.ai/api/v1',

@@ -1,11 +1,19 @@
 import { Router, Request, Response } from 'express';
-import { logger } from '@coachartie/shared';
+import {
+  logger,
+  readKillSwitch,
+  writeManualMute,
+  clearKillSwitch,
+  writeBudgetOverride,
+  easternDayKey,
+  getKillSwitchPath,
+} from '@coachartie/shared';
 import { ForumTraversalService } from '../services/forum-traversal.js';
 import { GitHubIntegrationService } from '../services/github-integration.js';
 import { Client, AttachmentBuilder, PollLayoutType } from 'discord.js';
 import { mentionProxyRouter } from './mention-proxy.js';
 import { violatesOutputSafety } from '../services/user-intent-processor.js';
-import { readFileSync, writeFileSync, existsSync, appendFileSync, unlinkSync } from 'fs';
+import { readFileSync, writeFileSync, existsSync, appendFileSync } from 'fs';
 import { join } from 'path';
 
 // Active-poll ledger: cap how many live Artie-created polls exist per channel so #prison
@@ -28,8 +36,7 @@ function recordPoll(channelId: string, messageId: string, durationHours: number)
 }
 
 // Emergency kill switch file (presence of file = Artie muted globally). See message-handler.ts.
-const KILL_SWITCH_PATH =
-  process.env.KILL_SWITCH_PATH || join(process.cwd(), '..', '..', 'KILL_SWITCH');
+const KILL_SWITCH_PATH = getKillSwitchPath();
 
 // Presence system constants
 const EJ_USER_ID = '688448399879438340';
@@ -97,25 +104,44 @@ export function createApiRouter(discordClient: Client): Router {
 
   // ============================================================================
   // EMERGENCY KILL SWITCH
-  // GET  /api/killswitch            -> { muted: boolean }
+  // GET  /api/killswitch            -> { muted, kind: 'manual'|'budget'|null, ... }
   // POST /api/killswitch {enabled}  -> set muted on/off (creates/removes KILL_SWITCH file)
-  // When muted, message-handler ignores ALL incoming messages (checked per message).
+  // While muted NOTHING generates: message-handler ignores incoming messages and every LLM
+  // call site in both processes refuses (see @coachartie/shared kill-switch.ts).
+  // A budget mute (daily spend cap) lifts itself at ET midnight. Unmuting one by hand also
+  // records a same-day override so the cap doesn't re-trip on the very next call.
   // ============================================================================
   router.get('/killswitch', (_req: Request, res: Response) => {
-    res.json({ muted: existsSync(KILL_SWITCH_PATH), path: KILL_SWITCH_PATH });
+    const state = readKillSwitch(KILL_SWITCH_PATH);
+    res.json({
+      ...state,
+      kind: state.muted ? state.kind : null,
+      path: KILL_SWITCH_PATH,
+    });
   });
 
   router.post('/killswitch', (req: Request, res: Response) => {
     try {
       const enabled = req.body?.enabled === true || req.body?.enabled === 'true';
       if (enabled) {
-        writeFileSync(KILL_SWITCH_PATH, `muted at ${new Date().toISOString()}\n`);
+        // Always written as a MANUAL mute — automation never lifts these.
+        writeManualMute(KILL_SWITCH_PATH);
         logger.warn('🛑 KILL SWITCH ENABLED via API — Artie is now muted globally');
-      } else if (existsSync(KILL_SWITCH_PATH)) {
-        unlinkSync(KILL_SWITCH_PATH);
-        logger.warn('✅ KILL SWITCH DISABLED via API — Artie is responding again');
+      } else {
+        const state = readKillSwitch(KILL_SWITCH_PATH);
+        if (state.muted && state.kind === 'budget') {
+          writeBudgetOverride(easternDayKey(), KILL_SWITCH_PATH);
+          logger.warn(
+            `💸 Budget mute lifted by hand — daily cap overridden for the rest of ${easternDayKey()} (ET)`
+          );
+        }
+        if (state.muted) {
+          clearKillSwitch(KILL_SWITCH_PATH);
+          logger.warn('✅ KILL SWITCH DISABLED via API — Artie is responding again');
+        }
       }
-      res.json({ success: true, muted: existsSync(KILL_SWITCH_PATH) });
+      const after = readKillSwitch(KILL_SWITCH_PATH);
+      res.json({ success: true, muted: after.muted, kind: after.muted ? after.kind : null });
     } catch (error) {
       logger.error('Failed to toggle kill switch:', error);
       res.status(500).json({

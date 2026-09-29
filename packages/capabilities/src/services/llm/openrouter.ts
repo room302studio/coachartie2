@@ -9,7 +9,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 config({ path: resolve(__dirname, '../../../../.env') });
 config({ path: resolve(__dirname, '../../.env') });
 
-import { logger } from '@coachartie/shared';
+import { logger, assertGenerationAllowed } from '@coachartie/shared';
 import { UsageTracker, TokenUsage } from '../monitoring/usage-tracker.js';
 import { applyCacheControl, readCacheUsage, wireContentLength } from './prompt-cache.js';
 import { creditMonitor } from '../monitoring/credit-monitor.js';
@@ -23,6 +23,21 @@ import { traceManager, experimentManager } from '../context-alchemy/index.js';
 import { PER_REQUEST_TIMEOUT_MS } from '../../config/timeouts.js';
 
 export { PER_REQUEST_TIMEOUT_MS };
+
+/**
+ * Cost attribution for a model_usage_stats row.
+ *
+ * Usage used to be recorded ONLY when the caller passed a messageId, so every background call
+ * (observation summaries, memory tagging, reflection, briefings, social behaviour...) spent
+ * money that never reached the table — invisible to cost reports and to the daily budget cap,
+ * which sums this table. Every call is recorded now; calls with no message behind them are
+ * labelled 'background' so they don't inflate the 'response' numbers.
+ */
+function stepTypeFor(userId: string, messageId: string | undefined, explicit?: string): string {
+  if (explicit) return explicit;
+  if (userId === 'observational-system') return 'observational_learning';
+  return messageId ? 'response' : 'background';
+}
 
 class OpenRouterService {
   private client: OpenAI;
@@ -323,6 +338,9 @@ class OpenRouterService {
       stepType?: string; // Cost attribution: 'response' | 'observational_learning' | 'capability' | 'planning'
     }
   ): Promise<string> {
+    // KILL SWITCH (manual or daily-budget mute): nothing generates, whoever is asking.
+    assertGenerationAllowed(`generation for ${userId}`);
+
     // SHORT-CIRCUIT: If credits are exhausted, don't even try the API
     if (creditMonitor.areCreditsExhausted()) {
       logger.info('💳 Skipping API call - credits exhausted (in cooldown period)');
@@ -516,11 +534,11 @@ class OpenRouterService {
         }
 
         // Record usage statistics (don't await to avoid blocking)
-        if (messageId) {
+        {
           UsageTracker.recordUsage({
             model_name: model,
             user_id: userId,
-            message_id: messageId,
+            message_id: messageId ?? '',
             input_length: cache.messages.reduce(
               (total, msg) => total + wireContentLength(msg.content),
               0
@@ -536,7 +554,7 @@ class OpenRouterService {
             total_tokens: usage.total_tokens,
             cached_tokens: usage.cached_tokens ?? 0,
             estimated_cost: estimatedCost,
-            step_type: options?.stepType || (userId === 'observational-system' ? 'observational_learning' : 'response'),
+            step_type: stepTypeFor(userId, messageId, options?.stepType),
           }).catch((error) => {
             logger.error('Failed to record usage stats:', error);
           });
@@ -579,11 +597,11 @@ class OpenRouterService {
         // from this table was a fake 0%. A failed attempt still consumed billed input
         // tokens in most cases; prompt_tokens is an estimate here since the API returned
         // no usage object, which is why it is flagged via error_type rather than trusted.
-        if (messageId) {
+        {
           UsageTracker.recordUsage({
             model_name: model,
             user_id: userId,
-            message_id: messageId,
+            message_id: messageId ?? '',
             input_length: messages.reduce((total, msg) => total + msg.content.length, 0),
             output_length: 0,
             response_time_ms: Date.now() - startTime,
@@ -597,7 +615,7 @@ class OpenRouterService {
             total_tokens: 0,
             cached_tokens: 0,
             estimated_cost: 0,
-            step_type: options?.stepType || 'response',
+            step_type: stepTypeFor(userId, messageId, options?.stepType),
           }).catch(() => {
             // Never let telemetry failure mask the real error we're handling.
           });
@@ -721,6 +739,8 @@ class OpenRouterService {
     if (messages.length === 0) {
       throw new Error('No messages provided');
     }
+    // KILL SWITCH (manual or daily-budget mute): nothing generates, whoever is asking.
+    assertGenerationAllowed(`streaming generation for ${userId}`);
 
     const startTime = Date.now();
     const traceId = options?.traceId;
@@ -883,11 +903,11 @@ class OpenRouterService {
         }
 
         // Record usage statistics (don't await to avoid blocking)
-        if (messageId) {
+        {
           UsageTracker.recordUsage({
             model_name: model,
             user_id: userId,
-            message_id: messageId,
+            message_id: messageId ?? '',
             input_length: cache.messages.reduce(
               (total, msg) => total + wireContentLength(msg.content),
               0
@@ -903,7 +923,7 @@ class OpenRouterService {
             total_tokens: usage.total_tokens,
             cached_tokens: usage.cached_tokens ?? 0,
             estimated_cost: estimatedCost,
-            step_type: options?.stepType || (userId === 'observational-system' ? 'observational_learning' : 'response'),
+            step_type: stepTypeFor(userId, messageId, options?.stepType),
           }).catch((error) => {
             logger.error('Failed to record streaming usage stats:', error);
           });

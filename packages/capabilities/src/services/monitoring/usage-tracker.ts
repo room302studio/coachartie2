@@ -1,5 +1,6 @@
 import { getSyncDb } from '@coachartie/shared';
 import { logger } from '@coachartie/shared';
+import { scheduleDailyBudgetCheck } from './daily-budget.js';
 
 export interface TokenUsage {
   prompt_tokens: number;
@@ -157,6 +158,9 @@ export class UsageTracker {
       logger.info(
         `📊 Usage recorded: ${stats.model_name} - ${stats.total_tokens} tokens${cacheNote} - $${stats.estimated_cost.toFixed(4)}`
       );
+
+      // Spend just changed — re-evaluate the daily cap (coalesced, fire-and-forget).
+      if ((stats.estimated_cost ?? 0) > 0) scheduleDailyBudgetCheck();
     } catch (error) {
       logger.error('❌ Failed to record usage stats:', error);
       // Don't throw - usage tracking failure shouldn't break the main flow

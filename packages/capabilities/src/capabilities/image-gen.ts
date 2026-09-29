@@ -1,5 +1,5 @@
 import { RegisteredCapability } from '../services/capability/capability-registry.js';
-import { logger } from '@coachartie/shared';
+import { logger, assertGenerationAllowed } from '@coachartie/shared';
 import { addPendingAttachment } from '../services/llm/context-alchemy.js';
 
 interface ImageGenParams {
@@ -90,7 +90,8 @@ async function handleImageGen(params: ImageGenParams): Promise<{
     },
   ];
 
-  // Make the API call
+  // Make the API call (never while the kill switch / budget mute is on)
+  assertGenerationAllowed('image-gen');
   const response = await fetch(`${baseURL}/chat/completions`, {
     method: 'POST',
     headers: {

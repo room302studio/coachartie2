@@ -1,6 +1,6 @@
 import OpenAI from 'openai';
 import { RegisteredCapability } from '../../services/capability/capability-registry.js';
-import { logger } from '@coachartie/shared';
+import { logger, assertGenerationAllowed } from '@coachartie/shared';
 
 interface VisionParams {
   action: 'extract';
@@ -103,6 +103,8 @@ async function handleVision(params: VisionParams): Promise<string> {
     process.env.VISION_MODEL ||
     process.env.OPENROUTER_MODELS?.split(',').map((m) => m.trim())[0] ||
     'openai/gpt-4o';
+
+  assertGenerationAllowed('vision');
 
   const client = new OpenAI({
     apiKey,
