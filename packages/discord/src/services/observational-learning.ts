@@ -9,6 +9,46 @@ import { getGuildConfig, GUILD_CONFIGS, GuildType } from '../config/guild-whitel
  * Uses Discord API to fetch message history instead of real-time batching
  */
 
+/**
+ * THE OBSERVATION FIREHOSE IS OFF BY DEFAULT (#91).
+ *
+ * Every 25 minutes this summarized each observed channel with an LLM call and stored the
+ * summary as an 'observational-system' memory, plus an LLM profile-synthesis call per person
+ * who spoke. 7,161 observation memories were written and exactly 0 were ever recalled; 60%
+ * summarized three messages or fewer (a paid summary of someone saying thanks), and 535
+ * recorded that nothing happened. Explicit memories — a user asking Artie to remember
+ * something, facts he stores via the memory capability — are a different path and untouched.
+ *
+ * OBSERVATIONAL_LEARNING_ENABLED=true turns the loop back on (summaries AND profile updates).
+ * When on, two guards from #91 apply: batches under OBSERVATION_MIN_MESSAGES (default 5)
+ * human messages wait for more instead of being summarized, and summaries that only say
+ * nothing happened are not stored. Existing user profiles stay readable either way (the
+ * speak gate uses them); they just stop being refreshed while this is off.
+ */
+export function isObservationalLearningEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
+  return env.OBSERVATIONAL_LEARNING_ENABLED === 'true';
+}
+
+export function observationMinMessages(env: NodeJS.ProcessEnv = process.env): number {
+  const n = parseInt(env.OBSERVATION_MIN_MESSAGES || '', 10);
+  return Number.isFinite(n) && n > 0 ? n : 5;
+}
+
+/** "An LLM concluded there was nothing to remember" — don't store that as a memory. */
+const NON_EVENT_PATTERNS = [
+  /\bno (specific|notable|significant|relevant|meaningful|particular|clear)\b/i,
+  /\bno correlations?\b/i,
+  /\bnothing (notable|significant|of note|relevant|meaningful|to (note|report|remember))\b/i,
+  /\b(were|was) not (mentioned|discussed|observed)\b/i,
+  /\binsufficient (information|context|data)\b/i,
+];
+
+export function isNonEventSummary(summary: string | null | undefined): boolean {
+  const text = (summary || '').trim();
+  if (text.length < 20) return true;
+  return NON_EVENT_PATTERNS.some((re) => re.test(text));
+}
+
 interface ProcessedChannel {
   guildId: string;
   channelId: string;
@@ -45,6 +85,13 @@ export class ObservationalLearning {
    */
   initialize(client: Client): void {
     this.client = client;
+
+    if (!isObservationalLearningEnabled()) {
+      logger.info(
+        '👁️ Observational learning OFF (OBSERVATIONAL_LEARNING_ENABLED != true) — no observation summaries or profile synthesis'
+      );
+      return;
+    }
 
     // Check for guilds that should be observed:
     // - All 'watching' type guilds
@@ -166,6 +213,18 @@ export class ObservationalLearning {
           return;
         }
 
+        // Substance floor (#91): a batch of 1-3 messages isn't worth an LLM summary. Leave the
+        // cursor where it is so they accumulate — unless the fetch is full, in which case
+        // waiting wouldn't help.
+        const humanCount = messages.filter((m) => !m.author.bot && !isBlockedUser(m.author.id)).size;
+        const floor = observationMinMessages();
+        if (humanCount < floor && messages.size < this.MESSAGES_PER_FETCH) {
+          logger.debug(
+            `👁️ ${guildName} #${channel.name}: ${humanCount} new human message(s) < floor ${floor} — waiting`
+          );
+          return;
+        }
+
         await this.summarizeAndStore(messages, guildId, guildName, channel.id, channel.name);
 
         // Update user profiles for anyone who spoke in this batch
@@ -272,6 +331,12 @@ Focus on patterns that would help understand this community's needs and interest
         logger.info(
           `👁️ Observation summary created (cost: $${result.cost?.toFixed(4)}): ${result.summary?.substring(0, 100)}...`
         );
+
+        // Write-time guard (#91): "nothing notable happened" is not a memory.
+        if (isNonEventSummary(result.summary)) {
+          logger.info(`👁️ Observation for ${guildName} #${channelName} was a non-event — not stored`);
+          return;
+        }
 
         // Store as observational memory
         await this.storeObservationalMemory(
