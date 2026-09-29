@@ -489,6 +489,7 @@ class OpenRouterService {
           completion_tokens: completion.usage?.completion_tokens || 0,
           total_tokens: completion.usage?.total_tokens || 0,
           cached_tokens: readCacheUsage(completion.usage).read,
+          cache_write_tokens: readCacheUsage(completion.usage).write,
         };
         const cacheUsage = readCacheUsage(completion.usage);
         // read AND write, because read=0 alone can't tell "just warmed it" from "broken".
@@ -553,6 +554,7 @@ class OpenRouterService {
             completion_tokens: usage.completion_tokens,
             total_tokens: usage.total_tokens,
             cached_tokens: usage.cached_tokens ?? 0,
+            cache_write_tokens: usage.cache_write_tokens ?? 0,
             estimated_cost: estimatedCost,
             step_type: stepTypeFor(userId, messageId, options?.stepType),
           }).catch((error) => {
@@ -859,6 +861,7 @@ class OpenRouterService {
               completion_tokens: chunk.usage.completion_tokens || 0,
               total_tokens: chunk.usage.total_tokens || 0,
               cached_tokens: readCacheUsage(chunk.usage).read,
+              cache_write_tokens: readCacheUsage(chunk.usage).write,
             };
             const cu = readCacheUsage(chunk.usage);
             logger.info(
@@ -922,6 +925,7 @@ class OpenRouterService {
             completion_tokens: usage.completion_tokens,
             total_tokens: usage.total_tokens,
             cached_tokens: usage.cached_tokens ?? 0,
+            cache_write_tokens: usage.cache_write_tokens ?? 0,
             estimated_cost: estimatedCost,
             step_type: stepTypeFor(userId, messageId, options?.stepType),
           }).catch((error) => {

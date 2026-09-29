@@ -13,6 +13,17 @@ export interface TokenUsage {
    * prefix means a silent cache invalidator — see context-alchemy's static system block.
    */
   cached_tokens?: number;
+  /**
+   * Prompt tokens WRITTEN to the cache on this call (prompt_tokens_details.cache_write_tokens),
+   * also a subset of prompt_tokens. Billed at a premium: 1.25x for the 5-minute TTL, 2x for
+   * the 1-hour TTL we use by default.
+   */
+  cache_write_tokens?: number;
+}
+
+/** Write premium matching prompt-cache.ts's TTL choice (PROMPT_CACHE_TTL=5m → 1.25x, else 1h → 2x). */
+export function cacheWriteMultiplier(): number {
+  return process.env.PROMPT_CACHE_TTL === '5m' ? 1.25 : 2.0;
 }
 
 export interface UsageStats {
@@ -31,6 +42,7 @@ export interface UsageStats {
   completion_tokens: number;
   total_tokens: number;
   cached_tokens?: number;
+  cache_write_tokens?: number;
   estimated_cost: number;
   step_type?: string; // 'response' | 'proactive_judgment' | 'observational_learning' | 'capability' | 'planning'
 }
@@ -103,9 +115,15 @@ export class UsageTracker {
     // the uncached remainder is the difference — charging the full prompt at list price
     // would hide exactly the saving prompt caching exists to produce.
     const cached = Math.min(usage.cached_tokens ?? 0, usage.prompt_tokens);
-    const uncached = usage.prompt_tokens - cached;
+    // Cache WRITES bill at a premium (2x at the 1h TTL). They were costed at list price, so
+    // every cache-warming call was under-booked — and the daily budget cap sums these rows.
+    const written = Math.min(usage.cache_write_tokens ?? 0, usage.prompt_tokens - cached);
+    const uncached = usage.prompt_tokens - cached - written;
 
-    const inputCost = (uncached / 1000) * pricing.input + (cached / 1000) * pricing.input * 0.1;
+    const inputCost =
+      (uncached / 1000) * pricing.input +
+      (cached / 1000) * pricing.input * 0.1 +
+      (written / 1000) * pricing.input * cacheWriteMultiplier();
     const outputCost = (usage.completion_tokens / 1000) * pricing.output;
 
     return inputCost + outputCost;
@@ -125,8 +143,9 @@ export class UsageTracker {
           model_name, user_id, message_id, input_length, output_length,
           response_time_ms, capabilities_detected, capabilities_executed,
           capability_types, success, error_type, prompt_tokens,
-          completion_tokens, total_tokens, cached_tokens, estimated_cost, step_type
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          completion_tokens, total_tokens, cached_tokens, cache_write_tokens,
+          estimated_cost, step_type
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           stats.model_name || 'unknown',
           stats.user_id || 'unknown',
@@ -143,6 +162,7 @@ export class UsageTracker {
           stats.completion_tokens ?? 0,
           stats.total_tokens ?? 0,
           stats.cached_tokens ?? 0,
+          stats.cache_write_tokens ?? 0,
           stats.estimated_cost ?? 0,
           stats.step_type || 'response',
         ]

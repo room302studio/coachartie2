@@ -28,6 +28,13 @@ if ! sqlite3 "$DB" "PRAGMA table_info(model_usage_stats);" | grep -q '|cached_to
   exit 1
 fi
 
+# cache_write_tokens arrived later than cached_tokens (also added on boot). Show it when present:
+# a cold cache writes (write > 0, read = 0) on the first call per prefix; a broken one does neither.
+WRITES_COL="0"
+if sqlite3 "$DB" "PRAGMA table_info(model_usage_stats);" | grep -q '|cache_write_tokens|'; then
+  WRITES_COL="cache_write_tokens"
+fi
+
 echo "=== Prompt cache, last ${HOURS}h ==="
 sqlite3 -header -column "$DB" "
   SELECT
@@ -36,6 +43,7 @@ sqlite3 -header -column "$DB" "
     COUNT(*)                                             AS calls,
     ROUND(AVG(prompt_tokens))                            AS avg_in,
     ROUND(AVG(cached_tokens))                            AS avg_cached,
+    SUM(${WRITES_COL})                                   AS written,
     ROUND(100.0 * SUM(cached_tokens) / NULLIF(SUM(prompt_tokens),0), 1) AS cache_pct,
     ROUND(SUM(estimated_cost), 4)                        AS cost
   FROM model_usage_stats
@@ -56,6 +64,10 @@ sqlite3 "$DB" "
       THEN 'NO DATA — no calls in the window. Is he running? Are credits topped up?'
     WHEN MAX(cached_tokens) > 0
       THEN 'WORKING — best call served ' || MAX(cached_tokens) || ' tokens from cache.'
+    WHEN MAX(${WRITES_COL}) > 0
+      THEN 'WARMING — writes seen (' || MAX(${WRITES_COL}) || ' tokens) but no reads yet. ' ||
+           'Normal for the FIRST call per prefix; if later calls to the same model still read 0, ' ||
+           'the prefix is changing between calls (see the NOT CACHING checklist).'
     ELSE 'NOT CACHING — every call billed its full prefix. Check, in this order: ' ||
          'is the model anthropic/*; is the static prefix above the model minimum ' ||
          '(Haiku 4.5 needs 4096, Opus 4.8 needs 1024 — grep the logs for ' ||

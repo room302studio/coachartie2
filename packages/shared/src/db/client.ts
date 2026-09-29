@@ -261,6 +261,9 @@ function addColumnIfMissing(
   // threw, the error was caught and logged, and the service booted happily writing zero
   // usage rows. Silent, total loss of cost and cache telemetry on any new deploy.
   addColumnIfMissing(raw, 'model_usage_stats', 'step_type', "TEXT DEFAULT 'response'");
+  // Cache WRITES, so a cold cache (first call per prefix: write > 0, read = 0) can be told
+  // apart from a broken one (both 0) in the table, not just in the logs.
+  addColumnIfMissing(raw, 'model_usage_stats', 'cache_write_tokens', 'INTEGER DEFAULT 0');
 
   // Credit balance table
   raw.exec(`
