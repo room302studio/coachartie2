@@ -32,6 +32,23 @@ import { PER_REQUEST_TIMEOUT_MS } from '../../config/timeouts.js';
 export { PER_REQUEST_TIMEOUT_MS };
 
 /**
+ * Sticky rotation (EJ, 2026-09-29: "rotate it per-convo so we're still rotating but not losing
+ * our cache"). Prompt caches are per model, so the global round-robin — which advances after
+ * every call — meant consecutive calls in one conversation alternated models and missed the
+ * cache every time. A rotationKey (e.g. the conversation's channel) always maps to the same
+ * starting model; different conversations still spread across the rotation. FNV-1a, so the
+ * mapping is stable across restarts and processes.
+ */
+export function stickyRotationIndex(key: string, size: number): number {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < key.length; i++) {
+    hash ^= key.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193) >>> 0;
+  }
+  return size > 0 ? hash % size : 0;
+}
+
+/**
  * Cost attribution for a model_usage_stats row.
  *
  * Usage used to be recorded ONLY when the caller passed a messageId, so every background call
@@ -343,6 +360,7 @@ class OpenRouterService {
       guildId?: string;
       maxTokens?: number; // Dynamic token limit from preflight analysis
       plugins?: unknown[]; // OpenRouter plugins, e.g. [{ id: 'auto-router', cost_tier: 'low' }]
+      rotationKey?: string; // sticky rotation per conversation (see stickyRotationIndex)
       stepType?: string; // Cost attribution: 'response' | 'observational_learning' | 'capability' | 'planning'
     }
   ): Promise<string> {
@@ -398,7 +416,9 @@ class OpenRouterService {
     // Otherwise check for experiment override, then rotate through models
     const effectiveModel = selectedModel || variantModelOverride;
     const useSpecificModel = effectiveModel && effectiveModel.trim().length > 0;
-    const startIndex = this.currentModelIndex;
+    const startIndex = options?.rotationKey
+      ? stickyRotationIndex(options.rotationKey, this.models.length)
+      : this.currentModelIndex;
 
     // Try each model starting from current rotation position. A specifically-requested
     // model (three-tier strategy) is tried FIRST but still falls back to the rotation:
@@ -459,7 +479,9 @@ class OpenRouterService {
           // Auto-routed picks may be models we have no price for (billed at $15/$75 by
           // default); OpenRouter's usage accounting reports the exact USD cost instead.
           ...(isAutoRouted(model) ? { usage: { include: true } } : {}),
-          ...(isAutoRouted(model) && autoReasoningFor(plugins) ? { reasoning: autoReasoningFor(plugins) } : {}),
+          ...(isAutoRouted(model) && autoReasoningFor(plugins)
+            ? { reasoning: autoReasoningFor(plugins) }
+            : {}),
         };
         const completion = await this.client.chat.completions.create({
           model,
@@ -489,9 +511,10 @@ class OpenRouterService {
           attemptUsage = {
             billed: billedModel,
             usage: failedUsage,
-            cost: isAutoRouted(model) && Number.isFinite(failedReported)
-              ? failedReported
-              : UsageTracker.calculateCost(billedModel, failedUsage),
+            cost:
+              isAutoRouted(model) && Number.isFinite(failedReported)
+                ? failedReported
+                : UsageTracker.calculateCost(billedModel, failedUsage),
           };
           // OpenRouter can return HTTP 200 with an embedded error body, a
           // reasoning/thinking-only turn (content: null), or a length-truncated
@@ -522,9 +545,7 @@ class OpenRouterService {
           );
         }
 
-        logger.info(
-          `✅ MODEL RESPONSE: ${model} generated ${response.length} chars successfully`
-        );
+        logger.info(`✅ MODEL RESPONSE: ${model} generated ${response.length} chars successfully`);
 
         const responseTime = Date.now() - startTime;
 
@@ -687,8 +708,7 @@ class OpenRouterService {
         // Parse the affordable token count so we can retry with a smaller cap.
         const affordMatch = errorMessage.match(/can only afford (\d+)/i);
         const isAffordabilityError =
-          errorStatus === 402 &&
-          (affordMatch !== null || /fewer max_tokens/i.test(errorMessage));
+          errorStatus === 402 && (affordMatch !== null || /fewer max_tokens/i.test(errorMessage));
 
         const isLastModel = i === modelsToTry.length - 1;
 
@@ -788,6 +808,7 @@ class OpenRouterService {
       guildId?: string;
       maxTokens?: number; // Dynamic token limit from preflight analysis
       plugins?: unknown[]; // OpenRouter plugins, e.g. [{ id: 'auto-router', cost_tier: 'low' }]
+      rotationKey?: string; // sticky rotation per conversation (see stickyRotationIndex)
       stepType?: string; // Cost attribution: 'response' | 'observational_learning' | 'capability' | 'planning'
     }
   ): Promise<string> {
@@ -835,7 +856,9 @@ class OpenRouterService {
     // Otherwise check for experiment override, then rotate through models
     const effectiveModel = selectedModel || variantModelOverride;
     const useSpecificModel = effectiveModel && effectiveModel.trim().length > 0;
-    const startIndex = this.currentModelIndex;
+    const startIndex = options?.rotationKey
+      ? stickyRotationIndex(options.rotationKey, this.models.length)
+      : this.currentModelIndex;
 
     // Specifically-requested model first, then the rotation as fallback (see the
     // non-streaming path — a bare [effectiveModel] turns one transient error into silence).
@@ -879,7 +902,9 @@ class OpenRouterService {
           // Auto-routed picks may be models we have no price for (billed at $15/$75 by
           // default); OpenRouter's usage accounting reports the exact USD cost instead.
           ...(isAutoRouted(model) ? { usage: { include: true } } : {}),
-          ...(isAutoRouted(model) && autoReasoningFor(plugins) ? { reasoning: autoReasoningFor(plugins) } : {}),
+          ...(isAutoRouted(model) && autoReasoningFor(plugins)
+            ? { reasoning: autoReasoningFor(plugins) }
+            : {}),
         };
         const completion = await this.client.chat.completions.create({
           model,
@@ -1079,7 +1104,6 @@ class OpenRouterService {
     logger.error('🚨 All streaming attempts failed');
     throw new Error('❌ All LLM models failed. Check OpenRouter status and credits.');
   }
-
 }
 
 // Export singleton instance

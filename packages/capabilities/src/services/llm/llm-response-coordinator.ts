@@ -295,7 +295,9 @@ export class LLMResponseCoordinator {
   async generateReflection(
     contextText: string,
     type: 'general' | 'capability',
-    userId: string
+    userId: string,
+    /** Conversation key: keeps this conversation's reflections on one model so its cache stays warm. */
+    rotationKey?: string
   ): Promise<string> {
     try {
       // Load reflection prompts from database
@@ -331,7 +333,16 @@ Format your response as lessons learned for future reference.`);
       const baseSystemPrompt = await promptManager.getCapabilityInstructions(prompt);
       const { messages } = await contextAlchemy.buildMessageChain(prompt, userId, baseSystemPrompt);
 
-      const reflection = await openRouterService.generateFromMessageChain(messages, userId);
+      const reflection = await openRouterService.generateFromMessageChain(
+        messages,
+        userId,
+        undefined,
+        undefined,
+        {
+          rotationKey,
+          stepType: 'reflection',
+        }
+      );
       return reflection.trim();
     } catch (_error) {
       logger.error(`❌ Failed to generate ${type} reflection:`, _error);

@@ -38,10 +38,15 @@ export class MemoryOrchestration {
 
       // Store USER-SPECIFIC interaction reflection using PROMPT_REMEMBER
       // SECURITY FIX: Store reflection memories per user to prevent contamination
+      // One model per conversation for reflections: the global rotation alternated models on
+      // every call, so the reflection never hit its prompt cache (sticky rotation, 2026-09-29).
+      const conversationKey =
+        message.respondTo?.threadId || message.respondTo?.channelId || `user:${context.userId}`;
       const generalReflection = await llmResponseCoordinator.generateReflection(
         conversationText,
         'general',
-        context.userId
+        context.userId,
+        conversationKey
       );
       if (generalReflection && generalReflection !== '✨') {
         await service.remember(context.userId, generalReflection, 'reflection', 3);
@@ -55,7 +60,8 @@ export class MemoryOrchestration {
         const capabilityReflection = await llmResponseCoordinator.generateReflection(
           capabilityContext,
           'capability',
-          context.userId
+          context.userId,
+          conversationKey
         );
 
         if (capabilityReflection && capabilityReflection !== '✨') {
