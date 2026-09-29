@@ -1,5 +1,6 @@
 import { getSyncDb } from '@coachartie/shared';
 import { logger } from '@coachartie/shared';
+import { stripUserMessagePlaceholder } from './prompt-cache.js';
 
 export interface PromptTemplate {
   id?: number;
@@ -110,7 +111,9 @@ export class PromptManager {
       logger.info(`🔍 Attempting to load rich system prompt from database`);
       const systemPrompt = await this.getPrompt('PROMPT_SYSTEM');
       if (systemPrompt) {
-        let instructions = systemPrompt.content.replace(/\{\{USER_MESSAGE\}\}/g, userMessage);
+        // Never substitute the user message here: this text becomes the cached system prefix,
+        // and a per-request byte in it means no cache hit ever (see prompt-cache.ts).
+        let instructions = stripUserMessagePlaceholder(systemPrompt.content);
 
         // Append capability format instructions
         const capabilityIntro = await this.getPrompt('CAPABILITY_PROMPT_INTRO');
@@ -133,7 +136,7 @@ export class PromptManager {
         logger.warn(`⚠️ Rich system prompt not found, trying capability_instructions`);
         const dbPrompt = await this.getPrompt('capability_instructions');
         if (dbPrompt) {
-          const instructions = dbPrompt.content.replace(/\{\{USER_MESSAGE\}\}/g, userMessage);
+          const instructions = stripUserMessagePlaceholder(dbPrompt.content);
           logger.info(
             `🎯 Using basic capability instructions from database (v${dbPrompt.version})`
           );
@@ -153,9 +156,9 @@ export class PromptManager {
       const nominated = await capabilitySelector.selectRelevantCapabilities(userMessage);
 
       // TIER 2: Generate instructions for ONLY nominated capabilities
-      const instructions = capabilitySelector
-        .generateNominatedInstructions(nominated)
-        .replace(/\{\{USER_MESSAGE\}\}/g, userMessage);
+      const instructions = stripUserMessagePlaceholder(
+        capabilitySelector.generateNominatedInstructions(nominated)
+      );
 
       logger.info(
         `✅ Two-tier selector: Nominated ${nominated.length} capabilities (reduced from full registry)`
@@ -166,9 +169,7 @@ export class PromptManager {
       // Fallback if selector fails: use ALL capabilities
       logger.warn('⚠️ Capability selector failed, falling back to full registry:', selectorError);
       const { capabilityRegistry } = await import('../capability/capability-registry.js');
-      const instructions = capabilityRegistry
-        .generateInstructions()
-        .replace(/\{\{USER_MESSAGE\}\}/g, userMessage);
+      const instructions = stripUserMessagePlaceholder(capabilityRegistry.generateInstructions());
       logger.info(
         `🎯 Using fallback capability instructions from registry (${capabilityRegistry.size()} capabilities)`
       );

@@ -194,3 +194,25 @@ export function wireContentLength(content: WireContent): number {
     ? content.length
     : content.reduce((total, part) => total + part.text.length, 0);
 }
+
+/**
+ * Make a DB system-prompt template safe to sit in the cached prefix.
+ *
+ * PROMPT_SYSTEM (and the capability_instructions fallback) are templates, and
+ * prompt-manager used to substitute {{USER_MESSAGE}} into them. The copy in
+ * scripts/restore-prompts.ts ENDS with a bare {{USER_MESSAGE}}, so wherever that template is
+ * live, the current user's message lands inside messages[0] — the block the cache breakpoint
+ * sits on — and the prefix is different on every single request: zero cache hits, forever,
+ * with no error anywhere. It also meant the message appeared twice (it already rides in the
+ * final user turn, wrapped in <user_message>).
+ *
+ * The placeholder (and a "User message:" label in front of it) is removed instead of filled.
+ * Idempotent, and a no-op for templates without it.
+ */
+export function stripUserMessagePlaceholder(template: string): string {
+  if (!/\{\{USER_MESSAGE\}\}/i.test(template)) return template;
+  return template
+    .replace(/[ \t]*(?:User message:[ \t]*)?\{\{USER_MESSAGE\}\}[ \t]*/gi, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trimEnd();
+}
