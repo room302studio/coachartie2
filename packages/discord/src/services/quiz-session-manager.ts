@@ -3,6 +3,9 @@ import { logger } from '@coachartie/shared';
 const FLASHCARD_API_BASE = 'https://ejfox.com/api/flashcards';
 const DEFAULT_QUESTION_COUNT = 10;
 const QUESTION_TIMEOUT_MS = 30000; // 30 seconds per question
+const AI_JUDGE_MODEL = process.env.QUIZ_JUDGE_MODEL || 'google/gemini-2.0-flash-001';
+const AI_JUDGE_URL =
+  process.env.QUIZ_JUDGE_URL || 'https://router.tools.ejfox.com/v1/chat/completions';
 
 export interface FlashcardResponse {
   id: string;
@@ -14,18 +17,37 @@ export interface FlashcardResponse {
   course: string;
 }
 
+export type QuestionOutcome = 'correct' | 'missed' | 'current' | 'upcoming';
+
 export interface QuizSession {
   channelId: string;
   deckId?: string;
   currentCard: FlashcardResponse | null;
   questionNumber: number;
   totalQuestions: number;
-  scores: Map<string, number>; // oderId -> score
+  scores: Map<string, number>; // userId -> score
+  streaks: Map<string, number>; // userId -> current streak in this session
+  bestStreaks: Map<string, number>; // userId -> best streak in this session
   answered: boolean;
+  aiJudge: boolean; // Use LLM to grade fuzzy answers
   startedBy: string;
   startedAt: Date;
   questionTimeout?: ReturnType<typeof setTimeout>;
   onTimeout?: () => void; // Callback when question times out
+  // userIds who attempted this question (used to break streaks on miss)
+  attemptedThisQuestion: Set<string>;
+  // In-flight LLM judgements so we don't fire duplicate calls per user/question
+  pendingJudgements: Set<string>;
+  // Hints revealed for the current question (count)
+  hintsRevealed: number;
+  // Per-question outcome for the progress bar
+  progress: QuestionOutcome[];
+  // Discord message id we update in place — Wordle-style single embed
+  questionMessageId?: string;
+  // Username cache so we can render mentions without re-fetching members
+  usernames: Map<string, string>;
+  // Last answer-result banner to render at the top of the embed
+  lastBanner?: string;
 }
 
 export interface QuizStartOptions {
@@ -33,6 +55,7 @@ export interface QuizStartOptions {
   userId: string;
   deckId?: string;
   questionCount?: number;
+  aiJudge?: boolean;
   onTimeout?: (session: QuizSession) => void;
 }
 
@@ -41,9 +64,13 @@ export interface AnswerResult {
   isFirstCorrect: boolean;
   correctAnswer: string;
   currentScores: Map<string, number>;
+  currentStreaks: Map<string, number>;
+  bestStreaks: Map<string, number>;
+  winnerStreak: number;
   questionNumber: number;
   totalQuestions: number;
   quizEnded: boolean;
+  judgedByAI: boolean;
 }
 
 // In-memory storage for active quiz sessions
@@ -61,9 +88,10 @@ function normalizeAnswer(text: string): string {
 }
 
 /**
- * Check if user's answer matches the correct answer
+ * Check if user's answer matches the correct answer (fast string-based check).
+ * Exported so the daily-quiz flow can reuse the same matching rules.
  */
-function isCorrectAnswer(userAnswer: string, correctAnswer: string): boolean {
+export function isCorrectAnswer(userAnswer: string, correctAnswer: string): boolean {
   const userNorm = normalizeAnswer(userAnswer);
   const correctNorm = normalizeAnswer(correctAnswer);
 
@@ -80,6 +108,111 @@ function isCorrectAnswer(userAnswer: string, correctAnswer: string): boolean {
   if (userNorm.length >= 3 && correctNorm.includes(userNorm)) return true;
 
   return false;
+}
+
+/**
+ * Heuristic: does a message look like a real answer attempt, vs. chatter?
+ * Used to gate LLM judgement so we don't burn tokens on every message.
+ */
+export function looksLikeAnswerAttempt(text: string): boolean {
+  const trimmed = text.trim();
+  if (!trimmed) return false;
+  if (trimmed.length > 200) return false;
+  if (trimmed.startsWith('/') || trimmed.startsWith('!')) return false;
+  // Pure emoji/punctuation reactions
+  if (!/[a-z0-9]/i.test(trimmed)) return false;
+  return true;
+}
+
+/**
+ * Ask a light LLM whether a user's answer is semantically equivalent to the
+ * correct answer. Returns null if the call fails or the API key is missing.
+ */
+export async function verifyAnswerWithLLM(
+  question: string,
+  correctAnswer: string,
+  userAnswer: string
+): Promise<boolean | null> {
+  const apiKey = process.env.OPENROUTER_API_KEY;
+  if (!apiKey) {
+    return null;
+  }
+
+  const prompt = `You are grading a flashcard quiz answer. Reply with ONLY "yes" or "no".
+
+Is the user's answer a correct/equivalent response to the question? Accept synonyms, abbreviations, and minor wording differences. Reject answers that are wrong, off-topic, or only tangentially related.
+
+Question: ${question}
+Correct answer: ${correctAnswer}
+User answer: ${userAnswer}
+
+Answer (yes/no):`;
+
+  try {
+    const response = await fetch(AI_JUDGE_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiKey}`,
+        'HTTP-Referer': 'https://coach-artie.local',
+        'X-Title': 'Coach Artie Quiz Judge',
+      },
+      body: JSON.stringify({
+        model: AI_JUDGE_MODEL,
+        messages: [{ role: 'user', content: prompt }],
+        max_tokens: 5,
+        temperature: 0,
+      }),
+    });
+
+    if (!response.ok) {
+      logger.warn(`Quiz LLM judge returned ${response.status}`);
+      return null;
+    }
+
+    const data = (await response.json()) as {
+      choices?: Array<{ message?: { content?: string } }>;
+    };
+    const raw = (data.choices?.[0]?.message?.content || '').toLowerCase().trim();
+    if (raw.startsWith('yes')) return true;
+    if (raw.startsWith('no')) return false;
+    return null;
+  } catch (e) {
+    logger.warn('Quiz LLM judge call failed:', e);
+    return null;
+  }
+}
+
+/**
+ * Build the initial per-question outcome array — first slot is "current",
+ * the rest are "upcoming". Wordle-style empty squares until played.
+ */
+export function buildInitialProgress(total: number): QuestionOutcome[] {
+  const arr: QuestionOutcome[] = [];
+  for (let i = 0; i < total; i++) {
+    arr.push(i === 0 ? 'current' : 'upcoming');
+  }
+  return arr;
+}
+
+/**
+ * Render a Wordle-style emoji progress bar from a list of outcomes.
+ */
+export function renderProgressBar(progress: QuestionOutcome[]): string {
+  return progress
+    .map((o) => {
+      switch (o) {
+        case 'correct':
+          return '🟩';
+        case 'missed':
+          return '⬛';
+        case 'current':
+          return '🟨';
+        case 'upcoming':
+          return '⬜';
+      }
+    })
+    .join(' ');
 }
 
 /**
@@ -115,6 +248,7 @@ export const quizSessionManager = {
       userId,
       deckId,
       questionCount = DEFAULT_QUESTION_COUNT,
+      aiJudge = false,
       onTimeout,
     } = options;
 
@@ -133,9 +267,17 @@ export const quizSessionManager = {
       questionNumber: 1,
       totalQuestions: questionCount,
       scores: new Map(),
+      streaks: new Map(),
+      bestStreaks: new Map(),
       answered: false,
+      aiJudge,
       startedBy: userId,
       startedAt: new Date(),
+      attemptedThisQuestion: new Set(),
+      pendingJudgements: new Set(),
+      hintsRevealed: 0,
+      progress: buildInitialProgress(questionCount),
+      usernames: new Map(),
       onTimeout: onTimeout ? () => onTimeout(session) : undefined,
     };
 
@@ -169,9 +311,25 @@ export const quizSessionManager = {
   },
 
   /**
-   * Check an answer from a user
+   * Record that a user attempted an answer (regardless of correctness).
+   * Used so streaks can be reset for everyone who missed once the question ends.
    */
-  checkAnswer(channelId: string, oderId: string, answer: string): AnswerResult | null {
+  recordAttempt(channelId: string, userId: string): void {
+    const session = activeSessions.get(channelId);
+    if (!session || session.answered) return;
+    session.attemptedThisQuestion.add(userId);
+  },
+
+  /**
+   * Check an answer from a user using fast string matching.
+   * Returns an AnswerResult if correct, "maybe" if not matched but AI judge is
+   * enabled and the message looks like an answer attempt, or null otherwise.
+   */
+  checkAnswer(
+    channelId: string,
+    userId: string,
+    answer: string
+  ): AnswerResult | 'maybe' | null {
     const session = activeSessions.get(channelId);
 
     if (!session || !session.currentCard || session.answered) {
@@ -180,37 +338,104 @@ export const quizSessionManager = {
 
     const correct = isCorrectAnswer(answer, session.currentCard.back);
 
-    if (!correct) {
-      return null; // Don't return anything for wrong answers
+    if (correct) {
+      return this.awardCorrect(session, userId, false);
     }
 
-    // First correct answer!
+    // String match failed. Signal that the LLM judge should weigh in if
+    // enabled and the message looks like a genuine answer attempt.
+    if (session.aiJudge && looksLikeAnswerAttempt(answer)) {
+      session.attemptedThisQuestion.add(userId);
+      return 'maybe';
+    }
+
+    return null;
+  },
+
+  /**
+   * Ask the LLM to grade an answer that failed the string check. Safe to call
+   * concurrently — only the first verified answer wins the question.
+   */
+  async checkAnswerWithAI(
+    channelId: string,
+    userId: string,
+    answer: string
+  ): Promise<AnswerResult | null> {
+    const session = activeSessions.get(channelId);
+    if (!session || !session.currentCard || session.answered || !session.aiJudge) {
+      return null;
+    }
+
+    const judgementKey = `${session.questionNumber}:${userId}:${answer}`;
+    if (session.pendingJudgements.has(judgementKey)) {
+      return null;
+    }
+    session.pendingJudgements.add(judgementKey);
+
+    const card = session.currentCard;
+    const verdict = await verifyAnswerWithLLM(card.front, card.back, answer);
+
+    // Re-fetch — the session may have ended while we awaited the LLM.
+    const fresh = activeSessions.get(channelId);
+    if (!fresh || fresh !== session || fresh.answered || fresh.currentCard !== card) {
+      return null;
+    }
+
+    if (verdict !== true) {
+      return null;
+    }
+
+    return this.awardCorrect(session, userId, true);
+  },
+
+  /**
+   * Award a correct answer to a user and update scores/streaks.
+   * Internal — callers should go through checkAnswer / checkAnswerWithAI.
+   */
+  awardCorrect(session: QuizSession, userId: string, judgedByAI: boolean): AnswerResult {
     session.answered = true;
 
-    // Clear timeout
     if (session.questionTimeout) {
       clearTimeout(session.questionTimeout);
       session.questionTimeout = undefined;
     }
 
-    // Award point
-    const currentScore = session.scores.get(oderId) || 0;
-    session.scores.set(oderId, currentScore + 1);
+    const currentScore = session.scores.get(userId) || 0;
+    session.scores.set(userId, currentScore + 1);
+
+    // Bump the winner's streak; reset everyone else who attempted this question.
+    const winnerStreak = (session.streaks.get(userId) || 0) + 1;
+    session.streaks.set(userId, winnerStreak);
+    const winnerBest = Math.max(session.bestStreaks.get(userId) || 0, winnerStreak);
+    session.bestStreaks.set(userId, winnerBest);
+
+    for (const attemptedId of session.attemptedThisQuestion) {
+      if (attemptedId !== userId) {
+        session.streaks.set(attemptedId, 0);
+      }
+    }
+
+    // Mark this question correct in the Wordle-style progress bar
+    session.progress[session.questionNumber - 1] = 'correct';
 
     const quizEnded = session.questionNumber >= session.totalQuestions;
 
     logger.info(
-      `✅ Quiz answer correct! Channel: ${channelId}, User: ${oderId}, Q${session.questionNumber}/${session.totalQuestions}`
+      `✅ Quiz answer correct${judgedByAI ? ' (AI judged)' : ''}! Channel: ${session.channelId}, User: ${userId}, Streak: ${winnerStreak}, Q${session.questionNumber}/${session.totalQuestions}`
     );
 
     return {
       correct: true,
       isFirstCorrect: true,
-      correctAnswer: session.currentCard.back,
+      correctAnswer: session.currentCard!.back,
       currentScores: new Map(session.scores),
+      currentStreaks: new Map(session.streaks),
+      bestStreaks: new Map(session.bestStreaks),
+      winnerStreak,
       questionNumber: session.questionNumber,
       totalQuestions: session.totalQuestions,
       quizEnded,
+      judgedByAI,
     };
   },
 
@@ -236,6 +461,11 @@ export const quizSessionManager = {
     session.currentCard = nextCard;
     session.questionNumber++;
     session.answered = false;
+    session.attemptedThisQuestion = new Set();
+    session.pendingJudgements = new Set();
+    session.hintsRevealed = 0;
+    // The slot we just moved into is now the current question
+    session.progress[session.questionNumber - 1] = 'current';
 
     // Set new timeout
     if (session.onTimeout) {
@@ -274,6 +504,11 @@ export const quizSessionManager = {
     }
 
     session.answered = true;
+    // Skipping = nobody got it. Reset streaks for anyone who attempted.
+    for (const attemptedId of session.attemptedThisQuestion) {
+      session.streaks.set(attemptedId, 0);
+    }
+    session.progress[session.questionNumber - 1] = 'missed';
 
     // Move to next question or end
     const nextSession = await this.nextQuestion(channelId);
@@ -295,6 +530,11 @@ export const quizSessionManager = {
 
     const answer = session.currentCard.back;
     session.answered = true;
+    // Timeout = nobody got it. Reset streaks for anyone who attempted.
+    for (const attemptedId of session.attemptedThisQuestion) {
+      session.streaks.set(attemptedId, 0);
+    }
+    session.progress[session.questionNumber - 1] = 'missed';
 
     // Move to next question
     const nextSession = await this.nextQuestion(channelId);
@@ -336,9 +576,54 @@ export const quizSessionManager = {
   },
 
   /**
+   * Cache a userId → displayName mapping so we can render @-free names in
+   * shareable end cards without re-fetching members.
+   */
+  rememberUsername(channelId: string, userId: string, displayName: string): void {
+    const session = activeSessions.get(channelId);
+    if (!session) return;
+    session.usernames.set(userId, displayName);
+  },
+
+  /**
+   * Track which Discord message hosts the live quiz embed so callers can
+   * edit it in place.
+   */
+  setQuestionMessage(channelId: string, messageId: string): void {
+    const session = activeSessions.get(channelId);
+    if (session) session.questionMessageId = messageId;
+  },
+
+  /**
+   * Reveal the next available hint for the current question. Returns the hint
+   * text, or null if there are no more hints / no active question.
+   */
+  revealHint(channelId: string): string | null {
+    const session = activeSessions.get(channelId);
+    if (!session?.currentCard) return null;
+    const hints = session.currentCard.hints;
+    if (session.hintsRevealed >= hints.length) return null;
+    const hint = hints[session.hintsRevealed];
+    session.hintsRevealed++;
+    return hint;
+  },
+
+  /**
+   * Update the top banner that the embed renders (e.g. "✅ alice got it!").
+   */
+  setBanner(channelId: string, banner: string | undefined): void {
+    const session = activeSessions.get(channelId);
+    if (session) session.lastBanner = banner;
+  },
+
+  /**
    * Format scores for display
    */
-  formatScores(scores: Map<string, number>, userMentions?: Map<string, string>): string {
+  formatScores(
+    scores: Map<string, number>,
+    userMentions?: Map<string, string>,
+    streaks?: Map<string, number>
+  ): string {
     if (scores.size === 0) {
       return 'No scores yet!';
     }
@@ -346,12 +631,23 @@ export const quizSessionManager = {
     const sorted = [...scores.entries()].sort((a, b) => b[1] - a[1]);
 
     return sorted
-      .map(([oderId, score], i) => {
+      .map(([userId, score], i) => {
         const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : '  ';
-        const name = userMentions?.get(oderId) || `<@${oderId}>`;
-        return `${medal} ${name}: ${score}`;
+        const name = userMentions?.get(userId) || `<@${userId}>`;
+        const streak = streaks?.get(userId) || 0;
+        const streakBadge = streak >= 2 ? ` 🔥${streak}` : '';
+        return `${medal} ${name}: ${score}${streakBadge}`;
       })
       .join(' | ');
+  },
+
+  /**
+   * Format a single user's streak as a badge, e.g. " 🔥3" or "" when below threshold.
+   */
+  formatStreakBadge(streak: number): string {
+    if (streak >= 5) return ` 🔥🔥${streak} streak!`;
+    if (streak >= 2) return ` 🔥${streak} streak`;
+    return '';
   },
 
   /**
@@ -363,6 +659,17 @@ export const quizSessionManager = {
     const maxScore = Math.max(...scores.values());
     return [...scores.entries()]
       .filter(([, score]) => score === maxScore)
-      .map(([oderId]) => oderId);
+      .map(([userId]) => userId);
+  },
+
+  /**
+   * Return best streaks (current session) sorted descending. Useful for the
+   * end-of-quiz recap so the "streak champion" can be celebrated alongside
+   * the points winner.
+   */
+  getStreakLeaders(bestStreaks: Map<string, number>): Array<[string, number]> {
+    return [...bestStreaks.entries()]
+      .filter(([, streak]) => streak >= 2)
+      .sort((a, b) => b[1] - a[1]);
   },
 };
