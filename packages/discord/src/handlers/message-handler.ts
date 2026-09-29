@@ -37,6 +37,7 @@ import {
   getSyncDb,
   isOwner,
   logDMGate,
+  reportToAnomalywatch,
 } from '@coachartie/shared';
 import {
   BLOCKED_USER_IDS,
@@ -1558,6 +1559,21 @@ export function setupMessageHandler(client: Client) {
 
           await message.reply(pairingMessage);
           telemetry.logEvent('dm_pairing_code_sent', { userId: message.author.id, isNew }, correlationId, message.author.id);
+
+          // New request → EJ's phone via anomalywatch (EJ, 2026-09-29: "run it thru anomalywatch
+          // at a high weight"). Its own alert_type scores 7.5 there: pages when awake, digest
+          // when asleep. One per requester per ET day, so a stranger can't spam pages.
+          if (isNew) {
+            void reportToAnomalywatch(
+              'warning',
+              `DM pairing request: ${message.author.username} (${message.author.id}) wants to DM Artie: "${message.content.slice(0, 120)}". To approve, tell Artie: pairing approve ${code} (expires in ${expiresInMinutes}m)`,
+              {
+                kind: `dm-pairing:${message.author.id}`,
+                alertType: 'dm_pairing_request',
+                deepLink: `https://discord.com/users/${message.author.id}`,
+              }
+            );
+          }
         } catch (error) {
           logger.error('Failed to send pairing code:', error);
         }

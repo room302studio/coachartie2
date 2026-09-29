@@ -110,12 +110,21 @@ export function flattenAlertMessage(message: string, max = 500): string {
   return flat.length > max ? `${flat.slice(0, max - 1)}…` : flat;
 }
 
-export type AlertExec = (file: string, args: string[]) => Promise<void>;
+export type AlertExec = (
+  file: string,
+  args: string[],
+  env?: Record<string, string>
+) => Promise<void>;
 
-const defaultExec: AlertExec = (file, args) =>
+const defaultExec: AlertExec = (file, args, env) =>
   new Promise((resolve, reject) => {
     // execFile, not exec: the message is argv, never parsed by a shell.
-    execFile(file, args, { timeout: 15_000 }, (error) => (error ? reject(error) : resolve()));
+    execFile(
+      file,
+      args,
+      { timeout: 15_000, env: env ? { ...process.env, ...env } : undefined },
+      (error) => (error ? reject(error) : resolve())
+    );
   });
 
 export interface ReportOptions {
@@ -126,6 +135,11 @@ export interface ReportOptions {
   /** Overrides script resolution (null = behave as if the script is missing). */
   scriptPath?: string | null;
   exec?: AlertExec;
+  /** anomalywatch alert_type (alert.sh ALERT_TYPE; default 'system'). Anomalywatch scores by
+   * type, and a critical 'system' alert pages even during sleep — use a specific type. */
+  alertType?: string;
+  /** Link the phone notification opens (alert.sh ALERT_DEEPLINK). */
+  deepLink?: string;
 }
 
 /**
@@ -159,7 +173,14 @@ export async function reportToAnomalywatch(
       return 'logged';
     }
 
-    await (options.exec ?? defaultExec)(script, [ANOMALYWATCH_SOURCE, level, text]);
+    const env: Record<string, string> = {};
+    if (options.alertType) env.ALERT_TYPE = options.alertType;
+    if (options.deepLink) env.ALERT_DEEPLINK = options.deepLink;
+    await (options.exec ?? defaultExec)(
+      script,
+      [ANOMALYWATCH_SOURCE, level, text],
+      Object.keys(env).length ? env : undefined
+    );
     logger.warn(`📟 anomalywatch alert sent (${level}, ${kind}): ${text}`);
     return 'sent';
   } catch (error) {

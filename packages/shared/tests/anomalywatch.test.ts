@@ -20,7 +20,27 @@ describe('reportToAnomalywatch', () => {
       now: at('2026-09-29T15:00:00Z'),
     });
     expect(outcome).toBe('sent');
-    expect(exec).toHaveBeenCalledWith('/fake/alert.sh', ['coach-artie', 'warning', 'Balance low $3.00']);
+    expect(exec).toHaveBeenCalledWith(
+      '/fake/alert.sh',
+      ['coach-artie', 'warning', 'Balance low $3.00'],
+      undefined
+    );
+  });
+
+  it('passes alert type and deep link to alert.sh as env', async () => {
+    const exec = vi.fn().mockResolvedValue(undefined);
+    await reportToAnomalywatch('warning', 'DM pairing request: stranger', {
+      kind: 'dm-pairing:1',
+      store: createMemoryAlertRateStore(),
+      scriptPath: '/fake/alert.sh',
+      exec,
+      alertType: 'dm_pairing_request',
+      deepLink: 'https://discord.com/users/1',
+    });
+    expect(exec.mock.calls[0][2]).toEqual({
+      ALERT_TYPE: 'dm_pairing_request',
+      ALERT_DEEPLINK: 'https://discord.com/users/1',
+    });
   });
 
   it('rate-limits to once per kind per ET day', async () => {
