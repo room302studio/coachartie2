@@ -291,7 +291,9 @@ async function createErrorsEmbed(userId: string): Promise<EmbedBuilder> {
     const errorEvents = allEvents
       .filter(
         (event) =>
-          (event.userId === userId || !event.userId) &&
+          // Only the caller's own events. System events with no user attached can carry
+          // other people's content or raw provider error bodies.
+          event.userId === userId &&
           (event.success === false ||
             event.event.includes('error') ||
             event.event.includes('failed'))
