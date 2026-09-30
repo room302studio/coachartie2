@@ -57,7 +57,9 @@ export async function execute(interaction: ChatInputCommandInteraction) {
       // Use specified forum
       forumId = forumOption;
       const forum = await interaction.client.channels.fetch(forumId);
-      if (!forum || forum.type !== ChannelType.GuildForum) {
+      // Same server only: the bot can see forums in every guild it's in, so any channel id
+      // would otherwise let one server's managers copy another server's forum out.
+      if (!forum || forum.type !== ChannelType.GuildForum || forum.guildId !== interaction.guildId) {
         await interaction.reply({
           content: '❌ Invalid forum channel specified.',
           flags: MessageFlags.Ephemeral,
@@ -123,6 +125,16 @@ export async function execute(interaction: ChatInputCommandInteraction) {
     if (!hasAccess) {
       await interaction.editReply({
         content: `❌ Cannot access repository **${repoInfo.owner}/${repoInfo.repo}**. Please check:\n- Repository exists\n- GitHub token has access\n- Repository name is correct`,
+      });
+      return;
+    }
+
+    // Private repos only. Each issue carries Discord usernames and full message text; in a
+    // public repo that publishes people's messages to the internet without their say.
+    const repoDetails = await githubService.getRepositoryInfo(repoInfo.owner, repoInfo.repo);
+    if (!repoDetails?.isPrivate) {
+      await interaction.editReply({
+        content: `❌ **${repoInfo.owner}/${repoInfo.repo}** is ${repoDetails ? 'public' : 'not readable'}. Discussions (usernames and messages) only sync to private repos.`,
       });
       return;
     }
