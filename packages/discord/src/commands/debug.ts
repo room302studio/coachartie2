@@ -223,38 +223,31 @@ async function createPerformanceEmbed(userId: string): Promise<EmbedBuilder> {
 
 async function createCapabilitiesTestEmbed(): Promise<EmbedBuilder> {
   const embed = new EmbedBuilder().setTitle('🧠 Capabilities Test').setColor(0xe74c3c);
-  const brainUrl = process.env.BRAIN_URL || 'http://localhost:18239';
+  // Was POST ${BRAIN_URL}/chat "Test calculation: 2+2": a dead default port, and once pointed
+  // at capabilities every /debug would have run a paid model reply. Health + registry is free.
+  const capabilitiesUrl = process.env.CAPABILITIES_URL || 'http://localhost:47324';
 
   try {
-    // Test a simple capability
     const testStart = Date.now();
-    const response = await fetch(`${brainUrl}/chat`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        message: 'Test calculation: 2+2',
-        userId: 'debug-test',
-      }),
+    const response = await fetch(`${capabilitiesUrl}/capabilities`, {
+      signal: AbortSignal.timeout(10_000),
     });
-
     const testDuration = Date.now() - testStart;
 
     if (response.ok) {
-      const result = (await response.json()) as any;
+      const result = (await response.json()) as {
+        stats?: { totalCapabilities?: number; totalActions?: number };
+      };
       embed.setColor(0x2ecc71);
       embed.addFields(
         { name: '✅ Capabilities Service', value: 'Online and responding', inline: true },
         { name: '⚡ Response Time', value: `${testDuration}ms`, inline: true },
-        { name: '🆔 Test Job ID', value: result.messageId?.slice(-8) || 'N/A', inline: true }
+        {
+          name: '🛠️ Registered',
+          value: `${result.stats?.totalCapabilities ?? '?'} capabilities · ${result.stats?.totalActions ?? '?'} actions`,
+          inline: true,
+        }
       );
-
-      // Check if capabilities are being detected
-      embed.addFields({
-        name: '🔍 Capability Detection',
-        value:
-          'Test job submitted successfully\nMonitor with `/bot-status` for capability execution',
-        inline: false,
-      });
     } else {
       embed.addFields({
         name: '❌ Capabilities Service Error',
@@ -269,14 +262,6 @@ async function createCapabilitiesTestEmbed(): Promise<EmbedBuilder> {
       inline: false,
     });
   }
-
-  // Available capabilities info
-  embed.addFields({
-    name: '🛠️ Available Capabilities',
-    value:
-      '• Calculator (math operations)\n• Memory (save/search conversations)\n• Web search (coming soon)\n• More capabilities available via API',
-    inline: false,
-  });
 
   embed.setTimestamp();
   return embed;
