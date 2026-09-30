@@ -38,11 +38,12 @@ export const modelsCommand = {
 
 async function createModelsListEmbed(): Promise<EmbedBuilder> {
   // Get REAL models from capabilities service API with OpenRouter data
-  const brainUrl = process.env.BRAIN_URL || 'http://localhost:18239';
+  // /api/models lives on capabilities; BRAIN_URL's default (:18239) never had a listener.
+  const capabilitiesUrl = process.env.CAPABILITIES_URL || 'http://localhost:47324';
   let modelData: any = null;
 
   try {
-    const response = await fetch(`${brainUrl}/api/models`);
+    const response = await fetch(`${capabilitiesUrl}/api/models`);
     if (response.ok) {
       const result = (await response.json()) as any;
 
@@ -66,7 +67,7 @@ async function createModelsListEmbed(): Promise<EmbedBuilder> {
     let configuredModels = '';
 
     try {
-      const response = await fetch(`${brainUrl}/api/models`);
+      const response = await fetch(`${capabilitiesUrl}/api/models`);
       if (!response.ok) {
         const errorData = (await response.json()) as any;
         if (errorData.hint) {
@@ -185,9 +186,10 @@ async function createModelsListEmbed(): Promise<EmbedBuilder> {
 
 async function createModelDetailEmbed(modelQuery: string): Promise<EmbedBuilder> {
   // Get live model data from API
-  const brainUrl = process.env.BRAIN_URL || 'http://localhost:18239';
+  // /api/models lives on capabilities; BRAIN_URL's default (:18239) never had a listener.
+  const capabilitiesUrl = process.env.CAPABILITIES_URL || 'http://localhost:47324';
   try {
-    const response = await fetch(`${brainUrl}/api/models`);
+    const response = await fetch(`${capabilitiesUrl}/api/models`);
     if (!response.ok) {
       throw new Error(`API returned ${response.status}`);
     }
