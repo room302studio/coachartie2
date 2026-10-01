@@ -9,6 +9,7 @@
 
 import { logger, assertGenerationAllowed } from '@coachartie/shared';
 import OpenAI from 'openai';
+import { shadowPickOne, shadowYesNo } from './jev-shadow.js';
 
 // Micro LLM config - fast and cheap
 const MICRO_MODEL = process.env.MICRO_LLM_MODEL || 'meta-llama/llama-3.1-8b-instruct:free';
@@ -48,6 +49,11 @@ export async function askYesNo(
   context: string,
   defaultValue: boolean = false
 ): Promise<MicroDecision<boolean>> {
+  const started = Date.now();
+  const decided = (d: MicroDecision<boolean>) => {
+    shadowYesNo(question, context, d, Date.now() - started);
+    return d;
+  };
   try {
     const response = await getClient().chat.completions.create({
       model: MICRO_MODEL,
@@ -71,10 +77,10 @@ export async function askYesNo(
 
     if (!isYes && !isNo) {
       logger.debug(`[micro-llm] Ambiguous response: "${answer}", using default`);
-      return { result: defaultValue, fallback: true };
+      return decided({ result: defaultValue, fallback: true });
     }
 
-    return { result: isYes, fallback: false };
+    return decided({ result: isYes, fallback: false });
   } catch (error) {
     logger.debug(`[micro-llm] Error, using default:`, error);
     return { result: defaultValue, fallback: true };
@@ -90,6 +96,11 @@ export async function pickOne<T extends string>(
   options: T[],
   defaultValue: T
 ): Promise<MicroDecision<T>> {
+  const started = Date.now();
+  const decided = (d: MicroDecision<T>) => {
+    shadowPickOne(question, context, options, d, Date.now() - started);
+    return d;
+  };
   try {
     const response = await getClient().chat.completions.create({
       model: MICRO_MODEL,
@@ -112,10 +123,10 @@ export async function pickOne<T extends string>(
 
     if (!match) {
       logger.debug(`[micro-llm] No match for "${answer}" in options, using default`);
-      return { result: defaultValue, fallback: true };
+      return decided({ result: defaultValue, fallback: true });
     }
 
-    return { result: match, fallback: false };
+    return decided({ result: match, fallback: false });
   } catch (error) {
     logger.debug(`[micro-llm] Error, using default:`, error);
     return { result: defaultValue, fallback: true };
