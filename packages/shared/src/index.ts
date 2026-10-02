@@ -30,6 +30,7 @@ export * from './utils/anomalywatch.js';
 export * from './utils/model-spec.js';
 export * from './utils/guild-budget.js';
 export * from './utils/kill-switch.js';
+export * from './utils/jev-shadow.js';
 // DEPRECATED: Use db/client.ts instead (Drizzle ORM)
 // This module uses sql.js which is being phased out
 export * from './utils/database.js';

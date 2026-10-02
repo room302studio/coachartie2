@@ -91,6 +91,7 @@ import {
 import { recordWheelVictim } from '../services/casino.js';
 import { getMentionProxyService } from '../services/mention-proxy-service.js';
 import { quizSessionManager } from '../services/quiz-session-manager.js';
+import { shadowSpeakGate } from '../services/jev-experiments.js';
 import { refreshLiveQuiz, postQuizSummary } from '../commands/quiz.js';
 import Chance from 'chance';
 import { readFileSync, existsSync, unlinkSync } from 'fs';
@@ -552,6 +553,26 @@ async function shouldProactivelyAnswer(
   guildContext: string,
   correlationId: string
 ): Promise<boolean> {
+  const outcome = { called: false, fallback: false };
+  const started = Date.now();
+  const verdict = await judgeProactively(message, guildContext, correlationId, outcome);
+  // Jev shadow (no-op without JEV_API_KEY), only when the judgment model was actually asked
+  if (outcome.called) {
+    shadowSpeakGate(
+      { message: message.content, channelContext: guildContext || '' },
+      { verdict, fallback: outcome.fallback },
+      Date.now() - started
+    );
+  }
+  return verdict;
+}
+
+async function judgeProactively(
+  message: Message,
+  guildContext: string,
+  correlationId: string,
+  outcome: { called: boolean; fallback: boolean }
+): Promise<boolean> {
   try {
     // Don't spend a judgment LLM call if we couldn't act on a "yes" anyway — the ambient
     // hourly budget is already exhausted.
@@ -655,6 +676,7 @@ JSON response:`;
       process.env.OPENROUTER_BASE_URL ||
       'https://openrouter.ai/api/v1'
     ).replace(/\/+$/, '');
+    outcome.called = true;
     const openRouterResponse = await fetch(`${judgmentBaseUrl}/chat/completions`, {
       method: 'POST',
       headers: {
@@ -748,6 +770,7 @@ JSON response:`;
     }
 
     // Fallback: check for yes/no in response
+    outcome.fallback = true;
     const decision = rawResponse.toLowerCase().trim();
     logger.info(
       `🤔 Fallback judgment for "${message.content.substring(0, 50)}...": "${rawResponse}" -> ${decision.includes('yes') ? 'YES' : 'NO'}`
@@ -755,6 +778,7 @@ JSON response:`;
     return decision.includes('yes');
   } catch (error) {
     logger.warn(`Failed proactive answer judgment, defaulting to no:`, error);
+    outcome.fallback = true;
     return false; // Default to not answering if judgment fails
   }
 }

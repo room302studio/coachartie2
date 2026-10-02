@@ -1,0 +1,7 @@
+{"t":1,"experiment":"quiz-judge","text":"Q: Capital of France? | correct: Paris | user: paris","micro":true,"microFallback":false,"microMs":100,"jev":true,"jevType":"noul","jevProbability":0.97,"jevMs":300,"agree":true}
+{"t":2,"experiment":"quiz-judge","text":"Q: 2+2? | correct: 4 | user: five","micro":true,"microFallback":false,"microMs":200,"jev":false,"jevType":"noul","jevProbability":0.05,"jevMs":500,"agree":false}
+{"t":3,"experiment":"quiz-judge","text":"Q: Largest planet? | correct: Jupiter | user: jupiter","microFallback":true,"microMs":50,"jev":true,"jevType":"noul","jevProbability":0.9,"jevMs":400}
+{"t":4,"experiment":"quiz-judge","text":"Q: x | correct: y | user: z","micro":false,"microFallback":false,"microMs":120,"error":"Jev 529"}
+{"t":5,"helper":"pickOne","question":"Tone?","text":"lol nice","micro":"technical","microFallback":false,"microMs":30,"jev":"casual","jevProbability":0.7,"jevMs":250,"agree":false}
+{"t":6,"experiment":"preflight-batch","text":"what time is it in tokyo","micro":"casual/chat","microFallback":false,"microMs":400,"microWallMs":250,"jev":"casual/list","jevMs":300,"agree":false,"parts":{"tone":{"micro":"casual","microFallback":false,"microMs":150,"jev":"casual","jevType":"choice","jevProbability":0.9,"agree":true},"format":{"micro":"chat","microFallback":false,"microMs":250,"jev":"list","jevType":"choice","jevProbability":0.6,"agree":false}}}
+not json at all

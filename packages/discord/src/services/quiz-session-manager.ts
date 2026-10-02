@@ -7,6 +7,7 @@ import {
   autoReasoningFor,
   getSyncDb,
 } from '@coachartie/shared';
+import { shadowQuizJudge } from './jev-experiments.js';
 
 const FLASHCARD_API_BASE = 'https://ejfox.com/api/flashcards';
 const DEFAULT_QUESTION_COUNT = 10;
@@ -156,6 +157,20 @@ export async function verifyAnswerWithLLM(
   if (isGenerationMuted() || checkGuildBudget(ctx.guildId)?.over) {
     return null;
   }
+  // Jev shadow (no-op without JEV_API_KEY): logs Jev's verdict next to this judge's
+  const started = Date.now();
+  const verdict = await judgeAnswer(question, correctAnswer, userAnswer, apiKey, ctx);
+  shadowQuizJudge({ question, correctAnswer, userAnswer }, verdict, Date.now() - started);
+  return verdict;
+}
+
+async function judgeAnswer(
+  question: string,
+  correctAnswer: string,
+  userAnswer: string,
+  apiKey: string,
+  ctx: { guildId?: string | null; userId?: string }
+): Promise<boolean | null> {
   const judge = resolveModelSpec(AI_JUDGE_MODEL);
 
   const prompt = `You are grading a flashcard quiz answer. Reply with ONLY "yes" or "no".

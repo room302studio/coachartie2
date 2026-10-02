@@ -3,6 +3,7 @@ import { Client, TextChannel, Message } from 'discord.js';
 import fetch from 'node-fetch';
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs';
 import { join, dirname } from 'path';
+import { shadowSteamReview } from './jev-experiments.js';
 
 /**
  * Steam Review Notes Service
@@ -33,6 +34,8 @@ const POLL_INTERVAL_MS = parseInt(process.env.STEAM_REVIEW_POLL_MS || '600000');
 const ANALYSIS_MIN_INTERVAL_MS = parseInt(process.env.STEAM_REVIEW_ANALYSIS_MIN_MS || '1800000'); // 30 min
 const MAX_MESSAGES_PER_CYCLE = 1000;
 const CHATTER_BUFFER_MAX = 80; // recent human lines carried into the next analysis
+// Jev shadow (no-op without JEV_API_KEY): newest N reviews per cycle, so a backfill can't fan out
+const JEV_SHADOW_MAX_PER_CYCLE = 20;
 
 // Consecutive-failure backoff for the analysis refresh.
 //
@@ -290,6 +293,7 @@ export class SteamReviewNotes {
       if (reviews.length > 0) {
         notes = this.appendToLog(notes, reviews.map((r) => this.formatLogLine(r)));
         notes = this.updateTally(notes);
+        reviews.slice(-JEV_SHADOW_MAX_PER_CYCLE).forEach((r) => shadowSteamReview(r));
         // warn-level: prod console hides info, and new reviews are worth seeing in the log
         logger.warn(`📓 Logged ${reviews.length} new Steam review(s) (${messages.length} msgs scanned)`);
       }

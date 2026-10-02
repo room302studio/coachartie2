@@ -12,6 +12,23 @@
 
 import { logger } from '@coachartie/shared';
 import { microLLM } from './micro-llm.js';
+import { shadowPreflightBatch } from './jev-shadow.js';
+
+/** The three micro pickOne questions (also shadowed as one Jev request) */
+const PREFLIGHT_PICKS = {
+  tone: {
+    question: 'What tone should the response have?',
+    options: ['casual', 'helpful', 'technical', 'formal', 'playful'] as Array<PreflightAnalysis['tone']>,
+  },
+  format: {
+    question: 'What format should the response be?',
+    options: ['chat', 'list', 'explanation', 'tutorial', 'creative'] as Array<PreflightAnalysis['format']>,
+  },
+  complexity: {
+    question: 'How complex is this request?',
+    options: ['simple', 'moderate', 'complex'] as Array<PreflightAnalysis['complexity']>,
+  },
+};
 
 export interface PreflightAnalysis {
   // Response sizing
@@ -72,28 +89,28 @@ export async function quickAnalysis(message: string): Promise<PreflightAnalysis>
   const defaults = getDefaultAnalysis();
 
   try {
+    const context = message.substring(0, 200);
+    const timed = async <T>(p: Promise<T>) => {
+      const started = Date.now();
+      const r = await p;
+      return { ...r, ms: Date.now() - started };
+    };
     // Parallel micro LLM calls for speed
     const [tokensResult, toneResult, formatResult, complexityResult] = await Promise.all([
       microLLM.estimateResponseLength(message),
-      microLLM.pickOne(
-        'What tone should the response have?',
-        message.substring(0, 200),
-        ['casual', 'helpful', 'technical', 'formal', 'playful'] as const,
-        'helpful'
-      ),
-      microLLM.pickOne(
-        'What format should the response be?',
-        message.substring(0, 200),
-        ['chat', 'list', 'explanation', 'tutorial', 'creative'] as const,
-        'chat'
-      ),
-      microLLM.pickOne(
-        'How complex is this request?',
-        message.substring(0, 200),
-        ['simple', 'moderate', 'complex'] as const,
-        'moderate'
+      timed(microLLM.pickOne(PREFLIGHT_PICKS.tone.question, context, PREFLIGHT_PICKS.tone.options, 'helpful')),
+      timed(microLLM.pickOne(PREFLIGHT_PICKS.format.question, context, PREFLIGHT_PICKS.format.options, 'chat')),
+      timed(
+        microLLM.pickOne(PREFLIGHT_PICKS.complexity.question, context, PREFLIGHT_PICKS.complexity.options, 'moderate')
       ),
     ]);
+
+    // Jev shadow (no-op without JEV_API_KEY): the same three questions in one request
+    shadowPreflightBatch(context, {
+      tone: { ...PREFLIGHT_PICKS.tone, ...toneResult },
+      format: { ...PREFLIGHT_PICKS.format, ...formatResult },
+      complexity: { ...PREFLIGHT_PICKS.complexity, ...complexityResult },
+    });
 
     const result: PreflightAnalysis = {
       responseTokens: tokensResult.result,
