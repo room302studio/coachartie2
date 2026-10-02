@@ -18,11 +18,15 @@ import { shadowPreflightBatch } from './jev-shadow.js';
 const PREFLIGHT_PICKS = {
   tone: {
     question: 'What tone should the response have?',
-    options: ['casual', 'helpful', 'technical', 'formal', 'playful'] as Array<PreflightAnalysis['tone']>,
+    options: ['casual', 'helpful', 'technical', 'formal', 'playful'] as Array<
+      PreflightAnalysis['tone']
+    >,
   },
   format: {
     question: 'What format should the response be?',
-    options: ['chat', 'list', 'explanation', 'tutorial', 'creative'] as Array<PreflightAnalysis['format']>,
+    options: ['chat', 'list', 'explanation', 'tutorial', 'creative'] as Array<
+      PreflightAnalysis['format']
+    >,
   },
   complexity: {
     question: 'How complex is this request?',
@@ -98,10 +102,34 @@ export async function quickAnalysis(message: string): Promise<PreflightAnalysis>
     // Parallel micro LLM calls for speed
     const [tokensResult, toneResult, formatResult, complexityResult] = await Promise.all([
       microLLM.estimateResponseLength(message),
-      timed(microLLM.pickOne(PREFLIGHT_PICKS.tone.question, context, PREFLIGHT_PICKS.tone.options, 'helpful')),
-      timed(microLLM.pickOne(PREFLIGHT_PICKS.format.question, context, PREFLIGHT_PICKS.format.options, 'chat')),
       timed(
-        microLLM.pickOne(PREFLIGHT_PICKS.complexity.question, context, PREFLIGHT_PICKS.complexity.options, 'moderate')
+        microLLM.pickOne(
+          PREFLIGHT_PICKS.tone.question,
+          context,
+          PREFLIGHT_PICKS.tone.options,
+          'helpful',
+          { shadow: false }
+        )
+      ),
+      timed(
+        microLLM.pickOne(
+          PREFLIGHT_PICKS.format.question,
+          context,
+          PREFLIGHT_PICKS.format.options,
+          'chat',
+          { shadow: false }
+        )
+      ),
+      timed(
+        microLLM.pickOne(
+          PREFLIGHT_PICKS.complexity.question,
+          context,
+          PREFLIGHT_PICKS.complexity.options,
+          'moderate',
+          {
+            shadow: false,
+          }
+        )
       ),
     ]);
 

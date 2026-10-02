@@ -94,11 +94,14 @@ export async function pickOne<T extends string>(
   question: string,
   context: string,
   options: T[],
-  defaultValue: T
+  defaultValue: T,
+  // Callers that run their own batched Jev shadow (preflight) opt out here,
+  // so one message doesn't cost four Jev requests
+  opts: { shadow?: boolean } = {}
 ): Promise<MicroDecision<T>> {
   const started = Date.now();
   const decided = (d: MicroDecision<T>) => {
-    shadowPickOne(question, context, options, d, Date.now() - started);
+    if (opts.shadow !== false) shadowPickOne(question, context, options, d, Date.now() - started);
     return d;
   };
   try {
