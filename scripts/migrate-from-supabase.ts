@@ -5,9 +5,9 @@
 
 import { getSyncDb, initializeDb } from '../packages/shared/src/db/client.js';
 
-const SUPABASE_URL = 'https://avifojtjjlshjzvqibdo.supabase.co';
-const SUPABASE_KEY =
-  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF2aWZvanRqamxzaGp6dnFpYmRvIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTcwMjU5NjI0NiwiZXhwIjoyMDE4MTcyMjQ2fQ.w5KZIPckFL-otI3G0pvCSIy_xPW7X-NgJG5hzWiQ16k';
+const SUPABASE_URL = process.env.SUPABASE_URL ?? 'https://avifojtjjlshjzvqibdo.supabase.co';
+const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+if (!SUPABASE_KEY) throw new Error('Set SUPABASE_SERVICE_ROLE_KEY to run this migration');
 
 async function fetchFromSupabase(
   table: string,
