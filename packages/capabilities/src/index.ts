@@ -61,6 +61,7 @@ import {
   stopSocialMediaBehavior,
 } from './services/behaviors/social-media-behavior.js';
 import { getMetrics, getMetricsContentType } from './services/metrics.js';
+import { requireApiToken } from './middleware/require-api-token.js';
 
 // Export openRouterService for models endpoint
 export { openRouterService } from './services/llm/openrouter.js';
@@ -98,6 +99,18 @@ app.use(express.json({
   },
 }));
 app.use(createRequestLogger('capabilities'));
+
+// Remote callers (Cloudflare tunnel api.artie.tools, Caddy, docker bridges) need the
+// token; direct 127.0.0.1 callers don't. Health checks and the two webhooks that verify
+// their own signatures (MailerSend -> /api/sbat, GitHub -> /github/webhook) stay open.
+app.use(
+  requireApiToken([
+    (req) => req.path === '/test' || req.path === '/health' || req.path.startsWith('/health/'),
+    (req) => req.method === 'GET' && req.path === '/github/health',
+    (req) =>
+      req.method === 'POST' && (req.path === '/github/webhook' || req.path.startsWith('/api/sbat')),
+  ])
+);
 
 // Test route
 app.get('/test', (req, res) => {
