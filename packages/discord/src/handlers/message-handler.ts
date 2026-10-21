@@ -69,7 +69,6 @@ import {
   getStaffRespectBlock,
   getJanRuleBlock,
   getClapBackBlock,
-  getLobotomyBlock,
 } from '../config/guild-prompt-blocks.js';
 import {
   fetchReplyContext,
@@ -1809,10 +1808,6 @@ ${channelPersona.systemPrompt}
           if (!isJanGbg && !isStaff) {
             guildContextToPass = clapBack + (guildContextToPass || '');
           }
-          // 🧠 THE LOBOTOMY (2026-07-24): rap-first identity, the Alien rule, WAP forever.
-          // Prepended LAST so it sits at the very top of the assembled guild context —
-          // it must outrank the train-first base persona, not get buried under it.
-          guildContextToPass = getLobotomyBlock() + (guildContextToPass || '');
         }
 
         // Self-awareness: Artie's live per-guild display name, so nickname bits land
