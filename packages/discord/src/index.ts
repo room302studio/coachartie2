@@ -74,8 +74,10 @@ export const client = new Client({
 
 // DEBUG: Raw message listener to verify events are coming through
 client.on(Events.MessageCreate, (msg) => {
+  // No message text here: PM2 logs are shipped to Loki, and the privacy policy promises we
+  // don't keep people's words outside the (encrypted) database. Length is enough to debug.
   console.log(
-    `🔔 RAW MESSAGE: ${msg.author.tag} in ${msg.guild?.name || 'DM'}: "${msg.content.slice(0, 50)}..."`
+    `🔔 RAW MESSAGE: ${msg.author.tag} in ${msg.guild?.name || 'DM'} (${msg.content.length} chars)`
   );
 
   // Identity learning: check if message mentions GitHub activity

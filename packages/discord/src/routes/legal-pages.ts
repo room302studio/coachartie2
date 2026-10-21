@@ -73,11 +73,18 @@ const PRIVACY = page(
 <h2>How it's used</h2>
 <p>Only to run Artie: generating replies, remembering context, moderation he's been asked to do in his servers, and keeping costs in check. It is never sold, never used for advertising, and never shared except as below.</p>
 
-<h2>Who processes it</h2>
-<p>Artie's data is stored in a database on a private server operated by Room 302 Studio. To generate a reply, the relevant text (your message, nearby context and related memories) is sent to AI model providers through <a href="https://openrouter.ai/privacy">OpenRouter</a> (for example Anthropic and DeepSeek). Those providers process it under their own policies.</p>
+<h2>Where it's stored and who processes it</h2>
+<p>Artie's database, backups, job queue and service logs live on a private server operated by Room 302 Studio, on an encrypted volume (LUKS2, AES-256). Service logs record who sent a message and when, not what it said. Operational logs are also kept in our monitoring system, which stores them in Cloudflare R2, encrypted at rest by Cloudflare.</p>
+<p>To generate a reply, the relevant text (your message, nearby context and related memories) is sent to AI model providers through <a href="https://openrouter.ai/privacy">OpenRouter</a> (for example Anthropic and DeepSeek). Those providers process it under their own policies. We don't use your messages to train AI models.</p>
 
-<h2>Retention and deletion</h2>
-<p>Messages and memories are kept until they're pruned or you ask us to remove them. You can see what Artie remembers about you with the <code>/memory</code> command. To have your memories and logged messages deleted, email <a href="mailto:${CONTACT}">${CONTACT}</a> from anywhere and include your Discord username or user ID; we'll delete them and confirm.</p>
+<h2>Opting out, retention and deletion</h2>
+<ul>
+<li><strong>Opt out any time</strong> with <code>/artie-optout</code>. Artie immediately stops reading, storing, remembering or replying to your messages, and deletes the memories, logged messages and profile he holds about you. <code>/artie-optin</code> turns him back on for you; nothing deleted comes back.</li>
+<li><strong>See what he remembers</strong> with <code>/memory</code>.</li>
+<li><strong>Retention:</strong> messages and memories are kept until they're pruned, you opt out, or you ask for deletion. Channel summaries are overwritten as conversations move on.</li>
+<li><strong>Deletion by request:</strong> email <a href="mailto:${CONTACT}">${CONTACT}</a> with your Discord username or user ID and we'll delete your data and confirm.</li>
+</ul>
+<p>One honest limit: if other people mention you by name in their own messages, opting out doesn't rewrite what they said.</p>
 
 <h2>Children</h2>
 <p>Discord requires users to be at least 13 (or older where local law says so). Artie is not intended for anyone younger.</p>
