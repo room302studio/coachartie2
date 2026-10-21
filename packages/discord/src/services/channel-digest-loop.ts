@@ -90,6 +90,11 @@ export class ChannelDigestLoop {
       logger.info('📰 Channel digests OFF (CHANNEL_DIGEST_ENABLED=false)');
       return;
     }
+    // Without the MessageContent intent every fetched message is blank (see index.ts).
+    if (process.env.DISCORD_PRIVILEGED_INTENTS !== 'true') {
+      logger.info('📰 Channel digests idle: no MessageContent intent (DISCORD_PRIVILEGED_INTENTS)');
+      return;
+    }
     this.timer = setInterval(() => void this.tick(), TICK_MS);
     setTimeout(() => void this.tick(), 15_000);
     logger.info(`📰 Channel digests on (tick ${TICK_MS / 60000}m)`, digestThresholds());

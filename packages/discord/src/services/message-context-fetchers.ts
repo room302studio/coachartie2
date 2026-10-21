@@ -131,7 +131,10 @@ export async function fetchChannelHistory(
           // every webhook/other-bot message read as something Artie himself said.
           isSelf: msg.author.id === message.client.user?.id,
         };
-      });
+      })
+      // Without the MessageContent intent, other people's messages arrive blank (only
+      // @mentions of Artie, DMs and his own posts carry text). Blank lines are noise.
+      .filter((h) => h.content.trim().length > 0);
   } catch (error) {
     logger.error('Failed to fetch channel history:', error);
     return [];

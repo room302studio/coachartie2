@@ -1591,8 +1591,12 @@ export function setupMessageHandler(client: Client) {
 
     // Explicit triggers: the user deliberately addressed the bot (@mention, reply, DM) —
     // always respond, regardless of channel whitelist or budget.
+    // A message with no text and no attachments is what a no-ping reply to Artie looks like
+    // without the MessageContent intent (index.ts). There's nothing to answer; don't pay for it.
+    const hasReadableContent = message.content.trim().length > 0 || message.attachments.size > 0;
     const explicitlyAddressed =
-      responseConditions.botMentioned || responseConditions.repliedToBot || isDMAllowed;
+      hasReadableContent &&
+      (responseConditions.botMentioned || responseConditions.repliedToBot || isDMAllowed);
 
     // Ambient triggers: the bot decided to speak up on its own (robot channel, proactive
     // judgment, or a respondToAll persona). These MUST respect the channel whitelist

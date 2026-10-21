@@ -46,15 +46,25 @@ import { observationalLearning } from './services/observational-learning.js';
 import { steamReviewNotes } from './services/steam-review-notes.js';
 import { channelDigestLoop } from './services/channel-digest-loop.js';
 
+/**
+ * Privileged intents (GuildMembers, MessageContent) need Discord's app verification once a
+ * bot reaches 10k users, and Subway Builder put Artie over it: the portal refuses to turn them
+ * on (2026-10-21), and asking for them anyway makes login fail with "Used disallowed intents".
+ * Without MessageContent Discord still delivers the text of DMs, messages that @mention
+ * Artie, and his own messages, which is all mention-only Artie strictly needs; channel
+ * history and digests go quiet until verification lands. Then set
+ * DISCORD_PRIVILEGED_INTENTS=true (and restart with --update-env).
+ */
+export const privilegedIntents = process.env.DISCORD_PRIVILEGED_INTENTS === 'true';
+
 export const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildMembers,
     GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent,
     GatewayIntentBits.DirectMessages,
     GatewayIntentBits.GuildIntegrations,
     GatewayIntentBits.GuildMessageReactions,
+    ...(privilegedIntents ? [GatewayIntentBits.GuildMembers, GatewayIntentBits.MessageContent] : []),
   ],
   partials: [Partials.Message, Partials.Channel, Partials.User, Partials.Reaction],
   // SAFETY: never let Artie ping @everyone/@here or roles, no matter what text he posts.
