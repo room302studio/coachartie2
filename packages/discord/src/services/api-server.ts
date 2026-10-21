@@ -3,6 +3,7 @@ import { logger } from '@coachartie/shared';
 import { createApiRouter } from '../routes/api.js';
 import { setupModerationApi } from '../routes/moderation-api.js';
 import { requireApiToken } from '../middleware/require-api-token.js';
+import { mountLegalPages } from '../routes/legal-pages.js';
 import { Client } from 'discord.js';
 
 export class ApiServer {
@@ -27,6 +28,9 @@ export class ApiServer {
       res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
       next();
     });
+
+    // Public legal pages (Discord app verification links to them). Must come before the gate.
+    mountLegalPages(this.app);
 
     // Every route needs the token unless called directly from this box (see middleware).
     this.app.use(requireApiToken());
