@@ -92,6 +92,17 @@ export interface WireMessage {
   content: WireContent;
 }
 
+/**
+ * Header that opens context-alchemy's guild-knowledge system message. Only a second system
+ * message starting with it is static enough to cache; any other second system message is
+ * the per-message "Relevant context" block, where a breakpoint would pay writes for nothing.
+ */
+export const GUILD_KNOWLEDGE_HEADER = '📚 COMMUNITY KNOWLEDGE (USE THIS):';
+
+function isStaticSecondBlock(messages: Array<{ content: string }>, i: number): boolean {
+  return messages[i].content.startsWith(GUILD_KNOWLEDGE_HEADER);
+}
+
 export function supportsPromptCaching(model: string): boolean {
   return model.startsWith('anthropic/');
 }
@@ -109,11 +120,12 @@ export interface CacheDecision {
 }
 
 /**
- * Put a single cache breakpoint on the leading system message.
+ * Put cache breakpoints on the static prefix: the leading system message, and the guild-
+ * knowledge system message when one follows it.
  *
- * One breakpoint, not four. The static system block is the only real stability boundary:
- * the "Relevant context" block and the channel transcript change every message, so marking
- * them would pay a write premium on bytes that are never read back.
+ * Two at most, not four. Those are the only real stability boundaries: the "Relevant
+ * context" block and the channel transcript change every message, so marking them would pay
+ * a write premium on bytes that are never read back.
  */
 export function applyCacheControl(
   messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>,
@@ -128,11 +140,23 @@ export function applyCacheControl(
     return { messages, applied: false, reason: 'no system message', prefixTokens: 0 };
   }
 
-  const prefix = messages[firstSystemIndex].content;
-  const prefixTokens = estimateTokens(prefix);
+  // The prefix is the leading system message plus, when context-alchemy put one there, the
+  // guild-knowledge system message right after it. Each gets its own breakpoint: the first
+  // is shared across every guild, the second per guild/channel persona.
+  const breakpoints = [firstSystemIndex];
+  if (messages[firstSystemIndex + 1]?.role === 'system' && isStaticSecondBlock(messages, firstSystemIndex + 1)) {
+    breakpoints.push(firstSystemIndex + 1);
+  }
   const minimum = cacheMinimumFor(model);
+  let running = 0;
+  const marked: number[] = [];
+  for (const i of breakpoints) {
+    running += estimateTokens(messages[i].content);
+    if (running >= minimum) marked.push(i);
+  }
+  const prefixTokens = running;
 
-  if (prefixTokens < minimum) {
+  if (marked.length === 0) {
     return {
       messages,
       applied: false,
@@ -142,15 +166,15 @@ export function applyCacheControl(
   }
 
   const wire: WireMessage[] = messages.map((m, i) =>
-    i === firstSystemIndex
+    marked.includes(i)
       ? {
           role: m.role,
-          content: [{ type: 'text' as const, text: prefix, cache_control: cacheTtl() }],
+          content: [{ type: 'text' as const, text: m.content, cache_control: cacheTtl() }],
         }
       : { role: m.role, content: m.content }
   );
 
-  return { messages: wire, applied: true, reason: 'ok', prefixTokens };
+  return { messages: wire, applied: true, reason: `ok (${marked.length} breakpoint(s))`, prefixTokens };
 }
 
 /**

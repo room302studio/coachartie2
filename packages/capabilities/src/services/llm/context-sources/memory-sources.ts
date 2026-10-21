@@ -124,6 +124,12 @@ export async function addLearnedRules(
   }
 }
 
+/** MEMORY_CONTEXT_MAX_TOKENS (default 1500, floor 300): cap on recalled memories per reply. */
+export function memoryContextMaxTokens(env: NodeJS.ProcessEnv = process.env): number {
+  const n = parseInt(env.MEMORY_CONTEXT_MAX_TOKENS || '', 10);
+  return Number.isFinite(n) && n > 0 ? Math.max(300, n) : 1500;
+}
+
 /**
  * Add relevant memories to message context (matches assembleMessagePreamble pattern)
  */
@@ -167,9 +173,11 @@ export async function addRelevantMemories(
       searchQuery = `${searchQuery} [people here: ${participants.join(', ')}]`;
     }
 
-    // Calculate available token budget for memory context
-    const contextSize = parseInt(process.env.CONTEXT_WINDOW_SIZE || '32000', 10);
-    const maxTokensForMemory = Math.max(800, Math.floor(contextSize * 0.15)); // Minimum 800, scales with context
+    // Memory budget: a fixed cap, not a share of the context window. The old 15%-of-32k
+    // (4800 tok, ~25k chars) was the single biggest block in every reply — mostly low-
+    // importance recall the voice model skimmed past. The channel digest now carries
+    // "what's been going on here", so memories only need the sharpest few.
+    const maxTokensForMemory = memoryContextMaxTokens();
 
     const startTime = Date.now();
     const memoryResult = await memoryEntourage.getMemoryContext(

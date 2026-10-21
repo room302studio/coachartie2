@@ -156,6 +156,43 @@ export async function addChannelVibes(
   }
 }
 
+/** Digests older than this are history, not "what's going on" — leave them out. */
+const DIGEST_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+
+/**
+ * Add the channel's rolling digest (shared/services/channel-digest-store.ts): the cheap
+ * summary of what's been happening here between the times Artie is addressed. Read
+ * directly by channel id, never through memory recall.
+ */
+export async function addChannelDigest(
+  message: IncomingMessage,
+  sources: ContextSource[]
+): Promise<void> {
+  try {
+    const channelId = message.context?.channelId;
+    if (!channelId || message.source !== 'discord') return;
+
+    const { getChannelDigest, digestAge } = await import('@coachartie/shared');
+    const d = getChannelDigest(channelId);
+    if (!d || !d.digest.trim()) return;
+    if (Date.now() - new Date(d.updatedAt).getTime() > DIGEST_MAX_AGE_MS) return;
+
+    const content =
+      `WHAT'S BEEN GOING ON IN #${d.channelName} (your notes from ${digestAge(d.updatedAt)}; ` +
+      `the live transcript below is newer and wins):\n${d.digest}`;
+
+    sources.push({
+      name: 'channel_digest',
+      priority: 90, // above recalled memories (70): this is the room's current picture
+      tokenWeight: estimateTokens(content),
+      content,
+      category: 'user_state',
+    });
+  } catch (error) {
+    logger.warn('Failed to add channel digest:', error);
+  }
+}
+
 /**
  * Add recent messages from channel
  */

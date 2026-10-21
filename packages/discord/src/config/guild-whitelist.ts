@@ -106,6 +106,8 @@ export const GUILD_CONFIGS: Record<string, GuildConfig> = {
     proactiveAnswering: false,
     proactiveChannels: [],  // Empty = all channels (only relevant if proactiveAnswering re-enabled)
     proactiveCooldownSeconds: 120,  // 2 min between proactive responses
+    // Strict mention/reply/DM (EJ, 2026-10-21): the cheap "should I speak?" judge isn't consulted.
+    ambientMode: 'never',
     githubSync: {
       enabled: true,
       defaultPollIntervalMinutes: 3,
@@ -151,6 +153,8 @@ Use <read>path/to/file.md</read> to look up info before answering questions abou
     proactiveAnswering: false,
     proactiveChannels: ['mods', 'modders'],
     proactiveCooldownSeconds: 180, // 3 minutes - big server, don't spam
+    // Strict mention/reply/DM (EJ, 2026-10-21): the cheap "should I speak?" judge isn't consulted.
+    ambientMode: 'never',
     restrictToRobotChannelsOnly: false,
     responseChannels: [], // Can respond in any channel when mentioned
     // Only observe/learn from these channels (saves API costs)

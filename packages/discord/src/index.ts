@@ -44,6 +44,7 @@ import { initializeMentionProxyService } from './services/mention-proxy-service.
 import { initializeGitHubSync } from './services/github-sync.js';
 import { observationalLearning } from './services/observational-learning.js';
 import { steamReviewNotes } from './services/steam-review-notes.js';
+import { channelDigestLoop } from './services/channel-digest-loop.js';
 
 export const client = new Client({
   intents: [
@@ -278,6 +279,13 @@ async function start() {
       } catch (error) {
         logger.warn('Failed to initialize observational learning:', error);
         console.error('❌ Observational learning init failed:', error);
+      }
+
+      // Channel digests: one cheap rolling summary per observed channel (replaces the firehose)
+      try {
+        channelDigestLoop.initialize(client);
+      } catch (error) {
+        logger.warn('Failed to initialize channel digests:', error);
       }
 
       // Initialize Steam review note-taking (#steam-reviews → ongoing situation doc)

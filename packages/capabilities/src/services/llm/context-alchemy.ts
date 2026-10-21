@@ -31,11 +31,13 @@ import {
 import {
   addRecentGuildMessages,
   addChannelVibes,
+  addChannelDigest,
   addRecentChannelMessages,
   addCapabilityManifest,
   addDiscordEnvironment,
 } from './context-sources/discord-sources.js';
 import { addSongNudge, addMoltbookPeek } from './context-sources/nudge-sources.js';
+import { GUILD_KNOWLEDGE_HEADER } from './prompt-cache.js';
 import {
   addLearnedRules,
   addRelevantMemories,
@@ -47,6 +49,9 @@ const GUILD_CONTEXT_PATHS: Record<string, string> = {
   '1420846272545296470': 'reference-docs/guild-prompts/subwaybuilder.md',
   '932719842522443928': 'reference-docs/guild-prompts/room302studio.md',
 };
+
+/** Source name for guild knowledge, which gets its own cached system message. */
+const GUILD_KNOWLEDGE_SOURCE = 'guild_knowledge';
 
 // Cache for loaded guild prompts
 const guildPromptCache = new Map<string, { content: string; loadedAt: number }>();
@@ -505,6 +510,9 @@ Important:
     // Channel vibes - activity level, response style hints ("the vibes of the room")
     await this.addChannelVibes(message, sources);
 
+    // Channel digest - rolling summary of what's happened here between mentions
+    await addChannelDigest(message, sources);
+
     // Moltbook peek - randomly check what other AIs are posting (~10% chance)
     await this.addMoltbookPeek(sources);
 
@@ -727,7 +735,17 @@ Important:
     }
 
     if (guildKnowledge) {
-      parts.push(`\n📚 COMMUNITY KNOWLEDGE (USE THIS):\n${guildKnowledge}`);
+      // Its own source, not part of this per-message block: guild knowledge is static per
+      // (guild, channel persona, speaker class), so assembleMessageChain gives it a second
+      // system message right under the prefix, where it can carry its own cache breakpoint.
+      // Inside 'Relevant context' it was re-billed at full price on every reply.
+      sources.push({
+        name: GUILD_KNOWLEDGE_SOURCE,
+        priority: 97,
+        tokenWeight: estimateTokens(guildKnowledge),
+        content: `${GUILD_KNOWLEDGE_HEADER}\n${guildKnowledge.trim()}`,
+        category: 'system',
+      });
       if (ctx.isProactiveAnswer) {
         parts.push(`\n⚡ PROACTIVE RESPONSE RULES:
 - You were NOT mentioned or asked — you chose to jump in. Be extra thoughtful about whether this is welcome.
@@ -1029,7 +1047,10 @@ Important:
       logger.info('┌─ MESSAGE CHAIN ASSEMBLY ────────────────────────────────────────┐');
     }
 
-    const contextByCategory = groupContextByCategory(contextSources);
+    const guildKnowledge = contextSources.find((s) => s.name === GUILD_KNOWLEDGE_SOURCE);
+    const contextByCategory = groupContextByCategory(
+      contextSources.filter((s) => s.name !== GUILD_KNOWLEDGE_SOURCE)
+    );
     const messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [];
 
     // 1. System message: persona + capabilities. Deliberately STATIC.
@@ -1079,6 +1100,13 @@ Important:
     }
 
     messages.push({ role: 'system', content: systemContent.trim() });
+
+    // 1b. Guild knowledge (persona blocks, community canon). Static per guild/channel/speaker
+    // class, so it sits directly under the prefix and prompt-cache.ts puts a second
+    // breakpoint on it. Same rule as above: nothing per-message in here.
+    if (guildKnowledge) {
+      messages.push({ role: 'system', content: guildKnowledge.content });
+    }
 
     // 2. Add contextual information (memory, goals, user_state, system notes) as system message
     if (
