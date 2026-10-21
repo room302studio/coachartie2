@@ -15,6 +15,7 @@ import { watchRepoCommand } from './watch-repo.js';
 import { unwatchRepoCommand } from './unwatch-repo.js';
 import { listWatchesCommand } from './list-watches.js';
 import { pairingCommand } from './pairing.js';
+import { optOutCommand, optInCommand } from './privacy.js';
 
 /**
  * THE list of global slash commands. The interaction handler routes from it and
@@ -44,4 +45,6 @@ export const globalCommands: SlashCommand[] = [
   unwatchRepoCommand,
   listWatchesCommand,
   pairingCommand,
+  optOutCommand,
+  optInCommand,
 ] as SlashCommand[];

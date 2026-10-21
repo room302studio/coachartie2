@@ -1,4 +1,10 @@
-import { logger, getSyncDb, isBlockedUser, BLOCKED_USER_EPITHET } from '@coachartie/shared';
+import {
+  logger,
+  getSyncDb,
+  isBlockedUser,
+  BLOCKED_USER_EPITHET,
+  BLOCKED_USER_IDS,
+} from '@coachartie/shared';
 import { RegisteredCapability } from '../services/capability/capability-registry.js';
 import { metricsRegistry } from '../services/metrics.js';
 
@@ -25,7 +31,8 @@ interface SelfStatsParams {
 // generation. Blocked users are redacted, not shown — they don't exist.
 
 function redactUser(userId: string): string {
-  return isBlockedUser(userId) ? BLOCKED_USER_EPITHET : `<@${userId}>`;
+  if (BLOCKED_USER_IDS.has(userId)) return BLOCKED_USER_EPITHET;
+  return isBlockedUser(userId) ? 'someone who opted out' : `<@${userId}>`;
 }
 
 function userCostsReport(db: ReturnType<typeof getSyncDb>, userId: string): string {

@@ -6,6 +6,8 @@
 // Both packages (discord + capabilities) enforce this, which is why it lives in shared:
 // the discord package gates intake/context, capabilities gates memory formation/recall.
 
+import { isOptedOut } from '../services/privacy-opt-out.js';
+
 export interface BlockedUser {
   id: string; // Discord snowflake — immutable, survives renames
   names: string[]; // usernames/display names they're known by, for content matching
@@ -27,8 +29,14 @@ export const BLOCKED_USER_IDS: ReadonlySet<string> = new Set(BLOCKED_USERS.map((
 // appear in Discord-sourced text, and a false positive just means one less memory.
 const BLOCKED_NAME_PATTERNS = BLOCKED_USERS.flatMap((u) => u.names.map((n) => n.toLowerCase()));
 
+/**
+ * True for anyone Artie must treat as absent from his DATA: EJ's blocklist plus users who
+ * opted out themselves (services/privacy-opt-out.ts). Gates intake, history, digests,
+ * memory formation and recall. For "banned" treatment specifically (💔, the epithet),
+ * check BLOCKED_USER_IDS instead; an opt-out is a choice, not a punishment.
+ */
 export function isBlockedUser(userId?: string | null): boolean {
-  return !!userId && BLOCKED_USER_IDS.has(userId);
+  return !!userId && (BLOCKED_USER_IDS.has(userId) || isOptedOut(userId));
 }
 
 /**

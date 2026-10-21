@@ -1070,6 +1070,12 @@ export function setupMessageHandler(client: Client) {
       return;
     }
 
+    // Privacy opt-out (/artie-optout): their own choice, so no 💔 — Artie just doesn't read,
+    // store, or answer their messages. /artie-optin (an interaction, not a message) undoes it.
+    if (isBlockedUser(message.author.id)) {
+      return;
+    }
+
     // EMERGENCY KILL SWITCH — checked per message, no restart required.
     if (!isCoachArtiePlace) {
       const _chName = ('name' in message.channel ? message.channel.name : '') || '';
