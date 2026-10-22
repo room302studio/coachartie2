@@ -39,13 +39,13 @@ NEW REPO: ${repo.fullName}
 Description: ${repo.description || '(none)'}
 Language: ${repo.language || '(unknown)'}
 
-HOW THE TEAM ALREADY ROUTES (follow the pattern):
+HOW EXISTING REPOS ARE ROUTED (a hint about which project owns which channels, not a rule):
 ${prior}
 
 CHANNELS:
 ${list}
 
-Pick the single channel where the people who work on this repo would want its updates: a project's engineering or robot channel beats its general chat, and a dedicated channel beats a shared one. Never pick channels about leadership, marketing, private or personal topics unless the repo is clearly about that. If nothing fits better than the studio-wide feed, pick that.
+Pick the single channel where the people who work on this repo would want its updates. Match the repo's PURPOSE to a channel's purpose first: art, store pages or trailers go to marketing; design files to design; a channel named after this exact project beats everything. Among a project's channels, prefer engineering or robot channels for ordinary code. Never pick leadership, private or personal channels unless the repo is clearly about that. If nothing fits better than the studio-wide feed, pick that.
 
 Return JSON only: {"channelId": "<one id from the list>", "reason": "<under 15 words>"}`;
 }
