@@ -7,7 +7,7 @@
  */
 
 import { Client, EmbedBuilder, TextChannel, NewsChannel, ThreadChannel } from 'discord.js';
-import { logger } from '@coachartie/shared';
+import { logger, GITHUB_FEED_CHANNEL_ID } from '@coachartie/shared';
 import type { GitHubSyncEvent, GitHubEventType } from './github-poller.js';
 import type { ProcessedEvent, BatchedEvents, DiscordMention } from './github-event-processor.js';
 
@@ -142,6 +142,18 @@ export class GitHubDiscordPoster {
       logger.info(`Posted ${processed.event.type} event to ${channel.id}`);
     } catch (error) {
       logger.error(`Failed to post event to ${channel.id}:`, error);
+      // Missing Access / Missing Permissions: the watch points somewhere Artie can't post.
+      // Don't drop the event; put it in the studio-wide feed (2026-10-22: a PR comment was
+      // lost this way after a channel move).
+      const code = (error as { code?: number })?.code;
+      if ((code === 50001 || code === 50013) && channel.id !== GITHUB_FEED_CHANNEL_ID) {
+        const feed = await this.getChannel(GITHUB_FEED_CHANNEL_ID);
+        if (feed) {
+          await feed
+            .send({ content: `⚠️ couldn't post in <#${channel.id}> (no access), so here:${content ? `\n${content}` : ''}`, embeds: [embed] })
+            .catch((e) => logger.error('Fallback post to the GitHub feed also failed:', e));
+        }
+      }
     }
   }
 

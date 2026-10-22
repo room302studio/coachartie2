@@ -157,8 +157,15 @@ export class GitHubOrgWatcher {
     for (const repo of activeRepos) {
       if (watchedRepos.has(repo.full_name)) continue;
 
-      // Find the best Discord channel for this repo
+      // Find the best Discord channel for this repo. Whatever the route, Artie must be able to
+      // post there: a mapped channel he can't see (Missing Access) silently eats every event,
+      // which happened on 2026-10-22. Unpostable → the studio-wide feed, with a log line.
       const route = await this.findBestChannel(repo, config, existingWatches);
+      if (!this.canPost(route.channelId)) {
+        logger.warn(`Org watcher: can't post in ${route.channelId} for ${repo.full_name}; using #robot until Artie gets access`);
+        route.channelId = GITHUB_FEED_CHANNEL_ID;
+        route.how = 'default';
+      }
       const channelId = route.channelId;
 
       // Create the watch
@@ -283,6 +290,12 @@ export class GitHubOrgWatcher {
       logger.warn(`Org watcher: Artie couldn't route ${repo.full_name}, using name match:`, error);
       return null;
     }
+  }
+
+  private canPost(channelId: string): boolean {
+    const ch = this.client.channels.cache.get(channelId) as TextChannel | undefined;
+    const me = ch?.guild?.members.me;
+    return !!ch && !!me && !!ch.permissionsFor(me)?.has(['ViewChannel', 'SendMessages', 'EmbedLinks']);
   }
 
   /** The old heuristic: channel name contains the repo name, or shares a 4+ letter word. */
