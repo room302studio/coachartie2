@@ -36,7 +36,7 @@ const ORG_CONFIGS: OrgWatchConfig[] = [
     defaultChannelId: '1467952594671632647', // #subwaybuilder-engineering
     channelMappings: {
       'metro-maker4': '1467952594671632647', // #subwaybuilder-engineering
-      'sb-unity': '1467952594671632647', // #subwaybuilder-engineering
+      'sb-unity': '1560347074715979816', // #subwaybuilder-2 (SB2 runs on it; that's where the team talks about it)
       'subway-builder-2': '1560347074715979816', // #subwaybuilder-2
       sbat: '1480985884676587620', // #subwaybuilder-sbat
     },
