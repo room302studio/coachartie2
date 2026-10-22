@@ -114,7 +114,7 @@ export const GUILD_CONFIGS: Record<string, GuildConfig> = {
       repos: [
         {
           repo: 'Subway-Builder/metro-maker4',
-          channelId: '1412880705456836689', // #collab-subwaybuilder
+          channelId: '1467952594671632647', // #subwaybuilder-engineering (org-watcher routes the rest of the org)
           events: ['all'],
         },
       ],

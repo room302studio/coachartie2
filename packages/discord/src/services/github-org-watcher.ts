@@ -29,9 +29,17 @@ interface OrgWatchConfig {
 // Configured orgs to watch
 const ORG_CONFIGS: OrgWatchConfig[] = [
   {
+    // Every repo in the org, including new ones (EJ 2026-10-22). Explicit routes; anything
+    // new and unmapped goes to #subwaybuilder-engineering, never the studio-wide #robot.
     org: 'Subway-Builder',
     guildId: '932719842522443928', // Room 302
-    defaultChannelId: GITHUB_FEED_CHANNEL_ID,
+    defaultChannelId: '1467952594671632647', // #subwaybuilder-engineering
+    channelMappings: {
+      'metro-maker4': '1467952594671632647', // #subwaybuilder-engineering
+      'sb-unity': '1467952594671632647', // #subwaybuilder-engineering
+      'subway-builder-2': '1560347074715979816', // #subwaybuilder-2
+      sbat: '1480985884676587620', // #subwaybuilder-sbat
+    },
   },
   {
     org: 'room302studio',
@@ -58,12 +66,13 @@ export class GitHubOrgWatcher {
   }
 
   start(): void {
-    // Check every 6 hours for new repos
+    // Check hourly for new repos: orgs are spinning up repos and a new one shouldn't sit
+    // unwatched for half a day. One list call per org per hour; trivial against the API limit.
     this.watchTimer = setInterval(() => {
       this.syncAllOrgs().catch((err) =>
         logger.error('Org watcher sync error:', err)
       );
-    }, 6 * 60 * 60 * 1000);
+    }, 60 * 60 * 1000);
 
     // Initial sync after 45 seconds (let other services start first)
     setTimeout(() => {
