@@ -191,6 +191,22 @@ app.post('/api/channel-digest', async (req, res) => {
   }
 });
 
+// Repo routing: Artie picks the Discord channel for a newly discovered GitHub repo (repo-router.ts)
+app.post('/api/route-repo', async (req, res) => {
+  try {
+    const { repo, channels, existing, guildId } = req.body || {};
+    if (!repo?.fullName || !Array.isArray(channels)) {
+      return res.status(400).json({ error: 'repo.fullName and channels[] required' });
+    }
+    const { pickRepoChannel } = await import('./services/core/repo-router.js');
+    const pick = await pickRepoChannel(repo, channels, Array.isArray(existing) ? existing : [], guildId);
+    res.status(pick ? 200 : 422).json(pick ?? { error: 'no valid pick' });
+  } catch (error) {
+    logger.warn('Repo routing endpoint error:', error);
+    res.status(500).json({ error: 'routing failed' });
+  }
+});
+
 // Observation stats endpoint
 app.get('/api/observe/stats', async (req, res) => {
   try {

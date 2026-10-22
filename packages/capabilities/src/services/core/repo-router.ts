@@ -1,0 +1,82 @@
+/**
+ * Repo → Discord channel routing, decided by Artie (a cheap model) when a GitHub org grows a
+ * repo nobody mapped. The discord org watcher sends the repo and the guild's text channels;
+ * this picks one and says why. Explicit mappings in github-org-watcher.ts always win, and
+ * any failure here falls back to the watcher's name matching and default channel.
+ *
+ * One call per newly discovered repo, so cost is noise. Goes through openRouterService,
+ * which means the kill switch, the daily budget and usage tracking all apply.
+ */
+
+import { openRouterService } from '../llm/openrouter.js';
+
+export interface ChannelOption {
+  id: string;
+  name: string;
+  topic?: string | null;
+  category?: string | null;
+}
+
+export interface RepoInfo {
+  fullName: string;
+  description?: string | null;
+  language?: string | null;
+}
+
+export interface RoutePick {
+  channelId: string;
+  reason: string;
+}
+
+export function buildRoutePrompt(repo: RepoInfo, channels: ChannelOption[], existing: Array<{ repo: string; channel: string }>): string {
+  const list = channels
+    .map((c) => `- ${c.id} #${c.name}${c.category ? ` (category: ${c.category})` : ''}${c.topic ? ` — ${c.topic.slice(0, 120)}` : ''}`)
+    .join('\n');
+  const prior = existing.map((e) => `- ${e.repo} → #${e.channel}`).join('\n') || '(none yet)';
+  return `You route GitHub activity into a team's Discord. A new repository appeared and needs a channel for its pull requests, reviews and CI.
+
+NEW REPO: ${repo.fullName}
+Description: ${repo.description || '(none)'}
+Language: ${repo.language || '(unknown)'}
+
+HOW THE TEAM ALREADY ROUTES (follow the pattern):
+${prior}
+
+CHANNELS:
+${list}
+
+Pick the single channel where the people who work on this repo would want its updates: a project's engineering or robot channel beats its general chat, and a dedicated channel beats a shared one. Never pick channels about leadership, marketing, private or personal topics unless the repo is clearly about that. If nothing fits better than the studio-wide feed, pick that.
+
+Return JSON only: {"channelId": "<one id from the list>", "reason": "<under 15 words>"}`;
+}
+
+export function parseRoutePick(raw: string, channels: ChannelOption[]): RoutePick | null {
+  const m = raw.match(/\{[\s\S]*\}/);
+  if (!m) return null;
+  try {
+    const j = JSON.parse(m[0]) as { channelId?: unknown; reason?: unknown };
+    const id = String(j.channelId ?? '').replace(/[^0-9]/g, '');
+    if (!channels.some((c) => c.id === id)) return null; // never trust an id we didn't offer
+    const reason = typeof j.reason === 'string' ? j.reason.trim().slice(0, 140) : '';
+    return { channelId: id, reason };
+  } catch {
+    return null;
+  }
+}
+
+export async function pickRepoChannel(
+  repo: RepoInfo,
+  channels: ChannelOption[],
+  existing: Array<{ repo: string; channel: string }>,
+  guildId?: string
+): Promise<RoutePick | null> {
+  if (channels.length === 0) return null;
+  const raw = await openRouterService.generateFromMessageChain(
+    [{ role: 'user', content: buildRoutePrompt(repo, channels, existing) }],
+    'repo-router',
+    undefined,
+    process.env.BACKGROUND_MODEL || process.env.FAST_MODEL,
+    { guildId, maxTokens: 120, stepType: 'repo_routing' }
+  );
+  return parseRoutePick(raw, channels);
+}

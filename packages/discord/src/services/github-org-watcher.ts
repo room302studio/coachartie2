@@ -106,7 +106,15 @@ export class GitHubOrgWatcher {
     const db = getDb();
 
     // Fetch all repos in the org
-    const repos: Array<{ name: string; full_name: string; archived: boolean; fork: boolean; pushed_at: string | null }> = [];
+    const repos: Array<{
+      name: string;
+      full_name: string;
+      archived: boolean;
+      fork: boolean;
+      pushed_at: string | null;
+      description: string | null;
+      language: string | null;
+    }> = [];
     let page = 1;
     while (true) {
       const { data } = await this.octokit.repos.listForOrg({
@@ -123,6 +131,8 @@ export class GitHubOrgWatcher {
         archived: r.archived || false,
         fork: r.fork || false,
         pushed_at: r.pushed_at || null,
+        description: r.description || null,
+        language: r.language || null,
       })));
       if (data.length < 100) break;
       page++;
@@ -148,7 +158,8 @@ export class GitHubOrgWatcher {
       if (watchedRepos.has(repo.full_name)) continue;
 
       // Find the best Discord channel for this repo
-      const channelId = await this.findBestChannel(repo.name, config);
+      const route = await this.findBestChannel(repo, config, existingWatches);
+      const channelId = route.channelId;
 
       // Create the watch
       await db.insert(githubRepoWatches).values({
@@ -163,9 +174,21 @@ export class GitHubOrgWatcher {
       const channel = this.client.channels.cache.get(channelId);
       const channelName = (channel as TextChannel)?.name || channelId;
 
-      console.log(`🔭 Auto-watching ${repo.full_name} → #${channelName}`);
-      logger.info(`Org watcher: added ${repo.full_name} → #${channelName}`);
+      console.log(`🔭 Auto-watching ${repo.full_name} → #${channelName} (${route.how})`);
+      logger.info(`Org watcher: added ${repo.full_name} → #${channelName} via ${route.how}`);
       newWatches++;
+
+      // When Artie chose the room himself, say so where it'll be seen, so a wrong pick gets
+      // caught in a day instead of never. Explicit routes and fallbacks stay quiet.
+      if (route.how === 'artie' && channel && 'send' in channel) {
+        await (channel as TextChannel)
+          .send(
+            `📡 New repo **${repo.full_name}**: I'll post its PRs and reviews here` +
+              (route.reason ? ` (${route.reason.replace(/\.$/, '')})` : '') +
+              `. Wrong room? \`/unwatch-repo\` here and \`/watch-repo\` in the right one.`
+          )
+          .catch((err) => logger.warn(`Org watcher: couldn't announce ${repo.full_name}:`, err));
+      }
     }
 
     // Deactivate watches for repos that no longer exist or are archived
@@ -194,21 +217,76 @@ export class GitHubOrgWatcher {
   }
 
   /**
-   * Find the best Discord channel for a repo based on name matching.
+   * Find the best Discord channel for a repo.
    *
    * Strategy:
-   * 1. Check explicit channel mapping overrides
-   * 2. Look for a channel containing the repo name (e.g., "metro-maker4" → #subwaybuilder-robot)
-   * 3. Look for a channel in the same category as other project channels
-   * 4. Fall back to default channel
+   * 1. Explicit channel mapping overrides (config)
+   * 2. Artie picks, from channel names/topics/categories and how existing repos are routed
+   * 3. Name matching (channel contains the repo name, or shares a 4+ letter word)
+   * 4. The org's default channel
    */
-  private async findBestChannel(repoName: string, config: OrgWatchConfig): Promise<string> {
+  private async findBestChannel(
+    repo: { name: string; full_name: string; description: string | null; language: string | null },
+    config: OrgWatchConfig,
+    existingWatches: Array<{ repo: string; channelId: string; isActive: boolean | null }>
+  ): Promise<{ channelId: string; how: 'mapping' | 'artie' | 'name-match' | 'default'; reason?: string }> {
+    const repoName = repo.name;
     // 1. Explicit overrides
     if (config.channelMappings?.[repoName]) {
-      return config.channelMappings[repoName];
+      return { channelId: config.channelMappings[repoName], how: 'mapping' };
     }
 
-    // 2. Search guild channels for name match
+    // 2. Artie decides: a cheap model sees the repo, the guild's channels (names, topics,
+    //    categories) and how existing repos are routed, and picks one. Any failure falls
+    //    through to the old name matching below.
+    const picked = await this.askArtieForChannel(repo, config, existingWatches);
+    if (picked) return { channelId: picked.channelId, how: 'artie', reason: picked.reason };
+
+    const fallback = this.matchChannelByName(repoName, config);
+    return fallback
+      ? { channelId: fallback, how: 'name-match' }
+      : { channelId: config.defaultChannelId, how: 'default' };
+  }
+
+  private async askArtieForChannel(
+    repo: { full_name: string; description: string | null; language: string | null },
+    config: OrgWatchConfig,
+    existingWatches: Array<{ repo: string; channelId: string; isActive: boolean | null }>
+  ): Promise<{ channelId: string; reason: string } | null> {
+    const guild = this.client.guilds.cache.get(config.guildId);
+    const me = guild?.members.me;
+    if (!guild || !me) return null;
+    const channels = [...guild.channels.cache.values()]
+      .filter((ch): ch is TextChannel => ch.type === 0 && !!ch.permissionsFor(me)?.has(['ViewChannel', 'SendMessages']))
+      .map((ch) => ({ id: ch.id, name: ch.name, topic: ch.topic, category: ch.parent?.name ?? null }));
+    const nameOf = (id: string) => (guild.channels.cache.get(id) as TextChannel | undefined)?.name ?? id;
+    const existing = existingWatches
+      .filter((w) => w.isActive)
+      .map((w) => ({ repo: w.repo, channel: nameOf(w.channelId) }));
+    try {
+      const res = await fetch(`${process.env.CAPABILITIES_URL || 'http://localhost:47324'}/api/route-repo`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          repo: { fullName: repo.full_name, description: repo.description, language: repo.language },
+          channels,
+          existing,
+          guildId: config.guildId,
+        }),
+      });
+      if (!res.ok) return null;
+      const pick = (await res.json()) as { channelId?: string; reason?: string };
+      return pick.channelId && channels.some((c) => c.id === pick.channelId)
+        ? { channelId: pick.channelId, reason: pick.reason || '' }
+        : null;
+    } catch (error) {
+      logger.warn(`Org watcher: Artie couldn't route ${repo.full_name}, using name match:`, error);
+      return null;
+    }
+  }
+
+  /** The old heuristic: channel name contains the repo name, or shares a 4+ letter word. */
+  private matchChannelByName(repoName: string, config: OrgWatchConfig): string | null {
     const guild = this.client.guilds.cache.get(config.guildId);
     if (guild) {
       const textChannels = guild.channels.cache.filter(
@@ -240,8 +318,7 @@ export class GitHubOrgWatcher {
       }
     }
 
-    // 3. Fall back to default
-    return config.defaultChannelId;
+    return null;
   }
 }
 
