@@ -8,7 +8,7 @@ import type { Express, Request, Response } from 'express';
  */
 
 const CONTACT = 'artie@coachartiebot.com';
-const UPDATED = 'October 21, 2026';
+const UPDATED = 'October 22, 2026';
 
 function page(title: string, body: string): string {
   return `<!doctype html>
@@ -79,12 +79,12 @@ const PRIVACY = page(
 
 <h2>Opting out, retention and deletion</h2>
 <ul>
-<li><strong>Opt out any time</strong> with <code>/artie-optout</code>. Artie immediately stops reading, storing, remembering or replying to your messages, and deletes the memories, logged messages and profile he holds about you. <code>/artie-optin</code> turns him back on for you; nothing deleted comes back.</li>
+<li><strong>Opt out any time</strong> with <code>/artie-optout</code>. Artie immediately stops reading, storing, remembering or replying to your messages, and deletes the memories, logged messages and profile he holds about you, including memories formed from other people's conversations that name you. He won't form new ones that do. <code>/artie-optin</code> turns him back on for you; nothing deleted comes back.</li>
 <li><strong>See what he remembers</strong> with <code>/memory</code>.</li>
-<li><strong>Retention:</strong> messages and memories are kept until they're pruned, you opt out, or you ask for deletion. Channel summaries are overwritten as conversations move on.</li>
+<li><strong>Retention:</strong> messages and memories are kept until they're pruned, you opt out, or you ask for deletion. Channel summaries are overwritten as conversations move on. Database backups are kept for 30 days and then deleted, so a deletion reaches backups within 30 days.</li>
 <li><strong>Deletion by request:</strong> email <a href="mailto:${CONTACT}">${CONTACT}</a> with your Discord username or user ID and we'll delete your data and confirm.</li>
 </ul>
-<p>One honest limit: if other people mention you by name in their own messages, opting out doesn't rewrite what they said.</p>
+<p>One honest limit: if other people mention you by name in their own messages, opting out doesn't rewrite what they wrote in Discord, but Artie won't remember or repeat it.</p>
 
 <h2>Children</h2>
 <p>Discord requires users to be at least 13 (or older where local law says so). Artie is not intended for anyone younger.</p>
