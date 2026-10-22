@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { getSyncDb, optOut, optIn, isOptedOut, isBlockedUser, BLOCKED_USER_IDS } from '@coachartie/shared';
+import { getSyncDb, optOut, optIn, isOptedOut, isBlockedUser, BLOCKED_USER_IDS, mentionsOptedOutUser } from '@coachartie/shared';
 import { globalCommands } from '../src/commands/registry.js';
 
 const USER = '999000111222333444';
@@ -24,6 +24,27 @@ describe('privacy opt-out', () => {
     expect(optIn(USER)).toBe(true);
     expect(isBlockedUser(USER)).toBe(false);
     expect(optIn(USER)).toBe(false);
+  });
+
+  it('also deletes memories that NAME them under other ids, by whole word only', () => {
+    const db = getSyncDb();
+    const add = (uid: string, content: string) =>
+      db.run(`INSERT INTO memories (user_id, content, tags, context, timestamp, importance)
+              VALUES (?, ?, '[]', '', datetime('now'), 5)`, [uid, content]);
+    add('someone-else', 'tram_fan_99 is building a Tokyo save');
+    add('someone-else', `<@${USER}> asked about signals`);
+    add('someone-else', 'janet likes trams'); // must survive: not a whole-word match for jan_gbg-style handles
+    add('someone-else', 'tram_fan_990 is a different person'); // must survive
+
+    const removed = optOut(USER, ['tram_fan_99', 'Tram Fan', 'jo']); // 'jo' is too short to match on
+    expect(removed.memories_mentioning).toBe(2);
+    const left = db.all<{ content: string }>(`SELECT content FROM memories WHERE user_id = 'someone-else'`).map((m) => m.content);
+    expect(left).toContain('janet likes trams');
+    expect(left).toContain('tram_fan_990 is a different person');
+    expect(mentionsOptedOutUser('saw tram_fan_99 today')).toBe(true);
+    expect(mentionsOptedOutUser('jo said hi')).toBe(false);
+    optIn(USER);
+    expect(mentionsOptedOutUser('saw tram_fan_99 today')).toBe(false);
   });
 
   it('registers /artie-optout and /artie-optin for everyone', () => {

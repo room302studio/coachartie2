@@ -20,13 +20,16 @@ export const optOutCommand = {
         flags: MessageFlags.Ephemeral,
       });
     }
-    const removed = optOut(userId);
+    // Every handle they're known by, so memories that name them (stored under other people's
+    // ids) go too. Server nickname comes from the member, if this ran in a server.
+    const member = interaction.member as { nick?: string | null } | null;
+    const removed = optOut(userId, [interaction.user.username, interaction.user.globalName, member?.nick]);
     const total = Object.values(removed).reduce((a, b) => a + b, 0);
     logger.info(`🔒 Privacy opt-out: ${userId} (${total} rows deleted)`, removed);
     return interaction.reply({
       content:
         `Done. Artie will no longer read, store, remember or reply to your messages, and ` +
-        `what he held about you (${removed.memories ?? 0} memories, ${removed.messages ?? 0} logged messages) is deleted. ` +
+        `what he held about you (${(removed.memories ?? 0) + (removed.memories_mentioning ?? 0)} memories, ${removed.messages ?? 0} logged messages) is deleted, including memories other conversations formed that named you. ` +
         `Change your mind any time with \`/artie-optin\`. Details: ${PRIVACY_URL}`,
       flags: MessageFlags.Ephemeral,
     });

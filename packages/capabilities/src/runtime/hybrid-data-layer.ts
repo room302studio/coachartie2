@@ -1,10 +1,11 @@
-import { logger, getSyncDb, type SyncDbWrapper, isBlockedUser } from '@coachartie/shared';
+import { logger, getSyncDb, type SyncDbWrapper, isBlockedUser, mentionsOptedOutUser } from '@coachartie/shared';
 
 // Memories keyed to blocked users never surface in recall. Memories that merely
-// mention one are allowed (policy 2026-07-16: Artie may reference banned users;
-// the no-name rule is enforced at the discord output layer).
+// mention a BANNED user are allowed (policy 2026-07-16: Artie may reference banned users;
+// the no-name rule is enforced at the discord output layer). Memories that name someone
+// who OPTED OUT never surface: that was their request.
 function isRecallable(memory: MemoryRecord): boolean {
-  return !isBlockedUser(memory.user_id);
+  return !isBlockedUser(memory.user_id) && !mentionsOptedOutUser(memory.content);
 }
 
 /**

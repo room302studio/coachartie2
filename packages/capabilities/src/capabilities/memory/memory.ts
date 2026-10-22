@@ -1,4 +1,4 @@
-import { logger, getSyncDb, isBlockedUser } from '@coachartie/shared';
+import { logger, getSyncDb, isBlockedUser, mentionsOptedOutUser } from '@coachartie/shared';
 import { RegisteredCapability } from '../../services/capability/capability-registry.js';
 import { hybridDataLayer, MemoryRecord } from '../../runtime/hybrid-data-layer.js';
 
@@ -87,6 +87,12 @@ export class MemoryService {
     // discord delivery layer).
     if (isBlockedUser(userId)) {
       logger.debug(`⏭️ Skipping memory storage for blocked user`);
+      return '⏭️ Skipped';
+    }
+    // Someone who opted out asked not to be remembered: no new memory may name them,
+    // whoever's conversation it came from.
+    if (mentionsOptedOutUser(content)) {
+      logger.debug(`⏭️ Skipping memory that names an opted-out user`);
       return '⏭️ Skipped';
     }
 

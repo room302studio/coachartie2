@@ -6,46 +6,94 @@
  * them (isBlockedUser() in config/blocklist.ts consults this list). Unlike the EJ-curated
  * blocklist, it's their own choice, so there's no 💔 and no "banned" epithet.
  *
- * Opting out also deletes what Artie already holds about them (deleteUserData). Both PM2
- * processes read the list through a 30s cache, so an opt-out takes effect everywhere within
- * half a minute; the process that writes it sees it immediately.
+ * Opting out also deletes what Artie already holds about them (deleteUserData): rows keyed
+ * to their id, AND memories stored under other people's ids that name them (by id, @-mention
+ * or one of their handles). The handles are kept in the opt-out row so memory formation and
+ * recall can keep refusing new mentions (mentionsOptedOutUser).
+ *
+ * Both PM2 processes read the list through a 30s cache, so an opt-out takes effect everywhere
+ * within half a minute; the process that writes it sees it immediately.
  */
 
 import { getSyncDb } from '../db/client.js';
 import { logger } from '../utils/logger.js';
 
 const CACHE_MS = 30_000;
-let cache: { at: number; ids: Set<string> } | null = null;
+/** Handles shorter than this are too likely to match ordinary words ("jan", "kai"). */
+const MIN_NAME_LEN = 4;
+
+interface OptOutCache {
+  at: number;
+  ids: Set<string>;
+  names: string[]; // lowercased handles + ids
+}
+let cache: OptOutCache | null = null;
 let tableReady = false;
 
 function ensureTable(): void {
   if (tableReady) return;
-  getSyncDb().run(`
+  const db = getSyncDb();
+  db.run(`
     CREATE TABLE IF NOT EXISTS privacy_opt_outs (
       user_id TEXT PRIMARY KEY,
       opted_out_at TEXT NOT NULL
     )
   `);
+  // Additive: handles they're known by (JSON array), for name matching.
+  try {
+    db.run(`ALTER TABLE privacy_opt_outs ADD COLUMN names TEXT NOT NULL DEFAULT '[]'`);
+  } catch {
+    // column already exists
+  }
   tableReady = true;
 }
 
-function load(): Set<string> {
+/** Normalize a person's handles into the names we match on. */
+export function optOutNames(names: Array<string | null | undefined>): string[] {
+  return [...new Set(names.map((n) => (n || '').trim().toLowerCase()).filter((n) => n.length >= MIN_NAME_LEN))];
+}
+
+function load(): OptOutCache {
   const now = Date.now();
-  if (cache && now - cache.at < CACHE_MS) return cache.ids;
+  if (cache && now - cache.at < CACHE_MS) return cache;
   try {
     ensureTable();
-    const rows = getSyncDb().all<{ user_id: string }>(`SELECT user_id FROM privacy_opt_outs`);
-    cache = { at: now, ids: new Set(rows.map((r) => r.user_id)) };
+    const rows = getSyncDb().all<{ user_id: string; names: string }>(`SELECT user_id, names FROM privacy_opt_outs`);
+    const names = rows.flatMap((r) => {
+      try {
+        return [r.user_id, ...(JSON.parse(r.names) as string[])];
+      } catch {
+        return [r.user_id];
+      }
+    });
+    cache = { at: now, ids: new Set(rows.map((r) => r.user_id)), names };
   } catch (error) {
     // Keep serving the last known list rather than silently forgetting opt-outs.
     logger.warn('privacy-opt-out: could not read opt-out list', error);
-    cache = { at: now, ids: cache?.ids ?? new Set() };
+    cache = { at: now, ids: cache?.ids ?? new Set(), names: cache?.names ?? [] };
   }
-  return cache.ids;
+  return cache;
 }
 
 export function isOptedOut(userId?: string | null): boolean {
-  return !!userId && load().has(userId);
+  return !!userId && load().ids.has(userId);
+}
+
+function escapeRegex(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * True if the text names someone who opted out: their id (covers <@id> mentions) or one of
+ * their handles, matched as a whole word. Used to refuse forming memories about them and to
+ * keep stragglers out of recall.
+ */
+export function mentionsOptedOutUser(text?: string | null): boolean {
+  if (!text) return false;
+  const { names } = load();
+  if (names.length === 0) return false;
+  const lower = text.toLowerCase();
+  return names.some((n) => new RegExp(`(^|[^a-z0-9_])${escapeRegex(n)}($|[^a-z0-9_])`).test(lower));
 }
 
 /**
@@ -61,8 +109,11 @@ export const USER_DATA_TABLES = [
   'user_sessions',
 ] as const;
 
-/** Delete everything Artie holds about a user. Returns rows removed per table. */
-export function deleteUserData(userId: string): Record<string, number> {
+/**
+ * Delete everything Artie holds about a user: rows keyed to their id, plus memories stored
+ * under anyone else's id that name them. Returns rows removed per table.
+ */
+export function deleteUserData(userId: string, names: string[] = []): Record<string, number> {
   const db = getSyncDb();
   const removed: Record<string, number> = {};
   for (const table of USER_DATA_TABLES) {
@@ -74,18 +125,31 @@ export function deleteUserData(userId: string): Record<string, number> {
       removed[table] = 0;
     }
   }
+  // Memories ABOUT them under other ids. LIKE narrows the scan; the word-boundary check
+  // decides, so "janet" doesn't take out memories about "jan_gbg".
+  const terms = [userId, ...names];
+  const candidates = db.all<{ id: number; content: string }>(
+    `SELECT id, content FROM memories WHERE ${terms.map(() => 'lower(content) LIKE ?').join(' OR ')}`,
+    terms.map((t) => `%${t.toLowerCase()}%`)
+  );
+  const hits = candidates.filter((m) =>
+    terms.some((t) => new RegExp(`(^|[^a-z0-9_])${escapeRegex(t.toLowerCase())}($|[^a-z0-9_])`).test(m.content.toLowerCase()))
+  );
+  for (const m of hits) db.run(`DELETE FROM memories WHERE id = ?`, [m.id]);
+  removed.memories_mentioning = hits.length;
   return removed;
 }
 
-export function optOut(userId: string): Record<string, number> {
+export function optOut(userId: string, handles: Array<string | null | undefined> = []): Record<string, number> {
   ensureTable();
+  const names = optOutNames(handles);
   getSyncDb().run(
-    `INSERT INTO privacy_opt_outs (user_id, opted_out_at) VALUES (?, ?)
-     ON CONFLICT(user_id) DO NOTHING`,
-    [userId, new Date().toISOString()]
+    `INSERT INTO privacy_opt_outs (user_id, opted_out_at, names) VALUES (?, ?, ?)
+     ON CONFLICT(user_id) DO UPDATE SET names = excluded.names`,
+    [userId, new Date().toISOString(), JSON.stringify(names)]
   );
   cache = null;
-  return deleteUserData(userId);
+  return deleteUserData(userId, names);
 }
 
 export function optIn(userId: string): boolean {
