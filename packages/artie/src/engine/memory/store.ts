@@ -3,6 +3,7 @@ import { getSyncDb, type SyncDbWrapper } from '../../shared/db/client.js';
 import { isBlockedUser } from '../../shared/blocklist.js';
 import { mentionsOptedOutUser } from '../../shared/privacy-opt-out.js';
 import { getDatabasePath } from '../../shared/paths.js';
+import { escapeFts5 } from '../../shared/sql-escape.js';
 
 // Memories keyed to blocked users never surface in recall. Memories that merely
 // mention a BANNED user are allowed (policy 2026-07-16: Artie may reference banned users;
@@ -448,7 +449,7 @@ export class HybridDataLayer {
 
         // Escape FTS5 query to prevent syntax errors
         // Wrap in quotes and escape internal quotes to make it a phrase search
-        const escapedQuery = `"${query.trim().replace(/"/g, '""')}"`;
+        const escapedQuery = escapeFts5(query.trim());
         const params = guildId ? [escapedQuery, userId, guildId] : [escapedQuery, userId];
 
         // Now using synchronous better-sqlite3 (no await needed)

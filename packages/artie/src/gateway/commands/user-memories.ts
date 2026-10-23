@@ -1,5 +1,6 @@
 import { getSyncDb } from '../../shared/db/client.js';
 import { logger } from '../../shared/logger.js';
+import { escapeFts5, escapeLike } from '../../shared/sql-escape.js';
 
 /**
  * Read-only access to ONE user's own memories, for /memory. Always filtered by user_id in SQL:
@@ -28,7 +29,19 @@ function toFtsQuery(text: string): string | null {
         .filter((w) => w.length >= 2)
     ),
   ].slice(0, 16);
-  return words.length ? words.map((w) => `"${w.replace(/"/g, '""')}"`).join(' OR ') : null;
+  return words.length ? words.map(escapeFts5).join(' OR ') : null;
+}
+
+/**
+ * The LIKE fallback (FTS unavailable, or a query with no 2+ char words). '%' and '_' are
+ * escaped, not stripped, so they match themselves. Exported for its test.
+ */
+export function likeSearchOwnMemories(userId: string, query: string, limit: number): OwnMemory[] {
+  return getSyncDb().all<OwnMemory>(
+    `SELECT ${COLUMNS} FROM memories m WHERE m.user_id = ? AND m.content LIKE ? ESCAPE '\\'
+      ORDER BY m.timestamp DESC LIMIT ?`,
+    [userId, `%${escapeLike(query)}%`, limit]
+  );
 }
 
 export function searchOwnMemories(userId: string, query: string, limit: number): OwnMemory[] {
@@ -46,11 +59,7 @@ export function searchOwnMemories(userId: string, query: string, limit: number):
       logger.warn('/memory search: FTS unavailable, falling back to LIKE', error);
     }
   }
-  return db.all<OwnMemory>(
-    `SELECT ${COLUMNS} FROM memories m WHERE m.user_id = ? AND m.content LIKE ?
-      ORDER BY m.timestamp DESC LIMIT ?`,
-    [userId, `%${query.replace(/[%_]/g, '')}%`, limit]
-  );
+  return likeSearchOwnMemories(userId, query, limit);
 }
 
 export function recentOwnMemories(userId: string, limit: number): OwnMemory[] {
