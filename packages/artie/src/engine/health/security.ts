@@ -27,6 +27,66 @@ interface SecurityIncident {
   severity: 'low' | 'medium' | 'high' | 'critical';
 }
 
+/**
+ * Leak-shaped patterns in a model response. Pure, exported for tests.
+ *
+ * Ledger #8: two detectors flagged ordinary answers.
+ * - json_leak was /json\s*\{/ anywhere, so any answer with a ```json { code block
+ *   counted. It now needs "json{" / "json {" to start a line (the bare reasoning-leak
+ *   shape), which a fenced block's ```json line never does.
+ * - colon_fragments was /^:\s* /m, i.e. any line starting with ':', so a :thumbsup: emoji
+ *   line counted. It now needs ':' followed by whitespace and text (a dangling fragment).
+ *
+ * Note: SecurityMonitor has no live caller of this today (incident recording was never
+ * wired); the route only reads the empty stats.
+ */
+export function detectLeakPatterns(content: string): string[] {
+  const patterns: string[] = [];
+
+  // Internal reasoning patterns
+  if (content.match(/^analysis[A-Z]/im)) {
+    patterns.push('analysis_leak');
+  }
+  if (content.match(/^assistant\s*commentary/im)) {
+    patterns.push('assistant_commentary');
+  }
+  if (content.match(/^assistant\s*final/im)) {
+    patterns.push('assistant_final_marker');
+  }
+  if (content.match(/<thinking>/i)) {
+    patterns.push('thinking_tags');
+  }
+
+  // Debug and system patterns
+  if (content.match(/^(DEBUG|TRACE|INFO):/im)) {
+    patterns.push('debug_output');
+  }
+  if (content.match(/^\[SYSTEM/im)) {
+    patterns.push('system_messages');
+  }
+  if (content.match(/^(execute|processing|result):/im)) {
+    patterns.push('execution_debug');
+  }
+
+  // Structured data patterns
+  if (content.match(/^json\s*\{/im)) {
+    patterns.push('json_leak');
+  }
+  if (content.match(/^→\s*/m)) {
+    patterns.push('arrow_fragments');
+  }
+  if (content.match(/^:\s+\S/m)) {
+    patterns.push('colon_fragments');
+  }
+
+  // XML debug patterns
+  if (content.match(/<(analysis|commentary|debug|internal)/i)) {
+    patterns.push('xml_debug_tags');
+  }
+
+  return patterns;
+}
+
 export class SecurityMonitor {
   private incidents: SecurityIncident[] = [];
   private patternCounts = new Map<string, number>();
@@ -35,50 +95,7 @@ export class SecurityMonitor {
    * Analyze content for security-sensitive patterns
    */
   private analyzeSecurityPatterns(content: string): string[] {
-    const patterns: string[] = [];
-
-    // Internal reasoning patterns
-    if (content.match(/^analysis[A-Z]/im)) {
-      patterns.push('analysis_leak');
-    }
-    if (content.match(/^assistant\s*commentary/im)) {
-      patterns.push('assistant_commentary');
-    }
-    if (content.match(/^assistant\s*final/im)) {
-      patterns.push('assistant_final_marker');
-    }
-    if (content.match(/<thinking>/i)) {
-      patterns.push('thinking_tags');
-    }
-
-    // Debug and system patterns
-    if (content.match(/^(DEBUG|TRACE|INFO):/im)) {
-      patterns.push('debug_output');
-    }
-    if (content.match(/^\[SYSTEM/im)) {
-      patterns.push('system_messages');
-    }
-    if (content.match(/^(execute|processing|result):/im)) {
-      patterns.push('execution_debug');
-    }
-
-    // Structured data patterns
-    if (content.match(/json\s*\{/i)) {
-      patterns.push('json_leak');
-    }
-    if (content.match(/^→\s*/m)) {
-      patterns.push('arrow_fragments');
-    }
-    if (content.match(/^:\s*/m)) {
-      patterns.push('colon_fragments');
-    }
-
-    // XML debug patterns
-    if (content.match(/<(analysis|commentary|debug|internal)/i)) {
-      patterns.push('xml_debug_tags');
-    }
-
-    return patterns;
+    return detectLeakPatterns(content);
   }
 
   /**
