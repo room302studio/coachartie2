@@ -20,13 +20,12 @@ import {
 
 // =====================================================
 // TAINT TRACKING FOR EXTERNAL CONTENT SECURITY
-// Prevents prompt injection from external sources (moltbook, web, etc.)
+// Prevents prompt injection from external sources (web, etc.)
 // from hijacking dangerous capabilities (shell, filesystem, git)
 // =====================================================
 
 // Capabilities that fetch external untrusted content - executing these taints the context
 const TAINTING_CAPABILITIES = new Set([
-  'moltbook', // AI social network - prime injection target
   'websearch', // Web search results
   'http', // Raw HTTP fetches
   'web', // Web browsing

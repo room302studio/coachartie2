@@ -246,22 +246,6 @@
     "get_recommendation",
     "list_models"
   ],
-  "moltbook": [
-    "browse",
-    "comment",
-    "feed",
-    "follow",
-    "join",
-    "leave",
-    "post",
-    "profile",
-    "read",
-    "recall",
-    "register",
-    "search",
-    "submolts",
-    "unfollow"
-  ],
   "morning-briefing": [
     "config",
     "configure",

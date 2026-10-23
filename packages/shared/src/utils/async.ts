@@ -2,8 +2,8 @@
  * Async control-flow helpers shared across Artie.
  *
  * Replaces inlined `new Promise((r) => setTimeout(r, ms))` sleeps (10+ copies)
- * and three separate exponential-backoff retry loops (moltbook, the robust
- * capability executor, the Discord capabilities-client).
+ * and separate exponential-backoff retry loops (the robust capability
+ * executor, the Discord capabilities-client).
  */
 
 /** Resolve after `ms` milliseconds. */

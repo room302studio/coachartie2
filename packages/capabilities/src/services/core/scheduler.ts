@@ -9,7 +9,6 @@ import {
   testRedisConnection,
 } from '@coachartie/shared';
 import { redditMentionMonitor } from '../reddit-mention-monitor.js';
-import { executeOnDemand as moltbookExecute } from '../behaviors/social-media-behavior.js';
 import { memoryGardener } from '../learning/memory-gardener.js';
 
 export interface ScheduledTask {
@@ -305,7 +304,6 @@ export class SchedulerService {
       const PROACTIVE_JOB_TYPES = new Set([
         'daily-summary',
         'reddit-mentions',
-        'moltbook-social',
         'morning-briefing',
         'trend-digest',
         'heartbeat',
@@ -336,10 +334,6 @@ export class SchedulerService {
 
         case 'reddit-mentions':
           await this.executeRedditMentions();
-          break;
-
-        case 'moltbook-social':
-          await this.executeMoltbookSocial();
           break;
 
         case 'daily-reflection':
@@ -521,16 +515,6 @@ export class SchedulerService {
       );
     } catch (error) {
       logger.error('❌ Reddit mention poll failed:', error);
-    }
-  }
-
-  private async executeMoltbookSocial(): Promise<void> {
-    logger.info('🤖 Moltbook social behavior triggered (LLM + memories)');
-    try {
-      const result = await moltbookExecute();
-      logger.info(`Moltbook social: ${result.action} - ${result.message}`);
-    } catch (error) {
-      logger.error('❌ Moltbook social behavior failed:', error);
     }
   }
 
@@ -789,16 +773,6 @@ export class SchedulerService {
       name: 'reddit-mentions',
       cron: '0 * * * *',
       data: { type: 'reddit-mentions' },
-      options: { immediate: false },
-    });
-
-    // Moltbook social behavior - every 4 hours with random skip
-    // Runs at 8am, 12pm, 4pm, 8pm UTC but randomly skips ~30% of the time
-    await this.scheduleTask({
-      id: 'moltbook-social',
-      name: 'moltbook-social',
-      cron: '0 8,12,16,20 * * *',
-      data: { type: 'moltbook-social' },
       options: { immediate: false },
     });
 

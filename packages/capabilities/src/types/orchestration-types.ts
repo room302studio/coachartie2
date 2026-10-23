@@ -47,7 +47,7 @@ export interface OrchestrationContext {
 
   // Security: Taint tracking for external content
   // When true, dangerous capabilities (shell, fs write, git) are blocked
-  // to prevent prompt injection from external sources like moltbook
+  // to prevent prompt injection from external sources (web fetch, search)
   taintedByExternalContent?: boolean;
   taintSource?: string; // Which capability caused the taint
 

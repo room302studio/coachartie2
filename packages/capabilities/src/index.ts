@@ -56,10 +56,6 @@ import { capabilityRegistry } from './services/capability/capability-registry.js
 import { capabilitiesRouter } from './routes/capabilities.js';
 import { simpleHealer } from './runtime/simple-healer.js';
 import { hybridDataLayer } from './runtime/hybrid-data-layer.js';
-import {
-  startSocialMediaBehavior,
-  stopSocialMediaBehavior,
-} from './services/behaviors/social-media-behavior.js';
 import { getMetrics, getMetricsContentType } from './services/metrics.js';
 import { requireApiToken } from './middleware/require-api-token.js';
 
@@ -358,10 +354,6 @@ async function start() {
     console.log('🏥 Starting simple healer...');
     simpleHealer.start();
 
-    // Start social media behavior (periodic moltbook checks)
-    console.log('🌐 Starting social media behavior...');
-    startSocialMediaBehavior();
-
     // Start distress monitor (detects when Artie needs help)
     console.log('🆘 Starting distress monitor...');
     distressMonitor.start();
@@ -434,9 +426,6 @@ async function gracefulShutdown() {
     // Stop services in order
     logger.info('Stopping simple healer...');
     simpleHealer.stop();
-
-    logger.info('Stopping social media behavior...');
-    stopSocialMediaBehavior();
 
     logger.info('Shutting down scheduler...');
     await schedulerService.close();

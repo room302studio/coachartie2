@@ -143,16 +143,16 @@ describe('Taint Tracking Security', () => {
       expect(statusResult.error || '').not.toContain('SECURITY');
     });
 
-    it('should allow moltbook capability (non-dangerous)', async () => {
-      const moltbookCap: ExtractedCapability = {
-        name: 'moltbook',
-        action: 'browse',
-        params: {},
+    it('should allow calculator capability (non-dangerous)', async () => {
+      const calculatorCap: ExtractedCapability = {
+        name: 'calculator',
+        action: 'calculate',
+        params: { expression: '2 + 2' },
         priority: 0,
       };
 
       const result = await capabilityExecutor.executeCapability(
-        moltbookCap,
+        calculatorCap,
         context,
         (cap, err) => `Error: ${err}`
       );

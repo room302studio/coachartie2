@@ -67,8 +67,6 @@ import { relayCapability } from '../../capabilities/communication/relay.js';
 // Analytics capabilities
 import { selfStatsCapability } from '../../capabilities/self-stats.js';
 import { communityAnalyticsCapability } from '../../capabilities/community-analytics.js';
-// Social capabilities
-import { moltbookCapability } from '../../capabilities/social/moltbook.js';
 // Media capabilities
 import { ttsCapability } from '../../capabilities/media/tts.js';
 // Research capabilities
@@ -125,7 +123,7 @@ export class CapabilityBootstrap {
         searchCapability, gitCapability, scratchpadCapability, selfStatsCapability,
         communityAnalyticsCapability, contextCapability, visionCapability, imageGenCapability,
         diagnoseCapability, autonomousCapability, n8nBrowserCapability, flashcardCapability,
-        quizGameCapability, redditCapability, moltbookCapability, deepResearchCapability,
+        quizGameCapability, redditCapability, deepResearchCapability,
         trendWatcherCapability, questsCapability, taskStatusCapability, morningBriefingCapability,
         goalsCapability, kanbanCapability, vpsClaudeCapability, hermesCapability,
         systemMemoryCapability, osintLookupCapability, discordPollCapability,
