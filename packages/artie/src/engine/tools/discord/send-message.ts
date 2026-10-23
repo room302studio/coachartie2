@@ -68,7 +68,7 @@ async function sendMessage(params: {
 
   try {
     // Gateway's POST /api/channels/:id/messages, in-process since wave 9
-    const response = await gateway.sendChannelMessage(channelId, { content: message });
+    const response = await gateway.sendChannelMessage(String(channelId), { content: message });
 
     if (!gateway.isOk(response)) {
       const errorData = JSON.stringify(response.body);
