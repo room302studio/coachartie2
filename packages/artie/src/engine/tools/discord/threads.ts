@@ -1,6 +1,6 @@
 import { RegisteredCapability } from '../../5-tool-loop/registry.js';
 import { logger } from '../../../shared/logger.js';
-import fetch from 'node-fetch';
+import * as gateway from '../../../gateway/api.js';
 
 interface _DiscordThreadParams {
   action: 'create_thread' | 'get_thread_messages';
@@ -11,27 +11,11 @@ interface _DiscordThreadParams {
   limit?: number;
 }
 
-const DISCORD_SERVICE_URL = process.env.DISCORD_SERVICE_URL || 'http://localhost:47321';
+// Wave 9: the gateway has never served this tool's routes (no handler for POST
+// /api/channels/:id/threads or GET /api/channels/:id/threads/:id/messages): over HTTP every call
+// got express's 404. In-process, gateway.unservedRoute answers the same 404, so the tool fails
+// exactly as it always has. Serving them is new work, not part of the move.
 
-async function fetchWithTimeout(url: string, options: any = {}, timeout = 30000): Promise<any> {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), timeout);
-
-  try {
-    const response = await fetch(url, {
-      ...options,
-      signal: controller.signal,
-    });
-    clearTimeout(timeoutId);
-    return response;
-  } catch (error) {
-    clearTimeout(timeoutId);
-    if (error instanceof Error && error.name === 'AbortError') {
-      throw new Error(`Request to ${url} timed out after ${timeout}ms`);
-    }
-    throw error;
-  }
-}
 
 export const discordThreadsCapability: RegisteredCapability = {
   name: 'discord-threads',
@@ -81,28 +65,13 @@ async function createThread(params: {
   }
 
   try {
-    const url = `${DISCORD_SERVICE_URL}/api/channels/${channelId}/threads`;
-    const body: any = {
-      name: threadName,
-    };
+    const response = await gateway.unservedRoute('POST', `/api/channels/${channelId}/threads`);
 
-    if (message) {
-      body.message = message;
+    if (!gateway.isOk(response)) {
+      throw new Error(`Discord service error: ${response.status} ${gateway.statusText(response)}`);
     }
 
-    const response = await fetchWithTimeout(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(body),
-    });
-
-    if (!response.ok) {
-      throw new Error(`Discord service error: ${response.status} ${response.statusText}`);
-    }
-
-    const thread = await response.json();
+    const thread = response.body as any;
 
     return {
       success: true,
@@ -140,18 +109,13 @@ async function getThreadMessages(params: {
   }
 
   try {
-    const url = new URL(
-      `${DISCORD_SERVICE_URL}/api/channels/${channelId}/threads/${threadId}/messages`
-    );
-    url.searchParams.set('limit', Math.min(limit, 100).toString()); // Cap at 100
+    const response = await gateway.unservedRoute('GET', `/api/channels/${channelId}/threads/${threadId}/messages`);
 
-    const response = await fetchWithTimeout(url.toString());
-
-    if (!response.ok) {
-      throw new Error(`Discord service error: ${response.status} ${response.statusText}`);
+    if (!gateway.isOk(response)) {
+      throw new Error(`Discord service error: ${response.status} ${gateway.statusText(response)}`);
     }
 
-    const messages = await response.json();
+    const messages = response.body as any;
 
     return {
       success: true,

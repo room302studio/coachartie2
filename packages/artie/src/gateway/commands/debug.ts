@@ -246,7 +246,7 @@ async function createCapabilitiesTestEmbed(): Promise<EmbedBuilder> {
     } else {
       embed.addFields({
         name: '❌ Capabilities Service Error',
-        value: `HTTP ${response.status}: ${response.body?.error ?? ''}`,
+        value: `HTTP ${response.status}: ${engine.statusText(response)}`,
         inline: false,
       });
     }

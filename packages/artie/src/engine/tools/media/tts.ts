@@ -7,6 +7,7 @@ import {
   CapabilityContext,
 } from '../../5-tool-loop/registry.js';
 import { openRouterService } from '../../4-generate/openrouter.js';
+import * as gateway from '../../../gateway/api.js';
 
 /**
  * TTS capability — Artie speaks out loud via ElevenLabs, posting an mp3
@@ -20,7 +21,6 @@ import { openRouterService } from '../../4-generate/openrouter.js';
 
 const ELEVENLABS_API_URL = 'https://api.elevenlabs.io/v1/text-to-speech';
 const ELEVENLABS_MODEL = 'eleven_multilingual_v2';
-const DISCORD_SERVICE_URL = process.env.DISCORD_SERVICE_URL || 'http://localhost:47321';
 
 // Same cast as morningradio/synthesize.ts — keep in sync by hand.
 const VOICES: Record<string, string> = {
@@ -263,15 +263,12 @@ export const ttsCapability: RegisteredCapability = {
           return `SFX generation failed (${sfxResponse.status}).`;
         }
         const audio = Buffer.from(await sfxResponse.arrayBuffer());
-        const postResponse = await fetch(`${DISCORD_SERVICE_URL}/api/channels/${channelId}/messages`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            fileBase64: audio.toString('base64'),
-            fileName: 'artie-sfx.mp3',
-          }),
+        // Gateway's POST /api/channels/:id/messages, in-process since wave 9
+        const postResponse = await gateway.sendChannelMessage(String(channelId), {
+          fileBase64: audio.toString('base64'),
+          fileName: 'artie-sfx.mp3',
         });
-        if (!postResponse.ok) {
+        if (!gateway.isOk(postResponse)) {
           return `Generated the sound but failed to post it (discord service ${postResponse.status}).`;
         }
         logger.warn(`🔊 SFX posted: "${description.slice(0, 60)}" → channel ${channelId}`);
@@ -402,15 +399,12 @@ export const ttsCapability: RegisteredCapability = {
           }
         }
         const audio = Buffer.from(await musicResponse.arrayBuffer());
-        const postResponse = await fetch(`${DISCORD_SERVICE_URL}/api/channels/${channelId}/messages`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            fileBase64: audio.toString('base64'),
-            fileName: 'artie-sings.mp3',
-          }),
+        // Gateway's POST /api/channels/:id/messages, in-process since wave 9
+        const postResponse = await gateway.sendChannelMessage(String(channelId), {
+          fileBase64: audio.toString('base64'),
+          fileName: 'artie-sings.mp3',
         });
-        if (!postResponse.ok) {
+        if (!gateway.isOk(postResponse)) {
           return `Generated the song but failed to post it (discord service ${postResponse.status}).`;
         }
         const totalSec = Math.round(sections.reduce((s, x) => s + x.duration_ms, 0) / 1000);
@@ -483,16 +477,13 @@ export const ttsCapability: RegisteredCapability = {
 
       const audio = Buffer.from(await ttsResponse.arrayBuffer());
 
-      const postResponse = await fetch(`${DISCORD_SERVICE_URL}/api/channels/${channelId}/messages`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          fileBase64: audio.toString('base64'),
-          fileName: action === 'vibe_report' ? 'artie-vibe-report.mp3' : 'artie-voice-note.mp3',
-        }),
+      // Gateway's POST /api/channels/:id/messages, in-process since wave 9
+      const postResponse = await gateway.sendChannelMessage(String(channelId), {
+        fileBase64: audio.toString('base64'),
+        fileName: action === 'vibe_report' ? 'artie-vibe-report.mp3' : 'artie-voice-note.mp3',
       });
 
-      if (!postResponse.ok) {
+      if (!gateway.isOk(postResponse)) {
         return `Generated audio but failed to post it (discord service ${postResponse.status}).`;
       }
 

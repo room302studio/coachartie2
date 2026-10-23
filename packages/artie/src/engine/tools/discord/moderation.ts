@@ -8,9 +8,9 @@ import {
   CapabilityContext,
 } from '../../5-tool-loop/registry.js';
 import { logger } from '../../../shared/logger.js';
+import * as gateway from '../../../gateway/api.js';
 
 const ARTIE_ENEMY_ROLE_NAME = 'artie-enemy';
-const DISCORD_SERVICE_URL = process.env.DISCORD_SERVICE_URL || 'http://localhost:47321';
 
 export const discordModerationCapability: RegisteredCapability = {
   name: 'discord-moderation',
@@ -48,19 +48,16 @@ export const discordModerationCapability: RegisteredCapability = {
           });
         }
         try {
-          const response = await fetch(`${DISCORD_SERVICE_URL}/api/moderation/timeout`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              guildId,
-              channelId,
-              userId,
-              durationMinutes: Math.min(60, Math.max(1, Number(durationMinutes))),
-              reason,
-            }),
+          // Gateway's POST /api/moderation/timeout, in-process since wave 9
+          const response = await gateway.timeoutMember({
+            guildId,
+            channelId,
+            userId,
+            durationMinutes: Math.min(60, Math.max(1, Number(durationMinutes))),
+            reason,
           });
-          if (!response.ok) {
-            return JSON.stringify({ success: false, error: await response.text() });
+          if (!gateway.isOk(response)) {
+            return JSON.stringify({ success: false, error: JSON.stringify(response.body) });
           }
           logger.info(`[moderation] Timed out ${userId} for ${durationMinutes}min: ${reason}`);
           return JSON.stringify({
@@ -80,13 +77,10 @@ export const discordModerationCapability: RegisteredCapability = {
           });
         }
         try {
-          const response = await fetch(`${DISCORD_SERVICE_URL}/api/moderation/add-role`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ guildId, channelId, userId, roleName: ARTIE_ENEMY_ROLE_NAME, reason }),
-          });
-          if (!response.ok) {
-            return JSON.stringify({ success: false, error: await response.text() });
+          // Gateway's POST /api/moderation/add-role, in-process since wave 9
+          const response = await gateway.addRole({ guildId, channelId, userId, roleName: ARTIE_ENEMY_ROLE_NAME, reason });
+          if (!gateway.isOk(response)) {
+            return JSON.stringify({ success: false, error: JSON.stringify(response.body) });
           }
           logger.info(`[moderation] Added ${ARTIE_ENEMY_ROLE_NAME} to ${userId}: ${reason}`);
           return JSON.stringify({
@@ -106,13 +100,10 @@ export const discordModerationCapability: RegisteredCapability = {
           return JSON.stringify({ success: false, error: 'Missing required: user' });
         }
         try {
-          const response = await fetch(`${DISCORD_SERVICE_URL}/api/moderation/remove-role`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ guildId, channelId, userId, roleName: ARTIE_ENEMY_ROLE_NAME }),
-          });
-          if (!response.ok) {
-            return JSON.stringify({ success: false, error: await response.text() });
+          // Gateway's POST /api/moderation/remove-role, in-process since wave 9
+          const response = await gateway.removeRole({ guildId, channelId, userId, roleName: ARTIE_ENEMY_ROLE_NAME });
+          if (!gateway.isOk(response)) {
+            return JSON.stringify({ success: false, error: JSON.stringify(response.body) });
           }
           logger.info(`[moderation] Removed ${ARTIE_ENEMY_ROLE_NAME} from ${userId}`);
           return JSON.stringify({ success: true, message: 'Enemy role removed' });

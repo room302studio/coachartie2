@@ -1,4 +1,5 @@
 import type { Response } from 'express';
+import { STATUS_CODES } from 'http';
 
 /**
  * What a route handler used to put on the wire, as a value: the HTTP status and the JSON body
@@ -21,4 +22,18 @@ export function isOk(result: ApiResult): boolean {
 /** `res.status(status).json(body)` — exactly what the handler did before it was extracted. */
 export function sendResult(res: Response, result: ApiResult): void {
   res.status(result.status).json(result.body);
+}
+
+/** `response.statusText`, for an ApiResult ('Not Found', 'Internal Server Error', ...). */
+export function statusText(result: ApiResult): string {
+  return STATUS_CODES[result.status] ?? '';
+}
+
+/**
+ * A request body as the handler received it over HTTP: a JSON round trip (undefined keys
+ * dropped, Dates as strings, no shared references). The seams (engine/api.ts, gateway/api.ts)
+ * pass bodies through this so an in-process call sees exactly what the route would have.
+ */
+export function wire<T>(body: T): T {
+  return body === undefined ? ({} as T) : JSON.parse(JSON.stringify(body));
 }

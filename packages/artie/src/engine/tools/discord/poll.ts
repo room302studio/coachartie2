@@ -9,8 +9,7 @@ import {
   CapabilityContext,
 } from '../../5-tool-loop/registry.js';
 import { logger } from '../../../shared/logger.js';
-
-const DISCORD_SERVICE_URL = process.env.DISCORD_SERVICE_URL || 'http://localhost:47321';
+import * as gateway from '../../../gateway/api.js';
 
 /** Split "A | B | C" (preferred) or newline-separated option lists into an array. */
 function parseOptions(raw: unknown): string[] {
@@ -59,9 +58,10 @@ export const discordPollCapability: RegisteredCapability = {
         if (!messageId) {
           return JSON.stringify({ success: false, error: 'no message_id given and no recent poll to read' });
         }
-        const resp = await fetch(`${DISCORD_SERVICE_URL}/api/channels/${channelId}/polls/${messageId}`);
-        const data = await resp.json();
-        if (!resp.ok || !(data as any).success) {
+        // Gateway's GET /api/channels/:id/polls/:messageId, in-process since wave 9
+        const resp = await gateway.readPoll(String(channelId), String(messageId));
+        const data = resp.body;
+        if (!gateway.isOk(resp) || !(data as any).success) {
           return JSON.stringify({ success: false, error: (data as any).error || 'could not read poll' });
         }
         return JSON.stringify(data);
@@ -77,18 +77,15 @@ export const discordPollCapability: RegisteredCapability = {
         });
       }
 
-      const resp = await fetch(`${DISCORD_SERVICE_URL}/api/channels/${channelId}/polls`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          question,
-          options,
-          durationHours: params.duration_hours ? Number(params.duration_hours) : undefined,
-          allowMultiselect: params.multi === 'true' || params.multi === true,
-        }),
+      // Gateway's POST /api/channels/:id/polls, in-process since wave 9
+      const resp = await gateway.createPoll(String(channelId), {
+        question,
+        options,
+        durationHours: params.duration_hours ? Number(params.duration_hours) : undefined,
+        allowMultiselect: params.multi === 'true' || params.multi === true,
       });
-      const data = (await resp.json()) as any;
-      if (!resp.ok || !data.success) {
+      const data = resp.body as any;
+      if (!gateway.isOk(resp) || !data.success) {
         return JSON.stringify({ success: false, error: data.error || 'poll creation failed' });
       }
 

@@ -1,6 +1,6 @@
 import { RegisteredCapability } from '../../5-tool-loop/registry.js';
 import { logger } from '../../../shared/logger.js';
-import fetch from 'node-fetch';
+import * as gateway from '../../../gateway/api.js';
 
 interface _DiscordUserHistoryParams {
   action: 'get_user_messages';
@@ -9,27 +9,11 @@ interface _DiscordUserHistoryParams {
   limit?: number;
 }
 
-const DISCORD_SERVICE_URL = process.env.DISCORD_SERVICE_URL || 'http://localhost:47321';
+// Wave 9: the gateway has never served this tool's routes (no handler for GET
+// /api/channels/:id/messages): over HTTP every call got express's 404. In-process,
+// gateway.unservedRoute answers the same 404, so the tool fails exactly as it always has. Serving
+// them is new work, not part of the move.
 
-async function fetchWithTimeout(url: string, options: any = {}, timeout = 30000): Promise<any> {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), timeout);
-
-  try {
-    const response = await fetch(url, {
-      ...options,
-      signal: controller.signal,
-    });
-    clearTimeout(timeoutId);
-    return response;
-  } catch (error) {
-    clearTimeout(timeoutId);
-    if (error instanceof Error && error.name === 'AbortError') {
-      throw new Error(`Request to ${url} timed out after ${timeout}ms`);
-    }
-    throw error;
-  }
-}
 
 export const discordUserHistoryCapability: RegisteredCapability = {
   name: 'discord-user-history',
@@ -77,17 +61,13 @@ async function getUserMessages(params: {
   }
 
   try {
-    const url = new URL(`${DISCORD_SERVICE_URL}/api/channels/${channelId}/messages`);
-    url.searchParams.set('userId', userId);
-    url.searchParams.set('limit', Math.min(limit, 100).toString()); // Cap at 100
+    const response = await gateway.unservedRoute('GET', `/api/channels/${channelId}/messages`);
 
-    const response = await fetchWithTimeout(url.toString());
-
-    if (!response.ok) {
-      throw new Error(`Discord service error: ${response.status} ${response.statusText}`);
+    if (!gateway.isOk(response)) {
+      throw new Error(`Discord service error: ${response.status} ${gateway.statusText(response)}`);
     }
 
-    const messages = await response.json();
+    const messages = response.body as any;
 
     return {
       success: true,

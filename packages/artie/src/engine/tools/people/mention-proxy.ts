@@ -10,11 +10,19 @@
 
 import { logger } from '../../../shared/logger.js';
 import { RegisteredCapability } from '../../5-tool-loop/registry.js';
-import axios from 'axios';
+import * as gateway from '../../../gateway/api.js';
 
-const DISCORD_API_BASE =
-  process.env.DISCORD_SERVICE_URL ||
-  'http://localhost:' + (process.env.DISCORD_API_PORT || '47321');
+/**
+ * The gateway's /api/mention-proxy/rules handlers, in-process since wave 9 (were axios calls
+ * to :47321). axios threw on any non-2xx; this keeps that, with axios's message.
+ */
+async function rules(call: Promise<gateway.ApiResult>): Promise<{ data: any }> {
+  const response = await call;
+  if (!gateway.isOk(response)) {
+    throw new Error(`Request failed with status code ${response.status}`);
+  }
+  return { data: response.body };
+}
 
 interface MentionProxyParams {
   action:
@@ -55,19 +63,21 @@ async function createProxyRule(params: MentionProxyParams) {
     );
   }
 
-  const response = await axios.post(`${DISCORD_API_BASE}/api/mention-proxy/rules`, {
-    targetUserId: params.target_user_id,
-    targetUsername: params.target_username,
-    guildId: params.guild_id,
-    name: params.name,
-    guildName: params.guild_name,
-    channelIds: params.channel_ids,
-    responseMode: params.response_mode || 'direct',
-    responseStyle: params.response_style,
-    triggerType: params.trigger_type || 'any_mention',
-    keywords: params.keywords,
-    description: params.description,
-  });
+  const response = await rules(
+    gateway.mentionProxyRules.create({
+      targetUserId: params.target_user_id,
+      targetUsername: params.target_username,
+      guildId: params.guild_id,
+      name: params.name,
+      guildName: params.guild_name,
+      channelIds: params.channel_ids,
+      responseMode: params.response_mode || 'direct',
+      responseStyle: params.response_style,
+      triggerType: params.trigger_type || 'any_mention',
+      keywords: params.keywords,
+      description: params.description,
+    })
+  );
 
   return JSON.stringify(
     {
@@ -81,7 +91,7 @@ async function createProxyRule(params: MentionProxyParams) {
 }
 
 async function listProxyRules() {
-  const response = await axios.get(`${DISCORD_API_BASE}/api/mention-proxy/rules`);
+  const response = await rules(gateway.mentionProxyRules.list());
   return JSON.stringify(
     {
       success: true,
@@ -94,7 +104,7 @@ async function listProxyRules() {
 }
 
 async function getProxyRule(ruleId: string) {
-  const response = await axios.get(`${DISCORD_API_BASE}/api/mention-proxy/rules/${ruleId}`);
+  const response = await rules(gateway.mentionProxyRules.get(String(ruleId)));
   return JSON.stringify(
     {
       success: true,
@@ -118,10 +128,7 @@ async function updateProxyRule(ruleId: string, params: MentionProxyParams) {
   if (params.keywords !== undefined) updates.keywords = params.keywords;
   if (params.enabled !== undefined) updates.enabled = params.enabled;
 
-  const response = await axios.patch(
-    `${DISCORD_API_BASE}/api/mention-proxy/rules/${ruleId}`,
-    updates
-  );
+  const response = await rules(gateway.mentionProxyRules.update(String(ruleId), updates));
 
   return JSON.stringify(
     {
@@ -135,7 +142,7 @@ async function updateProxyRule(ruleId: string, params: MentionProxyParams) {
 }
 
 async function deleteProxyRule(ruleId: string) {
-  await axios.delete(`${DISCORD_API_BASE}/api/mention-proxy/rules/${ruleId}`);
+  await rules(gateway.mentionProxyRules.remove(String(ruleId)));
   return JSON.stringify(
     {
       success: true,
@@ -147,9 +154,7 @@ async function deleteProxyRule(ruleId: string) {
 }
 
 async function setProxyRuleEnabled(ruleId: string, enabled: boolean) {
-  const response = await axios.patch(`${DISCORD_API_BASE}/api/mention-proxy/rules/${ruleId}`, {
-    enabled,
-  });
+  const response = await rules(gateway.mentionProxyRules.update(String(ruleId), { enabled }));
 
   return JSON.stringify(
     {
@@ -163,7 +168,7 @@ async function setProxyRuleEnabled(ruleId: string, enabled: boolean) {
 }
 
 async function listProxyRulesForGuild(guildId: string) {
-  const response = await axios.get(`${DISCORD_API_BASE}/api/mention-proxy/rules/guild/${guildId}`);
+  const response = await rules(gateway.mentionProxyRules.listForGuild(String(guildId)));
   return JSON.stringify(
     {
       success: true,
@@ -177,7 +182,7 @@ async function listProxyRulesForGuild(guildId: string) {
 }
 
 async function listProxyRulesForUser(userId: string) {
-  const response = await axios.get(`${DISCORD_API_BASE}/api/mention-proxy/rules/user/${userId}`);
+  const response = await rules(gateway.mentionProxyRules.listForUser(String(userId)));
   return JSON.stringify(
     {
       success: true,

@@ -1,12 +1,12 @@
 import { Router, Request, Response } from 'express';
 import { logger } from '../../shared/logger.js';
 import crypto from 'crypto';
-import axios from 'axios';
+import * as gateway from '../../gateway/api.js';
+import { withTimeout } from '../../shared/async.js';
 
 export const sbatRouter: ReturnType<typeof Router> = Router();
 
 const SBAT_DISCORD_CHANNEL = '1480985884676587620'; // #subwaybuilder-sbat in Room 302
-const DISCORD_API = 'http://127.0.0.1:47321/api';
 
 // Simple in-memory rate limiter
 const rateLimiter = {
@@ -35,12 +35,14 @@ function verifySignature(payload: string, signature: string, secret: string): bo
  */
 async function postToDiscord(content: string): Promise<string | null> {
   try {
-    const resp = await axios.post(
-      `${DISCORD_API}/channels/${SBAT_DISCORD_CHANNEL}/messages`,
-      { content },
-      { headers: { 'Content-Type': 'application/json' }, timeout: 10000 }
+    // The gateway's POST /api/channels/:id/messages, in-process since wave 9 (was an HTTP
+    // POST to the gateway on :47321 with a 10s timeout, which threw on any non-2xx).
+    const resp = await withTimeout(
+      gateway.sendChannelMessage(SBAT_DISCORD_CHANNEL, { content }),
+      10000
     );
-    return resp.data?.id || null;
+    if (!gateway.isOk(resp)) throw new Error(`Request failed with status code ${resp.status}`);
+    return resp.body?.id || null;
   } catch (e) {
     logger.error('SBAT: Failed to post to Discord:', e);
     return null;

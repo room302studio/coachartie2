@@ -369,7 +369,7 @@ Output ONLY the markdown body of the section — no top-level heading, no code f
         this.analysisRetryAfter = Date.now() + backoffMs;
         const level = this.analysisFailures === 1 || this.analysisFailures % 10 === 0 ? 'warn' : 'debug';
         logger[level](
-          `📓 Analysis refresh failed: ${response.status} ${response.body?.error ?? ''} ` +
+          `📓 Analysis refresh failed: ${response.status} ${engine.statusText(response)} ` +
             `(failure #${this.analysisFailures}, backing off ${Math.round(backoffMs / 60000)}min)`
         );
         return;

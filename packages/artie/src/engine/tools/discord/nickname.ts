@@ -8,8 +8,7 @@ import {
   CapabilityContext,
 } from '../../5-tool-loop/registry.js';
 import { logger } from '../../../shared/logger.js';
-
-const DISCORD_SERVICE_URL = process.env.DISCORD_SERVICE_URL || 'http://localhost:47321';
+import * as gateway from '../../../gateway/api.js';
 
 export const discordNicknameCapability: RegisteredCapability = {
   name: 'discord-nickname',
@@ -50,17 +49,14 @@ export const discordNicknameCapability: RegisteredCapability = {
     }
 
     try {
-      const response = await fetch(`${DISCORD_SERVICE_URL}/api/guilds/${guildId}/nickname`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          nickname: action === 'reset_nickname' ? null : String(nickname).trim().slice(0, 32),
-        }),
+      // Gateway's POST /api/guilds/:id/nickname, in-process since wave 9
+      const response = await gateway.setNickname(String(guildId), {
+        nickname: action === 'reset_nickname' ? null : String(nickname).trim().slice(0, 32),
       });
-      if (!response.ok) {
-        return JSON.stringify({ success: false, error: await response.text() });
+      if (!gateway.isOk(response)) {
+        return JSON.stringify({ success: false, error: JSON.stringify(response.body) });
       }
-      const result = (await response.json()) as { nickname: string | null };
+      const result = response.body as { nickname: string | null };
       logger.info(`[nickname] Set guild ${guildId} nickname to: ${result.nickname || '(default)'}`);
       return JSON.stringify({
         success: true,

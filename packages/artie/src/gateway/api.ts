@@ -8,6 +8,9 @@
  * health.ts) and returns that route's `{ status, body }`, so a caller that used to branch on
  * `response.status` / `await response.json()` reads `.status` / `.body` instead.
  *
+ * Bodies go through `wire()` (a JSON round trip), so a handler sees exactly what the HTTP
+ * route would have parsed.
+ *
  * The gateway registers its live Discord client here at ClientReady — the same moment the
  * :47321 server used to start listening. Calls before that (or after shutdown) reject with
  * GatewayUnavailableError, the in-process equivalent of the connection-refused error the
@@ -17,10 +20,10 @@
  * talks to Discord does) never drags the gateway's module graph into the engine's at load.
  */
 import type { Client } from 'discord.js';
-import type { ApiResult } from '../shared/api-result.js';
+import { type ApiResult, wire } from '../shared/api-result.js';
 
 export type { ApiResult } from '../shared/api-result.js';
-export { isOk } from '../shared/api-result.js';
+export { isOk, statusText } from '../shared/api-result.js';
 
 export class GatewayUnavailableError extends Error {
   constructor() {
@@ -55,7 +58,7 @@ export async function sendDm(body: {
   fileName?: string;
 }): Promise<ApiResult> {
   const c = client();
-  return (await proxy()).sendDm(c, body);
+  return (await proxy()).sendDm(c, wire(body));
 }
 
 /** POST /api/channels/:channelId/messages: text and/or a base64 file (tts voice notes, sbat). */
@@ -64,14 +67,14 @@ export async function sendChannelMessage(
   body: { content?: string; fileBase64?: string; fileName?: string }
 ): Promise<ApiResult> {
   const c = client();
-  return (await proxy()).sendChannelMessage(c, { channelId }, body);
+  return (await proxy()).sendChannelMessage(c, { channelId }, wire(body));
 }
 
 // --- the discord tools' proxy actions ---
 
 export async function createPoll(channelId: string, body: any): Promise<ApiResult> {
   const c = client();
-  return (await proxy()).createPoll(c, { channelId }, body);
+  return (await proxy()).createPoll(c, { channelId }, wire(body));
 }
 
 export async function readPoll(channelId: string, messageId: string): Promise<ApiResult> {
@@ -85,12 +88,12 @@ export async function addReaction(
   body: { emoji?: string }
 ): Promise<ApiResult> {
   const c = client();
-  return (await proxy()).addReaction(c, { channelId, messageId }, body);
+  return (await proxy()).addReaction(c, { channelId, messageId }, wire(body));
 }
 
 export async function setNickname(guildId: string, body: { nickname?: string | null }): Promise<ApiResult> {
   const c = client();
-  return (await proxy()).setNickname(c, { guildId }, body);
+  return (await proxy()).setNickname(c, { guildId }, wire(body));
 }
 
 export async function listGuildForums(guildId: string): Promise<ApiResult> {
@@ -115,22 +118,35 @@ export async function getForumSummary(forumId: string): Promise<ApiResult> {
 
 export async function syncForumToGitHub(forumId: string, body: { repo?: string }): Promise<ApiResult> {
   const c = client();
-  return (await proxy()).syncForumToGitHub(c, { forumId }, body);
+  return (await proxy()).syncForumToGitHub(c, { forumId }, wire(body));
 }
 
 export async function timeoutMember(body: any): Promise<ApiResult> {
   const c = client();
-  return (await moderation()).timeoutMember(c, body);
+  return (await moderation()).timeoutMember(c, wire(body));
 }
 
 export async function addRole(body: any): Promise<ApiResult> {
   const c = client();
-  return (await moderation()).addRole(c, body);
+  return (await moderation()).addRole(c, wire(body));
 }
 
 export async function removeRole(body: any): Promise<ApiResult> {
   const c = client();
-  return (await moderation()).removeRole(c, body);
+  return (await moderation()).removeRole(c, wire(body));
+}
+
+/**
+ * A route the engine calls but the gateway never had a handler for: the discord-channels /
+ * discord-threads / discord-user-history tools' GET /api/channels/:id/messages, /pins,
+ * /messages/search, POST /api/channels/:id/threads, GET .../threads/:id/messages, and the
+ * discord-environment context source's GET :47321/health. Over HTTP express answered 404;
+ * this answers the same, so those keep failing exactly as they always have. Giving them
+ * handlers is a feature (or a prompt change) for later, not part of the one-process move.
+ */
+export async function unservedRoute(method: string, path: string): Promise<ApiResult> {
+  client();
+  return { status: 404, body: { error: `Cannot ${method} ${path}` } };
 }
 
 /** :47319 GET /health (status + body), from the gateway's health server. */
@@ -161,11 +177,11 @@ export const mentionProxyRules = {
   },
   async create(body: any): Promise<ApiResult> {
     client();
-    return (await mentionProxy()).createProxyRule(body);
+    return (await mentionProxy()).createProxyRule(wire(body));
   },
   async update(id: string, body: any): Promise<ApiResult> {
     client();
-    return (await mentionProxy()).updateProxyRule({ id }, body);
+    return (await mentionProxy()).updateProxyRule({ id }, wire(body));
   },
   async remove(id: string): Promise<ApiResult> {
     client();

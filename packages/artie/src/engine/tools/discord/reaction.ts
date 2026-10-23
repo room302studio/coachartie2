@@ -10,8 +10,7 @@ import {
   CapabilityContext,
 } from '../../5-tool-loop/registry.js';
 import { logger } from '../../../shared/logger.js';
-
-const DISCORD_SERVICE_URL = process.env.DISCORD_SERVICE_URL || 'http://localhost:47321';
+import * as gateway from '../../../gateway/api.js';
 
 export const discordReactionCapability: RegisteredCapability = {
   name: 'discord-reaction',
@@ -45,16 +44,10 @@ export const discordReactionCapability: RegisteredCapability = {
     }
 
     try {
-      const resp = await fetch(
-        `${DISCORD_SERVICE_URL}/api/channels/${channelId}/messages/${messageId}/reactions`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ emoji }),
-        }
-      );
-      const data = (await resp.json()) as any;
-      if (!resp.ok || !data.success) {
+      // Gateway's POST /api/channels/:id/messages/:id/reactions, in-process since wave 9
+      const resp = await gateway.addReaction(String(channelId), String(messageId), { emoji });
+      const data = resp.body as any;
+      if (!gateway.isOk(resp) || !data.success) {
         return JSON.stringify({ success: false, error: data.error || 'reaction failed' });
       }
       logger.info(`[reaction] ${emoji} on ${messageId}`);

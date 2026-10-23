@@ -2,6 +2,8 @@ import { Queue, Worker } from 'bullmq';
 import { logger } from '../../shared/logger.js';
 import { createRedisConnection, createWorker, testRedisConnection } from '../../shared/queue/redis.js';
 import { getSyncDb } from '../../shared/db/client.js';
+import { withTimeout } from '../../shared/async.js';
+import * as gateway from '../../gateway/api.js';
 import { IncomingMessage } from '../../shared/queue/types.js';
 import { QUEUES } from '../../shared/queue/names.js';
 import { redditMentionMonitor } from '../proactive/reddit-mentions.js';
@@ -613,19 +615,19 @@ export class SchedulerService {
         { userId: userId as string }
       );
 
-      // Deliver via Discord DM API (direct HTTP call avoids BullMQ consumer race)
+      // Deliver via the gateway's DM handler (a direct call avoids the BullMQ consumer race).
+      // Wave 9: in-process (was POST :47321/api/dm over loopback, which sent no Bearer token and
+      // so answered 401 on every run; the HTTP-only token check doesn't apply in-process).
       if (channel === 'discord' || channel === 'both') {
         try {
-          const resp = await fetch('http://127.0.0.1:47321/api/dm', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ userId, message: briefing }),
-            signal: AbortSignal.timeout(15000),
-          });
-          if (resp.ok) {
+          const resp = await withTimeout(
+            gateway.sendDm({ userId: userId as string, message: briefing }),
+            15000
+          );
+          if (gateway.isOk(resp)) {
             logger.info(`✅ Morning briefing sent via DM to ${userId}`);
           } else {
-            logger.error(`❌ Morning briefing DM failed: ${resp.status} ${resp.statusText}`);
+            logger.error(`❌ Morning briefing DM failed: ${resp.status} ${gateway.statusText(resp)}`);
           }
         } catch (dmError) {
           logger.error('❌ Morning briefing DM delivery failed:', dmError);

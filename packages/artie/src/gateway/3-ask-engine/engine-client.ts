@@ -66,10 +66,9 @@ export interface JobStatusResponse {
   lastStreamUpdate?: string;
 }
 
-/** The `HTTP <status>: <reason>` text these errors carried when they were HTTP failures. */
+/** The `HTTP <status>: <statusText>` text these errors carried when they were HTTP failures. */
 function httpError(result: engine.ApiResult): string {
-  const reason = result.body?.error ? String(result.body.error) : 'request failed';
-  return `HTTP ${result.status}: ${reason}`;
+  return `HTTP ${result.status}: ${engine.statusText(result)}`;
 }
 
 /**
@@ -93,22 +92,19 @@ export class CapabilitiesClient {
         // AUTO-DETECT: Set source to 'discord' if context contains Discord metadata
         const source = context?.platform === 'discord' ? 'discord' : undefined;
 
-        // A JSON round trip, as the HTTP body was: the turn's context is a plain-data copy
-        // (no undefined keys, no live objects), exactly what POST /chat received.
-        const response = await engine.submitTurn(
-          JSON.parse(
-            JSON.stringify({
-              message,
-              userId,
-              context,
-              source, // Pass source to trigger Discord-specific handling
-            })
-          )
-        );
+        // engine/api.ts passes the body through a JSON round trip, so the turn's context is
+        // the same plain-data copy POST /chat received.
+        const response = await engine.submitTurn({
+          message,
+          userId,
+          context,
+          source, // Pass source to trigger Discord-specific handling
+        });
 
         if (!engine.isOk(response)) {
           logger.error(`❌ Job submission failed:`, {
             status: response.status,
+            statusText: engine.statusText(response),
             body: JSON.stringify(response.body),
           });
           throw new Error(httpError(response));

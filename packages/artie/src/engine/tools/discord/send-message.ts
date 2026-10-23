@@ -1,14 +1,9 @@
 import { RegisteredCapability } from '../../5-tool-loop/registry.js';
 import { logger } from '../../../shared/logger.js';
-import fetch from 'node-fetch';
+import * as gateway from '../../../gateway/api.js';
 
 // Room 302 Studio Guild whitelist
 const WHITELISTED_GUILD_IDS = ['932719842522443928'];
-
-// Use docker service name when running in container, localhost otherwise
-const DISCORD_SERVICE_URL =
-  process.env.DISCORD_SERVICE_URL ||
-  (process.env.DOCKER_ENV ? 'http://discord:47321' : 'http://localhost:47321');
 
 export const discordSendMessageCapability: RegisteredCapability = {
   name: 'discord-send-message',
@@ -72,19 +67,11 @@ async function sendMessage(params: {
   }
 
   try {
-    // Call Discord service to send message
-    const response = await fetch(`${DISCORD_SERVICE_URL}/api/channels/${channelId}/messages`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        content: message,
-      }),
-    });
+    // Gateway's POST /api/channels/:id/messages, in-process since wave 9
+    const response = await gateway.sendChannelMessage(channelId, { content: message });
 
-    if (!response.ok) {
-      const errorData = await response.text();
+    if (!gateway.isOk(response)) {
+      const errorData = JSON.stringify(response.body);
       logger.error('❌ discord-send-message: Failed to send message', {
         status: response.status,
         error: errorData,
@@ -98,7 +85,7 @@ async function sendMessage(params: {
       };
     }
 
-    const sentMessage = await response.json();
+    const sentMessage = response.body;
     logger.info('✅ discord-send-message: Message sent successfully', {
       channelId,
       messageId: (sentMessage as any).id,

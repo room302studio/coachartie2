@@ -337,7 +337,7 @@ Focus on patterns that would help understand this community's needs and interest
           humanMessages.size
         );
       } else {
-        logger.warn(`👁️ Failed to generate observation summary: ${response.status}`);
+        logger.warn(`👁️ Failed to generate observation summary: ${engine.statusText(response)}`);
       }
     } catch (error) {
       logger.error('👁️ Error generating observation summary:', error);
@@ -379,7 +379,7 @@ Focus on patterns that would help understand this community's needs and interest
       if (engine.isOk(memoryResponse)) {
         logger.info(`👁️ Stored observational memory for ${guildName} #${channelName}`);
       } else {
-        logger.warn(`👁️ Failed to store observational memory: ${memoryResponse.status}`);
+        logger.warn(`👁️ Failed to store observational memory: ${engine.statusText(memoryResponse)}`);
       }
     } catch (error) {
       logger.error('👁️ Failed to store observational memory:', error);

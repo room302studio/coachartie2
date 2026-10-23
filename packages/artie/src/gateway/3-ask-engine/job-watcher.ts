@@ -297,7 +297,7 @@ export class JobMonitor {
 
           throw new Error('Job not found or expired');
         }
-        throw new Error(`HTTP ${response.status}: ${response.body?.error ?? 'request failed'}`);
+        throw new Error(`HTTP ${response.status}: ${engine.statusText(response)}`);
       }
 
       const status = response.body as JobStatusResponse;

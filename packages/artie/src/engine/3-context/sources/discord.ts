@@ -11,6 +11,7 @@ import { estimateTokens } from '../../../shared/async.js';
 import type { IncomingMessage } from '../../../shared/queue/types.js';
 import type { ContextSource } from './types.js';
 import { DEBUG } from './types.js';
+import * as gateway from '../../../gateway/api.js';
 
 /**
  * Add recent messages from guild (Discord server)
@@ -256,20 +257,20 @@ export async function addRecentChannelMessages(
  */
 export async function addDiscordEnvironment(sources: ContextSource[]): Promise<void> {
   try {
-    // Fetch Discord health info from the health server
-    // Use DISCORD_HEALTH_URL env var, fallback to localhost for local dev, docker hostname for containers
-    const discordHealthUrl =
-      process.env.DISCORD_HEALTH_URL ||
-      (process.env.DOCKER_ENV ? 'http://discord:47321/health' : 'http://localhost:47321/health');
-    const response = await fetch(discordHealthUrl);
-    if (!response.ok) {
+    // Fetch Discord health info from the health server. This always asked :47321/health,
+    // which the gateway never served (its health server is :47319; DISCORD_HEALTH_URL is not
+    // set in prod), so it returned early on a 404 every time and this source never reached a
+    // prompt. Wave 9 keeps that exactly (gateway.unservedRoute) — wiring it to the real
+    // health body would add a block to every prompt, a prompt change for its own wave.
+    const response = await gateway.unservedRoute('GET', '/health');
+    if (!gateway.isOk(response)) {
       if (DEBUG) {
         logger.info('│ ⚠️  Discord health endpoint not available');
       }
       return;
     }
 
-    const health = (await response.json()) as any; // Type as any for flexible health response
+    const health = response.body as any; // Type as any for flexible health response
     if (!health?.discord?.guildDetails || health.discord.guildDetails.length === 0) {
       if (DEBUG) {
         logger.info('│ ⚠️  No Discord guild details available');
