@@ -14,11 +14,28 @@ function isRecallable(memory: MemoryRecord): boolean {
  * daily-summary notes that read as current events, and importance ≤ 2 chatter. They stay
  * in the database (history, audits); they just aren't candidates for what he "remembers".
  */
-export function isStaleNoise(memory: Pick<MemoryRecord, 'user_id' | 'tags' | 'importance'>): boolean {
+export function isStaleNoise(
+  memory: Pick<MemoryRecord, 'user_id' | 'tags' | 'importance'> & { context?: string | null; content?: string }
+): boolean {
   if (memory.user_id === 'observational-system') return true;
   if ((memory.importance ?? 5) <= 2) return true;
   const tags = memory.tags || '';
-  return /"(observation|passive-learning|daily-summary)"/.test(tags);
+  if (/"(observation|passive-learning|daily-summary)"/.test(tags)) return true;
+  // A third of stored "reflections" are the reflection model answering in character
+  // ("Lap eighteen, comrade") instead of writing a note; recalled, they replay old loops.
+  return memory.context === 'reflection' && isInCharacterReflection(memory.content || '');
+}
+
+/**
+ * A reflection should be a note ABOUT a conversation ("- user is building a Tokyo save").
+ * In-character ones talk TO someone, use the ✨/[SILENT] reply conventions, or count laps.
+ * Measured 2026-10-23: flags 2,744 of 7,581 stored reflections; spot checks all in-character.
+ */
+export function isInCharacterReflection(text: string): boolean {
+  if (/\[SILENT\]|✨/.test(text) || /^\s*(round|lap)\s+[a-z-]+\b/i.test(text)) return true;
+  const you = (text.match(/\byou(r|rs|'re|'ve)?\b/gi) || []).length;
+  const notes = (text.match(/\b(user|they|their|them|he|she|community|members?)\b/gi) || []).length;
+  return you >= 3 && you > 2 * notes;
 }
 
 /**

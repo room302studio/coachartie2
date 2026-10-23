@@ -2,6 +2,7 @@ import { logger, IncomingMessage } from '@coachartie/shared';
 import { capabilityXMLParser } from '../../utils/xml-parser.js';
 import { llmResponseCoordinator } from '../llm/llm-response-coordinator.js';
 import { OrchestrationContext } from '../../types/orchestration-types.js';
+import { isInCharacterReflection } from '../../runtime/hybrid-data-layer.js';
 
 // =====================================================
 // MEMORY ORCHESTRATION SERVICE
@@ -48,8 +49,14 @@ export class MemoryOrchestration {
         context.userId,
         conversationKey
       );
-      if (generalReflection && generalReflection !== '✨') {
-        await service.remember(context.userId, generalReflection, 'reflection', 3);
+      // Scope the note to the server it came from (they were all stored server-less, so a
+      // Subway Builder reflection could surface in Room 302), and drop in-character output.
+      const guildId = message.context?.guildId as string | undefined;
+      const channelId = (message.context?.channelId || message.respondTo?.channelId) as string | undefined;
+      if (generalReflection && isInCharacterReflection(generalReflection)) {
+        logger.info(`⏭️ Reflection was an in-character reply, not a note; not stored`);
+      } else if (generalReflection && generalReflection !== '✨') {
+        await service.remember(context.userId, generalReflection, 'reflection', 3, undefined, undefined, guildId, channelId);
         logger.info(`💾 Stored general reflection memory for user ${context.userId}`);
       }
 
@@ -75,7 +82,9 @@ export class MemoryOrchestration {
             'capability-reflection',
             4,
             undefined, // relatedMessageId
-            tags
+            tags,
+            message.context?.guildId as string | undefined,
+            (message.context?.channelId || message.respondTo?.channelId) as string | undefined
           );
           logger.info(
             `🔧 Stored capability reflection memory for user ${context.userId} (${context.capabilities.length} capabilities) with tags: ${tags.join(', ')}`
