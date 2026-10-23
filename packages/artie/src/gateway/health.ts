@@ -3,6 +3,8 @@ import { logger } from '../shared/logger.js';
 import { telemetry } from './telemetry.js';
 import { readFileSync } from 'fs';
 import type { ApiResult } from '../shared/api-result.js';
+import * as engine from '../engine/api.js';
+import { withTimeout } from '../shared/async.js';
 
 export interface HealthCheckResponse {
   status: 'healthy' | 'degraded' | 'unhealthy';
@@ -46,14 +48,13 @@ export class HealthServer {
       return this.capabilitiesHealthCache.reachable;
     }
 
-    const capabilitiesUrl = process.env.CAPABILITIES_URL || 'http://localhost:47324';
+    // Wave 9: the engine's GET /health body, in-process (was a fetch to :47324/health),
+    // still bounded at 3s: a Redis ping can hang when Redis is down.
     try {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 3000);
-      const response = await fetch(`${capabilitiesUrl}/health`, { signal: controller.signal });
-      clearTimeout(timeout);
-      this.capabilitiesHealthCache = { reachable: response.ok, checkedAt: now };
-      return response.ok;
+      const response = await withTimeout(engine.healthSnapshot(), 3000);
+      const reachable = engine.isOk(response);
+      this.capabilitiesHealthCache = { reachable, checkedAt: now };
+      return reachable;
     } catch {
       this.capabilitiesHealthCache = { reachable: false, checkedAt: now };
       return false;

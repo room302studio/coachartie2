@@ -1,5 +1,6 @@
 import { logger } from '../../shared/logger.js';
 import { delay } from '../../shared/async.js';
+import * as engine from '../../engine/api.js';
 
 /**
  * Retry a function with exponential backoff
@@ -65,12 +66,18 @@ export interface JobStatusResponse {
   lastStreamUpdate?: string;
 }
 
-export class CapabilitiesClient {
-  private baseUrl: string;
+/** The `HTTP <status>: <reason>` text these errors carried when they were HTTP failures. */
+function httpError(result: engine.ApiResult): string {
+  const reason = result.body?.error ? String(result.body.error) : 'request failed';
+  return `HTTP ${result.status}: ${reason}`;
+}
 
-  constructor(baseUrl = process.env.CAPABILITIES_URL || 'http://localhost:47324') {
-    this.baseUrl = baseUrl;
-  }
+/**
+ * The gateway's client for the engine's turn API. Wave 9: one process, so every call goes
+ * through engine/api.ts (same handler bodies as POST /chat, GET /chat/:id, ...) instead of
+ * loopback HTTP to :47324. Retries, logging and return shapes are unchanged.
+ */
+export class CapabilitiesClient {
 
   /**
    * Submit a message for processing and get job ID
@@ -86,30 +93,28 @@ export class CapabilitiesClient {
         // AUTO-DETECT: Set source to 'discord' if context contains Discord metadata
         const source = context?.platform === 'discord' ? 'discord' : undefined;
 
-        const response = await fetch(`${this.baseUrl}/chat`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            message,
-            userId,
-            context,
-            source, // Pass source to trigger Discord-specific handling
-          }),
-        });
+        // A JSON round trip, as the HTTP body was: the turn's context is a plain-data copy
+        // (no undefined keys, no live objects), exactly what POST /chat received.
+        const response = await engine.submitTurn(
+          JSON.parse(
+            JSON.stringify({
+              message,
+              userId,
+              context,
+              source, // Pass source to trigger Discord-specific handling
+            })
+          )
+        );
 
-        if (!response.ok) {
-          const errorBody = await response.text();
+        if (!engine.isOk(response)) {
           logger.error(`❌ Job submission failed:`, {
             status: response.status,
-            statusText: response.statusText,
-            body: errorBody,
+            body: JSON.stringify(response.body),
           });
-          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+          throw new Error(httpError(response));
         }
 
-        const result = (await response.json()) as JobSubmissionResponse;
+        const result = response.body as JobSubmissionResponse;
 
         // DEFENSIVE: Log the raw response for debugging
         logger.info(`📤 Submitted job for user ${userId}:`, {
@@ -139,9 +144,9 @@ export class CapabilitiesClient {
     return withRetry(
       async () => {
         logger.info(`🔍 API CALL: GET /chat/${messageId.slice(-8)}`);
-        const response = await fetch(`${this.baseUrl}/chat/${messageId}`);
+        const response = await engine.getTurn(messageId);
 
-        if (!response.ok) {
+        if (!engine.isOk(response)) {
           if (response.status === 404) {
             // Don't retry 404s - job genuinely doesn't exist
             logger.warn(`🔍 API RESPONSE: 404 Job not found - ${messageId.slice(-8)}`);
@@ -150,10 +155,10 @@ export class CapabilitiesClient {
             throw error;
           }
           logger.error(`🔍 API RESPONSE: HTTP ${response.status} - ${messageId.slice(-8)}`);
-          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+          throw new Error(httpError(response));
         }
 
-        const result = (await response.json()) as JobStatusResponse;
+        const result = response.body as JobStatusResponse;
         logger.info(
           `🔍 API RESPONSE: status="${result.status}", hasResponse=${!!result.response}, responseLength=${result.response?.length || 0}`
         );
@@ -181,12 +186,12 @@ export class CapabilitiesClient {
     }>
   > {
     try {
-      const response = await fetch(`${this.baseUrl}/chat/pending-attachments/${userId}`);
-      if (!response.ok) {
+      const response = await engine.pendingAttachments(userId);
+      if (!engine.isOk(response)) {
         logger.warn(`Failed to fetch pending attachments: ${response.status}`);
         return [];
       }
-      const result = (await response.json()) as {
+      const result = response.body as {
         attachments?: Array<{ filename: string; content?: string; data: string; size: number }>;
       };
       return result.attachments || [];
@@ -344,19 +349,10 @@ export class CapabilitiesClient {
    */
   async linkDiscordMessage(jobId: string, discordMessageId: string): Promise<void> {
     try {
-      const response = await fetch(`${this.baseUrl}/api/traces/link-discord`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          jobId,
-          discordMessageId,
-        }),
-      });
+      const response = await engine.linkDiscordMessage({ jobId, discordMessageId });
 
-      if (!response.ok) {
-        const errorBody = await response.text();
+      if (!engine.isOk(response)) {
+        const errorBody = JSON.stringify(response.body);
         logger.warn(`Failed to link Discord message: ${response.status} ${errorBody}`);
       } else {
         logger.debug(`Linked Discord message ${discordMessageId} to job ${jobId.slice(-8)}`);
@@ -377,23 +373,13 @@ export class CapabilitiesClient {
     emoji: string
   ): Promise<boolean> {
     try {
-      const response = await fetch(`${this.baseUrl}/api/traces/feedback`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          discordMessageId,
-          sentiment,
-          emoji,
-        }),
-      });
+      const response = await engine.recordTraceFeedback({ discordMessageId, sentiment, emoji });
 
-      if (response.ok) {
+      if (engine.isOk(response)) {
         logger.debug(`Recorded ${sentiment} feedback for Discord message ${discordMessageId}`);
         return true;
       } else {
-        const errorBody = await response.text();
+        const errorBody = JSON.stringify(response.body);
         logger.debug(`No trace found for Discord message ${discordMessageId}: ${errorBody}`);
         return false;
       }

@@ -1,4 +1,5 @@
 import { logger } from '../../shared/logger.js';
+import * as engine from '../../engine/api.js';
 
 export interface JobCallback {
   onComplete: (result: string) => void;
@@ -33,16 +34,16 @@ export class JobMonitor {
   private static instance: JobMonitor;
   private pendingJobs = new Map<string, JobCallback>();
   private monitorInterval: NodeJS.Timeout | null = null;
-  private baseUrl: string;
   private isRunning = false;
 
-  private constructor(baseUrl = process.env.CAPABILITIES_URL || 'http://localhost:47324') {
-    this.baseUrl = baseUrl;
-  }
+  // Wave 9: one process. The SSE stream and the status poll below used to be loopback HTTP
+  // to :47324 (/chat/:id/stream, /chat/:id); they are now engine/api.ts calls into the same
+  // job tracker, with the same events, timeouts, 404-means-orphaned rule and recovery.
+  private constructor() {}
 
-  public static getInstance(baseUrl?: string): JobMonitor {
+  public static getInstance(): JobMonitor {
     if (!JobMonitor.instance) {
-      JobMonitor.instance = new JobMonitor(baseUrl);
+      JobMonitor.instance = new JobMonitor();
     }
     return JobMonitor.instance;
   }
@@ -129,76 +130,53 @@ export class JobMonitor {
     }
   ): Promise<void> {
     const shortId = jobId.slice(-8);
-    const sseUrl = `${this.baseUrl}/chat/${jobId}/stream`;
 
     logger.info(`📡 Starting SSE connection for job ${shortId}`);
 
     return new Promise((resolve, reject) => {
-      const controller = new AbortController();
+      // Once settled (completed, failed, timed out), later events are ignored: the HTTP
+      // version stopped reading the stream at that point.
+      let settled = false;
+      const settle = (fn: () => void) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timeout);
+        fn();
+      };
       const timeout = setTimeout(() => {
-        controller.abort();
-        reject(new Error('SSE connection timeout'));
+        settle(() => reject(new Error('SSE connection timeout')));
       }, 300000); // 5 minute timeout
 
-      fetch(sseUrl, {
-        signal: controller.signal,
-        headers: { Accept: 'text/event-stream' },
-      })
-        .then(async (response) => {
-          if (!response.ok) {
-            throw new Error(`SSE failed: ${response.status}`);
-          }
+      // Every event's data, handled exactly as the SSE reader handled each `data:` line.
+      const onEvent = (_event: string, data: any) => {
+        if (settled) return;
+        try {
+          handleData(data);
+        } catch {
+          // The SSE reader swallowed anything thrown while handling an event line.
+        }
+      };
+      const handleData = (data: any) => {
+        if (data.status === 'completed' || data.response) {
+          settle(() => {
+            logger.info(`✅ SSE: Job ${shortId} completed`);
+            callbacks.onComplete(data.response || '');
+            resolve();
+          });
+        } else if (data.status === 'failed' || data.error) {
+          settle(() => {
+            logger.error(`❌ SSE: Job ${shortId} failed: ${data.error}`);
+            callbacks.onError?.(data.error || 'Job failed');
+            resolve();
+          });
+        } else if (data.partial && callbacks.onProgress) {
+          callbacks.onProgress({ partialResponse: data.partial });
+        }
+      };
 
-          const reader = response.body?.getReader();
-          if (!reader) {
-            throw new Error('No response body');
-          }
-
-          const decoder = new TextDecoder();
-          let buffer = '';
-
-          while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-
-            buffer += decoder.decode(value, { stream: true });
-            const lines = buffer.split('\n');
-            buffer = lines.pop() || ''; // Keep incomplete line in buffer
-
-            for (const line of lines) {
-              if (line.startsWith('data: ')) {
-                try {
-                  const data = JSON.parse(line.slice(6));
-
-                  if (data.status === 'completed' || data.response) {
-                    clearTimeout(timeout);
-                    logger.info(`✅ SSE: Job ${shortId} completed`);
-                    callbacks.onComplete(data.response || '');
-                    resolve();
-                    return;
-                  } else if (data.status === 'failed' || data.error) {
-                    clearTimeout(timeout);
-                    logger.error(`❌ SSE: Job ${shortId} failed: ${data.error}`);
-                    callbacks.onError?.(data.error || 'Job failed');
-                    resolve();
-                    return;
-                  } else if (data.partial && callbacks.onProgress) {
-                    callbacks.onProgress({ partialResponse: data.partial });
-                  }
-                } catch (e) {
-                  // Ignore parse errors for malformed events
-                }
-              }
-            }
-          }
-
-          clearTimeout(timeout);
-          resolve();
-        })
-        .catch((err) => {
-          clearTimeout(timeout);
-          reject(err);
-        });
+      engine
+        .watchTurn(jobId, onEvent, () => settle(resolve))
+        .catch((err) => settle(() => reject(err)));
     });
   }
 
@@ -261,14 +239,14 @@ export class JobMonitor {
         fullJobId: jobId,
         jobIdLength: jobId.length,
         jobIdType: typeof jobId,
-        url: `${this.baseUrl}/chat/${jobId}`,
+        url: `/chat/${jobId}`,
         attempt: callback.attemptCount,
         maxAttempts: callback.maxAttempts,
       });
 
-      const response = await fetch(`${this.baseUrl}/chat/${jobId}`);
+      const response = await engine.getTurn(jobId);
 
-      if (!response.ok) {
+      if (!engine.isOk(response)) {
         if (response.status === 404) {
           // Job orphaned - try to recover!
           const maxOrphanRetries = 2;
@@ -319,10 +297,10 @@ export class JobMonitor {
 
           throw new Error('Job not found or expired');
         }
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        throw new Error(`HTTP ${response.status}: ${response.body?.error ?? 'request failed'}`);
       }
 
-      const status = (await response.json()) as JobStatusResponse;
+      const status = response.body as JobStatusResponse;
       const actualResponse = status.partialResponse || status.response;
       logger.info(
         `🔍 Job ${shortId} status: "${status.status}", hasResponse: ${!!actualResponse}, responseLength: ${actualResponse?.length || 0}`

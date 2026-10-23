@@ -3,6 +3,7 @@ import { logger } from '../../shared/logger.js';
 import { testRedisConnection } from '../../shared/queue/redis.js';
 import { telemetry } from '../telemetry.js';
 import { capabilitiesClient } from '../3-ask-engine/engine-client.js';
+import * as engine from '../../engine/api.js';
 
 export const botStatusCommand = {
   data: new SlashCommandBuilder()
@@ -143,13 +144,12 @@ async function createUserUsageEmbed(userId: string): Promise<EmbedBuilder> {
 
 async function createSystemStatusEmbed(): Promise<EmbedBuilder> {
   const embed = new EmbedBuilder().setTitle('🔧 System Status').setColor(0x9b59b6);
-  const capabilitiesUrl = process.env.CAPABILITIES_URL || 'http://localhost:47324';
 
   try {
-    // Test capabilities service
+    // Test capabilities service (the engine's GET /health, in-process since wave 9)
     const capabilitiesStart = Date.now();
     const testResult = await Promise.race([
-      fetch(`${capabilitiesUrl}/health`).then((r) => r.ok),
+      engine.healthSnapshot().then((r) => engine.isOk(r)),
       new Promise((resolve) => setTimeout(() => resolve(false), 5000)),
     ]);
     const capabilitiesLatency = Date.now() - capabilitiesStart;

@@ -11,6 +11,7 @@
 import { Client, TextChannel } from 'discord.js';
 import { Octokit } from '@octokit/rest';
 import { logger } from '../../../shared/logger.js';
+import * as engine from '../../../engine/api.js';
 import { GITHUB_FEED_CHANNEL_ID } from '../../../shared/config/channels.js';
 import { getDb, eq, and } from '../../../shared/db/client.js';
 import { githubRepoWatches } from '../../../shared/db/schema.js';
@@ -267,18 +268,15 @@ export class GitHubOrgWatcher {
       .filter((w) => w.isActive)
       .map((w) => ({ repo: w.repo, channel: nameOf(w.channelId) }));
     try {
-      const res = await fetch(`${process.env.CAPABILITIES_URL || 'http://localhost:47324'}/api/route-repo`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          repo: { fullName: repo.full_name, description: repo.description, language: repo.language },
-          channels,
-          existing,
-          guildId: config.guildId,
-        }),
+      // Wave 9: in-process (was POST :47324/api/route-repo; same handler).
+      const res = await engine.routeRepo({
+        repo: { fullName: repo.full_name, description: repo.description, language: repo.language },
+        channels,
+        existing,
+        guildId: config.guildId,
       });
-      if (!res.ok) return null;
-      const pick = (await res.json()) as { channelId?: string; reason?: string };
+      if (!engine.isOk(res)) return null;
+      const pick = res.body as { channelId?: string; reason?: string };
       return pick.channelId && channels.some((c) => c.id === pick.channelId)
         ? { channelId: pick.channelId, reason: pick.reason || '' }
         : null;

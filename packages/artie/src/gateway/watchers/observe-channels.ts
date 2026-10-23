@@ -2,7 +2,7 @@ import { logger } from '../../shared/logger.js';
 import { getSyncDb } from '../../shared/db/client.js';
 import { isBlockedUser } from '../../shared/blocklist.js';
 import { Client, TextChannel, Message, Collection } from 'discord.js';
-import fetch from 'node-fetch';
+import * as engine from '../../engine/api.js';
 import { getGuildConfig, GUILD_CONFIGS, GuildType } from '../../shared/config/guilds.js';
 import { NON_EVENT_PATTERNS } from '../4-reply/output-safety.js';
 
@@ -62,7 +62,6 @@ export class ObservationalLearning {
     process.env.OBSERVATION_MESSAGES_PER_FETCH || '50'
   );
   private readonly PROCESS_INTERVAL_MS = parseInt(process.env.OBSERVATION_INTERVAL_MS || '1500000'); // 25 minutes
-  private readonly CAPABILITIES_URL = process.env.CAPABILITIES_URL || 'http://localhost:47324';
 
   private constructor() {
     // Constructor is private for singleton
@@ -303,26 +302,21 @@ Summarize in 2-3 sentences:
 Focus on patterns that would help understand this community's needs and interests.`;
 
     try {
-      // Call capabilities service to generate summary using FAST_MODEL
-      const response = await fetch(`${this.CAPABILITIES_URL}/api/observe`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
+      // Call capabilities service to generate summary using FAST_MODEL (wave 9: in-process,
+      // was POST :47324/api/observe; same handler)
+      const response = await engine.observe({
+        prompt: summaryPrompt,
+        guildId,
+        channelId,
+        messageCount: humanMessages.size,
+        timeRange: {
+          start: humanMessages.last()?.createdAt.toISOString(),
+          end: humanMessages.first()?.createdAt.toISOString(),
         },
-        body: JSON.stringify({
-          prompt: summaryPrompt,
-          guildId,
-          channelId,
-          messageCount: humanMessages.size,
-          timeRange: {
-            start: humanMessages.last()?.createdAt.toISOString(),
-            end: humanMessages.first()?.createdAt.toISOString(),
-          },
-        }),
       });
 
-      if (response.ok) {
-        const result = (await response.json()) as { summary: string; cost: number };
+      if (engine.isOk(response)) {
+        const result = response.body as { summary: string; cost: number };
         logger.info(
           `👁️ Observation summary created (cost: $${result.cost?.toFixed(4)}): ${result.summary?.substring(0, 100)}...`
         );
@@ -343,7 +337,7 @@ Focus on patterns that would help understand this community's needs and interest
           humanMessages.size
         );
       } else {
-        logger.warn(`👁️ Failed to generate observation summary: ${response.statusText}`);
+        logger.warn(`👁️ Failed to generate observation summary: ${response.status}`);
       }
     } catch (error) {
       logger.error('👁️ Error generating observation summary:', error);
@@ -362,38 +356,30 @@ Focus on patterns that would help understand this community's needs and interest
     messageCount: number
   ): Promise<void> {
     try {
-      // Call memory capability to store observation
-      const memoryResponse = await fetch(
-        `${this.CAPABILITIES_URL}/capabilities/registry/memory/execute`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            action: 'remember',
-            params: {
-              content: `[Observation from ${guildName} #${channelName} (${messageCount} messages)] ${summary}`,
-              userId: 'observational-system',
-              importance: 2,
-              tags: [
-                'observation',
-                'passive-learning',
-                guildName.toLowerCase().split(' ').join('-'),
-                channelName.toLowerCase().split(' ').join('-'),
-              ],
-              // Store guild/channel scope directly on the memory
-              guildId,
-              channelId,
-            },
-          }),
-        }
-      );
+      // Call memory capability to store observation (wave 9: in-process, was POST
+      // :47324/capabilities/registry/memory/execute; same handler)
+      const memoryResponse = await engine.executeTool('memory', {
+        action: 'remember',
+        params: {
+          content: `[Observation from ${guildName} #${channelName} (${messageCount} messages)] ${summary}`,
+          userId: 'observational-system',
+          importance: 2,
+          tags: [
+            'observation',
+            'passive-learning',
+            guildName.toLowerCase().split(' ').join('-'),
+            channelName.toLowerCase().split(' ').join('-'),
+          ],
+          // Store guild/channel scope directly on the memory
+          guildId,
+          channelId,
+        },
+      });
 
-      if (memoryResponse.ok) {
+      if (engine.isOk(memoryResponse)) {
         logger.info(`👁️ Stored observational memory for ${guildName} #${channelName}`);
       } else {
-        logger.warn(`👁️ Failed to store observational memory: ${memoryResponse.statusText}`);
+        logger.warn(`👁️ Failed to store observational memory: ${memoryResponse.status}`);
       }
     } catch (error) {
       logger.error('👁️ Failed to store observational memory:', error);
@@ -489,20 +475,17 @@ Rules:
 - Never invent details. "I don't know how they feel about me" is better than "neutral."
 - Keep it under 400 characters.`;
 
-        const response = await fetch(`${this.CAPABILITIES_URL}/api/observe`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            prompt: profilePrompt,
-            guildId,
-            channelId: 'profile-synthesis',
-            messageCount: userMessages.length,
-          }),
+        // Wave 9: in-process (was POST :47324/api/observe; same handler)
+        const response = await engine.observe({
+          prompt: profilePrompt,
+          guildId,
+          channelId: 'profile-synthesis',
+          messageCount: userMessages.length,
         });
 
-        if (!response.ok) continue;
+        if (!engine.isOk(response)) continue;
 
-        const result = (await response.json()) as { summary: string; cost: number };
+        const result = response.body as { summary: string; cost: number };
         if (!result.summary) continue;
 
         // Skip if LLM says nothing changed

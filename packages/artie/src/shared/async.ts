@@ -12,6 +12,20 @@ export function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/**
+ * `promise`, or a rejection (`timeout of <ms>ms exceeded`) once `ms` passes first. The
+ * in-process stand-in for the request timeouts the gateway's old loopback HTTP calls had
+ * (wave 9); the underlying work is not cancelled, exactly as an aborted fetch didn't stop
+ * the server-side handler.
+ */
+export function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  let timer: NodeJS.Timeout | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`timeout of ${ms}ms exceeded`)), ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
+
 export interface RetryOptions {
   /** Max retry attempts after the first try (default 3). */
   maxRetries?: number;

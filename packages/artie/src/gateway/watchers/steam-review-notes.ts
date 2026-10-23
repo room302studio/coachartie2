@@ -2,7 +2,7 @@ import { logger } from '../../shared/logger.js';
 import { isBlockedUser } from '../../shared/blocklist.js';
 import { getSteamReviewNotes } from '../../shared/paths.js';
 import { Client, TextChannel, Message } from 'discord.js';
-import fetch from 'node-fetch';
+import * as engine from '../../engine/api.js';
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs';
 import { dirname } from 'path';
 
@@ -95,7 +95,6 @@ export class SteamReviewNotes {
   // cycle after a restart reconciles any refresh that failed before the restart.
   private analysisPending = true;
   private chatterBuffer: string[] = [];
-  private readonly CAPABILITIES_URL = process.env.CAPABILITIES_URL || 'http://localhost:47324';
 
   private constructor() {}
 
@@ -352,17 +351,14 @@ Rewrite the full "Situation Analysis" section. Be detailed and concrete:
 Output ONLY the markdown body of the section — no top-level heading, no code fences, no preamble.`;
 
     try {
-      const response = await fetch(`${this.CAPABILITIES_URL}/api/observe`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          prompt,
-          guildId: '1420846272545296470',
-          channelId: STEAM_REVIEWS_CHANNEL_ID,
-          messageCount: this.chatterBuffer.length,
-        }),
+      // Wave 9: in-process (was POST :47324/api/observe; same handler)
+      const response = await engine.observe({
+        prompt,
+        guildId: '1420846272545296470',
+        channelId: STEAM_REVIEWS_CHANNEL_ID,
+        messageCount: this.chatterBuffer.length,
       });
-      if (!response.ok) {
+      if (!engine.isOk(response)) {
         this.analysisFailures++;
         // Exponential backoff, capped. Log loudly only on the first failure and then at
         // widening intervals, so a persistent outage is visible once instead of 144x/day.
@@ -373,7 +369,7 @@ Output ONLY the markdown body of the section — no top-level heading, no code f
         this.analysisRetryAfter = Date.now() + backoffMs;
         const level = this.analysisFailures === 1 || this.analysisFailures % 10 === 0 ? 'warn' : 'debug';
         logger[level](
-          `📓 Analysis refresh failed: ${response.status} ${response.statusText} ` +
+          `📓 Analysis refresh failed: ${response.status} ${response.body?.error ?? ''} ` +
             `(failure #${this.analysisFailures}, backing off ${Math.round(backoffMs / 60000)}min)`
         );
         return;
@@ -383,7 +379,7 @@ Output ONLY the markdown body of the section — no top-level heading, no code f
       }
       this.analysisFailures = 0;
       this.analysisRetryAfter = 0;
-      const result = (await response.json()) as { summary: string; cost: number };
+      const result = response.body as { summary: string; cost: number };
       if (!result.summary?.trim()) {
         logger.warn('📓 Analysis refresh returned empty summary — keeping previous analysis');
         return;

@@ -24,8 +24,9 @@ import {
   launchStatusLine,
 } from './launch-config.js';
 import { violatesOutputSafety } from '../4-reply/output-safety.js';
+import * as engine from '../../engine/api.js';
+import { withTimeout } from '../../shared/async.js';
 
-const CAPABILITIES_URL = process.env.CAPABILITIES_URL || 'http://localhost:47324';
 const STEAM_PAGE_URL = process.env.STEAM_PAGE_URL; // optional; never fabricate a link
 
 const MINUTE = 60 * 1000;
@@ -92,17 +93,13 @@ async function generateCopy(milestone: Milestone, countdown: string): Promise<st
   } Write ONE short hype post (under 700 characters, no preamble, no quotes around it) rallying them: electric excitement, countdown front and center, funnel language, affectionate contempt, sign-off optional. No @everyone/@here. No slurs or hate — sharp but good-natured.`;
 
   try {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 90_000);
-    const res = await fetch(`${CAPABILITIES_URL}/chat?wait=true`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message: prompt, userId: 'launch-countdown-scheduler' }),
-      signal: controller.signal,
-    });
-    clearTimeout(timer);
-    if (!res.ok) return null;
-    const data = (await res.json()) as { status?: string; response?: string };
+    // POST /chat?wait=true, in-process since wave 9, still given up on after 90s
+    const res = await withTimeout(
+      engine.submitTurn({ message: prompt, userId: 'launch-countdown-scheduler' }, { wait: true }),
+      90_000
+    );
+    if (!engine.isOk(res)) return null;
+    const data = res.body as { status?: string; response?: string };
     const text = typeof data.response === 'string' ? data.response.trim() : '';
     if (data.status !== 'completed' || !text) return null;
     if (text.length > 1500 || violatesOutputSafety(text)) return null;

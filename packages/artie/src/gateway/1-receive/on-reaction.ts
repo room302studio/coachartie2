@@ -23,11 +23,9 @@ import { telemetry } from '../telemetry.js';
 import { generateCorrelationId, getShortCorrelationId } from '../correlation.js';
 import { processUserIntent } from '../4-reply/stream-reply.js';
 
-// Capabilities service URL (use environment variable or default)
-const CAPABILITIES_URL = process.env.CAPABILITIES_URL || 'http://localhost:47324';
-
 // Import capabilities client for trace feedback correlation
 import { capabilitiesClient } from '../3-ask-engine/engine-client.js';
+import * as engine from '../../engine/api.js';
 
 // Reaction trigger emojis
 const REGENERATE_EMOJI = '🔄';
@@ -541,23 +539,20 @@ async function handleFeedbackReaction(
         ? `community feedback: ${emoji} reaction to my response in ${guildName} #${channelName}. response was: "${messageSnippet}..." - this response style works well here`
         : `community feedback: ${emoji} reaction (negative) to my response in ${guildName} #${channelName}. response was: "${messageSnippet}..." - should avoid this response style`;
 
-    // Use direct memory endpoint for proper storage with guild scope
-    const response = await fetch(`${CAPABILITIES_URL}/capabilities/registry/memory/execute`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        action: 'remember',
-        params: {
-          content: feedbackNote,
-          userId: 'reaction-feedback-system',
-          importance: sentiment === 'negative' ? 5 : 3, // Negative feedback is more important to learn from
-          tags: ['community', 'feedback', sentiment, 'response-style', channelName.toLowerCase()],
-          guildId: guildId, // Store with guild scope so it's recalled in that guild
-        },
-      }),
+    // Use direct memory endpoint for proper storage with guild scope (wave 9: in-process,
+    // was POST :47324/capabilities/registry/memory/execute; same handler)
+    const response = await engine.executeTool('memory', {
+      action: 'remember',
+      params: {
+        content: feedbackNote,
+        userId: 'reaction-feedback-system',
+        importance: sentiment === 'negative' ? 5 : 3, // Negative feedback is more important to learn from
+        tags: ['community', 'feedback', sentiment, 'response-style', channelName.toLowerCase()],
+        guildId: guildId, // Store with guild scope so it's recalled in that guild
+      },
     });
 
-    if (response.ok) {
+    if (engine.isOk(response)) {
       logger.info(`Stored ${sentiment} feedback memory for guild ${guildId} [${shortId}]`);
 
       // Check if negative feedback threshold crossed - trigger emergency reflection
@@ -605,19 +600,16 @@ async function checkNegativeFeedbackThreshold(guildId: string, shortId: string):
 
     const threshold = parseInt(process.env.REFLECTION_NEGATIVE_THRESHOLD || '5', 10);
 
-    // Call the capabilities service to check threshold and trigger reflection
-    const response = await fetch(`${CAPABILITIES_URL}/api/reflection/check-threshold`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        guildId,
-        threshold,
-        hours: 1, // Check last hour
-      }),
+    // Call the capabilities service to check threshold and trigger reflection (wave 9:
+    // in-process, was POST :47324/api/reflection/check-threshold)
+    const response = await engine.checkReflectionThreshold({
+      guildId,
+      threshold,
+      hours: 1, // Check last hour
     });
 
-    if (response.ok) {
-      const result = (await response.json()) as { triggered?: boolean; count?: number };
+    if (engine.isOk(response)) {
+      const result = response.body as { triggered?: boolean; count?: number };
       if (result.triggered) {
         logger.warn(
           `🚨 Emergency reflection triggered for guild ${guildId}: ${result.count} negative reactions in last hour [${shortId}]`

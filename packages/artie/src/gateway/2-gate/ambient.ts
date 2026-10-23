@@ -113,9 +113,6 @@ export async function shouldProactivelyAnswer(
       return false;
     }
 
-    // Use fetch directly to call the capabilities service
-    const capabilitiesUrl = process.env.CAPABILITIES_URL || 'http://localhost:47324';
-
     // Debug: log what context we have
     logger.info(`🔍 Proactive judgment context length: ${guildContext?.length || 0} chars`);
 

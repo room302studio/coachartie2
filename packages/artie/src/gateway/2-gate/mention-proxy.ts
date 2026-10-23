@@ -6,7 +6,8 @@
  */
 
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
-import { delay } from '../../shared/async.js';
+import { delay, withTimeout } from '../../shared/async.js';
+import * as engine from '../../engine/api.js';
 import { join, dirname } from 'path';
 import { logger } from '../../shared/logger.js';
 import { isBlockedUser } from '../../shared/blocklist.js';
@@ -468,12 +469,8 @@ class MentionProxyService {
         })
         .join('\n');
 
-      // Use fast LLM to judge (haiku for speed)
-      // @ts-ignore - axios types may not be available
-      const axios = (await import('axios')).default;
-      const CAPABILITIES_URL =
-        process.env.CAPABILITIES_URL ||
-        'http://localhost:' + (process.env.CAPABILITIES_PORT || '47324');
+      // Use fast LLM to judge (haiku for speed). Wave 9: the turn API is in-process
+      // (engine/api.ts; was axios against :47324/chat, 5s timeout, throw on non-2xx).
 
       const judgmentPrompt =
         rule.judgmentPrompt ||
@@ -495,19 +492,23 @@ Rules:
 Answer with ONLY one word: either "SKIP" or "RESPOND"
 `;
 
-      const response = await axios.post(
-        `${CAPABILITIES_URL}/chat`,
-        {
+      const response = await withTimeout(
+        engine.submitTurn({
           message: judgmentPrompt,
           userId: 'mention-proxy-judgment',
           username: 'Judgment System',
           source: 'mention-proxy',
           preferredModel: 'anthropic/claude-3-haiku',
-        },
-        { timeout: 5000 }
+        }),
+        5000
       );
+      if (!engine.isOk(response)) throw new Error(`Request failed with status code ${response.status}`);
 
-      if (!response.data?.jobId) {
+      // KNOWN, PRESERVED AS-IS (wave 9): POST /chat answers `messageId`, never `jobId`, so
+      // this has always taken the SKIP branch below (and the queued judgment turn's answer is
+      // never read). Fixing it would make the proxy start speaking for people; that's EJ's
+      // call, logged in BUILD-LOG, not a side effect of the one-process move.
+      if (!response.body?.jobId) {
         // FAIL CLOSED: if we can't judge, don't speak for someone. Defaulting to
         // RESPOND here meant every LLM outage (e.g. out of credits) made the proxy
         // MORE trigger-happy, answering for people mid-conversation.
@@ -519,10 +520,13 @@ Answer with ONLY one word: either "SKIP" or "RESPOND"
       for (let i = 0; i < 6; i++) {
         await delay(500);
 
-        const statusResponse = await axios.get(`${CAPABILITIES_URL}/chat/${response.data.jobId}`);
+        const statusResponse = await engine.getTurn(response.body.jobId);
+        if (!engine.isOk(statusResponse)) {
+          throw new Error(`Request failed with status code ${statusResponse.status}`);
+        }
 
-        if (statusResponse.data?.status === 'completed' && statusResponse.data.response) {
-          const judgment = statusResponse.data.response.toUpperCase();
+        if (statusResponse.body?.status === 'completed' && statusResponse.body.response) {
+          const judgment = statusResponse.body.response.toUpperCase();
           // SKIP wins over RESPOND so "DO NOT RESPOND"-style answers parse correctly
           const shouldRespond = !judgment.includes('SKIP') && judgment.includes('RESPOND');
 

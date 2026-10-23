@@ -1,6 +1,8 @@
 import { MessageFlags, ChatInputCommandInteraction, SlashCommandBuilder, EmbedBuilder } from 'discord.js';
 import { logger } from '../../shared/logger.js';
 import { telemetry } from '../telemetry.js';
+import * as engine from '../../engine/api.js';
+import { withTimeout } from '../../shared/async.js';
 
 export const debugCommand = {
   data: new SlashCommandBuilder()
@@ -64,7 +66,6 @@ export const debugCommand = {
 
 async function createConnectionTestEmbed(): Promise<EmbedBuilder> {
   const embed = new EmbedBuilder().setTitle('🔍 Connection Test Results').setColor(0x3498db);
-  const capabilitiesUrl = process.env.CAPABILITIES_URL || 'http://localhost:47324';
   const healthServerUrl = process.env.HEALTH_SERVER_URL || 'http://localhost:47319';
 
   const tests = [];
@@ -76,18 +77,14 @@ async function createConnectionTestEmbed(): Promise<EmbedBuilder> {
     latency: 'Active',
   });
 
-  // Test Capabilities Service
+  // Test Capabilities Service (the engine's GET /health, in-process since wave 9)
   try {
     const start = Date.now();
-    const response = (await Promise.race([
-      fetch(`${capabilitiesUrl}/health`),
-      new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 10000)),
-    ])) as Response;
+    const response = await withTimeout(engine.healthSnapshot(), 10000);
 
     const latency = Date.now() - start;
 
-    if (response.ok) {
-      const healthData = await response.json();
+    if (engine.isOk(response)) {
       tests.push({
         name: '🧠 Capabilities Service',
         status: '🟢 Online',
@@ -225,17 +222,15 @@ async function createCapabilitiesTestEmbed(): Promise<EmbedBuilder> {
   const embed = new EmbedBuilder().setTitle('🧠 Capabilities Test').setColor(0xe74c3c);
   // Was POST ${BRAIN_URL}/chat "Test calculation: 2+2": a dead default port, and once pointed
   // at capabilities every /debug would have run a paid model reply. Health + registry is free.
-  const capabilitiesUrl = process.env.CAPABILITIES_URL || 'http://localhost:47324';
 
   try {
     const testStart = Date.now();
-    const response = await fetch(`${capabilitiesUrl}/capabilities`, {
-      signal: AbortSignal.timeout(10_000),
-    });
+    // The engine's GET /capabilities, in-process since wave 9
+    const response = await withTimeout(engine.capabilities(), 10_000);
     const testDuration = Date.now() - testStart;
 
-    if (response.ok) {
-      const result = (await response.json()) as {
+    if (engine.isOk(response)) {
+      const result = response.body as {
         stats?: { totalCapabilities?: number; totalActions?: number };
       };
       embed.setColor(0x2ecc71);
@@ -251,7 +246,7 @@ async function createCapabilitiesTestEmbed(): Promise<EmbedBuilder> {
     } else {
       embed.addFields({
         name: '❌ Capabilities Service Error',
-        value: `HTTP ${response.status}: ${response.statusText}`,
+        value: `HTTP ${response.status}: ${response.body?.error ?? ''}`,
         inline: false,
       });
     }

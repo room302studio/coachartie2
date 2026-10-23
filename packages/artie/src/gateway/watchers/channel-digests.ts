@@ -3,7 +3,7 @@ import { isBlockedUser } from '../../shared/blocklist.js';
 import { isGenerationMuted } from '../../shared/kill-switch.js';
 import { getChannelDigest, setChannelDigestCursor } from '../../shared/db/channel-digest-store.js';
 import { Client, Collection, Message, TextChannel } from 'discord.js';
-import fetch from 'node-fetch';
+import * as engine from '../../engine/api.js';
 import { GUILD_CONFIGS, GuildConfig } from '../../shared/config/guilds.js';
 
 /**
@@ -68,7 +68,6 @@ function isChannelDigestEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
 
 const FETCH_LIMIT = 100;
 const TICK_MS = num(process.env.DIGEST_TICK_MIN, 10) * 60_000;
-const CAPABILITIES_URL = process.env.CAPABILITIES_URL || 'http://localhost:47324';
 
 function observedChannels(client: Client, cfg: GuildConfig): TextChannel[] {
   const guild = client.guilds.cache.get(cfg.id);
@@ -154,19 +153,16 @@ export class ChannelDigestLoop {
     }
 
     const lines = humans.map((m) => `${m.author.username}: ${m.content.replace(/\s+/g, ' ').trim()}`);
-    const res = await fetch(`${CAPABILITIES_URL}/api/channel-digest`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        guildId: cfg.id,
-        guildName: cfg.name,
-        channelId: channel.id,
-        channelName: channel.name,
-        lines,
-        lastMessageId: newest.id,
-      }),
+    // Wave 9: in-process (was POST :47324/api/channel-digest; same handler)
+    const res = await engine.channelDigest({
+      guildId: cfg.id,
+      guildName: cfg.name,
+      channelId: channel.id,
+      channelName: channel.name,
+      lines,
+      lastMessageId: newest.id,
     });
-    if (!res.ok) logger.warn(`📰 Digest #${channel.name}: capabilities ${res.status}`);
+    if (!engine.isOk(res)) logger.warn(`📰 Digest #${channel.name}: capabilities ${res.status}`);
   }
 
   stop(): void {

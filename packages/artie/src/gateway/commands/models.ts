@@ -1,5 +1,6 @@
 import { MessageFlags, ChatInputCommandInteraction, SlashCommandBuilder, EmbedBuilder } from 'discord.js';
 import { logger } from '../../shared/logger.js';
+import * as engine from '../../engine/api.js';
 
 export const modelsCommand = {
   data: new SlashCommandBuilder()
@@ -37,15 +38,13 @@ export const modelsCommand = {
 };
 
 async function createModelsListEmbed(): Promise<EmbedBuilder> {
-  // Get REAL models from capabilities service API with OpenRouter data
-  // /api/models lives on capabilities; BRAIN_URL's default (:18239) never had a listener.
-  const capabilitiesUrl = process.env.CAPABILITIES_URL || 'http://localhost:47324';
+  // Get REAL models from the engine's GET /api/models (in-process since wave 9)
   let modelData: any = null;
 
   try {
-    const response = await fetch(`${capabilitiesUrl}/api/models`);
-    if (response.ok) {
-      const result = (await response.json()) as any;
+    const response = await engine.models();
+    if (engine.isOk(response)) {
+      const result = response.body as any;
 
       if (result.success && result.data) {
         modelData = result.data;
@@ -67,9 +66,9 @@ async function createModelsListEmbed(): Promise<EmbedBuilder> {
     let configuredModels = '';
 
     try {
-      const response = await fetch(`${capabilitiesUrl}/api/models`);
-      if (!response.ok) {
-        const errorData = (await response.json()) as any;
+      const response = await engine.models();
+      if (!engine.isOk(response)) {
+        const errorData = response.body as any;
         if (errorData.hint) {
           errorDetails = errorData.hint;
         }
@@ -185,16 +184,14 @@ async function createModelsListEmbed(): Promise<EmbedBuilder> {
 }
 
 async function createModelDetailEmbed(modelQuery: string): Promise<EmbedBuilder> {
-  // Get live model data from API
-  // /api/models lives on capabilities; BRAIN_URL's default (:18239) never had a listener.
-  const capabilitiesUrl = process.env.CAPABILITIES_URL || 'http://localhost:47324';
+  // Get live model data from the engine's GET /api/models (in-process since wave 9)
   try {
-    const response = await fetch(`${capabilitiesUrl}/api/models`);
-    if (!response.ok) {
+    const response = await engine.models();
+    if (!engine.isOk(response)) {
       throw new Error(`API returned ${response.status}`);
     }
 
-    const result = (await response.json()) as any;
+    const result = response.body as any;
     if (!result.success || !result.data) {
       throw new Error('Invalid API response');
     }
