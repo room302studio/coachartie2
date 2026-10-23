@@ -1,6 +1,6 @@
 import { logger } from '../../shared/logger.js';
 import { CreditMonitor } from './openrouter-balance.js';
-import { costMonitor } from './session-spend.js';
+import { costMonitor } from './usage-ledger.js';
 import { getDailyBudgetUsd, getTodaySpendUsd } from './daily-cap.js';
 
 // =====================================================

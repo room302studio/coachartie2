@@ -22,7 +22,7 @@ import { resolveModelSpec, isAutoRouted, autoReasoningFor } from '../../shared/m
 import { UsageTracker, TokenUsage } from '../budget/usage-ledger.js';
 import { applyCacheControl, readCacheUsage, wireContentLength } from '../3-context/prompt-cache.js';
 import { creditMonitor } from '../budget/openrouter-balance.js';
-import { costMonitor } from '../budget/session-spend.js';
+import { costMonitor } from '../budget/usage-ledger.js';
 
 // Context Alchemy observability
 import { traceManager } from '../2-turn/trace.js';

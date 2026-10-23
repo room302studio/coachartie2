@@ -13,7 +13,7 @@ import { IncomingMessage } from '../../shared/queue/types.js';
 import { logger } from '../../shared/logger.js';
 import { openRouterService } from '../4-generate/openrouter.js';
 import { capabilityRegistry } from '../5-tool-loop/registry.js';
-import { costMonitor } from '../budget/session-spend.js';
+import { costMonitor } from '../budget/usage-ledger.js';
 import { updateUserScoresFromMessage } from './user-scores.js';
 import { tryVoiceNoteFastPath, maybeAutoCheckCredits } from './fast-paths.js';
 import { getErrorMessage, getErrorStack } from '../error-utils.js';

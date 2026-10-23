@@ -2,7 +2,7 @@ import { getSyncDb } from '../../shared/db/client.js';
 import { createQueue } from '../../shared/queue/redis.js';
 import { logger } from '../../shared/logger.js';
 import { reportToAnomalywatch } from '../../shared/anomalywatch.js';
-import { costMonitor } from '../budget/session-spend.js';
+import { costMonitor } from '../budget/usage-ledger.js';
 
 /**
  * Distress monitoring service for Artie

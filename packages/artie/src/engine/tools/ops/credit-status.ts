@@ -1,6 +1,6 @@
 import { logger } from '../../../shared/logger.js';
 import { creditMonitor } from '../../budget/openrouter-balance.js';
-import { costMonitor } from '../../budget/session-spend.js';
+import { costMonitor } from '../../budget/usage-ledger.js';
 import { RegisteredCapability } from '../../5-tool-loop/registry.js';
 
 export const creditStatusCapability: RegisteredCapability = {

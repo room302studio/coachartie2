@@ -191,7 +191,7 @@ export class VitalsMonitor {
       // defaults to 1.5, against a real monthly average nearer $0.26/hr — so runway was
       // understated ~6x and VITALS_MIN_RUNWAY_HOURS was being compared against a guess.
       // Falls back to the constant when there is too little traffic to measure.
-      const { costMonitor } = await import('../budget/session-spend.js');
+      const { costMonitor } = await import('../budget/usage-ledger.js');
       const measured = costMonitor.getRecentBurnPerHour();
       const burn =
         typeof measured === 'number' && measured > 0
