@@ -9,6 +9,7 @@ import { readFileSync, existsSync } from 'fs';
 import { join } from 'path';
 import { logger } from '../../shared/logger.js';
 import { REPO_ROOT } from '../../shared/paths.js';
+import { isStaffRole } from '../../shared/staff-role.js';
 import type { ChannelPersona, GuildConfig } from '../../shared/config/guilds.js';
 import {
   getShortRulesBlock,
@@ -140,7 +141,7 @@ ${channelPersona.systemPrompt}
     const isStaff =
       _ju === 'hudson' ||
       _jd === 'hudson' ||
-      _roles.some((r) => /\b(dev|developer|moderator|admin|administrator|staff|sbat)\b/.test(r));
+      _roles.some((r) => isStaffRole(r));
     // Staff (mods/devs/admins) + Hudson get baseline respect, always.
     guildContextToPass = getStaffRespectBlock() + (guildContextToPass || '');
     // jan_gbg is universally protected: always warm + respectful, never roasted.

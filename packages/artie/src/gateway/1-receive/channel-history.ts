@@ -3,14 +3,11 @@ import type { Message, Collection } from 'discord.js';
 import Chance from 'chance';
 import { logger } from '../../shared/logger.js';
 import { isBlockedUser } from '../../shared/blocklist.js';
+import { isStaffRole } from '../../shared/staff-role.js';
 import { violatesOutputSafety } from '../4-reply/output-safety.js';
 
 // Own Chance instance (seedless RNG — behaviorally identical to any other).
 const chance = new Chance();
-
-// Staff roles that earn the [staff] tag in history labels (mirrors the current-speaker check).
-export const HISTORY_STAFF_ROLE_RE =
-  /\b(dev|developer|moderator|admin|administrator|staff|sbat)\b/i;
 
 const MIN_CHANNEL_HISTORY = 10; // Minimum messages to fetch
 export const MAX_CHANNEL_HISTORY = 25; // Maximum messages to fetch
@@ -95,7 +92,7 @@ export async function fetchChannelHistory(
         const display = msg.author.displayName || msg.author.username;
         const uname = msg.author.username;
         const roles = msg.member?.roles?.cache; // cached only — no extra fetch in the hot path
-        const isStaff = roles ? roles.some((r) => HISTORY_STAFF_ROLE_RE.test(r.name)) : false;
+        const isStaff = roles ? roles.some((r) => isStaffRole(r.name)) : false;
 
         const safeDisplay = violatesOutputSafety(display) ? '[name hidden]' : display;
         const safeUname = violatesOutputSafety(uname) ? 'hidden' : uname;

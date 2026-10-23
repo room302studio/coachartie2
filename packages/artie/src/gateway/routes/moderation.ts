@@ -2,9 +2,9 @@ import express from 'express';
 import { logger } from '../../shared/logger.js';
 import { moderationService } from './moderation-service.js';
 import { isProtectedUser } from '../../shared/config/protected-users.js';
+import { isStaffRole } from '../../shared/staff-role.js';
 
 const SUBWAY_BUILDER_GUILD_ID = '1420846272545296470';
-const STAFF_ROLE_RE = /\b(dev|developer|moderator|admin|administrator|staff|sbat)\b/i;
 
 // Discord user IDs that can never be moderated, in addition to the
 // username-based list in config/protected-users.ts
@@ -35,7 +35,7 @@ async function fetchModeratableMember(
     PROTECTED_IDS.includes(userId) ||
     isProtectedUser(member.user.username, userId) ||
     isProtectedUser(member.displayName, userId) ||
-    member.roles.cache.some((r: any) => STAFF_ROLE_RE.test(r.name))
+    member.roles.cache.some((r: any) => isStaffRole(r.name))
   ) {
     return { ok: false, error: 'Cannot moderate protected user or staff', status: 403 };
   }

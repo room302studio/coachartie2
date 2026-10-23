@@ -18,6 +18,7 @@
 import { GuildMember, Message } from 'discord.js';
 import { logger } from '../../shared/logger.js';
 import { getChannelPersona } from '../../shared/config/guilds.js';
+import { isStaffRole } from '../../shared/staff-role.js';
 
 export type OutboundAction = 'reply' | 'reaction' | 'timeout' | 'proxy-reply';
 
@@ -34,7 +35,6 @@ const COACH_ARTIE_CHANNEL_RE = /🤖|robot|coach.?artie|\bartie\b/i;
 // never bots, never these people, never anyone wearing a staff-shaped role.
 const PROTECTED_NAMES = new Set(['jan_gbg', 'hudson', 'colin', 'ejfox']);
 const PROTECTED_USER_IDS = new Set(['688448399879438340']); // EJ
-const PROTECTED_ROLE_RE = /\b(dev|developer|moderator|admin|administrator|staff|sbat)\b/;
 
 // Denials worth a production log line (VPS runs CONSOLE_LOG_LEVEL=warn, so this
 // must be warn to be visible). The routine per-message reaction roll loses the
@@ -111,5 +111,5 @@ export function isProtectedTimeoutTarget(member: GuildMember): boolean {
   const dname = (member.displayName || '').toLowerCase();
   if (PROTECTED_NAMES.has(uname) || PROTECTED_NAMES.has(dname)) return true;
   if (PROTECTED_USER_IDS.has(member.id)) return true;
-  return member.roles.cache.map((r) => r.name.toLowerCase()).some((r) => PROTECTED_ROLE_RE.test(r));
+  return member.roles.cache.some((r) => isStaffRole(r.name));
 }
