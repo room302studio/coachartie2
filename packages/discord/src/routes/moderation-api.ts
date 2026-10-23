@@ -43,16 +43,57 @@ async function fetchModeratableMember(
   return { ok: true, member };
 }
 
+/**
+ * Turn whatever Artie has (a snowflake, an @-mention, a username or display name) into a
+ * user id. He only ever sees names, so demanding a raw id meant every timeout failed
+ * (2026-10-23: "I can't pull a Discord user ID just from a username"). Tries, in order:
+ * an id or <@id>, the guild member search (REST; no privileged intent needed), then the
+ * authors of recent messages in the channel he was talking in.
+ */
+export async function resolveUserId(
+  client: any,
+  guildId: string | undefined,
+  who: string | undefined,
+  channelId?: string
+): Promise<string | null> {
+  const raw = String(who || '').trim();
+  if (!raw) return null;
+  const id = raw.match(/^<@!?(\d{15,21})>$/)?.[1] || raw.match(/^(\d{15,21})$/)?.[1];
+  if (id) return id;
+  const name = raw.replace(/^@/, '').toLowerCase();
+  const matches = (u: { username?: string; globalName?: string | null }, nick?: string | null) =>
+    [u.username, u.globalName, nick].some((n) => (n || '').toLowerCase() === name);
+
+  const guild = client.guilds.cache.get(guildId || SUBWAY_BUILDER_GUILD_ID);
+  if (guild) {
+    const found = await guild.members.search({ query: name.slice(0, 32), limit: 10 }).catch(() => null);
+    const hit = found && [...found.values()].find((m: any) => matches(m.user, m.nickname));
+    if (hit) return hit.user.id;
+  }
+  if (channelId) {
+    const channel = await client.channels.fetch(channelId).catch(() => null);
+    const recent = channel && 'messages' in channel ? await channel.messages.fetch({ limit: 100 }).catch(() => null) : null;
+    const author = recent && [...recent.values()].find((m: any) => matches(m.author, m.member?.nickname));
+    if (author) return author.author.id;
+  }
+  return null;
+}
+
 export function setupModerationApi(app: express.Application, client: any) {
   // POST /api/moderation/timeout
   // Called by the discord-moderation capability: { guildId, userId, durationMinutes, reason }
   app.post('/api/moderation/timeout', async (req, res) => {
     try {
-      const { guildId, durationMinutes, reason } = req.body;
-      const userId = req.body.userId || req.body.targetUserId;
+      const { guildId, durationMinutes, reason, channelId } = req.body;
+      const who = req.body.userId || req.body.targetUserId || req.body.user || req.body.username;
+      const userId = await resolveUserId(client, guildId, who, channelId);
 
       if (!userId || !durationMinutes || !reason) {
-        return res.status(400).json({ error: 'Missing required: userId, durationMinutes, reason' });
+        return res.status(400).json({
+          error: userId
+            ? 'Missing required: durationMinutes, reason'
+            : `Couldn't find a member called "${who ?? ''}" in this server`,
+        });
       }
 
       const check = await fetchModeratableMember(client, guildId, userId);
@@ -92,7 +133,8 @@ export function setupModerationApi(app: express.Application, client: any) {
   // POST /api/moderation/add-role — { guildId, userId, roleName, reason }
   app.post('/api/moderation/add-role', async (req, res) => {
     try {
-      const { guildId, userId, roleName, reason } = req.body;
+      const { guildId, roleName, reason, channelId } = req.body;
+      const userId = await resolveUserId(client, guildId, req.body.userId || req.body.user, channelId);
       if (!userId || !roleName) {
         return res.status(400).json({ error: 'Missing required: userId, roleName' });
       }
@@ -122,7 +164,8 @@ export function setupModerationApi(app: express.Application, client: any) {
   // POST /api/moderation/remove-role — { guildId, userId, roleName }
   app.post('/api/moderation/remove-role', async (req, res) => {
     try {
-      const { guildId, userId, roleName } = req.body;
+      const { guildId, roleName, channelId } = req.body;
+      const userId = await resolveUserId(client, guildId, req.body.userId || req.body.user, channelId);
       if (!userId || !roleName) {
         return res.status(400).json({ error: 'Missing required: userId, roleName' });
       }

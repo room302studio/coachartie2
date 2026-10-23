@@ -700,6 +700,14 @@ Important:
     } else if (ctx.channelName) {
       parts.push(`📍 Discord DM or channel: #${ctx.channelName}`);
     }
+    // Raw ids, so tools never stall on "I don't have the guildId" (they're also passed to
+    // every capability automatically). People can be named by username in tool calls.
+    const ids = [
+      ctx.guildId && `server ${ctx.guildId}`,
+      ctx.channelId && `channel ${ctx.channelId}`,
+      message.userId && `speaker ${message.userId}`,
+    ].filter(Boolean);
+    if (ids.length) parts.push(`🔢 ids: ${ids.join(' · ')}`);
 
     // User info
     if (ctx.displayName || ctx.username) {
