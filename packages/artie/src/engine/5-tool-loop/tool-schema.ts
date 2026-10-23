@@ -47,6 +47,9 @@ const DESCRIPTION_FIRST_LINE_MAX = 200;
 const EXAMPLE_MAX = 200;
 const EXAMPLES_SHOWN = 1;
 
+/** Free-text body: what the XML format put between the tags. */
+const CONTENT_DESCRIPTION = 'Free text body (lyrics, a fact to remember, code, a message).';
+
 /** The opening <capability ...> tag of an example (quoted values may contain `>`). */
 const OPEN_TAG = new RegExp(`<capability\\b${TAG_ATTRS}\\/?>`);
 
@@ -73,11 +76,7 @@ export function capabilityToTool(cap: RegisteredCapability): ToolDefinition {
 
   // `action` selects which sub-action of the capability to run.
   if (cap.supportedActions.length > 0) {
-    properties.action = {
-      type: 'string',
-      enum: [...cap.supportedActions],
-      description: `Which ${cap.name} action to run.`,
-    };
+    properties.action = { type: 'string', enum: [...cap.supportedActions] };
     required.push('action');
   }
 
@@ -86,7 +85,7 @@ export function capabilityToTool(cap: RegisteredCapability): ToolDefinition {
   // AUTO_INJECTED_PARAMS), so they are declared but never required of the model.
   for (const param of cap.requiredParams ?? []) {
     if (!PROPERTY_NAME.test(param) || param === 'action' || param === 'content') continue;
-    properties[param] = { type: 'string', description: `${param} for ${cap.name}.` };
+    properties[param] = { type: 'string' };
     if (!AUTO_INJECTED_PARAMS.has(param) && !required.includes(param)) {
       required.push(param);
     }
@@ -99,12 +98,9 @@ export function capabilityToTool(cap: RegisteredCapability): ToolDefinition {
   }
 
   // Most handlers also accept free-text `content` (the CapabilityHandler 2nd arg).
-  properties.content = {
-    type: 'string',
-    description:
-      'Optional free text for the action: what the old XML format put between the tags ' +
-      '(lyrics to sing, a fact to remember, code, a message body).',
-  };
+  // The whole list rides on every tool turn (~63 tools), so per-tool text stays short: the
+  // action enum already lists the actions, and this one description is repeated 63 times.
+  properties.content = { type: 'string', description: CONTENT_DESCRIPTION };
 
   const firstLine = toCallNotation((cap.description || '').split('\n')[0].trim());
   const examples = (cap.examples ?? [])
@@ -112,7 +108,6 @@ export function capabilityToTool(cap: RegisteredCapability): ToolDefinition {
     .map((e) => clip(toCallNotation(e.trim()).replace(/\s+/g, ' '), EXAMPLE_MAX));
   const description = [
     clip(firstLine || `The ${cap.name} capability.`, DESCRIPTION_FIRST_LINE_MAX),
-    cap.supportedActions.length ? `Actions: ${cap.supportedActions.join(', ')}.` : '',
     examples.length ? `e.g. ${examples.join(' ; ')}` : '',
   ]
     .filter(Boolean)
