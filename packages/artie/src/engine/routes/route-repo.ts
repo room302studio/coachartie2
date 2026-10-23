@@ -16,6 +16,7 @@ import { type ApiResult, sendResult } from '../../shared/api-result.js';
 // send; the route sends it and engine/api.ts calls it in-process for the gateway.
 const reply = (status: number, body: any): ApiResult => ({ status, body });
 import { parseModelJson } from '../../shared/model-json.js';
+import type { JsonOutputSpec } from '../../shared/structured-output.js';
 import { openRouterService } from '../4-generate/openrouter.js';
 
 export interface ChannelOption {
@@ -58,6 +59,18 @@ Pick the single channel where the people who work on this repo would want its up
 Return JSON only: {"channelId": "<one id from the list>", "reason": "<under 15 words>"}`;
 }
 
+/** The reply's shape, sent as response_format to models that take it (wave 10). */
+export const ROUTE_OUTPUT: JsonOutputSpec = {
+  name: 'repo_route',
+  schema: {
+    type: 'object',
+    properties: { channelId: { type: 'string' }, reason: { type: 'string' } },
+    required: ['channelId', 'reason'],
+    additionalProperties: false,
+  },
+};
+
+// The digit-strip below stays even with structured output: models still answer "<#111>".
 export function parseRoutePick(raw: string, channels: ChannelOption[]): RoutePick | null {
   const j = parseModelJson<{ channelId?: unknown; reason?: unknown }>(raw, 'object');
   if (!j) return null;
@@ -83,7 +96,7 @@ export async function pickRepoChannel(
     'repo-router',
     undefined,
     process.env.BACKGROUND_MODEL || process.env.FAST_MODEL,
-    { guildId, maxTokens: 120, stepType: 'repo_routing' }
+    { guildId, maxTokens: 120, stepType: 'repo_routing', jsonOutput: ROUTE_OUTPUT }
   );
   return parseRoutePick(raw, channels);
 }

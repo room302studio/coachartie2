@@ -16,6 +16,7 @@
  * import a watcher don't boot the tool registry).
  */
 import { type ApiResult, wire } from '../shared/api-result.js';
+import type { JsonOutputSpec } from '../shared/structured-output.js';
 
 export type { ApiResult } from '../shared/api-result.js';
 export { isOk, statusText } from '../shared/api-result.js';
@@ -131,4 +132,18 @@ export async function models(): Promise<ApiResult> {
 /** GET /capabilities: the tool registry and its stats. */
 export async function capabilities(): Promise<ApiResult> {
   return (await import('./routes/tool-registry.js')).listCapabilities();
+}
+
+// --- model catalog (wave 10; not an HTTP route) ---
+
+/**
+ * `response_format` for a direct OpenRouter call the gateway makes itself (the ambient
+ * judgment), or undefined: the same per-model rule generateTurn applies (openrouter.ts
+ * responseFormatForModel). The caller still parses the reply with parseModelJson.
+ */
+export async function responseFormatForModel(
+  model: string,
+  spec: JsonOutputSpec
+): Promise<Record<string, unknown> | undefined> {
+  return (await import('./4-generate/openrouter.js')).responseFormatForModel(model, spec);
 }

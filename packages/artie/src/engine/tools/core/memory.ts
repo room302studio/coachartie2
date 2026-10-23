@@ -5,6 +5,18 @@ import { isBlockedUser } from '../../../shared/blocklist.js';
 import { mentionsOptedOutUser } from '../../../shared/privacy-opt-out.js';
 import { RegisteredCapability } from '../../5-tool-loop/registry.js';
 import { hybridDataLayer, MemoryRecord } from '../../memory/store.js';
+import type { JsonOutputSpec } from '../../../shared/structured-output.js';
+
+/** The semantic-tag reply, sent as response_format to models that take it (wave 10). */
+const TAGS_OUTPUT: JsonOutputSpec = {
+  name: 'memory_tags',
+  schema: {
+    type: 'object',
+    properties: { tags: { type: 'array', items: { type: 'string' } } },
+    required: ['tags'],
+    additionalProperties: false,
+  },
+};
 
 interface MemoryRow {
   id: number;
@@ -432,8 +444,8 @@ Generate tags that capture:
 - CATEGORY (specific type, genre, style, etc.)
 - RELATIONS (family, friend, colleague, etc.)
 
-Return ONLY a JSON array of lowercase tag strings, no other text.
-Example: ["food", "pizza", "italian", "preference", "like"]`;
+Return ONLY JSON with a list of lowercase tag strings, no other text.
+Example: {"tags": ["food", "pizza", "italian", "preference", "like"]}`;
 
       const { openRouterService } = await import('../../4-generate/openrouter.js');
       const { contextAlchemy } = await import('../../3-context/assemble.js');
@@ -451,7 +463,8 @@ Example: ["food", "pizza", "italian", "preference", "like"]`;
         messages,
         'memory-tagging-system',
         undefined,
-        process.env.BACKGROUND_MODEL || process.env.FAST_MODEL || 'google/gemini-2.0-flash-001'
+        process.env.BACKGROUND_MODEL || process.env.FAST_MODEL || 'google/gemini-2.0-flash-001',
+        { jsonOutput: TAGS_OUTPUT }
       );
       const tags = this.parseTagsFromResponse(response);
 
@@ -499,8 +512,8 @@ Generate tags that capture:
 - CATEGORY (specific type, genre, style, etc.)
 - RELATIONS (family, friend, colleague, etc.)
 
-Return ONLY a JSON array of lowercase tag strings, no other text.
-Example: ["food", "pizza", "italian", "preference", "like"]`;
+Return ONLY JSON with a list of lowercase tag strings, no other text.
+Example: {"tags": ["food", "pizza", "italian", "preference", "like"]}`;
 
       const { openRouterService } = await import('../../4-generate/openrouter.js');
       const { contextAlchemy } = await import('../../3-context/assemble.js');
@@ -517,7 +530,8 @@ Example: ["food", "pizza", "italian", "preference", "like"]`;
         messages,
         'memory-tagging-system',
         undefined,
-        process.env.BACKGROUND_MODEL || process.env.FAST_MODEL || 'google/gemini-2.0-flash-001'
+        process.env.BACKGROUND_MODEL || process.env.FAST_MODEL || 'google/gemini-2.0-flash-001',
+        { jsonOutput: TAGS_OUTPUT }
       );
 
       // Parse the tags from LLM response
@@ -539,8 +553,9 @@ Example: ["food", "pizza", "italian", "preference", "like"]`;
 
   private parseTagsFromResponse(response: string): string[] {
     try {
-      // Try to extract JSON array from response
-      const tags = parseModelJson<unknown[]>(response, 'array');
+      // {"tags": [...]}; a bare array (a model that ignored the wrapper) is read too.
+      const wrapped = parseModelJson<{ tags?: unknown }>(response, 'object')?.tags;
+      const tags = Array.isArray(wrapped) ? wrapped : parseModelJson<unknown[]>(response, 'array');
       if (tags) {
         return tags
           .filter((tag): tag is string => typeof tag === 'string' && tag.length > 1)

@@ -14,6 +14,23 @@ import { getKillSwitchPath, isGenerationMuted } from '../../shared/kill-switch.j
 import type { ChannelPersona, GuildConfig } from '../../shared/config/guilds.js';
 import { telemetry } from '../telemetry.js';
 import { getEnhancedGuildContext } from '../1-receive/guild-context.js';
+import type { JsonOutputSpec } from '../../shared/structured-output.js';
+import * as engine from '../../engine/api.js';
+
+/** The judgment reply, sent as response_format to models that take it (wave 10). */
+const JUDGMENT_OUTPUT: JsonOutputSpec = {
+  name: 'proactive_judgment',
+  schema: {
+    type: 'object',
+    properties: {
+      answer: { type: 'boolean' },
+      confidence: { type: 'number' },
+      reason: { type: 'string' },
+    },
+    required: ['answer', 'confidence', 'reason'],
+    additionalProperties: false,
+  },
+};
 
 /** How the incoming message reached Artie (on-message's response-conditions step). */
 export interface ResponseConditions {
@@ -205,6 +222,10 @@ JSON response:`;
       process.env.OPENROUTER_BASE_URL ||
       'https://openrouter.ai/api/v1'
     ).replace(/\/+$/, '');
+    // judgmentModel() may be an "auto:<tier>" spec — see shared model-spec.ts
+    const judgmentSpec = resolveModelSpec(judgmentModel());
+    // Never for openrouter/auto (responseFormatForModel's rule), so the auto branch is unchanged.
+    const responseFormat = await engine.responseFormatForModel(judgmentSpec.model, JUDGMENT_OUTPUT);
     const openRouterResponse = await fetch(`${judgmentBaseUrl}/chat/completions`, {
       method: 'POST',
       headers: {
@@ -214,15 +235,17 @@ JSON response:`;
         'X-Title': 'Coach Artie Proactive Judgment',
       },
       body: JSON.stringify({
-        // judgmentModel() may be an "auto:<tier>" spec — see shared model-spec.ts
-        ...(() => {
-          const r = resolveModelSpec(judgmentModel());
-          return isAutoRouted(r.model)
-            ? { model: r.model, plugins: r.plugins, usage: { include: true }, reasoning: autoReasoningFor(r.plugins) }
-            : { model: r.model };
-        })(),
+        ...(isAutoRouted(judgmentSpec.model)
+          ? {
+              model: judgmentSpec.model,
+              plugins: judgmentSpec.plugins,
+              usage: { include: true },
+              reasoning: autoReasoningFor(judgmentSpec.plugins),
+            }
+          : { model: judgmentSpec.model }),
         messages: [{ role: 'user', content: prompt }],
         max_tokens: 200, // Small response - just need yes/no JSON
+        ...(responseFormat ? { response_format: responseFormat } : {}),
       }),
     });
 

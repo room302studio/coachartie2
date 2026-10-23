@@ -16,6 +16,7 @@
 
 import { logger } from '../../shared/logger.js';
 import { parseModelJson } from '../../shared/model-json.js';
+import type { JsonOutputSpec } from '../../shared/structured-output.js';
 import { getSyncDb } from '../../shared/db/client.js';
 import { saveChannelDigest, getChannelDigest } from '../../shared/db/channel-digest-store.js';
 import { openRouterService } from '../4-generate/openrouter.js';
@@ -70,6 +71,17 @@ Return JSON only: {"digest": "...", "remember": "..." or null}
 "remember": usually null. Only set it for something Artie should still know in a month: a decision or announcement, a durable fact about a specific person (their project, their role, a real preference they stated), a new piece of community canon, or a promise someone made. One sentence, name the person. Gossip, moods, jokes that won't outlive the week, and anything about bots: null.`;
 }
 
+/** The reply's shape, sent as response_format to models that take it (wave 10). */
+export const DIGEST_OUTPUT: JsonOutputSpec = {
+  name: 'channel_digest',
+  schema: {
+    type: 'object',
+    properties: { digest: { type: 'string' }, remember: { type: ['string', 'null'] } },
+    required: ['digest', 'remember'],
+    additionalProperties: false,
+  },
+};
+
 export function parseDigestResponse(raw: string): DigestResult | null {
   const parsed = parseModelJson<{ digest?: unknown; remember?: unknown }>(raw, 'object');
   if (!parsed) return null;
@@ -111,7 +123,7 @@ export async function refreshChannelDigest(req: DigestRequest): Promise<DigestRe
     'channel-digest',
     undefined,
     digestModel(),
-    { guildId: req.guildId, maxTokens: 400, stepType: 'channel_digest' }
+    { guildId: req.guildId, maxTokens: 400, stepType: 'channel_digest', jsonOutput: DIGEST_OUTPUT }
   );
 
   const result = parseDigestResponse(raw);

@@ -12,6 +12,7 @@
 
 import { logger } from '../../shared/logger.js';
 import { parseModelJson } from '../../shared/model-json.js';
+import type { JsonOutputSpec } from '../../shared/structured-output.js';
 import { getSyncDb } from '../../shared/db/client.js';
 import { openRouterService } from '../4-generate/openrouter.js';
 
@@ -56,6 +57,21 @@ export function getUserScores(userId: string, guildId = ''): UserScores | null {
   }
 }
 
+/** The reply's shape, sent as response_format to models that take it (wave 10). */
+const SCORES_OUTPUT: JsonOutputSpec = {
+  name: 'user_scores',
+  schema: {
+    type: 'object',
+    properties: {
+      warmth: { type: 'number' },
+      openness: { type: 'number' },
+      expressiveness: { type: 'number' },
+    },
+    required: ['warmth', 'openness', 'expressiveness'],
+    additionalProperties: false,
+  },
+};
+
 /** One cheap-model read of a single message. Returns null on any failure (never throws upward). */
 async function scoreMessage(
   text: string
@@ -84,7 +100,7 @@ async function scoreMessage(
       'user-scoring',
       undefined,
       model,
-      { stepType: 'user_scoring' }
+      { stepType: 'user_scoring', jsonOutput: SCORES_OUTPUT }
     );
     const parsed = parseModelJson<Record<string, unknown>>(raw, 'object');
     if (!parsed) return null;

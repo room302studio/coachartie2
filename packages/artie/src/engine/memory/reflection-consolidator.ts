@@ -13,7 +13,34 @@
 
 import { logger } from '../../shared/logger.js';
 import { parseModelJson } from '../../shared/model-json.js';
+import type { JsonOutputSpec } from '../../shared/structured-output.js';
 import { getSyncDb } from '../../shared/db/client.js';
+
+/** The rules reply, sent as response_format to models that take it (wave 10). */
+const RULES_OUTPUT: JsonOutputSpec = {
+  name: 'feedback_rules',
+  schema: {
+    type: 'object',
+    properties: {
+      rules: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            rule: { type: 'string' },
+            addresses: { type: 'string' },
+            confidence: { type: 'number' },
+            tag: { type: 'string' },
+          },
+          required: ['rule', 'addresses', 'confidence', 'tag'],
+          additionalProperties: false,
+        },
+      },
+    },
+    required: ['rules'],
+    additionalProperties: false,
+  },
+};
 
 // Minimum confidence threshold for a rule to be active
 const MIN_RULE_CONFIDENCE = parseFloat(process.env.REFLECTION_MIN_CONFIDENCE || '0.6');
@@ -526,7 +553,8 @@ Rules should be concise (1-2 sentences) and actionable.`,
         messages,
         'reflection-consolidator',
         undefined,
-        process.env.BACKGROUND_MODEL || process.env.FAST_MODEL || 'google/gemini-2.0-flash-001' // Use background model for cost efficiency
+        process.env.BACKGROUND_MODEL || process.env.FAST_MODEL || 'google/gemini-2.0-flash-001', // Use background model for cost efficiency
+        { jsonOutput: RULES_OUTPUT }
       );
 
       // Parse the response
@@ -561,23 +589,24 @@ Generate 0-3 actionable rules based on clear patterns. For each rule:
 2. Explain what feedback pattern it addresses
 3. Rate confidence (0.0-1.0) based on how clear the pattern is
 
-Return ONLY a JSON array (no other text):
-[
+Return ONLY JSON (no other text):
+{"rules": [
   {
     "rule": "Clear actionable instruction",
     "addresses": "What feedback pattern this addresses",
     "confidence": 0.8,
     "tag": "response-style|format|tone|content"
   }
-]
+]}
 
-If no clear patterns emerge, return empty array: []`;
+If no clear patterns emerge, return {"rules": []}`;
   }
 
   private parseRulesFromResponse(response: string, feedbackCount: number): GeneratedRule[] {
     try {
-      // Extract JSON array from response
-      const parsed = parseModelJson<any[]>(response, 'array');
+      // {"rules": [...]}; a bare array (a model that ignored the wrapper) is read too.
+      const rules = parseModelJson<{ rules?: unknown }>(response, 'object')?.rules;
+      const parsed = Array.isArray(rules) ? (rules as any[]) : parseModelJson<any[]>(response, 'array');
       if (!parsed) {
         logger.debug('[reflection] No JSON array in LLM response');
         return [];

@@ -3,6 +3,8 @@
 import { logger } from '../../shared/logger.js';
 import { capabilityRegistry, RegisteredCapability } from '../5-tool-loop/registry.js';
 import { openRouterService } from '../4-generate/openrouter.js';
+import { parseModelJson } from '../../shared/model-json.js';
+import type { JsonOutputSpec } from '../../shared/structured-output.js';
 
 // Cache for CAPABILITY_PROMPT_INTRO to avoid repeated database lookups
 let cachedCapabilityIntro: string | null = null;
@@ -48,6 +50,61 @@ async function getCapabilityIntro(): Promise<string> {
  * - Without selector: Every message pays SMART_MODEL price for full capability list
  * - With selector: Small FAST_MODEL fee (~$0.00005) + SMART_MODEL sees smaller context
  */
+
+/** The triage reply, sent as response_format to models that take it (wave 10). */
+export const TRIAGE_OUTPUT: JsonOutputSpec = {
+  name: 'capability_triage',
+  schema: {
+    type: 'object',
+    properties: {
+      capabilities: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            capability: { type: 'string' },
+            score: { type: 'number' },
+            reason: { type: 'string' },
+          },
+          required: ['capability', 'score', 'reason'],
+          additionalProperties: false,
+        },
+      },
+    },
+    required: ['capabilities'],
+    additionalProperties: false,
+  },
+};
+
+export interface TriagePick {
+  capability: string;
+  score: number;
+  reason: string;
+}
+
+/**
+ * {"capabilities": [{capability, score, reason}]} -> picks; [] for an empty list, null when
+ * the reply isn't that shape. Same defaults as the old CAPABILITY:/SCORE:/REASON: line parser:
+ * a missing score is 0.5, a missing reason 'Selected by triage'.
+ */
+export function parseTriagePicks(raw: string): TriagePick[] | null {
+  const list = parseModelJson<{ capabilities?: unknown }>(raw, 'object')?.capabilities;
+  if (!Array.isArray(list)) return null;
+  const picks: TriagePick[] = [];
+  for (const item of list) {
+    if (!item || typeof item !== 'object') continue;
+    const { capability, score, reason } = item as Record<string, unknown>;
+    const name = typeof capability === 'string' ? capability.trim() : '';
+    if (!name) continue;
+    const n = typeof score === 'number' ? score : parseFloat(String(score ?? ''));
+    picks.push({
+      capability: name,
+      score: Number.isFinite(n) ? n : 0.5,
+      reason: typeof reason === 'string' && reason.trim() ? reason.trim() : 'Selected by triage',
+    });
+  }
+  return picks;
+}
 
 interface CapabilityNomination {
   capability: RegisteredCapability;
@@ -114,7 +171,8 @@ export class CapabilitySelector {
         ],
         'capability-selector',
         undefined,
-        fastModel // Use specific fast model
+        fastModel, // Use specific fast model
+        { jsonOutput: TRIAGE_OUTPUT }
       );
 
       // Parse nominations from triage response
@@ -171,18 +229,19 @@ INSTRUCTIONS:
 2. Identify which capabilities (if any) would be useful to fulfill the request
 3. Score each relevant capability from 0.0 to 1.0 based on relevance
 4. Return ONLY the relevant capabilities, not all of them
-5. If no capabilities are needed (simple conversation), return "NONE"
+5. If no capabilities are needed (simple conversation), return an empty list
 
-RESPONSE FORMAT:
-For each relevant capability, output one line:
-CAPABILITY: <name> | SCORE: <0.0-1.0> | REASON: <brief explanation>
+RESPONSE FORMAT (JSON only, no other text):
+{"capabilities": [{"capability": "<name>", "score": <0.0-1.0>, "reason": "<brief explanation>"}]}
 
 Example:
-CAPABILITY: calculator | SCORE: 0.95 | REASON: User asks to calculate a percentage
-CAPABILITY: remember | SCORE: 0.80 | REASON: User wants to store the result
+{"capabilities": [
+  {"capability": "calculator", "score": 0.95, "reason": "User asks to calculate a percentage"},
+  {"capability": "remember", "score": 0.8, "reason": "User wants to store the result"}
+]}
 
 If no capabilities needed:
-NONE
+{"capabilities": []}
 
 Be selective - only nominate capabilities that are actually useful for this specific request.`;
   }
@@ -194,50 +253,23 @@ Be selective - only nominate capabilities that are actually useful for this spec
     triageResponse: string,
     allCapabilities: RegisteredCapability[]
   ): CapabilityNomination[] {
-    const nominations: CapabilityNomination[] = [];
-
-    // Check if response is "NONE"
-    if (triageResponse.trim().toUpperCase().includes('NONE')) {
+    const picks = parseTriagePicks(triageResponse);
+    if (picks === null) {
+      logger.warn(`⚠️ Capability Selector: triage reply was not JSON: ${triageResponse.slice(0, 120)}`);
+      return [];
+    }
+    if (picks.length === 0) {
       logger.info('🚫 Capability Selector: No capabilities needed');
       return [];
     }
 
-    // Parse capability nominations
-    const lines = triageResponse.split('\n');
-
-    for (const line of lines) {
-      if (line.includes('CAPABILITY:')) {
-        try {
-          // Extract name
-          const nameMatch = line.match(/CAPABILITY:\s*([^|]+)/);
-          const name = nameMatch ? nameMatch[1].trim() : null;
-
-          // Extract score
-          const scoreMatch = line.match(/SCORE:\s*([\d.]+)/);
-          const score = scoreMatch ? parseFloat(scoreMatch[1]) : 0.5;
-
-          // Extract reason
-          const reasonMatch = line.match(/REASON:\s*(.+)/);
-          const reason = reasonMatch ? reasonMatch[1].trim() : 'Selected by triage';
-
-          if (name) {
-            // Find matching capability
-            const capability = allCapabilities.find((cap) => cap.name === name);
-
-            if (capability && score >= this.MIN_RELEVANCE_SCORE) {
-              nominations.push({
-                capability,
-                relevanceScore: score,
-                reason,
-              });
-            }
-          }
-        } catch (_error) {
-          logger.warn(`⚠️ Failed to parse nomination line: ${line}`);
-        }
+    const nominations: CapabilityNomination[] = [];
+    for (const pick of picks) {
+      const capability = allCapabilities.find((cap) => cap.name === pick.capability);
+      if (capability && pick.score >= this.MIN_RELEVANCE_SCORE) {
+        nominations.push({ capability, relevanceScore: pick.score, reason: pick.reason });
       }
     }
-
     return nominations;
   }
 

@@ -122,6 +122,26 @@ export function normalizeToolCalls(raw: unknown): ToolCall[] {
   return calls;
 }
 
+/**
+ * `response_format` for this model, or undefined (wave 10). Only when the caller asked for
+ * JSON and the catalog positively lists structured output for this exact model: openrouter/auto
+ * may route to a model without it, and a catalog miss (fetch failed, unknown id) sends nothing.
+ * The one rule for every caller (generateTurn here, the gateway's ambient judgment via
+ * engine/api.ts).
+ */
+export async function responseFormatForModel(
+  model: string,
+  spec: JsonOutputSpec | undefined
+): Promise<Record<string, unknown> | undefined> {
+  if (!spec || isAutoRouted(model)) return undefined;
+  try {
+    const mode = await openRouterModelsService.structuredOutputMode(model);
+    return mode ? responseFormatFor(spec, mode) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 class OpenRouterService {
   private client: OpenAI;
   private models: string[];
@@ -509,24 +529,6 @@ class OpenRouterService {
     return capable;
   }
 
-  /**
-   * `response_format` for this model, or undefined. Only when the caller asked for JSON and
-   * the catalog positively lists structured output for this exact model: openrouter/auto may
-   * route to a model without it, and a catalog miss (fetch failed, unknown id) sends nothing.
-   */
-  private async responseFormatFor(
-    model: string,
-    spec: JsonOutputSpec | undefined
-  ): Promise<Record<string, unknown> | undefined> {
-    if (!spec || isAutoRouted(model)) return undefined;
-    try {
-      const mode = await openRouterModelsService.structuredOutputMode(model);
-      return mode ? responseFormatFor(spec, mode) : undefined;
-    } catch {
-      return undefined;
-    }
-  }
-
   private async generateTurn(
     messages: ChatMessage[],
     userId: string,
@@ -628,7 +630,7 @@ class OpenRouterService {
       let attemptUsage: { billed: string; usage: TokenUsage; cost: number } | undefined;
 
       try {
-        const responseFormat = sendTools ? undefined : await this.responseFormatFor(model, options?.jsonOutput);
+        const responseFormat = sendTools ? undefined : await responseFormatForModel(model, options?.jsonOutput);
         logger.info(
           `🤖 MODEL SELECTION: Using ${model} ${useSpecificModel && i === 0 ? '(SPECIFIC)' : `(${i + 1}/${modelsToTry.length})`} for ${messages.length} messages${toolSpec ? ` (tool turn, ${toolSpec.tools.length} tools, tool_choice ${toolSpec.toolChoice})` : ''}`
         );

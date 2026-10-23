@@ -8,6 +8,29 @@ import {
 } from '../../5-tool-loop/registry.js';
 import { openRouterService } from '../../4-generate/openrouter.js';
 import * as gateway from '../../../gateway/api.js';
+import { parseModelJson } from '../../../shared/model-json.js';
+
+/**
+ * When the XML parser can't read a malformed data='{...}' attribute it demotes the whole
+ * payload to the tag's content, so `text`/`lyrics` can arrive as a raw JSON blob. Pull the
+ * field back out: parse it as JSON first (wave 10: escapes decoded, nested quotes fine), and
+ * only when that fails, which is the usual reason it was demoted, fall back to the old
+ * first-quoted-value scrape. Native tool calls (the default loop) hand over parsed arguments,
+ * so this only matters under TOOL_LOOP=xml. Returns the input unchanged when nothing fits.
+ */
+export function salvageTextField(text: string, keys: string[], malformedFallback: RegExp): string {
+  if (!text.trimStart().startsWith('{')) return text;
+  const obj = parseModelJson<Record<string, unknown>>(text, 'object');
+  if (obj) {
+    for (const key of keys) {
+      const value = obj[key];
+      if (typeof value === 'string' && value.trim()) return value;
+    }
+    return text;
+  }
+  // XML-LOOP: delete after v3 soak (TOOL_LOOP=xml)
+  return malformedFallback.exec(text)?.[1] ?? text;
+}
 
 /**
  * TTS capability — Artie speaks out loud via ElevenLabs, posting an mp3
@@ -286,8 +309,7 @@ export const ttsCapability: RegisteredCapability = {
     // so the words physically fit — cramming 460 chars into a requested 45s was mush.
     if (action === 'sing') {
       let lyrics = String(params.lyrics || params.text || params.content || capContent || '').trim();
-      const salvage = lyrics.match(/"(?:lyrics|text)"\s*:\s*"([\s\S]+?)"\s*[,}]/);
-      if (salvage && lyrics.trimStart().startsWith('{')) lyrics = salvage[1];
+      lyrics = salvageTextField(lyrics, ['lyrics', 'text'], /"(?:lyrics|text)"\s*:\s*"([\s\S]+?)"\s*[,}]/);
       if (!lyrics) return 'Nothing to sing — pass lyrics.';
       if (lyrics.length > MAX_TTS_CHARS) lyrics = lyrics.slice(0, MAX_TTS_CHARS);
       lyrics = scrubBlockedUserMentions(lyrics);
@@ -436,8 +458,7 @@ export const ttsCapability: RegisteredCapability = {
       // payload to content — better to sing a slightly mangled payload than say "Nothing to say."
       text = String(params.text || params.content || capContent || '').trim();
       // If the demoted payload is the raw JSON blob, salvage the text field out of it.
-      const jsonish = text.match(/"text"\s*:\s*"([\s\S]+?)"\s*[,}]/);
-      if (jsonish && text.trimStart().startsWith('{')) text = jsonish[1];
+      text = salvageTextField(text, ['text'], /"text"\s*:\s*"([\s\S]+?)"\s*[,}]/);
     }
 
     if (!text) {
