@@ -10,7 +10,7 @@ import { RegisteredCapability } from '../../5-tool-loop/registry.js';
  * - Send emails via MailDev (local development)
  * - Send emails via VPS SMTP (direct, when IP has reputation)
  *
- * Email-writing mode is implemented in capability-orchestrator.ts:
+ * Email-writing mode is routed from 2-turn/run-turn.ts (email-drafting.ts does the work):
  * - Detects email intent from user messages
  * - Drafts emails using Claude Sonnet
  * - Shows drafts for approval/revision

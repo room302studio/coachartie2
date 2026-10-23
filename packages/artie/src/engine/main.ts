@@ -63,10 +63,11 @@ import { distressMonitor } from './health/distress.js';
 import { vitalsMonitor } from './health/vitals.js';
 import { startDailyBudgetWatch } from './budget/daily-cap.js';
 import { GlobalVariableStore } from './5-tool-loop/variables.js';
-// Import orchestrator FIRST to trigger capability registration. (This path was left
-// pointing at the pre-move services/capability/ tree by wave 3; tsc doesn't check
-// side-effect-only imports, so it would have thrown ERR_MODULE_NOT_FOUND at boot.)
-import './2-turn/capability-orchestrator.js';
+// Import the turn spine FIRST to trigger capability registration (its orchestrator
+// singleton runs the bootstrap at module load). Wave 3 left this path pointing at the
+// pre-move services/capability/ tree; tsc doesn't check side-effect-only imports, so it
+// would have thrown ERR_MODULE_NOT_FOUND at boot.
+import './2-turn/run-turn.js';
 import { capabilityRegistry } from './5-tool-loop/registry.js';
 import { simpleHealer } from './health/simple-healer.js';
 import { hybridDataLayer } from './memory/store.js';

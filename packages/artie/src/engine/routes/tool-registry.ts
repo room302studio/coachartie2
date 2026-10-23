@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { logger } from '../../shared/logger.js';
-import { capabilityOrchestrator } from '../2-turn/capability-orchestrator.js';
+import { capabilityOrchestrator } from '../2-turn/run-turn.js';
 import { capabilityRegistry } from '../5-tool-loop/registry.js';
 
 const router: Router = Router();
