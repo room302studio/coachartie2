@@ -29,30 +29,83 @@ interface NodeError extends Error {
 // Get the project root directory (where the packages folder is located)
 const PROJECT_ROOT = REPO_ROOT;
 
+const OUTSIDE = 'Access denied: Path must be within the project directory';
+
+function isInside(root: string, candidate: string): boolean {
+  return candidate === root || candidate.startsWith(root + path.sep);
+}
+
 /**
- * Validates and sanitizes a file path to ensure it's within the project directory
- * @param inputPath - The input path to validate
- * @returns The sanitized absolute path
- * @throws Error if the path is invalid or outside the project directory
+ * realpath of the deepest existing ancestor, with the missing tail re-appended. A leaf that
+ * doesn't exist can't be a symlink, but a parent can, so `exists` on a missing file under a
+ * symlinked directory is still checked against where that directory really points.
  */
-function validateAndSanitizePath(inputPath: string): string {
+async function realpathOfExisting(p: string): Promise<string> {
+  let current = p;
+  const tail: string[] = [];
+  for (;;) {
+    try {
+      const real = await fs.realpath(current);
+      return tail.length ? path.join(real, ...tail.reverse()) : real;
+    } catch (error) {
+      if ((error as NodeError).code !== 'ENOENT') throw error;
+      const parent = path.dirname(current);
+      if (parent === current) return p;
+      tail.push(path.basename(current));
+      current = parent;
+    }
+  }
+}
+
+/**
+ * Resolve a model-supplied path inside the project, or throw.
+ *
+ * The jail is path.resolve + a prefix check against root + path.sep (so a sibling like
+ * `<root>-old` doesn't pass), then the same check on the realpath so a symlink can't lead
+ * out. Percent-encoded input (`%2e%2e/`) is decoded once and must pass too. The old
+ * `..`-stripping regex is gone: resolve() already normalizes `..`, and stripping turned
+ * `....//` into `../`.
+ *
+ * Exported with an injectable root for the jail test.
+ */
+export async function resolveJailedPath(
+  inputPath: string,
+  root: string = PROJECT_ROOT
+): Promise<string> {
   if (!inputPath || typeof inputPath !== 'string') {
     throw new Error('Path is required and must be a string');
   }
 
-  // Remove any dangerous characters or patterns
-  const sanitized = inputPath.replace(/\.\.\//g, '').replace(/\.\./g, '');
-
-  // Resolve to absolute path
-  const absolutePath = path.resolve(PROJECT_ROOT, sanitized);
-
-  // Ensure the path is within the project directory
-  if (!absolutePath.startsWith(PROJECT_ROOT)) {
-    throw new Error('Access denied: Path must be within the project directory');
+  let decoded = inputPath;
+  try {
+    decoded = decodeURIComponent(inputPath);
+  } catch {
+    // Not valid percent-encoding: use it as typed
+  }
+  if (decoded !== inputPath && !isInside(root, path.resolve(root, decoded))) {
+    throw new Error(OUTSIDE);
   }
 
-  // Prevent access to sensitive files
-  const relativePath = path.relative(PROJECT_ROOT, absolutePath);
+  const absolutePath = path.resolve(root, inputPath);
+  if (!isInside(root, absolutePath)) {
+    throw new Error(OUTSIDE);
+  }
+
+  // Sensitive names are checked on the path as typed (before symlinks), so data/ is refused
+  // even though it is a symlink to the live DB's real location.
+  assertNotSensitive(path.relative(root, absolutePath));
+
+  const realRoot = await fs.realpath(root);
+  const realPath = await realpathOfExisting(absolutePath);
+  if (!isInside(realRoot, realPath)) {
+    throw new Error(OUTSIDE);
+  }
+  assertNotSensitive(path.relative(realRoot, realPath));
+
+  return absolutePath;
+}
+
+function assertNotSensitive(relativePath: string): void {
   const sensitivePatterns = [
     /^\.env$/i,
     /^\.env\./i,
@@ -77,15 +130,13 @@ function validateAndSanitizePath(inputPath: string): string {
       throw new Error(`Access denied: Cannot access sensitive file/directory: ${relativePath}`);
     }
   }
-
-  return absolutePath;
 }
 
 /**
  * Reads the contents of a file
  */
 async function readFile(filePath: string): Promise<string> {
-  const validPath = validateAndSanitizePath(filePath);
+  const validPath = await resolveJailedPath(filePath);
 
   try {
     const stats = await fs.stat(validPath);
@@ -131,7 +182,7 @@ async function readFile(filePath: string): Promise<string> {
  * Lists the contents of a directory
  */
 async function listDirectory(dirPath: string): Promise<string> {
-  const validPath = validateAndSanitizePath(dirPath);
+  const validPath = await resolveJailedPath(dirPath);
 
   try {
     const stats = await fs.stat(validPath);
@@ -167,7 +218,7 @@ async function listDirectory(dirPath: string): Promise<string> {
  * Checks if a file or directory exists
  */
 async function exists(targetPath: string): Promise<string> {
-  const validPath = validateAndSanitizePath(targetPath);
+  const validPath = await resolveJailedPath(targetPath);
 
   try {
     const stats = await fs.stat(validPath);
