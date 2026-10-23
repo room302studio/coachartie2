@@ -11,7 +11,9 @@ import { logger, assertGenerationAllowed } from '@coachartie/shared';
 import OpenAI from 'openai';
 
 // Micro LLM config - fast and cheap
-const MICRO_MODEL = process.env.MICRO_LLM_MODEL || 'meta-llama/llama-3.1-8b-instruct:free';
+// The :free slug was retired (404 on every call, Oct 2026), so every micro decision silently
+// fell back to its default. The paid 8B is ~$0.02/M tokens.
+const MICRO_MODEL = process.env.MICRO_LLM_MODEL || 'meta-llama/llama-3.1-8b-instruct';
 const MICRO_MAX_TOKENS = 50; // Keep responses tiny
 const MICRO_TIMEOUT_MS = 3000; // Fail fast
 

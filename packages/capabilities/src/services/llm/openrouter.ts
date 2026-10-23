@@ -68,6 +68,25 @@ class OpenRouterService {
   private models: string[];
   private currentModelIndex: number = 0;
 
+  /**
+   * Low/medium auto-routed calls ask for reasoning effort "none", but the router sometimes
+   * picks a model that can't turn it off and 400s ("Reasoning is mandatory…", 31× on
+   * 2026-10-23). Retry that one case at low effort, hidden, instead of burning a fallback.
+   */
+  private async createCompletion(params: Record<string, any>): Promise<any> {
+    try {
+      return await this.client.chat.completions.create(params as never);
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      if (params.reasoning?.effort !== 'none' || !/reasoning is mandatory/i.test(msg)) throw error;
+      logger.info(`🧠 ${params.model}: routed to a reasoning-only model, retrying at low effort`);
+      return this.client.chat.completions.create({
+        ...params,
+        reasoning: { effort: 'low', exclude: true },
+      } as never);
+    }
+  }
+
   constructor() {
     const apiKey = process.env.OPENROUTER_API_KEY;
     const baseURL = process.env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1';
@@ -483,9 +502,9 @@ class OpenRouterService {
             ? { reasoning: autoReasoningFor(plugins) }
             : {}),
         };
-        const completion = await this.client.chat.completions.create({
+        const completion: OpenAI.Chat.Completions.ChatCompletion = await this.createCompletion({
           model,
-          messages: cache.messages as never,
+          messages: cache.messages,
           max_tokens: maxTokens,
           temperature,
           ...extraBody,
@@ -906,9 +925,9 @@ class OpenRouterService {
             ? { reasoning: autoReasoningFor(plugins) }
             : {}),
         };
-        const completion = await this.client.chat.completions.create({
+        const completion: AsyncIterable<OpenAI.Chat.Completions.ChatCompletionChunk> = await this.createCompletion({
           model,
-          messages: cache.messages as never,
+          messages: cache.messages,
           max_tokens: maxTokens,
           temperature,
           stream: true, // Enable streaming
