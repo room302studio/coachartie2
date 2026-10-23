@@ -499,16 +499,16 @@ Important:
     await this.addDiscordSituationalAwareness(message, sources);
 
     // Reply context - the message being replied to (if any)
-    await this.addReplyContext(message, sources);
+    await addReplyContext(message, sources);
 
     // Ongoing per-user "vibe" profile — what Artie has learned about this speaker
-    await this.addUserScores(message, sources);
+    await addUserScores(message, sources);
 
     // Attachment context (includes URLs for vision/OCR or user follow-up)
-    await this.addAttachmentContext(message, sources);
+    await addAttachmentContext(message, sources);
 
     // Previously analyzed files - so follow-up messages know about them
-    await this.addStoredFileContext(message, sources);
+    await addStoredFileContext(message, sources);
 
     // Goal whisper from Conscience - high-level intent/guidance
     await this.addGoalWhisper(message, sources);
@@ -517,13 +517,14 @@ Important:
     await addSelfAwareness(sources);
 
     // Channel vibes - activity level, response style hints ("the vibes of the room")
-    await this.addChannelVibes(message, sources);
+    await addChannelVibes(message, sources);
 
     // Channel digest - rolling summary of what's happened here between mentions
     await addChannelDigest(message, sources);
 
     // Song-moment nudge - occasionally push him to reach for an ACTUAL song (his #1 hit)
-    await this.addSongNudge(message, sources);
+    // (the per-channel cooldown map lives on this instance and is passed in)
+    await addSongNudge(message, sources, this.lastSongNudgeAt);
 
     // Community feedback (raw reaction examples) is superseded by learned_rules below —
     // the reflection consolidator distills the SAME feedback signal into higher-quality
@@ -534,7 +535,7 @@ Important:
     // Learned rules - consolidated actionable rules from feedback patterns
     // Can be disabled via experiment feature flags
     if (featureFlags.enableRules !== false) {
-      await this.addLearnedRules(message, sources);
+      await addLearnedRules(message, sources);
     } else if (DEBUG) {
       logger.info('🧪 Experiment: Learned rules DISABLED');
     }
@@ -546,8 +547,8 @@ Important:
     // context that muddies the model. Only fall back to them when there's NO transcript
     // (non-Discord surfaces, or the live history fetch came back empty).
     if (!featureFlags.hasDiscordTranscript) {
-      await this.addRecentChannelMessages(message, sources);
-      await this.addRecentGuildMessages(message, sources);
+      await addRecentChannelMessages(message, sources);
+      await addRecentGuildMessages(message, sources);
     } else if (DEBUG) {
       logger.info(
         '│ ⏭️  Skipping DB channel/guild copies — live Discord transcript is the source of truth'
@@ -558,7 +559,7 @@ Important:
     // This now includes guild-scoped memories automatically when guildId is present
     // Can be disabled via experiment feature flags
     if (featureFlags.enableMemories !== false) {
-      await this.addRelevantMemories(message, sources, capabilityContext);
+      await addRelevantMemories(message, sources, capabilityContext, this.memoryEntourage);
       // Yard historian: occasionally surface a notable past moment as an optional callback.
       await addYardCallback(message, sources);
     } else if (DEBUG) {
@@ -572,11 +573,11 @@ Important:
 
     // Capability manifest - available tools/actions (how to do things)
     if (includeCapabilities) {
-      await this.addCapabilityManifest(sources);
+      await addCapabilityManifest(sources);
     }
 
     // Discord environment - connected servers (where we are)
-    await this.addDiscordEnvironment(sources);
+    await addDiscordEnvironment(sources);
 
     // Future: await this.addUserPreferences(message, sources);
 
@@ -847,43 +848,6 @@ Important:
   }
 
   /**
-   * Add reply context - the message being replied to
-   * Helps the LLM understand what the user is responding to
-   */
-  /**
-   * Inject the ongoing per-user vibe profile so Artie's tone can adapt to who he's
-   * talking to. Only added once the user has enough history to be meaningful.
-   */
-  private async addUserScores(message: IncomingMessage, sources: ContextSource[]): Promise<void> {
-    return addUserScores(message, sources);
-  }
-
-  private async addReplyContext(message: IncomingMessage, sources: ContextSource[]): Promise<void> {
-    return addReplyContext(message, sources);
-  }
-
-  /**
-   * Attachment context (URLs and metadata). Encourages vision/OCR or user-provided text.
-   */
-  private async addAttachmentContext(
-    message: IncomingMessage,
-    sources: ContextSource[]
-  ): Promise<void> {
-    return addAttachmentContext(message, sources);
-  }
-
-  /**
-   * Add stored file context - reads analysis from /tmp/artie-analysis/{userId}.txt
-   * Simple file-based approach for follow-up questions
-   */
-  private async addStoredFileContext(
-    message: IncomingMessage,
-    sources: ContextSource[]
-  ): Promise<void> {
-    return addStoredFileContext(message, sources);
-  }
-
-  /**
    * Add goal whisper to message context (matches assembleMessagePreamble pattern)
    */
   private async addGoalWhisper(message: IncomingMessage, sources: ContextSource[]): Promise<void> {
@@ -905,79 +869,6 @@ Important:
       logger.warn('Failed to add goal whisper:', error);
       // Graceful degradation - continue without goal context
     }
-  }
-
-  /**
-   * Add recent messages from guild (Discord server)
-   */
-  private async addRecentGuildMessages(
-    message: IncomingMessage,
-    sources: ContextSource[]
-  ): Promise<void> {
-    return addRecentGuildMessages(message, sources);
-  }
-
-  /**
-   * Add channel vibes - the social context of the room
-   * Helps the LLM understand channel activity, type, and adjust response style
-   * Works for both Discord and Slack
-   */
-  private async addChannelVibes(message: IncomingMessage, sources: ContextSource[]): Promise<void> {
-    return addChannelVibes(message, sources);
-  }
-
-  /**
-   * Add recent messages from channel
-   */
-  private async addRecentChannelMessages(
-    message: IncomingMessage,
-    sources: ContextSource[]
-  ): Promise<void> {
-    return addRecentChannelMessages(message, sources);
-  }
-
-  /**
-   * Occasionally nudge Artie to make his reply an ACTUAL sung track. See
-   * addSongNudge in nudge-sources.ts; the per-channel cooldown map
-   * (this.lastSongNudgeAt) is passed through so behavior is identical.
-   */
-  private async addSongNudge(message: IncomingMessage, sources: ContextSource[]): Promise<void> {
-    return addSongNudge(message, sources, this.lastSongNudgeAt);
-  }
-
-  /**
-   * Add learned rules - consolidated actionable rules from feedback patterns
-   * These are persistent rules generated by the reflection consolidator service
-   * Priority 92: high, after temporal but before capabilities
-   */
-  private async addLearnedRules(message: IncomingMessage, sources: ContextSource[]): Promise<void> {
-    return addLearnedRules(message, sources);
-  }
-
-  /**
-   * Add relevant memories to message context (matches assembleMessagePreamble pattern)
-   */
-  private async addRelevantMemories(
-    message: IncomingMessage,
-    sources: ContextSource[],
-    capabilityContext?: string[]
-  ): Promise<void> {
-    return addRelevantMemories(message, sources, capabilityContext, this.memoryEntourage);
-  }
-
-  /**
-   * Add capability manifest to message context (COMPRESSED format - saves ~800 tokens!)
-   */
-  private async addCapabilityManifest(sources: ContextSource[]): Promise<void> {
-    return addCapabilityManifest(sources);
-  }
-
-  /**
-   * Add Discord environment context - available servers and their IDs
-   * This helps Coach Artie understand what Discord servers it's connected to
-   */
-  private async addDiscordEnvironment(sources: ContextSource[]): Promise<void> {
-    return addDiscordEnvironment(sources);
   }
 
   /**
