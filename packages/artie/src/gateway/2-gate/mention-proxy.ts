@@ -10,17 +10,87 @@ import { delay } from '../../shared/async.js';
 import { join, dirname } from 'path';
 import { logger } from '../../shared/logger.js';
 import { isBlockedUser } from '../../shared/blocklist.js';
-import {
-  MentionProxyRule,
-  MentionProxyConfig,
-  DEFAULT_CONFIG,
-  TriggerType,
-  ResponseMode,
-} from './mention-proxy-config.js';
 import { pathResolver } from '../path-resolver.js';
 import type { Client, Message } from 'discord.js';
 import { telemetry } from '../telemetry.js';
 import { handleMessageAsIntent } from '../3-ask-engine/build-request.js';
+
+// -----------------------------------------------------------------------------
+// Rule types (folded in from mention-proxy-config.ts, wave 5)
+// -----------------------------------------------------------------------------
+
+/**
+ * Mention Proxy System
+ *
+ * Allows Artie to act as a representative/proxy for specific users in specific contexts.
+ * Examples:
+ * - Answer questions when @ejfox is mentioned in Subway Builder guild
+ * - Act as team representative in public servers
+ * - Handle common questions for busy people
+ */
+
+export type ResponseMode =
+  | 'direct' // Answer directly without announcing proxy
+  | 'announced' // "Answering for @user: ..."
+  | 'assistant'; // "I can help while @user is away..."
+
+export type TriggerType =
+  | 'any_mention' // Respond to any mention
+  | 'questions_only' // Only respond to questions
+  | 'keywords'; // Only respond if specific keywords present
+
+export interface MentionProxyRule {
+  // Unique identifier
+  id: string;
+
+  // Who to represent
+  targetUserId: string; // Discord user ID to monitor
+  targetUsername: string; // For display/logging
+
+  // Where to respond
+  guildId: string; // Which guild this applies to
+  guildName?: string; // Optional: for display
+  channelIds?: string[]; // Optional: specific channels only
+
+  // How to respond
+  responseMode: ResponseMode;
+  responseStyle?: string; // Optional: custom system prompt context
+
+  // When to respond
+  triggerType: TriggerType;
+  keywords?: string[]; // For keyword-based triggers
+
+  // Judgment layer
+  useJudgment?: boolean; // Use LLM to judge if response is appropriate
+  judgmentPrompt?: string; // Optional: custom judgment criteria
+
+  // Control
+  enabled: boolean;
+
+  // Metadata
+  name: string; // Human-friendly name
+  description?: string; // What this rule is for
+  createdAt: string; // ISO timestamp
+  updatedAt: string; // ISO timestamp
+  createdBy?: string; // Discord user ID who created it
+}
+
+export interface MentionProxyConfig {
+  rules: MentionProxyRule[];
+  version: string;
+}
+
+/**
+ * Default empty configuration
+ */
+export const DEFAULT_CONFIG: MentionProxyConfig = {
+  rules: [],
+  version: '1.0.0',
+};
+
+// -----------------------------------------------------------------------------
+// The service
+// -----------------------------------------------------------------------------
 
 class MentionProxyService {
   private config: MentionProxyConfig;

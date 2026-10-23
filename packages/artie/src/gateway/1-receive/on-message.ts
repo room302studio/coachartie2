@@ -5,20 +5,19 @@
  * returns 'stop' to end the turn there; anything else moves on to the next step. Steps share
  * one Turn record (what earlier steps learned about the message). The heavy pieces live next
  * door: 2-gate/ambient.ts (unaddressed-message judgment, cooldowns, ambient budget),
- * 2-gate/pacing.ts (burst guard, antibody), 1-receive/guild-context.ts (persona and rule
- * blocks), 1-receive/expand-links.ts, 3-ask-engine/build-request.ts (Discord message → turn
- * request) and 4-reply/discord-reply.ts (delivery hooks, warden powers).
+ * 2-gate/pacing.ts (burst guard, antibody), 2-gate/dm-gate.ts (DM pairing), 2-gate/mention-proxy.ts
+ * (proxy step), 1-receive/guild-context.ts (persona and rule blocks), 1-receive/expand-links.ts,
+ * commands/quiz/command.ts (quiz answers), 3-ask-engine/build-request.ts (Discord message →
+ * turn request) and 4-reply/discord-reply.ts (delivery hooks, warden powers).
  *
  * Split out of the old 2,539-line message-handler.ts in wave 5, behavior-neutral: every step
- * body is the old listener's code moved verbatim, in the old order.
+ * body is the old listener's code moved verbatim, in the old order. The first step is the
+ * raw-message log + GitHub-identity learning that used to be a second listener in main.ts.
  */
 
 import { Client, Events, Message, ChannelType } from 'discord.js';
 import { checkGuildBudget, reportGuildBudgetSpent } from '../../shared/guild-budget.js';
 import { logger } from '../../shared/logger.js';
-import { canDMForTasks, getDMPolicy, isOwner } from '../../shared/config/owner.js';
-import { dmPairingService, logDMGate } from '../../shared/dm-pairing.js';
-import { reportToAnomalywatch } from '../../shared/anomalywatch.js';
 import { BLOCKED_USER_IDS, isBlockedUser } from '../../shared/blocklist.js';
 import { isOperatorOnlyError } from '../../shared/anomalywatch.js';
 import { getKillSwitchPath, isGenerationMuted } from '../../shared/kill-switch.js';
@@ -58,6 +57,7 @@ import {
   type ResponseConditions,
 } from '../2-gate/ambient.js';
 import { applyAntibody, isBurstRepeat } from '../2-gate/pacing.js';
+import { runDMGate } from '../2-gate/dm-gate.js';
 import { runMentionProxy } from '../2-gate/mention-proxy.js';
 import { handleMessageAsIntent } from '../3-ask-engine/build-request.js';
 import { handleQuizAnswer } from '../commands/quiz/command.js';
@@ -477,72 +477,10 @@ function resolveChannelPersona(turn: Turn): StepResult {
 
 async function dmGate(turn: Turn): Promise<StepResult> {
   const { message, correlationId, shortId, responseConditions } = turn;
-  // For DMs, check authorization via pairing system
-  // OpenClaw-compatible: unknown users get pairing code
-  const isDMFromAuthorizedUser = responseConditions.isDM && canDMForTasks(message.author.id);
-  const dmWho = { userId: message.author.id, username: message.author.username };
-
-  if (isDMFromAuthorizedUser) {
-    logDMGate(isOwner(message.author.id) ? 'owner' : 'allowed', { ...dmWho, detail: `[${shortId}]` });
-  }
-
-  if (responseConditions.isDM && !isDMFromAuthorizedUser) {
-    const policy = getDMPolicy('discord');
-
-    if (policy.policy === 'open') {
-      // Open mode: treat as authorized
-      logDMGate('open', { ...dmWho, detail: `open policy [${shortId}]` });
-    } else if (policy.policy === 'pairing') {
-      // Pairing mode: send pairing code
-      logDMGate('blocked_pairing', {
-        ...dmWho,
-        detail: `unverified, sent pairing code: "${message.content.slice(0, 80)}" [${shortId}]`,
-      });
-
-      try {
-        const { code, expiresAt, isNew } = dmPairingService.getOrCreatePairingCode(
-          'discord',
-          message.author.id,
-          message.author.username,
-          message.content
-        );
-
-        const expiresInMinutes = Math.round((expiresAt.getTime() - Date.now()) / 60000);
-        const pairingMessage = dmPairingService.generatePairingMessage('discord', code, expiresInMinutes);
-
-        await message.reply(pairingMessage);
-        telemetry.logEvent('dm_pairing_code_sent', { userId: message.author.id, isNew }, correlationId, message.author.id);
-
-        // New request → EJ's phone via anomalywatch (EJ, 2026-09-29: "run it thru anomalywatch
-        // at a high weight"). Its own alert_type scores 7.5 there: pages when awake, digest
-        // when asleep. One per requester per ET day, so a stranger can't spam pages.
-        if (isNew) {
-          void reportToAnomalywatch(
-            'warning',
-            `DM pairing request: ${message.author.username} (${message.author.id}) wants to DM Artie: "${message.content.slice(0, 120)}". Approve with /pairing approve code:${code} (expires in ${expiresInMinutes}m)`,
-            {
-              kind: `dm-pairing:${message.author.id}`,
-              alertType: 'dm_pairing_request',
-              deepLink: `https://discord.com/users/${message.author.id}`,
-            }
-          );
-        }
-      } catch (error) {
-        logger.error('Failed to send pairing code:', error);
-      }
-
-      return 'stop'; // Don't process the message further
-    } else {
-      // Closed mode: silent ignore (current behavior)
-      logDMGate('blocked_closed', { ...dmWho, detail: `closed policy, ignored [${shortId}]` });
-      return 'stop';
-    }
-  }
-
-  // Check if DM should be processed (authorized OR open policy)
-  const dmPolicy = responseConditions.isDM ? getDMPolicy('discord') : null;
-  const isDMAllowed = isDMFromAuthorizedUser || (responseConditions.isDM && dmPolicy?.policy === 'open');
-  turn.isDMAllowed = isDMAllowed;
+  // Body: 2-gate/dm-gate.ts runDMGate (owner/allowed pass; pairing code or silence otherwise).
+  const verdict = await runDMGate(message, responseConditions, correlationId, shortId);
+  if (verdict.stop) return 'stop';
+  turn.isDMAllowed = verdict.isDMAllowed;
 }
 
 async function speakGate(turn: Turn): Promise<StepResult> {
