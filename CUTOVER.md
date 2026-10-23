@@ -13,12 +13,31 @@ process, two ports. `coach-artie-brain` is untouched throughout.
 
 ## 0. Pre-flight (read-only, no state change)
 
+Prod's tree is never actually clean — `git status` on it today shows modified
+`capabilities/data/mention-proxy-rules.json` (the bot's own live runtime data; wave 12 stopped
+tracking this file going forward, but a not-yet-pulled prod checkout still has it tracked and
+modified), modified `docker-compose.yml` (the LUKS edit made by hand on the box), modified
+`logs` and `packages/brain`, plus several untracked `.env*.bak-*` files. **Do not expect or
+require a clean tree** — list what's there and decide what to keep, same as any other step that
+touches the working tree.
+
+From the dev worktree (NOT on the VPS), bundle the branch this cutover deploys, the same way
+`scripts/deploy.sh` does — not `git fetch origin`, since that pulls from GitHub and prod may not
+have a configured `origin` remote pointed at the same place this branch lives:
+
+```bash
+# From /Users/ejfox/code/coachartie2-v3 (or wherever v3 is merged to its final branch):
+git bundle create /tmp/coachartie-cutover.bundle v3   # or the actual merged branch name
+scp /tmp/coachartie-cutover.bundle vps:/tmp/coachartie-cutover.bundle
+```
+
 On the VPS, in prod (`/data2/apps/coachartie2`):
 
 ```bash
 cd /data2/apps/coachartie2
-git fetch origin
-git log --oneline -1 FETCH_HEAD   # the v3-merged commit you're about to deploy
+git status --short                 # RECORD THIS — what's about to get stashed in step 1
+git fetch -q /tmp/coachartie-cutover.bundle v3
+git log --oneline -1 FETCH_HEAD    # the v3-merged commit you're about to deploy
 git rev-parse HEAD                 # RECORD THIS — the rollback target
 pm2 jlist > /tmp/pm2-jlist-pre-cutover-$(date +%Y%m%d-%H%M%S).json   # RECORD THIS TOO
 cat /tmp/pm2-jlist-pre-cutover-*.json | jq -r '.[].name'   # sanity: the two old app names
@@ -42,12 +61,18 @@ on this box).
 
 ```bash
 cd /data2/apps/coachartie2
-git fetch origin
+# Preserve whatever step 0's `git status --short` showed — list, then stash (never drop):
+git stash push -u -m "pre-cutover stash $(date +%Y%m%d-%H%M%S)"
+git fetch -q /tmp/coachartie-cutover.bundle v3
 git checkout <the-v3-merge-commit>   # the commit from step 0
 ```
 
-**Check:** `git log --oneline -1` shows the expected commit; `git status` is clean.
-**Rollback:** `git checkout <previous HEAD from step 0>`.
+**Check:** `git log --oneline -1` shows the expected commit. `git status` will still show
+untracked `.env*.bak-*` files and anything `git stash -u` didn't catch (it stashes tracked
+changes plus untracked files, not ignored ones) — that's expected, not a failure; the bar is "no
+tracked-file diff left uncommitted and unstashed," not a literally empty `git status`.
+**Rollback:** `git checkout <previous HEAD from step 0>`, then `git stash pop` to restore the
+pre-cutover local state.
 
 ---
 
@@ -129,16 +154,18 @@ boot). The full current list, by NAME only, is reproducible with:
 rg -oN 'process\.env\.([A-Z_][A-Z0-9_]*)' packages/artie/src -r '$1' | sort -u
 ```
 
-**Two names are new in v3** and almost certainly absent from today's `.env.production` since
-the features they gate didn't exist before this rebuild:
-- `TOOL_LOOP` — optional; unset is the correct default (native tool calls). Do not set it
-  unless rolling back.
-- `AUTONOMOUS_PAUSED` — optional; if unset, the proactive chain (heartbeat, morning briefing,
-  proactive DMs, relay, reddit mentions, trend watcher) runs unpaused the moment this deploy
-  goes live. **If prod's current behavior is "proactive stuff is paused," set
-  `AUTONOMOUS_PAUSED=true` in `.env.production` BEFORE starting `coach-artie` in step 4** —
-  otherwise the morning briefing, etc. starts firing for real on the old env's good faith that
-  it was already paused.
+**Only one name is genuinely new in v3**: `TOOL_LOOP` — optional; unset is the correct default
+(native tool calls). Do not set it unless rolling back. (An earlier draft of this file also
+listed `AUTONOMOUS_PAUSED` as new — that was wrong. Production `e78d1f8` already reads it
+today: `scheduler.ts:314`, `social-media-behavior.ts:1420`. ARCHITECTURE.md says "today prod
+runs with it set." So it's an existing flag, not a new one.)
+
+- `AUTONOMOUS_PAUSED` — **confirm it is already set in prod's `.env.production` before step 4**,
+  the same as it is today. This cutover doesn't change the flag's meaning or its default, but if
+  it is somehow NOT set going into this deploy, the proactive chain (heartbeat, morning
+  briefing, proactive DMs, relay, reddit mentions, trend watcher) would run unpaused the moment
+  `coach-artie` starts — so check, don't assume. `rg AUTONOMOUS_PAUSED packages/artie/src` shows
+  every read site if you need to confirm the behavior before checking prod's env.
 
 **One name is no longer read** by the bot app: `CAPABILITIES_URL` (there's no internal HTTP hop
 left to point at). It's dropped from `coach-artie`'s env block in `ecosystem.config.cjs`.
@@ -196,16 +223,26 @@ backoff BullMQ gives it) rather than doing anything externally visible — optio
 not required for the cutover to work.
 
 ```bash
-# One-liner, against prod Redis, via the scheduler's own API:
+# Run from packages/artie, not the repo root: pnpm only resolves `bullmq` inside that
+# package's node_modules. Also don't hardcode the Redis port/no-password — reuse the app's own
+# connection helper so this one-liner matches whatever REDIS_PORT/REDIS_PASSWORD prod actually
+# runs with (createRedisConnection(), shared/queue/redis.ts — NOT a bare {host, port} literal).
+cd /data2/apps/coachartie2/packages/artie
 node -e "
+require('dotenv').config({ path: '../../.env.production' });
 const { Queue } = require('bullmq');
 (async () => {
-  const q = new Queue('coachartie-scheduler', { connection: { host: 'localhost', port: 47320 } });
+  // dist/shared/queue/redis.js is ESM ('type': 'module' in this package) — require() can't
+  // load it from a CJS -e script, so dynamic import() instead.
+  const { createRedisConnection } = await import('./dist/shared/queue/redis.js');
+  const connection = createRedisConnection();
+  const q = new Queue('coachartie-scheduler', { connection });
   const jobs = await q.getRepeatableJobs();
   const stale = jobs.find(j => j.id === 'moltbook-social' || j.name === 'moltbook-social');
   if (stale) { await q.removeRepeatableByKey(stale.key); console.log('removed', stale.key); }
   else console.log('no moltbook-social repeatable job found');
   await q.close();
+  connection.disconnect();
 })();
 "
 ```
@@ -305,10 +342,20 @@ Watch for at least 24h of real traffic before considering this done:
 
 - **Tool-call rate vs baseline** (`capability-usage.txt`): calculator ~13/day, web ~14/day. A
   drop of more than 50% in either (with no change in message volume) means native tool calling
-  is probably mis-firing for some reason that didn't show up in the smoke test — **set
-  `TOOL_LOOP=xml` in `.env.production` and `pm2 restart coach-artie --update-env`** to fall back
-  to the old XML path while you investigate. This is the ONE rollback flag; it exists for
-  exactly this.
+  is probably mis-firing for some reason that didn't show up in the smoke test — set
+  `TOOL_LOOP=xml` in `.env.production`, then
+  ```bash
+  pm2 delete coach-artie
+  pm2 start ecosystem.config.cjs --only coach-artie
+  pm2 save
+  ```
+  to fall back to the old XML path while you investigate. **Not `pm2 restart --update-env`** —
+  `ecosystem.config.cjs` does its own `fs.readFileSync` of `.env.production` at require time
+  (that's the only thing in this stack that reads that file); `--update-env` only forwards the
+  calling shell's env into the process and never re-requires the config file, so the flag would
+  silently fail to apply and you'd still be running native tool calls while believing you'd
+  rolled back. This is the ONE rollback flag; it exists for exactly this, so it has to actually
+  land.
 - **Uncaught exceptions**: `grep '💥 Uncaught Exception' logs/coach-artie-out.log` (or the
   winston combined log). The one-process crash policy is log-and-continue — if these trace into
   discord.js internals repeatedly, the log-and-continue policy may need revisiting (originally

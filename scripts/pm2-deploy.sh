@@ -35,11 +35,15 @@ pnpm build
 echo ""
 
 # 4. Restart the service. Wave 12 collapsed capabilities+discord into one PM2 app,
-# coach-artie (see ecosystem.config.cjs, CUTOVER.md). This script restarts in place —
-# CUTOVER.md's PM2 steps (delete the two old apps, start coach-artie fresh) are the
-# one-time migration; after that, `pm2 restart` here is fine for routine deploys.
+# coach-artie (see ecosystem.config.cjs, CUTOVER.md). NOT `pm2 restart --update-env`:
+# ecosystem.config.cjs does its own fs.readFileSync of .env.production at require time —
+# that's the ONLY thing that reads .env.production — and `--update-env` only forwards the
+# calling shell's env, it never re-requires the config file. A routine deploy that ships an
+# .env.production change would restart with the stale env and nobody would see an error.
+# Delete+start forces the config file to be re-required, which re-reads .env.production.
 echo "🔄 Restarting coach-artie..."
-pm2 restart coach-artie --update-env
+pm2 delete coach-artie
+pm2 start ecosystem.config.cjs --only coach-artie
 
 # 5. Wait and show status
 sleep 5

@@ -1,11 +1,11 @@
 -- Seed Subway Builder guild-context prompt blocks into the `prompts` table.
 --
 -- These match, byte-for-byte, the CODE FALLBACK constants in
--- packages/discord/src/config/guild-prompt-blocks.ts. Applying this makes the DB
+-- packages/artie/src/shared/config/guild-prompt-blocks.ts. Applying this makes the DB
 -- the source of truth while the code fallback remains a safety net.
 --
 -- Review before applying. Apply against the live SQLite DB manually, e.g.:
---   sqlite3 packages/discord/data/coachartie.db < reference-docs/migrations/seed-guild-prompt-blocks.sql
+--   sqlite3 data/coachartie.db < reference-docs/migrations/seed-guild-prompt-blocks.sql
 --
 -- NOTE: content strings contain smart quotes (“ ” ’) and em-dashes (—) in the
 -- CLAPBACK block. Keep UTF-8 encoding intact. Trailing separators ("\n\n---\n")

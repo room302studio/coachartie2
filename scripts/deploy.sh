@@ -7,20 +7,28 @@
 # aimed at prod instead of a scratch clone.
 #
 # Usage:
-#   scripts/deploy.sh [branch]        # default branch: main
+#   scripts/deploy.sh [branch]        # default: the branch checked out locally right now.
+#                                      # Prod runs `artie-lean` today; after CUTOVER.md's
+#                                      # one-time migration it runs `v3` (this repo's branch).
+#                                      # There is deliberately no hardcoded default like `main`
+#                                      # — `main` has never been what prod deploys from, and a
+#                                      # bare invocation should ship whatever you actually have
+#                                      # checked out, not a guess.
 #
 # Env:
 #   DEPLOY_HOST   SSH host for the VPS (default: vps, i.e. your ~/.ssh/config alias)
 #   DEPLOY_PATH   prod path on the VPS (default: /data2/apps/coachartie2)
 #
-# What it does NOT do: it never runs `pm2 restart` across an ecosystem.config.cjs change
-# (CUTOVER.md's PM2 section explains why — a script change under a running app needs
-# delete+start, not restart). This script assumes ecosystem.config.cjs is already current
-# on prod (true after CUTOVER.md's one-time migration); it only rebuilds and restarts.
+# Every run does `pm2 delete coach-artie && pm2 start ecosystem.config.cjs --only coach-artie`,
+# never `pm2 restart --update-env` — see the comment at that step. `--update-env` only forwards
+# the calling shell's env; it never re-reads ecosystem.config.cjs, which is the only thing that
+# loads .env.production, so a routine deploy that ships an .env.production change would
+# otherwise restart with the stale env and nobody would see an error. This script assumes
+# CUTOVER.md's one-time two-old-apps-to-one-new-app migration has already happened on prod.
 
 set -euo pipefail
 
-BRANCH="${1:-main}"
+BRANCH="${1:-$(git rev-parse --abbrev-ref HEAD)}"
 DEPLOY_HOST="${DEPLOY_HOST:-vps}"
 DEPLOY_PATH="${DEPLOY_PATH:-/data2/apps/coachartie2}"
 SCRATCH="$(mktemp -d)"
@@ -56,10 +64,28 @@ PREV_HEAD="$(git rev-parse HEAD)"
 echo "Previous HEAD: $PREV_HEAD"
 pm2 jlist > "/tmp/pm2-jlist-pre-deploy-$(date +%Y%m%d-%H%M%S).json" 2>/dev/null || true
 
+echo "--- Checking prod's working tree for local state before touching it ---"
+# Prod is never actually clean: capabilities/data/mention-proxy-rules.json used to be a
+# tracked file the bot writes to at runtime (fixed in wave 12 — it's untracked now, but an
+# older prod checkout may still show it modified), plus whatever hand-edits are sitting there
+# (docker-compose.yml, etc). `checkout -f` + `clean -fd` would silently discard both. List
+# first, stash (never drop), and let a normal `git checkout` fail loudly on a real conflict
+# instead of eating anyone's uncommitted work.
+if ! git diff --quiet || ! git diff --cached --quiet; then
+  echo "Local changes found on prod. Listing (nothing destroyed):"
+  git status --short
+  STASH_MSG="deploy.sh pre-deploy stash $(date +%Y%m%d-%H%M%S)"
+  git stash push -u -m "$STASH_MSG"
+  echo "Stashed as: $STASH_MSG"
+  echo "Review with 'git stash list' / 'git stash show -p stash@{0}' before ever dropping it."
+fi
+
 echo "--- Fetching the bundle ---"
 git fetch -q /tmp/coachartie-deploy.bundle "$BRANCH"
-git checkout -q -f --detach FETCH_HEAD
-git clean -qfd -e node_modules -e '**/node_modules' -e data -e logs -e .env -e .env.production
+# No -f, no git clean: a plain checkout refuses (loudly) rather than silently overwriting any
+# tracked file git doesn't expect to change. If this fails, STOP and look at what it's
+# protecting before re-running with --force by hand.
+git checkout -q --detach FETCH_HEAD
 
 echo "--- Installing (frozen lockfile) ---"
 # Fails loudly, on purpose, if the committed lockfile is stale: a deploy must never silently
@@ -70,8 +96,15 @@ pnpm install --frozen-lockfile
 echo "--- Building ---"
 pnpm build
 
-echo "--- PM2: restart in place (ecosystem.config.cjs assumed current; see CUTOVER.md for the one-time migration) ---"
-pm2 restart coach-artie --update-env
+echo "--- PM2: delete + start fresh (ecosystem.config.cjs assumed current; see CUTOVER.md for the one-time migration) ---"
+# NOT `pm2 restart --update-env`. `--update-env` forwards THIS shell's env into the process;
+# it never re-reads ecosystem.config.cjs, which is the only thing that actually loads
+# .env.production (it does its own fs.readFileSync at require time, above). A routine deploy
+# that ships an .env.production change would restart with the OLD env and nobody would see an
+# error — the flag would just silently not apply. Delete+start re-requires the config file,
+# which re-reads .env.production, every time.
+pm2 delete coach-artie
+pm2 start ecosystem.config.cjs --only coach-artie
 pm2 save
 
 echo "--- Health check ---"
@@ -79,7 +112,7 @@ sleep 3
 curl -sf http://localhost:47324/health/ready && echo "✅ engine ready" || echo "❌ engine not ready"
 curl -sf http://127.0.0.1:47319/health && echo "✅ gateway healthy" || echo "❌ gateway unhealthy"
 
-echo "✅ Deploy complete. Previous HEAD was $PREV_HEAD (for rollback: git reset --hard $PREV_HEAD && pnpm install --frozen-lockfile && pnpm build && pm2 restart coach-artie)."
+echo "✅ Deploy complete. Previous HEAD was $PREV_HEAD (for rollback: git reset --hard $PREV_HEAD && pnpm install --frozen-lockfile && pnpm build && pm2 delete coach-artie && pm2 start ecosystem.config.cjs --only coach-artie)."
 REMOTE
 
 echo "=== Done ==="

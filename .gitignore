@@ -13,6 +13,11 @@ build/
 .env.local
 .env.*.local
 .env.production
+# Dated backups made by hand on prod before a risky edit (e.g. .env.bak-precache-20260922,
+# .env.production.bak-adminid) — never tracked, same reasoning as .env itself.
+.env.bak-*
+.env.production.bak-*
+*.bak-*
 
 # Security - Secret files
 *.pem

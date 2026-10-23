@@ -2,8 +2,8 @@
 # Coach Artie Docker Compose - INFRASTRUCTURE ONLY
 # =============================================================================
 #
-# IMPORTANT: Application services (capabilities, discord, brain, sms) run via PM2
-# See: ecosystem.config.cjs and DEPLOYMENT.md
+# IMPORTANT: Application services (coach-artie, brain) run via PM2
+# See: ecosystem.config.cjs and docs/archive/DEPLOYMENT.md
 #
 # This file ONLY contains:
 #   - redis: Job queues and response routing
