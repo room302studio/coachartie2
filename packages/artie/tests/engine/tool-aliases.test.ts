@@ -199,17 +199,26 @@ describe('execution through an alias', () => {
     const out = await capabilityRegistry.execute('shell', 'exec', { command: 'echo hi' });
     expect(out).toContain('$ echo hi');
     expect(out).toContain('mocked-output');
+    // Boolean assert on purpose: shell's tmux/pwd helper puts `-e GITHUB_TOKEN=<value>` in its
+    // command string (logged as a wave-7 item), so a failing toContain must never print the
+    // captured commands.
     const commands = execMock.mock.calls.map((c) => c[0]);
-    expect(commands).toContain(
-      'docker exec -w /workspace -e GITHUB_TOKEN -e OPENAI_API_KEY coachartie-sandbox /bin/bash -c "echo hi"'
-    );
+    expect(
+      commands.includes(
+        'docker exec -w /workspace -e GITHUB_TOKEN -e OPENAI_API_KEY coachartie-sandbox /bin/bash -c "echo hi"'
+      ),
+      'sandbox:exec docker command unchanged'
+    ).toBe(true);
   });
 
   it('git:status runs sandbox:git_status in the same container', async () => {
     const out = await capabilityRegistry.execute('git', 'status', {});
     expect(out).toContain('Branch: mocked-output');
     const commands = execMock.mock.calls.map((c) => c[0]);
-    expect(commands).toContain('docker exec -w /workspace coachartie-sandbox /bin/bash -c "git status"');
+    expect(
+      commands.includes('docker exec -w /workspace coachartie-sandbox /bin/bash -c "git status"'),
+      'sandbox:git_status docker command unchanged'
+    ).toBe(true);
   });
 
   it('task-status:start runs tasks with tracker=task', async () => {

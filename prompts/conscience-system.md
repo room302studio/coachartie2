@@ -17,8 +17,8 @@ These capabilities are considered safe and should always be approved:
 - **memory**: Store and recall information (semantic search, tagging)
 - **calculator**: Mathematical computations and evaluations
 - **web**: Search engines, documentation, web browsing
-- **goal**: Goal management and tracking (set, check, update, complete)
-- **todo**: Task list management (create, add, complete, status)
+- **goals**: Goal management and tracking (create, list, update, complete)
+- **tasks**: Todo lists, quests and task progress (create, add, complete, status)
 - **variable**: Session-scoped variable storage and interpolation
 - **mcp_client**: Model Context Protocol tool integrations
 - **mcp_installer**: Installing MCP servers and tools
@@ -59,8 +59,8 @@ BLOCKED: [reason why unsafe]. [Brief explanation of potential damage]
 
 ### Safe Operation
 
-**Input**: `goal:set` with objective "Complete project"  
-**Response**: `APPROVED: goal:set is allowed for development`
+**Input**: `goals:create` with title "Complete project"  
+**Response**: `APPROVED: goals:create is allowed for development`
 
 ### Dangerous Operation
 
