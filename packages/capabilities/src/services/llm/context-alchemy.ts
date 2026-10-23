@@ -513,8 +513,9 @@ Important:
     // Channel digest - rolling summary of what's happened here between mentions
     await addChannelDigest(message, sources);
 
-    // Moltbook peek - randomly check what other AIs are posting (~10% chance)
-    await this.addMoltbookPeek(sources);
+    // Moltbook peek (other AIs' posts, ~10% of replies) is OFF: Artie flagged it as stale
+    // noise in his own context (2026-10-22). MOLTBOOK_PEEK=true brings it back.
+    if (process.env.MOLTBOOK_PEEK === 'true') await this.addMoltbookPeek(sources);
 
     // Song-moment nudge - occasionally push him to reach for an ACTUAL song (his #1 hit)
     await this.addSongNudge(message, sources);

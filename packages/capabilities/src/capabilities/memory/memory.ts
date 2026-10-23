@@ -40,6 +40,7 @@ interface MemoryEntry {
   context: string;
   timestamp: string;
   importance: number; // 1-10 scale
+  guildId?: string | null;
 }
 
 export class MemoryService {
@@ -275,11 +276,11 @@ export class MemoryService {
     return '❌ Hybrid layer disabled';
   }
 
-  async getRecentMemories(userId: string, limit: number = 10): Promise<MemoryEntry[]> {
+  async getRecentMemories(userId: string, limit: number = 10, guildId?: string): Promise<MemoryEntry[]> {
     if (this.useHybridLayer) {
-      // FAST PATH: Use hybrid layer
+      // FAST PATH: Use hybrid layer. guildId (when given) keeps other servers' memories out.
       try {
-        const memories = await hybridDataLayer.getRecentMemories(userId, limit);
+        const memories = await hybridDataLayer.getRecentMemories(userId, limit, guildId);
 
         return memories.map((memory) => ({
           id: memory.id,
@@ -289,6 +290,7 @@ export class MemoryService {
           context: memory.context || '',
           timestamp: memory.timestamp,
           importance: memory.importance || 5,
+          guildId: memory.guild_id ?? null,
         }));
       } catch (error) {
         logger.error('❌ [HYBRID] Failed to get recent memories:', error);

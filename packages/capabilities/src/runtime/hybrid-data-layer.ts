@@ -5,7 +5,20 @@ import { logger, getSyncDb, type SyncDbWrapper, isBlockedUser, mentionsOptedOutU
 // the no-name rule is enforced at the discord output layer). Memories that name someone
 // who OPTED OUT never surface: that was their request.
 function isRecallable(memory: MemoryRecord): boolean {
-  return !isBlockedUser(memory.user_id) && !mentionsOptedOutUser(memory.content);
+  return !isBlockedUser(memory.user_id) && !mentionsOptedOutUser(memory.content) && !isStaleNoise(memory);
+}
+
+/**
+ * Memories that only ever cluttered recall (Artie flagged it himself, 2026-10-22):
+ * the July observation firehose (7,161 rows, never once recalled usefully), old
+ * daily-summary notes that read as current events, and importance ≤ 2 chatter. They stay
+ * in the database (history, audits); they just aren't candidates for what he "remembers".
+ */
+export function isStaleNoise(memory: Pick<MemoryRecord, 'user_id' | 'tags' | 'importance'>): boolean {
+  if (memory.user_id === 'observational-system') return true;
+  if ((memory.importance ?? 5) <= 2) return true;
+  const tags = memory.tags || '';
+  return /"(observation|passive-learning|daily-summary)"/.test(tags);
 }
 
 /**
@@ -302,6 +315,9 @@ export class HybridDataLayer {
                  metadata, embedding, related_message_id, guild_id, channel_id, created_at, updated_at
           FROM memories
           WHERE user_id = ? ${guildFilter}
+            AND COALESCE(importance, 5) > 2
+            AND COALESCE(tags, '') NOT LIKE '%"observation"%'
+            AND COALESCE(tags, '') NOT LIKE '%"daily-summary"%'
           ORDER BY timestamp DESC
           LIMIT ?
         `,
@@ -333,6 +349,12 @@ export class HybridDataLayer {
                metadata, embedding, related_message_id, guild_id, channel_id, created_at, updated_at
         FROM memories
         WHERE guild_id = ?
+          -- same noise rules as isStaleNoise, in SQL so the LIMIT window isn't all firehose
+          AND user_id != 'observational-system'
+          AND COALESCE(importance, 5) > 2
+          AND COALESCE(tags, '') NOT LIKE '%"observation"%'
+          AND COALESCE(tags, '') NOT LIKE '%"passive-learning"%'
+          AND COALESCE(tags, '') NOT LIKE '%"daily-summary"%'
         ORDER BY timestamp DESC
         LIMIT ?
         `,

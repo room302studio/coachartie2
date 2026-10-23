@@ -87,11 +87,17 @@ export class MemoryRecaller implements MemoryEntourageInterface {
   // Candidate fetch (single pass — superset of what the old two layers pulled)
   // --------------------------------------------------------------------------
   private async fetchCandidates(userId: string, guildId?: string): Promise<Candidate[]> {
-    const userMemories = await this.memoryService.getRecentMemories(userId, 60);
+    // Scoped to this server when there is one (Artie flagged 2026-10-22 that memories from
+    // one server were surfacing in another; the data layer could isolate, nobody asked it to).
+    const userMemories = await this.memoryService.getRecentMemories(userId, 60, guildId);
 
     let artieMemories: any[] = [];
+    // Artie's own reflections are mostly unscoped (no guild_id) and name other servers'
+    // people and bits, so inside a server only that server's ones are candidates.
     if (userId !== 'artie-social') {
-      const allArtie = await this.memoryService.getRecentMemories('artie-social', 150);
+      const allArtie = (await this.memoryService.getRecentMemories('artie-social', 150, guildId)).filter(
+        (m: any) => !guildId || m.guildId === guildId
+      );
       const highImportance = allArtie.filter((m) => (m.importance || 5) >= 7);
       const recent = allArtie.filter((m) => (m.importance || 5) < 7).slice(0, 20);
       artieMemories = [...highImportance, ...recent];
