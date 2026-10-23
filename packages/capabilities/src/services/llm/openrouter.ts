@@ -1,6 +1,5 @@
 import OpenAI from 'openai';
 import { estimateTokens } from '@coachartie/shared';
-import { config } from 'dotenv';
 import {
   logger,
   assertGenerationAllowed,
@@ -8,15 +7,22 @@ import {
   resolveModelSpec,
   isAutoRouted,
   autoReasoningFor,
-  getEnvFiles,
 } from '@coachartie/shared';
 
-// Load from both root and local env files. getEnvFiles() (paths.ts, wave 2) resolves both to
-// the exact same absolute files the old resolve(__dirname, '../../../../.env') /
-// resolve(__dirname, '../../.env') pair did — see its doc comment.
-for (const envFile of getEnvFiles('capabilities')) {
-  config({ path: envFile });
-}
+// No dotenv config() here, deliberately. The old code called
+// resolve(__dirname, '../../../../.env') / resolve(__dirname, '../../.env') from
+// src|dist/services/llm — on prod those resolve to <repo>/packages/.env and
+// packages/capabilities/{src,dist}/.env, neither of which exists (only
+// /data2/apps/coachartie2/.env does, which `pnpm`/PM2 never reaches by that math). So on prod
+// this was always a no-op: `openRouterService`'s constructor below (and anything else this
+// module's eval order pulls in) has only ever read whatever PM2 already put in `process.env`
+// directly, never a dotenv-loaded root `.env`. Wiring up `getEnvFiles()` here would load the
+// REAL root `.env` while this module is being imported — which, because ESM import evaluation
+// happens before `C/index.ts`'s own top-level `config()` calls run, is EARLIER than today's
+// actual env-loading point, and would hand prod values (e.g. OPENROUTER_MODELS, the micro-LLM
+// slug) from the dev `.env` that `.env.production`/PM2 doesn't set. That is the invariant this
+// wave was told to protect. Loading .env is `C/index.ts` / `D/index.ts`'s job; this module just
+// reads `process.env` same as before.
 import { UsageTracker, TokenUsage } from '../monitoring/usage-tracker.js';
 import { applyCacheControl, readCacheUsage, wireContentLength } from './prompt-cache.js';
 import { creditMonitor } from '../monitoring/credit-monitor.js';

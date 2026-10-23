@@ -15,6 +15,7 @@ import {
   REFERENCE_DOCS,
   ENGINE_LOGS,
   GATEWAY_LOGS,
+  PM2_LOGS,
   getLogsDir,
   SKILLS_DIRS,
   getGuildKnowledgeDirs,
@@ -119,6 +120,10 @@ describe('directories', () => {
 
   it('GATEWAY_LOGS resolves to <repo>/packages/discord/logs', () => {
     expect(GATEWAY_LOGS).toBe(join(REPO_ROOT, 'packages/discord/logs'));
+  });
+
+  it('PM2_LOGS resolves to <repo>/logs (PM2 out/error dir, not a winston dir)', () => {
+    expect(PM2_LOGS).toBe(join(REPO_ROOT, 'logs'));
   });
 });
 

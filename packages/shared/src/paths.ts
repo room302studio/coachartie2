@@ -183,10 +183,26 @@ export const ENGINE_LOGS = join(REPO_ROOT, 'packages/capabilities/logs');
 export const GATEWAY_LOGS = join(REPO_ROOT, 'packages/discord/logs');
 
 /**
+ * PM2's own `out_file`/`error_file` directory — `ecosystem.config.cjs`'s
+ * `capabilities-out.log`/`discord-out.log` etc, NOT winston's `*-combined.log`
+ * (`ENGINE_LOGS`/`GATEWAY_LOGS` above). The vitals monitor is the one reader, and until now it
+ * hardcoded the prod absolute path (`/data2/apps/coachartie2/logs`) with `VITALS_LOG_DIR` as
+ * its only escape hatch — wrong for this worktree, and wrong for any environment besides that
+ * one prod path. `VITALS_LOG_DIR` still wins at the call site; this just fixes the fallback to
+ * be cwd-independent and worktree-correct instead of a hardcoded prod path. No behavior change
+ * on prod (`ecosystem.config.cjs` never sets `VITALS_LOG_DIR`, so prod fell through to the
+ * hardcoded `/data2/apps/coachartie2/logs` before and PM2 really does write there — this export
+ * is `REPO_ROOT`-relative, not prod-only, so other environments now get a correct answer too).
+ */
+export const PM2_LOGS = join(REPO_ROOT, 'logs');
+
+/**
  * Where `logger.ts` (shared by both processes) should write today, cwd-independent.
  *
- * `LOGS_DIR` env always wins (unchanged — this is how tests set it... actually tests don't set
- * it today, they inherit the per-package default, see below).
+ * `LOGS_DIR` env always wins (unchanged). No test suite sets `LOGS_DIR` globally today —
+ * `paths.test.ts` sets and clears it only inside its own override test (see
+ * `packages/shared/tests/paths.test.ts`'s "LOGS_DIR env always wins" case); every other test
+ * run inherits the per-package default computed below.
  *
  * This is the one export that still has to look at `process.cwd()` — not to build a relative
  * path (the old bug this wave fixes), but to decide WHICH process's absolute logs directory a
@@ -253,11 +269,17 @@ export function getGuildKnowledgeDirs(): string[] {
 }
 
 /**
- * The two `.env` files a process loads, in load order, lowest priority first: `dotenv`'s
+ * The two `.env` files a process loads, in load order, HIGHEST priority first: `dotenv`'s
  * `config()` does not override a variable that's already set, so the FIRST `config()` call
- * wins on conflicts — same as every `C/index.ts`/`D/index.ts`/`openrouter.ts` call site today
- * (root `.env` first, then the package-specific one, which therefore can't override the root
- * file's values; both only ever fill in gaps `process.env` doesn't already have).
+ * wins on conflicts — same as every `C/index.ts`/`D/index.ts` call site today (root `.env`
+ * first, then the package-specific one, which therefore can't override the root file's values;
+ * both only ever fill in gaps `process.env` doesn't already have).
+ *
+ * `openrouter.ts` deliberately does NOT call this — see its own comment. On prod its old
+ * `resolve(__dirname, …)` paths never existed, so it only ever read what PM2 already put in
+ * `process.env`; calling `getEnvFiles()` there would load these files earlier than
+ * `index.ts`'s own `config()` calls (ESM import hoisting) and change what the micro-LLM slug
+ * and model env vars resolve to.
  */
 export function getEnvFiles(pkg: 'capabilities' | 'discord'): string[] {
   return [join(REPO_ROOT, '.env'), join(REPO_ROOT, 'packages', pkg, '.env')];

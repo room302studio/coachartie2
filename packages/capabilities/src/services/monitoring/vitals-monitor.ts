@@ -1,6 +1,6 @@
 import { promises as fs } from 'node:fs';
 import { join } from 'node:path';
-import { logger, reportToAnomalywatch } from '@coachartie/shared';
+import { logger, reportToAnomalywatch, PM2_LOGS } from '@coachartie/shared';
 import { CreditMonitor } from './credit-monitor.js';
 
 /**
@@ -87,7 +87,11 @@ export class VitalsMonitor {
 
   private async collectCounts(sinceMs: number, untilMs: number): Promise<Counts> {
     const counts = Object.fromEntries(SIGNALS.map((s) => [s.key, 0])) as Counts;
-    const logDir = process.env.VITALS_LOG_DIR || '/data2/apps/coachartie2/logs';
+    // PM2's out/error log dir (capabilities-out.log, discord-out.log, …), not winston's
+    // ENGINE_LOGS/GATEWAY_LOGS. VITALS_LOG_DIR still wins; PM2_LOGS (paths.ts) replaces the old
+    // hardcoded '/data2/apps/coachartie2/logs' with the same path, cwd-independent (wave 2
+    // review fix — see BUILD-LOG.md).
+    const logDir = process.env.VITALS_LOG_DIR || PM2_LOGS;
 
     let entries: string[];
     try {
