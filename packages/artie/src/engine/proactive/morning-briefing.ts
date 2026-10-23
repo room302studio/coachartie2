@@ -735,13 +735,20 @@ async function fetchHealthNarrative(): Promise<string> {
     });
     if (!resp.ok) return '';
     const data: any = await resp.json();
-    const narrative = data?.narrative || '';
-    if (!narrative || narrative.startsWith('(')) return '';
-    // Strip markdown bold markers for Discord, keep it readable
-    return narrative.replace(/\*\*/g, '**');
+    return cleanHealthNarrative(data?.narrative || '');
   } catch {
     return '';
   }
+}
+
+/**
+ * The narrative as the briefing shows it: '' for empty or "(placeholder)" text, otherwise
+ * with markdown bold markers stripped. Ledger #6: the replace used to put '**' back for
+ * every '**' (a no-op), so the markers its comment meant to strip went through.
+ */
+export function cleanHealthNarrative(narrative: string): string {
+  if (!narrative || narrative.startsWith('(')) return '';
+  return narrative.replace(/\*\*/g, '');
 }
 
 function generateTensionSection(): string {
