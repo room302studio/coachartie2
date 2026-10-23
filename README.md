@@ -59,10 +59,10 @@ pnpm typecheck       # tsc --noEmit, all packages
 
 `scripts/deploy.sh [branch]` bundles the committed branch, ships it to the VPS, installs with
 a frozen lockfile, builds, and restarts the one PM2 app. It assumes `ecosystem.config.cjs` is
-already current on prod — the one-time migration from the old two-app PM2 setup
-(`coach-artie-capabilities` + `coach-artie-discord`) to the new one-app setup (`coach-artie`)
-is written, step by step with rollbacks, in **[CUTOVER.md](./CUTOVER.md)**. That migration has
-not run yet; read it before running anything against prod.
+already current on prod — the one-time migration from the old two-PM2-app setup (separate
+capabilities and discord apps) to the new one-app setup (`coach-artie`) is written, step by
+step with rollbacks, in **[CUTOVER.md](./CUTOVER.md)**. That migration has not run yet; read
+it before running anything against prod.
 
 `scripts/pm2-deploy.sh` is the old (pre-v3) deploy script, kept until `deploy.sh` has shipped
 once.

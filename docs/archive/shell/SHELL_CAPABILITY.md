@@ -56,12 +56,12 @@ The `gh` CLI is **automatically authenticated** on sandbox startup if you set `G
      - `admin:org` (for org-level operations)
      - `admin:repo_hook` (for webhook management)
      - `workflow` (for GitHub Actions)
-   - Copy the token (starts with `ghp_`)
+   - Copy the token (a GitHub personal access token)
 
 2. **Add to your .env file**:
 
    ```bash
-   GITHUB_TOKEN=ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+   GITHUB_TOKEN=<your GitHub personal access token>
    ```
 
 3. **Restart sandbox**:

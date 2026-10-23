@@ -213,7 +213,7 @@ cd coachartie2
 cp .env.example .env
 
 # Step 2: Add OpenRouter key
-# Edit .env and add: OPENROUTER_API_KEY=sk-or-v1-...
+# Edit .env and add: OPENROUTER_API_KEY=<your OpenRouter key>
 # Get free trial key: https://openrouter.ai (includes $1 credit)
 
 # Step 3: Start services WITH health checks
