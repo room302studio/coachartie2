@@ -15,6 +15,7 @@
  */
 
 import { logger } from '../../shared/logger.js';
+import { parseModelJson } from '../../shared/model-json.js';
 import { getSyncDb } from '../../shared/db/client.js';
 import { saveChannelDigest, getChannelDigest } from '../../shared/db/channel-digest-store.js';
 import { openRouterService } from '../4-generate/openrouter.js';
@@ -70,10 +71,9 @@ Return JSON only: {"digest": "...", "remember": "..." or null}
 }
 
 export function parseDigestResponse(raw: string): DigestResult | null {
-  const match = raw.match(/\{[\s\S]*\}/);
-  if (!match) return null;
+  const parsed = parseModelJson<{ digest?: unknown; remember?: unknown }>(raw, 'object');
+  if (!parsed) return null;
   try {
-    const parsed = JSON.parse(match[0]) as { digest?: unknown; remember?: unknown };
     const digest = typeof parsed.digest === 'string' ? parsed.digest.trim() : '';
     if (digest.length < 20) return null;
     const remember =

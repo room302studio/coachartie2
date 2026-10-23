@@ -12,6 +12,7 @@
  */
 
 import { logger } from '../../shared/logger.js';
+import { parseModelJson } from '../../shared/model-json.js';
 import { getSyncDb } from '../../shared/db/client.js';
 
 // Minimum confidence threshold for a rule to be active
@@ -576,14 +577,11 @@ If no clear patterns emerge, return empty array: []`;
   private parseRulesFromResponse(response: string, feedbackCount: number): GeneratedRule[] {
     try {
       // Extract JSON array from response
-      const jsonMatch = response.match(/\[[\s\S]*?\]/);
-      if (!jsonMatch) {
+      const parsed = parseModelJson<any[]>(response, 'array');
+      if (!parsed) {
         logger.debug('[reflection] No JSON array in LLM response');
         return [];
       }
-
-      const parsed = JSON.parse(jsonMatch[0]);
-      if (!Array.isArray(parsed)) return [];
 
       return parsed
         .filter((r: any) => r.rule && typeof r.rule === 'string')

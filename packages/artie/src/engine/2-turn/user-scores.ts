@@ -11,6 +11,7 @@
  */
 
 import { logger } from '../../shared/logger.js';
+import { parseModelJson } from '../../shared/model-json.js';
 import { getSyncDb } from '../../shared/db/client.js';
 import { openRouterService } from '../4-generate/openrouter.js';
 
@@ -85,9 +86,8 @@ async function scoreMessage(
       model,
       { stepType: 'user_scoring' }
     );
-    const match = raw.match(/\{[^}]*\}/);
-    if (!match) return null;
-    const parsed = JSON.parse(match[0]);
+    const parsed = parseModelJson<Record<string, unknown>>(raw, 'object');
+    if (!parsed) return null;
     const clamp = (n: unknown) => Math.max(0, Math.min(100, Number(n)));
     if (![parsed.warmth, parsed.openness, parsed.expressiveness].every((v) => Number.isFinite(Number(v)))) {
       return null;

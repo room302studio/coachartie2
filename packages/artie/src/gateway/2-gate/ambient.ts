@@ -8,6 +8,7 @@ import type { Client, Message } from 'discord.js';
 import { resolveModelSpec, isAutoRouted, autoReasoningFor } from '../../shared/model-spec.js';
 import { estimateTokens } from '../../shared/async.js';
 import { logger } from '../../shared/logger.js';
+import { parseModelJson } from '../../shared/model-json.js';
 import { getSyncDb } from '../../shared/db/client.js';
 import { getKillSwitchPath, isGenerationMuted } from '../../shared/kill-switch.js';
 import type { ChannelPersona, GuildConfig } from '../../shared/config/guilds.js';
@@ -277,13 +278,12 @@ JSON response:`;
     // Parse JSON response
     try {
       // Extract JSON from response (in case there's extra text)
-      const jsonMatch = rawResponse.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        const judgment = JSON.parse(jsonMatch[0]) as {
-          answer: boolean;
-          confidence: number;
-          reason: string;
-        };
+      const judgment = parseModelJson<{
+        answer: boolean;
+        confidence: number;
+        reason: string;
+      }>(rawResponse, 'object');
+      if (judgment) {
         logger.info(
           `🤔 Proactive judgment: answer=${judgment.answer}, confidence=${judgment.confidence}, reason="${judgment.reason}"`
         );

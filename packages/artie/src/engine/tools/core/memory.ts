@@ -1,4 +1,5 @@
 import { logger } from '../../../shared/logger.js';
+import { parseModelJson } from '../../../shared/model-json.js';
 import { getSyncDb } from '../../../shared/db/client.js';
 import { isBlockedUser } from '../../../shared/blocklist.js';
 import { mentionsOptedOutUser } from '../../../shared/privacy-opt-out.js';
@@ -539,12 +540,11 @@ Example: ["food", "pizza", "italian", "preference", "like"]`;
   private parseTagsFromResponse(response: string): string[] {
     try {
       // Try to extract JSON array from response
-      const jsonMatch = response.match(/\[.*?\]/);
-      if (jsonMatch) {
-        const tags = JSON.parse(jsonMatch[0]);
-        if (Array.isArray(tags)) {
-          return tags.filter((tag) => typeof tag === 'string' && tag.length > 1).slice(0, 8);
-        }
+      const tags = parseModelJson<unknown[]>(response, 'array');
+      if (tags) {
+        return tags
+          .filter((tag): tag is string => typeof tag === 'string' && tag.length > 1)
+          .slice(0, 8);
       }
     } catch (parseError) {
       // Don't crash the entire response for memory parsing failures

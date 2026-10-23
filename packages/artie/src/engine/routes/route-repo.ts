@@ -10,6 +10,7 @@
 
 import { Router } from 'express';
 import { logger } from '../../shared/logger.js';
+import { parseModelJson } from '../../shared/model-json.js';
 import { openRouterService } from '../4-generate/openrouter.js';
 
 export interface ChannelOption {
@@ -53,10 +54,9 @@ Return JSON only: {"channelId": "<one id from the list>", "reason": "<under 15 w
 }
 
 export function parseRoutePick(raw: string, channels: ChannelOption[]): RoutePick | null {
-  const m = raw.match(/\{[\s\S]*\}/);
-  if (!m) return null;
+  const j = parseModelJson<{ channelId?: unknown; reason?: unknown }>(raw, 'object');
+  if (!j) return null;
   try {
-    const j = JSON.parse(m[0]) as { channelId?: unknown; reason?: unknown };
     const id = String(j.channelId ?? '').replace(/[^0-9]/g, '');
     if (!channels.some((c) => c.id === id)) return null; // never trust an id we didn't offer
     const reason = typeof j.reason === 'string' ? j.reason.trim().slice(0, 140) : '';
