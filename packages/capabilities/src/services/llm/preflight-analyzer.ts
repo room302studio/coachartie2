@@ -95,9 +95,14 @@ export async function quickAnalysis(message: string): Promise<PreflightAnalysis>
       ),
     ]);
 
+    // The estimate becomes a hard max_tokens, and it's an 8B model's guess from the first
+    // 300 chars (reasoning models spend part of the cap thinking, too). Let it raise the cap,
+    // never lower it below 1000: the micro-LLM's revival on 2026-10-23 cut Artie off
+    // mid-sentence on a ~600-token guess. Brownout still tapers on top of this.
+    const responseTokens = Math.max(tokensResult.result, 1000);
     const result: PreflightAnalysis = {
-      responseTokens: tokensResult.result,
-      responseTier: tokensTier(tokensResult.result),
+      responseTokens,
+      responseTier: tokensTier(responseTokens),
       memoryKeywords: [], // Could add keyword extraction here
       memoryImportanceMin: complexityResult.result === 'complex' ? 5 : 3,
       needsRecentMemories: true,
