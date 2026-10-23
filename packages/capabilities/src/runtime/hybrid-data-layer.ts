@@ -21,6 +21,8 @@ export function isStaleNoise(
   if ((memory.importance ?? 5) <= 2) return true;
   const tags = memory.tags || '';
   if (/"(observation|passive-learning|daily-summary)"/.test(tags)) return true;
+  // Other AIs' Moltbook posts were stored as memories; Moltbook is off, so are they.
+  if (/^moltbook_/.test(memory.context || '')) return true;
   // A third of stored "reflections" are the reflection model answering in character
   // ("Lap eighteen, comrade") instead of writing a note; recalled, they replay old loops.
   return memory.context === 'reflection' && isInCharacterReflection(memory.content || '');
@@ -33,6 +35,11 @@ export function isStaleNoise(
  */
 export function isInCharacterReflection(text: string): boolean {
   if (/\[SILENT\]|✨/.test(text) || /^\s*(round|lap)\s+[a-z-]+\b/i.test(text)) return true;
+  // Artie's own address terms and loop-counting bits: a note never says "comrade".
+  // (Ordinals like "first time" and words like "sport" were tried and dropped: they hit
+  // real notes. Nearly every loop reply says "same wrapper/trick/ask" anyway.)
+  if (/\b(comrade|champ)\b/i.test(text)) return true;
+  if (/\bsame (wrapper|bit|script|loop|template|envelope|trick|injection|ask|extraction)\b/i.test(text)) return true;
   const you = (text.match(/\byou(r|rs|'re|'ve)?\b/gi) || []).length;
   const notes = (text.match(/\b(user|they|their|them|he|she|community|members?)\b/gi) || []).length;
   return you >= 3 && you > 2 * notes;
