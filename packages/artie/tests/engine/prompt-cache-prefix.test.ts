@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { stripUserMessagePlaceholder, applyCacheControl } from '../../src/engine/3-context/prompt-cache.js';
+import { substituteKeys } from '../../src/engine/5-tool-loop/execute.js';
 
 // Shape of PROMPT_SYSTEM in scripts/restore-prompts.ts: persona + examples, then a bare
 // {{USER_MESSAGE}} at the very end.
@@ -39,7 +40,8 @@ describe('stripUserMessagePlaceholder', () => {
   });
 
   it('(the old substitution would have broken it)', () => {
-    const old = (m: string) => TEMPLATE.replace(/\{\{USER_MESSAGE\}\}/g, m);
+    // Wave 11: the real {{key}} substitution (execute.ts) instead of a local regex copy.
+    const old = (m: string) => substituteKeys(TEMPLATE, new Map([['USER_MESSAGE', m]]));
     expect(old('a')).not.toBe(old('b'));
   });
 });
