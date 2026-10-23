@@ -2,6 +2,7 @@ import axios, { AxiosResponse, AxiosRequestConfig } from 'axios';
 import * as cheerio from 'cheerio';
 import { decode as decodeHtmlEntities } from 'html-entities';
 import { z } from 'zod';
+import { BlockList, isIPv4, isIPv6 } from 'node:net';
 import { logger } from '../../../shared/logger.js';
 
 // Configuration constants
@@ -22,17 +23,8 @@ const CONFIG = {
   USER_AGENT: 'CoachArtie/1.0 (Web Content Fetcher; +https://coachartie.com)',
   // Allowed protocols
   ALLOWED_PROTOCOLS: ['http:', 'https:'],
-  // Blocked domains (security)
-  BLOCKED_DOMAINS: [
-    'localhost',
-    '127.0.0.1',
-    '0.0.0.0',
-    '::1',
-    '169.254.169.254', // AWS metadata
-    '10.0.0.0/8',
-    '172.16.0.0/12',
-    '192.168.0.0/16',
-  ],
+  // Blocked hostnames (security). IP ranges are in BLOCKED_ADDRESSES below.
+  BLOCKED_DOMAINS: ['localhost'],
   // Blocked ports
   BLOCKED_PORTS: [22, 23, 25, 53, 80, 110, 143, 443, 993, 995],
 };
@@ -102,8 +94,8 @@ export function validateUrl(url: string): {
       }
     }
 
-    // Check for private IP ranges (basic check)
-    if (isPrivateIP(hostname)) {
+    // Check for private/reserved IP ranges
+    if (isBlockedAddress(hostname)) {
       return {
         isValid: false,
         error: 'URL points to a private IP address',
@@ -140,24 +132,63 @@ export function validateUrl(url: string): {
 }
 
 /**
- * Basic private IP detection
+ * Address ranges a fetch must never reach: loopback, RFC 1918, CGNAT, link-local (cloud
+ * metadata lives at 169.254.169.254), IETF protocol assignments, benchmarking, multicast,
+ * reserved, and the IPv6 equivalents. A node:net BlockList replaces the old regex list,
+ * which missed 100.64/10, 192.0.0/24, 198.18/15, 224/4, 240/4 and every fd00::/8 address
+ * except fd00:: itself.
  */
-function isPrivateIP(hostname: string): boolean {
-  // Basic regex patterns for private IP ranges
-  const privateIPPatterns = [
-    /^10\./, // 10.0.0.0/8
-    /^172\.(1[6-9]|2[0-9]|3[01])\./, // 172.16.0.0/12
-    /^192\.168\./, // 192.168.0.0/16
-    /^127\./, // 127.0.0.0/8 (loopback)
-    /^169\.254\./, // 169.254.0.0/16 (link-local)
-    /^0\.0\.0\.0$/, // 0.0.0.0
-    /^::1$/, // IPv6 loopback
-    /^fe80:/i, // IPv6 link-local
-    /^fc00:/i, // IPv6 unique local
-    /^fd00:/i, // IPv6 unique local
-  ];
+const BLOCKED_ADDRESSES = new BlockList();
+for (const [net, prefix] of [
+  ['0.0.0.0', 8],
+  ['10.0.0.0', 8],
+  ['100.64.0.0', 10],
+  ['127.0.0.0', 8],
+  ['169.254.0.0', 16],
+  ['172.16.0.0', 12],
+  ['192.0.0.0', 24],
+  ['192.168.0.0', 16],
+  ['198.18.0.0', 15],
+  ['224.0.0.0', 4],
+  ['240.0.0.0', 4],
+] as const) {
+  BLOCKED_ADDRESSES.addSubnet(net, prefix, 'ipv4');
+}
+BLOCKED_ADDRESSES.addAddress('::', 'ipv6');
+BLOCKED_ADDRESSES.addAddress('::1', 'ipv6');
+BLOCKED_ADDRESSES.addSubnet('fc00::', 7, 'ipv6');
+BLOCKED_ADDRESSES.addSubnet('fe80::', 10, 'ipv6');
 
-  return privateIPPatterns.some((pattern) => pattern.test(hostname));
+/**
+ * IPv4-mapped IPv6 (::ffff:a.b.c.d) → the IPv4 address, so the IPv4 rules apply to it.
+ * WHATWG URL serializes [::ffff:10.0.0.1] as [::ffff:a00:1], so both forms are handled.
+ */
+function unwrapMappedIPv4(ip: string): string | null {
+  const m = /^(?:0{0,4}:){0,5}:?ffff:(.+)$/i.exec(ip);
+  if (!m) return null;
+  const tail = m[1];
+  if (isIPv4(tail)) return tail;
+  const hex = /^([0-9a-f]{1,4}):([0-9a-f]{1,4})$/i.exec(tail);
+  if (!hex) return null;
+  const hi = parseInt(hex[1], 16);
+  const lo = parseInt(hex[2], 16);
+  return [hi >> 8, hi & 255, lo >> 8, lo & 255].join('.');
+}
+
+/**
+ * True when `host` (a URL hostname, IPv6 possibly in brackets) is a literal IP address in a
+ * blocked range. Hostnames are not resolved here: axios does its own lookup, and this guard
+ * has only ever checked literal addresses.
+ */
+export function isBlockedAddress(host: string): boolean {
+  const ip = host.replace(/^\[|\]$/g, '');
+  if (isIPv4(ip)) return BLOCKED_ADDRESSES.check(ip, 'ipv4');
+  if (isIPv6(ip)) {
+    const v4 = unwrapMappedIPv4(ip);
+    if (v4) return BLOCKED_ADDRESSES.check(v4, 'ipv4');
+    return BLOCKED_ADDRESSES.check(ip, 'ipv6');
+  }
+  return false;
 }
 
 /**
