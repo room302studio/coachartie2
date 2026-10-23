@@ -10,14 +10,14 @@
  * This is the core of Artie's autonomous behavior.
  *
  * IMPORTANT: Only sends proactive DMs to whitelisted users (owner only by default).
- * See @coachartie/shared config/owner.ts for the whitelist.
+ * See shared/config/owner.ts for the whitelist.
  */
 
 import { logger } from '../../shared/logger.js';
-import { getSyncDb, getDb } from '../../shared/db/client.js';
+import { getSyncDb, getDb, eq } from '../../shared/db/client.js';
 import { canReceiveProactiveDMs, OWNER_USER_ID } from '../../shared/config/owner.js';
 import { objectives } from '../../shared/db/schema.js';
-import type { type Objective } from '../../shared/db/schema.js';
+import type { Objective } from '../../shared/db/schema.js';
 import { sendDiscordDM } from './proactive-dm.js';
 import { getStalledGoals, logGoalAction } from '../tools/planning/goals.js';
 import { deliveryManager } from './delivery.js';

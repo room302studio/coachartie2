@@ -1,6 +1,6 @@
 import { MessageFlags, ChatInputCommandInteraction, SlashCommandBuilder, EmbedBuilder } from 'discord.js';
 import { logger } from '../../shared/logger.js';
-import { getDb } from '../../shared/db/client.js';
+import { getDb, desc, eq, gte, count, sum, avg, sql } from '../../shared/db/client.js';
 import { modelUsageStats } from '../../shared/db/schema.js';
 
 export const usageCommand = {

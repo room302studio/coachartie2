@@ -1,4 +1,4 @@
-import { getDb } from '../../../shared/db/client.js';
+import { getDb, eq, and } from '../../../shared/db/client.js';
 import { githubRepoWatches, type GithubRepoWatch } from '../../../shared/db/schema.js';
 
 /**

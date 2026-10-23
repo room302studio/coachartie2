@@ -7,7 +7,7 @@
 
 import { Client } from 'discord.js';
 import { logger } from '../../../shared/logger.js';
-import { getDb, initializeDb } from '../../../shared/db/client.js';
+import { getDb, initializeDb, eq } from '../../../shared/db/client.js';
 import { githubRepoWatches } from '../../../shared/db/schema.js';
 import {
   GitHubPollerService,

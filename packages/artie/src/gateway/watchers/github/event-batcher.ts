@@ -9,7 +9,7 @@
  */
 
 import { logger } from '../../../shared/logger.js';
-import { getDb } from '../../../shared/db/client.js';
+import { getDb, eq } from '../../../shared/db/client.js';
 import { githubIdentityMappings, type GithubIdentityMapping } from '../../../shared/db/schema.js';
 import type { GitHubSyncEvent, GitHubEventType } from './poller.js';
 

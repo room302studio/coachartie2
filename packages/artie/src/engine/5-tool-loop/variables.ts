@@ -1,5 +1,5 @@
 import { logger } from '../../shared/logger.js';
-import { getDb, getRawDb } from '../../shared/db/client.js';
+import { getDb, getRawDb, eq, inArray, asc } from '../../shared/db/client.js';
 import { globalVariables } from '../../shared/db/schema.js';
 import { RegisteredCapability } from './registry.js';
 

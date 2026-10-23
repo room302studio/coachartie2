@@ -1,4 +1,4 @@
-import type { type IncomingMessage } from '../../shared/queue/types.js';
+import type { IncomingMessage } from '../../shared/queue/types.js';
 
 /**
  * PASSIVE DISCORD OBSERVATION DOES NOT GENERATE (#88).

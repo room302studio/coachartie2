@@ -149,8 +149,8 @@ describe('getLogsDir', () => {
 describe('SKILLS_DIRS', () => {
   // Wave 3: packages/capabilities is gone, its src/skills moved to
   // packages/artie/src/engine/tools/skills/library. The first entry was already a dead/
-  // nonexistent directory before this wave (see paths.ts's history) and stays dead, just
-  // renamed to match — this is the one deliberate SKILLS_DIRS change the wave spec calls for.
+  // nonexistent directory before this wave and stays dead, just renamed to match — this is the
+  // one deliberate SKILLS_DIRS change the wave spec calls for.
   it('is the three real candidates, highest priority first', () => {
     expect(SKILLS_DIRS).toEqual([
       join(REPO_ROOT, 'packages/artie/skills'),

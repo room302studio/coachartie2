@@ -3,7 +3,7 @@ import { mkdtempSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 
-// A throwaway DB with just the watches table; must be set before @coachartie/shared opens one.
+// A throwaway DB with just the watches table; must be set before the shared db client opens one.
 process.env.DATABASE_PATH = join(mkdtempSync(join(tmpdir(), 'gh-watches-')), 'test.db');
 
 let w: typeof import('../../src/gateway/watchers/github/watch-list.js');

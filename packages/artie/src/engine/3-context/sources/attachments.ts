@@ -9,7 +9,7 @@
 
 import { logger } from '../../../shared/logger.js';
 import { estimateTokens } from '../../../shared/text.js';
-import type { type IncomingMessage } from '../../../shared/queue/types.js';
+import type { IncomingMessage } from '../../../shared/queue/types.js';
 import { visionCapability as visionCap } from '../../tools/media/vision.js';
 import { processMetroAttachment } from '../../metro/analyze.js';
 import { MemoryService } from '../../tools/core/memory.js';

@@ -5,7 +5,7 @@ import {
   EmbedBuilder,
   InteractionResponse,
 } from 'discord.js';
-import { getDb } from '../../shared/db/client.js';
+import { getDb, eq, desc } from '../../shared/db/client.js';
 import { modelUsageStats } from '../../shared/db/schema.js';
 import { logger } from '../../shared/logger.js';
 

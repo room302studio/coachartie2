@@ -13,7 +13,7 @@ import { and, desc, eq, gte, sql } from 'drizzle-orm';
 import { logger } from '../../shared/logger.js';
 import { getDb } from '../../shared/db/client.js';
 import { relays } from '../../shared/db/schema.js';
-import type { type Relay } from '../../shared/db/schema.js';
+import type { Relay } from '../../shared/db/schema.js';
 import {
   RegisteredCapability,
   CapabilityContext,

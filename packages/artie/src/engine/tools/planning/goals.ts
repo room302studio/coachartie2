@@ -17,7 +17,7 @@ import { eq, and, desc, isNull } from 'drizzle-orm';
 import { logger } from '../../../shared/logger.js';
 import { getDb } from '../../../shared/db/client.js';
 import { objectives, goalActions } from '../../../shared/db/schema.js';
-import type { type Objective, type NewObjective } from '../../../shared/db/schema.js';
+import type { Objective, NewObjective } from '../../../shared/db/schema.js';
 import type { RegisteredCapability, CapabilityContext } from '../../5-tool-loop/registry.js';
 import { randomUUID } from 'crypto';
 

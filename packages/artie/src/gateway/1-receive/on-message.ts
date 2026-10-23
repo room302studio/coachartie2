@@ -205,7 +205,7 @@ const ANTIBODY_BREVITY_FLOOR = 25; // never shrink a normal user below this many
 
 // Hard ban: users who get NO response from Artie at all (dropped before any processing).
 // EJ-curated. Supersedes the tight-leash list. The list itself lives in
-// @coachartie/shared (config/blocklist.ts) because capabilities enforces it too:
+// shared/blocklist.ts because the engine enforces it too:
 // blocked users are also stripped from channel-history context, reply context,
 // observational learning, and memory formation/recall — Artie shouldn't even
 // mention them.

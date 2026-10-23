@@ -9,7 +9,7 @@
 
 import { logger } from '../../../shared/logger.js';
 import { estimateTokens } from '../../../shared/text.js';
-import type { type IncomingMessage } from '../../../shared/queue/types.js';
+import type { IncomingMessage } from '../../../shared/queue/types.js';
 import type { ContextSource } from './types.js';
 import { DEBUG } from './types.js';
 

@@ -101,7 +101,7 @@ export function createApiRouter(discordClient: Client): Router {
   // GET  /api/killswitch            -> { muted, kind: 'manual'|'budget'|null, ... }
   // POST /api/killswitch {enabled}  -> set muted on/off (creates/removes KILL_SWITCH file)
   // While muted NOTHING generates: message-handler ignores incoming messages and every LLM
-  // call site in both processes refuses (see @coachartie/shared kill-switch.ts).
+  // call site in both processes refuses (see shared/kill-switch.ts).
   // A budget mute (daily spend cap) lifts itself at ET midnight. Unmuting one by hand also
   // records a same-day override so the cap doesn't re-trip on the very next call.
   // ============================================================================

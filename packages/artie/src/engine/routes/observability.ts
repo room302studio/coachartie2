@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { logger } from '../../shared/logger.js';
-import { getDb, getSyncDb } from '../../shared/db/client.js';
+import { getDb, desc, sql, countDistinct, getSyncDb } from '../../shared/db/client.js';
 import { memories, messages } from '../../shared/db/schema.js';
 import { errorPatternTracker } from '../5-tool-loop/tool-error-patterns.js';
 import { traceManager } from '../2-turn/trace.js';

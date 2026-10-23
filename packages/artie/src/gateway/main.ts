@@ -1,7 +1,7 @@
 console.log('🚀 DISCORD SERVICE STARTING UP - BOOKITY BOOKITY!');
-// The 'Current directory' diagnostic that used to be here is gone (wave 3): DONE WHEN requires
-// the cwd call that used to live here is gone — it's a shared/paths.ts-only concept now. REPO_ROOT (logged below) is the
-// cwd-independent answer to "where is this process rooted" anyway.
+// The directory diagnostic that used to be here is gone (wave 3): DONE WHEN requires the cwd
+// call to appear only in shared/paths.ts. REPO_ROOT (logged below) is the cwd-independent
+// answer to "where is this process rooted" anyway.
 console.log('🔧 Node version:', process.version);
 console.log('🌍 Environment:', process.env.NODE_ENV);
 

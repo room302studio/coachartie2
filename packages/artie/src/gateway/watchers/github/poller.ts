@@ -8,7 +8,7 @@
 import { Octokit } from '@octokit/rest';
 import { delay } from '../../../shared/async.js';
 import { logger } from '../../../shared/logger.js';
-import { getDb } from '../../../shared/db/client.js';
+import { getDb, eq, and } from '../../../shared/db/client.js';
 import { githubRepoWatches, githubSyncState, type GithubRepoWatch, type GithubSyncState } from '../../../shared/db/schema.js';
 import { EventEmitter } from 'events';
 
