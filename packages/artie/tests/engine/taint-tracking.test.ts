@@ -89,9 +89,11 @@ describe('Taint Tracking Security', () => {
         (cap, err) => `Error: ${err}`
       );
 
-      // Should attempt execution (may fail for other reasons, but not taint block)
-      expect(result.error).not.toContain('SECURITY');
-      expect(result.error).not.toContain('tainted');
+      // Should attempt execution (may fail for other reasons, but not taint block).
+      // child_process is mocked above, so it now actually succeeds instead of failing on docker.
+      expect(result.error || '').not.toContain('SECURITY');
+      expect(result.error || '').not.toContain('tainted');
+      expect(result.success).toBe(true);
     });
   });
 
