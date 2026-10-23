@@ -8,7 +8,7 @@ echo
 # Check if services are listening on expected ports
 echo "📊 Service Ports:"
 services_up=0
-for port in 47319 47320 47321 47324 47325 47326; do
+for port in 47319 47320 47321 47324 47325; do
   if lsof -i :$port -sTCP:LISTEN -t >/dev/null 2>&1; then
     service_name=$(lsof -i :$port -sTCP:LISTEN | tail -1 | awk '{print $1}')
     echo "  ✅ Port $port: $service_name"
@@ -17,7 +17,7 @@ for port in 47319 47320 47321 47324 47325 47326; do
     echo "  ❌ Port $port: NOT LISTENING"
   fi
 done
-echo "  Total: $services_up/6 services up"
+echo "  Total: $services_up/5 services up"
 echo
 
 # Check Discord Health

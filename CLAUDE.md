@@ -57,7 +57,6 @@ Two paths, both active:
 
 ## Key Environment
 - `.env` at project root — DISCORD_TOKEN, GITHUB_TOKEN, etc.
-- n8n webhook auth: `claude:its-ya-boi-claude-676767`
 
 ## Docker
 - `coachartie-sandbox` + `coachartie2-redis-1` run via docker-compose

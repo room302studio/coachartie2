@@ -10,7 +10,7 @@ import blessed from 'blessed';
 import {
   promptManager,
   PromptTemplate,
-} from '../packages/capabilities/src/services/prompt-manager.js';
+} from '../packages/capabilities/src/services/llm/prompt-manager.js';
 
 // Create screen
 const screen = blessed.screen({

@@ -13,7 +13,6 @@
  *   - capabilities (port 47324): Core AI, memory, LLM orchestration
  *   - discord (port 47321): Discord bot + REST API
  *   - brain (port 47325): Nuxt web dashboard
- *   - sms (port 47326): Twilio SMS interface
  *
  * Docker services (separate):
  *   - redis (port 47320): Job queues - docker compose up -d redis

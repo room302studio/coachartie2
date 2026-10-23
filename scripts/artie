@@ -3,7 +3,7 @@
 # Usage: artie <command>
 
 set -e
-cd /data2/coachartie2
+cd /data2/apps/coachartie2
 
 case "$1" in
   status|s)
@@ -56,24 +56,24 @@ case "$1" in
     ;;
 
   db)
-    sqlite3 /data2/coachartie2/data/coachartie.db
+    sqlite3 /data2/apps/coachartie2/data/coachartie.db
     ;;
 
   backup)
     BACKUP_DIR="/data2/backups/coachartie"
     mkdir -p "$BACKUP_DIR"
     BACKUP_FILE="$BACKUP_DIR/coachartie-$(date +%Y%m%d-%H%M%S).db"
-    sqlite3 /data2/coachartie2/data/coachartie.db ".backup '$BACKUP_FILE'"
+    sqlite3 /data2/apps/coachartie2/data/coachartie.db ".backup '$BACKUP_FILE'"
     echo "Backed up to: $BACKUP_FILE"
     ls -lh "$BACKUP_FILE"
     ;;
 
   memories)
-    sqlite3 /data2/coachartie2/data/coachartie.db "SELECT COUNT(*) as count FROM memories;"
+    sqlite3 /data2/apps/coachartie2/data/coachartie.db "SELECT COUNT(*) as count FROM memories;"
     ;;
 
   social)
-    grep -i "social\|moltbook" /data2/coachartie2/logs/capabilities-out-0.log | tail -20
+    grep -i "social\|moltbook" /data2/apps/coachartie2/logs/capabilities-out-0.log | tail -20
     ;;
 
   *)

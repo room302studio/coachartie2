@@ -45,8 +45,6 @@ export default defineConfig({
       '@coachartie/shared': resolve(__dirname, 'packages/shared/src'),
       '@coachartie/capabilities': resolve(__dirname, 'packages/capabilities/src'),
       '@coachartie/discord': resolve(__dirname, 'packages/discord/src'),
-      '@coachartie/email': resolve(__dirname, 'packages/email/src'),
-      '@coachartie/sms': resolve(__dirname, 'packages/sms/src'),
     },
   },
 });

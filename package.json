@@ -9,8 +9,6 @@
     "build": "turbo run build",
     "dev": "node scripts/smart-dev.js",
     "dev:force": "turbo run dev",
-    "dev:pm2": "pm2 start ecosystem.config.js",
-    "dev:docker": "docker-compose -f docker/docker-compose.yml up",
     "stop": "pm2 stop all",
     "restart": "pm2 restart all",
     "logs": "pm2 logs",
@@ -21,13 +19,9 @@
     "format:check": "prettier --check \"**/*.{js,ts,json,md}\"",
     "typecheck": "turbo run typecheck",
     "clean": "turbo run clean && rm -rf node_modules",
-    "prepare": "husky install",
-    "test:queue": "tsx scripts/test-queue-flow.ts",
-    "test:all": "tsx scripts/test-all-services.ts",
     "prompt:tui": "DATABASE_PATH=./data/coachartie.db tsx tools/prompt-tui.ts",
     "prompt:cli": "DATABASE_PATH=./data/coachartie.db tsx tools/prompt-cli.ts",
     "prompts": "npm run prompt:tui",
-    "changelog": "./scripts/generate-changelog.sh",
     "version:patch": "npm version patch && git push --follow-tags",
     "version:minor": "npm version minor && git push --follow-tags",
     "version:major": "npm version major && git push --follow-tags"
@@ -55,9 +49,7 @@
   },
   "packageManager": "pnpm@8.14.0",
   "dependencies": {
-    "blessed": "^0.1.81",
-    "csv-parser": "^3.2.0",
-    "nodemailer": "^6.9.8"
+    "blessed": "^0.1.81"
   },
   "pnpm": {
     "overrides": {

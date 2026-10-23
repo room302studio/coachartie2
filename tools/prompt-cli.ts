@@ -17,7 +17,7 @@
 import {
   promptManager,
   PromptTemplate,
-} from '../packages/capabilities/src/services/prompt-manager.js';
+} from '../packages/capabilities/src/services/llm/prompt-manager.js';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 
