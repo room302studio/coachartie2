@@ -33,9 +33,28 @@ const { execMock } = vi.hoisted(() => ({
   ),
 }));
 
+// The sandbox's in-container helper (pwd, tmux) uses execFile with an argv array since
+// wave 7; route it through the same stub so nothing reaches a real docker.
+const { execFileMock } = vi.hoisted(() => ({
+  execFileMock: vi.fn(
+    (_file: string, _args: unknown, optsOrCb: unknown, maybeCb?: unknown) => {
+      const cb = (typeof optsOrCb === 'function' ? optsOrCb : maybeCb) as (
+        err: Error | null,
+        out?: { stdout: string; stderr: string }
+      ) => void;
+      cb(null, { stdout: 'mocked-output\n', stderr: '' });
+      return {} as unknown;
+    }
+  ),
+}));
 vi.mock('child_process', async (importOriginal) => {
   const actual = await importOriginal<typeof import('child_process')>();
-  return { ...actual, exec: execMock, default: { ...actual, exec: execMock } };
+  return {
+    ...actual,
+    exec: execMock,
+    execFile: execFileMock,
+    default: { ...actual, exec: execMock, execFile: execFileMock },
+  };
 });
 
 import { capabilityBootstrap } from '../../src/engine/5-tool-loop/register-tools.js';
@@ -202,9 +221,9 @@ describe('execution through an alias', () => {
     const out = await capabilityRegistry.execute('shell', 'exec', { command: 'echo hi' });
     expect(out).toContain('$ echo hi');
     expect(out).toContain('mocked-output');
-    // Boolean assert on purpose: shell's tmux/pwd helper puts `-e GITHUB_TOKEN=<value>` in its
-    // command string (logged as a wave-7 item), so a failing toContain must never print the
-    // captured commands.
+    // Boolean assert on purpose: before wave 7, shell's tmux/pwd helper put
+    // `-e GITHUB_TOKEN=<value>` in its command string, so a failing toContain must never
+    // print the captured commands. (It passes the name only now, via execFile.)
     const commands = execMock.mock.calls.map((c) => c[0]);
     expect(
       commands.includes(

@@ -16,7 +16,10 @@ vi.mock('child_process', async (importOriginal) => {
     cb(null, { stdout: '', stderr: '' });
     return {} as unknown;
   };
-  return { ...actual, exec, default: { ...actual, exec } };
+  // sandbox's in-container helper uses execFile (argv, no shell) since wave 7.
+  const execFile = (_file: string, _args: unknown, optsOrCb: unknown, maybeCb?: unknown) =>
+    exec('', optsOrCb, maybeCb);
+  return { ...actual, exec, execFile, default: { ...actual, exec, execFile } };
 });
 
 import {

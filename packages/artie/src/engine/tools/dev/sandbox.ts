@@ -14,17 +14,19 @@
  *
  * The old names still work through TOOL_ALIASES in 5-tool-loop/registry.ts.
  * The docker command strings are byte-identical to the pre-merge files (each section keeps its
- * own exec helper, because their -w / -e flags differ).
+ * own exec helper, because their -w / -e flags differ), except shell's tmux/pwd helper, which
+ * became an execFile argv call in wave 7 (ledger #10; see execInContainer).
  */
 
 import { logger } from '../../../shared/logger.js';
 import { delay } from '../../../shared/async.js';
-import { exec } from 'child_process';
+import { exec, execFile } from 'child_process';
 import { promisify } from 'util';
 import { RegisteredCapability } from '../../5-tool-loop/registry.js';
 import { marked } from 'marked';
 
 const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
 
 // =====================================================================================
 // shell: exec, send, read_pane, split, list_panes (was the `shell` tool)
@@ -45,37 +47,32 @@ interface ShellParams {
   lines?: number;
 }
 
-// Helper to execute command in sandbox container
-async function execInContainer(command: string, timeout: number = 30000) {
+/**
+ * Run one program inside the sandbox container, as an argv array (ledger #10).
+ *
+ * This used to join ['docker', 'exec', …, '/bin/bash', '-c', command] with spaces and hand
+ * the string to the HOST shell. The command wasn't quoted, so the container's bash got only
+ * its first word (`tmux` with no arguments), and anything the host shell expands in the
+ * rest ($(…), backticks, the old "-escaped send-keys text) ran on the host. It also put the
+ * token values in the process list. execFile runs docker directly with no shell; `-e NAME`
+ * passes the variable through from this process's environment.
+ */
+async function execInContainer(argv: string[], timeout: number = 30000) {
   const containerName = process.env.SANDBOX_CONTAINER_NAME || 'coachartie-sandbox';
-
-  const dockerCommand = [
+  return await execFileAsync(
     'docker',
-    'exec',
-    '-e',
-    `GITHUB_TOKEN=${process.env.GITHUB_TOKEN || ''}`,
-    '-e',
-    `OPENAI_API_KEY=${process.env.OPENAI_API_KEY || ''}`,
-    containerName,
-    '/bin/bash',
-    '-c',
-    command,
-  ].join(' ');
-
-  return await execAsync(dockerCommand, {
-    timeout,
-    maxBuffer: 1024 * 1024 * 5,
-    env: process.env,
-  });
+    ['exec', '-e', 'GITHUB_TOKEN', '-e', 'OPENAI_API_KEY', containerName, ...argv],
+    { timeout, maxBuffer: 1024 * 1024 * 5, env: process.env }
+  );
 }
 
 // Helper to ensure tmux session exists
 async function ensureSession(session: string, cwd: string = '/workspace') {
   try {
-    await execInContainer(`tmux has-session -t ${session} 2>/dev/null`);
+    await execInContainer(['tmux', 'has-session', '-t', session]);
   } catch {
     logger.info(`Creating new tmux session: ${session}`);
-    await execInContainer(`tmux new-session -d -s ${session} -c ${cwd}`);
+    await execInContainer(['tmux', 'new-session', '-d', '-s', session, '-c', cwd]);
   }
 }
 
@@ -227,7 +224,7 @@ Use an explicit heredoc in your command instead.`;
         // Get pwd first so we can show context
         let actualCwd = cwd;
         try {
-          const { stdout: pwdOut } = await execInContainer('pwd');
+          const { stdout: pwdOut } = await execInContainer(['pwd']);
           actualCwd = pwdOut.trim() || cwd;
         } catch {
           // Use default cwd
@@ -271,8 +268,10 @@ Use an explicit heredoc in your command instead.`;
         logger.info(`Sending to ${target}: ${command}`);
         await ensureSession(session, cwd);
 
-        const escapedCommand = command.replace(/"/g, '\\"');
-        await execInContainer(`tmux send-keys -t ${target} "${escapedCommand}" Enter`, timeout);
+        // -l types the command literally (no key-name lookup, no shell quoting to get
+        // wrong); Enter is a second, non-literal send so it's a keypress, not the word.
+        await execInContainer(['tmux', 'send-keys', '-t', target, '-l', '--', command], timeout);
+        await execInContainer(['tmux', 'send-keys', '-t', target, 'Enter'], timeout);
         await delay(100);
 
         // Return simple confirmation
@@ -285,16 +284,21 @@ Use action="read_pane" session="${session}" to see output.`;
         await ensureSession(session, cwd);
 
         const { stdout } = await execInContainer(
-          `tmux capture-pane -t ${target} -p -S -${lines}`,
+          ['tmux', 'capture-pane', '-t', target, '-p', '-S', `-${lines}`],
           timeout
         );
 
         // Get current directory in the pane
         let paneCwd = '/workspace';
         try {
-          const { stdout: cwdOut } = await execInContainer(
-            `tmux display-message -t ${target} -p '#{pane_current_path}'`
-          );
+          const { stdout: cwdOut } = await execInContainer([
+            'tmux',
+            'display-message',
+            '-t',
+            target,
+            '-p',
+            '#{pane_current_path}',
+          ]);
           paneCwd = cwdOut.trim() || '/workspace';
         } catch {
           // Use default
@@ -319,10 +323,10 @@ ${truncated.truncated ? `[...truncated...]` : ''}
         await ensureSession(session, cwd);
 
         const splitFlag = direction === 'horizontal' ? '-h' : '-v';
-        const escapedCommand = command.replace(/"/g, '\\"');
 
+        // The command is one argv element; tmux runs it with the container's shell.
         const { stdout } = await execInContainer(
-          `tmux split-window ${splitFlag} -t ${target} -c ${cwd} -P -F '#{pane_index}' "${escapedCommand}"`,
+          ['tmux', 'split-window', splitFlag, '-t', target, '-c', cwd, '-P', '-F', '#{pane_index}', command],
           timeout
         );
 
@@ -336,7 +340,7 @@ Running: ${command}`;
 
         try {
           const { stdout: sessionList } = await execInContainer(
-            `tmux list-sessions -F '#{session_name}: #{session_windows} window(s)'`,
+            ['tmux', 'list-sessions', '-F', '#{session_name}: #{session_windows} window(s)'],
             timeout
           );
 
@@ -354,9 +358,14 @@ Start one with: action="send" session="mywork" command="..."`;
             details.push(`\n${sess}`);
 
             try {
-              const { stdout: paneList } = await execInContainer(
-                `tmux list-panes -t ${sessionName} -F '  pane #{pane_index}: #{pane_current_path}'`
-              );
+              const { stdout: paneList } = await execInContainer([
+                'tmux',
+                'list-panes',
+                '-t',
+                sessionName,
+                '-F',
+                '  pane #{pane_index}: #{pane_current_path}',
+              ]);
               details.push(paneList.trim());
             } catch {
               // Skip pane details on error
