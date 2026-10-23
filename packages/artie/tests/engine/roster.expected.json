@@ -11,6 +11,19 @@
     "status",
     "summaries"
   ],
+  "bot-config": [
+    "auto_optimize",
+    "compare_models",
+    "get_active_model",
+    "get_context_size",
+    "get_iteration_limits",
+    "get_pricing",
+    "get_recommendation",
+    "list_models",
+    "set_context_size",
+    "set_iteration_limits",
+    "set_model_tier"
+  ],
   "calculator": [
     "calc",
     "calculate",
@@ -102,12 +115,6 @@
   "discord-user-history": [
     "get_user_messages"
   ],
-  "edit": [
-    "delete",
-    "insert",
-    "read",
-    "replace"
-  ],
   "email": [
     "send",
     "status"
@@ -129,14 +136,6 @@
     "search",
     "stats"
   ],
-  "git": [
-    "blame",
-    "branch",
-    "diff",
-    "log",
-    "show",
-    "status"
-  ],
   "github": [
     "create_issue",
     "get_deployment_stats",
@@ -149,13 +148,6 @@
     "search_issues",
     "search_repositories",
     "update_issue"
-  ],
-  "goal": [
-    "check",
-    "complete",
-    "history",
-    "set",
-    "update"
   ],
   "goals": [
     "abandon",
@@ -240,12 +232,6 @@
     "list_for_user",
     "update"
   ],
-  "model_manager": [
-    "compare_models",
-    "get_pricing",
-    "get_recommendation",
-    "list_models"
-  ],
   "morning-briefing": [
     "config",
     "configure",
@@ -300,22 +286,6 @@
     "send",
     "status"
   ],
-  "quests": [
-    "abandon",
-    "cancel",
-    "clear",
-    "complete",
-    "create",
-    "current",
-    "done",
-    "finish",
-    "list",
-    "next",
-    "resume",
-    "skip",
-    "start",
-    "status"
-  ],
   "quiz-game": [
     "help",
     "info"
@@ -334,14 +304,25 @@
     "clear",
     "list"
   ],
-  "runtime_config": [
-    "auto_optimize",
-    "get_active_model",
-    "get_context_size",
-    "get_iteration_limits",
-    "set_context_size",
-    "set_iteration_limits",
-    "set_model_tier"
+  "sandbox": [
+    "delete",
+    "exec",
+    "find_files",
+    "git_blame",
+    "git_branch",
+    "git_diff",
+    "git_log",
+    "git_show",
+    "git_status",
+    "grep",
+    "insert",
+    "list_panes",
+    "read_file",
+    "read_pane",
+    "replace",
+    "search",
+    "send",
+    "split"
   ],
   "scheduler": [
     "cancel",
@@ -364,11 +345,6 @@
     "section",
     "write"
   ],
-  "search": [
-    "both",
-    "content",
-    "files"
-  ],
   "self-stats": [
     "capabilities",
     "costs",
@@ -383,13 +359,6 @@
   ],
   "sequence": [
     "execute"
-  ],
-  "shell": [
-    "exec",
-    "list",
-    "read",
-    "send",
-    "split"
   ],
   "skills": [
     "disable",
@@ -423,28 +392,29 @@
     "get_uptime",
     "health_summary"
   ],
-  "task-status": [
+  "tasks": [
+    "abandon",
     "abort",
     "active",
+    "add",
     "begin",
     "cancel",
+    "clear",
     "complete",
+    "create",
+    "current",
     "done",
     "error",
     "fail",
     "finish",
     "list",
-    "progress",
-    "start",
-    "update"
-  ],
-  "todo": [
-    "add",
-    "complete",
-    "create",
-    "list",
     "next",
-    "status"
+    "progress",
+    "resume",
+    "skip",
+    "start",
+    "status",
+    "update"
   ],
   "trend-watcher": [
     "all",

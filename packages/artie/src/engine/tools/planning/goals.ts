@@ -1,6 +1,12 @@
 /**
  * Goals Capability - Artie's Persistent Objectives
  *
+ * The one goal tool. The older `goal` tool (planning/goal.ts, legacy `goals` table) was folded
+ * in on 2026-10-23 (wave 4): its name and actions resolve here through TOOL_ALIASES in
+ * 5-tool-loop/registry.ts (set → create, check → list, update, complete, history → list;
+ * objective → title, deadline → target_date, goal_id → id). The legacy `goals` table and its
+ * rows are untouched; conscience's goal whisper still reads it.
+ *
  * Goals are directions Artie works toward over time, not tasks to complete.
  * They give Artie purpose and enable proactive, autonomous behavior.
  *
@@ -110,7 +116,9 @@ async function handleGoals(
   try {
     switch (action) {
       case 'create': {
-        const { title, description, type, target_date, parent_id, budget } = params;
+        const { description, type, target_date, parent_id, budget } = params;
+        // The old `goal:set` (aliased here since wave 4) accepted the objective as tag content.
+        const title = params.title || (_content && _content.trim()) || undefined;
 
         if (!title) {
           return 'Need a title for the goal. What are we working toward?';

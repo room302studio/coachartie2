@@ -1,6 +1,7 @@
 import { openRouterService } from '../4-generate/openrouter.js';
 import { logger } from '../../shared/logger.js';
 import { getSyncDb } from '../../shared/db/client.js';
+import { resolveToolCall } from '../5-tool-loop/registry.js';
 
 export interface CapabilityRequest {
   name: string;
@@ -172,9 +173,12 @@ For DANGEROUS operations: Explain why unsafe, no approval`;
       },
       blacklistedPaths: ['/etc/', '/usr/', '/var/', '/System/', '/boot/', '/root/'],
     },
-    shell: {
-      dangerousActions: ['execute'],
+    // The old `shell` tool, merged into `sandbox` (wave 4). Its real action has always been
+    // `exec`; `execute` is kept because callers (and the conscience tests) use it.
+    sandbox: {
+      dangerousActions: ['exec', 'execute'],
       warnings: {
+        exec: 'EXTREME DANGER: Shell execution can compromise entire system. Block destructive commands.',
         execute:
           'EXTREME DANGER: Shell execution can compromise entire system. Block destructive commands.',
       },
@@ -188,6 +192,7 @@ For DANGEROUS operations: Explain why unsafe, no approval`;
   };
 
   private checkBlacklist(capability: CapabilityRequest): string[] {
+    capability = this.canonical(capability);
     const warnings: string[] = [];
     const manifest = this.SAFETY_MANIFEST[capability.name];
 
@@ -219,7 +224,7 @@ For DANGEROUS operations: Explain why unsafe, no approval`;
     }
 
     // Check shell commands
-    if (capability.name === 'shell' && capability.params) {
+    if (capability.name === 'sandbox' && capability.params) {
       const command =
         typeof capability.params === 'string' ? capability.params : capability.params.command;
       if (
@@ -249,7 +254,16 @@ For DANGEROUS operations: Explain why unsafe, no approval`;
     return warnings;
   }
 
+  /** Old merged tool names (shell, goal, todo, …) → their canonical tool, via resolveToolCall. */
+  private canonical(capability: CapabilityRequest): CapabilityRequest {
+    const resolved = resolveToolCall(capability.name, capability.action, capability.params, {
+      log: false,
+    });
+    return { name: resolved.name, action: resolved.action, params: resolved.params };
+  }
+
   async review(userMessage: string, capability: CapabilityRequest): Promise<string> {
+    capability = this.canonical(capability);
     try {
       logger.info(
         `🔍 CONSCIENCE REVIEW: Checking capability ${capability.name}:${capability.action} with params: ${JSON.stringify(capability.params)}`
@@ -280,7 +294,10 @@ For DANGEROUS operations: Explain why unsafe, no approval`;
       }
 
       // Immediate failsafe: Block dangerous shell commands without LLM
-      if (capability.name === 'shell' && capability.action === 'execute') {
+      if (
+        capability.name === 'sandbox' &&
+        (capability.action === 'exec' || capability.action === 'execute')
+      ) {
         const command =
           typeof capability.params === 'string'
             ? capability.params
@@ -306,9 +323,9 @@ For DANGEROUS operations: Explain why unsafe, no approval`;
         capability.name === 'scheduler' ||
         capability.name === 'mcp_client' ||
         capability.name === 'mcp_installer' ||
-        capability.name === 'goal' ||
+        capability.name === 'goals' ||
         capability.name === 'variable' ||
-        capability.name === 'todo' ||
+        capability.name === 'tasks' ||
         capability.name === 'discord-ui' ||
         capability.name === 'github'
       ) {

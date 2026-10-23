@@ -1,7 +1,7 @@
 import { logger } from '../../shared/logger.js';
 import { IncomingMessage } from '../../shared/queue/types.js';
 import { openRouterService } from '../4-generate/openrouter.js';
-import { capabilityRegistry, AUTO_INJECTED_PARAMS } from './registry.js';
+import { capabilityRegistry, AUTO_INJECTED_PARAMS, resolveToolCall } from './registry.js';
 import { capabilityXMLParser } from './xml-parser.js';
 import { conscienceLLM } from '../health/conscience.js';
 import { ExtractedCapability, OrchestrationContext } from '../2-turn/types.js';
@@ -35,10 +35,12 @@ export class CapabilityParser {
         logger.info(
           `🔍 MAPPING DEBUG: cap.name=${cap.name}, cap.params=${JSON.stringify(cap.params)}, cap.content="${cap.content}"`
         );
+        // Old merged tool names (goal, shell, todo, …) become canonical right at parse time.
+        const resolved = resolveToolCall(cap.name, cap.action, cap.params);
         return {
-          name: cap.name,
-          action: cap.action,
-          params: cap.params,
+          name: resolved.name,
+          action: resolved.action,
+          params: resolved.params,
           content: cap.content,
           priority: index,
         };
@@ -69,7 +71,9 @@ export class CapabilityParser {
   }
 
   generateHelpfulErrorMessage(capability: ExtractedCapability, originalError: string): string {
-    const { name, action } = capability;
+    const { name, action } = resolveToolCall(capability.name, capability.action, undefined, {
+      log: false,
+    });
 
     // Check if the capability exists
     if (!capabilityRegistry.has(name)) {

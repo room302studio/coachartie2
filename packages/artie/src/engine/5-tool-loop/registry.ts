@@ -70,6 +70,153 @@ const ACTION_ALIASES: Record<string, Record<string, string>> = {
 };
 
 /**
+ * Old tool names that were merged into one canonical tool (wave 4, 2026-10-23). The model may
+ * still emit them from memory, old examples or recalled conversations, so they keep working.
+ *
+ * - `to`: the canonical registered tool.
+ * - `actions`: old action → canonical action. An action missing from the map keeps its name
+ *   (the name still maps, so the taint guard sees the canonical tool and the registry rejects
+ *   the unknown action with the canonical tool's real action list).
+ * - `params`: fixed params the alias forces (e.g. which tracker inside `tasks`). They override
+ *   whatever the model sent.
+ * - `paramRenames`: old param key → canonical key, applied only when the canonical key is absent.
+ *
+ * Aliases are never registered, so they never appear in the prompt roster or a tool schema.
+ * Resolve them ONLY through resolveToolCall().
+ */
+export interface ToolAlias {
+  to: string;
+  actions: Record<string, string>;
+  params?: Record<string, unknown>;
+  paramRenames?: Record<string, string>;
+}
+
+const identity = (actions: string[]): Record<string, string> =>
+  Object.fromEntries(actions.map((a) => [a, a]));
+
+export const TOOL_ALIASES: Record<string, ToolAlias> = {
+  // planning: goal (legacy `goals` table) → goals (`objectives` table)
+  goal: {
+    to: 'goals',
+    actions: {
+      set: 'create',
+      check: 'list',
+      update: 'update',
+      complete: 'complete',
+      // goal:history was user-wide activity over N days; goals:history is per-goal and needs
+      // an id, so the closest canonical action is the full list.
+      history: 'list',
+    },
+    paramRenames: { objective: 'title', deadline: 'target_date', goal_id: 'id' },
+  },
+  // planning: todo + quests + task-status → tasks, told apart by `tracker`
+  todo: {
+    to: 'tasks',
+    actions: identity(['create', 'add', 'next', 'complete', 'status', 'list']),
+    params: { tracker: 'todo' },
+  },
+  quests: {
+    to: 'tasks',
+    actions: identity([
+      'start', 'create', 'next', 'current', 'status', 'complete', 'done', 'finish', 'skip',
+      'list', 'abandon', 'cancel', 'resume', 'clear',
+    ]),
+    params: { tracker: 'quest' },
+  },
+  'task-status': {
+    to: 'tasks',
+    actions: identity([
+      'start', 'begin', 'update', 'progress', 'complete', 'done', 'finish', 'fail', 'error',
+      'list', 'active', 'cancel', 'abort',
+    ]),
+    params: { tracker: 'task' },
+  },
+  // dev: shell + edit + git + search (docker exec into the sandbox container) → sandbox
+  shell: {
+    to: 'sandbox',
+    actions: { exec: 'exec', send: 'send', split: 'split', read: 'read_pane', list: 'list_panes' },
+  },
+  edit: {
+    to: 'sandbox',
+    actions: { read: 'read_file', replace: 'replace', insert: 'insert', delete: 'delete' },
+  },
+  git: {
+    to: 'sandbox',
+    actions: {
+      status: 'git_status',
+      diff: 'git_diff',
+      log: 'git_log',
+      branch: 'git_branch',
+      show: 'git_show',
+      blame: 'git_blame',
+    },
+  },
+  search: {
+    to: 'sandbox',
+    actions: { files: 'find_files', content: 'grep', both: 'search' },
+  },
+  // ops: runtime_config + model_manager → bot-config (no action collisions)
+  runtime_config: {
+    to: 'bot-config',
+    actions: identity([
+      'get_active_model', 'set_model_tier', 'get_context_size', 'set_context_size',
+      'get_iteration_limits', 'set_iteration_limits', 'auto_optimize',
+    ]),
+  },
+  model_manager: {
+    to: 'bot-config',
+    actions: identity(['list_models', 'get_pricing', 'get_recommendation', 'compare_models']),
+  },
+};
+
+export interface ResolvedToolCall<P = any> {
+  name: string;
+  action: string;
+  params: P;
+  /** The old name the call arrived with, when an alias fired. */
+  aliasedFrom?: string;
+}
+
+/**
+ * The ONE place an old tool name becomes its canonical tool. Used by registry
+ * execute/has/get/supportsAction, the executor's taint check, conscience and the parse path.
+ * Runs before ACTION_ALIASES. Idempotent: a canonical name resolves to itself.
+ */
+export function resolveToolCall<P = any>(
+  name: string,
+  action: string,
+  params?: P,
+  opts: { log?: boolean } = {}
+): ResolvedToolCall<P> {
+  const key = typeof name === 'string' ? name : String(name ?? '');
+  const alias = TOOL_ALIASES[key] ?? TOOL_ALIASES[key.toLowerCase()];
+  if (!alias) {
+    return { name, action, params: params as P };
+  }
+
+  const newAction = alias.actions[action] ?? alias.actions[String(action ?? '').toLowerCase()] ?? action;
+
+  let newParams: any = params;
+  if (params && typeof params === 'object' && !Array.isArray(params)) {
+    const merged: Record<string, unknown> = { ...(params as Record<string, unknown>) };
+    for (const [oldKey, newKey] of Object.entries(alias.paramRenames ?? {})) {
+      if (oldKey in merged && !(newKey in merged)) {
+        merged[newKey] = merged[oldKey];
+        delete merged[oldKey];
+      }
+    }
+    newParams = { ...merged, ...(alias.params ?? {}) };
+  } else if (params === undefined && alias.params) {
+    newParams = { ...alias.params };
+  }
+
+  if (opts.log !== false) {
+    logger.info(`🔀 tool alias ${key}:${action} → ${alias.to}:${newAction}`);
+  }
+  return { name: alias.to, action: newAction, params: newParams as P, aliasedFrom: key };
+}
+
+/**
  * Params that are NOT part of the `data` blob the LLM writes — they arrive
  * separately: `action` is the tag attribute, and channelId/guildId are injected
  * downstream from the Discord context by the executor. Listing them in a
@@ -116,6 +263,7 @@ export class CapabilityRegistry {
    * @throws Error if capability not found or action not supported
    */
   get(name: string, action: string): RegisteredCapability {
+    ({ name, action } = resolveToolCall(name, action, undefined, { log: false }));
     const capability = this.capabilities.get(name);
 
     if (!capability) {
@@ -164,7 +312,7 @@ export class CapabilityRegistry {
    * @returns True if capability exists
    */
   has(name: string): boolean {
-    return this.capabilities.has(name);
+    return this.capabilities.has(resolveToolCall(name, '', undefined, { log: false }).name);
   }
 
   /**
@@ -175,6 +323,7 @@ export class CapabilityRegistry {
    * @returns True if capability exists and supports the action
    */
   supportsAction(name: string, action: string): boolean {
+    ({ name, action } = resolveToolCall(name, action, undefined, { log: false }));
     const capability = this.capabilities.get(name);
     return capability ? capability.supportedActions.includes(action) : false;
   }
@@ -305,6 +454,10 @@ export class CapabilityRegistry {
     content?: string,
     context?: CapabilityContext
   ): Promise<string> {
+    // Old merged tool names (goal, shell, todo, …) resolve to their canonical tool first,
+    // before ACTION_ALIASES and before any validation.
+    ({ name, action, params } = resolveToolCall(name, action, params));
+
     // Get capability (will throw if not found)
     const capability = this.capabilities.get(name);
 
@@ -719,7 +872,7 @@ export const capabilityRegistry = new CapabilityRegistry();
 
 // Module-load registrations for capabilities that are NOT registered by
 // capability-bootstrap.ts. Everything bootstrap handles (memory, web,
-// n8n-browser, discord-forums, email, user-profile, variable-store, shell,
+// n8n-browser, discord-forums, email, user-profile, variable-store, sandbox,
 // filesystem) was removed from here — registering them in both places logged a
 // "⚠️ Overwriting existing capability" warning on every boot. Keep this list in
 // sync: only caps that bootstrap does NOT register belong here.

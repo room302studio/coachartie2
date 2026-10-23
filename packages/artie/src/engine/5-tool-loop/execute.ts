@@ -1,5 +1,5 @@
 import { logger } from '../../shared/logger.js';
-import { capabilityRegistry } from './registry.js';
+import { capabilityRegistry, resolveToolCall } from './registry.js';
 import { robustExecutor } from './retry.js';
 import { getErrorMessage } from '../error-utils.js';
 import { openRouterService } from '../4-generate/openrouter.js';
@@ -24,31 +24,41 @@ import {
 // from hijacking dangerous capabilities (shell, filesystem, git)
 // =====================================================
 
+// Every name in these three sets is a REGISTERED CANONICAL tool name (taint-tracking.test.ts
+// asserts it). Old merged names (shell, git, …) are resolved through resolveToolCall before
+// these sets are consulted, so they never need listing here.
+
 // Capabilities that fetch external untrusted content - executing these taints the context
-const TAINTING_CAPABILITIES = new Set([
-  'websearch', // Web search results
+export const TAINTING_CAPABILITIES = new Set([
   'http', // Raw HTTP fetches
-  'web', // Web browsing
-  'n8n-browser', // Browser automation
+  'web', // Web browsing + web search (the <websearch> shortcut resolves to web:search)
+  'n8n_browser', // Browser automation (registered name; was listed as 'n8n-browser', which never matched)
 ]);
 
 // Capabilities that are dangerous when context is tainted by external content
 // These are blocked to prevent "rm -rf" style attacks via prompt injection
-const DANGEROUS_WHEN_TAINTED = new Set([
-  'shell', // Command execution
-  'bash', // Command execution
+export const DANGEROUS_WHEN_TAINTED = new Set([
+  'sandbox', // Command execution, file edits and git in the sandbox (was shell/git; bash never existed)
   'filesystem', // File operations (write/delete)
-  'git', // Repository operations
   'email', // Sending emails (could exfiltrate data)
-  'sms', // Sending SMS
   'scheduler', // Scheduling future actions
-  'n8n', // Workflow automation
 ]);
 
 // Actions within dangerous capabilities that are safe even when tainted
-const SAFE_ACTIONS_WHEN_TAINTED: Record<string, Set<string>> = {
+export const SAFE_ACTIONS_WHEN_TAINTED: Record<string, Set<string>> = {
   filesystem: new Set(['read', 'list', 'exists']), // Read-only is fine
-  git: new Set(['status', 'log', 'diff', 'branch']), // Read-only git ops
+  sandbox: new Set([
+    // Read-only git ops (the old git tool's safe set; show/blame were never on it)
+    'git_status',
+    'git_log',
+    'git_diff',
+    'git_branch',
+    // The old edit:read and dev search were not in the dangerous set at all
+    'read_file',
+    'find_files',
+    'grep',
+    'search',
+  ]),
 };
 
 // Callback types for dependencies the executor needs from orchestrator
@@ -85,7 +95,9 @@ function checkTaintBlock(
     return null; // Not tainted, allow everything
   }
 
-  const capName = capability.name.toLowerCase();
+  // Canonical name + action (an old name like shell/git maps to sandbox first).
+  const resolved = resolveToolCall(capability.name, capability.action, undefined, { log: false });
+  const capName = String(resolved.name).toLowerCase();
 
   if (!DANGEROUS_WHEN_TAINTED.has(capName)) {
     return null; // Not a dangerous capability
@@ -93,7 +105,7 @@ function checkTaintBlock(
 
   // Check if this specific action is safe
   const safeActions = SAFE_ACTIONS_WHEN_TAINTED[capName];
-  if (safeActions && safeActions.has(capability.action.toLowerCase())) {
+  if (safeActions && safeActions.has(String(resolved.action).toLowerCase())) {
     return null; // This action is safe even when tainted
   }
 
@@ -110,7 +122,8 @@ function checkTaintBlock(
  * Check if executing a capability should taint the context
  */
 function shouldTaintContext(capability: ExtractedCapability): boolean {
-  return TAINTING_CAPABILITIES.has(capability.name.toLowerCase());
+  const { name } = resolveToolCall(capability.name, capability.action, undefined, { log: false });
+  return TAINTING_CAPABILITIES.has(String(name).toLowerCase());
 }
 
 /**
@@ -234,7 +247,9 @@ export class CapabilityExecutor {
         // Skip intermediate responses when they won't add value:
         const isLastCapability = capabilityIndex + 1 === context.capabilities.length;
         const capabilityType = capability.name.split(':')[0];
-        const isWriteOperation = ['memory', 'variable', 'goal', 'todo'].includes(capabilityType);
+        const isWriteOperation = ['memory', 'variable', 'goals', 'tasks'].includes(
+          resolveToolCall(capabilityType, capability.action, undefined, { log: false }).name
+        );
         const isSingleCapability = context.capabilities.length === 1;
 
         // Skip when: last in chain, write operation, or single capability (no chaining opportunity)
@@ -431,6 +446,20 @@ export class CapabilityExecutor {
     context: OrchestrationContext | undefined,
     generateHelpfulError: GenerateHelpfulErrorCallback
   ): Promise<CapabilityResult> {
+    // Old merged tool names (shell, git, todo, …) become their canonical tool BEFORE the taint
+    // check, so the guard only ever has to know canonical names.
+    {
+      const resolved = resolveToolCall(capability.name, capability.action, capability.params);
+      if (resolved.aliasedFrom) {
+        capability = {
+          ...capability,
+          name: resolved.name,
+          action: resolved.action,
+          params: resolved.params,
+        };
+      }
+    }
+
     const result: CapabilityResult = {
       capability,
       success: false,

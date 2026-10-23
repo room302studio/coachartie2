@@ -3,9 +3,57 @@
  * Verifies that dangerous capabilities are blocked after fetching external content
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
-import { capabilityExecutor } from '../../src/engine/5-tool-loop/execute.js';
+import { describe, it, expect, beforeEach, beforeAll, vi } from 'vitest';
+
+// The allowed (non-blocked) sandbox calls below would otherwise `docker exec` for real.
+vi.mock('child_process', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('child_process')>();
+  const exec = (_cmd: string, optsOrCb: unknown, maybeCb?: unknown) => {
+    const cb = (typeof optsOrCb === 'function' ? optsOrCb : maybeCb) as (
+      err: Error | null,
+      out?: { stdout: string; stderr: string }
+    ) => void;
+    cb(null, { stdout: '', stderr: '' });
+    return {} as unknown;
+  };
+  return { ...actual, exec, default: { ...actual, exec } };
+});
+
+import {
+  capabilityExecutor,
+  TAINTING_CAPABILITIES,
+  DANGEROUS_WHEN_TAINTED,
+  SAFE_ACTIONS_WHEN_TAINTED,
+} from '../../src/engine/5-tool-loop/execute.js';
+import { capabilityBootstrap } from '../../src/engine/5-tool-loop/register-tools.js';
+import { capabilityRegistry, TOOL_ALIASES } from '../../src/engine/5-tool-loop/registry.js';
 import { OrchestrationContext, ExtractedCapability } from '../../src/engine/2-turn/types.js';
+
+describe('Taint sets name only registered canonical tools', () => {
+  beforeAll(() => {
+    capabilityBootstrap.initializeCapabilityRegistry();
+  });
+
+  it('every taint-set name is registered and is not an alias', () => {
+    const registered = new Set(capabilityRegistry.list().map((c) => c.name));
+    const names = [
+      ...TAINTING_CAPABILITIES,
+      ...DANGEROUS_WHEN_TAINTED,
+      ...Object.keys(SAFE_ACTIONS_WHEN_TAINTED),
+    ];
+    for (const name of names) {
+      expect(registered.has(name), `${name} is not a registered tool`).toBe(true);
+      expect(TOOL_ALIASES[name], `${name} is an alias, not canonical`).toBeUndefined();
+    }
+  });
+
+  it("sandbox's taint-safe actions are real sandbox actions", () => {
+    const sandbox = capabilityRegistry.list().find((c) => c.name === 'sandbox')!;
+    for (const action of SAFE_ACTIONS_WHEN_TAINTED.sandbox) {
+      expect(sandbox.supportedActions).toContain(action);
+    }
+  });
+});
 
 describe('Taint Tracking Security', () => {
   let context: OrchestrationContext;
@@ -160,6 +208,28 @@ describe('Taint Tracking Security', () => {
       // Should not be blocked by taint
       expect(result.error || '').not.toContain('SECURITY');
       expect(result.error || '').not.toContain('tainted');
+    });
+
+    it('blocks sandbox:exec and sandbox writes by canonical name, allows sandbox reads', async () => {
+      for (const action of ['exec', 'send', 'replace', 'insert', 'delete', 'read_pane']) {
+        const blocked = await capabilityExecutor.executeCapability(
+          { name: 'sandbox', action, params: { command: 'rm -rf /', file: '/x' }, priority: 0 },
+          context,
+          (cap, err) => `Error: ${err}`
+        );
+        expect(blocked.success, `sandbox:${action}`).toBe(false);
+        expect(blocked.error, `sandbox:${action}`).toContain('SECURITY');
+      }
+
+      // The old edit:read (now read_file) was never taint-blocked; still isn't.
+      const read = await capabilityExecutor.executeCapability(
+        { name: 'edit', action: 'read', params: { file: '/workspace/x' }, priority: 0 },
+        context,
+        (cap, err) => `Error: ${err}`
+      );
+      expect(read.capability.name).toBe('sandbox');
+      expect(read.capability.action).toBe('read_file');
+      expect(read.error || '').not.toContain('SECURITY');
     });
 
     it('should block email capability', async () => {

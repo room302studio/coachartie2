@@ -3,7 +3,8 @@ import { capabilityRegistry } from './registry.js';
 // System capabilities
 import { calculatorCapability } from '../tools/core/calculator.js';
 import { creditStatusCapability } from '../tools/ops/credit-status.js';
-import { runtimeConfigCapability } from '../tools/ops/runtime-config.js';
+// bot-config = runtime_config + model_manager (wave 4; old names alias in registry.ts)
+import { botConfigCapability } from '../tools/ops/bot-config.js';
 import { systemMonitorCapability } from '../tools/ops/system-monitor.js';
 import { variableStoreCapability } from './variables.js';
 import { sequenceCapability } from '../tools/ops/sequence.js';
@@ -17,31 +18,27 @@ import { webCapability } from '../tools/core/web.js';
 import { httpCapability } from '../tools/core/http.js';
 import { mediaWikiCapability } from '../tools/web/mediawiki.js';
 import { wolframCapability } from '../tools/web/wolfram.js';
-import { searchCapability } from '../tools/dev/sandbox/search.js';
 import { n8nBrowserCapability } from '../tools/web/n8n-browser.js';
 // Development capabilities. package_manager, system_installer and environment (.env
 // read/write) ran on the production host with zero use; removed 2026-10-23.
 import { filesystemCapability } from '../tools/dev/filesystem.js';
 import { githubCapability } from '../tools/dev/github.js';
-import { shellCapability } from '../tools/dev/sandbox/shell.js';
-import { editCapability } from '../tools/dev/sandbox/edit.js';
-import { gitCapability } from '../tools/dev/sandbox/git.js';
+// sandbox = shell + edit + git + search(dev), all docker exec into the sandbox container
+import { sandboxCapability } from '../tools/dev/sandbox.js';
 // Memory capabilities
 import { memoryCapability } from '../tools/core/memory.js';
 // AI capabilities
-import { modelManagerCapability } from '../tools/ops/model-manager.js';
 import { visionCapability } from '../tools/media/vision.js';
 import { imageGenCapability } from '../tools/media/image-gen.js';
 // Productivity capabilities
-import { goalCapability } from '../tools/planning/goal.js';
-import { todoCapability } from '../tools/planning/todo.js';
+// tasks = todo + quests + task-status (told apart by `tracker`)
+import { tasksCapability } from '../tools/planning/tasks.js';
 import { schedulerCapability } from '../tools/core/reminders.js';
 import { scratchpadCapability } from '../tools/planning/scratchpad.js';
 import { flashcardCapability } from '../tools/planning/flashcard.js';
 import { quizGameCapability } from '../tools/planning/quiz-game.js';
-import { questsCapability } from '../tools/planning/quests.js';
-import { taskStatusCapability } from '../tools/planning/task-status.js';
 import { morningBriefingCapability } from '../proactive/morning-briefing.js';
+// goals absorbs the old `goal` tool (alias in registry.ts)
 import { goalsCapability } from '../tools/planning/goals.js';
 // Discord capabilities
 import { discordUICapability } from '../tools/discord/ui.js';
@@ -114,17 +111,17 @@ export class CapabilityBootstrap {
       const ALL_CAPABILITIES = [
         calculatorCapability, webCapability, httpCapability,
         filesystemCapability, memoryCapability,
-        githubCapability, creditStatusCapability, modelManagerCapability, runtimeConfigCapability,
-        systemMonitorCapability, goalCapability, variableStoreCapability, todoCapability,
+        githubCapability, creditStatusCapability, botConfigCapability,
+        systemMonitorCapability, variableStoreCapability, tasksCapability,
         meetingCapability, discordUICapability, askQuestionCapability, discordForumsCapability,
         discordModerationCapability, mentionProxyCapability, emailCapability, proactiveDMCapability,
         userProfileCapability, pairingCapability, mediaWikiCapability, wolframCapability,
-        schedulerCapability, sequenceCapability, shellCapability, editCapability,
-        searchCapability, gitCapability, scratchpadCapability, selfStatsCapability,
+        schedulerCapability, sequenceCapability, sandboxCapability,
+        scratchpadCapability, selfStatsCapability,
         communityAnalyticsCapability, contextCapability, visionCapability, imageGenCapability,
         diagnoseCapability, autonomousCapability, n8nBrowserCapability, flashcardCapability,
         quizGameCapability, redditCapability, deepResearchCapability,
-        trendWatcherCapability, questsCapability, taskStatusCapability, morningBriefingCapability,
+        trendWatcherCapability, morningBriefingCapability,
         goalsCapability, kanbanCapability, vpsClaudeCapability, hermesCapability,
         systemMemoryCapability, osintLookupCapability, discordPollCapability,
         discordReactionCapability, stripePaymentsCapability, discordNicknameCapability,
