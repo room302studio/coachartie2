@@ -11,7 +11,7 @@ import {
   quizSessionManager,
   looksLikeAnswerAttempt,
   type FlashcardResponse,
-} from '../src/services/quiz-session-manager';
+} from '../../src/gateway/commands/quiz/live-session.js';
 
 const CHANNEL = 'test-channel-streaks';
 

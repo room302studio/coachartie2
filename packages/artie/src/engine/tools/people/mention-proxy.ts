@@ -8,8 +8,8 @@
  * representation without hard-coding rules.
  */
 
-import { logger } from '@coachartie/shared';
-import { RegisteredCapability } from '../../services/capability/capability-registry.js';
+import { logger } from '../../../shared/logger.js';
+import { RegisteredCapability } from '../../5-tool-loop/registry.js';
 import axios from 'axios';
 
 const DISCORD_API_BASE =

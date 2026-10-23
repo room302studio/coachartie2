@@ -7,16 +7,16 @@
  * priorities, token weights, thresholds, or ordering.
  */
 
-import { logger } from '@coachartie/shared';
-import { estimateTokens } from '@coachartie/shared';
-import type { IncomingMessage } from '@coachartie/shared';
-import type { MemoryEntourageInterface } from '../../memory/memory-entourage-interface.js';
-import type { ContextSource } from '../context-providers/types.js';
-import { DEBUG } from '../context-providers/types.js';
+import { logger } from '../../../shared/logger.js';
+import { estimateTokens } from '../../../shared/text.js';
+import type { type IncomingMessage } from '../../../shared/queue/types.js';
+import type { MemoryEntourageInterface } from '../../memory/types.js';
+import type { ContextSource } from './types.js';
+import { DEBUG } from './types.js';
 import {
   formatLearnedRulesForContext,
   extractParticipants,
-} from './transcript-helpers.js';
+} from './transcript.js';
 
 /**
  * Yard historian — occasionally surface ONE notable past moment as an OPTIONAL callback,
@@ -34,7 +34,7 @@ export async function addYardCallback(
     const chance = parseFloat(process.env.YARD_CALLBACK_CHANCE || '0.2');
     if (!(chance > 0) || Math.random() > chance) return;
 
-    const { getSyncDb } = await import('@coachartie/shared');
+    const { getSyncDb } = await import('../../../shared/db/client.js');
     const db = getSyncDb();
     // A notable moment from a while back — not the last few days (those are still fresh in
     // the transcript). High-importance, guild-scoped, older than 5 days, picked at random.
@@ -83,7 +83,7 @@ export async function addLearnedRules(
     const guildId = message.context?.guildId;
 
     // Import the reflection consolidator
-    const { reflectionConsolidator } = await import('../../learning/reflection-consolidator.js');
+    const { reflectionConsolidator } = await import('../../memory/reflection-consolidator.js');
 
     // Get system-wide rules (always apply)
     const systemRules = await reflectionConsolidator.getActiveRules('system');

@@ -6,7 +6,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 config({ path: resolve(__dirname, '../../.env') });
 
 import { REST, Routes } from 'discord.js';
-import { globalCommands } from './src/commands/registry.js';
+import { globalCommands } from '../artie/src/gateway/commands/registry.js';
 
 /**
  * Publish Artie's global slash commands from src/commands/registry.ts (the same list the

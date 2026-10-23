@@ -1,11 +1,8 @@
-import {
-  logger,
-  getSyncDb,
-  type SyncDbWrapper,
-  isBlockedUser,
-  mentionsOptedOutUser,
-  getDatabasePath,
-} from '@coachartie/shared';
+import { logger } from '../../shared/logger.js';
+import { getSyncDb, type SyncDbWrapper } from '../../shared/db/client.js';
+import { isBlockedUser } from '../../shared/blocklist.js';
+import { mentionsOptedOutUser } from '../../shared/privacy-opt-out.js';
+import { getDatabasePath } from '../../shared/paths.js';
 
 // Memories keyed to blocked users never surface in recall. Memories that merely
 // mention a BANNED user are allowed (policy 2026-07-16: Artie may reference banned users;

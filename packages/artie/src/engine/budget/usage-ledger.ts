@@ -1,6 +1,6 @@
-import { getSyncDb } from '@coachartie/shared';
-import { logger } from '@coachartie/shared';
-import { scheduleDailyBudgetCheck } from './daily-budget.js';
+import { getSyncDb } from '../../shared/db/client.js';
+import { logger } from '../../shared/logger.js';
+import { scheduleDailyBudgetCheck } from './daily-cap.js';
 
 export interface TokenUsage {
   prompt_tokens: number;

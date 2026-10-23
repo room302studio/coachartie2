@@ -1,6 +1,6 @@
-import { logger } from '@coachartie/shared';
+import { logger } from '../../../shared/logger.js';
 
-import { RegisteredCapability } from '../../services/capability/capability-registry.js';
+import { RegisteredCapability } from '../../5-tool-loop/registry.js';
 
 interface _GitHubParams {
   action?: string;

@@ -1,7 +1,7 @@
-import { logger } from '@coachartie/shared';
-import { openRouterModelsService } from '../../services/llm/openrouter-models.js';
-import { creditMonitor } from '../../services/monitoring/credit-monitor.js';
-import { RegisteredCapability } from '../../services/capability/capability-registry.js';
+import { logger } from '../../../shared/logger.js';
+import { openRouterModelsService } from '../../4-generate/model-catalog.js';
+import { creditMonitor } from '../../budget/openrouter-balance.js';
+import { RegisteredCapability } from '../../5-tool-loop/registry.js';
 
 /**
  * Model Manager Capability

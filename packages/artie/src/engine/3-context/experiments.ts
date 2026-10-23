@@ -10,7 +10,8 @@
  * Provides consistent variant assignment per user and tracks outcomes.
  */
 
-import { logger, getSyncDb } from '@coachartie/shared';
+import { logger } from '../../shared/logger.js';
+import { getSyncDb } from '../../shared/db/client.js';
 import { randomUUID } from 'crypto';
 
 // Whether experiments are enabled

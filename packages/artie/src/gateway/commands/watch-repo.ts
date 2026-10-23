@@ -6,14 +6,14 @@ import {
   EmbedBuilder,
   PermissionFlagsBits,
 } from 'discord.js';
-import { logger } from '@coachartie/shared';
+import { logger } from '../../shared/logger.js';
 import {
   REPO_PATTERN,
   WATCH_EVENTS,
   parseWatchEvents,
   suggestRepos,
   upsertWatch,
-} from '../services/github-watches.js';
+} from '../watchers/github/watch-list.js';
 
 const EVENT_HELP: Record<string, string> = {
   all: 'everything below',

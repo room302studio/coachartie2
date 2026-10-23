@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express';
-import { logger } from '@coachartie/shared';
-import { capabilityOrchestrator } from '../services/capability/capability-orchestrator.js';
-import { capabilityRegistry } from '../services/capability/capability-registry.js';
+import { logger } from '../../shared/logger.js';
+import { capabilityOrchestrator } from '../2-turn/capability-orchestrator.js';
+import { capabilityRegistry } from '../5-tool-loop/registry.js';
 
 const router: Router = Router();
 

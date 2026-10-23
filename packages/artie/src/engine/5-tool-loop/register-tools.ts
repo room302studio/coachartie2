@@ -1,85 +1,85 @@
-import { logger } from '@coachartie/shared';
-import { capabilityRegistry } from './capability-registry.js';
+import { logger } from '../../shared/logger.js';
+import { capabilityRegistry } from './registry.js';
 // System capabilities
-import { calculatorCapability } from '../../capabilities/system/calculator.js';
-import { creditStatusCapability } from '../../capabilities/system/credit-status.js';
-import { runtimeConfigCapability } from '../../capabilities/system/runtime-config.js';
-import { systemMonitorCapability } from '../../capabilities/system/system-monitor.js';
-import { variableStoreCapability } from '../../capabilities/system/variable-store.js';
-import { sequenceCapability } from '../../capabilities/system/sequence.js';
-import { contextCapability } from '../../capabilities/system/context.js';
-import { diagnoseCapability } from '../../capabilities/system/diagnose.js';
-import { userProfileCapability } from '../../capabilities/system/user-profile.js';
-import { autonomousCapability } from '../../capabilities/system/autonomous.js';
-import { pairingCapability } from '../../capabilities/system/pairing.js';
+import { calculatorCapability } from '../tools/core/calculator.js';
+import { creditStatusCapability } from '../tools/ops/credit-status.js';
+import { runtimeConfigCapability } from '../tools/ops/runtime-config.js';
+import { systemMonitorCapability } from '../tools/ops/system-monitor.js';
+import { variableStoreCapability } from './variables.js';
+import { sequenceCapability } from '../tools/ops/sequence.js';
+import { contextCapability } from '../tools/core/context.js';
+import { diagnoseCapability } from '../tools/ops/diagnose.js';
+import { userProfileCapability } from '../tools/people/user-profile.js';
+import { autonomousCapability } from '../tools/ops/autonomous.js';
+import { pairingCapability } from '../tools/people/pairing.js';
 // Web capabilities
-import { webCapability } from '../../capabilities/web/web.js';
-import { httpCapability } from '../../capabilities/web/http.js';
-import { mediaWikiCapability } from '../../capabilities/web/mediawiki.js';
-import { wolframCapability } from '../../capabilities/web/wolfram.js';
-import { searchCapability } from '../../capabilities/web/search.js';
-import { n8nBrowserCapability } from '../../capabilities/web/n8n-browser.js';
+import { webCapability } from '../tools/core/web.js';
+import { httpCapability } from '../tools/core/http.js';
+import { mediaWikiCapability } from '../tools/web/mediawiki.js';
+import { wolframCapability } from '../tools/web/wolfram.js';
+import { searchCapability } from '../tools/dev/sandbox/search.js';
+import { n8nBrowserCapability } from '../tools/web/n8n-browser.js';
 // Development capabilities. package_manager, system_installer and environment (.env
 // read/write) ran on the production host with zero use; removed 2026-10-23.
-import { filesystemCapability } from '../../capabilities/development/filesystem.js';
-import { githubCapability } from '../../capabilities/development/github.js';
-import { shellCapability } from '../../capabilities/development/shell.js';
-import { editCapability } from '../../capabilities/development/edit.js';
-import { gitCapability } from '../../capabilities/development/git.js';
+import { filesystemCapability } from '../tools/dev/filesystem.js';
+import { githubCapability } from '../tools/dev/github.js';
+import { shellCapability } from '../tools/dev/sandbox/shell.js';
+import { editCapability } from '../tools/dev/sandbox/edit.js';
+import { gitCapability } from '../tools/dev/sandbox/git.js';
 // Memory capabilities
-import { memoryCapability } from '../../capabilities/memory/memory.js';
+import { memoryCapability } from '../tools/core/memory.js';
 // AI capabilities
-import { modelManagerCapability } from '../../capabilities/ai/model-manager.js';
-import { visionCapability } from '../../capabilities/ai/vision.js';
-import { imageGenCapability } from '../../capabilities/image-gen.js';
+import { modelManagerCapability } from '../tools/ops/model-manager.js';
+import { visionCapability } from '../tools/media/vision.js';
+import { imageGenCapability } from '../tools/media/image-gen.js';
 // Productivity capabilities
-import { goalCapability } from '../../capabilities/productivity/goal.js';
-import { todoCapability } from '../../capabilities/productivity/todo.js';
-import { schedulerCapability } from '../../capabilities/productivity/scheduler.js';
-import { scratchpadCapability } from '../../capabilities/productivity/scratchpad.js';
-import { flashcardCapability } from '../../capabilities/productivity/flashcard.js';
-import { quizGameCapability } from '../../capabilities/productivity/quiz-game.js';
-import { questsCapability } from '../../capabilities/productivity/quests.js';
-import { taskStatusCapability } from '../../capabilities/productivity/task-status.js';
-import { morningBriefingCapability } from '../../capabilities/productivity/morning-briefing.js';
-import { goalsCapability } from '../../capabilities/productivity/goals.js';
+import { goalCapability } from '../tools/planning/goal.js';
+import { todoCapability } from '../tools/planning/todo.js';
+import { schedulerCapability } from '../tools/core/reminders.js';
+import { scratchpadCapability } from '../tools/planning/scratchpad.js';
+import { flashcardCapability } from '../tools/planning/flashcard.js';
+import { quizGameCapability } from '../tools/planning/quiz-game.js';
+import { questsCapability } from '../tools/planning/quests.js';
+import { taskStatusCapability } from '../tools/planning/task-status.js';
+import { morningBriefingCapability } from '../proactive/morning-briefing.js';
+import { goalsCapability } from '../tools/planning/goals.js';
 // Discord capabilities
-import { discordUICapability } from '../../capabilities/discord/discord-ui.js';
-import { discordForumsCapability } from '../../capabilities/discord/discord-forums.js';
-import { discordModerationCapability } from '../../capabilities/discord/discord-moderation.js';
-import { discordPollCapability } from '../../capabilities/discord/discord-poll.js';
-import { discordReactionCapability } from '../../capabilities/discord/discord-reaction.js';
-import { stripePaymentsCapability } from '../../capabilities/finance/stripe-payment-links.js';
-import { discordNicknameCapability } from '../../capabilities/discord/discord-nickname.js';
-import { discordThreadsCapability } from '../../capabilities/discord/discord-threads.js';
-import { discordSendMessageCapability } from '../../capabilities/discord/discord-send-message.js';
-import { discordChannelsCapability } from '../../capabilities/discord/discord-channels.js';
-import { discordUserHistoryCapability } from '../../capabilities/discord/discord-user-history.js';
-import { discordIssueParserCapability } from '../../capabilities/discord/discord-issue-parser.js';
-import { sendMetroFileCapability } from '../../capabilities/discord/send-metro-file.js';
+import { discordUICapability } from '../tools/discord/ui.js';
+import { discordForumsCapability } from '../tools/discord/forums.js';
+import { discordModerationCapability } from '../tools/discord/moderation.js';
+import { discordPollCapability } from '../tools/discord/poll.js';
+import { discordReactionCapability } from '../tools/discord/reaction.js';
+import { stripePaymentsCapability } from '../tools/money/stripe.js';
+import { discordNicknameCapability } from '../tools/discord/nickname.js';
+import { discordThreadsCapability } from '../tools/discord/threads.js';
+import { discordSendMessageCapability } from '../tools/discord/send-message.js';
+import { discordChannelsCapability } from '../tools/discord/channels.js';
+import { discordUserHistoryCapability } from '../tools/discord/user-history.js';
+import { discordIssueParserCapability } from '../tools/discord/issue-parser.js';
+import { sendMetroFileCapability } from '../tools/discord/send-metro-file.js';
 // Communication capabilities
-import { askQuestionCapability } from '../../capabilities/communication/ask-question.js';
-import { mentionProxyCapability } from '../../capabilities/communication/mention-proxy.js';
-import { emailCapability } from '../../capabilities/communication/email.js';
-import { redditCapability } from '../../capabilities/communication/reddit.js';
-import { proactiveDMCapability } from '../../capabilities/communication/proactive-dm.js';
-import { relayCapability } from '../../capabilities/communication/relay.js';
+import { askQuestionCapability } from '../tools/people/ask-question.js';
+import { mentionProxyCapability } from '../tools/people/mention-proxy.js';
+import { emailCapability } from '../tools/people/email.js';
+import { redditCapability } from '../tools/personal/reddit.js';
+import { proactiveDMCapability } from '../proactive/proactive-dm.js';
+import { relayCapability } from '../proactive/relay.js';
 // Analytics capabilities
-import { selfStatsCapability } from '../../capabilities/self-stats.js';
-import { communityAnalyticsCapability } from '../../capabilities/community-analytics.js';
+import { selfStatsCapability } from '../tools/ops/self-stats.js';
+import { communityAnalyticsCapability } from '../tools/ops/community-analytics.js';
 // Media capabilities
-import { ttsCapability } from '../../capabilities/media/tts.js';
+import { ttsCapability } from '../tools/media/tts.js';
 // Research capabilities
-import { deepResearchCapability } from '../../capabilities/research/deep-research.js';
-import { trendWatcherCapability } from '../../capabilities/research/trend-watcher.js';
+import { deepResearchCapability } from '../tools/research/deep-research.js';
+import { trendWatcherCapability } from '../proactive/trend-watcher.js';
 // Cross-agent capabilities
-import { kanbanCapability } from '../../capabilities/system/kanban.js';
-import { vpsClaudeCapability } from '../../capabilities/system/vps-claude.js';
-import { hermesCapability } from '../../capabilities/system/hermes.js';
-import { systemMemoryCapability } from '../../capabilities/system/system-memory.js';
-import { osintLookupCapability } from '../../capabilities/system/osint-lookup.js';
+import { kanbanCapability } from '../tools/agents/kanban.js';
+import { vpsClaudeCapability } from '../tools/agents/vps-claude.js';
+import { hermesCapability } from '../tools/agents/hermes.js';
+import { systemMemoryCapability } from '../tools/agents/system-memory.js';
+import { osintLookupCapability } from '../tools/agents/osint-lookup.js';
 // Services
-import { meetingCapability } from '../core/meeting-service.js';
+import { meetingCapability } from '../tools/people/meeting.js';
 
 // =====================================================
 // CAPABILITY BOOTSTRAP SERVICE
@@ -140,7 +140,7 @@ export class CapabilityBootstrap {
       logger.info('🦞 Scheduling OpenClaw skill system initialization...');
       setImmediate(async () => {
         try {
-          const { skillRegistry, skillsCapability } = await import('../skills/skill-registry.js');
+          const { skillRegistry, skillsCapability } = await import('../tools/skills/registry.js');
           capabilityRegistry.register(skillsCapability);
           await skillRegistry.initialize();
           logger.info(`🦞 Skills system ready: ${skillRegistry.size()} skills loaded`);

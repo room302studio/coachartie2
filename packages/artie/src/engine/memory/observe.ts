@@ -1,5 +1,5 @@
-import { logger } from '@coachartie/shared';
-import { openRouterService } from '../llm/openrouter.js';
+import { logger } from '../../shared/logger.js';
+import { openRouterService } from '../4-generate/openrouter.js';
 
 /**
  * Observation Handler Service
@@ -25,7 +25,7 @@ async function getObservationSystemPrompt(): Promise<string> {
   }
 
   try {
-    const { promptManager } = await import('../llm/prompt-manager.js');
+    const { promptManager } = await import('../3-context/system-prompt.js');
 
     // Try to load a dedicated observation prompt first
     const observationPrompt = await promptManager.getPrompt('PROMPT_OBSERVATION');
@@ -140,7 +140,7 @@ export class ObservationHandler {
   }> {
     try {
       // This would query the database for stored observational memories
-      const { getSyncDb } = await import('@coachartie/shared');
+      const { getSyncDb } = await import('../../shared/db/client.js');
       const db = getSyncDb();
 
       const stats = db.get<{ totalObservations: number; totalCost: number }>(`

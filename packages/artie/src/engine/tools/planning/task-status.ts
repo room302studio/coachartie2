@@ -13,11 +13,11 @@
  * - Provide ETA estimates for long tasks
  */
 
-import { logger } from '@coachartie/shared';
+import { logger } from '../../../shared/logger.js';
 import type {
   RegisteredCapability,
   CapabilityContext,
-} from '../../services/capability/capability-registry.js';
+} from '../../5-tool-loop/registry.js';
 
 interface TaskStatusParams {
   action: string;

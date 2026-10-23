@@ -1,18 +1,18 @@
-import { logger } from '@coachartie/shared';
-import { capabilityRegistry } from './capability-registry.js';
-import { robustExecutor } from '../../utils/robust-capability-executor.js';
-import { getErrorMessage } from '../../utils/error-utils.js';
-import { openRouterService } from '../llm/openrouter.js';
-import { contextAlchemy } from '../llm/context-alchemy.js';
-import { capabilityParser } from './capability-parser.js';
-import { GlobalVariableStore } from '../../capabilities/system/variable-store.js';
-import { jobTracker } from '../core/job-tracker.js';
-import { recordCapabilityUsage } from '../metrics.js';
+import { logger } from '../../shared/logger.js';
+import { capabilityRegistry } from './registry.js';
+import { robustExecutor } from './retry.js';
+import { getErrorMessage } from '../error-utils.js';
+import { openRouterService } from '../4-generate/openrouter.js';
+import { contextAlchemy } from '../3-context/assemble.js';
+import { capabilityParser } from './parse-tool-calls.js';
+import { GlobalVariableStore } from './variables.js';
+import { jobTracker } from '../1-intake/job-tracker.js';
+import { recordCapabilityUsage } from '../health/metrics.js';
 import {
   ExtractedCapability,
   CapabilityResult,
   OrchestrationContext,
-} from '../../types/orchestration-types.js';
+} from '../2-turn/types.js';
 
 // =====================================================
 // CAPABILITY EXECUTION ENGINE (THE CHAIN/LOOP)

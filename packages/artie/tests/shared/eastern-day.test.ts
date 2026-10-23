@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { easternDayKey, easternDayBounds, toSqliteUtc } from '../src/utils/eastern-day.js';
+import { easternDayKey, easternDayBounds, toSqliteUtc } from '../../src/shared/eastern-day.js';
 
 describe('easternDayKey', () => {
   it('uses the New York calendar, not UTC', () => {

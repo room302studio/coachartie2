@@ -7,8 +7,10 @@
  * - Provides consistent UX across all interaction types
  */
 
-import { logger, scrubBlockedUserMentions, isOperatorOnlyError } from '@coachartie/shared';
-import { capabilitiesClient } from './capabilities-client.js';
+import { logger } from '../../shared/logger.js';
+import { scrubBlockedUserMentions } from '../../shared/blocklist.js';
+import { isOperatorOnlyError } from '../../shared/anomalywatch.js';
+import { capabilitiesClient } from '../3-ask-engine/engine-client.js';
 import {
   recordSelfSpin,
   adjustCred,
@@ -21,16 +23,16 @@ import {
   bumpHouseEvents,
   houseFlourish,
   CASINO_OPEN,
-} from './casino.js';
+} from '../games/casino.js';
 
 /** Attach the house's deteriorating inner monologue to a verdict (Discord small-text). */
 function withMelt(verdict: string): string {
   const aside = houseFlourish();
   return aside ? `${verdict}\n-# ${aside}` : verdict;
 }
-import { jobMonitor } from './job-monitor.js';
-import { telemetry } from './telemetry.js';
-import { generateCorrelationId, getShortCorrelationId } from '../utils/correlation.js';
+import { jobMonitor } from '../3-ask-engine/job-watcher.js';
+import { telemetry } from '../telemetry.js';
+import { generateCorrelationId, getShortCorrelationId } from '../correlation.js';
 
 // OUTPUT SAFETY FLOOR: genuine slurs / hate terms that must NEVER reach a channel, even in
 // roast mode. If a reply matches, the message is suppressed (Artie stays silent) rather than

@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
-import { logger } from '@coachartie/shared';
-import { schedulerService, ScheduledTask } from '../services/core/scheduler.js';
+import { logger } from '../../shared/logger.js';
+import { schedulerService, ScheduledTask } from '../jobs/scheduler.js';
 
 const router: Router = Router();
 

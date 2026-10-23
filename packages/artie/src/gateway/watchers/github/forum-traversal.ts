@@ -12,7 +12,7 @@
  */
 
 import { Client, ChannelType, ForumChannel, ThreadChannel, Message, Collection } from 'discord.js';
-import { logger } from '@coachartie/shared';
+import { logger } from '../../../shared/logger.js';
 
 export interface ForumThreadData {
   threadId: string;

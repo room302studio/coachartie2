@@ -1,5 +1,5 @@
-import { logger } from '@coachartie/shared';
-import { RegisteredCapability } from '../../services/capability/capability-registry.js';
+import { logger } from '../../../shared/logger.js';
+import { RegisteredCapability } from '../../5-tool-loop/registry.js';
 
 const N8N_URL = process.env.N8N_URL || 'http://localhost:5678';
 const WORKFLOW_ID = 'icDlrOYPgN9OGPqb';

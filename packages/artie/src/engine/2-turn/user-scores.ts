@@ -10,8 +10,9 @@
  * the response latency or the Opus bill.
  */
 
-import { logger, getSyncDb } from '@coachartie/shared';
-import { openRouterService } from './llm/openrouter.js';
+import { logger } from '../../shared/logger.js';
+import { getSyncDb } from '../../shared/db/client.js';
+import { openRouterService } from '../4-generate/openrouter.js';
 
 export interface UserScores {
   warmth: number;

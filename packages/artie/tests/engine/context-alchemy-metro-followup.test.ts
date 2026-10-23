@@ -5,9 +5,9 @@ const { metroModulePath, memoryModulePath, processMetroAttachment, remember } = 
   process.env.OPENROUTER_MODELS = 'test/model';
   process.env.AUTO_VISION_EXTRACT = 'false';
   return {
-    metroModulePath: new URL('../src/services/monitoring/metro-doctor.js', import.meta.url)
+    metroModulePath: new URL('../../src/engine/metro/analyze.js', import.meta.url)
       .pathname,
-    memoryModulePath: new URL('../src/capabilities/memory/memory.js', import.meta.url).pathname,
+    memoryModulePath: new URL('../../src/engine/tools/core/memory.js', import.meta.url).pathname,
     processMetroAttachment: vi.fn(),
     remember: vi.fn(),
   };
@@ -27,7 +27,7 @@ vi.mock(memoryModulePath, () => ({
   },
 }));
 
-import { contextAlchemy } from '../src/services/llm/context-alchemy';
+import { contextAlchemy } from '../../src/engine/3-context/assemble.js';
 
 describe.skip('ContextAlchemy metro follow-ups', () => {
   const baseSystemPrompt = 'system';

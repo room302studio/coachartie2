@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
-import { logger } from '@coachartie/shared';
+import { logger } from '../../shared/logger.js';
 
 // Simple in-memory rate limiting for better "error handling"
 const requestCounts = new Map<string, { count: number; resetTime: number }>();

@@ -2,7 +2,7 @@ import { existsSync } from 'fs';
 import { execFile } from 'child_process';
 import { logger } from './logger.js';
 import { easternDayKey } from './eastern-day.js';
-import { getSyncDb } from '../db/client.js';
+import { getSyncDb } from './db/client.js';
 
 /**
  * Operator alerts go to anomalywatch — never to Discord.

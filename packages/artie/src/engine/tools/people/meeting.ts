@@ -1,6 +1,7 @@
-import { logger, getSyncDb } from '@coachartie/shared';
-import { schedulerService } from './scheduler.js';
-import { RegisteredCapability } from '../capability/capability-registry.js';
+import { logger } from '../../../shared/logger.js';
+import { getSyncDb } from '../../../shared/db/client.js';
+import { schedulerService } from '../../jobs/scheduler.js';
+import { RegisteredCapability } from '../../5-tool-loop/registry.js';
 import { parse, parseISO, isValid, addDays } from 'date-fns';
 import { fromZonedTime } from 'date-fns-tz';
 
@@ -73,7 +74,7 @@ class MeetingService {
 
     // Try 3: Use micro-LLM to parse relative dates
     try {
-      const { microLLM } = await import('../llm/micro-llm.js');
+      const { microLLM } = await import('../../4-generate/micro-llm.js');
       const today = new Date().toISOString().split('T')[0];
       const result = await microLLM.extract(
         `Today is ${today}. Convert this to YYYY-MM-DD format. Reply with ONLY the date, nothing else.`,

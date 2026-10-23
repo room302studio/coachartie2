@@ -19,44 +19,29 @@ import {
   ChannelType,
   GuildMember,
 } from 'discord.js';
-import {
-  delay,
-  chunkMessage,
-  resolveModelSpec,
-  isAutoRouted,
-  autoReasoningFor,
-  checkGuildBudget,
-  reportGuildBudgetSpent,
-} from '@coachartie/shared';
-import { estimateTokens } from '@coachartie/shared';
-import {
-  logger,
-  canDMForTasks,
-  getDMPolicy,
-  dmPairingService,
-  getSyncDb,
-  isOwner,
-  logDMGate,
-  reportToAnomalywatch,
-} from '@coachartie/shared';
-import {
-  BLOCKED_USER_IDS,
-  isBlockedUser,
-  isOperatorOnlyError,
-  getKillSwitchPath,
-  isGenerationMuted,
-  REPO_ROOT,
-  getStrikeMode,
-} from '@coachartie/shared';
-import { decideSpeakRoute, runSpeakGate, resolveAmbientMode, isReplyToBot } from '../services/speak-gate.js';
-import { publishMessage } from '../queues/publisher.js';
-import { telemetry } from '../services/telemetry.js';
+import { delay } from '../../shared/async.js';
+import { chunkMessage } from '../4-reply/chunks.js';
+import { resolveModelSpec, isAutoRouted, autoReasoningFor } from '../../shared/model-spec.js';
+import { checkGuildBudget, reportGuildBudgetSpent } from '../../shared/guild-budget.js';
+import { estimateTokens } from '../../shared/text.js';
+import { logger } from '../../shared/logger.js';
+import { canDMForTasks, getDMPolicy, isOwner } from '../../shared/config/owner.js';
+import { dmPairingService, logDMGate } from '../../shared/dm-pairing.js';
+import { getSyncDb } from '../../shared/db/client.js';
+import { reportToAnomalywatch } from '../../shared/anomalywatch.js';
+import { BLOCKED_USER_IDS, isBlockedUser } from '../../shared/blocklist.js';
+import { isOperatorOnlyError } from '../../shared/anomalywatch.js';
+import { getKillSwitchPath, isGenerationMuted } from '../../shared/kill-switch.js';
+import { REPO_ROOT, getStrikeMode } from '../../shared/paths.js';
+import { decideSpeakRoute, runSpeakGate, resolveAmbientMode, isReplyToBot } from '../2-gate/speak-gate.js';
+import { publishMessage } from '../../shared/queue/discord-publisher.js';
+import { telemetry } from '../telemetry.js';
 import {
   CorrelationContext,
   generateCorrelationId,
   getShortCorrelationId,
-} from '../utils/correlation.js';
-import { processUserIntent } from '../services/user-intent-processor.js';
+} from '../correlation.js';
+import { processUserIntent } from '../4-reply/stream-reply.js';
 import {
   isGuildWhitelisted,
   isWorkingGuild,
@@ -65,34 +50,34 @@ import {
   shouldRespondToAllInChannel,
   isChannelAllowedForResponse,
   GuildConfig,
-} from '../config/guild-whitelist.js';
+} from '../../shared/config/guilds.js';
 import {
   getShortRulesBlock,
   getStaffRespectBlock,
   getJanRuleBlock,
   getClapBackBlock,
-} from '../config/guild-prompt-blocks.js';
+} from '../../shared/config/guild-prompt-blocks.js';
 import {
   fetchReplyContext,
   fetchChannelHistory,
   fetchRecentAttachments,
   fetchRecentUrls,
   MAX_CHANNEL_HISTORY,
-} from '../services/message-context-fetchers.js';
+} from './channel-history.js';
 import {
   getGitHubIntegrationSafe,
   isGitHubIntegrationReady,
-} from '../services/github-integration.js';
-import { getForumTraversal } from '../services/forum-traversal.js';
+} from '../watchers/github/issue-sync.js';
+import { getForumTraversal } from '../watchers/github/forum-traversal.js';
 import {
   checkOutbound,
   isProtectedTimeoutTarget,
   SUBWAY_BUILDER_GUILD_ID,
-} from '../services/outbound-gate.js';
-import { recordWheelVictim } from '../services/casino.js';
-import { getMentionProxyService } from '../services/mention-proxy-service.js';
-import { quizSessionManager } from '../services/quiz-session-manager.js';
-import { refreshLiveQuiz, postQuizSummary } from '../commands/quiz.js';
+} from '../4-reply/outbound-gate.js';
+import { recordWheelVictim } from '../games/casino.js';
+import { getMentionProxyService } from '../2-gate/mention-proxy.js';
+import { quizSessionManager } from '../commands/quiz/live-session.js';
+import { refreshLiveQuiz, postQuizSummary } from '../commands/quiz/command.js';
 import Chance from 'chance';
 import { readFileSync, existsSync, unlinkSync } from 'fs';
 import { join } from 'path';
@@ -571,7 +556,7 @@ async function shouldProactivelyAnswer(
     // Fetch user profile: what do we know about this person?
     let relationshipContext = '';
     try {
-      const { ObservationalLearning } = await import('../services/observational-learning.js');
+      const { ObservationalLearning } = await import('../watchers/observe-channels.js');
       const profile = ObservationalLearning.getUserProfile(message.author.id, guildId || '');
       if (profile) {
         relationshipContext = `\n${profile}\n\nUse this profile to calibrate: if this person has pushed back on unsolicited input before, set answer=false.`;

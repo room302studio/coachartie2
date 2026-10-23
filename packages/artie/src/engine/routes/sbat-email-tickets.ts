@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { logger } from '@coachartie/shared';
+import { logger } from '../../shared/logger.js';
 import crypto from 'crypto';
 import axios from 'axios';
 

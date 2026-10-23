@@ -5,11 +5,11 @@ const hasApiKey = !!process.env.OPENROUTER_API_KEY;
 
 describe.skipIf(!hasApiKey)('Conscience Safety Layer', () => {
   // Dynamic import to avoid module-level throw
-  let ConscienceLLM: typeof import('../src/services/monitoring/conscience').ConscienceLLM;
+  let ConscienceLLM: typeof import('../../src/engine/health/conscience.js').ConscienceLLM;
   let conscience: InstanceType<typeof ConscienceLLM>;
 
   beforeEach(async () => {
-    const module = await import('../src/services/monitoring/conscience');
+    const module = await import('../../src/engine/health/conscience.js');
     ConscienceLLM = module.ConscienceLLM;
     conscience = new ConscienceLLM();
   });

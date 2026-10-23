@@ -1,4 +1,5 @@
-import { logger, getRawDb } from '@coachartie/shared';
+import { logger } from '../../shared/logger.js';
+import { getRawDb } from '../../shared/db/client.js';
 
 /**
  * Moderation audit log (timeouts, bans) in the shared DB's moderation_audit table.

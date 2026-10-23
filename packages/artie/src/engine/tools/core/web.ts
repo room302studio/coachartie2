@@ -1,7 +1,7 @@
-import { logger } from '@coachartie/shared';
-import { RegisteredCapability } from '../../services/capability/capability-registry.js';
-import { searchWeb, fetchWebContent } from '../../utils/web-fetch.js';
-import { capabilityRegistry } from '../../services/capability/capability-registry.js';
+import { logger } from '../../../shared/logger.js';
+import { RegisteredCapability } from '../../5-tool-loop/registry.js';
+import { searchWeb, fetchWebContent } from './web-fetch.js';
+import { capabilityRegistry } from '../../5-tool-loop/registry.js';
 
 /**
  * Web capability - performs web searches and fetches content from URLs

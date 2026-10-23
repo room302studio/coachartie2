@@ -1,7 +1,7 @@
-import { logger } from '@coachartie/shared';
+import { logger } from '../shared/logger.js';
 import { writeFileSync, existsSync, mkdirSync } from 'fs';
 import { dirname } from 'path';
-import { pathResolver } from '../utils/path-resolver.js';
+import { pathResolver } from './path-resolver.js';
 
 export interface DiscordMetrics {
   // Message metrics

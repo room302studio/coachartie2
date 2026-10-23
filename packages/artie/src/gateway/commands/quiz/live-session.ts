@@ -1,12 +1,8 @@
-import {
-  logger,
-  isGenerationMuted,
-  checkGuildBudget,
-  resolveModelSpec,
-  isAutoRouted,
-  autoReasoningFor,
-  getSyncDb,
-} from '@coachartie/shared';
+import { logger } from '../../../shared/logger.js';
+import { isGenerationMuted } from '../../../shared/kill-switch.js';
+import { checkGuildBudget } from '../../../shared/guild-budget.js';
+import { resolveModelSpec, isAutoRouted, autoReasoningFor } from '../../../shared/model-spec.js';
+import { getSyncDb } from '../../../shared/db/client.js';
 
 const FLASHCARD_API_BASE = 'https://ejfox.com/api/flashcards';
 const DEFAULT_QUESTION_COUNT = 10;

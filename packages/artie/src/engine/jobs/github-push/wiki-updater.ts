@@ -1,5 +1,5 @@
-import { logger } from '@coachartie/shared';
-import { MediaWikiClient, MediaWikiConfig } from './mediawiki-client.js';
+import { logger } from '../../../shared/logger.js';
+import { MediaWikiClient, MediaWikiConfig } from './wiki-client.js';
 
 export class MediaWikiManager {
   private clients: Map<string, MediaWikiClient> = new Map();
@@ -216,7 +216,7 @@ export class MediaWikiManager {
     if (availableWikis.length === 1) return availableWikis[0];
 
     try {
-      const { microLLM } = await import('../llm/micro-llm.js');
+      const { microLLM } = await import('../../4-generate/micro-llm.js');
       const result = await microLLM.pickOne(
         'Which wiki is this content most appropriate for?',
         `Content: "${pageNameOrContent.substring(0, 150)}"\nAvailable wikis: ${availableWikis.join(', ')}`,

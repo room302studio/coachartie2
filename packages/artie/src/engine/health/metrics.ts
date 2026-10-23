@@ -5,7 +5,7 @@
  */
 
 import { Registry, Counter, Gauge, Histogram, collectDefaultMetrics } from 'prom-client';
-import { logger } from '@coachartie/shared';
+import { logger } from '../../shared/logger.js';
 
 // Create a custom registry
 export const metricsRegistry = new Registry();

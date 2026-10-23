@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { logger } from '@coachartie/shared';
+import { logger } from '../../shared/logger.js';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 

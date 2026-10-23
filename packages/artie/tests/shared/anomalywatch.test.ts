@@ -5,7 +5,7 @@ import {
   sqliteAlertRateStore,
   flattenAlertMessage,
   isOperatorOnlyError,
-} from '../src/utils/anomalywatch.js';
+} from '../../src/shared/anomalywatch.js';
 
 describe('reportToAnomalywatch', () => {
   const at = (iso: string) => new Date(iso);

@@ -16,8 +16,8 @@
  */
 
 import { GuildMember, Message } from 'discord.js';
-import { logger } from '@coachartie/shared';
-import { getChannelPersona } from '../config/guild-whitelist.js';
+import { logger } from '../../shared/logger.js';
+import { getChannelPersona } from '../../shared/config/guilds.js';
 
 export type OutboundAction = 'reply' | 'reaction' | 'timeout' | 'proxy-reply';
 

@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
-import { logger } from '@coachartie/shared';
-import { openRouterModelsService } from '../services/llm/openrouter-models.js';
+import { logger } from '../../shared/logger.js';
+import { openRouterModelsService } from '../4-generate/model-catalog.js';
 
 const router: Router = Router();
 
@@ -8,7 +8,7 @@ const router: Router = Router();
 router.get('/', async (req: Request, res: Response) => {
   try {
     // Import OpenRouter service dynamically to avoid circular dependencies
-    const { openRouterService } = await import('../index.js');
+    const { openRouterService } = await import('../main.js');
 
     const availableModels = openRouterService.getAvailableModels();
     const currentModel = openRouterService.getCurrentModel();
@@ -44,7 +44,7 @@ router.get('/', async (req: Request, res: Response) => {
     logger.error('Error fetching models with OpenRouter data:', error);
 
     // Check if it's a configuration issue
-    const { openRouterService } = await import('../index.js');
+    const { openRouterService } = await import('../main.js');
     const configuredModels = openRouterService.getAvailableModels();
 
     res.status(500).json({
@@ -60,7 +60,7 @@ router.get('/', async (req: Request, res: Response) => {
 // GET /api/models/summary - Get quick model pool summary
 router.get('/summary', async (req: Request, res: Response) => {
   try {
-    const { openRouterService } = await import('../index.js');
+    const { openRouterService } = await import('../main.js');
     const availableModels = openRouterService.getAvailableModels();
     const summary = await openRouterModelsService.getModelSummary(availableModels);
 

@@ -1,5 +1,5 @@
 import { existsSync, readFileSync, writeFileSync, unlinkSync } from 'fs';
-import { getKillSwitch } from '../paths.js';
+import { getKillSwitch } from './paths.js';
 
 /**
  * The global kill switch: while the KILL_SWITCH file exists, nothing generates.

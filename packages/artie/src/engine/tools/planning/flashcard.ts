@@ -1,5 +1,5 @@
-import { logger } from '@coachartie/shared';
-import { RegisteredCapability } from '../../services/capability/capability-registry.js';
+import { logger } from '../../../shared/logger.js';
+import { RegisteredCapability } from '../../5-tool-loop/registry.js';
 
 const FLASHCARD_API_BASE = 'https://ejfox.com/api/flashcards';
 

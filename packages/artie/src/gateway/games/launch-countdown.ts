@@ -15,14 +15,15 @@
 import { Client, ChannelType } from 'discord.js';
 import { readFile, writeFile, mkdir } from 'fs/promises';
 import path from 'path';
-import { logger, LAUNCH_STATE } from '@coachartie/shared';
+import { logger } from '../../shared/logger.js';
+import { LAUNCH_STATE } from '../../shared/paths.js';
 import {
   STEAM_LAUNCH_AT,
   LAUNCH_CHANNEL_ID,
   formatDelta,
   launchStatusLine,
-} from '../config/launch-config.js';
-import { violatesOutputSafety } from './user-intent-processor.js';
+} from './launch-config.js';
+import { violatesOutputSafety } from '../4-reply/stream-reply.js';
 
 const CAPABILITIES_URL = process.env.CAPABILITIES_URL || 'http://localhost:47324';
 const STEAM_PAGE_URL = process.env.STEAM_PAGE_URL; // optional; never fabricate a link

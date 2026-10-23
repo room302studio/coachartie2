@@ -1,15 +1,15 @@
-import { logger } from '@coachartie/shared';
-import { delay } from '@coachartie/shared';
+import { logger } from '../../shared/logger.js';
+import { delay } from '../../shared/async.js';
 import { ParsedCapability } from './xml-parser.js';
-import { capabilityRegistry } from '../services/capability/capability-registry.js';
-import { GlobalVariableStore } from '../capabilities/system/variable-store.js';
+import { capabilityRegistry } from './registry.js';
+import { GlobalVariableStore } from './variables.js';
 import Handlebars from 'handlebars';
 import {
   StructuredCapabilityError,
   formatStructuredErrorForLLM,
-} from '../types/structured-errors.js';
-import { errorPatternTracker } from '../services/llm/llm-error-pattern-tracker.js';
-import { capabilityTracker } from '../services/observability/capability-tracker.js';
+} from '../errors.js';
+import { errorPatternTracker } from './tool-error-patterns.js';
+import { capabilityTracker } from './tool-tracker.js';
 
 export interface CapabilityResult {
   capability: ParsedCapability;

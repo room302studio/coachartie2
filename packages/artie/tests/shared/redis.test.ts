@@ -4,8 +4,8 @@ import {
   createWorker,
   createRedisConnection,
   closeRedisConnection,
-} from '../src/utils/redis';
-import { IncomingMessage } from '../src/types/queue';
+} from '../../src/shared/queue/redis.js';
+import { IncomingMessage } from '../../src/shared/queue/types.js';
 
 describe('Redis Queue Tests', () => {
   beforeAll(async () => {

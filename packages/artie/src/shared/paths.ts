@@ -26,7 +26,7 @@
  * module's imports are fully evaluated before ANY of its own top-level statements run,
  * regardless of where the `import` line sits textually. `test-setup.ts` sets
  * `process.env.DATABASE_PATH = ':memory:'` as a top-level statement AFTER its own
- * `import { initializeDb } from '@coachartie/shared'` line — but because of hoisting, that
+ * `import { initializeDb } from './db/client.js';` line — but because of hoisting, that
  * import (and this module, transitively) evaluates BEFORE the assignment runs. A
  * `DATABASE_PATH` computed as a plain const at this module's load time would therefore
  * permanently miss that override (verified empirically; it is not a theoretical concern).
@@ -213,15 +213,16 @@ export const PM2_LOGS = join(REPO_ROOT, 'logs');
  * packages. Any other cwd (e.g. `packages/shared`'s own tests) falls back to the same
  * cwd-relative `<cwd>/logs` the old code always used — unchanged for that case too.
  *
- * HEADS-UP FOR WAVE 9 (one process, two ports): once the engine and gateway run in the same
- * Node process, `process.cwd()` picks ONE package name for both — there is no "the gateway's
- * cwd" vs "the engine's cwd" anymore, and this function's `pkg === 'capabilities'` /
- * `pkg === 'discord'` branches collapse to whichever one happens to be the process's actual
- * cwd, silently pointing BOTH log streams at the same directory. `ENGINE_LOGS`/`GATEWAY_LOGS`
- * are already two separate, unambiguous absolute constants — wave 9 should have the single
- * process construct two explicitly-identified logger instances (or pass the target dir in),
- * not rely on this cwd-sniffing default surviving the move. Same shape of warning wave 1 left
- * on `register-commands.ts` for wave 3.
+ * THE COLLAPSE THIS WARNED ABOUT ALREADY HAPPENED, IN THIS WAVE, NOT WAVE 9: `packages/capabilities`
+ * and `packages/discord` no longer exist as separate packages with separate cwds — both
+ * `dev:engine` and `dev:gateway` (and `test`) now run with cwd `packages/artie`, which matches
+ * neither `pkg === 'capabilities'` nor `pkg === 'discord'`, so BOTH branches fall through to the
+ * generic `<cwd>/logs` (`packages/artie/logs`) today, for both processes, until they're actually
+ * merged into one process (wave 9) or given an explicit per-component logger. This is a real,
+ * observable change from wave 2's captured before/after table (which still showed two distinct
+ * directories) — flagged in BUILD-LOG for wave 9/CUTOVER rather than silently left. `ENGINE_LOGS`/
+ * `GATEWAY_LOGS` are still two separate, correct absolute constants for whoever wires this
+ * properly; `LOGS_DIR` env still overrides everything, unchanged.
  */
 export function getLogsDir(): string {
   if (process.env.LOGS_DIR) return process.env.LOGS_DIR;
@@ -241,9 +242,9 @@ export function getLogsDir(): string {
  * three real candidates here is not a behavior change.
  */
 export const SKILLS_DIRS: readonly string[] = [
-  join(REPO_ROOT, 'packages/capabilities/skills'),
+  join(REPO_ROOT, 'packages/artie/skills'),
   join(process.env.HOME || '', '.coachartie/skills'),
-  join(REPO_ROOT, 'packages/capabilities/src/skills'),
+  join(REPO_ROOT, 'packages/artie/src/engine/tools/skills/library'),
 ];
 
 /**

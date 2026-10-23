@@ -1,6 +1,6 @@
-import { logger } from '@coachartie/shared';
+import { logger } from '../../../shared/logger.js';
 import axios from 'axios';
-import { RegisteredCapability } from '../../services/capability/capability-registry.js';
+import { RegisteredCapability } from '../../5-tool-loop/registry.js';
 
 /**
  * Email capability for sending emails via self-hosted infrastructure

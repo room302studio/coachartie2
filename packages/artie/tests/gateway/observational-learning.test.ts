@@ -4,7 +4,7 @@ import {
   isObservationalLearningEnabled,
   observationMinMessages,
   isNonEventSummary,
-} from '../src/services/observational-learning.js';
+} from '../../src/gateway/watchers/observe-channels.js';
 
 describe('observation firehose flag (#91)', () => {
   const saved = process.env.OBSERVATIONAL_LEARNING_ENABLED;

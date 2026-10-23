@@ -11,7 +11,8 @@
  * Part of the Context Alchemy observability system.
  */
 
-import { logger, getSyncDb } from '@coachartie/shared';
+import { logger } from '../../shared/logger.js';
+import { getSyncDb } from '../../shared/db/client.js';
 import { randomUUID } from 'crypto';
 
 // Sampling rate for full context snapshots (0.01 = 1%)

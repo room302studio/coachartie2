@@ -1,4 +1,4 @@
-import { getSyncDb } from '../db/client.js';
+import { getSyncDb } from './db/client.js';
 import { easternDayBounds, toSqliteUtc } from './eastern-day.js';
 import { GenerationMutedError } from './kill-switch.js';
 import { reportToAnomalywatch } from './anomalywatch.js';

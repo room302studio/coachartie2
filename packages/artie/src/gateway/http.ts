@@ -1,9 +1,9 @@
 import express, { Express } from 'express';
-import { logger } from '@coachartie/shared';
-import { createApiRouter } from '../routes/api.js';
-import { setupModerationApi } from '../routes/moderation-api.js';
-import { requireApiToken } from '../middleware/require-api-token.js';
-import { mountLegalPages } from '../routes/legal-pages.js';
+import { logger } from '../shared/logger.js';
+import { createApiRouter } from './routes/discord-proxy.js';
+import { setupModerationApi } from './routes/moderation.js';
+import { requireApiToken } from '../shared/require-api-token.js';
+import { mountLegalPages } from './routes/legal-pages.js';
 import { Client } from 'discord.js';
 
 export class ApiServer {

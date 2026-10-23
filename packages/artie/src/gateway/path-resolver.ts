@@ -1,7 +1,8 @@
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { existsSync, mkdirSync } from 'fs';
-import { logger, MENTION_PROXY_DATA } from '@coachartie/shared';
+import { logger } from '../shared/logger.js';
+import { MENTION_PROXY_DATA } from '../shared/paths.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -48,13 +49,16 @@ export class PathResolver {
    */
   private detectDockerEnvironment(): boolean {
     // Check multiple indicators of Docker environment
+    // Docker was removed in wave 1 (no Dockerfiles, no docker-compose left in this repo), and
+    // the cwd-equals-/app check never fired anywhere this repo now runs — dropped as part of
+    // wave 3's cwd cleanup (DONE WHEN: only shared/paths.ts may read the process cwd). The other
+    // three indicators are untouched; none of them was ever true either, so `isDocker` still
+    // always resolves to the same `false` it always has in every environment this code runs in.
     const indicators = [
       // Docker creates /.dockerenv file
       existsSync('/.dockerenv'),
       // Docker often sets container-specific env vars
       !!process.env.DOCKER_CONTAINER,
-      // Current working directory is /app (common Docker pattern)
-      process.cwd() === '/app',
       // Check if we're in a path that looks like Docker
       __dirname.startsWith('/app/'),
     ];
@@ -63,7 +67,6 @@ export class PathResolver {
     logger.debug(`🔍 Docker detection: ${isDocker ? 'Docker' : 'Local'}`, {
       dockerenv: existsSync('/.dockerenv'),
       dockerContainer: !!process.env.DOCKER_CONTAINER,
-      cwd: process.cwd(),
       dirname: __dirname,
     });
 

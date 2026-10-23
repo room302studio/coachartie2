@@ -1,6 +1,7 @@
-import { getSyncDb, reportToAnomalywatch, AnomalywatchLevel } from '@coachartie/shared';
-import { logger } from '@coachartie/shared';
-import { costMonitor } from './cost-monitor.js';
+import { getSyncDb } from '../../shared/db/client.js';
+import { reportToAnomalywatch, AnomalywatchLevel } from '../../shared/anomalywatch.js';
+import { logger } from '../../shared/logger.js';
+import { costMonitor } from './session-spend.js';
 
 export interface CreditInfo {
   provider: string;

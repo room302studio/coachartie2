@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { isStaleNoise, isInCharacterReflection } from '../src/runtime/hybrid-data-layer.js';
-import { stripCapabilityTags } from '../src/services/memory/memory-recaller.js';
+import { isStaleNoise, isInCharacterReflection } from '../../src/engine/memory/store.js';
+import { stripCapabilityTags } from '../../src/engine/memory/recall.js';
 
 describe('in-character reflections', () => {
   it('flags replies stored as reflections', () => {

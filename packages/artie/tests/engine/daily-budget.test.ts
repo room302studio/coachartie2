@@ -2,23 +2,16 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, existsSync, readFileSync, writeFileSync, unlinkSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
-import {
-  getSyncDb,
-  readKillSwitch,
-  writeBudgetOverride,
-  reportToAnomalywatch,
-  createMemoryAlertRateStore,
-  isGenerationMuted,
-  assertGenerationAllowed,
-  GenerationMutedError,
-} from '@coachartie/shared';
+import { getSyncDb } from '../../src/shared/db/client.js';
+import { readKillSwitch, writeBudgetOverride, isGenerationMuted, assertGenerationAllowed, GenerationMutedError } from '../../src/shared/kill-switch.js';
+import { reportToAnomalywatch, createMemoryAlertRateStore } from '../../src/shared/anomalywatch.js';
 import {
   decideBudgetAction,
   checkDailyBudget,
   getDailyBudgetUsd,
   getTodaySpendUsd,
   BUDGET_ALERT_KIND,
-} from '../src/services/monitoring/daily-budget.js';
+} from '../../src/engine/budget/daily-cap.js';
 
 // 2026-09-29 is EDT (UTC-4): the ET day runs 04:00Z → 04:00Z next day.
 const NOON_ET = new Date('2026-09-29T16:00:00Z');

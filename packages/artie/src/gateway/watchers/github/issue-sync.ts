@@ -6,8 +6,8 @@
  */
 
 import { Octokit } from '@octokit/rest';
-import { delay } from '@coachartie/shared';
-import { logger } from '@coachartie/shared';
+import { delay } from '../../../shared/async.js';
+import { logger } from '../../../shared/logger.js';
 import type { ForumThreadData, ThreadMessageData } from './forum-traversal.js';
 
 export interface GitHubIssueData {

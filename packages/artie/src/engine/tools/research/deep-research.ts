@@ -10,13 +10,13 @@
  * - "get research results" → retrieves completed research
  */
 
-import { logger } from '@coachartie/shared';
+import { logger } from '../../../shared/logger.js';
 import type {
   RegisteredCapability,
   CapabilityContext,
-} from '../../services/capability/capability-registry.js';
-import { researchQueueService } from '../../services/harnesses/research-queue.js';
-import { openaiResearchHarness } from '../../services/harnesses/openai-research.js';
+} from '../../5-tool-loop/registry.js';
+import { researchQueueService } from './harness/research-queue.js';
+import { openaiResearchHarness } from './harness/openai-research.js';
 
 interface DeepResearchParams {
   action: string;

@@ -1,5 +1,6 @@
-import { logger, UserProfileService } from '@coachartie/shared';
-import { RegisteredCapability } from '../../services/capability/capability-registry.js';
+import { logger } from '../../../shared/logger.js';
+import { UserProfileService } from '../../../shared/db/user-profiles.js';
+import { RegisteredCapability } from '../../5-tool-loop/registry.js';
 
 /**
  * User Profile Capability

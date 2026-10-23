@@ -1,7 +1,7 @@
-import { logger } from '@coachartie/shared';
-import { CreditMonitor } from '../monitoring/credit-monitor.js';
-import { costMonitor } from '../monitoring/cost-monitor.js';
-import { getDailyBudgetUsd, getTodaySpendUsd } from '../monitoring/daily-budget.js';
+import { logger } from '../../shared/logger.js';
+import { CreditMonitor } from './openrouter-balance.js';
+import { costMonitor } from './session-spend.js';
+import { getDailyBudgetUsd, getTodaySpendUsd } from './daily-cap.js';
 
 // =====================================================
 // BROWNOUT CONTROLLER

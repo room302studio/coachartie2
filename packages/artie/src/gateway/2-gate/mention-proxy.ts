@@ -6,17 +6,18 @@
  */
 
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
-import { delay } from '@coachartie/shared';
+import { delay } from '../../shared/async.js';
 import { join, dirname } from 'path';
-import { logger, isBlockedUser } from '@coachartie/shared';
+import { logger } from '../../shared/logger.js';
+import { isBlockedUser } from '../../shared/blocklist.js';
 import {
   MentionProxyRule,
   MentionProxyConfig,
   DEFAULT_CONFIG,
   TriggerType,
   ResponseMode,
-} from '../config/mention-proxy.js';
-import { pathResolver } from '../utils/path-resolver.js';
+} from './mention-proxy-config.js';
+import { pathResolver } from '../path-resolver.js';
 
 class MentionProxyService {
   private config: MentionProxyConfig;

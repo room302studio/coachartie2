@@ -1,10 +1,13 @@
 import { Router, Request, Response } from 'express';
-import { delay } from '@coachartie/shared';
-import { logger, createQueue, QUEUES, IncomingMessage } from '@coachartie/shared';
+import { delay } from '../../shared/async.js';
+import { logger } from '../../shared/logger.js';
+import { createQueue } from '../../shared/queue/redis.js';
+import { QUEUES } from '../../shared/queue/names.js';
+import { IncomingMessage } from '../../shared/queue/types.js';
 import { v4 as uuidv4 } from 'uuid';
-import { rateLimiter } from '../middleware/rate-limiter.js';
-import { jobTracker } from '../services/core/job-tracker.js';
-import { getPendingAttachments } from '../services/llm/context-alchemy.js';
+import { rateLimiter } from './rate-limiter.js';
+import { jobTracker } from './job-tracker.js';
+import { getPendingAttachments } from '../3-context/assemble.js';
 
 const messageQueue = createQueue<IncomingMessage>(QUEUES.INCOMING_MESSAGES);
 

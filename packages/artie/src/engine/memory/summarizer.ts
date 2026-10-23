@@ -9,7 +9,9 @@
  * This creates persistent long-term context from daily interactions.
  */
 
-import { logger, getSyncDb, isBlockedUser } from '@coachartie/shared';
+import { logger } from '../../shared/logger.js';
+import { getSyncDb } from '../../shared/db/client.js';
+import { isBlockedUser } from '../../shared/blocklist.js';
 
 interface ConversationChunk {
   userId: string;

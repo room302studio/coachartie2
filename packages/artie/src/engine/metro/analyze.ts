@@ -12,7 +12,7 @@ import { mkdir, writeFile, readFile } from 'fs/promises';
 import { join, basename, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { spawn } from 'child_process';
-import { logger } from '@coachartie/shared';
+import { logger } from '../../shared/logger.js';
 
 interface MetroAnalysis {
   valid: boolean;
@@ -124,7 +124,7 @@ function spawnAnalyzerChild(
   inputPath: string,
   outputJsonPath: string
 ): Promise<{ code: number | null; stdout: string; stderr: string; timedOut: boolean }> {
-  const childPath = join(dirname(fileURLToPath(import.meta.url)), 'metro-analyzer-child.js');
+  const childPath = join(dirname(fileURLToPath(import.meta.url)), 'child.js');
   const maxOldSpaceMb = Number(process.env.METRO_DOCTOR_MAX_OLD_SPACE_MB || 2048);
   const timeoutMs = Number(process.env.METRO_DOCTOR_TIMEOUT_MS || 90_000);
 

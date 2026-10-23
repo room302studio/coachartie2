@@ -1,12 +1,8 @@
-import {
-  logger,
-  getSyncDb,
-  isBlockedUser,
-  BLOCKED_USER_EPITHET,
-  BLOCKED_USER_IDS,
-} from '@coachartie/shared';
-import { RegisteredCapability } from '../services/capability/capability-registry.js';
-import { metricsRegistry } from '../services/metrics.js';
+import { logger } from '../../../shared/logger.js';
+import { getSyncDb } from '../../../shared/db/client.js';
+import { isBlockedUser, BLOCKED_USER_EPITHET, BLOCKED_USER_IDS } from '../../../shared/blocklist.js';
+import { RegisteredCapability } from '../../5-tool-loop/registry.js';
+import { metricsRegistry } from '../../health/metrics.js';
 
 /**
  * Self-Stats capability - Artie can check his own health and metrics

@@ -7,16 +7,16 @@
  * token weights, or ordering.
  */
 
-import { logger } from '@coachartie/shared';
-import { estimateTokens } from '@coachartie/shared';
-import type { IncomingMessage } from '@coachartie/shared';
-import { visionCapability as visionCap } from '../../../capabilities/ai/vision.js';
-import { processMetroAttachment } from '../../monitoring/metro-doctor.js';
-import { MemoryService } from '../../../capabilities/memory/memory.js';
-import { storeAnalyzedMetroFile, readAnalysis } from '../pending-attachments.js';
-import { getUserScores, formatUserScores } from '../../user-scores.js';
-import type { ContextSource } from '../context-providers/types.js';
-import { DEBUG } from '../context-providers/types.js';
+import { logger } from '../../../shared/logger.js';
+import { estimateTokens } from '../../../shared/text.js';
+import type { type IncomingMessage } from '../../../shared/queue/types.js';
+import { visionCapability as visionCap } from '../../tools/media/vision.js';
+import { processMetroAttachment } from '../../metro/analyze.js';
+import { MemoryService } from '../../tools/core/memory.js';
+import { storeAnalyzedMetroFile, readAnalysis } from '../../1-intake/pending-attachments.js';
+import { getUserScores, formatUserScores } from '../../2-turn/user-scores.js';
+import type { ContextSource } from './types.js';
+import { DEBUG } from './types.js';
 
 // Vision capability wrapper for auto-extraction
 const visionCapability: { execute: (opts: any) => Promise<string> } | null = {

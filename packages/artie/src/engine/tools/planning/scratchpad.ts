@@ -1,8 +1,9 @@
-import { logger, CAPABILITIES_GUILD_NOTES } from '@coachartie/shared';
+import { logger } from '../../../shared/logger.js';
+import { CAPABILITIES_GUILD_NOTES } from '../../../shared/paths.js';
 import {
   RegisteredCapability,
   CapabilityContext,
-} from '../../services/capability/capability-registry.js';
+} from '../../5-tool-loop/registry.js';
 import { readFile, writeFile, mkdir } from 'fs/promises';
 import { dirname, resolve } from 'path';
 import { existsSync } from 'fs';

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { stripUserMessagePlaceholder, applyCacheControl } from '../src/services/llm/prompt-cache.js';
+import { stripUserMessagePlaceholder, applyCacheControl } from '../../src/engine/3-context/prompt-cache.js';
 
 // Shape of PROMPT_SYSTEM in scripts/restore-prompts.ts: persona + examples, then a bare
 // {{USER_MESSAGE}} at the very end.

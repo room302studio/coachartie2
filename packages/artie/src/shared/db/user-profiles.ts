@@ -1,5 +1,5 @@
-import { createRedisConnection } from '../utils/redis.js';
-import { logger } from '../utils/logger.js';
+import { createRedisConnection } from '../queue/redis.js';
+import { logger } from '../logger.js';
 
 const redis = createRedisConnection();
 

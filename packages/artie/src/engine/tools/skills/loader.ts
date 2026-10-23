@@ -29,11 +29,12 @@
  * ```
  */
 
-import { logger, SKILLS_DIRS } from '@coachartie/shared';
+import { logger } from '../../../shared/logger.js';
+import { SKILLS_DIRS } from '../../../shared/paths.js';
 import { existsSync, readdirSync, readFileSync } from 'fs';
 import { join } from 'path';
 import { execSync } from 'child_process';
-import type { RegisteredCapability, CapabilityContext } from '../capability/capability-registry.js';
+import type { RegisteredCapability, CapabilityContext } from '../../5-tool-loop/registry.js';
 
 // Skill loading paths (OpenClaw-compatible hierarchy). Routed through paths.ts's SKILLS_DIRS
 // (wave 2) — see that export's doc comment for why the old 5-entry list (two of which were

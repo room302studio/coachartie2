@@ -661,3 +661,34 @@ export function getSyncDb(): SyncDbWrapper {
     },
   };
 }
+
+// Re-export drizzle-orm operators so every importer uses the same drizzle instance (fixes type
+// mismatch errors when tables from this module are used with operators imported directly from
+// drizzle-orm — different package instances due to pnpm hoisting). Moved here from the old
+// packages/shared/src/db/index.ts barrel (wave 3 dissolution; that barrel is deleted).
+export {
+  eq,
+  ne,
+  and,
+  or,
+  not,
+  gt,
+  gte,
+  lt,
+  lte,
+  like,
+  ilike,
+  inArray,
+  notInArray,
+  isNull,
+  isNotNull,
+  asc,
+  desc,
+  sql,
+  count,
+  countDistinct,
+  sum,
+  avg,
+  min,
+  max,
+} from 'drizzle-orm';

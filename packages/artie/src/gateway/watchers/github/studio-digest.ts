@@ -10,13 +10,9 @@
 
 import { Client, EmbedBuilder } from 'discord.js';
 import { Octokit } from '@octokit/rest';
-import {
-  logger,
-  getDb,
-  githubRepoWatches,
-  githubIdentityMappings,
-  eq,
-} from '@coachartie/shared';
+import { logger } from '../../../shared/logger.js';
+import { getDb } from '../../../shared/db/client.js';
+import { githubRepoWatches, githubIdentityMappings } from '../../../shared/db/schema.js';
 
 interface RepoDigest {
   repo: string;

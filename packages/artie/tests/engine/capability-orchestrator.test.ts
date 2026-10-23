@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { capabilityXMLParser as capabilityParser } from '../src/utils/xml-parser';
+import { capabilityXMLParser as capabilityParser } from '../../src/engine/5-tool-loop/xml-parser.js';
 
 describe('Capability Parser', () => {
   describe('extractCapabilities', () => {

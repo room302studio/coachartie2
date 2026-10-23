@@ -10,7 +10,8 @@
 
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
 import { dirname } from 'path';
-import { logger, getCasinoLedger } from '@coachartie/shared';
+import { logger } from '../../shared/logger.js';
+import { getCasinoLedger } from '../../shared/paths.js';
 
 const LEDGER_PATH = getCasinoLedger();
 

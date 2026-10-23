@@ -7,9 +7,9 @@
  * private methods — do not change wording, regexes, or output shape.
  */
 
-import { estimateTokens } from '@coachartie/shared';
-import type { IncomingMessage } from '@coachartie/shared';
-import type { ContextSource } from '../context-providers/types.js';
+import { estimateTokens } from '../../../shared/text.js';
+import type { type IncomingMessage } from '../../../shared/queue/types.js';
+import type { ContextSource } from './types.js';
 
 export interface DiscordHistoryEntry {
   author: string;

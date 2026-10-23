@@ -1,6 +1,6 @@
 import { MessageFlags, SlashCommandBuilder, ChatInputCommandInteraction, EmbedBuilder } from 'discord.js';
-import { logger } from '@coachartie/shared';
-import { describeEvents, listGuildWatches } from '../services/github-watches.js';
+import { logger } from '../../shared/logger.js';
+import { describeEvents, listGuildWatches } from '../watchers/github/watch-list.js';
 
 export const listWatchesCommand = {
   data: new SlashCommandBuilder()

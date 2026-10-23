@@ -1,5 +1,6 @@
-import { logger, getSyncDb } from '@coachartie/shared';
-import { RegisteredCapability } from '../services/capability/capability-registry.js';
+import { logger } from '../../../shared/logger.js';
+import { getSyncDb } from '../../../shared/db/client.js';
+import { RegisteredCapability } from '../../5-tool-loop/registry.js';
 
 /**
  * Community Analytics capability

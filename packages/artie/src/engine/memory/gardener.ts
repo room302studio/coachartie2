@@ -13,7 +13,8 @@
  * - Generates weekly synthesis digests
  */
 
-import { logger, getSyncDb } from '@coachartie/shared';
+import { logger } from '../../shared/logger.js';
+import { getSyncDb } from '../../shared/db/client.js';
 
 interface MemoryRecord {
   id: number;

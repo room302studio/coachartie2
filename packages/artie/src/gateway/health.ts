@@ -1,5 +1,5 @@
 import { createServer, IncomingMessage, ServerResponse } from 'http';
-import { logger } from '@coachartie/shared';
+import { logger } from '../shared/logger.js';
 import { telemetry } from './telemetry.js';
 import { readFileSync } from 'fs';
 

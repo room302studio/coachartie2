@@ -1,20 +1,12 @@
-import {
-  delay,
-  createWorker,
-  createQueue,
-  createRedisConnection,
-  QUEUES,
-  IncomingMessage,
-  OutgoingMessage,
-  logger,
-  queueLogger,
-  performanceLogger,
-  testRedisConnection,
-  isGenerationMuted,
-} from '@coachartie/shared';
-import { processMessage } from '../handlers/process-message.js';
-import { JOB_TIMEOUT_MS } from '../config/timeouts.js';
-import { jobTracker } from '../services/core/job-tracker.js';
+import { delay } from '../../shared/async.js';
+import { createWorker, createQueue, createRedisConnection, testRedisConnection } from '../../shared/queue/redis.js';
+import { QUEUES } from '../../shared/queue/names.js';
+import { IncomingMessage, OutgoingMessage } from '../../shared/queue/types.js';
+import { logger, queueLogger, performanceLogger } from '../../shared/logger.js';
+import { isGenerationMuted } from '../../shared/kill-switch.js';
+import { processMessage } from '../2-turn/run-turn.js';
+import { JOB_TIMEOUT_MS } from '../5-tool-loop/timeouts.js';
+import { jobTracker } from './job-tracker.js';
 import { shouldSkipPassiveGeneration } from './passive-observation.js';
 import type { Worker } from 'bullmq';
 
@@ -103,7 +95,7 @@ export async function startMessageConsumer(): Promise<Worker<IncomingMessage, vo
         (message.source === 'api' && message.context?.platform === 'discord')
       ) {
         try {
-          const { database } = await import('../services/core/database.js');
+          const { database } = await import('../memory/sync-db.js');
           await database.run(
             `
               INSERT INTO messages (value, user_id, message_type, channel_id, guild_id, created_at)
@@ -199,7 +191,7 @@ export async function startMessageConsumer(): Promise<Worker<IncomingMessage, vo
             (message.source === 'api' && message.context?.platform === 'discord'))
         ) {
           try {
-            const { database } = await import('../services/core/database.js');
+            const { database } = await import('../memory/sync-db.js');
             await database.run(
               `
                 INSERT INTO messages (value, user_id, message_type, channel_id, guild_id, role, related_message_id, created_at)
@@ -266,7 +258,7 @@ export async function startMessageConsumer(): Promise<Worker<IncomingMessage, vo
           (message.source === 'api' && message.context?.platform === 'discord')
         ) {
           try {
-            const { database } = await import('../services/core/database.js');
+            const { database } = await import('../memory/sync-db.js');
             await database.run(
               `
                 INSERT INTO messages (value, user_id, message_type, channel_id, guild_id, role, related_message_id, created_at)

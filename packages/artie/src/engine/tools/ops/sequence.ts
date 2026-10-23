@@ -1,8 +1,8 @@
-import { logger } from '@coachartie/shared';
+import { logger } from '../../../shared/logger.js';
 import {
   capabilityRegistry,
   RegisteredCapability,
-} from '../../services/capability/capability-registry.js';
+} from '../../5-tool-loop/registry.js';
 
 // =====================================================
 // SEQUENCE CAPABILITY

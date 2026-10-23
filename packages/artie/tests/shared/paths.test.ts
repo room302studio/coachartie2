@@ -20,7 +20,7 @@ import {
   SKILLS_DIRS,
   getGuildKnowledgeDirs,
   getEnvFiles,
-} from '../src/paths.js';
+} from '../../src/shared/paths.js';
 
 describe('REPO_ROOT', () => {
   it('contains pnpm-workspace.yaml', () => {
@@ -147,11 +147,15 @@ describe('getLogsDir', () => {
 });
 
 describe('SKILLS_DIRS', () => {
+  // Wave 3: packages/capabilities is gone, its src/skills moved to
+  // packages/artie/src/engine/tools/skills/library. The first entry was already a dead/
+  // nonexistent directory before this wave (see paths.ts's history) and stays dead, just
+  // renamed to match — this is the one deliberate SKILLS_DIRS change the wave spec calls for.
   it('is the three real candidates, highest priority first', () => {
     expect(SKILLS_DIRS).toEqual([
-      join(REPO_ROOT, 'packages/capabilities/skills'),
+      join(REPO_ROOT, 'packages/artie/skills'),
       join(process.env.HOME || '', '.coachartie/skills'),
-      join(REPO_ROOT, 'packages/capabilities/src/skills'),
+      join(REPO_ROOT, 'packages/artie/src/engine/tools/skills/library'),
     ]);
   });
 });

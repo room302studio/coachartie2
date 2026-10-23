@@ -5,8 +5,8 @@
  * Manages pairing codes, allowlist, and policy configuration.
  */
 
-import { logger } from '../utils/logger.js';
-import { getSyncDb } from '../db/client.js';
+import { logger } from './logger.js';
+import { getSyncDb } from './db/client.js';
 
 // Types
 export interface PairingCode {

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { statusCommand } from '../src/commands/status';
+import { statusCommand } from '../../src/gateway/commands/status.js';
 
 describe('/status command', () => {
   it('should have correct command structure', () => {

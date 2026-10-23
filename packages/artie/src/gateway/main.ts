@@ -1,29 +1,12 @@
 console.log('🚀 DISCORD SERVICE STARTING UP - BOOKITY BOOKITY!');
-console.log('📍 Current directory:', process.cwd());
+// The 'Current directory' diagnostic that used to be here is gone (wave 3): DONE WHEN requires
+// the cwd call that used to live here is gone — it's a shared/paths.ts-only concept now. REPO_ROOT (logged below) is the
+// cwd-independent answer to "where is this process rooted" anyway.
 console.log('🔧 Node version:', process.version);
 console.log('🌍 Environment:', process.env.NODE_ENV);
 
 import { config } from 'dotenv';
-import {
-  getEnvFiles,
-  REPO_ROOT,
-  getKillSwitch,
-  getStrikeMode,
-  getDatabasePath,
-  getSteamReviewNotes,
-  getCasinoLedger,
-  LAUNCH_STATE,
-  CAPABILITIES_GUILD_NOTES,
-  MENTION_PROXY_DATA,
-  SKILLS_DIRS,
-  getGuildKnowledgeDirs,
-  ENGINE_LOGS,
-  GATEWAY_LOGS,
-  PM2_LOGS,
-  getLogsDir,
-  PROMPTS_DIR,
-  REFERENCE_DOCS,
-} from '@coachartie/shared';
+import { getEnvFiles, REPO_ROOT, getKillSwitch, getStrikeMode, getDatabasePath, getSteamReviewNotes, getCasinoLedger, LAUNCH_STATE, CAPABILITIES_GUILD_NOTES, MENTION_PROXY_DATA, SKILLS_DIRS, getGuildKnowledgeDirs, ENGINE_LOGS, GATEWAY_LOGS, PM2_LOGS, getLogsDir, PROMPTS_DIR, REFERENCE_DOCS } from '../shared/paths.js';
 
 console.log('🔑 Loading environment variables...');
 
@@ -69,26 +52,26 @@ console.log('  - CAPABILITIES_URL:', process.env.CAPABILITIES_URL || 'not set');
 console.log('  - DISCORD_PORT:', process.env.DISCORD_PORT || 'not set');
 
 import { Client, GatewayIntentBits, Events, Partials } from 'discord.js';
-import { logger } from '@coachartie/shared';
-import { setupMessageHandler } from './handlers/message-handler.js';
-import { setupInteractionHandler } from './handlers/interaction-handler.js';
-import { setupReactionHandler } from './handlers/reaction-handler.js';
-import { startResponseConsumer } from './queues/consumer.js';
-import { publishMessage } from './queues/publisher.js';
+import { logger } from '../shared/logger.js';
+import { setupMessageHandler } from './1-receive/on-message.js';
+import { setupInteractionHandler } from './1-receive/on-interaction.js';
+import { setupReactionHandler } from './1-receive/on-reaction.js';
+import { startResponseConsumer } from './watchers/push-worker.js';
+import { publishMessage } from '../shared/queue/discord-publisher.js';
 import { writeFileSync } from 'fs';
 import { join } from 'path';
-import { telemetry } from './services/telemetry.js';
-import { healthServer } from './services/health-server.js';
-import { apiServer } from './services/api-server.js';
-import { pathResolver } from './utils/path-resolver.js';
-import { jobMonitor } from './services/job-monitor.js';
-import { initializeForumTraversal } from './services/forum-traversal.js';
-import { initializeGitHubIntegration } from './services/github-integration.js';
-import { initializeMentionProxyService } from './services/mention-proxy-service.js';
-import { initializeGitHubSync } from './services/github-sync.js';
-import { observationalLearning } from './services/observational-learning.js';
-import { steamReviewNotes } from './services/steam-review-notes.js';
-import { channelDigestLoop } from './services/channel-digest-loop.js';
+import { telemetry } from './telemetry.js';
+import { healthServer } from './health.js';
+import { apiServer } from './http.js';
+import { pathResolver } from './path-resolver.js';
+import { jobMonitor } from './3-ask-engine/job-watcher.js';
+import { initializeForumTraversal } from './watchers/github/forum-traversal.js';
+import { initializeGitHubIntegration } from './watchers/github/issue-sync.js';
+import { initializeMentionProxyService } from './2-gate/mention-proxy.js';
+import { initializeGitHubSync } from './watchers/github/watch-loop.js';
+import { observationalLearning } from './watchers/observe-channels.js';
+import { steamReviewNotes } from './watchers/steam-review-notes.js';
+import { channelDigestLoop } from './watchers/channel-digests.js';
 
 /**
  * Privileged intents (GuildMembers, MessageContent) need Discord's app verification once a
@@ -128,7 +111,7 @@ client.on(Events.MessageCreate, (msg) => {
   if (!msg.author.bot && msg.content.length > 5) {
     const githubSignals = /(?:push|commit|pr|pull request|issue|merge|branch|github|my pr|just pushed|just merged|i opened|i filed)/i;
     if (githubSignals.test(msg.content)) {
-      import('./services/github-identity-resolver.js')
+      import('./watchers/github/identity-resolver.js')
         .then(({ getIdentityResolver }) => {
           const resolver = getIdentityResolver();
           if (resolver) {
@@ -266,7 +249,7 @@ async function start() {
       }
 
       // Steam launch countdown (Sterling Artie milestone posts in #prison; self-disarms after launch)
-      import('./services/launch-countdown.js').then(({ initializeLaunchCountdown }) => {
+      import('./games/launch-countdown.js').then(({ initializeLaunchCountdown }) => {
         initializeLaunchCountdown(client);
       }).catch((error) => {
         logger.warn('Failed to initialize launch countdown:', error);
@@ -276,7 +259,7 @@ async function start() {
       // Initialize GitHub Identity Resolver (auto-maps GitHub → Discord users)
       // Initialize GitHub Studio Manager (daily digests, stale PR nudges)
       if (process.env.GITHUB_TOKEN) {
-        import('./services/github-identity-resolver.js').then(({ initializeIdentityResolver }) => {
+        import('./watchers/github/identity-resolver.js').then(({ initializeIdentityResolver }) => {
           initializeIdentityResolver(client);
           logger.info('✅ GitHub identity resolver enabled');
           console.log('✅ GitHub identity resolver enabled');
@@ -285,7 +268,7 @@ async function start() {
           console.error('❌ Identity resolver init failed:', error);
         });
 
-        import('./services/github-studio-manager.js').then(({ initializeStudioManager }) => {
+        import('./watchers/github/studio-digest.js').then(({ initializeStudioManager }) => {
           initializeStudioManager(client);
           logger.info('✅ GitHub studio manager enabled');
           console.log('✅ GitHub studio manager enabled');
@@ -294,7 +277,7 @@ async function start() {
           console.error('❌ Studio manager init failed:', error);
         });
 
-        import('./services/github-org-watcher.js').then(({ initializeOrgWatcher }) => {
+        import('./watchers/github/org-watcher.js').then(({ initializeOrgWatcher }) => {
           initializeOrgWatcher(client);
           logger.info('✅ GitHub org watcher enabled');
           console.log('✅ GitHub org watcher enabled');

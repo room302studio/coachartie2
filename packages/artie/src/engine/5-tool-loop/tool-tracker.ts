@@ -2,7 +2,8 @@
  * Capability Tracker - Logs every capability invocation for analysis
  */
 
-import { logger, getSyncDb } from '@coachartie/shared';
+import { logger } from '../../shared/logger.js';
+import { getSyncDb } from '../../shared/db/client.js';
 
 interface CapabilityInvocationData {
   traceId?: string;

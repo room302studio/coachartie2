@@ -1,5 +1,5 @@
-import { logger } from './logger.js';
-import { redis, isRedisAvailable, hasRedisBeenChecked } from './redis.js';
+import { logger } from '../../shared/logger.js';
+import { redis, isRedisAvailable, hasRedisBeenChecked } from '../../shared/queue/redis.js';
 
 /**
  * Service Discovery System

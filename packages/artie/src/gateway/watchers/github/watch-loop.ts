@@ -6,28 +6,30 @@
  */
 
 import { Client } from 'discord.js';
-import { logger, getDb, initializeDb, githubRepoWatches, eq } from '@coachartie/shared';
+import { logger } from '../../../shared/logger.js';
+import { getDb, initializeDb } from '../../../shared/db/client.js';
+import { githubRepoWatches } from '../../../shared/db/schema.js';
 import {
   GitHubPollerService,
   initializeGitHubPoller,
   getGitHubPoller,
   type GitHubSyncEvent,
   type PollerConfig,
-} from './github-poller.js';
+} from './poller.js';
 import {
   GitHubEventProcessor,
   initializeEventProcessor,
   getEventProcessor,
   type ProcessorConfig,
   type BatchedEvents,
-} from './github-event-processor.js';
+} from './event-batcher.js';
 import {
   GitHubDiscordPoster,
   initializeDiscordPoster,
   getDiscordPoster,
   type PosterConfig,
-} from './github-discord-poster.js';
-import { GUILD_CONFIGS } from '../config/guild-whitelist.js';
+} from './poster.js';
+import { GUILD_CONFIGS } from '../../../shared/config/guilds.js';
 
 export interface GitHubSyncConfig {
   poller?: Partial<PollerConfig>;

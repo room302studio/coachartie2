@@ -1,10 +1,10 @@
-import { logger } from '@coachartie/shared';
+import { logger } from '../../shared/logger.js';
 import {
   StructuredCapabilityError,
   createStructuredError,
   formatStructuredErrorCompact,
   ParameterSchema,
-} from '../../types/structured-errors.js';
+} from '../errors.js';
 
 /**
  * Context passed to capability handlers
@@ -723,10 +723,10 @@ export const capabilityRegistry = new CapabilityRegistry();
 // filesystem) was removed from here — registering them in both places logged a
 // "⚠️ Overwriting existing capability" warning on every boot. Keep this list in
 // sync: only caps that bootstrap does NOT register belong here.
-import { embeddedMCPCapability } from '../../capabilities/ai/embedded-mcp.js';
+import { embeddedMCPCapability } from '../tools/ops/embedded-mcp.js';
 capabilityRegistry.register(embeddedMCPCapability);
 
-import { scrapbookCapability } from '../../capabilities/memory/scrapbook.js';
+import { scrapbookCapability } from '../tools/personal/scrapbook.js';
 capabilityRegistry.register(scrapbookCapability);
 
 // (discord-channels, discord-threads, discord-user-history, discord-issue-parser,

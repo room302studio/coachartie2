@@ -1,7 +1,8 @@
-import { logger, IncomingMessage } from '@coachartie/shared';
-import { openRouterService } from '../llm/openrouter.js';
-import { contextAlchemy } from '../llm/context-alchemy.js';
-import { promptManager } from '../llm/prompt-manager.js';
+import { logger } from '../../../shared/logger.js';
+import { IncomingMessage } from '../../../shared/queue/types.js';
+import { openRouterService } from '../../4-generate/openrouter.js';
+import { contextAlchemy } from '../../3-context/assemble.js';
+import { promptManager } from '../../3-context/system-prompt.js';
 
 // =====================================================
 // EMAIL DRAFTING SERVICE
@@ -201,7 +202,7 @@ Format your response using XML tags:
         }
 
         // Actually send the email using the email capability
-        const { emailCapability } = await import('../../capabilities/communication/email.js');
+        const { emailCapability } = await import('./email.js');
         const result = await emailCapability.handler(
           {
             action: 'send',

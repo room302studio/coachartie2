@@ -15,16 +15,19 @@ import {
   PartialMessageReaction,
   PartialUser,
 } from 'discord.js';
-import { delay, logger, chunkMessage, isBlockedUser } from '@coachartie/shared';
-import { telemetry } from '../services/telemetry.js';
-import { generateCorrelationId, getShortCorrelationId } from '../utils/correlation.js';
-import { processUserIntent } from '../services/user-intent-processor.js';
+import { delay } from '../../shared/async.js';
+import { logger } from '../../shared/logger.js';
+import { chunkMessage } from '../4-reply/chunks.js';
+import { isBlockedUser } from '../../shared/blocklist.js';
+import { telemetry } from '../telemetry.js';
+import { generateCorrelationId, getShortCorrelationId } from '../correlation.js';
+import { processUserIntent } from '../4-reply/stream-reply.js';
 
 // Capabilities service URL (use environment variable or default)
 const CAPABILITIES_URL = process.env.CAPABILITIES_URL || 'http://localhost:47324';
 
 // Import capabilities client for trace feedback correlation
-import { capabilitiesClient } from '../services/capabilities-client.js';
+import { capabilitiesClient } from '../3-ask-engine/engine-client.js';
 
 // Reaction trigger emojis
 const REGENERATE_EMOJI = '🔄';

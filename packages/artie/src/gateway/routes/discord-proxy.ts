@@ -1,18 +1,12 @@
 import { Router, Request, Response } from 'express';
-import {
-  logger,
-  readKillSwitch,
-  writeManualMute,
-  clearKillSwitch,
-  writeBudgetOverride,
-  easternDayKey,
-  getKillSwitchPath,
-} from '@coachartie/shared';
-import { ForumTraversalService } from '../services/forum-traversal.js';
-import { GitHubIntegrationService } from '../services/github-integration.js';
+import { logger } from '../../shared/logger.js';
+import { readKillSwitch, writeManualMute, clearKillSwitch, writeBudgetOverride, getKillSwitchPath } from '../../shared/kill-switch.js';
+import { easternDayKey } from '../../shared/eastern-day.js';
+import { ForumTraversalService } from '../watchers/github/forum-traversal.js';
+import { GitHubIntegrationService } from '../watchers/github/issue-sync.js';
 import { Client, AttachmentBuilder, PollLayoutType } from 'discord.js';
-import { mentionProxyRouter } from './mention-proxy.js';
-import { violatesOutputSafety } from '../services/user-intent-processor.js';
+import { mentionProxyRouter } from './mention-proxy-api.js';
+import { violatesOutputSafety } from '../4-reply/stream-reply.js';
 import { readFileSync, writeFileSync, existsSync, appendFileSync } from 'fs';
 import { join } from 'path';
 

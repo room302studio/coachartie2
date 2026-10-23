@@ -1,5 +1,5 @@
-import { RegisteredCapability } from '../../services/capability/capability-registry.js';
-import { logger } from '@coachartie/shared';
+import { RegisteredCapability } from '../../5-tool-loop/registry.js';
+import { logger } from '../../../shared/logger.js';
 
 // Discord.js component types (without importing the library)
 enum TextInputStyle {

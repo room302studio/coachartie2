@@ -14,9 +14,11 @@
  * memories; this catches what happens while nobody's talking to him.
  */
 
-import { logger, getSyncDb, saveChannelDigest, getChannelDigest } from '@coachartie/shared';
-import { openRouterService } from '../llm/openrouter.js';
-import { MemoryService } from '../../capabilities/memory/memory.js';
+import { logger } from '../../shared/logger.js';
+import { getSyncDb } from '../../shared/db/client.js';
+import { saveChannelDigest, getChannelDigest } from '../../shared/db/channel-digest-store.js';
+import { openRouterService } from '../4-generate/openrouter.js';
+import { MemoryService } from '../tools/core/memory.js';
 
 export interface DigestRequest {
   guildId: string;

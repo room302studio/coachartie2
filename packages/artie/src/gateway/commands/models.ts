@@ -1,5 +1,5 @@
 import { MessageFlags, ChatInputCommandInteraction, SlashCommandBuilder, EmbedBuilder } from 'discord.js';
-import { logger } from '@coachartie/shared';
+import { logger } from '../../shared/logger.js';
 
 export const modelsCommand = {
   data: new SlashCommandBuilder()

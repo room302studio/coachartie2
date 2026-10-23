@@ -1,6 +1,9 @@
-import { logger, getSyncDb, isBlockedUser, mentionsOptedOutUser } from '@coachartie/shared';
-import { RegisteredCapability } from '../../services/capability/capability-registry.js';
-import { hybridDataLayer, MemoryRecord } from '../../runtime/hybrid-data-layer.js';
+import { logger } from '../../../shared/logger.js';
+import { getSyncDb } from '../../../shared/db/client.js';
+import { isBlockedUser } from '../../../shared/blocklist.js';
+import { mentionsOptedOutUser } from '../../../shared/privacy-opt-out.js';
+import { RegisteredCapability } from '../../5-tool-loop/registry.js';
+import { hybridDataLayer, MemoryRecord } from '../../memory/store.js';
 
 interface MemoryRow {
   id: number;
@@ -431,9 +434,9 @@ Generate tags that capture:
 Return ONLY a JSON array of lowercase tag strings, no other text.
 Example: ["food", "pizza", "italian", "preference", "like"]`;
 
-      const { openRouterService } = await import('../../services/llm/openrouter.js');
-      const { contextAlchemy } = await import('../../services/llm/context-alchemy.js');
-      const { promptManager } = await import('../../services/llm/prompt-manager.js');
+      const { openRouterService } = await import('../../4-generate/openrouter.js');
+      const { contextAlchemy } = await import('../../3-context/assemble.js');
+      const { promptManager } = await import('../../3-context/system-prompt.js');
 
       const baseSystemPrompt = await promptManager.getCapabilityInstructions(prompt);
       const { messages } = await contextAlchemy.buildMessageChain(
@@ -498,9 +501,9 @@ Generate tags that capture:
 Return ONLY a JSON array of lowercase tag strings, no other text.
 Example: ["food", "pizza", "italian", "preference", "like"]`;
 
-      const { openRouterService } = await import('../../services/llm/openrouter.js');
-      const { contextAlchemy } = await import('../../services/llm/context-alchemy.js');
-      const { promptManager } = await import('../../services/llm/prompt-manager.js');
+      const { openRouterService } = await import('../../4-generate/openrouter.js');
+      const { contextAlchemy } = await import('../../3-context/assemble.js');
+      const { promptManager } = await import('../../3-context/system-prompt.js');
 
       const baseSystemPrompt = await promptManager.getCapabilityInstructions(prompt);
       const { messages } = await contextAlchemy.buildMessageChain(

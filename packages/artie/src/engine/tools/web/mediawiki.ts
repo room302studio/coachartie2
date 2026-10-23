@@ -1,6 +1,6 @@
-import { logger } from '@coachartie/shared';
-import { RegisteredCapability } from '../../services/capability/capability-registry.js';
-import { mediaWikiManager } from '../../services/external/mediawiki-manager.js';
+import { logger } from '../../../shared/logger.js';
+import { RegisteredCapability } from '../../5-tool-loop/registry.js';
+import { mediaWikiManager } from '../../jobs/github-push/wiki-updater.js';
 
 export const mediaWikiCapability: RegisteredCapability = {
   name: 'mediawiki',

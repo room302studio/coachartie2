@@ -10,14 +10,14 @@
  * This is the control panel for Artie's proactive behavior.
  */
 
-import { logger } from '@coachartie/shared';
+import { logger } from '../../../shared/logger.js';
 import type {
   RegisteredCapability,
   CapabilityContext,
-} from '../../services/capability/capability-registry.js';
-import { heartbeatStatus } from '../../services/autonomous/heartbeat.js';
-import { getRecentSummaries } from '../../services/autonomous/conversation-summarizer.js';
-import { MODEL_TIERS, routeMessage } from '../../services/autonomous/model-router.js';
+} from '../../5-tool-loop/registry.js';
+import { heartbeatStatus } from '../../proactive/heartbeat.js';
+import { getRecentSummaries } from '../../memory/summarizer.js';
+import { MODEL_TIERS, routeMessage } from './model-router.js';
 
 interface AutonomousParams {
   action: string;

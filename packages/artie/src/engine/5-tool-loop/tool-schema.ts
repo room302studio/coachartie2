@@ -1,4 +1,4 @@
-import { RegisteredCapability } from './capability-registry.js';
+import { RegisteredCapability } from './registry.js';
 
 /**
  * Capability → native tool-call schema (Phase A foundation, see TOOL-USE-MIGRATION.md).

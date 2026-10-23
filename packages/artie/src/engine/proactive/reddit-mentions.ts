@@ -1,7 +1,9 @@
 import { v4 as uuidv4 } from 'uuid';
-import { createRedisConnection, QUEUES, logger } from '@coachartie/shared';
+import { createRedisConnection } from '../../shared/queue/redis.js';
+import { QUEUES } from '../../shared/queue/names.js';
+import { logger } from '../../shared/logger.js';
 import { Queue } from 'bullmq';
-import { redditClient } from './reddit-client.js';
+import { redditClient } from '../tools/personal/reddit-client.js';
 
 interface MentionJobContext {
   mentionId: string;

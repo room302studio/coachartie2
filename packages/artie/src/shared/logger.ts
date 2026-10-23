@@ -2,7 +2,7 @@ import winston from 'winston';
 import LokiTransport from 'winston-loki';
 import path from 'path';
 import fs from 'fs';
-import { getLogsDir } from '../paths.js';
+import { getLogsDir } from './paths.js';
 
 const logLevel = process.env.LOG_LEVEL || 'info';
 const serviceName = process.env.SERVICE_NAME || 'coachartie';

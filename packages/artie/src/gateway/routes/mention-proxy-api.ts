@@ -6,8 +6,8 @@
  */
 
 import { Router, Request, Response } from 'express';
-import { logger } from '@coachartie/shared';
-import { getMentionProxyService } from '../services/mention-proxy-service.js';
+import { logger } from '../../shared/logger.js';
+import { getMentionProxyService } from '../2-gate/mention-proxy.js';
 
 export const mentionProxyRouter: Router = Router();
 

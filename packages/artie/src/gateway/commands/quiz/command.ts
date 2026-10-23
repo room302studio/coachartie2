@@ -6,9 +6,9 @@ import {
   Channel,
   PermissionsBitField,
 } from 'discord.js';
-import { logger } from '@coachartie/shared';
-import { quizSessionManager, QuizSession } from '../services/quiz-session-manager.js';
-import { buildLiveQuizMessage, buildQuizSummary } from '../services/quiz-embed.js';
+import { logger } from '../../../shared/logger.js';
+import { quizSessionManager, QuizSession } from './live-session.js';
+import { buildLiveQuizMessage, buildQuizSummary } from './live-embed.js';
 import {
   ensureDailyQuizTables,
   fetchUniqueCards,
@@ -33,7 +33,7 @@ import {
   tomorrowKey,
   DAILY_QUESTION_COUNT,
   type LeaderboardScope,
-} from '../services/daily-quiz.js';
+} from './daily.js';
 import {
   buildChallengeMessage,
   buildDailyGameMessage,
@@ -43,7 +43,7 @@ import {
   buildLeaderboardMessage,
   buildProfileMessage,
   buildScheduleDraftMessage,
-} from '../services/daily-quiz-embed.js';
+} from './daily-embed.js';
 
 const DECK_CHOICES = [
   { name: 'All Decks (Random)', value: 'all' },
@@ -54,7 +54,7 @@ const DECK_CHOICES = [
   { name: 'Search & Rescue', value: 'SAR_AND_WILDERNESS' },
 ];
 
-const SCHEDULE_DRAFTS = new Map<string, import('../services/quiz-session-manager.js').FlashcardResponse[]>();
+const SCHEDULE_DRAFTS = new Map<string, import('./live-session.js').FlashcardResponse[]>();
 const draftKey = (userId: string, guildId: string, date: string, deck: string) =>
   `${userId}:${guildId}:${date}:${deck}`;
 export function getScheduleDraft(
@@ -62,7 +62,7 @@ export function getScheduleDraft(
   guildId: string,
   date: string,
   deck: string
-): import('../services/quiz-session-manager.js').FlashcardResponse[] | undefined {
+): import('./live-session.js').FlashcardResponse[] | undefined {
   return SCHEDULE_DRAFTS.get(draftKey(userId, guildId, date, deck));
 }
 export function setScheduleDraft(
@@ -70,7 +70,7 @@ export function setScheduleDraft(
   guildId: string,
   date: string,
   deck: string,
-  cards: import('../services/quiz-session-manager.js').FlashcardResponse[]
+  cards: import('./live-session.js').FlashcardResponse[]
 ): void {
   SCHEDULE_DRAFTS.set(draftKey(userId, guildId, date, deck), cards);
 }
@@ -575,7 +575,7 @@ async function handleSchedule(
   await interaction.deferReply({ ephemeral: true });
   ensureDailyQuizTables();
 
-  let cards: import('../services/quiz-session-manager.js').FlashcardResponse[] = [];
+  let cards: import('./live-session.js').FlashcardResponse[] = [];
   try {
     cards = await fetchUniqueCards(deck, DAILY_QUESTION_COUNT);
   } catch (e) {

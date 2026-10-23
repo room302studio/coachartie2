@@ -1,7 +1,8 @@
 import * as crypto from 'crypto';
-import { logger, GITHUB_FEED_CHANNEL_ID } from '@coachartie/shared';
-import { publishMessage } from '../queues/publisher.js';
-import { mediaWikiManager } from '../services/external/mediawiki-manager.js';
+import { logger } from '../../../shared/logger.js';
+import { GITHUB_FEED_CHANNEL_ID } from '../../../shared/config/channels.js';
+import { publishMessage } from '../../../shared/queue/enqueue-message.js';
+import { mediaWikiManager } from './wiki-updater.js';
 
 interface GitHubWebhookPayload {
   action?: string;

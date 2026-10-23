@@ -1,18 +1,12 @@
 import { Router, Request, Response } from 'express';
-import {
-  logger,
-  getDb,
-  memories,
-  messages,
-  desc,
-  sql,
-  countDistinct,
-  getSyncDb,
-} from '@coachartie/shared';
-import { errorPatternTracker } from '../services/llm/llm-error-pattern-tracker.js';
-import { traceManager, experimentManager } from '../services/context-alchemy/index.js';
-import type { ExperimentDefinition } from '../services/context-alchemy/experiment-manager.js';
-import { hybridDataLayer } from '../runtime/hybrid-data-layer.js';
+import { logger } from '../../shared/logger.js';
+import { getDb, getSyncDb } from '../../shared/db/client.js';
+import { memories, messages } from '../../shared/db/schema.js';
+import { errorPatternTracker } from '../5-tool-loop/tool-error-patterns.js';
+import { traceManager } from '../2-turn/trace.js';
+import { experimentManager } from '../3-context/experiments.js';
+import type { ExperimentDefinition } from '../3-context/experiments.js';
+import { hybridDataLayer } from '../memory/store.js';
 
 export const apiRouter: ReturnType<typeof Router> = Router();
 
@@ -953,7 +947,7 @@ apiRouter.get('/analytics/traces/with-text', (_req: Request, res: Response) => {
 // GET /api/analytics/delivery/stats - Delivery attempt statistics
 apiRouter.get('/analytics/delivery/stats', async (_req: Request, res: Response) => {
   try {
-    const { deliveryManager } = await import('../services/delivery/index.js');
+    const { deliveryManager } = await import('../proactive/delivery.js');
     const days = parseInt(_req.query.days as string) || 7;
     const stats = await deliveryManager.getStats(days);
 

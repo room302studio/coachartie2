@@ -33,8 +33,8 @@ import {
   type LeaderboardScope,
   type ServerLeaderboardRow,
   type UserStats,
-} from './daily-quiz.js';
-import type { FlashcardResponse } from './quiz-session-manager.js';
+} from './daily.js';
+import type { FlashcardResponse } from './live-session.js';
 
 export const DAILY_PREFIX = 'quiz:daily:';
 export const DAILY_MODAL_INPUT = 'answer';

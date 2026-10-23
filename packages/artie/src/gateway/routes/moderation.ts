@@ -1,7 +1,7 @@
 import express from 'express';
-import { logger } from '@coachartie/shared';
-import { moderationService } from '../services/moderation-service.js';
-import { isProtectedUser } from '../config/protected-users.js';
+import { logger } from '../../shared/logger.js';
+import { moderationService } from './moderation-service.js';
+import { isProtectedUser } from '../../shared/config/protected-users.js';
 
 const SUBWAY_BUILDER_GUILD_ID = '1420846272545296470';
 const STAFF_ROLE_RE = /\b(dev|developer|moderator|admin|administrator|staff|sbat)\b/i;

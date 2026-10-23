@@ -1,6 +1,6 @@
-import { logger } from '@coachartie/shared';
-import { capabilityRegistry, RegisteredCapability } from './capability-registry.js';
-import { openRouterService } from '../llm/openrouter.js';
+import { logger } from '../../shared/logger.js';
+import { capabilityRegistry, RegisteredCapability } from '../5-tool-loop/registry.js';
+import { openRouterService } from '../4-generate/openrouter.js';
 
 // Cache for CAPABILITY_PROMPT_INTRO to avoid repeated database lookups
 let cachedCapabilityIntro: string | null = null;
@@ -17,7 +17,7 @@ async function getCapabilityIntro(): Promise<string> {
   }
 
   try {
-    const { promptManager } = await import('../llm/prompt-manager.js');
+    const { promptManager } = await import('./system-prompt.js');
     const promptData = await promptManager.getPrompt('CAPABILITY_PROMPT_INTRO');
     if (promptData?.content) {
       cachedCapabilityIntro = promptData.content;
@@ -283,7 +283,7 @@ RELEVANT CAPABILITIES FOR THIS REQUEST:
     }
 
     try {
-      const { microLLM } = await import('../llm/micro-llm.js');
+      const { microLLM } = await import('../4-generate/micro-llm.js');
       const result = await microLLM.askYesNo(
         'Does this message need tools like: file operations, web search, memory/recall, calculations, scheduling, or code execution?',
         userMessage.substring(0, 200),

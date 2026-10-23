@@ -1,9 +1,12 @@
-import { logger, getSyncDb, scrubBlockedUserMentions, assertGenerationAllowed } from '@coachartie/shared';
+import { logger } from '../../../shared/logger.js';
+import { getSyncDb } from '../../../shared/db/client.js';
+import { scrubBlockedUserMentions } from '../../../shared/blocklist.js';
+import { assertGenerationAllowed } from '../../../shared/kill-switch.js';
 import {
   RegisteredCapability,
   CapabilityContext,
-} from '../../services/capability/capability-registry.js';
-import { openRouterService } from '../../services/llm/openrouter.js';
+} from '../../5-tool-loop/registry.js';
+import { openRouterService } from '../../4-generate/openrouter.js';
 
 /**
  * TTS capability — Artie speaks out loud via ElevenLabs, posting an mp3

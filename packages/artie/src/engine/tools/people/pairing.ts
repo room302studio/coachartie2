@@ -5,8 +5,10 @@
  * Allows the owner to approve, deny, and manage DM access requests.
  */
 
-import { logger, dmPairingService, isOwner } from '@coachartie/shared';
-import type { RegisteredCapability, CapabilityContext } from '../../services/capability/capability-registry.js';
+import { logger } from '../../../shared/logger.js';
+import { dmPairingService } from '../../../shared/dm-pairing.js';
+import { isOwner } from '../../../shared/config/owner.js';
+import type { RegisteredCapability, CapabilityContext } from '../../5-tool-loop/registry.js';
 
 interface PairingParams {
   action: string;

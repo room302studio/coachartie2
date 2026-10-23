@@ -7,8 +7,8 @@
 import {
   RegisteredCapability,
   CapabilityContext,
-} from '../../services/capability/capability-registry.js';
-import { logger } from '@coachartie/shared';
+} from '../../5-tool-loop/registry.js';
+import { logger } from '../../../shared/logger.js';
 
 const DISCORD_SERVICE_URL = process.env.DISCORD_SERVICE_URL || 'http://localhost:47321';
 

@@ -9,8 +9,8 @@
  * so a prompt-injected call can at worst create a silly (deactivatable) link.
  */
 
-import { RegisteredCapability } from '../../services/capability/capability-registry.js';
-import { logger } from '@coachartie/shared';
+import { RegisteredCapability } from '../../5-tool-loop/registry.js';
+import { logger } from '../../../shared/logger.js';
 
 const STRIPE_API = 'https://api.stripe.com/v1';
 const MIN_AMOUNT_USD = 1;

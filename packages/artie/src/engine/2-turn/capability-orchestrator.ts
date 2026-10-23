@@ -1,21 +1,22 @@
-import { logger, IncomingMessage } from '@coachartie/shared';
-import { capabilityRegistry } from './capability-registry.js';
-import { getErrorMessage, getErrorStack } from '../../utils/error-utils.js';
+import { logger } from '../../shared/logger.js';
+import { IncomingMessage } from '../../shared/queue/types.js';
+import { capabilityRegistry } from '../5-tool-loop/registry.js';
+import { getErrorMessage, getErrorStack } from '../error-utils.js';
 
 // Import new modular services
-import { emailDraftingService } from '../external/email-drafting-service.js';
-import { llmResponseCoordinator } from '../llm/llm-response-coordinator.js';
-import { capabilityBootstrap } from './capability-bootstrap.js';
-import { memoryOrchestration } from '../memory/memory-orchestration.js';
-import { llmLoopService } from '../llm/llm-loop-service.js';
-import { JOB_TIMEOUT_MS, SOFT_DEADLINE_RESERVE_MS } from '../../config/timeouts.js';
+import { emailDraftingService } from '../tools/people/email-drafting.js';
+import { llmResponseCoordinator } from '../4-generate/generate-reply.js';
+import { capabilityBootstrap } from '../5-tool-loop/register-tools.js';
+import { memoryOrchestration } from './save-reflection.js';
+import { llmLoopService } from '../5-tool-loop/loop.js';
+import { JOB_TIMEOUT_MS, SOFT_DEADLINE_RESERVE_MS } from '../5-tool-loop/timeouts.js';
 
 // Import Context Alchemy observability
-import { traceManager } from '../context-alchemy/index.js';
-import { sessionManager } from '../observability/session-manager.js';
+import { traceManager } from './trace.js';
+import { sessionManager } from './session-log.js';
 
 // Import shared types
-import { OrchestrationContext } from '../../types/orchestration-types.js';
+import { OrchestrationContext } from './types.js';
 
 export class CapabilityOrchestrator {
   private contexts = new Map<string, OrchestrationContext>();

@@ -1,7 +1,8 @@
 import { MessageFlags, ChatInputCommandInteraction, SlashCommandBuilder, EmbedBuilder } from 'discord.js';
-import { logger, testRedisConnection } from '@coachartie/shared';
-import { telemetry } from '../services/telemetry.js';
-import { capabilitiesClient } from '../services/capabilities-client.js';
+import { logger } from '../../shared/logger.js';
+import { testRedisConnection } from '../../shared/queue/redis.js';
+import { telemetry } from '../telemetry.js';
+import { capabilitiesClient } from '../3-ask-engine/engine-client.js';
 
 export const botStatusCommand = {
   data: new SlashCommandBuilder()

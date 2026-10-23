@@ -2,8 +2,9 @@
  * Error Tracker - Structured error logging for pattern analysis
  */
 
-import { logger, getDb } from '@coachartie/shared';
-import { errorEvents } from '@coachartie/shared';
+import { logger } from '../../shared/logger.js';
+import { getDb } from '../../shared/db/client.js';
+import { errorEvents } from '../../shared/db/schema.js';
 import { desc, sql } from 'drizzle-orm';
 
 export const ERROR_TYPES = {

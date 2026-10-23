@@ -5,15 +5,12 @@ import {
   SelectMenuBuilder,
   ModalBuilder,
 } from 'discord.js';
-import {
-  createWorker,
-  QUEUES,
-  OutgoingMessage,
-  logger,
-  testRedisConnection,
-  chunkMessage,
-  stripCapabilityXML,
-} from '@coachartie/shared';
+import { createWorker, testRedisConnection } from '../../shared/queue/redis.js';
+import { QUEUES } from '../../shared/queue/names.js';
+import { OutgoingMessage } from '../../shared/queue/types.js';
+import { logger } from '../../shared/logger.js';
+import { chunkMessage } from '../4-reply/chunks.js';
+import { stripCapabilityXML } from '../../shared/clean-llm-output.js';
 import type { Worker } from 'bullmq';
 
 // Known users Artie often means to actually PING but writes as plain text ("@ejfox"),

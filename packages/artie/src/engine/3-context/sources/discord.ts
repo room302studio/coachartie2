@@ -6,11 +6,11 @@
  * methods; do not change wording, queries, priorities, or token weights.
  */
 
-import { logger } from '@coachartie/shared';
-import { estimateTokens } from '@coachartie/shared';
-import type { IncomingMessage } from '@coachartie/shared';
-import type { ContextSource } from '../context-providers/types.js';
-import { DEBUG } from '../context-providers/types.js';
+import { logger } from '../../../shared/logger.js';
+import { estimateTokens } from '../../../shared/text.js';
+import type { type IncomingMessage } from '../../../shared/queue/types.js';
+import type { ContextSource } from './types.js';
+import { DEBUG } from './types.js';
 
 /**
  * Add recent messages from guild (Discord server)
@@ -31,7 +31,7 @@ export async function addRecentGuildMessages(
     }
 
     // Import database dynamically
-    const { database } = await import('../../core/database.js');
+    const { database } = await import('../../memory/sync-db.js');
 
     // Fetch recent messages from this guild (deduplicated)
     const recentGuildMessages = await database.all(
@@ -91,7 +91,7 @@ export async function addChannelVibes(
     }
 
     // Import database for recent activity check
-    const { database } = await import('../../core/database.js');
+    const { database } = await import('../../memory/sync-db.js');
 
     const channelId = messageContext.channelId;
     const channelName = messageContext.channelName || messageContext.channelId || 'unknown';
@@ -172,7 +172,7 @@ export async function addChannelDigest(
     const channelId = message.context?.channelId;
     if (!channelId || message.source !== 'discord') return;
 
-    const { getChannelDigest, digestAge } = await import('@coachartie/shared');
+    const { getChannelDigest, digestAge } = await import('../../../shared/db/channel-digest-store.js');
     const d = getChannelDigest(channelId);
     if (!d || !d.digest.trim()) return;
     if (Date.now() - new Date(d.updatedAt).getTime() > DIGEST_MAX_AGE_MS) return;
@@ -212,7 +212,7 @@ export async function addRecentChannelMessages(
     }
 
     // Import database dynamically
-    const { database } = await import('../../core/database.js');
+    const { database } = await import('../../memory/sync-db.js');
 
     // Fetch recent messages from this channel (deduplicated)
     const recentChannelMessages = await database.all(
@@ -257,7 +257,7 @@ export async function addCapabilityManifest(sources: ContextSource[]): Promise<v
   try {
     // Use COMPRESSED format: saves ~800 tokens vs full instructions
     // Lists capabilities concisely with format shown once
-    const { capabilityRegistry } = await import('../../capability/capability-registry.js');
+    const { capabilityRegistry } = await import('../../5-tool-loop/registry.js');
     const content = capabilityRegistry.generateCompressedInstructions();
 
     sources.push({

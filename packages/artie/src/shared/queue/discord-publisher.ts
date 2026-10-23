@@ -1,4 +1,7 @@
-import { createQueue, QUEUES, IncomingMessage, logger, isRedisAvailable } from '@coachartie/shared';
+import { createQueue, isRedisAvailable } from './redis.js';
+import { QUEUES } from './names.js';
+import { IncomingMessage } from './types.js';
+import { logger } from '../logger.js';
 import type { Queue } from 'bullmq';
 
 let messageQueue: Queue<IncomingMessage> | null = null;

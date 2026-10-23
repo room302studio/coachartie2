@@ -6,9 +6,9 @@ import { join } from 'path';
 // A throwaway DB with just the watches table; must be set before @coachartie/shared opens one.
 process.env.DATABASE_PATH = join(mkdtempSync(join(tmpdir(), 'gh-watches-')), 'test.db');
 
-let w: typeof import('../src/services/github-watches.js');
+let w: typeof import('../../src/gateway/watchers/github/watch-list.js');
 beforeAll(async () => {
-  const { getSyncDb } = await import('@coachartie/shared');
+  const { getSyncDb } = await import('../../src/shared/db/client.js');
   const db = getSyncDb();
   db.run(`CREATE TABLE IF NOT EXISTS github_repo_watches (
     id INTEGER PRIMARY KEY AUTOINCREMENT, repo TEXT NOT NULL, guild_id TEXT NOT NULL,
@@ -19,7 +19,7 @@ beforeAll(async () => {
     `INSERT INTO github_repo_watches (repo, guild_id, channel_id, created_by)
      VALUES ('room302studio/coachartie2', 'g1', 'robot', 'org-watcher')`
   );
-  w = await import('../src/services/github-watches.js');
+  w = await import('../../src/gateway/watchers/github/watch-list.js');
 });
 
 describe('parseWatchEvents', () => {

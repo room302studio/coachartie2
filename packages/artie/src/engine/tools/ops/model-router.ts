@@ -10,7 +10,7 @@
  * - Tier 3 (Complex): Opus - Deep reasoning, complex analysis
  */
 
-import { logger } from '@coachartie/shared';
+import { logger } from '../../../shared/logger.js';
 
 export type ModelTier = 'simple' | 'medium' | 'complex';
 

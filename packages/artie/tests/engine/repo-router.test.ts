@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildRoutePrompt, parseRoutePick } from '../src/services/core/repo-router.js';
+import { buildRoutePrompt, parseRoutePick } from '../../src/engine/routes/route-repo.js';
 
 const channels = [
   { id: '111', name: 'subwaybuilder-engineering', category: 'Subway Builder', topic: 'code, PRs, CI' },

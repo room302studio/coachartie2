@@ -12,7 +12,7 @@ import {
   ButtonStyle,
   EmbedBuilder,
 } from 'discord.js';
-import { renderProgressBar, type QuizSession } from './quiz-session-manager.js';
+import { renderProgressBar, type QuizSession } from './live-session.js';
 
 export const QUIZ_BUTTON_PREFIX = 'quiz:';
 

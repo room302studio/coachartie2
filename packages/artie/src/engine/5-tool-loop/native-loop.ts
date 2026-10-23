@@ -1,4 +1,4 @@
-import { ToolDefinition, toolCallToInvocation } from '../capability/capability-to-tool.js';
+import { ToolDefinition, toolCallToInvocation } from './tool-schema.js';
 
 /**
  * The new agentic loop (Phase A core, see TOOL-USE-MIGRATION.md).

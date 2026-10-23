@@ -1,14 +1,15 @@
-import { logger, IncomingMessage } from '@coachartie/shared';
-import { estimateTokens } from '@coachartie/shared';
+import { logger } from '../../shared/logger.js';
+import { IncomingMessage } from '../../shared/queue/types.js';
+import { estimateTokens } from '../../shared/text.js';
 import { openRouterService } from './openrouter.js';
-import { promptManager } from './prompt-manager.js';
-import { contextAlchemy } from './context-alchemy.js';
-import { modelAwarePrompter } from '../../utils/model-aware-prompter.js';
-import { preflightAnalyzer } from './preflight-analyzer.js';
-import { getBrownoutMode, applyBrevityNote, brownoutMaxTokens, brownoutRoute } from './brownout.js';
-import { experimentManager } from '../context-alchemy/index.js';
-import { errorTracker, ERROR_TYPES } from '../observability/error-tracker.js';
-import { CapabilityResult, OrchestrationContext } from '../../types/orchestration-types.js';
+import { promptManager } from '../3-context/system-prompt.js';
+import { contextAlchemy } from '../3-context/assemble.js';
+import { modelAwarePrompter } from './model-prompt-style.js';
+import { preflightAnalyzer } from './preflight.js';
+import { getBrownoutMode, applyBrevityNote, brownoutMaxTokens, brownoutRoute } from '../budget/brownout.js';
+import { experimentManager } from '../3-context/experiments.js';
+import { errorTracker, ERROR_TYPES } from './error-tracker.js';
+import { CapabilityResult, OrchestrationContext } from '../2-turn/types.js';
 
 // =====================================================
 // LLM RESPONSE COORDINATOR

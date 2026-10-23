@@ -1,5 +1,6 @@
 import { MessageFlags, ChatInputCommandInteraction, SlashCommandBuilder } from 'discord.js';
-import { logger, optOut, optIn, isOptedOut } from '@coachartie/shared';
+import { logger } from '../../shared/logger.js';
+import { optOut, optIn, isOptedOut } from '../../shared/privacy-opt-out.js';
 
 /**
  * /artie-optout and /artie-optin: self-serve privacy (shared/services/privacy-opt-out.ts).

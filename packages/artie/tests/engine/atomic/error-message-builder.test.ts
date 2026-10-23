@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { calculateSimilarity } from './string-similarity.test';
-import { ActionAliasMapper } from './action-alias-mapper.test';
+import { calculateSimilarity } from './string-similarity.test.js';
+import { ActionAliasMapper } from './action-alias-mapper.test.js';
 
 /**
  * ATOMIC UNIT: Error Message Builder

@@ -10,13 +10,14 @@
  * - Scheduled: "Send me a trend report every morning"
  */
 
-import { logger, canReceiveProactiveDMs, isAdmin } from '@coachartie/shared';
+import { logger } from '../../shared/logger.js';
+import { canReceiveProactiveDMs, isAdmin } from '../../shared/config/owner.js';
 import { Queue } from 'bullmq';
-import { createRedisConnection, testRedisConnection } from '@coachartie/shared';
+import { createRedisConnection, testRedisConnection } from '../../shared/queue/redis.js';
 import type {
   RegisteredCapability,
   CapabilityContext,
-} from '../../services/capability/capability-registry.js';
+} from '../5-tool-loop/registry.js';
 
 interface ProactiveDMParams {
   action: string;

@@ -1,4 +1,7 @@
-import { createQueue, QUEUES, IncomingMessage, logger } from '@coachartie/shared';
+import { createQueue } from './redis.js';
+import { QUEUES } from './names.js';
+import { IncomingMessage } from './types.js';
+import { logger } from '../logger.js';
 
 const messageQueue = createQueue<IncomingMessage>(QUEUES.INCOMING_MESSAGES);
 

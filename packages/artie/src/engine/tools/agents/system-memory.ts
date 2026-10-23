@@ -15,11 +15,12 @@
  * fast in-conversation handoffs.
  */
 
-import { logger, getSyncDb } from '@coachartie/shared';
+import { logger } from '../../../shared/logger.js';
+import { getSyncDb } from '../../../shared/db/client.js';
 import type {
   RegisteredCapability,
   CapabilityContext,
-} from '../../services/capability/capability-registry.js';
+} from '../../5-tool-loop/registry.js';
 
 interface SystemMemoryParams {
   action: string;

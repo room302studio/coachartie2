@@ -10,7 +10,7 @@
  * NO REGEX HEURISTICS - Uses micro LLM for smart decisions.
  */
 
-import { logger } from '@coachartie/shared';
+import { logger } from '../../shared/logger.js';
 import { microLLM } from './micro-llm.js';
 
 export interface PreflightAnalysis {

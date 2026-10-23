@@ -7,11 +7,11 @@
  * cooldowns, priorities, or token weights.
  */
 
-import { logger } from '@coachartie/shared';
-import { estimateTokens } from '@coachartie/shared';
-import type { IncomingMessage } from '@coachartie/shared';
-import type { ContextSource } from '../context-providers/types.js';
-import { DEBUG } from '../context-providers/types.js';
+import { logger } from '../../../shared/logger.js';
+import { estimateTokens } from '../../../shared/text.js';
+import type { type IncomingMessage } from '../../../shared/queue/types.js';
+import type { ContextSource } from './types.js';
+import { DEBUG } from './types.js';
 
 /**
  * Occasionally nudge Artie to make his reply an ACTUAL sung track. Songs are his single

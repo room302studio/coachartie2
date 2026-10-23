@@ -1,6 +1,6 @@
 import { evaluate } from 'mathjs';
-import { logger } from '@coachartie/shared';
-import { RegisteredCapability } from '../../services/capability/capability-registry.js';
+import { logger } from '../../../shared/logger.js';
+import { RegisteredCapability } from '../../5-tool-loop/registry.js';
 
 /**
  * Calculator capability - performs mathematical calculations and evaluates expressions

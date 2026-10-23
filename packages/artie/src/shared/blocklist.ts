@@ -6,7 +6,7 @@
 // Both packages (discord + capabilities) enforce this, which is why it lives in shared:
 // the discord package gates intake/context, capabilities gates memory formation/recall.
 
-import { isOptedOut } from '../services/privacy-opt-out.js';
+import { isOptedOut } from './privacy-opt-out.js';
 
 export interface BlockedUser {
   id: string; // Discord snowflake — immutable, survives renames

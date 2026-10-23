@@ -1,6 +1,6 @@
-import { logger } from '@coachartie/shared';
-import { RegisteredCapability } from '../../services/capability/capability-registry.js';
-import { embeddedMCPRuntime } from '../../runtime/embedded-mcp-runtime.js';
+import { logger } from '../../../shared/logger.js';
+import { RegisteredCapability } from '../../5-tool-loop/registry.js';
+import { embeddedMCPRuntime } from './embedded-mcp-runtime.js';
 
 interface EmbeddedMCPParams {
   action: string;

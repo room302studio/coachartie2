@@ -4,8 +4,8 @@
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
-import { capabilityExecutor } from '../src/services/capability/capability-executor.js';
-import { OrchestrationContext, ExtractedCapability } from '../src/types/orchestration-types.js';
+import { capabilityExecutor } from '../../src/engine/5-tool-loop/execute.js';
+import { OrchestrationContext, ExtractedCapability } from '../../src/engine/2-turn/types.js';
 
 describe('Taint Tracking Security', () => {
   let context: OrchestrationContext;

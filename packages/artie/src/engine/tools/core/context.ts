@@ -1,7 +1,7 @@
-import { logger } from '@coachartie/shared';
+import { logger } from '../../../shared/logger.js';
 import { exec } from 'child_process';
 import { promisify } from 'util';
-import { RegisteredCapability } from '../../services/capability/capability-registry.js';
+import { RegisteredCapability } from '../../5-tool-loop/registry.js';
 
 const execAsync = promisify(exec);
 

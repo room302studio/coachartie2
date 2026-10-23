@@ -1,15 +1,11 @@
 import { Queue, Worker } from 'bullmq';
-import {
-  logger,
-  createRedisConnection,
-  createWorker,
-  getSyncDb,
-  IncomingMessage,
-  QUEUES,
-  testRedisConnection,
-} from '@coachartie/shared';
-import { redditMentionMonitor } from '../reddit-mention-monitor.js';
-import { memoryGardener } from '../learning/memory-gardener.js';
+import { logger } from '../../shared/logger.js';
+import { createRedisConnection, createWorker, testRedisConnection } from '../../shared/queue/redis.js';
+import { getSyncDb } from '../../shared/db/client.js';
+import { IncomingMessage } from '../../shared/queue/types.js';
+import { QUEUES } from '../../shared/queue/names.js';
+import { redditMentionMonitor } from '../proactive/reddit-mentions.js';
+import { memoryGardener } from '../memory/gardener.js';
 
 export interface ScheduledTask {
   id: string;
@@ -534,7 +530,7 @@ export class SchedulerService {
     }
 
     try {
-      const { reflectionConsolidator } = await import('../learning/reflection-consolidator.js');
+      const { reflectionConsolidator } = await import('../memory/reflection-consolidator.js');
       const result = await reflectionConsolidator.runDailyConsolidation();
       logger.info(
         `✅ Daily reflection complete: ${result.rulesCreated} created, ${result.rulesUpdated} updated, ${result.guildsProcessed} guilds`
@@ -558,7 +554,7 @@ export class SchedulerService {
     }
 
     try {
-      const { reflectionConsolidator } = await import('../learning/reflection-consolidator.js');
+      const { reflectionConsolidator } = await import('../memory/reflection-consolidator.js');
       const result = await reflectionConsolidator.reviewAndPruneRules();
       logger.info(
         `✅ Weekly rule review complete: ${result.kept} kept, ${result.modified} modified, ${result.retired} retired`
@@ -607,7 +603,7 @@ export class SchedulerService {
     try {
       // Import the briefing capability
       const { morningBriefingCapability } = await import(
-        '../../capabilities/productivity/morning-briefing.js'
+        '../proactive/morning-briefing.js'
       );
 
       // Generate the briefing
@@ -652,7 +648,7 @@ export class SchedulerService {
 
     try {
       const { trendWatcherCapability } = await import(
-        '../../capabilities/research/trend-watcher.js'
+        '../proactive/trend-watcher.js'
       );
 
       const digest = await trendWatcherCapability.handler(
@@ -687,7 +683,7 @@ export class SchedulerService {
     logger.info('Autonomous heartbeat triggered');
 
     try {
-      const { executeHeartbeat } = await import('../autonomous/heartbeat.js');
+      const { executeHeartbeat } = await import('../proactive/heartbeat.js');
       const result = await executeHeartbeat();
       logger.info(
         `Heartbeat complete: ${result.questNudges} nudges, ${result.insightsDelivered} insights, ${result.errors} errors`
@@ -705,7 +701,7 @@ export class SchedulerService {
     logger.info('Daily conversation summarization triggered');
 
     try {
-      const { runDailySummarization } = await import('../autonomous/conversation-summarizer.js');
+      const { runDailySummarization } = await import('../memory/summarizer.js');
       const result = await runDailySummarization();
       logger.info(
         `Summarization complete: ${result.usersProcessed} users, ${result.summariesCreated} summaries`
@@ -723,7 +719,7 @@ export class SchedulerService {
     logger.info('Delivery retry processing triggered');
 
     try {
-      const { deliveryManager } = await import('../delivery/index.js');
+      const { deliveryManager } = await import('../proactive/delivery.js');
       await deliveryManager.initialize();
       const result = await deliveryManager.processRetries();
       logger.info(
@@ -844,7 +840,7 @@ export class SchedulerService {
 
     // Owner morning briefing - 8 AM Eastern
     // Clawdbot-style daily intelligence briefing for the owner
-    const { OWNER_USER_ID } = await import('@coachartie/shared');
+    const { OWNER_USER_ID } = await import('../../shared/config/owner.js');
     const morningBriefingCron = process.env.MORNING_BRIEFING_CRON || '0 8 * * *';
     await this.scheduleTask({
       id: 'owner-morning-briefing',

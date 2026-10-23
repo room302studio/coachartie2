@@ -1,29 +1,12 @@
 console.log('🚀 CAPABILITIES SERVICE STARTING - BOOKITY SNOOKITY!');
-console.log('📍 Current directory:', process.cwd());
+// The 'Current directory' diagnostic that used to be here is gone (wave 3): DONE WHEN requires
+// the cwd call that used to live here is gone — it's a shared/paths.ts-only concept now. REPO_ROOT (logged below) is the
+// cwd-independent answer to "where is this process rooted" anyway.
 console.log('🔧 Node version:', process.version);
 console.log('🌍 Environment:', process.env.NODE_ENV);
 
 import { config } from 'dotenv';
-import {
-  getEnvFiles,
-  REPO_ROOT,
-  getKillSwitch,
-  getStrikeMode,
-  getDatabasePath,
-  getSteamReviewNotes,
-  getCasinoLedger,
-  LAUNCH_STATE,
-  CAPABILITIES_GUILD_NOTES,
-  MENTION_PROXY_DATA,
-  SKILLS_DIRS,
-  getGuildKnowledgeDirs,
-  ENGINE_LOGS,
-  GATEWAY_LOGS,
-  PM2_LOGS,
-  getLogsDir,
-  PROMPTS_DIR,
-  REFERENCE_DOCS,
-} from '@coachartie/shared';
+import { getEnvFiles, REPO_ROOT, getKillSwitch, getStrikeMode, getDatabasePath, getSteamReviewNotes, getCasinoLedger, LAUNCH_STATE, CAPABILITIES_GUILD_NOTES, MENTION_PROXY_DATA, SKILLS_DIRS, getGuildKnowledgeDirs, ENGINE_LOGS, GATEWAY_LOGS, PM2_LOGS, getLogsDir, PROMPTS_DIR, REFERENCE_DOCS } from '../shared/paths.js';
 
 console.log('🔑 Loading environment variables...');
 
@@ -68,43 +51,39 @@ console.log('  - REDIS_PORT:', process.env.REDIS_PORT || 'not set');
 
 import express from 'express';
 import helmet from 'helmet';
-import {
-  logger,
-  createRequestLogger,
-  parsePortWithFallback,
-  registerServiceWithDiscovery,
-  serviceDiscovery,
-} from '@coachartie/shared';
-import { startMessageConsumer } from './queues/consumer.js';
+import { logger, createRequestLogger } from '../shared/logger.js';
+import { parsePortWithFallback } from '../shared/config/ports.js';
+import { registerServiceWithDiscovery, serviceDiscovery } from './health/service-discovery.js';
+import { startMessageConsumer } from './1-intake/queue-worker.js';
 import { healthRouter } from './routes/health.js';
-import { chatRouter } from './routes/chat.js';
+import { chatRouter } from './1-intake/chat-route.js';
 import { schedulerRouter } from './routes/scheduler.js';
 import { githubRouter } from './routes/github.js';
 import { servicesRouter } from './routes/services.js';
 import { memoriesRouter } from './routes/memories.js';
 import modelsRouter from './routes/models.js';
 import { logsRouter, stopCleanupInterval } from './routes/logs.js';
-import { apiRouter } from './routes/api.js';
+import { apiRouter } from './routes/observability.js';
 import { securityRouter } from './routes/security.js';
-import { sbatRouter } from './routes/sbat.js';
-import { schedulerService } from './services/core/scheduler.js';
-import { jobTracker } from './services/core/job-tracker.js';
-import { costMonitor } from './services/monitoring/cost-monitor.js';
-import { distressMonitor } from './services/monitoring/distress-monitor.js';
-import { vitalsMonitor } from './services/monitoring/vitals-monitor.js';
-import { startDailyBudgetWatch } from './services/monitoring/daily-budget.js';
-import { GlobalVariableStore } from './capabilities/system/variable-store.js';
+import { sbatRouter } from './routes/sbat-email-tickets.js';
+import { schedulerService } from './jobs/scheduler.js';
+import { jobTracker } from './1-intake/job-tracker.js';
+import { costMonitor } from './budget/session-spend.js';
+import { distressMonitor } from './health/distress.js';
+import { vitalsMonitor } from './health/vitals.js';
+import { startDailyBudgetWatch } from './budget/daily-cap.js';
+import { GlobalVariableStore } from './5-tool-loop/variables.js';
 // Import orchestrator FIRST to trigger capability registration
 import './services/capability/capability-orchestrator.js';
-import { capabilityRegistry } from './services/capability/capability-registry.js';
-import { capabilitiesRouter } from './routes/capabilities.js';
-import { simpleHealer } from './runtime/simple-healer.js';
-import { hybridDataLayer } from './runtime/hybrid-data-layer.js';
-import { getMetrics, getMetricsContentType } from './services/metrics.js';
-import { requireApiToken } from './middleware/require-api-token.js';
+import { capabilityRegistry } from './5-tool-loop/registry.js';
+import { capabilitiesRouter } from './routes/tool-registry.js';
+import { simpleHealer } from './health/simple-healer.js';
+import { hybridDataLayer } from './memory/store.js';
+import { getMetrics, getMetricsContentType } from './health/metrics.js';
+import { requireApiToken } from '../shared/require-api-token.js';
 
 // Export openRouterService for models endpoint
-export { openRouterService } from './services/llm/openrouter.js';
+export { openRouterService } from './4-generate/openrouter.js';
 
 const app = express();
 
@@ -191,7 +170,7 @@ app.post('/api/observe', async (req, res) => {
     }
 
     // Import observation handler
-    const { observationHandler } = await import('./services/core/observation-handler.js');
+    const { observationHandler } = await import('./memory/observe.js');
 
     // Generate summary
     const result = await observationHandler.generateObservationSummary(prompt, {
@@ -215,7 +194,7 @@ app.post('/api/channel-digest', async (req, res) => {
     if (!guildId || !channelId || !lastMessageId || !Array.isArray(lines)) {
       return res.status(400).json({ error: 'guildId, channelId, lastMessageId and lines[] required' });
     }
-    const { refreshChannelDigest } = await import('./services/core/channel-digest.js');
+    const { refreshChannelDigest } = await import('./memory/channel-digest.js');
     const result = await refreshChannelDigest({
       guildId,
       guildName: guildName || guildId,
@@ -238,7 +217,7 @@ app.post('/api/route-repo', async (req, res) => {
     if (!repo?.fullName || !Array.isArray(channels)) {
       return res.status(400).json({ error: 'repo.fullName and channels[] required' });
     }
-    const { pickRepoChannel } = await import('./services/core/repo-router.js');
+    const { pickRepoChannel } = await import('./routes/route-repo.js');
     const pick = await pickRepoChannel(repo, channels, Array.isArray(existing) ? existing : [], guildId);
     res.status(pick ? 200 : 422).json(pick ?? { error: 'no valid pick' });
   } catch (error) {
@@ -250,7 +229,7 @@ app.post('/api/route-repo', async (req, res) => {
 // Observation stats endpoint
 app.get('/api/observe/stats', async (req, res) => {
   try {
-    const { observationHandler } = await import('./services/core/observation-handler.js');
+    const { observationHandler } = await import('./memory/observe.js');
     const stats = await observationHandler.getObservationStats();
     res.json(stats);
   } catch (error) {
@@ -270,7 +249,7 @@ app.post('/api/reflection/check-threshold', async (req, res) => {
 
     // Import the consolidator
     const { reflectionConsolidator, countRecentNegativeFeedback } = await import(
-      './services/learning/reflection-consolidator.js'
+      './memory/reflection-consolidator.js'
     );
 
     // Check count of recent negative feedback
@@ -306,13 +285,13 @@ app.post('/api/reflection/check-threshold', async (req, res) => {
 app.get('/api/reflection/stats', async (req, res) => {
   try {
     const { reflectionConsolidator } = await import(
-      './services/learning/reflection-consolidator.js'
+      './memory/reflection-consolidator.js'
     );
 
     const systemRules = await reflectionConsolidator.getActiveRules('system');
 
     // Get guild-specific rules count
-    const { getSyncDb } = await import('@coachartie/shared');
+    const { getSyncDb } = await import('../shared/db/client.js');
     const db = getSyncDb();
 
     const guildStats = db.all<{ scope_id: string; count: number }>(

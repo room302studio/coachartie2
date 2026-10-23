@@ -12,13 +12,9 @@
 
 import { Client, GuildMember } from 'discord.js';
 import { Octokit } from '@octokit/rest';
-import {
-  logger,
-  getDb,
-  githubIdentityMappings,
-  githubRepoWatches,
-  eq,
-} from '@coachartie/shared';
+import { logger } from '../../../shared/logger.js';
+import { getDb } from '../../../shared/db/client.js';
+import { githubIdentityMappings, githubRepoWatches } from '../../../shared/db/schema.js';
 
 interface DiscordMemberInfo {
   id: string;

@@ -8,14 +8,10 @@
  * - Enriches events with additional context
  */
 
-import {
-  logger,
-  getDb,
-  githubIdentityMappings,
-  type GithubIdentityMapping,
-  eq,
-} from '@coachartie/shared';
-import type { GitHubSyncEvent, GitHubEventType } from './github-poller.js';
+import { logger } from '../../../shared/logger.js';
+import { getDb } from '../../../shared/db/client.js';
+import { githubIdentityMappings, type GithubIdentityMapping } from '../../../shared/db/schema.js';
+import type { GitHubSyncEvent, GitHubEventType } from './poller.js';
 
 // Bot usernames to filter out (excludes Copilot since those are human-initiated)
 const BOT_USERNAMES = [

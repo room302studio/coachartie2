@@ -1,9 +1,10 @@
 import { Router, type Router as ExpressRouter } from 'express';
-import { createRedisConnection, getDatabasePath } from '@coachartie/shared';
+import { createRedisConnection } from '../../shared/queue/redis.js';
+import { getDatabasePath } from '../../shared/paths.js';
 import { access } from 'fs/promises';
-import { logger } from '@coachartie/shared';
+import { logger } from '../../shared/logger.js';
 import os from 'os';
-import { creditMonitor } from '../services/monitoring/credit-monitor.js';
+import { creditMonitor } from '../budget/openrouter-balance.js';
 
 export const healthRouter: ExpressRouter = Router();
 

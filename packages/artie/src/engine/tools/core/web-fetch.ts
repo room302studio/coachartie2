@@ -2,7 +2,7 @@ import axios, { AxiosResponse, AxiosRequestConfig } from 'axios';
 import * as cheerio from 'cheerio';
 import { decode as decodeHtmlEntities } from 'html-entities';
 import { z } from 'zod';
-import { logger } from '@coachartie/shared';
+import { logger } from '../../../shared/logger.js';
 
 // Configuration constants
 const CONFIG = {

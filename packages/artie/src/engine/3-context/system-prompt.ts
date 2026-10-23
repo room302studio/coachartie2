@@ -1,5 +1,5 @@
-import { getSyncDb } from '@coachartie/shared';
-import { logger } from '@coachartie/shared';
+import { getSyncDb } from '../../shared/db/client.js';
+import { logger } from '../../shared/logger.js';
 import { stripUserMessagePlaceholder } from './prompt-cache.js';
 
 export interface PromptTemplate {
@@ -149,7 +149,7 @@ export class PromptManager {
 
     // Fallback: Use two-tier capability selector to nominate relevant capabilities
     logger.info('🎯 Using two-tier capability selector for intelligent triage');
-    const { capabilitySelector } = await import('../capability/capability-selector.js');
+    const { capabilitySelector } = await import('./pick-tools.js');
 
     try {
       // TIER 1: Use FAST_MODEL to nominate 3-5 relevant capabilities
@@ -168,7 +168,7 @@ export class PromptManager {
     } catch (selectorError) {
       // Fallback if selector fails: use ALL capabilities
       logger.warn('⚠️ Capability selector failed, falling back to full registry:', selectorError);
-      const { capabilityRegistry } = await import('../capability/capability-registry.js');
+      const { capabilityRegistry } = await import('../5-tool-loop/registry.js');
       const instructions = stripUserMessagePlaceholder(capabilityRegistry.generateInstructions());
       logger.info(
         `🎯 Using fallback capability instructions from registry (${capabilityRegistry.size()} capabilities)`
@@ -184,7 +184,7 @@ export class PromptManager {
    * fallback path / examples); this just makes the tools discoverable.
    */
   private async buildCapabilityRoster(): Promise<string> {
-    const { capabilityRegistry } = await import('../capability/capability-registry.js');
+    const { capabilityRegistry } = await import('../5-tool-loop/registry.js');
     // Sorted, not registration-ordered. This roster sits inside the cached system prefix, and
     // prompt caching is a byte-exact prefix match — if registration order shifts between
     // restarts (it has: see the double-registration fix in b46d9814f) the whole prefix stops

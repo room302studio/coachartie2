@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from 'vitest';
-import { UsageTracker } from '../src/services/monitoring/usage-tracker.js';
+import { UsageTracker } from '../../src/engine/budget/usage-ledger.js';
 
 const OPUS = 'anthropic/claude-opus-4.8'; // $5 / $25 per M
 

@@ -1,34 +1,35 @@
-import { logger, OWNER_USER_ID } from '@coachartie/shared';
-import { estimateTokens } from '@coachartie/shared';
-import { getGuildKnowledgeDirs } from '@coachartie/shared';
-import { conscienceLLM } from '../monitoring/conscience.js';
-import { IncomingMessage } from '@coachartie/shared';
-import { MemoryEntourageInterface } from '../memory/memory-entourage-interface.js';
-import { MemoryRecaller } from '../memory/memory-recaller.js';
+import { logger } from '../../shared/logger.js';
+import { OWNER_USER_ID } from '../../shared/config/owner.js';
+import { estimateTokens } from '../../shared/text.js';
+import { getGuildKnowledgeDirs } from '../../shared/paths.js';
+import { conscienceLLM } from '../health/conscience.js';
+import { IncomingMessage } from '../../shared/queue/types.js';
+import { MemoryEntourageInterface } from '../memory/types.js';
+import { MemoryRecaller } from '../memory/recall.js';
 import { existsSync, readFileSync } from 'fs';
 import { join } from 'path';
 
 // Context Alchemy observability
-import { traceManager } from '../context-alchemy/index.js';
-import { ContextSource, ContextBudget, DEBUG } from './context-providers/types.js';
+import { traceManager } from '../2-turn/trace.js';
+import { ContextSource, ContextBudget, DEBUG } from './sources/types.js';
 import {
   addCreditWarnings,
   addCurrentDateTime,
   addSelfAwareness,
-} from './context-providers/system-context.js';
+} from './sources/system-health.js';
 import {
   sanitizeAssistantMessage,
   renderDiscordTranscript,
   DEFAULT_TRANSCRIPT_MAX_TOKENS,
   groupContextByCategory,
-} from './context-sources/transcript-helpers.js';
+} from './sources/transcript.js';
 // Extracted context-source builders (behavior-identical; see each module header).
 import {
   addUserScores,
   addReplyContext,
   addAttachmentContext,
   addStoredFileContext,
-} from './context-sources/attachment-sources.js';
+} from './sources/attachments.js';
 import {
   addRecentGuildMessages,
   addChannelVibes,
@@ -36,14 +37,14 @@ import {
   addRecentChannelMessages,
   addCapabilityManifest,
   addDiscordEnvironment,
-} from './context-sources/discord-sources.js';
-import { addSongNudge } from './context-sources/nudge-sources.js';
+} from './sources/discord.js';
+import { addSongNudge } from './sources/nudges.js';
 import { GUILD_KNOWLEDGE_HEADER } from './prompt-cache.js';
 import {
   addLearnedRules,
   addRelevantMemories,
   addYardCallback,
-} from './context-sources/memory-sources.js';
+} from './sources/memories.js';
 
 // Guild ID to context path mapping (mirrors Discord guild-whitelist.ts)
 const GUILD_CONTEXT_PATHS: Record<string, string> = {
@@ -138,8 +139,8 @@ This message is from EJ, verified by his Discord user ID. He built you and runs 
  * 4. Assembles optimal context for the LLM
  */
 // Re-export pending attachment functions for backwards compatibility
-export type { PendingAttachment } from './pending-attachments.js';
-export { addPendingAttachment, getPendingAttachments } from './pending-attachments.js';
+export type { PendingAttachment } from '../1-intake/pending-attachments.js';
+export { addPendingAttachment, getPendingAttachments } from '../1-intake/pending-attachments.js';
 
 export class ContextAlchemy {
   private static instance: ContextAlchemy;
@@ -407,7 +408,7 @@ export class ContextAlchemy {
 
     // Load from database with fallback
     try {
-      const { promptManager } = await import('./prompt-manager.js');
+      const { promptManager } = await import('./system-prompt.js');
       const synthesisTemplate = await promptManager.getPrompt('PROMPT_CAPABILITY_SYNTHESIS');
 
       if (synthesisTemplate) {
@@ -592,7 +593,7 @@ Important:
     limit: number = 3
   ): Promise<Array<{ role: 'user' | 'assistant'; content: string }>> {
     try {
-      const { database } = await import('../core/database.js');
+      const { database } = await import('../memory/sync-db.js');
 
       // Human-like memory: blend channel-specific + global context
       // 70% from current channel, 30% from anywhere (like human recollection)
@@ -1076,7 +1077,7 @@ Important:
     // Loaded from DB (PROMPT_MESSAGE_FORMAT) with byte-identical fallback.
     let messageFormatBlock = MESSAGE_FORMAT_FALLBACK;
     try {
-      const { promptManager } = await import('./prompt-manager.js');
+      const { promptManager } = await import('./system-prompt.js');
       const mfPrompt = await promptManager.getPrompt('PROMPT_MESSAGE_FORMAT');
       if (mfPrompt?.content) {
         messageFormatBlock = mfPrompt.content;
@@ -1089,7 +1090,7 @@ Important:
     // Add UI modality rules for Discord messages (from database)
     if (source === 'discord') {
       try {
-        const { promptManager } = await import('./prompt-manager.js');
+        const { promptManager } = await import('./system-prompt.js');
         const uiPrompt = await promptManager.getPrompt('PROMPT_DISCORD_UI_MODALITY');
         const uiRules = uiPrompt?.content || UI_MODALITY_RULES_FALLBACK;
         systemContent += `\n\n${uiRules}`;
@@ -1242,7 +1243,7 @@ ${userMessage}
     // Loaded from DB (PROMPT_SECURITY_REMINDER) with byte-identical fallback.
     let securityReminderBlock = SECURITY_REMINDER_FALLBACK;
     try {
-      const { promptManager } = await import('./prompt-manager.js');
+      const { promptManager } = await import('./system-prompt.js');
       const srPrompt = await promptManager.getPrompt('PROMPT_SECURITY_REMINDER');
       if (srPrompt?.content) {
         securityReminderBlock = srPrompt.content;

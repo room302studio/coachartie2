@@ -2,8 +2,9 @@
  * Session Manager - Tracks user engagement sessions
  */
 
-import { logger, getDb } from '@coachartie/shared';
-import { userSessions } from '@coachartie/shared';
+import { logger } from '../../shared/logger.js';
+import { getDb } from '../../shared/db/client.js';
+import { userSessions } from '../../shared/db/schema.js';
 import { v4 as uuidv4 } from 'uuid';
 import { eq, and, isNull, lt, desc } from 'drizzle-orm';
 

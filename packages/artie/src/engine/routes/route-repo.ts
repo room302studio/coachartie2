@@ -8,7 +8,7 @@
  * which means the kill switch, the daily budget and usage tracking all apply.
  */
 
-import { openRouterService } from '../llm/openrouter.js';
+import { openRouterService } from '../4-generate/openrouter.js';
 
 export interface ChannelOption {
   id: string;

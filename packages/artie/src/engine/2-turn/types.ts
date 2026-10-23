@@ -1,4 +1,4 @@
-import { IncomingMessage } from '@coachartie/shared';
+import { IncomingMessage } from '../../shared/queue/types.js';
 
 // =====================================================
 // ORCHESTRATION TYPES

@@ -1,6 +1,7 @@
-import { RegisteredCapability } from '../services/capability/capability-registry.js';
-import { logger, assertGenerationAllowed } from '@coachartie/shared';
-import { addPendingAttachment } from '../services/llm/context-alchemy.js';
+import { RegisteredCapability } from '../../5-tool-loop/registry.js';
+import { logger } from '../../../shared/logger.js';
+import { assertGenerationAllowed } from '../../../shared/kill-switch.js';
+import { addPendingAttachment } from '../../3-context/assemble.js';
 
 interface ImageGenParams {
   action: 'generate' | 'edit';

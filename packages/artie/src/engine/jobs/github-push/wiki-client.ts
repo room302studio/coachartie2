@@ -1,4 +1,4 @@
-import { logger } from '@coachartie/shared';
+import { logger } from '../../../shared/logger.js';
 import fetch from 'node-fetch';
 import FormData from 'form-data';
 

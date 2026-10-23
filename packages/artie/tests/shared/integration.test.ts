@@ -1,13 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import {
-  createQueue,
-  createWorker,
-  createRedisConnection,
-  closeRedisConnection,
-  QUEUES,
-  IncomingMessage,
-  OutgoingMessage,
-} from '../src/index';
+import { createQueue, createWorker, createRedisConnection, closeRedisConnection } from '../../src/shared/queue/redis.js';
+import { QUEUES } from '../../src/shared/queue/names.js';
+import { IncomingMessage, OutgoingMessage } from '../../src/shared/queue/types.js';
 
 describe('Redis Queue Integration Tests', () => {
   beforeAll(async () => {

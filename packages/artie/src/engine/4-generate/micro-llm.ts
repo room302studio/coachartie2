@@ -7,7 +7,8 @@
  * Uses the fastest/cheapest available model (haiku-class or free tier).
  */
 
-import { logger, assertGenerationAllowed } from '@coachartie/shared';
+import { logger } from '../../shared/logger.js';
+import { assertGenerationAllowed } from '../../shared/kill-switch.js';
 import OpenAI from 'openai';
 
 // Micro LLM config - fast and cheap

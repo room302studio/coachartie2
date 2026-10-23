@@ -1,6 +1,6 @@
 import { Router } from 'express';
-import { logger } from '@coachartie/shared';
-import { handleGitHubWebhook } from '../handlers/github-webhook.js';
+import { logger } from '../../shared/logger.js';
+import { handleGitHubWebhook } from '../jobs/github-push/handle-push.js';
 
 export const githubRouter: Router = Router();
 

@@ -17,17 +17,20 @@
  *   - n8n calendar/email (when configured)
  */
 
-import { logger, getDb, errorEvents, isGenerationMuted } from '@coachartie/shared';
+import { logger } from '../../shared/logger.js';
+import { getDb } from '../../shared/db/client.js';
+import { errorEvents } from '../../shared/db/schema.js';
+import { isGenerationMuted } from '../../shared/kill-switch.js';
 import { desc, gte, sql } from 'drizzle-orm';
 import {
   getPendingRelaysForBriefing,
   markRelaysDelivered,
-} from '../communication/relay.js';
+} from './relay.js';
 import type {
   RegisteredCapability,
   CapabilityContext,
-} from '../../services/capability/capability-registry.js';
-import { schedulerService } from '../../services/core/scheduler.js';
+} from '../5-tool-loop/registry.js';
+import { schedulerService } from '../jobs/scheduler.js';
 import { execSync } from 'child_process';
 import { existsSync, readFileSync, readdirSync, statSync, writeFileSync, mkdirSync } from 'fs';
 import { basename, dirname } from 'path';
@@ -1537,7 +1540,7 @@ Write the morning brief. Under 1800 characters total.`;
 
   // Attempt 1: OpenRouter
   try {
-    const { openRouterService } = await import('../../services/llm/openrouter.js');
+    const { openRouterService } = await import('../4-generate/openrouter.js');
     const model = process.env.SMART_MODEL || 'anthropic/claude-sonnet-4';
     result = await openRouterService.generateFromMessageChain(
       messages,

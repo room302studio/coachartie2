@@ -1,6 +1,6 @@
 import { Router } from 'express';
-import { logger } from '@coachartie/shared';
-import { serviceDiscovery } from '@coachartie/shared';
+import { logger } from '../../shared/logger.js';
+import { serviceDiscovery } from '../health/service-discovery.js';
 
 export const servicesRouter: Router = Router();
 

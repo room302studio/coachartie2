@@ -1,9 +1,10 @@
-import { logger, IncomingMessage } from '@coachartie/shared';
-import { openRouterService } from '../llm/openrouter.js';
-import { capabilityRegistry, AUTO_INJECTED_PARAMS } from './capability-registry.js';
-import { capabilityXMLParser } from '../../utils/xml-parser.js';
-import { conscienceLLM } from '../monitoring/conscience.js';
-import { ExtractedCapability, OrchestrationContext } from '../../types/orchestration-types.js';
+import { logger } from '../../shared/logger.js';
+import { IncomingMessage } from '../../shared/queue/types.js';
+import { openRouterService } from '../4-generate/openrouter.js';
+import { capabilityRegistry, AUTO_INJECTED_PARAMS } from './registry.js';
+import { capabilityXMLParser } from './xml-parser.js';
+import { conscienceLLM } from '../health/conscience.js';
+import { ExtractedCapability, OrchestrationContext } from '../2-turn/types.js';
 
 // =====================================================
 // CAPABILITY PARSER SERVICE

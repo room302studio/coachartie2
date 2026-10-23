@@ -7,9 +7,10 @@
  */
 
 import { Client, EmbedBuilder, TextChannel, NewsChannel, ThreadChannel } from 'discord.js';
-import { logger, GITHUB_FEED_CHANNEL_ID } from '@coachartie/shared';
-import type { GitHubSyncEvent, GitHubEventType } from './github-poller.js';
-import type { ProcessedEvent, BatchedEvents, DiscordMention } from './github-event-processor.js';
+import { logger } from '../../../shared/logger.js';
+import { GITHUB_FEED_CHANNEL_ID } from '../../../shared/config/channels.js';
+import type { GitHubSyncEvent, GitHubEventType } from './poller.js';
+import type { ProcessedEvent, BatchedEvents, DiscordMention } from './event-batcher.js';
 
 // Color palette for different event types
 const EVENT_COLORS: Record<GitHubEventType, number> = {

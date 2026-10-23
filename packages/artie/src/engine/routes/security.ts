@@ -3,8 +3,8 @@
  */
 
 import { Request, Response, Router } from 'express';
-import { logger } from '@coachartie/shared';
-import { securityMonitor } from '../services/monitoring/security-monitor.js';
+import { logger } from '../../shared/logger.js';
+import { securityMonitor } from '../health/security.js';
 
 const router: Router = Router();
 

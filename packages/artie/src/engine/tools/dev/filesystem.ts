@@ -1,7 +1,8 @@
 import { promises as fs } from 'fs';
 import path from 'path';
-import { logger, REPO_ROOT } from '@coachartie/shared';
-import { RegisteredCapability } from '../../services/capability/capability-registry.js';
+import { logger } from '../../../shared/logger.js';
+import { REPO_ROOT } from '../../../shared/paths.js';
+import { RegisteredCapability } from '../../5-tool-loop/registry.js';
 
 interface NodeError extends Error {
   code?: string;

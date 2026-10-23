@@ -5,7 +5,9 @@ import {
   PermissionFlagsBits,
   SlashCommandBuilder,
 } from 'discord.js';
-import { logger, isOwner, dmPairingService } from '@coachartie/shared';
+import { logger } from '../../shared/logger.js';
+import { isOwner } from '../../shared/config/owner.js';
+import { dmPairingService } from '../../shared/dm-pairing.js';
 
 /**
  * /pairing — manage who may DM Artie (the DM gate). Owner-only; works in a server or in a DM

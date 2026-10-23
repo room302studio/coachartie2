@@ -11,8 +11,8 @@ import {
   applyBrevityNote,
   brevityNoteFor,
   type BrownoutMode,
-} from '../src/services/llm/brownout.js';
-import { applyCacheControl } from '../src/services/llm/prompt-cache.js';
+} from '../../src/engine/budget/brownout.js';
+import { applyCacheControl } from '../../src/engine/3-context/prompt-cache.js';
 
 const ENV_KEYS = [
   'BROWNOUT_DAILY_LEAN_FRACTION',

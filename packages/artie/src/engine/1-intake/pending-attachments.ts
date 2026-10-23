@@ -5,7 +5,7 @@
  * Artie saves analysis to files, reads them back for follow-ups.
  */
 
-import { logger } from '@coachartie/shared';
+import { logger } from '../../shared/logger.js';
 import * as fs from 'fs';
 import * as path from 'path';
 

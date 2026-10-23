@@ -10,11 +10,12 @@
  * actual data instead of guessing from training data.
  */
 
-import { logger, isOwner } from '@coachartie/shared';
+import { logger } from '../../../shared/logger.js';
+import { isOwner } from '../../../shared/config/owner.js';
 import type {
   RegisteredCapability,
   CapabilityContext,
-} from '../../services/capability/capability-registry.js';
+} from '../../5-tool-loop/registry.js';
 import { readFileSync } from 'fs';
 
 // Default coordinates are only used for owner — never exposed to other users

@@ -1,6 +1,6 @@
 import { Redis } from 'ioredis';
 import { Queue, Worker, QueueEvents, Job } from 'bullmq';
-import { logger } from './logger.js';
+import { logger } from '../logger.js';
 
 let redisConnection: Redis | null = null;
 let redisAvailable = false;

@@ -13,11 +13,14 @@
  * See @coachartie/shared config/owner.ts for the whitelist.
  */
 
-import { logger, getSyncDb, canReceiveProactiveDMs, OWNER_USER_ID, getDb, objectives, eq } from '@coachartie/shared';
-import type { Objective } from '@coachartie/shared';
-import { sendDiscordDM } from '../../capabilities/communication/proactive-dm.js';
-import { getStalledGoals, logGoalAction } from '../../capabilities/productivity/goals.js';
-import { deliveryManager } from '../delivery/index.js';
+import { logger } from '../../shared/logger.js';
+import { getSyncDb, getDb } from '../../shared/db/client.js';
+import { canReceiveProactiveDMs, OWNER_USER_ID } from '../../shared/config/owner.js';
+import { objectives } from '../../shared/db/schema.js';
+import type { type Objective } from '../../shared/db/schema.js';
+import { sendDiscordDM } from './proactive-dm.js';
+import { getStalledGoals, logGoalAction } from '../tools/planning/goals.js';
+import { deliveryManager } from './delivery.js';
 
 const NUDGE_COOLDOWN_HOURS = 24;
 

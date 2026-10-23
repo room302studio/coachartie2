@@ -10,14 +10,10 @@
 
 import { Client, TextChannel } from 'discord.js';
 import { Octokit } from '@octokit/rest';
-import {
-  logger,
-  GITHUB_FEED_CHANNEL_ID,
-  getDb,
-  githubRepoWatches,
-  eq,
-  and,
-} from '@coachartie/shared';
+import { logger } from '../../../shared/logger.js';
+import { GITHUB_FEED_CHANNEL_ID } from '../../../shared/config/channels.js';
+import { getDb } from '../../../shared/db/client.js';
+import { githubRepoWatches } from '../../../shared/db/schema.js';
 
 interface OrgWatchConfig {
   org: string;

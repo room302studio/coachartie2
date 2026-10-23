@@ -9,7 +9,9 @@ import {
   ModalSubmitInteraction,
   PermissionsBitField,
 } from 'discord.js';
-import { logger, canDMForTasks, logDMGate } from '@coachartie/shared';
+import { logger } from '../../shared/logger.js';
+import { canDMForTasks } from '../../shared/config/owner.js';
+import { logDMGate } from '../../shared/dm-pairing.js';
 import { globalCommands } from '../commands/registry.js';
 import {
   refreshLiveQuiz,
@@ -18,9 +20,9 @@ import {
   setScheduleDraft,
   clearScheduleDraft,
   getBallotDecks,
-} from '../commands/quiz.js';
-import { parseQuizButtonId } from '../services/quiz-embed.js';
-import { quizSessionManager, isCorrectAnswer } from '../services/quiz-session-manager.js';
+} from '../commands/quiz/command.js';
+import { parseQuizButtonId } from '../commands/quiz/live-embed.js';
+import { quizSessionManager, isCorrectAnswer } from '../commands/quiz/live-session.js';
 import {
   parseDailyCustomId,
   parseScheduleCustomId,
@@ -33,7 +35,7 @@ import {
   buildGuessModal,
   buildScheduleDraftMessage,
   DAILY_MODAL_INPUT,
-} from '../services/daily-quiz-embed.js';
+} from '../commands/quiz/daily-embed.js';
 import {
   castDeckVote,
   closeDeckPoll,
@@ -49,14 +51,14 @@ import {
   markShared,
   scheduleDailyPuzzle,
   DAILY_QUESTION_COUNT,
-} from '../services/daily-quiz.js';
-import { telemetry } from '../services/telemetry.js';
+} from '../commands/quiz/daily.js';
+import { telemetry } from '../telemetry.js';
 import {
   CorrelationContext,
   generateCorrelationId,
   getShortCorrelationId,
-} from '../utils/correlation.js';
-import { processUserIntent } from '../services/user-intent-processor.js';
+} from '../correlation.js';
+import { processUserIntent } from '../4-reply/stream-reply.js';
 
 // Routed from the same registry register-commands.ts publishes (commands/registry.ts).
 const commands = new Map<string, any>(globalCommands.map((c) => [c.data.name, c]));

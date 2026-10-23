@@ -10,7 +10,8 @@
  * - Code interpreter: $0.03 per session
  */
 
-import { logger, assertGenerationAllowed } from '@coachartie/shared';
+import { logger } from '../../../../shared/logger.js';
+import { assertGenerationAllowed } from '../../../../shared/kill-switch.js';
 import type {
   ModelHarness,
   ResearchTask,

@@ -1,5 +1,4 @@
 import { defineConfig } from 'vitest/config';
-import { resolve } from 'path';
 
 export default defineConfig({
   test: {
@@ -40,11 +39,6 @@ export default defineConfig({
     },
   },
 
-  resolve: {
-    alias: {
-      '@coachartie/shared': resolve(__dirname, 'packages/shared/src'),
-      '@coachartie/capabilities': resolve(__dirname, 'packages/capabilities/src'),
-      '@coachartie/discord': resolve(__dirname, 'packages/discord/src'),
-    },
-  },
+  // No more @coachartie/{shared,capabilities,discord} aliases (wave 3): those three packages
+  // are gone, merged into packages/artie as one package with plain relative imports.
 });

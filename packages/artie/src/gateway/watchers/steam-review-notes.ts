@@ -1,4 +1,6 @@
-import { logger, isBlockedUser, getSteamReviewNotes } from '@coachartie/shared';
+import { logger } from '../../shared/logger.js';
+import { isBlockedUser } from '../../shared/blocklist.js';
+import { getSteamReviewNotes } from '../../shared/paths.js';
 import { Client, TextChannel, Message } from 'discord.js';
 import fetch from 'node-fetch';
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs';

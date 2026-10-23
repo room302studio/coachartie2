@@ -10,8 +10,8 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { capabilityBootstrap } from '../src/services/capability/capability-bootstrap.js';
-import { capabilityRegistry } from '../src/services/capability/capability-registry.js';
+import { capabilityBootstrap } from '../../src/engine/5-tool-loop/register-tools.js';
+import { capabilityRegistry } from '../../src/engine/5-tool-loop/registry.js';
 import expected from './roster.expected.json';
 
 async function bootRoster(): Promise<Record<string, string[]>> {

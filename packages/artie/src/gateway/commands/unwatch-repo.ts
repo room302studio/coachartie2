@@ -6,8 +6,8 @@ import {
   EmbedBuilder,
   PermissionFlagsBits,
 } from 'discord.js';
-import { logger } from '@coachartie/shared';
-import { REPO_PATTERN, pauseWatch, suggestRepos } from '../services/github-watches.js';
+import { logger } from '../../shared/logger.js';
+import { REPO_PATTERN, pauseWatch, suggestRepos } from '../watchers/github/watch-list.js';
 
 export const unwatchRepoCommand = {
   data: new SlashCommandBuilder()

@@ -10,13 +10,13 @@
  * has been doing and can reference that context in conversations.
  */
 
-import { logger } from '@coachartie/shared';
+import { logger } from '../../../shared/logger.js';
 import { readFileSync, readdirSync, statSync, existsSync } from 'fs';
 import { join } from 'path';
 import type {
   RegisteredCapability,
   CapabilityContext,
-} from '../../services/capability/capability-registry.js';
+} from '../../5-tool-loop/registry.js';
 
 const CLAUDE_HOME = '/home/debian/claude';
 const BRIEFING_PATH = join(CLAUDE_HOME, 'briefing.md');

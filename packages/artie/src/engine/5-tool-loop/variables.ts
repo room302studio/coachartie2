@@ -1,5 +1,7 @@
-import { logger, getDb, globalVariables, getRawDb, eq, inArray, asc } from '@coachartie/shared';
-import { RegisteredCapability } from '../../services/capability/capability-registry.js';
+import { logger } from '../../shared/logger.js';
+import { getDb, getRawDb } from '../../shared/db/client.js';
+import { globalVariables } from '../../shared/db/schema.js';
+import { RegisteredCapability } from './registry.js';
 
 interface VariableParams {
   action: string;

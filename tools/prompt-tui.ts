@@ -10,7 +10,7 @@ import blessed from 'blessed';
 import {
   promptManager,
   PromptTemplate,
-} from '../packages/capabilities/src/services/llm/prompt-manager.js';
+} from '../packages/artie/src/engine/3-context/system-prompt.js';
 
 // Create screen
 const screen = blessed.screen({
@@ -527,7 +527,7 @@ promptList.key(['t'], async () => {
       log(`Toggling active status for ${selectedPrompt.name}...`, 'info');
 
       // Update via database
-      const { getDatabase } = await import('../packages/shared/src/utils/database.js');
+      const { getDatabase } = await import('../packages/artie/src/shared/db/client.js');
       const db = await getDatabase();
       await db.run('UPDATE prompts SET is_active = ? WHERE name = ?', [
         newActiveState ? 1 : 0,

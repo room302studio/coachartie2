@@ -1,5 +1,5 @@
-import { logger } from '@coachartie/shared';
-import type { RegisteredCapability } from '../../services/capability/capability-registry.js';
+import { logger } from '../../../shared/logger.js';
+import type { RegisteredCapability } from '../../5-tool-loop/registry.js';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
 // Initialize Supabase client lazily

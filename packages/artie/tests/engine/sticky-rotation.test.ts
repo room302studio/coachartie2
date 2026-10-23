@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { stickyRotationIndex } from '../src/services/llm/openrouter.js';
+import { stickyRotationIndex } from '../../src/engine/4-generate/openrouter.js';
 
 describe('stickyRotationIndex', () => {
   it('maps a conversation to the same model every time', () => {

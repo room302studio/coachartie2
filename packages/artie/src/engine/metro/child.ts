@@ -13,7 +13,7 @@
 import { readFile, writeFile, stat } from 'fs/promises';
 import { join, basename, dirname } from 'path';
 import { createRequire } from 'module';
-import { analyzeMetroGeo, formatGeoInsights } from '../metro-geo-analysis.js';
+import { analyzeMetroGeo, formatGeoInsights } from './geo.js';
 
 // Import from official metro-savefile-doctor repo
 import {

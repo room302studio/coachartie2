@@ -1,4 +1,5 @@
-import { getSyncDb, logger } from '@coachartie/shared';
+import { getSyncDb } from '../db/client.js';
+import { logger } from '../logger.js';
 
 /**
  * Guild-context prompt blocks for the Subway Builder guild.

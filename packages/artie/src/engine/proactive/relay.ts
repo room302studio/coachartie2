@@ -10,12 +10,14 @@
  */
 
 import { and, desc, eq, gte, sql } from 'drizzle-orm';
-import { logger, getDb, relays } from '@coachartie/shared';
-import type { Relay } from '@coachartie/shared';
+import { logger } from '../../shared/logger.js';
+import { getDb } from '../../shared/db/client.js';
+import { relays } from '../../shared/db/schema.js';
+import type { type Relay } from '../../shared/db/schema.js';
 import {
   RegisteredCapability,
   CapabilityContext,
-} from '../../services/capability/capability-registry.js';
+} from '../5-tool-loop/registry.js';
 
 /** Who relays are for when nobody says otherwise. Matches the briefing owner. */
 const DEFAULT_RECIPIENT = process.env.RELAY_RECIPIENT || 'ej';

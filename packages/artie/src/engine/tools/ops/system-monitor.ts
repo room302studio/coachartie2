@@ -1,6 +1,6 @@
-import { logger } from '@coachartie/shared';
-import { RegisteredCapability } from '../../services/capability/capability-registry.js';
-import { DiscordFormatter } from '../../utils/discord-formatter.js';
+import { logger } from '../../../shared/logger.js';
+import { RegisteredCapability } from '../../5-tool-loop/registry.js';
+import { DiscordFormatter } from './system-monitor-format.js';
 import os from 'os';
 import { exec } from 'child_process';
 import { promisify } from 'util';

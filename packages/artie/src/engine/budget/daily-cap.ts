@@ -1,18 +1,9 @@
-import {
-  readDailyBudgetUsd,
-  logger,
-  getSyncDb,
-  easternDayKey,
-  easternDayBounds,
-  toSqliteUtc,
-  readKillSwitch,
-  writeBudgetMute,
-  clearKillSwitch,
-  readBudgetOverrideDay,
-  getKillSwitchPath,
-  reportToAnomalywatch,
-  type KillSwitchState,
-} from '@coachartie/shared';
+import { readDailyBudgetUsd } from '../../shared/guild-budget.js';
+import { logger } from '../../shared/logger.js';
+import { getSyncDb } from '../../shared/db/client.js';
+import { easternDayKey, easternDayBounds, toSqliteUtc } from '../../shared/eastern-day.js';
+import { readKillSwitch, writeBudgetMute, clearKillSwitch, readBudgetOverrideDay, getKillSwitchPath, type KillSwitchState } from '../../shared/kill-switch.js';
+import { reportToAnomalywatch } from '../../shared/anomalywatch.js';
 
 /**
  * DAILY SPEND CAP → AUTO-MUTE.
@@ -28,7 +19,7 @@ import {
  * the mute at midnight, and what catches spend written directly by the discord process).
  */
 
-export { DEFAULT_DAILY_BUDGET_USD } from '@coachartie/shared';
+export { DEFAULT_DAILY_BUDGET_USD } from '../../shared/guild-budget.js';
 export const BUDGET_ALERT_KIND = 'daily-budget-mute';
 
 /** DAILY_BUDGET_USD, default 3. 0, a negative number or "off" disables the cap. */

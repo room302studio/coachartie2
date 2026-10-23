@@ -1,11 +1,11 @@
 import { MessageFlags, ChatInputCommandInteraction, SlashCommandBuilder, EmbedBuilder } from 'discord.js';
-import { logger } from '@coachartie/shared';
+import { logger } from '../../shared/logger.js';
 import {
   searchOwnMemories,
   recentOwnMemories,
   ownMemoryStats,
   type OwnMemory,
-} from '../services/user-memories.js';
+} from './user-memories.js';
 
 /** /memory: the caller's OWN memories only, always as a private reply (services/user-memories). */
 export const memoryCommand = {

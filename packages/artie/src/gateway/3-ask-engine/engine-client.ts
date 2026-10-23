@@ -1,5 +1,5 @@
-import { logger } from '@coachartie/shared';
-import { delay } from '@coachartie/shared';
+import { logger } from '../../shared/logger.js';
+import { delay } from '../../shared/async.js';
 
 /**
  * Retry a function with exponential backoff

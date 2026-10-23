@@ -1,5 +1,6 @@
-import { openRouterService } from '../llm/openrouter.js';
-import { logger, getSyncDb } from '@coachartie/shared';
+import { openRouterService } from '../4-generate/openrouter.js';
+import { logger } from '../../shared/logger.js';
+import { getSyncDb } from '../../shared/db/client.js';
 
 export interface CapabilityRequest {
   name: string;
@@ -70,8 +71,8 @@ Examples:
 - "They're in deep work mode, be concise and helpful"`;
 
     try {
-      const { contextAlchemy } = await import('../llm/context-alchemy.js');
-      const { promptManager } = await import('../llm/prompt-manager.js');
+      const { contextAlchemy } = await import('../3-context/assemble.js');
+      const { promptManager } = await import('../3-context/system-prompt.js');
 
       const baseSystemPrompt = await promptManager.getCapabilityInstructions(prompt);
       const { messages } = await contextAlchemy.buildMessageChain(prompt, userId, baseSystemPrompt);
@@ -124,7 +125,7 @@ Examples:
 
   private async inferEnergyLevel(message: string): Promise<string> {
     try {
-      const { microLLM } = await import('../llm/micro-llm.js');
+      const { microLLM } = await import('../4-generate/micro-llm.js');
       const result = await microLLM.pickOne(
         'What energy/emotional state does this message convey?',
         message.substring(0, 150),
@@ -140,7 +141,7 @@ Examples:
   // Get conscience prompt from database
   private async getConsciencePrompt(): Promise<string> {
     try {
-      const { promptManager } = await import('../llm/prompt-manager.js');
+      const { promptManager } = await import('../3-context/system-prompt.js');
       const prompt = await promptManager.getPrompt('PROMPT_CONSCIENCE_SYSTEM');
       if (prompt?.content) {
         return prompt.content;
@@ -344,8 +345,8 @@ For DANGEROUS operations: Explain why unsafe, no approval`;
           .replace('{{CAPABILITY_PARAMS}}', JSON.stringify(capability.params)) +
         `\n\n${warningsText}${capabilityGuidance}`;
 
-      const { contextAlchemy } = await import('../llm/context-alchemy.js');
-      const { promptManager } = await import('../llm/prompt-manager.js');
+      const { contextAlchemy } = await import('../3-context/assemble.js');
+      const { promptManager } = await import('../3-context/system-prompt.js');
 
       const baseSystemPrompt = await promptManager.getCapabilityInstructions(prompt);
       const { messages } = await contextAlchemy.buildMessageChain(

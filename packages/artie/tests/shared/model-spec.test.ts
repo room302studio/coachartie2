@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { resolveModelSpec, isAutoRouted, autoReasoningFor } from '../src/utils/model-spec.js';
+import { resolveModelSpec, isAutoRouted, autoReasoningFor } from '../../src/shared/model-spec.js';
 
 describe('resolveModelSpec', () => {
   it('passes concrete model ids through untouched', () => {

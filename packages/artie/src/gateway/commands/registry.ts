@@ -10,7 +10,7 @@ import { memoryCommand } from './memory.js';
 import { usageCommand } from './usage.js';
 import { debugCommand } from './debug.js';
 import * as syncDiscussionsCommand from './sync-discussions.js';
-import { quizCommand } from './quiz.js';
+import { quizCommand } from './quiz/command.js';
 import { watchRepoCommand } from './watch-repo.js';
 import { unwatchRepoCommand } from './unwatch-repo.js';
 import { listWatchesCommand } from './list-watches.js';

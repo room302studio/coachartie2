@@ -31,7 +31,7 @@
  * apart by cache_write_tokens, which readCachedTokens also returns.
  */
 
-import { estimateTokens } from '@coachartie/shared';
+import { estimateTokens } from '../../shared/text.js';
 
 /**
  * Minimum cacheable prefix, in tokens, keyed by OpenRouter model id.

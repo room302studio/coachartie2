@@ -1,5 +1,5 @@
 import axios, { AxiosInstance } from 'axios';
-import { logger } from '@coachartie/shared';
+import { logger } from '../../../shared/logger.js';
 
 const REDDIT_OAUTH_URL = 'https://www.reddit.com/api/v1/access_token';
 const REDDIT_API_BASE = 'https://oauth.reddit.com';

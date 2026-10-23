@@ -1,6 +1,7 @@
 import OpenAI from 'openai';
-import { RegisteredCapability } from '../../services/capability/capability-registry.js';
-import { logger, assertGenerationAllowed } from '@coachartie/shared';
+import { RegisteredCapability } from '../../5-tool-loop/registry.js';
+import { logger } from '../../../shared/logger.js';
+import { assertGenerationAllowed } from '../../../shared/kill-switch.js';
 
 interface VisionParams {
   action: 'extract';

@@ -1,7 +1,8 @@
 import type { Message, Collection } from 'discord.js';
 import Chance from 'chance';
-import { logger, isBlockedUser } from '@coachartie/shared';
-import { violatesOutputSafety } from './user-intent-processor.js';
+import { logger } from '../../shared/logger.js';
+import { isBlockedUser } from '../../shared/blocklist.js';
+import { violatesOutputSafety } from '../4-reply/stream-reply.js';
 
 // Own Chance instance (seedless RNG — behaviorally identical to any other).
 const chance = new Chance();

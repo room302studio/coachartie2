@@ -15,8 +15,8 @@
  * within half a minute; the process that writes it sees it immediately.
  */
 
-import { getSyncDb } from '../db/client.js';
-import { logger } from '../utils/logger.js';
+import { getSyncDb } from './db/client.js';
+import { logger } from './logger.js';
 
 const CACHE_MS = 30_000;
 /** Handles shorter than this are too likely to match ordinary words ("jan", "kai"). */

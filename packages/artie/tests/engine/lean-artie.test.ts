@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { applyCacheControl, GUILD_KNOWLEDGE_HEADER } from '../src/services/llm/prompt-cache.js';
-import { buildDigestPrompt, parseDigestResponse } from '../src/services/core/channel-digest.js';
-import { memoryContextMaxTokens } from '../src/services/llm/context-sources/memory-sources.js';
+import { applyCacheControl, GUILD_KNOWLEDGE_HEADER } from '../../src/engine/3-context/prompt-cache.js';
+import { buildDigestPrompt, parseDigestResponse } from '../../src/engine/memory/channel-digest.js';
+import { memoryContextMaxTokens } from '../../src/engine/3-context/sources/memories.js';
 
 const BIG = 'persona rules. '.repeat(400); // ~1.5k tokens, over the 1024 minimum
 const OPUS = 'anthropic/claude-opus-4.8';

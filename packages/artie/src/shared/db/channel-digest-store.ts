@@ -10,7 +10,7 @@
  * capabilities process does the cheap LLM call and writes the row. Both read it.
  */
 
-import { getSyncDb } from '../db/client.js';
+import { getSyncDb } from './client.js';
 
 export interface ChannelDigest {
   guildId: string;

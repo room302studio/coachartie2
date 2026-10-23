@@ -1,7 +1,7 @@
-import { logger } from '@coachartie/shared';
-import { MemoryEntourageInterface, MemoryEntourageResult } from './memory-entourage-interface.js';
-import { MemoryService } from '../../capabilities/memory/memory.js';
-import { hybridDataLayer } from '../../runtime/hybrid-data-layer.js';
+import { logger } from '../../shared/logger.js';
+import { MemoryEntourageInterface, MemoryEntourageResult } from './types.js';
+import { MemoryService } from '../tools/core/memory.js';
+import { hybridDataLayer } from './store.js';
 
 /**
  * MemoryRecaller - unified semantic + temporal memory recall.

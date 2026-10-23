@@ -1,7 +1,7 @@
-import { logger } from '@coachartie/shared';
-import { creditMonitor } from '../../services/monitoring/credit-monitor.js';
-import { openRouterService } from '../../services/llm/openrouter.js';
-import { RegisteredCapability } from '../../services/capability/capability-registry.js';
+import { logger } from '../../../shared/logger.js';
+import { creditMonitor } from '../../budget/openrouter-balance.js';
+import { openRouterService } from '../../4-generate/openrouter.js';
+import { RegisteredCapability } from '../../5-tool-loop/registry.js';
 
 /**
  * Runtime Configuration Capability

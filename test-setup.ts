@@ -7,7 +7,7 @@ process.env.DATABASE_PATH = ':memory:';
 process.env.LOG_LEVEL = 'error';
 
 // Import and initialize the database schema
-import { initializeDb, closeDb } from '@coachartie/shared';
+import { initializeDb, closeDb } from './packages/artie/src/shared/db/client.js';
 
 // Initialize the in-memory database with schema
 initializeDb(':memory:');

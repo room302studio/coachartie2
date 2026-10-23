@@ -1,13 +1,9 @@
 import OpenAI from 'openai';
-import { estimateTokens } from '@coachartie/shared';
-import {
-  logger,
-  assertGenerationAllowed,
-  assertGuildBudget,
-  resolveModelSpec,
-  isAutoRouted,
-  autoReasoningFor,
-} from '@coachartie/shared';
+import { estimateTokens } from '../../shared/text.js';
+import { logger } from '../../shared/logger.js';
+import { assertGenerationAllowed } from '../../shared/kill-switch.js';
+import { assertGuildBudget } from '../../shared/guild-budget.js';
+import { resolveModelSpec, isAutoRouted, autoReasoningFor } from '../../shared/model-spec.js';
 
 // No dotenv config() here, deliberately. The old code called
 // resolve(__dirname, '../../../../.env') / resolve(__dirname, '../../.env') from
@@ -23,17 +19,18 @@ import {
 // slug) from the dev `.env` that `.env.production`/PM2 doesn't set. That is the invariant this
 // wave was told to protect. Loading .env is `C/index.ts` / `D/index.ts`'s job; this module just
 // reads `process.env` same as before.
-import { UsageTracker, TokenUsage } from '../monitoring/usage-tracker.js';
-import { applyCacheControl, readCacheUsage, wireContentLength } from './prompt-cache.js';
-import { creditMonitor } from '../monitoring/credit-monitor.js';
-import { costMonitor } from '../monitoring/cost-monitor.js';
+import { UsageTracker, TokenUsage } from '../budget/usage-ledger.js';
+import { applyCacheControl, readCacheUsage, wireContentLength } from '../3-context/prompt-cache.js';
+import { creditMonitor } from '../budget/openrouter-balance.js';
+import { costMonitor } from '../budget/session-spend.js';
 
 // Context Alchemy observability
-import { traceManager, experimentManager } from '../context-alchemy/index.js';
+import { traceManager } from '../2-turn/trace.js';
+import { experimentManager } from '../3-context/experiments.js';
 
 // Hard ceiling on ONE model attempt. Lives in config/timeouts.ts with the rest of the reply
 // budget and the invariant tying them together — see that file before changing it.
-import { PER_REQUEST_TIMEOUT_MS } from '../../config/timeouts.js';
+import { PER_REQUEST_TIMEOUT_MS } from '../5-tool-loop/timeouts.js';
 
 export { PER_REQUEST_TIMEOUT_MS };
 
@@ -202,7 +199,7 @@ class OpenRouterService {
 
     // Check credit balance on startup, then poll every 30 min so the operator gets a
     // low-balance DM warning BEFORE credits run dry (not just on a live 402).
-    import('../monitoring/credit-monitor.js').then(({ creditMonitor }) => {
+    import('../budget/openrouter-balance.js').then(({ creditMonitor }) => {
       creditMonitor.startPeriodicBalanceCheck();
     });
   }

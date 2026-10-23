@@ -9,7 +9,7 @@
  * - Processing internals
  */
 
-import { logger } from '@coachartie/shared';
+import { logger } from '../../shared/logger.js';
 
 interface SecurityIncident {
   timestamp: Date;

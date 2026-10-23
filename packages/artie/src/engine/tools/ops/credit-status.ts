@@ -1,7 +1,7 @@
-import { logger } from '@coachartie/shared';
-import { creditMonitor } from '../../services/monitoring/credit-monitor.js';
-import { costMonitor } from '../../services/monitoring/cost-monitor.js';
-import { RegisteredCapability } from '../../services/capability/capability-registry.js';
+import { logger } from '../../../shared/logger.js';
+import { creditMonitor } from '../../budget/openrouter-balance.js';
+import { costMonitor } from '../../budget/session-spend.js';
+import { RegisteredCapability } from '../../5-tool-loop/registry.js';
 
 export const creditStatusCapability: RegisteredCapability = {
   name: 'credit_status',

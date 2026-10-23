@@ -1,7 +1,9 @@
-import { logger, getSyncDb, isBlockedUser } from '@coachartie/shared';
+import { logger } from '../../shared/logger.js';
+import { getSyncDb } from '../../shared/db/client.js';
+import { isBlockedUser } from '../../shared/blocklist.js';
 import { Client, TextChannel, Message, Collection } from 'discord.js';
 import fetch from 'node-fetch';
-import { getGuildConfig, GUILD_CONFIGS, GuildType } from '../config/guild-whitelist.js';
+import { getGuildConfig, GUILD_CONFIGS, GuildType } from '../../shared/config/guilds.js';
 
 /**
  * Observational Learning Service

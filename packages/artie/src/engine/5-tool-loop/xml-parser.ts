@@ -1,6 +1,6 @@
 import { XMLParser } from 'fast-xml-parser';
-import { logger } from '@coachartie/shared';
-import { capabilityRegistry } from '../services/capability/capability-registry.js';
+import { logger } from '../../shared/logger.js';
+import { capabilityRegistry } from './registry.js';
 
 /**
  * LLMs write multi-line strings (song lyrics, poems) inside data='{"text":"..."}' with

@@ -1,6 +1,6 @@
-import { logger } from '@coachartie/shared';
-import { RegisteredCapability } from '../../services/capability/capability-registry.js';
-import { redditClient } from '../../services/reddit-client.js';
+import { logger } from '../../../shared/logger.js';
+import { RegisteredCapability } from '../../5-tool-loop/registry.js';
+import { redditClient } from './reddit-client.js';
 
 export const redditCapability: RegisteredCapability = {
   name: 'reddit',

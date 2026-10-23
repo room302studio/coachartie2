@@ -1,14 +1,14 @@
-import { logger } from '@coachartie/shared';
-import { openRouterService } from './openrouter.js';
-import { promptManager } from './prompt-manager.js';
-import { contextAlchemy } from './context-alchemy.js';
-import { robustExecutor } from '../../utils/robust-capability-executor.js';
-import { capabilityParser } from '../capability/capability-parser.js';
-import { capabilityExecutor } from '../capability/capability-executor.js';
-import { llmResponseCoordinator } from './llm-response-coordinator.js';
-import { getErrorMessage } from '../../utils/error-utils.js';
-import { OrchestrationContext, CapabilityResult } from '../../types/orchestration-types.js';
-import { LLM_LOOP_TIMEOUT_MS } from '../../config/timeouts.js';
+import { logger } from '../../shared/logger.js';
+import { openRouterService } from '../4-generate/openrouter.js';
+import { promptManager } from '../3-context/system-prompt.js';
+import { contextAlchemy } from '../3-context/assemble.js';
+import { robustExecutor } from './retry.js';
+import { capabilityParser } from './parse-tool-calls.js';
+import { capabilityExecutor } from './execute.js';
+import { llmResponseCoordinator } from '../4-generate/generate-reply.js';
+import { getErrorMessage } from '../error-utils.js';
+import { OrchestrationContext, CapabilityResult } from '../2-turn/types.js';
+import { LLM_LOOP_TIMEOUT_MS } from './timeouts.js';
 
 /**
  * ONE source of truth for the loop bounds, because the loop and the prompt that DESCRIBES
@@ -282,7 +282,7 @@ export class LLMLoopService {
           const outputVar = processedCapability.params.output;
           if (outputVar && result.success && result.data) {
             const { GlobalVariableStore } = await import(
-              '../../capabilities/system/variable-store.js'
+              './variables.js'
             );
             const globalStore = GlobalVariableStore.getInstance();
             await globalStore.set(

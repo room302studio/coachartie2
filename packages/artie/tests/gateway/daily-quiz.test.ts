@@ -6,7 +6,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { getSyncDb } from '@coachartie/shared';
+import { getSyncDb } from '../../src/shared/db/client.js';
 import {
   ACHIEVEMENTS,
   DAILY_QUESTION_COUNT,
@@ -42,8 +42,8 @@ import {
   tomorrowKey,
   type DailyOutcome,
   type UserStats,
-} from '../src/services/daily-quiz';
-import type { FlashcardResponse } from '../src/services/quiz-session-manager';
+} from '../../src/gateway/commands/quiz/daily.js';
+import type { FlashcardResponse } from '../../src/gateway/commands/quiz/live-session.js';
 import {
   buildAchievementUnlockMessage,
   buildChallengeMessage,
@@ -62,7 +62,7 @@ import {
   parseVoteCustomId,
   scheduleCustomId,
   voteCustomId,
-} from '../src/services/daily-quiz-embed';
+} from '../../src/gateway/commands/quiz/daily-embed.js';
 
 function clearDailyTables() {
   ensureDailyQuizTables();

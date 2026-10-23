@@ -8,7 +8,8 @@
  * - Sends notifications
  */
 
-import { logger, getSyncDb } from '@coachartie/shared';
+import { logger } from '../../../../shared/logger.js';
+import { getSyncDb } from '../../../../shared/db/client.js';
 import type { ResearchTask, TaskHandle, TaskResult } from './types.js';
 import { openaiResearchHarness } from './openai-research.js';
 

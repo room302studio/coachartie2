@@ -1,7 +1,7 @@
-import { logger } from '@coachartie/shared';
-import { estimateTokens } from '@coachartie/shared';
-import { CreditMonitor } from '../../monitoring/credit-monitor.js';
-import { distressMonitor } from '../../monitoring/distress-monitor.js';
+import { logger } from '../../../shared/logger.js';
+import { estimateTokens } from '../../../shared/text.js';
+import { CreditMonitor } from '../../budget/openrouter-balance.js';
+import { distressMonitor } from '../../health/distress.js';
 import { ContextSource } from './types.js';
 
 /**

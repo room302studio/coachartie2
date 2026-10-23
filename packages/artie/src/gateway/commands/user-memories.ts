@@ -1,4 +1,5 @@
-import { getSyncDb, logger } from '@coachartie/shared';
+import { getSyncDb } from '../../shared/db/client.js';
+import { logger } from '../../shared/logger.js';
 
 /**
  * Read-only access to ONE user's own memories, for /memory. Always filtered by user_id in SQL:

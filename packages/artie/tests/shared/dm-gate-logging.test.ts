@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { logDMGate } from '../src/services/dm-pairing.js';
-import { logger } from '../src/utils/logger.js';
+import { logDMGate } from '../../src/shared/dm-pairing.js';
+import { logger } from '../../src/shared/logger.js';
 
 describe('logDMGate', () => {
   afterEach(() => vi.restoreAllMocks());

@@ -17,7 +17,7 @@
 import {
   promptManager,
   PromptTemplate,
-} from '../packages/capabilities/src/services/llm/prompt-manager.js';
+} from '../packages/artie/src/engine/3-context/system-prompt.js';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 
@@ -203,7 +203,7 @@ async function toggleActive(name: string) {
     return;
   }
 
-  const { getDatabase } = await import('../packages/shared/src/utils/database.js');
+  const { getDatabase } = await import('../packages/artie/src/shared/db/client.js');
   const db = await getDatabase();
 
   const newStatus = !prompt.isActive;

@@ -5,7 +5,7 @@
  * Other users can gain DM access via the pairing system.
  */
 
-import { dmPairingService } from '../services/dm-pairing.js';
+import { dmPairingService } from '../dm-pairing.js';
 
 // EJ's Discord user ID - the owner of Coach Artie
 export const OWNER_USER_ID = '688448399879438340';

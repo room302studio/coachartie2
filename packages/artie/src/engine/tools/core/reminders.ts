@@ -1,5 +1,5 @@
-import { schedulerService } from '../../services/core/scheduler.js';
-import { RegisteredCapability } from '../../services/capability/capability-registry.js';
+import { schedulerService } from '../../jobs/scheduler.js';
+import { RegisteredCapability } from '../../5-tool-loop/registry.js';
 
 // =====================================================
 // SCHEDULER CAPABILITY

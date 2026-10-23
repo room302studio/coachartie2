@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { PermissionFlagsBits } from 'discord.js';
-import { globalCommands } from '../src/commands/registry.js';
+import { globalCommands } from '../../src/gateway/commands/registry.js';
 
 const byName = new Map(globalCommands.map((c) => [c.data.name, c.data.toJSON()]));
 

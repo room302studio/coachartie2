@@ -9,13 +9,13 @@ import {
   renderProgressBar,
   buildInitialProgress,
   type FlashcardResponse,
-} from '../src/services/quiz-session-manager';
+} from '../../src/gateway/commands/quiz/live-session.js';
 import {
   buildLiveQuizMessage,
   buildQuizSummary,
   quizButtonId,
   parseQuizButtonId,
-} from '../src/services/quiz-embed';
+} from '../../src/gateway/commands/quiz/live-embed.js';
 
 const CHANNEL = 'test-channel-embed';
 

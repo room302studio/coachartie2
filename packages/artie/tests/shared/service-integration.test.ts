@@ -1,14 +1,8 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
-import {
-  createQueue,
-  createWorker,
-  createRedisConnection,
-  closeRedisConnection,
-  QUEUES,
-  IncomingMessage,
-  OutgoingMessage,
-  logger,
-} from '../src/index';
+import { createQueue, createWorker, createRedisConnection, closeRedisConnection } from '../../src/shared/queue/redis.js';
+import { QUEUES } from '../../src/shared/queue/names.js';
+import { IncomingMessage, OutgoingMessage } from '../../src/shared/queue/types.js';
+import { logger } from '../../src/shared/logger.js';
 import type { Queue, Worker } from 'bullmq';
 
 // These tests are timing-sensitive and require Redis workers to process in time

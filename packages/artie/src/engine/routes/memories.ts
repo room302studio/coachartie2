@@ -1,5 +1,7 @@
 import express from 'express';
-import { getDb, memories, desc, logger } from '@coachartie/shared';
+import { getDb } from '../../shared/db/client.js';
+import { memories } from '../../shared/db/schema.js';
+import { logger } from '../../shared/logger.js';
 
 const router: express.Router = express.Router();
 
@@ -10,7 +12,7 @@ router.get('/', async (req, res) => {
 
     if (search) {
       // Use memory capability directly via registry
-      const { capabilityRegistry } = await import('../services/capability/capability-registry.js');
+      const { capabilityRegistry } = await import('../5-tool-loop/registry.js');
       const result = await capabilityRegistry.execute('memory', 'search', {
         query: search as string,
         userId: userId as string,
@@ -24,7 +26,7 @@ router.get('/', async (req, res) => {
       });
     } else {
       // Get recent memories directly
-      const memoryService = new (await import('../capabilities/memory/memory.js')).MemoryService();
+      const memoryService = new (await import('../tools/core/memory.js')).MemoryService();
       let memoriesList;
 
       if (userId) {

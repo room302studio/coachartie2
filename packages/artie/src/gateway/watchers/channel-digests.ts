@@ -1,7 +1,10 @@
-import { logger, isBlockedUser, isGenerationMuted, getChannelDigest, setChannelDigestCursor } from '@coachartie/shared';
+import { logger } from '../../shared/logger.js';
+import { isBlockedUser } from '../../shared/blocklist.js';
+import { isGenerationMuted } from '../../shared/kill-switch.js';
+import { getChannelDigest, setChannelDigestCursor } from '../../shared/db/channel-digest-store.js';
 import { Client, Collection, Message, TextChannel } from 'discord.js';
 import fetch from 'node-fetch';
-import { GUILD_CONFIGS, GuildConfig } from '../config/guild-whitelist.js';
+import { GUILD_CONFIGS, GuildConfig } from '../../shared/config/guilds.js';
 
 /**
  * Channel digest loop: keeps one rolling summary per observed channel so that when someone

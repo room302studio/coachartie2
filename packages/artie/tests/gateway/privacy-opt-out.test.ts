@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { getSyncDb, optOut, optIn, isOptedOut, isBlockedUser, BLOCKED_USER_IDS, mentionsOptedOutUser } from '@coachartie/shared';
-import { globalCommands } from '../src/commands/registry.js';
+import { getSyncDb } from '../../src/shared/db/client.js';
+import { optOut, optIn, isOptedOut, mentionsOptedOutUser } from '../../src/shared/privacy-opt-out.js';
+import { isBlockedUser, BLOCKED_USER_IDS } from '../../src/shared/blocklist.js';
+import { globalCommands } from '../../src/gateway/commands/registry.js';
 
 const USER = '999000111222333444';
 

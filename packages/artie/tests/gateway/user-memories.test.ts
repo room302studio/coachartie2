@@ -5,9 +5,9 @@ import { join } from 'path';
 
 process.env.DATABASE_PATH = join(mkdtempSync(join(tmpdir(), 'user-mem-')), 'test.db');
 
-let m: typeof import('../src/services/user-memories.js');
+let m: typeof import('../../src/gateway/commands/user-memories.js');
 beforeAll(async () => {
-  const { getSyncDb } = await import('@coachartie/shared');
+  const { getSyncDb } = await import('../../src/shared/db/client.js');
   const db = getSyncDb();
   db.run(`CREATE TABLE IF NOT EXISTS memories (
     id INTEGER PRIMARY KEY AUTOINCREMENT, user_id TEXT NOT NULL, content TEXT NOT NULL,
@@ -29,7 +29,7 @@ beforeAll(async () => {
   add('alice', 'Alice loves tunnels and bridges', recent, ['subway', 'bridges'], 8);
   add('alice', 'Alice asked about the quiz', '2026-01-01T00:00:00Z', ['quiz']);
   add('bob', 'Bob secret: bridges are his whole personality', recent, ['bridges']);
-  m = await import('../src/services/user-memories.js');
+  m = await import('../../src/gateway/commands/user-memories.js');
 });
 
 describe('own memories only', () => {

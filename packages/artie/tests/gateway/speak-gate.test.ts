@@ -5,8 +5,8 @@ import {
   resolveAmbientMode,
   isReplyToBot,
   type SpeakInputs,
-} from '../src/services/speak-gate.js';
-import { shouldSkipPassiveGeneration } from '../../capabilities/src/queues/passive-observation.js';
+} from '../../src/gateway/2-gate/speak-gate.js';
+import { shouldSkipPassiveGeneration } from '../../src/engine/1-intake/passive-observation.js';
 
 const quiet: SpeakInputs = {
   botMentioned: false,

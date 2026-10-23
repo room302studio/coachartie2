@@ -11,7 +11,8 @@
  * - Automatic rule retirement when evidence contradicts
  */
 
-import { logger, getSyncDb } from '@coachartie/shared';
+import { logger } from '../../shared/logger.js';
+import { getSyncDb } from '../../shared/db/client.js';
 
 // Minimum confidence threshold for a rule to be active
 const MIN_RULE_CONFIDENCE = parseFloat(process.env.REFLECTION_MIN_CONFIDENCE || '0.6');
@@ -508,7 +509,7 @@ export class ReflectionConsolidator {
       const prompt = this.buildConsolidationPrompt(feedbackSummary, ruleDirection, isEmergency);
 
       // Use the LLM to generate rules
-      const { openRouterService } = await import('../llm/openrouter.js');
+      const { openRouterService } = await import('../4-generate/openrouter.js');
 
       const messages = [
         {

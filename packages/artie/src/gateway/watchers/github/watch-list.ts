@@ -1,10 +1,5 @@
-import {
-  getDb,
-  githubRepoWatches,
-  type GithubRepoWatch,
-  eq,
-  and,
-} from '@coachartie/shared';
+import { getDb } from '../../../shared/db/client.js';
+import { githubRepoWatches, type GithubRepoWatch } from '../../../shared/db/schema.js';
 
 /**
  * GitHub watch management for the slash commands (watch-repo / unwatch-repo / list-watches).

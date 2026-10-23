@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { shouldRefreshDigest, digestThresholds } from '../src/services/channel-digest-loop.js';
-import { GUILD_CONFIGS } from '../src/config/guild-whitelist.js';
-import { resolveAmbientMode } from '../src/services/speak-gate.js';
+import { shouldRefreshDigest, digestThresholds } from '../../src/gateway/watchers/channel-digests.js';
+import { GUILD_CONFIGS } from '../../src/shared/config/guilds.js';
+import { resolveAmbientMode } from '../../src/gateway/2-gate/speak-gate.js';
 
 const t = digestThresholds({} as NodeJS.ProcessEnv); // 30 msgs / 8 if stale / 12h / 30min
 const H = 3600_000;

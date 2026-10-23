@@ -1,6 +1,6 @@
 import { MessageFlags, ChatInputCommandInteraction, SlashCommandBuilder, EmbedBuilder } from 'discord.js';
-import { logger } from '@coachartie/shared';
-import { telemetry } from '../services/telemetry.js';
+import { logger } from '../../shared/logger.js';
+import { telemetry } from '../telemetry.js';
 
 export const debugCommand = {
   data: new SlashCommandBuilder()

@@ -5,8 +5,8 @@ import {
   checkGuildBudget,
   GuildBudgetExceededError,
   SUBWAY_BUILDER_GUILD_ID,
-} from '../src/utils/guild-budget.js';
-import { GenerationMutedError } from '../src/utils/kill-switch.js';
+} from '../../src/shared/guild-budget.js';
+import { GenerationMutedError } from '../../src/shared/kill-switch.js';
 
 afterEach(() => {
   delete process.env.GUILD_BUDGET_SHARES;

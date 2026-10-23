@@ -1,6 +1,6 @@
-import { logger } from '@coachartie/shared';
-import { wolframService } from '../../services/external/wolfram.js';
-import { RegisteredCapability } from '../../services/capability/capability-registry.js';
+import { logger } from '../../../shared/logger.js';
+import { wolframService } from './wolfram-client.js';
+import { RegisteredCapability } from '../../5-tool-loop/registry.js';
 
 // =====================================================
 // WOLFRAM ALPHA CAPABILITY

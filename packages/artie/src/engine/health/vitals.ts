@@ -1,7 +1,9 @@
 import { promises as fs } from 'node:fs';
 import { join } from 'node:path';
-import { logger, reportToAnomalywatch, PM2_LOGS } from '@coachartie/shared';
-import { CreditMonitor } from './credit-monitor.js';
+import { logger } from '../../shared/logger.js';
+import { reportToAnomalywatch } from '../../shared/anomalywatch.js';
+import { PM2_LOGS } from '../../shared/paths.js';
+import { CreditMonitor } from '../budget/openrouter-balance.js';
 
 /**
  * VitalsMonitor — Artie's self-audit loop (Beer's System 4 + algedonic channel).
@@ -189,7 +191,7 @@ export class VitalsMonitor {
       // defaults to 1.5, against a real monthly average nearer $0.26/hr — so runway was
       // understated ~6x and VITALS_MIN_RUNWAY_HOURS was being compared against a guess.
       // Falls back to the constant when there is too little traffic to measure.
-      const { costMonitor } = await import('./cost-monitor.js');
+      const { costMonitor } = await import('../budget/session-spend.js');
       const measured = costMonitor.getRecentBurnPerHour();
       const burn =
         typeof measured === 'number' && measured > 0

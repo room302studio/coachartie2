@@ -11,8 +11,9 @@
  *   the emoji grid at any point (in-progress preview or final share card).
  */
 
-import { getSyncDb, logger } from '@coachartie/shared';
-import type { FlashcardResponse } from './quiz-session-manager.js';
+import { getSyncDb } from '../../../shared/db/client.js';
+import { logger } from '../../../shared/logger.js';
+import type { FlashcardResponse } from './live-session.js';
 
 export const DAILY_QUESTION_COUNT = 5;
 const FLASHCARD_API_BASE = 'https://ejfox.com/api/flashcards';

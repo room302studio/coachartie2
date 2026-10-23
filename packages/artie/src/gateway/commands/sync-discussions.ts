@@ -11,9 +11,9 @@ import {
   ChannelType,
   PermissionFlagsBits,
 } from 'discord.js';
-import { logger } from '@coachartie/shared';
-import { getForumTraversal } from '../services/forum-traversal.js';
-import { getGitHubIntegration } from '../services/github-integration.js';
+import { logger } from '../../shared/logger.js';
+import { getForumTraversal } from '../watchers/github/forum-traversal.js';
+import { getGitHubIntegration } from '../watchers/github/issue-sync.js';
 
 export const data = new SlashCommandBuilder()
   .setName('sync-discussions')

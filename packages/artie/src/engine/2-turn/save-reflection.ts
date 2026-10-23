@@ -1,8 +1,9 @@
-import { logger, IncomingMessage } from '@coachartie/shared';
-import { capabilityXMLParser } from '../../utils/xml-parser.js';
-import { llmResponseCoordinator } from '../llm/llm-response-coordinator.js';
-import { OrchestrationContext } from '../../types/orchestration-types.js';
-import { isInCharacterReflection } from '../../runtime/hybrid-data-layer.js';
+import { logger } from '../../shared/logger.js';
+import { IncomingMessage } from '../../shared/queue/types.js';
+import { capabilityXMLParser } from '../5-tool-loop/xml-parser.js';
+import { llmResponseCoordinator } from '../4-generate/generate-reply.js';
+import { OrchestrationContext } from './types.js';
+import { isInCharacterReflection } from '../memory/store.js';
 
 // =====================================================
 // MEMORY ORCHESTRATION SERVICE
@@ -31,7 +32,7 @@ export class MemoryOrchestration {
     try {
       logger.info(`📝 Auto-storing reflection memory for interaction ${context.messageId}`);
 
-      const memoryService = await import('../../capabilities/memory/memory.js');
+      const memoryService = await import('../tools/core/memory.js');
       const service = memoryService.MemoryService.getInstance();
 
       // Create conversation summary for reflection

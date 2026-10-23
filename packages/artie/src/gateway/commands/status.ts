@@ -5,7 +5,9 @@ import {
   EmbedBuilder,
   InteractionResponse,
 } from 'discord.js';
-import { getDb, modelUsageStats, logger, eq, desc } from '@coachartie/shared';
+import { getDb } from '../../shared/db/client.js';
+import { modelUsageStats } from '../../shared/db/schema.js';
+import { logger } from '../../shared/logger.js';
 
 export const statusCommand = {
   data: new SlashCommandBuilder()

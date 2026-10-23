@@ -11,10 +11,10 @@
  * - Skill version tracking
  */
 
-import { logger } from '@coachartie/shared';
-import { discoverSkills, loadSkill, getSkillPaths } from './skill-loader.js';
-import { capabilityRegistry } from '../capability/capability-registry.js';
-import type { RegisteredCapability } from '../capability/capability-registry.js';
+import { logger } from '../../../shared/logger.js';
+import { discoverSkills, loadSkill, getSkillPaths } from './loader.js';
+import { capabilityRegistry } from '../../5-tool-loop/registry.js';
+import type { RegisteredCapability } from '../../5-tool-loop/registry.js';
 
 interface SkillMetadata {
   name: string;
