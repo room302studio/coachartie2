@@ -8,15 +8,12 @@ interface NodeError extends Error {
 }
 
 /**
- * Filesystem capability - manages files and directories autonomously
+ * Filesystem capability - read-only access to the project tree
  *
  * Supported actions:
  * - read_file: Read contents of a file
- * - write_file: Write/create a file with content
- * - create_directory: Create a directory (and parent directories if needed)
  * - list_directory: List contents of a directory
  * - exists: Check if a file or directory exists
- * - delete: Delete a file or directory
  *
  * Security Features:
  * - Only allows operations within the project directory
@@ -26,8 +23,6 @@ interface NodeError extends Error {
  *
  * Parameters:
  * - path: The file or directory path (required for all actions)
- * - content: The content to write (required for write_file action)
- * - recursive: Whether to create parent directories or delete recursively (optional)
  */
 
 // Get the project root directory (where the packages folder is located)
@@ -69,6 +64,12 @@ function validateAndSanitizePath(inputPath: string): string {
     /yarn\.lock$/i,
     /pnpm-lock\.yaml$/i,
   ];
+
+  // Secrets at any depth (packages/*/.env too) and the live DB behind the data/ symlink.
+  const segments = relativePath.split(path.sep);
+  if (segments.some((s) => s.startsWith('.env')) || segments[0] === 'data') {
+    throw new Error(`Access denied: Cannot access sensitive file/directory: ${relativePath}`);
+  }
 
   for (const pattern of sensitivePatterns) {
     if (pattern.test(relativePath)) {
@@ -122,72 +123,6 @@ async function readFile(filePath: string): Promise<string> {
       throw new Error(`File not found: ${path.relative(PROJECT_ROOT, validPath)}`);
     }
     throw error;
-  }
-}
-
-/**
- * Writes content to a file (creates if doesn't exist)
- */
-async function writeFile(filePath: string, content: string): Promise<string> {
-  const validPath = validateAndSanitizePath(filePath);
-
-  try {
-    // Ensure parent directory exists
-    const parentDir = path.dirname(validPath);
-    await fs.mkdir(parentDir, { recursive: true });
-
-    await fs.writeFile(validPath, content, 'utf-8');
-    const relativePath = path.relative(PROJECT_ROOT, validPath);
-
-    logger.info(`📝 Wrote file: ${relativePath} (${content.length} characters)`);
-    return `Successfully wrote ${content.length} characters to ${relativePath}`;
-  } catch (error) {
-    const relativePath = path.relative(PROJECT_ROOT, validPath);
-    throw new Error(`Failed to write file ${relativePath}: ${(error as Error).message}`);
-  }
-}
-
-/**
- * Appends content to a file (creates if doesn't exist)
- */
-async function appendFile(filePath: string, content: string): Promise<string> {
-  const validPath = validateAndSanitizePath(filePath);
-
-  try {
-    // Ensure parent directory exists
-    const parentDir = path.dirname(validPath);
-    await fs.mkdir(parentDir, { recursive: true });
-
-    await fs.appendFile(validPath, content, 'utf-8');
-    const relativePath = path.relative(PROJECT_ROOT, validPath);
-
-    logger.info(`📝 Appended to file: ${relativePath} (${content.length} characters)`);
-    return `Successfully appended ${content.length} characters to ${relativePath}`;
-  } catch (error) {
-    const relativePath = path.relative(PROJECT_ROOT, validPath);
-    throw new Error(`Failed to append to file ${relativePath}: ${(error as Error).message}`);
-  }
-}
-
-/**
- * Creates a directory (and parent directories if needed)
- */
-async function createDirectory(dirPath: string, recursive: boolean = true): Promise<string> {
-  const validPath = validateAndSanitizePath(dirPath);
-
-  try {
-    await fs.mkdir(validPath, { recursive });
-    const relativePath = path.relative(PROJECT_ROOT, validPath);
-
-    logger.info(`📁 Created directory: ${relativePath}`);
-    return `Successfully created directory: ${relativePath}`;
-  } catch (error) {
-    if ((error as NodeError).code === 'EEXIST') {
-      const relativePath = path.relative(PROJECT_ROOT, validPath);
-      return `Directory already exists: ${relativePath}`;
-    }
-    const relativePath = path.relative(PROJECT_ROOT, validPath);
-    throw new Error(`Failed to create directory ${relativePath}: ${(error as Error).message}`);
   }
 }
 
@@ -249,64 +184,16 @@ async function exists(targetPath: string): Promise<string> {
   }
 }
 
-/**
- * Deletes a file or directory
- */
-async function deleteFileOrDirectory(
-  targetPath: string,
-  recursive: boolean = false
-): Promise<string> {
-  const validPath = validateAndSanitizePath(targetPath);
-
-  try {
-    const stats = await fs.stat(validPath);
-    const relativePath = path.relative(PROJECT_ROOT, validPath);
-
-    if (stats.isDirectory()) {
-      if (recursive) {
-        await fs.rm(validPath, { recursive: true, force: true });
-        logger.info(`🗑️ Deleted directory recursively: ${relativePath}`);
-        return `Successfully deleted directory and all contents: ${relativePath}`;
-      } else {
-        await fs.rmdir(validPath);
-        logger.info(`🗑️ Deleted empty directory: ${relativePath}`);
-        return `Successfully deleted empty directory: ${relativePath}`;
-      }
-    } else {
-      await fs.unlink(validPath);
-      logger.info(`🗑️ Deleted file: ${relativePath}`);
-      return `Successfully deleted file: ${relativePath}`;
-    }
-  } catch (error) {
-    if ((error as NodeError).code === 'ENOENT') {
-      throw new Error(`Path not found: ${path.relative(PROJECT_ROOT, validPath)}`);
-    }
-    if ((error as NodeError).code === 'ENOTEMPTY') {
-      throw new Error(
-        `Directory not empty (use recursive=true to delete contents): ${path.relative(PROJECT_ROOT, validPath)}`
-      );
-    }
-    const relativePath = path.relative(PROJECT_ROOT, validPath);
-    throw new Error(`Failed to delete ${relativePath}: ${(error as Error).message}`);
-  }
-}
-
 export const filesystemCapability: RegisteredCapability = {
   name: 'filesystem',
   emoji: '📁',
-  supportedActions: [
-    'read_file',
-    'write_file',
-    'append_file',
-    'create_directory',
-    'list_directory',
-    'exists',
-    'delete',
-  ],
-  description: 'Manages files and directories autonomously with security restrictions',
+  // Read-only. This runs on the production host (not the sandbox), so write/append/
+  // create/delete were a way for any chat turn to change the bot's own code. Removed 2026-10-23.
+  supportedActions: ['read_file', 'list_directory', 'exists'],
+  description: 'Reads files and lists directories inside the project (read-only)',
   requiredParams: ['path'],
   handler: async (params, content) => {
-    const { action, path: filePath, recursive } = params;
+    const { action, path: filePath } = params;
 
     if (!filePath) {
       throw new Error('Path parameter is required for all filesystem operations');
@@ -319,33 +206,11 @@ export const filesystemCapability: RegisteredCapability = {
         case 'read_file':
           return await readFile(filePath);
 
-        case 'write_file': {
-          const writeContent = params.content || content;
-          if (!writeContent) {
-            throw new Error('Content is required for write_file operation');
-          }
-          return await writeFile(filePath, writeContent);
-        }
-
-        case 'append_file': {
-          const appendContent = params.content || content;
-          if (!appendContent) {
-            throw new Error('Content is required for append_file operation');
-          }
-          return await appendFile(filePath, appendContent);
-        }
-
-        case 'create_directory':
-          return await createDirectory(filePath, recursive !== false);
-
         case 'list_directory':
           return await listDirectory(filePath);
 
         case 'exists':
           return await exists(filePath);
-
-        case 'delete':
-          return await deleteFileOrDirectory(filePath, recursive === true);
 
         default:
           throw new Error(`Unknown filesystem action: ${action}`);

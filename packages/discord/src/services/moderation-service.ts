@@ -1,12 +1,14 @@
-import { logger } from '@coachartie/shared';
-import { execSync } from 'child_process';
+import { logger, getRawDb } from '@coachartie/shared';
 
-const DB_PATH = '/data2/apps/coachartie2/packages/discord/data/coachartie.db';
-
+/**
+ * Moderation audit log (timeouts, bans) in the shared DB's moderation_audit table.
+ *
+ * Prepared statements only. This used to splice Discord display names into a shell
+ * command (`execSync(sqlite3 … "INSERT … '${name}'")`): any user whose name contained $( )
+ * or a quote could run commands on the host when a mod acted on them. It also never wrote
+ * a row (0 rows against 45 logged timeouts, 2026-10-23).
+ */
 export class ModerationService {
-  /**
-   * Log a moderation action (timeout/ban) to the audit table
-   */
   logAction(params: {
     issuedByUserId: string;
     issuedByName: string;
@@ -18,13 +20,23 @@ export class ModerationService {
     discordUntil?: string;
   }) {
     try {
-      const query = `
-        INSERT INTO moderation_audit
-        (issued_by_user_id, issued_by_name, target_user_id, target_username, action, duration_minutes, reason, discord_until, status)
-        VALUES ('${params.issuedByUserId}', '${params.issuedByName}', '${params.targetUserId}', '${params.targetUsername}', '${params.action}', ${params.durationMinutes || null}, '${params.reason.replace(/'/g, "''")}', '${params.discordUntil || null}', 'active')
-      `;
-
-      execSync(`sqlite3 ${DB_PATH} "${query}"`);
+      getRawDb()
+        .prepare(
+          `INSERT INTO moderation_audit
+            (issued_by_user_id, issued_by_name, target_user_id, target_username, action,
+             duration_minutes, reason, discord_until, status)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active')`
+        )
+        .run(
+          params.issuedByUserId,
+          params.issuedByName,
+          params.targetUserId,
+          params.targetUsername,
+          params.action,
+          params.durationMinutes ?? null,
+          params.reason,
+          params.discordUntil ?? null
+        );
 
       logger.info(
         `[moderation-audit] ${params.action.toUpperCase()}: ${params.targetUsername} by ${params.issuedByName} (${params.reason})`
@@ -34,19 +46,19 @@ export class ModerationService {
     }
   }
 
-  /**
-   * Get audit log for a user
-   */
-  getAuditLog(userId: string, limit = 10) {
+  /** Most recent actions where the user was the target or the issuer. */
+  getAuditLog(userId: string, limit = 10): unknown[] {
     try {
-      const result = execSync(
-        `sqlite3 ${DB_PATH} "SELECT * FROM moderation_audit WHERE target_user_id = '${userId}' OR issued_by_user_id = '${userId}' ORDER BY created_at DESC LIMIT ${limit}"`,
-        { encoding: 'utf-8' }
-      );
-      return result;
+      return getRawDb()
+        .prepare(
+          `SELECT * FROM moderation_audit
+            WHERE target_user_id = ? OR issued_by_user_id = ?
+            ORDER BY created_at DESC LIMIT ?`
+        )
+        .all(userId, userId, limit);
     } catch (error) {
       logger.debug('[moderation-audit] Get audit log failed:', error);
-      return '';
+      return [];
     }
   }
 }

@@ -2,7 +2,6 @@ import { logger } from '@coachartie/shared';
 import { capabilityRegistry } from './capability-registry.js';
 // System capabilities
 import { calculatorCapability } from '../../capabilities/system/calculator.js';
-import { environmentCapability } from '../../capabilities/system/environment.js';
 import { creditStatusCapability } from '../../capabilities/system/credit-status.js';
 import { runtimeConfigCapability } from '../../capabilities/system/runtime-config.js';
 import { systemMonitorCapability } from '../../capabilities/system/system-monitor.js';
@@ -20,10 +19,9 @@ import { mediaWikiCapability } from '../../capabilities/web/mediawiki.js';
 import { wolframCapability } from '../../capabilities/web/wolfram.js';
 import { searchCapability } from '../../capabilities/web/search.js';
 import { n8nBrowserCapability } from '../../capabilities/web/n8n-browser.js';
-// Development capabilities
-import { packageManagerCapability } from '../../capabilities/development/package-manager.js';
+// Development capabilities. package_manager, system_installer and environment (.env
+// read/write) ran on the production host with zero use; removed 2026-10-23.
 import { filesystemCapability } from '../../capabilities/development/filesystem.js';
-import { systemInstallerCapability } from '../../capabilities/development/system-installer.js';
 import { githubCapability } from '../../capabilities/development/github.js';
 import { shellCapability } from '../../capabilities/development/shell.js';
 import { editCapability } from '../../capabilities/development/edit.js';
@@ -116,8 +114,8 @@ export class CapabilityBootstrap {
     try {
       // Register all capabilities (registration is idempotent, keyed by name)
       const ALL_CAPABILITIES = [
-        calculatorCapability, webCapability, httpCapability, packageManagerCapability,
-        filesystemCapability, environmentCapability, systemInstallerCapability, memoryCapability,
+        calculatorCapability, webCapability, httpCapability,
+        filesystemCapability, memoryCapability,
         githubCapability, creditStatusCapability, modelManagerCapability, runtimeConfigCapability,
         systemMonitorCapability, goalCapability, variableStoreCapability, todoCapability,
         meetingCapability, discordUICapability, askQuestionCapability, discordForumsCapability,
