@@ -96,8 +96,9 @@ export interface ProcessorOptions {
 /**
  * Strip LLM system/capability tags that should never reach Discord.
  * The LLM sometimes emits these despite prompting — belt and suspenders.
+ * Exported for tests/shared/clean-llm-output.test.ts (the per-caller pin table).
  */
-function cleanCapabilityTags(text: string): string {
+export function cleanCapabilityTags(text: string): string {
   return text
     .replace(/<capability\b[^>]*\/>/gs, '')
     .replace(/<capability\b[^>]*>[\s\S]*?<\/capability>/gs, '')
