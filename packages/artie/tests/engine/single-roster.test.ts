@@ -83,7 +83,8 @@ describe('capability roster appears once per prompt', () => {
     }
 
     // The removed compressed listing is gone.
+    // Its two fingerprints: the shortcuts header, and the "name(a|b), name(c|d)" list shape.
     expect(all).not.toContain('SIMPLE SHORTCUTS (preferred)');
-    expect(all).not.toContain('Available: ');
+    expect(all).not.toMatch(/\b[\w-]+\([\w|-]+\), [\w-]+\([\w|-]+\)/);
   }, 20000);
 });
