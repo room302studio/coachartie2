@@ -11,6 +11,7 @@ import { OutgoingMessage } from '../../shared/queue/types.js';
 import { logger } from '../../shared/logger.js';
 import { chunkMessage } from '../4-reply/chunks.js';
 import { stripCapabilityXML } from '../../shared/clean-llm-output.js';
+import { isSilent, stripSilentMarkers } from '../4-reply/control-tokens.js';
 import type { Worker } from 'bullmq';
 
 // Known users Artie often means to actually PING but writes as plain text ("@ejfox"),
@@ -103,11 +104,11 @@ export async function startResponseConsumer(
       const rawText = response.message ?? response.content ?? '';
       // Last line of defense: [SILENT] means silence, never a literal post. A leading
       // marker suppresses the whole send; a stray embedded one is stripped.
-      if (/^\s*\[SILENT\]/i.test(rawText)) {
+      if (isSilent(rawText)) {
         logger.warn(`🤫 [SILENT] response suppressed at delivery (inReplyTo=${response.inReplyTo ?? 'n/a'})`);
         return;
       }
-      const text = rawText.replace(/\[SILENT\]/gi, '').trim();
+      const text = stripSilentMarkers(rawText).trim();
       const channelId = response.metadata?.channelId ?? response.channelId;
 
       // DM path: no channel, but we know who to reach.

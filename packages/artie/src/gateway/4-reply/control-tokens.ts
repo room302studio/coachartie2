@@ -15,7 +15,7 @@
  * several. The regexes are today's, unchanged (waves 7/10 own any change).
  */
 
-import { isSilent } from '../../shared/clean-llm-output.js';
+import { isSilent, stripSilentMarkers } from '../../shared/clean-llm-output.js';
 import type { UserIntent } from './stream-reply.js';
 import {
   recordSelfSpin,
@@ -31,7 +31,9 @@ import {
   CASINO_OPEN,
 } from '../games/casino.js';
 
-export { isSilent };
+// [SILENT] detection lives in shared (the engine's queue worker checks it too, and shared
+// can't import the gateway); re-exported so gateway code has one control-token module.
+export { isSilent, stripSilentMarkers };
 
 export type ControlToken =
   | { kind: 'silent' }
@@ -102,11 +104,10 @@ export function parseControlTokens(text: string): ControlToken[] {
   );
 }
 
-// Strip patterns, one per handling stage. `casino` is the closed-floor sweep; `stream` is
-// the mid-stream scrub of every complete marker.
+// Strip patterns, one per handling stage ([SILENT] uses shared stripSilentMarkers). `casino`
+// is the closed-floor sweep; `stream` is the mid-stream scrub of every complete marker.
 const STRIP = {
   timeout: /\[TIMEOUT(?::\d{1,3})?\]/gi,
-  silent: /\[SILENT\]/gi,
   casino:
     /\[(?:GAMBLE(?::\d{1,3}){0,2}|WHEEL(?::[^\]\n]{1,40})?|DEAL(?::\d{1,3})?|HIT|STAND|SLOTS(?::\d{1,3})?)\]/gi,
   gamble: /\[GAMBLE(?::\d{1,3}){0,2}\]/gi,
@@ -155,7 +156,7 @@ export async function applyControlTokens(cleanResult: string, intent: UserIntent
   if (isSilent(cleanResult)) {
     cleanResult = '';
   } else {
-    cleanResult = stripControlTokens(cleanResult, 'silent').trim();
+    cleanResult = stripSilentMarkers(cleanResult).trim();
   }
   // TIMEOUT ROULETTE — SELF-SPIN: [GAMBLE] / [GAMBLE:NN] / [GAMBLE:NN:P]. The gambler
   // is the person Artie is replying to; playing is consent. The dice roll HERE,

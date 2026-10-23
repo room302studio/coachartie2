@@ -1,6 +1,7 @@
 import { logger } from '../../shared/logger.js';
 import { IncomingMessage } from '../../shared/queue/types.js';
 import { estimateTokens } from '../../shared/text.js';
+import { stripChatPrefixes, stripInternalMarkup } from '../../shared/clean-llm-output.js';
 import { openRouterService } from './openrouter.js';
 import { promptManager } from '../3-context/system-prompt.js';
 import { contextAlchemy } from '../3-context/assemble.js';
@@ -383,25 +384,15 @@ ${capabilityDetails}`;
    * Security measure to prevent information disclosure
    */
   stripThinkingTags(content: string, _userId?: string, _messageId?: string): string {
-    let result = content;
-
-    // Remove thinking tags
-    result = result.replace(/<thinking>[\s\S]*?<\/thinking>/gi, '');
-
-    // SECURITY: Remove internal prompt artifacts that should never be exposed
-    result = result.replace(/<security_reminder>[\s\S]*?<\/security_reminder>/gi, '');
-    result = result.replace(/\[USER_MESSAGE\][\s\S]*?\[\/USER_MESSAGE\]/gi, '');
-    result = result.replace(/\[SYSTEM:[\s\S]*?(?:\]|→[^\]]*)/g, '');
+    // Remove thinking tags, then (SECURITY) internal prompt artifacts that should never be
+    // exposed: <security_reminder>, [USER_MESSAGE] and [SYSTEM: …] blocks.
+    let result = stripInternalMarkup(content, ['thinking', 'security_reminder', 'USER_MESSAGE', 'SYSTEM']);
 
     // Remove role prefixes the LLM shouldn't use
-    result = result.replace(/^\[artie\]:\s*/i, '');
-    result = result.replace(/^\*\*Response:\*\*\s*/i, '');
-    result = result.replace(/^\*\*Me:\*\*\s*/i, '');
-    result = result.replace(/^\*\*Artie:\*\*\s*/i, '');
-    result = result.replace(/^\*\*Coach Artie:\*\*\s*/i, '');
+    result = stripChatPrefixes(result, 'reply');
 
     // Remove <artie> wrapper tags some models add (seen in Llama/Mistral outputs)
-    result = result.replace(/<\/?artie>/gi, '');
+    result = stripInternalMarkup(result, ['artie']);
 
     // Use trimEnd() to preserve leading spaces needed for text concatenation
     return result.trimEnd();
@@ -478,7 +469,7 @@ ${capabilityDetails}`;
     }
 
     // Remove the wants_loop tag from the response
-    const cleanedResponse = content.replace(/<wants_loop>(true|false)<\/wants_loop>/gi, '').trim();
+    const cleanedResponse = stripInternalMarkup(content, ['wants_loop_bool']).trim();
 
     logger.info(`🎯 Loop decision: wantsLoop=${wantsLoop} (${decisionSource})`);
 

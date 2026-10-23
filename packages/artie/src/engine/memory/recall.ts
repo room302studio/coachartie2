@@ -1,4 +1,5 @@
 import { logger } from '../../shared/logger.js';
+import { stripInternalMarkup, stripToolCalls } from '../../shared/clean-llm-output.js';
 import { MemoryEntourageInterface, MemoryEntourageResult } from './types.js';
 import { MemoryService } from '../tools/core/memory.js';
 import { hybridDataLayer } from './store.js';
@@ -46,9 +47,9 @@ const empty = (categories: string[], confidence = 0): MemoryEntourageResult => (
  * note almost always restates the fact.
  */
 export function stripCapabilityTags(text: string): string {
-  return text
-    .replace(/<capability\b[\s\S]*?(\/>|<\/capability>)/g, '')
-    .replace(/<\/?recall\b[^>]*>/g, '')
+  // 'lazy' = recall's own capability match (to the first "/>" or "</capability>"); the
+  // shared stripper keeps it as an explicit option. <recall> loses its tags, not its text.
+  return stripInternalMarkup(stripToolCalls(text, { capability: 'lazy' }), ['recall'])
     .replace(/\s{2,}/g, ' ')
     .trim();
 }

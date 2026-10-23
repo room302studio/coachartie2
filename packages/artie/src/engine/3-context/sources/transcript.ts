@@ -8,6 +8,13 @@
  */
 
 import { estimateTokens } from '../../../shared/text.js';
+import {
+  isSilent,
+  stripChatPrefixes,
+  stripInternalMarkup,
+  stripSilentMarkers,
+  stripToolCalls,
+} from '../../../shared/clean-llm-output.js';
 import type { IncomingMessage } from '../../../shared/queue/types.js';
 import type { ContextSource } from './types.js';
 
@@ -27,50 +34,30 @@ export interface DiscordHistoryEntry {
 export function sanitizeAssistantMessage(content: string): string {
   // Patterns that indicate conversation history poisoning
   // These are formats the model should NEVER use, so strip them from history
-  const poisonedPrefixes = [
-    /^\*\*Me:\*\*\s*/i,
-    /^\*\*Artie:\*\*\s*/i,
-    /^\*\*Coach Artie:\*\*\s*/i,
-    /^\*\*Response:\*\*\s*/i,
-    /^\*\*Reply:\*\*\s*/i,
-    /^\*\*Review:\*\*\s*/i,
-    /^\*\*Analysis:\*\*\s*/i,
-    /^\*\*Answer:\*\*\s*/i,
-    /^\*\*Explanation:\*\*\s*/i,
-    /^Response to (your |the )?message:\s*/i,
-    /^Response to user:\s*/i,
-    /^Here's my response:\s*/i,
-  ];
-
-  let sanitized = content;
-  for (const pattern of poisonedPrefixes) {
-    sanitized = sanitized.replace(pattern, '');
-  }
+  // (the 'history' prefix set in shared/clean-llm-output.ts).
+  let sanitized = stripChatPrefixes(content, 'history');
 
   // Stored assistant turns carry orchestration scaffolding that must never be
   // replayed as "something Artie said": capability invocations/results, step
   // markers from the multi-step loop, and injected wrapper blocks. Replaying
   // these made Artie describe his own prompts as "a mess of fragments stitched
   // together" and refuse live questions as jailbreak attempts.
-  sanitized = sanitized
-    .replace(/<capability\b[^>]*\/>/gi, '')
-    .replace(/<capability\b[^>]*>[\s\S]*?<\/capability>/gi, '')
-    .replace(/<security_reminder>[\s\S]*?<\/security_reminder>/gi, '')
-    .replace(/<user_message\b[^>]*>[\s\S]*?<\/user_message>/gi, '')
-    .replace(/^#{0,3}\s*Step \d+\s*\/\s*\d+.*$/gim, '')
-    .trim();
+  sanitized = stripInternalMarkup(stripToolCalls(sanitized, { capability: 'self-then-paired' }), [
+    'security_reminder',
+    'user_message',
+    'step-markers',
+  ]).trim();
 
   // A refusal-spiral breaker: [SILENT] markers (and pure-meta parentheticals
   // that ride with them) must not replay — each replayed refusal teaches the
   // next generation to refuse too. Returning '' drops the turn from history.
-  const silentStripped = sanitized
-    .replace(/\[SILENT\]/gi, '')
+  const silentStripped = stripSilentMarkers(sanitized)
     .replace(/^\((?:that|this)['’a-z ,.-]*\)$/gim, '')
     .trim();
   if (silentStripped.length === 0) {
     return '';
   }
-  if (/^\[SILENT\]/i.test(sanitized)) {
+  if (isSilent(sanitized)) {
     return '';
   }
 

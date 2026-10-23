@@ -4,6 +4,7 @@ import { QUEUES } from '../../shared/queue/names.js';
 import { IncomingMessage, OutgoingMessage } from '../../shared/queue/types.js';
 import { logger, queueLogger, performanceLogger } from '../../shared/logger.js';
 import { isGenerationMuted } from '../../shared/kill-switch.js';
+import { isSilent, stripSilentMarkers } from '../../shared/clean-llm-output.js';
 import { processMessage } from '../2-turn/run-turn.js';
 import { JOB_TIMEOUT_MS } from '../5-tool-loop/timeouts.js';
 import { jobTracker } from './job-tracker.js';
@@ -183,10 +184,10 @@ export async function startMessageConsumer(): Promise<Worker<IncomingMessage, vo
 
         // Store Artie's response for Discord messages (via API path)
         // Skip storing [SILENT] responses - they pollute conversation history
-        const isSilent =
-          response.trim() === '[SILENT]' || response.trim().toLowerCase() === '[silent]';
+        // exact: only a reply that is nothing but the marker is skipped here (unchanged).
+        const silent = isSilent(response, { exact: true });
         if (
-          !isSilent &&
+          !silent &&
           (message.source === 'discord' ||
             (message.source === 'api' && message.context?.platform === 'discord'))
         ) {
@@ -211,14 +212,14 @@ export async function startMessageConsumer(): Promise<Worker<IncomingMessage, vo
           } catch (dbError) {
             logger.error('[consumer] Failed to store Artie response:', dbError);
           }
-        } else if (isSilent) {
+        } else if (silent) {
           logger.debug(`[consumer] Skipped storing [SILENT] response for ${message.id}`);
         }
 
         // Mark job as complete
         jobTracker.completeJob(message.id, response);
         logger.info(`📊 Job ${message.id} marked as complete`);
-      } else if (/^\s*\[SILENT\]/i.test(response)) {
+      } else if (isSilent(response)) {
         // [SILENT] means stay silent — never enqueue it for delivery. The discord-side
         // respond path already guards this, but this queue path shipped the raw response
         // verbatim, which is how literal "[SILENT]" messages reached channels.
@@ -226,7 +227,7 @@ export async function startMessageConsumer(): Promise<Worker<IncomingMessage, vo
         jobTracker.completeJob(message.id, response);
       } else {
         // Strip any stray embedded [SILENT] marker before delivery
-        response = response.replace(/\[SILENT\]/gi, '').trim();
+        response = stripSilentMarkers(response).trim();
         // Determine which outgoing queue to use for other types
         const outgoingQueueName = getOutgoingQueueName(message.respondTo.type);
         const outgoingQueue = createQueue<OutgoingMessage>(outgoingQueueName);

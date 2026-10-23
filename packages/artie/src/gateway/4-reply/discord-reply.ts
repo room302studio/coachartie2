@@ -9,6 +9,7 @@ import { Message, EmbedBuilder, AttachmentBuilder, GuildMember } from 'discord.j
 import { delay } from '../../shared/async.js';
 import { logger } from '../../shared/logger.js';
 import { chunkMessage } from './chunks.js';
+import { isSilent } from './control-tokens.js';
 import { telemetry } from '../telemetry.js';
 import { checkOutbound, isProtectedTimeoutTarget, SUBWAY_BUILDER_GUILD_ID } from './outbound-gate.js';
 import { recordWheelVictim } from '../games/casino.js';
@@ -149,7 +150,7 @@ export function createDiscordReplyHandlers(
       // Check if LLM chose to stay silent — a leading [SILENT] counts even if
       // chatter follows, so a proxy prefix can never resurrect a silent reply
       const trimmedContent = content.trim();
-      if (!trimmedContent || /^\[SILENT\]/i.test(trimmedContent)) {
+      if (!trimmedContent || isSilent(trimmedContent)) {
         logger.info(`🤫 DISCORD: LLM chose to stay silent [${shortId}]`);
         return;
       }

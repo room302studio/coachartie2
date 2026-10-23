@@ -12,6 +12,7 @@
  */
 
 import { logger } from '../../shared/logger.js';
+import { stripToolCalls, stripInternalMarkup } from '../../shared/clean-llm-output.js';
 import { scrubBlockedUserMentions } from '../../shared/blocklist.js';
 import { isOperatorOnlyError } from '../../shared/anomalywatch.js';
 import { capabilitiesClient } from '../3-ask-engine/engine-client.js';
@@ -66,21 +67,12 @@ export interface ProcessorOptions {
  * Exported for tests/shared/clean-llm-output.test.ts (the per-caller pin table).
  */
 export function cleanCapabilityTags(text: string): string {
-  return text
-    .replace(/<capability\b[^>]*\/>/gs, '')
-    .replace(/<capability\b[^>]*>[\s\S]*?<\/capability>/gs, '')
-    .replace(/<wants_loop>[^<]*<\/wants_loop>/gs, '')
-    .replace(/<think>[\s\S]*?<\/think>/gs, '')
-    .replace(/<system-reminder>[\s\S]*?<\/system-reminder>/gs, '')
-    // Anthropic-native tool syntax: models routed through claude-* sometimes slip into
-    // <function_calls>/<invoke> format instead of <capability> tags. The parser ignores
-    // it (so nothing executes) and the raw scaffolding was leaking into Discord verbatim.
-    .replace(/<function_calls>[\s\S]*?(<\/function_calls>|$)/gs, '')
-    .replace(/<function_results>[\s\S]*?(<\/function_results>|$)/gs, '')
-    .replace(/<invoke\b[^>]*>[\s\S]*?(<\/invoke>|$)/gs, '')
-    .replace(/<\/?(?:function_calls|function_results|invoke)>/g, '')
-    .replace(/\n{3,}/g, '\n\n')
-    .trim();
+  // Same passes, same order as before the shared stripper: capability tags (case-sensitive,
+  // self-closing first), then wants_loop/think/system-reminder, then function-call blocks.
+  let out = stripToolCalls(text, { capability: 'self-then-paired-case-sensitive' });
+  out = stripInternalMarkup(out, ['wants_loop', 'think', 'system-reminder']);
+  out = stripToolCalls(out, { capability: false, functionCalls: true });
+  return out.replace(/\n{3,}/g, '\n\n').trim();
 }
 
 /**
