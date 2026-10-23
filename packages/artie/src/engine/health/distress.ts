@@ -1,5 +1,6 @@
 import { getSyncDb } from '../../shared/db/client.js';
 import { createQueue } from '../../shared/queue/redis.js';
+import { QUEUES } from '../../shared/queue/names.js';
 import { logger } from '../../shared/logger.js';
 import { reportToAnomalywatch } from '../../shared/anomalywatch.js';
 import { costMonitor } from '../budget/usage-ledger.js';
@@ -28,6 +29,7 @@ class DistressMonitor {
   private static instance: DistressMonitor;
   private checkInterval: NodeJS.Timeout | null = null;
   private lastAlertTime: Date | null = null;
+  private incomingQueue: ReturnType<typeof createQueue> | null = null;
   private readonly ALERT_COOLDOWN_MS = 2 * 60 * 60 * 1000; // 2 hours
   private readonly CHECK_INTERVAL_MS = 15 * 60 * 1000; // 15 minutes
 
@@ -208,8 +210,11 @@ class DistressMonitor {
    */
   private async getMessageQueueDepth(): Promise<number> {
     try {
-      // Try to get queue stats from BullMQ
-      const queue = createQueue('coachartie-incoming');
+      // Try to get queue stats from BullMQ. This watched 'coachartie-incoming', a queue
+      // nothing produces to, so depth always read 0. One Queue handle, reused: this runs on
+      // every prompt build (getSelfAwarenessNote) as well as the 15-minute check.
+      this.incomingQueue ??= createQueue(QUEUES.INCOMING_MESSAGES);
+      const queue = this.incomingQueue;
       const waiting = await queue.getWaitingCount();
       const active = await queue.getActiveCount();
       return waiting + active;
