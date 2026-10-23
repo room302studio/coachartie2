@@ -17,6 +17,7 @@
 
 import { getSyncDb } from './db/client.js';
 import { logger } from './logger.js';
+import { escapeRegex } from './regex.js';
 
 const CACHE_MS = 30_000;
 /** Handles shorter than this are too likely to match ordinary words ("jan", "kai"). */
@@ -77,10 +78,6 @@ function load(): OptOutCache {
 
 export function isOptedOut(userId?: string | null): boolean {
   return !!userId && load().ids.has(userId);
-}
-
-function escapeRegex(s: string): string {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 /**

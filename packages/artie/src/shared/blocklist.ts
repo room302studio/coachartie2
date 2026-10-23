@@ -7,6 +7,7 @@
 // the discord package gates intake/context, capabilities gates memory formation/recall.
 
 import { isOptedOut } from './privacy-opt-out.js';
+import { escapeRegex } from './regex.js';
 
 export interface BlockedUser {
   id: string; // Discord snowflake — immutable, survives renames
@@ -52,25 +53,31 @@ export function mentionsBlockedUser(text?: string | null): boolean {
   );
 }
 
-function escapeRegex(s: string): string {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
 /**
  * Replace blocked users' names and @-mentions in OUTBOUND text with a neutral
  * epithet. Referring to them is allowed; naming or pinging them is not. This is
  * the output-side guarantee — names can still reach Artie's context via other
  * people's messages, but they can't leave his mouth.
+ *
+ * Names match as whole words (ledger #4): a short blocked name inside a longer word
+ * ("kai" in "kaiser") is left alone. Lookarounds rather than \b, so a name that starts
+ * or ends with punctuation still matches. `users` is injectable for tests.
  */
-export function scrubBlockedUserMentions(text: string): string {
+export function scrubBlockedUserMentions(
+  text: string,
+  users: readonly BlockedUser[] = BLOCKED_USERS
+): string {
   if (!text) return text;
   let out = text;
-  for (const u of BLOCKED_USERS) {
+  for (const u of users) {
     out = out.replace(new RegExp(`<@!?${u.id}>`, 'g'), BLOCKED_USER_EPITHET);
     out = out.replace(new RegExp(u.id, 'g'), BLOCKED_USER_EPITHET);
     for (const name of u.names) {
       // "@name" and possessives read fine after replacement ("the banned one's")
-      out = out.replace(new RegExp(`@?${escapeRegex(name)}`, 'gi'), BLOCKED_USER_EPITHET);
+      out = out.replace(
+        new RegExp(`(?<!\\w)@?${escapeRegex(name)}(?!\\w)`, 'gi'),
+        BLOCKED_USER_EPITHET
+      );
     }
   }
   return out;
