@@ -125,9 +125,10 @@ export async function startGateway(): Promise<GatewayHandle> {
   console.log('  - REDIS_PORT:', process.env.REDIS_PORT || 'not set');
   console.log('  - DISCORD_PORT:', process.env.DISCORD_PORT || 'not set');
 
-  // Settled by the ClientReady handler with the two listeners' start promises.
-  let markReady!: (listeners: Promise<unknown>) => void;
-  const clientReady = new Promise<Promise<unknown>>((resolve) => {
+  // Settled by the ClientReady handler with the two listeners' start promise (boxed, so
+  // awaiting clientReady doesn't also await the listeners).
+  let markReady!: (ready: { listeners: Promise<unknown> }) => void;
+  const clientReady = new Promise<{ listeners: Promise<unknown> }>((resolve) => {
     markReady = resolve;
   });
   let statusTimer: NodeJS.Timeout | null = null;
@@ -159,7 +160,7 @@ export async function startGateway(): Promise<GatewayHandle> {
       // Start health server, and the API server for forum access
       healthServer.setDiscordClient(client);
       apiServer.setDiscordClient(client);
-      markReady(Promise.all([healthServer.start(), apiServer.start()]));
+      markReady({ listeners: Promise.all([healthServer.start(), apiServer.start()]) });
 
       // From here the engine reaches Discord through gateway/api.ts (wave 9): the same
       // moment the :47321 server used to start answering its HTTP calls.
@@ -355,7 +356,7 @@ export async function startGateway(): Promise<GatewayHandle> {
     // Status updates disabled - only update on actual state changes
     // This reduces log spam and Clickhouse costs
 
-    const listening = await (await clientReady).then(
+    const listening = await (await clientReady).listeners.then(
       () => true,
       () => false // each server already logged its own listen error
     );

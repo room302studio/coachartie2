@@ -10,7 +10,6 @@
  * where prod is listening.
  */
 import { describe, it, expect, vi, afterAll } from 'vitest';
-import { EventEmitter } from 'events';
 
 vi.hoisted(() => {
   process.env.CAPABILITIES_PORT = '0';
@@ -90,6 +89,8 @@ vi.mock('../src/shared/queue/redis.js', async (importOriginal) => {
 
 vi.mock('discord.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('discord.js')>();
+  // Imported inside the factory: vi.mock factories are hoisted above the file's imports.
+  const { EventEmitter } = await import('events');
   class Client extends EventEmitter {
     options: unknown;
     user = { id: '100000000000000001', tag: 'artie#0001', username: 'artie', flags: { bitfield: 0 } };
