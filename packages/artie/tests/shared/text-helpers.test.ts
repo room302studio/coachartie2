@@ -1,6 +1,7 @@
 /**
  * Wave 10: the ledger's one-liners in one home each (shared/text.ts, shared/email.ts,
- * shared/mentions.ts), plus parseLogLine, the temporal keyword list and diagnose's \b rows.
+ * shared/mentions.ts), plus parseLogLine and the temporal keyword list. (diagnose's \b rows
+ * moved to engine/diagnose.test.ts in wave 11.)
  * Each "old" expression below is the regex the call sites used before, quoted verbatim.
  */
 import { describe, it, expect } from 'vitest';
@@ -9,7 +10,6 @@ import { isEmail } from '../../src/shared/email.js';
 import { replaceMention } from '../../src/shared/mentions.js';
 import { parseLogLine } from '../../src/engine/routes/logs.js';
 import { extractTemporalKeywords } from '../../src/engine/memory/recall.js';
-import { analyzeError } from '../../src/engine/tools/ops/diagnose.js';
 
 const SAMPLES = ['  Hello   World\n\tagain ', 'jonah_AB!!', '--Room 302 Studio--', '#🤖robot', '', 'a/b\\c d.e'];
 
@@ -99,14 +99,5 @@ describe('recall temporal keywords: one list, same words as the six regexes', ()
     ]) {
       expect(new Set(extractTemporalKeywords(m))).toEqual(new Set(old(m)));
     }
-  });
-});
-
-describe('diagnose: bare status codes need word boundaries', () => {
-  it('matches a status, not a longer number', () => {
-    expect(analyzeError('Request failed with status code 404').causes).toContain('Resource not found');
-    expect(analyzeError('listening on port 4010').causes).not.toContain('Authentication failed');
-    expect(analyzeError('order 15003 shipped').causes).not.toContain('Server-side error');
-    expect(analyzeError('HTTP 403').causes).toContain('Access forbidden');
   });
 });
