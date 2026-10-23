@@ -8,7 +8,8 @@
   "scripts": {
     "build": "tsc",
     "typecheck": "tsc --noEmit",
-    "test": "vitest --config ../../vitest.config.ts",
+    "test": "vitest run --root ../.. packages/artie/tests --exclude 'packages/artie/tests/integration/**'",
+    "test:integration": "vitest run --root ../.. packages/artie/tests/integration",
     "dev": "tsx watch src/main.ts",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
