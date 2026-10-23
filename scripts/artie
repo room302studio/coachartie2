@@ -72,10 +72,6 @@ case "$1" in
     sqlite3 /data2/apps/coachartie2/data/coachartie.db "SELECT COUNT(*) as count FROM memories;"
     ;;
 
-  social)
-    grep -i "social\|moltbook" /data2/apps/coachartie2/logs/capabilities-out-0.log | tail -20
-    ;;
-
   *)
     echo "Coach Artie Management"
     echo ""
@@ -91,7 +87,6 @@ case "$1" in
     echo "  db                 Open SQLite shell"
     echo "  backup             Backup database"
     echo "  memories           Count memories in DB"
-    echo "  social             View social media behavior logs"
     echo ""
     echo "Examples:"
     echo "  artie status"

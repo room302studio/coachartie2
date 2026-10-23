@@ -102,7 +102,6 @@ All environment variables. Critical ones:
 # API Keys
 OPENROUTER_API_KEY=...
 DISCORD_BOT_TOKEN=...
-MOLTBOOK_API_KEY=...
 
 # Service URLs (for native deployment)
 REDIS_HOST=localhost
@@ -303,11 +302,9 @@ The brain of Artie. Handles:
 - LLM orchestration (OpenRouter)
 - Memory storage and recall (SQLite + BM25 search)
 - Capability detection and execution
-- Social media behavior (Moltbook)
 
 Key behaviors:
 
-- **Social Media**: Checks Moltbook every 3-6 hours, uses LLM for genuine posts/comments
 - **Memory**: Stores observations, conversations, uses TF-IDF for semantic search
 - **Model Rotation**: Cycles through Claude, Gemini, Mistral for variety
 
