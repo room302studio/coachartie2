@@ -1,3 +1,4 @@
+import { ChannelType } from 'discord.js';
 import type { Message, Collection } from 'discord.js';
 import Chance from 'chance';
 import { logger } from '../../shared/logger.js';
@@ -258,4 +259,59 @@ export async function fetchRecentUrls(
     logger.error('Failed to fetch recent URLs:', error);
     return [];
   }
+}
+
+/**
+ * The one Discord fetch the three views above share (moved out of handleMessageAsIntent,
+ * wave 5).
+ */
+export async function fetchChannelWindow(
+  message: Message,
+  shortId: string
+): Promise<Collection<string, Message> | undefined> {
+  // ENHANCED: Fetch recent channel context ONCE, then derive history + attachments +
+  // URLs from the same window. These used to be three separate identical Discord API
+  // fetches of the same messages, awaited sequentially (~3× the round-trip latency and
+  // 3× the rate-limit budget on the hot path). Fetch fails soft → transforms fall back.
+  let prefetchedChannel: Collection<string, Message> | undefined;
+  try {
+    prefetchedChannel = await message.channel.messages.fetch({
+      limit: MAX_CHANNEL_HISTORY,
+      before: message.id,
+    });
+  } catch (e) {
+    logger.warn(`Failed to prefetch channel window [${shortId}] — transforms will re-fetch`);
+  }
+  return prefetchedChannel;
+}
+
+// Channel detection constants
+export const GUILD_CHANNEL_TYPE = 0; // Discord guild text channel type
+
+/**
+ * Helper: Check if channel name indicates robot interaction
+ */
+export function isRobotChannelName(channel: Message['channel']): boolean {
+  return (
+    (channel.type === GUILD_CHANNEL_TYPE &&
+      'name' in channel &&
+      (channel.name?.includes('🤖') || channel.name?.includes('robot'))) ||
+    false
+  );
+}
+
+/**
+ * Helper: Check if message is in a forum thread (Discord Discussions)
+ */
+export async function isForumThread(message: Message): Promise<boolean> {
+  if (
+    message.channel.type !== ChannelType.PublicThread &&
+    message.channel.type !== ChannelType.PrivateThread
+  ) {
+    return false;
+  }
+
+  // Get the parent channel to check if it's a forum
+  const parent = message.channel.parent;
+  return parent?.type === ChannelType.GuildForum;
 }

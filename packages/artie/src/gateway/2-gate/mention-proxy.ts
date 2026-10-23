@@ -18,6 +18,9 @@ import {
   ResponseMode,
 } from './mention-proxy-config.js';
 import { pathResolver } from '../path-resolver.js';
+import type { Client, Message } from 'discord.js';
+import { telemetry } from '../telemetry.js';
+import { handleMessageAsIntent } from '../3-ask-engine/build-request.js';
 
 class MentionProxyService {
   private config: MentionProxyConfig;
@@ -481,4 +484,106 @@ export function getMentionProxyService(): MentionProxyService {
 export function initializeMentionProxyService(): void {
   proxyService = new MentionProxyService();
   logger.info('Mention proxy service initialized');
+}
+
+/**
+ * on-message's mention-proxy step (moved here verbatim in wave 5): when the message mentions
+ * someone Artie represents, answer for them (or deliberately skip). True when a proxy rule
+ * took the message, so normal processing must stop.
+ */
+export async function runMentionProxy(
+  message: Message,
+  client: Client,
+  correlationId: string,
+  shortId: string
+): Promise<boolean> {
+  // -------------------------------------------------------------------------
+  // MENTION PROXY DETECTION
+  // -------------------------------------------------------------------------
+
+  // Check if this message mentions someone we're representing
+  try {
+    const proxyService = getMentionProxyService();
+    const mentionedUserIds = Array.from(message.mentions.users.keys());
+
+    const matchedRule = await proxyService.findMatchingRule(
+      message.content,
+      mentionedUserIds,
+      message.guildId,
+      message.channelId
+    );
+
+    if (matchedRule) {
+      logger.info(`🎭 Proxy rule matched: ${matchedRule.name} [${shortId}]`, {
+        correlationId,
+        targetUser: matchedRule.targetUsername,
+        rule: matchedRule.id,
+        hasJudgment: matchedRule.useJudgment,
+      });
+
+      // Judgment layer: Should we actually respond?
+      if (matchedRule.useJudgment) {
+        logger.info(`⚖️ Running judgment layer for proxy rule [${shortId}]`);
+
+        const shouldRespond = await proxyService.judgeIfShouldRespond(
+          message,
+          matchedRule,
+          client
+        );
+
+        if (!shouldRespond) {
+          logger.info(`⚖️ Judgment layer: SKIP - Active conversation detected [${shortId}]`);
+          telemetry.logEvent(
+            'mention_proxy_judgment_skip',
+            {
+              ruleId: matchedRule.id,
+              ruleName: matchedRule.name,
+              targetUserId: matchedRule.targetUserId,
+              guildId: message.guildId,
+            },
+            correlationId,
+            message.author.id
+          );
+          return true; // Don't respond - user is in active conversation
+        }
+
+        logger.info(`⚖️ Judgment layer: PROCEED - Standalone mention [${shortId}]`);
+      }
+
+      telemetry.logEvent(
+        'mention_proxy_triggered',
+        {
+          ruleId: matchedRule.id,
+          ruleName: matchedRule.name,
+          targetUserId: matchedRule.targetUserId,
+          guildId: message.guildId,
+          usedJudgment: matchedRule.useJudgment,
+        },
+        correlationId,
+        message.author.id
+      );
+
+      // warn, not info: prod console level is warn, and the vitals monitor counts this line
+      logger.warn(`📣 Proxying for @${matchedRule.targetUsername} [${shortId}]`);
+
+      // Get the clean message (remove mentions)
+      const cleanMessage = message.content
+        .replace(new RegExp(`<@!?${matchedRule.targetUserId}>`, 'g'), '')
+        .trim();
+
+      // Process using existing intent handler with proxy context
+      await handleMessageAsIntent(message, cleanMessage, correlationId, {
+        isProxyResponse: true,
+        proxyRule: matchedRule,
+        proxyContext: proxyService.getSystemContext(matchedRule),
+        proxyPrefix: proxyService.getResponsePrefix(matchedRule, matchedRule.targetUsername),
+      });
+
+      return true; // Don't process as normal message
+    }
+  } catch (error) {
+    logger.warn(`Mention proxy detection failed [${shortId}]:`, error);
+    // Continue with normal message processing
+  }
+  return false;
 }

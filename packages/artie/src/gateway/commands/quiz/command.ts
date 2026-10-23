@@ -5,6 +5,7 @@ import {
   InteractionResponse,
   Channel,
   PermissionsBitField,
+  type Message,
 } from 'discord.js';
 import { logger } from '../../../shared/logger.js';
 import { quizSessionManager, QuizSession } from './live-session.js';
@@ -772,4 +773,73 @@ async function handleLeaderboard(
   const guildName = interaction.guild?.name || 'This server';
   const payload = buildLeaderboardMessage(rows, scopeOption, guildName);
   return await interaction.reply(payload);
+}
+
+/**
+ * A channel message that may answer the live quiz (on-message's quiz-answer step, moved here
+ * verbatim in wave 5). True when it was a correct answer and the message is fully handled.
+ */
+export async function handleQuizAnswer(message: Message): Promise<boolean> {
+  // -------------------------------------------------------------------------
+  // QUIZ ANSWER DETECTION
+  // -------------------------------------------------------------------------
+
+  // Check if this channel has an active quiz and if this message is an answer
+  if (quizSessionManager.hasActiveQuiz(message.channelId)) {
+    const initial = quizSessionManager.checkAnswer(
+      message.channelId,
+      message.author.id,
+      message.content
+    );
+
+    // String match failed but AI judge is on — fire an async LLM check.
+    // Race: another user may answer correctly first; in that case the LLM
+    // result is dropped by the manager.
+    const result =
+      initial === 'maybe'
+        ? await quizSessionManager.checkAnswerWithAI(
+            message.channelId,
+            message.author.id,
+            message.content,
+            message.guildId
+          )
+        : initial;
+
+    if (result && result.correct) {
+      logger.info(
+        `✅ Quiz answer correct! User: ${message.author.tag}, Channel: ${message.channelId}, streak=${result.winnerStreak}${result.judgedByAI ? ' (AI)' : ''}`
+      );
+
+      // React on the user's answer message — the live embed updates separately.
+      try {
+        await message.react(result.judgedByAI ? '🤖' : '✅');
+      } catch (e) {
+        logger.warn('Failed to add reaction to quiz answer:', e);
+      }
+
+      quizSessionManager.rememberUsername(
+        message.channelId,
+        message.author.id,
+        message.author.username
+      );
+
+      const streakBadge = quizSessionManager.formatStreakBadge(result.winnerStreak);
+      const judgeNote = result.judgedByAI ? ' _(AI judged)_' : '';
+      const banner = `✅ **${message.author.username}** got it!${streakBadge}${judgeNote} · Answer: **${result.correctAnswer}**`;
+      quizSessionManager.setBanner(message.channelId, banner);
+
+      if (result.quizEnded) {
+        await postQuizSummary(message.channel, message.channelId);
+      } else {
+        const nextSession = await quizSessionManager.nextQuestion(message.channelId);
+        if (nextSession) {
+          await refreshLiveQuiz(message.channel, nextSession);
+        } else {
+          await postQuizSummary(message.channel, message.channelId);
+        }
+      }
+      return true;
+    }
+  }
+  return false;
 }
