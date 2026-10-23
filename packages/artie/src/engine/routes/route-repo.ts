@@ -10,6 +10,11 @@
 
 import { Router } from 'express';
 import { logger } from '../../shared/logger.js';
+import { type ApiResult, sendResult } from '../../shared/api-result.js';
+
+// Wave 9: the handler body is an exported function returning the status + JSON it used to
+// send; the route sends it and engine/api.ts calls it in-process for the gateway.
+const reply = (status: number, body: any): ApiResult => ({ status, body });
 import { parseModelJson } from '../../shared/model-json.js';
 import { openRouterService } from '../4-generate/openrouter.js';
 
@@ -90,16 +95,19 @@ export async function pickRepoChannel(
  */
 export const routeRepoRouter: Router = Router();
 
-routeRepoRouter.post('/route-repo', async (req, res) => {
+routeRepoRouter.post('/route-repo', async (req, res) => sendResult(res, await routeRepo(req.body)));
+
+/** POST /api/route-repo's body: Artie picks the channel for a new repo ({channelId, reason}). */
+export async function routeRepo(body: any): Promise<ApiResult> {
   try {
-    const { repo, channels, existing, guildId } = req.body || {};
+    const { repo, channels, existing, guildId } = body || {};
     if (!repo?.fullName || !Array.isArray(channels)) {
-      return res.status(400).json({ error: 'repo.fullName and channels[] required' });
+      return reply(400, { error: 'repo.fullName and channels[] required' });
     }
     const pick = await pickRepoChannel(repo, channels, Array.isArray(existing) ? existing : [], guildId);
-    res.status(pick ? 200 : 422).json(pick ?? { error: 'no valid pick' });
+    return reply(pick ? 200 : 422, pick ?? { error: 'no valid pick' });
   } catch (error) {
     logger.warn('Repo routing endpoint error:', error);
-    res.status(500).json({ error: 'routing failed' });
+    return reply(500, { error: 'routing failed' });
   }
-});
+}

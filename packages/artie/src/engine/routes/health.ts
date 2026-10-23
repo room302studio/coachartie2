@@ -1,32 +1,20 @@
 import { Router, type Router as ExpressRouter } from 'express';
-import { engineDeps } from '../deps.js';
+import { engineDeps, defaultEngineDeps, type EngineDeps } from '../deps.js';
 import { getDatabasePath } from '../../shared/paths.js';
 import { access } from 'fs/promises';
 import { logger } from '../../shared/logger.js';
+import { type ApiResult, sendResult } from '../../shared/api-result.js';
+
+// Wave 9: the handler body is an exported function returning the status + JSON it used to
+// send; the route sends it and engine/api.ts calls it in-process for the gateway.
+const reply = (status: number, body: any): ApiResult => ({ status, body });
 import os from 'os';
 import { creditMonitor } from '../budget/openrouter-balance.js';
 
 export const healthRouter: ExpressRouter = Router();
 
 // Basic health check
-healthRouter.get('/', async (req, res) => {
-  try {
-    // Check Redis connection
-    await engineDeps(req).pingRedis();
-
-    res.json({
-      status: 'healthy',
-      timestamp: new Date().toISOString(),
-    });
-  } catch (error) {
-    res.status(503).json({
-      status: 'unhealthy',
-      service: 'capabilities',
-      timestamp: new Date().toISOString(),
-      error: error instanceof Error ? error.message : 'Unknown error',
-    });
-  }
-});
+healthRouter.get('/', async (req, res) => sendResult(res, await healthSnapshot(engineDeps(req))));
 
 // Detailed health check with system metrics
 healthRouter.get('/detailed', async (req, res) => {
@@ -189,3 +177,23 @@ healthRouter.post('/admin/clear-credit-flag', (req, res) => {
     timestamp: new Date().toISOString(),
   });
 });
+
+/** GET /health's body: 200 healthy when Redis answers a ping, else 503. */
+export async function healthSnapshot(deps: EngineDeps = defaultEngineDeps): Promise<ApiResult> {
+  try {
+    // Check Redis connection
+    await deps.pingRedis();
+
+    return reply(200, {
+      status: 'healthy',
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error) {
+    return reply(503, {
+      status: 'unhealthy',
+      service: 'capabilities',
+      timestamp: new Date().toISOString(),
+      error: error instanceof Error ? error.message : 'Unknown error',
+    });
+  }
+}

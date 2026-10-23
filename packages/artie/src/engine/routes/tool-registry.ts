@@ -1,29 +1,17 @@
 import { Router, Request, Response } from 'express';
 import { logger } from '../../shared/logger.js';
+import { type ApiResult, sendResult } from '../../shared/api-result.js';
+
+// Wave 9: the handler body is an exported function returning the status + JSON it used to
+// send; the route sends it and engine/api.ts calls it in-process for the gateway.
+const reply = (status: number, body: any): ApiResult => ({ status, body });
 import { capabilityOrchestrator } from '../2-turn/run-turn.js';
 import { capabilityRegistry } from '../5-tool-loop/registry.js';
 
 const router: Router = Router();
 
 // GET /capabilities - List all registered capabilities
-router.get('/', (req: Request, res: Response) => {
-  try {
-    const capabilities = capabilityRegistry.list();
-    const stats = capabilityRegistry.getStats();
-
-    res.json({
-      success: true,
-      stats,
-      capabilities,
-    });
-  } catch (error) {
-    logger.error('Error listing capabilities:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Internal server error',
-    });
-  }
-});
+router.get('/', (_req: Request, res: Response) => sendResult(res, listCapabilities()));
 
 // GET /capabilities/active - List active orchestrations
 router.get('/active', (req: Request, res: Response) => {
@@ -180,52 +168,9 @@ router.get('/registry/:name', (req: Request, res: Response) => {
 });
 
 // POST /capabilities/registry/:name/execute - Execute a capability directly
-router.post('/registry/:name/execute', async (req: Request, res: Response) => {
-  try {
-    const { name } = req.params;
-    const { action, params = {}, content, guildId, channelId, userId, messageId } = req.body;
-
-    if (!action) {
-      return res.status(400).json({
-        success: false,
-        error: 'Action is required',
-      });
-    }
-
-    if (!capabilityRegistry.has(name)) {
-      return res.status(404).json({
-        success: false,
-        error: `Capability '${name}' not found`,
-      });
-    }
-
-    if (!capabilityRegistry.supportsAction(name, action)) {
-      return res.status(400).json({
-        success: false,
-        error: capabilityRegistry.generateActionError(name, action),
-      });
-    }
-
-    // Build context from request body
-    const context =
-      guildId || channelId || userId || messageId
-        ? { guildId, channelId, userId, messageId }
-        : undefined;
-
-    const result = await capabilityRegistry.execute(name, action, params, content, context);
-
-    res.json({
-      success: true,
-      result,
-    });
-  } catch (error) {
-    logger.error(`Error executing capability ${req.params.name}:`, error);
-    res.status(500).json({
-      success: false,
-      error: error instanceof Error ? error.message : 'Internal server error',
-    });
-  }
-});
+router.post('/registry/:name/execute', async (req: Request, res: Response) =>
+  sendResult(res, await executeTool(req.params as { name: string }, req.body))
+);
 
 // POST /capabilities/mcp/test - Direct MCP testing without LLM
 router.post('/mcp/test', async (req: Request, res: Response) => {
@@ -322,5 +267,76 @@ router.get('/health', (req: Request, res: Response) => {
     },
   });
 });
+
+/** GET /capabilities's body: every registered capability plus registry stats. */
+export function listCapabilities(): ApiResult {
+  try {
+    const capabilities = capabilityRegistry.list();
+    const stats = capabilityRegistry.getStats();
+
+    return reply(200, {
+      success: true,
+      stats,
+      capabilities,
+    });
+  } catch (error) {
+    logger.error('Error listing capabilities:', error);
+    return reply(500, {
+      success: false,
+      error: 'Internal server error',
+    });
+  }
+}
+
+/**
+ * POST /capabilities/registry/:name/execute's body: run one capability action directly, no LLM
+ * (the gateway stores observation and reaction-feedback memories through this).
+ */
+export async function executeTool(params: { name: string }, body: any): Promise<ApiResult> {
+  try {
+    const { name } = params;
+    const { action, params = {}, content, guildId, channelId, userId, messageId } = body;
+
+    if (!action) {
+      return reply(400, {
+        success: false,
+        error: 'Action is required',
+      });
+    }
+
+    if (!capabilityRegistry.has(name)) {
+      return reply(404, {
+        success: false,
+        error: `Capability '${name}' not found`,
+      });
+    }
+
+    if (!capabilityRegistry.supportsAction(name, action)) {
+      return reply(400, {
+        success: false,
+        error: capabilityRegistry.generateActionError(name, action),
+      });
+    }
+
+    // Build context from request body
+    const context =
+      guildId || channelId || userId || messageId
+        ? { guildId, channelId, userId, messageId }
+        : undefined;
+
+    const result = await capabilityRegistry.execute(name, action, params, content, context);
+
+    return reply(200, {
+      success: true,
+      result,
+    });
+  } catch (error) {
+    logger.error(`Error executing capability ${params.name}:`, error);
+    return reply(500, {
+      success: false,
+      error: error instanceof Error ? error.message : 'Internal server error',
+    });
+  }
+}
 
 export { router as capabilitiesRouter };

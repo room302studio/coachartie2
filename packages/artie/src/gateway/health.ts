@@ -2,6 +2,7 @@ import { createServer, IncomingMessage, ServerResponse } from 'http';
 import { logger } from '../shared/logger.js';
 import { telemetry } from './telemetry.js';
 import { readFileSync } from 'fs';
+import type { ApiResult } from '../shared/api-result.js';
 
 export interface HealthCheckResponse {
   status: 'healthy' | 'degraded' | 'unhealthy';
@@ -131,6 +132,16 @@ export class HealthServer {
   }
 
   private handleHealthCheck(res: ServerResponse): void {
+    const { status, body } = this.healthCheck();
+    res.writeHead(status);
+    res.end(JSON.stringify(body, null, 2));
+  }
+
+  /**
+   * GET /health's status code and body (wave 9: extracted so the engine's forums tool can
+   * read the guild list in-process through gateway/api.ts instead of fetching :47319).
+   */
+  healthCheck(): ApiResult<HealthCheckResponse> {
     const healthSummary = telemetry.getHealthSummary();
     const discordStatus = this.getDiscordStatus();
 
@@ -156,8 +167,7 @@ export class HealthServer {
 
     const statusCode = overallStatus === 'healthy' ? 200 : overallStatus === 'degraded' ? 200 : 503;
 
-    res.writeHead(statusCode);
-    res.end(JSON.stringify(response, null, 2));
+    return { status: statusCode, body: response };
   }
 
   private handleMetrics(res: ServerResponse): void {

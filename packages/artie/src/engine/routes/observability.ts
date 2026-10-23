@@ -1,5 +1,10 @@
 import { Router, Request, Response } from 'express';
 import { logger } from '../../shared/logger.js';
+import { type ApiResult, sendResult } from '../../shared/api-result.js';
+
+// Wave 9: the handler body is an exported function returning the status + JSON it used to
+// send; the route sends it and engine/api.ts calls it in-process for the gateway.
+const reply = (status: number, body: any): ApiResult => ({ status, body });
 import { getDb, desc, sql, countDistinct, getSyncDb } from '../../shared/db/client.js';
 import { memories, messages } from '../../shared/db/schema.js';
 import { errorPatternTracker } from '../5-tool-loop/tool-error-patterns.js';
@@ -130,44 +135,9 @@ apiRouter.get('/error-analytics/global', (_req: Request, res: Response) => {
 // ============================================================================
 
 // POST /api/traces/link-discord - Link Discord message ID to trace
-apiRouter.post('/traces/link-discord', async (req: Request, res: Response) => {
-  try {
-    const { jobId, discordMessageId } = req.body as {
-      jobId: string;
-      discordMessageId: string;
-    };
-
-    if (!jobId || !discordMessageId) {
-      res.status(400).json({
-        error: 'Missing required fields: jobId and discordMessageId',
-      });
-      return;
-    }
-
-    // The jobId is the messageId used when creating the trace
-    // We need to find the trace by messageId and update it
-    const db = getSyncDb();
-    const result = db.run(
-      `UPDATE generation_traces SET discord_message_id = ? WHERE message_id = ?`,
-      [discordMessageId, jobId]
-    );
-
-    if (result.changes > 0) {
-      logger.debug(`Linked Discord message ${discordMessageId} to job ${jobId.slice(-8)}`);
-      res.json({ success: true });
-    } else {
-      // Trace might not exist yet (tracing disabled) - not an error
-      logger.debug(`No trace found for job ${jobId.slice(-8)} (tracing may be disabled)`);
-      res.json({ success: true, note: 'No trace found' });
-    }
-  } catch (error) {
-    logger.error('Failed to link Discord message:', error);
-    res.status(500).json({
-      error: 'Failed to link Discord message',
-      message: error instanceof Error ? error.message : 'Unknown error',
-    });
-  }
-});
+apiRouter.post('/traces/link-discord', async (req: Request, res: Response) =>
+  sendResult(res, await linkDiscordMessage(req.body))
+);
 
 // GET /api/traces - Query traces with filtering
 apiRouter.get('/traces', async (req: Request, res: Response) => {
@@ -256,38 +226,9 @@ apiRouter.get('/traces/:id', async (req: Request, res: Response) => {
 });
 
 // POST /api/traces/feedback - Record feedback for a trace
-apiRouter.post('/traces/feedback', async (req: Request, res: Response) => {
-  try {
-    const { discordMessageId, sentiment, emoji } = req.body as {
-      discordMessageId: string;
-      sentiment: 'positive' | 'negative';
-      emoji: string;
-    };
-
-    if (!discordMessageId || !sentiment || !emoji) {
-      res.status(400).json({
-        error: 'Missing required fields: discordMessageId, sentiment, emoji',
-      });
-      return;
-    }
-
-    const success = await traceManager.recordFeedback(discordMessageId, sentiment, emoji);
-
-    if (success) {
-      res.json({ success: true });
-    } else {
-      res.status(404).json({
-        error: 'No trace found for this Discord message',
-      });
-    }
-  } catch (error) {
-    logger.error('Failed to record feedback:', error);
-    res.status(500).json({
-      error: 'Failed to record feedback',
-      message: error instanceof Error ? error.message : 'Unknown error',
-    });
-  }
-});
+apiRouter.post('/traces/feedback', async (req: Request, res: Response) =>
+  sendResult(res, await recordTraceFeedback(req.body))
+);
 
 // ============================================================================
 // CONTEXT ALCHEMY - EXPERIMENT ENDPOINTS
@@ -998,3 +939,75 @@ apiRouter.get('/analytics/delivery/recent', (_req: Request, res: Response) => {
     });
   }
 });
+
+/** POST /api/traces/link-discord's body: tie the Discord reply's id to its generation trace. */
+export async function linkDiscordMessage(body: any): Promise<ApiResult> {
+  try {
+    const { jobId, discordMessageId } = body as {
+      jobId: string;
+      discordMessageId: string;
+    };
+
+    if (!jobId || !discordMessageId) {
+      return reply(400, {
+        error: 'Missing required fields: jobId and discordMessageId',
+      });
+    }
+
+    // The jobId is the messageId used when creating the trace
+    // We need to find the trace by messageId and update it
+    const db = getSyncDb();
+    const result = db.run(
+      `UPDATE generation_traces SET discord_message_id = ? WHERE message_id = ?`,
+      [discordMessageId, jobId]
+    );
+
+    if (result.changes > 0) {
+      logger.debug(`Linked Discord message ${discordMessageId} to job ${jobId.slice(-8)}`);
+      return reply(200, { success: true });
+    } else {
+      // Trace might not exist yet (tracing disabled) - not an error
+      logger.debug(`No trace found for job ${jobId.slice(-8)} (tracing may be disabled)`);
+      return reply(200, { success: true, note: 'No trace found' });
+    }
+  } catch (error) {
+    logger.error('Failed to link Discord message:', error);
+    return reply(500, {
+      error: 'Failed to link Discord message',
+      message: error instanceof Error ? error.message : 'Unknown error',
+    });
+  }
+}
+
+/** POST /api/traces/feedback's body: record a 👍/👎 reaction against the reply's trace. */
+export async function recordTraceFeedback(body: any): Promise<ApiResult> {
+  try {
+    const { discordMessageId, sentiment, emoji } = body as {
+      discordMessageId: string;
+      sentiment: 'positive' | 'negative';
+      emoji: string;
+    };
+
+    if (!discordMessageId || !sentiment || !emoji) {
+      return reply(400, {
+        error: 'Missing required fields: discordMessageId, sentiment, emoji',
+      });
+    }
+
+    const success = await traceManager.recordFeedback(discordMessageId, sentiment, emoji);
+
+    if (success) {
+      return reply(200, { success: true });
+    } else {
+      return reply(404, {
+        error: 'No trace found for this Discord message',
+      });
+    }
+  } catch (error) {
+    logger.error('Failed to record feedback:', error);
+    return reply(500, {
+      error: 'Failed to record feedback',
+      message: error instanceof Error ? error.message : 'Unknown error',
+    });
+  }
+}

@@ -5,7 +5,10 @@ import { dirname, join, relative, resolve } from 'path';
 import { fileURLToPath } from 'url';
 
 // Wave 3 architecture rules (rules 3-5 arrive in wave 11):
-//   1. src/gateway/** never imports src/engine/**, and the reverse.
+//   1. src/gateway/** never imports src/engine/**, and the reverse — except through the
+//      two seam files (wave 9, one process): the gateway may import src/engine/api.ts and
+//      nothing else of the engine; the engine may import src/gateway/api.ts and nothing else
+//      of the gateway. src/main.ts (the one entry point, outside both zones) is unrestricted.
 //   2. src/shared/** imports neither src/gateway/** nor src/engine/**.
 //
 // Uses ts.preProcessFile (already a dependency via typescript) instead of regex, so this
@@ -38,6 +41,9 @@ function zoneOf(absPath: string): Zone {
   return null;
 }
 
+/** The only cross-zone import targets (src-relative, no extension). */
+const SEAMS = { engine: join('engine', 'api'), gateway: join('gateway', 'api') } as const;
+
 interface Violation {
   from: string;
   fromZone: Zone;
@@ -68,6 +74,11 @@ function findViolations(): Violation[] {
 
       if (!toZone || toZone === fromZone) continue;
 
+      // The two seams (wave 9): each zone's api.ts is the only file the other may import.
+      const target = relative(SRC, resolvedNoExt);
+      if (fromZone === 'gateway' && toZone === 'engine' && target === SEAMS.engine) continue;
+      if (fromZone === 'engine' && toZone === 'gateway' && target === SEAMS.gateway) continue;
+
       const crossesEngineGateway =
         (fromZone === 'gateway' && toZone === 'engine') || (fromZone === 'engine' && toZone === 'gateway');
       const sharedImportsOut = fromZone === 'shared' && (toZone === 'engine' || toZone === 'gateway');
@@ -82,7 +93,7 @@ function findViolations(): Violation[] {
 }
 
 describe('architecture: gateway/engine/shared boundaries', () => {
-  it('src/gateway/** never imports src/engine/**, and the reverse', () => {
+  it('src/gateway/** imports only src/engine/api.ts of the engine, and the reverse', () => {
     const violations = findViolations().filter(
       (v) =>
         (v.fromZone === 'gateway' && v.toZone === 'engine') ||
@@ -100,5 +111,11 @@ describe('architecture: gateway/engine/shared boundaries', () => {
       violations,
       violations.map((v) => `${v.from} imports '${v.spec}' (zone ${v.toZone})`).join('\n')
     ).toEqual([]);
+  });
+
+  it('the seam files exist (so the exception above is not vacuous)', () => {
+    for (const seam of Object.values(SEAMS)) {
+      expect(statSync(join(SRC, seam + '.ts')).isFile()).toBe(true);
+    }
   });
 });

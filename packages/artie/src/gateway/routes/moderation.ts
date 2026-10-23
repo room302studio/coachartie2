@@ -3,6 +3,12 @@ import { logger } from '../../shared/logger.js';
 import { moderationService } from './moderation-service.js';
 import { isProtectedUser } from '../../shared/config/protected-users.js';
 import { isStaffRole } from '../../shared/staff-role.js';
+import { type ApiResult, sendResult } from '../../shared/api-result.js';
+
+// Wave 9: each moderation route's handler body is an exported function returning the
+// status + JSON it used to send; gateway/api.ts calls them in-process for the engine's
+// moderation tool.
+const reply = (status: number, body: any): ApiResult => ({ status, body });
 
 const SUBWAY_BUILDER_GUILD_ID = '1420846272545296470';
 
@@ -79,128 +85,136 @@ export async function resolveUserId(
   return null;
 }
 
+export async function timeoutMember(client: any, body: any): Promise<ApiResult> {
+  try {
+    const { guildId, durationMinutes, reason, channelId } = body;
+    const who = body.userId || body.targetUserId || body.user || body.username;
+    const userId = await resolveUserId(client, guildId, who, channelId);
+
+    if (!userId || !durationMinutes || !reason) {
+      return reply(400, {
+        error: userId
+          ? 'Missing required: durationMinutes, reason'
+          : `Couldn't find a member called "${who ?? ''}" in this server`,
+      });
+    }
+
+    const check = await fetchModeratableMember(client, guildId, userId);
+    if (!check.ok) {
+      return reply(check.status, { error: check.error });
+    }
+    const member = check.member;
+
+    const minutes = Math.min(60, Math.max(1, Number(durationMinutes)));
+    const until = new Date(Date.now() + minutes * 60_000);
+    await member.timeout(minutes * 60_000, reason);
+
+    moderationService.logAction({
+      issuedByUserId: body.issuedByUserId || 'coach-artie',
+      issuedByName: body.issuedByName || 'Coach Artie',
+      targetUserId: userId,
+      targetUsername: member.user.username,
+      action: 'timeout',
+      durationMinutes: minutes,
+      reason,
+      discordUntil: until.toISOString(),
+    });
+
+    logger.info(`⏱️ [moderation] Timed out ${member.user.username}: ${minutes}min (${reason})`);
+
+    return reply(200, {
+      success: true,
+      message: `${member.user.username} timed out for ${minutes} minutes`,
+      until: until.toISOString(),
+    });
+  } catch (error) {
+    logger.error('[moderation/timeout] Error:', error);
+    return reply(500, { error: 'Timeout failed' });
+  }
+}
+
+export async function addRole(client: any, body: any): Promise<ApiResult> {
+  try {
+    const { guildId, roleName, reason, channelId } = body;
+    const userId = await resolveUserId(client, guildId, body.userId || body.user, channelId);
+    if (!userId || !roleName) {
+      return reply(400, { error: 'Missing required: userId, roleName' });
+    }
+
+    const check = await fetchModeratableMember(client, guildId, userId);
+    if (!check.ok) {
+      return reply(check.status, { error: check.error });
+    }
+    const member = check.member;
+
+    const role = member.guild.roles.cache.find(
+      (r: any) => r.name.toLowerCase() === String(roleName).toLowerCase()
+    );
+    if (!role) {
+      return reply(404, { error: `Role "${roleName}" not found in guild` });
+    }
+
+    await member.roles.add(role, reason || 'Coach Artie moderation');
+    logger.info(`🛡️ [moderation] Added role ${role.name} to ${member.user.username} (${reason})`);
+    return reply(200, { success: true, message: `Added ${role.name} to ${member.user.username}` });
+  } catch (error) {
+    logger.error('[moderation/add-role] Error:', error);
+    return reply(500, { error: 'Add role failed - may lack permissions' });
+  }
+}
+
+export async function removeRole(client: any, body: any): Promise<ApiResult> {
+  try {
+    const { guildId, roleName, channelId } = body;
+    const userId = await resolveUserId(client, guildId, body.userId || body.user, channelId);
+    if (!userId || !roleName) {
+      return reply(400, { error: 'Missing required: userId, roleName' });
+    }
+
+    const guild = client.guilds.cache.get(guildId || SUBWAY_BUILDER_GUILD_ID);
+    if (!guild) return reply(500, { error: 'Guild not found' });
+    const member = await guild.members.fetch(userId).catch(() => null);
+    if (!member) return reply(404, { error: 'User not in guild' });
+
+    const role = guild.roles.cache.find(
+      (r: any) => r.name.toLowerCase() === String(roleName).toLowerCase()
+    );
+    if (!role) {
+      return reply(404, { error: `Role "${roleName}" not found in guild` });
+    }
+
+    await member.roles.remove(role, 'Coach Artie moderation');
+    logger.info(`🛡️ [moderation] Removed role ${role.name} from ${member.user.username}`);
+    return reply(200, { success: true, message: `Removed ${role.name} from ${member.user.username}` });
+  } catch (error) {
+    logger.error('[moderation/remove-role] Error:', error);
+    return reply(500, { error: 'Remove role failed' });
+  }
+}
+
+export function getModerationAudit(params: Record<string, string>): ApiResult {
+  try {
+    const audit = moderationService.getAuditLog(params.userId, 20);
+    return reply(200, audit);
+  } catch (error) {
+    logger.error('[moderation/audit] Error:', error);
+    return reply(500, { error: 'Failed to fetch audit' });
+  }
+}
+
 export function setupModerationApi(app: express.Application, client: any) {
   // POST /api/moderation/timeout
   // Called by the discord-moderation capability: { guildId, userId, durationMinutes, reason }
-  app.post('/api/moderation/timeout', async (req, res) => {
-    try {
-      const { guildId, durationMinutes, reason, channelId } = req.body;
-      const who = req.body.userId || req.body.targetUserId || req.body.user || req.body.username;
-      const userId = await resolveUserId(client, guildId, who, channelId);
-
-      if (!userId || !durationMinutes || !reason) {
-        return res.status(400).json({
-          error: userId
-            ? 'Missing required: durationMinutes, reason'
-            : `Couldn't find a member called "${who ?? ''}" in this server`,
-        });
-      }
-
-      const check = await fetchModeratableMember(client, guildId, userId);
-      if (!check.ok) {
-        return res.status(check.status).json({ error: check.error });
-      }
-      const member = check.member;
-
-      const minutes = Math.min(60, Math.max(1, Number(durationMinutes)));
-      const until = new Date(Date.now() + minutes * 60_000);
-      await member.timeout(minutes * 60_000, reason);
-
-      moderationService.logAction({
-        issuedByUserId: req.body.issuedByUserId || 'coach-artie',
-        issuedByName: req.body.issuedByName || 'Coach Artie',
-        targetUserId: userId,
-        targetUsername: member.user.username,
-        action: 'timeout',
-        durationMinutes: minutes,
-        reason,
-        discordUntil: until.toISOString(),
-      });
-
-      logger.info(`⏱️ [moderation] Timed out ${member.user.username}: ${minutes}min (${reason})`);
-
-      res.json({
-        success: true,
-        message: `${member.user.username} timed out for ${minutes} minutes`,
-        until: until.toISOString(),
-      });
-    } catch (error) {
-      logger.error('[moderation/timeout] Error:', error);
-      res.status(500).json({ error: 'Timeout failed' });
-    }
-  });
+  app.post('/api/moderation/timeout', async (req, res) => sendResult(res, await timeoutMember(client, req.body)));
 
   // POST /api/moderation/add-role — { guildId, userId, roleName, reason }
-  app.post('/api/moderation/add-role', async (req, res) => {
-    try {
-      const { guildId, roleName, reason, channelId } = req.body;
-      const userId = await resolveUserId(client, guildId, req.body.userId || req.body.user, channelId);
-      if (!userId || !roleName) {
-        return res.status(400).json({ error: 'Missing required: userId, roleName' });
-      }
-
-      const check = await fetchModeratableMember(client, guildId, userId);
-      if (!check.ok) {
-        return res.status(check.status).json({ error: check.error });
-      }
-      const member = check.member;
-
-      const role = member.guild.roles.cache.find(
-        (r: any) => r.name.toLowerCase() === String(roleName).toLowerCase()
-      );
-      if (!role) {
-        return res.status(404).json({ error: `Role "${roleName}" not found in guild` });
-      }
-
-      await member.roles.add(role, reason || 'Coach Artie moderation');
-      logger.info(`🛡️ [moderation] Added role ${role.name} to ${member.user.username} (${reason})`);
-      res.json({ success: true, message: `Added ${role.name} to ${member.user.username}` });
-    } catch (error) {
-      logger.error('[moderation/add-role] Error:', error);
-      res.status(500).json({ error: 'Add role failed - may lack permissions' });
-    }
-  });
+  app.post('/api/moderation/add-role', async (req, res) => sendResult(res, await addRole(client, req.body)));
 
   // POST /api/moderation/remove-role — { guildId, userId, roleName }
-  app.post('/api/moderation/remove-role', async (req, res) => {
-    try {
-      const { guildId, roleName, channelId } = req.body;
-      const userId = await resolveUserId(client, guildId, req.body.userId || req.body.user, channelId);
-      if (!userId || !roleName) {
-        return res.status(400).json({ error: 'Missing required: userId, roleName' });
-      }
-
-      const guild = client.guilds.cache.get(guildId || SUBWAY_BUILDER_GUILD_ID);
-      if (!guild) return res.status(500).json({ error: 'Guild not found' });
-      const member = await guild.members.fetch(userId).catch(() => null);
-      if (!member) return res.status(404).json({ error: 'User not in guild' });
-
-      const role = guild.roles.cache.find(
-        (r: any) => r.name.toLowerCase() === String(roleName).toLowerCase()
-      );
-      if (!role) {
-        return res.status(404).json({ error: `Role "${roleName}" not found in guild` });
-      }
-
-      await member.roles.remove(role, 'Coach Artie moderation');
-      logger.info(`🛡️ [moderation] Removed role ${role.name} from ${member.user.username}`);
-      res.json({ success: true, message: `Removed ${role.name} from ${member.user.username}` });
-    } catch (error) {
-      logger.error('[moderation/remove-role] Error:', error);
-      res.status(500).json({ error: 'Remove role failed' });
-    }
-  });
+  app.post('/api/moderation/remove-role', async (req, res) => sendResult(res, await removeRole(client, req.body)));
 
   // GET /api/moderation/audit/:userId
-  app.get('/api/moderation/audit/:userId', (req, res) => {
-    try {
-      const audit = moderationService.getAuditLog(req.params.userId, 20);
-      res.json(audit);
-    } catch (error) {
-      logger.error('[moderation/audit] Error:', error);
-      res.status(500).json({ error: 'Failed to fetch audit' });
-    }
-  });
+  app.get('/api/moderation/audit/:userId', (req, res) => sendResult(res, getModerationAudit(req.params)));
 
   logger.info('✅ Moderation API endpoints registered');
 }
