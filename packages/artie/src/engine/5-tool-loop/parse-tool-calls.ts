@@ -147,8 +147,9 @@ export class CapabilityParser {
   /**
    * Simple string similarity calculation (Jaro-Winkler inspired)
    * Checks exact match, substrings, and common prefixes
+   * (public for tests/engine/parse-tool-calls.test.ts; wave 11)
    */
-  private calculateSimilarity(a: string, b: string): number {
+  calculateSimilarity(a: string, b: string): number {
     if (a === b) {
       return 1.0;
     }
