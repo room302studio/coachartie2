@@ -97,12 +97,11 @@ Per guild, in `guild-whitelist.ts`, set `ambientMode: 'never'` for strict mentio
 1. Top up OpenRouter. Also set a **key limit** in the OpenRouter dashboard as a second, provider-side cap.
 2. Start the services: `docker compose ps`, and confirm redis is Up on 47320. Then:
    ```bash
-   pm2 start coach-artie-capabilities
-   pm2 start coach-artie-discord
+   pm2 start coach-artie
    pm2 save
    ```
 3. Get about three @mention replies to Artie in one guild within a few minutes.
-4. Watch the logs with `pm2 logs coach-artie-capabilities | grep -E "Prompt cache|Cache usage|Usage recorded"`. What a hit looks like:
+4. Watch the logs with `pm2 logs coach-artie | grep -E "Prompt cache|Cache usage|Usage recorded"`. What a hit looks like:
    - `🗄️ Prompt cache: breakpoint on ~7000tok system prefix (anthropic/claude-opus-4.8, streaming)`. The breakpoint was placed.
    - `🗄️ Cache usage: read 0, write 6800 of 12000 prompt tokens`. This is the first call, which writes the cache (normal).
    - `🗄️ Cache usage: read 6800, write 0 of 12100 prompt tokens`. This is a later call, and **it is a hit.**

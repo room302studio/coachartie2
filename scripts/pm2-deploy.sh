@@ -3,14 +3,13 @@
 # Coach Artie 2 - PM2 Native Deploy Script
 # Always builds before restarting to prevent stale dist/ issues
 #
-# Usage: ./scripts/pm2-deploy.sh [service]
-# Examples:
-#   ./scripts/pm2-deploy.sh          # Rebuild all, restart all
-#   ./scripts/pm2-deploy.sh discord  # Rebuild all, restart discord only
+# One process now (wave 9/12): engine + gateway run as the single PM2 app `coach-artie`.
+# Superseded by scripts/deploy.sh (wave 12) once that has shipped once; kept until then.
+#
+# Usage: ./scripts/pm2-deploy.sh
 
 set -e
 
-SERVICE=${1:-"all"}
 ROOT_DIR="/data2/apps/coachartie2"
 
 cd "$ROOT_DIR"
@@ -35,14 +34,12 @@ echo "🔨 Building all packages..."
 pnpm build
 echo ""
 
-# 4. Restart services
-if [ "$SERVICE" = "all" ]; then
-    echo "🔄 Restarting all services..."
-    pm2 restart coach-artie-capabilities coach-artie-discord coach-artie-sms --update-env
-else
-    echo "🔄 Restarting $SERVICE..."
-    pm2 restart "coach-artie-$SERVICE" --update-env
-fi
+# 4. Restart the service. Wave 12 collapsed capabilities+discord into one PM2 app,
+# coach-artie (see ecosystem.config.cjs, CUTOVER.md). This script restarts in place —
+# CUTOVER.md's PM2 steps (delete the two old apps, start coach-artie fresh) are the
+# one-time migration; after that, `pm2 restart` here is fine for routine deploys.
+echo "🔄 Restarting coach-artie..."
+pm2 restart coach-artie --update-env
 
 # 5. Wait and show status
 sleep 5
@@ -54,8 +51,8 @@ echo ""
 # 6. Quick health check
 echo "🩺 Health checks:"
 sleep 3
-curl -sf http://localhost:47324/health >/dev/null && echo "  ✅ Capabilities healthy" || echo "  ❌ Capabilities unhealthy"
-curl -sf http://localhost:47319/health >/dev/null && echo "  ✅ Discord healthy" || echo "  ❌ Discord unhealthy"
+curl -sf http://localhost:47324/health/ready >/dev/null && echo "  ✅ Engine healthy (:47324)" || echo "  ❌ Engine unhealthy (:47324)"
+curl -sf http://127.0.0.1:47319/health >/dev/null && echo "  ✅ Gateway healthy (:47319)" || echo "  ❌ Gateway unhealthy (:47319)"
 echo ""
 
 echo "✅ Deploy complete!"

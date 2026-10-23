@@ -1,3 +1,11 @@
+> **Done in v3.** This plan's goal — native `tools`/`tool_calls` in place of the `<capability/>`
+> XML loop — shipped in waves 8-9 of the v3 rebuild (see `BUILD-LOG.md` in the `reorg/`
+> scratchpad, and `ARCHITECTURE.md`'s `TOOL_LOOP` section). Native is the default; `TOOL_LOOP=xml`
+> is the one emergency rollback flag, marked for deletion after the soak. The lean-core-tools /
+> skills-migration half of this plan (Phase B below) was **not** done — F1 was decided as
+> merge-not-delete (four tool merges with an alias map, not a retirement). Archived as a historical
+> design doc; the forward-looking architecture doc is `ARCHITECTURE.md` at the repo root.
+
 # Coach Artie — Tool-Use Brain Transplant (scope)
 
 **Goal:** Replace the XML-tag capability system + forced-depth text loop with **native

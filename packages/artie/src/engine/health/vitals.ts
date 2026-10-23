@@ -236,7 +236,7 @@ export class VitalsMonitor {
     // Operator alert via anomalywatch — never a Discord DM. Also capped at one per ET day.
     await reportToAnomalywatch(
       'warning',
-      `Vitals alarm: ${breaches.join('; ')} — check pm2 logs coach-artie-capabilities coach-artie-discord`,
+      `Vitals alarm: ${breaches.join('; ')} — check pm2 logs coach-artie`,
       { kind: 'vitals-monitor-alarm' }
     );
   }
