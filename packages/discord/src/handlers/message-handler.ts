@@ -105,15 +105,18 @@ const chance = new Chance();
  */
 /**
  * Resolve the repo root that holds reference-docs/. This used to probe `APP_ROOT`, the
- * hardcoded Docker path `/app`, and cwd-relative guesses in order, falling back through each
- * if the previous one didn't actually contain reference-docs/ — because under PM2 there is no
- * `APP_ROOT` and the Docker fallback pointed nowhere real. Docker support was removed in wave
- * 1, `APP_ROOT` is never set in this repo's env files, and `REPO_ROOT` (found by walking up to
- * `pnpm-workspace.yaml`, not by probing cwd) always contains reference-docs/ in every
- * environment this now runs in, so the probing is gone — this resolves to the same directory
- * the old probe found today.
+ * hardcoded Docker path `/app`, and two cwd-relative guesses in order, falling through to the
+ * next candidate whenever the previous one didn't actually contain reference-docs/. Docker
+ * support was removed in wave 1 (the `/app` and bare-cwd candidates are unreachable dead code:
+ * `.env.production` is read by `ecosystem.config.cjs`, not by this process, so I can't confirm
+ * `APP_ROOT` is unset there — the `APP_ROOT` override itself stays, exactly as before, rather
+ * than assume). `REPO_ROOT` (found by walking up to `pnpm-workspace.yaml`, not by probing cwd)
+ * replaces the cwd-relative fallback, since it always contains reference-docs/ in every
+ * environment this now runs in.
  */
 function resolveRepoRoot(): string {
+  const appRoot = process.env.APP_ROOT;
+  if (appRoot && existsSync(join(appRoot, 'reference-docs'))) return appRoot;
   return REPO_ROOT;
 }
 

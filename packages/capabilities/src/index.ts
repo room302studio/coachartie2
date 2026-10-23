@@ -10,10 +10,16 @@ import {
   getKillSwitch,
   getStrikeMode,
   getDatabasePath,
+  getSteamReviewNotes,
+  getCasinoLedger,
+  LAUNCH_STATE,
   CAPABILITIES_GUILD_NOTES,
   MENTION_PROXY_DATA,
   SKILLS_DIRS,
+  getGuildKnowledgeDirs,
   ENGINE_LOGS,
+  GATEWAY_LOGS,
+  getLogsDir,
   PROMPTS_DIR,
   REFERENCE_DOCS,
 } from '@coachartie/shared';
@@ -24,21 +30,31 @@ console.log('🔑 Loading environment variables...');
 // wave 2) resolves both to the exact same absolute files the old
 // resolve(__dirname, '../../../.env') / resolve(__dirname, '../.env') pair did — see its doc
 // comment.
-for (const envFile of getEnvFiles('capabilities')) {
+const envFiles = getEnvFiles('capabilities');
+for (const envFile of envFiles) {
   config({ path: envFile });
 }
 
 // Every resolved runtime path, one block, every boot — so a wrong path is visible in the
 // first log line instead of discovered the next time something silently reads a stale file.
+// Logs every export (not just the ones this process itself reads) so a before/after diff
+// between this process and the gateway's is a straight log comparison.
 console.log('📂 Resolved paths:', {
   REPO_ROOT,
+  ENV_FILES: envFiles,
   KILL_SWITCH: getKillSwitch(),
   STRIKE_MODE: getStrikeMode(),
   DATABASE_PATH: getDatabasePath(),
+  STEAM_REVIEW_NOTES: getSteamReviewNotes(),
+  CASINO_LEDGER: getCasinoLedger(),
+  LAUNCH_STATE,
   CAPABILITIES_GUILD_NOTES,
   MENTION_PROXY_DATA,
   SKILLS_DIRS,
+  GUILD_KNOWLEDGE_DIRS: getGuildKnowledgeDirs(),
   ENGINE_LOGS,
+  GATEWAY_LOGS,
+  LOGS_DIR: getLogsDir(),
   PROMPTS_DIR,
   REFERENCE_DOCS,
 });

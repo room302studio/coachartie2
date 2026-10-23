@@ -68,14 +68,21 @@ const __selfDir = dirname(fileURLToPath(import.meta.url));
 /**
  * The repo root: the directory containing `pnpm-workspace.yaml`.
  *
- * Historically this was answered independently in two places with a Docker-era fallback
- * (`process.env.APP_ROOT || '/app'`) ahead of the cwd-relative guess — see
- * `D/handlers/message-handler.ts`'s old `resolveRepoRoot()` and
- * `C/capabilities/development/filesystem.ts`'s old `PROJECT_ROOT`. Docker support (the
- * Dockerfiles, docker-compose.prod.yml, start.sh) was deleted in wave 1, `APP_ROOT` is not set
- * anywhere in this repo's env files or `ecosystem.config.cjs`, and '/app' only ever existed
- * inside a container that no longer exists — so that fallback is now unreachable dead code in
- * every environment this repo actually runs in. Dropping it changes no observed behavior.
+ * `D/handlers/message-handler.ts`'s old `resolveRepoRoot()` additionally probed
+ * `process.env.APP_ROOT`, then the hardcoded Docker path `/app`, ahead of two cwd-relative
+ * guesses, falling through whenever a candidate didn't contain `reference-docs/`.
+ * `C/capabilities/development/filesystem.ts`'s old `PROJECT_ROOT` never had an `APP_ROOT`
+ * fallback — it was always plain `path.resolve(process.cwd(), '../..')`.
+ *
+ * `REPO_ROOT` here deliberately does NOT read `APP_ROOT` — it is the one answer every call site
+ * shares, and `APP_ROOT` was historically an override for exactly one of them
+ * (`message-handler.ts`'s guild-persona lookup), not a repo-wide one. `.env.production` (read
+ * by `ecosystem.config.cjs`, not by this process, and off-limits to open or print per the
+ * secrets rules) might still set `APP_ROOT` for all I can verify from here, so
+ * `message-handler.ts`'s `resolveRepoRoot()` keeps checking it itself before falling back to
+ * `REPO_ROOT`, exactly as it did before. The `/app` Docker fallback there is genuinely gone —
+ * the Dockerfiles, docker-compose.prod.yml and start.sh it depended on were deleted in wave 1,
+ * so no directory named `/app` exists in any environment this repo now runs in.
  */
 export const REPO_ROOT = findRepoRoot(__selfDir);
 
@@ -189,6 +196,16 @@ export const GATEWAY_LOGS = join(REPO_ROOT, 'packages/discord/logs');
  * this returns the exact same absolute directory `./logs` resolved to before, for both known
  * packages. Any other cwd (e.g. `packages/shared`'s own tests) falls back to the same
  * cwd-relative `<cwd>/logs` the old code always used — unchanged for that case too.
+ *
+ * HEADS-UP FOR WAVE 9 (one process, two ports): once the engine and gateway run in the same
+ * Node process, `process.cwd()` picks ONE package name for both — there is no "the gateway's
+ * cwd" vs "the engine's cwd" anymore, and this function's `pkg === 'capabilities'` /
+ * `pkg === 'discord'` branches collapse to whichever one happens to be the process's actual
+ * cwd, silently pointing BOTH log streams at the same directory. `ENGINE_LOGS`/`GATEWAY_LOGS`
+ * are already two separate, unambiguous absolute constants — wave 9 should have the single
+ * process construct two explicitly-identified logger instances (or pass the target dir in),
+ * not rely on this cwd-sniffing default surviving the move. Same shape of warning wave 1 left
+ * on `register-commands.ts` for wave 3.
  */
 export function getLogsDir(): string {
   if (process.env.LOGS_DIR) return process.env.LOGS_DIR;
