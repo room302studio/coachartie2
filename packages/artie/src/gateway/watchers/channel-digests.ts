@@ -62,7 +62,7 @@ export function shouldRefreshDigest(
   return age >= t.staleMs && humanCount >= t.staleMinMessages;
 }
 
-export function isChannelDigestEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
+function isChannelDigestEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
   return env.CHANNEL_DIGEST_ENABLED !== 'false';
 }
 

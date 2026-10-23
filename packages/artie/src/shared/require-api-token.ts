@@ -10,7 +10,7 @@ import type { NextFunction, Request, Response } from 'express';
 const LOOPBACK = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
 const FORWARDING_HEADERS = ['x-forwarded-for', 'x-forwarded-host', 'x-real-ip', 'forwarded', 'via', 'cf-connecting-ip', 'cf-ray'];
 
-export function isDirectLocal(req: Request): boolean {
+function isDirectLocal(req: Request): boolean {
   if (!LOOPBACK.has(req.socket.remoteAddress || '')) return false;
   return !FORWARDING_HEADERS.some((h) => req.headers[h] !== undefined);
 }

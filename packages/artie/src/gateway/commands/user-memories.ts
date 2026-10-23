@@ -19,7 +19,7 @@ export interface OwnMemory {
 const COLUMNS = 'm.id, m.content, m.timestamp, m.importance, m.tags';
 
 /** FTS5 query from free text: distinct quoted words OR'd (quoting defuses FTS syntax). */
-export function toFtsQuery(text: string): string | null {
+function toFtsQuery(text: string): string | null {
   const words = [
     ...new Set(
       text

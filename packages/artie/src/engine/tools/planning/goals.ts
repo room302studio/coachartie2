@@ -419,7 +419,7 @@ async function handleGoals(
 /**
  * Get active goals for heartbeat evaluation
  */
-export async function getActiveGoals(userId: string = 'ej'): Promise<Objective[]> {
+async function getActiveGoals(userId: string = 'ej'): Promise<Objective[]> {
   const db = getDb();
   return db
     .select()

@@ -250,6 +250,3 @@ export const imageGenCapability: RegisteredCapability = {
     return result.text;
   },
 };
-
-// Export for use by other modules that may want direct access to the buffer
-export { handleImageGen };

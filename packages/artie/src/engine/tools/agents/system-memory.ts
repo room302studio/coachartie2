@@ -236,5 +236,3 @@ export const systemMemoryCapability: RegisteredCapability = {
     '<capability name="system_memory" action="write" category="observation" content="User prefers..." />',
   ],
 };
-
-export default systemMemoryCapability;

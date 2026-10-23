@@ -89,7 +89,7 @@ export function bumpHouseEvents(): number {
 }
 
 /** 0 = professional · 1 = cracks showing · 2 = unwell · 3 = the fish era */
-export function houseMadness(): number {
+function houseMadness(): number {
   const events = houseState(loadLedger()).events;
   if (events < 25) return 0;
   if (events < 60) return 1;
@@ -208,7 +208,7 @@ function bjDraw(): BjCard {
   return { label: `${r}${BJ_SUITS[Math.floor(Math.random() * BJ_SUITS.length)]}`, v };
 }
 
-export function bjValue(cards: BjCard[]): number {
+function bjValue(cards: BjCard[]): number {
   let total = cards.reduce((s, c) => s + c.v, 0);
   let aces = cards.filter((c) => c.v === 11).length;
   while (total > 21 && aces > 0) {

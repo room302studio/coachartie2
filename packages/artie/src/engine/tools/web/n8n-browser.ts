@@ -60,5 +60,3 @@ export const n8nBrowserCapability: RegisteredCapability = {
     }
   },
 };
-
-export default n8nBrowserCapability;

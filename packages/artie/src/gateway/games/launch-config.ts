@@ -8,7 +8,6 @@
 // 1:00 PM ET, Friday July 17 2026 (EDT = UTC-4 in July)
 export const STEAM_LAUNCH_AT = new Date('2026-07-17T13:00:00-04:00');
 
-export const LAUNCH_GUILD_ID = '1420846272545296470'; // Subway Builder
 export const LAUNCH_CHANNEL_ID = '1520088794551025684'; // #prison
 
 const MINUTE = 60 * 1000;

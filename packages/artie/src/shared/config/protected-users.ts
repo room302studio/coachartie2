@@ -3,7 +3,7 @@
  * Single source of truth for users who cannot be moderated
  */
 
-export const PROTECTED_USERS = {
+const PROTECTED_USERS = {
   // Discord usernames (case-insensitive matching)
   discord: ['jan_gbg', 'hudson', 'colin', 'ejfox'],
 
@@ -49,15 +49,4 @@ export function isProtectedUser(username?: string, userId?: string): boolean {
   }
 
   return false;
-}
-
-/**
- * Get list of all protected usernames for logging/display
- */
-export function getProtectedUsersList(): string {
-  const all = [
-    ...PROTECTED_USERS.discord,
-    ...Object.values(PROTECTED_USERS.alternatives).flat(),
-  ];
-  return [...new Set(all)].join(', ');
 }

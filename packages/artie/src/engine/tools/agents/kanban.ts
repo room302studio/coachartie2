@@ -254,5 +254,3 @@ export const kanbanCapability: RegisteredCapability = {
     '<capability name="kanban" action="move" cardId="42" lane="Done" />',
   ],
 };
-
-export default kanbanCapability;

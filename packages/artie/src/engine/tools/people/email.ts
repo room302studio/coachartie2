@@ -272,5 +272,3 @@ export const emailCapability: RegisteredCapability = {
     '<capability name="email" action="status" />',
   ],
 };
-
-export { EmailService, getEmailService };

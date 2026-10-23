@@ -12,7 +12,7 @@ const chance = new Chance();
 export const HISTORY_STAFF_ROLE_RE =
   /\b(dev|developer|moderator|admin|administrator|staff|sbat)\b/i;
 
-export const MIN_CHANNEL_HISTORY = 10; // Minimum messages to fetch
+const MIN_CHANNEL_HISTORY = 10; // Minimum messages to fetch
 export const MAX_CHANNEL_HISTORY = 25; // Maximum messages to fetch
 
 /**

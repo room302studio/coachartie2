@@ -258,7 +258,7 @@ System ready for proactive messaging.`;
 }
 
 // Export for use by other services
-export { sendDiscordDM, sendDelayedDM };
+export { sendDiscordDM };
 
 export const proactiveDMCapability: RegisteredCapability = {
   name: 'proactive-dm',

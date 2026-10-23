@@ -211,5 +211,3 @@ export const deepResearchCapability: RegisteredCapability = {
     '<capability name="deep_research" action="harness_status" />',
   ],
 };
-
-export default deepResearchCapability;

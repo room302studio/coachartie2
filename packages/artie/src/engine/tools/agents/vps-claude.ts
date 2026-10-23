@@ -205,5 +205,3 @@ export const vpsClaudeCapability: RegisteredCapability = {
     '<capability name="vps_claude" action="read_note" filename="2024-01-15-session.md" />',
   ],
 };
-
-export default vpsClaudeCapability;

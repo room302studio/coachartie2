@@ -51,7 +51,7 @@ interface TodoParams {
   [key: string]: unknown;
 }
 
-export class TodoService {
+class TodoService {
   private static instance: TodoService;
   private dbReady = false;
 

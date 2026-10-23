@@ -405,5 +405,3 @@ export const osintLookupCapability: RegisteredCapability = {
     '<capability name="osint" action="lookup-entity" query="Stewart ANG" /> - Look up entity in entityhub',
   ],
 };
-
-export default osintLookupCapability;
