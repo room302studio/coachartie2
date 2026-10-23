@@ -1,4 +1,5 @@
 import { logger } from '../../shared/logger.js';
+import { escapeRegex } from '../../shared/regex.js';
 import { capabilityRegistry, resolveToolCall } from './registry.js';
 import { robustExecutor } from './retry.js';
 import { getErrorMessage } from '../error-utils.js';
@@ -82,6 +83,20 @@ export type AttemptErrorRecoveryCallback = (
   originalMessage: string
 ) => Promise<void>;
 export type GenerateFinalSummaryCallback = (context: OrchestrationContext) => Promise<string>;
+
+/**
+ * Replace each `{{ key }}` placeholder with its value. Ledger #11: the key is escaped, so
+ * a key with `.` or `*` matches only itself, and the value is inserted through a function
+ * so `$&` / `$1` in a previous tool's output are not treated as replacement patterns.
+ */
+export function substituteKeys(text: string, substitutions: Map<string, string>): string {
+  let out = text;
+  for (const [key, value] of substitutions) {
+    const pattern = new RegExp(`\\{\\{\\s*${escapeRegex(key)}\\s*\\}\\}`, 'g');
+    out = out.replace(pattern, () => value);
+  }
+  return out;
+}
 
 /**
  * Check if a capability is blocked due to taint
@@ -407,10 +422,7 @@ export class CapabilityExecutor {
     let processedContent = capability.content;
     if (processedContent) {
       // First substitute local results
-      for (const [key, value] of substitutions) {
-        const pattern = new RegExp(`\\{\\{\\s*${key}\\s*\\}\\}`, 'g');
-        processedContent = processedContent.replace(pattern, value);
-      }
+      processedContent = substituteKeys(processedContent, substitutions);
       // Then substitute global variables from database
       processedContent = await globalStore.substitute(processedContent);
     }
@@ -420,11 +432,7 @@ export class CapabilityExecutor {
     for (const [paramKey, paramValue] of Object.entries(processedParams)) {
       if (typeof paramValue === 'string') {
         // First substitute local results
-        let processed = paramValue;
-        for (const [key, value] of substitutions) {
-          const pattern = new RegExp(`\\{\\{\\s*${key}\\s*\\}\\}`, 'g');
-          processed = processed.replace(pattern, value);
-        }
+        const processed = substituteKeys(paramValue, substitutions);
         // Then substitute global variables
         processedParams[paramKey] = await globalStore.substitute(processed);
       }
