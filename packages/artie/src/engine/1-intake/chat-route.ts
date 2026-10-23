@@ -1,15 +1,12 @@
 import { Router, Request, Response } from 'express';
 import { delay } from '../../shared/async.js';
 import { logger } from '../../shared/logger.js';
-import { createQueue } from '../../shared/queue/redis.js';
-import { QUEUES } from '../../shared/queue/names.js';
 import { IncomingMessage } from '../../shared/queue/types.js';
+import { engineDeps } from '../deps.js';
 import { v4 as uuidv4 } from 'uuid';
 import { rateLimiter } from './rate-limiter.js';
 import { jobTracker } from './job-tracker.js';
 import { getPendingAttachments } from '../3-context/assemble.js';
-
-const messageQueue = createQueue<IncomingMessage>(QUEUES.INCOMING_MESSAGES);
 
 const router: Router = Router();
 
@@ -127,7 +124,7 @@ router.post('/', rateLimiter(50, 60000), async (req: Request, res: Response) => 
     // Add message to queue for processing
     try {
       logger.info(`➕ Adding message ${messageId} to queue...`);
-      const job = await messageQueue.add('process', incomingMessage);
+      const job = await engineDeps(req).enqueueTurn(incomingMessage);
       logger.info(`✅ Message ${messageId} added to queue with job ID: ${job.id}`);
 
       // If wait=true, poll for result before responding

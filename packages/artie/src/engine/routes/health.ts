@@ -1,5 +1,5 @@
 import { Router, type Router as ExpressRouter } from 'express';
-import { createRedisConnection } from '../../shared/queue/redis.js';
+import { engineDeps } from '../deps.js';
 import { getDatabasePath } from '../../shared/paths.js';
 import { access } from 'fs/promises';
 import { logger } from '../../shared/logger.js';
@@ -12,8 +12,7 @@ export const healthRouter: ExpressRouter = Router();
 healthRouter.get('/', async (req, res) => {
   try {
     // Check Redis connection
-    const redis = createRedisConnection();
-    await redis.ping();
+    await engineDeps(req).pingRedis();
 
     res.json({
       status: 'healthy',
@@ -38,9 +37,8 @@ healthRouter.get('/detailed', async (req, res) => {
   try {
     // Check Redis connection
     try {
-      const redis = createRedisConnection();
       const redisStart = Date.now();
-      await redis.ping();
+      await engineDeps(req).pingRedis();
       checks.redis = {
         status: 'connected',
         responseTime: Date.now() - redisStart,
@@ -139,8 +137,7 @@ healthRouter.get('/detailed', async (req, res) => {
 healthRouter.get('/ready', async (req, res) => {
   try {
     // Check essential services are ready
-    const redis = createRedisConnection();
-    await redis.ping();
+    await engineDeps(req).pingRedis();
 
     // Check if database is accessible
     const dbPath = getDatabasePath();

@@ -7,8 +7,9 @@ const router: Router = Router();
 // GET /api/models - Get current active models with live OpenRouter data
 router.get('/', async (req: Request, res: Response) => {
   try {
-    // Import OpenRouter service dynamically to avoid circular dependencies
-    const { openRouterService } = await import('../main.js');
+    // Import OpenRouter service dynamically to avoid circular dependencies. From its own
+    // module, not main.js: main.js only re-exported it, and importing main boots the engine.
+    const { openRouterService } = await import('../4-generate/openrouter.js');
 
     const availableModels = openRouterService.getAvailableModels();
     const currentModel = openRouterService.getCurrentModel();
@@ -44,7 +45,7 @@ router.get('/', async (req: Request, res: Response) => {
     logger.error('Error fetching models with OpenRouter data:', error);
 
     // Check if it's a configuration issue
-    const { openRouterService } = await import('../main.js');
+    const { openRouterService } = await import('../4-generate/openrouter.js');
     const configuredModels = openRouterService.getAvailableModels();
 
     res.status(500).json({
@@ -60,7 +61,7 @@ router.get('/', async (req: Request, res: Response) => {
 // GET /api/models/summary - Get quick model pool summary
 router.get('/summary', async (req: Request, res: Response) => {
   try {
-    const { openRouterService } = await import('../main.js');
+    const { openRouterService } = await import('../4-generate/openrouter.js');
     const availableModels = openRouterService.getAvailableModels();
     const summary = await openRouterModelsService.getModelSummary(availableModels);
 
