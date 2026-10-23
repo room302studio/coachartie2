@@ -88,8 +88,19 @@ export type WireContent =
   | string
   | Array<{ type: 'text'; text: string; cache_control?: { type: 'ephemeral'; ttl?: '1h' } }>;
 export interface WireMessage {
-  role: 'system' | 'user' | 'assistant';
+  role: 'system' | 'user' | 'assistant' | 'tool';
   content: WireContent;
+  /** Native tool calls (wave 8): an assistant turn that requested tools, and each result. */
+  tool_calls?: Array<{ id: string; type: 'function'; function: { name: string; arguments: string } }>;
+  tool_call_id?: string;
+}
+
+/** A chat message as the engine builds it, before cache marking. */
+export interface ChatMessage {
+  role: 'system' | 'user' | 'assistant' | 'tool';
+  content: string;
+  tool_calls?: WireMessage['tool_calls'];
+  tool_call_id?: string;
 }
 
 /**
@@ -127,10 +138,7 @@ export interface CacheDecision {
  * context" block and the channel transcript change every message, so marking them would pay
  * a write premium on bytes that are never read back.
  */
-export function applyCacheControl(
-  messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>,
-  model: string
-): CacheDecision {
+export function applyCacheControl(messages: ChatMessage[], model: string): CacheDecision {
   if (!supportsPromptCaching(model)) {
     return { messages, applied: false, reason: 'non-anthropic model', prefixTokens: 0 };
   }
@@ -165,13 +173,16 @@ export function applyCacheControl(
     };
   }
 
+  // Unmarked messages are copied whole: a native tool round-trip carries tool_calls on the
+  // assistant turn and tool_call_id on each result, and Anthropic rejects a tool_result whose
+  // tool_use was dropped. (Marked messages are always system messages: role + content only.)
   const wire: WireMessage[] = messages.map((m, i) =>
     marked.includes(i)
       ? {
           role: m.role,
           content: [{ type: 'text' as const, text: m.content, cache_control: cacheTtl() }],
         }
-      : { role: m.role, content: m.content }
+      : { ...m }
   );
 
   return { messages: wire, applied: true, reason: `ok (${marked.length} breakpoint(s))`, prefixTokens };

@@ -20,7 +20,15 @@ import { resolveModelSpec, isAutoRouted, autoReasoningFor } from '../../shared/m
 // wave was told to protect. Loading .env is `C/index.ts` / `D/index.ts`'s job; this module just
 // reads `process.env` same as before.
 import { UsageTracker, TokenUsage } from '../budget/usage-ledger.js';
-import { applyCacheControl, readCacheUsage, wireContentLength } from '../3-context/prompt-cache.js';
+import {
+  applyCacheControl,
+  readCacheUsage,
+  wireContentLength,
+  type ChatMessage,
+} from '../3-context/prompt-cache.js';
+import { openRouterModelsService } from './model-catalog.js';
+import type { ToolDefinition } from '../5-tool-loop/tool-schema.js';
+import type { ToolCall } from '../5-tool-loop/native-loop.js';
 import { creditMonitor } from '../budget/openrouter-balance.js';
 import { costMonitor } from '../budget/usage-ledger.js';
 
@@ -64,6 +72,47 @@ function stepTypeFor(userId: string, messageId: string | undefined, explicit?: s
   if (explicit) return explicit;
   if (userId === 'observational-system') return 'observational_learning';
   return messageId ? 'response' : 'background';
+}
+
+/** Options shared by every generate call (streaming, plain and tool turns). */
+export interface GenerateOptions {
+  traceId?: string | null;
+  guildId?: string;
+  maxTokens?: number; // Dynamic token limit from preflight analysis
+  plugins?: unknown[]; // OpenRouter plugins, e.g. [{ id: 'auto-router', cost_tier: 'low' }]
+  rotationKey?: string; // sticky rotation per conversation (see stickyRotationIndex)
+  stepType?: string; // Cost attribution: 'response' | 'observational_learning' | 'capability' | 'planning'
+}
+
+/** One generate turn's result. `toolCalls` is always [] unless the turn offered tools. */
+export interface GenerateTurnResult {
+  content: string;
+  toolCalls: ToolCall[];
+  /** The model the request went to (after any tool-capable pin). */
+  model: string;
+}
+
+/**
+ * Normalize a completion's tool_calls to {id, name, arguments}. `arguments` is always a
+ * string (some providers hand back an object); a call with no id gets a positional one so
+ * its tool result can still be matched to it.
+ */
+export function normalizeToolCalls(raw: unknown): ToolCall[] {
+  if (!Array.isArray(raw)) return [];
+  const calls: ToolCall[] = [];
+  raw.forEach((tc, i) => {
+    const fn = (tc as { function?: { name?: unknown; arguments?: unknown } } | null)?.function;
+    if (!fn || typeof fn.name !== 'string' || !fn.name) return;
+    const args =
+      typeof fn.arguments === 'string'
+        ? fn.arguments
+        : fn.arguments === undefined || fn.arguments === null
+          ? '{}'
+          : JSON.stringify(fn.arguments);
+    const id = (tc as { id?: unknown }).id;
+    calls.push({ id: typeof id === 'string' && id ? id : `call_${i}`, name: fn.name, arguments: args });
+  });
+  return calls;
 }
 
 class OpenRouterService {
@@ -373,19 +422,94 @@ class OpenRouterService {
   }
 
   async generateFromMessageChain(
-    messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>,
+    messages: ChatMessage[],
     userId: string,
     messageId?: string,
     selectedModel?: string,
-    options?: {
-      traceId?: string | null;
-      guildId?: string;
-      maxTokens?: number; // Dynamic token limit from preflight analysis
-      plugins?: unknown[]; // OpenRouter plugins, e.g. [{ id: 'auto-router', cost_tier: 'low' }]
-      rotationKey?: string; // sticky rotation per conversation (see stickyRotationIndex)
-      stepType?: string; // Cost attribution: 'response' | 'observational_learning' | 'capability' | 'planning'
-    }
+    options?: GenerateOptions
   ): Promise<string> {
+    const { content } = await this.generateTurn(messages, userId, messageId, selectedModel, options);
+    return content.trim();
+  }
+
+  /**
+   * One NATIVE tool turn (wave 8): the same request path as generateFromMessageChain — kill
+   * switch, guild/daily budget, credit short-circuit, usage ledger, affordability retry, the
+   * reasoning-mandatory retry, the model fallback ladder — plus `tools` and `tool_choice`.
+   * Non-streaming by design. The model is pinned to a tool-capable one (toolModelsToTry).
+   *
+   * `toolChoice: 'none'` keeps the tool list on the wire (Anthropic rejects tool_use/
+   * tool_result history without tool definitions, and an identical list keeps the cached
+   * prefix) while forbidding new calls: runToolLoop's forced final answer uses it.
+   */
+  async generateWithTools(
+    messages: ChatMessage[],
+    tools: ToolDefinition[],
+    userId: string,
+    messageId?: string,
+    selectedModel?: string,
+    options?: GenerateOptions & { toolChoice?: 'auto' | 'none' }
+  ): Promise<GenerateTurnResult> {
+    return this.generateTurn(messages, userId, messageId, selectedModel, options, {
+      tools,
+      toolChoice: options?.toolChoice ?? 'auto',
+    });
+  }
+
+  /**
+   * The models a tool turn may use, in order.
+   *
+   * openrouter/auto can route to a model with no tool support, so a tool turn never goes
+   * there; neither does a model the catalog says lacks `tools` in supported_parameters. Those
+   * get replaced by the first tool-capable OPENROUTER_MODELS entry (logged). A concrete model
+   * the catalog has no data on (catalog fetch failed, or a new id) is trusted rather than
+   * blocked: failing closed would silence Artie whenever openrouter.ai/models is down.
+   * Brownout's final-third route is openrouter/auto, so its downgrade lands here too and stays
+   * inside the tool-capable set; brownout's max_tokens cap and brevity note still apply.
+   */
+  async toolModelsToTry(requested: string | undefined): Promise<string[]> {
+    const verdict = async (spec: string): Promise<{ model: string; ok: boolean; why: string }> => {
+      const model = resolveModelSpec(spec).model;
+      if (isAutoRouted(model)) return { model, ok: false, why: 'auto-routed' };
+      const tools = await openRouterModelsService.supportsTools(model);
+      return tools === false
+        ? { model, ok: false, why: 'no tools in supported_parameters' }
+        : { model, ok: true, why: tools === undefined ? 'not in catalog, trusted' : 'tool-capable' };
+    };
+
+    const capable: string[] = [];
+    for (const spec of this.models) {
+      const v = await verdict(spec);
+      if (v.ok && !capable.includes(v.model)) capable.push(v.model);
+    }
+
+    if (requested && requested.trim()) {
+      const v = await verdict(requested);
+      if (v.ok) return [v.model, ...capable.filter((m) => m !== v.model)];
+      if (capable.length > 0) {
+        logger.warn(`🔧 Tool turn: ${requested} is ${v.why} → pinned to ${capable[0]}`);
+        return capable;
+      }
+      logger.error(
+        `🔧 Tool turn: ${requested} is ${v.why} and no OPENROUTER_MODELS entry is tool-capable; sending it anyway`
+      );
+      return [requested];
+    }
+    if (capable.length === 0) {
+      logger.error('🔧 Tool turn: no OPENROUTER_MODELS entry is tool-capable; using the rotation as is');
+      return [...this.models];
+    }
+    return capable;
+  }
+
+  private async generateTurn(
+    messages: ChatMessage[],
+    userId: string,
+    messageId?: string,
+    selectedModel?: string,
+    options?: GenerateOptions,
+    toolSpec?: { tools: ToolDefinition[]; toolChoice: 'auto' | 'none' }
+  ): Promise<GenerateTurnResult> {
     // KILL SWITCH (manual or daily-budget mute): nothing generates, whoever is asking.
     assertGenerationAllowed(`generation for ${userId}`);
     // Per-guild share of the daily budget (guild-budget.ts) — silent in that guild once spent.
@@ -446,9 +570,16 @@ class OpenRouterService {
     // model (three-tier strategy) is tried FIRST but still falls back to the rotation:
     // with a bare [effectiveModel] a single transient provider error on SMART_MODEL left
     // nothing to retry with, the orchestration failed, and Artie silently said nothing.
-    const modelsToTry = useSpecificModel
-      ? [effectiveModel, ...this.models.filter((m) => m !== effectiveModel)]
-      : this.models;
+    // A tool turn always runs an explicit, tool-capable list (toolModelsToTry): the requested
+    // model first when it can take tools, otherwise the pin, then the other capable models.
+    const toolModels = toolSpec ? await this.toolModelsToTry(effectiveModel) : undefined;
+    const modelsToTry = toolModels
+      ? toolModels
+      : useSpecificModel
+        ? [effectiveModel, ...this.models.filter((m) => m !== effectiveModel)]
+        : this.models;
+    const explicitList = !!toolModels || !!useSpecificModel;
+    const sendTools = toolSpec && toolSpec.tools.length > 0 ? toolSpec : undefined;
 
     // When OpenRouter returns a 402 of the form "you requested up to X tokens,
     // but can only afford Y", it means there IS still balance — just not enough
@@ -458,19 +589,22 @@ class OpenRouterService {
     let affordabilityRetried = false;
 
     for (let i = 0; i < modelsToTry.length; i++) {
-      const modelSpec = useSpecificModel
+      const modelSpec = explicitList
         ? modelsToTry[i]
         : this.models[(startIndex + i) % this.models.length];
       // "auto:<tier>[:allowed]" specs → openrouter/auto + the auto-router plugin (model-spec.ts);
       // plugins passed in by the caller (brownout's final-third route) take precedence.
       const resolved = resolveModelSpec(modelSpec);
       const model = resolved.model;
-      const plugins = options?.plugins ?? resolved.plugins;
+      // The auto-router plugin belongs to openrouter/auto. A tool turn pinned off auto (the
+      // brownout route) must not carry it to the concrete model it was pinned to.
+      const plugins =
+        toolSpec && !isAutoRouted(model) ? undefined : (options?.plugins ?? resolved.plugins);
       let attemptUsage: { billed: string; usage: TokenUsage; cost: number } | undefined;
 
       try {
         logger.info(
-          `🤖 MODEL SELECTION: Using ${model} ${useSpecificModel && i === 0 ? '(SPECIFIC)' : `(${i + 1}/${modelsToTry.length})`} for ${messages.length} messages`
+          `🤖 MODEL SELECTION: Using ${model} ${useSpecificModel && i === 0 ? '(SPECIFIC)' : `(${i + 1}/${modelsToTry.length})`} for ${messages.length} messages${toolSpec ? ` (tool turn, ${toolSpec.tools.length} tools, tool_choice ${toolSpec.toolChoice})` : ''}`
         );
 
         // Use dynamic maxTokens from preflight analysis, or fall back to env default
@@ -510,6 +644,9 @@ class OpenRouterService {
           messages: cache.messages,
           max_tokens: maxTokens,
           temperature,
+          // Native tools (wave 8). The list is pre-sorted and byte-stable (tool-schema.ts), so
+          // it stays inside the provider's cached prefix (Anthropic orders tools before system).
+          ...(sendTools ? { tools: sendTools.tools, tool_choice: sendTools.toolChoice } : {}),
           ...extraBody,
         });
         // openrouter/auto picks the model; bill what was actually served, or the unknown-model
@@ -517,9 +654,11 @@ class OpenRouterService {
         const billedModel = isAutoRouted(model) && completion.model ? completion.model : model;
 
         const choice = completion.choices?.[0];
-        const response = choice?.message?.content;
+        const response = choice?.message?.content ?? '';
+        // Only a turn that offered tools can come back with calls; a plain turn ignores them.
+        const toolCalls = sendTools ? normalizeToolCalls(choice?.message?.tool_calls) : [];
 
-        if (!response) {
+        if (!response && toolCalls.length === 0) {
           // Still billed (e.g. reasoning tokens that hit max_tokens) — keep the real usage and
           // cost for the failure row below instead of booking the attempt at $0.
           const failedUsage: TokenUsage = {
@@ -567,7 +706,9 @@ class OpenRouterService {
           );
         }
 
-        logger.info(`✅ MODEL RESPONSE: ${model} generated ${response.length} chars successfully`);
+        logger.info(
+          `✅ MODEL RESPONSE: ${model} generated ${response.length} chars${toolCalls.length ? ` + ${toolCalls.length} tool call(s): ${toolCalls.map((t) => t.name).join(', ')}` : ''} successfully`
+        );
 
         const responseTime = Date.now() - startTime;
 
@@ -638,7 +779,8 @@ class OpenRouterService {
               (total, msg) => total + wireContentLength(msg.content),
               0
             ),
-            output_length: response.length,
+            output_length:
+              response.length + toolCalls.reduce((n, t) => n + t.name.length + t.arguments.length, 0),
             response_time_ms: responseTime,
             capabilities_detected: 0, // Will be updated by orchestrator
             capabilities_executed: 0, // Will be updated by orchestrator
@@ -675,7 +817,7 @@ class OpenRouterService {
           `✅ Generated response for user ${userId} using ${model} (${usage.total_tokens} tokens, $${estimatedCost.toFixed(4)})`
         );
         logger.info(`🔄 Rotated to next model: ${this.getCurrentModel()}`);
-        return response.trim();
+        return { content: response, toolCalls, model };
       } catch (error: unknown) {
         const errorMessage = error instanceof Error ? error.message : String(error);
         const errorStatus = (error as { status?: number }).status;

@@ -23,7 +23,12 @@ export interface OpenRouterModelInfo {
     prompt_tokens: string;
     completion_tokens: string;
   };
+  /** Request parameters the model accepts, e.g. 'tools', 'tool_choice', 'reasoning'. */
+  supported_parameters?: string[];
 }
+
+/** One catalog fetch may not stall a reply: past this, the tool-capability check says "unknown". */
+const CATALOG_FETCH_TIMEOUT_MS = 5_000;
 
 export class OpenRouterModelsService {
   private modelsCache: Map<string, OpenRouterModelInfo> = new Map();
@@ -47,12 +52,16 @@ export class OpenRouterModelsService {
     try {
       logger.info('Fetching live model data from OpenRouter API');
 
-      const response = await fetch('https://openrouter.ai/api/v1/models', {
+      // Same base URL as the generate client (openrouter.ts), and bounded: tool turns consult
+      // this catalog, so a hung fetch here would hang a reply.
+      const baseURL = process.env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1';
+      const response = await fetch(`${baseURL}/models`, {
         headers: {
           Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
           'HTTP-Referer': 'https://coach-artie.local',
           'X-Title': 'Coach Artie',
         },
+        signal: AbortSignal.timeout(CATALOG_FETCH_TIMEOUT_MS),
       });
 
       if (!response.ok) {
@@ -88,6 +97,35 @@ export class OpenRouterModelsService {
       return new Map();
     }
   }
+
+  /**
+   * Does this model accept native tools? true/false from the catalog's supported_parameters;
+   * undefined when the catalog is empty (fetch failed) or doesn't list the model.
+   *
+   * Stale-while-revalidate: with a cache in hand it answers immediately and refreshes in the
+   * background, so only the very first tool turn after boot ever waits on the fetch (bounded
+   * by CATALOG_FETCH_TIMEOUT_MS). main.ts warms it at boot.
+   */
+  async supportsTools(modelId: string): Promise<boolean | undefined> {
+    let models = this.modelsCache;
+    if (models.size === 0) {
+      // After a failed fetch, don't make every tool turn wait on another one for a minute.
+      if (Date.now() - this.lastFailedAt < 60_000) return undefined;
+      models = await this.fetchLiveModelInfo();
+      if (models.size === 0) this.lastFailedAt = Date.now();
+    } else if (Date.now() - this.lastFetch >= this.cacheTTL && !this.refreshing) {
+      this.refreshing = true;
+      void this.fetchLiveModelInfo().finally(() => {
+        this.refreshing = false;
+      });
+    }
+    const info = models.get(modelId);
+    if (!info || !Array.isArray(info.supported_parameters)) return undefined;
+    return info.supported_parameters.includes('tools');
+  }
+
+  private refreshing = false;
+  private lastFailedAt = 0;
 
   /**
    * Get model information for specific models
