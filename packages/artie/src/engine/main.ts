@@ -122,7 +122,7 @@ function listen(port: number, stats: { totalCapabilities: number; totalActions: 
 
 /**
  * Start the engine: queue workers, daily budget watch, scheduler, monitors, then the HTTP
- * API on 127.0.0.1:47324 (CAPABILITIES_PORT). Resolves once the server is listening.
+ * API on 127.0.0.1, port CAPABILITIES_PORT (47324). Resolves once the server is listening.
  */
 export async function startEngine(): Promise<EngineHandle> {
   console.log('🚀 CAPABILITIES SERVICE STARTING - BOOKITY SNOOKITY!');
