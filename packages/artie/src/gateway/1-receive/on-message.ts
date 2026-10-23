@@ -143,6 +143,43 @@ function startTurn(message: Message, client: Client): Turn {
 // STEPS, in the order they run (see STEPS below)
 // =============================================================================
 
+/**
+ * Every message, Artie's own included: the length-only debug line and GitHub-identity
+ * learning. This was a second MessageCreate listener in main.ts, registered before this one,
+ * so it runs first (folded in verbatim in wave 5; its regex is wave 7's bug #3).
+ */
+function rawLogAndLearnIdentity({ message: msg }: Turn): StepResult {
+  // DEBUG: Raw message listener to verify events are coming through
+  // No message text here: PM2 logs are shipped to Loki, and the privacy policy promises we
+  // don't keep people's words outside the (encrypted) database. Length is enough to debug.
+  console.log(
+    `🔔 RAW MESSAGE: ${msg.author.tag} in ${msg.guild?.name || 'DM'} (${msg.content.length} chars)`
+  );
+
+  // Identity learning: check if message mentions GitHub activity
+  if (!msg.author.bot && msg.content.length > 5) {
+    const githubSignals = /(?:push|commit|pr|pull request|issue|merge|branch|github|my pr|just pushed|just merged|i opened|i filed)/i;
+    if (githubSignals.test(msg.content)) {
+      import('../watchers/github/identity-resolver.js')
+        .then(({ getIdentityResolver }) => {
+          const resolver = getIdentityResolver();
+          if (resolver) {
+            // Best-effort, but not invisible: a resolver that silently never learns looks
+            // identical to one that has nothing to learn.
+            resolver
+              .learnFromContext(
+                msg.author.id,
+                msg.author.displayName || msg.author.username,
+                msg.content
+              )
+              .catch((err) => logger.debug('Identity learning failed:', err));
+          }
+        })
+        .catch((err) => logger.warn('Identity resolver unavailable:', err));
+    }
+  }
+}
+
 function logReceived({ message, correlationId, shortId }: Turn): StepResult {
   // Structured logging with correlation ID
   logger.info(`📨 Message received [${shortId}]`, {
@@ -840,6 +877,7 @@ function cleanupCorrelation(): StepResult {
 // =============================================================================
 
 const STEPS: ReadonlyArray<readonly [name: string, step: Step]> = [
+  ['raw-log-and-learn-identity', rawLogAndLearnIdentity],
   ['log-received', logReceived],
   ['ignore-own-messages', ignoreOwnMessages],
   ['coach-artie-place', resolveCoachArtiePlace],

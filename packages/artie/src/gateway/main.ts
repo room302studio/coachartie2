@@ -99,37 +99,8 @@ export const client = new Client({
   allowedMentions: { parse: ['users'] },
 });
 
-// DEBUG: Raw message listener to verify events are coming through
-client.on(Events.MessageCreate, (msg) => {
-  // No message text here: PM2 logs are shipped to Loki, and the privacy policy promises we
-  // don't keep people's words outside the (encrypted) database. Length is enough to debug.
-  console.log(
-    `🔔 RAW MESSAGE: ${msg.author.tag} in ${msg.guild?.name || 'DM'} (${msg.content.length} chars)`
-  );
-
-  // Identity learning: check if message mentions GitHub activity
-  if (!msg.author.bot && msg.content.length > 5) {
-    const githubSignals = /(?:push|commit|pr|pull request|issue|merge|branch|github|my pr|just pushed|just merged|i opened|i filed)/i;
-    if (githubSignals.test(msg.content)) {
-      import('./watchers/github/identity-resolver.js')
-        .then(({ getIdentityResolver }) => {
-          const resolver = getIdentityResolver();
-          if (resolver) {
-            // Best-effort, but not invisible: a resolver that silently never learns looks
-            // identical to one that has nothing to learn.
-            resolver
-              .learnFromContext(
-                msg.author.id,
-                msg.author.displayName || msg.author.username,
-                msg.content
-              )
-              .catch((err) => logger.debug('Identity learning failed:', err));
-          }
-        })
-        .catch((err) => logger.warn('Identity resolver unavailable:', err));
-    }
-  }
-});
+// The raw-message debug log and GitHub-identity learning that used to be a second
+// MessageCreate listener here are now the first step of 1-receive/on-message.ts (wave 5).
 
 // Write status to shared file
 function writeStatus(status: 'starting' | 'ready' | 'error' | 'shutdown', data?: any) {
