@@ -25,6 +25,83 @@ export interface ParsedCapability {
   params: Record<string, unknown>;
 }
 
+interface SimpleTag {
+  tagName: string;
+  attributeString: string;
+  content: string;
+}
+
+/**
+ * Linear-time stand-in for /<([\w-]+)([^>]*)(?:\/>|>([\s\S]*?)<\/\1>)/g (ledger #5).
+ *
+ * That regex re-scanned to the end of the text from every '<' whose close tag never came
+ * (and from every '<' with no '>' after it), so malformed model output cost O(n²). This
+ * yields the same matches: a paired <tag ...>body</tag> wins when the close exists
+ * (attributes are everything up to the first '>', as [^>]* had it), otherwise a tag whose
+ * attributes end in '/' is self-closing, otherwise nothing matches at that '<'. A match
+ * skips over its body, as lastIndex did. Close-tag positions are indexed once up front.
+ * Differential-tested against the regex on 500k random strings (wave 7): identical output.
+ */
+// XML-LOOP: delete after v3 soak
+function* scanSimpleTags(text: string): Generator<SimpleTag> {
+  const closes = new Map<string, { at: number[]; next: number }>();
+  const closeRe = /<\/([\w-]+)>/g;
+  let cm: RegExpExecArray | null;
+  while ((cm = closeRe.exec(text)) !== null) {
+    const entry = closes.get(cm[1]) ?? { at: [], next: 0 };
+    entry.at.push(cm.index);
+    closes.set(cm[1], entry);
+  }
+  // First '</name>' at or after `from` (calls come with non-decreasing `from`).
+  const findClose = (name: string, from: number): number => {
+    const entry = closes.get(name);
+    if (!entry) return -1;
+    while (entry.next < entry.at.length && entry.at[entry.next] < from) entry.next++;
+    return entry.next < entry.at.length ? entry.at[entry.next] : -1;
+  };
+
+  const nameRe = /[\w-]+/y;
+  let nextGt = 0;
+  let i = text.indexOf('<');
+  scan: while (i !== -1) {
+    nameRe.lastIndex = i + 1;
+    const nm = nameRe.exec(text);
+    if (!nm) {
+      i = text.indexOf('<', i + 1);
+      continue;
+    }
+    const fullName = nm[0];
+    const afterName = i + 1 + fullName.length;
+    if (nextGt < afterName) nextGt = text.indexOf('>', afterName);
+    if (nextGt === -1) return; // no '>' anywhere after here: nothing else can match
+    const gt = nextGt;
+    const rawAttrs = text.slice(afterName, gt);
+
+    // The regex's backtracking order: the full name paired, then the full name
+    // self-closing, then each shorter name prefix paired (the rest of the name joins the
+    // attributes). A shorter prefix can't be self-closing where the full name wasn't.
+    for (let len = fullName.length; len >= 1; len--) {
+      const tagName = fullName.slice(0, len);
+      const close = findClose(tagName, gt + 1);
+      if (close !== -1) {
+        yield {
+          tagName,
+          attributeString: fullName.slice(len) + rawAttrs,
+          content: text.slice(gt + 1, close),
+        };
+        i = text.indexOf('<', close + len + 3);
+        continue scan;
+      }
+      if (len === fullName.length && rawAttrs.endsWith('/')) {
+        yield { tagName, attributeString: rawAttrs.slice(0, -1), content: '' };
+        i = text.indexOf('<', gt + 1);
+        continue scan;
+      }
+    }
+    i = text.indexOf('<', i + 1);
+  }
+}
+
 export class CapabilityXMLParser {
   private xmlParser: XMLParser;
 
@@ -408,15 +485,7 @@ export class CapabilityXMLParser {
     // Match any XML tags that aren't "capability" (both self-closing and with content)
     // Self-closing: <tagname attr="value" />
     // With content: <tagname attr="value">content</tagname>
-    // Use [\s\S] instead of . to match newlines in content
-    // Updated pattern to match hyphenated tag names: [\w-]+
-    const simpleTagPattern = /<([\w-]+)([^>]*)(?:\/>|>([\s\S]*?)<\/\1>)/g;
-
-    let match;
-    while ((match = simpleTagPattern.exec(text)) !== null) {
-      const tagName = match[1];
-      const attributeString = match[2];
-      const content = match[3] || '';
+    for (const { tagName, attributeString, content } of scanSimpleTags(text)) {
 
       // Skip the main capability tag and special tags
       if (tagName === 'capability' || tagName === 'wants_loop' || tagName === 'thinking') {
