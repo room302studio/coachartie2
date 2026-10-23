@@ -103,7 +103,7 @@ export class SchedulerService {
       });
 
       // Create Discord outgoing queue for sending reminders
-      this.discordQueue = new Queue('coachartie-discord-outgoing', {
+      this.discordQueue = new Queue(QUEUES.OUTGOING_DISCORD, {
         connection,
       });
 

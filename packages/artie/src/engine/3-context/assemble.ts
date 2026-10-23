@@ -1,6 +1,6 @@
 import { logger } from '../../shared/logger.js';
 import { OWNER_USER_ID } from '../../shared/config/owner.js';
-import { estimateTokens } from '../../shared/text.js';
+import { estimateTokens } from '../../shared/async.js';
 import { getGuildKnowledgeDirs } from '../../shared/paths.js';
 import { conscienceLLM } from '../health/conscience.js';
 import { IncomingMessage } from '../../shared/queue/types.js';

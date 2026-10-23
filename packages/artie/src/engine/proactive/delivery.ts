@@ -11,6 +11,7 @@ import { logger } from '../../shared/logger.js';
 import { getSyncDb } from '../../shared/db/client.js';
 import { Queue } from 'bullmq';
 import { createRedisConnection, testRedisConnection } from '../../shared/queue/redis.js';
+import { QUEUES } from '../../shared/queue/names.js';
 
 const MAX_ATTEMPTS = 3;
 const RETRY_DELAYS_MS = [5 * 60 * 1000, 30 * 60 * 1000, 2 * 60 * 60 * 1000]; // 5m, 30m, 2h
@@ -76,7 +77,7 @@ class DeliveryManager {
     }
 
     try {
-      this.discordQueue = new Queue('coachartie-discord-outgoing', {
+      this.discordQueue = new Queue(QUEUES.OUTGOING_DISCORD, {
         connection: createRedisConnection(),
       });
       this.initialized = true;

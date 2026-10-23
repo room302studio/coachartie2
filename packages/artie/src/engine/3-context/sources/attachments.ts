@@ -8,7 +8,7 @@
  */
 
 import { logger } from '../../../shared/logger.js';
-import { estimateTokens } from '../../../shared/text.js';
+import { estimateTokens } from '../../../shared/async.js';
 import type { IncomingMessage } from '../../../shared/queue/types.js';
 import { visionCapability as visionCap } from '../../tools/media/vision.js';
 import { processMetroAttachment } from '../../metro/analyze.js';

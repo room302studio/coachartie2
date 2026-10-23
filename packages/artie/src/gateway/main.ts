@@ -57,7 +57,7 @@ import { setupMessageHandler } from './1-receive/on-message.js';
 import { setupInteractionHandler } from './1-receive/on-interaction.js';
 import { setupReactionHandler } from './1-receive/on-reaction.js';
 import { startResponseConsumer } from './watchers/push-worker.js';
-import { publishMessage } from '../shared/queue/discord-publisher.js';
+import { publishMessage } from '../shared/queue/enqueue-message.js';
 import { writeFileSync } from 'fs';
 import { join } from 'path';
 import { telemetry } from './telemetry.js';

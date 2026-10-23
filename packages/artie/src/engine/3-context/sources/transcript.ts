@@ -7,7 +7,7 @@
  * private methods — do not change wording, regexes, or output shape.
  */
 
-import { estimateTokens } from '../../../shared/text.js';
+import { estimateTokens } from '../../../shared/async.js';
 import {
   isSilent,
   stripChatPrefixes,

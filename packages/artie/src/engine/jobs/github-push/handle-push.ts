@@ -296,7 +296,7 @@ async function handlePushEvent(payload: GitHubPushPayload): Promise<void> {
 
   const celebrationMessage = generatePushCelebration(payload);
 
-  await publishMessage('github-bot', celebrationMessage, GITHUB_FEED_CHANNEL_ID, 'GitHub Bot', true);
+  await publishMessage('github-bot', celebrationMessage, GITHUB_FEED_CHANNEL_ID, 'GitHub Bot', true, undefined, { rethrow: true });
 }
 
 async function handleReleaseEvent(payload: GitHubReleasePayload): Promise<void> {
@@ -334,7 +334,9 @@ Please announce this release in the appropriate Discord channel.`;
     artieMessage,
     GITHUB_FEED_CHANNEL_ID, // Artie can still override via capabilities
     'GitHub Webhook',
-    false // Don't skip capability extraction
+    false, // Don't skip capability extraction
+    undefined,
+    { rethrow: true }
   );
 
   // Smart wiki updates based on configuration
@@ -498,7 +500,7 @@ async function handlePullRequestEvent(payload: GitHubWebhookPayload): Promise<vo
 
   const celebrationMessage = generatePRCelebration(payload);
 
-  await publishMessage('github-bot', celebrationMessage, GITHUB_FEED_CHANNEL_ID, 'GitHub Bot', true);
+  await publishMessage('github-bot', celebrationMessage, GITHUB_FEED_CHANNEL_ID, 'GitHub Bot', true, undefined, { rethrow: true });
 }
 
 async function handleIssueEvent(payload: GitHubWebhookPayload): Promise<void> {
@@ -555,7 +557,7 @@ async function handleIssueEvent(payload: GitHubWebhookPayload): Promise<void> {
   });
 
   // Post to the subwaybuilder-engineering channel
-  await publishMessage('github-bot', message, GITHUB_FEED_CHANNEL_ID, 'GitHub Bot', true);
+  await publishMessage('github-bot', message, GITHUB_FEED_CHANNEL_ID, 'GitHub Bot', true, undefined, { rethrow: true });
 }
 
 async function handleIssueCommentEvent(payload: GitHubWebhookPayload): Promise<void> {
@@ -594,7 +596,7 @@ async function handleIssueCommentEvent(payload: GitHubWebhookPayload): Promise<v
     author: comment.user.login,
   });
 
-  await publishMessage('github-bot', message, GITHUB_FEED_CHANNEL_ID, 'GitHub Bot', true);
+  await publishMessage('github-bot', message, GITHUB_FEED_CHANNEL_ID, 'GitHub Bot', true, undefined, { rethrow: true });
 }
 
 function generatePushCelebration(payload: GitHubPushPayload): string {

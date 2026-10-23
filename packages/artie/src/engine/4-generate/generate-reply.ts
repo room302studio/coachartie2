@@ -1,6 +1,6 @@
 import { logger } from '../../shared/logger.js';
 import { IncomingMessage } from '../../shared/queue/types.js';
-import { estimateTokens } from '../../shared/text.js';
+import { estimateTokens } from '../../shared/async.js';
 import { stripChatPrefixes, stripInternalMarkup } from '../../shared/clean-llm-output.js';
 import { openRouterService } from './openrouter.js';
 import { promptManager } from '../3-context/system-prompt.js';

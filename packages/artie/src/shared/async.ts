@@ -1,5 +1,6 @@
 /**
- * Async control-flow helpers shared across Artie.
+ * Async control-flow helpers shared across Artie, plus the token estimator (was
+ * shared/text.ts, folded in wave 6).
  *
  * Replaces inlined `new Promise((r) => setTimeout(r, ms))` sleeps (10+ copies)
  * and separate exponential-backoff retry loops (the robust capability
@@ -59,4 +60,15 @@ export async function withRetry<T>(fn: () => Promise<T>, options: RetryOptions =
     }
   }
   throw lastError;
+}
+
+/**
+ * Rough token estimate using the ~4-characters-per-token heuristic.
+ *
+ * This is the single canonical estimator — previously this exact
+ * `Math.ceil(text.length / 4)` was inlined in 35+ places across the codebase.
+ * Keep the formula identical so context-budget math stays unchanged.
+ */
+export function estimateTokens(text: string): number {
+  return Math.ceil(text.length / 4);
 }

@@ -23,7 +23,7 @@ import { isOperatorOnlyError } from '../../shared/anomalywatch.js';
 import { getKillSwitchPath, isGenerationMuted } from '../../shared/kill-switch.js';
 import { getStrikeMode } from '../../shared/paths.js';
 import { decideSpeakRoute, runSpeakGate, resolveAmbientMode, isReplyToBot } from '../2-gate/speak-gate.js';
-import { publishMessage } from '../../shared/queue/discord-publisher.js';
+import { publishMessage } from '../../shared/queue/enqueue-message.js';
 import { telemetry } from '../telemetry.js';
 import { CorrelationContext, getShortCorrelationId } from '../correlation.js';
 import {

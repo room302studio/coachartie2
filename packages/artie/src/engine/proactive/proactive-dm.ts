@@ -14,6 +14,7 @@ import { logger } from '../../shared/logger.js';
 import { canReceiveProactiveDMs, isAdmin } from '../../shared/config/owner.js';
 import { Queue } from 'bullmq';
 import { createRedisConnection, testRedisConnection } from '../../shared/queue/redis.js';
+import { QUEUES } from '../../shared/queue/names.js';
 import type {
   RegisteredCapability,
   CapabilityContext,
@@ -42,7 +43,7 @@ async function initQueue(): Promise<Queue | null> {
   }
 
   try {
-    discordQueue = new Queue('coachartie-discord-outgoing', {
+    discordQueue = new Queue(QUEUES.OUTGOING_DISCORD, {
       connection: createRedisConnection(),
     });
     return discordQueue;

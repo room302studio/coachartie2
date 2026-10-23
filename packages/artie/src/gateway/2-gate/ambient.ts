@@ -6,7 +6,7 @@
 
 import type { Client, Message } from 'discord.js';
 import { resolveModelSpec, isAutoRouted, autoReasoningFor } from '../../shared/model-spec.js';
-import { estimateTokens } from '../../shared/text.js';
+import { estimateTokens } from '../../shared/async.js';
 import { logger } from '../../shared/logger.js';
 import { getSyncDb } from '../../shared/db/client.js';
 import { getKillSwitchPath, isGenerationMuted } from '../../shared/kill-switch.js';

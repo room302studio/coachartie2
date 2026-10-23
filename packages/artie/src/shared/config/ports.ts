@@ -1,11 +1,12 @@
 import { createServer } from 'net';
 
 /**
- * Port Discovery Utility
- * Automatically finds available ports to eliminate manual process killing
+ * Port selection for the engine's HTTP server: parsePortWithFallback is the only export.
+ * Wave 6 trimmed the unused helpers (getMultiplePorts, reservePort) and un-exported the
+ * internals; the env-var-then-auto-discovery behavior is unchanged.
  */
 
-export interface PortDiscoveryOptions {
+interface PortDiscoveryOptions {
   startPort: number;
   endPort?: number;
   maxAttempts?: number;
@@ -14,7 +15,7 @@ export interface PortDiscoveryOptions {
 /**
  * Check if a specific port is available
  */
-export function isPortAvailable(port: number): Promise<boolean> {
+function isPortAvailable(port: number): Promise<boolean> {
   return new Promise((resolve) => {
     const server = createServer();
 
@@ -31,7 +32,7 @@ export function isPortAvailable(port: number): Promise<boolean> {
 /**
  * Find the next available port starting from a base port
  */
-export async function findAvailablePort(options: PortDiscoveryOptions): Promise<number> {
+async function findAvailablePort(options: PortDiscoveryOptions): Promise<number> {
   const { startPort, endPort = startPort + 100, maxAttempts = 50 } = options;
 
   for (let port = startPort; port <= Math.min(endPort, startPort + maxAttempts - 1); port++) {
@@ -45,84 +46,44 @@ export async function findAvailablePort(options: PortDiscoveryOptions): Promise<
   );
 }
 
+/** Default ports per service name. */
+const DEFAULT_PORTS = {
+  redis: 47320,
+  discord: 47321,
+  irc: 47322,
+  capabilities: 47324,
+  brain: 47325,
+  sms: 47326,
+  email: 35892, // Not currently used but keeping for future
+};
+
 /**
- * Service-specific port discovery with sensible defaults
+ * Get an available port for a specific service
  */
-export class PortDiscovery {
-  private static readonly DEFAULT_PORTS = {
-    redis: 47320,
-    discord: 47321,
-    irc: 47322,
-    capabilities: 47324,
-    brain: 47325,
-    sms: 47326,
-    email: 35892, // Not currently used but keeping for future
-  };
+async function getServicePort(
+  serviceName: keyof typeof DEFAULT_PORTS,
+  customStartPort?: number
+): Promise<number> {
+  const startPort = customStartPort || DEFAULT_PORTS[serviceName];
 
-  /**
-   * Get an available port for a specific service
-   */
-  static async getServicePort(
-    serviceName: keyof (typeof PortDiscovery)['DEFAULT_PORTS'],
-    customStartPort?: number
-  ): Promise<number> {
-    const startPort = customStartPort || PortDiscovery.DEFAULT_PORTS[serviceName];
-
-    try {
-      const availablePort = await findAvailablePort({
-        startPort,
-        maxAttempts: 50,
-      });
-
-      if (availablePort !== startPort) {
-        console.log(
-          `⚠️  Default port ${startPort} for ${serviceName} service was busy, using port ${availablePort}`
-        );
-      } else {
-        console.log(`✅ ${serviceName} service using default port ${availablePort}`);
-      }
-
-      return availablePort;
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      throw new Error(`Failed to find available port for ${serviceName} service: ${errorMessage}`);
-    }
-  }
-
-  /**
-   * Get multiple ports for services that need them
-   */
-  static async getMultiplePorts(count: number, startPort: number): Promise<number[]> {
-    const ports: number[] = [];
-    let currentPort = startPort;
-
-    for (let i = 0; i < count; i++) {
-      const availablePort = await findAvailablePort({
-        startPort: currentPort,
-        maxAttempts: 20,
-      });
-      ports.push(availablePort);
-      currentPort = availablePort + 1; // Start next search from next port
-    }
-
-    return ports;
-  }
-
-  /**
-   * Reserve a port temporarily (useful for testing)
-   */
-  static async reservePort(port: number, durationMs: number = 5000): Promise<void> {
-    return new Promise((resolve, reject) => {
-      const server = createServer();
-
-      server.listen(port, '0.0.0.0', () => {
-        setTimeout(() => {
-          server.close(() => resolve());
-        }, durationMs);
-      });
-
-      server.on('error', reject);
+  try {
+    const availablePort = await findAvailablePort({
+      startPort,
+      maxAttempts: 50,
     });
+
+    if (availablePort !== startPort) {
+      console.log(
+        `⚠️  Default port ${startPort} for ${serviceName} service was busy, using port ${availablePort}`
+      );
+    } else {
+      console.log(`✅ ${serviceName} service using default port ${availablePort}`);
+    }
+
+    return availablePort;
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    throw new Error(`Failed to find available port for ${serviceName} service: ${errorMessage}`);
   }
 }
 
@@ -131,7 +92,7 @@ export class PortDiscovery {
  */
 export function parsePortWithFallback(
   envVarName: string,
-  serviceName: keyof (typeof PortDiscovery)['DEFAULT_PORTS'],
+  serviceName: keyof typeof DEFAULT_PORTS,
   defaultPort?: number
 ): Promise<number> {
   const envPort = process.env[envVarName];
@@ -142,5 +103,5 @@ export function parsePortWithFallback(
     return Promise.resolve(port);
   }
 
-  return PortDiscovery.getServicePort(serviceName, defaultPort);
+  return getServicePort(serviceName, defaultPort);
 }

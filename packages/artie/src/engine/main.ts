@@ -60,7 +60,7 @@ import { schedulerService } from './jobs/scheduler.js';
 import { jobTracker } from './1-intake/job-tracker.js';
 import { costMonitor } from './budget/usage-ledger.js';
 import { distressMonitor } from './health/distress.js';
-import { vitalsMonitor } from './health/vitals.js';
+import { vitalsMonitor, simpleHealer } from './health/vitals.js';
 import { startDailyBudgetWatch } from './budget/daily-cap.js';
 import { GlobalVariableStore } from './5-tool-loop/variables.js';
 // Import the turn spine FIRST to trigger capability registration (its orchestrator
@@ -69,7 +69,6 @@ import { GlobalVariableStore } from './5-tool-loop/variables.js';
 // would have thrown ERR_MODULE_NOT_FOUND at boot.
 import './2-turn/run-turn.js';
 import { capabilityRegistry } from './5-tool-loop/registry.js';
-import { simpleHealer } from './health/simple-healer.js';
 import { hybridDataLayer } from './memory/store.js';
 
 // Export openRouterService for models endpoint

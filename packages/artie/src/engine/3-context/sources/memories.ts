@@ -8,7 +8,7 @@
  */
 
 import { logger } from '../../../shared/logger.js';
-import { estimateTokens } from '../../../shared/text.js';
+import { estimateTokens } from '../../../shared/async.js';
 import type { IncomingMessage } from '../../../shared/queue/types.js';
 import type { MemoryEntourageInterface } from '../../memory/types.js';
 import type { ContextSource } from './types.js';

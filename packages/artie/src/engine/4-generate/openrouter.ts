@@ -1,5 +1,5 @@
 import OpenAI from 'openai';
-import { estimateTokens } from '../../shared/text.js';
+import { estimateTokens } from '../../shared/async.js';
 import { logger } from '../../shared/logger.js';
 import { assertGenerationAllowed } from '../../shared/kill-switch.js';
 import { assertGuildBudget } from '../../shared/guild-budget.js';

@@ -1,5 +1,5 @@
 import { logger } from '../../../shared/logger.js';
-import { estimateTokens } from '../../../shared/text.js';
+import { estimateTokens } from '../../../shared/async.js';
 import { CreditMonitor } from '../../budget/openrouter-balance.js';
 import { distressMonitor } from '../../health/distress.js';
 import { ContextSource } from './types.js';
