@@ -6,7 +6,7 @@ import { ForumTraversalService } from '../watchers/github/forum-traversal.js';
 import { GitHubIntegrationService } from '../watchers/github/issue-sync.js';
 import { Client, AttachmentBuilder, PollLayoutType } from 'discord.js';
 import { mentionProxyRouter } from './mention-proxy-api.js';
-import { violatesOutputSafety } from '../4-reply/stream-reply.js';
+import { violatesOutputSafety } from '../4-reply/output-safety.js';
 import { readFileSync, writeFileSync, existsSync, appendFileSync } from 'fs';
 import { join } from 'path';
 

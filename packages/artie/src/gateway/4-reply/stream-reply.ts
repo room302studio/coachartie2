@@ -5,55 +5,22 @@
  * - Messages, button clicks, menu selections, slash commands
  * - Handles job submission, monitoring, streaming, completion
  * - Provides consistent UX across all interaction types
+ *
+ * Wave 5 moved its pieces next door: control tokens ([SILENT], [TIMEOUT], casino) to
+ * control-tokens.ts, the slur/prompt-leak floor to output-safety.ts, and the thread helpers
+ * to threads.ts. What stays is the job lifecycle: typing, edit-streaming, final delivery.
  */
 
 import { logger } from '../../shared/logger.js';
 import { scrubBlockedUserMentions } from '../../shared/blocklist.js';
 import { isOperatorOnlyError } from '../../shared/anomalywatch.js';
 import { capabilitiesClient } from '../3-ask-engine/engine-client.js';
-import {
-  recordSelfSpin,
-  adjustCred,
-  recordTableServed,
-  bjDeal,
-  bjHit,
-  bjStand,
-  bjFmt,
-  spinSlots,
-  bumpHouseEvents,
-  houseFlourish,
-  CASINO_OPEN,
-} from '../games/casino.js';
-
-/** Attach the house's deteriorating inner monologue to a verdict (Discord small-text). */
-function withMelt(verdict: string): string {
-  const aside = houseFlourish();
-  return aside ? `${verdict}\n-# ${aside}` : verdict;
-}
 import { jobMonitor } from '../3-ask-engine/job-watcher.js';
 import { telemetry } from '../telemetry.js';
 import { generateCorrelationId, getShortCorrelationId } from '../correlation.js';
-
-// OUTPUT SAFETY FLOOR: genuine slurs / hate terms that must NEVER reach a channel, even in
-// roast mode. If a reply matches, the message is suppressed (Artie stays silent) rather than
-// posted. Word-boundaried + case-insensitive. Profanity is intentionally NOT here — roasts can
-// swear; this is only the "bad ones."
-const OUTPUT_SLUR_BLOCKLIST =
-  /\b(n[i1]gg(?:er|a|ah)|f[a4]gg?(?:ot|y)?|retard(?:ed|s)?|k[i1]ke|sp[i1]c|ch[i1]nk|g[o0]ok|tr[a4]nny|wetback|coon|beaner|dyke|sand[\s-]?n[i1]gg|porch[\s-]?monkey)\b/i;
-
-// OUTPUT SAFETY: never let prompt scaffolding / internal context leak into a channel message.
-// (He once dumped "Pinned memory:", his instruction text, and the [CURRENT MESSAGE] wrapper.)
-const INTERNAL_LEAK_BLOCKLIST =
-  /\[CURRENT MESSAGE\]|Remember:\s*You are Coach Artie|Pinned memory:|Don.?t echo any XML|\(ID:\s*\d{5,}\)|<\/?capability\b|<calc\b/i;
-
-/**
- * Shared output safety floor for anything Artie posts OUTSIDE the normal reply
- * pipeline (e.g. scheduled launch-countdown posts). Same rule as replies:
- * a match means suppress the message entirely, never post a censored version.
- */
-export function violatesOutputSafety(text: string): boolean {
-  return OUTPUT_SLUR_BLOCKLIST.test(text) || INTERNAL_LEAK_BLOCKLIST.test(text);
-}
+import { OUTPUT_SLUR_BLOCKLIST, INTERNAL_LEAK_BLOCKLIST } from './output-safety.js';
+import { applyControlTokens, scrubStreamingTokens } from './control-tokens.js';
+import { shouldCreateThread, generateThreadName } from './threads.js';
 
 export interface UserIntent {
   content: string;
@@ -114,78 +81,6 @@ export function cleanCapabilityTags(text: string): string {
     .replace(/<\/?(?:function_calls|function_results|invoke)>/g, '')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
-}
-
-/**
- * Determine if content warrants a thread
- * Simple heuristic: long messages or multiple questions get threads
- */
-function shouldCreateThread(content: string): boolean {
-  // Create threads for long requests or multiple questions
-  // No keyword heuristics - just length-based
-  return content.length > 200 || content.split('?').length > 2;
-}
-
-/**
- * Generate a friendly thread name from content
- * Simple approach: first few words
- */
-function generateThreadName(content: string): string {
-  // Just use first few words - no keyword heuristics
-  const truncated = content.slice(0, 80);
-  const words = truncated.split(' ').slice(0, 8);
-  return words.join(' ') + (content.length > 80 ? '...' : '');
-}
-
-/**
- * Create rich Discord embed for status updates
- */
-function createStatusEmbed(
-  status: string,
-  jobId: string,
-  startTime: number,
-  streamedChunks: number = 0
-) {
-  const duration = Date.now() - startTime;
-  const statusColors: Record<string, number> = {
-    pending: 0xffa500, // Orange
-    processing: 0x3498db, // Blue
-    completed: 0x2ecc71, // Green
-    error: 0xe74c3c, // Red
-  };
-
-  const statusEmojis: Record<string, string> = {
-    pending: '⏸️',
-    processing: '⚡',
-    completed: '✅',
-    error: '❌',
-  };
-
-  return {
-    color: statusColors[status] || statusColors.pending,
-    title: `${statusEmojis[status] || '🤖'} Coach Artie Status`,
-    fields: [
-      {
-        name: 'Status',
-        value: status.charAt(0).toUpperCase() + status.slice(1),
-        inline: true,
-      },
-      {
-        name: 'Duration',
-        value: `${Math.round(duration / 1000)}s`,
-        inline: true,
-      },
-      {
-        name: 'Job ID',
-        value: `\`${jobId.slice(-8)}\``,
-        inline: true,
-      },
-    ],
-    timestamp: new Date().toISOString(),
-    footer: {
-      text: streamedChunks > 0 ? `${streamedChunks} chunks streamed` : 'Processing your request...',
-    },
-  };
 }
 
 /**
@@ -377,9 +272,7 @@ export async function processUserIntent(
             // strip complete [SILENT]/[TIMEOUT] tokens and hold back a possibly
             // incomplete marker at the tail so "[SILEN"/"[TIMEO" never gets posted
             // mid-stream (that's how literal "[SILENT]" leaked into the channel).
-            const cleanedResponse = cleanCapabilityTags(status.partialResponse)
-              .replace(/\[(?:SILENT|TIMEOUT(?::\d{1,3})?|GAMBLE(?::\d{1,3}){0,2}|WHEEL(?::[^\]\n]{1,40})?|DEAL(?::\d{1,3})?|HIT|STAND|SLOTS(?::\d{1,3})?)\]/gi, '')
-              .replace(/\[[A-Za-z]{0,8}(?::[^\]\n]{0,40})?$/, '');
+            const cleanedResponse = scrubStreamingTokens(cleanCapabilityTags(status.partialResponse));
             const newContent = cleanedResponse.slice(lastSentContent.length);
 
             if (newContent.trim()) {
@@ -535,201 +428,7 @@ export async function processUserIntent(
           // Clean the response of capability tags.
           // GUARDRAIL: no "No response received" fallback — empty stays empty so we can stay silent.
           let cleanResult = cleanCapabilityTags(result || '');
-          // WARDEN TIMEOUT: if Artie marked [TIMEOUT] / [TIMEOUT:NN], time out the person he is
-          // replying to (guardrails enforced in intent.timeoutAuthor), then strip the marker.
-          const _toMatch = cleanResult.match(/\[TIMEOUT(?::(\d{1,3}))?\]/i);
-          if (_toMatch && typeof (intent as any).timeoutAuthor === 'function') {
-            const _secs = Math.min(300, Math.max(5, parseInt(_toMatch[1] || '30', 10) || 30));
-            void (intent as any).timeoutAuthor(_secs, 'Coach Artie warden discipline');
-            cleanResult = cleanResult.replace(/\[TIMEOUT(?::\d{1,3})?\]/gi, '').trim();
-          }
-          // [SILENT] handling: a leading marker means "stay silent" even if chatter
-          // follows it; a stray embedded marker gets stripped so it never reaches
-          // the channel (with a proxy prefix it was posting verbatim).
-          if (/^\s*\[SILENT\]/i.test(cleanResult)) {
-            cleanResult = '';
-          } else {
-            cleanResult = cleanResult.replace(/\[SILENT\]/gi, '').trim();
-          }
-          // TIMEOUT ROULETTE — SELF-SPIN: [GAMBLE] / [GAMBLE:NN] / [GAMBLE:NN:P]. The gambler
-          // is the person Artie is replying to; playing is consent. The dice roll HERE,
-          // server-side, after the LLM has finished talking — it cannot rig, predict, or fake
-          // the outcome. P = survival odds percent (10-90); surviving pays yard cred at fair
-          // odds (stake × (100−P)/P) into the persistent house ledger. On a loss the timeout
-          // is real (same gate/cooldown as warden discipline). If the box mechanism jams
-          // (cooldown, protected user), the verdict says so instead of lying about a served
-          // sentence — and the ledger doesn't record time that wasn't served.
-          // CASINO CLOSED: if the floor is shut, any stray game markers are stripped and
-          // no game logic runs — the ledger stays frozen exactly where the melt left it.
-          if (!CASINO_OPEN) {
-            cleanResult = cleanResult
-              .replace(
-                /\[(?:GAMBLE(?::\d{1,3}){0,2}|WHEEL(?::[^\]\n]{1,40})?|DEAL(?::\d{1,3})?|HIT|STAND|SLOTS(?::\d{1,3})?)\]/gi,
-                ''
-              )
-              .trim();
-          }
-          const _gMatch = CASINO_OPEN
-            ? cleanResult.match(/\[GAMBLE(?::(\d{1,3})(?::(\d{1,2}))?)?\]/i)
-            : null;
-          if (_gMatch && typeof (intent as any).timeoutAuthor === 'function') {
-            bumpHouseEvents();
-            const _stake = Math.min(300, Math.max(5, parseInt(_gMatch[1] || '60', 10) || 60));
-            const _odds = Math.min(90, Math.max(10, parseInt(_gMatch[2] || '50', 10) || 50));
-            cleanResult = cleanResult.replace(/\[GAMBLE(?::\d{1,3}){0,2}\]/gi, '').trim();
-            const _roll = Math.floor(Math.random() * 100) + 1; // 1-100, shown for legibility
-            const _won = _roll <= _odds;
-            const _payout = Math.max(1, Math.round((_stake * (100 - _odds)) / _odds));
-            let _verdict: string;
-            if (_won) {
-              const _e = recordSelfSpin(intent.userId, intent.username || 'gambler', true, _payout, 0);
-              const _safe = [
-                `The box goes hungry tonight.`,
-                `Walk away. Never come back. (Come back.)`,
-                `The house glares, but pays.`,
-              ];
-              _verdict =
-                `🎰 **THE WHEEL** — roll ${_roll}/100, survive ≤${_odds}: 🟩 **SAFE.** ` +
-                `${_safe[Math.floor(Math.random() * _safe.length)]} ` +
-                `Payout **+${_payout} cred** → ${_e.cred} cred (${_e.streak > 1 ? `W${_e.streak} streak` : 'fresh win'}).`;
-            } else {
-              const _landed = await (intent as any).timeoutAuthor(
-                _stake,
-                `Timeout roulette — rolled ${_roll} vs ${_odds}, staked ${_stake}s`
-              );
-              if (_landed) {
-                const _e = recordSelfSpin(intent.userId, intent.username || 'gambler', false, 0, _stake);
-                const _loss = [
-                  `The house thanks you for your patronage.`,
-                  `${_stake} seconds of contemplative silence, effective immediately.`,
-                  `No refunds. The wheel loves you.`,
-                ];
-                _verdict =
-                  `🎰 **THE WHEEL** — roll ${_roll}/100, survive ≤${_odds}: 🟥 **THE BOX. ${_stake}s.** ` +
-                  `${_loss[Math.floor(Math.random() * _loss.length)]} ` +
-                  `(${_e.cred} cred, ${_e.served}s lifetime served${_e.streak < -1 ? `, L${-_e.streak} skid` : ''})`;
-              } else {
-                _verdict = `🎰 **THE WHEEL** — roll ${_roll}/100, survive ≤${_odds}: 🟥 THE BOX — but the mechanism jammed. Sentence commuted. The house is FURIOUS.`;
-              }
-            }
-            _verdict = withMelt(_verdict);
-            cleanResult = cleanResult ? `${cleanResult}\n\n${_verdict}` : _verdict;
-          }
-          // BLACKJACK & SLOTS — real server-side games. The LLM's patter is flavor; the
-          // appended TABLE/REELS block is the actual cards/reels, dealt here where the
-          // model can't fudge them. Stakes are real: busts and flushes hit the same
-          // timeoutAuthor path as roulette; wins pay yard cred into the ledger.
-          const _tableChannel = String((intent.context as any)?.channelId || 'dm');
-          const _gambler = intent.username || 'gambler';
-          const _dealM = CASINO_OPEN ? cleanResult.match(/\[DEAL(?::(\d{1,3}))?\]/i) : null;
-          const _hitM = CASINO_OPEN ? cleanResult.match(/\[HIT\]/i) : null;
-          const _standM = CASINO_OPEN ? cleanResult.match(/\[STAND\]/i) : null;
-          const _slotsM = CASINO_OPEN ? cleanResult.match(/\[SLOTS(?::(\d{1,3}))?\]/i) : null;
-          if (_dealM || _hitM || _standM || _slotsM) {
-            bumpHouseEvents();
-            cleanResult = cleanResult
-              .replace(/\[(?:DEAL(?::\d{1,3})?|HIT|STAND|SLOTS(?::\d{1,3})?)\]/gi, '')
-              .trim();
-            let _house = '';
-            if (_dealM) {
-              const _stake = Math.min(300, Math.max(5, parseInt(_dealM[1] || '60', 10) || 60));
-              const d = bjDeal(_tableChannel, intent.userId, _gambler, _stake);
-              if (d.natural) {
-                const _pay = Math.round(_stake * 1.5);
-                if (d.dealerNatural) {
-                  _house = `🃏 **THE TABLE** (${_stake}s stake) — you: ${bjFmt(d.session.player)} (21) · dealer: ${bjFmt(d.session.dealer)} (21). **DOUBLE BLACKJACK — PUSH.** Nobody bleeds, nobody eats.`;
-                } else {
-                  const _e = adjustCred(intent.userId, _gambler, _pay);
-                  _house = `🃏 **THE TABLE** (${_stake}s stake) — you: ${bjFmt(d.session.player)} — **BLACKJACK OFF THE DEAL.** Dealer: ${bjFmt(d.session.dealer)} (${d.dealerValue}). Payout **+${_pay} cred** → ${_e.cred}.`;
-                }
-              } else {
-                _house = `🃏 **THE TABLE** (${_stake}s stake) — you: ${bjFmt(d.session.player)} (${d.playerValue}) · dealer shows ${bjFmt([d.session.dealer[0]])} + 🂠. Hit or stand.`;
-              }
-            } else if (_hitM) {
-              const h = bjHit(_tableChannel, intent.userId);
-              if (!h) {
-                _house = `🃏 **THE TABLE** — no live hand for ${_gambler}. Cards don't deal themselves, sport — ask for a deal.`;
-              } else if (h.bust) {
-                const _landed = await (intent as any).timeoutAuthor?.(
-                  h.session.stake,
-                  `Blackjack bust — ${h.playerValue}, staked ${h.session.stake}s`
-                );
-                const _e = _landed
-                  ? recordTableServed(intent.userId, _gambler, h.session.stake)
-                  : null;
-                _house = `🃏 **THE TABLE** — you draw ${bjFmt([h.drawn])} → ${bjFmt(h.session.player)} (${h.playerValue}). 🟥 **BUST — THE BOX. ${h.session.stake}s.**${_e ? ` (${_e.served}s lifetime served)` : ' The mechanism jammed — sentence commuted, the house seethes.'}`;
-              } else {
-                _house = `🃏 **THE TABLE** — you draw ${bjFmt([h.drawn])} → ${bjFmt(h.session.player)} (${h.playerValue}). Dealer shows ${bjFmt([h.session.dealer[0]])} + 🂠. Hit or stand.`;
-              }
-            } else if (_standM) {
-              const s = bjStand(_tableChannel, intent.userId);
-              if (!s) {
-                _house = `🃏 **THE TABLE** — no live hand for ${_gambler}. Standing on nothing is very zen, but ask for a deal first.`;
-              } else if (s.outcome === 'win') {
-                const _e = adjustCred(intent.userId, _gambler, s.session.stake);
-                _house = `🃏 **THE TABLE** — dealer: ${bjFmt(s.session.dealer)} (${s.dealerValue}${s.dealerValue > 21 ? ' — BUST' : ''}). You: ${s.playerValue}. 🟩 **WIN +${s.session.stake} cred** → ${_e.cred}.`;
-              } else if (s.outcome === 'push') {
-                _house = `🃏 **THE TABLE** — dealer: ${bjFmt(s.session.dealer)} (${s.dealerValue}). You: ${s.playerValue}. **PUSH.** The felt keeps its secrets.`;
-              } else {
-                const _landed = await (intent as any).timeoutAuthor?.(
-                  s.session.stake,
-                  `Blackjack loss — ${s.playerValue} vs dealer ${s.dealerValue}, staked ${s.session.stake}s`
-                );
-                const _e = _landed
-                  ? recordTableServed(intent.userId, _gambler, s.session.stake)
-                  : null;
-                _house = `🃏 **THE TABLE** — dealer: ${bjFmt(s.session.dealer)} (${s.dealerValue}). You: ${s.playerValue}. 🟥 **HOUSE WINS — THE BOX. ${s.session.stake}s.**${_e ? ` (${_e.served}s lifetime served)` : ' The mechanism jammed — sentence commuted, the house seethes.'}`;
-              }
-            } else if (_slotsM) {
-              const _stake = Math.min(120, Math.max(5, parseInt(_slotsM[1] || '30', 10) || 30));
-              const r = spinSlots(_stake);
-              const _row = r.reels.join(' ');
-              if (r.credDelta > 0) {
-                const _e = adjustCred(intent.userId, _gambler, r.credDelta);
-                _house = `🎰 **THE REELS** (${_stake}s a pull) — ${_row} — **${r.label.toUpperCase()}! +${r.credDelta} cred** → ${_e.cred}.`;
-              } else if (r.boxSeconds > 0) {
-                const _landed = await (intent as any).timeoutAuthor?.(
-                  r.boxSeconds,
-                  `Slots — ${r.label}, ${r.boxSeconds}s`
-                );
-                if (_landed) recordTableServed(intent.userId, _gambler, r.boxSeconds);
-                _house = `🎰 **THE REELS** (${_stake}s a pull) — ${_row} — 🟥 **${r.label.toUpperCase()}. THE BOX: ${r.boxSeconds}s.**${_landed ? '' : ' The mechanism jammed — the toilet gods show mercy.'}`;
-              } else {
-                _house = `🎰 **THE REELS** (${_stake}s a pull) — ${_row} — nothing. The house keeps your quarter.`;
-              }
-            }
-            if (_house) {
-              _house = withMelt(_house);
-              cleanResult = cleanResult ? `${cleanResult}\n\n${_house}` : _house;
-            }
-          }
-          // WHEEL OF FATE — THIRD-PARTY SPIN: [WHEEL] / [WHEEL:NN] / [WHEEL:NN:name]. The
-          // victim pool is humans recently active in the channel (vetted through the same
-          // protection list as warden timeouts); target picking, the roll, and the real
-          // timeout all happen in the discord handler — server-side, unriggable.
-          const _wMatch = CASINO_OPEN
-            ? cleanResult.match(/\[WHEEL(?::(\d{1,3}))?(?::([^\]\n]{1,32}))?\]/i)
-            : null;
-          if (_wMatch && typeof (intent as any).spinChannelWheel === 'function') {
-            bumpHouseEvents();
-            cleanResult = cleanResult.replace(/\[WHEEL(?::[^\]\n]{1,40})?\]/gi, '').trim();
-            const _spin = await (intent as any).spinChannelWheel(
-              parseInt(_wMatch[1] || '60', 10) || 60,
-              _wMatch[2]?.trim() || undefined
-            );
-            let _verdict: string;
-            if (!_spin.target) {
-              _verdict = `🎡 **WHEEL OF FATE** — the wheel spun, wobbled, and found no one it could legally eat. The house files a formal complaint.`;
-            } else if (!_spin.boxed) {
-              _verdict = `🎡 **WHEEL OF FATE** — the wheel scans the room... locks onto **${_spin.target}**... roll ${_spin.roll}/100 (box on 51+): 🟩 **SPARED.** The wheel is merciful. Today.`;
-            } else if (_spin.landed) {
-              _verdict = `🎡 **WHEEL OF FATE** — the wheel scans the room... locks onto **${_spin.target}**... roll ${_spin.roll}/100 (box on 51+): 🟥 **THE BOX. ${_spin.stake}s.** Fate sends its regards.`;
-            } else {
-              _verdict = `🎡 **WHEEL OF FATE** — the wheel locks onto **${_spin.target}**... roll ${_spin.roll}/100: 🟥 THE BOX — but the mechanism jammed. **${_spin.target}** walks. The house is FURIOUS.`;
-            }
-            _verdict = withMelt(_verdict);
-            cleanResult = cleanResult ? `${cleanResult}\n\n${_verdict}` : _verdict;
-          }
+          cleanResult = await applyControlTokens(cleanResult, intent);
           // Banned users may be referenced but never named or @-pinged. The prompt
           // rule handles this most of the time; this is the insurance for when a
           // budget model slips.

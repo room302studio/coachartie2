@@ -4,6 +4,7 @@ import { isBlockedUser } from '../../shared/blocklist.js';
 import { Client, TextChannel, Message, Collection } from 'discord.js';
 import fetch from 'node-fetch';
 import { getGuildConfig, GUILD_CONFIGS, GuildType } from '../../shared/config/guilds.js';
+import { NON_EVENT_PATTERNS } from '../4-reply/output-safety.js';
 
 /**
  * Observational Learning Service
@@ -36,15 +37,7 @@ export function observationMinMessages(env: NodeJS.ProcessEnv = process.env): nu
   return Number.isFinite(n) && n > 0 ? n : 5;
 }
 
-/** "An LLM concluded there was nothing to remember" — don't store that as a memory. */
-const NON_EVENT_PATTERNS = [
-  /\bno (specific|notable|significant|relevant|meaningful|particular|clear)\b/i,
-  /\bno correlations?\b/i,
-  /\bnothing (notable|significant|of note|relevant|meaningful|to (note|report|remember))\b/i,
-  /\b(were|was) not (mentioned|discussed|observed)\b/i,
-  /\binsufficient (information|context|data)\b/i,
-];
-
+// NON_EVENT_PATTERNS (the hedge phrases) live in 4-reply/output-safety.ts since wave 5.
 export function isNonEventSummary(summary: string | null | undefined): boolean {
   const text = (summary || '').trim();
   if (text.length < 20) return true;

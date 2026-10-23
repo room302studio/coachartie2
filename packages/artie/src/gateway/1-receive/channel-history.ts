@@ -3,7 +3,7 @@ import type { Message, Collection } from 'discord.js';
 import Chance from 'chance';
 import { logger } from '../../shared/logger.js';
 import { isBlockedUser } from '../../shared/blocklist.js';
-import { violatesOutputSafety } from '../4-reply/stream-reply.js';
+import { violatesOutputSafety } from '../4-reply/output-safety.js';
 
 // Own Chance instance (seedless RNG — behaviorally identical to any other).
 const chance = new Chance();

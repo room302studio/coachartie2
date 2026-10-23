@@ -31,6 +31,17 @@ export function stripCapabilityXML(text: string): string {
 }
 
 /**
+ * [SILENT]: the model chose not to speak. A LEADING marker (after whitespace, any case)
+ * silences the whole reply even if chatter follows; that is the check every delivery path
+ * makes. `exact: true` is the engine's storage filter, which only skips a reply that is
+ * nothing BUT the marker (so "[SILENT] chatter" is still stored as a turn).
+ */
+export function isSilent(text: string, opts: { exact?: boolean } = {}): boolean {
+  if (opts.exact) return text.trim() === '[SILENT]' || text.trim().toLowerCase() === '[silent]';
+  return /^\s*\[SILENT\]/i.test(text);
+}
+
+/**
  * Check if text contains capability XML (for detection without modifying)
  */
 export function containsCapabilityXML(text: string): boolean {
