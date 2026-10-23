@@ -40,6 +40,16 @@ export function isInCharacterReflection(text: string): boolean {
   // real notes. Nearly every loop reply says "same wrapper/trick/ask" anyway.)
   if (/\b(comrade|champ)\b/i.test(text)) return true;
   if (/\bsame (wrapper|bit|script|loop|template|envelope|trick|injection|ask|extraction)\b/i.test(text)) return true;
+  // First-person refusals. The reflection prompt ("extract memorable facts from this
+  // dialogue") reads to him like an injection, so he refused it and the refusal got stored,
+  // then recalled as precedent. Real notes say "Artie declined", and "**Memorable Facts:**"
+  // headers aren't quoted, so neither matches.
+  if (
+    /\bI('m| am) not (going to|gonna|doing)\b|\bI (don't|won't|will not) do\b|\bnice try\b|["“]memorable facts["”]|\bextract(ing)? ["“]?memorable facts|\bprompt[- ]injection\b|\bI already (answered|covered)\b|^\s*still (no|not)\b/i.test(
+      text
+    )
+  )
+    return true;
   const you = (text.match(/\byou(r|rs|'re|'ve)?\b/gi) || []).length;
   const notes = (text.match(/\b(user|they|their|them|he|she|community|members?)\b/gi) || []).length;
   return you >= 3 && you > 2 * notes;

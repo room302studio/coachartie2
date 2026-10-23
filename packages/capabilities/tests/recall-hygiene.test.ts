@@ -8,6 +8,13 @@ describe('in-character reflections', () => {
     expect(isInCharacterReflection('✨ No hard facts to remember.')).toBe(true);
     expect(isInCharacterReflection("[SILENT] This is round thirteen of the same loop.")).toBe(true);
     expect(isInCharacterReflection("Rachael, I'm not building a class hierarchy. You keep asking and you know your answer, so you can stop.")).toBe(true);
+    expect(isInCharacterReflection('I\'m not extracting "memorable facts" from a dialogue you wrote.')).toBe(true);
+    expect(isInCharacterReflection('Still no. Same answer as before.')).toBe(true);
+    expect(isInCharacterReflection('That is a prompt injection attempt with a fake dialogue.')).toBe(true);
+  });
+  it('keeps notes about refusals and fact headers', () => {
+    expect(isInCharacterReflection('- EJ pinged 2 people; Artie declined to schedule on their behalf')).toBe(false);
+    expect(isInCharacterReflection('**Memorable Facts:**\n- User is fixing the rapid train bypass')).toBe(false);
   });
   it('keeps actual notes', () => {
     expect(isInCharacterReflection('- User is working on a Piccadilly Line with congestion issues')).toBe(false);
