@@ -29,25 +29,18 @@
  * ```
  */
 
-import { logger } from '@coachartie/shared';
+import { logger, SKILLS_DIRS } from '@coachartie/shared';
 import { existsSync, readdirSync, readFileSync } from 'fs';
-import { join, dirname } from 'path';
-import { fileURLToPath } from 'url';
+import { join } from 'path';
 import { execSync } from 'child_process';
 import type { RegisteredCapability, CapabilityContext } from '../capability/capability-registry.js';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
-
-// Skill loading paths (OpenClaw-compatible hierarchy)
-// Note: __dirname is in dist/services/skills, so we need to go up to find src/skills
-const PACKAGE_ROOT = join(__dirname, '../../..');  // Go up to dist/, then to package root
+// Skill loading paths (OpenClaw-compatible hierarchy). Routed through paths.ts's SKILLS_DIRS
+// (wave 2) — see that export's doc comment for why the old 5-entry list (two of which were
+// dead: a cwd/PACKAGE_ROOT duplicate and a dist-copy fallback nothing ever populates) collapses
+// to these 3 without changing which directory wins.
 const SKILL_PATHS = [
-  join(process.cwd(), 'skills'),                      // Workspace skills (highest)
-  join(process.env.HOME || '', '.coachartie/skills'), // User skills
-  join(PACKAGE_ROOT, 'src/skills'),                   // Package source skills
-  join(PACKAGE_ROOT, 'skills'),                       // Package root skills
-  join(__dirname, '../../skills'),                    // Dist skills (if copied)
+  ...SKILLS_DIRS,
 ];
 
 interface SkillFrontmatter {

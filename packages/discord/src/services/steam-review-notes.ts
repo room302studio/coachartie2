@@ -1,8 +1,8 @@
-import { logger, isBlockedUser } from '@coachartie/shared';
+import { logger, isBlockedUser, getSteamReviewNotes } from '@coachartie/shared';
 import { Client, TextChannel, Message } from 'discord.js';
 import fetch from 'node-fetch';
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs';
-import { join, dirname } from 'path';
+import { dirname } from 'path';
 
 /**
  * Steam Review Notes Service
@@ -132,8 +132,8 @@ export class SteamReviewNotes {
   private notesFullPath(): string {
     // Repo root, not package cwd: pm2 runs this service with cwd packages/discord, but the
     // <readfile> capability (packages/capabilities/src/capabilities/development/filesystem.ts)
-    // resolves paths from resolve(cwd, '../..') — the doc must land where Artie can read it.
-    return join(process.cwd(), '..', '..', NOTES_PATH);
+    // resolves paths from REPO_ROOT — the doc must land where Artie can read it.
+    return getSteamReviewNotes();
   }
 
   private readNotes(): string {

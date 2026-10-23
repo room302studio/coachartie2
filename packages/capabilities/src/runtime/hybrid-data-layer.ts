@@ -1,4 +1,11 @@
-import { logger, getSyncDb, type SyncDbWrapper, isBlockedUser, mentionsOptedOutUser } from '@coachartie/shared';
+import {
+  logger,
+  getSyncDb,
+  type SyncDbWrapper,
+  isBlockedUser,
+  mentionsOptedOutUser,
+  getDatabasePath,
+} from '@coachartie/shared';
 
 // Memories keyed to blocked users never surface in recall. Memories that merely
 // mention a BANNED user are allowed (policy 2026-07-16: Artie may reference banned users;
@@ -741,7 +748,8 @@ export class HybridDataLayer {
   }
 }
 
-// Singleton instance - Use shared database path for consolidation
-export const hybridDataLayer = new HybridDataLayer(
-  process.env.DATABASE_PATH || '/app/data/coachartie.db'
-);
+// Singleton instance - Use shared database path for consolidation. Routed through paths.ts's
+// getDatabasePath() (wave 2): same DATABASE_PATH env override, but the fallback is now
+// REPO_ROOT/data/coachartie.db instead of a Docker '/app/data/coachartie.db' path that no
+// longer exists anywhere this repo runs (Docker support was removed in wave 1).
+export const hybridDataLayer = new HybridDataLayer(getDatabasePath());

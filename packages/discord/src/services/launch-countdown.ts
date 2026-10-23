@@ -14,9 +14,8 @@
 
 import { Client, ChannelType } from 'discord.js';
 import { readFile, writeFile, mkdir } from 'fs/promises';
-import { fileURLToPath } from 'url';
 import path from 'path';
-import { logger } from '@coachartie/shared';
+import { logger, LAUNCH_STATE } from '@coachartie/shared';
 import {
   STEAM_LAUNCH_AT,
   LAUNCH_CHANNEL_ID,
@@ -63,10 +62,7 @@ const MILESTONES: Milestone[] = [
 ];
 
 // state file lives next to the sqlite db: packages/discord/data/
-const STATE_PATH = path.join(
-  path.dirname(fileURLToPath(import.meta.url)),
-  '../../data/launch-countdown-state.json'
-);
+const STATE_PATH = LAUNCH_STATE;
 
 interface CountdownState {
   posted: string[];

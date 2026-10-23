@@ -1,7 +1,7 @@
-import { join, resolve, dirname } from 'path';
+import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { existsSync, mkdirSync } from 'fs';
-import { logger } from '@coachartie/shared';
+import { logger, MENTION_PROXY_DATA } from '@coachartie/shared';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -22,8 +22,10 @@ export class PathResolver {
     if (this.isDocker) {
       this.dataDir = '/app/data';
     } else {
-      // Local development: use packages/capabilities/data (shared data directory)
-      this.dataDir = resolve(__dirname, '../../../../capabilities/data');
+      // Local development: routed through paths.ts's MENTION_PROXY_DATA (wave 2) — same
+      // resolved absolute directory the old resolve(__dirname, '../../../../capabilities/data')
+      // math landed on.
+      this.dataDir = MENTION_PROXY_DATA;
     }
 
     // Ensure data directory exists

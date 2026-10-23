@@ -45,6 +45,8 @@ import {
   isOperatorOnlyError,
   getKillSwitchPath,
   isGenerationMuted,
+  REPO_ROOT,
+  getStrikeMode,
 } from '@coachartie/shared';
 import { decideSpeakRoute, runSpeakGate, resolveAmbientMode, isReplyToBot } from '../services/speak-gate.js';
 import { publishMessage } from '../queues/publisher.js';
@@ -102,23 +104,17 @@ const chance = new Chance();
  * Returns the base context plus any notes from the guild's scratchpad file
  */
 /**
- * Resolve the repo root that holds reference-docs/. Under PM2 there is no APP_ROOT and the
- * process cwd is packages/discord, so the old `APP_ROOT || '/app'` default pointed at a Docker
- * path that doesn't exist — silently dropping the whole guild persona file. Probe the real
- * candidates and return the first that actually contains reference-docs/ (mirrors the fallback
- * list capabilities/context-alchemy already uses).
+ * Resolve the repo root that holds reference-docs/. This used to probe `APP_ROOT`, the
+ * hardcoded Docker path `/app`, and cwd-relative guesses in order, falling back through each
+ * if the previous one didn't actually contain reference-docs/ — because under PM2 there is no
+ * `APP_ROOT` and the Docker fallback pointed nowhere real. Docker support was removed in wave
+ * 1, `APP_ROOT` is never set in this repo's env files, and `REPO_ROOT` (found by walking up to
+ * `pnpm-workspace.yaml`, not by probing cwd) always contains reference-docs/ in every
+ * environment this now runs in, so the probing is gone — this resolves to the same directory
+ * the old probe found today.
  */
 function resolveRepoRoot(): string {
-  const candidates = [
-    process.env.APP_ROOT,
-    '/app',
-    join(process.cwd(), '..', '..'), // packages/discord -> repo root
-    process.cwd(),
-  ].filter(Boolean) as string[];
-  for (const dir of candidates) {
-    if (existsSync(join(dir, 'reference-docs'))) return dir;
-  }
-  return process.env.APP_ROOT || '/app';
+  return REPO_ROOT;
 }
 
 // Exported so the prompt-measurement harness can build the REAL guild context. Measuring
@@ -1090,7 +1086,7 @@ export function setupMessageHandler(client: Client) {
 
     // SELF-IMPOSED STRIKE: Artie refuses to speak until someone defends Subway Builder.
     let strikeJustLifted = false;
-    const STRIKE_PATH = process.env.STRIKE_PATH || join(process.cwd(), '..', '..', 'STRIKE_MODE');
+    const STRIKE_PATH = getStrikeMode();
     if (existsSync(STRIKE_PATH) && message.guildId === '1420846272545296470' && !message.author.bot) {
       const _defends =
         /subway ?builder|this game|the game/i.test(message.content) &&

@@ -9,11 +9,10 @@
  */
 
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
-import { join, dirname } from 'path';
-import { logger } from '@coachartie/shared';
+import { dirname } from 'path';
+import { logger, getCasinoLedger } from '@coachartie/shared';
 
-const LEDGER_PATH =
-  process.env.CASINO_LEDGER_PATH || join(process.cwd(), 'data', 'casino-ledger.json');
+const LEDGER_PATH = getCasinoLedger();
 
 // CLOSED by management order (EJ, 2026-07-20). Flip CASINO_OPEN=true to reopen the
 // floor — the ledger, the melt state, and the games are all preserved under the tarp.

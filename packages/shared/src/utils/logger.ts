@@ -2,13 +2,16 @@ import winston from 'winston';
 import LokiTransport from 'winston-loki';
 import path from 'path';
 import fs from 'fs';
+import { getLogsDir } from '../paths.js';
 
 const logLevel = process.env.LOG_LEVEL || 'info';
 const serviceName = process.env.SERVICE_NAME || 'coachartie';
 const lokiUrl = process.env.LOKI_URL || 'http://localhost:3100';
 
-// Create logs directory if it doesn't exist
-const logsDir = process.env.LOGS_DIR || './logs';
+// Create logs directory if it doesn't exist. getLogsDir() resolves to the exact same absolute
+// directory the old cwd-relative './logs' default did (LOGS_DIR env still wins) — see
+// paths.ts's getLogsDir() doc comment.
+const logsDir = getLogsDir();
 if (!fs.existsSync(logsDir)) {
   fs.mkdirSync(logsDir, { recursive: true });
 }

@@ -1,4 +1,4 @@
-import { logger } from '@coachartie/shared';
+import { logger, CAPABILITIES_GUILD_NOTES } from '@coachartie/shared';
 import {
   RegisteredCapability,
   CapabilityContext,
@@ -27,7 +27,7 @@ interface ScratchpadParams {
 }
 
 // Base path for guild notes
-const NOTES_BASE_PATH = resolve(process.cwd(), 'reference-docs/guild-notes');
+const NOTES_BASE_PATH = CAPABILITIES_GUILD_NOTES;
 
 // In-memory cache of loaded scratchpads
 const scratchpadCache = new Map<string, string>();

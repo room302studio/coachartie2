@@ -1,5 +1,6 @@
 import { logger, OWNER_USER_ID } from '@coachartie/shared';
 import { estimateTokens } from '@coachartie/shared';
+import { getGuildKnowledgeDirs } from '@coachartie/shared';
 import { conscienceLLM } from '../monitoring/conscience.js';
 import { IncomingMessage } from '@coachartie/shared';
 import { MemoryEntourageInterface } from '../memory/memory-entourage-interface.js';
@@ -813,16 +814,10 @@ Important:
     // holds a 1,591-char February copy of subwaybuilder.md, so it shadowed the live
     // 8,543-char file in the actual repo — a 5x smaller persona, loaded silently. The
     // running repo now comes first, and the legacy Docker//data2 paths are last-resort.
-    // Under PM2 the cwd is packages/<name>, hence the ../.. candidate.
-    const cwd = process.cwd();
-    const baseDirs = [
-      process.env.APP_ROOT,
-      cwd,
-      join(cwd, '..', '..'),
-      '/data2/apps/coachartie2',
-      '/data2/coachartie2',
-      '/app',
-    ].filter(Boolean) as string[];
+    // Under PM2 the cwd is packages/<name>, hence the ../.. candidate. Routed through
+    // paths.ts's getGuildKnowledgeDirs() (wave 2) — same search order, now anchored off
+    // REPO_ROOT instead of recomputed from cwd each call.
+    const baseDirs = getGuildKnowledgeDirs();
 
     for (const baseDir of baseDirs) {
       try {

@@ -1,5 +1,5 @@
 import { existsSync, readFileSync, writeFileSync, unlinkSync } from 'fs';
-import { join } from 'path';
+import { getKillSwitch } from '../paths.js';
 
 /**
  * The global kill switch: while the KILL_SWITCH file exists, nothing generates.
@@ -20,7 +20,7 @@ import { join } from 'path';
 export const BUDGET_MUTE_MARKER = 'BUDGET_MUTE';
 
 export function getKillSwitchPath(): string {
-  return process.env.KILL_SWITCH_PATH || join(process.cwd(), '..', '..', 'KILL_SWITCH');
+  return getKillSwitch();
 }
 
 export interface BudgetMuteInfo {

@@ -4,18 +4,44 @@ console.log('🔧 Node version:', process.version);
 console.log('🌍 Environment:', process.env.NODE_ENV);
 
 import { config } from 'dotenv';
-import { resolve, dirname } from 'path';
-import { fileURLToPath } from 'url';
+import {
+  getEnvFiles,
+  REPO_ROOT,
+  getKillSwitch,
+  getStrikeMode,
+  getDatabasePath,
+  CAPABILITIES_GUILD_NOTES,
+  MENTION_PROXY_DATA,
+  SKILLS_DIRS,
+  ENGINE_LOGS,
+  PROMPTS_DIR,
+  REFERENCE_DOCS,
+} from '@coachartie/shared';
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-
-console.log('📁 __dirname:', __dirname);
 console.log('🔑 Loading environment variables...');
 
-// Load .env from monorepo root (go up from packages/capabilities/src to monorepo root)
-config({ path: resolve(__dirname, '../../../.env') });
-// Also try package-specific .env
-config({ path: resolve(__dirname, '../.env') });
+// Load .env from monorepo root, then the package-specific one. getEnvFiles() (paths.ts,
+// wave 2) resolves both to the exact same absolute files the old
+// resolve(__dirname, '../../../.env') / resolve(__dirname, '../.env') pair did — see its doc
+// comment.
+for (const envFile of getEnvFiles('capabilities')) {
+  config({ path: envFile });
+}
+
+// Every resolved runtime path, one block, every boot — so a wrong path is visible in the
+// first log line instead of discovered the next time something silently reads a stale file.
+console.log('📂 Resolved paths:', {
+  REPO_ROOT,
+  KILL_SWITCH: getKillSwitch(),
+  STRIKE_MODE: getStrikeMode(),
+  DATABASE_PATH: getDatabasePath(),
+  CAPABILITIES_GUILD_NOTES,
+  MENTION_PROXY_DATA,
+  SKILLS_DIRS,
+  ENGINE_LOGS,
+  PROMPTS_DIR,
+  REFERENCE_DOCS,
+});
 
 console.log('🔌 Port Configuration:');
 console.log('  - CAPABILITIES_PORT:', process.env.CAPABILITIES_PORT || 'not set');

@@ -1,6 +1,6 @@
 import { promises as fs } from 'fs';
 import path from 'path';
-import { logger } from '@coachartie/shared';
+import { logger, REPO_ROOT } from '@coachartie/shared';
 import { RegisteredCapability } from '../../services/capability/capability-registry.js';
 
 interface NodeError extends Error {
@@ -26,7 +26,7 @@ interface NodeError extends Error {
  */
 
 // Get the project root directory (where the packages folder is located)
-const PROJECT_ROOT = path.resolve(process.cwd(), '../..');
+const PROJECT_ROOT = REPO_ROOT;
 
 /**
  * Validates and sanitizes a file path to ensure it's within the project directory

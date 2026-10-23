@@ -1,5 +1,5 @@
 import { Router, type Router as ExpressRouter } from 'express';
-import { createRedisConnection } from '@coachartie/shared';
+import { createRedisConnection, getDatabasePath } from '@coachartie/shared';
 import { access } from 'fs/promises';
 import { logger } from '@coachartie/shared';
 import os from 'os';
@@ -54,7 +54,7 @@ healthRouter.get('/detailed', async (req, res) => {
 
     // Check database accessibility
     try {
-      const dbPath = process.env.DATABASE_PATH || '/app/data/coachartie.db';
+      const dbPath = getDatabasePath();
       await access(dbPath);
       checks.database = {
         status: 'accessible',
@@ -142,7 +142,7 @@ healthRouter.get('/ready', async (req, res) => {
     await redis.ping();
 
     // Check if database is accessible
-    const dbPath = process.env.DATABASE_PATH || '/app/data/coachartie.db';
+    const dbPath = getDatabasePath();
     await access(dbPath);
 
     res.json({

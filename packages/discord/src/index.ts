@@ -4,18 +4,42 @@ console.log('🔧 Node version:', process.version);
 console.log('🌍 Environment:', process.env.NODE_ENV);
 
 import { config } from 'dotenv';
-import { resolve, dirname } from 'path';
-import { fileURLToPath } from 'url';
+import {
+  getEnvFiles,
+  REPO_ROOT,
+  getKillSwitch,
+  getStrikeMode,
+  getDatabasePath,
+  getCasinoLedger,
+  LAUNCH_STATE,
+  MENTION_PROXY_DATA,
+  GATEWAY_LOGS,
+  REFERENCE_DOCS,
+} from '@coachartie/shared';
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-
-console.log('📁 __dirname:', __dirname);
 console.log('🔑 Loading environment variables...');
 
-// Load .env from monorepo root (go up from packages/discord/src to monorepo root)
-config({ path: resolve(__dirname, '../../../.env') });
-// Also try package-specific .env
-config({ path: resolve(__dirname, '../.env') });
+// Load .env from monorepo root, then the package-specific one. getEnvFiles() (paths.ts,
+// wave 2) resolves both to the exact same absolute files the old
+// resolve(__dirname, '../../../.env') / resolve(__dirname, '../.env') pair did — see its doc
+// comment.
+for (const envFile of getEnvFiles('discord')) {
+  config({ path: envFile });
+}
+
+// Every resolved runtime path, one block, every boot — so a wrong path is visible in the
+// first log line instead of discovered the next time something silently reads a stale file.
+console.log('📂 Resolved paths:', {
+  REPO_ROOT,
+  KILL_SWITCH: getKillSwitch(),
+  STRIKE_MODE: getStrikeMode(),
+  DATABASE_PATH: getDatabasePath(),
+  CASINO_LEDGER: getCasinoLedger(),
+  LAUNCH_STATE,
+  MENTION_PROXY_DATA,
+  GATEWAY_LOGS,
+  REFERENCE_DOCS,
+});
 
 console.log('🔌 Environment check:');
 console.log('  - DISCORD_TOKEN:', process.env.DISCORD_TOKEN ? '✅ Set' : '❌ Missing');

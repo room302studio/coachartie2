@@ -1,14 +1,6 @@
 import OpenAI from 'openai';
 import { estimateTokens } from '@coachartie/shared';
 import { config } from 'dotenv';
-import { resolve, dirname } from 'path';
-import { fileURLToPath } from 'url';
-
-const __dirname = dirname(fileURLToPath(import.meta.url));
-// Load from both root and local env files
-config({ path: resolve(__dirname, '../../../../.env') });
-config({ path: resolve(__dirname, '../../.env') });
-
 import {
   logger,
   assertGenerationAllowed,
@@ -16,7 +8,15 @@ import {
   resolveModelSpec,
   isAutoRouted,
   autoReasoningFor,
+  getEnvFiles,
 } from '@coachartie/shared';
+
+// Load from both root and local env files. getEnvFiles() (paths.ts, wave 2) resolves both to
+// the exact same absolute files the old resolve(__dirname, '../../../../.env') /
+// resolve(__dirname, '../../.env') pair did — see its doc comment.
+for (const envFile of getEnvFiles('capabilities')) {
+  config({ path: envFile });
+}
 import { UsageTracker, TokenUsage } from '../monitoring/usage-tracker.js';
 import { applyCacheControl, readCacheUsage, wireContentLength } from './prompt-cache.js';
 import { creditMonitor } from '../monitoring/credit-monitor.js';

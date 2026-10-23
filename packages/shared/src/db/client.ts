@@ -9,6 +9,7 @@ import { drizzle, BetterSQLite3Database } from 'drizzle-orm/better-sqlite3';
 import Database from 'better-sqlite3';
 import * as schema from './schema.js';
 import { sql } from 'drizzle-orm';
+import { getDatabasePath } from '../paths.js';
 
 // Re-export schema for convenience
 export * from './schema.js';
@@ -17,10 +18,15 @@ let db: BetterSQLite3Database<typeof schema> | null = null;
 let rawDb: Database.Database | null = null;
 
 /**
- * Get the default database path
+ * Get the default database path. DATABASE_PATH env still wins (paths.ts's getDatabasePath()
+ * already applies that override); the previous `'./data/coachartie.db'` cwd-relative fallback
+ * resolved to a different file per process (packages/capabilities/data/... vs
+ * packages/discord/data/...) whenever DATABASE_PATH wasn't set — a real but latent bug, since
+ * every known deployment path (PM2's ecosystem.config.cjs, vitest's test-setup.ts) always sets
+ * it. Anchoring the fallback to the repo root fixes that split instead of preserving it.
  */
 export function getDefaultDbPath(): string {
-  return process.env.DATABASE_PATH || './data/coachartie.db';
+  return getDatabasePath();
 }
 
 /**
