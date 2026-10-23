@@ -15,6 +15,7 @@ import { runToolLoop, type ToolLoopDeps } from '../5-tool-loop/native-loop.js';
 import { registryToTools } from '../5-tool-loop/tool-schema.js';
 import { capabilityRegistry } from '../5-tool-loop/registry.js';
 import { getErrorMessage } from '../error-utils.js';
+import { generateReflectionFacts, type ReflectionType } from '../2-turn/reflection-facts.js';
 
 // =====================================================
 // LLM RESPONSE COORDINATOR
@@ -404,65 +405,19 @@ export class LLMResponseCoordinator {
   }
 
   /**
-   * Generate reflection using existing prompts from CSV
-   * Used for auto-storing learnings in memory
+   * The facts worth remembering from one turn, as {"facts": string[]} (wave 10): [] means
+   * nothing to remember (or an unparseable reply, logged once). The prompt is code-owned and
+   * persona-free — see 2-turn/reflection-facts.ts. PROMPT_REFLECTION_GENERAL /
+   * PROMPT_REFLECTION_CAPABILITY in the prompts table are no longer read here.
    */
   async generateReflection(
     contextText: string,
-    type: 'general' | 'capability',
+    type: ReflectionType,
     userId: string,
     /** Conversation key: keeps this conversation's reflections on one model so its cache stays warm. */
     rotationKey?: string
-  ): Promise<string> {
-    try {
-      // Load reflection prompts from database
-      const promptName =
-        type === 'general' ? 'PROMPT_REFLECTION_GENERAL' : 'PROMPT_REFLECTION_CAPABILITY';
-      const reflectionPrompt = await promptManager.getPrompt(promptName);
-
-      const promptContent =
-        reflectionPrompt?.content ||
-        (type === 'general'
-          ? `In the dialogue I just sent, identify and list the key details worth remembering for future conversations:
-
-- Remember any hard facts – numeric values, URLs, dates, names, technical specifications
-- Remember user preferences, goals, and context about their projects
-- Remember important decisions or conclusions reached
-- Focus on information that will be useful later
-
-Never respond in the negative - if there are no hard facts, simply respond with "✨".
-
-Format your response as a bullet list of memorable facts.`
-          : `In the dialogue I just sent, identify and list the key learnings about capability usage:
-
-- Remember the capability you used and the exact arguments that worked
-- Note any errors encountered and how they were resolved
-- Identify what worked well and what didn't
-- Extract patterns for future capability usage
-
-Format your response as lessons learned for future reference.`);
-
-      const prompt = `${promptContent}\n\nDialogue:\n${contextText}`;
-
-      // Use Context Alchemy for all LLM requests - SECURITY FIX: Use actual userId for reflection generation
-      const baseSystemPrompt = await promptManager.getCapabilityInstructions(prompt);
-      const { messages } = await contextAlchemy.buildMessageChain(prompt, userId, baseSystemPrompt);
-
-      const reflection = await openRouterService.generateFromMessageChain(
-        messages,
-        userId,
-        undefined,
-        undefined,
-        {
-          rotationKey,
-          stepType: 'reflection',
-        }
-      );
-      return reflection.trim();
-    } catch (_error) {
-      logger.error(`❌ Failed to generate ${type} reflection:`, _error);
-      return '';
-    }
+  ): Promise<string[]> {
+    return generateReflectionFacts(contextText, type, userId, rotationKey);
   }
 
   /**
