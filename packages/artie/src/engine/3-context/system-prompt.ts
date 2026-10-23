@@ -1,6 +1,11 @@
 import { getSyncDb } from '../../shared/db/client.js';
 import { logger } from '../../shared/logger.js';
 import { stripUserMessagePlaceholder } from './prompt-cache.js';
+import { toolLoopMode } from '../5-tool-loop/mode.js';
+
+/** Base prompt when the DB has no PROMPT_SYSTEM row (native mode; tests, a fresh DB). */
+export const NATIVE_FALLBACK_BASE_PROMPT =
+  'You are Coach Artie, an assistant who hangs out on Discord and helps people with whatever they need.';
 
 export interface PromptTemplate {
   id?: number;
@@ -115,6 +120,15 @@ export class PromptManager {
         // and a per-request byte in it means no cache hit ever (see prompt-cache.ts).
         let instructions = stripUserMessagePlaceholder(systemPrompt.content);
 
+        // Native tools (the default): tools describe themselves on the wire, so no XML format
+        // teaching and no roster. assemble.ts strips any XML teaching left in the DB prompts
+        // and adds the one native line.
+        if (toolLoopMode() === 'native') {
+          logger.info(`🎯 Using rich PROMPT_SYSTEM from database (v${systemPrompt.version}), native tools`);
+          return instructions;
+        }
+
+        // XML-LOOP: delete after v3 soak (TOOL_LOOP=xml) — the intro and roster below.
         // Append capability format instructions
         const capabilityIntro = await this.getPrompt('CAPABILITY_PROMPT_INTRO');
         if (capabilityIntro) {
@@ -147,6 +161,14 @@ export class PromptManager {
       logger.warn(`⚠️ Failed to load DB prompts, falling back to registry:`, error);
     }
 
+    // Native tools need no selector: the tool list rides on the request. (The selector costs a
+    // FAST_MODEL call and writes XML instructions.)
+    if (toolLoopMode() === 'native') {
+      logger.warn('⚠️ No PROMPT_SYSTEM or capability_instructions in the DB; using the minimal native base prompt');
+      return NATIVE_FALLBACK_BASE_PROMPT;
+    }
+
+    // XML-LOOP: delete after v3 soak (TOOL_LOOP=xml) — the selector fallbacks below.
     // Fallback: Use two-tier capability selector to nominate relevant capabilities
     logger.info('🎯 Using two-tier capability selector for intelligent triage');
     const { capabilitySelector } = await import('./pick-tools.js');
@@ -180,6 +202,7 @@ export class PromptManager {
   }
 
   /**
+   * XML-LOOP: delete after v3 soak (TOOL_LOOP=xml). Native mode lists tools on the wire.
    * Compact roster of every registered capability: name, actions, and the first
    * line of its description. This just makes the tools discoverable.
    *

@@ -1,5 +1,5 @@
 import { AUTO_INJECTED_PARAMS, type RegisteredCapability } from './registry.js';
-import { parseTagAttributes, toCallNotation, XML_ONLY_TOOLS } from './mode.js';
+import { parseTagAttributes, toCallNotation, TAG_ATTRS, XML_ONLY_TOOLS } from './mode.js';
 
 /**
  * Capability → native tool-call schema (see TOOL-USE-MIGRATION.md; wired in wave 8).
@@ -42,8 +42,13 @@ const PROPERTY_NAME = /^[a-zA-Z0-9_.-]{1,64}$/;
 const NOT_A_PARAM = new Set(['name', 'action', 'content', 'userId', 'messageId', 'channelId', 'guildId']);
 
 const DESCRIPTION_FIRST_LINE_MAX = 200;
-const EXAMPLE_MAX = 240;
-const EXAMPLES_SHOWN = 2;
+// One example per tool: optional param names are already declared in the schema, so the
+// example only has to show a call's shape. The whole list rides on every tool turn.
+const EXAMPLE_MAX = 200;
+const EXAMPLES_SHOWN = 1;
+
+/** The opening <capability ...> tag of an example (quoted values may contain `>`). */
+const OPEN_TAG = new RegExp(`<capability\\b${TAG_ATTRS}\\/?>`);
 
 function clip(text: string, max: number): string {
   return text.length <= max ? text : `${text.slice(0, max - 1).trimEnd()}…`;
@@ -53,7 +58,7 @@ function clip(text: string, max: number): string {
 function exampleParams(cap: RegisteredCapability): string[] {
   const names = new Set<string>();
   for (const example of cap.examples ?? []) {
-    const open = /<capability\b([^>]*?)\/?>/.exec(example);
+    const open = OPEN_TAG.exec(example);
     if (!open) continue;
     for (const [k] of parseTagAttributes(open[1])) {
       if (!NOT_A_PARAM.has(k) && PROPERTY_NAME.test(k)) names.add(k);

@@ -1,3 +1,5 @@
+// XML-LOOP: delete after v3 soak (TOOL_LOOP=xml). The whole module: the XML capability
+// parser and its <read>/<recall> shortcut hints. Native tool calls never pass through here.
 import { logger } from '../../shared/logger.js';
 import { IncomingMessage } from '../../shared/queue/types.js';
 import { openRouterService } from '../4-generate/openrouter.js';

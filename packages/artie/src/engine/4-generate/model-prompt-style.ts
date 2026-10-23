@@ -1,3 +1,5 @@
+// XML-LOOP: delete after v3 soak (TOOL_LOOP=xml). The whole module: XML-format prompts and the
+// <wants_loop> instructions. Native turns never call it (generate-reply.ts prepareTurn).
 import { logger } from '../../shared/logger.js';
 
 export class ModelAwarePrompter {

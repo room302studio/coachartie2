@@ -69,6 +69,8 @@ import { GlobalVariableStore } from './5-tool-loop/variables.js';
 // would have thrown ERR_MODULE_NOT_FOUND at boot.
 import './2-turn/run-turn.js';
 import { capabilityRegistry } from './5-tool-loop/registry.js';
+import { toolLoopMode } from './5-tool-loop/mode.js';
+import { openRouterModelsService } from './4-generate/model-catalog.js';
 import { hybridDataLayer } from './memory/store.js';
 
 // Export openRouterService for models endpoint
@@ -116,6 +118,17 @@ async function start() {
     // Initialize orchestrator
     console.log('📊 Initializing orchestrator...');
     const stats = capabilityRegistry.getStats();
+
+    // Which tool loop this process runs (wave 8). warn, so it reaches the PM2 log file.
+    const loopMode = toolLoopMode();
+    logger.warn(
+      loopMode === 'native'
+        ? '🔧 Tool loop: native tool calls (default). Rollback: TOOL_LOOP=xml + restart.'
+        : '🔧 Tool loop: XML (TOOL_LOOP=xml, emergency fallback)'
+    );
+    // Native tool turns check the model catalog's supported_parameters; warm it now so the
+    // first reply after boot doesn't wait on the fetch.
+    if (loopMode === 'native') void openRouterModelsService.fetchLiveModelInfo();
 
     // Start queue workers first
     console.log('👷 Starting queue workers...');

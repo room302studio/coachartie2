@@ -11,6 +11,10 @@ import { getBrownoutMode, applyBrevityNote, brownoutMaxTokens, brownoutRoute } f
 import { experimentManager } from '../3-context/experiments.js';
 import { errorTracker, ERROR_TYPES } from './error-tracker.js';
 import { CapabilityResult, OrchestrationContext } from '../2-turn/types.js';
+import { runToolLoop, type ToolLoopDeps } from '../5-tool-loop/native-loop.js';
+import { registryToTools } from '../5-tool-loop/tool-schema.js';
+import { capabilityRegistry } from '../5-tool-loop/registry.js';
+import { getErrorMessage } from '../error-utils.js';
 
 // =====================================================
 // LLM RESPONSE COORDINATOR
@@ -28,8 +32,8 @@ export class LLMResponseCoordinator {
   }
 
   /**
-   * Get LLM response with capability extraction
-   * Uses FAST_MODEL for cost-efficient capability pattern matching
+   * Get LLM response with capability extraction (the XML path's first generate).
+   * XML-LOOP: delete after v3 soak (TOOL_LOOP=xml)
    */
   async getLLMResponseWithCapabilities(
     message: IncomingMessage,
@@ -38,7 +42,119 @@ export class LLMResponseCoordinator {
   ): Promise<string> {
     try {
       logger.info(`🚀 getLLMResponseWithCapabilities called for message: "${message.message}"`);
+      const turn = await this.prepareTurn(message, capabilityNames, 'xml');
+      const { modelAwareMessages, smartModel, generationOptions } = turn;
 
+      // Use streaming if callback provided, otherwise regular generation
+      // Pass the fast model explicitly to ensure consistent model selection
+      // Context Alchemy: Include traceId and guildId for observability
+      // Preflight: Include maxTokens for dynamic response length
+      const generated = onPartialResponse
+        ? await openRouterService.generateFromMessageChainStreaming(
+            modelAwareMessages,
+            message.userId,
+            onPartialResponse,
+            message.id,
+            smartModel,
+            generationOptions
+          )
+        : await openRouterService.generateFromMessageChain(
+            modelAwareMessages,
+            message.userId,
+            message.id,
+            smartModel,
+            generationOptions
+          );
+
+      return this.disarmWarden(generated, turn);
+    } catch (error: any) {
+      return this.rethrowClassified(error, message);
+    }
+  }
+
+  /**
+   * The NATIVE tool turn (wave 8, the default): the same prepared prompt as the XML path
+   * (preflight, context assembly, complexity route, brownout model/max_tokens/brevity note),
+   * then runToolLoop with openrouter's generateWithTools and the given executeTool. Tool turns
+   * are non-streaming; the caller hands the final text to onPartialResponse.
+   *
+   * If a later round fails after the model already said something (e.g. every model 5xx on
+   * round 3), that text is the reply instead of an error, the way the XML path fell back to its
+   * first response when the ReAct loop threw.
+   */
+  async getNativeToolResponse(
+    message: IncomingMessage,
+    deps: Pick<ToolLoopDeps, 'executeTool' | 'deadlineAt'> & {
+      onStep?: ToolLoopDeps['onStep'];
+    }
+  ): Promise<string> {
+    try {
+      const turn = await this.prepareTurn(message, undefined, 'native');
+      // Built per turn (skills can register after boot); same registry → same bytes.
+      const tools = registryToTools(capabilityRegistry.list());
+      let round = 0;
+      let lastText = '';
+
+      const generate: ToolLoopDeps['generate'] = async (msgs, offered) => {
+        round++;
+        const result = await openRouterService.generateWithTools(
+          msgs,
+          tools, // the full list every round, so the cached prefix never changes
+          message.userId,
+          round === 1 ? message.id : `${message.id}_tool_${round}`,
+          turn.smartModel,
+          { ...turn.generationOptions, toolChoice: offered.length > 0 ? 'auto' : 'none' }
+        );
+        return { content: result.content, toolCalls: offered.length > 0 ? result.toolCalls : [] };
+      };
+
+      let finalText: string;
+      try {
+        const result = await runToolLoop(turn.modelAwareMessages, tools, {
+          generate,
+          executeTool: deps.executeTool,
+          deadlineAt: deps.deadlineAt,
+          onStep: (step) => {
+            if (step.content.trim()) lastText = step.content;
+            deps.onStep?.(step);
+          },
+        });
+        logger.info(
+          `🔧 Native tool loop: ${result.stoppedReason} after ${result.iterations} round(s), ${result.toolCallsMade} tool call(s)`
+        );
+        finalText = result.finalText;
+      } catch (loopError) {
+        if (round > 1 && lastText) {
+          logger.warn(
+            `⚠️ Native tool loop failed on round ${round}; replying with the text it already had: ${getErrorMessage(loopError)}`
+          );
+          finalText = lastText;
+        } else {
+          throw loopError;
+        }
+      }
+
+      return this.disarmWarden(this.stripThinkingTags(finalText, message.userId, message.id), turn);
+    } catch (error: any) {
+      return this.rethrowClassified(error, message);
+    }
+  }
+
+  /**
+   * Everything before the first generate, shared by both loops: preflight, the base system
+   * prompt, context assembly, the complexity route and brownout (model, max_tokens, brevity).
+   */
+  private async prepareTurn(
+    message: IncomingMessage,
+    capabilityNames: string[] | undefined,
+    mode: 'native' | 'xml'
+  ): Promise<{
+    modelAwareMessages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>;
+    smartModel: string;
+    generationOptions: { traceId?: string | null; guildId?: string; maxTokens: number; plugins?: unknown[] };
+    brownout: Awaited<ReturnType<typeof getBrownoutMode>>;
+  }> {
+    {
       // Use micro LLM for smart preflight analysis
       // No regex heuristics - let a cheap fast model make intelligent decisions
       const preflight = await preflightAnalyzer.analyze(message.message);
@@ -126,15 +242,18 @@ export class LLMResponseCoordinator {
         );
       }
       const modelAwareMessages = applyBrevityNote(
-        messages.map((msg) => {
-          if (msg.role === 'system') {
-            return {
-              ...msg,
-              content: modelAwarePrompter.generateCapabilityPrompt(smartModel, msg.content),
-            };
-          }
-          return msg;
-        }),
+        mode === 'native'
+          ? messages
+          : // XML-LOOP: delete after v3 soak (TOOL_LOOP=xml). A pass-through today.
+            messages.map((msg) => {
+              if (msg.role === 'system') {
+                return {
+                  ...msg,
+                  content: modelAwarePrompter.generateCapabilityPrompt(smartModel, msg.content),
+                };
+              }
+              return msg;
+            }),
         // Lean/critical cap max_tokens; ask for a complete short reply that fits rather than
         // a normal one that gets cut off. Inserted after the cache breakpoint.
         brownout.mode
@@ -144,8 +263,6 @@ export class LLMResponseCoordinator {
         `🎯 Model route: ${routeSimple ? 'SIMPLE' : preflight.complexity.toUpperCase()} → ${smartModel} (${modelAwareMessages.length} messages)`
       );
 
-      // Use streaming if callback provided, otherwise regular generation
-      // Pass the fast model explicitly to ensure consistent model selection
       // Context Alchemy: Include traceId and guildId for observability
       // Preflight: Include maxTokens for dynamic response length
       const generationOptions = {
@@ -155,38 +272,34 @@ export class LLMResponseCoordinator {
         plugins: route.plugins,
       };
 
-      const generated = onPartialResponse
-        ? await openRouterService.generateFromMessageChainStreaming(
-            modelAwareMessages,
-            message.userId,
-            onPartialResponse,
-            message.id,
-            smartModel,
-            generationOptions
-          )
-        : await openRouterService.generateFromMessageChain(
-            modelAwareMessages,
-            message.userId,
-            message.id,
-            smartModel,
-            generationOptions
-          );
+      return { modelAwareMessages, smartModel, generationOptions, brownout };
+    }
+  }
 
-      // WARDEN DISARM: the [TIMEOUT] marker is a live moderation weapon that the
-      // model wields at its own judgment. Under brownout that judgment belongs to
-      // a token-capped budget model — which timed out a friendly user for asking a
-      // question (rhodie3587, 2026-07-16). Degraded cognition ≠ moderation duty:
-      // strip the marker before it reaches the discord side unless we're in
-      // normal mode on the full model.
-      if (brownout.mode !== 'normal' && generated && /\[TIMEOUT(?::\d{1,3})?\]/i.test(generated)) {
-        logger.warn(
-          `🕯️ Brownout ${brownout.mode}: discarding [TIMEOUT] marker from ${smartModel} — degraded models don't get warden powers`
-        );
-        return generated.replace(/\[TIMEOUT(?::\d{1,3})?\]/gi, '').trim();
-      }
+  /**
+   * WARDEN DISARM: the [TIMEOUT] marker is a live moderation weapon that the
+   * model wields at its own judgment. Under brownout that judgment belongs to
+   * a token-capped budget model — which timed out a friendly user for asking a
+   * question (rhodie3587, 2026-07-16). Degraded cognition ≠ moderation duty:
+   * strip the marker before it reaches the discord side unless we're in
+   * normal mode on the full model. Applies to both loops' final text.
+   */
+  private disarmWarden(
+    generated: string,
+    turn: { brownout: { mode: string }; smartModel: string }
+  ): string {
+    if (turn.brownout.mode !== 'normal' && generated && /\[TIMEOUT(?::\d{1,3})?\]/i.test(generated)) {
+      logger.warn(
+        `🕯️ Brownout ${turn.brownout.mode}: discarding [TIMEOUT] marker from ${turn.smartModel} — degraded models don't get warden powers`
+      );
+      return generated.replace(/\[TIMEOUT(?::\d{1,3})?\]/gi, '').trim();
+    }
+    return generated;
+  }
 
-      return generated;
-    } catch (error: any) {
+  /** Classify a generate failure into the operator-facing error run-turn maps to a reply. */
+  private async rethrowClassified(error: any, message: IncomingMessage): Promise<never> {
+    {
       const errorMessage = error?.message || String(error);
       const traceId = message.context?.traceId;
 
@@ -399,6 +512,7 @@ ${capabilityDetails}`;
   }
 
   /**
+   * XML-LOOP: delete after v3 soak (TOOL_LOOP=xml). The native loop has no <wants_loop>.
    * Extract loop decision from LLM response
    * Checks for <wants_loop>true</wants_loop> signal in the response
    * Returns both the cleaned response and the loop decision flag
@@ -480,6 +594,7 @@ ${capabilityDetails}`;
   }
 
   /**
+   * XML-LOOP: delete after v3 soak (TOOL_LOOP=xml). Used only by the llm-loop ReAct loop.
    * Extract suggested next actions from capability results
    * Parses "Next Actions:" sections from capability responses
    */
@@ -521,6 +636,7 @@ ${capabilityDetails}`;
   }
 
   /**
+   * XML-LOOP: delete after v3 soak (TOOL_LOOP=xml). Used only by the llm-loop ReAct loop.
    * Intelligently truncate conversation history to prevent context overflow
    * Keeps first 2 messages (user + initial response) + recent messages within token budget
    */

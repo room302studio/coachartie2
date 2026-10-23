@@ -3,6 +3,7 @@ import { OWNER_USER_ID } from '../../shared/config/owner.js';
 import { estimateTokens } from '../../shared/async.js';
 import { getGuildKnowledgeDirs } from '../../shared/paths.js';
 import { conscienceLLM } from '../health/conscience.js';
+import { toolLoopMode, stripXmlToolTeaching, NATIVE_TOOLS_LINE } from '../5-tool-loop/mode.js';
 import { IncomingMessage } from '../../shared/queue/types.js';
 import { MemoryEntourageInterface } from '../memory/types.js';
 import { MemoryRecaller } from '../memory/recall.js';
@@ -984,6 +985,13 @@ Important:
         logger.warn('Failed to load Discord UI modality prompt, using fallback');
         systemContent += `\n\n${UI_MODALITY_RULES_FALLBACK}`;
       }
+    }
+
+    // Native tools (wave 8, the default): the DB prompts above can still teach the XML tag
+    // format (PROMPT_DISCORD_UI_MODALITY's `Use: <capability .../>` lines, any roster). Rewrite
+    // it by marker and say once how tools work now. Deterministic, so the prefix stays cacheable.
+    if (toolLoopMode() === 'native') {
+      systemContent = `${stripXmlToolTeaching(systemContent.trim())}\n\n${NATIVE_TOOLS_LINE}`;
     }
 
     messages.push({ role: 'system', content: systemContent.trim() });

@@ -32,8 +32,14 @@ describe('registryToTools over the real registry', () => {
     tools = registryToTools(capabilityRegistry.list());
     // For the BUILD-LOG: how big the tool list is on the wire.
     // eslint-disable-next-line no-console
+    const biggest = tools
+      .map((t) => [t.function.name, JSON.stringify(t).length] as const)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5)
+      .map(([n, b]) => `${n}:${b}`)
+      .join(' ');
     console.log(
-      `NATIVE_TOOLS count=${tools.length} bytes=${JSON.stringify(tools).length}`
+      `NATIVE_TOOLS count=${tools.length} bytes=${JSON.stringify(tools).length} biggest=${biggest}`
     );
   }, 20000);
 
@@ -149,6 +155,12 @@ describe('call notation (XML examples rewritten for native mode)', () => {
         `<capability name="discord-ui" action="buttons" data='[{"label":"A"}]' /> then <capability name="tts" action="sing">la</capability>`
       )
     ).toBe('discord-ui(action="buttons", data="[{\\"label\\":\\"A\\"}]") then tts(action="sing", content="la")');
+  });
+
+  it('keeps a quoted ">" inside an attribute value (Discord mentions)', () => {
+    expect(
+      toCallNotation('<capability name="meeting-scheduler" action="suggest-time" participants="<@123456>,bob" />')
+    ).toBe('meeting-scheduler(action="suggest-time", participants="<@123456>,bob")');
   });
 
   it('stripXmlToolTeaching drops the roster and wants_loop lines, and is a no-op without markers', () => {

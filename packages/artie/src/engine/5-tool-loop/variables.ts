@@ -1,3 +1,6 @@
+// XML-LOOP: delete after v3 soak (TOOL_LOOP=xml). The variable store and the `variable` tool
+// carry values between <capability/> tags ({{var}}); native tool results go straight back to
+// the model, and registryToTools never offers `variable`. (The global_variables table stays.)
 import { logger } from '../../shared/logger.js';
 import { getDb, getRawDb, eq, inArray, asc } from '../../shared/db/client.js';
 import { globalVariables } from '../../shared/db/schema.js';

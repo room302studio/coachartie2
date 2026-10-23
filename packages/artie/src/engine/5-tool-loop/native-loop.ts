@@ -4,7 +4,7 @@ import { NATIVE_TOOL_MAX_ITERATIONS } from './timeouts.js';
 /**
  * The native agentic loop (TOOL-USE-MIGRATION.md Phase A; wired in wave 8, the default loop).
  *
- * Replaces `llm-loop`'s XML-tag + <wants_loop> design. The model is given native tools; if it
+ * Replaces `llm-loop`'s XML-tag + forced-loop design. The model is given native tools; if it
  * returns tool calls we run them (in PARALLEL), feed the results back, and repeat. It stops
  * NATURALLY when the model returns text with no tool calls — no `minDepth`/`canStop` machinery,
  * which is what cures the barging-in + token-burn.

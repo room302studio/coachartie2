@@ -7,6 +7,7 @@ import { logger } from '../../shared/logger.js';
  *   xml               TOOL_LOOP=xml: the old path end to end — the XML roster and format
  *                     teaching in the system prompt, the <capability/> parser, <wants_loop>,
  *                     the llm-loop ReAct loop, {{var}} substitution and the `variable` tool.
+ *                     XML-LOOP: delete after v3 soak (TOOL_LOOP=xml)
  *
  * TOOL_LOOP=xml is the ONE emergency flag and exists only until v3 has soaked. Rollback is
  * `TOOL_LOOP=xml` in the environment + a restart. This getter is the only reader of the
@@ -72,13 +73,22 @@ function callNotation(attrText: string, body?: string): string {
 export function toCallNotation(text: string): string {
   if (!text.includes('<capability')) return text;
   return text
-    .replace(/<capability\b([^>]*?)\s*\/>/g, (_m, attrs: string) => callNotation(attrs))
-    .replace(/<capability\b([^>]*)>([\s\S]*?)<\/capability>/g, (_m, attrs: string, body: string) =>
-      callNotation(attrs, body)
-    );
+    .replace(SELF_CLOSING_TAG, (_m, attrs: string) => callNotation(attrs))
+    .replace(PAIRED_TAG, (_m, attrs: string, body: string) => callNotation(attrs, body));
 }
 
 /**
+ * A tag's attribute text: quoted values may contain `>` (`participants="<@123>"`), so a quoted
+ * string is consumed whole; anything else stops at `>`. Each alternative starts with a
+ * different character, so matching stays linear.
+ */
+export const TAG_ATTRS = `((?:[^>"']|"[^"]*"|'[^']*')*?)`;
+const SELF_CLOSING_TAG = new RegExp(`<capability\\b${TAG_ATTRS}\\s*\\/>`, 'g');
+const PAIRED_TAG = new RegExp(`<capability\\b${TAG_ATTRS}>([\\s\\S]*?)<\\/capability>`, 'g');
+
+/**
+ * XML-LOOP: delete after v3 soak (TOOL_LOOP=xml), once the DB prompt rows are cleaned too
+ * (BUILD-LOG wave 8 has the SQL): this only exists because those rows still teach XML.
  * Native-mode system prompt clean-up, by marker (spec §5). The live DB prompts can carry XML
  * tool teaching (PROMPT_DISCORD_UI_MODALITY's `Use: <capability name="discord-ui" .../>`
  * lines, tool examples). This:

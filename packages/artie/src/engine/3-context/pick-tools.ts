@@ -1,3 +1,5 @@
+// XML-LOOP: delete after v3 soak (TOOL_LOOP=xml). The two-tier selector writes XML capability
+// instructions; only system-prompt.ts's XML fallback calls it.
 import { logger } from '../../shared/logger.js';
 import { capabilityRegistry, RegisteredCapability } from '../5-tool-loop/registry.js';
 import { openRouterService } from '../4-generate/openrouter.js';

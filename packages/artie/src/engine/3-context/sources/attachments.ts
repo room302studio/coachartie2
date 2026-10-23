@@ -17,6 +17,14 @@ import { storeAnalyzedMetroFile, readAnalysis } from '../../1-intake/pending-att
 import { getUserScores, formatUserScores } from '../../2-turn/user-scores.js';
 import type { ContextSource } from './types.js';
 import { DEBUG } from './types.js';
+import { toolLoopMode, toCallNotation } from '../../5-tool-loop/mode.js';
+
+/** How to send the analyzed save back: XML tag on the XML path, call notation on native. */
+function sendMetroFileHint(): string {
+  const xml =
+    'TO SEND FILE: <capability name="send-metro-file" action="send" userId="USER_ID" message="Your message here" />';
+  return toolLoopMode() === 'native' ? toCallNotation(xml) : xml;
+}
 
 // Vision capability wrapper for auto-extraction
 const visionCapability: { execute: (opts: any) => Promise<string> } | null = {
@@ -375,7 +383,7 @@ ${recentMetroMemory.content}`;
         if (repairsMade) {
           const repairedContent = `METRO SAVE ANALYZED: ${first.name}
 Status: Repairs made
-${canSendFile ? 'TO SEND FILE: <capability name="send-metro-file" action="send" userId="USER_ID" message="Your message here" />' : ''}
+${canSendFile ? sendMetroFileHint() : ''}
 
 ${summary}`;
 
@@ -433,7 +441,7 @@ File URL: ${url}`;
 
           const healthyContent = `METRO SAVE ANALYZED: ${first.name}
 Status: Healthy
-${canSendFile ? 'TO SEND FILE: <capability name="send-metro-file" action="send" userId="USER_ID" message="Your message here" />' : ''}
+${canSendFile ? sendMetroFileHint() : ''}
 
 ${summary}`;
 

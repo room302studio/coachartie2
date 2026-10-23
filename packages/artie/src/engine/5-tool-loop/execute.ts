@@ -9,6 +9,7 @@ import { capabilityParser } from './parse-tool-calls.js';
 import { GlobalVariableStore } from './variables.js';
 import { jobTracker } from '../1-intake/job-tracker.js';
 import { recordCapabilityUsage } from '../health/metrics.js';
+import { toCallNotation } from './mode.js';
 import {
   ExtractedCapability,
   CapabilityResult,
@@ -141,6 +142,103 @@ function shouldTaintContext(capability: ExtractedCapability): boolean {
   return TAINTING_CAPABILITIES.has(String(name).toLowerCase());
 }
 
+/** Cap on one tool result fed back to the model (a fetched page can be 100k+ chars). */
+export const NATIVE_TOOL_RESULT_MAX_CHARS = 12_000;
+
+function toolResultText(data: unknown): string {
+  if (data === undefined || data === null) return '';
+  return typeof data === 'string' ? data : JSON.stringify(data);
+}
+
+/**
+ * Execute ONE native tool call (wave 8): runToolLoop's executeTool in run-turn.ts.
+ *
+ * The same execute path the XML loop uses, plus the taint guard the XML ReAct loop never ran:
+ *   resolveToolCall (TOOL_ALIASES: an old name like shell/todo runs its canonical tool)
+ *   → taint block (DANGEROUS_WHEN_TAINTED after a web/http fetch in this turn)
+ *   → job tracker emoji (the gateway's "using <tool>" reactions)
+ *   → robustExecutor.executeWithRetry (retry wrapper → registry.execute: ACTION_ALIASES,
+ *     param validation, scheduler/memory userId injection, channel/guild context)
+ *   → context.capabilities/results (autoSingLyricSheet, reflection and failure logs read them)
+ *   → taint set when the tool fetched external content.
+ * Not here, on purpose: {{var}}/`output` variable plumbing (XML-only). Never throws for a tool
+ * failure: the failure comes back as "Error: ..." text so the model can recover. Registry
+ * hints that quote <capability .../> syntax are rewritten as call notation first.
+ */
+export async function executeNativeToolCall(
+  context: OrchestrationContext,
+  invocation: { name: string; action?: string; content?: string; params: Record<string, unknown> }
+): Promise<string> {
+  const resolved = resolveToolCall(invocation.name, invocation.action ?? '', invocation.params);
+  const capability: ExtractedCapability = {
+    name: resolved.name,
+    action: resolved.action,
+    params: resolved.params ?? {},
+    content: invocation.content,
+    priority: context.capabilities.length,
+  };
+  context.capabilities.push(capability);
+
+  const taintBlock = checkTaintBlock(capability, context);
+  if (taintBlock) {
+    logger.warn(`🛡️ TAINT BLOCK: ${capability.name}:${capability.action} blocked (native tool call)`);
+    context.results.push({
+      capability,
+      success: false,
+      error: taintBlock,
+      timestamp: new Date().toISOString(),
+    });
+    context.currentStep++;
+    return `Error: ${taintBlock}`;
+  }
+
+  try {
+    const emoji = capabilityRegistry.get(capability.name, capability.action)?.emoji;
+    if (emoji) jobTracker.trackCapabilityExecution(context.messageId, emoji);
+  } catch {
+    // unknown tool or action: the registry reports it below
+  }
+
+  const robust = await robustExecutor.executeWithRetry(
+    {
+      name: capability.name,
+      action: capability.action,
+      content: capability.content || '',
+      params: capability.params,
+    },
+    {
+      userId: context.userId,
+      messageId: context.messageId,
+      traceId: context.traceId || undefined,
+      channelId: context.discord_context?.channelId,
+      guildId: context.discord_context?.guildId,
+    },
+    3
+  );
+
+  context.results.push({
+    capability,
+    success: robust.success,
+    data: robust.data,
+    error: robust.error,
+    timestamp: robust.timestamp,
+  });
+  context.currentStep++;
+
+  if (robust.success && shouldTaintContext(capability)) {
+    context.taintedByExternalContent = true;
+    context.taintSource = `${capability.name}:${capability.action}`;
+    logger.warn(`🛡️ TAINT SET: context tainted by ${context.taintSource} (native tool call)`);
+  }
+
+  const text = robust.success
+    ? toolResultText(robust.data)
+    : `Error: ${toCallNotation(robust.error || 'the tool failed')}`;
+  return text.length > NATIVE_TOOL_RESULT_MAX_CHARS
+    ? `${text.slice(0, NATIVE_TOOL_RESULT_MAX_CHARS)}\n[… truncated, ${text.length - NATIVE_TOOL_RESULT_MAX_CHARS} more chars]`
+    : text;
+}
+
 /**
  * Capability Execution Engine
  * Handles the execution chain/loop for capabilities
@@ -156,6 +254,7 @@ export class CapabilityExecutor {
   }
 
   /**
+   * XML-LOOP: delete after v3 soak (TOOL_LOOP=xml).
    * Execute capability chain with streaming support
    * This is "the loop" - processes capabilities one at a time with LLM interaction
    */
@@ -387,6 +486,7 @@ export class CapabilityExecutor {
   }
 
   /**
+   * XML-LOOP: delete after v3 soak (TOOL_LOOP=xml). {{result}}/{{var}} plumbing.
    * Perform template variable substitution on capability content and params
    * Enables capability chaining via {{result}}, {{result_1}}, etc.
    * ALSO substitutes global variables from the database
@@ -564,6 +664,7 @@ export class CapabilityExecutor {
   }
 
   /**
+   * XML-LOOP: delete after v3 soak (TOOL_LOOP=xml). Native failures go back as tool results.
    * CRITICAL FIX: Error Recovery Loop - Ask LLM to self-correct failed capabilities
    * This implements the architecture improvement the user requested:
    * "send better errors back to the LLM so it could have fixed it itself"

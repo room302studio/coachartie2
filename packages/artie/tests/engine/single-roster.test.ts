@@ -28,8 +28,13 @@ function countOccurrences(haystack: string, needle: string): number {
   return count;
 }
 
-describe('capability roster appears once per prompt', () => {
+// The roster is XML-path prompt content: since wave 8 it is built only under TOOL_LOOP=xml.
+// XML-LOOP: delete after v3 soak (TOOL_LOOP=xml) — the first describe; keep the native one.
+const savedToolLoop = process.env.TOOL_LOOP;
+
+describe('capability roster appears once per prompt (TOOL_LOOP=xml)', () => {
   beforeAll(async () => {
+    process.env.TOOL_LOOP = 'xml';
     capabilityBootstrap.initializeCapabilityRegistry();
     // Skills register in a setImmediate after bootstrap (see roster.test.ts). Let them land
     // first, so the roster and the registry list are read from the same set.
@@ -48,6 +53,8 @@ describe('capability roster appears once per prompt', () => {
 
   afterAll(() => {
     getSyncDb().run(`DELETE FROM prompts WHERE name = ?`, ['PROMPT_SYSTEM']);
+    if (savedToolLoop === undefined) delete process.env.TOOL_LOOP;
+    else process.env.TOOL_LOOP = savedToolLoop;
   });
 
   it('an assembled first-turn chain lists each capability exactly once', async () => {
@@ -86,5 +93,61 @@ describe('capability roster appears once per prompt', () => {
     // Its two fingerprints: the shortcuts header, and the "name(a|b), name(c|d)" list shape.
     expect(all).not.toContain('SIMPLE SHORTCUTS (preferred)');
     expect(all).not.toMatch(/\b[\w-]+\([\w|-]+\), [\w-]+\([\w|-]+\)/);
+  }, 20000);
+});
+
+describe('native tools (TOOL_LOOP unset): no roster, no XML teaching, one tools line', () => {
+  beforeAll(() => {
+    delete process.env.TOOL_LOOP;
+    getSyncDb().run(
+      `INSERT OR REPLACE INTO prompts (name, content, category, is_active) VALUES (?, ?, ?, 1)`,
+      ['PROMPT_SYSTEM', PERSONA, 'system']
+    );
+    // A DB prompt that still teaches the XML format (the live PROMPT_DISCORD_UI_MODALITY shape).
+    getSyncDb().run(
+      `INSERT OR REPLACE INTO prompts (name, content, category, is_active) VALUES (?, ?, ?, 1)`,
+      [
+        'PROMPT_DISCORD_UI_MODALITY',
+        'CHOICE → USE BUTTONS:\nUse: <capability name="discord-ui" action="buttons" data=\'[{"label":"A"}]\' />\nAdd <wants_loop>true</wants_loop> for long tasks',
+        'system',
+      ]
+    );
+  });
+
+  afterAll(() => {
+    getSyncDb().run(`DELETE FROM prompts WHERE name IN (?, ?)`, [
+      'PROMPT_SYSTEM',
+      'PROMPT_DISCORD_UI_MODALITY',
+    ]);
+    if (savedToolLoop === undefined) delete process.env.TOOL_LOOP;
+    else process.env.TOOL_LOOP = savedToolLoop;
+  });
+
+  it('the cached system message has the persona, call notation, and the native line once', async () => {
+    const base = await promptManager.getCapabilityInstructions('hey artie, what can you do?');
+    expect(base).toBe(PERSONA);
+
+    const build = async () =>
+      (
+        await contextAlchemy.buildMessageChain('hey artie, what can you do?', 'user-native-test', base, [], {
+          source: 'discord',
+          channelId: 'channel-native-test',
+          enableMemories: false,
+          enableRules: false,
+        })
+      ).messages;
+    const messages = await build();
+    const system = messages[0].content;
+
+    expect(system.startsWith(PERSONA)).toBe(true);
+    expect(system).not.toContain('## Your capability roster');
+    expect(system).not.toContain('<capability '); // a tag; the native line names "<capability>" itself
+    expect(system).not.toContain('wants_loop');
+    expect(system).toContain('Use: discord-ui(action="buttons", data="[{\\"label\\":\\"A\\"}]")');
+    expect(countOccurrences(system, 'Use the provided tools; never write <capability> tags.')).toBe(1);
+    expect(system.endsWith('Use the provided tools; never write <capability> tags.')).toBe(true);
+
+    // Byte-stable across builds (it is the cached prefix).
+    expect((await build())[0].content).toBe(system);
   }, 20000);
 });

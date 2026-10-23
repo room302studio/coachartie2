@@ -69,8 +69,9 @@ export interface ProcessorOptions {
 export function cleanCapabilityTags(text: string): string {
   // Same passes, same order as before the shared stripper: capability tags (case-sensitive,
   // self-closing first), then wants_loop/think/system-reminder, then function-call blocks.
+  // Kept on the native path too: models still slip old tags. XML-LOOP: delete after v3 soak (TOOL_LOOP=xml) — the wants_loop entry only.
   let out = stripToolCalls(text, { capability: 'self-then-paired-case-sensitive' });
-  out = stripInternalMarkup(out, ['wants_loop', 'think', 'system-reminder']);
+  out = stripInternalMarkup(out, ['wants_loop', 'think', 'system-reminder']); // XML-LOOP: delete after v3 soak (TOOL_LOOP=xml) — 'wants_loop'
   out = stripToolCalls(out, { capability: false, functionCalls: true });
   return out.replace(/\n{3,}/g, '\n\n').trim();
 }

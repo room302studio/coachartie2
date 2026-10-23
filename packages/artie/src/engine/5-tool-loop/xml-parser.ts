@@ -1,3 +1,5 @@
+// XML-LOOP: delete after v3 soak (TOOL_LOOP=xml). The whole module: <capability/> extraction
+// for the XML tool loop. Native tool calls arrive structured (native-loop.ts).
 import { XMLParser } from 'fast-xml-parser';
 import { logger } from '../../shared/logger.js';
 import { capabilityRegistry } from './registry.js';
@@ -42,7 +44,7 @@ interface SimpleTag {
  * skips over its body, as lastIndex did. Close-tag positions are indexed once up front.
  * Differential-tested against the regex on 500k random strings (wave 7): identical output.
  */
-// XML-LOOP: delete after v3 soak
+// XML-LOOP: delete after v3 soak (TOOL_LOOP=xml)
 function* scanSimpleTags(text: string): Generator<SimpleTag> {
   const closes = new Map<string, { at: number[]; next: number }>();
   const closeRe = /<\/([\w-]+)>/g;

@@ -1,3 +1,5 @@
+// XML-LOOP: delete after v3 soak (TOOL_LOOP=xml). The whole module: the llm-loop ReAct loop
+// over <capability/> text. The default loop is native-loop.ts.
 import { logger } from '../../shared/logger.js';
 import { openRouterService } from '../4-generate/openrouter.js';
 import { promptManager } from '../3-context/system-prompt.js';

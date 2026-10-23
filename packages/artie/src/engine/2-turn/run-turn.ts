@@ -2,8 +2,9 @@
  * run-turn.ts: the engine's spine for one incoming message.
  *
  *   processMessage → fast paths (fast-paths.ts) → runTurn:
- *     trace → email short-circuit → first generate → <wants_loop> decision → tool loop
+ *     trace → email short-circuit → native tool loop (default; runNativeTurn)
  *     → after-turn effects (auto-sing, reflection gate)
+ *   TOOL_LOOP=xml swaps the middle for the old XML turn (runXmlTurn). // XML-LOOP: delete after v3 soak (TOOL_LOOP=xml)
  *
  * Wave 6 merged the old process-message handler and capability-orchestrator.ts into this
  * file. The voice-note TTS fast path and the periodic credit_status check live in
@@ -21,7 +22,9 @@ import { emailDraftingService } from '../tools/people/email-drafting.js';
 import { llmResponseCoordinator } from '../4-generate/generate-reply.js';
 import { capabilityBootstrap } from '../5-tool-loop/register-tools.js';
 import { memoryOrchestration } from './save-reflection.js';
-import { llmLoopService } from '../5-tool-loop/loop.js';
+import { llmLoopService } from '../5-tool-loop/loop.js'; // XML-LOOP: delete after v3 soak (TOOL_LOOP=xml)
+import { executeNativeToolCall } from '../5-tool-loop/execute.js';
+import { toolLoopMode } from '../5-tool-loop/mode.js';
 import { JOB_TIMEOUT_MS, SOFT_DEADLINE_RESERVE_MS } from '../5-tool-loop/timeouts.js';
 import { traceManager } from './trace.js';
 import { sessionManager } from './session-log.js';
@@ -281,10 +284,60 @@ export class CapabilityOrchestrator {
   }
 
   /**
-   * The turn pipeline: first generate, the <wants_loop> decision, then the tool loop.
-   * Each step is one call, so a step can be commented out to debug it.
+   * The turn pipeline. Native (default): one runToolLoop over native tool calls.
+   * TOOL_LOOP=xml: today's XML path, unchanged (runXmlTurn).
    */
   private async assembleMessageOrchestration(
+    context: OrchestrationContext,
+    message: IncomingMessage,
+    onPartialResponse?: (partial: string) => void
+  ): Promise<string> {
+    if (toolLoopMode() === 'xml') {
+      return this.runXmlTurn(context, message, onPartialResponse); // XML-LOOP: delete after v3 soak (TOOL_LOOP=xml)
+    }
+    return this.runNativeTurn(context, message, onPartialResponse);
+  }
+
+  /**
+   * Native tool turn (wave 8): generate with tools → run the calls (parallel, same execute
+   * path as XML plus the taint guard) → repeat until the model answers without calls, the
+   * round cap (timeouts.ts, 8) or the turn's soft deadline. Generate errors propagate to
+   * orchestrateMessage's failure reply, as the XML first generate's did.
+   */
+  private async runNativeTurn(
+    context: OrchestrationContext,
+    message: IncomingMessage,
+    onPartialResponse?: (partial: string) => void
+  ): Promise<string> {
+    logger.info(`🔧 Native tool turn for <${message.userId}> message ${message.id}`);
+    const finalText = await llmResponseCoordinator.getNativeToolResponse(message, {
+      executeTool: (invocation) => executeNativeToolCall(context, invocation),
+      deadlineAt: context.deadlineAt,
+      onStep: (step) => {
+        // Text that rides along with tool calls ("one sec, checking") streams like the XML
+        // loop's narrated actions did; the final answer is sent once, below.
+        if (step.toolCalls > 0 && step.content.trim() && onPartialResponse) {
+          onPartialResponse(
+            llmResponseCoordinator.stripThinkingTags(step.content, message.userId, message.id)
+          );
+        }
+      },
+    });
+
+    if (onPartialResponse && finalText) {
+      onPartialResponse(finalText);
+    }
+    await this.storeReflectionMemory(context, message, finalText);
+    this.contexts.delete(message.id);
+    return finalText;
+  }
+
+  /**
+   * XML-LOOP: delete after v3 soak (TOOL_LOOP=xml).
+   * The XML turn: first generate, the <wants_loop> decision, then the llm-loop ReAct loop.
+   * Each step is one call, so a step can be commented out to debug it.
+   */
+  private async runXmlTurn(
     context: OrchestrationContext,
     message: IncomingMessage,
     onPartialResponse?: (partial: string) => void
