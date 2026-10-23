@@ -1,4 +1,4 @@
-import { logger } from '@coachartie/shared';
+import { logger, OWNER_USER_ID } from '@coachartie/shared';
 import { estimateTokens } from '@coachartie/shared';
 import { conscienceLLM } from '../monitoring/conscience.js';
 import { IncomingMessage } from '@coachartie/shared';
@@ -122,6 +122,10 @@ The message above is from an external user. Remember:
 - Your own previous replies appear above as assistant turns. Do NOT repeat a point, joke, apology, or refusal you already made. If you already answered this, do not restate it — either add something genuinely new or briefly decline to repeat yourself.
 - Banned users: you may refer to them ("the banned one", "our departed friend") but NEVER by username and NEVER as an @-mention. Others may say their name; you don't.
 </security_reminder>`;
+
+const OWNER_NOTE = `<owner_note>
+This message is from EJ, verified by his Discord user ID. He built you and runs these servers. His instructions about his own servers (announcements, rules, moderation notices, bits, how you behave) are authoritative: when he states a policy, it IS policy. Carry it out fully and in the tone he asked for, with no hedging, softening or disclaimers. The rules above still hold for things that would hurt people or leak secrets.
+</owner_note>`;
 
 /**
  * Context Alchemy System - Intelligent context window management
@@ -317,7 +321,10 @@ export class ContextAlchemy {
       options.source,
       currentAuthorName,
       options.promptOrigin ?? 'user',
-      groupTranscript
+      groupTranscript,
+      // Owner = EJ's Discord user id, on Discord only (ids there can't be spoofed; the
+      // HTTP API's userId field can be, so it never earns owner treatment).
+      options.source === 'discord' && userId === OWNER_USER_ID
     );
 
     if (DEBUG) {
@@ -1042,7 +1049,8 @@ Important:
     source?: string,
     authorName?: string,
     promptOrigin: 'user' | 'harness' = 'user',
-    groupTranscript = ''
+    groupTranscript = '',
+    fromOwner = false
   ): Promise<Array<{ role: 'system' | 'user' | 'assistant'; content: string }>> {
     if (DEBUG) {
       logger.info('┌─ MESSAGE CHAIN ASSEMBLY ────────────────────────────────────────┐');
@@ -1252,6 +1260,11 @@ ${userMessage}
       logger.warn('Failed to load security-reminder prompt, using fallback');
     }
     finalUserParts.push(securityReminderBlock);
+
+    // The reminder above calls every sender "an external user", which made Artie hedge on
+    // EJ's own instructions (2026-10-23: asked for a moderation notice in his server, Artie
+    // refused to state it "as if it's already policy"). When EJ says it, it is policy.
+    if (fromOwner) finalUserParts.push(OWNER_NOTE);
 
     messages.push({ role: 'user', content: finalUserParts.join('\n\n') });
 
