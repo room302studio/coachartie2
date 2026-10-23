@@ -20,6 +20,7 @@ import {
   SKILLS_DIRS,
   getGuildKnowledgeDirs,
   getEnvFiles,
+  ARTIE_LOGS,
 } from '../../src/shared/paths.js';
 
 describe('REPO_ROOT', () => {
@@ -139,10 +140,10 @@ describe('getLogsDir', () => {
     expect(getLogsDir()).toBe('/tmp/some-other-logs');
   });
 
-  it('falls back to <cwd>/logs for an unrecognized package (e.g. shared itself)', () => {
+  it('falls back to ARTIE_LOGS (<repo>/packages/artie/logs), whatever the cwd (wave 9: one process)', () => {
     delete process.env.LOGS_DIR;
-    // vitest runs shared's own tests with cwd = packages/shared (turbo sets this per package).
-    expect(getLogsDir()).toBe(join(process.cwd(), 'logs'));
+    expect(ARTIE_LOGS).toBe(join(REPO_ROOT, 'packages/artie/logs'));
+    expect(getLogsDir()).toBe(ARTIE_LOGS);
   });
 });
 
@@ -183,16 +184,19 @@ describe('getGuildKnowledgeDirs', () => {
 });
 
 describe('getEnvFiles', () => {
-  it('returns the repo-root .env then the package .env, for capabilities', () => {
-    expect(getEnvFiles('capabilities')).toEqual([
+  // Wave 9: one process loads the union of what the engine and gateway each loaded, in their
+  // precedence (dotenv: the first file to set a name wins).
+  it('returns the repo-root .env first, then the engine package .env (capabilities)', () => {
+    expect(getEnvFiles().slice(0, 2)).toEqual([
       join(REPO_ROOT, '.env'),
       join(REPO_ROOT, 'packages/capabilities/.env'),
     ]);
   });
 
-  it('returns the repo-root .env then the package .env, for discord', () => {
-    expect(getEnvFiles('discord')).toEqual([
+  it('then the gateway package .env (discord), last, and nothing else', () => {
+    expect(getEnvFiles()).toEqual([
       join(REPO_ROOT, '.env'),
+      join(REPO_ROOT, 'packages/capabilities/.env'),
       join(REPO_ROOT, 'packages/discord/.env'),
     ]);
   });

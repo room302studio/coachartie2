@@ -1,56 +1,11 @@
-console.log('🚀 DISCORD SERVICE STARTING UP - BOOKITY BOOKITY!');
-// The directory diagnostic that used to be here is gone (wave 3): DONE WHEN requires the cwd
-// call to appear only in shared/paths.ts. REPO_ROOT (logged below) is the cwd-independent
-// answer to "where is this process rooted" anyway.
-console.log('🔧 Node version:', process.version);
-console.log('🌍 Environment:', process.env.NODE_ENV);
-
-import { config } from 'dotenv';
-import { getEnvFiles, REPO_ROOT, getKillSwitch, getStrikeMode, getDatabasePath, getSteamReviewNotes, getCasinoLedger, LAUNCH_STATE, CAPABILITIES_GUILD_NOTES, MENTION_PROXY_DATA, SKILLS_DIRS, getGuildKnowledgeDirs, ENGINE_LOGS, GATEWAY_LOGS, PM2_LOGS, getLogsDir, PROMPTS_DIR, REFERENCE_DOCS } from '../shared/paths.js';
-
-console.log('🔑 Loading environment variables...');
-
-// Load .env from monorepo root, then the package-specific one. getEnvFiles() (paths.ts,
-// wave 2) resolves both to the exact same absolute files the old
-// resolve(__dirname, '../../../.env') / resolve(__dirname, '../.env') pair did — see its doc
-// comment.
-const envFiles = getEnvFiles('discord');
-for (const envFile of envFiles) {
-  config({ path: envFile });
-}
-
-// Every resolved runtime path, one block, every boot — so a wrong path is visible in the
-// first log line instead of discovered the next time something silently reads a stale file.
-// Logs every export (not just the ones this process itself reads) so a before/after diff
-// between this process and the engine's is a straight log comparison.
-console.log('📂 Resolved paths:', {
-  REPO_ROOT,
-  ENV_FILES: envFiles,
-  KILL_SWITCH: getKillSwitch(),
-  STRIKE_MODE: getStrikeMode(),
-  DATABASE_PATH: getDatabasePath(),
-  STEAM_REVIEW_NOTES: getSteamReviewNotes(),
-  CASINO_LEDGER: getCasinoLedger(),
-  LAUNCH_STATE,
-  CAPABILITIES_GUILD_NOTES,
-  MENTION_PROXY_DATA,
-  SKILLS_DIRS,
-  GUILD_KNOWLEDGE_DIRS: getGuildKnowledgeDirs(),
-  ENGINE_LOGS,
-  GATEWAY_LOGS,
-  PM2_LOGS,
-  LOGS_DIR: getLogsDir(),
-  PROMPTS_DIR,
-  REFERENCE_DOCS,
-});
-
-console.log('🔌 Environment check:');
-console.log('  - DISCORD_TOKEN:', process.env.DISCORD_TOKEN ? '✅ Set' : '❌ Missing');
-console.log('  - REDIS_HOST:', process.env.REDIS_HOST || 'not set');
-console.log('  - REDIS_PORT:', process.env.REDIS_PORT || 'not set');
-console.log('  - CAPABILITIES_URL:', process.env.CAPABILITIES_URL || 'not set');
-console.log('  - DISCORD_PORT:', process.env.DISCORD_PORT || 'not set');
-
+/**
+ * The gateway: the Discord client, its event handlers and watchers, the OUTGOING_DISCORD push
+ * worker, the :47321 API and the 127.0.0.1:47319 health server.
+ *
+ * Wave 9 (one process): this module no longer runs itself, loads .env, or installs signal and
+ * crash handlers. src/main.ts does those once for the whole bot and calls startGateway() after
+ * the engine is up; its one SIGINT/SIGTERM handler calls the returned stop().
+ */
 import { Client, GatewayIntentBits, Events, Partials } from 'discord.js';
 import { logger } from '../shared/logger.js';
 import { setupMessageHandler } from './1-receive/on-message.js';
@@ -72,6 +27,7 @@ import { initializeGitHubSync } from './watchers/github/watch-loop.js';
 import { observationalLearning } from './watchers/observe-channels.js';
 import { steamReviewNotes } from './watchers/steam-review-notes.js';
 import { channelDigestLoop } from './watchers/channel-digests.js';
+import { registerGatewayClient } from './api.js';
 
 /**
  * Privileged intents (GuildMembers, MessageContent) need Discord's app verification once a
@@ -147,7 +103,35 @@ function writeStatus(status: 'starting' | 'ready' | 'error' | 'shutdown', data?:
   }
 }
 
-async function start() {
+export interface GatewayHandle {
+  /** True when both the :47321 API and the :47319 health server are listening. */
+  listening: boolean;
+  /** Stop everything startGateway started, in reverse order. Never exits the process. */
+  stop(signal?: string): Promise<void>;
+}
+
+/**
+ * Start the gateway: event handlers, the OUTGOING_DISCORD push worker, Discord login. At
+ * ClientReady (as before) the health server and the API start listening and the client is
+ * registered in gateway/api.ts for the engine. Resolves once Discord is ready and both
+ * listeners have started (or failed, which is logged, as before, and reported in `listening`).
+ * A login failure rejects, after writing the 'error' status file.
+ */
+export async function startGateway(): Promise<GatewayHandle> {
+  console.log('🚀 DISCORD SERVICE STARTING UP - BOOKITY BOOKITY!');
+  console.log('🔌 Environment check:');
+  console.log('  - DISCORD_TOKEN:', process.env.DISCORD_TOKEN ? '✅ Set' : '❌ Missing');
+  console.log('  - REDIS_HOST:', process.env.REDIS_HOST || 'not set');
+  console.log('  - REDIS_PORT:', process.env.REDIS_PORT || 'not set');
+  console.log('  - DISCORD_PORT:', process.env.DISCORD_PORT || 'not set');
+
+  // Settled by the ClientReady handler with the two listeners' start promises.
+  let markReady!: (listeners: Promise<unknown>) => void;
+  const clientReady = new Promise<Promise<unknown>>((resolve) => {
+    markReady = resolve;
+  });
+  let statusTimer: NodeJS.Timeout | null = null;
+
   console.log('🎯 Start function called - SNOOKITY LOOKITY!');
   try {
     console.log('📝 Writing starting status...');
@@ -172,13 +156,14 @@ async function start() {
         channels: channelCount,
       });
 
-      // Start health server
+      // Start health server, and the API server for forum access
       healthServer.setDiscordClient(client);
-      healthServer.start();
-
-      // Start API server for forum access
       apiServer.setDiscordClient(client);
-      apiServer.start();
+      markReady(Promise.all([healthServer.start(), apiServer.start()]));
+
+      // From here the engine reaches Discord through gateway/api.ts (wave 9): the same
+      // moment the :47321 server used to start answering its HTTP calls.
+      registerGatewayClient(client);
 
       // Start the persistent job monitor (single wheel for all jobs)
       jobMonitor.startMonitoring();
@@ -315,7 +300,7 @@ async function start() {
       });
 
       // Refresh status file every 30 minutes so other processes get live guild counts
-      setInterval(() => {
+      statusTimer = setInterval(() => {
         writeStatus('ready', {
           username: client.user?.tag,
           guilds: client.guilds.cache.size,
@@ -358,7 +343,7 @@ async function start() {
 
     // Start queue consumer for responses
     console.log('🚀 Starting queue consumer...');
-    await startResponseConsumer(client);
+    const pushWorker = await startResponseConsumer(client);
 
     // Login to Discord
     console.log('🔐 Attempting Discord login...');
@@ -369,59 +354,38 @@ async function start() {
 
     // Status updates disabled - only update on actual state changes
     // This reduces log spam and Clickhouse costs
+
+    const listening = await (await clientReady).then(
+      () => true,
+      () => false // each server already logged its own listen error
+    );
+
+    return {
+      listening,
+      async stop(signal = 'shutdown') {
+        // Reverse of start: stop answering the engine and the network first, then the
+        // watchers, the push worker, and finally the Discord connection.
+        logger.info(`${signal} received, shutting down Discord bot`);
+        telemetry.logEvent('shutdown', { signal });
+        telemetry.persistMetrics();
+        writeStatus('shutdown');
+        registerGatewayClient(null);
+        await healthServer.stop();
+        await apiServer.stop();
+        jobMonitor.stopMonitoring();
+        observationalLearning.shutdown();
+        steamReviewNotes.shutdown();
+        channelDigestLoop.stop();
+        if (statusTimer) clearInterval(statusTimer);
+        if (pushWorker) await pushWorker.close();
+        client.destroy();
+        logger.info('✅ Gateway stopped');
+      },
+    };
   } catch (error) {
     logger.error('Failed to start Discord bot:', error);
     const errorMessage = error instanceof Error ? error.message : String(error);
     writeStatus('error', { error: errorMessage });
-    process.exit(1);
+    throw error;
   }
 }
-
-// Handle graceful shutdown
-process.on('SIGTERM', async () => {
-  logger.info('SIGTERM received, shutting down Discord bot');
-  telemetry.logEvent('shutdown', { signal: 'SIGTERM' });
-  telemetry.persistMetrics();
-  writeStatus('shutdown');
-  healthServer.stop();
-  apiServer.stop();
-  jobMonitor.stopMonitoring();
-  observationalLearning.shutdown();
-  steamReviewNotes.shutdown();
-  client.destroy();
-  process.exit(0);
-});
-
-process.on('SIGINT', async () => {
-  logger.info('SIGINT received, shutting down Discord bot');
-  telemetry.logEvent('shutdown', { signal: 'SIGINT' });
-  telemetry.persistMetrics();
-  writeStatus('shutdown');
-  healthServer.stop();
-  apiServer.stop();
-  jobMonitor.stopMonitoring();
-  observationalLearning.shutdown();
-  steamReviewNotes.shutdown();
-  client.destroy();
-  process.exit(0);
-});
-
-// Handle uncaught exceptions
-process.on('uncaughtException', (error) => {
-  logger.error('💥 Uncaught Exception:', error);
-  telemetry.logEvent('error', { type: 'uncaughtException', message: error.message });
-  process.exit(1);
-});
-
-process.on('unhandledRejection', (reason, promise) => {
-  logger.error('💥 Unhandled Rejection:', reason);
-  telemetry.logEvent('error', { type: 'unhandledRejection', reason: String(reason) });
-});
-
-// Start the bot
-console.log('🏁 CALLING START FUNCTION - JUCKS ARE SNUCKED!');
-start().catch((err) => {
-  console.error('💥 START FUNCTION FAILED - SHUCKS ARE JUCKED!', err);
-  process.exit(1);
-});
-console.log('🎸 Start function call completed (async)');

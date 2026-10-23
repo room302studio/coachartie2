@@ -65,7 +65,8 @@ export class HealthServer {
     this.discordClient = client;
   }
 
-  start(): void {
+  /** Listen on 127.0.0.1; resolves once listening, rejects (after logging) on a listen error. */
+  start(): Promise<void> {
     this.server = createServer((req: IncomingMessage, res: ServerResponse) => {
       // Set CORS headers
       res.setHeader('Access-Control-Allow-Origin', '*');
@@ -116,20 +117,26 @@ export class HealthServer {
       }
     });
 
-    this.server.listen(this.port, '127.0.0.1', () => {
-      logger.info(`🩺 Health server running on 127.0.0.1:${this.port}`);
-    });
+    return new Promise((resolve, reject) => {
+      this.server.listen(this.port, '127.0.0.1', () => {
+        logger.info(`🩺 Health server running on 127.0.0.1:${this.server.address()?.port ?? this.port}`);
+        resolve();
+      });
 
-    this.server.on('error', (error: Error) => {
-      logger.error('Health server error:', error);
+      this.server.on('error', (error: Error) => {
+        logger.error('Health server error:', error);
+        reject(error);
+      });
     });
   }
 
-  stop(): void {
-    if (this.server) {
-      this.server.close();
+  stop(): Promise<void> {
+    return new Promise((resolve) => {
+      if (!this.server) return resolve();
+      this.server.close(() => resolve());
+      this.server = null;
       logger.info('Health server stopped');
-    }
+    });
   }
 
   private handleHealthCheck(res: ServerResponse): void {

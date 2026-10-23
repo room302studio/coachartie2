@@ -35,7 +35,7 @@
  */
 
 import { existsSync } from 'fs';
-import { dirname, join, basename } from 'path';
+import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 
 /**
@@ -173,13 +173,21 @@ export const REFERENCE_DOCS = {
 } as const;
 
 /**
- * The capabilities engine's logs directory (`winston`'s `*-combined.log`, read by the vitals
- * monitor, the `/logs` route and self-stats). NOT `<repo>/logs` — that's PM2's
- * `error_file`/`out_file` target, a different thing.
+ * The one winston logs directory (wave 9: engine and gateway are one process, so one
+ * `logger.ts` instance writes `coachartie-{combined,error,debug}.log` here). `LOGS_DIR` env
+ * still wins (`getLogsDir()`). NOT `<repo>/logs` — that's PM2's `out_file`/`error_file`
+ * target (`PM2_LOGS`), a different thing.
+ */
+export const ARTIE_LOGS = join(REPO_ROOT, 'packages/artie/logs');
+
+/**
+ * Where the two pre-v3 processes' winston logs live on prod (the capabilities engine's and
+ * the Discord gateway's). Nothing in v3 writes or reads them; they stay exported so CUTOVER
+ * and anyone back-reading old logs has the paths. The live directory is `ARTIE_LOGS`.
  */
 export const ENGINE_LOGS = join(REPO_ROOT, 'packages/capabilities/logs');
 
-/** The Discord gateway's logs directory. Same caveats as `ENGINE_LOGS`. */
+/** The pre-v3 Discord gateway's winston logs directory. See `ENGINE_LOGS`. */
 export const GATEWAY_LOGS = join(REPO_ROOT, 'packages/discord/logs');
 
 /**
@@ -197,39 +205,17 @@ export const GATEWAY_LOGS = join(REPO_ROOT, 'packages/discord/logs');
 export const PM2_LOGS = join(REPO_ROOT, 'logs');
 
 /**
- * Where `logger.ts` (shared by both processes) should write today, cwd-independent.
+ * Where `logger.ts` writes: `LOGS_DIR` env when set, else `ARTIE_LOGS`
+ * (`<repo>/packages/artie/logs`), cwd-independent.
  *
- * `LOGS_DIR` env always wins (unchanged). No test suite sets `LOGS_DIR` globally today —
- * `paths.test.ts` sets and clears it only inside its own override test (see
- * `packages/shared/tests/paths.test.ts`'s "LOGS_DIR env always wins" case); every other test
- * run inherits the per-package default computed below.
- *
- * This is the one export that still has to look at `process.cwd()` — not to build a relative
- * path (the old bug this wave fixes), but to decide WHICH process's absolute logs directory a
- * single shared logger module should use, since one `logger.ts` module instance runs inside
- * each process. Today cwd is always `<repo>/packages/<pkgname>` under PM2, `turbo run test`
- * (which runs each package's `test` script with that package as cwd) and `nodemon`/`tsx`, so
- * this returns the exact same absolute directory `./logs` resolved to before, for both known
- * packages. Any other cwd (e.g. `packages/shared`'s own tests) falls back to the same
- * cwd-relative `<cwd>/logs` the old code always used — unchanged for that case too.
- *
- * THE COLLAPSE THIS WARNED ABOUT ALREADY HAPPENED, IN THIS WAVE, NOT WAVE 9: `packages/capabilities`
- * and `packages/discord` no longer exist as separate packages with separate cwds — both
- * `dev:engine` and `dev:gateway` (and `test`) now run with cwd `packages/artie`, which matches
- * neither `pkg === 'capabilities'` nor `pkg === 'discord'`, so BOTH branches fall through to the
- * generic `<cwd>/logs` (`packages/artie/logs`) today, for both processes, until they're actually
- * merged into one process (wave 9) or given an explicit per-component logger. This is a real,
- * observable change from wave 2's captured before/after table (which still showed two distinct
- * directories) — flagged in BUILD-LOG for wave 9/CUTOVER rather than silently left. `ENGINE_LOGS`/
- * `GATEWAY_LOGS` are still two separate, correct absolute constants for whoever wires this
- * properly; `LOGS_DIR` env still overrides everything, unchanged.
+ * Before wave 9 this sniffed `process.cwd()` to tell the engine (cwd `packages/capabilities`)
+ * from the gateway (`packages/discord`) and fell back to `<cwd>/logs`. With one process and
+ * one package there is nothing to tell apart, so the cwd branch is gone; the directory is the
+ * same one `<cwd>/logs` already resolved to since wave 3 (cwd `packages/artie`).
  */
 export function getLogsDir(): string {
   if (process.env.LOGS_DIR) return process.env.LOGS_DIR;
-  const pkg = basename(process.cwd());
-  if (pkg === 'capabilities') return ENGINE_LOGS;
-  if (pkg === 'discord') return GATEWAY_LOGS;
-  return join(process.cwd(), 'logs');
+  return ARTIE_LOGS;
 }
 
 /**
@@ -270,18 +256,26 @@ export function getGuildKnowledgeDirs(): string[] {
 }
 
 /**
- * The two `.env` files a process loads, in load order, HIGHEST priority first: `dotenv`'s
- * `config()` does not override a variable that's already set, so the FIRST `config()` call
- * wins on conflicts — same as every `C/index.ts`/`D/index.ts` call site today (root `.env`
- * first, then the package-specific one, which therefore can't override the root file's values;
- * both only ever fill in gaps `process.env` doesn't already have).
+ * The `.env` files the bot loads at boot, in load order, HIGHEST priority first: `dotenv`'s
+ * `config()` never overrides a variable that's already set, so the FIRST file to define a
+ * name wins, and anything PM2 already put in `process.env` beats all three.
+ *
+ * Wave 9 (one process): the union of what the two processes loaded, in their precedence —
+ * the repo-root `.env` (both loaded it first), then `packages/capabilities/.env` (the engine's
+ * second file), then `packages/discord/.env` (the gateway's). If the two package files ever
+ * define the same name differently, the engine's value now wins for the gateway too. Neither
+ * package file exists on prod (checked 2026-10-23), so prod loads exactly the root `.env`.
  *
  * `openrouter.ts` deliberately does NOT call this — see its own comment. On prod its old
  * `resolve(__dirname, …)` paths never existed, so it only ever read what PM2 already put in
  * `process.env`; calling `getEnvFiles()` there would load these files earlier than
- * `index.ts`'s own `config()` calls (ESM import hoisting) and change what the micro-LLM slug
+ * `main.ts`'s own `config()` calls (ESM import hoisting) and change what the micro-LLM slug
  * and model env vars resolve to.
  */
-export function getEnvFiles(pkg: 'capabilities' | 'discord'): string[] {
-  return [join(REPO_ROOT, '.env'), join(REPO_ROOT, 'packages', pkg, '.env')];
+export function getEnvFiles(): string[] {
+  return [
+    join(REPO_ROOT, '.env'),
+    join(REPO_ROOT, 'packages', 'capabilities', '.env'),
+    join(REPO_ROOT, 'packages', 'discord', '.env'),
+  ];
 }

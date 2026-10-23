@@ -1,60 +1,18 @@
-console.log('🚀 CAPABILITIES SERVICE STARTING - BOOKITY SNOOKITY!');
-// The directory diagnostic that used to be here is gone (wave 3): DONE WHEN requires the cwd
-// call to appear only in shared/paths.ts. REPO_ROOT (logged below) is the cwd-independent
-// answer to "where is this process rooted" anyway.
-console.log('🔧 Node version:', process.version);
-console.log('🌍 Environment:', process.env.NODE_ENV);
-
-import { config } from 'dotenv';
-import { getEnvFiles, REPO_ROOT, getKillSwitch, getStrikeMode, getDatabasePath, getSteamReviewNotes, getCasinoLedger, LAUNCH_STATE, CAPABILITIES_GUILD_NOTES, MENTION_PROXY_DATA, SKILLS_DIRS, getGuildKnowledgeDirs, ENGINE_LOGS, GATEWAY_LOGS, PM2_LOGS, getLogsDir, PROMPTS_DIR, REFERENCE_DOCS } from '../shared/paths.js';
-
-console.log('🔑 Loading environment variables...');
-
-// Load .env from monorepo root, then the package-specific one. getEnvFiles() (paths.ts,
-// wave 2) resolves both to the exact same absolute files the old
-// resolve(__dirname, '../../../.env') / resolve(__dirname, '../.env') pair did — see its doc
-// comment.
-const envFiles = getEnvFiles('capabilities');
-for (const envFile of envFiles) {
-  config({ path: envFile });
-}
-
-// Every resolved runtime path, one block, every boot — so a wrong path is visible in the
-// first log line instead of discovered the next time something silently reads a stale file.
-// Logs every export (not just the ones this process itself reads) so a before/after diff
-// between this process and the gateway's is a straight log comparison.
-console.log('📂 Resolved paths:', {
-  REPO_ROOT,
-  ENV_FILES: envFiles,
-  KILL_SWITCH: getKillSwitch(),
-  STRIKE_MODE: getStrikeMode(),
-  DATABASE_PATH: getDatabasePath(),
-  STEAM_REVIEW_NOTES: getSteamReviewNotes(),
-  CASINO_LEDGER: getCasinoLedger(),
-  LAUNCH_STATE,
-  CAPABILITIES_GUILD_NOTES,
-  MENTION_PROXY_DATA,
-  SKILLS_DIRS,
-  GUILD_KNOWLEDGE_DIRS: getGuildKnowledgeDirs(),
-  ENGINE_LOGS,
-  GATEWAY_LOGS,
-  PM2_LOGS,
-  LOGS_DIR: getLogsDir(),
-  PROMPTS_DIR,
-  REFERENCE_DOCS,
-});
-
-console.log('🔌 Port Configuration:');
-console.log('  - CAPABILITIES_PORT:', process.env.CAPABILITIES_PORT || 'not set');
-console.log('  - REDIS_HOST:', process.env.REDIS_HOST || 'not set');
-console.log('  - REDIS_PORT:', process.env.REDIS_PORT || 'not set');
-
+/**
+ * The engine: queue workers, the scheduler, the monitors and the :47324 HTTP API.
+ *
+ * Wave 9 (one process): this module no longer runs itself, loads .env, or installs signal
+ * handlers. src/main.ts does those once for the whole bot and calls startEngine(), then the
+ * gateway's startGateway(); its one SIGINT/SIGTERM handler calls the returned stop().
+ */
+import type { Server } from 'http';
+import type { Worker } from 'bullmq';
 import { logger } from '../shared/logger.js';
 import { parsePortWithFallback } from '../shared/config/ports.js';
 import { registerServiceWithDiscovery, serviceDiscovery } from './health/service-discovery.js';
 import { startMessageConsumer } from './1-intake/queue-worker.js';
 // The express app, its middleware and every route (http.ts). main.ts only boots and listens.
-import { app } from './http.js';
+import { createEngineApp } from './http.js';
 import { stopCleanupInterval } from './routes/logs.js';
 import { schedulerService } from './jobs/scheduler.js';
 import { jobTracker } from './1-intake/job-tracker.js';
@@ -76,8 +34,17 @@ import { hybridDataLayer } from './memory/store.js';
 // Export openRouterService for models endpoint
 export { openRouterService } from './4-generate/openrouter.js';
 
+export interface EngineHandle {
+  /** The :47324 server, listening. */
+  server: Server;
+  /** The INCOMING_MESSAGES worker (null when Redis was unavailable at boot). */
+  incomingWorker: Worker | null;
+  /** Stop everything startEngine started, in reverse order. Never exits the process. */
+  stop(): Promise<void>;
+}
+
 // Start queue consumers and scheduler
-async function startQueueWorkers() {
+async function startQueueWorkers(): Promise<Worker | null> {
   try {
     logger.info('Starting queue consumers...');
     const worker = await startMessageConsumer();
@@ -86,9 +53,11 @@ async function startQueueWorkers() {
     } else {
       logger.warn('Queue consumers not started (Redis unavailable)');
     }
+    return worker;
   } catch (error) {
     logger.error('Failed to start queue consumers:', error);
     // Don't exit - continue without queues
+    return null;
   }
 }
 
@@ -111,63 +80,17 @@ async function startScheduler() {
   }
 }
 
-// Start server
-async function start() {
-  console.log('🎯 Start function called - LUCKS ARE SNUCK!');
-  try {
-    // Initialize orchestrator
-    console.log('📊 Initializing orchestrator...');
-    const stats = capabilityRegistry.getStats();
-
-    // Which tool loop this process runs (wave 8). warn, so it reaches the PM2 log file.
-    const loopMode = toolLoopMode();
-    logger.warn(
-      loopMode === 'native'
-        ? '🔧 Tool loop: native tool calls (default). Rollback: TOOL_LOOP=xml + restart.'
-        : '🔧 Tool loop: XML (TOOL_LOOP=xml, emergency fallback)'
-    );
-    // Native tool turns check the model catalog's supported_parameters; warm it now so the
-    // first reply after boot doesn't wait on the fetch.
-    if (loopMode === 'native') void openRouterModelsService.fetchLiveModelInfo();
-
-    // Start queue workers first
-    console.log('👷 Starting queue workers...');
-    await startQueueWorkers();
-
-    // Daily spend cap FIRST, before anything that can generate: it lifts a stale budget mute
-    // from a previous ET day and trips the mute if today's spend is already over the cap.
-    console.log('💸 Starting daily budget watch...');
-    startDailyBudgetWatch();
-
-    // Start scheduler
-    console.log('⏰ Starting scheduler...');
-    await startScheduler();
-
-    // Start simple healer
-    console.log('🏥 Starting simple healer...');
-    simpleHealer.start();
-
-    // Start distress monitor (detects when Artie needs help)
-    console.log('🆘 Starting distress monitor...');
-    distressMonitor.start();
-
-    // Start vitals monitor (hourly self-audit of prod logs + operator alarms)
-    console.log('🩺 Starting vitals monitor...');
-    vitalsMonitor.start();
-
-    console.log('🔍 Parsing port configuration...');
-    console.log('  - CAPABILITIES_PORT env:', process.env.CAPABILITIES_PORT);
-    const PORT = await parsePortWithFallback('CAPABILITIES_PORT', 'capabilities');
-    console.log(`🎲 Selected port: ${PORT}`);
-
-    // Start HTTP server
-    console.log(`🌐 Starting HTTP server on 127.0.0.1:${PORT}...`);
-    const server = app.listen(PORT, '127.0.0.1', async () => {
+/** Listen on 127.0.0.1:<port>; resolves once listening. EADDRINUSE still exits, as before. */
+function listen(port: number, stats: { totalCapabilities: number; totalActions: number }): Promise<Server> {
+  return new Promise((resolve) => {
+    console.log(`🌐 Starting HTTP server on 127.0.0.1:${port}...`);
+    const server = createEngineApp().listen(port, '127.0.0.1', async () => {
       console.log(`✅ HTTP SERVER LISTENING - SNUCKS ARE JUCKED!`);
       logger.info(
-        `✅ capabilities: ${PORT} [${stats.totalCapabilities} caps, ${stats.totalActions} actions]`
+        `✅ capabilities: ${port} [${stats.totalCapabilities} caps, ${stats.totalActions} actions]`
       );
-      await registerServiceWithDiscovery('capabilities', PORT);
+      resolve(server);
+      await registerServiceWithDiscovery('capabilities', port);
     });
 
     // Enhanced error handling with helpful developer guidance
@@ -176,92 +99,128 @@ async function start() {
         console.error('\n' + '='.repeat(60));
         console.error('❌ PORT CONFLICT DETECTED!');
         console.error('='.repeat(60));
-        console.error(`Port ${PORT} is already in use!\n`);
+        console.error(`Port ${port} is already in use!\n`);
 
         console.error('This usually means one of the following:');
-        console.error('1. Docker is running Coach Artie (check: docker ps)');
-        console.error('2. A previous instance is still running');
-        console.error('3. Another service is using this port\n');
+        console.error('1. A previous instance is still running (pm2 list)');
+        console.error('2. Another service is using this port\n');
 
         console.error('TO FIX THIS:');
         console.error('------------');
-        console.error('Option 1: If Docker is running Coach Artie:');
-        console.error('  $ docker-compose down');
+        console.error('Kill the process using this port:');
+        console.error(`  $ lsof -ti :${port} | xargs kill -9`);
         console.error('  $ pnpm run dev\n');
-
-        console.error('Option 2: Kill the process using this port:');
-        console.error(`  $ lsof -ti :${PORT} | xargs kill -9`);
-        console.error('  $ pnpm run dev\n');
-
-        console.error('Option 3: Use the built-in port checker:');
-        console.error('  $ pnpm run check-ports');
-        console.error("  (This will show you exactly what's using each port)\n");
 
         console.error('='.repeat(60) + '\n');
       } else {
-        logger.error(`❌ Server failed to start on port ${PORT}:`, error);
+        logger.error(`❌ Server failed to start on port ${port}:`, error);
       }
       process.exit(1);
     });
-
-    // DELETE the self-test - if it works, it works
-  } catch (error) {
-    logger.error('Failed to start capabilities service:', error);
-    process.exit(1);
-  }
+  });
 }
 
-// Handle graceful shutdown
-async function gracefulShutdown() {
-  logger.info('🛑 Graceful shutdown initiated...');
+/**
+ * Start the engine: queue workers, daily budget watch, scheduler, monitors, then the HTTP
+ * API on 127.0.0.1:47324 (CAPABILITIES_PORT). Resolves once the server is listening.
+ */
+export async function startEngine(): Promise<EngineHandle> {
+  console.log('🚀 CAPABILITIES SERVICE STARTING - BOOKITY SNOOKITY!');
+  console.log('🔌 Port Configuration:');
+  console.log('  - CAPABILITIES_PORT:', process.env.CAPABILITIES_PORT || 'not set');
+  console.log('  - REDIS_HOST:', process.env.REDIS_HOST || 'not set');
+  console.log('  - REDIS_PORT:', process.env.REDIS_PORT || 'not set');
 
-  try {
-    // Stop services in order
-    logger.info('Stopping simple healer...');
-    simpleHealer.stop();
+  console.log('🎯 Start function called - LUCKS ARE SNUCK!');
+  // Initialize orchestrator
+  console.log('📊 Initializing orchestrator...');
+  const stats = capabilityRegistry.getStats();
 
-    logger.info('Shutting down scheduler...');
-    await schedulerService.close();
+  // Which tool loop this process runs (wave 8). warn, so it reaches the PM2 log file.
+  const loopMode = toolLoopMode();
+  logger.warn(
+    loopMode === 'native'
+      ? '🔧 Tool loop: native tool calls (default). Rollback: TOOL_LOOP=xml + restart.'
+      : '🔧 Tool loop: XML (TOOL_LOOP=xml, emergency fallback)'
+  );
+  // Native tool turns check the model catalog's supported_parameters; warm it now so the
+  // first reply after boot doesn't wait on the fetch.
+  if (loopMode === 'native') void openRouterModelsService.fetchLiveModelInfo();
 
-    logger.info('Shutting down job tracker...');
-    jobTracker.shutdown();
+  // Start queue workers first
+  console.log('👷 Starting queue workers...');
+  const incomingWorker = await startQueueWorkers();
 
-    logger.info('Shutting down cost monitor...');
-    costMonitor.shutdown();
+  // Daily spend cap FIRST, before anything that can generate: it lifts a stale budget mute
+  // from a previous ET day and trips the mute if today's spend is already over the cap.
+  console.log('💸 Starting daily budget watch...');
+  startDailyBudgetWatch();
 
-    logger.info('Stopping job logs cleanup interval...');
-    stopCleanupInterval();
+  // Start scheduler
+  console.log('⏰ Starting scheduler...');
+  await startScheduler();
 
-    logger.info('Shutting down variable store...');
-    GlobalVariableStore.getInstance().shutdown();
+  // Start simple healer
+  console.log('🏥 Starting simple healer...');
+  simpleHealer.start();
 
-    logger.info('Cleaning up hybrid data layer...');
-    await hybridDataLayer.cleanup();
+  // Start distress monitor (detects when Artie needs help)
+  console.log('🆘 Starting distress monitor...');
+  distressMonitor.start();
 
-    logger.info('Shutting down service discovery...');
-    await serviceDiscovery.shutdown();
+  // Start vitals monitor (hourly self-audit of prod logs + operator alarms)
+  console.log('🩺 Starting vitals monitor...');
+  vitalsMonitor.start();
 
-    logger.info('✅ Graceful shutdown complete');
-  } catch (error) {
-    logger.error('Error during graceful shutdown:', error);
-  } finally {
-    process.exit(0);
-  }
+  console.log('🔍 Parsing port configuration...');
+  console.log('  - CAPABILITIES_PORT env:', process.env.CAPABILITIES_PORT);
+  const PORT = await parsePortWithFallback('CAPABILITIES_PORT', 'capabilities');
+  console.log(`🎲 Selected port: ${PORT}`);
+
+  const server = await listen(PORT, stats);
+
+  return {
+    server,
+    incomingWorker,
+    async stop() {
+      // Reverse of start: HTTP server, monitors, scheduler, the INCOMING worker, then the
+      // in-process state that flushes on the way out.
+      logger.info('Closing the engine HTTP server...');
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+
+      logger.info('Stopping distress monitor...');
+      distressMonitor.stop();
+
+      logger.info('Stopping simple healer...');
+      simpleHealer.stop();
+
+      logger.info('Shutting down scheduler...');
+      await schedulerService.close();
+
+      if (incomingWorker) {
+        logger.info('Closing the INCOMING_MESSAGES worker...');
+        await incomingWorker.close();
+      }
+
+      logger.info('Shutting down job tracker...');
+      jobTracker.shutdown();
+
+      logger.info('Shutting down cost monitor...');
+      costMonitor.shutdown();
+
+      logger.info('Stopping job logs cleanup interval...');
+      stopCleanupInterval();
+
+      logger.info('Shutting down variable store...');
+      GlobalVariableStore.getInstance().shutdown();
+
+      logger.info('Cleaning up hybrid data layer...');
+      await hybridDataLayer.cleanup();
+
+      logger.info('Shutting down service discovery...');
+      await serviceDiscovery.shutdown();
+
+      logger.info('✅ Engine stopped');
+    },
+  };
 }
-
-process.on('SIGTERM', gracefulShutdown);
-process.on('SIGINT', gracefulShutdown);
-
-// Catch unhandled errors
-process.on('uncaughtException', (error) => {
-  logger.error('Uncaught Exception:', error);
-  // Don't exit, just log
-});
-
-process.on('unhandledRejection', (reason, promise) => {
-  logger.error('Unhandled Rejection at:', promise, 'reason:', reason);
-  // Don't exit, just log
-});
-
-// Start the service
-start();

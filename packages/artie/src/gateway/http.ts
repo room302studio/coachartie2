@@ -62,26 +62,33 @@ export class ApiServer {
     this.discordClient = client;
   }
 
-  start(): void {
+  /** Listen on 0.0.0.0; resolves once listening, rejects (after logging) on a listen error. */
+  start(): Promise<void> {
     if (!this.discordClient) {
       logger.warn('⚠️ API server starting without Discord client - routes may not work');
     }
 
     const app = createGatewayApp({ client: this.discordClient });
-    this.server = app.listen(this.port, '0.0.0.0', () => {
-      logger.info(`🌐 Discord API server running on 0.0.0.0:${this.port}`);
-    });
+    return new Promise((resolve, reject) => {
+      this.server = app.listen(this.port, '0.0.0.0', () => {
+        logger.info(`🌐 Discord API server running on 0.0.0.0:${this.server.address()?.port ?? this.port}`);
+        resolve();
+      });
 
-    this.server.on('error', (error: Error) => {
-      logger.error('API server error:', error);
+      this.server.on('error', (error: Error) => {
+        logger.error('API server error:', error);
+        reject(error);
+      });
     });
   }
 
-  stop(): void {
-    if (this.server) {
-      this.server.close();
+  stop(): Promise<void> {
+    return new Promise((resolve) => {
+      if (!this.server) return resolve();
+      this.server.close(() => resolve());
+      this.server = null;
       logger.info('API server stopped');
-    }
+    });
   }
 }
 

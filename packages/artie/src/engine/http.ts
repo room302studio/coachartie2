@@ -115,6 +115,3 @@ export function createEngineApp(deps: Partial<EngineDeps> = {}): Express {
 
   return app;
 }
-
-/** The production app (engine/main.ts listens on it). */
-export const app: Express = createEngineApp();
