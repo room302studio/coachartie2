@@ -3,6 +3,10 @@
  *
  * Exercises the puzzle-cache flow, per-user state, emoji grid rendering, the
  * customId encoding round-trip, and the embed builders.
+ *
+ * Was daily-quiz.test.ts (wave 11 rename to mirror src/gateway/commands/quiz/daily.ts). The
+ * pure-function groups are it.each tables, one row per former assertion pair; the DB-flow tests
+ * (beforeEach + mocked fetch) stay as plain its.
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
@@ -104,50 +108,42 @@ function mockFlashcards(cards: { id: string; front: string; back: string }[]) {
   }) as unknown as typeof fetch;
 }
 
+// Pure functions as it.each tables (wave 11): one row per former expect pair.
 describe('todayKey', () => {
-  it('formats as YYYY-MM-DD in UTC', () => {
-    expect(todayKey(new Date('2026-05-19T23:00:00Z'))).toBe('2026-05-19');
-    expect(todayKey(new Date('2026-01-01T00:00:00Z'))).toBe('2026-01-01');
+  it.each([
+    ['2026-05-19T23:00:00Z', '2026-05-19'],
+    ['2026-01-01T00:00:00Z', '2026-01-01'],
+  ])('formats %s as %s (YYYY-MM-DD in UTC)', (iso, key) => {
+    expect(todayKey(new Date(iso))).toBe(key);
   });
 });
 
 describe('renderEmojiGrid', () => {
-  it('pads remaining slots with ⬜', () => {
-    expect(renderEmojiGrid(['correct', 'wrong'] as DailyOutcome[], 5)).toBe(
-      '🟩 🟥 ⬜ ⬜ ⬜'
-    );
-  });
-  it('renders a full row when complete', () => {
-    expect(
-      renderEmojiGrid(['correct', 'correct', 'wrong', 'correct', 'correct'], 5)
-    ).toBe('🟩 🟩 🟥 🟩 🟩');
+  it.each<[string, DailyOutcome[], string]>([
+    ['pads remaining slots with ⬜', ['correct', 'wrong'], '🟩 🟥 ⬜ ⬜ ⬜'],
+    [
+      'renders a full row when complete',
+      ['correct', 'correct', 'wrong', 'correct', 'correct'],
+      '🟩 🟩 🟥 🟩 🟩',
+    ],
+  ])('%s', (_label, results, grid) => {
+    expect(renderEmojiGrid(results, 5)).toBe(grid);
   });
 });
 
 describe('customId encoding', () => {
-  it('round-trips guess/modal/share with deck and date', () => {
-    const id = dailyCustomId('guess', '2026-05-19', 'POLITICS');
-    expect(id).toBe('quiz:daily:guess:2026-05-19:POLITICS');
-    expect(parseDailyCustomId(id)).toEqual({
-      action: 'guess',
-      date: '2026-05-19',
-      deck: 'POLITICS',
-    });
+  it.each([
+    // [label, action, date, deck, encoded]
+    ['round-trips guess with deck and date', 'guess', '2026-05-19', 'POLITICS', 'quiz:daily:guess:2026-05-19:POLITICS'],
+    ['uses "all" sentinel for the empty deck', 'share', '2026-05-19', '', 'quiz:daily:share:2026-05-19:all'],
+  ] as const)('%s', (_label, action, date, deck, encoded) => {
+    const id = dailyCustomId(action, date, deck);
+    expect(id).toBe(encoded);
+    expect(parseDailyCustomId(id)).toEqual({ action, date, deck });
   });
 
-  it('uses "all" sentinel for the empty deck', () => {
-    const id = dailyCustomId('share', '2026-05-19', '');
-    expect(id).toBe('quiz:daily:share:2026-05-19:all');
-    expect(parseDailyCustomId(id)).toEqual({
-      action: 'share',
-      date: '2026-05-19',
-      deck: '',
-    });
-  });
-
-  it('returns null for non-daily custom ids', () => {
-    expect(parseDailyCustomId('quiz:hint')).toBeNull();
-    expect(parseDailyCustomId('ask_123_yes')).toBeNull();
+  it.each(['quiz:hint', 'ask_123_yes'])('returns null for non-daily custom id %s', (id) => {
+    expect(parseDailyCustomId(id)).toBeNull();
   });
 });
 
@@ -280,41 +276,21 @@ describe('leaderboard', () => {
 });
 
 describe('computeDayStreaks', () => {
-  it('returns zeros for an empty list', () => {
-    expect(computeDayStreaks([], '2026-05-19')).toEqual({ currentStreak: 0, bestStreak: 0 });
-  });
-
-  it('counts a run of consecutive days ending today', () => {
-    const dates = ['2026-05-17', '2026-05-18', '2026-05-19'];
-    expect(computeDayStreaks(dates, '2026-05-19')).toEqual({
-      currentStreak: 3,
-      bestStreak: 3,
-    });
-  });
-
-  it('treats yesterday as still-streaking (today not yet played)', () => {
-    const dates = ['2026-05-17', '2026-05-18'];
-    expect(computeDayStreaks(dates, '2026-05-19')).toEqual({
-      currentStreak: 2,
-      bestStreak: 2,
-    });
-  });
-
-  it('resets current streak when the most recent play is too old', () => {
-    const dates = ['2026-05-10', '2026-05-11'];
-    expect(computeDayStreaks(dates, '2026-05-19')).toEqual({
-      currentStreak: 0,
-      bestStreak: 2,
-    });
-  });
-
-  it('tracks best streak separately from current', () => {
+  // today is 2026-05-19 in every row
+  it.each<[string, string[], number, number]>([
+    ['returns zeros for an empty list', [], 0, 0],
+    ['counts a run of consecutive days ending today', ['2026-05-17', '2026-05-18', '2026-05-19'], 3, 3],
+    ['treats yesterday as still-streaking (today not yet played)', ['2026-05-17', '2026-05-18'], 2, 2],
+    ['resets current streak when the most recent play is too old', ['2026-05-10', '2026-05-11'], 0, 2],
     // Played a 4-day streak in May, broke it, played a 1-day "streak" today.
-    const dates = ['2026-05-01', '2026-05-02', '2026-05-03', '2026-05-04', '2026-05-19'];
-    expect(computeDayStreaks(dates, '2026-05-19')).toEqual({
-      currentStreak: 1,
-      bestStreak: 4,
-    });
+    [
+      'tracks best streak separately from current',
+      ['2026-05-01', '2026-05-02', '2026-05-03', '2026-05-04', '2026-05-19'],
+      1,
+      4,
+    ],
+  ])('%s', (_label, dates, currentStreak, bestStreak) => {
+    expect(computeDayStreaks(dates, '2026-05-19')).toEqual({ currentStreak, bestStreak });
   });
 });
 
@@ -542,10 +518,12 @@ describe('guild config', () => {
     expect(getGuildConfig('g1').defaultDeck).toBeNull();
   });
 
-  it('isDeckAllowedForGuild defaults to open (no config = anything)', () => {
-    expect(isDeckAllowedForGuild('g1', 'POLITICS')).toBe(true);
-    expect(isDeckAllowedForGuild('g1', '')).toBe(true);
-  });
+  it.each(['POLITICS', ''])(
+    'isDeckAllowedForGuild defaults to open (no config = anything): deck %j',
+    (deck) => {
+      expect(isDeckAllowedForGuild('g1', deck)).toBe(true);
+    }
+  );
 
   it('isDeckAllowedForGuild enforces the allow-list when set', () => {
     setGuildAllowedDecks('g1', ['POLITICS']);
@@ -670,9 +648,11 @@ describe('admin scheduling', () => {
     expect(components).toHaveLength(0);
   });
 
-  it('tomorrowKey returns the day after today (UTC)', () => {
-    expect(tomorrowKey(new Date('2026-05-19T12:00:00Z'))).toBe('2026-05-20');
-    expect(tomorrowKey(new Date('2026-12-31T12:00:00Z'))).toBe('2027-01-01');
+  it.each([
+    ['2026-05-19T12:00:00Z', '2026-05-20'],
+    ['2026-12-31T12:00:00Z', '2027-01-01'],
+  ])('tomorrowKey(%s) is %s (the day after, UTC)', (iso, key) => {
+    expect(tomorrowKey(new Date(iso))).toBe(key);
   });
 });
 
@@ -717,15 +697,20 @@ describe('deck vote', () => {
     expect(t[0].votes).toBe(1);
   });
 
-  it('pickWinningDeck picks the highest count with deterministic tie-break', () => {
-    expect(
-      pickWinningDeck([
+  it.each<[string, { deck: string; votes: number }[], string | null]>([
+    // first one matching the max in input order
+    [
+      'picks the highest count with deterministic tie-break',
+      [
         { deck: 'A', votes: 2 },
         { deck: 'B', votes: 5 },
         { deck: 'C', votes: 5 },
-      ])
-    ).toBe('B'); // first one matching the max in input order
-    expect(pickWinningDeck([{ deck: 'A', votes: 0 }])).toBeNull();
+      ],
+      'B',
+    ],
+    ['returns null when nobody voted', [{ deck: 'A', votes: 0 }], null],
+  ])('pickWinningDeck %s', (_label, tallies, winner) => {
+    expect(pickWinningDeck(tallies)).toBe(winner);
   });
 
   it('closeDeckPoll stamps the winner on the poll row', () => {
@@ -750,20 +735,23 @@ describe('deck vote', () => {
     expect(reread?.messageId).toBe('msg-1');
   });
 
-  it('voteCustomId round-trips cast + close', () => {
-    expect(parseVoteCustomId(voteCustomId('cast', 7, 'POLITICS'))).toEqual({
-      action: 'cast',
-      pollId: 7,
-      deck: 'POLITICS',
+  it.each([
+    ['cast', 7, 'POLITICS', 'POLITICS'],
+    ['close', 7, undefined, ''],
+  ] as const)('voteCustomId round-trips %s (poll %i)', (action, pollId, deck, parsedDeck) => {
+    expect(parseVoteCustomId(voteCustomId(action, pollId, deck))).toEqual({
+      action,
+      pollId,
+      deck: parsedDeck,
     });
-    expect(parseVoteCustomId(voteCustomId('close', 7))).toEqual({
-      action: 'close',
-      pollId: 7,
-      deck: '',
-    });
-    expect(parseVoteCustomId('quiz:daily:guess:x:y')).toBeNull();
-    expect(parseVoteCustomId('quiz:vote:cast:not-a-number:POLITICS')).toBeNull();
   });
+
+  it.each(['quiz:daily:guess:x:y', 'quiz:vote:cast:not-a-number:POLITICS'])(
+    'parseVoteCustomId rejects %s',
+    (id) => {
+      expect(parseVoteCustomId(id)).toBeNull();
+    }
+  );
 
   it('voteCustomId encodes the empty-deck sentinel as "all"', () => {
     expect(voteCustomId('cast', 1, '')).toBe('quiz:vote:cast:1:all');
