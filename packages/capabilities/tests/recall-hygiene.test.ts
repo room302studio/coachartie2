@@ -15,6 +15,8 @@ describe('in-character reflections', () => {
   it('keeps notes about refusals and fact headers', () => {
     expect(isInCharacterReflection('- EJ pinged 2 people; Artie declined to schedule on their behalf')).toBe(false);
     expect(isInCharacterReflection('**Memorable Facts:**\n- User is fixing the rapid train bypass')).toBe(false);
+    expect(isInCharacterReflection('- game license is tied to your email address\n- support can recover it\n\n✨')).toBe(false);
+    expect(isInCharacterReflection('• jan_gbg was assigned the "Artie\'s Favorite" role\n\n✨')).toBe(false);
   });
   it('keeps actual notes', () => {
     expect(isInCharacterReflection('- User is working on a Piccadilly Line with congestion issues')).toBe(false);

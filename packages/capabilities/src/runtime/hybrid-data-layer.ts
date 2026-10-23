@@ -31,10 +31,10 @@ export function isStaleNoise(
 /**
  * A reflection should be a note ABOUT a conversation ("- user is building a Tokyo save").
  * In-character ones talk TO someone, use the ✨/[SILENT] reply conventions, or count laps.
- * Measured 2026-10-23: flags 2,744 of 7,581 stored reflections; spot checks all in-character.
+ * Checked against all ~7.6k stored reflections on 2026-10-23, in three passes.
  */
 export function isInCharacterReflection(text: string): boolean {
-  if (/\[SILENT\]|✨/.test(text) || /^\s*(round|lap)\s+[a-z-]+\b/i.test(text)) return true;
+  if (/\[SILENT\]/.test(text) || /^\s*(round|lap)\s+[a-z-]+\b/i.test(text)) return true;
   // Artie's own address terms and loop-counting bits: a note never says "comrade".
   // (Ordinals like "first time" and words like "sport" were tried and dropped: they hit
   // real notes. Nearly every loop reply says "same wrapper/trick/ask" anyway.)
@@ -50,6 +50,12 @@ export function isInCharacterReflection(text: string): boolean {
     )
   )
     return true;
+  // A note that opens as a bullet list is a note, even when he signs it with ✨. Treating ✨
+  // as a reply marker hid ~110 real facts ("license is tied to your email") on 2026-10-23.
+  // ...unless it's empty: "- ✨" or "No hard facts to remember" is a non-note.
+  if (/\bno (hard |memorable )?facts\b/i.test(text) || text.replace(/[-•*✨\s]/g, '').length < 15) return true;
+  if (/^\s*([-•*]|\d+\.)\s/.test(text)) return false;
+  if (/✨/.test(text)) return true;
   const you = (text.match(/\byou(r|rs|'re|'ve)?\b/gi) || []).length;
   const notes = (text.match(/\b(user|they|their|them|he|she|community|members?)\b/gi) || []).length;
   return you >= 3 && you > 2 * notes;
