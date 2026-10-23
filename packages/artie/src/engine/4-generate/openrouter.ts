@@ -4,6 +4,7 @@ import { logger } from '../../shared/logger.js';
 import { assertGenerationAllowed } from '../../shared/kill-switch.js';
 import { assertGuildBudget } from '../../shared/guild-budget.js';
 import { resolveModelSpec, isAutoRouted, autoReasoningFor } from '../../shared/model-spec.js';
+import { responseFormatFor, type JsonOutputSpec } from '../../shared/structured-output.js';
 
 // No dotenv config() here, deliberately. The old code called
 // resolve(__dirname, '../../../../.env') / resolve(__dirname, '../../.env') from
@@ -82,6 +83,12 @@ export interface GenerateOptions {
   plugins?: unknown[]; // OpenRouter plugins, e.g. [{ id: 'auto-router', cost_tier: 'low' }]
   rotationKey?: string; // sticky rotation per conversation (see stickyRotationIndex)
   stepType?: string; // Cost attribution: 'response' | 'observational_learning' | 'capability' | 'planning'
+  /**
+   * The JSON this call wants back (wave 10). Sent as `response_format` only to a model the
+   * catalog says takes it (never on a tool turn, never to openrouter/auto, whose pick is
+   * unknown); the caller parses the reply with parseModelJson either way.
+   */
+  jsonOutput?: JsonOutputSpec;
 }
 
 /** One generate turn's result. `toolCalls` is always [] unless the turn offered tools. */
@@ -502,6 +509,24 @@ class OpenRouterService {
     return capable;
   }
 
+  /**
+   * `response_format` for this model, or undefined. Only when the caller asked for JSON and
+   * the catalog positively lists structured output for this exact model: openrouter/auto may
+   * route to a model without it, and a catalog miss (fetch failed, unknown id) sends nothing.
+   */
+  private async responseFormatFor(
+    model: string,
+    spec: JsonOutputSpec | undefined
+  ): Promise<Record<string, unknown> | undefined> {
+    if (!spec || isAutoRouted(model)) return undefined;
+    try {
+      const mode = await openRouterModelsService.structuredOutputMode(model);
+      return mode ? responseFormatFor(spec, mode) : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
   private async generateTurn(
     messages: ChatMessage[],
     userId: string,
@@ -603,6 +628,7 @@ class OpenRouterService {
       let attemptUsage: { billed: string; usage: TokenUsage; cost: number } | undefined;
 
       try {
+        const responseFormat = sendTools ? undefined : await this.responseFormatFor(model, options?.jsonOutput);
         logger.info(
           `🤖 MODEL SELECTION: Using ${model} ${useSpecificModel && i === 0 ? '(SPECIFIC)' : `(${i + 1}/${modelsToTry.length})`} for ${messages.length} messages${toolSpec ? ` (tool turn, ${toolSpec.tools.length} tools, tool_choice ${toolSpec.toolChoice})` : ''}`
         );
@@ -652,6 +678,7 @@ class OpenRouterService {
           // Native tools (wave 8). The list is pre-sorted and byte-stable (tool-schema.ts), so
           // it stays inside the provider's cached prefix (Anthropic orders tools before system).
           ...(sendTools ? { tools: sendTools.tools, tool_choice: sendTools.toolChoice } : {}),
+          ...(responseFormat ? { response_format: responseFormat } : {}),
           ...extraBody,
         });
         // openrouter/auto picks the model; bill what was actually served, or the unknown-model

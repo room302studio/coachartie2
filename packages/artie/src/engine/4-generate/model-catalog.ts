@@ -107,6 +107,26 @@ export class OpenRouterModelsService {
    * by CATALOG_FETCH_TIMEOUT_MS). main.ts warms it at boot.
    */
   async supportsTools(modelId: string): Promise<boolean | undefined> {
+    const params = await this.supportedParameters(modelId);
+    return params ? params.includes('tools') : undefined;
+  }
+
+  /**
+   * Which structured-output mode the catalog says this model takes (wave 10):
+   * 'json_schema' when supported_parameters lists `structured_outputs`, 'json_object' when it
+   * lists only `response_format`, null when it lists neither. undefined when the catalog has
+   * no data on the model; callers treat that as "send no response_format" (the reply still
+   * goes through parseModelJson, so failing closed costs nothing).
+   */
+  async structuredOutputMode(modelId: string): Promise<'json_schema' | 'json_object' | null | undefined> {
+    const params = await this.supportedParameters(modelId);
+    if (!params) return undefined;
+    if (params.includes('structured_outputs')) return 'json_schema';
+    if (params.includes('response_format')) return 'json_object';
+    return null;
+  }
+
+  private async supportedParameters(modelId: string): Promise<string[] | undefined> {
     let models = this.modelsCache;
     if (models.size === 0) {
       // After a failed fetch, don't make every tool turn wait on another one for a minute.
@@ -121,7 +141,7 @@ export class OpenRouterModelsService {
     }
     const info = models.get(modelId);
     if (!info || !Array.isArray(info.supported_parameters)) return undefined;
-    return info.supported_parameters.includes('tools');
+    return info.supported_parameters;
   }
 
   private refreshing = false;
