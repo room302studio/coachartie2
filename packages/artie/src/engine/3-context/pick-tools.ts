@@ -241,7 +241,7 @@ Be selective - only nominate capabilities that are actually useful for this spec
 
   /**
    * Generate instructions for ONLY the nominated capabilities (not all)
-   * This replaces the bloated generateInstructions() that shows everything
+   * (the full roster is system-prompt.ts's buildCapabilityRoster)
    */
   generateNominatedInstructions(nominations: RegisteredCapability[]): string {
     if (nominations.length === 0) {

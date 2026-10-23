@@ -1,7 +1,7 @@
 /**
  * Discord/Slack channel & environment context source builders extracted verbatim
  * from ContextAlchemy. These depend only on their arguments plus dynamically-imported
- * modules (database, capability registry) — no instance state — so they live here as
+ * modules (database) — no instance state — so they live here as
  * plain functions. Behavior is byte-for-byte identical to the original private
  * methods; do not change wording, queries, priorities, or token weights.
  */
@@ -247,49 +247,6 @@ export async function addRecentChannelMessages(
   } catch (error) {
     logger.warn('Failed to add recent channel messages:', error);
     // Graceful degradation - continue without channel context
-  }
-}
-
-/**
- * Add capability manifest to message context (COMPRESSED format - saves ~800 tokens!)
- */
-export async function addCapabilityManifest(sources: ContextSource[]): Promise<void> {
-  try {
-    // Use COMPRESSED format: saves ~800 tokens vs full instructions
-    // Lists capabilities concisely with format shown once
-    const { capabilityRegistry } = await import('../../5-tool-loop/registry.js');
-    const content = capabilityRegistry.generateCompressedInstructions();
-
-    sources.push({
-      name: 'capability_context',
-      // High priority, despite reading like optional context. This source's content is
-      // concatenated into the FIRST system message, which is the prompt-cache breakpoint.
-      // At priority 30 a budget squeeze could drop it, which both removes the capability
-      // roster AND changes the cached prefix's bytes — a budget-dependent value inside a
-      // byte-exact prefix. Keep it in, or caching silently stops paying off under load.
-      priority: 96,
-      tokenWeight: estimateTokens(content),
-      content,
-      category: 'capabilities',
-    });
-
-    const capCount = capabilityRegistry.size();
-    if (DEBUG) {
-      logger.info(
-        `│ ✅ Added COMPRESSED capability instructions (${capCount} capabilities, ${content.length} chars, saved ~800 tokens)`
-      );
-    }
-  } catch (error) {
-    logger.warn('Failed to add capability manifest:', error);
-    // Graceful fallback to minimal instructions - use SIMPLE syntax
-    const content = `Simple shortcuts: <read>path</read>, <recall>query</recall>, <websearch>query</websearch>, <calc>2+2</calc>`;
-    sources.push({
-      name: 'capability_context',
-      priority: 30,
-      tokenWeight: estimateTokens(content),
-      content,
-      category: 'capabilities',
-    });
   }
 }
 

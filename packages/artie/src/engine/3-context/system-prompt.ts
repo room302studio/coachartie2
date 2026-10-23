@@ -166,10 +166,11 @@ export class PromptManager {
 
       return instructions;
     } catch (selectorError) {
-      // Fallback if selector fails: use ALL capabilities
+      // Fallback if selector fails: use ALL capabilities, as the one roster (wave 6: this
+      // used to be a separate, longer listing built by the registry).
       logger.warn('⚠️ Capability selector failed, falling back to full registry:', selectorError);
       const { capabilityRegistry } = await import('../5-tool-loop/registry.js');
-      const instructions = stripUserMessagePlaceholder(capabilityRegistry.generateInstructions());
+      const instructions = await this.buildCapabilityRoster();
       logger.info(
         `🎯 Using fallback capability instructions from registry (${capabilityRegistry.size()} capabilities)`
       );
@@ -180,10 +181,13 @@ export class PromptManager {
 
   /**
    * Compact roster of every registered capability: name, actions, and the first
-   * line of its description. Detail lives in the full descriptions (registry
-   * fallback path / examples); this just makes the tools discoverable.
+   * line of its description. This just makes the tools discoverable.
+   *
+   * The ONLY capability roster (wave 6). Context assembly used to add a second, compressed
+   * listing built by the registry (a 'capability_context' source) into the same cached
+   * system message, so every first turn carried the roster twice.
    */
-  private async buildCapabilityRoster(): Promise<string> {
+  async buildCapabilityRoster(): Promise<string> {
     const { capabilityRegistry } = await import('../5-tool-loop/registry.js');
     // Sorted, not registration-ordered. This roster sits inside the cached system prefix, and
     // prompt caching is a byte-exact prefix match — if registration order shifts between

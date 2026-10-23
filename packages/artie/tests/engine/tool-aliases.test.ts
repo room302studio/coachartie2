@@ -45,6 +45,7 @@ import {
   TOOL_ALIASES,
 } from '../../src/engine/5-tool-loop/registry.js';
 import { getRawDb } from '../../src/shared/db/client.js';
+import { promptManager } from '../../src/engine/3-context/system-prompt.js';
 
 const PRE_MERGE_TOOLS: Record<string, string[]> = {
   // planning/goal.ts
@@ -169,12 +170,14 @@ describe('tool alias map', () => {
     expect(resolveToolCall('web', 'search', {})).toMatchObject({ name: 'web', action: 'search' });
   });
 
-  it('the prompt roster lists only canonical names', () => {
-    const roster = capabilityRegistry.generateCompressedInstructions();
+  it('the prompt roster lists only canonical names', async () => {
+    // Wave 6: buildCapabilityRoster is the only roster (the registry's compressed listing,
+    // which this assertion used to read, is gone). Its lines are "- name [a, b]: desc".
+    const roster = await promptManager.buildCapabilityRoster();
     const listed = roster
-      .slice(roster.indexOf('Available: ') + 'Available: '.length)
-      .split(/\), /)
-      .map((entry) => entry.slice(0, entry.indexOf('(')));
+      .split('\n')
+      .filter((line) => line.startsWith('- '))
+      .map((line) => line.slice(2, line.indexOf(' [')));
     for (const alias of Object.keys(TOOL_ALIASES)) {
       expect(listed).not.toContain(alias);
     }

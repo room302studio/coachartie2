@@ -35,7 +35,6 @@ import {
   addChannelVibes,
   addChannelDigest,
   addRecentChannelMessages,
-  addCapabilityManifest,
   addDiscordEnvironment,
 } from './sources/discord.js';
 import { addSongNudge } from './sources/nudges.js';
@@ -185,7 +184,6 @@ export class ContextAlchemy {
       minimal?: boolean;
       capabilityContext?: string[];
       channelId?: string;
-      includeCapabilities?: boolean;
       source?: string;
       // Discord channel history - source of truth for DMs (includes webhook/n8n messages)
       discordChannelHistory?: Array<{
@@ -287,7 +285,6 @@ export class ContextAlchemy {
       const contextSources = await this.assembleMessageContext(
         mockMessage,
         options.capabilityContext,
-        options.includeCapabilities ?? true, // Default to true for backwards compatibility
         {
           enableMemories: options.enableMemories ?? true, // Default to true
           enableRules: options.enableRules ?? true, // Default to true
@@ -477,7 +474,6 @@ Important:
   private async assembleMessageContext(
     message: IncomingMessage,
     capabilityContext?: string[],
-    includeCapabilities: boolean = true,
     featureFlags: {
       enableMemories?: boolean;
       enableRules?: boolean;
@@ -571,10 +567,10 @@ Important:
     // These get loaded later in the orchestration flow after extraction + conscience review
     // await this.addCapabilityLearnings(message, sources, capabilityContext);
 
-    // Capability manifest - available tools/actions (how to do things)
-    if (includeCapabilities) {
-      await addCapabilityManifest(sources);
-    }
+    // No capability manifest source here (wave 6). It used to push a second, compressed
+    // roster into the cached system prefix on every turn, on top of the one
+    // system-prompt.ts's buildCapabilityRoster already appends to the base system prompt.
+    // That roster is now the only one.
 
     // Discord environment - connected servers (where we are)
     await addDiscordEnvironment(sources);
@@ -955,10 +951,9 @@ Important:
     //
     // Anything added here must be identical call to call. Per-message content goes in the
     // "Relevant context" block or the final user turn, never above this line.
+    // The capability roster is already inside baseSystemPrompt (system-prompt.ts
+    // buildCapabilityRoster); no context source is in the 'capabilities' bucket since wave 6.
     let systemContent = baseSystemPrompt;
-    if (contextByCategory.capabilities.length > 0) {
-      systemContent += `\n\n${contextByCategory.capabilities[0].content}`;
-    }
 
     // Message-format protocol. The final user turn carries harness-injected
     // sections (evidence, <security_reminder>) because the provider rejects
