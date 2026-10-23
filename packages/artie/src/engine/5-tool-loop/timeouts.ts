@@ -41,3 +41,15 @@ export const JOB_TIMEOUT_MS = 180_000;
  * the reply — after we stop starting new work.
  */
 export const SOFT_DEADLINE_RESERVE_MS = 30_000;
+
+/**
+ * Round-trip cap for the native tool loop (native-loop.ts runToolLoop, wave 8). Each round is
+ * one LLM call plus the tools it asked for, run in parallel. When the cap is hit the loop asks
+ * once more with tool_choice 'none' for a final answer.
+ *
+ * In practice the soft deadline above binds first: 8 rounds of a slow model plus tools cannot
+ * fit in JOB - RESERVE (150s), so the loop also stops starting rounds at context.deadlineAt and
+ * returns the best text it has. The cap is the guard against a fast model that never stops
+ * calling tools, not the thing that shapes normal replies.
+ */
+export const NATIVE_TOOL_MAX_ITERATIONS = 8;
