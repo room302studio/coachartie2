@@ -292,9 +292,9 @@ export function listCapabilities(): ApiResult {
  * POST /capabilities/registry/:name/execute's body: run one capability action directly, no LLM
  * (the gateway stores observation and reaction-feedback memories through this).
  */
-export async function executeTool(params: { name: string }, body: any): Promise<ApiResult> {
+export async function executeTool(routeParams: { name: string }, body: any): Promise<ApiResult> {
   try {
-    const { name } = params;
+    const { name } = routeParams;
     const { action, params = {}, content, guildId, channelId, userId, messageId } = body;
 
     if (!action) {
@@ -331,7 +331,7 @@ export async function executeTool(params: { name: string }, body: any): Promise<
       result,
     });
   } catch (error) {
-    logger.error(`Error executing capability ${params.name}:`, error);
+    logger.error(`Error executing capability ${routeParams.name}:`, error);
     return reply(500, {
       success: false,
       error: error instanceof Error ? error.message : 'Internal server error',
