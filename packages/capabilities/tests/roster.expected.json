@@ -1,1 +1,522 @@
-{}
+{
+  "ask-question": [
+    "ask"
+  ],
+  "autonomous": [
+    "config",
+    "heartbeat",
+    "help",
+    "models",
+    "route",
+    "status",
+    "summaries"
+  ],
+  "calculator": [
+    "calc",
+    "calculate",
+    "compute",
+    "eval",
+    "evaluate",
+    "math"
+  ],
+  "community-analytics": [
+    "activity_patterns",
+    "channel_stats",
+    "engagement_summary",
+    "github_activity",
+    "top_contributors",
+    "topic_trends",
+    "user_profile"
+  ],
+  "context": [
+    "full",
+    "recent",
+    "running",
+    "what",
+    "where"
+  ],
+  "credit_status": [
+    "acknowledge_alerts",
+    "check_balance",
+    "get_alerts",
+    "usage_summary"
+  ],
+  "deep_research": [
+    "harness_status",
+    "results",
+    "status",
+    "submit"
+  ],
+  "diagnose": [
+    "disk",
+    "error",
+    "logs",
+    "network",
+    "process"
+  ],
+  "discord-channels": [
+    "get_messages",
+    "get_pinned_messages",
+    "search_messages"
+  ],
+  "discord-forums": [
+    "get-forum-summary",
+    "get-thread",
+    "list-forums",
+    "list-threads",
+    "sync-to-github"
+  ],
+  "discord-issue-parser": [
+    "parse_issue_links"
+  ],
+  "discord-moderation": [
+    "add_enemy_role",
+    "escalate",
+    "remove_enemy_role",
+    "timeout"
+  ],
+  "discord-nickname": [
+    "reset_nickname",
+    "set_nickname"
+  ],
+  "discord-poll": [
+    "create_poll",
+    "read_poll"
+  ],
+  "discord-reaction": [
+    "react"
+  ],
+  "discord-send-message": [
+    "send_message"
+  ],
+  "discord-threads": [
+    "create_thread",
+    "get_thread_messages"
+  ],
+  "discord-ui": [
+    "buttons",
+    "context-menu",
+    "modal",
+    "select"
+  ],
+  "discord-user-history": [
+    "get_user_messages"
+  ],
+  "edit": [
+    "delete",
+    "insert",
+    "read",
+    "replace"
+  ],
+  "email": [
+    "send",
+    "status"
+  ],
+  "embedded_mcp": [
+    "execute_tool",
+    "health_check",
+    "list_tools"
+  ],
+  "filesystem": [
+    "exists",
+    "list_directory",
+    "read_file"
+  ],
+  "flashcard": [
+    "decks",
+    "quiz",
+    "random",
+    "search",
+    "stats"
+  ],
+  "git": [
+    "blame",
+    "branch",
+    "diff",
+    "log",
+    "show",
+    "status"
+  ],
+  "github": [
+    "create_issue",
+    "get_deployment_stats",
+    "get_issue_details",
+    "get_issues_by_label",
+    "get_recent_commits",
+    "get_related_prs",
+    "get_releases",
+    "list_issues",
+    "search_issues",
+    "search_repositories",
+    "update_issue"
+  ],
+  "goal": [
+    "check",
+    "complete",
+    "history",
+    "set",
+    "update"
+  ],
+  "goals": [
+    "abandon",
+    "achieve",
+    "complete",
+    "create",
+    "delete",
+    "history",
+    "list",
+    "progress",
+    "status",
+    "subgoal",
+    "update"
+  ],
+  "hello-world": [
+    "greet",
+    "introduce",
+    "wave"
+  ],
+  "hermes": [
+    "ask",
+    "chat",
+    "do",
+    "execute",
+    "health",
+    "run",
+    "status"
+  ],
+  "http": [
+    "delete",
+    "get",
+    "post",
+    "put"
+  ],
+  "image_gen": [
+    "edit",
+    "generate"
+  ],
+  "kanban": [
+    "active",
+    "block",
+    "create",
+    "get",
+    "list",
+    "move",
+    "unblock"
+  ],
+  "mediawiki": [
+    "add",
+    "list",
+    "read",
+    "search",
+    "write"
+  ],
+  "meeting-scheduler": [
+    "cancel",
+    "check-availability",
+    "create",
+    "list",
+    "suggest-time",
+    "update"
+  ],
+  "memory": [
+    "add",
+    "pin",
+    "recall",
+    "recent",
+    "remember",
+    "save",
+    "search",
+    "stats",
+    "store"
+  ],
+  "mention_proxy": [
+    "create",
+    "delete",
+    "disable",
+    "enable",
+    "get",
+    "list",
+    "list_for_guild",
+    "list_for_user",
+    "update"
+  ],
+  "model_manager": [
+    "compare_models",
+    "get_pricing",
+    "get_recommendation",
+    "list_models"
+  ],
+  "moltbook": [
+    "browse",
+    "comment",
+    "feed",
+    "follow",
+    "join",
+    "leave",
+    "post",
+    "profile",
+    "read",
+    "recall",
+    "register",
+    "search",
+    "submolts",
+    "unfollow"
+  ],
+  "morning-briefing": [
+    "config",
+    "configure",
+    "disable",
+    "enable",
+    "now",
+    "pause",
+    "preview",
+    "set",
+    "setup",
+    "show",
+    "status"
+  ],
+  "n8n_browser": [
+    "browse",
+    "fetch"
+  ],
+  "osint": [
+    "explain",
+    "flight-anomalies",
+    "investigations",
+    "lookup-entity",
+    "lookup-flight",
+    "lookup-signal",
+    "military-activity",
+    "nearby-aircraft",
+    "recent-flights",
+    "recent-signals",
+    "search-signals"
+  ],
+  "pairing": [
+    "add",
+    "allowed",
+    "allowlist",
+    "approve",
+    "deny",
+    "help",
+    "list",
+    "list-pending",
+    "pending",
+    "policy",
+    "revoke",
+    "status"
+  ],
+  "proactive-dm": [
+    "alert",
+    "dm",
+    "followup",
+    "message",
+    "notify",
+    "remind",
+    "send",
+    "status"
+  ],
+  "quests": [
+    "abandon",
+    "cancel",
+    "clear",
+    "complete",
+    "create",
+    "current",
+    "done",
+    "finish",
+    "list",
+    "next",
+    "resume",
+    "skip",
+    "start",
+    "status"
+  ],
+  "quiz-game": [
+    "help",
+    "info"
+  ],
+  "reddit": [
+    "comment",
+    "list-subreddits",
+    "mentions",
+    "post",
+    "read",
+    "search",
+    "status"
+  ],
+  "relay": [
+    "add",
+    "clear",
+    "list"
+  ],
+  "runtime_config": [
+    "auto_optimize",
+    "get_active_model",
+    "get_context_size",
+    "get_iteration_limits",
+    "set_context_size",
+    "set_iteration_limits",
+    "set_model_tier"
+  ],
+  "scheduler": [
+    "cancel",
+    "list",
+    "remind",
+    "schedule"
+  ],
+  "scrapbook": [
+    "entity",
+    "get",
+    "recent",
+    "search",
+    "stats"
+  ],
+  "scratchpad": [
+    "append",
+    "clear",
+    "note",
+    "read",
+    "section",
+    "write"
+  ],
+  "search": [
+    "both",
+    "content",
+    "files"
+  ],
+  "self-stats": [
+    "capabilities",
+    "costs",
+    "errors",
+    "health",
+    "overview",
+    "top_spenders",
+    "user_costs"
+  ],
+  "send-metro-file": [
+    "send"
+  ],
+  "sequence": [
+    "execute"
+  ],
+  "shell": [
+    "exec",
+    "list",
+    "read",
+    "send",
+    "split"
+  ],
+  "skills": [
+    "disable",
+    "enable",
+    "info",
+    "list",
+    "paths",
+    "reload"
+  ],
+  "stripe": [
+    "create_payment_link",
+    "deactivate_payment_link"
+  ],
+  "system-info": [
+    "disk",
+    "memory",
+    "status",
+    "uptime"
+  ],
+  "system_memory": [
+    "check_handoffs",
+    "handoff",
+    "read",
+    "recent",
+    "write"
+  ],
+  "system_monitor": [
+    "check_disk",
+    "check_services",
+    "get_resources",
+    "get_uptime",
+    "health_summary"
+  ],
+  "task-status": [
+    "abort",
+    "active",
+    "begin",
+    "cancel",
+    "complete",
+    "done",
+    "error",
+    "fail",
+    "finish",
+    "list",
+    "progress",
+    "start",
+    "update"
+  ],
+  "todo": [
+    "add",
+    "complete",
+    "create",
+    "list",
+    "next",
+    "status"
+  ],
+  "trend-watcher": [
+    "all",
+    "github",
+    "hackernews",
+    "hn",
+    "news",
+    "overview",
+    "repos",
+    "trends"
+  ],
+  "tts": [
+    "sfx",
+    "sing",
+    "speak",
+    "vibe_report"
+  ],
+  "user-profile": [
+    "delete",
+    "get",
+    "get-all",
+    "has",
+    "link",
+    "link-email",
+    "link-github",
+    "link-linkedin",
+    "link-phone",
+    "link-reddit",
+    "link-twitter",
+    "set",
+    "set-many"
+  ],
+  "variable": [
+    "clear",
+    "delete",
+    "get",
+    "list",
+    "set",
+    "substitute"
+  ],
+  "vision": [
+    "extract"
+  ],
+  "vps_claude": [
+    "briefing",
+    "notes",
+    "projects",
+    "read_note",
+    "status"
+  ],
+  "web": [
+    "fetch",
+    "search"
+  ],
+  "wolfram": [
+    "query",
+    "search"
+  ]
+}
