@@ -27,6 +27,12 @@ export const REFLECTION_V3_TAG = 'reflection_v3';
 
 const MAX_FACTS = 8;
 const MAX_FACT_CHARS = 300;
+/**
+ * Room for MAX_FACTS facts plus the JSON around them. The default (LLM_MAX_TOKENS, 400) fit the
+ * old bullet list, which was still usable when cut off; a JSON reply cut off mid-array parses
+ * to nothing, so the cap has to cover a full answer.
+ */
+export const REFLECTION_MAX_TOKENS = 800;
 
 export const REFLECTION_OUTPUT: JsonOutputSpec = {
   name: 'reflection_facts',
@@ -112,7 +118,7 @@ export async function generateReflectionFacts(
       userId,
       undefined,
       undefined,
-      { rotationKey, stepType: 'reflection', jsonOutput: REFLECTION_OUTPUT }
+      { rotationKey, stepType: 'reflection', jsonOutput: REFLECTION_OUTPUT, maxTokens: REFLECTION_MAX_TOKENS }
     );
   } catch (error) {
     logger.error(`❌ Failed to generate ${type} reflection:`, error);

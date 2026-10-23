@@ -79,7 +79,12 @@ describe('reflection JSON path', () => {
     // the call asked for structured output, with a code-owned, persona-free prompt
     const [messages, , , model, opts] = generateMock.mock.calls[0];
     expect(model).toBeUndefined(); // sticky rotation, as before
-    expect(opts).toMatchObject({ stepType: 'reflection', rotationKey: 'c1', jsonOutput: REFLECTION_OUTPUT });
+    expect(opts).toMatchObject({
+      stepType: 'reflection',
+      rotationKey: 'c1',
+      jsonOutput: REFLECTION_OUTPUT,
+      maxTokens: 800, // a JSON reply cut off mid-array parses to nothing
+    });
     expect(messages[0].role).toBe('system');
     expect(messages[1].content).toContain('I am building a Tokyo save');
   });
