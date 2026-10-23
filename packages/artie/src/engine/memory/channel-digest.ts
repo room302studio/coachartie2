@@ -17,6 +17,7 @@
 import { logger } from '../../shared/logger.js';
 import { parseModelJson } from '../../shared/model-json.js';
 import type { JsonOutputSpec } from '../../shared/structured-output.js';
+import { slugify } from '../../shared/text.js';
 import { getSyncDb } from '../../shared/db/client.js';
 import { saveChannelDigest, getChannelDigest } from '../../shared/db/channel-digest-store.js';
 import { openRouterService } from '../4-generate/openrouter.js';
@@ -108,12 +109,6 @@ function factsStoredToday(channelId: string): number {
   return row?.n ?? 0;
 }
 
-const slug = (s: string) =>
-  s
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-|-$/g, '');
-
 export async function refreshChannelDigest(req: DigestRequest): Promise<DigestResult | null> {
   if (req.lines.length === 0) return null;
   const previous = getChannelDigest(req.channelId)?.digest ?? '';
@@ -148,7 +143,7 @@ export async function refreshChannelDigest(req: DigestRequest): Promise<DigestRe
       `#${req.channelName} in ${req.guildName}`,
       5,
       undefined,
-      ['channel-fact', slug(req.guildName), slug(req.channelName)],
+      ['channel-fact', slugify(req.guildName), slugify(req.channelName)],
       req.guildId,
       req.channelId
     );

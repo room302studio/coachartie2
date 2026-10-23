@@ -3,6 +3,7 @@ import { execFile } from 'child_process';
 import { logger } from './logger.js';
 import { easternDayKey } from './eastern-day.js';
 import { getSyncDb } from './db/client.js';
+import { collapseWhitespace } from './text.js';
 
 /**
  * Operator alerts go to anomalywatch — never to Discord.
@@ -103,10 +104,7 @@ export function resolveAlertScriptPath(): string | null {
 
 /** One line, no markdown, bounded — alert.sh takes it as a single argv entry. */
 export function flattenAlertMessage(message: string, max = 500): string {
-  const flat = message
-    .replace(/\*\*|__|`/g, '')
-    .replace(/\s+/g, ' ')
-    .trim();
+  const flat = collapseWhitespace(message.replace(/\*\*|__|`/g, '')).trim();
   return flat.length > max ? `${flat.slice(0, max - 1)}…` : flat;
 }
 

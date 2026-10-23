@@ -1,6 +1,7 @@
 import { getSyncDb } from '../../shared/db/client.js';
 import { reportToAnomalywatch, AnomalywatchLevel } from '../../shared/anomalywatch.js';
 import { logger } from '../../shared/logger.js';
+import { trimTrailingSlash } from '../../shared/text.js';
 import { costMonitor } from './usage-ledger.js';
 
 export interface CreditInfo {
@@ -162,7 +163,7 @@ export class CreditMonitor {
     if (!apiKey) return null;
 
     try {
-      const response = await fetch(`${baseURL.replace(/\/+$/, '')}/credits`, {
+      const response = await fetch(`${trimTrailingSlash(baseURL)}/credits`, {
         headers: { Authorization: `Bearer ${apiKey}` },
       });
       if (!response.ok) return null;

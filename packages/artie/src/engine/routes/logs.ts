@@ -13,6 +13,16 @@ const jobLogs = new Map<string, Array<{ timestamp: string; level: string; messag
 let cleanupInterval: NodeJS.Timeout | null = null;
 
 /**
+ * One container log line, "HH:MM:SS level: message". A line in any other shape becomes an
+ * info entry stamped now, with the whole line as the message. (Was the same regex twice.)
+ */
+export function parseLogLine(line: string): { timestamp: string; level: string; message: string } {
+  const match = line.match(/^(\d{2}:\d{2}:\d{2})\s+(\w+):\s*(.+)$/);
+  if (match) return { timestamp: match[1], level: match[2], message: match[3] };
+  return { timestamp: new Date().toISOString(), level: 'info', message: line };
+}
+
+/**
  * Cleanup old job logs to prevent memory leaks
  * Removes jobs whose last log entry is older than 1 hour
  */
@@ -115,22 +125,7 @@ router.get('/:jobId', async (req, res) => {
           .trim()
           .split('\n')
           .filter((line) => line.includes(jobId))
-          .map((line) => {
-            // Parse Docker log format: timestamp level message
-            const match = line.match(/^(\d{2}:\d{2}:\d{2})\s+(\w+):\s*(.+)$/);
-            if (match) {
-              return {
-                timestamp: match[1],
-                level: match[2],
-                message: match[3],
-              };
-            }
-            return {
-              timestamp: new Date().toISOString(),
-              level: 'info',
-              message: line,
-            };
-          });
+          .map(parseLogLine);
       }
     } catch (dockerError) {
       logger.warn(`Could not retrieve Docker logs: ${dockerError}`);
@@ -206,22 +201,7 @@ router.get('/', async (req, res) => {
         ? stdout
             .trim()
             .split('\n')
-            .map((line) => {
-              // Parse log format
-              const match = line.match(/^(\d{2}:\d{2}:\d{2})\s+(\w+):\s*(.+)$/);
-              if (match) {
-                return {
-                  timestamp: match[1],
-                  level: match[2],
-                  message: match[3],
-                };
-              }
-              return {
-                timestamp: new Date().toISOString(),
-                level: 'info',
-                message: line,
-              };
-            })
+            .map(parseLogLine)
         : [];
 
       res.json({

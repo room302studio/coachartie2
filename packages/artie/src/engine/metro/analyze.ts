@@ -13,6 +13,7 @@ import { join, basename, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { spawn } from 'child_process';
 import { logger } from '../../shared/logger.js';
+import { slugify } from '../../shared/text.js';
 
 interface MetroAnalysis {
   valid: boolean;
@@ -183,14 +184,6 @@ export async function processMetroAttachment(
   const workDir = getWorkDir();
   await mkdir(workDir, { recursive: true });
 
-  // Slugify helper for safe filenames
-  const slugify = (str: string) =>
-    str
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '_')
-      .replace(/^_|_$/g, '')
-      .slice(0, 8);
-
   // Extract filename from URL
   let originalFilename = 'save.metro';
   try {
@@ -201,7 +194,7 @@ export async function processMetroAttachment(
   }
 
   // Prepend sender slug to filename
-  const senderSlug = sender ? slugify(sender) : '';
+  const senderSlug = sender ? slugify(sender, '_').slice(0, 8) : '';
   const filename = senderSlug ? `${senderSlug}_${originalFilename}` : originalFilename;
 
   // Download the file

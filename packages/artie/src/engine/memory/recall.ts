@@ -41,6 +41,26 @@ const empty = (categories: string[], confidence = 0): MemoryEntourageResult => (
   memoryIds: [],
 });
 
+/** Words in a query that make recall weigh time (was six word-list regexes, one per row). */
+export const TEMPORAL_KEYWORDS: readonly string[] = [
+  ...['today', 'yesterday', 'tomorrow', 'now', 'recently', 'lately', 'earlier', 'later'],
+  ...['morning', 'afternoon', 'evening', 'night', 'dawn', 'dusk'],
+  ...['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'],
+  ...['weekend', 'weekday', 'week', 'month', 'year'],
+  ...['spring', 'summer', 'fall', 'autumn', 'winter', 'holiday', 'birthday'],
+  ...['always', 'usually', 'often', 'sometimes', 'rarely', 'never', 'before', 'after', 'during', 'since'],
+];
+const TEMPORAL_KEYWORD_RE = new RegExp(`\\b(${TEMPORAL_KEYWORDS.join('|')})\\b`, 'gi');
+
+/**
+ * The temporal keywords in a message, lowercased, deduped. Order is text order (it was
+ * word-group order); matchTemporalContext only sums per keyword, so order doesn't matter.
+ */
+export function extractTemporalKeywords(message: string): string[] {
+  const found = message.match(TEMPORAL_KEYWORD_RE) || [];
+  return [...new Set(found.map((m) => m.toLowerCase()))];
+}
+
 /**
  * ~200 old memories (Jan–Sep 2026) have raw capability calls baked into the note text.
  * Recalled verbatim, they read as live instructions, so strip them; the surrounding
@@ -411,22 +431,7 @@ export class MemoryRecaller implements MemoryEntourageInterface {
   }
 
   private extractTemporalKeywords(message: string): string[] {
-    const patterns = [
-      /\b(today|yesterday|tomorrow|now|recently|lately|earlier|later)\b/gi,
-      /\b(morning|afternoon|evening|night|dawn|dusk)\b/gi,
-      /\b(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/gi,
-      /\b(weekend|weekday|week|month|year)\b/gi,
-      /\b(spring|summer|fall|autumn|winter|holiday|birthday)\b/gi,
-      /\b(always|usually|often|sometimes|rarely|never|before|after|during|since)\b/gi,
-    ];
-    const keywords: string[] = [];
-    for (const pattern of patterns) {
-      const found = message.match(pattern);
-      if (found) {
-        keywords.push(...found.map((m) => m.toLowerCase()));
-      }
-    }
-    return [...new Set(keywords)];
+    return extractTemporalKeywords(message);
   }
 
   private matchTemporalContext(

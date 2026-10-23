@@ -5,6 +5,7 @@ import { Client, TextChannel, Message } from 'discord.js';
 import * as engine from '../../engine/api.js';
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs';
 import { dirname } from 'path';
+import { collapseWhitespace } from '../../shared/text.js';
 
 /**
  * Steam Review Notes Service
@@ -220,7 +221,7 @@ export class SteamReviewNotes {
       embed.fields.find((f) => name.test(f.name))?.value || '?';
     // Essay-length reviews get truncated in the log — a handful of untruncated ones
     // blew the analysis prompt past the capabilities body limit (413).
-    let text = (embed.description || '(no text)').replace(/\s+/g, ' ').trim();
+    let text = collapseWhitespace(embed.description || '(no text)').trim();
     if (text.length > 600) text = text.slice(0, 600) + '… [truncated]';
     const d = msg.createdAt.toISOString();
     return {
@@ -280,7 +281,7 @@ export class SteamReviewNotes {
           // Human chatter: carried in memory into the next analysis as community-reaction
           // context, never persisted to the log (the log is reviews only).
           this.chatterBuffer.push(
-            `${msg.author.username}: ${msg.content.replace(/\s+/g, ' ').slice(0, 300)}`
+            `${msg.author.username}: ${collapseWhitespace(msg.content).slice(0, 300)}`
           );
         }
       }

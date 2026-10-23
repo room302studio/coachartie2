@@ -11,6 +11,7 @@
 
 import { RegisteredCapability } from '../../5-tool-loop/registry.js';
 import { logger } from '../../../shared/logger.js';
+import { collapseWhitespace } from '../../../shared/text.js';
 
 const STRIPE_API = 'https://api.stripe.com/v1';
 const MIN_AMOUNT_USD = 1;
@@ -45,9 +46,7 @@ async function stripePost(path: string, form: Record<string, string>): Promise<a
 function sanitizeName(raw: string): string {
   // Printable chars only, collapse whitespace, cap length. This name appears on
   // real Stripe checkout pages and receipts under the Room 302 Studio brand.
-  const cleaned = raw
-    .replace(/[^\x20-\x7E]/g, '')
-    .replace(/\s+/g, ' ')
+  const cleaned = collapseWhitespace(raw.replace(/[^\x20-\x7E]/g, ''))
     .trim()
     .slice(0, MAX_NAME_LENGTH);
   const blocklist = (process.env.OUTPUT_SLUR_BLOCKLIST || '')

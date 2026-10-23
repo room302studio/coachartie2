@@ -10,6 +10,7 @@ import {
 } from '../errors.js';
 import { errorPatternTracker } from './tool-error-patterns.js';
 import { capabilityTracker } from './tool-tracker.js';
+import { collapseWhitespace } from '../../shared/text.js';
 
 export interface CapabilityResult {
   capability: ParsedCapability;
@@ -439,10 +440,8 @@ export class RobustCapabilityExecutor {
    * Clean mathematical expressions
    */
   private cleanMathExpression(expression: string): string {
-    return expression
-      .replace(/[^0-9+\-*/(). ]/g, '') // Only allow math characters
-      .replace(/\s+/g, ' ') // Normalize whitespace
-      .trim();
+    // Only allow math characters, then normalize whitespace
+    return collapseWhitespace(expression.replace(/[^0-9+\-*/(). ]/g, '')).trim();
   }
 
   /**

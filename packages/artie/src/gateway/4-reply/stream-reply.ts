@@ -22,6 +22,7 @@ import { generateCorrelationId, getShortCorrelationId } from '../correlation.js'
 import { OUTPUT_SLUR_BLOCKLIST, INTERNAL_LEAK_BLOCKLIST } from './output-safety.js';
 import { applyControlTokens, scrubStreamingTokens } from './control-tokens.js';
 import { shouldCreateThread, generateThreadName } from './threads.js';
+import { slugify } from '../../shared/text.js';
 
 export interface UserIntent {
   content: string;
@@ -177,13 +178,7 @@ export async function processUserIntent(
     let messageContent = intent.content;
     if (!messageContent && hasAttachments) {
       // Build descriptive placeholder: "jonah_ab uploaded game.metro"
-      const slugify = (str: string) =>
-        str
-          .toLowerCase()
-          .replace(/[^a-z0-9]+/g, '_')
-          .replace(/^_|_$/g, '')
-          .slice(0, 8);
-      const senderSlug = slugify(intent.username || 'user');
+      const senderSlug = slugify(intent.username || 'user', '_').slice(0, 8);
       const filenames = currentAttachments.map((a: any) => a.name || 'file').join(', ');
       messageContent = `${senderSlug} uploaded ${filenames || 'attachment'}`;
     }

@@ -1,6 +1,7 @@
 import { logger } from '../../../shared/logger.js';
 import axios from 'axios';
 import { RegisteredCapability } from '../../5-tool-loop/registry.js';
+import { isEmail } from '../../../shared/email.js';
 
 /**
  * Email capability for sending emails via self-hosted infrastructure
@@ -45,8 +46,7 @@ class EmailService {
       }
 
       // Email validation
-      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-      if (!emailRegex.test(payload.to)) {
+      if (!isEmail(payload.to)) {
         throw new Error(
           `Invalid email address: ${payload.to}\n\nExample: <capability name="email" action="send" to="user@example.com" subject="Test" body="Hello!" />`
         );

@@ -6,6 +6,7 @@
  */
 
 import { logger } from '../../shared/logger.js';
+import { sanitizeIdentifier } from '../../shared/text.js';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -51,13 +52,11 @@ export function addPendingAttachment(key: string, attachment: PendingAttachment)
 
 function getAnalysisPath(userId: string): string {
   // Sanitize userId for filesystem
-  const safe = userId.replace(/[^a-zA-Z0-9-_]/g, '_');
-  return path.join(ANALYSIS_DIR, `${safe}.txt`);
+  return path.join(ANALYSIS_DIR, `${sanitizeIdentifier(userId)}.txt`);
 }
 
 function getAnalysisBufferPath(userId: string): string {
-  const safe = userId.replace(/[^a-zA-Z0-9-_]/g, '_');
-  return path.join(ANALYSIS_DIR, `${safe}.bin`);
+  return path.join(ANALYSIS_DIR, `${sanitizeIdentifier(userId)}.bin`);
 }
 
 /**

@@ -15,6 +15,7 @@ import type { ChannelPersona, GuildConfig } from '../../shared/config/guilds.js'
 import { telemetry } from '../telemetry.js';
 import { getEnhancedGuildContext } from '../1-receive/guild-context.js';
 import type { JsonOutputSpec } from '../../shared/structured-output.js';
+import { trimTrailingSlash } from '../../shared/text.js';
 import * as engine from '../../engine/api.js';
 
 /** The judgment reply, sent as response_format to models that take it (wave 10). */
@@ -217,11 +218,9 @@ JSON response:`;
 
     // Same base-URL convention as every other call site (was hardcoded to a separate router;
     // set PROACTIVE_JUDGMENT_BASE_URL=https://router.tools.ejfox.com/v1 to go back to it).
-    const judgmentBaseUrl = (
-      process.env.PROACTIVE_JUDGMENT_BASE_URL ||
-      process.env.OPENROUTER_BASE_URL ||
-      'https://openrouter.ai/api/v1'
-    ).replace(/\/+$/, '');
+    const judgmentBaseUrl = trimTrailingSlash(
+      process.env.PROACTIVE_JUDGMENT_BASE_URL || process.env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1'
+    );
     // judgmentModel() may be an "auto:<tier>" spec — see shared model-spec.ts
     const judgmentSpec = resolveModelSpec(judgmentModel());
     // Never for openrouter/auto (responseFormatForModel's rule), so the auto branch is unchanged.

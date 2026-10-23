@@ -1,6 +1,8 @@
 import { logger } from '../../../shared/logger.js';
 import { UserProfileService } from '../../../shared/db/user-profiles.js';
 import { RegisteredCapability } from '../../5-tool-loop/registry.js';
+import { sanitizeIdentifier } from '../../../shared/text.js';
+import { isEmail } from '../../../shared/email.js';
 
 /**
  * User Profile Capability
@@ -42,8 +44,7 @@ async function handleUserProfileAction(
         }
 
         // Validate email format
-        const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
-        if (!emailRegex.test(email)) {
+        if (!isEmail(email)) {
           throw new Error(`Invalid email format: "${email}"\n\nExample format: user@example.com`);
         }
 
@@ -139,7 +140,7 @@ async function handleUserProfileAction(
           );
         }
 
-        const serviceName = attribute.toLowerCase().replace(/[^a-z0-9_-]/g, '_');
+        const serviceName = sanitizeIdentifier(attribute.toLowerCase());
         await UserProfileService.setAttribute(userId, serviceName, value);
         logger.info(`🔗 LLM linked ${serviceName} for user ${userId}: ${value}`);
         return `✅ ${attribute} linked: ${value}`;

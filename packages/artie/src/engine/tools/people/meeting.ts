@@ -2,6 +2,7 @@ import { logger } from '../../../shared/logger.js';
 import { getSyncDb } from '../../../shared/db/client.js';
 import { schedulerService } from '../../jobs/scheduler.js';
 import { RegisteredCapability } from '../../5-tool-loop/registry.js';
+import { isEmail } from '../../../shared/email.js';
 import { parse, parseISO, isValid, addDays } from 'date-fns';
 import { fromZonedTime } from 'date-fns-tz';
 
@@ -489,8 +490,7 @@ class MeetingService {
     }
 
     // Email format
-    const emailMatch = participant.match(/^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/);
-    if (emailMatch) {
+    if (isEmail(participant)) {
       return {
         id: participant,
         type: 'email',

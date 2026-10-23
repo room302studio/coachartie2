@@ -63,6 +63,7 @@ import { handleMessageAsIntent } from '../3-ask-engine/build-request.js';
 import { handleQuizAnswer } from '../commands/quiz/command.js';
 import { existsSync, unlinkSync } from 'fs';
 import { looksLikeGithubActivity } from './github-signals.js';
+import { replaceMention } from '../../shared/mentions.js';
 
 // =============================================================================
 // CONSTANTS & CONFIGURATION
@@ -576,10 +577,7 @@ function emptyMention({ message, client, shortId, shouldRespond, responseConditi
   // an empty message, which 400s at the capabilities API ("Message is required") and wastes
   // retries. (Pile-on spammers ping with no content.) DMs/attachments are exempt.
   if (shouldRespond && !responseConditions.isDM && message.attachments.size === 0) {
-    const strippedForEmptyCheck = message.content
-      .replace(`<@${client.user!.id}>`, '')
-      .replace(`<@!${client.user!.id}>`, '')
-      .trim();
+    const strippedForEmptyCheck = replaceMention(message.content, client.user!.id, '').trim();
     if (!strippedForEmptyCheck) {
       logger.info(`🚫 Empty mention (no text/attachments) — skipping to avoid 400 [${shortId}]`);
       return 'stop';
@@ -616,16 +614,15 @@ async function respondOrObserve(turn: Turn): Promise<StepResult> {
     // -------------------------------------------------------------------------
 
     const fullMessage = message.content;
-    let cleanMessage = message.content
-      .replace(`<@${client.user!.id}>`, '') // Remove @bot mentions
-      .replace(`<@!${client.user!.id}>`, '') // Remove @bot nickname mentions
-      .trim();
+    // Remove @bot mentions (both forms). Not message.cleanContent: it would put "@Coach Artie"
+    // into every mention-only turn and rewrite #channel / @role mentions too.
+    let cleanMessage = replaceMention(message.content, client.user!.id, '').trim();
     // Resolve remaining <@id> mentions to readable @names so the LLM knows who
     // is being talked about (raw IDs were causing Artie to confuse people)
     for (const [id, user] of message.mentions.users) {
       if (id === client.user!.id) continue;
       const name = user.displayName || user.username;
-      cleanMessage = cleanMessage.replace(new RegExp(`<@!?${id}>`, 'g'), `@${name}`);
+      cleanMessage = replaceMention(cleanMessage, id, `@${name}`);
     }
 
     // Deduplication: prevent processing identical messages within TTL window

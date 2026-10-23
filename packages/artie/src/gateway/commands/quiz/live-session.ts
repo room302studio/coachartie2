@@ -1,5 +1,6 @@
 import { logger } from '../../../shared/logger.js';
 import { isGenerationMuted } from '../../../shared/kill-switch.js';
+import { collapseWhitespace, trimTrailingSlash } from '../../../shared/text.js';
 import { checkGuildBudget } from '../../../shared/guild-budget.js';
 import { resolveModelSpec, isAutoRouted, autoReasoningFor } from '../../../shared/model-spec.js';
 import { getSyncDb } from '../../../shared/db/client.js';
@@ -12,7 +13,7 @@ const AI_JUDGE_MODEL = process.env.QUIZ_JUDGE_MODEL || 'google/gemini-2.0-flash-
 // https://router.tools.ejfox.com/v1/chat/completions).
 const AI_JUDGE_URL =
   process.env.QUIZ_JUDGE_URL ||
-  `${(process.env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1').replace(/\/+$/, '')}/chat/completions`;
+  `${trimTrailingSlash(process.env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1')}/chat/completions`;
 // Conservative per-1K rates when OpenRouter doesn't report a cost: book high, never free.
 const JUDGE_FALLBACK_RATES = { input: 0.015, output: 0.075 };
 
@@ -89,11 +90,12 @@ const activeSessions = new Map<string, QuizSession>();
  * Normalize text for answer comparison
  */
 function normalizeAnswer(text: string): string {
-  return text
-    .toLowerCase()
-    .trim()
-    .replace(/[^\w\s]/g, '') // Remove punctuation
-    .replace(/\s+/g, ' '); // Normalize whitespace
+  return collapseWhitespace(
+    text
+      .toLowerCase()
+      .trim()
+      .replace(/[^\w\s]/g, '') // Remove punctuation
+  );
 }
 
 /**

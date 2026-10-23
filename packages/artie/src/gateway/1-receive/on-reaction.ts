@@ -26,6 +26,7 @@ import { processUserIntent } from '../4-reply/stream-reply.js';
 // Import capabilities client for trace feedback correlation
 import { capabilitiesClient } from '../3-ask-engine/engine-client.js';
 import * as engine from '../../engine/api.js';
+import { replaceMention } from '../../shared/mentions.js';
 
 // Reaction trigger emojis
 const REGENERATE_EMOJI = '🔄';
@@ -338,9 +339,8 @@ async function handleRegenerateReaction(
     await botMessage.react('✅');
 
     // Extract the clean message content (remove mentions)
-    const cleanMessage = originalMessage.content
-      .replace(new RegExp(`<@!?${reaction.message.client.user?.id}>`, 'g'), '')
-      .trim();
+    // Strip the bot's own mention only (cleanContent would leave "@Coach Artie" in).
+    const cleanMessage = replaceMention(originalMessage.content, reaction.message.client.user?.id, '').trim();
 
     // Gather Discord context
     const guildInfo = botMessage.guild

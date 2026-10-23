@@ -5,6 +5,7 @@ import { getChannelDigest, setChannelDigestCursor } from '../../shared/db/channe
 import { Client, Collection, Message, TextChannel } from 'discord.js';
 import * as engine from '../../engine/api.js';
 import { GUILD_CONFIGS, GuildConfig } from '../../shared/config/guilds.js';
+import { collapseWhitespace } from '../../shared/text.js';
 
 /**
  * Channel digest loop: keeps one rolling summary per observed channel so that when someone
@@ -152,7 +153,7 @@ export class ChannelDigestLoop {
       return;
     }
 
-    const lines = humans.map((m) => `${m.author.username}: ${m.content.replace(/\s+/g, ' ').trim()}`);
+    const lines = humans.map((m) => `${m.author.username}: ${collapseWhitespace(m.content).trim()}`);
     // Wave 9: in-process (was POST :47324/api/channel-digest; same handler)
     const res = await engine.channelDigest({
       guildId: cfg.id,

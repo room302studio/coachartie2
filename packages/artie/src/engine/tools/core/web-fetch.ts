@@ -4,6 +4,7 @@ import { decode as decodeHtmlEntities } from 'html-entities';
 import { z } from 'zod';
 import { BlockList, isIPv4, isIPv6 } from 'node:net';
 import { logger } from '../../../shared/logger.js';
+import { collapseWhitespace } from '../../../shared/text.js';
 
 // Configuration constants
 const CONFIG = {
@@ -231,10 +232,8 @@ function extractTextFromHtml(
     }
 
     // Clean up text
-    content = content
-      .replace(/\s+/g, ' ')
-      .replace(/\n\s*\n/g, '\n')
-      .trim();
+    // (The old second step, /\n\s*\n/ -> '\n', could never match after the collapse; dropped.)
+    content = collapseWhitespace(content).trim();
 
     return {
       title: title ? decodeHtmlEntities(title.substring(0, CONFIG.MAX_TITLE_LENGTH)) : undefined,

@@ -3,6 +3,7 @@ import { logger } from '../../shared/logger.js';
 import crypto from 'crypto';
 import * as gateway from '../../gateway/api.js';
 import { withTimeout } from '../../shared/async.js';
+import { isEmail } from '../../shared/email.js';
 
 export const sbatRouter: ReturnType<typeof Router> = Router();
 
@@ -96,7 +97,7 @@ sbatRouter.post('/inbound-email', async (req: Request, res: Response) => {
     const subject = (data.subject || '(no subject)').substring(0, 500);
     const bodyText = (data.text || data.body_text || data.body || '').substring(0, 50_000);
 
-    if (!fromEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(fromEmail)) {
+    if (!fromEmail || !isEmail(fromEmail)) {
       return res.status(400).json({ error: 'Invalid sender email' });
     }
 

@@ -18,6 +18,7 @@ import { getUserScores, formatUserScores } from '../../2-turn/user-scores.js';
 import type { ContextSource } from './types.js';
 import { DEBUG } from './types.js';
 import { toolLoopMode, toCallNotation } from '../../5-tool-loop/mode.js';
+import { collapseWhitespace } from '../../../shared/text.js';
 
 /** How to send the analyzed save back: XML tag on the XML path, call notation on native. */
 function sendMetroFileHint(): string {
@@ -587,11 +588,12 @@ File URL: ${url}`;
           const titleMatch = trimmed.match(/<title>([^<]{0,200})<\/title>/i);
           const title = titleMatch ? titleMatch[1].trim() : '';
 
-          const plain = trimmed
-            .replace(/<script[\s\S]*?<\/script>/gi, '')
-            .replace(/<style[\s\S]*?<\/style>/gi, '')
-            .replace(/<[^>]+>/g, ' ')
-            .replace(/\s+/g, ' ')
+          const plain = collapseWhitespace(
+            trimmed
+              .replace(/<script[\s\S]*?<\/script>/gi, '')
+              .replace(/<style[\s\S]*?<\/style>/gi, '')
+              .replace(/<[^>]+>/g, ' ')
+          )
             .trim()
             .slice(0, 600);
 

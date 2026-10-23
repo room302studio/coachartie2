@@ -104,29 +104,30 @@ const errorPatterns: { pattern: RegExp; cause: string; suggestion: string }[] = 
     suggestion: 'Configure CORS on the server or use a proxy.',
   },
   {
-    pattern: /401|unauthorized/i,
+    // \b on the bare status codes: "port 4010" or "id 15003" is not an HTTP status (wave 10).
+    pattern: /\b401\b|unauthorized/i,
     cause: 'Authentication failed',
     suggestion: 'Check credentials, tokens, or API keys.',
   },
   {
-    pattern: /403|forbidden/i,
+    pattern: /\b403\b|forbidden/i,
     cause: 'Access forbidden',
     suggestion: 'Check permissions. User may not have access to this resource.',
   },
   {
-    pattern: /404|not found/i,
+    pattern: /\b404\b|not found/i,
     cause: 'Resource not found',
     suggestion: 'Check the URL/endpoint. Resource may have been deleted or moved.',
   },
   {
-    pattern: /500|internal server error/i,
+    pattern: /\b500\b|internal server error/i,
     cause: 'Server-side error',
     suggestion: 'Check server logs. The bug is on the backend.',
   },
 ];
 
-// Analyze an error message
-function analyzeError(errorText: string): {
+// Analyze an error message (exported for its test)
+export function analyzeError(errorText: string): {
   causes: string[];
   suggestions: string[];
   stackInfo?: { file: string; line: number }[];

@@ -3,6 +3,7 @@ import LokiTransport from 'winston-loki';
 import path from 'path';
 import fs from 'fs';
 import { getLogsDir } from './paths.js';
+import { collapseWhitespace } from './text.js';
 
 const logLevel = process.env.LOG_LEVEL || 'info';
 const serviceName = process.env.SERVICE_NAME || 'coachartie';
@@ -29,7 +30,7 @@ const transports: winston.transport[] = [
         const { pid, nodeVersion, ...cleanMeta } = meta;
 
         // Collapse message to single line
-        const cleanMessage = String(message).replace(/\n/g, ' ').replace(/\s+/g, ' ').trim();
+        const cleanMessage = collapseWhitespace(String(message)).trim();
 
         // Only show meta if it has meaningful content
         const hasUsefulMeta =

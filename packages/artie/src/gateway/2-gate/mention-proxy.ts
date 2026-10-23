@@ -15,6 +15,7 @@ import { pathResolver } from '../path-resolver.js';
 import type { Client, Message } from 'discord.js';
 import { telemetry } from '../telemetry.js';
 import { handleMessageAsIntent } from '../3-ask-engine/build-request.js';
+import { replaceMention } from '../../shared/mentions.js';
 
 // -----------------------------------------------------------------------------
 // Rule types (folded in from mention-proxy-config.ts, wave 5)
@@ -641,9 +642,7 @@ export async function runMentionProxy(
       logger.warn(`📣 Proxying for @${matchedRule.targetUsername} [${shortId}]`);
 
       // Get the clean message (remove mentions)
-      const cleanMessage = message.content
-        .replace(new RegExp(`<@!?${matchedRule.targetUserId}>`, 'g'), '')
-        .trim();
+      const cleanMessage = replaceMention(message.content, matchedRule.targetUserId, '').trim();
 
       // Process using existing intent handler with proxy context
       await handleMessageAsIntent(message, cleanMessage, correlationId, {
