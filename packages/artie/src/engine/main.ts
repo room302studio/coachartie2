@@ -49,23 +49,13 @@ console.log('  - CAPABILITIES_PORT:', process.env.CAPABILITIES_PORT || 'not set'
 console.log('  - REDIS_HOST:', process.env.REDIS_HOST || 'not set');
 console.log('  - REDIS_PORT:', process.env.REDIS_PORT || 'not set');
 
-import express from 'express';
-import helmet from 'helmet';
-import { logger, createRequestLogger } from '../shared/logger.js';
+import { logger } from '../shared/logger.js';
 import { parsePortWithFallback } from '../shared/config/ports.js';
 import { registerServiceWithDiscovery, serviceDiscovery } from './health/service-discovery.js';
 import { startMessageConsumer } from './1-intake/queue-worker.js';
-import { healthRouter } from './routes/health.js';
-import { chatRouter } from './1-intake/chat-route.js';
-import { schedulerRouter } from './routes/scheduler.js';
-import { githubRouter } from './routes/github.js';
-import { servicesRouter } from './routes/services.js';
-import { memoriesRouter } from './routes/memories.js';
-import modelsRouter from './routes/models.js';
-import { logsRouter, stopCleanupInterval } from './routes/logs.js';
-import { apiRouter } from './routes/observability.js';
-import { securityRouter } from './routes/security.js';
-import { sbatRouter } from './routes/sbat-email-tickets.js';
+// The express app, its middleware and every route (http.ts). main.ts only boots and listens.
+import { app } from './http.js';
+import { stopCleanupInterval } from './routes/logs.js';
 import { schedulerService } from './jobs/scheduler.js';
 import { jobTracker } from './1-intake/job-tracker.js';
 import { costMonitor } from './budget/session-spend.js';
@@ -73,249 +63,16 @@ import { distressMonitor } from './health/distress.js';
 import { vitalsMonitor } from './health/vitals.js';
 import { startDailyBudgetWatch } from './budget/daily-cap.js';
 import { GlobalVariableStore } from './5-tool-loop/variables.js';
-// Import orchestrator FIRST to trigger capability registration
-import './services/capability/capability-orchestrator.js';
+// Import orchestrator FIRST to trigger capability registration. (This path was left
+// pointing at the pre-move services/capability/ tree by wave 3; tsc doesn't check
+// side-effect-only imports, so it would have thrown ERR_MODULE_NOT_FOUND at boot.)
+import './2-turn/capability-orchestrator.js';
 import { capabilityRegistry } from './5-tool-loop/registry.js';
-import { capabilitiesRouter } from './routes/tool-registry.js';
 import { simpleHealer } from './health/simple-healer.js';
 import { hybridDataLayer } from './memory/store.js';
-import { getMetrics, getMetricsContentType } from './health/metrics.js';
-import { requireApiToken } from '../shared/require-api-token.js';
 
 // Export openRouterService for models endpoint
 export { openRouterService } from './4-generate/openrouter.js';
-
-const app = express();
-
-// CORS middleware - allow Brain UI to connect
-app.use((req, res, next) => {
-  res.header('Access-Control-Allow-Origin', '*');
-  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  res.header(
-    'Access-Control-Allow-Headers',
-    'Origin, X-Requested-With, Content-Type, Accept, Authorization'
-  );
-
-  if (req.method === 'OPTIONS') {
-    return res.sendStatus(200);
-  }
-
-  next();
-});
-
-// Middleware
-app.use(
-  helmet({
-    crossOriginResourcePolicy: false,
-  })
-);
-app.use(express.json({
-  // Capture raw body for webhook signature verification (SBAT inbound email)
-  verify: (req, _res, buf) => {
-    if (req.headers['x-mailersend-signature']) {
-      (req as any).rawBody = buf.toString();
-    }
-  },
-}));
-app.use(createRequestLogger('capabilities'));
-
-// Remote callers (Cloudflare tunnel api.artie.tools, Caddy, docker bridges) need the
-// token; direct 127.0.0.1 callers don't. Health checks and the two webhooks that verify
-// their own signatures (MailerSend -> /api/sbat, GitHub -> /github/webhook) stay open.
-app.use(
-  requireApiToken([
-    (req) => req.path === '/test' || req.path === '/health' || req.path.startsWith('/health/'),
-    (req) => req.method === 'GET' && req.path === '/github/health',
-    (req) =>
-      req.method === 'POST' && (req.path === '/github/webhook' || req.path.startsWith('/api/sbat')),
-  ])
-);
-
-// Test route
-app.get('/test', (req, res) => {
-  res.send('Server is running!');
-});
-
-// Prometheus metrics endpoint
-app.get('/metrics', async (req, res) => {
-  try {
-    res.set('Content-Type', getMetricsContentType());
-    res.end(await getMetrics());
-  } catch (err) {
-    res.status(500).end((err as Error).message);
-  }
-});
-
-// Routes
-app.use('/health', healthRouter);
-app.use('/chat', chatRouter);
-app.use('/capabilities', capabilitiesRouter);
-app.use('/scheduler', schedulerRouter);
-app.use('/github', githubRouter);
-app.use('/security', securityRouter);
-app.use('/services', servicesRouter);
-app.use('/api/memories', memoriesRouter);
-app.use('/api/models', modelsRouter);
-app.use('/api', apiRouter); // Context Alchemy observability + experiments
-app.use('/api/sbat', sbatRouter); // SBAT inbound email tickets
-app.use('/logs', logsRouter);
-
-// Observational learning endpoint
-app.post('/api/observe', async (req, res) => {
-  try {
-    const { prompt, guildId, channelId, messageCount, timeRange } = req.body;
-
-    if (!prompt) {
-      return res.status(400).json({ error: 'Prompt is required' });
-    }
-
-    // Import observation handler
-    const { observationHandler } = await import('./memory/observe.js');
-
-    // Generate summary
-    const result = await observationHandler.generateObservationSummary(prompt, {
-      guildId,
-      channelId,
-      messageCount,
-      timeRange,
-    });
-
-    res.json(result);
-  } catch (error) {
-    logger.error('Observation endpoint error:', error);
-    res.status(500).json({ error: 'Failed to process observation' });
-  }
-});
-
-// Channel digest: fold new channel messages into the channel's rolling summary (channel-digest.ts)
-app.post('/api/channel-digest', async (req, res) => {
-  try {
-    const { guildId, guildName, channelId, channelName, lines, lastMessageId } = req.body || {};
-    if (!guildId || !channelId || !lastMessageId || !Array.isArray(lines)) {
-      return res.status(400).json({ error: 'guildId, channelId, lastMessageId and lines[] required' });
-    }
-    const { refreshChannelDigest } = await import('./memory/channel-digest.js');
-    const result = await refreshChannelDigest({
-      guildId,
-      guildName: guildName || guildId,
-      channelId,
-      channelName: channelName || channelId,
-      lines: lines.map(String),
-      lastMessageId: String(lastMessageId),
-    });
-    res.status(result ? 200 : 422).json(result ?? { error: 'digest not produced' });
-  } catch (error) {
-    logger.warn('Channel digest endpoint error:', error);
-    res.status(500).json({ error: 'Failed to refresh digest' });
-  }
-});
-
-// Repo routing: Artie picks the Discord channel for a newly discovered GitHub repo (repo-router.ts)
-app.post('/api/route-repo', async (req, res) => {
-  try {
-    const { repo, channels, existing, guildId } = req.body || {};
-    if (!repo?.fullName || !Array.isArray(channels)) {
-      return res.status(400).json({ error: 'repo.fullName and channels[] required' });
-    }
-    const { pickRepoChannel } = await import('./routes/route-repo.js');
-    const pick = await pickRepoChannel(repo, channels, Array.isArray(existing) ? existing : [], guildId);
-    res.status(pick ? 200 : 422).json(pick ?? { error: 'no valid pick' });
-  } catch (error) {
-    logger.warn('Repo routing endpoint error:', error);
-    res.status(500).json({ error: 'routing failed' });
-  }
-});
-
-// Observation stats endpoint
-app.get('/api/observe/stats', async (req, res) => {
-  try {
-    const { observationHandler } = await import('./memory/observe.js');
-    const stats = await observationHandler.getObservationStats();
-    res.json(stats);
-  } catch (error) {
-    logger.error('Observation stats error:', error);
-    res.status(500).json({ error: 'Failed to get observation stats' });
-  }
-});
-
-// Reflection threshold check endpoint - triggers emergency reflection if threshold crossed
-app.post('/api/reflection/check-threshold', async (req, res) => {
-  try {
-    const { guildId, threshold, hours } = req.body;
-
-    if (!guildId || !threshold) {
-      return res.status(400).json({ error: 'guildId and threshold are required' });
-    }
-
-    // Import the consolidator
-    const { reflectionConsolidator, countRecentNegativeFeedback } = await import(
-      './memory/reflection-consolidator.js'
-    );
-
-    // Check count of recent negative feedback
-    const count = await countRecentNegativeFeedback(guildId, hours || 1);
-
-    if (count >= threshold) {
-      // Trigger emergency reflection
-      const result = await reflectionConsolidator.triggerEmergencyReflection(
-        guildId,
-        `${count} negative reactions in last ${hours || 1} hour(s)`
-      );
-
-      res.json({
-        triggered: true,
-        count,
-        threshold,
-        rulesCreated: result.rulesCreated,
-      });
-    } else {
-      res.json({
-        triggered: false,
-        count,
-        threshold,
-      });
-    }
-  } catch (error) {
-    logger.error('Reflection threshold check error:', error);
-    res.status(500).json({ error: 'Failed to check reflection threshold' });
-  }
-});
-
-// Reflection stats endpoint - get active rules and reflection statistics
-app.get('/api/reflection/stats', async (req, res) => {
-  try {
-    const { reflectionConsolidator } = await import(
-      './memory/reflection-consolidator.js'
-    );
-
-    const systemRules = await reflectionConsolidator.getActiveRules('system');
-
-    // Get guild-specific rules count
-    const { getSyncDb } = await import('../shared/db/client.js');
-    const db = getSyncDb();
-
-    const guildStats = db.all<{ scope_id: string; count: number }>(
-      `SELECT scope_id, COUNT(*) as count
-       FROM learned_rules
-       WHERE rule_type = 'guild' AND is_active = 1
-       GROUP BY scope_id`
-    );
-
-    const totalRules = db.get<{ count: number }>(
-      `SELECT COUNT(*) as count FROM learned_rules WHERE is_active = 1`
-    );
-
-    res.json({
-      systemRules: systemRules.length,
-      guildRules: guildStats || [],
-      totalActiveRules: totalRules?.count || 0,
-      timestamp: new Date().toISOString(),
-    });
-  } catch (error) {
-    logger.error('Reflection stats error:', error);
-    res.status(500).json({ error: 'Failed to get reflection stats' });
-  }
-});
 
 // Start queue consumers and scheduler
 async function startQueueWorkers() {

@@ -8,6 +8,8 @@
  * which means the kill switch, the daily budget and usage tracking all apply.
  */
 
+import { Router } from 'express';
+import { logger } from '../../shared/logger.js';
 import { openRouterService } from '../4-generate/openrouter.js';
 
 export interface ChannelOption {
@@ -80,3 +82,24 @@ export async function pickRepoChannel(
   );
   return parseRoutePick(raw, channels);
 }
+
+/**
+ * POST /api/route-repo: Artie picks the Discord channel for a newly discovered GitHub repo.
+ * Moved verbatim out of engine/main.ts (wave 6); path and response shape are unchanged.
+ * Mounted at /api by http.ts.
+ */
+export const routeRepoRouter: Router = Router();
+
+routeRepoRouter.post('/route-repo', async (req, res) => {
+  try {
+    const { repo, channels, existing, guildId } = req.body || {};
+    if (!repo?.fullName || !Array.isArray(channels)) {
+      return res.status(400).json({ error: 'repo.fullName and channels[] required' });
+    }
+    const pick = await pickRepoChannel(repo, channels, Array.isArray(existing) ? existing : [], guildId);
+    res.status(pick ? 200 : 422).json(pick ?? { error: 'no valid pick' });
+  } catch (error) {
+    logger.warn('Repo routing endpoint error:', error);
+    res.status(500).json({ error: 'routing failed' });
+  }
+});
