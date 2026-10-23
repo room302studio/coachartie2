@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { isStaleNoise, isInCharacterReflection } from '../src/runtime/hybrid-data-layer.js';
+import { stripCapabilityTags } from '../src/services/memory/memory-recaller.js';
 
 describe('in-character reflections', () => {
   it('flags replies stored as reflections', () => {
@@ -12,6 +13,14 @@ describe('in-character reflections', () => {
     expect(isInCharacterReflection('- User is working on a Piccadilly Line with congestion issues')).toBe(false);
     expect(isInCharacterReflection('• Version 1.4.0 shipped (~2026-06-29)')).toBe(false);
     expect(isInCharacterReflection('- the user thinks you should batch replies; they said you were spammy')).toBe(false);
+  });
+});
+
+describe('capability tags in old memories', () => {
+  it('strips them and keeps the note', () => {
+    const note = `• Status: ready to push / <capability name="memory" action="pin" data='{"fact":"a \\"quoted\\" fact"}' /> / • Ticket cms1`;
+    expect(stripCapabilityTags(note)).toBe('• Status: ready to push / / • Ticket cms1');
+    expect(stripCapabilityTags('<recall>x</recall> y <capability name="m">body</capability>')).toBe('x y');
   });
 });
 

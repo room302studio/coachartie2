@@ -40,6 +40,19 @@ const empty = (categories: string[], confidence = 0): MemoryEntourageResult => (
   memoryIds: [],
 });
 
+/**
+ * ~200 old memories (Jan–Sep 2026) have raw capability calls baked into the note text.
+ * Recalled verbatim, they read as live instructions, so strip them; the surrounding
+ * note almost always restates the fact.
+ */
+export function stripCapabilityTags(text: string): string {
+  return text
+    .replace(/<capability\b[\s\S]*?(\/>|<\/capability>)/g, '')
+    .replace(/<\/?recall\b[^>]*>/g, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+}
+
 export class MemoryRecaller implements MemoryEntourageInterface {
   private memoryService: MemoryService;
 
@@ -116,7 +129,7 @@ export class MemoryRecaller implements MemoryEntourageInterface {
     }
 
     return [...userMemories, ...artieMemories, ...guildMemories].map((m) => ({
-      content: m.content,
+      content: stripCapabilityTags(m.content),
       importance: m.importance || 5,
       date: m.timestamp || new Date().toISOString(),
       tags: Array.isArray(m.tags) ? m.tags : [],
