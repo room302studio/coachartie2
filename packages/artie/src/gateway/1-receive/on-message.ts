@@ -62,6 +62,7 @@ import { runMentionProxy } from '../2-gate/mention-proxy.js';
 import { handleMessageAsIntent } from '../3-ask-engine/build-request.js';
 import { handleQuizAnswer } from '../commands/quiz/command.js';
 import { existsSync, unlinkSync } from 'fs';
+import { looksLikeGithubActivity } from './github-signals.js';
 
 // =============================================================================
 // CONSTANTS & CONFIGURATION
@@ -158,8 +159,7 @@ function rawLogAndLearnIdentity({ message: msg }: Turn): StepResult {
 
   // Identity learning: check if message mentions GitHub activity
   if (!msg.author.bot && msg.content.length > 5) {
-    const githubSignals = /(?:push|commit|pr|pull request|issue|merge|branch|github|my pr|just pushed|just merged|i opened|i filed)/i;
-    if (githubSignals.test(msg.content)) {
+    if (looksLikeGithubActivity(msg.content)) {
       import('../watchers/github/identity-resolver.js')
         .then(({ getIdentityResolver }) => {
           const resolver = getIdentityResolver();
