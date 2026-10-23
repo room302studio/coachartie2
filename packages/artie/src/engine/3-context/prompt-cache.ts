@@ -138,7 +138,16 @@ export interface CacheDecision {
  * context" block and the channel transcript change every message, so marking them would pay
  * a write premium on bytes that are never read back.
  */
-export function applyCacheControl(messages: ChatMessage[], model: string): CacheDecision {
+export function applyCacheControl(
+  messages: ChatMessage[],
+  model: string,
+  /**
+   * Tokens that precede the system message in the provider's cached prefix: on a native tool
+   * turn, the tool definitions (Anthropic orders tools → system → messages). They count toward
+   * the model's minimum, so a system prompt just under Haiku's 4096 still caches with tools.
+   */
+  leadingTokens = 0
+): CacheDecision {
   if (!supportsPromptCaching(model)) {
     return { messages, applied: false, reason: 'non-anthropic model', prefixTokens: 0 };
   }
@@ -156,7 +165,7 @@ export function applyCacheControl(messages: ChatMessage[], model: string): Cache
     breakpoints.push(firstSystemIndex + 1);
   }
   const minimum = cacheMinimumFor(model);
-  let running = 0;
+  let running = leadingTokens;
   const marked: number[] = [];
   for (const i of breakpoints) {
     running += estimateTokens(messages[i].content);

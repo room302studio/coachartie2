@@ -228,4 +228,34 @@ describe('wire shape helpers', () => {
     expect(Array.isArray(out.messages[0].content)).toBe(true);
     expect(out.messages.slice(1)).toEqual(chain.slice(1));
   });
+
+  it("tool definitions count toward the cache minimum (Haiku's 4096) on a tool turn", () => {
+    const system = [{ role: 'system' as const, content: 'x'.repeat(4 * 3000) }]; // ~3000 tok
+    expect(applyCacheControl(system, 'anthropic/claude-haiku-4.5').applied).toBe(false);
+    const withTools = applyCacheControl(system, 'anthropic/claude-haiku-4.5', 9000);
+    expect(withTools.applied).toBe(true);
+    expect(withTools.prefixTokens).toBe(12000);
+  });
+
+  it('a haiku tool turn sends the breakpoint when tools + system clear the minimum', async () => {
+    createMock.mockResolvedValueOnce(completion({ content: 'hi' }));
+    const bigTools: ToolDefinition[] = Array.from({ length: 40 }, (_, i) => ({
+      type: 'function' as const,
+      function: {
+        name: `tool_${i}`,
+        description: 'd'.repeat(400),
+        parameters: { type: 'object' as const, properties: {}, required: [] },
+      },
+    }));
+    await openRouterService.generateWithTools(
+      [{ role: 'system', content: 's'.repeat(4 * 3000) }, { role: 'user', content: 'hi' }],
+      bigTools,
+      'u',
+      'm',
+      'anthropic/claude-haiku-4.5'
+    );
+    const params = createMock.mock.calls[0][0];
+    expect(Array.isArray(params.messages[0].content)).toBe(true);
+    expect(params.messages[0].content[0].cache_control).toBeDefined();
+  });
 });

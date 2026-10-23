@@ -622,10 +622,15 @@ class OpenRouterService {
 
         // Mark the static system prefix cacheable. No-op for non-Anthropic models and for
         // prefixes under the model's minimum — see prompt-cache.ts for why both matter.
-        const cache = applyCacheControl(messages, model);
+        // On a tool turn the tool list sits ahead of the system prompt in that prefix.
+        const cache = applyCacheControl(
+          messages,
+          model,
+          sendTools ? estimateTokens(JSON.stringify(sendTools.tools)) : 0
+        );
         logger.info(
           cache.applied
-            ? `🗄️ Prompt cache: breakpoint on ${cache.prefixTokens}tok system prefix (${model})`
+            ? `🗄️ Prompt cache: breakpoint on ${cache.prefixTokens}tok ${sendTools ? 'tools + ' : ''}system prefix (${model})`
             : `🗄️ Prompt cache: not applied — ${cache.reason}`
         );
 
