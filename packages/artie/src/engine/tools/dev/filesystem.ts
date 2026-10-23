@@ -48,7 +48,15 @@ async function realpathOfExisting(p: string): Promise<string> {
       const real = await fs.realpath(current);
       return tail.length ? path.join(real, ...tail.reverse()) : real;
     } catch (error) {
-      if ((error as NodeError).code !== 'ENOENT') throw error;
+      // Anything we can't resolve (EACCES, ELOOP, …) is refused rather than surfaced raw.
+      if ((error as NodeError).code !== 'ENOENT') throw new Error(OUTSIDE);
+      // ENOENT on an entry that exists is a dangling symlink: its target is unknowable
+      // ahead of time, so refuse it.
+      const isDangling = await fs.lstat(current).then(
+        () => true,
+        () => false
+      );
+      if (isDangling) throw new Error(OUTSIDE);
       const parent = path.dirname(current);
       if (parent === current) return p;
       tail.push(path.basename(current));
@@ -95,7 +103,9 @@ export async function resolveJailedPath(
   // even though it is a symlink to the live DB's real location.
   assertNotSensitive(path.relative(root, absolutePath));
 
-  const realRoot = await fs.realpath(root);
+  const realRoot = await fs.realpath(root).catch(() => {
+    throw new Error(OUTSIDE);
+  });
   const realPath = await realpathOfExisting(absolutePath);
   if (!isInside(realRoot, realPath)) {
     throw new Error(OUTSIDE);

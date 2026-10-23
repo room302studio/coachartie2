@@ -25,6 +25,9 @@ describe('filesystem jail (temp root)', () => {
     writeFileSync(join(outside, 'secret.txt'), 'nope');
     symlinkSync(outside, join(root, 'escape'));
     symlinkSync(join(root, '.env.production'), join(root, 'innocent.txt'));
+    symlinkSync('/nonexistent-wave7/x', join(root, 'dangling'));
+    symlinkSync(join(root, 'loop-b'), join(root, 'loop-a'));
+    symlinkSync(join(root, 'loop-a'), join(root, 'loop-b'));
   });
 
   const refused = [
@@ -39,6 +42,9 @@ describe('filesystem jail (temp root)', () => {
     'escape/missing.txt', // missing leaf under a symlinked parent
     'innocent.txt', // symlink to a sensitive file inside the root
     'README.md/../../x', // resolve() normalizes, then the prefix check refuses
+    'dangling', // symlink to a missing target: can't know where it leads
+    'dangling/deeper.txt',
+    'loop-a/x', // ELOOP surfaces as Access denied, not a raw node error
   ];
   for (const p of refused) {
     it(`refuses ${p}`, async () => {
