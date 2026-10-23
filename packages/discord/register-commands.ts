@@ -9,9 +9,9 @@ import { REST, Routes } from 'discord.js';
 import { globalCommands } from '../artie/src/gateway/commands/registry.js';
 
 /**
- * Publish Artie's global slash commands from src/commands/registry.ts (the same list the
- * interaction handler routes from). This REPLACES the whole global set, so it prints the diff
- * against what Discord has first. `--dry-run` stops there.
+ * Publish Artie's global slash commands from ../artie/src/gateway/commands/registry.ts (the
+ * same list the interaction handler routes from). This REPLACES the whole global set, so it
+ * prints the diff against what Discord has first. `--dry-run` stops there.
  *
  *   npx tsx packages/discord/register-commands.ts --dry-run
  *   npx tsx packages/discord/register-commands.ts
