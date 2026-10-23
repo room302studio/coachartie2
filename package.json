@@ -7,7 +7,7 @@
   "license": "CC-BY-NC-4.0",
   "scripts": {
     "build": "turbo run build",
-    "dev": "node scripts/smart-dev.js",
+    "dev": "pnpm --filter @coachartie/artie dev",
     "dev:force": "turbo run dev",
     "stop": "pm2 stop all",
     "restart": "pm2 restart all",

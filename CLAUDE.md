@@ -1,63 +1,89 @@
 # Coach Artie
 
-Discord/SMS bot for Room 302 Studio and Subway Builder communities.
-Monorepo at `/data2/apps/coachartie2/` with turborepo build.
+Discord bot for Room 302 Studio and Subway Builder. One package (`packages/artie/`), one Node
+process, one PM2 app (`coach-artie`). See `README.md` for dev/deploy and `ARCHITECTURE.md` for
+the full tree — this file is the short version for an agent working in this repo.
 
 ## Packages
-- `packages/discord/` — Discord bot (PM2: coach-artie-discord)
-- `packages/capabilities/` — HTTP API + webhook handlers (PM2: coach-artie-capabilities, port 47324)
-- `packages/shared/` — DB schema, queues, logger (drizzle ORM + SQLite)
-- `packages/brain/` — LLM integration (PM2: coach-artie-brain)
-- `packages/sms/` — Twilio SMS (PM2: coach-artie-sms)
-- `packages/irc/`, `packages/slack/` — other integrations
 
-## Build & Deploy
+- `packages/artie/src/engine/` — the brain: HTTP API (:47324), queue workers, scheduler, tools.
+- `packages/artie/src/gateway/` — Discord: client, slash commands, watchers, HTTP API
+  (:47321, health 127.0.0.1:47319).
+- `packages/artie/src/shared/` — DB client/schema, logger, paths, queue names. Imported by
+  both sides; imports neither.
+- `packages/artie/tests/` — mirrors `src/` by zone (`engine/`, `gateway/`, `shared/`,
+  `integration/` for the Redis-bound suite).
+- `packages/brain/` — separate Nuxt dashboard, separate PM2 app (`coach-artie-brain`), a git
+  submodule, untouched by this rebuild.
+- `packages/capabilities/`, `packages/discord/` — **leftovers only**, no `src/`: reference docs
+  and one operational script (`register-commands.ts`) that were never worth moving.
+
+The gateway and engine talk to each other through exactly two files, `engine/api.ts` and
+`gateway/api.ts` — no other file on either side imports across that line
+(`tests/architecture.test.ts` enforces it). Everything that used to be an HTTP hop between two
+processes is now a direct function call through one of those two files.
+
+## Build & test
+
 ```bash
-cd /data2/apps/coachartie2 && npm run build   # turborepo builds all packages
-pm2 restart coach-artie-discord coach-artie-capabilities  # restart relevant services
+pnpm build       # tsc, all packages
+pnpm test        # vitest, excludes packages/artie/tests/integration/**
+pnpm typecheck   # tsc --noEmit
+pnpm dev         # tsx watch src/main.ts, one process, both ports
 ```
 
 ## Database
-SQLite at `packages/discord/data/coachartie.db` (also symlinked in other packages).
-Schema in `packages/shared/src/db/schema.ts` (drizzle ORM).
-Column names use snake_case in DB (e.g., `channel_id`) but camelCase in TypeScript (e.g., `channelId`).
 
-## GitHub → Discord Pipeline
-Two paths, both active:
+SQLite at `data/coachartie.db` (`DATABASE_PATH` env overrides). Schema in
+`packages/artie/src/shared/db/schema.ts` (drizzle ORM). Column names are snake_case in SQLite
+(`channel_id`) but camelCase in TypeScript (`channelId`). The `.sql` files under
+`reference-docs/migrations/` are historical snapshots — nothing running loads them by path.
 
-**Poller** (discord package, every 3 min):
-- `services/github-poller.ts` — polls PRs, reviews, comments, CI, issues
-- `services/github-event-processor.ts` — batches, dedupes (30-min window), filters bots/drafts
-- `services/github-discord-poster.ts` — formats embeds, resolves @mentions
-- Watch config in `github_repo_watches` table: metro-maker4 + 6 room302studio repos → #🤖robot in Room 302 (`1086329744762622023`)
-- @mentions (via `github_identity_mappings`) only on review requested / ready for review / approved / changes requested / CI failure / issue assigned — new PRs ping nobody, by design
-- Morning standup digest per repo at ~09:22 ET
+## Tool calls
 
-**Webhook** (capabilities package):
-- `handlers/github-webhook.ts` — handles push, release, pull_request, issues, issue_comment
-- Posts to `GITHUB_FEED_CHANNEL_ID` (`packages/shared/src/config/channels.ts`, same #🤖robot channel). The old sb-robot channel `1480600810743267420` is deleted.
-- Rate limited: 5 posts/min, 30-min dedup window
-- Bot-authored events filtered
+Native OpenRouter/OpenAI `tools` + `tool_calls` is the default (`engine/5-tool-loop/`).
+`TOOL_LOOP=xml` is the one emergency rollback to the old `<capability/>` XML protocol; every
+line that exists only for that path is marked `// XML-LOOP: delete after v3 soak`. Don't delete
+XML-LOOP-marked code without checking the flag is actually gone first.
 
-## Guild Configuration
-- `config/guild-whitelist.ts` — per-guild settings (channels, personas, moderation)
-- Room 302 Studio: `932719842522443928`
-- Subway Builder: `1420846272545296470`
-- Judge Artie persona in `#litigation` channel
+Tools merged in v3 keep their old names working through an alias map
+(`engine/5-tool-loop/registry.ts TOOL_ALIASES`): `goal`->`goals`, `todo`/`quests`/`task-status`->
+`tasks`, `shell`/`edit`/`git`/dev-`search`->`sandbox`, `runtime_config`/`model_manager`->
+`bot-config`. A model (or a human) can still call the old name; the prompt's tool roster only
+lists canonical names.
 
-## Communication
-- DM API: `POST http://127.0.0.1:47321/api/dm` (direct to Artie)
-- All text DMs route through anomalywatch for scoring/dedup
-- Email: `artie@coachartiebot.com` via MailerSend (send) + docker-mailserver (receive)
-- `~/scripts/send-email`, `~/scripts/check-artie-mail`
+## GitHub -> Discord
 
-## Morning Briefing
-- `~/scripts/claude/morning-briefing.ts` — ESM project (import, not require)
-- Gathers OSINT data, sends via anomalywatch with alert_type='morning_briefing'
+- `gateway/watchers/github/org-watcher.ts` polls PRs/reviews/comments/CI/issues across the
+  watched repos (`github_repo_watches` table), batches and dedupes (30-min window), and posts
+  to the `#🤖robot` channel in Room 302 (`GITHUB_FEED_CHANNEL_ID`). @mentions
+  (`github_identity_mappings`) only fire on review-requested / ready-for-review / approved /
+  changes-requested / CI-failure / issue-assigned — a new PR pings nobody, by design.
+- `engine/jobs/github-push/handle-push.ts` handles the inbound webhook (push, release,
+  pull_request, issues, issue_comment) and posts to the same channel, rate-limited and
+  bot-filtered.
 
-## Key Environment
-- `.env` at project root — DISCORD_TOKEN, GITHUB_TOKEN, etc.
+## Guild configuration
 
-## Docker
-- `coachartie-sandbox` + `coachartie2-redis-1` run via docker-compose
-- Main services run via PM2 (not docker)
+`shared/config/guilds.ts` holds per-guild settings: channels, personas, moderation,
+`ambientMode` (`'gated'` default or `'never'`). Judge Artie persona in `#litigation`. Room 302
+Studio and Subway Builder are the two whitelisted guilds.
+
+## Proactive (paused)
+
+`engine/proactive/` — heartbeat, morning briefing, proactive DMs, relay, reddit mentions,
+trend watcher. All gated by one switch: `AUTONOMOUS_PAUSED=true` in the environment skips every
+job in that chain (including queued-DM retries) and logs it instead of running. Lifting the
+pause is a product decision, not a code change.
+
+## Secrets
+
+Nothing secret in this file, in code, or in tests. `.env` files are gitignored; `.env.example`
+and `.env.production.example` are templates only. Never read or print a real `.env*` file's
+contents into a commit, a log, or a transcript.
+
+## Before touching prod
+
+Read `CUTOVER.md` first. It is written and has not been run — PM2 app names, log file names,
+and the env union all change at that migration, and it has exact commands + rollbacks for each
+step.
