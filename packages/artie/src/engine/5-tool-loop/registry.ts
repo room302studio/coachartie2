@@ -779,33 +779,7 @@ export class CapabilityRegistry {
   }
 }
 
-// Export singleton instance
+// Export singleton instance. It starts empty: every tool is registered by
+// register-tools.ts (capabilityBootstrap), which also logs the roster. The old
+// module-load side-door here (embedded_mcp, scrapbook) moved there in wave 7.
 export const capabilityRegistry = new CapabilityRegistry();
-
-// Module-load registrations for capabilities that are NOT registered by
-// capability-bootstrap.ts. Everything bootstrap handles (memory, web,
-// n8n-browser, discord-forums, email, user-profile, variable-store, sandbox,
-// filesystem) was removed from here — registering them in both places logged a
-// "⚠️ Overwriting existing capability" warning on every boot. Keep this list in
-// sync: only caps that bootstrap does NOT register belong here.
-import { embeddedMCPCapability } from '../tools/ops/embedded-mcp.js';
-capabilityRegistry.register(embeddedMCPCapability);
-
-import { scrapbookCapability } from '../tools/personal/scrapbook.js';
-capabilityRegistry.register(scrapbookCapability);
-
-// (discord-channels, discord-threads, discord-user-history, discord-issue-parser,
-// discord-send-message and send-metro-file were registered here too, which is exactly the
-// double-registration the comment above warns about — they're all in bootstrap's
-// ALL_CAPABILITIES. That drifted back out of sync and logged 6 "Overwriting existing
-// capability" warnings on every single boot. Bootstrap owns them; this list must stay
-// limited to capabilities bootstrap does NOT touch.)
-
-// Log all successfully registered capabilities on startup
-logger.info(
-  `🚀 Capability Registry initialized with ${capabilityRegistry.size()} capabilities:`,
-  capabilityRegistry
-    .list()
-    .map((cap) => `${cap.name} (${cap.supportedActions.join(', ')})`)
-    .join(', ')
-);

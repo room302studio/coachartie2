@@ -3,8 +3,8 @@
  *
  * Boots the capability registry the same way production does
  * (capabilityBootstrap.initializeCapabilityRegistry(), then the setImmediate
- * skills registration, plus the module-load side-door registrations in
- * capability-registry.ts for embedded-mcp and scrapbook), then compares the
+ * skills registration; embedded-mcp and scrapbook, once a module-load side-door
+ * in the registry, are in bootstrap's list since wave 7), then compares the
  * sorted roster of `name: [sorted supportedActions]` against a committed
  * snapshot. This is a tripwire for wave 4's merges, not a judgment on shape.
  */

@@ -77,6 +77,9 @@ import { systemMemoryCapability } from '../tools/agents/system-memory.js';
 import { osintLookupCapability } from '../tools/agents/osint-lookup.js';
 // Services
 import { meetingCapability } from '../tools/people/meeting.js';
+// Formerly self-registered at registry.ts load (wave 7 moved them here)
+import { embeddedMCPCapability } from '../tools/ops/embedded-mcp.js';
+import { scrapbookCapability } from '../tools/personal/scrapbook.js';
 
 // =====================================================
 // CAPABILITY BOOTSTRAP SERVICE
@@ -107,8 +110,12 @@ export class CapabilityBootstrap {
     logger.info('🔧 Initializing capability registry with existing capabilities');
 
     try {
-      // Register all capabilities (registration is idempotent, keyed by name)
+      // Register all capabilities (registration is idempotent, keyed by name).
+      // embedded_mcp and scrapbook come first: they used to self-register when
+      // registry.ts loaded, i.e. before this ran, and list() order is the roster
+      // order in the cached system prompt.
       const ALL_CAPABILITIES = [
+        embeddedMCPCapability, scrapbookCapability,
         calculatorCapability, webCapability, httpCapability,
         filesystemCapability, memoryCapability,
         githubCapability, creditStatusCapability, botConfigCapability,
