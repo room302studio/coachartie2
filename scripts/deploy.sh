@@ -65,26 +65,27 @@ echo "Previous HEAD: $PREV_HEAD"
 pm2 jlist > "/tmp/pm2-jlist-pre-deploy-$(date +%Y%m%d-%H%M%S).json" 2>/dev/null || true
 
 echo "--- Checking prod's working tree for local state before touching it ---"
-# Prod is never actually clean: capabilities/data/mention-proxy-rules.json used to be a
-# tracked file the bot writes to at runtime (fixed in wave 12 — it's untracked now, but an
-# older prod checkout may still show it modified), plus whatever hand-edits are sitting there
-# (docker-compose.yml, etc). `checkout -f` + `clean -fd` would silently discard both. List
-# first, stash (never drop), and let a normal `git checkout` fail loudly on a real conflict
-# instead of eating anyone's uncommitted work.
+# REFUSE, don't stash. `capabilities/data/mention-proxy-rules.json` is untracked in v3 (wave 12
+# git-rm --cached it), so a clean post-cutover prod won't show it here at all — but a hand edit
+# to a TRACKED file (docker-compose.yml's LUKS change is the known example) belongs in the v3
+# branch, not in a stash that this script never tells anyone to pop. Stashing it "fixes" this
+# run and silently reintroduces the exact same unmerged-edit problem on every future deploy.
 if ! git diff --quiet || ! git diff --cached --quiet; then
-  echo "Local changes found on prod. Listing (nothing destroyed):"
-  git status --short
-  STASH_MSG="deploy.sh pre-deploy stash $(date +%Y%m%d-%H%M%S)"
-  git stash push -u -m "$STASH_MSG"
-  echo "Stashed as: $STASH_MSG"
-  echo "Review with 'git stash list' / 'git stash show -p stash@{0}' before ever dropping it."
+  echo "Local changes found on prod (tracked files only — untracked files are never touched by" >&2
+  echo "the plain checkout below, so they're not listed or at risk here):" >&2
+  git status --short --untracked-files=no >&2
+  echo "" >&2
+  echo "REFUSING to deploy over this. Commit these changes into the v3 branch (or discard them" >&2
+  echo "on purpose with 'git checkout -- <path>' after confirming what they are) and re-run." >&2
+  exit 1
 fi
 
 echo "--- Fetching the bundle ---"
 git fetch -q /tmp/coachartie-deploy.bundle "$BRANCH"
-# No -f, no git clean: a plain checkout refuses (loudly) rather than silently overwriting any
-# tracked file git doesn't expect to change. If this fails, STOP and look at what it's
-# protecting before re-running with --force by hand.
+# No -f, no git clean, no stash: a plain checkout refuses (loudly) rather than silently
+# overwriting any tracked file git doesn't expect to change, and never touches untracked files
+# at all. If this fails, STOP and look at what it's protecting before re-running with --force
+# by hand.
 git checkout -q --detach FETCH_HEAD
 
 echo "--- Installing (frozen lockfile) ---"
@@ -103,7 +104,7 @@ echo "--- PM2: delete + start fresh (ecosystem.config.cjs assumed current; see C
 # that ships an .env.production change would restart with the OLD env and nobody would see an
 # error — the flag would just silently not apply. Delete+start re-requires the config file,
 # which re-reads .env.production, every time.
-pm2 delete coach-artie
+pm2 delete coach-artie 2>/dev/null || true   # ok if it's not running (e.g. a prior deploy died before this step)
 pm2 start ecosystem.config.cjs --only coach-artie
 pm2 save
 

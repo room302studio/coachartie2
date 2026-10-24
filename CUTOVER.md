@@ -14,12 +14,25 @@ process, two ports. `coach-artie-brain` is untouched throughout.
 ## 0. Pre-flight (read-only, no state change)
 
 Prod's tree is never actually clean — `git status` on it today shows modified
-`capabilities/data/mention-proxy-rules.json` (the bot's own live runtime data; wave 12 stopped
+`capabilities/data/mention-proxy-rules.json` (the bot's own live runtime data — wave 12 stopped
 tracking this file going forward, but a not-yet-pulled prod checkout still has it tracked and
-modified), modified `docker-compose.yml` (the LUKS edit made by hand on the box), modified
-`logs` and `packages/brain`, plus several untracked `.env*.bak-*` files. **Do not expect or
-require a clean tree** — list what's there and decide what to keep, same as any other step that
-touches the working tree.
+modified, with +16 live rules prod has written since it was last checked out) and modified
+`docker-compose.yml` (the LUKS edit made by hand on the box), plus several untracked
+`.env*.bak-*` files.
+
+**Do not `git stash` these.** `capabilities/data/mention-proxy-rules.json` is untracked in v3
+(wave 12 `git rm --cached` it, see below) — if you stash the modified copy and then check out
+v3, the checkout lands on a tree that simply has no such path tracked, git deletes the working
+copy with no conflict and no warning, and the live rules sit orphaned in a stash entry nothing
+in this file tells you to pop. Back up the two files you know are modified, by name, instead:
+
+```bash
+cd /data2/apps/coachartie2
+git status --short                       # RECORD THIS — confirms what's modified right now
+cp capabilities/data/mention-proxy-rules.json /tmp/mention-proxy-rules.pre-cutover.json
+git diff docker-compose.yml > /tmp/docker-compose.luks.pre-cutover.patch
+ls -la /tmp/mention-proxy-rules.pre-cutover.json /tmp/docker-compose.luks.pre-cutover.patch
+```
 
 From the dev worktree (NOT on the VPS), bundle the branch this cutover deploys, the same way
 `scripts/deploy.sh` does — not `git fetch origin`, since that pulls from GitHub and prod may not
@@ -35,7 +48,6 @@ On the VPS, in prod (`/data2/apps/coachartie2`):
 
 ```bash
 cd /data2/apps/coachartie2
-git status --short                 # RECORD THIS — what's about to get stashed in step 1
 git fetch -q /tmp/coachartie-cutover.bundle v3
 git log --oneline -1 FETCH_HEAD    # the v3-merged commit you're about to deploy
 git rev-parse HEAD                 # RECORD THIS — the rollback target
@@ -50,29 +62,38 @@ cp data/coachartie.db "data/coachartie.db.bak-cutover-$(date +%Y%m%d-%H%M%S)"
 ls -lh data/coachartie.db.bak-cutover-*
 ```
 
-**Check:** the backup file exists and is non-empty; `pm2 jlist` shows exactly
-`coach-artie-capabilities`, `coach-artie-discord`, `coach-artie-brain` (plus whatever else runs
-on this box).
+**Check:** both the mention-proxy backup and the docker-compose patch are non-empty; the DB
+backup file exists and is non-empty; `pm2 jlist` shows exactly `coach-artie-capabilities`,
+`coach-artie-discord`, `coach-artie-brain` (plus whatever else runs on this box).
 **Rollback:** none needed — nothing changed yet.
 
 ---
 
 ## 1. Fetch the new code
 
+Discard the two known modifications by name (bounded, not a blanket stash — you just backed
+both up above), check out v3, then restore the mention-proxy rules from the backup (v3 doesn't
+track that path, so writing it back is a plain untracked file, not a conflict):
+
 ```bash
 cd /data2/apps/coachartie2
-# Preserve whatever step 0's `git status --short` showed — list, then stash (never drop):
-git stash push -u -m "pre-cutover stash $(date +%Y%m%d-%H%M%S)"
-git fetch -q /tmp/coachartie-cutover.bundle v3
+git checkout -- capabilities/data/mention-proxy-rules.json docker-compose.yml
 git checkout <the-v3-merge-commit>   # the commit from step 0
+cp /tmp/mention-proxy-rules.pre-cutover.json capabilities/data/mention-proxy-rules.json
+diff /tmp/mention-proxy-rules.pre-cutover.json capabilities/data/mention-proxy-rules.json  # expect no output
+# The LUKS docker-compose.yml edit: v3's copy has different header comments (see wave 12's
+# BUILD-LOG). Re-apply the hand edit on top of the new file instead of assuming it merges clean:
+git apply --3way /tmp/docker-compose.luks.pre-cutover.patch || echo "CONFLICT: hand-merge the LUKS edit into docker-compose.yml now, then commit it to v3 as a follow-up so this step stops being manual."
 ```
 
-**Check:** `git log --oneline -1` shows the expected commit. `git status` will still show
-untracked `.env*.bak-*` files and anything `git stash -u` didn't catch (it stashes tracked
-changes plus untracked files, not ignored ones) — that's expected, not a failure; the bar is "no
-tracked-file diff left uncommitted and unstashed," not a literally empty `git status`.
-**Rollback:** `git checkout <previous HEAD from step 0>`, then `git stash pop` to restore the
-pre-cutover local state.
+**Check:** `git log --oneline -1` shows the expected commit; the `diff` above printed nothing
+(rules file restored byte-for-byte); `docker-compose.yml` has the LUKS edit (`git diff` against
+the committed v3 copy shows exactly that one hand change, nothing else). Untracked `.env*.bak-*`
+files are untouched throughout this step — a non-forced `git checkout` with no `git clean` never
+touches untracked files, which is the actual protection here (not a stash).
+**Rollback:** `git checkout <previous HEAD from step 0>`; the mention-proxy file already matches
+what prod had (nothing in rollback needs to touch it); re-apply
+`/tmp/docker-compose.luks.pre-cutover.patch` if the hand-merge above changed it.
 
 ---
 
@@ -227,8 +248,13 @@ not required for the cutover to work.
 # package's node_modules. Also don't hardcode the Redis port/no-password — reuse the app's own
 # connection helper so this one-liner matches whatever REDIS_PORT/REDIS_PASSWORD prod actually
 # runs with (createRedisConnection(), shared/queue/redis.ts — NOT a bare {host, port} literal).
+# REDIS_HOST=localhost is set on the shell, not left to .env.production/dotenv: dotenv's
+# config() never overrides a variable already present in process.env, and
+# ecosystem.config.cjs itself overrides REDIS_HOST to 'localhost' for the exact same reason —
+# .env.production's own value is a Docker-network hostname that only resolves inside the redis
+# container's compose network, not from a plain `node` process on the host.
 cd /data2/apps/coachartie2/packages/artie
-node -e "
+REDIS_HOST=localhost node -e "
 require('dotenv').config({ path: '../../.env.production' });
 const { Queue } = require('bullmq');
 (async () => {

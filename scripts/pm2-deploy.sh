@@ -42,7 +42,7 @@ echo ""
 # .env.production change would restart with the stale env and nobody would see an error.
 # Delete+start forces the config file to be re-required, which re-reads .env.production.
 echo "🔄 Restarting coach-artie..."
-pm2 delete coach-artie
+pm2 delete coach-artie 2>/dev/null || true   # ok if it's not running already
 pm2 start ecosystem.config.cjs --only coach-artie
 
 # 5. Wait and show status

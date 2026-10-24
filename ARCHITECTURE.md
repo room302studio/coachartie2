@@ -57,11 +57,10 @@ packages/
   brain/          Nuxt web dashboard (separate submodule, separate PM2 app, untouched by v3).
   capabilities/   Leftover non-src files only: reference-docs/guild-notes, nothing in src/.
   discord/        Leftover non-src files only: register-commands.ts, .env.example.
-tools/            prompt-tui.ts / prompt-cli.ts — operate on the DB's `prompts` table directly.
-reference-docs/   Guild knowledge the LLM reads at runtime (room302studio/, subwaybuilder/,
-                  guild-notes/, guild-prompts/) plus migrations/ (historical .sql, not loaded
-                  by any running code — drizzle owns the live schema).
 ```
+
+(`tools/` and `reference-docs/` are root-level, not under `packages/` — see the Root tree
+section above.)
 
 `packages/capabilities/` and `packages/discord/` are **not** stale leftovers to clean up blindly:
 they hold the handful of non-`src/` files wave 3 deliberately left in place (an operational
