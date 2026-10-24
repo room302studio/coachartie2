@@ -582,83 +582,46 @@ Important:
   }
 
   /**
-   * Get conversation history from database
-   * Returns last N message pairs for continuity
+   * The last few exchanges between this user and Artie in this channel: each of the user's
+   * messages followed by the reply Artie stored right after it (role='assistant', user_id
+   * 'artie'). It used to select only the user's own rows and blend in 30% from every other
+   * channel, so "history" was a stack of their recent asks from anywhere, no answers, across
+   * servers. No channel (API calls) means no stored conversation, so no history.
    */
   private async getConversationHistory(
     userId: string,
     channelId?: string,
     limit: number = 3
   ): Promise<Array<{ role: 'user' | 'assistant'; content: string }>> {
+    if (!channelId) return [];
     try {
       const { database } = await import('../memory/sync-db.js');
 
-      // Human-like memory: blend channel-specific + global context
-      // 70% from current channel, 30% from anywhere (like human recollection)
-      const channelLimit = Math.ceil(limit * 0.7);
-      const globalLimit = Math.floor(limit * 0.3);
-
-      const allMessages: any[] = [];
-
-      // Get recent messages from current channel (immediate context)
-      if (channelId) {
-        const channelQuery = `
-          SELECT value, user_id, created_at, 'channel' as source
-          FROM messages
-          WHERE user_id = ? AND channel_id = ?
-          ORDER BY created_at DESC
-          LIMIT ?
-        `;
-        const channelMessages = await database.all(channelQuery, [
-          userId,
-          channelId,
-          channelLimit * 2,
-        ]);
-        allMessages.push(...channelMessages);
-      }
-
-      // Get some recent messages from ALL channels (cross-context awareness)
-      const globalQuery = `
-        SELECT value, user_id, created_at, 'global' as source
-        FROM messages
-        WHERE user_id = ?
-        ${channelId ? 'AND channel_id != ?' : ''}
-        ORDER BY created_at DESC
-        LIMIT ?
-      `;
-      const globalParams = channelId
-        ? [userId, channelId, globalLimit * 2]
-        : [userId, globalLimit * 2];
-      const globalMessages = await database.all(globalQuery, globalParams);
-      allMessages.push(...globalMessages);
-
-      // Sort all messages by recency
-      allMessages.sort(
-        (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+      // The reply must land within the next few rows of the channel, before anything else
+      // the user said, or it was an answer to someone else.
+      const rows: Array<{ asked: string; reply: string | null }> = await database.all(
+        `SELECT m.value AS asked,
+                (SELECT a.value FROM messages a
+                  WHERE a.channel_id = m.channel_id AND a.role = 'assistant'
+                    AND a.id > m.id AND a.id <= m.id + 4
+                    AND NOT EXISTS (SELECT 1 FROM messages u
+                                     WHERE u.channel_id = m.channel_id AND u.user_id = m.user_id
+                                       AND u.id > m.id AND u.id < a.id)
+                  ORDER BY a.id LIMIT 1) AS reply
+           FROM messages m
+          WHERE m.user_id = ? AND m.channel_id = ? AND coalesce(m.role, '') != 'assistant'
+          ORDER BY m.id DESC
+          LIMIT ?`,
+        [userId, channelId, limit]
       );
 
-      // Take the limit
-      const messages = allMessages.slice(0, limit * 2);
-
-      if (!messages || messages.length === 0) {
-        return [];
-      }
-
-      // Convert to message format
       const history: Array<{ role: 'user' | 'assistant'; content: string }> = [];
-
-      for (const msg of messages.reverse()) {
-        // Determine if this is user or assistant message
-        // Messages from the user have their userId, bot messages might have different logic
-        const isUser = msg.user_id === userId;
+      for (const row of rows.reverse()) {
+        if (row.asked?.trim()) history.push({ role: 'user', content: row.asked });
         // Sanitize assistant messages to break poisoned patterns; a turn that
         // sanitizes to nothing (pure [SILENT]/scaffolding) is dropped entirely.
-        const content = isUser ? msg.value : sanitizeAssistantMessage(msg.value);
-        if (!content || content.trim().length === 0) continue;
-        history.push({
-          role: isUser ? 'user' : 'assistant',
-          content,
-        });
+        const reply = row.reply ? sanitizeAssistantMessage(row.reply) : '';
+        if (reply.trim()) history.push({ role: 'assistant', content: reply });
       }
 
       if (DEBUG && history.length > 0) {
