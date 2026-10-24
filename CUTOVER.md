@@ -91,9 +91,19 @@ git apply --3way /tmp/docker-compose.luks.pre-cutover.patch || echo "CONFLICT: h
 the committed v3 copy shows exactly that one hand change, nothing else). Untracked `.env*.bak-*`
 files are untouched throughout this step — a non-forced `git checkout` with no `git clean` never
 touches untracked files, which is the actual protection here (not a stash).
-**Rollback:** `git checkout <previous HEAD from step 0>`; the mention-proxy file already matches
-what prod had (nothing in rollback needs to touch it); re-apply
-`/tmp/docker-compose.luks.pre-cutover.patch` if the hand-merge above changed it.
+**Rollback:** `git checkout <previous HEAD from step 0>` will REFUSE here —
+`capabilities/data/mention-proxy-rules.json` is untracked on disk (v3 doesn't track it) but
+tracked in the previous HEAD, so git sees an untracked file in the way and stops rather than
+overwrite it. Move it out of the way first, with `mv` (the live file as it stands right now, not
+the step-0 backup — if step 4+ already ran, the bot may have written new rules since):
+```bash
+mv capabilities/data/mention-proxy-rules.json /tmp/mention-proxy-rules.live.json
+git checkout <previous HEAD from step 0>
+cp /tmp/mention-proxy-rules.live.json capabilities/data/mention-proxy-rules.json
+```
+Re-apply `/tmp/docker-compose.luks.pre-cutover.patch` if the hand-merge above changed it. Every
+later step's rollback that does `git checkout <previous HEAD>` needs this same three-line dance,
+not a bare checkout — referenced from steps 2/3/4 below rather than repeated in full each time.
 
 ---
 
@@ -107,8 +117,9 @@ pnpm install --frozen-lockfile
 stale — **stop, do not pass `--frozen-lockfile=false` on prod.** Go back to the dev worktree,
 regenerate the lockfile there (verify-v3.sh's VPS scratch-clone method, never prod), commit it,
 and re-fetch.
-**Rollback:** `git checkout <previous HEAD>` then `pnpm install --frozen-lockfile` again (the
-old lockfile matches the old code).
+**Rollback:** the step-1 checkout dance (move `capabilities/data/mention-proxy-rules.json` out
+of the way, `git checkout <previous HEAD>`, move it back — see step 1's rollback), then
+`pnpm install --frozen-lockfile` again (the old lockfile matches the old code).
 
 ---
 
@@ -119,7 +130,7 @@ pnpm build
 ```
 
 **Check:** exits 0; `packages/artie/dist/main.js` exists.
-**Rollback:** same as step 2 — go back to the previous HEAD and rebuild.
+**Rollback:** same as step 2 (the step-1 checkout dance, then rebuild).
 
 ---
 
@@ -153,7 +164,11 @@ old entries before starting again).
 **Rollback:**
 ```bash
 pm2 delete coach-artie
+# The step-1 checkout dance, not a bare checkout (capabilities/data/mention-proxy-rules.json
+# is untracked now; move the live file out of the way first or this refuses — see step 1):
+mv capabilities/data/mention-proxy-rules.json /tmp/mention-proxy-rules.live.json
 git checkout <previous HEAD>    # back to the pre-cutover ecosystem.config.cjs + code
+cp /tmp/mention-proxy-rules.live.json capabilities/data/mention-proxy-rules.json
 pnpm install --frozen-lockfile && pnpm build
 pm2 start ecosystem.config.cjs --only coach-artie-capabilities,coach-artie-discord
 pm2 save
@@ -405,3 +420,9 @@ Watch for at least 24h of real traffic before considering this done:
   on the old value first.
 - Once `scripts/deploy.sh` has shipped a real deploy successfully, retire
   `scripts/pm2-deploy.sh`.
+- **Commit the LUKS `docker-compose.yml` edit into the v3 branch** (step 1 re-applies it by hand
+  every cutover run via a saved patch; it should just be in the branch). This isn't optional
+  busywork — until it's committed, `scripts/deploy.sh`'s clean-tree check will REFUSE every
+  single routine deploy (by design: it treats any tracked-file diff on prod as something that
+  needs a decision, not something to silently carry forward), so this is a near-term blocker on
+  routine deploys working at all, not a someday cleanup.
