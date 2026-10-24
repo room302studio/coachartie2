@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { validateUrl, isBlockedAddress } from '../../src/engine/tools/core/web-fetch.js';
+import { validateUrl, isBlockedAddress, makeGuardedLookup } from '../../src/engine/tools/core/web-fetch.js';
 
 // Wave 7 (b): the SSRF guard is a node:net BlockList, checked through validateUrl so the
 // WHATWG URL hostname forms ([::ffff:a00:1], bracketed IPv6) are what gets tested.
@@ -50,5 +50,24 @@ describe('web-fetch SSRF guard', () => {
 
   it('leaves hostnames alone (no DNS here)', () => {
     expect(isBlockedAddress('example.com')).toBe(false);
+  });
+});
+
+describe('web-fetch guarded DNS lookup', () => {
+  const fakeDns = (answer: unknown) => (_h: string, _o: unknown, cb: (...a: any[]) => void) =>
+    cb(null, answer, 4);
+  const run = (answer: unknown, options: object = {}) =>
+    new Promise<Error | null>((done) => makeGuardedLookup(fakeDns(answer))('evil.example', options, (err) => done(err)));
+
+  it('refuses a hostname that resolves to a private address', async () => {
+    expect((await run('127.0.0.1'))?.message).toMatch(/private address/);
+    expect((await run('169.254.169.254'))?.message).toMatch(/private address/);
+  });
+  it('refuses when any of all:true results is private', async () => {
+    expect(await run([{ address: '8.8.8.8', family: 4 }, { address: '10.0.0.5', family: 4 }], { all: true })).toBeTruthy();
+  });
+  it('passes public results through', async () => {
+    expect(await run('93.184.216.34')).toBeNull();
+    expect(await run([{ address: '2606:4700::1', family: 6 }], { all: true })).toBeNull();
   });
 });

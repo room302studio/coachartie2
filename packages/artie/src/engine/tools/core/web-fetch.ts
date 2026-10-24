@@ -3,6 +3,9 @@ import * as cheerio from 'cheerio';
 import { decode as decodeHtmlEntities } from 'html-entities';
 import { z } from 'zod';
 import { BlockList, isIPv4, isIPv6 } from 'node:net';
+import dns from 'node:dns';
+import http from 'node:http';
+import https from 'node:https';
 import { logger } from '../../../shared/logger.js';
 import { collapseWhitespace } from '../../../shared/text.js';
 
@@ -178,8 +181,7 @@ function unwrapMappedIPv4(ip: string): string | null {
 
 /**
  * True when `host` (a URL hostname, IPv6 possibly in brackets) is a literal IP address in a
- * blocked range. Hostnames are not resolved here: axios does its own lookup, and this guard
- * has only ever checked literal addresses.
+ * blocked range. Hostnames are checked after DNS by guardedLookup below.
  */
 export function isBlockedAddress(host: string): boolean {
   const ip = host.replace(/^\[|\]$/g, '');
@@ -191,6 +193,32 @@ export function isBlockedAddress(host: string): boolean {
   }
   return false;
 }
+
+type LookupCallback = (err: NodeJS.ErrnoException | null, address: any, family?: number) => void;
+type Resolver = (hostname: string, options: dns.LookupOptions, cb: LookupCallback) => void;
+
+/**
+ * A dns.lookup for the fetch agents that refuses private/reserved results. The URL check only
+ * sees literal IPs, so `evil.example → 127.0.0.1` (or a redirect to one) used to get through.
+ * Running inside the agent covers every connection, redirects included.
+ */
+export function makeGuardedLookup(resolve: Resolver = dns.lookup as unknown as Resolver) {
+  return (hostname: string, options: dns.LookupOptions, cb: LookupCallback) => {
+    resolve(hostname, options, (err, address, family) => {
+      if (err) return cb(err, address, family);
+      const all: { address: string }[] = Array.isArray(address) ? address : [{ address }];
+      if (all.some((a) => isBlockedAddress(a.address))) {
+        const blocked = new Error(`Access denied: ${hostname} resolves to a private address`);
+        return cb(blocked as NodeJS.ErrnoException, address, family);
+      }
+      cb(null, address, family);
+    });
+  };
+}
+
+const guardedLookup = makeGuardedLookup() as unknown as http.AgentOptions['lookup'];
+const httpAgent = new http.Agent({ lookup: guardedLookup });
+const httpsAgent = new https.Agent({ lookup: guardedLookup });
 
 /**
  * Extracts readable text content from HTML
@@ -331,6 +359,8 @@ export async function fetchWebContent(
       method: 'GET',
       timeout: options.timeout || CONFIG.REQUEST_TIMEOUT,
       maxRedirects: options.followRedirects !== false ? CONFIG.MAX_REDIRECTS : 0,
+      httpAgent,
+      httpsAgent,
       maxContentLength: options.maxContentSize || CONFIG.MAX_CONTENT_SIZE,
       maxBodyLength: options.maxContentSize || CONFIG.MAX_CONTENT_SIZE,
       headers: {
