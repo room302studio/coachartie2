@@ -122,22 +122,13 @@ export async function processMessage(
       return aiResponse;
     }
   } catch (error) {
-    logger.error('Error processing message:', error);
-    return `🚨 VERBOSE ERROR DEBUG INFO 🚨
-Message ID: ${message.id}
-User ID: ${message.userId}
-Source: ${message.source}
-Original Message: "${message.message}"
-Error: ${error instanceof Error ? error.message : String(error)}
-Stack: ${error instanceof Error ? error.stack : 'No stack trace'}
-Timestamp: ${new Date().toISOString()}
-OpenRouter Key Status: ${process.env.OPENROUTER_API_KEY ? 'CONFIGURED' : 'MISSING'}
-Capabilities Enabled: ${process.env.ENABLE_CAPABILITIES !== 'false'}
-Environment: ${process.env.NODE_ENV || 'unknown'}
-Available Capabilities: ${capabilityRegistry
-      .list()
-      .map((c: { name: string }) => c.name)
-      .join(', ')}`;
+    // Full detail goes to the log only. This reply used to post the stack, server paths,
+    // raw error text and the whole tool list into whatever channel asked (fixed 2026-10-23).
+    logger.error(
+      `Error processing message ${message.id} from ${message.userId} (${message.source}):`,
+      error
+    );
+    return "Something broke on my end and I couldn't finish that. Try again in a minute.";
   }
 }
 
