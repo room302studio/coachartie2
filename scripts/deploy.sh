@@ -70,10 +70,19 @@ echo "--- Checking prod's working tree for local state before touching it ---"
 # to a TRACKED file (docker-compose.yml's LUKS change is the known example) belongs in the v3
 # branch, not in a stash that this script never tells anyone to pop. Stashing it "fixes" this
 # run and silently reintroduces the exact same unmerged-edit problem on every future deploy.
-if ! git diff --quiet || ! git diff --cached --quiet; then
+#
+# Excludes `logs` and `packages/brain` from the check (`--ignore-submodules=all` for the brain
+# gitlink, `':!logs'` for the symlink): both can show as "modified" on prod for reasons that
+# have nothing to do with a deploy and never should block one — brain is a separate app/PM2
+# process/submodule whose checked-out commit on prod legitimately drifts from what v3's gitlink
+# records, and `logs` is a machine-local symlink target. Neither is ever actually different
+# between any two commits of THIS branch, so the checkout below carries both forward untouched
+# either way; they're excluded from the check, not from the checkout.
+DIRTY="$(git status --porcelain --untracked-files=no --ignore-submodules=all -- . ':!logs')"
+if [ -n "$DIRTY" ]; then
   echo "Local changes found on prod (tracked files only — untracked files are never touched by" >&2
   echo "the plain checkout below, so they're not listed or at risk here):" >&2
-  git status --short --untracked-files=no >&2
+  echo "$DIRTY" >&2
   echo "" >&2
   echo "REFUSING to deploy over this. Commit these changes into the v3 branch (or discard them" >&2
   echo "on purpose with 'git checkout -- <path>' after confirming what they are) and re-run." >&2

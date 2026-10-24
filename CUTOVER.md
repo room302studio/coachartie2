@@ -29,10 +29,13 @@ in this file tells you to pop. Back up the two files you know are modified, by n
 ```bash
 cd /data2/apps/coachartie2
 git status --short                       # RECORD THIS — confirms what's modified right now
-cp capabilities/data/mention-proxy-rules.json /tmp/mention-proxy-rules.pre-cutover.json
 git diff docker-compose.yml > /tmp/docker-compose.luks.pre-cutover.patch
-ls -la /tmp/mention-proxy-rules.pre-cutover.json /tmp/docker-compose.luks.pre-cutover.patch
+ls -la /tmp/docker-compose.luks.pre-cutover.patch
 ```
+
+(`capabilities/data/mention-proxy-rules.json` is backed up in step 1, immediately before it's
+discarded there, not here — the bot is still live and writing to it between this step and that
+one, so a backup taken now could already be stale by the time step 1 runs.)
 
 From the dev worktree (NOT on the VPS), bundle the branch this cutover deploys, the same way
 `scripts/deploy.sh` does — not `git fetch origin`, since that pulls from GitHub and prod may not
@@ -62,35 +65,42 @@ cp data/coachartie.db "data/coachartie.db.bak-cutover-$(date +%Y%m%d-%H%M%S)"
 ls -lh data/coachartie.db.bak-cutover-*
 ```
 
-**Check:** both the mention-proxy backup and the docker-compose patch are non-empty; the DB
-backup file exists and is non-empty; `pm2 jlist` shows exactly `coach-artie-capabilities`,
-`coach-artie-discord`, `coach-artie-brain` (plus whatever else runs on this box).
+**Check:** the docker-compose patch is non-empty; the DB backup file exists and is non-empty;
+`pm2 jlist` shows exactly `coach-artie-capabilities`, `coach-artie-discord`, `coach-artie-brain`
+(plus whatever else runs on this box).
 **Rollback:** none needed — nothing changed yet.
 
 ---
 
 ## 1. Fetch the new code
 
-Discard the two known modifications by name (bounded, not a blanket stash — you just backed
-both up above), check out v3, then restore the mention-proxy rules from the backup (v3 doesn't
-track that path, so writing it back is a plain untracked file, not a conflict):
+Back up the rules file right now, fresh (the bot is still live and writing to it up to this
+exact moment), then discard both known modifications by name (bounded, not a blanket stash),
+check out v3, and restore the mention-proxy rules from that backup (v3 doesn't track that path,
+so writing it back is a plain untracked file, not a conflict):
 
 ```bash
 cd /data2/apps/coachartie2
+cp capabilities/data/mention-proxy-rules.json /tmp/mention-proxy-rules.pre-cutover.json
 git checkout -- capabilities/data/mention-proxy-rules.json docker-compose.yml
 git checkout <the-v3-merge-commit>   # the commit from step 0
+# v3's tree doesn't have this path tracked at all, so `git checkout` may have rmdir'd its
+# now-empty parent directory — recreate it before writing the file back:
+mkdir -p capabilities/data
 cp /tmp/mention-proxy-rules.pre-cutover.json capabilities/data/mention-proxy-rules.json
 diff /tmp/mention-proxy-rules.pre-cutover.json capabilities/data/mention-proxy-rules.json  # expect no output
 # The LUKS docker-compose.yml edit: v3's copy has different header comments (see wave 12's
-# BUILD-LOG). Re-apply the hand edit on top of the new file instead of assuming it merges clean:
+# BUILD-LOG). Re-apply the hand edit on top of the new file instead of assuming it merges clean.
+# --3way implies --index, so a clean apply lands the change staged, not as a working-tree diff:
 git apply --3way /tmp/docker-compose.luks.pre-cutover.patch || echo "CONFLICT: hand-merge the LUKS edit into docker-compose.yml now, then commit it to v3 as a follow-up so this step stops being manual."
 ```
 
 **Check:** `git log --oneline -1` shows the expected commit; the `diff` above printed nothing
-(rules file restored byte-for-byte); `docker-compose.yml` has the LUKS edit (`git diff` against
-the committed v3 copy shows exactly that one hand change, nothing else). Untracked `.env*.bak-*`
-files are untouched throughout this step — a non-forced `git checkout` with no `git clean` never
-touches untracked files, which is the actual protection here (not a stash).
+(rules file restored byte-for-byte); `docker-compose.yml` has the LUKS edit
+(`git diff HEAD -- docker-compose.yml` shows exactly that one hand change — not a plain
+`git diff`, since a clean `--3way` apply already staged it). Untracked `.env*.bak-*` files are
+untouched throughout this step — a non-forced `git checkout` with no `git clean` never touches
+untracked files, which is the actual protection here (not a stash).
 **Rollback:** `git checkout <previous HEAD from step 0>` will REFUSE here —
 `capabilities/data/mention-proxy-rules.json` is untracked on disk (v3 doesn't track it) but
 tracked in the previous HEAD, so git sees an untracked file in the way and stops rather than
