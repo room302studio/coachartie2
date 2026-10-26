@@ -1,6 +1,7 @@
-import { RegisteredCapability } from '../../5-tool-loop/registry.js';
+import { RegisteredCapability, CapabilityContext } from '../../5-tool-loop/registry.js';
 import { logger } from '../../../shared/logger.js';
 import { getErrorMessage } from '../../../shared/errors.js';
+import { addPendingComponents } from '../../1-intake/pending-components.js';
 
 // Discord.js component types (without importing the library)
 enum TextInputStyle {
@@ -37,7 +38,7 @@ interface DiscordUIParams {
   style?: string;
   placeholder?: string;
   options?: Array<{ label: string; value: string; description?: string }>;
-  buttons?: Array<{ label: string; style?: string; customId?: string }>;
+  buttons?: Array<{ label: string; style?: string; customId?: string; url?: string }>;
   inputs?: Array<{
     label: string;
     customId: string;
@@ -49,7 +50,11 @@ interface DiscordUIParams {
   }>;
 }
 
-const handler = async (params: DiscordUIParams, content?: string): Promise<string> => {
+const handler = async (
+  params: DiscordUIParams,
+  content?: string,
+  context?: CapabilityContext
+): Promise<string> => {
   const { action } = params;
 
   try {
@@ -82,10 +87,10 @@ const handler = async (params: DiscordUIParams, content?: string): Promise<strin
         return await createModal(mergedParams, content);
 
       case 'buttons':
-        return await createButtons(mergedParams, content);
+        return await createButtons(mergedParams, content, context);
 
       case 'select':
-        return await createSelectMenu(mergedParams, content);
+        return await createSelectMenu(mergedParams, content, context);
 
       case 'context-menu':
         return await createContextMenu(mergedParams, content);
@@ -169,16 +174,127 @@ async function createModal(params: DiscordUIParams, content?: string): Promise<s
 
   logger.info('🎨 Generated Discord modal:', { modalId, title, inputCount: inputs.length });
 
-  // Return special response format that Discord consumer will recognize
+  // Honest, not a success claim: a modal can only open in direct response to an
+  // interaction (a button/select click or a slash command), never attached to a plain
+  // chat reply — there is no interaction here for it to ride on.
   return `DISCORD_UI:MODAL:${JSON.stringify({
     modalId,
     modal: modalJson,
     title,
     inputCount: inputs.length,
-  })}:Modal "${title}" with ${inputs.length} input fields created! Waiting for user interaction...`;
+  })}:I built a modal ("${title}", ${inputs.length} field${inputs.length === 1 ? '' : 's'}), but modals can only open in direct response to a button, select menu, or slash command interaction — it can't appear on a plain chat reply like this one, so nothing will actually pop up for you here.`;
 }
 
-async function createButtons(params: DiscordUIParams, _content?: string): Promise<string> {
+// Discord hard limits for buttons: 5 action rows per message, 5 buttons per row.
+const MAX_BUTTON_ROWS = 5;
+const MAX_BUTTONS_PER_ROW = 5;
+const MAX_BUTTON_LABEL_LEN = 80;
+const MAX_SELECT_OPTIONS = 25;
+const ALLOWED_BUTTON_STYLES = new Set(['primary', 'secondary', 'success', 'danger', 'link']);
+
+interface SanitizedButton {
+  label: string;
+  style: string;
+  url?: string;
+}
+
+/** Validate + clamp a raw buttons array: drop entries that can't be made into a real button
+ *  rather than throwing, so one bad entry doesn't sink the whole batch. */
+function sanitizeButtons(raw: any[]): SanitizedButton[] {
+  const out: SanitizedButton[] = [];
+  for (const btn of raw) {
+    if (!btn || typeof btn.label !== 'string' || !btn.label.trim()) continue;
+    const label = btn.label.trim().slice(0, MAX_BUTTON_LABEL_LEN);
+    const styleRaw = typeof btn.style === 'string' ? btn.style.toLowerCase() : 'secondary';
+    const style = ALLOWED_BUTTON_STYLES.has(styleRaw) ? styleRaw : 'secondary';
+
+    if (style === 'link') {
+      // Link buttons carry a URL, never a custom_id, and only ever an http(s) URL.
+      if (typeof btn.url !== 'string' || !/^https?:\/\//i.test(btn.url)) continue;
+      out.push({ label, style, url: btn.url });
+    } else {
+      out.push({ label, style });
+    }
+
+    if (out.length >= MAX_BUTTON_ROWS * MAX_BUTTONS_PER_ROW) break;
+  }
+  return out;
+}
+
+/** Server-built custom_id: `artie:<shortTurnId>:<index>`. The model never supplies this. */
+function artieCustomId(turnId: string, index: number): string {
+  return `artie:${turnId.slice(-12)}:${index}`;
+}
+
+function buildButtonActionRows(buttons: SanitizedButton[], turnId: string): any[] {
+  const rows: any[] = [];
+  let index = 0;
+  for (let i = 0; i < buttons.length && rows.length < MAX_BUTTON_ROWS; i += MAX_BUTTONS_PER_ROW) {
+    const rowButtons = buttons.slice(i, i + MAX_BUTTONS_PER_ROW);
+    const row = {
+      type: 1, // ActionRow
+      components: rowButtons.map((btn) => {
+        const component: any = {
+          type: 2, // Button
+          label: btn.label,
+          style: getButtonStyle(btn.style),
+        };
+        if (btn.style === 'link') {
+          component.url = btn.url;
+        } else {
+          component.custom_id = artieCustomId(turnId, index);
+        }
+        index++;
+        return component;
+      }),
+    };
+    rows.push(row);
+  }
+  return rows;
+}
+
+/** The legacy push-worker path: no turn id, so the old inline DISCORD_UI marker is the only
+ *  way these components can ever reach Discord. Unchanged behavior. */
+async function createLegacyButtons(buttonsArray: any[]): Promise<string> {
+  const actionRows: any[] = [];
+  const buttons = buttonsArray.slice(0, 25); // Discord limit: 25 buttons total
+
+  for (let i = 0; i < buttons.length; i += 5) {
+    const rowButtons = buttons.slice(i, i + 5);
+    const actionRow = {
+      type: 1,
+      components: [] as any[],
+    };
+
+    rowButtons.forEach((btn, index) => {
+      actionRow.components.push({
+        type: 2,
+        custom_id: btn.customId || `btn_${i + index}`,
+        label: btn.label,
+        style: getButtonStyle(btn.style),
+      });
+    });
+
+    actionRows.push(actionRow);
+  }
+
+  logger.info('🔘 Generated Discord buttons (legacy/no turn id):', {
+    buttonCount: buttons.length,
+    rows: actionRows.length,
+  });
+
+  return `DISCORD_UI:BUTTONS:${JSON.stringify({
+    actionRows,
+    buttonCount: buttons.length,
+    rows: actionRows.length,
+  })}:Created ${buttons.length} interactive buttons! Click to interact.`;
+}
+
+async function createButtons(
+  params: DiscordUIParams,
+  _content?: string,
+  context?: CapabilityContext
+): Promise<string> {
   // Extract buttons - handle both array format and object-with-numeric-keys
   const buttonsArray = extractButtonsArray(params);
 
@@ -192,55 +308,61 @@ async function createButtons(params: DiscordUIParams, _content?: string): Promis
     throw new Error('Button action requires buttons array');
   }
 
-  const actionRows: any[] = [];
-  const buttons = buttonsArray.slice(0, 25); // Discord limit: 25 buttons total
-
-  // Discord allows max 5 buttons per row, max 5 rows
-  for (let i = 0; i < buttons.length; i += 5) {
-    const rowButtons = buttons.slice(i, i + 5);
-    const actionRow = {
-      type: 1, // ActionRow component type
-      components: [] as any[],
-    };
-
-    rowButtons.forEach((btn, index) => {
-      const button = {
-        type: 2, // Button component type
-        custom_id: btn.customId || `btn_${i + index}`,
-        label: btn.label,
-        style: getButtonStyle(btn.style),
-      };
-
-      actionRow.components.push(button);
-    });
-
-    actionRows.push(actionRow);
+  const turnId = context?.messageId;
+  if (!turnId) {
+    // No turn id means this call didn't come from a normal reply's tool loop (e.g. a
+    // proactive push) — keep the old inline-marker behavior for push-worker.
+    return createLegacyButtons(buttonsArray);
   }
 
-  logger.info('🔘 Generated Discord buttons:', {
-    buttonCount: buttons.length,
-    rows: actionRows.length,
+  const buttons = sanitizeButtons(buttonsArray);
+  if (buttons.length === 0) {
+    throw new Error(
+      'No valid buttons after validation: each needs a non-empty label (≤80 chars); ' +
+        'link-style buttons also need an http(s) url and no custom_id.'
+    );
+  }
+
+  const rows = buildButtonActionRows(buttons, turnId);
+  addPendingComponents(turnId, rows);
+
+  const labels = buttons.map((b) => b.label).join(' / ');
+  logger.info('🔘 Queued Discord buttons for turn:', {
+    turnId: turnId.slice(-8),
+    count: buttons.length,
   });
 
-  return `DISCORD_UI:BUTTONS:${JSON.stringify({
-    actionRows,
-    buttonCount: buttons.length,
-    rows: actionRows.length,
-  })}:Created ${buttons.length} interactive buttons! Click to interact.`;
+  return `${buttons.length} button${buttons.length === 1 ? '' : 's'} will appear under your reply: ${labels}`;
 }
 
-async function createSelectMenu(params: DiscordUIParams, _content?: string): Promise<string> {
-  // Extract options - handle both array format and object-with-numeric-keys
-  const optionsArray = extractOptionsArray(params);
+interface SanitizedOption {
+  label: string;
+  value: string;
+  description?: string;
+}
 
-  if (!optionsArray || optionsArray.length === 0) {
-    throw new Error('Select menu requires options array');
+/** Validate + clamp a raw options array, dropping entries that can't be a real option. */
+function sanitizeOptions(raw: any[]): SanitizedOption[] {
+  const out: SanitizedOption[] = [];
+  for (const opt of raw) {
+    if (!opt || typeof opt.label !== 'string' || !opt.label.trim()) continue;
+    const label = opt.label.trim().slice(0, 100);
+    const value = String(opt.value ?? opt.label).slice(0, 100);
+    let description: string | undefined;
+    if (typeof opt.description === 'string' && opt.description.trim()) {
+      description = opt.description.slice(0, 100);
+    }
+    out.push({ label, value, description });
+    if (out.length >= MAX_SELECT_OPTIONS) break;
   }
+  return out;
+}
 
+/** The legacy push-worker path: no turn id. Unchanged behavior. */
+async function createLegacySelectMenu(optionsArray: any[], params: DiscordUIParams): Promise<string> {
   const customId = params.customId || `select_${Date.now()}`;
   const placeholder = params.placeholder || 'Choose an option...';
 
-  // Add options (max 25)
   const options = optionsArray.slice(0, 25).map((opt) => ({
     label: opt.label,
     value: opt.value,
@@ -248,7 +370,7 @@ async function createSelectMenu(params: DiscordUIParams, _content?: string): Pro
   }));
 
   const selectMenu = {
-    type: 3, // StringSelectMenu component type
+    type: 3,
     custom_id: customId,
     placeholder,
     min_values: 1,
@@ -257,11 +379,11 @@ async function createSelectMenu(params: DiscordUIParams, _content?: string): Pro
   };
 
   const actionRow = {
-    type: 1, // ActionRow component type
+    type: 1,
     components: [selectMenu],
   };
 
-  logger.info('📋 Generated Discord select menu:', {
+  logger.info('📋 Generated Discord select menu (legacy/no turn id):', {
     customId,
     optionCount: options.length,
   });
@@ -271,6 +393,53 @@ async function createSelectMenu(params: DiscordUIParams, _content?: string): Pro
     customId,
     optionCount: options.length,
   })}:Select menu with ${options.length} options created! Choose an option to continue.`;
+}
+
+async function createSelectMenu(
+  params: DiscordUIParams,
+  _content?: string,
+  context?: CapabilityContext
+): Promise<string> {
+  // Extract options - handle both array format and object-with-numeric-keys
+  const optionsArray = extractOptionsArray(params);
+
+  if (!optionsArray || optionsArray.length === 0) {
+    throw new Error('Select menu requires options array');
+  }
+
+  const turnId = context?.messageId;
+  if (!turnId) {
+    return createLegacySelectMenu(optionsArray, params);
+  }
+
+  const options = sanitizeOptions(optionsArray);
+  if (options.length === 0) {
+    throw new Error('No valid options after validation: each needs a non-empty label.');
+  }
+
+  const placeholder = (params.placeholder || 'Choose an option...').slice(0, 150);
+  const row = {
+    type: 1, // ActionRow
+    components: [
+      {
+        type: 3, // StringSelectMenu
+        custom_id: artieCustomId(turnId, 0),
+        placeholder,
+        min_values: 1,
+        max_values: 1,
+        options,
+      },
+    ],
+  };
+
+  addPendingComponents(turnId, [row]);
+
+  logger.info('📋 Queued Discord select menu for turn:', {
+    turnId: turnId.slice(-8),
+    optionCount: options.length,
+  });
+
+  return `A dropdown with ${options.length} option${options.length === 1 ? '' : 's'} will appear under your reply: ${options.map((o) => o.label).join(', ')}`;
 }
 
 async function createContextMenu(params: DiscordUIParams, _content?: string): Promise<string> {
@@ -285,10 +454,13 @@ async function createContextMenu(params: DiscordUIParams, _content?: string): Pr
 
   logger.info('📝 Generated Discord context menu:', { name: params.name });
 
+  // Honest, not a success claim: a context menu is a Discord application command and
+  // only actually appears after it's registered with Discord's API — building the JSON here
+  // doesn't register anything, so right-clicking a message won't show it yet.
   return `DISCORD_UI:CONTEXT_MENU:${JSON.stringify({
     command: contextMenu,
     name: params.name,
-  })}:Context menu "${params.name}" created! This will be available when right-clicking messages.`;
+  })}:I built a context menu command ("${params.name}"), but it needs to be registered with Discord before it shows up when right-clicking a message — that hasn't happened here, so nothing changed for you yet.`;
 }
 
 // Helper functions
@@ -392,7 +564,9 @@ export const discordUICapability: RegisteredCapability = {
   emoji: '🎨',
   supportedActions: ['modal', 'buttons', 'select', 'context-menu'],
   description:
-    'Create interactive Discord UI components (modals, buttons, select menus, context menus)',
+    'Create interactive Discord UI components. buttons/select attach under THIS reply automatically ' +
+    "(no separate send needed) — a click comes back to you as a new turn describing who picked what. " +
+    'modal/context-menu need a live interaction to open and cannot attach to a plain reply.',
   requiredParams: [], // action is automatically injected by capability registry
   examples: [
     '<capability name="discord-ui" action="modal" data=\'{"title":"User Feedback","inputs":[{"label":"Name","required":true},{"label":"Email"},{"label":"Message","style":"paragraph"}]}\' />',

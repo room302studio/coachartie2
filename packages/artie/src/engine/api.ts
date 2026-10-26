@@ -63,6 +63,30 @@ export async function pendingAttachments(userId: string): Promise<ApiResult> {
   return (await chat()).takePendingAttachments({ userId });
 }
 
+const pendingComponentsStore = () => import('./1-intake/pending-components.js');
+
+/**
+ * Take (and clear) the Discord component rows (buttons/select) a turn queued via the
+ * discord-ui tool. Not an HTTP route — only the gateway's stream-reply.ts calls this, keyed
+ * by the turn id (jobInfo.messageId), right after the final reply, to attach them to the
+ * message it just sent.
+ */
+export async function pendingComponents(turnId: string): Promise<ApiResult> {
+  const { takePendingComponents } = await pendingComponentsStore();
+  return { status: 200, body: { success: true, rows: takePendingComponents(turnId) } };
+}
+
+/**
+ * Current brownout mode/runway (engine/budget/brownout.ts), for the gateway's component-click
+ * cap: a click under `critical` brownout gets an ephemeral "running lean" instead of a paid
+ * LLM turn. Not an HTTP route.
+ */
+export async function brownoutStatus(): Promise<ApiResult> {
+  const { getBrownoutMode } = await import('./budget/brownout.js');
+  const status = await getBrownoutMode();
+  return { status: 200, body: status };
+}
+
 // --- background work the gateway asks for ---
 
 /** POST /api/observe: a FAST_MODEL observation summary ({summary, cost}). */

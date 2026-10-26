@@ -219,6 +219,40 @@ export class CapabilitiesClient {
   }
 
   /**
+   * Fetch (and clear) the Discord component rows (buttons/select) a turn queued via the
+   * discord-ui tool, keyed by turn id (jobInfo.messageId) — not userId, so two turns from
+   * the same person never cross.
+   */
+  async getPendingComponents(turnId: string): Promise<Array<Record<string, unknown>>> {
+    try {
+      const response = await engine.pendingComponents(turnId);
+      if (!engine.isOk(response)) {
+        logger.warn(`Failed to fetch pending components: ${response.status}`);
+        return [];
+      }
+      const result = response.body as { rows?: Array<Record<string, unknown>> };
+      return result.rows || [];
+    } catch (error) {
+      logger.error('Failed to fetch pending components:', error);
+      return [];
+    }
+  }
+
+  /** Current brownout mode, for the component-click cap (critical → no paid LLM call). */
+  async getBrownoutMode(): Promise<{ mode: 'normal' | 'lean' | 'critical' }> {
+    try {
+      const response = await engine.brownoutStatus();
+      if (!engine.isOk(response)) {
+        return { mode: 'normal' };
+      }
+      return response.body as { mode: 'normal' | 'lean' | 'critical' };
+    } catch (error) {
+      logger.warn('Failed to fetch brownout mode:', error);
+      return { mode: 'normal' };
+    }
+  }
+
+  /**
    * Poll job until completion with progress callbacks
    */
   async pollJobUntilComplete(
