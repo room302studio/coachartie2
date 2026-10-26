@@ -620,6 +620,13 @@ async function handleIssueCommentEvent(payload: GitHubWebhookPayload): Promise<v
   await publishMessage('github-bot', message, GITHUB_FEED_CHANNEL_ID, 'GitHub Bot', true, undefined, { rethrow: true });
 }
 
+function pluralS(n: number): string {
+  if (n > 1) {
+    return 's';
+  }
+  return '';
+}
+
 function generatePushCelebration(payload: GitHubPushPayload): string {
   const { repository, pusher, commits, head_commit } = payload;
   const commitCount = commits.length;
@@ -627,7 +634,7 @@ function generatePushCelebration(payload: GitHubPushPayload): string {
   const emojis = ['🚀', '✨', '🔥', '⚡', '🎯'];
   const emoji = emojis[Math.floor(Math.random() * emojis.length)];
 
-  const commitPlural = commitCount > 1 ? 's' : '';
+  const commitPlural = pluralS(commitCount);
   let message = `${emoji} **${pusher.name}** just pushed ${commitCount} commit${commitPlural} to **${repository.name}**!\n\n`;
 
   if (head_commit) {
@@ -642,8 +649,8 @@ function generatePushCelebration(payload: GitHubPushPayload): string {
   );
 
   if (totalChanges > 0) {
-    const filePlural = totalChanges > 1 ? 's' : '';
-    const commitPluralAgain = commitCount > 1 ? 's' : '';
+    const filePlural = pluralS(totalChanges);
+    const commitPluralAgain = pluralS(commitCount);
     message += `📊 ${totalChanges} file${filePlural} changed across ${commitCount} commit${commitPluralAgain}`;
   }
 

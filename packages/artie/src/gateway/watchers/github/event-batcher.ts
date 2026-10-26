@@ -492,8 +492,16 @@ export class GitHubEventProcessor {
         return `Issue #${event.data.issueNumber} closed`;
       case 'issue_comment':
         return `Comment on issue #${event.data.issueNumber} by ${event.data.commentAuthor}`;
-      case 'push':
-        return `${event.data.commitCount || 1} commit${(event.data.commitCount || 1) > 1 ? 's' : ''} pushed by ${event.data.commitAuthor}`;
+      case 'push': {
+        const commitCount = event.data.commitCount || 1;
+        let commitPlural: string;
+        if (commitCount > 1) {
+          commitPlural = 's';
+        } else {
+          commitPlural = '';
+        }
+        return `${commitCount} commit${commitPlural} pushed by ${event.data.commitAuthor}`;
+      }
       case 'issue_labeled':
         return `Label \`${event.data.label}\` added to #${event.data.issueNumber}`;
       case 'issue_assigned':
@@ -542,10 +550,16 @@ export class GitHubEventProcessor {
         if (event.data.prAuthor) {
           const discordUser = await this.resolveGitHubUser(event.data.prAuthor);
           if (discordUser) {
+            let reason: string;
+            if (event.type === 'pr_changes_requested') {
+              reason = 'Changes requested';
+            } else {
+              reason = 'CI failed';
+            }
             mentions.push({
               type: 'user',
               id: discordUser.discordUserId!,
-              reason: event.type === 'pr_changes_requested' ? 'Changes requested' : 'CI failed',
+              reason,
             });
           }
         }

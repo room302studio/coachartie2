@@ -54,9 +54,13 @@ export const n8nBrowserCapability: RegisteredCapability = {
       }
     } catch (error) {
       logger.error('n8n browser fetch failed:', error);
-      throw new Error(
-        `n8n browser error: ${error instanceof Error ? error.message : 'Unknown error'}`
-      );
+      let errorMessage: string;
+      if (error instanceof Error) {
+        errorMessage = error.message;
+      } else {
+        errorMessage = 'Unknown error';
+      }
+      throw new Error(`n8n browser error: ${errorMessage}`);
     }
   },
 };

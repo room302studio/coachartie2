@@ -1,6 +1,13 @@
 import { logger } from '../../../shared/logger.js';
 import { MediaWikiClient, MediaWikiConfig } from './wiki-client.js';
 
+function ensureApiPhpUrl(url: string): string {
+  if (url.includes('/api.php')) {
+    return url;
+  }
+  return `${url}/api.php`;
+}
+
 export class MediaWikiManager {
   private clients: Map<string, MediaWikiClient> = new Map();
   private lastUsedWiki: string | null = null;
@@ -26,7 +33,7 @@ export class MediaWikiManager {
           wikiConfigs.set(wikiName, {});
         }
         const config = wikiConfigs.get(wikiName)!;
-        config.apiUrl = value.includes('/api.php') ? value : `${value}/api.php`;
+        config.apiUrl = ensureApiPhpUrl(value);
         config.id = wikiName;
         config.name = wikiName.charAt(0).toUpperCase() + wikiName.slice(1);
       }
@@ -57,9 +64,7 @@ export class MediaWikiManager {
       const defaultConfig: MediaWikiConfig = {
         id: 'default',
         name: 'Default Wiki',
-        apiUrl: process.env.MEDIAWIKI_URL.includes('/api.php')
-          ? process.env.MEDIAWIKI_URL
-          : `${process.env.MEDIAWIKI_URL}/api.php`,
+        apiUrl: ensureApiPhpUrl(process.env.MEDIAWIKI_URL),
         username: process.env.MEDIAWIKI_USERNAME,
         botPassword: process.env.MEDIAWIKI_PASSWORD,
       };
@@ -164,7 +169,7 @@ export class MediaWikiManager {
       const config: MediaWikiConfig = {
         id: name.toLowerCase(),
         name: name,
-        apiUrl: url.includes('/api.php') ? url : `${url}/api.php`,
+        apiUrl: ensureApiPhpUrl(url),
         username: username,
         botPassword: password,
       };
@@ -223,7 +228,11 @@ export class MediaWikiManager {
         availableWikis as [string, ...string[]],
         this.lastUsedWiki || availableWikis[0]
       );
-      return this.clients.has(result.result) ? result.result : this.lastUsedWiki || 'default';
+      if (this.clients.has(result.result)) {
+        return result.result;
+      } else {
+        return this.lastUsedWiki || 'default';
+      }
     } catch {
       // Fallback to last used or default
       return this.lastUsedWiki || 'default';

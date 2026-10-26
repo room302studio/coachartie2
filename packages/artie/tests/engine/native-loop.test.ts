@@ -25,11 +25,19 @@ const TOOLS: ToolDefinition[] = [
   },
 ];
 
-const call = (id: string, name: string, args: unknown): ToolCall => ({
-  id,
-  name,
-  arguments: typeof args === 'string' ? args : JSON.stringify(args),
-});
+const call = (id: string, name: string, args: unknown): ToolCall => {
+  let argumentsStr: string;
+  if (typeof args === 'string') {
+    argumentsStr = args;
+  } else {
+    argumentsStr = JSON.stringify(args);
+  }
+  return {
+    id,
+    name,
+    arguments: argumentsStr,
+  };
+};
 
 function base(): ToolLoopMessage[] {
   return [
@@ -152,11 +160,13 @@ describe('runToolLoop', () => {
   });
 
   it('maxIterations forces one final call with NO tools', async () => {
-    const generate = vi.fn(async (_m: ToolLoopMessage[], tools: ToolDefinition[]) =>
-      tools.length === 0
-        ? { content: 'wrapping up', toolCalls: [] }
-        : { content: '', toolCalls: [call(`c${Math.random()}`, 'calculator', { action: 'calculate' })] }
-    );
+    const generate = vi.fn(async (_m: ToolLoopMessage[], tools: ToolDefinition[]) => {
+      if (tools.length === 0) {
+        return { content: 'wrapping up', toolCalls: [] };
+      } else {
+        return { content: '', toolCalls: [call(`c${Math.random()}`, 'calculator', { action: 'calculate' })] };
+      }
+    });
     const executeTool = vi.fn().mockResolvedValue('again');
 
     const result = await runToolLoop(base(), TOOLS, { generate, executeTool, maxIterations: 3 });
@@ -169,11 +179,13 @@ describe('runToolLoop', () => {
 
   it('defaults maxIterations to the timeouts.ts constant (8)', async () => {
     expect(NATIVE_TOOL_MAX_ITERATIONS).toBe(8);
-    const generate = vi.fn(async (_m: ToolLoopMessage[], tools: ToolDefinition[]) =>
-      tools.length === 0
-        ? { content: 'final', toolCalls: [] }
-        : { content: '', toolCalls: [call('id', 'calculator', { action: 'calculate' })] }
-    );
+    const generate = vi.fn(async (_m: ToolLoopMessage[], tools: ToolDefinition[]) => {
+      if (tools.length === 0) {
+        return { content: 'final', toolCalls: [] };
+      } else {
+        return { content: '', toolCalls: [call('id', 'calculator', { action: 'calculate' })] };
+      }
+    });
     const result = await runToolLoop(base(), TOOLS, { generate, executeTool: async () => 'r' });
     expect(result.iterations).toBe(8);
     expect(generate).toHaveBeenCalledTimes(9);
