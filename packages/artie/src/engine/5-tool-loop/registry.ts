@@ -202,7 +202,12 @@ export function resolveToolCall<P = any>(
   params?: P,
   opts: { log?: boolean } = {}
 ): ResolvedToolCall<P> {
-  const key = typeof name === 'string' ? name : String(name ?? '');
+  let key: string;
+  if (typeof name === 'string') {
+    key = name;
+  } else {
+    key = String(name ?? '');
+  }
   const alias = TOOL_ALIASES[key] ?? TOOL_ALIASES[key.toLowerCase()];
   if (!alias) {
     return { name, action, params: params as P };
@@ -339,7 +344,10 @@ export class CapabilityRegistry {
   supportsAction(name: string, action: string): boolean {
     ({ name, action } = resolveToolCall(name, action, undefined, { log: false }));
     const capability = this.capabilities.get(name);
-    return capability ? capability.supportedActions.includes(action) : false;
+    if (capability) {
+      return capability.supportedActions.includes(action);
+    }
+    return false;
   }
 
   /**
