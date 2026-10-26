@@ -53,4 +53,26 @@ describe('self-meter', () => {
     const line = selfMeterLine({ mode: 'normal', runwayHours: null }, null, none);
     expect(line).not.toContain('$');
   });
+
+  it('omits the jar clause entirely when jarUsd is null (unconfigured or no data yet)', () => {
+    const line = selfMeterLine({ mode: 'normal', runwayHours: null, dailySpendFraction: 0.1 }, 3, none);
+    expect(line).not.toContain('jar');
+  });
+
+  it('appends the jar line and the thank-but-never-solicit clause when jarUsd is set', () => {
+    const line = selfMeterLine(
+      { mode: 'normal', runwayHours: null, dailySpendFraction: 0.1 },
+      3,
+      none,
+      12.5
+    );
+    expect(line).toContain('jar: $12.50 tipped this month');
+    expect(line).toContain('thank them warmly');
+    expect(line).toContain('you still never ask');
+  });
+
+  it('formats a zero jar total correctly (not treated as falsy/absent)', () => {
+    const line = selfMeterLine({ mode: 'normal', runwayHours: null }, null, none, 0);
+    expect(line).toContain('jar: $0.00 tipped this month');
+  });
 });

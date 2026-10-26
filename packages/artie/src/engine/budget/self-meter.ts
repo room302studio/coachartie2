@@ -51,11 +51,13 @@ export function resetHiccups(): void {
 
 const SOFT_FRACTION = 0.4;
 
-/** The one meter line. Pure. */
+/** The one meter line. Pure. `jarUsd` is null when the jar isn't configured, or is but has
+ *  no successful read yet (jar-earnings.ts) — either way, no jar clause. */
 export function selfMeterLine(
   status: BrownoutStatus,
   budgetUsd: number | null,
-  hiccups: Record<LlmHiccup, number>
+  hiccups: Record<LlmHiccup, number>,
+  jarUsd: number | null = null
 ): string {
   const bits: string[] = [];
   const fraction = status.dailySpendFraction;
@@ -83,8 +85,17 @@ export function selfMeterLine(
     advice = 'plenty of room';
   }
 
-  return (
+  let line =
     `🔋 Your meter (private, for pacing yourself; don't bring up budget or credits in chat ` +
-    `unless EJ asks): ${bits.join(' · ')}. ${advice[0].toUpperCase()}${advice.slice(1)}.`
-  );
+    `unless EJ asks): ${bits.join(' · ')}. ${advice[0].toUpperCase()}${advice.slice(1)}.`;
+
+  // Only when the jar is configured AND has a successful read — the thank-but-never-solicit
+  // reminder only makes sense alongside an actual jar figure.
+  if (jarUsd !== null && Number.isFinite(jarUsd)) {
+    line +=
+      ` · jar: $${jarUsd.toFixed(2)} tipped this month (if someone thanks you or says they ` +
+      `tipped, thank them warmly — you still never ask)`;
+  }
+
+  return line;
 }

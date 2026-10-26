@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { easternDayKey, easternDayBounds, toSqliteUtc } from '../../src/shared/eastern-day.js';
+import {
+  easternDayKey,
+  easternDayBounds,
+  easternMonthKey,
+  easternMonthBounds,
+  toSqliteUtc,
+} from '../../src/shared/eastern-day.js';
 
 describe('easternDayKey', () => {
   it('uses the New York calendar, not UTC', () => {
@@ -43,6 +49,35 @@ describe('easternDayBounds', () => {
     const late = new Date('2026-09-30T03:59:59Z');
     const b = easternDayBounds(late);
     expect(late >= b.start && late < b.end).toBe(true);
+  });
+});
+
+describe('easternMonthKey', () => {
+  it('uses the New York calendar, not UTC, across the DST fall-back boundary', () => {
+    // 2026-11-01T02:00Z is still EDT (the DST transition is at 06:00Z that day) — Oct 31 ET.
+    expect(easternMonthKey(new Date('2026-11-01T02:00:00Z'))).toBe('2026-10');
+    expect(easternMonthKey(new Date('2026-11-01T06:00:00Z'))).toBe('2026-11');
+  });
+});
+
+describe('easternMonthBounds', () => {
+  it('is the 1st-of-month midnight to the 1st-of-next-month midnight, in ET', () => {
+    const b = easternMonthBounds(new Date('2026-10-15T12:00:00Z'));
+    expect(b.start.toISOString()).toBe('2026-10-01T04:00:00.000Z'); // Oct 1 00:00 EDT
+    expect(b.end.toISOString()).toBe('2026-11-01T04:00:00.000Z'); // Nov 1 00:00 ET — still EDT (DST ends later that day)
+  });
+
+  it('rolls December into January of the next year', () => {
+    const b = easternMonthBounds(new Date('2026-12-15T12:00:00Z'));
+    expect(b.start.toISOString()).toBe('2026-12-01T05:00:00.000Z'); // Dec 1 00:00 EST
+    expect(b.end.toISOString()).toBe('2027-01-01T05:00:00.000Z'); // Jan 1 00:00 EST
+  });
+
+  it('contains the instant it was computed from', () => {
+    const now = new Date('2026-11-01T02:00:00Z'); // Oct 31 ET
+    const b = easternMonthBounds(now);
+    expect(now >= b.start && now < b.end).toBe(true);
+    expect(easternMonthKey(now)).toBe('2026-10');
   });
 });
 

@@ -49,6 +49,7 @@ import {
 import { getBrownoutMode } from '../budget/brownout.js';
 import { getDailyBudgetUsd } from '../budget/daily-cap.js';
 import { recentHiccups, selfMeterLine } from '../budget/self-meter.js';
+import { getJarTippedUsd } from '../budget/jar-earnings.js';
 import { getLastTimeFacts, lastTimeLine } from './sources/last-time.js';
 
 // Guild ID to context path mapping (mirrors Discord guild-whitelist.ts)
@@ -769,7 +770,14 @@ Important:
     // His own spend/mode/fallback meter (he asked for it). getBrownoutMode serves a cached
     // status, so this never waits on OpenRouter.
     try {
-      parts.push(selfMeterLine(await getBrownoutMode(), getDailyBudgetUsd(), recentHiccups()));
+      parts.push(
+        selfMeterLine(
+          await getBrownoutMode(),
+          getDailyBudgetUsd(),
+          recentHiccups(),
+          await getJarTippedUsd()
+        )
+      );
     } catch (error) {
       logger.warn('🔋 Self-meter unavailable for this reply', error);
     }
