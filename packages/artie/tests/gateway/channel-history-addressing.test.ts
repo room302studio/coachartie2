@@ -121,6 +121,23 @@ describe('resolveAddressing', () => {
     expect(out.addressedElsewhere).toBeUndefined();
   });
 
+  it('a reply-with-ping does not duplicate the target into the mentions list', () => {
+    const otherMsg = fakeMessage({ authorId: 'u2', authorName: 'Bob' });
+    const window = new Collection<string, any>([[otherMsg.id, otherMsg]]);
+    const reply = fakeMessage({
+      authorId: 'u1',
+      authorName: 'Alice',
+      referenceId: otherMsg.id,
+      repliedUserId: 'u2',
+      repliedUserName: 'Bob',
+      mentionedUserIds: [{ id: 'u2', name: 'Bob' }], // reply-with-ping fills both fields
+    });
+
+    const out = resolveAddressing(reply, window, BOT_ID);
+    expect(out.replyToAuthor).toBe('Bob');
+    expect(out.mentions).toBeUndefined();
+  });
+
   it('plain message with no reply and no mentions resolves to an empty object', () => {
     const window = new Collection<string, any>();
     const msg = fakeMessage({ authorId: 'u1', authorName: 'Alice', content: 'hey all' });

@@ -85,6 +85,7 @@ export function resolveAddressing(
   } = {};
 
   const refId = msg.reference?.messageId;
+  let replyTargetId: string | undefined;
   if (refId) {
     const target = window.get(refId);
     const repliedUser = msg.mentions.repliedUser; // populated even without MessageContent
@@ -97,6 +98,7 @@ export function resolveAddressing(
     if (targetAuthorName && !isBlockedUser(targetAuthorId ?? '')) {
       out.replyToAuthor = targetAuthorName;
       out.replyToIsSelf = targetAuthorId === botId;
+      replyTargetId = targetAuthorId;
       if (out.replyToIsSelf && target) {
         const excerpt = (target.cleanContent || target.content || '').trim().slice(0, 120);
         if (excerpt) out.replyToExcerpt = excerpt;
@@ -105,8 +107,11 @@ export function resolveAddressing(
   }
 
   if (msg.mentions.users.size > 0) {
+    // A reply-with-ping fills BOTH mentions.repliedUser and mentions.users with the same
+    // person — without this exclusion that renders as the redundant "[↳@Bob →@Bob]"
+    // instead of just "[↳@Bob]".
     const names = Array.from(msg.mentions.users.values())
-      .filter((u) => u.id !== botId && !isBlockedUser(u.id))
+      .filter((u) => u.id !== botId && u.id !== replyTargetId && !isBlockedUser(u.id))
       .map((u) => u.displayName || u.username);
     if (names.length > 0) out.mentions = Array.from(new Set(names));
   }

@@ -677,9 +677,20 @@ Important:
         ctx.username && ctx.username.toLowerCase() !== String(displayName).toLowerCase()
           ? ` (@${ctx.username})`
           : '';
-      parts.push(
-        `👤 Talking to: @${displayName}${_unameSuffix}${_roleSuffix} — this is the ONE person you are replying to; do not attribute other people's messages from the history to them.`
-      );
+      // A batched burst (part 2a) has MULTIPLE authors in the one <user_message> — the
+      // "ONE person" framing below would be actively wrong (and contradicts the 📦 burst
+      // line a few lines down), so name everyone instead of singling out the newest author.
+      const isBurstTurn = Array.isArray(ctx.burst) && ctx.burst.length > 1;
+      if (isBurstTurn) {
+        const burstAuthors = Array.from(new Set(ctx.burst.map((b: any) => b.author))).join(', @');
+        parts.push(
+          `👤 This turn answers several people at once: @${burstAuthors}. Do not attribute one of their lines to another — each is labeled in <user_message> below.`
+        );
+      } else {
+        parts.push(
+          `👤 Talking to: @${displayName}${_unameSuffix}${_roleSuffix} — this is the ONE person you are replying to; do not attribute other people's messages from the history to them.`
+        );
+      }
     }
 
     // Forum thread context (if applicable)

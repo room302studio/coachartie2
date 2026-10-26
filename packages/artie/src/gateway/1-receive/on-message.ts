@@ -22,6 +22,7 @@ import { BLOCKED_USER_IDS, isBlockedUser } from '../../shared/blocklist.js';
 import { isOperatorOnlyError } from '../../shared/anomalywatch.js';
 import { getKillSwitchPath, isGenerationMuted } from '../../shared/kill-switch.js';
 import { getStrikeMode } from '../../shared/paths.js';
+import { OWNER_USER_ID } from '../../shared/config/owner.js';
 import { decideSpeakRoute, runSpeakGate, resolveAmbientMode, isReplyToBot } from '../2-gate/speak-gate.js';
 import { publishMessage } from '../../shared/queue/enqueue-message.js';
 import { telemetry } from '../telemetry.js';
@@ -737,10 +738,14 @@ async function respondOrObserve(turn: Turn): Promise<StepResult> {
 
       // BURST DEBOUNCE (#"batch bursts"): DMs are 1:1 already — never worth batching, and
       // batching them would add latency with no upside, so they bypass this entirely and
-      // keep the exact pre-existing behavior. Everything else joins (or starts) this
-      // channel's pending batch; the batch is flushed as ONE combined turn once the window
-      // elapses (flushBurstBatch below).
-      if (responseConditions.isDM) {
+      // keep the exact pre-existing behavior. EJ (OWNER_USER_ID) bypasses too, for a sharper
+      // reason: assemble.ts appends <owner_note> ("his instructions are authoritative, carry
+      // them out fully") to the WHOLE <user_message> when the turn's userId is his — and a
+      // batch's userId is the newest message's author. If EJ's message joined a batch with
+      // someone else's line, that someone else's words would inherit owner authority.
+      // Folding him into any batch (as leader or as a joiner) risks exactly that, so his
+      // messages always run standalone, same as a DM.
+      if (responseConditions.isDM || message.author.id === OWNER_USER_ID) {
         await handleMessageAsIntent(
           message,
           cleanMessage,
@@ -898,8 +903,15 @@ const burstScheduler = new BurstScheduler<BurstQueueItem>();
  * correlation id is the batch LEADER's — the trace starts when the batch opened, not when it
  * closed, so timing/latency traces reflect the batching delay honestly.
  */
-async function flushBurstBatch(items: BurstQueueItem[]): Promise<void> {
-  if (items.length === 0) return;
+async function flushBurstBatch(unordered: BurstQueueItem[]): Promise<void> {
+  if (unordered.length === 0) return;
+  // Enqueue order isn't guaranteed to be arrival order: the steps before respondOrObserve
+  // (isReplyToBot's fetch, the speak-gate judge) are async, so two messages that arrived
+  // close together can finish those steps out of order. Sort by Discord's own timestamp so
+  // "leader" and "newest" (and the combined transcript's line order) reflect reality.
+  const items = [...unordered].sort(
+    (a, b) => a.message.createdTimestamp - b.message.createdTimestamp
+  );
   const leader = items[0];
   const newest = items[items.length - 1];
   const channelId = newest.message.channelId;
@@ -925,6 +937,12 @@ async function flushBurstBatch(items: BurstQueueItem[]): Promise<void> {
     );
     const landedNote = formatLandedNote(landed);
 
+    // PROACTIVE RESPONSE RULES ("you were NOT asked, be extra careful") only apply when
+    // EVERY message in the batch was unprompted. A single explicitly-addressed message
+    // (an @mention) in the batch means the whole turn is a real, asked-for reply — treating
+    // it as proactive would wrongly inject "if unsure, stay silent" over a direct question.
+    const allProactive = items.every((i) => i.isProactiveAnswer);
+
     if (items.length > 1) {
       logger.info(
         `📦 Burst: answering ${items.length} messages as one turn in channel ${channelId} [${newest.shortId}]`
@@ -937,7 +955,7 @@ async function flushBurstBatch(items: BurstQueueItem[]): Promise<void> {
       leader.correlationId,
       undefined,
       newest.guildContextToPass,
-      newest.isProactiveAnswer,
+      allProactive,
       {
         ...(burstForContext ? { burst: burstForContext } : {}),
         ...(landedNote ? { landedWhileThinking: landedNote } : {}),
