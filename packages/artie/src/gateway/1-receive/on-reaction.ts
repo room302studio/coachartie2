@@ -28,6 +28,40 @@ import { recordReaction } from './reaction-log.js';
 // Import capabilities client for trace feedback correlation
 import { capabilitiesClient } from '../3-ask-engine/engine-client.js';
 import * as engine from '../../engine/api.js';
+
+function getGuildInfo(guild: any): any {
+  if (guild) {
+    return {
+      guildId: guild.id,
+      guildName: guild.name,
+      memberCount: guild.memberCount,
+    };
+  }
+  return null;
+}
+
+function getChannelNameValue(channel: any): string {
+  if ('name' in channel) {
+    return channel.name;
+  }
+  return 'DM';
+}
+
+function getSendTypingFunction(channel: any): any {
+  if ('sendTyping' in channel) {
+    return async () => {
+      await (channel as any).sendTyping();
+    };
+  }
+  return undefined;
+}
+
+function buildFeedbackNote(sentiment: string, emoji: string, guildName: string, channelName: string, messageSnippet: string): string {
+  if (sentiment === 'positive') {
+    return `community feedback: ${emoji} reaction to my response in ${guildName} #${channelName}. response was: "${messageSnippet}..." - this response style works well here`;
+  }
+  return `community feedback: ${emoji} reaction (negative) to my response in ${guildName} #${channelName}. response was: "${messageSnippet}..." - should avoid this response style`;
+}
 import { replaceMention } from '../../shared/mentions.js';
 
 // Reaction trigger emojis
@@ -357,15 +391,9 @@ async function handleRegenerateReaction(
     const cleanMessage = replaceMention(originalMessage.content, reaction.message.client.user?.id, '').trim();
 
     // Gather Discord context
-    const guildInfo = botMessage.guild
-      ? {
-          guildId: botMessage.guild.id,
-          guildName: botMessage.guild.name,
-          memberCount: botMessage.guild.memberCount,
-        }
-      : null;
+    const guildInfo = getGuildInfo(botMessage.guild);
 
-    const channelNameValue = 'name' in botMessage.channel ? botMessage.channel.name : 'DM';
+    const channelNameValue = getChannelNameValue(botMessage.channel);
     const channelInfo = {
       channelId: botMessage.channelId,
       channelType: botMessage.channel.type,
@@ -428,12 +456,7 @@ async function handleRegenerateReaction(
           telemetry.incrementResponsesDelivered(user.id, chunks.length);
         },
 
-        sendTyping:
-          'sendTyping' in botMessage.channel
-            ? async () => {
-                await (botMessage.channel as any).sendTyping();
-              }
-            : undefined,
+        sendTyping: getSendTypingFunction(botMessage.channel),
 
         addReaction: async (emoji: string) => {
           try {
@@ -554,10 +577,7 @@ async function handleFeedbackReaction(
     const guildId = reaction.message.guildId;
 
     // Build a more actionable reflection note
-    const feedbackNote =
-      sentiment === 'positive'
-        ? `community feedback: ${emoji} reaction to my response in ${guildName} #${channelName}. response was: "${messageSnippet}..." - this response style works well here`
-        : `community feedback: ${emoji} reaction (negative) to my response in ${guildName} #${channelName}. response was: "${messageSnippet}..." - should avoid this response style`;
+    const feedbackNote = buildFeedbackNote(sentiment, emoji, guildName, channelName, messageSnippet);
 
     // Use direct memory endpoint for proper storage with guild scope (wave 9: in-process,
     // was POST :47324/capabilities/registry/memory/execute; same handler)
