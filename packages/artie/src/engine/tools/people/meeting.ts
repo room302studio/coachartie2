@@ -93,7 +93,6 @@ function optionalStringWithDefault(value: unknown, defaultVal: string): string {
     return String(value);
   }
   return defaultVal;
-  [key: string]: unknown;
 }
 
 class MeetingService {
