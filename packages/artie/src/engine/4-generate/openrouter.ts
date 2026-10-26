@@ -534,7 +534,12 @@ class OpenRouterService {
       if (tools === false) {
         return { model, ok: false, why: 'no tools in supported_parameters' };
       }
-      const toolWhy = tools === undefined ? 'not in catalog, trusted' : 'tool-capable';
+      let toolWhy: string;
+      if (tools === undefined) {
+        toolWhy = 'not in catalog, trusted';
+      } else {
+        toolWhy = 'tool-capable';
+      }
       return { model, ok: true, why: toolWhy };
     };
 
@@ -989,7 +994,12 @@ class OpenRouterService {
           modelIndex: i + 1,
           totalModels: modelsToTry.length,
         });
-        const hiccupType = i === modelsToTry.length - 1 ? 'failed' : 'fallback';
+        let hiccupType: string;
+        if (i === modelsToTry.length - 1) {
+          hiccupType = 'failed';
+        } else {
+          hiccupType = 'fallback';
+        }
         recordLlmHiccup(hiccupType);
 
         // Record the FAILED attempt. Every one of the 15,122 historical rows has
@@ -1057,7 +1067,12 @@ class OpenRouterService {
         } else if (isAffordabilityError && !affordabilityRetried) {
           // Retry the SAME model once with max_tokens capped to what's affordable.
           // Leave a 10% safety margin so token-estimation drift doesn't re-trip it.
-          const affordableTokens = affordMatch ? parseInt(affordMatch[1], 10) : 256;
+          let affordableTokens: number;
+          if (affordMatch) {
+            affordableTokens = parseInt(affordMatch[1], 10);
+          } else {
+            affordableTokens = 256;
+          }
           affordabilityCap = Math.max(64, Math.floor(affordableTokens * 0.9));
           affordabilityRetried = true;
           logger.warn(
@@ -1067,7 +1082,12 @@ class OpenRouterService {
           i--; // retry the same model
           continue;
         } else if (isCreditError) {
-          const nextModelMsg = isLastModel ? '' : ', trying next model...';
+          let nextModelMsg: string;
+          if (isLastModel) {
+            nextModelMsg = '';
+          } else {
+            nextModelMsg = ', trying next model...';
+          }
           logger.info(
             `💳 Billing/credit error detected${nextModelMsg}`
           );
@@ -1085,7 +1105,12 @@ class OpenRouterService {
             );
           }
         } else if (errorStatus === 429) {
-          const nextModelMsg = isLastModel ? '' : ', trying next model...';
+          let nextModelMsg: string;
+          if (isLastModel) {
+            nextModelMsg = '';
+          } else {
+            nextModelMsg = ', trying next model...';
+          }
           logger.warn(`🚦 Rate limit hit${nextModelMsg}`);
           if (isLastModel) {
             throw new Error(
@@ -1093,7 +1118,12 @@ class OpenRouterService {
             );
           }
         } else if (errorStatus === 500 || errorStatus === 502 || errorStatus === 503) {
-          const nextModelMsg = isLastModel ? '' : ', trying next model...';
+          let nextModelMsg: string;
+          if (isLastModel) {
+            nextModelMsg = '';
+          } else {
+            nextModelMsg = ', trying next model...';
+          }
           logger.warn(`🔧 Server error${nextModelMsg}`);
           if (isLastModel) {
             throw new Error(
@@ -1101,7 +1131,12 @@ class OpenRouterService {
             );
           }
         } else {
-          const nextModelMsg = isLastModel ? '' : ', trying next model...';
+          let nextModelMsg: string;
+          if (isLastModel) {
+            nextModelMsg = '';
+          } else {
+            nextModelMsg = ', trying next model...';
+          }
           logger.warn(`🔄 Unknown error${nextModelMsg}`);
           if (isLastModel) {
             throw new Error(`❌ LLM ERROR: ${errorMessage.substring(0, 200)}`);
@@ -1204,7 +1239,12 @@ class OpenRouterService {
       modelsToTry = this.models;
     }
 
-    const generationMode = useSpecificModel ? `using SPECIFIC model ${effectiveModel}` : `using model rotation`;
+    let generationMode: string;
+    if (useSpecificModel) {
+      generationMode = `using SPECIFIC model ${effectiveModel}`;
+    } else {
+      generationMode = `using model rotation`;
+    }
     logger.info(
       `🤖 Starting streaming generation for user ${userId} ${generationMode}`
     );
@@ -1223,7 +1263,12 @@ class OpenRouterService {
       const plugins = options?.plugins ?? resolved.plugins;
 
       try {
-        const modelLabel = useSpecificModel ? '(SPECIFIC)' : `(${i + 1}/${modelsToTry.length})`;
+        let modelLabel: string;
+        if (useSpecificModel) {
+          modelLabel = '(SPECIFIC)';
+        } else {
+          modelLabel = `(${i + 1}/${modelsToTry.length})`;
+        }
         logger.info(
           `📡 Attempting streaming with model ${model} ${modelLabel}`
         );
@@ -1234,20 +1279,26 @@ class OpenRouterService {
 
         // Same breakpoint as the non-streaming path — this is the one Discord actually uses.
         const cache = applyCacheControl(messages, model);
-        const cacheMessage = cache.applied
-            ? `🗄️ Prompt cache: breakpoint on ${cache.prefixTokens}tok system prefix (${model}, streaming)`
-            : `🗄️ Prompt cache: not applied — ${cache.reason}`;
+        let cacheMessage: string;
+        if (cache.applied) {
+          cacheMessage = `🗄️ Prompt cache: breakpoint on ${cache.prefixTokens}tok system prefix (${model}, streaming)`;
+        } else {
+          cacheMessage = `🗄️ Prompt cache: not applied — ${cache.reason}`;
+        }
         logger.info(cacheMessage);
 
-        const extraBody: Record<string, unknown> = {
-          ...(plugins ? { plugins } : {}),
-          // Auto-routed picks may be models we have no price for (billed at $15/$75 by
-          // default); OpenRouter's usage accounting reports the exact USD cost instead.
-          ...(isAutoRouted(model) ? { usage: { include: true } } : {}),
-          ...(isAutoRouted(model) && autoReasoningFor(plugins)
-            ? { reasoning: autoReasoningFor(plugins) }
-            : {}),
-        };
+        const extraBody: Record<string, unknown> = {};
+        if (plugins) {
+          extraBody.plugins = plugins;
+        }
+        // Auto-routed picks may be models we have no price for (billed at $15/$75 by
+        // default); OpenRouter's usage accounting reports the exact USD cost instead.
+        if (isAutoRouted(model)) {
+          extraBody.usage = { include: true };
+        }
+        if (isAutoRouted(model) && autoReasoningFor(plugins)) {
+          extraBody.reasoning = autoReasoningFor(plugins);
+        }
         const completion: AsyncIterable<OpenAI.Chat.Completions.ChatCompletionChunk> = await this.createCompletion({
           model,
           messages: cache.messages,
@@ -1329,7 +1380,12 @@ class OpenRouterService {
         }
 
         // Calculate cost and track usage
-        const billedModel = (isAutoRouted(model) && servedModel) ? servedModel : model;
+        let billedModel: string;
+        if (isAutoRouted(model) && servedModel) {
+          billedModel = servedModel;
+        } else {
+          billedModel = model;
+        }
         let estimatedCost: number;
         if (isAutoRouted(model) && reportedCost !== undefined) {
           estimatedCost = reportedCost;
@@ -1338,7 +1394,12 @@ class OpenRouterService {
         }
 
         // Track costs in real-time cost monitor
-        const streamingCost = isAutoRouted(model) ? reportedCost : undefined;
+        let streamingCost: number | undefined;
+        if (isAutoRouted(model)) {
+          streamingCost = reportedCost;
+        } else {
+          streamingCost = undefined;
+        }
         const { warnings: streamWarnings } = costMonitor.trackCall(
           usage.prompt_tokens,
           usage.completion_tokens,
