@@ -831,7 +831,7 @@ export async function handleQuizAnswer(message: Message): Promise<boolean> {
     // String match failed but AI judge is on — fire an async LLM check.
     // Race: another user may answer correctly first; in that case the LLM
     // result is dropped by the manager.
-    let result: ReturnType<typeof quizSessionManager.checkAnswerWithAI> | string;
+    let result: string | (Awaited<ReturnType<typeof quizSessionManager.checkAnswerWithAI>>);
     if (initial === 'maybe') {
       result = await quizSessionManager.checkAnswerWithAI(
         message.channelId,
@@ -843,8 +843,8 @@ export async function handleQuizAnswer(message: Message): Promise<boolean> {
       result = initial;
     }
 
-    if (result && typeof result === 'object' && result.correct) {
-      const answerResult = result as Exclude<typeof result, string>;
+    if (result && typeof result === 'object' && 'correct' in result && result.correct) {
+      const answerResult = result;
 
       function aiIndicator(): string {
         if (answerResult.judgedByAI) {
