@@ -48,9 +48,14 @@ export function formatAddressingSuffix(
   const parts: string[] = [];
   if (entry.replyToAuthor) {
     if (entry.replyToIsSelf) {
-      const excerpt = entry.replyToExcerpt
-        ? ` ("${entry.replyToExcerpt.slice(0, 60)}${entry.replyToExcerpt.length > 60 ? '…' : ''}")`
-        : '';
+      let excerpt = '';
+      if (entry.replyToExcerpt) {
+        let ellipsis = '';
+        if (entry.replyToExcerpt.length > 60) {
+          ellipsis = '…';
+        }
+        excerpt = ` ("${entry.replyToExcerpt.slice(0, 60)}${ellipsis}")`;
+      }
       parts.push(`↳you${excerpt}`);
     } else {
       parts.push(`↳@${entry.replyToAuthor}`);
@@ -62,7 +67,10 @@ export function formatAddressingSuffix(
   if (entry.addressedElsewhere) {
     parts.push('(not to you)');
   }
-  return parts.length > 0 ? ` [${parts.join(' ')}]` : '';
+  if (parts.length > 0) {
+    return ` [${parts.join(' ')}]`;
+  }
+  return '';
 }
 
 /**
@@ -139,12 +147,20 @@ export function renderDiscordTranscript(
       const suffix = formatAddressingSuffix(msg);
       if (isSelf) {
         const sanitized = sanitizeAssistantMessage(msg.content);
-        return sanitized ? `Coach Artie (you)${suffix}: ${sanitized}` : '';
+        if (sanitized) {
+          return `Coach Artie (you)${suffix}: ${sanitized}`;
+        }
+        return '';
       }
       // msg.author already carries "Display (@username)[staff]/[bot]" labeling
       // from the discord side. No content (non-privileged intents) still gets a line so
       // the reply-chain / @-mention metadata isn't lost.
-      const body = msg.content && msg.content.trim().length > 0 ? msg.content : '[no text]';
+      let body: string;
+      if (msg.content && msg.content.trim().length > 0) {
+        body = msg.content;
+      } else {
+        body = '[no text]';
+      }
       return `${msg.author}${suffix}: ${body}`;
     })
     .filter((l) => l.split(': ').slice(1).join(': ').trim().length > 0);
@@ -236,7 +252,10 @@ export function extractParticipants(message: IncomingMessage): string[] {
   if (Array.isArray(history)) {
     for (const h of history) {
       if (!h || h.isSelf || h.isBot) continue; // not Artie, not other bots
-      const author = typeof h.author === 'string' ? h.author : '';
+      let author = '';
+      if (typeof h.author === 'string') {
+        author = h.author;
+      }
       // "Rebecka (@rebecka) [staff]" -> "Rebecka (@rebecka)" — keep display + handle
       // (both are how memories name people), drop the role/bot tags.
       const cleaned = author.replace(/\s*\[(bot|staff)\]/gi, '').trim();

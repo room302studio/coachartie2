@@ -79,9 +79,10 @@ const UNKNOWN_ANTHROPIC_MIN = 4096;
  * request lands inside 5 minutes, where the cheaper write wins.
  */
 function cacheTtl(): { type: 'ephemeral'; ttl?: '1h' } {
-  return process.env.PROMPT_CACHE_TTL === '5m'
-    ? { type: 'ephemeral' }
-    : { type: 'ephemeral', ttl: '1h' };
+  if (process.env.PROMPT_CACHE_TTL === '5m') {
+    return { type: 'ephemeral' };
+  }
+  return { type: 'ephemeral', ttl: '1h' };
 }
 
 export type WireContent =
@@ -185,14 +186,15 @@ export function applyCacheControl(
   // Unmarked messages are copied whole: a native tool round-trip carries tool_calls on the
   // assistant turn and tool_call_id on each result, and Anthropic rejects a tool_result whose
   // tool_use was dropped. (Marked messages are always system messages: role + content only.)
-  const wire: WireMessage[] = messages.map((m, i) =>
-    marked.includes(i)
-      ? {
-          role: m.role,
-          content: [{ type: 'text' as const, text: m.content, cache_control: cacheTtl() }],
-        }
-      : { ...m }
-  );
+  const wire: WireMessage[] = messages.map((m, i) => {
+    if (marked.includes(i)) {
+      return {
+        role: m.role,
+        content: [{ type: 'text' as const, text: m.content, cache_control: cacheTtl() }],
+      };
+    }
+    return { ...m };
+  });
 
   return { messages: wire, applied: true, reason: `ok (${marked.length} breakpoint(s))`, prefixTokens };
 }
@@ -234,9 +236,10 @@ export function readCacheUsage(usage: unknown): { read: number; write: number } 
 
 /** Character length of a wire message, for input_length accounting. */
 export function wireContentLength(content: WireContent): number {
-  return typeof content === 'string'
-    ? content.length
-    : content.reduce((total, part) => total + part.text.length, 0);
+  if (typeof content === 'string') {
+    return content.length;
+  }
+  return content.reduce((total, part) => total + part.text.length, 0);
 }
 
 /**

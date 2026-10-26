@@ -529,7 +529,12 @@ export class ReflectionConsolidator {
         .map((f) => {
           // Extract the response snippet from the feedback content
           const responseMatch = f.content.match(/response was: ["'](.+?)["']/);
-          const response = responseMatch ? responseMatch[1] : f.content;
+          let response: string;
+          if (responseMatch) {
+            response = responseMatch[1];
+          } else {
+            response = f.content;
+          }
           return `- "${response}"`;
         })
         .join('\n');
@@ -570,14 +575,24 @@ Rules should be concise (1-2 sentences) and actionable.`,
     ruleDirection: 'do' | 'avoid',
     isEmergency: boolean
   ): string {
-    const directionText =
-      ruleDirection === 'avoid'
-        ? 'NEGATIVE reactions (things to AVOID)'
-        : 'POSITIVE reactions (things that WORK WELL)';
+    let directionText: string;
+    if (ruleDirection === 'avoid') {
+      directionText = 'NEGATIVE reactions (things to AVOID)';
+    } else {
+      directionText = 'POSITIVE reactions (things that WORK WELL)';
+    }
 
-    const urgencyNote = isEmergency
-      ? '\n\n⚠️ EMERGENCY: This feedback is from concentrated recent negative reactions. Be specific about what to avoid.'
-      : '';
+    let urgencyNote = '';
+    if (isEmergency) {
+      urgencyNote = '\n\n⚠️ EMERGENCY: This feedback is from concentrated recent negative reactions. Be specific about what to avoid.';
+    }
+
+    let actionWord: string;
+    if (ruleDirection === 'avoid') {
+      actionWord = 'avoid';
+    } else {
+      actionWord = 'do';
+    }
 
     return `Review these community ${directionText}:
 
@@ -585,7 +600,7 @@ ${feedbackSummary}
 ${urgencyNote}
 
 Generate 0-3 actionable rules based on clear patterns. For each rule:
-1. State the rule clearly (what to ${ruleDirection === 'avoid' ? 'avoid' : 'do'})
+1. State the rule clearly (what to ${actionWord})
 2. Explain what feedback pattern it addresses
 3. Rate confidence (0.0-1.0) based on how clear the pattern is
 
@@ -606,7 +621,12 @@ If no clear patterns emerge, return {"rules": []}`;
     try {
       // {"rules": [...]}; a bare array (a model that ignored the wrapper) is read too.
       const rules = parseModelJson<{ rules?: unknown }>(response, 'object')?.rules;
-      const parsed = Array.isArray(rules) ? (rules as any[]) : parseModelJson<any[]>(response, 'array');
+      let parsed: any[] | null;
+      if (Array.isArray(rules)) {
+        parsed = rules as any[];
+      } else {
+        parsed = parseModelJson<any[]>(response, 'array');
+      }
       if (!parsed) {
         logger.debug('[reflection] No JSON array in LLM response');
         return [];
@@ -614,13 +634,19 @@ If no clear patterns emerge, return {"rules": []}`;
 
       return parsed
         .filter((r: any) => r.rule && typeof r.rule === 'string')
-        .map((r: any) => ({
-          ruleText: String(r.rule).trim(),
-          sourceTag: String(r.tag || 'general').trim(),
-          confidence: Math.max(0, Math.min(1, parseFloat(r.confidence) || 0.5)),
-          sourceCount: feedbackCount,
-          examples: r.addresses ? [String(r.addresses)] : [],
-        }))
+        .map((r: any) => {
+          let examples: string[] = [];
+          if (r.addresses) {
+            examples = [String(r.addresses)];
+          }
+          return {
+            ruleText: String(r.rule).trim(),
+            sourceTag: String(r.tag || 'general').trim(),
+            confidence: Math.max(0, Math.min(1, parseFloat(r.confidence) || 0.5)),
+            sourceCount: feedbackCount,
+            examples,
+          };
+        })
         .slice(0, 3); // Max 3 rules per consolidation
     } catch (error) {
       logger.warn('[reflection] Failed to parse rules from response:', error);
@@ -735,16 +761,25 @@ If no clear patterns emerge, return {"rules": []}`;
     const db = getSyncDb();
 
     // Count positive vs negative feedback that might relate to this rule
+    let guildFilter = '';
+    let params: unknown[];
+    if (rule.scope_id) {
+      guildFilter = 'AND guild_id = ?';
+      params = [rule.created_at, rule.scope_id];
+    } else {
+      params = [rule.created_at];
+    }
+
     const recentFeedback = db.all<{ tags: string; content: string }>(
       `
       SELECT tags, content
       FROM memories
       WHERE user_id = 'reaction-feedback-system'
         AND created_at > ?
-        ${rule.scope_id ? 'AND guild_id = ?' : ''}
+        ${guildFilter}
       LIMIT 50
     `,
-      rule.scope_id ? [rule.created_at, rule.scope_id] : [rule.created_at]
+      params
     );
 
     if (!recentFeedback || recentFeedback.length < 5) {

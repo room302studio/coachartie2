@@ -72,6 +72,11 @@ function getDailyConversations(userId: string): ConversationChunk[] {
     // Convert to chunks
     const chunks: ConversationChunk[] = [];
     for (const [channelId, channelMsgs] of byChannel) {
+      let finalChannelId: string | undefined;
+      if (channelId !== 'direct') {
+        finalChannelId = channelId;
+      }
+
       chunks.push({
         userId,
         messages: channelMsgs.map(m => ({
@@ -79,7 +84,7 @@ function getDailyConversations(userId: string): ConversationChunk[] {
           content: m.value,
           timestamp: m.created_at,
         })),
-        channelId: channelId !== 'direct' ? channelId : undefined,
+        channelId: finalChannelId,
         guildId: channelMsgs[0]?.guild_id,
       });
     }

@@ -49,7 +49,13 @@ export async function addYardCallback(
 
     // Drop any "[Observation from ...] " prefix for readability.
     const bracketEnd = row.content.indexOf('] ');
-    const body = (bracketEnd > 0 ? row.content.slice(bracketEnd + 2) : row.content).slice(0, 400);
+    let contentWithoutBracket: string;
+    if (bracketEnd > 0) {
+      contentWithoutBracket = row.content.slice(bracketEnd + 2);
+    } else {
+      contentWithoutBracket = row.content;
+    }
+    const body = contentWithoutBracket.slice(0, 400);
     const when = row.created_at?.slice(0, 10) || 'a while back';
 
     const content =
@@ -89,9 +95,10 @@ export async function addLearnedRules(
     const systemRules = await reflectionConsolidator.getActiveRules('system');
 
     // Get guild-specific rules if in a guild context
-    const guildRules = guildId
-      ? await reflectionConsolidator.getActiveRules('guild', guildId)
-      : [];
+    let guildRules: any[] = [];
+    if (guildId) {
+      guildRules = await reflectionConsolidator.getActiveRules('guild', guildId);
+    }
 
     const allRules = [...systemRules, ...guildRules];
 
@@ -127,7 +134,10 @@ export async function addLearnedRules(
 /** MEMORY_CONTEXT_MAX_TOKENS (default 1500, floor 300): cap on recalled memories per reply. */
 export function memoryContextMaxTokens(env: NodeJS.ProcessEnv = process.env): number {
   const n = parseInt(env.MEMORY_CONTEXT_MAX_TOKENS || '', 10);
-  return Number.isFinite(n) && n > 0 ? Math.max(300, n) : 1500;
+  if (Number.isFinite(n) && n > 0) {
+    return Math.max(300, n);
+  }
+  return 1500;
 }
 
 /**

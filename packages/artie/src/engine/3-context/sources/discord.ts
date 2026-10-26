@@ -97,8 +97,12 @@ export async function addChannelVibes(
     const channelId = messageContext.channelId;
     const channelName = messageContext.channelName || messageContext.channelId || 'unknown';
     const channelType = messageContext.channelType || 'text';
-    const platform =
-      message.source === 'slack' || messageContext.platform === 'slack' ? 'Slack' : 'Discord';
+    let platform: string;
+    if (message.source === 'slack' || messageContext.platform === 'slack') {
+      platform = 'Slack';
+    } else {
+      platform = 'Discord';
+    }
 
     // Get recent activity in this channel (last 10 minutes)
     const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();

@@ -214,9 +214,19 @@ export class MemoryGardener {
 
       for (const pair of candidates) {
         // Keep the one with higher importance, mark other as consolidated
-        const keepId =
-          (pair as any).imp1 >= (pair as any).imp2 ? (pair as any).id1 : (pair as any).id2;
-        const removeId = keepId === (pair as any).id1 ? (pair as any).id2 : (pair as any).id1;
+        let keepId: string;
+        if ((pair as any).imp1 >= (pair as any).imp2) {
+          keepId = (pair as any).id1;
+        } else {
+          keepId = (pair as any).id2;
+        }
+
+        let removeId: string;
+        if (keepId === (pair as any).id1) {
+          removeId = (pair as any).id2;
+        } else {
+          removeId = (pair as any).id1;
+        }
 
         // Don't delete - just reduce importance to 1 and mark as consolidated
         db.run(
@@ -344,9 +354,12 @@ export class MemoryGardener {
         [weekStart.toISOString()]
       );
 
-      const notableInteractions = notable.map((m) =>
-        m.content.length > 100 ? m.content.substring(0, 100) + '...' : m.content
-      );
+      const notableInteractions = notable.map((m) => {
+        if (m.content.length > 100) {
+          return m.content.substring(0, 100) + '...';
+        }
+        return m.content;
+      });
 
       // Get lessons learned (memories tagged with learning-related tags)
       const lessons = db.all<MemoryRecord>(
@@ -360,9 +373,12 @@ export class MemoryGardener {
         [weekStart.toISOString()]
       );
 
-      const lessonsLearned = lessons.map((m) =>
-        m.content.length > 100 ? m.content.substring(0, 100) + '...' : m.content
-      );
+      const lessonsLearned = lessons.map((m) => {
+        if (m.content.length > 100) {
+          return m.content.substring(0, 100) + '...';
+        }
+        return m.content;
+      });
 
       // Count memories that might need attention (low importance but recent)
       const needingAttention =

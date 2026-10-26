@@ -63,7 +63,12 @@ export async function addCurrentDateTime(sources: ContextSource[]): Promise<void
     hour12: false,
   });
   const tzMatch = now.toLocaleTimeString('en-US', { timeZoneName: 'short' }).match(/\b[A-Z]{3,4}\b/);
-  const tz = tzMatch ? tzMatch[0] : 'UTC';
+  let tz: string;
+  if (tzMatch) {
+    tz = tzMatch[0];
+  } else {
+    tz = 'UTC';
+  }
 
   // Format: "Date: 2025-10-24 13:40 EST (Fri)"
   const content = `Date: ${now.toISOString().split('T')[0]} ${timeStr} ${tz} (${dayName})`;

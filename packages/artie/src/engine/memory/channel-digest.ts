@@ -49,14 +49,22 @@ export function digestModel(env: NodeJS.ProcessEnv = process.env): string {
 
 export function factsPerChannelPerDay(env: NodeJS.ProcessEnv = process.env): number {
   const n = parseInt(env.DIGEST_FACTS_PER_DAY || '', 10);
-  return Number.isFinite(n) && n >= 0 ? n : 2;
+  if (Number.isFinite(n) && n >= 0) {
+    return n;
+  }
+  return 2;
 }
 
 export function buildDigestPrompt(
   previousDigest: string,
   req: Pick<DigestRequest, 'guildName' | 'channelName' | 'lines'>
 ): string {
-  const lines = req.lines.map((l) => (l.length > LINE_MAX_CHARS ? `${l.slice(0, LINE_MAX_CHARS)}…` : l));
+  const lines = req.lines.map((l) => {
+    if (l.length > LINE_MAX_CHARS) {
+      return `${l.slice(0, LINE_MAX_CHARS)}…`;
+    }
+    return l;
+  });
   return `You keep the running notes for #${req.channelName} in the ${req.guildName} Discord, so a bot named Artie knows what's going on when someone @'s him.
 
 PREVIOUS NOTES:
@@ -87,12 +95,17 @@ export function parseDigestResponse(raw: string): DigestResult | null {
   const parsed = parseModelJson<{ digest?: unknown; remember?: unknown }>(raw, 'object');
   if (!parsed) return null;
   try {
-    const digest = typeof parsed.digest === 'string' ? parsed.digest.trim() : '';
+    let digest = '';
+    if (typeof parsed.digest === 'string') {
+      digest = parsed.digest.trim();
+    }
     if (digest.length < 20) return null;
-    const remember =
-      typeof parsed.remember === 'string' && parsed.remember.trim().length >= 15
-        ? parsed.remember.trim().slice(0, FACT_MAX_CHARS)
-        : null;
+
+    let remember: string | null = null;
+    if (typeof parsed.remember === 'string' && parsed.remember.trim().length >= 15) {
+      remember = parsed.remember.trim().slice(0, FACT_MAX_CHARS);
+    }
+
     return { digest: digest.slice(0, DIGEST_MAX_CHARS), remembered: remember };
   } catch {
     return null;
@@ -151,8 +164,13 @@ export async function refreshChannelDigest(req: DigestRequest): Promise<DigestRe
     result.remembered = null; // over today's cap for this channel
   }
 
+  let rememberedNote = '';
+  if (result.remembered) {
+    rememberedNote = ' + 1 fact';
+  }
+
   logger.info(
-    `📰 Digest #${req.channelName}: ${req.lines.length} msgs folded${result.remembered ? ' + 1 fact' : ''}`
+    `📰 Digest #${req.channelName}: ${req.lines.length} msgs folded${rememberedNote}`
   );
   return result;
 }

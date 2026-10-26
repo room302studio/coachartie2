@@ -51,7 +51,10 @@ const SNIPPET_MAX = 60;
 
 function snippet(text: string): string {
   const clean = collapseWhitespace(stripCapabilityTags(text || '')).trim();
-  return clean.length > SNIPPET_MAX ? `${clean.slice(0, SNIPPET_MAX).trim()}…` : clean;
+  if (clean.length > SNIPPET_MAX) {
+    return `${clean.slice(0, SNIPPET_MAX).trim()}…`;
+  }
+  return clean;
 }
 
 /** The one line. Pure — same shape as self-meter's selfMeterLine. */
@@ -86,7 +89,12 @@ function lastExchangeRow(
   scope: { guildId?: string; channelId?: string }
 ): { value: string; created_at: string } | null {
   const db = getSyncDb();
-  const scopeColumn = scope.guildId ? 'guild_id' : scope.channelId ? 'channel_id' : null;
+  let scopeColumn: string | null = null;
+  if (scope.guildId) {
+    scopeColumn = 'guild_id';
+  } else if (scope.channelId) {
+    scopeColumn = 'channel_id';
+  }
   if (!scopeColumn) return null; // no scope to anchor "history" to — don't guess
   const scopeValue = scope.guildId || scope.channelId;
 
@@ -112,8 +120,14 @@ function lastExchangeRow(
 function highImportanceMemoryTopic(userId: string, guildId?: string): string | null {
   try {
     const db = getSyncDb();
-    const guildFilter = guildId ? 'AND (guild_id = ? OR guild_id IS NULL)' : '';
-    const params = guildId ? [userId, guildId] : [userId];
+    let guildFilter = '';
+    let params: unknown[];
+    if (guildId) {
+      guildFilter = 'AND (guild_id = ? OR guild_id IS NULL)';
+      params = [userId, guildId];
+    } else {
+      params = [userId];
+    }
     const row = db.get<{ content: string }>(
       `SELECT content FROM memories
        WHERE user_id = ? ${guildFilter} AND importance >= 7
@@ -166,7 +180,10 @@ function openLoopFor(userId: string): string | null {
        ORDER BY ti.position ASC LIMIT 1`,
       [userId]
     );
-    return todoItem ? snippet(todoItem.content) : null;
+    if (todoItem) {
+      return snippet(todoItem.content);
+    }
+    return null;
   } catch (error) {
     logger.warn('last-time: open-loop lookup failed', error);
     return null;
@@ -193,17 +210,32 @@ export function getLastTimeFacts(
   // could surface in a public channel. Use them only in DMs; in a guild, stick to
   // guild-scoped rows.
   const inGuild = Boolean(scope.guildId);
-  let topic = mentionsOptedOutUser(prior.value) ? '' : snippet(prior.value);
+  let topic: string;
+  if (mentionsOptedOutUser(prior.value)) {
+    topic = '';
+  } else {
+    topic = snippet(prior.value);
+  }
   if (topic.length < 10) {
+    let profileSummary: string | null = null;
+    if (!inGuild) {
+      profileSummary = userProfileSummary(userId);
+    }
+
     topic =
       highImportanceMemoryTopic(userId, scope.guildId) ||
-      (inGuild ? null : userProfileSummary(userId)) ||
+      profileSummary ||
       '';
+  }
+
+  let openLoop: string | null = null;
+  if (!inGuild) {
+    openLoop = openLoopFor(userId);
   }
 
   return {
     lastAt: prior.created_at,
     topic: topic || null,
-    openLoop: inGuild ? null : openLoopFor(userId),
+    openLoop,
   };
 }

@@ -94,13 +94,33 @@ export function parseTriagePicks(raw: string): TriagePick[] | null {
   for (const item of list) {
     if (!item || typeof item !== 'object') continue;
     const { capability, score, reason } = item as Record<string, unknown>;
-    const name = typeof capability === 'string' ? capability.trim() : '';
+    let name = '';
+    if (typeof capability === 'string') {
+      name = capability.trim();
+    }
     if (!name) continue;
-    const n = typeof score === 'number' ? score : parseFloat(String(score ?? ''));
+
+    let n: number;
+    if (typeof score === 'number') {
+      n = score;
+    } else {
+      n = parseFloat(String(score ?? ''));
+    }
+
+    let scoreValue = 0.5;
+    if (Number.isFinite(n)) {
+      scoreValue = n;
+    }
+
+    let reasonValue = 'Selected by triage';
+    if (typeof reason === 'string' && reason.trim()) {
+      reasonValue = reason.trim();
+    }
+
     picks.push({
       capability: name,
-      score: Number.isFinite(n) ? n : 0.5,
-      reason: typeof reason === 'string' && reason.trim() ? reason.trim() : 'Selected by triage',
+      score: scoreValue,
+      reason: reasonValue,
     });
   }
   return picks;
@@ -208,14 +228,17 @@ export class CapabilitySelector {
     capabilityList: string,
     conversationContext?: string[]
   ): Promise<string> {
-    const contextSection =
-      conversationContext && conversationContext.length > 0
-        ? `\nRecent conversation:\n${conversationContext.slice(-3).join('\n')}\n`
-        : '';
+    let contextSection = '';
+    if (conversationContext && conversationContext.length > 0) {
+      contextSection = `\nRecent conversation:\n${conversationContext.slice(-3).join('\n')}\n`;
+    }
 
     // Load capability intro from database for consistent approach
     const capabilityIntro = await getCapabilityIntro();
-    const introSection = capabilityIntro ? `\n${capabilityIntro}\n` : '';
+    let introSection = '';
+    if (capabilityIntro) {
+      introSection = `\n${capabilityIntro}\n`;
+    }
 
     return `You are a capability triage system. Your job is to quickly identify which capabilities (if any) are relevant to the user's request.${introSection}
 
