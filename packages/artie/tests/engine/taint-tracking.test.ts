@@ -9,10 +9,12 @@ import { describe, it, expect, beforeEach, beforeAll, vi } from 'vitest';
 vi.mock('child_process', async (importOriginal) => {
   const actual = await importOriginal<typeof import('child_process')>();
   const exec = (_cmd: string, optsOrCb: unknown, maybeCb?: unknown) => {
-    const cb = (typeof optsOrCb === 'function' ? optsOrCb : maybeCb) as (
-      err: Error | null,
-      out?: { stdout: string; stderr: string }
-    ) => void;
+    let cb: (err: Error | null, out?: { stdout: string; stderr: string }) => void;
+    if (typeof optsOrCb === 'function') {
+      cb = optsOrCb as (err: Error | null, out?: { stdout: string; stderr: string }) => void;
+    } else {
+      cb = maybeCb as (err: Error | null, out?: { stdout: string; stderr: string }) => void;
+    }
     cb(null, { stdout: '', stderr: '' });
     return {} as unknown;
   };

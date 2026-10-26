@@ -268,6 +268,13 @@ async function createUsageEmbed(userId: string, period: string): Promise<EmbedBu
 }
 
 // Helper function to format relative time
+function getPluralSuffix(count: number): string {
+  if (count === 1) {
+    return '';
+  }
+  return 's';
+}
+
 function formatTimeAgo(ms: number): string {
   const seconds = Math.floor(ms / 1000);
   const minutes = Math.floor(seconds / 60);
@@ -275,15 +282,15 @@ function formatTimeAgo(ms: number): string {
   const days = Math.floor(hours / 24);
 
   if (days > 0) {
-    const dayPlural = days > 1 ? 's' : '';
+    const dayPlural = getPluralSuffix(days);
     return `${days} day${dayPlural} ago`;
   }
   if (hours > 0) {
-    const hourPlural = hours > 1 ? 's' : '';
+    const hourPlural = getPluralSuffix(hours);
     return `${hours} hour${hourPlural} ago`;
   }
   if (minutes > 0) {
-    const minutePlural = minutes > 1 ? 's' : '';
+    const minutePlural = getPluralSuffix(minutes);
     return `${minutes} minute${minutePlural} ago`;
   }
   if (seconds > 30) return `${seconds} seconds ago`;

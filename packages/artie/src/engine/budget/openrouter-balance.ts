@@ -100,8 +100,18 @@ export class CreditMonitor {
       return;
     }
     this.lastLowBalanceAlertAt = new Date();
-    const criticalPrefix = critical ? 'critically ' : '';
-    const source = critical ? 'credit-monitor-low-balance-critical' : 'credit-monitor-low-balance';
+    let criticalPrefix: string;
+    if (critical) {
+      criticalPrefix = 'critically ';
+    } else {
+      criticalPrefix = '';
+    }
+    let source: string;
+    if (critical) {
+      source = 'credit-monitor-low-balance-critical';
+    } else {
+      source = 'credit-monitor-low-balance';
+    }
     void this.sendOperatorAlert(
       `OpenRouter balance ${criticalPrefix}low: $${balance.toFixed(2)} — top up: https://openrouter.ai/settings/credits`,
       source,
@@ -297,6 +307,12 @@ export class CreditMonitor {
       const db = getSyncDb();
 
       // Extract credit info from the response
+      let rate_limit_reset: Date | undefined;
+      if (creditData.rate_limit_reset) {
+        rate_limit_reset = new Date(creditData.rate_limit_reset);
+      } else {
+        rate_limit_reset = undefined;
+      }
       const creditInfo: CreditInfo = {
         provider: 'openrouter',
         credits_remaining: creditData.credits_remaining,
@@ -304,9 +320,7 @@ export class CreditMonitor {
         daily_spend: creditData.daily_spend,
         monthly_spend: creditData.monthly_spend,
         rate_limit_remaining: creditData.rate_limit_remaining,
-        rate_limit_reset: creditData.rate_limit_reset
-          ? new Date(creditData.rate_limit_reset)
-          : undefined,
+        rate_limit_reset,
         raw_response: JSON.stringify(creditData),
       };
 
@@ -607,9 +621,12 @@ export class CreditMonitor {
       const currentBalance = await this.getCurrentBalance();
       const totalSpend = result?.total_spend || 0;
       const dailyAverage = totalSpend / days;
-      const estimatedDaysRemaining = currentBalance?.credits_remaining
-        ? Math.floor(currentBalance.credits_remaining / Math.max(dailyAverage, 0.01))
-        : 0;
+      let estimatedDaysRemaining: number;
+      if (currentBalance?.credits_remaining) {
+        estimatedDaysRemaining = Math.floor(currentBalance.credits_remaining / Math.max(dailyAverage, 0.01));
+      } else {
+        estimatedDaysRemaining = 0;
+      }
 
       return {
         total_spend: totalSpend,

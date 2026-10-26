@@ -20,7 +20,12 @@ router.get('/', async (req, res) => {
         limit: parseInt(limit as string),
       });
 
-      const resultCount = Array.isArray(result) ? result.length : 0;
+      let resultCount: number;
+      if (Array.isArray(result)) {
+        resultCount = result.length;
+      } else {
+        resultCount = 0;
+      }
       return res.json({
         success: true,
         data: result || [],

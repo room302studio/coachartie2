@@ -113,15 +113,18 @@ class ResearchQueueService {
     this.ensureTable();
     const db = getSyncDb();
 
-    const rows = status
-      ? db.all<Record<string, unknown>>(
-          'SELECT * FROM research_tasks WHERE status = ? ORDER BY created_at DESC LIMIT ?',
-          [status, limit]
-        )
-      : db.all<Record<string, unknown>>(
-          'SELECT * FROM research_tasks ORDER BY created_at DESC LIMIT ?',
-          [limit]
-        );
+    let rows: Record<string, unknown>[];
+    if (status) {
+      rows = db.all<Record<string, unknown>>(
+        'SELECT * FROM research_tasks WHERE status = ? ORDER BY created_at DESC LIMIT ?',
+        [status, limit]
+      );
+    } else {
+      rows = db.all<Record<string, unknown>>(
+        'SELECT * FROM research_tasks ORDER BY created_at DESC LIMIT ?',
+        [limit]
+      );
+    }
 
     return rows.map((row) => this.rowToTask(row));
   }
