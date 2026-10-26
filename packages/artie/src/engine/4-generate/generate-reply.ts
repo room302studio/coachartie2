@@ -50,22 +50,25 @@ export class LLMResponseCoordinator {
       // Pass the fast model explicitly to ensure consistent model selection
       // Context Alchemy: Include traceId and guildId for observability
       // Preflight: Include maxTokens for dynamic response length
-      const generated = onPartialResponse
-        ? await openRouterService.generateFromMessageChainStreaming(
+      let generated: string;
+      if (onPartialResponse) {
+        generated = await openRouterService.generateFromMessageChainStreaming(
             modelAwareMessages,
             message.userId,
             onPartialResponse,
             message.id,
             smartModel,
             generationOptions
-          )
-        : await openRouterService.generateFromMessageChain(
+          );
+      } else {
+        generated = await openRouterService.generateFromMessageChain(
             modelAwareMessages,
             message.userId,
             message.id,
             smartModel,
             generationOptions
           );
+      }
 
       return this.disarmWarden(generated, turn);
     } catch (error: any) {
@@ -98,15 +101,18 @@ export class LLMResponseCoordinator {
 
       const generate: ToolLoopDeps['generate'] = async (msgs, offered) => {
         round++;
+        const messageId = round === 1 ? message.id : `${message.id}_tool_${round}`;
+        const toolChoice = offered.length > 0 ? 'auto' : 'none';
         const result = await openRouterService.generateWithTools(
           msgs,
           tools, // the full list every round, so the cached prefix never changes
           message.userId,
-          round === 1 ? message.id : `${message.id}_tool_${round}`,
+          messageId,
           turn.smartModel,
-          { ...turn.generationOptions, toolChoice: offered.length > 0 ? 'auto' : 'none' }
+          { ...turn.generationOptions, toolChoice }
         );
-        return { content: result.content, toolCalls: offered.length > 0 ? result.toolCalls : [] };
+        const returnToolCalls = offered.length > 0 ? result.toolCalls : [];
+        return { content: result.content, toolCalls: returnToolCalls };
       };
 
       let finalText: string;
@@ -234,34 +240,41 @@ export class LLMResponseCoordinator {
       const route = brownoutRoute(brownout, smartModel);
       smartModel = route.model;
       if (brownout.mode !== 'normal') {
-        const daily =
-          typeof brownout.dailySpendFraction === 'number'
-            ? `${Math.round(brownout.dailySpendFraction * 100)}% of daily budget`
-            : 'daily n/a';
+        let daily: string;
+        if (typeof brownout.dailySpendFraction === 'number') {
+          daily = `${Math.round(brownout.dailySpendFraction * 100)}% of daily budget`;
+        } else {
+          daily = 'daily n/a';
+        }
         logger.warn(
           `🕯️ Brownout ${brownout.mode.toUpperCase()} (runway ${brownout.runwayHours?.toFixed(1) ?? '?'}h, ${daily}) → ${smartModel}, maxTokens ${maxTokens}`
         );
       }
+      let messagesToProcess: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>;
+      if (mode === 'native') {
+        messagesToProcess = messages;
+      } else {
+        // XML-LOOP: delete after v3 soak (TOOL_LOOP=xml). A pass-through today.
+        messagesToProcess = messages.map((msg) => {
+          if (msg.role === 'system') {
+            return {
+              ...msg,
+              content: modelAwarePrompter.generateCapabilityPrompt(smartModel, msg.content),
+            };
+          }
+          return msg;
+        });
+      }
       const modelAwareMessages = applyBrevityNote(
-        mode === 'native'
-          ? messages
-          : // XML-LOOP: delete after v3 soak (TOOL_LOOP=xml). A pass-through today.
-            messages.map((msg) => {
-              if (msg.role === 'system') {
-                return {
-                  ...msg,
-                  content: modelAwarePrompter.generateCapabilityPrompt(smartModel, msg.content),
-                };
-              }
-              return msg;
-            }),
+        messagesToProcess,
         // Lean/critical cap max_tokens; ask for a complete short reply that fits rather than
         // a normal one that gets cut off. Inserted after the cache breakpoint.
         brownout.mode
       );
 
+      const routeLabel = routeSimple ? 'SIMPLE' : preflight.complexity.toUpperCase();
       logger.warn(
-        `🎯 Model route: ${routeSimple ? 'SIMPLE' : preflight.complexity.toUpperCase()} → ${smartModel} (${modelAwareMessages.length} messages)`
+        `🎯 Model route: ${routeLabel} → ${smartModel} (${modelAwareMessages.length} messages)`
       );
 
       // Context Alchemy: Include traceId and guildId for observability
@@ -428,11 +441,20 @@ export class LLMResponseCoordinator {
     const capabilityDetails = context.capabilities
       .map((cap, i) => {
         const result = context.results[i];
-        const status = result ? (result.success ? 'SUCCESS' : 'FAILED') : 'UNKNOWN';
-        const data = result?.data
-          ? ` - Result: ${JSON.stringify(result.data).substring(0, 100)}`
-          : '';
-        const error = result?.error ? ` - Error: ${result.error}` : '';
+        let status: string;
+        if (result) {
+          status = result.success ? 'SUCCESS' : 'FAILED';
+        } else {
+          status = 'UNKNOWN';
+        }
+        let data = '';
+        if (result?.data) {
+          data = ` - Result: ${JSON.stringify(result.data).substring(0, 100)}`;
+        }
+        let error = '';
+        if (result?.error) {
+          error = ` - Error: ${result.error}`;
+        }
 
         return `Capability ${i + 1}: ${cap.name}:${cap.action}
 Arguments: ${JSON.stringify(cap.params)}
