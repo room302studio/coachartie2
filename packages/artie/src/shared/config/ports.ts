@@ -82,7 +82,12 @@ async function getServicePort(
 
     return availablePort;
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    let errorMessage: string;
+    if (error instanceof Error) {
+      errorMessage = error.message;
+    } else {
+      errorMessage = 'Unknown error';
+    }
     throw new Error(`Failed to find available port for ${serviceName} service: ${errorMessage}`);
   }
 }

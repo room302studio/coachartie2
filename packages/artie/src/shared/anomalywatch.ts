@@ -98,14 +98,22 @@ function ensureTable(): void {
 
 export function resolveAlertScriptPath(): string | null {
   const configured = process.env.ALERT_SH_PATH;
-  if (configured) return existsSync(configured) ? configured : null;
+  if (configured) {
+    if (existsSync(configured)) {
+      return configured;
+    }
+    return null;
+  }
   return DEFAULT_ALERT_SH_PATHS.find((p) => existsSync(p)) ?? null;
 }
 
 /** One line, no markdown, bounded — alert.sh takes it as a single argv entry. */
 export function flattenAlertMessage(message: string, max = 500): string {
   const flat = collapseWhitespace(message.replace(/\*\*|__|`/g, '')).trim();
-  return flat.length > max ? `${flat.slice(0, max - 1)}…` : flat;
+  if (flat.length > max) {
+    return `${flat.slice(0, max - 1)}…`;
+  }
+  return flat;
 }
 
 export type AlertExec = (
@@ -117,11 +125,21 @@ export type AlertExec = (
 const defaultExec: AlertExec = (file, args, env) =>
   new Promise((resolve, reject) => {
     // execFile, not exec: the message is argv, never parsed by a shell.
+    let mergedEnv: Record<string, string> | undefined;
+    if (env) {
+      mergedEnv = { ...process.env, ...env } as Record<string, string>;
+    }
     execFile(
       file,
       args,
-      { timeout: 15_000, env: env ? { ...process.env, ...env } : undefined },
-      (error) => (error ? reject(error) : resolve())
+      { timeout: 15_000, env: mergedEnv },
+      (error) => {
+        if (error) {
+          reject(error);
+        } else {
+          resolve();
+        }
+      }
     );
   });
 
@@ -164,8 +182,12 @@ export async function reportToAnomalywatch(
     // Claim the day BEFORE sending so two concurrent callers can't both get through.
     store.markDay(kind, today);
 
-    const script =
-      options.scriptPath !== undefined ? options.scriptPath : resolveAlertScriptPath();
+    let script: string | null;
+    if (options.scriptPath !== undefined) {
+      script = options.scriptPath;
+    } else {
+      script = resolveAlertScriptPath();
+    }
     if (!script) {
       logger.warn(`📟 [anomalywatch:not-sent — no alert.sh] ${level} ${kind}: ${text}`);
       return 'logged';
@@ -174,10 +196,14 @@ export async function reportToAnomalywatch(
     const env: Record<string, string> = {};
     if (options.alertType) env.ALERT_TYPE = options.alertType;
     if (options.deepLink) env.ALERT_DEEPLINK = options.deepLink;
+    let envArg: Record<string, string> | undefined;
+    if (Object.keys(env).length) {
+      envArg = env;
+    }
     await (options.exec ?? defaultExec)(
       script,
       [ANOMALYWATCH_SOURCE, level, text],
-      Object.keys(env).length ? env : undefined
+      envArg
     );
     logger.warn(`📟 anomalywatch alert sent (${level}, ${kind}): ${text}`);
     return 'sent';
@@ -198,7 +224,14 @@ export async function reportToAnomalywatch(
  * must never be echoed into a channel or DM as a "something went wrong" reply.
  */
 export function isOperatorOnlyError(text: unknown): boolean {
-  const s = typeof text === 'string' ? text : text instanceof Error ? text.message : String(text);
+  let s: string;
+  if (typeof text === 'string') {
+    s = text;
+  } else if (text instanceof Error) {
+    s = text.message;
+  } else {
+    s = String(text);
+  }
   return /OUT OF CREDITS|credit|billing|\b402\b|quota|GENERATION MUTED|kill ?switch|daily budget/i.test(
     s
   );

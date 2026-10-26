@@ -160,10 +160,12 @@ describe.skipIf(!runIntegration)('Service Integration Tests', () => {
             processedSMS.push(message);
 
             // SMS responses should be shorter
-            let responseText =
-              message.message.length > 50
-                ? 'Message received! (long message truncated for SMS)'
-                : `Got it: ${message.message}`;
+            let responseText: string;
+            if (message.message.length > 50) {
+              responseText = 'Message received! (long message truncated for SMS)';
+            } else {
+              responseText = `Got it: ${message.message}`;
+            }
 
             const response: OutgoingMessage = {
               id: `sms-response-${Date.now()}`,
@@ -392,12 +394,14 @@ Coach Artie`;
           };
 
           // Route to appropriate queue
-          const targetQueue =
-            message.respondTo.type === 'discord'
-              ? discordQueue
-              : message.respondTo.type === 'sms'
-                ? smsQueue
-                : emailQueue;
+          let targetQueue: typeof discordQueue;
+          if (message.respondTo.type === 'discord') {
+            targetQueue = discordQueue;
+          } else if (message.respondTo.type === 'sms') {
+            targetQueue = smsQueue;
+          } else {
+            targetQueue = emailQueue;
+          }
 
           await targetQueue.add('response', response);
         }

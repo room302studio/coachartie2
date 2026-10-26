@@ -52,6 +52,17 @@ function balancedEnd(text: string, start: number): number {
   return -1;
 }
 
+/** Which opening bracket(s) to scan for, depending on the expected shape. */
+function getExpectedOpeners(expect?: ModelJsonShape): string {
+  if (expect === 'object') {
+    return '{';
+  }
+  if (expect === 'array') {
+    return '[';
+  }
+  return '{[';
+}
+
 export function parseModelJson<T = unknown>(raw: string, expect?: ModelJsonShape): T | null {
   if (!raw) return null;
   const text = raw.trim();
@@ -65,7 +76,7 @@ export function parseModelJson<T = unknown>(raw: string, expect?: ModelJsonShape
     if (fits(inner, expect)) return inner as T;
   }
 
-  const openers = expect === 'object' ? '{' : expect === 'array' ? '[' : '{[';
+  const openers = getExpectedOpeners(expect);
   let starts = 0;
   for (let i = 0; i < text.length && starts < MAX_SCAN_STARTS; i++) {
     if (!openers.includes(text[i])) continue;

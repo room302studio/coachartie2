@@ -19,7 +19,8 @@ export interface JsonOutputSpec {
 export type StructuredOutputMode = 'json_schema' | 'json_object';
 
 export function responseFormatFor(spec: JsonOutputSpec, mode: StructuredOutputMode): Record<string, unknown> {
-  return mode === 'json_schema'
-    ? { type: 'json_schema', json_schema: { name: spec.name, strict: true, schema: spec.schema } }
-    : { type: 'json_object' };
+  if (mode === 'json_schema') {
+    return { type: 'json_schema', json_schema: { name: spec.name, strict: true, schema: spec.schema } };
+  }
+  return { type: 'json_object' };
 }

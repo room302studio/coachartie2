@@ -38,7 +38,12 @@ const transports: winston.transport[] = [
           !Object.values(cleanMeta).every((v) => v === undefined || v === null);
 
         // Super compact format
-        const metaStr = hasUsefulMeta ? ` ${JSON.stringify(cleanMeta)}` : '';
+        let metaStr: string;
+        if (hasUsefulMeta) {
+          metaStr = ` ${JSON.stringify(cleanMeta)}`;
+        } else {
+          metaStr = '';
+        }
 
         // Clean service names
         const shortService = String(service || 'unknown').replace('@coachartie/', '');
@@ -169,10 +174,16 @@ export const performanceLogger = {
       timer.end({ ...meta, success: true });
       return result;
     } catch (error) {
+      let errorMessage: string;
+      if (error instanceof Error) {
+        errorMessage = error.message;
+      } else {
+        errorMessage = 'Unknown error';
+      }
       timer.end({
         ...meta,
         success: false,
-        error: error instanceof Error ? error.message : 'Unknown error',
+        error: errorMessage,
       });
       throw error;
     }

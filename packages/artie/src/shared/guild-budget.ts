@@ -25,7 +25,10 @@ export function readDailyBudgetUsd(): number | null {
   if (raw === '') return DEFAULT_DAILY_BUDGET_USD;
   const parsed = parseFloat(raw);
   if (!Number.isFinite(parsed)) return DEFAULT_DAILY_BUDGET_USD;
-  return parsed > 0 ? parsed : null;
+  if (parsed > 0) {
+    return parsed;
+  }
+  return null;
 }
 
 export function parseGuildBudgetShares(raw: string | undefined): Map<string, number> {

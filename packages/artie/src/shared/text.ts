@@ -12,10 +12,18 @@ export function collapseWhitespace(s: string): string {
   return s.replace(/\s+/g, ' ');
 }
 
+/** Remove leading and trailing occurrences of the given separator. */
+function trimSeparator(slug: string, sep: '-' | '_'): string {
+  if (sep === '-') {
+    return slug.replace(/^-|-$/g, '');
+  }
+  return slug.replace(/^_|_$/g, '');
+}
+
 /** Lowercase, every run of non-[a-z0-9] becomes `sep`, no leading/trailing `sep`. */
 export function slugify(s: string, sep: '-' | '_' = '-'): string {
   const slug = s.toLowerCase().replace(/[^a-z0-9]+/g, sep);
-  return sep === '-' ? slug.replace(/^-|-$/g, '') : slug.replace(/^_|_$/g, '');
+  return trimSeparator(slug, sep);
 }
 
 /** A base URL without its trailing slash(es), so `${base}/path` has exactly one. */
