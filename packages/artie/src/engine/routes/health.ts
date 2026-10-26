@@ -168,9 +168,11 @@ healthRouter.get('/live', (req, res) => {
 healthRouter.post('/admin/clear-credit-flag', (req, res) => {
   // Simple auth check - expects Authorization header or secret
   const auth = req.headers.authorization;
-  const expectedSecret = process.env.ADMIN_SECRET || 'admin-secret';
+  // Fail closed: no ADMIN_SECRET means no remote admin at all. (This used to fall back to the
+  // public literal 'admin-secret' on an open /health route; security audit 2026-10-26.)
+  const expectedSecret = process.env.ADMIN_SECRET;
 
-  if (!auth || auth !== `Bearer ${expectedSecret}`) {
+  if (!expectedSecret || !auth || auth !== `Bearer ${expectedSecret}`) {
     logger.warn('❌ Unauthorized attempt to clear credit flag');
     return res.status(401).json({
       error: 'Unauthorized',

@@ -23,8 +23,13 @@ export const sequenceCapability: RegisteredCapability = {
   supportedActions: ['execute'],
   description:
     'Execute multiple capabilities in sequence, passing results forward. Enables complex multi-step workflows. Use "steps" parameter with array of capability objects.',
-  handler: async (params, _content) => {
-    const { steps, userId, messageId } = params;
+  handler: async (params, _content, context) => {
+    const { steps } = params;
+    // Identity comes from the real caller's context, never from model params, and the same
+    // context is passed to every step so owner checks see who is really asking (security
+    // audit 2026-10-26: userId used to be model-supplied and steps ran with no context).
+    const userId = context?.userId;
+    const messageId = context?.messageId;
 
     if (!steps) {
       throw new Error('Steps array is required for sequence execution');
@@ -82,7 +87,7 @@ export const sequenceCapability: RegisteredCapability = {
         // Signature is (name, action, params, content) — this used to pass the
         // params OBJECT as `action`, so every sequence step failed with
         // "attemptedAction.toLowerCase is not a function".
-        const result = await capabilityRegistry.execute(name, stepAction, enrichedParams, '');
+        const result = await capabilityRegistry.execute(name, stepAction, enrichedParams, '', context);
 
         results.push({
           step: stepNum,

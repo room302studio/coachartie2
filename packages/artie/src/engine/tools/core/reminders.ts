@@ -19,12 +19,16 @@ export const schedulerCapability: RegisteredCapability = {
   supportedActions: ['remind', 'schedule', 'list', 'cancel'],
   description:
     'Set one-time reminders (e.g., "remind me in 5 minutes"), schedule recurring tasks with cron expressions, view scheduled tasks, or cancel scheduled reminders. Perfect for time-based automation and remembering things.',
-  handler: async (params, _content) => {
+  handler: async (params, _content, context) => {
     const { action } = params;
+    // Who the reminder belongs to comes from the real caller, never from model params: a
+    // reminder replays through the full pipeline as that user when it fires, so a forged
+    // userId (e.g. EJ's, via a context-less `sequence` call) would borrow their authority.
+    const callerId = context?.userId || 'unknown-user';
 
     switch (action) {
       case 'remind': {
-        const { message, delay, userId } = params;
+        const { message, delay } = params;
         if (!message) {
           throw new Error('Reminder message is required');
         }
@@ -37,7 +41,7 @@ export const schedulerCapability: RegisteredCapability = {
           {
             type: 'user-reminder',
             message,
-            userId: userId || 'unknown-user',
+            userId: callerId,
             reminderType: 'one-time',
           },
           delayMs
@@ -48,7 +52,7 @@ export const schedulerCapability: RegisteredCapability = {
       }
 
       case 'schedule': {
-        const { name, cron, message, userId } = params;
+        const { name, cron, message } = params;
         if (!name || !cron) {
           throw new Error('Task name and cron expression are required');
         }
@@ -62,7 +66,7 @@ export const schedulerCapability: RegisteredCapability = {
           data: {
             type: 'user-task',
             message: message || `Scheduled task: ${name}`,
-            userId: userId || 'unknown-user',
+            userId: callerId,
           },
         });
 
