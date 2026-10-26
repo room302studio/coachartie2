@@ -9,6 +9,16 @@ import { optOut, optIn, isOptedOut } from '../../shared/privacy-opt-out.js';
  */
 const PRIVACY_URL = 'https://coachartie.tools.ejfox.com/privacy';
 
+/**
+ * Describe what happened during opt-in.
+ */
+function optInChangeStatus(changed: boolean): string {
+  if (changed) {
+    return 'was opted out';
+  }
+  return 'no-op';
+}
+
 export const optOutCommand = {
   data: new SlashCommandBuilder()
     .setName('artie-optout')
@@ -43,7 +53,7 @@ export const optInCommand = {
     .setDescription('Let Artie read and remember your messages again (undoes /artie-optout)'),
   async execute(interaction: ChatInputCommandInteraction) {
     const changed = optIn(interaction.user.id);
-    const changeStatus = changed ? 'was opted out' : 'no-op';
+    const changeStatus = optInChangeStatus(changed);
     logger.info(`🔓 Privacy opt-in: ${interaction.user.id} (${changeStatus})`);
     let replyContent: string;
     if (changed) {

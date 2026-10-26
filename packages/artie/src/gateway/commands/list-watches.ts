@@ -54,7 +54,12 @@ export const listWatchesCommand = {
     const channelOnly = interaction.options.getBoolean('channel-only') ?? false;
 
     try {
-      const watchChannelFilter = channelOnly ? interaction.channelId : undefined;
+      let watchChannelFilter: string | undefined;
+      if (channelOnly) {
+        watchChannelFilter = interaction.channelId;
+      } else {
+        watchChannelFilter = undefined;
+      }
       const watches = listGuildWatches(guildId, watchChannelFilter);
       if (watches.length === 0) {
         return interaction.reply({

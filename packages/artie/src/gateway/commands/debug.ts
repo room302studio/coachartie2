@@ -323,10 +323,12 @@ async function createErrorsEmbed(userId: string): Promise<EmbedBuilder> {
 
       let errorDetails = '';
       if (event.data?.error) {
-        errorDetails =
-          event.data.error.length > 100
-            ? event.data.error.substring(0, 100) + '...'
-            : event.data.error;
+        const error = event.data.error;
+        if (error.length > 100) {
+          errorDetails = error.substring(0, 100) + '...';
+        } else {
+          errorDetails = error;
+        }
       }
 
       embed.addFields({

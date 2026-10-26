@@ -37,6 +37,34 @@ function truncateText(text: string): string {
   return text;
 }
 
+/**
+ * Create search results embed or empty state.
+ */
+function createSearchEmbed(query: string, rows: OwnMemory[]): EmbedBuilder {
+  if (rows.length) {
+    return memoryList('🔍 Memory search', `${rows.length} match${matchesPlural(rows.length)} for "${query}"`, rows);
+  }
+  const embed = new EmbedBuilder()
+    .setTitle('🔍 Memory search')
+    .setDescription(`No memories match "${query}". Try other words, or \`/memory recent\`.`)
+    .setColor(0xffaa00);
+  return embed;
+}
+
+/**
+ * Create recent memories embed or empty state.
+ */
+function createRecentEmbed(rows: OwnMemory[]): EmbedBuilder {
+  if (rows.length) {
+    return memoryList('📚 Your recent memories', `Your ${rows.length} most recent`, rows);
+  }
+  const embed = new EmbedBuilder()
+    .setTitle('📚 Your recent memories')
+    .setDescription("I haven't saved anything about you yet. Chat with me and I will.")
+    .setColor(0xffaa00);
+  return embed;
+}
+
 /** /memory: the caller's OWN memories only, always as a private reply (services/user-memories). */
 export const memoryCommand = {
   data: new SlashCommandBuilder()
@@ -86,30 +114,18 @@ export const memoryCommand = {
           const query = interaction.options.getString('query', true);
           const limit = interaction.options.getInteger('limit') ?? 10;
           const rows = searchOwnMemories(userId, query, limit);
+          const embed = createSearchEmbed(query, rows);
           await interaction.editReply({
-            embeds: [
-              rows.length
-                ? memoryList('🔍 Memory search', `${rows.length} match${matchesPlural(rows.length)} for "${query}"`, rows)
-                : new EmbedBuilder()
-                    .setTitle('🔍 Memory search')
-                    .setDescription(`No memories match "${query}". Try other words, or \`/memory recent\`.`)
-                    .setColor(0xffaa00),
-            ],
+            embeds: [embed],
           });
           return;
         }
         case 'recent': {
           const limit = interaction.options.getInteger('limit') ?? 10;
           const rows = recentOwnMemories(userId, limit);
+          const embed = createRecentEmbed(rows);
           await interaction.editReply({
-            embeds: [
-              rows.length
-                ? memoryList('📚 Your recent memories', `Your ${rows.length} most recent`, rows)
-                : new EmbedBuilder()
-                    .setTitle('📚 Your recent memories')
-                    .setDescription("I haven't saved anything about you yet. Chat with me and I will.")
-                    .setColor(0xffaa00),
-            ],
+            embeds: [embed],
           });
           return;
         }
