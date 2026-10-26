@@ -785,12 +785,12 @@ class OpenRouterService {
           );
         }
 
-        let toolInfo = '';
+        let responseToolInfo = '';
         if (toolCalls.length) {
-          toolInfo = ` + ${toolCalls.length} tool call(s): ${toolCalls.map((t) => t.name).join(', ')}`;
+          responseToolInfo = ` + ${toolCalls.length} tool call(s): ${toolCalls.map((t) => t.name).join(', ')}`;
         }
         logger.info(
-          `✅ MODEL RESPONSE: ${model} generated ${response.length} chars${toolInfo} successfully`
+          `✅ MODEL RESPONSE: ${model} generated ${response.length} chars${responseToolInfo} successfully`
         );
 
         const responseTime = Date.now() - startTime;
