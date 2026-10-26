@@ -38,6 +38,30 @@ Also this round: CUTOVER.md's boot checks fixed (they would have false-alarmed i
 rollback), winston logs moved onto the LUKS mount (`logs/app`), 17 unused deps dropped, and
 stale dev scripts removed (one could `pkill` prod).
 
+## Prod vs. this branch (2026-10-26 end of day)
+
+**Live in prod** (HEAD 2c87a53):
+- the v3 cutover
+- the kindness prompt v9 and security reminder v3
+- the security hotfix (owner-only tools, caller identity from context, closed admin and health routes)
+
+The sandbox container is STOPPED (restart=no).
+
+**Merged here, NOT deployed** (b3dcc0a, 1302 passed / 6 skipped, lint 0):
+- **Buttons/selects in replies:** COMPONENTS-NOTES.md
+- **`/scribe` voice meeting scribe, Room 302 only:** VOICE-NOTES.md
+- **Token jar:** JAR-NOTES.md. It reuses Stripe link "The Artie Fund", `plink_1TvO5aB2X0HWOIsKzUtVUko6`.
+- **Security batch 2:** SECURITY-NOTES.md
+
+**To deploy:**
+1. Bundle, then ff-merge prod onto v3.
+2. `pnpm install --frozen-lockfile` (adds the voice deps).
+3. `pnpm --filter @coachartie/artie build`, then `pm2 restart coach-artie`.
+4. Run `packages/discord/register-commands.ts` to publish `/scribe`.
+5. Set `ARTIE_TIP_JAR_URL` and `ARTIE_TIP_JAR_PAYMENT_LINK_ID` in `.env.production`.
+
+`STRIPE_JAR_READ_KEY` arrives via `scripts/jar-key-from-clipboard.sh`, which hands it to `~/scripts/set-artie-jar-key.sh` on the VPS.
+
 ## Needs EJ (nothing below happens without a yes)
 
 1. **OpenRouter top-up.** The account balance is about $5 and drives brownout/lean mode.
