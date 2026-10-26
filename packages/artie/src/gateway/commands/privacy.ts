@@ -43,11 +43,16 @@ export const optInCommand = {
     .setDescription('Let Artie read and remember your messages again (undoes /artie-optout)'),
   async execute(interaction: ChatInputCommandInteraction) {
     const changed = optIn(interaction.user.id);
-    logger.info(`🔓 Privacy opt-in: ${interaction.user.id} (${changed ? 'was opted out' : 'no-op'})`);
+    const changeStatus = changed ? 'was opted out' : 'no-op';
+    logger.info(`🔓 Privacy opt-in: ${interaction.user.id} (${changeStatus})`);
+    let replyContent: string;
+    if (changed) {
+      replyContent = `Welcome back. Artie will read and remember your messages again. Nothing deleted earlier comes back.`;
+    } else {
+      replyContent = `You weren't opted out, so nothing changed.`;
+    }
     return interaction.reply({
-      content: changed
-        ? `Welcome back. Artie will read and remember your messages again. Nothing deleted earlier comes back.`
-        : `You weren't opted out, so nothing changed.`,
+      content: replyContent,
       flags: MessageFlags.Ephemeral,
     });
   },
