@@ -2050,7 +2050,7 @@ async function handleMorningBriefing(
     }
   } catch (error) {
     logger.error('Morning briefing error:', error);
-    return `Briefing error: ${error instanceof Error ? error.message : 'Unknown error'}`;
+    return `Briefing error: ${getErrorMessage(error)}`;
   }
 }
 
