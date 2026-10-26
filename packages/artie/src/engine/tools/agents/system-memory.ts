@@ -17,6 +17,7 @@
 
 import { logger } from '../../../shared/logger.js';
 import { getSyncDb } from '../../../shared/db/client.js';
+import { getErrorMessage } from '../../../shared/errors.js';
 import type {
   RegisteredCapability,
   CapabilityContext,
@@ -115,16 +116,32 @@ async function handleSystemMemory(
 
         const rows = db.all<Record<string, unknown>>(sql, sqlParams);
 
-        const entries: SystemMemoryEntry[] = rows.map((row) => ({
-          id: row.id as number,
-          agent: row.agent as string,
-          category: row.category as string,
-          content: row.content as string,
-          metadata: row.metadata ? JSON.parse(row.metadata as string) : {},
-          created_at: row.created_at as string,
-          expires_at: row.expires_at as string | null,
-          read_by: row.read_by ? JSON.parse(row.read_by as string) : [],
-        }));
+        const entries: SystemMemoryEntry[] = rows.map((row) => {
+          let metadata: Record<string, unknown>;
+          if (row.metadata) {
+            metadata = JSON.parse(row.metadata as string);
+          } else {
+            metadata = {};
+          }
+
+          let readBy: string[];
+          if (row.read_by) {
+            readBy = JSON.parse(row.read_by as string);
+          } else {
+            readBy = [];
+          }
+
+          return {
+            id: row.id as number,
+            agent: row.agent as string,
+            category: row.category as string,
+            content: row.content as string,
+            metadata: metadata,
+            created_at: row.created_at as string,
+            expires_at: row.expires_at as string | null,
+            read_by: readBy,
+          };
+        });
 
         return JSON.stringify({
           success: true,
@@ -140,13 +157,20 @@ async function handleSystemMemory(
           return JSON.stringify({ success: false, error: 'content required for handoff' });
         }
 
+        let targetAgent: string;
+        if (callingAgent === 'artie') {
+          targetAgent = 'vps-claude';
+        } else {
+          targetAgent = 'artie';
+        }
+
         const result = db.run(
           `INSERT INTO system_memory (agent, category, content, metadata) VALUES (?, ?, ?, ?)`,
           [
             callingAgent,
             'handoff',
             memContent,
-            JSON.stringify({ for: callingAgent === 'artie' ? 'vps-claude' : 'artie' }),
+            JSON.stringify({ for: targetAgent }),
           ]
         );
 
@@ -174,14 +198,18 @@ async function handleSystemMemory(
           created_at: row.created_at as string,
         }));
 
+        let message: string;
+        if (handoffs.length > 0) {
+          message = `${handoffs.length} handoff notes waiting`;
+        } else {
+          message = 'No pending handoffs';
+        }
+
         return JSON.stringify({
           success: true,
           count: handoffs.length,
           handoffs,
-          message:
-            handoffs.length > 0
-              ? `${handoffs.length} handoff notes waiting`
-              : 'No pending handoffs',
+          message: message,
         });
       }
 
@@ -191,15 +219,24 @@ async function handleSystemMemory(
           `SELECT * FROM system_memory ORDER BY created_at DESC LIMIT 10`
         );
 
-        const summary = rows.map((row) => ({
-          id: row.id,
-          agent: row.agent,
-          category: row.category,
-          preview:
-            (row.content as string).slice(0, 100) +
-            ((row.content as string).length > 100 ? '...' : ''),
-          created_at: row.created_at,
-        }));
+        const summary = rows.map((row) => {
+          const content = row.content as string;
+          const contentPreview = content.slice(0, 100);
+          let ellipsis: string;
+          if (content.length > 100) {
+            ellipsis = '...';
+          } else {
+            ellipsis = '';
+          }
+          const preview = contentPreview + ellipsis;
+          return {
+            id: row.id,
+            agent: row.agent,
+            category: row.category,
+            preview: preview,
+            created_at: row.created_at,
+          };
+        });
 
         return JSON.stringify({
           success: true,
@@ -217,7 +254,7 @@ async function handleSystemMemory(
     logger.error(`❌ System memory error for action '${action}':`, error);
     return JSON.stringify({
       success: false,
-      error: error instanceof Error ? error.message : String(error),
+      error: getErrorMessage(error),
     });
   }
 }
