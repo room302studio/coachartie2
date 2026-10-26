@@ -28,7 +28,10 @@ import { collapseWhitespace } from '../../shared/text.js';
 
 const num = (v: string | undefined, d: number) => {
   const n = parseInt(v || '', 10);
-  return Number.isFinite(n) && n >= 0 ? n : d;
+  if (Number.isFinite(n) && n >= 0) {
+    return n;
+  }
+  return d;
 };
 
 export interface DigestThresholds {

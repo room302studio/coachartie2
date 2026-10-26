@@ -85,7 +85,10 @@ export class BurstScheduler<T> {
  * (every message flushes on its own, still through the same code path). */
 export function burstDebounceMs(): number {
   const raw = parseInt(process.env.BURST_DEBOUNCE_MS ?? '', 10);
-  return Number.isFinite(raw) && raw >= 0 ? raw : 2500;
+  if (Number.isFinite(raw) && raw >= 0) {
+    return raw;
+  }
+  return 2500;
 }
 
 /** One burst item's renderable shape — everything needed to fold it into a combined turn. */

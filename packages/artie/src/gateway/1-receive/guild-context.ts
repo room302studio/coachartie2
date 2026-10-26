@@ -137,7 +137,12 @@ ${channelPersona.systemPrompt}
     const _ju = (message.author.username || '').toLowerCase();
     const _jd = (message.author.displayName || '').toLowerCase();
     const isJanGbg = _ju === 'jan_gbg' || _jd === 'jan_gbg';
-    const _roles = message.member ? message.member.roles.cache.map((r) => r.name.toLowerCase()) : [];
+    let _roles: string[];
+    if (message.member) {
+      _roles = message.member.roles.cache.map((r) => r.name.toLowerCase());
+    } else {
+      _roles = [];
+    }
     const isStaff =
       _ju === 'hudson' ||
       _jd === 'hudson' ||

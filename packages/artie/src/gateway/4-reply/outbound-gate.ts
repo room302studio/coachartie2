@@ -71,7 +71,12 @@ export function checkOutbound(
   // speech — still requires a coach-artie place, so the warden powers and
   // ambient presence stay contained even when the reply happens in #general.
   if (message.guildId === SUBWAY_BUILDER_GUILD_ID && !message.channel.isDMBased()) {
-    const chName = ('name' in message.channel ? message.channel.name : '') || '';
+    let chName: string;
+    if ('name' in message.channel) {
+      chName = message.channel.name || '';
+    } else {
+      chName = '';
+    }
     const isCoachArtiePlace =
       COACH_ARTIE_CHANNEL_RE.test(chName) || !!getChannelPersona(message.guildId, chName);
     const mentionedReply =
