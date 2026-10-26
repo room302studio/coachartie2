@@ -185,6 +185,11 @@ export class JobTracker {
   } {
     const jobs = Array.from(this.jobs.values());
 
+    let oldestJob: Date | undefined;
+    if (jobs.length > 0) {
+      oldestJob = new Date(Math.min(...jobs.map((j) => j.startTime.getTime())));
+    }
+
     return {
       totalJobs: jobs.length,
       pendingJobs: jobs.filter((j) => j.status === 'pending').length,
@@ -192,8 +197,7 @@ export class JobTracker {
       completedJobs: jobs.filter((j) => j.status === 'completed').length,
       failedJobs: jobs.filter((j) => j.status === 'failed').length,
       cancelledJobs: jobs.filter((j) => j.status === 'cancelled').length,
-      oldestJob:
-        jobs.length > 0 ? new Date(Math.min(...jobs.map((j) => j.startTime.getTime()))) : undefined,
+      oldestJob,
     };
   }
 
@@ -300,7 +304,10 @@ export class JobTracker {
    */
   isJobCancellable(messageId: string): boolean {
     const job = this.jobs.get(messageId);
-    return job ? job.status === 'pending' || job.status === 'processing' : false;
+    if (!job) {
+      return false;
+    }
+    return job.status === 'pending' || job.status === 'processing';
   }
 
   /**

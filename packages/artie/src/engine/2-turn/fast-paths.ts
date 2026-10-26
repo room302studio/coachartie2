@@ -25,18 +25,27 @@ export async function tryVoiceNoteFastPath(message: IncomingMessage): Promise<st
     if (channelId) {
       logger.info(`🎙️ Voice-note fast path (${voiceNote.action}) for message ${message.id}`);
       try {
-        const result = await capabilityRegistry.execute('tts', voiceNote.action, {
+        const params: Record<string, any> = {
           channelId,
           guildId,
           userId: message.userId,
-          ...(voiceNote.text ? { text: voiceNote.text } : {}),
-          ...(voiceNote.voice ? { voice: voiceNote.voice } : {}),
-        });
+        };
+        if (voiceNote.text) {
+          params.text = voiceNote.text;
+        }
+        if (voiceNote.voice) {
+          params.voice = voiceNote.voice;
+        }
+        const result = await capabilityRegistry.execute('tts', voiceNote.action, params);
         logger.info(`🎙️ Voice-note fast path result: ${result.slice(0, 120)}`);
         // The audio IS the reply. Short text ack, no [SILENT] (that would delete nothing).
-        return voiceNote.action === 'vibe_report'
-          ? '🎙️ dropping a vibe report.'
-          : '🎙️ on it.';
+        let ack: string;
+        if (voiceNote.action === 'vibe_report') {
+          ack = '🎙️ dropping a vibe report.';
+        } else {
+          ack = '🎙️ on it.';
+        }
+        return ack;
       } catch (err) {
         logger.warn(`🎙️ Voice-note fast path failed, falling back to orchestration:`, err);
         // fall through to normal orchestration

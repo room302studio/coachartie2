@@ -147,7 +147,10 @@ export const NATIVE_TOOL_RESULT_MAX_CHARS = 12_000;
 
 function toolResultText(data: unknown): string {
   if (data === undefined || data === null) return '';
-  return typeof data === 'string' ? data : JSON.stringify(data);
+  if (typeof data === 'string') {
+    return data;
+  }
+  return JSON.stringify(data);
 }
 
 /**
@@ -275,14 +278,31 @@ export async function executeNativeToolCall(
     logger.warn(`🛡️ TAINT SET: context tainted by ${context.taintSource} (native tool call)`);
   }
 
-  const successText = robust.success ? toolResultText(robust.data) : null;
-  const text =
-    successText !== null && !looksLikeToolFailure(successText)
-      ? successText
-      : `Error: ${toCallNotation(robust.success ? successText || 'the tool failed' : robust.error || 'the tool failed')}`;
-  return text.length > NATIVE_TOOL_RESULT_MAX_CHARS
-    ? `${text.slice(0, NATIVE_TOOL_RESULT_MAX_CHARS)}\n[… truncated, ${text.length - NATIVE_TOOL_RESULT_MAX_CHARS} more chars]`
-    : text;
+  let successText: string | null;
+  if (robust.success) {
+    successText = toolResultText(robust.data);
+  } else {
+    successText = null;
+  }
+  let text: string;
+  if (successText !== null && !looksLikeToolFailure(successText)) {
+    text = successText;
+  } else {
+    let errorMsg: string;
+    if (robust.success) {
+      errorMsg = successText || 'the tool failed';
+    } else {
+      errorMsg = robust.error || 'the tool failed';
+    }
+    text = `Error: ${toCallNotation(errorMsg)}`;
+  }
+  let result: string;
+  if (text.length > NATIVE_TOOL_RESULT_MAX_CHARS) {
+    result = `${text.slice(0, NATIVE_TOOL_RESULT_MAX_CHARS)}\n[… truncated, ${text.length - NATIVE_TOOL_RESULT_MAX_CHARS} more chars]`;
+  } else {
+    result = text;
+  }
+  return result;
 }
 
 /**
@@ -419,8 +439,16 @@ export class CapabilityExecutor {
           process.env.ENABLE_INTERMEDIATE_RESPONSES === 'true' && !skipIntermediate;
 
         if (skipIntermediate && process.env.ENABLE_INTERMEDIATE_RESPONSES === 'true') {
+          let skipReason: string;
+          if (isLastCapability) {
+            skipReason = 'last';
+          } else if (isWriteOperation) {
+            skipReason = 'write-op';
+          } else {
+            skipReason = 'single';
+          }
           logger.info(
-            `⚡ Skipping intermediate response for ${capability.name} (${isLastCapability ? 'last' : isWriteOperation ? 'write-op' : 'single'}) - cost savings`
+            `⚡ Skipping intermediate response for ${capability.name} (${skipReason}) - cost savings`
           );
         }
 
@@ -493,9 +521,12 @@ export class CapabilityExecutor {
           }
         } else {
           // Just stream the capability result directly without LLM processing
-          const resultSummary = result.success
-            ? `✅ ${capability.name}:${capability.action} completed`
-            : `❌ ${capability.name}:${capability.action} failed: ${result.error}`;
+          let resultSummary: string;
+          if (result.success) {
+            resultSummary = `✅ ${capability.name}:${capability.action} completed`;
+          } else {
+            resultSummary = `❌ ${capability.name}:${capability.action} failed: ${result.error}`;
+          }
           onPartialResponse(resultSummary);
         }
       } catch (_error) {
@@ -638,39 +669,49 @@ export class CapabilityExecutor {
     }
 
     // Get userId for use in both registry and legacy handlers
-    const userId = context ? context.userId : 'unknown-user';
+    let userId: string | undefined;
+    if (context !== undefined) {
+      userId = context.userId;
+    } else {
+      userId = 'unknown-user';
+    }
 
     // Build capability context from discord_context (defined outside try for metrics access)
-    const capabilityContext = context?.discord_context
-      ? {
-          guildId: context.discord_context.guildId,
-          channelId: context.discord_context.channelId,
-          userId: context.userId,
-          messageId: context.messageId,
-        }
-      : undefined;
+    let capabilityContext: Record<string, any> | undefined;
+    if (context?.discord_context) {
+      capabilityContext = {
+        guildId: context.discord_context.guildId,
+        channelId: context.discord_context.channelId,
+        userId: context.userId,
+        messageId: context.messageId,
+      };
+    }
 
     try {
       // Inject userId and messageId into params for capabilities that need context
-      const paramsWithContext = ['scheduler', 'memory', 'image_gen'].includes(capability.name)
-        ? {
-            ...capability.params,
-            userId,
-            messageId: context?.messageId,
-            // Inject guild/channel context so memories get scoped properly
-            ...(capabilityContext?.guildId && !capability.params.guildId
-              ? { guildId: capabilityContext.guildId }
-              : {}),
-            ...(capabilityContext?.channelId && !capability.params.channelId
-              ? { channelId: capabilityContext.channelId }
-              : {}),
-          }
-        : capability.name === 'meeting-scheduler'
-          ? {
-              ...capability.params,
-              discord_context: context?.discord_context,
-            }
-          : capability.params;
+      let paramsWithContext: Record<string, any>;
+      if (['scheduler', 'memory', 'image_gen'].includes(capability.name)) {
+        const contextExtensions: Record<string, any> = {};
+        if (capabilityContext?.guildId && !capability.params.guildId) {
+          contextExtensions.guildId = capabilityContext.guildId;
+        }
+        if (capabilityContext?.channelId && !capability.params.channelId) {
+          contextExtensions.channelId = capabilityContext.channelId;
+        }
+        paramsWithContext = {
+          ...capability.params,
+          userId,
+          messageId: context?.messageId,
+          ...contextExtensions,
+        };
+      } else if (capability.name === 'meeting-scheduler') {
+        paramsWithContext = {
+          ...capability.params,
+          discord_context: context?.discord_context,
+        };
+      } else {
+        paramsWithContext = capability.params;
+      }
 
       // Debug: log what we're passing to the registry
       logger.info(

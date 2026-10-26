@@ -132,8 +132,12 @@ export async function updateUserScoresFromMessage(
 
     ensureTable();
     const prev = getUserScores(userId, guildId);
-    const blend = (old: number | undefined, s: number) =>
-      prev && old !== undefined ? Math.round((ALPHA * s + (1 - ALPHA) * old) * 10) / 10 : s;
+    const blend = (old: number | undefined, s: number): number => {
+      if (prev && old !== undefined) {
+        return Math.round((ALPHA * s + (1 - ALPHA) * old) * 10) / 10;
+      }
+      return s;
+    };
 
     const next = {
       warmth: blend(prev?.warmth, sample.warmth),
@@ -159,7 +163,18 @@ export async function updateUserScoresFromMessage(
   }
 }
 
-const band = (n: number) => (n >= 67 ? 'high' : n >= 34 ? 'moderate' : 'low');
+/**
+ * Categorize a score into a band (high, moderate, or low).
+ */
+function band(n: number): 'high' | 'moderate' | 'low' {
+  if (n >= 67) {
+    return 'high';
+  }
+  if (n >= 34) {
+    return 'moderate';
+  }
+  return 'low';
+}
 
 export function formatUserScores(s: UserScores): string {
   return (

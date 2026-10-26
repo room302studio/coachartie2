@@ -210,8 +210,9 @@ export class ContextAlchemy {
     contextSources: ContextSource[];
   }> {
     if (DEBUG) {
+      const mode = options.minimal ? 'minimal' : 'full';
       logger.info(
-        `🧪 Context Alchemy: user=${userId}, mode=${options.minimal ? 'minimal' : 'full'}, msg_len=${userMessage.length}`
+        `🧪 Context Alchemy: user=${userId}, mode=${mode}, msg_len=${userMessage.length}`
       );
     }
 
@@ -270,6 +271,13 @@ export class ContextAlchemy {
       }
 
       // 3. Assemble message context (beautiful, readable pattern)
+      let messageContext: Record<string, any> | undefined;
+      if (options.discordContext) {
+        messageContext = options.discordContext;
+      } else if (options.channelId) {
+        messageContext = { channelId: options.channelId };
+      }
+
       const mockMessage: IncomingMessage = {
         message: userMessage,
         userId,
@@ -278,9 +286,7 @@ export class ContextAlchemy {
         respondTo: { type: 'api' },
         timestamp: new Date(),
         retryCount: 0,
-        context:
-          options.discordContext ||
-          (options.channelId ? { channelId: options.channelId } : undefined),
+        context: messageContext,
       };
       const contextSources = await this.assembleMessageContext(
         mockMessage,
@@ -338,10 +344,12 @@ export class ContextAlchemy {
     if (DEBUG) {
       logger.info('🧪 CONTEXT SOURCES:');
       selectedContext.forEach((ctx) => {
-        const percentage =
-          totalContextTokens > 0
-            ? ((ctx.tokenWeight / totalContextTokens) * 100).toFixed(1)
-            : '0.0';
+        let percentage: string;
+        if (totalContextTokens > 0) {
+          percentage = ((ctx.tokenWeight / totalContextTokens) * 100).toFixed(1);
+        } else {
+          percentage = '0.0';
+        }
         logger.info(
           `  ${ctx.name.padEnd(22)}: ${percentage.padStart(5)}% (${ctx.tokenWeight.toString().padStart(4)} tokens, pri:${ctx.priority})`
         );
@@ -360,7 +368,12 @@ export class ContextAlchemy {
       const rulesSource = selectedContext.find((s) => s.name === 'learned_rules');
 
       // Count memories (rough estimate from token count, ~50 tokens per memory)
-      const memoriesCount = memoriesSource ? Math.ceil(memoriesSource.tokenWeight / 50) : 0;
+      let memoriesCount: number;
+      if (memoriesSource) {
+        memoriesCount = Math.ceil(memoriesSource.tokenWeight / 50);
+      } else {
+        memoriesCount = 0;
+      }
 
       // Count rules by parsing the content
       let rulesCount = 0;
@@ -368,7 +381,9 @@ export class ContextAlchemy {
       if (rulesSource) {
         // Count bullet points as rules
         const bulletMatches = rulesSource.content.match(/^[•\-]/gm);
-        rulesCount = bulletMatches ? bulletMatches.length : 0;
+        if (bulletMatches) {
+          rulesCount = bulletMatches.length;
+        }
       }
 
       await traceManager.updateTrace(options.traceId, {
@@ -619,7 +634,12 @@ Important:
         if (row.asked?.trim()) history.push({ role: 'user', content: row.asked });
         // Sanitize assistant messages to break poisoned patterns; a turn that
         // sanitizes to nothing (pure [SILENT]/scaffolding) is dropped entirely.
-        const reply = row.reply ? sanitizeAssistantMessage(row.reply) : '';
+        let reply: string;
+        if (row.reply) {
+          reply = sanitizeAssistantMessage(row.reply);
+        } else {
+          reply = '';
+        }
         if (reply.trim()) history.push({ role: 'assistant', content: reply });
       }
 
@@ -670,14 +690,24 @@ Important:
     // User info
     if (ctx.displayName || ctx.username) {
       const displayName = ctx.displayName || ctx.username;
-      const _roleList = Array.isArray((ctx as any).roles) ? (ctx as any).roles.filter(Boolean) : [];
-      const _roleSuffix = _roleList.length ? ` — roles: ${_roleList.join(", ")}` : "";
+      let _roleList: any[] = [];
+      if (Array.isArray((ctx as any).roles)) {
+        _roleList = (ctx as any).roles.filter(Boolean);
+      }
+      let _roleSuffix: string;
+      if (_roleList.length) {
+        _roleSuffix = ` — roles: ${_roleList.join(", ")}`;
+      } else {
+        _roleSuffix = "";
+      }
       // Include the username when it differs so the speaker maps unambiguously onto
       // channel-history labels ("Display (@username)") — Artie was mixing people up
-      const _unameSuffix =
-        ctx.username && ctx.username.toLowerCase() !== String(displayName).toLowerCase()
-          ? ` (@${ctx.username})`
-          : '';
+      let _unameSuffix: string;
+      if (ctx.username && ctx.username.toLowerCase() !== String(displayName).toLowerCase()) {
+        _unameSuffix = ` (@${ctx.username})`;
+      } else {
+        _unameSuffix = '';
+      }
       parts.push(
         `👤 Talking to: @${displayName}${_unameSuffix}${_roleSuffix} — this is the ONE person you are replying to; do not attribute other people's messages from the history to them.`
       );
@@ -1131,9 +1161,13 @@ Important:
     // User message - wrapped in XML to mark as untrusted input
     // Label the CURRENT speaker inline so Artie never mis-attributes who just spoke
     // (history turns are also name-prefixed; without this he'd guess a name from history).
-    finalUserParts.push(`<user_message source="discord_or_external"${
-      authorName ? ` from="@${authorName}"` : ''
-    }>
+    let authorAttribute: string;
+    if (authorName) {
+      authorAttribute = ` from="@${authorName}"`;
+    } else {
+      authorAttribute = '';
+    }
+    finalUserParts.push(`<user_message source="discord_or_external"${authorAttribute}>
 ${userMessage}
 </user_message>`);
 

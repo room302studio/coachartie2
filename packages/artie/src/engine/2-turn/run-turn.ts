@@ -30,6 +30,16 @@ import { traceManager } from './trace.js';
 import { sessionManager } from './session-log.js';
 import { OrchestrationContext } from './types.js';
 
+/**
+ * Format a tool execution result status.
+ */
+function formatResultStatus(success: boolean): string {
+  if (success) {
+    return 'OK';
+  }
+  return 'FAIL';
+}
+
 export async function processMessage(
   message: IncomingMessage,
   onPartialResponse?: (partial: string) => void
@@ -92,6 +102,11 @@ export async function processMessage(
       const { promptManager } = await import('../3-context/system-prompt.js');
 
       const baseSystemPrompt = await promptManager.getCapabilityInstructions(message.message);
+      let discordContext: Record<string, any> | undefined;
+      if (message.context?.platform === 'discord' || message.context?.guildKnowledge) {
+        discordContext = message.context;
+      }
+
       const { messages } = await contextAlchemy.buildMessageChain(
         message.message,
         message.userId,
@@ -101,22 +116,22 @@ export async function processMessage(
           source: message.source,
           // Pass full Discord context for guild knowledge, proactive answering, etc.
           // Discord uses source: 'message', check for platform or guildKnowledge in context
-          discordContext:
-            message.context?.platform === 'discord' || message.context?.guildKnowledge
-              ? message.context
-              : undefined,
+          discordContext,
         }
       );
 
       // Use streaming if callback provided, otherwise regular generation
-      const aiResponse = onPartialResponse
-        ? await openRouterService.generateFromMessageChainStreaming(
-            messages,
-            message.userId,
-            onPartialResponse,
-            message.id
-          )
-        : await openRouterService.generateFromMessageChain(messages, message.userId, message.id);
+      let aiResponse: string;
+      if (onPartialResponse) {
+        aiResponse = await openRouterService.generateFromMessageChainStreaming(
+          messages,
+          message.userId,
+          onPartialResponse,
+          message.id
+        );
+      } else {
+        aiResponse = await openRouterService.generateFromMessageChain(messages, message.userId, message.id);
+      }
 
       logger.info(`Generated simple AI response for user ${message.userId}`);
       return aiResponse;
@@ -348,7 +363,13 @@ export class CapabilityOrchestrator {
     const { response: llmResponse, wantsLoop } =
       llmResponseCoordinator.extractLoopDecision(initialLLMResponse);
 
-    logger.info(`🎯 Bot loop decision: ${wantsLoop ? '✅ WANTS LOOP' : '❌ NO LOOP NEEDED'}`);
+    let loopDecision: string;
+    if (wantsLoop) {
+      loopDecision = '✅ WANTS LOOP';
+    } else {
+      loopDecision = '❌ NO LOOP NEEDED';
+    }
+    logger.info(`🎯 Bot loop decision: ${loopDecision}`);
 
     // If the bot doesn't want to loop, return the response directly
     if (!wantsLoop) {
@@ -545,12 +566,13 @@ export class CapabilityOrchestrator {
     }
 
     // Anything else: keep the full diagnostic detail in the logs, say nothing publicly.
+    const resultsStr = context.results.map((r) => `${r.capability.name}:${formatResultStatus(r.success)}`).join(', ');
     logger.error(
       `🚨 Orchestration failure (suppressed from channel) for message ${message.id}\n` +
         `  user=${message.userId} source=${message.source} msg="${message.message}"\n` +
         `  error=${errorMessage}\n` +
         `  capabilities=[${context.capabilities.map((c) => `${c.name}:${c.action}`).join(', ')}]\n` +
-        `  results=[${context.results.map((r) => `${r.capability.name}:${r.success ? 'OK' : 'FAIL'}`).join(', ')}]\n` +
+        `  results=[${resultsStr}]\n` +
         `  step=${context.currentStep} registry=${capabilityRegistry.getStats().totalCapabilities}cap/${capabilityRegistry.getStats().totalActions}act\n` +
         `  stack=${getErrorStack(error)}`
     );

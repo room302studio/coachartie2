@@ -16,6 +16,29 @@ const reply = <T = any>(status: number, body: T): ApiResult<T> => ({ status, bod
 
 const router: Router = Router();
 
+/**
+ * Map source string to canonical source type.
+ */
+function getMessageSource(source: string): 'discord' | 'slack' | 'api' {
+  if (source === 'discord') {
+    return 'discord';
+  }
+  if (source === 'slack') {
+    return 'slack';
+  }
+  return 'api';
+}
+
+/**
+ * Calculate processing time in milliseconds.
+ */
+function calculateProcessingTime(startTime: Date, endTime: Date | undefined): number {
+  if (endTime) {
+    return endTime.getTime() - startTime.getTime();
+  }
+  return Date.now() - startTime.getTime();
+}
+
 export interface ChatRequest {
   message: string;
   userId?: string;
@@ -191,11 +214,17 @@ export function watchTurn(
 
   // If already complete, send result and close
   if (job.status === 'completed' || job.status === 'failed' || job.status === 'cancelled') {
+    let processingTime: number;
+    if (job.endTime) {
+      processingTime = job.endTime.getTime() - job.startTime.getTime();
+    } else {
+      processingTime = 0;
+    }
     sendEvent('complete', {
       status: job.status,
       response: job.result,
       error: job.error,
-      processingTime: job.endTime ? job.endTime.getTime() - job.startTime.getTime() : 0,
+      processingTime,
     });
     end();
     return false;
@@ -220,13 +249,17 @@ export function watchTurn(
       currentJob.status === 'failed' ||
       currentJob.status === 'cancelled'
     ) {
+      let processingTime: number;
+      if (currentJob.endTime) {
+        processingTime = currentJob.endTime.getTime() - currentJob.startTime.getTime();
+      } else {
+        processingTime = 0;
+      }
       sendEvent('complete', {
         status: currentJob.status,
         response: currentJob.result,
         error: currentJob.error,
-        processingTime: currentJob.endTime
-          ? currentJob.endTime.getTime() - currentJob.startTime.getTime()
-          : 0,
+        processingTime,
       });
       end();
       return;
@@ -314,7 +347,7 @@ export async function submitTurn(
       message: message?.substring(0, 100),
       userId,
       source,
-      contextKeys: context ? Object.keys(context) : [],
+      contextKeys: Object.keys(context || {}),
       contextPlatform: context?.platform,
       hasGuildKnowledge: !!context?.guildKnowledge,
       isProactiveAnswer: context?.isProactiveAnswer,
@@ -357,7 +390,7 @@ export async function submitTurn(
     logger.info(`Processing chat message from ${userId}: ${message.substring(0, 100)}...`);
 
     // Create message object for processing
-    const messageSource = source === 'discord' ? 'discord' : source === 'slack' ? 'slack' : 'api';
+    const messageSource = getMessageSource(source);
     const incomingMessage: IncomingMessage = {
       id: messageId,
       timestamp: new Date(),
@@ -508,9 +541,7 @@ export function getTurn(params: { messageId?: string }): ApiResult {
     }
 
     // Calculate processing time
-    const processingTime = job.endTime
-      ? job.endTime.getTime() - job.startTime.getTime()
-      : Date.now() - job.startTime.getTime();
+    const processingTime = calculateProcessingTime(job.startTime, job.endTime);
 
     const response: ChatResponse = {
       success: true,
