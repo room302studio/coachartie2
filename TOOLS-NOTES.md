@@ -3,8 +3,8 @@
 Branch `v3-tools`, off `v3`. Scope: the bot's own three asks — collapse the memory zoo, prune/
 consolidate tools (hello-world, stripe/email approval), and make tool failures loud to the
 model instead of swallowed. Bench: `/data2/tmp/artie-v3-tools` on the VPS. Final state:
-`pnpm typecheck` clean, `pnpm test` **1019 passed / 6 skipped** (baseline before this work was
-985 passed / 6 skipped — net +34 tests, 0 regressions, 0 failures).
+`pnpm typecheck` clean, `pnpm test` **1020 passed / 6 skipped** (baseline before this work was
+985 passed / 6 skipped — net +35 tests, 0 regressions, 0 failures).
 
 ## 1. The memory zoo: what unified, what didn't, and why
 
