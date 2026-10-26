@@ -182,7 +182,15 @@ async function createModal(params: DiscordUIParams, content?: string): Promise<s
     modal: modalJson,
     title,
     inputCount: inputs.length,
-  })}:I built a modal ("${title}", ${inputs.length} field${inputs.length === 1 ? '' : 's'}), but modals can only open in direct response to a button, select menu, or slash command interaction — it can't appear on a plain chat reply like this one, so nothing will actually pop up for you here.`;
+  })}:I built a modal ("${title}", ${inputs.length} field${pluralSuffix(inputs.length)}), but modals can only open in direct response to a button, select menu, or slash command interaction — it can't appear on a plain chat reply like this one, so nothing will actually pop up for you here.`;
+}
+
+/** 's' unless count is exactly 1. No ternaries (ESLint no-ternary). */
+function pluralSuffix(count: number): string {
+  if (count === 1) {
+    return '';
+  }
+  return 's';
 }
 
 // Discord hard limits for buttons: 5 action rows per message, 5 buttons per row.
@@ -205,8 +213,18 @@ function sanitizeButtons(raw: any[]): SanitizedButton[] {
   for (const btn of raw) {
     if (!btn || typeof btn.label !== 'string' || !btn.label.trim()) continue;
     const label = btn.label.trim().slice(0, MAX_BUTTON_LABEL_LEN);
-    const styleRaw = typeof btn.style === 'string' ? btn.style.toLowerCase() : 'secondary';
-    const style = ALLOWED_BUTTON_STYLES.has(styleRaw) ? styleRaw : 'secondary';
+    let styleRaw: string;
+    if (typeof btn.style === 'string') {
+      styleRaw = btn.style.toLowerCase();
+    } else {
+      styleRaw = 'secondary';
+    }
+    let style: string;
+    if (ALLOWED_BUTTON_STYLES.has(styleRaw)) {
+      style = styleRaw;
+    } else {
+      style = 'secondary';
+    }
 
     if (style === 'link') {
       // Link buttons carry a URL, never a custom_id, and only ever an http(s) URL.
@@ -332,7 +350,7 @@ async function createButtons(
     count: buttons.length,
   });
 
-  return `${buttons.length} button${buttons.length === 1 ? '' : 's'} will appear under your reply: ${labels}`;
+  return `${buttons.length} button${pluralSuffix(buttons.length)} will appear under your reply: ${labels}`;
 }
 
 interface SanitizedOption {
@@ -439,7 +457,7 @@ async function createSelectMenu(
     optionCount: options.length,
   });
 
-  return `A dropdown with ${options.length} option${options.length === 1 ? '' : 's'} will appear under your reply: ${options.map((o) => o.label).join(', ')}`;
+  return `A dropdown with ${options.length} option${pluralSuffix(options.length)} will appear under your reply: ${options.map((o) => o.label).join(', ')}`;
 }
 
 async function createContextMenu(params: DiscordUIParams, _content?: string): Promise<string> {

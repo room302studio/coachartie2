@@ -146,10 +146,12 @@ export async function handleComponentClick(
 
   const check = checkClickCap(messageId, userId);
   if (!check.allowed) {
-    const content =
-      check.reason === 'duplicate'
-        ? "Already got your pick on this one."
-        : "That one's closed out — too many clicks already.";
+    let content: string;
+    if (check.reason === 'duplicate') {
+      content = 'Already got your pick on this one.';
+    } else {
+      content = "That one's closed out — too many clicks already.";
+    }
     await interaction.reply({ content, flags: MessageFlags.Ephemeral }).catch(() => {});
     return;
   }
@@ -173,6 +175,13 @@ export async function handleComponentClick(
 
   await interaction.deferReply();
 
+  let componentType: 'button' | 'select';
+  if (interaction.isButton()) {
+    componentType = 'button';
+  } else {
+    componentType = 'select';
+  }
+
   await processUserIntent({
     content: clickContent,
     userId,
@@ -180,7 +189,7 @@ export async function handleComponentClick(
     source: 'button',
     metadata: {
       customId: interaction.customId,
-      componentType: interaction.isButton() ? 'button' : 'select',
+      componentType,
     },
     // Same shape a normal message gets (top-level guildId/channelId), so guild-scoped
     // memory and last-time rules still apply instead of falling back to owner-only defaults.
