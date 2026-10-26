@@ -189,6 +189,19 @@ Keep it short, keep it unhinged, keep it warm underneath.`,
 };
 
 /**
+ * Guilds where /scribe (voice meeting scribe) may run at all. EJ, 2026-10-26: "on the Room
+ * 302 Studio he's approved" — every other guild, Subway Builder included, gets a polite
+ * refusal. A single exported constant, so adding a guild later is a one-line change here
+ * (and nowhere else — gateway/commands/scribe.ts and gateway/voice/scribe-session.ts both
+ * check isScribeAllowedGuild() rather than hardcoding an id).
+ */
+export const SCRIBE_ALLOWED_GUILD_IDS: readonly string[] = [GUILD_CONFIGS.room_302_studio.id];
+
+export function isScribeAllowedGuild(guildId: string | null | undefined): boolean {
+  return !!guildId && SCRIBE_ALLOWED_GUILD_IDS.includes(guildId);
+}
+
+/**
  * Check if a guild is whitelisted for processing
  */
 export function isGuildWhitelisted(guildId: string | null): boolean {
