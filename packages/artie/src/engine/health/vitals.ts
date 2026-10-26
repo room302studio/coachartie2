@@ -206,10 +206,12 @@ export class VitalsMonitor {
       // Falls back to the constant when there is too little traffic to measure.
       const { costMonitor } = await import('../budget/usage-ledger.js');
       const measured = costMonitor.getRecentBurnPerHour();
-      const burn =
-        typeof measured === 'number' && measured > 0
-          ? measured
-          : envNum('VITALS_ASSUMED_BURN_PER_HOUR', 1.5);
+      let burn: number;
+      if (typeof measured === 'number' && measured > 0) {
+        burn = measured;
+      } else {
+        burn = envNum('VITALS_ASSUMED_BURN_PER_HOUR', 1.5);
+      }
       return balance / burn;
     } catch (error) {
       logger.warn(`🩺 Vitals: runway check failed: ${error}`);
