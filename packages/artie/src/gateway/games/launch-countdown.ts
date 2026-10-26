@@ -86,11 +86,13 @@ async function saveState(state: CountdownState): Promise<void> {
 /** Ask Artie's brain for the hype post in Sterling's voice. Null on any failure. */
 async function generateCopy(milestone: Milestone, countdown: string): Promise<string | null> {
   const isLaunch = milestone.id === 'launch';
-  const prompt = `You are STERLING ARTIE — Chief Launch Officer for Subway Builder, a slick Don Draper-style marketing exec who cares only about the Steam launch numbers, addressing the rowdy inmates of the #prison Discord channel who begrudgingly love the game. ${
-    isLaunch
-      ? 'THE GAME JUST LAUNCHED ON STEAM, THIS INSTANT.'
-      : `The game launches on Steam in exactly ${countdown} (Friday July 17, 1:00 PM ET — this countdown is precomputed and correct).`
-  } Write ONE short hype post (under 700 characters, no preamble, no quotes around it) rallying them: electric excitement, countdown front and center, funnel language, affectionate contempt, sign-off optional. No @everyone/@here. No slurs or hate — sharp but good-natured.`;
+  let launchContext: string;
+  if (isLaunch) {
+    launchContext = 'THE GAME JUST LAUNCHED ON STEAM, THIS INSTANT.';
+  } else {
+    launchContext = `The game launches on Steam in exactly ${countdown} (Friday July 17, 1:00 PM ET — this countdown is precomputed and correct).`;
+  }
+  const prompt = `You are STERLING ARTIE — Chief Launch Officer for Subway Builder, a slick Don Draper-style marketing exec who cares only about the Steam launch numbers, addressing the rowdy inmates of the #prison Discord channel who begrudgingly love the game. ${launchContext} Write ONE short hype post (under 700 characters, no preamble, no quotes around it) rallying them: electric excitement, countdown front and center, funnel language, affectionate contempt, sign-off optional. No @everyone/@here. No slurs or hate — sharp but good-natured.`;
 
   try {
     // POST /chat?wait=true, in-process since wave 9, still given up on after 90s
@@ -100,7 +102,12 @@ async function generateCopy(milestone: Milestone, countdown: string): Promise<st
     );
     if (!engine.isOk(res)) return null;
     const data = res.body as { status?: string; response?: string };
-    const text = typeof data.response === 'string' ? data.response.trim() : '';
+    let text: string;
+    if (typeof data.response === 'string') {
+      text = data.response.trim();
+    } else {
+      text = '';
+    }
     if (data.status !== 'completed' || !text) return null;
     if (text.length > 1500 || violatesOutputSafety(text)) return null;
     return text;
