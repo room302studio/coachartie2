@@ -95,9 +95,10 @@ export async function addLearnedRules(
     const systemRules = await reflectionConsolidator.getActiveRules('system');
 
     // Get guild-specific rules if in a guild context
-    const guildRules = guildId
-      ? await reflectionConsolidator.getActiveRules('guild', guildId)
-      : [];
+    let guildRules: any[] = [];
+    if (guildId) {
+      guildRules = await reflectionConsolidator.getActiveRules('guild', guildId);
+    }
 
     const allRules = [...systemRules, ...guildRules];
 

@@ -104,20 +104,25 @@ export class MemoryRecaller implements MemoryEntourageInterface {
       const budget = this.tokenBudget(options.maxTokens);
       const candidates = await this.fetchCandidates(userId, options.guildId);
 
-      const semantic =
-        candidates.length > 0
-          ? this.semanticLayer(
-              userMessage,
-              candidates,
-              options.priority,
-              budget.semantic,
-              options.participants
-            )
-          : empty(['no_memories']);
-      const temporal =
-        candidates.length > 0
-          ? this.temporalLayer(userMessage, candidates, options.priority, budget.temporal)
-          : empty(['no_memories']);
+      let semantic: MemoryEntourageResult;
+      if (candidates.length > 0) {
+        semantic = this.semanticLayer(
+          userMessage,
+          candidates,
+          options.priority,
+          budget.semantic,
+          options.participants
+        );
+      } else {
+        semantic = empty(['no_memories']);
+      }
+
+      let temporal: MemoryEntourageResult;
+      if (candidates.length > 0) {
+        temporal = this.temporalLayer(userMessage, candidates, options.priority, budget.temporal);
+      } else {
+        temporal = empty(['no_memories']);
+      }
 
       return this.fuse(semantic, temporal);
     } catch (error) {
