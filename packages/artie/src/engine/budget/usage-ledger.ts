@@ -198,10 +198,12 @@ export class UsageTracker {
       // Cache hit rate is logged at INFO deliberately: DEBUG is off in production, and a
       // silently-zero cache is the failure mode that costs money without raising anything.
       const cachedTok = stats.cached_tokens ?? 0;
-      const cacheNote =
-        stats.prompt_tokens > 0
-          ? ` - cache ${cachedTok}/${stats.prompt_tokens} (${Math.round((cachedTok / stats.prompt_tokens) * 100)}%)`
-          : '';
+      let cacheNote: string;
+      if (stats.prompt_tokens > 0) {
+        cacheNote = ` - cache ${cachedTok}/${stats.prompt_tokens} (${Math.round((cachedTok / stats.prompt_tokens) * 100)}%)`;
+      } else {
+        cacheNote = '';
+      }
       logger.info(
         `📊 Usage recorded: ${stats.model_name} - ${stats.total_tokens} tokens${cacheNote} - $${stats.estimated_cost.toFixed(4)}`
       );
@@ -515,10 +517,12 @@ class CostMonitor {
     this.totalCachedTokens += Math.min(Math.max(cachedTokens, 0), inputTokens);
     this.totalCalls++;
 
-    const estimatedCost =
-      reportedCost !== undefined && Number.isFinite(reportedCost)
-        ? reportedCost
-        : this.calculateCost(inputTokens, outputTokens, cachedTokens, model);
+    let estimatedCost: number;
+    if (reportedCost !== undefined && Number.isFinite(reportedCost)) {
+      estimatedCost = reportedCost;
+    } else {
+      estimatedCost = this.calculateCost(inputTokens, outputTokens, cachedTokens, model);
+    }
     this.totalCost += estimatedCost;
 
     const now = Date.now();
