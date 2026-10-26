@@ -262,7 +262,8 @@ show, and diff the `rg` output above against your actual `.env.production` names
   `logs/coach-artie-out-*.log` / `logs/coach-artie-error-*.log`. The old jobs can stay pointed
   at the old files until those files stop growing (nothing deletes them), then be removed.
 
-**Check:** `tail -f logs/coach-artie-out.log` shows the boot log and then live traffic.
+**Check:** `tail -f logs/app/coachartie-combined.log` shows the boot log and then live traffic.
+(`logs/coach-artie-out.log` only gets warn and above, because CONSOLE_LOG_LEVEL=warn.)
 **Rollback:** n/a — this is config, covered by step 4's rollback.
 
 ---
