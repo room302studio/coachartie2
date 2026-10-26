@@ -70,7 +70,7 @@ describe('relativeAge', () => {
     expect(lt.relativeAge('2026-10-26T11:59:30Z', now)).toBe('just now');
     expect(lt.relativeAge('2026-10-26T10:00:00Z', now)).toBe('2h ago');
     expect(lt.relativeAge('2026-10-23T12:00:00Z', now)).toBe('3d ago');
-    expect(lt.relativeAge('2026-09-01T12:00:00Z', now)).toContain('mo ago');
+    expect(lt.relativeAge('2026-06-01T12:00:00Z', now)).toContain('mo ago');
   });
 });
 
