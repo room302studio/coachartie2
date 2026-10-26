@@ -362,10 +362,13 @@ interface SanitizedOption {
 /** Validate + clamp a raw options array, dropping entries that can't be a real option. */
 function sanitizeOptions(raw: any[]): SanitizedOption[] {
   const out: SanitizedOption[] = [];
+  const seenValues = new Set<string>(); // Discord rejects a select with duplicate option values
   for (const opt of raw) {
     if (!opt || typeof opt.label !== 'string' || !opt.label.trim()) continue;
     const label = opt.label.trim().slice(0, 100);
     const value = String(opt.value ?? opt.label).slice(0, 100);
+    if (seenValues.has(value)) continue;
+    seenValues.add(value);
     let description: string | undefined;
     if (typeof opt.description === 'string' && opt.description.trim()) {
       description = opt.description.slice(0, 100);

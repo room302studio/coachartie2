@@ -17,6 +17,7 @@ import { logger } from '../../shared/logger.js';
 export type PendingComponentRow = Record<string, unknown>;
 
 const TTL_MS = 10 * 60 * 1000; // 10 minutes — can't leak past a turn's realistic lifetime
+const MAX_ROWS_PER_TURN = 5; // Discord's hard limit: 5 action rows per message
 
 interface Entry {
   rows: PendingComponentRow[];
@@ -34,13 +35,28 @@ function pruneExpired(now: number): void {
   }
 }
 
-/** Queue action rows for a turn. Overwrites any rows already queued for the same turn. */
+/**
+ * Queue action rows for a turn. APPENDS to any rows already queued for the same turn (e.g. the
+ * model calls discord-ui buttons, then select, in the same reply) and clamps the combined total
+ * to Discord's 5-action-row-per-message limit — extra rows from the latest call are dropped.
+ */
 export function addPendingComponents(turnId: string, rows: PendingComponentRow[]): void {
   if (!turnId || rows.length === 0) return;
   const now = Date.now();
   pruneExpired(now);
-  pendingComponents.set(turnId, { rows, expiresAt: now + TTL_MS });
-  logger.info(`🔘 Queued ${rows.length} component row(s) for turn ${turnId.slice(-8)}`);
+
+  const existing = pendingComponents.get(turnId);
+  let combined: PendingComponentRow[];
+  if (existing && existing.expiresAt > now) {
+    combined = [...existing.rows, ...rows].slice(0, MAX_ROWS_PER_TURN);
+  } else {
+    combined = rows.slice(0, MAX_ROWS_PER_TURN);
+  }
+
+  pendingComponents.set(turnId, { rows: combined, expiresAt: now + TTL_MS });
+  logger.info(
+    `🔘 Queued component row(s) for turn ${turnId.slice(-8)}: +${rows.length}, now ${combined.length} total`
+  );
 }
 
 /** Take (and clear) the rows queued for a turn. Returns [] if none, or if they expired. */

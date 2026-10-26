@@ -5,6 +5,7 @@ import {
   recordClick,
   resetClickCountersForTests,
   buildClickTurnText,
+  clickRefusal,
 } from '../../src/gateway/1-receive/on-component-click.js';
 
 describe('parseArtieCustomId', () => {
@@ -71,6 +72,40 @@ describe('component click caps', () => {
   it('checkClickCap alone (without recordClick) does not consume the cap', () => {
     expect(checkClickCap('msg-peek', 'user-a')).toEqual({ allowed: true });
     expect(checkClickCap('msg-peek', 'user-a')).toEqual({ allowed: true }); // still allowed, never recorded
+  });
+});
+
+describe('clickRefusal', () => {
+  it('proceeds (null) when brownout is normal and the click is allowed', () => {
+    expect(clickRefusal('normal', { allowed: true })).toBeNull();
+  });
+
+  it('proceeds (null) when brownout is lean and the click is allowed — lean only tapers reply length, not clicks', () => {
+    expect(clickRefusal('lean', { allowed: true })).toBeNull();
+  });
+
+  it('refuses every click under critical brownout, even with cap room (brownout wins over the cap)', () => {
+    expect(clickRefusal('critical', { allowed: true })).toBe('Running lean right now — @ me instead.');
+  });
+
+  it('a duplicate click is refused under normal brownout', () => {
+    expect(clickRefusal('normal', { allowed: false, reason: 'duplicate' })).toBe(
+      'Already got your pick on this one.'
+    );
+  });
+
+  it('a capped-out message is refused under normal brownout', () => {
+    expect(clickRefusal('normal', { allowed: false, reason: 'cap' })).toBe(
+      "That one's closed out — too many clicks already."
+    );
+  });
+
+  it('critical brownout text wins even when the check itself would also refuse', () => {
+    // Same ephemeral either way is fine, but brownout's text is what actually sends —
+    // confirms the precedence, not just two independently-correct branches.
+    expect(clickRefusal('critical', { allowed: false, reason: 'cap' })).toBe(
+      'Running lean right now — @ me instead.'
+    );
   });
 });
 

@@ -36,6 +36,22 @@ describe('pending-components store', () => {
     expect(takePendingComponents('turn-b')).toEqual([rowB]);
   });
 
+  it('a second addPendingComponents for the same turn APPENDS, not overwrites', () => {
+    const rowA: PendingComponentRow = { type: 1, components: [{ type: 2, label: 'A' }] };
+    const rowB: PendingComponentRow = { type: 1, components: [{ type: 2, label: 'B' }] };
+    addPendingComponents('turn-append', [rowA]);
+    addPendingComponents('turn-append', [rowB]);
+    expect(takePendingComponents('turn-append')).toEqual([rowA, rowB]);
+  });
+
+  it('clamps the combined total to 5 rows (Discord\'s per-message limit)', () => {
+    const rows = (n: number): PendingComponentRow[] =>
+      Array.from({ length: n }, (_, i) => ({ type: 1, components: [{ type: 2, label: `r${i}` }] }));
+    addPendingComponents('turn-clamp', rows(3));
+    addPendingComponents('turn-clamp', rows(4)); // 3 + 4 = 7, clamp to 5
+    expect(takePendingComponents('turn-clamp')).toHaveLength(5);
+  });
+
   it('ignores an empty rows array (nothing to queue)', () => {
     addPendingComponents('turn-empty', []);
     expect(takePendingComponents('turn-empty')).toEqual([]);

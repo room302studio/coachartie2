@@ -17,7 +17,9 @@ gateway takes it once after the final reply and delivers it.
    `addPendingComponents(turnId, rows)` / `takePendingComponents(turnId)`, 10-minute TTL.
    Keyed by **turn id** (`CapabilityContext.messageId`, which is the same uuid the gateway holds
    as `jobInfo.messageId` from `submitJob`) — NOT by userId, so two turns from the same person
-   never cross.
+   never cross. A second call for the same turn (e.g. the model calls `buttons` then `select` in
+   one reply) **appends** rather than overwrites, clamped to Discord's 5-action-row-per-message
+   limit — extra rows from the later call are dropped.
 
 2. **`packages/artie/src/engine/tools/discord/ui.ts`** — `buttons` and `select` actions:
    - When `context.messageId` (a turn id) is present: validate + clamp the payload, build the
@@ -47,7 +49,9 @@ gateway takes it once after the final reply and delivers it.
    - `brownoutStatus()` → the current `BrownoutStatus` (mode/runway), for the click cap below.
 
 4. **`packages/artie/src/gateway/3-ask-engine/engine-client.ts`** — `getPendingComponents(turnId)`
-   and `getBrownoutMode()`, mirroring `getPendingAttachments`.
+   and `getBrownoutMode()`, mirroring `getPendingAttachments`. `on-component-click.ts` goes
+   through `capabilitiesClient.getBrownoutMode()` rather than calling `engine.brownoutStatus()`
+   directly, matching how every other gateway caller reaches the engine.
 
 5. **`packages/artie/src/gateway/4-reply/stream-reply.ts`** — right after the existing pending-
    attachments block (post-completion, same `onComplete` handler): if `intent.attachComponents`
@@ -55,10 +59,15 @@ gateway takes it once after the final reply and delivers it.
    Wrapped in its own try/catch — an attach failure never takes down the already-delivered text
    reply, just a `logger.warn`.
 
-6. **`packages/artie/src/gateway/4-reply/discord-reply.ts`** — new `attachComponents` hook:
-   edits the turn's `streamingMessage` (the closure already tracks "the last message Artie sent
-   for this turn") with `{ components }`; if there's no editable message (e.g. the whole reply
-   stayed `[SILENT]`), sends a small follow-up message carrying just the components instead.
+6. **`packages/artie/src/gateway/4-reply/discord-reply.ts`** — new `attachComponents` hook.
+   `streamingMessage` (pre-existing) is always the FIRST chunk of the reply — `editResponse`/
+   `deleteResponse` need that. A second tracking ref, `lastSentMessage`, was added and is updated
+   on every `message.reply`/`channel.send` inside `respond`, so `attachComponents` edits the
+   actual **last** message the turn sent (falling back to `streamingMessage` if, somehow,
+   nothing ever updated it). This matters for a >2000-char reply: chunk 0 goes out via
+   `message.reply`, the rest via `channel.send`, and buttons on chunk 0 would sit above trailing
+   text otherwise. If there's no editable message at all (e.g. the whole reply stayed
+   `[SILENT]`), sends a small follow-up message carrying just the components instead.
 
 7. **`packages/artie/src/gateway/1-receive/on-component-click.ts`** (new) — the click loopback:
    - `parseArtieCustomId` recognizes only `artie:<turnId>:<index>`; anything else (quiz, daily,
@@ -70,13 +79,20 @@ gateway takes it once after the final reply and delivers it.
        pick on this one.").
      - `ARTIE_BUTTON_CLICK_CAP` total click-turns per message (default **8**); past it, an
        ephemeral "That one's closed out — too many clicks already." No LLM call either way.
-   - Brownout `critical` (via the new `engine.brownoutStatus()` seam): ephemeral "Running lean
-     right now — @ me instead." — no LLM call.
+   - Brownout `critical` (via the new `engine.brownoutStatus()` seam, through
+     `capabilitiesClient.getBrownoutMode()`): ephemeral "Running lean right now — @ me
+     instead." — no LLM call. The combined decision (brownout wins over the cap) is the pure,
+     exported `clickRefusal(brownoutMode, check)` — testable without a live brownout lookup or
+     a real interaction.
    - On a genuine, allowed click: defers, then calls `processUserIntent` as the **clicker's own
      turn** (`source: 'button'`), with `context: { platform: 'discord', guildId, channelId }` so
      guild-scoped memory/last-time rules apply instead of owner-only defaults (the existing
      `handleButtonInteraction` for other custom-id families doesn't set this — worth fixing
-     there too, left alone here since it's out of this task's scope).
+     there too, left alone here since it's out of this task's scope). The intent also carries
+     `attachComponents` (edits the deferred reply via `interaction.editReply({ components })`),
+     so a click's own reply can chain further buttons/select menus — not integration-tested here
+     (would need mocking the whole submit/poll job pipeline), but code-reviewed against the same
+     `ActionRowBuilder.from()` pattern used everywhere else.
    - The click's content, built by `buildClickTurnText`:
      `[button] <displayName> picked "<label>" on your message "<first 80 chars>" (<n>s after you posted)`
      — label comes straight from `interaction.component.label` (button) or the matched select
@@ -137,3 +153,13 @@ NEW   tests/gateway/on-component-click.test.ts
   than the original reply) — clicks on that follow-up get their own independent cap bucket. This
   seems like the right behavior (it's a distinct message) but is worth confirming against how
   often the follow-up path actually fires in practice.
+- Confirmed, not assumed: `engine/proactive/delivery.ts` pushes straight to the
+  `OUTGOING_DISCORD` queue (`this.discordQueue`) without running the turn through
+  `submitTurn`/the capability registry at all, so proactive content never gets a
+  `CapabilityContext.messageId` and the `discord-ui` tool's no-turn-id (legacy `DISCORD_UI:`)
+  branch is genuinely the only path that content can take — not a guess.
+- `parseArtieCustomId` is exported and unit-tested but `handleComponentClick` doesn't actually
+  call it — routing off `customId.startsWith('artie:')` and caps off `interaction.message.id`
+  are enough. Fine for phase 1; the turn id encoded in the custom_id isn't load-bearing anywhere
+  yet (it would matter if a future phase needed to recover which turn originally queued a row
+  from the click alone).

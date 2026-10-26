@@ -4,11 +4,11 @@
  * burning the budget: one click-turn per user per message, a total cap per message
  * (ARTIE_BUTTON_CLICK_CAP, default 8), and a brownout cutoff (critical → no LLM call at all).
  */
-import { MessageFlags, ButtonInteraction, SelectMenuInteraction } from 'discord.js';
+import { MessageFlags, ButtonInteraction, SelectMenuInteraction, ActionRowBuilder } from 'discord.js';
 import { logger } from '../../shared/logger.js';
 import { isBlockedUser } from '../../shared/blocklist.js';
 import { processUserIntent } from '../4-reply/stream-reply.js';
-import * as engine from '../../engine/api.js';
+import { capabilitiesClient } from '../3-ask-engine/engine-client.js';
 
 /** `artie:<shortTurnId>:<index>` — the only shape discord-ui ever builds server-side. */
 export function parseArtieCustomId(customId: string): { turnId: string; index: number } | null {
@@ -83,6 +83,24 @@ export function resetClickCountersForTests(): void {
   clickCounters.clear();
 }
 
+/**
+ * The combined refusal decision — pure, so every branch is testable without a live brownout
+ * lookup or a real interaction. Brownout wins over the cap: under `critical` nobody gets a
+ * click-turn, cap-room or not. Returns the ephemeral text to send, or null to proceed.
+ */
+export function clickRefusal(brownoutMode: string, check: ClickCheck): string | null {
+  if (brownoutMode === 'critical') {
+    return 'Running lean right now — @ me instead.';
+  }
+  if (!check.allowed) {
+    if (check.reason === 'duplicate') {
+      return 'Already got your pick on this one.';
+    }
+    return "That one's closed out — too many clicks already.";
+  }
+  return null;
+}
+
 // ---------------------------------------------------------------------------
 // The click → turn text, and the handler itself.
 // ---------------------------------------------------------------------------
@@ -129,30 +147,17 @@ export async function handleComponentClick(
     return;
   }
 
+  let brownoutMode = 'normal';
   try {
-    const brownout = await engine.brownoutStatus();
-    if (engine.isOk(brownout) && (brownout.body as { mode?: string })?.mode === 'critical') {
-      await interaction
-        .reply({
-          content: "Running lean right now — @ me instead.",
-          flags: MessageFlags.Ephemeral,
-        })
-        .catch(() => {});
-      return;
-    }
+    brownoutMode = (await capabilitiesClient.getBrownoutMode()).mode;
   } catch (error) {
     logger.warn('Component click: brownout check failed, proceeding:', error);
   }
 
   const check = checkClickCap(messageId, userId);
-  if (!check.allowed) {
-    let content: string;
-    if (check.reason === 'duplicate') {
-      content = 'Already got your pick on this one.';
-    } else {
-      content = "That one's closed out — too many clicks already.";
-    }
-    await interaction.reply({ content, flags: MessageFlags.Ephemeral }).catch(() => {});
+  const refusal = clickRefusal(brownoutMode, check);
+  if (refusal) {
+    await interaction.reply({ content: refusal, flags: MessageFlags.Ephemeral }).catch(() => {});
     return;
   }
   recordClick(messageId, userId);
@@ -205,6 +210,17 @@ export async function handleComponentClick(
 
     updateProgress: async (status: string) => {
       await interaction.editReply(status);
+    },
+
+    // So a click's reply can itself carry buttons (e.g. "Yes" → "Great, which one? [A] [B]").
+    // editReply on a deferred reply preserves whatever content was already set.
+    attachComponents: async (rows: Array<Record<string, unknown>>) => {
+      try {
+        const actionRows = rows.map((row) => ActionRowBuilder.from(row as any));
+        await interaction.editReply({ components: actionRows as any });
+      } catch (error) {
+        logger.warn('Failed to attach components to click reply:', error);
+      }
     },
   });
 }
