@@ -1,3 +1,4 @@
+import { getErrorMessage } from '../../../shared/errors.js';
 /**
  * Goals Capability - Artie's Persistent Objectives
  *
@@ -410,7 +411,7 @@ async function handleGoals(
         return `Unknown goals action: ${action}. Try: create, list, status, progress, achieve, abandon, subgoal, history, delete`;
     }
   } catch (err) {
-    const msg = err instanceof Error ? err.message : 'Unknown error';
+    const msg = getErrorMessage(err);
     logger.error('Goals error:', err);
     return `Goals error: ${msg}`;
   }

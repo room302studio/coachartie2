@@ -1,3 +1,4 @@
+import { getErrorMessage } from '../../../shared/errors.js';
 import { logger } from '../../../shared/logger.js';
 import { RegisteredCapability } from '../../5-tool-loop/registry.js';
 
@@ -97,9 +98,7 @@ export const httpCapability: RegisteredCapability = {
       return result;
     } catch (error) {
       logger.error(`❌ HTTP request failed:`, error);
-      throw new Error(
-        `HTTP request to ${url} failed: ${error instanceof Error ? error.message : String(error)}`
-      );
+      throw new Error(`HTTP request to ${url} failed: ${getErrorMessage(error)}`);
     }
   },
 };
