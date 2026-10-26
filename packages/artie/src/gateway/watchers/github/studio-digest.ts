@@ -15,6 +15,41 @@ import { logger } from '../../../shared/logger.js';
 import { getDb, eq } from '../../../shared/db/client.js';
 import { githubRepoWatches, githubIdentityMappings } from '../../../shared/db/schema.js';
 
+function pluralS(count: number): string {
+  if (count > 1) {
+    return 's';
+  }
+  return '';
+}
+
+function formatLabels(labels: any[]): string {
+  if (labels.length > 0) {
+    return ` \`${labels.join('` `')}\``;
+  }
+  return '';
+}
+
+function getAgeString(ageHours: number): string {
+  if (ageHours < 24) {
+    return `${ageHours}h`;
+  }
+  return `${Math.round(ageHours / 24)}d`;
+}
+
+function getETOffset(isDST: boolean): number {
+  if (isDST) {
+    return 4;
+  }
+  return 5;
+}
+
+function extractLabelName(label: any): string {
+  if (typeof label === 'string') {
+    return label;
+  }
+  return label.name;
+}
+
 interface RepoDigest {
   repo: string;
   channelId: string;
@@ -83,7 +118,7 @@ export class GitHubStudioManager {
     // Simple ET offset (handles EST/EDT approximately)
     const month = date.getUTCMonth();
     const isDST = month >= 2 && month <= 10; // March-November
-    const offset = isDST ? 4 : 5;
+    const offset = getETOffset(isDST);
     return (date.getUTCHours() - offset + 24) % 24;
   }
 
@@ -224,7 +259,7 @@ export class GitHubStudioManager {
           number: i.number,
           title: i.title,
           author: i.user?.login || 'unknown',
-          labels: i.labels?.map((l: any) => typeof l === 'string' ? l : l.name) || [],
+          labels: (i.labels?.map((l: any) => extractLabelName(l))) || [],
         }));
     } catch (error) {
       logger.debug(`Failed to fetch issues for ${watch.repo}:`, error);
@@ -238,7 +273,10 @@ export class GitHubStudioManager {
       digest.openIssues.recent.length > 0 ||
       digest.draftPrs.length > 0;
 
-    return hasContent ? digest : null;
+    if (hasContent) {
+      return digest;
+    }
+    return null;
   }
 
   private async postDigestToChannel(digest: RepoDigest): Promise<void> {
@@ -272,7 +310,7 @@ export class GitHubStudioManager {
       const authorMentions = await Promise.all(commitAuthors.map(mention));
 
       if (digest.recentMerges.length > 0) {
-        parts.push(`**Shipped yesterday:** ${digest.recentMerges.length} PR${digest.recentMerges.length > 1 ? 's' : ''} merged`);
+        parts.push(`**Shipped yesterday:** ${digest.recentMerges.length} PR${pluralS(digest.recentMerges.length)} merged`);
         for (const pr of digest.recentMerges) {
           parts.push(`  → [#${pr.number}](https://github.com/${digest.repo}/pull/${pr.number}) ${pr.title}`);
         }
@@ -288,7 +326,7 @@ export class GitHubStudioManager {
       parts.push(`\n**Waiting for review:**`);
       for (const pr of digest.prsNeedingReview) {
         const reviewerMentions = await Promise.all(pr.reviewers.map(mention));
-        const ageStr = pr.age < 24 ? `${pr.age}h` : `${Math.round(pr.age / 24)}d`;
+        const ageStr = getAgeString(pr.age);
         parts.push(`  → [#${pr.number}](${pr.url}) ${pr.title} (${ageStr} old, needs ${reviewerMentions.join(', ')})`);
       }
     }
@@ -304,7 +342,7 @@ export class GitHubStudioManager {
 
     // Draft PRs (lighter touch)
     if (digest.draftPrs.length > 0) {
-      parts.push(`\n**In progress** (${digest.draftPrs.length} draft${digest.draftPrs.length > 1 ? 's' : ''}):`);
+      parts.push(`\n**In progress** (${digest.draftPrs.length} draft${pluralS(digest.draftPrs.length)}):`);
       for (const pr of digest.draftPrs) {
         parts.push(`  → [#${pr.number}](${pr.url}) ${pr.title} — ${pr.author}`);
       }
@@ -321,7 +359,7 @@ export class GitHubStudioManager {
       if (digest.openIssues.recent.length > 0) {
         parts.push(`New this week:`);
         for (const issue of digest.openIssues.recent) {
-          const labels = issue.labels.length > 0 ? ` \`${issue.labels.join('` `')}\`` : '';
+          const labels = formatLabels(issue.labels);
           parts.push(`  → [#${issue.number}](https://github.com/${digest.repo}/issues/${issue.number}) ${issue.title}${labels}`);
         }
       }

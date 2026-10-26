@@ -64,12 +64,29 @@ export function pickLandedMessages(
     .slice(-limit);
 }
 
+function formatEntryLine(e: ChannelActivityEntry): string {
+  let toClause = '';
+  if (e.toLabel) {
+    toClause = ` (to ${e.toLabel})`;
+  }
+  let contentClause = '';
+  if (e.content) {
+    contentClause = `: "${e.content.slice(0, 60)}"`;
+  }
+  return `${e.authorLabel}${toClause}${contentClause}`;
+}
+
+function pluralMessages(count: number): string {
+  if (count === 1) {
+    return '';
+  }
+  return 's';
+}
+
 /** Render pickLandedMessages() output as the one-line note that goes in discordContext. */
 export function formatLandedNote(landed: ChannelActivityEntry[]): string | undefined {
   if (landed.length === 0) return undefined;
-  const parts = landed.map(
-    (e) =>
-      `${e.authorLabel}${e.toLabel ? ` (to ${e.toLabel})` : ''}${e.content ? `: "${e.content.slice(0, 60)}"` : ''}`
-  );
-  return `While you were composing this reply, ${landed.length} more message${landed.length === 1 ? '' : 's'} landed in this channel, in arrival order — ${parts.join('; ')}. You may be answering a question that's already moved on; adjust if so. Lines marked (to X) are people talking to each other, not to you.`;
+  const parts = landed.map(formatEntryLine);
+  const pluralS = pluralMessages(landed.length);
+  return `While you were composing this reply, ${landed.length} more message${pluralS} landed in this channel, in arrival order — ${parts.join('; ')}. You may be answering a question that's already moved on; adjust if so. Lines marked (to X) are people talking to each other, not to you.`;
 }

@@ -8,6 +8,88 @@ import { Message, EmbedBuilder } from 'discord.js';
 import { logger } from '../../shared/logger.js';
 import type { getGitHubIntegrationSafe } from '../watchers/github/issue-sync.js';
 
+interface PRInfo {
+  state: string;
+  mergedAt?: string | null;
+  isDraft?: boolean;
+}
+
+function getPRStateEmoji(prInfo: PRInfo): string {
+  if (prInfo.state === 'open') {
+    return '🟢';
+  }
+  if (prInfo.mergedAt) {
+    return '🟣';
+  }
+  return '🔴';
+}
+
+function getPRStateText(prInfo: PRInfo): string {
+  if (prInfo.state === 'open') {
+    return 'Open';
+  }
+  if (prInfo.mergedAt) {
+    return 'Merged';
+  }
+  return 'Closed';
+}
+
+function getPRColor(prInfo: PRInfo): number {
+  if (prInfo.state === 'open') {
+    return 0x2ea44f;
+  }
+  if (prInfo.mergedAt) {
+    return 0x6f42c1;
+  }
+  return 0xcb2431;
+}
+
+function getDraftSuffix(isDraft: boolean | undefined): string {
+  if (isDraft) {
+    return ' (Draft)';
+  }
+  return '';
+}
+
+function getChannelName(channel: any): string {
+  if ('name' in channel) {
+    return channel.name;
+  }
+  return 'unknown';
+}
+
+function appendAttachmentInfo(content: string, attachmentInfo: string): string {
+  if (content) {
+    return `${content}\n${attachmentInfo}`;
+  }
+  return attachmentInfo;
+}
+
+interface IssueInfo {
+  state: string;
+}
+
+function getIssueStateEmoji(issueInfo: IssueInfo): string {
+  if (issueInfo.state === 'open') {
+    return '🟢';
+  }
+  return '🔴';
+}
+
+function getIssueStateText(issueInfo: IssueInfo): string {
+  if (issueInfo.state === 'open') {
+    return 'Open';
+  }
+  return 'Closed';
+}
+
+function getIssueColor(issueInfo: IssueInfo): number {
+  if (issueInfo.state === 'open') {
+    return 0x2ea44f;
+  }
+  return 0xcb2431;
+}
+
 /**
  * Auto-expand GitHub URLs in messages (only in working guilds)
  * Returns true if expansion was performed
@@ -99,12 +181,11 @@ export async function handleGitHubAutoExpansion(
             detected.number!
           );
           if (prInfo) {
-            const stateEmoji = prInfo.state === 'open' ? '🟢' : prInfo.mergedAt ? '🟣' : '🔴';
-            const stateText =
-              prInfo.state === 'open' ? 'Open' : prInfo.mergedAt ? 'Merged' : 'Closed';
+            const stateEmoji = getPRStateEmoji(prInfo);
+            const stateText = getPRStateText(prInfo);
 
             const embed = new EmbedBuilder()
-              .setColor(prInfo.state === 'open' ? 0x2ea44f : prInfo.mergedAt ? 0x6f42c1 : 0xcb2431)
+              .setColor(getPRColor(prInfo))
               .setTitle(`${stateEmoji} PR #${prInfo.number}: ${prInfo.title}`)
               .setURL(prInfo.url)
               .setDescription(prInfo.body?.slice(0, 200) || 'No description provided');
@@ -112,7 +193,7 @@ export async function handleGitHubAutoExpansion(
             const fields = [
               {
                 name: 'Status',
-                value: `${stateText}${prInfo.isDraft ? ' (Draft)' : ''}`,
+                value: `${stateText}${getDraftSuffix(prInfo.isDraft)}`,
                 inline: true,
               },
               {
@@ -152,11 +233,11 @@ export async function handleGitHubAutoExpansion(
             detected.number!
           );
           if (issueInfo) {
-            const stateEmoji = issueInfo.state === 'open' ? '🟢' : '🔴';
-            const stateText = issueInfo.state === 'open' ? 'Open' : 'Closed';
+            const stateEmoji = getIssueStateEmoji(issueInfo);
+            const stateText = getIssueStateText(issueInfo);
 
             const embed = new EmbedBuilder()
-              .setColor(issueInfo.state === 'open' ? 0x2ea44f : 0xcb2431)
+              .setColor(getIssueColor(issueInfo))
               .setTitle(`${stateEmoji} Issue #${issueInfo.number}: ${issueInfo.title}`)
               .setURL(issueInfo.url)
               .setDescription(issueInfo.body?.slice(0, 200) || 'No description provided');
@@ -260,7 +341,7 @@ export async function resolveDiscordMessageLinks(
       const referencedMessage = await (channel as any).messages.fetch(messageId);
       if (!referencedMessage) continue;
 
-      const channelName = 'name' in channel ? channel.name : 'unknown';
+      const channelName = getChannelName(channel);
 
       // Build content including attachments
       let content = referencedMessage.content || '';
@@ -268,7 +349,7 @@ export async function resolveDiscordMessageLinks(
         const attachmentInfo = referencedMessage.attachments
           .map((att: any) => `[Attachment: ${att.name}]`)
           .join(', ');
-        content += content ? `\n${attachmentInfo}` : attachmentInfo;
+        content = appendAttachmentInfo(content, attachmentInfo);
       }
 
       resolved.push({

@@ -9,6 +9,20 @@ import { violatesOutputSafety } from '../4-reply/output-safety.js';
 // Own Chance instance (seedless RNG — behaviorally identical to any other).
 const chance = new Chance();
 
+function getSafeDisplay(display: string): string {
+  if (violatesOutputSafety(display)) {
+    return '[name hidden]';
+  }
+  return display;
+}
+
+function getSafeUsername(uname: string): string {
+  if (violatesOutputSafety(uname)) {
+    return 'hidden';
+  }
+  return uname;
+}
+
 const MIN_CHANNEL_HISTORY = 10; // Minimum messages to fetch
 export const MAX_CHANNEL_HISTORY = 25; // Maximum messages to fetch
 
@@ -90,11 +104,14 @@ export function resolveAddressing(
     const target = window.get(refId);
     const repliedUser = msg.mentions.repliedUser; // populated even without MessageContent
     const targetAuthorId = target?.author.id ?? repliedUser?.id;
-    const targetAuthorName = target
-      ? target.author.displayName || target.author.username
-      : repliedUser
-        ? repliedUser.displayName || repliedUser.username
-        : undefined;
+    let targetAuthorName: string | undefined;
+    if (target) {
+      targetAuthorName = target.author.displayName || target.author.username;
+    } else if (repliedUser) {
+      targetAuthorName = repliedUser.displayName || repliedUser.username;
+    } else {
+      targetAuthorName = undefined;
+    }
     if (targetAuthorName && !isBlockedUser(targetAuthorId ?? '')) {
       out.replyToAuthor = targetAuthorName;
       out.replyToIsSelf = targetAuthorId === botId;
@@ -118,7 +135,12 @@ export function resolveAddressing(
 
   // "This message was for someone else": a reply or @-mention naming a human who isn't
   // Artie, with no mention of Artie anywhere in the same line.
-  const mentionsBot = botId ? msg.mentions.has(botId) : false;
+  let mentionsBot: boolean;
+  if (botId) {
+    mentionsBot = msg.mentions.has(botId);
+  } else {
+    mentionsBot = false;
+  }
   const replyTargetsOther = out.replyToAuthor !== undefined && !out.replyToIsSelf;
   const mentionsOther = (out.mentions?.length ?? 0) > 0;
   if (!mentionsBot && (replyTargetsOther || mentionsOther)) {
@@ -172,10 +194,15 @@ export async function fetchChannelHistory(
         const display = msg.author.displayName || msg.author.username;
         const uname = msg.author.username;
         const roles = msg.member?.roles?.cache; // cached only — no extra fetch in the hot path
-        const isStaff = roles ? roles.some((r) => isStaffRole(r.name)) : false;
+        let isStaff: boolean;
+        if (roles) {
+          isStaff = roles.some((r) => isStaffRole(r.name));
+        } else {
+          isStaff = false;
+        }
 
-        const safeDisplay = violatesOutputSafety(display) ? '[name hidden]' : display;
-        const safeUname = violatesOutputSafety(uname) ? 'hidden' : uname;
+        const safeDisplay = getSafeDisplay(display);
+        const safeUname = getSafeUsername(uname);
         let label = safeDisplay;
         if (safeUname && safeUname.toLowerCase() !== safeDisplay.toLowerCase()) {
           label += ` (@${safeUname})`;
@@ -196,7 +223,13 @@ export async function fetchChannelHistory(
             .filter(Boolean)
             .join(' | ')
             .slice(0, 600);
-          if (embedText) content = content ? `${content}\n[embed] ${embedText}` : `[embed] ${embedText}`;
+          if (embedText) {
+            if (content) {
+              content = `${content}\n[embed] ${embedText}`;
+            } else {
+              content = `[embed] ${embedText}`;
+            }
+          }
         }
 
         const addressing = resolveAddressing(msg, messages, message.client.user?.id);

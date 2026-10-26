@@ -17,6 +17,7 @@ import {
 } from 'discord.js';
 import { delay } from '../../shared/async.js';
 import { logger } from '../../shared/logger.js';
+import { getErrorMessage, getErrorStackOrUndefined } from '../../shared/errors.js';
 import { chunkMessage } from '../4-reply/chunks.js';
 import { isBlockedUser } from '../../shared/blocklist.js';
 import { telemetry } from '../telemetry.js';
@@ -27,6 +28,40 @@ import { recordReaction } from './reaction-log.js';
 // Import capabilities client for trace feedback correlation
 import { capabilitiesClient } from '../3-ask-engine/engine-client.js';
 import * as engine from '../../engine/api.js';
+
+function getGuildInfo(guild: any): any {
+  if (guild) {
+    return {
+      guildId: guild.id,
+      guildName: guild.name,
+      memberCount: guild.memberCount,
+    };
+  }
+  return null;
+}
+
+function getChannelNameValue(channel: any): string {
+  if ('name' in channel) {
+    return channel.name;
+  }
+  return 'DM';
+}
+
+function getSendTypingFunction(channel: any): any {
+  if ('sendTyping' in channel) {
+    return async () => {
+      await (channel as any).sendTyping();
+    };
+  }
+  return undefined;
+}
+
+function buildFeedbackNote(sentiment: string, emoji: string, guildName: string, channelName: string, messageSnippet: string): string {
+  if (sentiment === 'positive') {
+    return `community feedback: ${emoji} reaction to my response in ${guildName} #${channelName}. response was: "${messageSnippet}..." - this response style works well here`;
+  }
+  return `community feedback: ${emoji} reaction (negative) to my response in ${guildName} #${channelName}. response was: "${messageSnippet}..." - should avoid this response style`;
+}
 import { replaceMention } from '../../shared/mentions.js';
 
 // Reaction trigger emojis
@@ -253,14 +288,14 @@ export function setupReactionHandler(client: Client) {
       } catch (error) {
         logger.error(`Error handling reaction [${shortId}]:`, {
           correlationId,
-          error: error instanceof Error ? error.message : String(error),
-          stack: error instanceof Error ? error.stack : undefined,
+          error: getErrorMessage(error),
+          stack: getErrorStackOrUndefined(error),
         });
 
         telemetry.logEvent(
           'reaction_error',
           {
-            error: error instanceof Error ? error.message : String(error),
+            error: getErrorMessage(error),
           },
           correlationId,
           user.id,
@@ -356,18 +391,13 @@ async function handleRegenerateReaction(
     const cleanMessage = replaceMention(originalMessage.content, reaction.message.client.user?.id, '').trim();
 
     // Gather Discord context
-    const guildInfo = botMessage.guild
-      ? {
-          guildId: botMessage.guild.id,
-          guildName: botMessage.guild.name,
-          memberCount: botMessage.guild.memberCount,
-        }
-      : null;
+    const guildInfo = getGuildInfo(botMessage.guild);
 
+    const channelNameValue = getChannelNameValue(botMessage.channel);
     const channelInfo = {
       channelId: botMessage.channelId,
       channelType: botMessage.channel.type,
-      channelName: 'name' in botMessage.channel ? botMessage.channel.name : 'DM',
+      channelName: channelNameValue,
     };
 
     const userInfo = {
@@ -426,12 +456,7 @@ async function handleRegenerateReaction(
           telemetry.incrementResponsesDelivered(user.id, chunks.length);
         },
 
-        sendTyping:
-          'sendTyping' in botMessage.channel
-            ? async () => {
-                await (botMessage.channel as any).sendTyping();
-              }
-            : undefined,
+        sendTyping: getSendTypingFunction(botMessage.channel),
 
         addReaction: async (emoji: string) => {
           try {
@@ -483,7 +508,7 @@ async function handleRegenerateReaction(
     telemetry.logEvent(
       'reaction_regenerate_failed',
       {
-        error: error instanceof Error ? error.message : String(error),
+        error: getErrorMessage(error),
       },
       correlationId,
       user.id,
@@ -541,25 +566,33 @@ async function handleFeedbackReaction(
   // Store memory about this feedback for learning
   try {
     const messageSnippet = reaction.message.content?.substring(0, 150) || 'unknown message';
-    const channelName =
-      ('name' in reaction.message.channel ? reaction.message.channel.name : null) || 'DM';
+    let channelName: string | null;
+    if ('name' in reaction.message.channel) {
+      channelName = reaction.message.channel.name;
+    } else {
+      channelName = null;
+    }
+    channelName = channelName || 'DM';
     const guildName = reaction.message.guild?.name || 'unknown';
     const guildId = reaction.message.guildId;
 
     // Build a more actionable reflection note
-    const feedbackNote =
-      sentiment === 'positive'
-        ? `community feedback: ${emoji} reaction to my response in ${guildName} #${channelName}. response was: "${messageSnippet}..." - this response style works well here`
-        : `community feedback: ${emoji} reaction (negative) to my response in ${guildName} #${channelName}. response was: "${messageSnippet}..." - should avoid this response style`;
+    const feedbackNote = buildFeedbackNote(sentiment, emoji, guildName, channelName, messageSnippet);
 
     // Use direct memory endpoint for proper storage with guild scope (wave 9: in-process,
     // was POST :47324/capabilities/registry/memory/execute; same handler)
+    let importance: number;
+    if (sentiment === 'negative') {
+      importance = 5; // Negative feedback is more important to learn from
+    } else {
+      importance = 3;
+    }
     const response = await engine.executeTool('memory', {
       action: 'remember',
       params: {
         content: feedbackNote,
         userId: 'reaction-feedback-system',
-        importance: sentiment === 'negative' ? 5 : 3, // Negative feedback is more important to learn from
+        importance,
         tags: ['community', 'feedback', sentiment, 'response-style', channelName.toLowerCase()],
         guildId: guildId, // Store with guild scope so it's recalled in that guild
       },
