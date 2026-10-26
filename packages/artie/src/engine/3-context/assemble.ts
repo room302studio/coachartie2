@@ -48,6 +48,7 @@ import {
 import { getBrownoutMode } from '../budget/brownout.js';
 import { getDailyBudgetUsd } from '../budget/daily-cap.js';
 import { recentHiccups, selfMeterLine } from '../budget/self-meter.js';
+import { getLastTimeFacts, lastTimeLine } from './sources/last-time.js';
 
 // Guild ID to context path mapping (mirrors Discord guild-whitelist.ts)
 const GUILD_CONTEXT_PATHS: Record<string, string> = {
@@ -685,6 +686,20 @@ Important:
       parts.push(
         `👤 Talking to: @${displayName}${_unameSuffix}${_roleSuffix} — this is the ONE person you are replying to; do not attribute other people's messages from the history to them.`
       );
+
+      // "Last time" callback — Artie asked for this: not personality numbers, just when
+      // he last talked to this person (in THIS guild) and roughly what about, plus any
+      // open task/goal of theirs. No extra LLM call; skipped entirely with no prior
+      // history. See engine/3-context/sources/last-time.ts.
+      try {
+        const lastTimeFacts = getLastTimeFacts(message.userId, {
+          guildId: ctx.guildId,
+          channelId: ctx.channelId,
+        });
+        if (lastTimeFacts) parts.push(lastTimeLine(lastTimeFacts));
+      } catch (error) {
+        logger.warn('⏱️ Last-time line unavailable for this reply', error);
+      }
     }
 
     // Forum thread context (if applicable)
