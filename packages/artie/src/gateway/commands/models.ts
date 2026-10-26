@@ -2,6 +2,66 @@ import { MessageFlags, ChatInputCommandInteraction, SlashCommandBuilder, EmbedBu
 import { logger } from '../../shared/logger.js';
 import * as engine from '../../engine/api.js';
 
+/**
+ * Status icon for active/inactive model.
+ */
+function statusIcon(active: boolean): string {
+  if (active) return '🟢';
+  return '⚪';
+}
+
+/**
+ * Cost format for model.
+ */
+function costFormat(isFree: boolean, cost: any): string {
+  if (isFree) return 'Free';
+  return cost;
+}
+
+/**
+ * Context format for model.
+ */
+function contextFormat(ctx: any): string {
+  if (typeof ctx === 'number') {
+    return `${(ctx / 1000).toFixed(0)}K`;
+  }
+  return ctx;
+}
+
+/**
+ * Truncate list with count.
+ */
+function truncateWithCount(list: string, actual: number, limit: number): string {
+  if (actual > limit) {
+    return list + `\n...and ${actual - limit} more`;
+  }
+  return list;
+}
+
+/**
+ * Format active model status.
+ */
+function activeStatus(isActive: boolean): string {
+  if (isActive) return '🟢 Currently Active';
+  return '⚪ Available';
+}
+
+/**
+ * Format cost info.
+ */
+function formatCost(isFree: boolean, input: any, output: any): string {
+  if (isFree) return '🆓 Free';
+  return `💰 ${input}/1K input, ${output}/1K output`;
+}
+
+/**
+ * Get color for model status.
+ */
+function modelColor(isActive: boolean): number {
+  if (isActive) return 0x00ff00;
+  return 0x3498db;
+}
+
 export const modelsCommand = {
   data: new SlashCommandBuilder()
     .setName('models')
@@ -149,21 +209,18 @@ async function createModelsListEmbed(): Promise<EmbedBuilder> {
       .slice(0, 3)
       .map((model: any) => {
         // Max 3 models per provider
-        const status = model.isActive ? '🟢' : '⚪';
-        const cost = model.isFree ? 'Free' : model.inputCostPer1K;
-        const context =
-          typeof model.contextLength === 'number'
-            ? `${(model.contextLength / 1000).toFixed(0)}K`
-            : model.contextLength;
+        const status = statusIcon(model.isActive);
+        const cost = costFormat(model.isFree, model.inputCostPer1K);
+        const context = contextFormat(model.contextLength);
 
         return `${status} **${model.name}** | ${cost} | ${context} ctx`;
       })
       .join('\n');
 
+    const fieldValue = truncateWithCount(modelList, providerModels.length, 3);
     embed.addFields({
       name: `${providerIcon} ${provider.toUpperCase()} (${providerModels.length})`,
-      value:
-        modelList + (providerModels.length > 3 ? `\n...and ${providerModels.length - 3} more` : ''),
+      value: fieldValue,
       inline: true,
     });
   });
@@ -212,14 +269,14 @@ async function createModelDetailEmbed(modelQuery: string): Promise<EmbedBuilder>
         .map((m: any) => `\`${m.name}\``)
         .join(', ');
 
+      const modelListValue = truncateWithCount(availableModels, models.length, 10);
       const embed = new EmbedBuilder()
         .setTitle('❌ Model Not Found')
         .setDescription(`Could not find model matching "${modelQuery}"`)
         .setColor(0xff0000)
         .addFields({
           name: '💡 Available Models',
-          value:
-            availableModels + (models.length > 10 ? `\n...and ${models.length - 10} more` : ''),
+          value: modelListValue,
           inline: false,
         })
         .addFields({
@@ -232,15 +289,13 @@ async function createModelDetailEmbed(modelQuery: string): Promise<EmbedBuilder>
     }
 
     // Create detailed embed with live OpenRouter data
-    const statusEmoji = matchingModel.isActive ? '🟢 Currently Active' : '⚪ Available';
-    const costInfo = matchingModel.isFree
-      ? '🆓 Free'
-      : `💰 ${matchingModel.inputCostPer1K}/1K input, ${matchingModel.outputCostPer1K}/1K output`;
+    const statusEmoji = activeStatus(matchingModel.isActive);
+    const costInfo = formatCost(matchingModel.isFree, matchingModel.inputCostPer1K, matchingModel.outputCostPer1K);
 
     const embed = new EmbedBuilder()
       .setTitle(`🤖 ${matchingModel.displayName}`)
       .setDescription(`**${statusEmoji}**\n\n${matchingModel.description}`)
-      .setColor(matchingModel.isActive ? 0x00ff00 : 0x3498db)
+      .setColor(modelColor(matchingModel.isActive))
       .addFields(
         {
           name: '🏢 Provider',
@@ -254,10 +309,7 @@ async function createModelDetailEmbed(modelQuery: string): Promise<EmbedBuilder>
         },
         {
           name: '📄 Context Length',
-          value:
-            typeof matchingModel.contextLength === 'number'
-              ? `${matchingModel.contextLength.toLocaleString()} tokens`
-              : matchingModel.contextLength.toString(),
+          value: contextFormat(matchingModel.contextLength),
           inline: true,
         }
       );
