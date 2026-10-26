@@ -75,13 +75,15 @@ describe('approval gate: gated calls are blocked, not run', () => {
     expect(ungated).not.toContain("needs EJ's approval");
   });
 
-  it('http POST is gated; http GET is not', async () => {
+  // http is owner-only now (owner-only.ts), so a non-owner never reaches the gate; the owner
+  // still gets gated on writes.
+  it('http POST is gated for the owner; http GET is not', async () => {
     const gatedPost = await capabilityRegistry.execute(
       'http',
       'post',
       { url: 'https://example.com', body: {} },
       undefined,
-      { userId: NOT_OWNER }
+      { userId: OWNER_USER_ID }
     );
     expect(gatedPost).toContain("needs EJ's approval");
 
@@ -94,7 +96,7 @@ describe('approval gate: gated calls are blocked, not run', () => {
         'get',
         { url: 'https://example.invalid/does-not-matter' },
         undefined,
-        { userId: NOT_OWNER }
+        { userId: OWNER_USER_ID }
       );
       expect(ungatedGet).not.toContain("needs EJ's approval");
     } catch (error) {

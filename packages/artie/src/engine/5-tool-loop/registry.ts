@@ -6,6 +6,7 @@ import {
   ParameterSchema,
 } from '../errors.js';
 import { isGatedAction, isOwnerConfirmed } from './approval-gate.js';
+import { blocksNonOwner, OWNER_ONLY_REFUSAL } from './owner-only.js';
 import { createPendingAction } from '../../shared/pending-actions.js';
 
 /**
@@ -479,6 +480,13 @@ export class CapabilityRegistry {
     // Old merged tool names (goal, shell, todo, …) resolve to their canonical tool first,
     // before ACTION_ALIASES and before any validation.
     ({ name, action, params } = resolveToolCall(name, action, params));
+
+    // Owner-only tools (owner-only.ts): refused outright for anyone but EJ, before the
+    // approval gate, so a non-owner can't even queue them for approval.
+    if (blocksNonOwner(name, action, context)) {
+      logger.warn(`🔒 Owner-only call refused: ${name}:${action} from ${context?.userId || 'no-context'}`);
+      return OWNER_ONLY_REFUSAL;
+    }
 
     // Approval gate: money and anything leaving Discord needs EJ's sign-off, unless EJ is the
     // one calling and explicitly confirmed. Checked before the capability even has to exist,

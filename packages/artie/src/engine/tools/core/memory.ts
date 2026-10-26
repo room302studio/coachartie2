@@ -3,8 +3,10 @@ import { logger } from '../../../shared/logger.js';
 import { parseModelJson } from '../../../shared/model-json.js';
 import { getSyncDb } from '../../../shared/db/client.js';
 import { isBlockedUser } from '../../../shared/blocklist.js';
+import { isOwner } from '../../../shared/config/owner.js';
 import { mentionsOptedOutUser } from '../../../shared/privacy-opt-out.js';
 import { RegisteredCapability } from '../../5-tool-loop/registry.js';
+import type { CapabilityContext } from '../../5-tool-loop/registry.js';
 import { hybridDataLayer, MemoryRecord } from '../../memory/store.js';
 import type { JsonOutputSpec } from '../../../shared/structured-output.js';
 
@@ -40,6 +42,14 @@ interface MemoryParams {
   content?: string;
   limit?: string;
   [key: string]: unknown;
+}
+
+/** Whose memories a recall searches: EJ may name anyone; everyone else gets only their own. */
+export function recallTargetUser(requestedUser: unknown, callerId: string): string {
+  if (requestedUser && isOwner(callerId)) {
+    return String(requestedUser);
+  }
+  return callerId;
 }
 
 function parseJsonTags(tagsJson: string | undefined): string[] {
@@ -708,8 +718,14 @@ ${finalOutput}`);
 /**
  * Memory capability handler
  */
-async function handleMemoryAction(params: MemoryParams, content?: string): Promise<string> {
-  const { action, userId = 'unknown-user' } = params;
+async function handleMemoryAction(
+  params: MemoryParams,
+  content?: string,
+  context?: CapabilityContext
+): Promise<string> {
+  const { action } = params;
+  // The real caller's context wins over any model-supplied userId (security audit 2026-10-26).
+  const userId = context?.userId || params.userId || 'unknown-user';
   const memoryService = MemoryService.getInstance();
 
   logger.info(`🎯 Memory handler called - Action: ${action}, UserId: ${userId}, Params:`, params);
@@ -777,7 +793,9 @@ async function handleMemoryAction(params: MemoryParams, content?: string): Promi
 
         logger.info(`🎯 Memory search starting - Query: "${query}"`);
         const limit = Math.max(1, Math.min(20, parseInt(String(params.limit)) || 5));
-        const targetUserId = String(params.user || userId); // Allow searching other users if specified
+        // Only EJ may search someone else's memories; everyone else searches their own, whatever
+        // `user` the model passes (security audit 2026-10-26: this used to let anyone read EJ's).
+        const targetUserId = recallTargetUser(params.user, String(userId));
         const result = await memoryService.recall(targetUserId, String(query), limit);
         logger.info(`🎯 Memory search completed - Result length: ${result.length} characters`);
         return result;

@@ -69,7 +69,14 @@ export function createEngineApp(deps: Partial<EngineDeps> = {}): Express {
   // their own signatures (MailerSend -> /api/sbat, GitHub -> /github/webhook) stay open.
   app.use(
     requireApiToken([
-      (req) => req.path === '/test' || req.path === '/health' || req.path.startsWith('/health/'),
+      // Only the bare liveness/readiness probes are public. /health/detailed (DB path, env,
+      // versions) and /health/admin/* need the token (security audit 2026-10-26).
+      (req) =>
+        req.method === 'GET' &&
+        (req.path === '/test' ||
+          req.path === '/health' ||
+          req.path === '/health/ready' ||
+          req.path === '/health/live'),
       (req) => req.method === 'GET' && req.path === '/github/health',
       (req) =>
         req.method === 'POST' && (req.path === '/github/webhook' || req.path.startsWith('/api/sbat')),

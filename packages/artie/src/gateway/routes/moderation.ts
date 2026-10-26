@@ -178,10 +178,14 @@ export async function removeRole(client: any, body: any): Promise<ApiResult> {
       return reply(400, { error: 'Missing required: userId, roleName' });
     }
 
-    const guild = client.guilds.cache.get(guildId || SUBWAY_BUILDER_GUILD_ID);
-    if (!guild) return reply(500, { error: 'Guild not found' });
-    const member = await guild.members.fetch(userId).catch(() => null);
-    if (!member) return reply(404, { error: 'User not in guild' });
+    // Same protected-user/staff/bot guard as addRole and timeoutMember (security audit
+    // 2026-10-26: removeRole used to skip it).
+    const check = await fetchModeratableMember(client, guildId, userId);
+    if (!check.ok) {
+      return reply(check.status, { error: check.error });
+    }
+    const member = check.member;
+    const guild = member.guild;
 
     const role = guild.roles.cache.find(
       (r: any) => r.name.toLowerCase() === String(roleName).toLowerCase()

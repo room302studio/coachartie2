@@ -1,6 +1,7 @@
 import { logger } from '../../../shared/logger.js';
 import { UserProfileService } from '../../../shared/db/user-profiles.js';
 import { RegisteredCapability } from '../../5-tool-loop/registry.js';
+import type { CapabilityContext } from '../../5-tool-loop/registry.js';
 import { sanitizeIdentifier } from '../../../shared/text.js';
 import { isEmail } from '../../../shared/email.js';
 import { getErrorMessage } from '../../../shared/errors.js';
@@ -28,9 +29,14 @@ interface UserProfileParams {
 
 async function handleUserProfileAction(
   params: UserProfileParams,
-  content?: string
+  content?: string,
+  context?: CapabilityContext
 ): Promise<string> {
-  const { action, userId = 'unknown-user', attribute, value } = params;
+  const { action, attribute, value } = params;
+  // The profile is always the real caller's. A model-supplied userId is honoured only when
+  // there is no caller context (direct internal calls), never from chat (security audit
+  // 2026-10-26: anyone could read or rewrite EJ's profile, linked email included).
+  const userId = context?.userId || params.userId || 'unknown-user';
 
   logger.info(`👤 User profile action: ${action} for user ${userId}`);
 
