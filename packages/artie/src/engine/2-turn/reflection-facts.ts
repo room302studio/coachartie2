@@ -81,6 +81,16 @@ Answer with JSON only, in this shape: {"facts": ["...", "..."]}. If nothing is w
 }
 
 /**
+ * Cap a fact string to MAX_FACT_CHARS.
+ */
+function capFactLength(fact: string): string {
+  if (fact.length > MAX_FACT_CHARS) {
+    return `${fact.slice(0, MAX_FACT_CHARS)}…`;
+  }
+  return fact;
+}
+
+/**
  * The facts in a reflection reply: trimmed, non-empty strings, at most MAX_FACTS, each capped.
  * [] when the model said there is nothing; null when the reply is not {"facts": [...]}.
  */
@@ -92,7 +102,7 @@ export function parseReflectionFacts(raw: string): string[] | null {
     .map((f) => f.trim())
     .filter((f) => f.length > 0)
     .slice(0, MAX_FACTS)
-    .map((f) => (f.length > MAX_FACT_CHARS ? `${f.slice(0, MAX_FACT_CHARS)}…` : f));
+    .map(capFactLength);
 }
 
 /** Facts as one memory row, in the bullet-list shape reflection rows have always had. */

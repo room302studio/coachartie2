@@ -24,6 +24,16 @@ const CAPTURE_ALL_SNAPSHOTS = process.env.CAPTURE_ALL_SNAPSHOTS === 'true';
 // Whether tracing is enabled
 const ENABLE_TRACING = process.env.ENABLE_TRACING !== 'false'; // Default to true
 
+/**
+ * Calculate a percentage rate, returning 0 if total is 0.
+ */
+function calculatePercentage(count: number, total: number): number {
+  if (total > 0) {
+    return Math.round((count / total) * 100);
+  }
+  return 0;
+}
+
 export interface TraceCreateData {
   messageId: string;
   userId: string;
@@ -184,7 +194,13 @@ export class TraceManager {
       }
       if (updates.success !== undefined) {
         setClauses.push('success = ?');
-        values.push(updates.success ? 1 : 0);
+        let successInt: number;
+        if (updates.success) {
+          successInt = 1;
+        } else {
+          successInt = 0;
+        }
+        values.push(successInt);
       }
       if (updates.errorType !== undefined) {
         setClauses.push('error_type = ?');
@@ -303,7 +319,12 @@ export class TraceManager {
       }
 
       // Update variant stats
-      const column = sentiment === 'positive' ? 'positive_count' : 'negative_count';
+      let column: string;
+      if (sentiment === 'positive') {
+        column = 'positive_count';
+      } else {
+        column = 'negative_count';
+      }
       db.run(`UPDATE experiment_variants SET ${column} = ${column} + 1 WHERE id = ?`, [
         trace.variant_id,
       ]);
@@ -627,8 +648,7 @@ export class TraceManager {
         };
         modelBreakdown[model.model_used] = {
           count: model.count,
-          positiveRate:
-            model.with_feedback > 0 ? Math.round((model.positive / model.with_feedback) * 100) : 0,
+          positiveRate: calculatePercentage(model.positive, model.with_feedback),
         };
       }
 
@@ -638,8 +658,8 @@ export class TraceManager {
         avgDurationMs: Math.round((basic?.avg_duration as number) || 0),
         avgMemories: Math.round(((basic?.avg_memories as number) || 0) * 10) / 10,
         avgRules: Math.round(((basic?.avg_rules as number) || 0) * 10) / 10,
-        positiveRate: totalFeedback > 0 ? Math.round((positiveCount / totalFeedback) * 100) : 0,
-        negativeRate: totalFeedback > 0 ? Math.round((negativeCount / totalFeedback) * 100) : 0,
+        positiveRate: calculatePercentage(positiveCount, totalFeedback),
+        negativeRate: calculatePercentage(negativeCount, totalFeedback),
         modelBreakdown,
       };
     } catch (error) {

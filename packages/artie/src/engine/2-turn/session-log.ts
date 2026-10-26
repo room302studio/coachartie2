@@ -120,7 +120,12 @@ class SessionManager {
       if (sessions.length === 0) return;
 
       const session = sessions[0];
-      const field = sentiment === 'positive' ? 'positiveReactions' : 'negativeReactions';
+      let field: 'positiveReactions' | 'negativeReactions';
+      if (sentiment === 'positive') {
+        field = 'positiveReactions';
+      } else {
+        field = 'negativeReactions';
+      }
       const currentValue = session[field] || 0;
 
       await db
