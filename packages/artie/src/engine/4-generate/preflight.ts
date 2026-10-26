@@ -47,6 +47,16 @@ function tokensTier(tokens: number): PreflightAnalysis['responseTier'] {
 }
 
 /**
+ * Determine minimum memory importance based on complexity
+ */
+function importanceMinForComplexity(complexity: string): number {
+  if (complexity === 'complex') {
+    return 5;
+  }
+  return 3;
+}
+
+/**
  * Default analysis - generous defaults that let the LLM decide
  */
 export function getDefaultAnalysis(): PreflightAnalysis {
@@ -104,7 +114,7 @@ export async function quickAnalysis(message: string): Promise<PreflightAnalysis>
       responseTokens,
       responseTier: tokensTier(responseTokens),
       memoryKeywords: [], // Could add keyword extraction here
-      memoryImportanceMin: complexityResult.result === 'complex' ? 5 : 3,
+      memoryImportanceMin: importanceMinForComplexity(complexityResult.result),
       needsRecentMemories: true,
       tone: toneResult.result,
       format: formatResult.result,

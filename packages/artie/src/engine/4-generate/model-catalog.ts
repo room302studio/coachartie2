@@ -1,5 +1,15 @@
 import { logger } from '../../shared/logger.js';
 
+/**
+ * Extract numeric context length, defaulting to 0
+ */
+function contextLengthOrZero(value: unknown): number {
+  if (typeof value === 'number') {
+    return value;
+  }
+  return 0;
+}
+
 export interface OpenRouterModelInfo {
   id: string;
   name: string;
@@ -108,7 +118,7 @@ export class OpenRouterModelsService {
    */
   async supportsTools(modelId: string): Promise<boolean | undefined> {
     const params = await this.supportedParameters(modelId);
-    return params ? params.includes('tools') : undefined;
+    return params?.includes('tools');
   }
 
   /**
@@ -241,20 +251,26 @@ export class OpenRouterModelsService {
     const providers = [...new Set(enhancedData.map((m) => m.provider))];
 
     const totalContextLength = enhancedData.reduce((sum, m) => {
-      const context = typeof m.contextLength === 'number' ? m.contextLength : 0;
+      const context = contextLengthOrZero(m.contextLength);
       return sum + context;
     }, 0);
 
     // Calculate average input cost for paid models
     const paidModelsWithCost = enhancedData.filter((m) => !m.isFree && m.inputCostPer1K !== 'N/A');
 
-    const averageInputCost =
-      paidModelsWithCost.length > 0
-        ? paidModelsWithCost.reduce((sum, m) => {
-            const cost = parseFloat(m.inputCostPer1K.replace('$', ''));
-            return sum + (isNaN(cost) ? 0 : cost);
-          }, 0) / paidModelsWithCost.length
-        : 0;
+    let averageInputCost: number;
+    if (paidModelsWithCost.length > 0) {
+      const totalCost = paidModelsWithCost.reduce((sum, m) => {
+        const cost = parseFloat(m.inputCostPer1K.replace('$', ''));
+        if (isNaN(cost)) {
+          return sum;
+        }
+        return sum + cost;
+      }, 0);
+      averageInputCost = totalCost / paidModelsWithCost.length;
+    } else {
+      averageInputCost = 0;
+    }
 
     return {
       totalModels: enhancedData.length,

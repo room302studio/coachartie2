@@ -5,6 +5,7 @@ import { assertGenerationAllowed } from '../../shared/kill-switch.js';
 import { assertGuildBudget } from '../../shared/guild-budget.js';
 import { resolveModelSpec, isAutoRouted, autoReasoningFor } from '../../shared/model-spec.js';
 import { responseFormatFor, type JsonOutputSpec } from '../../shared/structured-output.js';
+import { getErrorMessage } from '../../shared/errors.js';
 
 // No dotenv config() here, deliberately. The old code called
 // resolve(__dirname, '../../../../.env') / resolve(__dirname, '../../.env') from
@@ -45,6 +46,22 @@ import { PER_REQUEST_TIMEOUT_MS } from '../5-tool-loop/timeouts.js';
 export { PER_REQUEST_TIMEOUT_MS };
 
 /**
+ * Determine step type for usage tracking
+ */
+function getStepType(userId: string, messageId: string | undefined, explicit?: string): string {
+  if (explicit) {
+    return explicit;
+  }
+  if (userId === 'observational-system') {
+    return 'observational_learning';
+  }
+  if (messageId) {
+    return 'response';
+  }
+  return 'background';
+}
+
+/**
  * Sticky rotation (EJ, 2026-09-29: "rotate it per-convo so we're still rotating but not losing
  * our cache"). Prompt caches are per model, so the global round-robin — which advances after
  * every call — meant consecutive calls in one conversation alternated models and missed the
@@ -58,7 +75,10 @@ export function stickyRotationIndex(key: string, size: number): number {
     hash ^= key.charCodeAt(i);
     hash = Math.imul(hash, 0x01000193) >>> 0;
   }
-  return size > 0 ? hash % size : 0;
+  if (size > 0) {
+    return hash % size;
+  }
+  return 0;
 }
 
 /**
@@ -71,9 +91,7 @@ export function stickyRotationIndex(key: string, size: number): number {
  * labelled 'background' so they don't inflate the 'response' numbers.
  */
 function stepTypeFor(userId: string, messageId: string | undefined, explicit?: string): string {
-  if (explicit) return explicit;
-  if (userId === 'observational-system') return 'observational_learning';
-  return messageId ? 'response' : 'background';
+  return getStepType(userId, messageId, explicit);
 }
 
 /** Options shared by every generate call (streaming, plain and tool turns). */
@@ -111,14 +129,17 @@ export function normalizeToolCalls(raw: unknown): ToolCall[] {
   raw.forEach((tc, i) => {
     const fn = (tc as { function?: { name?: unknown; arguments?: unknown } } | null)?.function;
     if (!fn || typeof fn.name !== 'string' || !fn.name) return;
-    const args =
-      typeof fn.arguments === 'string'
-        ? fn.arguments
-        : fn.arguments === undefined || fn.arguments === null
-          ? '{}'
-          : JSON.stringify(fn.arguments);
+    let args: string;
+    if (typeof fn.arguments === 'string') {
+      args = fn.arguments;
+    } else if (fn.arguments === undefined || fn.arguments === null) {
+      args = '{}';
+    } else {
+      args = JSON.stringify(fn.arguments);
+    }
     const id = (tc as { id?: unknown }).id;
-    calls.push({ id: typeof id === 'string' && id ? id : `call_${i}`, name: fn.name, arguments: args });
+    const callId = typeof id === 'string' && id ? id : `call_${i}`;
+    calls.push({ id: callId, name: fn.name, arguments: args });
   });
   return calls;
 }
@@ -137,7 +158,10 @@ export async function responseFormatForModel(
   if (!spec || isAutoRouted(model)) return undefined;
   try {
     const mode = await openRouterModelsService.structuredOutputMode(model);
-    return mode ? responseFormatFor(spec, mode) : undefined;
+    if (mode) {
+      return responseFormatFor(spec, mode);
+    }
+    return undefined;
   } catch {
     return undefined;
   }
@@ -157,7 +181,7 @@ class OpenRouterService {
     try {
       return await this.client.chat.completions.create(params as never);
     } catch (error) {
-      const msg = error instanceof Error ? error.message : String(error);
+      const msg = getErrorMessage(error);
       if (params.reasoning?.effort !== 'none' || !/reasoning is mandatory/i.test(msg)) throw error;
       logger.info(`🧠 ${params.model}: routed to a reasoning-only model, retrying at low effort`);
       recordLlmHiccup('reasoning-retry');
@@ -501,9 +525,11 @@ class OpenRouterService {
       const model = resolveModelSpec(spec).model;
       if (isAutoRouted(model)) return { model, ok: false, why: 'auto-routed' };
       const tools = await openRouterModelsService.supportsTools(model);
-      return tools === false
-        ? { model, ok: false, why: 'no tools in supported_parameters' }
-        : { model, ok: true, why: tools === undefined ? 'not in catalog, trusted' : 'tool-capable' };
+      if (tools === false) {
+        return { model, ok: false, why: 'no tools in supported_parameters' };
+      }
+      const toolWhy = tools === undefined ? 'not in catalog, trusted' : 'tool-capable';
+      return { model, ok: true, why: toolWhy };
     };
 
     const capable: string[] = [];
@@ -591,9 +617,12 @@ class OpenRouterService {
     // Otherwise check for experiment override, then rotate through models
     const effectiveModel = selectedModel || variantModelOverride;
     const useSpecificModel = effectiveModel && effectiveModel.trim().length > 0;
-    const startIndex = options?.rotationKey
-      ? stickyRotationIndex(options.rotationKey, this.models.length)
-      : this.currentModelIndex;
+    let startIndex: number;
+    if (options?.rotationKey) {
+      startIndex = stickyRotationIndex(options.rotationKey, this.models.length);
+    } else {
+      startIndex = this.currentModelIndex;
+    }
 
     // Try each model starting from current rotation position. A specifically-requested
     // model (three-tier strategy) is tried FIRST but still falls back to the rotation:
@@ -602,11 +631,14 @@ class OpenRouterService {
     // A tool turn always runs an explicit, tool-capable list (toolModelsToTry): the requested
     // model first when it can take tools, otherwise the pin, then the other capable models.
     const toolModels = toolSpec ? await this.toolModelsToTry(effectiveModel) : undefined;
-    const modelsToTry = toolModels
-      ? toolModels
-      : useSpecificModel
-        ? [effectiveModel, ...this.models.filter((m) => m !== effectiveModel)]
-        : this.models;
+    let modelsToTry: string[];
+    if (toolModels) {
+      modelsToTry = toolModels;
+    } else if (useSpecificModel) {
+      modelsToTry = [effectiveModel, ...this.models.filter((m) => m !== effectiveModel)];
+    } else {
+      modelsToTry = this.models;
+    }
     const explicitList = !!toolModels || !!useSpecificModel;
     const sendTools = toolSpec && toolSpec.tools.length > 0 ? toolSpec : undefined;
 
