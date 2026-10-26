@@ -45,7 +45,12 @@ async function handleApprovals(
           .map((p) => {
             let line = `#${p.id} — ${p.tool}:${p.action} (requested by ${p.requestedBy} at ${p.createdAt})\n   params: ${p.paramsJson}`;
             if (p.content) {
-              const ellipsis = p.content.length > 300 ? '…' : '';
+              let ellipsis: string;
+              if (p.content.length > 300) {
+                ellipsis = '…';
+              } else {
+                ellipsis = '';
+              }
               line += `\n   content: ${p.content.slice(0, 300)}${ellipsis}`;
             }
             return line;
