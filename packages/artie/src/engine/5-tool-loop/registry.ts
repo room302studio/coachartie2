@@ -481,6 +481,7 @@ export class CapabilityRegistry {
         tool: name,
         action,
         params,
+        context,
         requestedBy: context?.userId || 'unknown-user',
       });
       logger.info(`⏸️ Gated call blocked pending approval: ${name}:${action} (#${id})`);

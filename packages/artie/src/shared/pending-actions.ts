@@ -21,6 +21,11 @@ export interface PendingAction {
   tool: string;
   action: string;
   paramsJson: string;
+  /** guildId/channelId/messageId at request time, so approve() can replay with the same
+   *  Discord context instead of a bare owner-only context (otherwise a tool that reads
+   *  context.channelId/guildId would behave differently on replay than it would have at
+   *  the original call site). */
+  contextJson: string;
   requestedBy: string;
   reason: string | null;
   status: PendingActionStatus;
@@ -40,6 +45,7 @@ function ensureTable(): void {
       tool TEXT NOT NULL,
       action TEXT NOT NULL,
       params_json TEXT NOT NULL DEFAULT '{}',
+      context_json TEXT NOT NULL DEFAULT '{}',
       requested_by TEXT NOT NULL,
       reason TEXT,
       status TEXT NOT NULL DEFAULT 'pending',
@@ -49,6 +55,12 @@ function ensureTable(): void {
     )
   `);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_pending_actions_status ON pending_actions(status)`);
+  // A bench created before context_json existed would otherwise error on every insert.
+  try {
+    db.exec(`ALTER TABLE pending_actions ADD COLUMN context_json TEXT NOT NULL DEFAULT '{}'`);
+  } catch {
+    // already has the column
+  }
   ensured = true;
 }
 
@@ -58,6 +70,7 @@ function rowToPendingAction(row: Record<string, unknown>): PendingAction {
     tool: row.tool as string,
     action: row.action as string,
     paramsJson: row.params_json as string,
+    contextJson: (row.context_json as string) ?? '{}',
     requestedBy: row.requested_by as string,
     reason: (row.reason as string | null) ?? null,
     status: row.status as PendingActionStatus,
@@ -72,17 +85,19 @@ export function createPendingAction(input: {
   tool: string;
   action: string;
   params: unknown;
+  context?: unknown;
   requestedBy: string;
   reason?: string;
 }): number {
   ensureTable();
   const db = getSyncDb();
   const result = db.run(
-    `INSERT INTO pending_actions (tool, action, params_json, requested_by, reason) VALUES (?, ?, ?, ?, ?)`,
+    `INSERT INTO pending_actions (tool, action, params_json, context_json, requested_by, reason) VALUES (?, ?, ?, ?, ?, ?)`,
     [
       input.tool,
       input.action,
       JSON.stringify(input.params ?? {}),
+      JSON.stringify(input.context ?? {}),
       input.requestedBy,
       input.reason ?? null,
     ]

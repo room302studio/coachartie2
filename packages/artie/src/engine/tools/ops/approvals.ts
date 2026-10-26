@@ -67,12 +67,16 @@ async function handleApprovals(
         logger.info(`✅ Approval #${id} approved by ${callerId}: ${pending.tool}:${pending.action}`);
 
         const originalParams = JSON.parse(pending.paramsJson || '{}');
+        const originalContext = JSON.parse(pending.contextJson || '{}');
         const result = await capabilityRegistry.execute(
           pending.tool,
           pending.action,
           { ...originalParams, confirmed: true },
           undefined,
-          { userId: callerId }
+          // Replay with the ORIGINAL guildId/channelId/messageId (so a tool that reads
+          // context behaves the way it would have at the original call site), but userId
+          // is always the owner now — that's what satisfies isOwnerConfirmed().
+          { ...originalContext, userId: callerId }
         );
         return `✅ Approved #${id} and ran ${pending.tool}:${pending.action}:\n${result}`;
       }

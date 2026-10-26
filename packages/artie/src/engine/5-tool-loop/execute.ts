@@ -206,7 +206,14 @@ export async function executeNativeToolCall(
   context: OrchestrationContext,
   invocation: { name: string; action?: string; content?: string; params: Record<string, unknown> }
 ): Promise<string> {
-  const resolved = resolveToolCall(invocation.name, invocation.action ?? '', invocation.params);
+  // `confirmed: true` is the approval-gate's owner-bypass flag (approval-gate.ts's
+  // isOwnerConfirmed). It must ONLY ever be set by approvals.ts replaying an already-approved
+  // call — never by a live model tool call, even the owner's own, or Artie could decide on its
+  // own to add it and skip the gate without EJ actually having said yes. Stripped here, at the
+  // one place every native tool call enters, so the model can't set it no matter what it puts
+  // in the arguments.
+  const { confirmed: _ignoredConfirmed, ...sanitizedParams } = invocation.params ?? {};
+  const resolved = resolveToolCall(invocation.name, invocation.action ?? '', sanitizedParams);
   const capability: ExtractedCapability = {
     name: resolved.name,
     action: resolved.action,

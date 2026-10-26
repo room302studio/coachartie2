@@ -18,10 +18,11 @@ import type { CapabilityContext } from './registry.js';
 export const GATED_ACTIONS: Record<string, Set<string> | 'all'> = {
   // Real money, even though the Stripe key is restricted to payment-link creation.
   stripe: 'all',
-  // Sends outside Discord, to a real inbox.
+  // Sends outside Discord, to a real inbox. Gates BOTH the bare `email` capability and the
+  // drafting flow's real send step — email-drafting.ts's handleSendDraft() calls
+  // capabilityRegistry.execute('email', 'send', …) rather than emailCapability.handler()
+  // directly specifically so it passes through this gate (2026-10-26; it used to bypass it).
   email: new Set(['send']),
-  // The drafting flow's actual send step (distinct from drafting/revising, which stay local).
-  'email-drafting': new Set(['send']),
   // Public posts outside Discord; reading/searching Reddit is fine unattended.
   reddit: new Set(['post', 'comment']),
   // Writes a public GitHub issue/comment; every read action (list/search/get_*) stays open.
@@ -40,9 +41,15 @@ export function isGatedAction(name: string, action: string): boolean {
 
 /**
  * True when this specific call may proceed without being queued for approval: the owner,
- * calling in explicitly, with `confirmed: true` in params (set by the `approvals` tool when
- * replaying an approved call, or by the owner's own turn when they say "yes, do it" and the
- * model passes the flag through).
+ * calling in explicitly, with `confirmed: true` in params.
+ *
+ * `confirmed: true` must ONLY ever reach here from the `approvals` tool replaying an
+ * already-approved pending action — never from a live model tool call. execute.ts's
+ * executeNativeToolCall (the one entry point every native tool call goes through) strips
+ * `confirmed` out of a model's own arguments before they ever reach resolveToolCall/
+ * registry.execute, specifically so the model can't decide on its own to add the flag and
+ * skip the gate, even in the owner's own conversation — "EJ said yes" has to mean EJ actually
+ * ran `approvals:approve`, not Artie inferring it from the chat and setting a param.
  */
 export function isOwnerConfirmed(context: CapabilityContext | undefined, params: unknown): boolean {
   if (!context?.userId || context.userId !== OWNER_USER_ID) return false;

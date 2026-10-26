@@ -18,14 +18,20 @@ import {
   substituteKeys,
   capabilityExecutor,
   looksLikeToolFailure,
+  executeNativeToolCall,
 } from '../../src/engine/5-tool-loop/execute.js';
 import {
   CapabilityRegistry,
+  capabilityRegistry,
   type RegisteredCapability,
 } from '../../src/engine/5-tool-loop/registry.js';
 import { capabilityParser } from '../../src/engine/5-tool-loop/parse-tool-calls.js';
 import { GlobalVariableStore } from '../../src/engine/5-tool-loop/variables.js';
-import type { CapabilityResult, ExtractedCapability } from '../../src/engine/2-turn/types.js';
+import type {
+  CapabilityResult,
+  ExtractedCapability,
+  OrchestrationContext,
+} from '../../src/engine/2-turn/types.js';
 
 const subs = (o: Record<string, string>) => new Map(Object.entries(o));
 
@@ -419,5 +425,77 @@ describe('looksLikeToolFailure: catching self-reported failures that never threw
 
   it('does not flag an empty string (no data is not the same as a failure)', () => {
     expect(looksLikeToolFailure('')).toBe(false);
+  });
+});
+
+/**
+ * executeNativeToolCall is the actual integration point — looksLikeToolFailure above tests
+ * the detector in isolation, this exercises the real path a model's tool call takes: a
+ * handler that returns a self-reported failure string (no throw) must still come back to the
+ * model prefixed with "Error:", exactly like a thrown one would.
+ */
+describe('executeNativeToolCall: a self-reported failure is never swallowed as a success', () => {
+  function makeContext(userId = 'test-user'): OrchestrationContext {
+    return {
+      messageId: 'test-msg',
+      userId,
+      originalMessage: 'test',
+      source: 'test',
+      capabilities: [],
+      results: [],
+      currentStep: 0,
+      respondTo: async () => {},
+      capabilityFailureCount: new Map(),
+    };
+  }
+
+  beforeAll(() => {
+    capabilityRegistry.register({
+      name: 'loud-fallback-stub',
+      supportedActions: ['fail-quietly', 'succeed'],
+      handler: async (params: any) => {
+        if (params.action === 'fail-quietly') {
+          // The scratchpad.ts / system-memory.ts shape: caught internally, returned as text,
+          // never thrown.
+          return 'Stub error: something went wrong internally';
+        }
+        return '✅ all good';
+      },
+    });
+  });
+
+  it('a caught-and-returned failure reaches the model prefixed with "Error:"', async () => {
+    const context = makeContext();
+    const out = await executeNativeToolCall(context, {
+      name: 'loud-fallback-stub',
+      action: 'fail-quietly',
+      params: {},
+    });
+    expect(out.startsWith('Error:')).toBe(true);
+    expect(out).toContain('Stub error: something went wrong internally');
+  });
+
+  it('a real success still passes through untouched', async () => {
+    const context = makeContext();
+    const out = await executeNativeToolCall(context, {
+      name: 'loud-fallback-stub',
+      action: 'succeed',
+      params: {},
+    });
+    expect(out).toBe('✅ all good');
+  });
+
+  it("a model can't set confirmed:true itself to skip the approval gate", async () => {
+    // stripe is gated for everyone (approval-gate.ts); even the owner needs `approvals:approve`
+    // to actually confirm — a model-supplied `confirmed` param must be stripped before the
+    // gate check, not trusted.
+    const { OWNER_USER_ID } = await import('../../src/shared/config/owner.js');
+    const context = makeContext(OWNER_USER_ID);
+    const out = await executeNativeToolCall(context, {
+      name: 'stripe',
+      action: 'create_payment_link',
+      params: { name: 'x', amount: 5, confirmed: true },
+    });
+    expect(out).toContain("needs EJ's approval");
   });
 });
