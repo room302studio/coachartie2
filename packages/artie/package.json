@@ -8,6 +8,7 @@
   "scripts": {
     "build": "tsc",
     "typecheck": "tsc --noEmit",
+    "lint": "eslint src tests",
     "test": "vitest run --root ../.. packages/artie/tests --exclude 'packages/artie/tests/integration/**'",
     "test:integration": "vitest run --root ../.. packages/artie/tests/integration",
     "dev": "tsx watch src/main.ts",

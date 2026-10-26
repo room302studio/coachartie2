@@ -234,7 +234,8 @@ export class JobMonitor {
   private async checkSingleJob(jobId: string, callback: JobCallback): Promise<void> {
     const shortId = jobId.slice(-8);
 
-    try {
+    // Errors propagate: the caller handles them and the retry logic.
+    {
       logger.info(`🔍 Checking job ${shortId}:`, {
         fullJobId: jobId,
         jobIdLength: jobId.length,
@@ -400,8 +401,6 @@ export class JobMonitor {
       logger.info(
         `⏳ Job ${shortId} still ${status.status} (attempt ${callback.attemptCount}/${callback.maxAttempts})`
       );
-    } catch (error) {
-      throw error; // Let the caller handle the error and retry logic
     }
   }
 

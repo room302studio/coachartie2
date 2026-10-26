@@ -39,6 +39,13 @@ export default [
       'no-var': 'error',
       'eqeqeq': ['error', 'allow-null'],
       'curly': ['error', 'all'],
+      // EJ's rule (2026-10-26): no ternaries anywhere. Use a named function or if/else, so
+      // every decision has a name. Never a generic iff(cond, a, b) helper: it evaluates both
+      // branches eagerly.
+      'no-ternary': 'error',
+      // TypeScript already checks undefined names; core no-undef misfires on DOM/lib types
+      // like RequestInit.
+      'no-undef': 'off',
 
       // Relaxed rules for practical development
       'no-empty': ['error', { allowEmptyCatch: true }], // Allow empty catch blocks
