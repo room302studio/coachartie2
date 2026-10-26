@@ -177,8 +177,12 @@ export class LLMErrorPatternTracker {
     }
 
     const patterns = Array.from(profile.patterns.values());
-    const mostCommon =
-      patterns.length > 0 ? patterns.sort((a, b) => b.frequency - a.frequency)[0] : null;
+    let mostCommon: any;
+    if (patterns.length > 0) {
+      mostCommon = patterns.sort((a, b) => b.frequency - a.frequency)[0];
+    } else {
+      mostCommon = null;
+    }
 
     const errorsByCapability: Record<string, number> = {};
     for (const pattern of patterns) {
