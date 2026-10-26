@@ -341,13 +341,21 @@ export class LLMLoopService {
       }
     }
 
-    logger.warn(
-      outOfTime()
-        ? `⏱️ LLM-driven loop hit the soft deadline at iteration ${iterationCount}/${maxIterations} ` +
+    let logMsg: string;
+    if (outOfTime()) {
+      let responseWarning: string;
+      if (lastLLMResponse) {
+        responseWarning = '';
+      } else {
+        responseWarning = " (and there ISN'T one — user gets the canned line)";
+      }
+      logMsg = `⏱️ LLM-driven loop hit the soft deadline at iteration ${iterationCount}/${maxIterations} ` +
             `after ${((Date.now() - startTime) / 1000).toFixed(1)}s in-loop - returning best answer so far` +
-            `${lastLLMResponse ? '' : " (and there ISN'T one — user gets the canned line)"}`
-        : `⚠️ LLM-driven loop reached maximum iterations (${maxIterations}) - ending`
-    );
+            responseWarning;
+    } else {
+      logMsg = `⚠️ LLM-driven loop reached maximum iterations (${maxIterations}) - ending`;
+    }
+    logger.warn(logMsg);
     // Return the last meaningful LLM response instead of a generic canned message
     if (lastLLMResponse) {
       const cleanResponse = llmResponseCoordinator.stripThinkingTags(
