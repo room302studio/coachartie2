@@ -320,4 +320,13 @@ describe('hello-world merge (F1: merged, not deleted)', () => {
     const out = await capabilityRegistry.execute('hello-world', 'greet', {});
     expect(out).toContain('pong');
   });
+
+  it("skillRegistry.reload('hello-world') does not undo the merge at runtime", async () => {
+    // reload() is a SEPARATE code path from initialize()'s discovery loop — it had its own
+    // capabilityRegistry.register() call that bypassed the same skip, so a targeted
+    // `skills:reload` on a merged name would silently re-register it as its own capability.
+    const { skillRegistry } = await import('../../src/engine/tools/skills/registry.js');
+    skillRegistry.reload('hello-world');
+    expect(capabilityRegistry.list().map((c) => c.name)).not.toContain('hello-world');
+  });
 });

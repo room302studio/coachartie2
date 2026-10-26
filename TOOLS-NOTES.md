@@ -3,8 +3,8 @@
 Branch `v3-tools`, off `v3`. Scope: the bot's own three asks — collapse the memory zoo, prune/
 consolidate tools (hello-world, stripe/email approval), and make tool failures loud to the
 model instead of swallowed. Bench: `/data2/tmp/artie-v3-tools` on the VPS. Final state:
-`pnpm typecheck` clean, `pnpm test` **1015 passed / 6 skipped** (baseline before this work was
-985 passed / 6 skipped — net +30 tests, 0 regressions, 0 failures).
+`pnpm typecheck` clean, `pnpm test` **1018 passed / 6 skipped** (baseline before this work was
+985 passed / 6 skipped — net +33 tests, 0 regressions, 0 failures).
 
 ## 1. The memory zoo: what unified, what didn't, and why
 
@@ -218,18 +218,27 @@ it for an estimate. Caveat: chars/4 is a rough average, not exact BPE tokenizati
 
 | Line | Before | After | Δ |
 |---|---|---|---|
-| `memory` (6 vs 9 actions, longer description explaining what it replaced) | ~59 tok | ~108 tok | **+49** |
+| `memory` (6 vs 9 actions; description rewritten once — see below) | ~59 tok | ~91 tok | **+32** |
 | `hello-world` (removed) | ~26 tok | 0 | **−26** |
 | `approvals` (new) | 0 | ~52 tok | **+52** |
 
-**Net: the roster grew by ~75 tokens**, not shrank. The action list genuinely got smaller
+**Net: the roster grew by ~58 tokens**, not shrank. The action list genuinely got smaller
 (memory: 9→6 names; the roster no longer lists `add`/`save`/`store`/`search` as if they were
-distinct from `remember`/`recall`), but `memory`'s description grew to explain what it
-absorbed, and the new `approvals` tool adds a whole new line. If the goal is strictly token
-count, the next move is trimming `memory`'s description back down (the "what replaced what"
-explanation belongs in this file, not the live prompt) — left as an open question below
-rather than done here, since I'd rather the first version of a changed tool's prompt text be
-over-explained than under-explained while it's new.
+distinct from `remember`/`recall`), but the new `approvals` tool adds a whole new line, and
+`memory`'s description grew to say what it's *not* for.
+
+That description went through two drafts, worth recording because the first one was a bug.
+The first version said memory "replaces scratchpad/variable/system_memory for ordinary facts"
+and listed `guild`/`scratch` as example `kind` values, with "see TOOLS-NOTES.md" for the rest
+— which actively steers the model toward writing guild notes into `memory` with
+`kind: 'guild'`, exactly the silent-split §1 says scratchpad can't safely be routed into
+(`gateway/1-receive/guild-context.ts` reads the scratchpad *file* directly and would never
+see a note written to `memory` instead), and pointed at a file the model can't read. Caught
+on review, not written then shipped. Rewritten to route rather than claim replacement: it
+now says what memory IS for (facts about a person) and names scratchpad/user-profile by name
+for what it explicitly is NOT for, with no file reference. That cost 32 tokens instead of 49
+— still not free, but it's the honest price of a tool boundary a model actually has to
+respect, not an explanation that belongs in this file instead.
 
 ## Open questions
 
@@ -255,14 +264,26 @@ over-explained than under-explained while it's new.
    is ever actually flipped on in prod before that code is deleted, re-check whether a model
    could set `confirmed` through that path too.
 7. **Non-LLM callers of a gated action** (a scheduler job, a script hitting the HTTP
-   `/capabilities/execute` route) now queue as pending with `requestedBy: 'unknown-user'`
-   whenever they don't pass a `context.userId`, rather than running — this is new, fail-closed
-   behavior from this branch, not something that existed before. I didn't find any such
-   caller actually invoking a gated action today (`engine/jobs/`, `engine/proactive/`, and the
-   HTTP route all pass through the same `registry.execute()`, so they'd all be caught the same
-   way), but it's worth EJ knowing this exists as a behavior change, not discovering it from a
-   log line.
-8. **No dedicated unit test for the email-drafting fix itself** — `EmailDraftingService`'s
+   `/capabilities/execute` route) would now queue as pending with `requestedBy: 'unknown-user'`
+   whenever they don't pass a `context.userId`, rather than running — fail-closed, and a real
+   behavior change from this branch if it ever applies. Checked whether it applies today:
+   `grep -rn "capabilityRegistry.execute\|registry.execute\|emailCapability\|redditCapability"
+   src/engine/proactive src/engine/jobs src/engine/routes src/gateway`. The only hits are
+   `routes/memories.ts` (`memory:search`, not gated) and `routes/tool-registry.ts`'s own
+   generic `execute()` passthrough (whatever caller/context hits that HTTP route — same path,
+   same rules, nothing special). `proactive/delivery.ts` declares `'email'` as a
+   `DeliveryChannel` type member but has no `case 'email'` that actually sends anything yet;
+   `proactive/reddit-mentions.ts` and `morning-briefing.ts`'s `'reddit'` references are source
+   labels and config keys, not tool calls. So: no scheduler/proactive job calls a gated action
+   today. Worth re-checking if `delivery.ts` ever grows a real email-sending case — it would
+   need its own owner-context, or an explicit decision that queued reminders fail closed too.
+8. **`skills/registry.ts`'s `reload(name)`** (a *single*-skill reload, distinct from
+   `reloadAll()`) had its own `capabilityRegistry.register(capability)` call that bypassed the
+   same `TOOL_ALIASES` skip `initialize()` got — `skills:reload` on `hello-world` specifically
+   would have re-registered it as its own capability, undoing the merge at runtime (caught by
+   re-reading the file for every `register` call-site, not by a test — none of the existing
+   tests call `reload()` on a merged name). Fixed with the same one-line skip.
+9. **No dedicated unit test for the email-drafting fix itself** — `EmailDraftingService`'s
    draft state is populated by `handleEmailWritingMode()`, which calls the real
    `openRouterService`/`contextAlchemy` to draft with an LLM, so testing `handleSendDraft()`
    directly needs mocking that's out of this task's budget. The fix is covered indirectly:

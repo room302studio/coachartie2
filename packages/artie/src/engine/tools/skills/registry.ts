@@ -116,6 +116,12 @@ class SkillRegistry {
    * Reload a specific skill
    */
   reload(name: string): boolean {
+    if (TOOL_ALIASES[name]) {
+      // Same reasoning as initialize(): a merged skill (hello-world -> diagnose) must never
+      // become its own registered capability, even via a targeted reload.
+      logger.info(`🦞 Skipping reload of '${name}' — merged into '${TOOL_ALIASES[name].to}' (see TOOL_ALIASES)`);
+      return false;
+    }
     const capability = loadSkill(name);
     if (capability) {
       try {

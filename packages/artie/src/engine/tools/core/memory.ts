@@ -780,10 +780,10 @@ export const memoryCapability: RegisteredCapability = {
   emoji: '🧠',
   supportedActions: ['remember', 'recall', 'forget', 'pin', 'recent', 'stats'],
   description:
-    'The one persistent memory store (2026-10-26: replaces scratchpad/variable/system_memory for ' +
-    'ordinary facts — see TOOLS-NOTES.md for what stayed separate and why). Optional `kind` tags ' +
-    'a memory as person, guild, pinned, scratch, goal, etc. — use it instead of guessing which old ' +
-    'tool a fact belonged in. "pin" marks something important (importance 10); "forget" deletes it.',
+    'Store and recall facts about a person across conversations. Optional `kind` (person, ' +
+    'pinned, goal, ...) classifies what the fact is. NOT for guild notes (use scratchpad) or ' +
+    'structured profile fields like email/timezone (use user-profile). "pin" marks something ' +
+    'important (importance 10); "forget" deletes it.',
   handler: handleMemoryAction,
   examples: [
     '<capability name="memory" action="remember" kind="person" importance="8">Important user preference or fact</capability>',
