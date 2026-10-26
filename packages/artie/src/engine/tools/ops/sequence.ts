@@ -9,6 +9,14 @@ import {
 // Execute multiple capabilities in sequence with result forwarding
 // =====================================================
 
+/** Format a result message, truncating long results. */
+function formatResultMessage(result: unknown): string {
+  if (typeof result === 'string') {
+    return result.substring(0, 100);
+  }
+  return 'Success';
+}
+
 export const sequenceCapability: RegisteredCapability = {
   name: 'sequence',
   emoji: '🔄',
@@ -103,11 +111,13 @@ export const sequenceCapability: RegisteredCapability = {
     const summary =
       `✅ Sequence completed: ${stepsArray.length} steps in ${duration}ms\n\n` +
       results
-        .map((r) =>
-          r.success
-            ? `${r.step}. ✅ ${r.capability}: ${typeof r.result === 'string' ? r.result.substring(0, 100) : 'Success'}`
-            : `${r.step}. ❌ ${r.capability}: ${r.error}`
-        )
+        .map((r) => {
+          if (r.success) {
+            const resultMsg = formatResultMessage(r.result);
+            return `${r.step}. ✅ ${r.capability}: ${resultMsg}`;
+          }
+          return `${r.step}. ❌ ${r.capability}: ${r.error}`;
+        })
         .join('\n');
 
     logger.info(`🔗 SEQUENCE: Completed ${stepsArray.length} steps in ${duration}ms`);
