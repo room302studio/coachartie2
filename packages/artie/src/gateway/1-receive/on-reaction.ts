@@ -254,14 +254,14 @@ export function setupReactionHandler(client: Client) {
       } catch (error) {
         logger.error(`Error handling reaction [${shortId}]:`, {
           correlationId,
-          error: error instanceof Error ? error.message : String(error),
-          stack: error instanceof Error ? error.stack : undefined,
+          error: getErrorMessage(error),
+          stack: getErrorStackOrUndefined(error),
         });
 
         telemetry.logEvent(
           'reaction_error',
           {
-            error: error instanceof Error ? error.message : String(error),
+            error: getErrorMessage(error),
           },
           correlationId,
           user.id,
@@ -365,10 +365,11 @@ async function handleRegenerateReaction(
         }
       : null;
 
+    const channelNameValue = 'name' in botMessage.channel ? botMessage.channel.name : 'DM';
     const channelInfo = {
       channelId: botMessage.channelId,
       channelType: botMessage.channel.type,
-      channelName: 'name' in botMessage.channel ? botMessage.channel.name : 'DM',
+      channelName: channelNameValue,
     };
 
     const userInfo = {
@@ -484,7 +485,7 @@ async function handleRegenerateReaction(
     telemetry.logEvent(
       'reaction_regenerate_failed',
       {
-        error: error instanceof Error ? error.message : String(error),
+        error: getErrorMessage(error),
       },
       correlationId,
       user.id,
@@ -542,8 +543,13 @@ async function handleFeedbackReaction(
   // Store memory about this feedback for learning
   try {
     const messageSnippet = reaction.message.content?.substring(0, 150) || 'unknown message';
-    const channelName =
-      ('name' in reaction.message.channel ? reaction.message.channel.name : null) || 'DM';
+    let channelName: string | null;
+    if ('name' in reaction.message.channel) {
+      channelName = reaction.message.channel.name;
+    } else {
+      channelName = null;
+    }
+    channelName = channelName || 'DM';
     const guildName = reaction.message.guild?.name || 'unknown';
     const guildId = reaction.message.guildId;
 
@@ -555,12 +561,18 @@ async function handleFeedbackReaction(
 
     // Use direct memory endpoint for proper storage with guild scope (wave 9: in-process,
     // was POST :47324/capabilities/registry/memory/execute; same handler)
+    let importance: number;
+    if (sentiment === 'negative') {
+      importance = 5; // Negative feedback is more important to learn from
+    } else {
+      importance = 3;
+    }
     const response = await engine.executeTool('memory', {
       action: 'remember',
       params: {
         content: feedbackNote,
         userId: 'reaction-feedback-system',
-        importance: sentiment === 'negative' ? 5 : 3, // Negative feedback is more important to learn from
+        importance,
         tags: ['community', 'feedback', sentiment, 'response-style', channelName.toLowerCase()],
         guildId: guildId, // Store with guild scope so it's recalled in that guild
       },
