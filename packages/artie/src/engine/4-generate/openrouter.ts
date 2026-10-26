@@ -31,6 +31,7 @@ import { openRouterModelsService } from './model-catalog.js';
 import type { ToolDefinition } from '../5-tool-loop/tool-schema.js';
 import type { ToolCall } from '../5-tool-loop/native-loop.js';
 import { creditMonitor } from '../budget/openrouter-balance.js';
+import { recordLlmHiccup } from '../budget/self-meter.js';
 import { costMonitor } from '../budget/usage-ledger.js';
 
 // Context Alchemy observability
@@ -159,6 +160,7 @@ class OpenRouterService {
       const msg = error instanceof Error ? error.message : String(error);
       if (params.reasoning?.effort !== 'none' || !/reasoning is mandatory/i.test(msg)) throw error;
       logger.info(`🧠 ${params.model}: routed to a reasoning-only model, retrying at low effort`);
+      recordLlmHiccup('reasoning-retry');
       return this.client.chat.completions.create({
         ...params,
         reasoning: { effort: 'low', exclude: true },
@@ -862,6 +864,7 @@ class OpenRouterService {
           modelIndex: i + 1,
           totalModels: modelsToTry.length,
         });
+        recordLlmHiccup(i === modelsToTry.length - 1 ? 'failed' : 'fallback');
 
         // Record the FAILED attempt. Every one of the 15,122 historical rows has
         // success = 1, because recordUsage was only ever reached on the success path —

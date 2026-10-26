@@ -45,6 +45,9 @@ import {
   addRelevantMemories,
   addYardCallback,
 } from './sources/memories.js';
+import { getBrownoutMode } from '../budget/brownout.js';
+import { getDailyBudgetUsd } from '../budget/daily-cap.js';
+import { recentHiccups, selfMeterLine } from '../budget/self-meter.js';
 
 // Guild ID to context path mapping (mirrors Discord guild-whitelist.ts)
 const GUILD_CONTEXT_PATHS: Record<string, string> = {
@@ -695,6 +698,14 @@ Important:
         .map((m: any) => `@${m.displayName || m.username}`)
         .join(', ');
       parts.push(`🏷️  Mentions: ${mentionNames}`);
+    }
+
+    // His own spend/mode/fallback meter (he asked for it). getBrownoutMode serves a cached
+    // status, so this never waits on OpenRouter.
+    try {
+      parts.push(selfMeterLine(await getBrownoutMode(), getDailyBudgetUsd(), recentHiccups()));
+    } catch (error) {
+      logger.warn('🔋 Self-meter unavailable for this reply', error);
     }
 
     // System notes (e.g., recovery from downtime)
