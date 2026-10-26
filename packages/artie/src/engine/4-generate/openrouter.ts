@@ -999,7 +999,7 @@ class OpenRouterService {
           modelIndex: i + 1,
           totalModels: modelsToTry.length,
         });
-        let hiccupType: string;
+        let hiccupType: 'failed' | 'fallback';
         if (i === modelsToTry.length - 1) {
           hiccupType = 'failed';
         } else {
