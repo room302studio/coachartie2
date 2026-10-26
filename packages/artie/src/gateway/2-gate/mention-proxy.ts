@@ -536,7 +536,12 @@ Answer with ONLY one word: either "SKIP" or "RESPOND"
           // SKIP wins over RESPOND so "DO NOT RESPOND"-style answers parse correctly
           const shouldRespond = !judgment.includes('SKIP') && judgment.includes('RESPOND');
 
-          const verdict = shouldRespond ? 'PROCEED' : 'SKIP';
+          let verdict: string;
+          if (shouldRespond) {
+            verdict = 'PROCEED';
+          } else {
+            verdict = 'SKIP';
+          }
           logger.info(`⚖️ Judgment result: ${judgment} -> ${verdict}`);
           return shouldRespond;
         }
