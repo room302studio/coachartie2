@@ -16,7 +16,15 @@ beforeAll(async () => {
   db.run(`CREATE TABLE IF NOT EXISTS memories (
     id INTEGER PRIMARY KEY AUTOINCREMENT, user_id TEXT NOT NULL, content TEXT NOT NULL,
     tags TEXT NOT NULL DEFAULT '[]', context TEXT DEFAULT '', timestamp TEXT NOT NULL,
-    importance INTEGER DEFAULT 5, guild_id TEXT)`);
+    importance INTEGER DEFAULT 5)`);
+  // getSyncDb() bootstraps its own legacy "memories" (no guild_id) the first time it's
+  // called anywhere in this process, ahead of the CREATE above — add the column if the
+  // bootstrap won the race, same as client.ts's own addColumnIfMissing pattern.
+  try {
+    db.run(`ALTER TABLE memories ADD COLUMN guild_id TEXT`);
+  } catch {
+    // already has it
+  }
   db.run(`CREATE TABLE IF NOT EXISTS objectives (
     id TEXT PRIMARY KEY, title TEXT NOT NULL, owner TEXT, status TEXT, updated_at TEXT)`);
   db.run(`CREATE TABLE IF NOT EXISTS todo_lists (
