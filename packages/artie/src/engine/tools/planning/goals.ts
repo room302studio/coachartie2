@@ -34,6 +34,42 @@ const GOAL_STATUSES = ['dormant', 'active', 'blocked', 'achieved', 'abandoned'] 
 type GoalType = typeof GOAL_TYPES[number];
 type GoalStatus = typeof GOAL_STATUSES[number];
 
+function statusEmoji(status: string): string {
+  if (status === 'active') {
+    return '🟢';
+  }
+  if (status === 'blocked') {
+    return '🔴';
+  }
+  if (status === 'achieved') {
+    return '✅';
+  }
+  if (status === 'dormant') {
+    return '💤';
+  }
+  return '⚫';
+}
+
+function resolveGoalType(type: string | undefined): GoalType {
+  if (type && GOAL_TYPES.includes(type)) {
+    return type as GoalType;
+  }
+  return 'project';
+}
+
+function updateActionDescription(progress: number | undefined, status: string | undefined, blockers: string | undefined): string {
+  if (progress !== undefined) {
+    return `Progress: ${progress}%`;
+  }
+  if (status) {
+    return `Status: ${status}`;
+  }
+  if (blockers) {
+    return `Blocked: ${blockers}`;
+  }
+  return 'Updated';
+}
+
 /**
  * Resolve a goal ID from a full UUID or short prefix
  */
@@ -83,10 +119,7 @@ interface GoalsParams {
 function formatGoal(goal: Objective): string {
   const prog = goal.progress || 0;
   const progressBar = '█'.repeat(Math.floor(prog / 10)) + '░'.repeat(10 - Math.floor(prog / 10));
-  const statusIcon = goal.status === 'active' ? '🟢' :
-                     goal.status === 'blocked' ? '🔴' :
-                     goal.status === 'achieved' ? '✅' :
-                     goal.status === 'dormant' ? '💤' : '⚫';
+  const statusIcon = statusEmoji(goal.status);
 
   let result = `${statusIcon} **${goal.title}** (${goal.id.slice(0, 8)})\n`;
   result += `   [${progressBar}] ${prog}%\n`;
@@ -125,7 +158,7 @@ async function handleGoals(
           return 'Need a title for the goal. What are we working toward?';
         }
 
-        const goalType = type && GOAL_TYPES.includes(type) ? type : 'project';
+        const goalType = resolveGoalType(type);
 
         const newGoal: NewObjective = {
           id: randomUUID(),
@@ -243,9 +276,7 @@ async function handleGoals(
         await db.update(objectives).set(updates).where(eq(objectives.id, goalId));
 
         // Log the update
-        const actionDesc = progress !== undefined ? `Progress: ${progress}%` :
-                          status ? `Status: ${status}` :
-                          blockers ? `Blocked: ${blockers}` : 'Updated';
+        const actionDesc = updateActionDescription(progress, status, blockers);
 
         await db.insert(goalActions).values({
           goalId: goalId,
