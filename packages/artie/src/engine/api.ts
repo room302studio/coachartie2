@@ -17,6 +17,7 @@
  */
 import { type ApiResult, wire } from '../shared/api-result.js';
 import type { JsonOutputSpec } from '../shared/structured-output.js';
+import type { ScribeSession } from '../shared/db/scribe-store.js';
 
 export type { ApiResult } from '../shared/api-result.js';
 export { isOk, statusText } from '../shared/api-result.js';
@@ -115,6 +116,52 @@ export async function recordTraceFeedback(body: {
   emoji: string;
 }): Promise<ApiResult> {
   return (await import('./routes/observability.js')).recordTraceFeedback(wire(body));
+}
+
+// --- scribe mode (voice meeting scribe) — gateway/voice/scribe-session.ts owns the
+//     VoiceConnection; everything STT/storage/summary/GitHub-shaped lives engine-side
+//     (engine/jobs/scribe/orchestrator.ts). ---
+
+const scribe = () => import('./jobs/scribe/orchestrator.js');
+
+/** Brownout check before joining — refuses to start when credit runway is critical. */
+export async function scribeCanStart(): Promise<{ allowed: boolean; reason?: string }> {
+  return (await scribe()).scribeCanStart();
+}
+
+/** Create the DB session row (and run the retention sweep) once the gateway has joined. */
+export async function scribeStart(body: {
+  guildId: string;
+  voiceChannelId: string;
+  textChannelId: string;
+  startedBy: string;
+}): Promise<{ sessionId: string }> {
+  return (await scribe()).startScribeSession(wire(body));
+}
+
+/** One utterance: base64 WAV in, STT + usage-ledger recording + transcript row out. */
+export async function scribeSubmitUtterance(body: {
+  sessionId: string;
+  userId: string;
+  displayName: string;
+  wavBase64: string;
+  startedAt: string;
+  durationSeconds: number;
+}): Promise<{ accepted: boolean; text?: string; reason?: string }> {
+  return (await scribe()).submitScribeUtterance(wire(body));
+}
+
+/** Summary LLM call, gated GitHub proposals, and posting the result — all engine-side. */
+export async function scribeStop(
+  sessionId: string,
+  stopReason: string
+): Promise<{ pendingCount: number; textChannelId: string; capped: boolean; posted: boolean }> {
+  return (await scribe()).stopScribeSession(sessionId, stopReason);
+}
+
+/** The active session row for a guild (or null), for /scribe status. */
+export async function scribeStatus(guildId: string): Promise<ScribeSession | null> {
+  return (await scribe()).getScribeStatus(guildId);
 }
 
 // --- status (slash commands, the gateway's readiness check) ---

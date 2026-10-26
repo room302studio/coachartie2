@@ -29,6 +29,7 @@ import { observationalLearning } from './watchers/observe-channels.js';
 import { steamReviewNotes } from './watchers/steam-review-notes.js';
 import { channelDigestLoop } from './watchers/channel-digests.js';
 import { registerGatewayClient } from './api.js';
+import { stopAllVoiceScribeSessions } from './voice/scribe-session.js';
 
 /**
  * Privileged intents (GuildMembers, MessageContent) need Discord's app verification once a
@@ -68,6 +69,10 @@ export const client = new Client({
     GatewayIntentBits.DirectMessages,
     GatewayIntentBits.GuildIntegrations,
     GatewayIntentBits.GuildMessageReactions,
+    // Non-privileged (no portal flag, no verification gate) — needed for /scribe to see who's
+    // in a voice channel (join/leave events, member counts for auto-stop). Voice RECEIVE itself
+    // (@discordjs/voice) doesn't need an intent; this just keeps the voice-state cache warm.
+    GatewayIntentBits.GuildVoiceStates,
     ...privilegedIntentBits(),
   ],
   partials: [Partials.Message, Partials.Channel, Partials.User, Partials.Reaction],
@@ -400,6 +405,13 @@ export async function startGateway(): Promise<GatewayHandle> {
         channelDigestLoop.stop();
         if (statusTimer) clearInterval(statusTimer);
         if (pushWorker) await pushWorker.close();
+        // Graceful: finish each still-running scribe session's summary before the connection
+        // (and the engine API it needs to post that summary) goes away. Best-effort — a
+        // summary call that fails here just means the session's row is left for the
+        // retention sweep rather than losing the process over it.
+        await stopAllVoiceScribeSessions('shutdown').catch((error) =>
+          logger.warn('🎙️ Scribe shutdown sweep failed:', getErrorMessage(error))
+        );
         client.destroy();
         logger.info('✅ Gateway stopped');
       },

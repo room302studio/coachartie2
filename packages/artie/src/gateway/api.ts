@@ -70,6 +70,27 @@ export async function sendChannelMessage(
   return (await proxy()).sendChannelMessage(c, { channelId }, wire(body));
 }
 
+/**
+ * sendChannelMessage, but splitting first (4-reply/chunks.ts — Discord's 2000-char limit,
+ * code-block aware). The engine has text this long exactly once today (scribe mode's meeting
+ * summary, engine/jobs/scribe/orchestrator.ts): chunking is gateway-zone code, so this is the
+ * one seam function rather than the engine reaching into gateway/4-reply/ directly. Sends
+ * chunks in order and stops at the first failure.
+ */
+export async function sendChunkedChannelMessage(channelId: string, content: string): Promise<ApiResult> {
+  const { chunkMessage } = await import('./4-reply/chunks.js');
+  const chunks = chunkMessage(content);
+  if (!chunks) {
+    return { status: 400, body: { error: 'nothing to send' } };
+  }
+  let last: ApiResult = { status: 200, body: {} };
+  for (const chunk of chunks) {
+    last = await sendChannelMessage(channelId, { content: chunk });
+    if (last.status >= 400) return last;
+  }
+  return last;
+}
+
 // --- the discord tools' proxy actions ---
 
 export async function createPoll(channelId: string, body: any): Promise<ApiResult> {
