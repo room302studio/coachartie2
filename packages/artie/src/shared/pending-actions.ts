@@ -126,7 +126,10 @@ export function getPendingAction(id: number): PendingAction | null {
   ensureTable();
   const db = getSyncDb();
   const row = db.get<Record<string, unknown>>(`SELECT * FROM pending_actions WHERE id = ?`, [id]);
-  return row ? rowToPendingAction(row) : null;
+  if (row) {
+    return rowToPendingAction(row);
+  }
+  return null;
 }
 
 export function listPendingActions(status: PendingActionStatus = 'pending'): PendingAction[] {

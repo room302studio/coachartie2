@@ -76,8 +76,18 @@ export function logDMGate(
     detail?: string;
   }
 ): void {
-  const who = fields.username ? `${fields.username} (${fields.userId})` : fields.userId || '';
-  const line = `🔐 DM gate: ${decision} ${who}${fields.detail ? ` — ${fields.detail}` : ''}`;
+  let who: string;
+  if (fields.username) {
+    who = `${fields.username} (${fields.userId})`;
+  } else {
+    who = fields.userId || '';
+  }
+  let line: string;
+  if (fields.detail) {
+    line = `🔐 DM gate: ${decision} ${who} — ${fields.detail}`;
+  } else {
+    line = `🔐 DM gate: ${decision} ${who}`;
+  }
   const meta = { dmGate: decision, platform: fields.platform || 'discord', ...fields };
   if (decision.startsWith('blocked')) logger.warn(line, meta);
   else logger.info(line, meta);
@@ -301,9 +311,14 @@ class DMPairingService {
     const policy = this.getPolicy(platform);
     const template = policy.pairingMessage || DEFAULT_PAIRING_MESSAGE;
 
-    const expiryText = expiryMinutes >= 60
-      ? `${Math.round(expiryMinutes / 60)} hour${expiryMinutes >= 120 ? 's' : ''}`
-      : `${expiryMinutes} minutes`;
+    let expiryText: string;
+    if (expiryMinutes >= 60) {
+      const hours = Math.round(expiryMinutes / 60);
+      const plural = expiryMinutes >= 120 ? 's' : '';
+      expiryText = `${hours} hour${plural}`;
+    } else {
+      expiryText = `${expiryMinutes} minutes`;
+    }
 
     return template
       .replace('{CODE}', code)
@@ -422,9 +437,15 @@ class DMPairingService {
     // Clean up expired codes first
     db.run(`UPDATE dm_pairing_codes SET status = 'expired' WHERE status = 'pending' AND expires_at < datetime('now')`);
 
-    const query = platform
-      ? `SELECT * FROM dm_pairing_codes WHERE status = 'pending' AND platform = ? ORDER BY created_at DESC`
-      : `SELECT * FROM dm_pairing_codes WHERE status = 'pending' ORDER BY created_at DESC`;
+    let query: string;
+    let params: string[];
+    if (platform) {
+      query = `SELECT * FROM dm_pairing_codes WHERE status = 'pending' AND platform = ? ORDER BY created_at DESC`;
+      params = [platform];
+    } else {
+      query = `SELECT * FROM dm_pairing_codes WHERE status = 'pending' ORDER BY created_at DESC`;
+      params = [];
+    }
 
     const rows = db.all<{
       id: number;
@@ -436,7 +457,7 @@ class DMPairingService {
       status: string;
       first_message: string | null;
       created_at: string;
-    }>(query, platform ? [platform] : []);
+    }>(query, params);
 
     return rows.map(row => ({
       id: row.id,
@@ -458,9 +479,15 @@ class DMPairingService {
     this.initialize();
     const db = getSyncDb();
 
-    const query = platform
-      ? `SELECT * FROM dm_allowlist WHERE status = 'active' AND platform = ? ORDER BY approved_at DESC`
-      : `SELECT * FROM dm_allowlist WHERE status = 'active' ORDER BY approved_at DESC`;
+    let query: string;
+    let params: string[];
+    if (platform) {
+      query = `SELECT * FROM dm_allowlist WHERE status = 'active' AND platform = ? ORDER BY approved_at DESC`;
+      params = [platform];
+    } else {
+      query = `SELECT * FROM dm_allowlist WHERE status = 'active' ORDER BY approved_at DESC`;
+      params = [];
+    }
 
     const rows = db.all<{
       id: number;
@@ -470,7 +497,7 @@ class DMPairingService {
       approved_by: string;
       approved_at: string;
       status: string;
-    }>(query, platform ? [platform] : []);
+    }>(query, params);
 
     return rows.map(row => ({
       id: row.id,

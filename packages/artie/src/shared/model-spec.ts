@@ -20,14 +20,23 @@ const TIERS = new Set(['low', 'medium', 'high', 'xhigh', 'max']);
 export function resolveModelSpec(spec: string): ResolvedModel {
   const match = /^auto(?::([a-z]+))?(?::(.+))?$/.exec(spec.trim());
   if (!match) return { model: spec };
-  const tier = match[1] && TIERS.has(match[1]) ? match[1] : 'low';
+  let tier: string;
+  if (match[1] && TIERS.has(match[1])) {
+    tier = match[1];
+  } else {
+    tier = 'low';
+  }
   const allowed = (match[2] || '')
     .split(',')
     .map((m) => m.trim())
     .filter(Boolean);
+  const routerConfig: Record<string, unknown> = { id: 'auto-router', cost_tier: tier };
+  if (allowed.length) {
+    routerConfig.allowed_models = allowed;
+  }
   return {
     model: 'openrouter/auto',
-    plugins: [{ id: 'auto-router', cost_tier: tier, ...(allowed.length ? { allowed_models: allowed } : {}) }],
+    plugins: [routerConfig],
   };
 }
 
@@ -39,7 +48,10 @@ export function resolveModelSpec(spec: string): ResolvedModel {
  */
 export function autoReasoningFor(plugins?: unknown[]): { effort: 'none' } | undefined {
   const tier = (plugins?.[0] as { cost_tier?: string } | undefined)?.cost_tier ?? 'low';
-  return tier === 'low' || tier === 'medium' ? { effort: 'none' } : undefined;
+  if (tier === 'low' || tier === 'medium') {
+    return { effort: 'none' };
+  }
+  return undefined;
 }
 
 /** True when a request went to the auto-router, so billing must use the served model. */

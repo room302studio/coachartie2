@@ -550,6 +550,32 @@ export interface SyncDbWrapper {
   close(): void;
 }
 
+/** Determine the event type for database errors. */
+function getDbErrorEventType(
+  isCorruption: boolean,
+  isBusy: boolean,
+  isLocked: boolean
+): string {
+  if (isCorruption) {
+    return 'SQLITE_CORRUPT';
+  }
+  if (isBusy) {
+    return 'SQLITE_BUSY';
+  }
+  if (isLocked) {
+    return 'SQLITE_LOCKED';
+  }
+  return 'SQLITE_ERROR';
+}
+
+/** Determine severity for database errors. */
+function getDbErrorSeverity(isCorruption: boolean): string {
+  if (isCorruption) {
+    return 'CRITICAL';
+  }
+  return 'ERROR';
+}
+
 /**
  * Log database errors with structured data for monitoring
  */
@@ -562,19 +588,13 @@ function logDbError(operation: string, error: any, sql?: string): void {
 
   // Structured log for Loki/Grafana
   const logData = {
-    event: isCorruption
-      ? 'SQLITE_CORRUPT'
-      : isBusy
-        ? 'SQLITE_BUSY'
-        : isLocked
-          ? 'SQLITE_LOCKED'
-          : 'SQLITE_ERROR',
+    event: getDbErrorEventType(isCorruption, isBusy, isLocked),
     operation,
     code: error?.code,
     message: error?.message,
     sql: sql?.substring(0, 200), // Truncate for logging
     timestamp: new Date().toISOString(),
-    severity: isCorruption ? 'CRITICAL' : 'ERROR',
+    severity: getDbErrorSeverity(isCorruption),
   };
 
   if (isCorruption) {

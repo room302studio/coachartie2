@@ -67,7 +67,10 @@ export function getChannelDigest(channelId: string): ChannelDigest | null {
   const row = getSyncDb().get<DigestRow>(`SELECT * FROM channel_digests WHERE channel_id = ?`, [
     channelId,
   ]);
-  return row ? fromRow(row) : null;
+  if (row) {
+    return fromRow(row);
+  }
+  return null;
 }
 
 /**

@@ -54,6 +54,15 @@ export async function publishMessage(
     return;
   }
 
+  const context: Record<string, unknown> = {
+    userTag,
+    platform: 'discord',
+    shouldRespond,
+  };
+  if (guildId) {
+    context.guildId = guildId;
+  }
+
   const queueMessage: IncomingMessage = {
     id: `discord-${Date.now()}-${Math.random()}`,
     timestamp: new Date(),
@@ -61,12 +70,7 @@ export async function publishMessage(
     source: 'discord',
     userId,
     message,
-    context: {
-      userTag,
-      platform: 'discord',
-      shouldRespond,
-      ...(guildId ? { guildId } : {}),
-    },
+    context,
     respondTo: {
       type: 'discord',
       channelId,

@@ -35,5 +35,8 @@ export function statusText(result: ApiResult): string {
  * pass bodies through this so an in-process call sees exactly what the route would have.
  */
 export function wire<T>(body: T): T {
-  return body === undefined ? ({} as T) : JSON.parse(JSON.stringify(body));
+  if (body === undefined) {
+    return ({} as T);
+  }
+  return JSON.parse(JSON.stringify(body));
 }

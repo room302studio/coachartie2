@@ -101,7 +101,14 @@ export function budgetOverridePath(path: string = getKillSwitchPath()): string {
 export function readBudgetOverrideDay(path: string = getKillSwitchPath()): string | null {
   try {
     const p = budgetOverridePath(path);
-    return existsSync(p) ? readFileSync(p, 'utf8').trim() || null : null;
+    if (!existsSync(p)) {
+      return null;
+    }
+    const trimmed = readFileSync(p, 'utf8').trim();
+    if (trimmed) {
+      return trimmed;
+    }
+    return null;
   } catch {
     return null;
   }
