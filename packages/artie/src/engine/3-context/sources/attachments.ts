@@ -24,7 +24,10 @@ import { collapseWhitespace } from '../../../shared/text.js';
 function sendMetroFileHint(): string {
   const xml =
     'TO SEND FILE: <capability name="send-metro-file" action="send" userId="USER_ID" message="Your message here" />';
-  return toolLoopMode() === 'native' ? toCallNotation(xml) : xml;
+  if (toolLoopMode() === 'native') {
+    return toCallNotation(xml);
+  }
+  return xml;
 }
 
 // Vision capability wrapper for auto-extraction
@@ -104,13 +107,20 @@ export async function addAttachmentContext(
   sources: ContextSource[]
 ): Promise<void> {
   const messageText = message.message || '';
-  const currentAttachments = Array.isArray(message.context?.attachments)
-    ? message.context.attachments
-    : [];
-  const recentAttachments = Array.isArray(message.context?.recentAttachments)
-    ? message.context.recentAttachments
-    : [];
-  const recentUrls = Array.isArray(message.context?.recentUrls) ? message.context.recentUrls : [];
+  let currentAttachments: any[] = [];
+  if (Array.isArray(message.context?.attachments)) {
+    currentAttachments = message.context.attachments;
+  }
+
+  let recentAttachments: any[] = [];
+  if (Array.isArray(message.context?.recentAttachments)) {
+    recentAttachments = message.context.recentAttachments;
+  }
+
+  let recentUrls: any[] = [];
+  if (Array.isArray(message.context?.recentUrls)) {
+    recentUrls = message.context.recentUrls;
+  }
   const recentMetroAttachments = recentAttachments.filter(
     (att: any) =>
       typeof att?.name === 'string' &&
@@ -118,10 +128,15 @@ export async function addAttachmentContext(
       (!att.authorId || att.authorId === message.userId)
   );
 
+  let contextKeys: string[] = [];
+  if (message.context) {
+    contextKeys = Object.keys(message.context);
+  }
+
   logger.info(
     `📎 ATTACHMENT DEBUG: current=${currentAttachments.length}, recent=${recentAttachments.length}, urls=${recentUrls.length}`,
     {
-      contextKeys: message.context ? Object.keys(message.context) : [],
+      contextKeys,
       hasAttachmentsField: !!message.context?.attachments,
       hasRecentAttachmentsField: !!message.context?.recentAttachments,
       debugCurrent: message.context?._debug_currentAttachmentCount,
@@ -143,8 +158,14 @@ export async function addAttachmentContext(
       seen.add(url);
 
       const label = att.name || att.id || `attachment-${idx + 1}`;
-      const type = att.contentType ? ` (${att.contentType})` : '';
-      const from = att.author ? ` by ${att.author}` : '';
+      let type = '';
+      if (att.contentType) {
+        type = ` (${att.contentType})`;
+      }
+      let from = '';
+      if (att.author) {
+        from = ` by ${att.author}`;
+      }
       lines.push(`- ${label}${type}${from}: ${url}`);
     });
 
@@ -223,10 +244,12 @@ Be precise with numbers - if it says 1.5%, report 1.5% not 1.1%. If you can't re
 
         // Trim if very long to avoid context bloat
         const MAX_VISION_CHARS = 2000;
-        const truncated =
-          visionResult.length > MAX_VISION_CHARS
-            ? visionResult.slice(0, MAX_VISION_CHARS) + '\n…[truncated]'
-            : visionResult;
+        let truncated: string;
+        if (visionResult.length > MAX_VISION_CHARS) {
+          truncated = visionResult.slice(0, MAX_VISION_CHARS) + '\n…[truncated]';
+        } else {
+          truncated = visionResult;
+        }
 
         // Frame the vision output clearly so the LLM knows the images were already analyzed
         const framedContent = `🖼️ IMAGE ANALYSIS COMPLETE - The following images were analyzed using vision AI:\n\n${truncated}\n\n(Use this analysis to answer questions about the images - do NOT say you cannot view images.)`;
@@ -255,21 +278,33 @@ Be precise with numbers - if it says 1.5%, report 1.5% not 1.1%. If you can't re
   // Optional: auto metro doctor for .metro files
   // IMPORTANT: Only process metro files from the CURRENT message, not recentAttachments
   // Otherwise we'd re-send metro files every time someone mentions Artie in a channel
-  const metroAttachments = currentAttachments.filter((att: any) =>
-    typeof att.name === 'string' ? att.name.toLowerCase().endsWith('.metro') : false
-  );
+  function isMetroFile(att: any): boolean {
+    if (typeof att.name === 'string') {
+      return att.name.toLowerCase().endsWith('.metro');
+    }
+    return false;
+  }
+
+  const metroAttachments = currentAttachments.filter((att: any) => isMetroFile(att));
   const autoMetro = (process.env.AUTO_METRO_DOCTOR || 'true').toLowerCase() !== 'false';
 
   // Check if user explicitly mentions .metro files
   // Don't use keyword heuristics to guess transit intent - let the LLM handle context
   const isMetroFollowup = messageText.toLowerCase().includes('.metro');
 
-  const pickMostRecent = (items: any[]) =>
-    items.slice().sort((a, b) => {
-      const aTime = a.timestamp ? new Date(a.timestamp).getTime() : 0;
-      const bTime = b.timestamp ? new Date(b.timestamp).getTime() : 0;
+  const pickMostRecent = (items: any[]) => {
+    return items.slice().sort((a, b) => {
+      let aTime = 0;
+      if (a.timestamp) {
+        aTime = new Date(a.timestamp).getTime();
+      }
+      let bTime = 0;
+      if (b.timestamp) {
+        bTime = new Date(b.timestamp).getTime();
+      }
       return bTime - aTime;
     })[0];
+  };
 
   let metroCandidate = metroAttachments[0];
   let metroSource: 'current' | 'recent' = 'current';
@@ -351,16 +386,23 @@ ${recentMetroMemory.content}`;
         const result = await processMetroAttachment(url, sender);
 
         const MAX_METRO_CHARS = 2000;
-        const trimmed =
-          result.stdout.length > MAX_METRO_CHARS
-            ? result.stdout.slice(0, MAX_METRO_CHARS) + '\n…[truncated]'
-            : result.stdout;
+        let trimmed: string;
+        if (result.stdout.length > MAX_METRO_CHARS) {
+          trimmed = result.stdout.slice(0, MAX_METRO_CHARS) + '\n…[truncated]';
+        } else {
+          trimmed = result.stdout;
+        }
+
+        let stderrLine = '';
+        if (result.stderr) {
+          stderrLine = `Stderr: ${result.stderr.slice(0, 500)}`;
+        }
 
         const _content = [
           '🩺 Metro savefile doctor (auto)',
           `File: ${first.name || first.id || url}`,
           trimmed,
-          result.stderr ? `Stderr: ${result.stderr.slice(0, 500)}` : '',
+          stderrLine,
         ]
           .filter(Boolean)
           .join('\n');
@@ -372,9 +414,12 @@ ${recentMetroMemory.content}`;
         // Store the analyzed file so LLM can decide whether to send it back
         const canSendFile = metroSource === 'current';
         if (canSendFile) {
-          const storedFilename = repairsMade
-            ? result.filename
-            : `analyzed_${first.name || 'save.metro'}`;
+          let storedFilename: string;
+          if (repairsMade) {
+            storedFilename = result.filename;
+          } else {
+            storedFilename = `analyzed_${first.name || 'save.metro'}`;
+          }
           storeAnalyzedMetroFile(message.userId, storedFilename, result.buffer, summary);
           logger.info(
             `📦 Stored metro file for LLM to send: ${storedFilename} (repaired: ${repairsMade})`
@@ -382,9 +427,14 @@ ${recentMetroMemory.content}`;
         }
 
         if (repairsMade) {
+          let metroHint = '';
+          if (canSendFile) {
+            metroHint = sendMetroFileHint();
+          }
+
           const repairedContent = `METRO SAVE ANALYZED: ${first.name}
 Status: Repairs made
-${canSendFile ? sendMetroFileHint() : ''}
+${metroHint}
 
 ${summary}`;
 
@@ -417,11 +467,16 @@ ${summary}`;
                 `📝 Skipping metro memory storage - recent duplicate exists for ${first.name}`
               );
             } else {
+              let sendStatus = 'follow-up question';
+              if (canSendFile) {
+                sendStatus = 'file available to send back';
+              }
+
               const memoryContent = `Metro save file analyzed: ${first.name}
 Stats: ${result.analysis?.stats?.stations || 0} stations, ${result.analysis?.stats?.routes || 0} routes, ${result.analysis?.stats?.trains || 0} trains
 Money: $${result.analysis?.stats?.money || 0}
 Warnings: ${result.analysis?.warnings?.join('; ') || 'None'}
-Repairs made: Yes - ${canSendFile ? 'file available to send back' : 'follow-up question'}
+Repairs made: Yes - ${sendStatus}
 File URL: ${url}`;
               await memoryService.remember(
                 message.userId,
@@ -440,9 +495,14 @@ File URL: ${url}`;
           // No repairs needed - just tell the user
           logger.info(`✅ Metro file healthy, no repairs needed: ${first.name}`);
 
+          let metroHint = '';
+          if (canSendFile) {
+            metroHint = sendMetroFileHint();
+          }
+
           const healthyContent = `METRO SAVE ANALYZED: ${first.name}
 Status: Healthy
-${canSendFile ? sendMetroFileHint() : ''}
+${metroHint}
 
 ${summary}`;
 
@@ -524,9 +584,10 @@ File URL: ${url}`;
   }
 
   // Resolved Discord message links - show the actual content of linked messages
-  const resolvedDiscordMessages = Array.isArray(message.context?.resolvedDiscordMessages)
-    ? message.context.resolvedDiscordMessages
-    : [];
+  let resolvedDiscordMessages: any[] = [];
+  if (Array.isArray(message.context?.resolvedDiscordMessages)) {
+    resolvedDiscordMessages = message.context.resolvedDiscordMessages;
+  }
 
   if (resolvedDiscordMessages.length > 0) {
     const lines = ['📨 Referenced Discord Messages:'];
@@ -586,7 +647,10 @@ File URL: ${url}`;
           const trimmed = text.slice(0, MAX_CHARS);
 
           const titleMatch = trimmed.match(/<title>([^<]{0,200})<\/title>/i);
-          const title = titleMatch ? titleMatch[1].trim() : '';
+          let title = '';
+          if (titleMatch) {
+            title = titleMatch[1].trim();
+          }
 
           const plain = collapseWhitespace(
             trimmed
@@ -597,9 +661,12 @@ File URL: ${url}`;
             .trim()
             .slice(0, 600);
 
-          const summary = title
-            ? `Title: ${title}\nPreview: ${plain || '(empty)'}`
-            : `Preview: ${plain || '(empty)'}`;
+          let summary: string;
+          if (title) {
+            summary = `Title: ${title}\nPreview: ${plain || '(empty)'}`;
+          } else {
+            summary = `Preview: ${plain || '(empty)'}`;
+          }
 
           previews.push(`🔗 ${url}\n${summary}`);
         } catch (error: any) {
