@@ -12,6 +12,13 @@ import { GITHUB_FEED_CHANNEL_ID } from '../../../shared/config/channels.js';
 import type { GitHubSyncEvent, GitHubEventType } from './poller.js';
 import type { ProcessedEvent, BatchedEvents, DiscordMention } from './event-batcher.js';
 
+function formatContentWithPrefix(content: string): string {
+  if (content) {
+    return `\n${content}`;
+  }
+  return '';
+}
+
 // Color palette for different event types
 const EVENT_COLORS: Record<GitHubEventType, number> = {
   pr_opened: 0x238636, // Green
@@ -151,7 +158,7 @@ export class GitHubDiscordPoster {
         const feed = await this.getChannel(GITHUB_FEED_CHANNEL_ID);
         if (feed) {
           await feed
-            .send({ content: `⚠️ couldn't post in <#${channel.id}> (no access), so here:${content ? `\n${content}` : ''}`, embeds: [embed] })
+            .send({ content: `⚠️ couldn't post in <#${channel.id}> (no access), so here:${formatContentWithPrefix(content)}`, embeds: [embed] })
             .catch((e) => logger.error('Fallback post to the GitHub feed also failed:', e));
         }
       }
