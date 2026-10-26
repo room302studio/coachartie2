@@ -87,9 +87,10 @@ function extractCodeFromMarkdown(content: string): { code: string; lang?: string
     const codeToken = tokens.find((t) => t.type === 'code');
 
     if (codeToken && 'text' in codeToken) {
+      const codeTokenWithLang = codeToken as { text: string; lang?: string };
       return {
-        code: codeToken.text,
-        lang: 'lang' in codeToken ? codeToken.lang : undefined,
+        code: codeTokenWithLang.text,
+        lang: codeTokenWithLang.lang,
       };
     }
   } catch (error) {
@@ -307,10 +308,15 @@ Use action="read_pane" session="${session}" to see output.`;
         const output = stdout.trim();
         const truncated = truncateOutput(output);
 
+        let truncationNotice = '';
+        if (truncated.truncated) {
+          truncationNotice = '[...truncated...]';
+        }
+
         // Return like looking at a terminal screen
         return `--- ${target} ---
 ${truncated.text}
-${truncated.truncated ? `[...truncated...]` : ''}
+${truncationNotice}
 [${paneCwd}]`;
       }
 
@@ -322,7 +328,12 @@ ${truncated.truncated ? `[...truncated...]` : ''}
         logger.info(`Splitting ${target} ${direction}`);
         await ensureSession(session, cwd);
 
-        const splitFlag = direction === 'horizontal' ? '-h' : '-v';
+        let splitFlag: string;
+        if (direction === 'horizontal') {
+          splitFlag = '-h';
+        } else {
+          splitFlag = '-v';
+        }
 
         // The command is one argv element; tmux runs it with the container's shell.
         const { stdout } = await execInContainer(
@@ -591,9 +602,12 @@ async function runEdit(params: any, _content: string | undefined): Promise<strin
           }
         }
 
-        logger.info(
-          `Reading ${file}${startLine ? ` (lines ${startLine}-${endLine || 'end'})` : ''}`
-        );
+        let logMsg = `Reading ${file}`;
+        if (startLine) {
+          const endStr = endLine || 'end';
+          logMsg += ` (lines ${startLine}-${endStr})`;
+        }
+        logger.info(logMsg);
 
         const content = await readWithLineNumbers(file, startLine, endLine);
 
@@ -659,8 +673,12 @@ Either:
           .slice(0, 30) // Limit diff output
           .join('\n');
 
-        return `Edited ${file}${count > 1 ? ` (${count} replacements)` : ''}:
-${formattedDiff || '(no visible diff)'}`;
+        let resultMsg = `Edited ${file}`;
+        if (count > 1) {
+          resultMsg += ` (${count} replacements)`;
+        }
+        resultMsg += `:\n${formattedDiff || '(no visible diff)'}`;
+        return resultMsg;
       }
 
       case 'insert': {
@@ -678,8 +696,11 @@ ${formattedDiff || '(no visible diff)'}`;
         const escaped = new_string.replace(/'/g, "'\\''");
         await editExecInContainer(`sed -i '${lineNum}i\\${escaped}' "${file}"`);
 
-        return `Inserted at ${file}:${lineNum}:
-+ ${new_string.split('\n')[0]}${new_string.includes('\n') ? '\n  ...' : ''}`;
+        let insertResult = `Inserted at ${file}:${lineNum}:\n+ ${new_string.split('\n')[0]}`;
+        if (new_string.includes('\n')) {
+          insertResult += '\n  ...';
+        }
+        return insertResult;
       }
 
       case 'delete': {
@@ -709,8 +730,11 @@ ${formattedDiff || '(no visible diff)'}`;
           .slice(0, 3)
           .map((l) => `- ${l}`)
           .join('\n');
-        return `Deleted ${file}:${range}:
-${preview}${toDelete.stdout.split('\n').length > 3 ? '\n  ...' : ''}`;
+        let deleteResult = `Deleted ${file}:${range}:\n${preview}`;
+        if (toDelete.stdout.split('\n').length > 3) {
+          deleteResult += '\n  ...';
+        }
+        return deleteResult;
       }
 
       default:
@@ -780,7 +804,14 @@ async function runGit(params: any, _content: string | undefined): Promise<string
     count = 10,
   } = params as GitParams;
 
-  logger.info(`Git: ${action}${file ? ` ${file}` : ''}${ref ? ` (${ref})` : ''}`);
+  let gitLogMsg = `Git: ${action}`;
+  if (file) {
+    gitLogMsg += ` ${file}`;
+  }
+  if (ref) {
+    gitLogMsg += ` (${ref})`;
+  }
+  logger.info(gitLogMsg);
 
   try {
     switch (action) {
@@ -829,7 +860,10 @@ async function runGit(params: any, _content: string | undefined): Promise<string
         }
 
         const truncated = truncateGitOutput(stdout.trim(), 150);
-        return truncated.truncated ? `${truncated.text}\n[diff truncated]` : truncated.text;
+        if (truncated.truncated) {
+          return `${truncated.text}\n[diff truncated]`;
+        }
+        return truncated.text;
       }
 
       case 'log': {
@@ -885,7 +919,10 @@ async function runGit(params: any, _content: string | undefined): Promise<string
         );
 
         const truncated = truncateGitOutput(stdout.trim(), 80);
-        return truncated.truncated ? `${truncated.text}\n[output truncated]` : truncated.text;
+        if (truncated.truncated) {
+          return `${truncated.text}\n[output truncated]`;
+        }
+        return truncated.text;
       }
 
       case 'blame': {
@@ -896,9 +933,10 @@ async function runGit(params: any, _content: string | undefined): Promise<string
         const { stdout } = await gitExecInContainer(`git blame --date=short ${file}`);
 
         const truncated = truncateGitOutput(stdout.trim(), 100);
-        return truncated.truncated
-          ? `Blame for ${file}:\n${truncated.text}\n[output truncated]`
-          : `Blame for ${file}:\n${truncated.text}`;
+        if (truncated.truncated) {
+          return `Blame for ${file}:\n${truncated.text}\n[output truncated]`;
+        }
+        return `Blame for ${file}:\n${truncated.text}`;
       }
 
       default:
@@ -1140,7 +1178,12 @@ function formatContentResults(
     lines.push(`\n${relative}:`);
     for (const m of matches) {
       // Truncate long lines
-      const display = m.match.length > 100 ? m.match.slice(0, 100) + '...' : m.match;
+      let display: string;
+      if (m.match.length > 100) {
+        display = m.match.slice(0, 100) + '...';
+      } else {
+        display = m.match;
+      }
       lines.push(`  ${m.line}: ${display}`);
     }
   }

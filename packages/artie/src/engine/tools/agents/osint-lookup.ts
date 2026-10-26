@@ -17,6 +17,7 @@ import type {
   CapabilityContext,
 } from '../../5-tool-loop/registry.js';
 import { readFileSync } from 'fs';
+import { getErrorMessage } from '../../error-utils.js';
 
 // Default coordinates are only used for owner — never exposed to other users
 const DEFAULT_LAT = 41.75;
@@ -87,7 +88,13 @@ async function handleOsintLookup(
           `/api/signals?limit=${limit}&min_score=1.5`,
           token
         );
-        const signals = (Array.isArray(data) ? data : data.signals || []).slice(0, limit);
+        let signalsArray: any[];
+        if (Array.isArray(data)) {
+          signalsArray = data;
+        } else {
+          signalsArray = data.signals || [];
+        }
+        const signals = signalsArray.slice(0, limit);
         const summary = signals.map((s: any) => ({
           id: s.id,
           title: s.title,
@@ -121,10 +128,16 @@ async function handleOsintLookup(
           `/api/query?q=${encodeURIComponent(id)}&limit=5`,
           token
         );
+        let resultsArray: any[];
+        if (Array.isArray(results)) {
+          resultsArray = results;
+        } else {
+          resultsArray = results.results || [];
+        }
         return JSON.stringify({
           success: true,
           query: id,
-          results: Array.isArray(results) ? results : results.results || [],
+          results: resultsArray,
         });
       }
 
@@ -137,16 +150,28 @@ async function handleOsintLookup(
           `/api/query?q=${encodeURIComponent(query)}&limit=${params.limit || 10}`,
           token
         );
+        let resultsArray: any[];
+        if (Array.isArray(results)) {
+          resultsArray = results;
+        } else {
+          resultsArray = results.results || [];
+        }
         return JSON.stringify({
           success: true,
           query,
-          results: Array.isArray(results) ? results : results.results || [],
+          results: resultsArray,
         });
       }
 
       case 'investigations': {
         const data = await osintFetch(OSINT_APIS.anomalywatch, '/api/investigations', token);
-        const investigations = (Array.isArray(data) ? data : data.investigations || [])
+        let investigationsArray: any[];
+        if (Array.isArray(data)) {
+          investigationsArray = data;
+        } else {
+          investigationsArray = data.investigations || [];
+        }
+        const investigations = investigationsArray
           .filter((inv: any) => inv.status === 'active')
           .map((inv: any) => ({
             id: inv.id,
@@ -173,10 +198,16 @@ async function handleOsintLookup(
             OSINT_APIS.skywatch,
             `/api/notable?callsign=${encodeURIComponent(callsign)}&limit=10`
           );
+          let sightingsArray: any[];
+          if (Array.isArray(data)) {
+            sightingsArray = data;
+          } else {
+            sightingsArray = data.sightings || data.flights || [];
+          }
           return JSON.stringify({
             success: true,
             callsign,
-            sightings: Array.isArray(data) ? data : data.sightings || data.flights || [],
+            sightings: sightingsArray,
           });
         }
 
@@ -209,8 +240,14 @@ async function handleOsintLookup(
           });
         }
 
-        let lat = params.lat ? Number(params.lat) : null;
-        let lon = params.lon ? Number(params.lon) : null;
+        let lat: number | null = null;
+        if (params.lat) {
+          lat = Number(params.lat);
+        }
+        let lon: number | null = null;
+        if (params.lon) {
+          lon = Number(params.lon);
+        }
 
         // If no explicit coords, try OwnTracks for live location
         if (!lat || !lon) {
@@ -321,7 +358,12 @@ async function handleOsintLookup(
             `/api/query?q=${encodeURIComponent(query)}&limit=5`,
             token
           );
-          const signalList = Array.isArray(signals) ? signals : signals.results || [];
+          let signalList: any[];
+          if (Array.isArray(signals)) {
+            signalList = signals;
+          } else {
+            signalList = signals.results || [];
+          }
           if (signalList.length > 0) results.sources.anomalywatch = signalList;
         } catch (e) {
           logger.warn('OSINT explain: anomalywatch search failed', e);
@@ -367,7 +409,7 @@ async function handleOsintLookup(
     logger.error(`❌ OSINT lookup error for action '${action}':`, error);
     return JSON.stringify({
       success: false,
-      error: error instanceof Error ? error.message : String(error),
+      error: getErrorMessage(error),
     });
   }
 }
