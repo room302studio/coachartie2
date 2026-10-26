@@ -115,10 +115,50 @@ function findStalledQuests(): UserHeartbeatData[] {
 }
 
 /**
+ * Format a number of days as a human-readable string
+ */
+function formatDays(days: number): string {
+  if (days === 1) {
+    return 'a day';
+  }
+  return `${days} days`;
+}
+
+/**
+ * Format a content suffix for truncated text
+ */
+function formatTruncationSuffix(contentLength: number, maxLength: number): string {
+  if (contentLength > maxLength) {
+    return '...';
+  }
+  return '';
+}
+
+/**
+ * Format a plural suffix (ies vs blank)
+ */
+function formatPluralIes(count: number): string {
+  if (count > 1) {
+    return 'ies';
+  }
+  return '';
+}
+
+/**
+ * Get the priority level for a goal status
+ */
+function getPriorityForStatus(status: string): 'high' | 'normal' {
+  if (status === 'blocked') {
+    return 'high';
+  }
+  return 'normal';
+}
+
+/**
  * Generate a friendly nudge message for a stuck quest
  */
 function generateNudgeMessage(quest: StuckQuest): string {
-  const dayText = quest.stuckDays === 1 ? 'a day' : `${quest.stuckDays} days`;
+  const dayText = formatDays(quest.stuckDays);
 
   const nudges = [
     `Hey! I noticed you've been on step ${quest.currentStep} of "${quest.title}" for ${dayText}. The current step is: **${quest.stepTitle}**. Need any help moving forward?`,
@@ -200,13 +240,15 @@ async function generateDailyInsights(userId: string): Promise<string | null> {
     let insight = `**Your Daily Digest**\n\n`;
 
     if (memoryCount?.count) {
-      insight += `Captured ${memoryCount.count} new memory${memoryCount.count > 1 ? 'ies' : ''} today.\n\n`;
+      const pluralSuffix = formatPluralIes(memoryCount.count);
+      insight += `Captured ${memoryCount.count} new memory${pluralSuffix} today.\n\n`;
     }
 
     if (gems.length > 0) {
       insight += `**Notable memories:**\n`;
       for (const gem of gems) {
-        insight += `- ${gem.content.slice(0, 100)}${gem.content.length > 100 ? '...' : ''}\n`;
+        const truncationSuffix = formatTruncationSuffix(gem.content.length, 100);
+        insight += `- ${gem.content.slice(0, 100)}${truncationSuffix}\n`;
       }
     }
 
@@ -259,9 +301,14 @@ function findStalledTodos(): Array<{ userId: string; listName: string; pendingCo
  * Generate a nudge message for a stalled goal
  */
 function generateGoalNudgeMessage(goal: Objective): string {
-  const lastWorked = goal.lastWorkedAt ? new Date(goal.lastWorkedAt) : new Date(goal.createdAt || Date.now());
+  let lastWorked: Date;
+  if (goal.lastWorkedAt) {
+    lastWorked = new Date(goal.lastWorkedAt);
+  } else {
+    lastWorked = new Date(goal.createdAt || Date.now());
+  }
   const staleDays = Math.floor((Date.now() - lastWorked.getTime()) / (24 * 60 * 60 * 1000));
-  const dayText = staleDays === 1 ? 'a day' : `${staleDays} days`;
+  const dayText = formatDays(staleDays);
 
   const progressBar = '█'.repeat(Math.floor((goal.progress || 0) / 10)) + '░'.repeat(10 - Math.floor((goal.progress || 0) / 10));
 
@@ -393,12 +440,13 @@ export async function executeHeartbeat(): Promise<{
           const message = generateGoalNudgeMessage(goal);
 
           // Use delivery manager for reliable delivery with retry
+          const priority = getPriorityForStatus(goal.status);
           const result = await deliveryManager.deliver({
             messageType: 'goal_nudge',
             userId: OWNER_USER_ID,
             content: message,
             relatedId: goal.id,
-            priority: goal.status === 'blocked' ? 'high' : 'normal',
+            priority,
           });
 
           if (result.success) {
