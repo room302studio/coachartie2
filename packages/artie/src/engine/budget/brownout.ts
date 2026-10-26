@@ -37,12 +37,18 @@ export interface BrownoutStatus {
 const MODE_RANK: Record<BrownoutMode, number> = { normal: 0, lean: 1, critical: 2 };
 
 export function moreConservative(a: BrownoutMode, b: BrownoutMode): BrownoutMode {
-  return MODE_RANK[a] >= MODE_RANK[b] ? a : b;
+  if (MODE_RANK[a] >= MODE_RANK[b]) {
+    return a;
+  }
+  return b;
 }
 
 function envFraction(name: string, fallback: number): number {
   const parsed = parseFloat(process.env[name] || '');
-  return Number.isFinite(parsed) && parsed > 0 && parsed <= 1 ? parsed : fallback;
+  if (Number.isFinite(parsed) && parsed > 0 && parsed <= 1) {
+    return parsed;
+  }
+  return fallback;
 }
 
 /**
@@ -101,7 +107,13 @@ export function brownoutDriver(status: BrownoutStatus): string {
   if (status.mode === 'normal') return 'none';
   const r = status.runwayMode === status.mode;
   const d = status.dailyMode === status.mode;
-  return r && d ? 'runway+daily' : d ? 'daily' : 'runway';
+  if (r && d) {
+    return 'runway+daily';
+  }
+  if (d) {
+    return 'daily';
+  }
+  return 'runway';
 }
 
 // Balance lookups can hit OpenRouter's /credits endpoint — cache so we
@@ -116,7 +128,10 @@ let lastMode: BrownoutMode = 'normal';
 
 function envNumber(name: string, fallback: number): number {
   const parsed = parseFloat(process.env[name] || '');
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+  if (Number.isFinite(parsed) && parsed > 0) {
+    return parsed;
+  }
+  return fallback;
 }
 
 // Stale-while-revalidate: the balance lookup can be a live OpenRouter fetch with
@@ -187,7 +202,12 @@ async function refresh(now: number): Promise<void> {
       typeof status.dailySpendFraction === 'number'
         ? `${Math.round(status.dailySpendFraction * 100)}% of daily budget`
         : 'daily budget n/a';
-    const runway = runwayHours === null ? 'runway ?' : `~${runwayHours.toFixed(1)}h runway`;
+    let runway: string;
+    if (runwayHours === null) {
+      runway = 'runway ?';
+    } else {
+      runway = `~${runwayHours.toFixed(1)}h runway`;
+    }
     if (mode !== 'normal') {
       logger.error(
         `🚨🕯️ BROWNOUT ENGAGED: ${lastMode} → ${mode.toUpperCase()} ` +
@@ -221,7 +241,10 @@ const BREVITY_NOTES: Record<Exclude<BrownoutMode, 'normal'>, string> = {
 };
 
 export function brevityNoteFor(mode: BrownoutMode): string | null {
-  return mode === 'normal' ? null : BREVITY_NOTES[mode];
+  if (mode === 'normal') {
+    return null;
+  }
+  return BREVITY_NOTES[mode];
 }
 
 /**
@@ -259,15 +282,16 @@ export function brownoutRoute(status: BrownoutStatus, persona: string): Brownout
     .split(',')
     .map((m) => m.trim())
     .filter(Boolean);
+  const routerConfig: Record<string, unknown> = {
+    id: 'auto-router',
+    cost_tier: process.env.BROWNOUT_AUTO_COST_TIER || 'low',
+  };
+  if (allowed.length) {
+    routerConfig.allowed_models = allowed;
+  }
   return {
     model: 'openrouter/auto',
-    plugins: [
-      {
-        id: 'auto-router',
-        cost_tier: process.env.BROWNOUT_AUTO_COST_TIER || 'low',
-        ...(allowed.length ? { allowed_models: allowed } : {}),
-      },
-    ],
+    plugins: [routerConfig],
   };
 }
 
@@ -293,7 +317,12 @@ export function applyBrevityNote<T extends { role: 'system' | 'user' | 'assistan
   const note = brevityNoteFor(mode);
   if (!note) return messages;
   const first = messages.findIndex((m) => m.role === 'system');
-  const at = first === -1 ? 0 : first + 1;
+  let at: number;
+  if (first === -1) {
+    at = 0;
+  } else {
+    at = first + 1;
+  }
   const noteMessage = { role: 'system', content: note } as T;
   return [...messages.slice(0, at), noteMessage, ...messages.slice(at)];
 }
