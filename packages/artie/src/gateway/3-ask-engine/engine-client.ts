@@ -1,6 +1,27 @@
 import { logger } from '../../shared/logger.js';
 import { delay } from '../../shared/async.js';
+import { getErrorMessage } from '../../shared/errors.js';
 import * as engine from '../../engine/api.js';
+
+/**
+ * Ensure a value is an Error instance; convert non-Errors by stringifying them.
+ */
+function ensureError(value: unknown): Error {
+  if (value instanceof Error) {
+    return value;
+  }
+  return new Error(String(value));
+}
+
+/**
+ * Detect the source platform from context metadata; returns 'discord' if explicitly set, else undefined.
+ */
+function getSourceFromContext(context?: Record<string, any>): string | undefined {
+  if (context?.platform === 'discord') {
+    return 'discord';
+  }
+  return undefined;
+}
 
 /**
  * Retry a function with exponential backoff
@@ -16,7 +37,7 @@ async function withRetry<T>(
     try {
       return await fn();
     } catch (error: any) {
-      lastError = error instanceof Error ? error : new Error(String(error));
+      lastError = ensureError(error);
 
       // Don't retry if explicitly marked as non-retryable (e.g., 404s)
       if (error?.noRetry) {
@@ -90,7 +111,7 @@ export class CapabilitiesClient {
     return withRetry(
       async () => {
         // AUTO-DETECT: Set source to 'discord' if context contains Discord metadata
-        const source = context?.platform === 'discord' ? 'discord' : undefined;
+        const source = getSourceFromContext(context);
 
         // engine/api.ts passes the body through a JSON round trip, so the turn's context is
         // the same plain-data copy POST /chat received.
@@ -287,7 +308,7 @@ export class CapabilitiesClient {
           // Schedule next poll
           setTimeout(poll, pollInterval);
         } catch (error) {
-          const errorMsg = error instanceof Error ? error.message : String(error);
+          const errorMsg = getErrorMessage(error);
           logger.error(`Polling error for job ${messageId}:`, error);
 
           if (onError) {
