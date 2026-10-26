@@ -24,8 +24,8 @@ approved by him over `/chat`. His sign-off is saved as memory 20493.
 | Real-time reactions | MULTIPLAYER-NOTES.md §3 | |
 | Prune dead tools; gate stripe/email | TOOLS-NOTES.md §2-3 | hello-world merged into `diagnose ping` (F1: merge, never delete). Money, email, reddit/github/wiki writes and http writes queue as `pending_actions` until EJ approves via the `approvals` tool. The bypass flag is stripped on both loops (review fix) |
 | Loud fallbacks | self-meter (prod f3e0d5b) + TOOLS-NOTES.md §4 | Swallowed tool failures are now prefixed `Error:` |
-| Lighter security reminder | prompts/2026-10-26-kindness-streak.md | **Proposal, not loaded** |
-| Creative/kindness streak | prompts/2026-10-26-kindness-streak.md | Warm-first, maker streak, multiplayer block, rude-vs-hostile line (Artie's edit) |
+| Lighter security reminder | prompts/2026-10-26-kindness-streak.md | **Live in prod** (v3) |
+| Creative/kindness streak | prompts/2026-10-26-kindness-streak.md | Warm-first, maker streak, multiplayer block, rude-vs-hostile line (Artie's edit). **Live in prod** (v9) |
 
 **No ternaries (EJ's rule, 2026-10-26).**
 - All 1,260 ternaries are gone.
@@ -40,8 +40,8 @@ stale dev scripts removed (one could `pkill` prod).
 ## Needs EJ (nothing below happens without a yes)
 
 1. **OpenRouter top-up.** The account balance is about $5 and drives brownout/lean mode.
-2. **Load the prompt proposal.** It's a live DB row shared with prod, so it changes the
-   running bot immediately. The load and rollback steps are in the proposal file.
+2. ~~Load the prompt proposal.~~ **Done 2026-10-26.** It's live in prod (v9/v3). Rollback is in
+   the proposal file.
 3. **Run the cutover** (CUTOVER.md). It's a one-way-ish PM2 swap, with rollback documented.
 4. **UX change to confirm:** EJ's own stripe/email calls become two-step: Artie queues the
    call, then EJ approves it. The model can no longer self-confirm.

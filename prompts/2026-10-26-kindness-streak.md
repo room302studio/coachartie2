@@ -1,8 +1,12 @@
 # Prompt proposal: kindness/creative streak (2026-10-26)
 
-**Status: PROPOSED, not loaded.** Prompts live in the shared `prompts` table, and prod reads it
-live, so activating a row changes the running bot immediately. EJ approves before anything below
-is inserted.
+**Status: LOADED in prod 2026-10-26 18:28 UTC (EJ's yes).**
+- PROMPT_SYSTEM went v8 → v9 and PROMPT_SECURITY_REMINDER went v2 → v3.
+- `name` is UNIQUE, so it's one row per prompt. The old contents are in `prompt_history`, `changed_by='claude-for-ej'`.
+- DB backup: `/srv/artie/backups/coachartie.db.pre-prompt-v9-20261026-142750`.
+- Rollback: copy the v8/v2 content back from `prompt_history` into `prompts` and set the version.
+- The prompt manager caches for 30s.
+- Artie's first reply on it: "warm first, still allowed to roast, and I know exactly where the hostility line sits."
 
 Asked for by EJ's goal ("a multiplayer discord bot with tool usage and a creative/kindness
 streak") and by Artie himself (check-in, 2026-10-26: the security reminder "nudges me toward
