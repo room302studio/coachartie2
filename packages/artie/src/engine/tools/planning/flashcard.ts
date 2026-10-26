@@ -86,9 +86,12 @@ export const flashcardCapability: RegisteredCapability = {
     try {
       switch (action) {
         case 'random': {
-          const url = deck
-            ? `${FLASHCARD_API_BASE}/random/${deck}`
-            : `${FLASHCARD_API_BASE}/random`;
+          let url: string;
+          if (deck) {
+            url = `${FLASHCARD_API_BASE}/random/${deck}`;
+          } else {
+            url = `${FLASHCARD_API_BASE}/random`;
+          }
 
           logger.info(`🎴 Fetching random flashcard from ${url}`);
           const response = await fetch(url);
@@ -109,9 +112,12 @@ export const flashcardCapability: RegisteredCapability = {
         }
 
         case 'quiz': {
-          const url = deck
-            ? `${FLASHCARD_API_BASE}/random/${deck}`
-            : `${FLASHCARD_API_BASE}/random`;
+          let url: string;
+          if (deck) {
+            url = `${FLASHCARD_API_BASE}/random/${deck}`;
+          } else {
+            url = `${FLASHCARD_API_BASE}/random`;
+          }
 
           logger.info(`🎴 Fetching quiz question from ${url}`);
           const response = await fetch(url);

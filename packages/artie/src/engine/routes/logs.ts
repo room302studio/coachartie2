@@ -198,12 +198,15 @@ router.get('/', async (req, res) => {
       res.setHeader('Content-Type', 'text/plain');
       res.send(stdout || 'No logs found');
     } else {
-      const logs = stdout
-        ? stdout
-            .trim()
-            .split('\n')
-            .map(parseLogLine)
-        : [];
+      let logs: ReturnType<typeof parseLogLine>[];
+      if (stdout) {
+        logs = stdout
+          .trim()
+          .split('\n')
+          .map(parseLogLine);
+      } else {
+        logs = [];
+      }
 
       res.json({
         query: { jobs, since, lines, level },
@@ -238,16 +241,23 @@ router.get('/search/:query', async (req, res) => {
       res.setHeader('Content-Type', 'text/plain');
       res.send(stdout || 'No matching logs found');
     } else {
-      const logs = stdout
-        ? stdout
-            .trim()
-            .split('\n')
-            .map((line) => ({
-              timestamp: new Date().toISOString(),
-              message: line,
-              matchedQuery: query,
-            }))
-        : [];
+      let logs: Array<{
+        timestamp: string;
+        message: string;
+        matchedQuery: string;
+      }>;
+      if (stdout) {
+        logs = stdout
+          .trim()
+          .split('\n')
+          .map((line) => ({
+            timestamp: new Date().toISOString(),
+            message: line,
+            matchedQuery: query,
+          }));
+      } else {
+        logs = [];
+      }
 
       res.json({
         searchQuery: query,

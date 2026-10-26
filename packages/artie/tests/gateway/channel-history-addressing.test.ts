@@ -19,16 +19,28 @@ function fakeMessage(opts: {
   for (const m of opts.mentionedUserIds ?? []) {
     mentionedUsers.set(m.id, { id: m.id, displayName: m.name, username: m.name });
   }
+  let reference: { messageId: string } | null;
+  if (opts.referenceId) {
+    reference = { messageId: opts.referenceId };
+  } else {
+    reference = null;
+  }
+
+  let repliedUser: { id: string; displayName: string; username: string } | null;
+  if (opts.repliedUserId) {
+    repliedUser = { id: opts.repliedUserId, displayName: opts.repliedUserName, username: opts.repliedUserName };
+  } else {
+    repliedUser = null;
+  }
+
   return {
     id: `msg-${opts.authorId}-${Math.random()}`,
     author: { id: opts.authorId, displayName: opts.authorName, username: opts.authorName },
     content: opts.content ?? '',
     cleanContent: opts.cleanContent,
-    reference: opts.referenceId ? { messageId: opts.referenceId } : null,
+    reference,
     mentions: {
-      repliedUser: opts.repliedUserId
-        ? { id: opts.repliedUserId, displayName: opts.repliedUserName, username: opts.repliedUserName }
-        : null,
+      repliedUser,
       users: mentionedUsers,
       has: (id: string) =>
         mentionedUsers.has(id) || (opts.repliedUserId === id && id === BOT_ID),

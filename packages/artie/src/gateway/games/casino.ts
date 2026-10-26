@@ -371,7 +371,13 @@ export interface SlotResult {
 }
 
 export function spinSlots(stake: number): SlotResult {
-  const symbols = houseMadness() >= 2 ? SLOT_SYMBOLS_MELTED : SLOT_SYMBOLS;
+  const madness = houseMadness();
+  let symbols: Array<[string, number]>;
+  if (madness >= 2) {
+    symbols = SLOT_SYMBOLS_MELTED;
+  } else {
+    symbols = SLOT_SYMBOLS;
+  }
   const reels = [slotReel(symbols), slotReel(symbols), slotReel(symbols)];
   const count = (sym: string) => reels.filter((r) => r === sym).length;
   const trains = count('🚇');

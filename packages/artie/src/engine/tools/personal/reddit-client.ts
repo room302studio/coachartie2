@@ -397,12 +397,16 @@ export class RedditClient {
         throw new Error(response.data.json.errors.map((e: any) => e.join(': ')).join('; '));
       }
 
+      let permalink: string | undefined;
+      if (data?.things?.[0]?.data?.permalink) {
+        permalink = `https://reddit.com${data.things[0].data.permalink}`;
+      } else {
+        permalink = undefined;
+      }
       return {
         success: true,
         thingId,
-        permalink: data?.things?.[0]?.data?.permalink
-          ? `https://reddit.com${data.things[0].data.permalink}`
-          : undefined,
+        permalink,
         message: 'Comment posted to Reddit',
       };
     } catch (error) {
