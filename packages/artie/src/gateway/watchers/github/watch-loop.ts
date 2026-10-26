@@ -43,6 +43,20 @@ const DEFAULT_CONFIG: GitHubSyncConfig = {
   autoStart: true,
 };
 
+function pluralS(count: number): string {
+  if (count > 1) {
+    return 's';
+  }
+  return '';
+}
+
+function overflowLabel(count: number, threshold: number): string {
+  if (count > threshold) {
+    return ` +${count - threshold} more`;
+  }
+  return '';
+}
+
 /**
  * GitHub Sync Service
  * Orchestrates the full GitHub-Discord sync pipeline
@@ -246,9 +260,10 @@ export class GitHubSyncService {
         .map((d) => `• [#${d.data.prNumber}](${d.data.prUrl}) **${d.data.prTitle}** — ${d.data.prAuthor}`)
         .join('\n');
 
+      const draftPluralS = pluralS(uniqueDrafts.length);
       const embed = new EmbedBuilder()
         .setColor(0x6e7681)
-        .setTitle(`📝 ${uniqueDrafts.length} Draft PR${uniqueDrafts.length > 1 ? 's' : ''} In Progress`)
+        .setTitle(`📝 ${uniqueDrafts.length} Draft PR${draftPluralS} In Progress`)
         .setDescription(draftList)
         .setFooter({ text: 'Daily draft digest — these PRs are being worked on' })
         .setTimestamp();
@@ -386,7 +401,7 @@ export class GitHubSyncService {
             .slice(0, 5) // Limit to 5 links to avoid spam
             .map(([prNum, { url }]) => `[#${prNum}](${url})`)
             .join(', ');
-          const overflow = prLinks.size > 5 ? ` +${prLinks.size - 5} more` : '';
+          const overflow = overflowLabel(prLinks.size, 5);
           summaryParts.push(`• ${count} ${typeLabel}: ${links}${overflow}`);
         } else {
           // No links available (e.g., CI events)
@@ -500,7 +515,10 @@ export class GitHubSyncService {
 
     const label = labels[type];
     if (label) {
-      return count === 1 ? label.singular : label.plural;
+      if (count === 1) {
+        return label.singular;
+      }
+      return label.plural;
     }
 
     // Fallback: just replace underscores with spaces
