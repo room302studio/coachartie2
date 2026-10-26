@@ -71,7 +71,7 @@ export function selfMeterLine(
     hiccups.fallback && `${hiccups.fallback} model fallback${pluralSuffix(hiccups.fallback)}`,
     hiccups.failed && `${hiccups.failed} failed generation${pluralSuffix(hiccups.failed)}`,
     hiccups['reasoning-retry'] && `${hiccups['reasoning-retry']} reasoning retr${pluralSuffix(hiccups['reasoning-retry'], 'y')}`,
-  ].filter(Boolean);
+  ].filter(Boolean) as string[];
   bits.push(formatHiccupSummary(h));
 
   let advice: string;
