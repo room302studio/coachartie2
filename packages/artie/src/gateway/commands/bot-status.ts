@@ -5,6 +5,80 @@ import { telemetry } from '../telemetry.js';
 import { capabilitiesClient } from '../3-ask-engine/engine-client.js';
 import * as engine from '../../engine/api.js';
 
+/**
+ * Get color code for health status.
+ */
+function statusColor(status: 'healthy' | 'degraded' | 'unhealthy'): number {
+  if (status === 'healthy') {
+    return 0x00ff00;
+  }
+  if (status === 'degraded') {
+    return 0xffff00;
+  }
+  return 0xff0000;
+}
+
+/**
+ * Format a percentage or 'N/A'.
+ */
+function percentageOrNA(jobs: number, completions: number): string {
+  if (jobs > 0) {
+    return ((completions / jobs) * 100).toFixed(1) + '%';
+  }
+  return 'N/A';
+}
+
+/**
+ * Format response time or 'N/A'.
+ */
+function responseTimeOrNA(events: any[]): string {
+  if (events.length > 0) {
+    const avgTime = events.reduce((sum, event) => sum + (event.duration || 0), 0) / events.length / 1000;
+    return avgTime.toFixed(1) + 's';
+  }
+  return 'N/A';
+}
+
+/**
+ * Format service status string.
+ */
+function serviceStatus(online: boolean): string {
+  if (online) {
+    return '🟢 Online';
+  }
+  return '🔴 Offline';
+}
+
+/**
+ * Format service latency or 'N/A'.
+ */
+function serviceLatency(online: boolean, latency: number): string {
+  if (online) {
+    return `${latency}ms`;
+  }
+  return 'N/A';
+}
+
+/**
+ * Format connected status string.
+ */
+function connectedStatus(ok: boolean): string {
+  if (ok) {
+    return '🟢 Connected';
+  }
+  return '🔴 Offline';
+}
+
+/**
+ * Format latency text for redis.
+ */
+function latencyText(ok: boolean, latency: number): string {
+  if (ok) {
+    return `(${latency}ms)`;
+  }
+  return '';
+}
+
 export const botStatusCommand = {
   data: new SlashCommandBuilder()
     .setName('bot-status')
@@ -67,13 +141,7 @@ async function createBotHealthEmbed(): Promise<EmbedBuilder> {
 
   const embed = new EmbedBuilder()
     .setTitle(`${statusEmoji} Bot Health Status`)
-    .setColor(
-      healthSummary.status === 'healthy'
-        ? 0x00ff00
-        : healthSummary.status === 'degraded'
-          ? 0xffff00
-          : 0xff0000
-    )
+    .setColor(statusColor(healthSummary.status))
     .addFields(
       { name: '📈 Messages Processed', value: metrics.messagesReceived.toString(), inline: true },
       { name: '✅ Success Rate', value: metrics.successRate, inline: true },
@@ -105,21 +173,13 @@ async function createUserUsageEmbed(userId: string): Promise<EmbedBuilder> {
   const userCompletions = userEvents.filter((event) => event.event === 'job_completed').length;
   const userFailures = userEvents.filter((event) => event.event === 'job_failed').length;
 
-  const userSuccessRate =
-    userJobs > 0 ? ((userCompletions / userJobs) * 100).toFixed(1) + '%' : 'N/A';
+  const userSuccessRate = percentageOrNA(userJobs, userCompletions);
 
   // Calculate average response time for this user
   const userCompletionEvents = userEvents.filter(
     (event) => event.event === 'job_completed' && event.duration
   );
-  const avgUserResponseTime =
-    userCompletionEvents.length > 0
-      ? (
-          userCompletionEvents.reduce((sum, event) => sum + (event.duration || 0), 0) /
-          userCompletionEvents.length /
-          1000
-        ).toFixed(1) + 's'
-      : 'N/A';
+  const avgUserResponseTime = responseTimeOrNA(userCompletionEvents);
 
   const embed = new EmbedBuilder()
     .setTitle('📊 Your Usage Statistics')
@@ -154,15 +214,15 @@ async function createSystemStatusEmbed(): Promise<EmbedBuilder> {
     ]);
     const capabilitiesLatency = Date.now() - capabilitiesStart;
 
-    const capabilitiesStatus = testResult ? '🟢 Online' : '🔴 Offline';
-    const capabilitiesLatencyText = testResult ? `${capabilitiesLatency}ms` : 'N/A';
+    const capabilitiesStatus = serviceStatus(testResult);
+    const capabilitiesLatencyText = serviceLatency(testResult, capabilitiesLatency);
 
     // Test Redis connection
     const redisStart = Date.now();
     const redisOk = await testRedisConnection();
     const redisLatency = Date.now() - redisStart;
-    const redisStatus = redisOk ? '🟢 Connected' : '🔴 Offline';
-    const redisLatencyText = redisOk ? `(${redisLatency}ms)` : '';
+    const redisStatus = connectedStatus(redisOk);
+    const redisLatencyText = latencyText(redisOk, redisLatency);
 
     embed.addFields(
       { name: '🧠 Capabilities Service', value: capabilitiesStatus, inline: true },
