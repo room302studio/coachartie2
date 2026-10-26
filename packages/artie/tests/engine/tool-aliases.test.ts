@@ -12,6 +12,7 @@
  */
 
 import { describe, it, expect, vi, beforeAll, beforeEach } from 'vitest';
+import { OWNER_USER_ID } from '../../src/shared/config/owner.js';
 
 // Never run real docker: every sandbox action shells out through child_process.exec.
 const { execMock } = vi.hoisted(() => ({
@@ -222,7 +223,10 @@ describe('execution through an alias', () => {
   });
 
   it('shell:exec runs sandbox:exec with the same docker command', async () => {
-    const out = await capabilityRegistry.execute('shell', 'exec', { command: 'echo hi' });
+    // sandbox is owner-only (owner-only.ts), so this alias routing test calls as the owner.
+    const out = await capabilityRegistry.execute('shell', 'exec', { command: 'echo hi' }, undefined, {
+      userId: OWNER_USER_ID,
+    });
     expect(out).toContain('$ echo hi');
     expect(out).toContain('mocked-output');
     // Boolean assert on purpose: before wave 7, shell's tmux/pwd helper put
@@ -238,7 +242,9 @@ describe('execution through an alias', () => {
   });
 
   it('git:status runs sandbox:git_status in the same container', async () => {
-    const out = await capabilityRegistry.execute('git', 'status', {});
+    const out = await capabilityRegistry.execute('git', 'status', {}, undefined, {
+      userId: OWNER_USER_ID,
+    });
     expect(out).toContain('Branch: mocked-output');
     const commands = execMock.mock.calls.map((c) => c[0]);
     expect(
