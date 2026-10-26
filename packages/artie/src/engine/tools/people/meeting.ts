@@ -5,6 +5,7 @@ import { RegisteredCapability } from '../../5-tool-loop/registry.js';
 import { isEmail } from '../../../shared/email.js';
 import { parse, parseISO, isValid, addDays } from 'date-fns';
 import { fromZonedTime } from 'date-fns-tz';
+import { getErrorMessage } from '../../../shared/errors.js';
 
 // =====================================================
 // MEETING SCHEDULER SERVICE & CAPABILITY
@@ -196,9 +197,7 @@ class MeetingService {
       return `✅ Meeting scheduled: "${title}" on ${timeStr} with ${participantStr}`;
     } catch (error) {
       logger.error('❌ Failed to create meeting:', error);
-      throw new Error(
-        `Failed to create meeting: ${error instanceof Error ? error.message : 'Unknown error'}`
-      );
+      throw new Error(`Failed to create meeting: ${getErrorMessage(error)}`);
     }
   }
 
@@ -367,9 +366,7 @@ class MeetingService {
       }
     } catch (error) {
       logger.error('❌ Failed to check availability:', error);
-      throw new Error(
-        `Failed to check availability: ${error instanceof Error ? error.message : 'Unknown error'}`
-      );
+      throw new Error(`Failed to check availability: ${getErrorMessage(error)}`);
     }
   }
 
@@ -425,9 +422,7 @@ class MeetingService {
       return `✅ Updated meeting: "${meeting.title}"`;
     } catch (error) {
       logger.error('❌ Failed to update meeting:', error);
-      throw new Error(
-        `Failed to update meeting: ${error instanceof Error ? error.message : 'Unknown error'}`
-      );
+      throw new Error(`Failed to update meeting: ${getErrorMessage(error)}`);
     }
   }
 
@@ -455,9 +450,7 @@ class MeetingService {
       return `✅ Cancelled meeting: "${meeting.title}"`;
     } catch (error) {
       logger.error('❌ Failed to cancel meeting:', error);
-      throw new Error(
-        `Failed to cancel meeting: ${error instanceof Error ? error.message : 'Unknown error'}`
-      );
+      throw new Error(`Failed to cancel meeting: ${getErrorMessage(error)}`);
     }
   }
 
@@ -636,7 +629,7 @@ async function handleMeetingAction(params: MeetingParams, content?: string): Pro
     }
   } catch (error) {
     logger.error(`Meeting capability error for action '${action}':`, error);
-    return `Sorry, having trouble with meetings right now: ${error instanceof Error ? error.message : 'Unknown error'}`;
+    return `Sorry, having trouble with meetings right now: ${getErrorMessage(error)}`;
   }
 }
 
