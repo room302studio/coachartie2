@@ -149,7 +149,12 @@ export function buildLiveQuizMessage(session: QuizSession): {
     value: formatScoreboard(session),
   });
 
-  const hintsLeft = card ? card.hints.length - session.hintsRevealed : 0;
+  let hintsLeft: number;
+  if (card) {
+    hintsLeft = card.hints.length - session.hintsRevealed;
+  } else {
+    hintsLeft = 0;
+  }
 
   function hintCountDisplay(): string {
     if (hintsLeft > 0) {

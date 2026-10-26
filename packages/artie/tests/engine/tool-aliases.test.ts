@@ -21,10 +21,12 @@ const { execMock } = vi.hoisted(() => ({
       optsOrCb: unknown,
       maybeCb?: (err: Error | null, out?: { stdout: string; stderr: string }) => void
     ) => {
-      const cb = (typeof optsOrCb === 'function' ? optsOrCb : maybeCb) as (
-        err: Error | null,
-        out?: { stdout: string; stderr: string }
-      ) => void;
+      let cb: (err: Error | null, out?: { stdout: string; stderr: string }) => void;
+      if (typeof optsOrCb === 'function') {
+        cb = optsOrCb;
+      } else {
+        cb = maybeCb as (err: Error | null, out?: { stdout: string; stderr: string }) => void;
+      }
       // promisify(exec) without the custom symbol resolves to the single value after err,
       // so hand back one {stdout, stderr} object, exactly what the handlers destructure.
       cb(null, { stdout: 'mocked-output\n', stderr: '' });
@@ -38,10 +40,12 @@ const { execMock } = vi.hoisted(() => ({
 const { execFileMock } = vi.hoisted(() => ({
   execFileMock: vi.fn(
     (_file: string, _args: unknown, optsOrCb: unknown, maybeCb?: unknown) => {
-      const cb = (typeof optsOrCb === 'function' ? optsOrCb : maybeCb) as (
-        err: Error | null,
-        out?: { stdout: string; stderr: string }
-      ) => void;
+      let cb: (err: Error | null, out?: { stdout: string; stderr: string }) => void;
+      if (typeof optsOrCb === 'function') {
+        cb = optsOrCb as (err: Error | null, out?: { stdout: string; stderr: string }) => void;
+      } else {
+        cb = maybeCb as (err: Error | null, out?: { stdout: string; stderr: string }) => void;
+      }
       cb(null, { stdout: 'mocked-output\n', stderr: '' });
       return {} as unknown;
     }

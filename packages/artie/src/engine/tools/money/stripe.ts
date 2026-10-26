@@ -24,7 +24,10 @@ const linkCreationTimes: number[] = [];
 
 function stripeKey(): string | null {
   const key = process.env.STRIPE_RESTRICTED_KEY;
-  return key && key.startsWith('rk_') ? key : null;
+  if (key && key.startsWith('rk_')) {
+    return key;
+  }
+  return null;
 }
 
 async function stripePost(path: string, form: Record<string, string>): Promise<any> {
@@ -145,7 +148,12 @@ export const stripePaymentsCapability: RegisteredCapability = {
 
     try {
       const productForm: Record<string, string> = { name };
-      const description = params.description ? sanitizeName(String(params.description)) : '';
+      let description: string;
+      if (params.description) {
+        description = sanitizeName(String(params.description));
+      } else {
+        description = '';
+      }
       if (description) {
         productForm.description = description;
       }

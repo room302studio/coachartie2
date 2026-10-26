@@ -131,18 +131,29 @@ async function fetchGitHubTrending(language?: string, since: string = 'daily'): 
 }
 
 /**
+ * Build URL path segment for language filter
+ */
+function buildLanguagePath(language?: string): string {
+  if (language) {
+    return `/${language}`;
+  }
+  return '';
+}
+
+/**
  * Fallback trending repos when API fails
  */
 function getFallbackTrending(language?: string): GitHubRepo[] {
   // Return a helpful message instead of empty
+  const languagePath = buildLanguagePath(language);
   return [{
     name: 'API-unavailable',
     fullName: 'github/trending',
-    description: `GitHub API is rate-limited. Visit https://github.com/trending${language ? `/${language}` : ''} directly.`,
+    description: `GitHub API is rate-limited. Visit https://github.com/trending${languagePath} directly.`,
     stars: 0,
     todayStars: 0,
     language: language || 'All',
-    url: `https://github.com/trending${language ? `/${language}` : ''}`,
+    url: `https://github.com/trending${languagePath}`,
   }];
 }
 

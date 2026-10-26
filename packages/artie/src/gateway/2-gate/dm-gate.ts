@@ -28,7 +28,13 @@ export async function runDMGate(
   const dmWho = { userId: message.author.id, username: message.author.username };
 
   if (isDMFromAuthorizedUser) {
-    logDMGate(isOwner(message.author.id) ? 'owner' : 'allowed', { ...dmWho, detail: `[${shortId}]` });
+    let gateLevel: 'owner' | 'allowed';
+    if (isOwner(message.author.id)) {
+      gateLevel = 'owner';
+    } else {
+      gateLevel = 'allowed';
+    }
+    logDMGate(gateLevel, { ...dmWho, detail: `[${shortId}]` });
   }
 
   if (responseConditions.isDM && !isDMFromAuthorizedUser) {
@@ -85,7 +91,12 @@ export async function runDMGate(
   }
 
   // Check if DM should be processed (authorized OR open policy)
-  const dmPolicy = responseConditions.isDM ? getDMPolicy('discord') : null;
+  let dmPolicy: ReturnType<typeof getDMPolicy> | null;
+  if (responseConditions.isDM) {
+    dmPolicy = getDMPolicy('discord');
+  } else {
+    dmPolicy = null;
+  }
   const isDMAllowed = isDMFromAuthorizedUser || (responseConditions.isDM && dmPolicy?.policy === 'open');
   return { stop: false, isDMAllowed };
 }

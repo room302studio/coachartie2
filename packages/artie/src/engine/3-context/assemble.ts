@@ -210,7 +210,12 @@ export class ContextAlchemy {
     contextSources: ContextSource[];
   }> {
     if (DEBUG) {
-      const mode = options.minimal ? 'minimal' : 'full';
+      let mode: string;
+      if (options.minimal) {
+        mode = 'minimal';
+      } else {
+        mode = 'full';
+      }
       logger.info(
         `🧪 Context Alchemy: user=${userId}, mode=${mode}, msg_len=${userMessage.length}`
       );
