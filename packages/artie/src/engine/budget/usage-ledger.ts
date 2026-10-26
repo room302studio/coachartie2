@@ -31,7 +31,7 @@ export interface TokenUsage {
 
 /** Write premium matching prompt-cache.ts's TTL choice (PROMPT_CACHE_TTL=5m → 1.25x, else 1h → 2x). */
 export function cacheWriteMultiplier(): number {
-  return process.env.PROMPT_CACHE_TTL === '5m' ? 1.25 : 2.0;
+  return getCacheWriteMultiplier();
 }
 
 export interface UsageStats {
@@ -105,6 +105,14 @@ const MODEL_PRICING: Record<string, { input: number; output: number }> = {
 // use, so an untracked model reads as expensive rather than free.
 const UNKNOWN_MODEL_PRICING = { input: 0.015, output: 0.075 };
 
+/** Get the cache write multiplier based on TTL environment variable. */
+function getCacheWriteMultiplier(): number {
+  if (process.env.PROMPT_CACHE_TTL === '5m') {
+    return 1.25;
+  }
+  return 2.0;
+}
+
 export class UsageTracker {
   /**
    * Calculate estimated cost based on token usage and model
@@ -150,6 +158,12 @@ export class UsageTracker {
 
       // SQLite can't bind booleans - convert to 0/1
       // Also ensure all values are valid types (no undefined)
+      let successInt: number;
+      if (stats.success) {
+        successInt = 1;
+      } else {
+        successInt = 0;
+      }
       db.run(
         `INSERT INTO model_usage_stats (
           model_name, user_id, message_id, input_length, output_length,
@@ -168,7 +182,7 @@ export class UsageTracker {
           stats.capabilities_detected ?? 0,
           stats.capabilities_executed ?? 0,
           stats.capability_types || '',
-          stats.success ? 1 : 0, // Convert boolean to integer for SQLite
+          successInt,
           stats.error_type || null,
           stats.prompt_tokens ?? 0,
           stats.completion_tokens ?? 0,
@@ -557,7 +571,12 @@ class CostMonitor {
 
       if (runwayHours < warnHours && Date.now() - this.lastRunwayWarnAt > throttleMs) {
         this.lastRunwayWarnAt = Date.now();
-        const sev = runwayHours < critHours ? '🚨' : '⚠️';
+        let sev: string;
+        if (runwayHours < critHours) {
+          sev = '🚨';
+        } else {
+          sev = '⚠️';
+        }
         const warning = `${sev} ~${runwayHours.toFixed(1)}h of credit left at current burn ($${stats.costPerHour.toFixed(2)}/hr, $${this.lastKnownBalance.toFixed(2)} balance)`;
         logger.warn(warning);
         warnings.push(warning);
@@ -658,6 +677,13 @@ class CostMonitor {
     const uptime = Date.now() - this.startTime;
     const hours = uptime / (1000 * 60 * 60);
 
+    let costPerHour: number;
+    if (hours > 0) {
+      costPerHour = this.getTotalEstimatedCost() / hours;
+    } else {
+      costPerHour = 0;
+    }
+
     return {
       totalCalls: this.totalCalls,
       totalInputTokens: this.totalInputTokens,
@@ -667,7 +693,7 @@ class CostMonitor {
       estimatedCost: this.getTotalEstimatedCost(),
       // Cumulative average since boot. Kept for reporting; NOT a rate — see
       // getRecentBurnPerHour, which is what anything making a decision should use.
-      costPerHour: hours > 0 ? this.getTotalEstimatedCost() / hours : 0,
+      costPerHour,
       recentBurnPerHour: this.getRecentBurnPerHour(),
       burnWindowMinutes: this.burnWindowMs / 60_000,
       uptime: uptime,
