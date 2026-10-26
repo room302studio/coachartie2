@@ -65,7 +65,12 @@ export function parseDailyCustomId(customId: string): ParsedDailyId | null {
     return null;
   }
   const deckRaw = deckParts.join(':');
-  const deck = deckRaw === 'all' ? '' : deckRaw;
+  let deck: string;
+  if (deckRaw === 'all') {
+    deck = '';
+  } else {
+    deck = deckRaw;
+  }
   return { action, date, deck };
 }
 
@@ -95,7 +100,12 @@ export function buildDailyGameMessage(play: DailyPlay, puzzle: DailyPuzzle): {
     );
 
   if (card) {
-    const frontText = card.front.length > 1000 ? card.front.slice(0, 997) + '…' : card.front;
+    let frontText: string;
+    if (card.front.length > 1000) {
+      frontText = card.front.slice(0, 997) + '…';
+    } else {
+      frontText = card.front;
+    }
     embed.addFields({
       name: `❓ Question ${play.currentQuestion + 1}`,
       value: frontText,
@@ -111,7 +121,12 @@ export function buildDailyGameMessage(play: DailyPlay, puzzle: DailyPuzzle): {
     const lastIdx = play.results.length - 1;
     const lastCard = puzzle.cards[lastIdx];
     if (lastCard) {
-      const lastAnswerName = play.results[lastIdx] === 'correct' ? '✅ Last answer' : '❌ Last answer';
+      let lastAnswerName: string;
+      if (play.results[lastIdx] === 'correct') {
+        lastAnswerName = '✅ Last answer';
+      } else {
+        lastAnswerName = '❌ Last answer';
+      }
       embed.addFields({
         name: lastAnswerName,
         value: `You said: _${play.guesses[lastIdx] || '(empty)'}_\nCorrect: **${lastCard.back}**`,
@@ -169,12 +184,18 @@ export function buildDailyResultMessage(
         })
         .join('\n')
         .slice(0, 1024),
-    })
-    .setFooter({
-      text: play.shared
-        ? `Shared by ${username}`
-        : `Tap Share to post your result in the channel`,
     });
+
+  let footerText: string;
+  if (play.shared) {
+    footerText = `Shared by ${username}`;
+  } else {
+    footerText = `Tap Share to post your result in the channel`;
+  }
+
+  embed.setFooter({
+    text: footerText,
+  });
 
   function shareButtonLabel(): string {
     if (play.shared) {
@@ -247,7 +268,12 @@ export function parseScheduleCustomId(customId: string): ParsedScheduleId | null
   const [action, date, ...deckParts] = parts;
   if (action !== 'shuffle' && action !== 'save' && action !== 'cancel') return null;
   const deckRaw = deckParts.join(':');
-  const deck = deckRaw === 'all' ? '' : deckRaw;
+  let deck: string;
+  if (deckRaw === 'all') {
+    deck = '';
+  } else {
+    deck = deckRaw;
+  }
   return { action, date, deck };
 }
 
@@ -395,7 +421,12 @@ export function buildGuildConfigEmbed(
  */
 export function voteCustomId(action: VoteAction, pollId: number, deck?: string): string {
   if (action === 'cast') {
-    const deckPart = deck === '' ? 'all' : deck;
+    let deckPart: string | undefined;
+    if (deck === '') {
+      deckPart = 'all';
+    } else {
+      deckPart = deck;
+    }
     return `${VOTE_PREFIX}cast:${pollId}:${deckPart}`;
   }
   return `${VOTE_PREFIX}close:${pollId}`;
@@ -418,7 +449,12 @@ export function parseVoteCustomId(customId: string): ParsedVoteId | null {
   if (action === 'close') return { action: 'close', pollId, deck: '' };
   if (action === 'cast' && parts.length >= 3) {
     const deckRaw = parts.slice(2).join(':');
-    const deck = deckRaw === 'all' ? '' : deckRaw;
+    let deck: string;
+    if (deckRaw === 'all') {
+      deck = '';
+    } else {
+      deck = deckRaw;
+    }
     return { action: 'cast', pollId, deck };
   }
   return null;
@@ -615,13 +651,19 @@ export function buildChallengeMessage(
   todayDate: string,
   note?: string
 ): { content: string; embeds: EmbedBuilder[] } {
-  const score = callerRecent
-    ? callerRecent.results.filter((o) => o === 'correct').length
-    : null;
-  const grid =
-    callerRecent !== null
-      ? renderEmojiGrid(callerRecent.results, DAILY_QUESTION_COUNT)
-      : null;
+  let score: number | null;
+  if (callerRecent) {
+    score = callerRecent.results.filter((o) => o === 'correct').length;
+  } else {
+    score = null;
+  }
+
+  let grid: string | null;
+  if (callerRecent !== null) {
+    grid = renderEmojiGrid(callerRecent.results, DAILY_QUESTION_COUNT);
+  } else {
+    grid = null;
+  }
 
   const lines: string[] = [];
   if (score !== null) {
@@ -656,7 +698,12 @@ export function buildAchievementUnlockMessage(
   if (unlocked.length === 0) {
     return { content: '', embeds: [] };
   }
-  const header = unlocked.length === 1 ? 'Achievement unlocked!' : 'Achievements unlocked!';
+  let header: string;
+  if (unlocked.length === 1) {
+    header = 'Achievement unlocked!';
+  } else {
+    header = 'Achievements unlocked!';
+  }
   const lines = unlocked
     .map((a) => `${a.emoji} **${a.label}** — _${a.description}_`)
     .join('\n');
