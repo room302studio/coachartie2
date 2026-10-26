@@ -22,7 +22,16 @@ interface Candidate {
   date: string;
   tags: string[];
 }
-type SemanticMatch = Candidate & { semanticScore: number };
+type SemanticMatch = Candidate & {
+  semanticScore: number;
+  // "Why did this match" fields (Artie's own request, 2026-10-26: "Memory recall still
+  // occasionally pulls junk... a 'why did this match' flag would help more"). Computed
+  // alongside the score, never used to re-rank — see semanticReason().
+  rawSimilarity: number;
+  mentionsParticipant: boolean;
+  matchedParticipant?: string;
+  topTerm?: string;
+};
 type TemporalMatch = Candidate & { temporalScore: number; temporalType: string };
 
 interface RecallOptions {
@@ -202,7 +211,8 @@ export class MemoryRecaller implements MemoryEntourageInterface {
     const matches: SemanticMatch[] = [];
 
     for (const memory of candidates) {
-      const similarity = this.cosineSimilarity(queryVector, this.tfidfVector(memory.content));
+      const memoryVector = this.tfidfVector(memory.content);
+      const similarity = this.cosineSimilarity(queryVector, memoryVector);
       // A memory that names one of the people present is relevant to a conversation
       // ABOUT those people (rankings, roasts, "what's X been up to") even when the raw
       // query text barely overlaps it. Pull it in regardless of threshold and rank it up,
@@ -214,6 +224,12 @@ export class MemoryRecaller implements MemoryEntourageInterface {
         matches.push({
           ...memory,
           semanticScore: similarity + (mentionsParticipant ? 0.5 : 0),
+          rawSimilarity: similarity,
+          mentionsParticipant,
+          matchedParticipant: mentionsParticipant
+            ? people.find((p) => memory.content.toLowerCase().includes(p))
+            : undefined,
+          topTerm: this.topSharedTerm(queryVector, memoryVector),
         });
       }
     }
@@ -235,7 +251,9 @@ export class MemoryRecaller implements MemoryEntourageInterface {
       return empty(['no_semantic_matches']);
     }
 
-    const content = `This reminds me of: ${top.map((m) => m.content).join(', and also ')}.`;
+    const content = `This reminds me of: ${top
+      .map((m) => `${m.content}${this.semanticReason(m)}`)
+      .join(', and also ')}.`;
     return {
       content,
       confidence: this.confidence(
@@ -250,6 +268,38 @@ export class MemoryRecaller implements MemoryEntourageInterface {
 
   private importanceBoost(importance: number): number {
     return importance >= 7 ? 0.3 : importance >= 5 ? 0.1 : 0;
+  }
+
+  /**
+   * "Why did this match" — a few tokens appended per memory, after ranking is settled.
+   * Never feeds back into semanticScore/sort; it only explains a choice already made.
+   */
+  private semanticReason(m: SemanticMatch): string {
+    const primary = m.mentionsParticipant && m.matchedParticipant
+      ? `mentions ${m.matchedParticipant}`
+      : m.topTerm
+        ? `kw:${m.topTerm}`
+        : `sim ${m.rawSimilarity.toFixed(2)}`;
+    return ` [${primary}${m.importance >= 7 ? ', imp' : ''}]`;
+  }
+
+  /** The single highest-weighted term the query and this memory share — the thing a
+   *  human would point at and say "that's why it matched". Undefined when there's no
+   *  overlap (a pure participant-mention match, for instance). */
+  private topSharedTerm(a: Map<string, number>, b: Map<string, number>): string | undefined {
+    let best: string | undefined;
+    let bestScore = 0;
+    for (const [term, weight] of a) {
+      const bWeight = b.get(term);
+      if (bWeight) {
+        const score = weight * bWeight;
+        if (score > bestScore) {
+          bestScore = score;
+          best = term;
+        }
+      }
+    }
+    return best;
   }
 
   private tfidfVector(text: string): Map<string, number> {
@@ -360,7 +410,9 @@ export class MemoryRecaller implements MemoryEntourageInterface {
       return empty(['no_temporal_patterns']);
     }
 
-    const content = `${this.temporalFraming(top)}: ${top.map((m) => m.content).join(', and ')}.`;
+    const content = `${this.temporalFraming(top)}: ${top
+      .map((m) => `${m.content}${this.temporalReason(m)}`)
+      .join(', and ')}.`;
     return {
       content,
       confidence: this.confidence(
@@ -432,6 +484,13 @@ export class MemoryRecaller implements MemoryEntourageInterface {
 
   private extractTemporalKeywords(message: string): string[] {
     return extractTemporalKeywords(message);
+  }
+
+  /** "Why did this match" for the temporal layer: the same temporalType already computed
+   *  for scoring/framing, plus age in days — e.g. " [recent, 2d]" or " [day_of_week, 41d]". */
+  private temporalReason(m: TemporalMatch): string {
+    const days = Math.max(0, Math.round(this.daysBetween(new Date(m.date), new Date())));
+    return ` [${m.temporalType}, ${days}d]`;
   }
 
   private matchTemporalContext(
