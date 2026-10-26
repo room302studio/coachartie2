@@ -194,8 +194,18 @@ export async function processMetroAttachment(
   }
 
   // Prepend sender slug to filename
-  const senderSlug = sender ? slugify(sender, '_').slice(0, 8) : '';
-  const filename = senderSlug ? `${senderSlug}_${originalFilename}` : originalFilename;
+  let senderSlug: string;
+  if (sender) {
+    senderSlug = slugify(sender, '_').slice(0, 8);
+  } else {
+    senderSlug = '';
+  }
+  let filename: string;
+  if (senderSlug) {
+    filename = `${senderSlug}_${originalFilename}`;
+  } else {
+    filename = originalFilename;
+  }
 
   // Download the file
   const originalBuffer = await downloadMetro(url);
@@ -298,7 +308,12 @@ export async function processMetroAttachment(
       helpText = 'Try sharing a smaller save file.';
     }
 
-    const errorSummary = helpText ? `❌ ${friendlyError}\n💡 ${helpText}` : `❌ ${friendlyError}`;
+    let errorSummary: string;
+    if (helpText) {
+      errorSummary = `❌ ${friendlyError}\n💡 ${helpText}`;
+    } else {
+      errorSummary = `❌ ${friendlyError}`;
+    }
 
     errors.push(friendlyError);
 
