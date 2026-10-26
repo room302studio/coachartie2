@@ -186,10 +186,14 @@ export class GitHubOrgWatcher {
       // When Artie chose the room himself, say so where it'll be seen, so a wrong pick gets
       // caught in a day instead of never. Explicit routes and fallbacks stay quiet.
       if (route.how === 'artie' && channel && 'send' in channel) {
+        let reasonSuffix = '';
+        if (route.reason) {
+          reasonSuffix = ` (${route.reason.replace(/\.$/, '')})`;
+        }
         await (channel as TextChannel)
           .send(
             `📡 New repo **${repo.full_name}**: I'll post its PRs and reviews here` +
-              (route.reason ? ` (${route.reason.replace(/\.$/, '')})` : '') +
+              reasonSuffix +
               `. Wrong room? \`/unwatch-repo\` here and \`/watch-repo\` in the right one.`
           )
           .catch((err) => logger.warn(`Org watcher: couldn't announce ${repo.full_name}:`, err));
@@ -248,9 +252,10 @@ export class GitHubOrgWatcher {
     if (picked) return { channelId: picked.channelId, how: 'artie', reason: picked.reason };
 
     const fallback = this.matchChannelByName(repoName, config);
-    return fallback
-      ? { channelId: fallback, how: 'name-match' }
-      : { channelId: config.defaultChannelId, how: 'default' };
+    if (fallback) {
+      return { channelId: fallback, how: 'name-match' };
+    }
+    return { channelId: config.defaultChannelId, how: 'default' };
   }
 
   private async askArtieForChannel(
@@ -278,9 +283,10 @@ export class GitHubOrgWatcher {
       });
       if (!engine.isOk(res)) return null;
       const pick = res.body as { channelId?: string; reason?: string };
-      return pick.channelId && channels.some((c) => c.id === pick.channelId)
-        ? { channelId: pick.channelId, reason: pick.reason || '' }
-        : null;
+      if (pick.channelId && channels.some((c) => c.id === pick.channelId)) {
+        return { channelId: pick.channelId, reason: pick.reason || '' };
+      }
+      return null;
     } catch (error) {
       logger.warn(`Org watcher: Artie couldn't route ${repo.full_name}, using name match:`, error);
       return null;

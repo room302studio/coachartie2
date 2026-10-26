@@ -25,7 +25,10 @@ function resolveKnownMentions(text: string): string {
   // Match @name not already part of a <@id> mention or a word/email.
   return text.replace(/(?<![<\w/])@([a-z0-9_]+)/gi, (whole, name: string) => {
     const id = KNOWN_MENTIONS[name.toLowerCase()];
-    return id ? `<@${id}>` : whole;
+    if (id) {
+      return `<@${id}>`;
+    }
+    return whole;
   });
 }
 
@@ -151,10 +154,12 @@ export async function startResponseConsumer(
         // Send regular text message (only if channel supports it)
         if ('send' in channel) {
           // Add debug instance identifier if enabled
-          const debugInfo =
-            process.env.ENABLE_INSTANCE_DEBUG === 'true'
-              ? `\n\n_[${process.env.INSTANCE_NAME || 'unknown'}]_`
-              : '';
+          let debugInfo: string;
+          if (process.env.ENABLE_INSTANCE_DEBUG === 'true') {
+            debugInfo = `\n\n_[${process.env.INSTANCE_NAME || 'unknown'}]_`;
+          } else {
+            debugInfo = '';
+          }
 
           // Chunk the message to preserve formatting and respect Discord limits.
           // Resolve known plain-text @names to real pings so e.g. "@ejfox" actually notifies.
