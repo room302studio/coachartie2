@@ -248,9 +248,10 @@ export class GitHubOrgWatcher {
     if (picked) return { channelId: picked.channelId, how: 'artie', reason: picked.reason };
 
     const fallback = this.matchChannelByName(repoName, config);
-    return fallback
-      ? { channelId: fallback, how: 'name-match' }
-      : { channelId: config.defaultChannelId, how: 'default' };
+    if (fallback) {
+      return { channelId: fallback, how: 'name-match' };
+    }
+    return { channelId: config.defaultChannelId, how: 'default' };
   }
 
   private async askArtieForChannel(
@@ -278,9 +279,10 @@ export class GitHubOrgWatcher {
       });
       if (!engine.isOk(res)) return null;
       const pick = res.body as { channelId?: string; reason?: string };
-      return pick.channelId && channels.some((c) => c.id === pick.channelId)
-        ? { channelId: pick.channelId, reason: pick.reason || '' }
-        : null;
+      if (pick.channelId && channels.some((c) => c.id === pick.channelId)) {
+        return { channelId: pick.channelId, reason: pick.reason || '' };
+      }
+      return null;
     } catch (error) {
       logger.warn(`Org watcher: Artie couldn't route ${repo.full_name}, using name match:`, error);
       return null;
