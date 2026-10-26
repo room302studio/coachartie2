@@ -31,17 +31,33 @@ export function parseWatchEvents(raw: string | null | undefined): {
     .filter(Boolean);
   const invalid = names.filter((e) => !(WATCH_EVENTS as readonly string[]).includes(e));
   const valid = [...new Set(names.filter((e): e is WatchEvent => !invalid.includes(e)))];
-  return { events: valid.includes('all') || valid.length === 0 ? ['all'] : valid, invalid };
+  let events: WatchEvent[];
+  if (valid.includes('all') || valid.length === 0) {
+    events = ['all'];
+  } else {
+    events = valid;
+  }
+  return { events, invalid };
 }
 
 export function describeEvents(eventsJson: string | null | undefined): string {
   let events: string[] = ['all'];
   try {
-    events = eventsJson ? JSON.parse(eventsJson) : ['all'];
+    if (eventsJson) {
+      events = JSON.parse(eventsJson);
+    } else {
+      events = ['all'];
+    }
   } catch {
     // leave as all
   }
-  return events.includes('all') ? 'everything' : events.join(', ');
+  let description: string;
+  if (events.includes('all')) {
+    description = 'everything';
+  } else {
+    description = events.join(', ');
+  }
+  return description;
 }
 
 function watchesFor(repo: string, guildId: string): GithubRepoWatch[] {
@@ -88,9 +104,19 @@ export function upsertWatch(
     .set({ channelId, events: JSON.stringify(events), isActive: true, updatedAt: now })
     .where(and(eq(githubRepoWatches.repo, repo), eq(githubRepoWatches.guildId, guildId)))
     .run();
+  let outcome: WatchOutcome;
+  if (existing.isActive) {
+    outcome = 'updated';
+  } else {
+    outcome = 'resumed';
+  }
+  let previousChannelId: string | undefined;
+  if (existing.channelId !== channelId) {
+    previousChannelId = existing.channelId;
+  }
   return {
-    outcome: existing.isActive ? 'updated' : 'resumed',
-    previousChannelId: existing.channelId !== channelId ? existing.channelId : undefined,
+    outcome,
+    previousChannelId,
   };
 }
 
