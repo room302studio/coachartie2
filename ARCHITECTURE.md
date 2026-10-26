@@ -12,20 +12,17 @@ ecosystem.config.cjs   PM2 config. Reads .env.production itself (fs.readFileSync
 CUTOVER.md              The v3->prod migration, written, not run.
 ARCHITECTURE.md CLAUDE.md README.md   This file, the agent-facing short version, the human one.
 docker-compose.yml      Infra only now: redis, sandbox. Apps run via PM2, not Docker.
-docker-compose.dev.yml  Pre-v3 multi-service dev compose — stale, logged as an open question
-                        for EJ in BUILD-LOG (wave 12), left untouched.
-dev.sh reload.sh        Same pre-v3 multi-service assumptions as docker-compose.dev.yml — same
-                        open question, same reasoning, left untouched.
 package.json            Root workspace scripts. `dev` -> the one-process dev command.
 turbo.json pnpm-workspace.yaml pnpm-lock.yaml tsconfig.json vitest.config.ts eslint.config.mjs
 docs/                   Mostly archived. docs/archive/ holds everything superseded by this
                         rebuild (old READMEs, deployment docs, migration plans, test results).
                         docs/COST-GUARDRAILS.md is the one live doc here (its pm2 commands
                         updated to the one app name).
-prompts/                Seed prompt content (conscience-system.md); no current runtime read
-                        site reads this path directly — the DB `prompts` table is the live copy.
+prompts/                Seed prompt content (conscience-system.md) and proposed prompt versions
+                        awaiting EJ's review (2026-10-26-kindness-streak.md). No runtime code
+                        reads this path; the DB `prompts` table is the live copy.
 scripts/                deploy.sh (written, not run), pm2-deploy.sh (kept until deploy.sh has
-                        shipped once), smart-dev.js, health-check.sh, artie, check-prompt-cache.sh.
+                        shipped once), health-check.sh, artie, check-prompt-cache.sh.
 tests/                  Root-level manual/smoke scripts: smoke.sh (calculator/dm-contract/
                         presence, see CUTOVER.md step 10) plus tests/archive/ (the old
                         hand-run red-team suite, test-01..09, kept for reference, not run by CI).
