@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { MemoryRecaller } from '../../src/engine/memory/recall.js';
 
 /**
@@ -54,6 +54,11 @@ describe('semantic recall reasons', () => {
   });
 
   it('does not change which memories are selected or their order (reason text only)', async () => {
+    // Pin the clock. The temporal layer scores time-of-day and day-of-week similarity, so with
+    // a real clock these 2020 memories cleared its threshold at some hours of the day and not
+    // others, and this assertion flaked. At this fixed instant neither temporal signal fires.
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-06-17T16:00:00Z'));
     const candidates: Candidate[] = [
       { content: 'Nadia is debugging the Piccadilly line signal bug', importance: 5, date: '2020-01-01', tags: [] },
       { content: 'Totally unrelated note about snacks', importance: 5, date: '2020-01-01', tags: [] },
@@ -66,6 +71,7 @@ describe('semantic recall reasons', () => {
 
     // Only the participant-relevant memory clears threshold; the unrelated one is dropped,
     // exactly as it would be without any reason annotation.
+    vi.useRealTimers();
     expect(result.memoryCount).toBe(1);
     expect(result.content).toContain('Nadia is debugging');
     expect(result.content).not.toContain('snacks');
