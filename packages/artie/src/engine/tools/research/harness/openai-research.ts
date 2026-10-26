@@ -93,6 +93,13 @@ export class OpenAIResearchHarness implements ModelHarness {
     const tools = (task.tools || ['web_search', 'code_interpreter']).map((t) => ({ type: t }));
 
     try {
+      let taskInput: string;
+      if (task.context) {
+        taskInput = `Context: ${task.context}\n\nResearch task: ${task.prompt}`;
+      } else {
+        taskInput = task.prompt;
+      }
+
       const response = await fetch(`${this.baseUrl}/responses`, {
         method: 'POST',
         headers: {
@@ -101,9 +108,7 @@ export class OpenAIResearchHarness implements ModelHarness {
         },
         body: JSON.stringify({
           model: 'o4-mini-deep-research',
-          input: task.context
-            ? `Context: ${task.context}\n\nResearch task: ${task.prompt}`
-            : task.prompt,
+          input: taskInput,
           background: true,
           tools,
         }),
@@ -257,10 +262,17 @@ export class OpenAIResearchHarness implements ModelHarness {
     const hasWebSearch = !task.tools || task.tools.includes('web_search');
     const hasCode = !task.tools || task.tools.includes('code_interpreter');
 
+    let typicalCost: number;
+    if (hasWebSearch && hasCode) {
+      typicalCost = 1.1;
+    } else {
+      typicalCost = 0.5;
+    }
+
     return {
       min: 0.3, // Just tokens, minimal tools
       max: 3.0, // Heavy research, many searches
-      typical: hasWebSearch && hasCode ? 1.1 : 0.5,
+      typical: typicalCost,
       currency: 'USD',
     };
   }

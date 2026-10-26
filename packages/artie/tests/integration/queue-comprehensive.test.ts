@@ -202,12 +202,14 @@ describe('Comprehensive Redis Queue Tests', () => {
           };
 
           // Route to appropriate queue
-          const targetQueue =
-            message.respondTo.type === 'discord'
-              ? discordQueue
-              : message.respondTo.type === 'sms'
-                ? smsQueue
-                : emailQueue;
+          let targetQueue;
+          if (message.respondTo.type === 'discord') {
+            targetQueue = discordQueue;
+          } else if (message.respondTo.type === 'sms') {
+            targetQueue = smsQueue;
+          } else {
+            targetQueue = emailQueue;
+          }
 
           await targetQueue.add('response', response);
         }

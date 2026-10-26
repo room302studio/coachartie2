@@ -852,11 +852,13 @@ async function runGit(params: any, _content: string | undefined): Promise<string
         const { stdout } = await gitExecInContainer(command);
 
         if (!stdout.trim()) {
-          return file
-            ? `No changes in ${file}`
-            : ref
-              ? `No differences for ${ref}`
-              : 'No unstaged changes';
+          if (file) {
+            return `No changes in ${file}`;
+          } else if (ref) {
+            return `No differences for ${ref}`;
+          } else {
+            return 'No unstaged changes';
+          }
         }
 
         const truncated = truncateGitOutput(stdout.trim(), 150);

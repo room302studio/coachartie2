@@ -1187,9 +1187,12 @@ async function handleTaskStatus(
       case 'cancel':
       case 'abort': {
         const taskName = params.taskName;
-        const taskIndex = taskName
-          ? userTasks.findIndex(t => t.name.toLowerCase().includes(taskName.toLowerCase()))
-          : userTasks.length - 1;
+        let taskIndex: number;
+        if (taskName) {
+          taskIndex = userTasks.findIndex(t => t.name.toLowerCase().includes(taskName.toLowerCase()));
+        } else {
+          taskIndex = userTasks.length - 1;
+        }
 
         if (taskIndex === -1) {
           return '⚠️ No active task to cancel.';

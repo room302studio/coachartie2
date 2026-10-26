@@ -91,16 +91,18 @@ describe('TOOL_LOOP unset: the native tool loop', () => {
     const tasks = capabilityRegistry.get('tasks', 'list');
     const handler = vi.spyOn(tasks, 'handler').mockResolvedValue('3 open todos');
 
-    createMock.mockImplementation(async (params: { messages: WireMsg[] }) =>
-      params.messages.some((m) => m.role === 'tool')
-        ? reply({ content: 'you have 3 todos' })
-        : reply({
-            content: null,
-            tool_calls: [
-              { id: 'call_t', type: 'function', function: { name: 'todo', arguments: '{"action":"list"}' } },
-            ],
-          })
-    );
+    createMock.mockImplementation(async (params: { messages: WireMsg[] }) => {
+      if (params.messages.some((m) => m.role === 'tool')) {
+        return reply({ content: 'you have 3 todos' });
+      } else {
+        return reply({
+          content: null,
+          tool_calls: [
+            { id: 'call_t', type: 'function', function: { name: 'todo', arguments: '{"action":"list"}' } },
+          ],
+        });
+      }
+    });
 
     const result = await capabilityOrchestrator.orchestrateMessage(incoming('my todos?') as never);
 
@@ -131,20 +133,22 @@ describe('TOOL_LOOP unset: the native tool loop', () => {
     const wolfram = capabilityRegistry.get('wolfram', 'query');
     const handler = vi.spyOn(wolfram, 'handler').mockRejectedValue(new Error('division by zero'));
 
-    createMock.mockImplementation(async (params: { messages: WireMsg[] }) =>
-      params.messages.some((m) => m.role === 'tool')
-        ? reply({ content: 'that math broke' })
-        : reply({
-            content: '',
-            tool_calls: [
-              {
-                id: 'call_c',
-                type: 'function',
-                function: { name: 'wolfram', arguments: '{"action":"query","input":"1/0"}' },
-              },
-            ],
-          })
-    );
+    createMock.mockImplementation(async (params: { messages: WireMsg[] }) => {
+      if (params.messages.some((m) => m.role === 'tool')) {
+        return reply({ content: 'that math broke' });
+      } else {
+        return reply({
+          content: '',
+          tool_calls: [
+            {
+              id: 'call_c',
+              type: 'function',
+              function: { name: 'wolfram', arguments: '{"action":"query","input":"1/0"}' },
+            },
+          ],
+        });
+      }
+    });
 
     const result = await capabilityOrchestrator.orchestrateMessage(incoming('1/0?') as never);
 
@@ -164,11 +168,13 @@ describe('TOOL_LOOP=xml: the XML path end to end', () => {
     const calc = capabilityRegistry.get('calculator', 'calculate');
     const handler = vi.spyOn(calc, 'handler').mockResolvedValue('4');
 
-    createMock.mockImplementation(async (params: { messages: WireMsg[] }) =>
-      JSON.stringify(params.messages).includes('CONVERSATION SO FAR')
-        ? reply({ content: 'the answer is 4' })
-        : reply({ content: 'on it <capability name="calculator" action="calculate" expression="2+2" />' })
-    );
+    createMock.mockImplementation(async (params: { messages: WireMsg[] }) => {
+      if (JSON.stringify(params.messages).includes('CONVERSATION SO FAR')) {
+        return reply({ content: 'the answer is 4' });
+      } else {
+        return reply({ content: 'on it <capability name="calculator" action="calculate" expression="2+2" />' });
+      }
+    });
 
     const result = await capabilityOrchestrator.orchestrateMessage(incoming('2+2?') as never);
 
