@@ -2,6 +2,7 @@ import { logger } from '../../../shared/logger.js';
 import axios from 'axios';
 import { RegisteredCapability } from '../../5-tool-loop/registry.js';
 import { isEmail } from '../../../shared/email.js';
+import { getErrorMessage } from '../../../shared/errors.js';
 
 /**
  * Email capability for sending emails via self-hosted infrastructure
@@ -65,7 +66,7 @@ class EmailService {
       logger.error('❌ Failed to send email:', error);
       return {
         success: false,
-        message: `Failed to send email: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        message: `Failed to send email: ${getErrorMessage(error)}`,
       };
     }
   }
@@ -124,8 +125,28 @@ class EmailService {
     try {
       // Import nodemailer dynamically
       const nodemailer = await import('nodemailer');
-      const host = isDev ? 'localhost' : process.env.EMAIL_HOST || 'mail.coachartiebot.com';
-      const port = isDev ? 1025 : parseInt(process.env.EMAIL_PORT || '587');
+      let host: string;
+      if (isDev) {
+        host = 'localhost';
+      } else {
+        host = process.env.EMAIL_HOST || 'mail.coachartiebot.com';
+      }
+      let port: number;
+      if (isDev) {
+        port = 1025;
+      } else {
+        port = parseInt(process.env.EMAIL_PORT || '587');
+      }
+
+      let auth: { user: string; pass: string } | undefined;
+      if (isDev) {
+        auth = undefined;
+      } else {
+        auth = {
+          user: process.env.EMAIL_USER || 'artie@coachartiebot.com',
+          pass: process.env.EMAIL_PASS || '',
+        };
+      }
 
       // Create transporter
       const transporter = nodemailer.default.createTransport({
@@ -133,12 +154,7 @@ class EmailService {
         port,
         secure: port === 465,
         ignoreTLS: isDev, // MailDev doesn't need TLS
-        auth: isDev
-          ? undefined
-          : {
-              user: process.env.EMAIL_USER || 'artie@coachartiebot.com',
-              pass: process.env.EMAIL_PASS || '',
-            },
+        auth,
       });
 
       // Send email
@@ -151,18 +167,26 @@ class EmailService {
 
       logger.info(`✅ Email sent via SMTP to ${payload.to}, messageId: ${info.messageId}`);
 
+      let message: string;
+      if (isDev) {
+        message = `Email sent to ${payload.to} (captured in MailDev at http://localhost:47328)`;
+      } else {
+        message = `Email sent to ${payload.to}`;
+      }
+
       return {
         success: true,
-        message: isDev
-          ? `Email sent to ${payload.to} (captured in MailDev at http://localhost:47328)`
-          : `Email sent to ${payload.to}`,
+        message,
       };
     } catch (error) {
       logger.error('❌ SMTP email send failed:', error);
-      const errorMsg = error instanceof Error ? error.message : 'Unknown error';
-      const suggestion = isDev
-        ? 'Is MailDev running on localhost:1025?'
-        : `Check SMTP configuration: EMAIL_HOST=${process.env.EMAIL_HOST}, EMAIL_PORT=${process.env.EMAIL_PORT}`;
+      const errorMsg = getErrorMessage(error);
+      let suggestion: string;
+      if (isDev) {
+        suggestion = 'Is MailDev running on localhost:1025?';
+      } else {
+        suggestion = `Check SMTP configuration: EMAIL_HOST=${process.env.EMAIL_HOST}, EMAIL_PORT=${process.env.EMAIL_PORT}`;
+      }
       throw new Error(`SMTP failed: ${errorMsg}\n\n${suggestion}`);
     }
   }
@@ -175,7 +199,13 @@ class EmailService {
     const hasWebhook = !!(this.webhookUrl && this.webhookAuth);
 
     let status = 'Email System Status:\n';
-    status += `🌍 Environment: ${isDev ? 'Development' : 'Production'}\n`;
+    let env: string;
+    if (isDev) {
+      env = 'Development';
+    } else {
+      env = 'Production';
+    }
+    status += `🌍 Environment: ${env}\n`;
 
     if (hasWebhook) {
       status += `📡 Transport: n8n webhook (configured)\n`;
@@ -189,7 +219,13 @@ class EmailService {
     }
 
     status += `✉️ From: ${process.env.EMAIL_FROM || 'artie@coachartiebot.com'}\n`;
-    status += `✅ Ready: ${hasWebhook || isDev ? 'Yes' : 'Yes (may be rejected by Gmail until IP builds reputation)'}`;
+    let readyStatus: string;
+    if (hasWebhook || isDev) {
+      readyStatus = 'Yes';
+    } else {
+      readyStatus = 'Yes (may be rejected by Gmail until IP builds reputation)';
+    }
+    status += `✅ Ready: ${readyStatus}`;
 
     return status;
   }
@@ -239,7 +275,9 @@ async function handleEmailCapability(params: any, content?: string): Promise<str
         const result = await service.send({ to, from, subject, body });
 
         if (result.success) {
-          return `✅ ${result.message}\n\n📝 Sent:\nTo: ${to}\nSubject: ${subject}\n\nBody:\n${body.substring(0, 200)}${body.length > 200 ? '...' : ''}`;
+          const preview = body.substring(0, 200);
+          const suffix = body.length > 200 ? '...' : '';
+          return `✅ ${result.message}\n\n📝 Sent:\nTo: ${to}\nSubject: ${subject}\n\nBody:\n${preview}${suffix}`;
         }
 
         throw new Error(result.message);
