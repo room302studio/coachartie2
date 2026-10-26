@@ -35,6 +35,13 @@ export const TAINTING_CAPABILITIES = new Set([
   'http', // Raw HTTP fetches
   'web', // Web browsing + web search (the <websearch> shortcut resolves to web:search)
   'n8n_browser', // Browser automation (registered name; was listed as 'n8n-browser', which never matched)
+  // Security audit 2026-10-26 (sec-abuse.md, batch 2): reading any of these pulls
+  // attacker-controlled text into the turn (a GitHub issue body, a reddit thread, a wiki
+  // page) just as much as a raw http/web fetch does, even though the read itself is open
+  // (approval-gate.ts only gates the write actions on these tools).
+  'github',
+  'reddit',
+  'mediawiki',
 ]);
 
 // Capabilities that are dangerous when context is tainted by external content
@@ -44,6 +51,17 @@ export const DANGEROUS_WHEN_TAINTED = new Set([
   'filesystem', // File operations (write/delete)
   'email', // Sending emails (could exfiltrate data)
   'scheduler', // Scheduling future actions
+  // Security audit 2026-10-26 (sec-abuse.md, batch 2): a hostile page/issue/thread fetched
+  // mid-turn could otherwise instruct Artie to moderate someone, rename himself, DM/notify
+  // a user, answer as a mention-proxy target, or post fake UI — none of these leave the
+  // DANGEROUS_WHEN_TAINTED list before this, even though taint WAS being set correctly.
+  'discord-moderation', // timeout / enemy-role actions on a real person
+  'discord-nickname', // renames Artie himself
+  'proactive-dm', // sends an unsolicited DM/notification
+  'mention_proxy', // already owner-only at the registry gate; this is defense in depth for
+  // an owner turn that got prompt-injected mid-conversation (same reasoning as the http
+  // SSRF fix below — owner-only is not injection-proof).
+  'discord-ui', // posts buttons/selects/modals a user could mistake for a real prompt
 ]);
 
 // Actions within dangerous capabilities that are safe even when tainted
@@ -61,6 +79,10 @@ export const SAFE_ACTIONS_WHEN_TAINTED: Record<string, Set<string>> = {
     'grep',
     'search',
   ]),
+  // escalate just returns a string asking a human mod to look — no action against anyone.
+  'discord-moderation': new Set(['escalate']),
+  // status is a read of the proactive-DM allowlist/queue, not a send.
+  'proactive-dm': new Set(['status']),
 };
 
 // Callback types for dependencies the executor needs from orchestrator

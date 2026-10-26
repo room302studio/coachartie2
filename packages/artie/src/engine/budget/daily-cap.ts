@@ -42,6 +42,26 @@ export function getTodaySpendUsd(now: Date = new Date()): number {
   return row?.spent ?? 0;
 }
 
+/**
+ * How many model_usage_stats rows a user has logged today (ET day) for a given step_type.
+ * Zero new state: the ledger write IS the counter, so a restart can't reset it. Used by the
+ * per-user image_gen cap (security audit 2026-10-26, sec-abuse.md Critical #3).
+ */
+export function getUserActionCountToday(
+  userId: string,
+  stepType: string,
+  now: Date = new Date()
+): number {
+  const { start, end } = easternDayBounds(now);
+  const row = getSyncDb().get<{ n: number | null }>(
+    `SELECT COUNT(*) AS n
+       FROM model_usage_stats
+      WHERE user_id = ? AND step_type = ? AND timestamp >= ? AND timestamp < ?`,
+    [userId, stepType, toSqliteUtc(start), toSqliteUtc(end)]
+  );
+  return row?.n ?? 0;
+}
+
 export type BudgetAction = 'none' | 'mute' | 'unmute';
 
 /** Pure decision, so precedence is testable without files or a DB. */

@@ -420,7 +420,7 @@ export class CapabilityOrchestrator {
     message: IncomingMessage,
     traceId?: string | null
   ): OrchestrationContext {
-    return {
+    const context: OrchestrationContext = {
       messageId: message.id,
       userId: message.userId,
       originalMessage: message.message,
@@ -437,6 +437,20 @@ export class CapabilityOrchestrator {
       // SOFT_DEADLINE_RESERVE_MS leaves room to actually send the answer we salvage.
       deadlineAt: Date.now() + JOB_TIMEOUT_MS - SOFT_DEADLINE_RESERVE_MS,
     };
+    // Security audit 2026-10-26 (sec-abuse.md, batch 2): resolveDiscordMessageLinks
+    // (gateway/1-receive/expand-links.ts) pulls another user's past message text straight
+    // into this turn's context BEFORE the tool loop starts — attacker-controlled content
+    // that never passes through a capability call, so it could never set
+    // taintedByExternalContent on its own. Taint at ingest, same as a web/http fetch would.
+    const resolvedLinks = message.context?.resolvedDiscordMessages;
+    if (Array.isArray(resolvedLinks) && resolvedLinks.length > 0) {
+      context.taintedByExternalContent = true;
+      context.taintSource = 'discord-link-expansion';
+      logger.warn(
+        `🛡️ TAINT SET: context tainted by discord-link-expansion (${resolvedLinks.length} linked message(s))`
+      );
+    }
+    return context;
   }
 
   /**

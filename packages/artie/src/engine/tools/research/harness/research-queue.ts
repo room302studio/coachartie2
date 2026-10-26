@@ -13,6 +13,7 @@ import { getSyncDb } from '../../../../shared/db/client.js';
 import type { ResearchTask, TaskHandle, TaskResult } from './types.js';
 import { openaiResearchHarness } from './openai-research.js';
 import { getErrorMessage } from '../../../error-utils.js';
+import { UsageTracker } from '../../../budget/usage-ledger.js';
 
 // Initialize research queue table
 function ensureTable(): void {
@@ -262,6 +263,7 @@ class ResearchQueueService {
    */
   private async pollTask(task: QueuedTask): Promise<void> {
     if (!task.handleId) return;
+    this.ensureTable();
     const db = getSyncDb();
 
     try {
@@ -284,6 +286,30 @@ class ResearchQueueService {
         );
 
         logger.info(`🔬 Task ${task.id} completed - $${result.cost.total.toFixed(2)}`);
+
+        // Security audit 2026-10-26 (sec-abuse.md Critical #3): OpenAI deep-research spend
+        // used to be tracked only in-memory and in research_tasks.cost — never written to
+        // model_usage_stats, so daily-cap.ts's getTodaySpendUsd (which sums exactly that
+        // table) never saw it and the daily budget mute could never trip on it. Cost lands
+        // here, at completion, not at submit — there is no per-call cost before the task
+        // finishes.
+        void UsageTracker.recordUsage({
+          model_name: 'openai/o4-mini-deep-research',
+          user_id: task.userId,
+          message_id: task.id,
+          input_length: task.prompt.length,
+          output_length: result.content.length,
+          response_time_ms: 0,
+          capabilities_detected: 0,
+          capabilities_executed: 1,
+          capability_types: 'deep_research',
+          success: true,
+          prompt_tokens: result.usage.inputTokens,
+          completion_tokens: result.usage.outputTokens,
+          total_tokens: result.usage.inputTokens + result.usage.outputTokens,
+          estimated_cost: result.cost.total,
+          step_type: 'deep_research',
+        });
 
         // TODO: Write results to wiki, notify user
         await this.handleCompletion(task, result);
