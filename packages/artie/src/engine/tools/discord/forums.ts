@@ -61,7 +61,10 @@ function formatEditedTimestamp(timestamp: string | undefined): string | null {
 }
 
 function formatBooleanYesNo(value: boolean): string {
-  return value ? 'Yes' : 'No';
+  if (value) {
+    return 'Yes';
+  }
+  return 'No';
 }
 
 function calculateAverageMessageLength(messages: any[]): number {
@@ -73,7 +76,10 @@ function calculateAverageMessageLength(messages: any[]): number {
 }
 
 function formatBotIndicator(isBot: boolean): string {
-  return isBot ? ' 🤖' : '';
+  if (isBot) {
+    return ' 🤖';
+  }
+  return '';
 }
 
 function formatEditedInfo(edited: string | null): string {
@@ -88,6 +94,13 @@ function formatReactions(reactions: any[]): string {
     return '';
   }
   return `Reactions: ${reactions.map((r: any) => `${r.emoji} (${r.count})`).join(', ')}`;
+}
+
+function countedNextStepLine(count: number, message: string): string {
+  if (count > 0) {
+    return message;
+  }
+  return '';
 }
 
 function formatAttachments(attachments: any[]): string {
@@ -638,9 +651,9 @@ ${idx + 1}. ${issue.title || issue.threadTitle || 'Untitled'}
     rateLimitSection = '';
   }
 
-  const nextStepsLine1 = successCount > 0 ? `- View created issues at: https://github.com/${repo}/issues` : '';
-  const nextStepsLine2 = failureCount > 0 ? `- Review and retry failed syncs` : '';
-  const nextStepsLine3 = skippedCount > 0 ? `- ${skippedCount} threads were skipped (likely already synced)` : '';
+  const nextStepsLine1 = countedNextStepLine(successCount, `- View created issues at: https://github.com/${repo}/issues`);
+  const nextStepsLine2 = countedNextStepLine(failureCount, `- Review and retry failed syncs`);
+  const nextStepsLine3 = countedNextStepLine(skippedCount, `- ${skippedCount} threads were skipped (likely already synced)`);
 
   const response_text = `🔄 GITHUB SYNC COMPLETE
 
