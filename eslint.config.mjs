@@ -43,6 +43,19 @@ export default [
       // every decision has a name. Never a generic iff(cond, a, b) helper: it evaluates both
       // branches eagerly.
       'no-ternary': 'error',
+      // ...and no ternary in disguise: a sync immediately-invoked function used to pick a
+      // value. Name the function instead. (Async IIFEs, which await, are still allowed.)
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector: 'CallExpression[arguments.length=0] > ArrowFunctionExpression.callee[async=false]',
+          message: 'No IIFEs: give the decision a named function.',
+        },
+        {
+          selector: 'CallExpression[arguments.length=0] > FunctionExpression.callee[async=false]',
+          message: 'No IIFEs: give the decision a named function.',
+        },
+      ],
       // TypeScript already checks undefined names; core no-undef misfires on DOM/lib types
       // like RequestInit.
       'no-undef': 'off',
