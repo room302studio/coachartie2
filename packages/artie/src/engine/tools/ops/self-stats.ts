@@ -1,5 +1,6 @@
 import { logger } from '../../../shared/logger.js';
 import { getSyncDb } from '../../../shared/db/client.js';
+import { getErrorMessage } from '../../../shared/errors.js';
 import { isBlockedUser, BLOCKED_USER_EPITHET, BLOCKED_USER_IDS } from '../../../shared/blocklist.js';
 import { RegisteredCapability } from '../../5-tool-loop/registry.js';
 import { metricsRegistry } from '../../health/metrics.js';
@@ -28,7 +29,11 @@ interface SelfStatsParams {
 
 function redactUser(userId: string): string {
   if (BLOCKED_USER_IDS.has(userId)) return BLOCKED_USER_EPITHET;
-  return isBlockedUser(userId) ? 'someone who opted out' : `<@${userId}>`;
+  if (isBlockedUser(userId)) {
+    return 'someone who opted out';
+  } else {
+    return `<@${userId}>`;
+  }
 }
 
 function userCostsReport(db: ReturnType<typeof getSyncDb>, userId: string): string {
@@ -304,8 +309,18 @@ Use this when you want to reflect on your performance, check if something's wron
 
           lines.push('**Most Used:**');
           for (const cap of sorted.slice(0, 10)) {
-            const errorRate = cap.total > 0 ? ((cap.error / cap.total) * 100).toFixed(0) : '0';
-            const errorNote = cap.error > 0 ? ` (${errorRate}% errors)` : '';
+            let errorRate: string;
+            if (cap.total > 0) {
+              errorRate = ((cap.error / cap.total) * 100).toFixed(0);
+            } else {
+              errorRate = '0';
+            }
+            let errorNote: string;
+            if (cap.error > 0) {
+              errorNote = ` (${errorRate}% errors)`;
+            } else {
+              errorNote = '';
+            }
             lines.push(`- ${cap.name}: ${cap.total}${errorNote}`);
           }
 
@@ -338,7 +353,14 @@ Use this when you want to reflect on your performance, check if something's wron
           const eventLoopLag = metrics['artie_nodejs_eventloop_lag_seconds']?.[0]?.value;
           if (eventLoopLag !== undefined) {
             const lagMs = eventLoopLag * 1000;
-            const status = lagMs < 100 ? '✅' : lagMs < 500 ? '⚠️' : '🔴';
+            let status: string;
+            if (lagMs < 100) {
+              status = '✅';
+            } else if (lagMs < 500) {
+              status = '⚠️';
+            } else {
+              status = '🔴';
+            }
             lines.push(`\n**Event Loop Lag:** ${lagMs.toFixed(1)}ms ${status}`);
           }
 
