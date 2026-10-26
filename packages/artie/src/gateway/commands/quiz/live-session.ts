@@ -175,14 +175,20 @@ Answer (yes/no):`;
         'HTTP-Referer': 'https://coach-artie.local',
         'X-Title': 'Coach Artie Quiz Judge',
       },
-      body: JSON.stringify({
-        model: judge.model,
-        ...(isAutoRouted(judge.model) ? { plugins: judge.plugins, reasoning: autoReasoningFor(judge.plugins) } : {}),
-        usage: { include: true }, // OpenRouter reports the exact USD cost
-        messages: [{ role: 'user', content: prompt }],
-        max_tokens: 5,
-        temperature: 0,
-      }),
+      body: JSON.stringify((() => {
+        const payload: Record<string, unknown> = {
+          model: judge.model,
+          usage: { include: true }, // OpenRouter reports the exact USD cost
+          messages: [{ role: 'user', content: prompt }],
+          max_tokens: 5,
+          temperature: 0,
+        };
+        if (isAutoRouted(judge.model)) {
+          payload.plugins = judge.plugins;
+          payload.reasoning = autoReasoningFor(judge.plugins);
+        }
+        return payload;
+      })()),
     });
 
     if (!response.ok) {
@@ -198,11 +204,14 @@ Answer (yes/no):`;
     try {
       const promptTokens = data.usage?.prompt_tokens ?? Math.ceil(prompt.length / 3);
       const completionTokens = data.usage?.completion_tokens ?? 1;
-      const cost =
-        typeof data.usage?.cost === 'number'
-          ? data.usage.cost
-          : (promptTokens / 1000) * JUDGE_FALLBACK_RATES.input +
-            (completionTokens / 1000) * JUDGE_FALLBACK_RATES.output;
+      let cost: number;
+      if (typeof data.usage?.cost === 'number') {
+        cost = data.usage.cost;
+      } else {
+        cost =
+          (promptTokens / 1000) * JUDGE_FALLBACK_RATES.input +
+          (completionTokens / 1000) * JUDGE_FALLBACK_RATES.output;
+      }
       getSyncDb().run(
         `INSERT INTO model_usage_stats (
           model_name, user_id, message_id, input_length, output_length, response_time_ms,
@@ -235,7 +244,8 @@ Answer (yes/no):`;
 export function buildInitialProgress(total: number): QuestionOutcome[] {
   const arr: QuestionOutcome[] = [];
   for (let i = 0; i < total; i++) {
-    arr.push(i === 0 ? 'current' : 'upcoming');
+    const outcome: QuestionOutcome = i === 0 ? 'current' : 'upcoming';
+    arr.push(outcome);
   }
   return arr;
 }
@@ -264,7 +274,12 @@ export function renderProgressBar(progress: QuestionOutcome[]): string {
  * Fetch a random flashcard from the API
  */
 async function fetchRandomCard(deckId?: string): Promise<FlashcardResponse> {
-  const url = deckId ? `${FLASHCARD_API_BASE}/random/${deckId}` : `${FLASHCARD_API_BASE}/random`;
+  let url: string;
+  if (deckId) {
+    url = `${FLASHCARD_API_BASE}/random/${deckId}`;
+  } else {
+    url = `${FLASHCARD_API_BASE}/random`;
+  }
 
   const response = await fetch(url);
 
@@ -323,8 +338,12 @@ export const quizSessionManager = {
       hintsRevealed: 0,
       progress: buildInitialProgress(questionCount),
       usernames: new Map(),
-      onTimeout: onTimeout ? () => onTimeout(session) : undefined,
+      onTimeout: undefined,
     };
+
+    if (onTimeout) {
+      session.onTimeout = () => onTimeout(session);
+    }
 
     // Set question timeout
     if (session.onTimeout) {
@@ -466,8 +485,15 @@ export const quizSessionManager = {
 
     const quizEnded = session.questionNumber >= session.totalQuestions;
 
+    function judgeLabel(): string {
+      if (judgedByAI) {
+        return ' (AI judged)';
+      }
+      return '';
+    }
+
     logger.info(
-      `✅ Quiz answer correct${judgedByAI ? ' (AI judged)' : ''}! Channel: ${session.channelId}, User: ${userId}, Streak: ${winnerStreak}, Q${session.questionNumber}/${session.totalQuestions}`
+      `✅ Quiz answer correct${judgeLabel()}! Channel: ${session.channelId}, User: ${userId}, Streak: ${winnerStreak}, Q${session.questionNumber}/${session.totalQuestions}`
     );
 
     return {
@@ -618,7 +644,10 @@ export const quizSessionManager = {
    */
   getScores(channelId: string): Map<string, number> | null {
     const session = activeSessions.get(channelId);
-    return session ? new Map(session.scores) : null;
+    if (session) {
+      return new Map(session.scores);
+    }
+    return null;
   },
 
   /**
@@ -676,12 +705,32 @@ export const quizSessionManager = {
 
     const sorted = [...scores.entries()].sort((a, b) => b[1] - a[1]);
 
+    function getMedal(position: number): string {
+      if (position === 0) {
+        return '🥇';
+      }
+      if (position === 1) {
+        return '🥈';
+      }
+      if (position === 2) {
+        return '🥉';
+      }
+      return '  ';
+    }
+
+    function getStreakBadge(streak: number): string {
+      if (streak >= 2) {
+        return ` 🔥${streak}`;
+      }
+      return '';
+    }
+
     return sorted
       .map(([userId, score], i) => {
-        const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : '  ';
+        const medal = getMedal(i);
         const name = userMentions?.get(userId) || `<@${userId}>`;
         const streak = streaks?.get(userId) || 0;
-        const streakBadge = streak >= 2 ? ` 🔥${streak}` : '';
+        const streakBadge = getStreakBadge(streak);
         return `${medal} ${name}: ${score}${streakBadge}`;
       })
       .join(' | ');
