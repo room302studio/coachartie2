@@ -335,7 +335,14 @@ async function handleStart(
   const questionsOption = interaction.options.getInteger('questions');
   const aiJudgeOption = interaction.options.getBoolean('ai_judge');
 
-  const deckId = deckOption === 'all' ? undefined : deckOption;
+  let deckId: string | undefined;
+  if (deckOption === 'all') {
+    deckId = undefined;
+  } else if (deckOption) {
+    deckId = deckOption;
+  } else {
+    deckId = undefined;
+  }
   const questionCount = questionsOption || 10;
   const aiJudge = aiJudgeOption ?? false;
 
@@ -836,7 +843,7 @@ export async function handleQuizAnswer(message: Message): Promise<boolean> {
       result = initial;
     }
 
-    if (result && result.correct) {
+    if (result && typeof result === 'object' && result.correct) {
       function aiIndicator(): string {
         if (result.judgedByAI) {
           return ' (AI)';

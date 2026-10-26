@@ -117,17 +117,20 @@ export function buildLiveQuizMessage(session: QuizSession): {
         .join('\n')
     );
 
-  if (card) {
-    function cardFrontText(): string {
-      if (card.front.length > 1000) {
-        return card.front.slice(0, 997) + '…';
-      }
-      return card.front;
+  function cardFrontText(c: typeof card): string {
+    if (c && c.front.length > 1000) {
+      return c.front.slice(0, 997) + '…';
     }
+    if (c) {
+      return c.front;
+    }
+    return '';
+  }
 
+  if (card) {
     embed.addFields({
       name: `❓ Question ${session.questionNumber}`,
-      value: cardFrontText(),
+      value: cardFrontText(card),
     });
 
     if (session.hintsRevealed > 0) {
