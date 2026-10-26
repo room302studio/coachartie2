@@ -79,6 +79,8 @@ module.exports = {
       name: 'coach-artie',
       cwd: path.join(__dirname, 'packages/artie'),
       script: 'dist/main.js',
+      // A dependency still requires the deprecated punycode builtin; the warning is noise.
+      node_args: '--disable-warning=DEP0040',
       env: {
         ...env,
         DATABASE_PATH,

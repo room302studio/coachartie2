@@ -10,6 +10,7 @@
 
 import { Client, EmbedBuilder } from 'discord.js';
 import { Octokit } from '@octokit/rest';
+import { octokitLog } from './octokit-log.js';
 import { logger } from '../../../shared/logger.js';
 import { getDb, eq } from '../../../shared/db/client.js';
 import { githubRepoWatches, githubIdentityMappings } from '../../../shared/db/schema.js';
@@ -34,7 +35,7 @@ export class GitHubStudioManager {
 
   constructor(client: Client, githubToken: string) {
     this.client = client;
-    this.octokit = new Octokit({ auth: githubToken });
+    this.octokit = new Octokit({ auth: githubToken, log: octokitLog });
   }
 
   start(): void {

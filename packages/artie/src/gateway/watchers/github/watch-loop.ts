@@ -7,6 +7,7 @@
 
 import { Client } from 'discord.js';
 import { logger } from '../../../shared/logger.js';
+import { octokitLog } from './octokit-log.js';
 import { getDb, initializeDb, eq } from '../../../shared/db/client.js';
 import { githubRepoWatches } from '../../../shared/db/schema.js';
 import {
@@ -173,7 +174,7 @@ export class GitHubSyncService {
         if (!owner || !repo) continue;
 
         const { Octokit } = await import('@octokit/rest');
-        const octokit = new Octokit({ auth: process.env.GITHUB_TOKEN });
+        const octokit = new Octokit({ auth: process.env.GITHUB_TOKEN, log: octokitLog });
 
         const { data: prs } = await octokit.pulls.list({
           owner, repo, state: 'open', per_page: 20,

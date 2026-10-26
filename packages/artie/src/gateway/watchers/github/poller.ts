@@ -6,6 +6,7 @@
  */
 
 import { Octokit } from '@octokit/rest';
+import { octokitLog } from './octokit-log.js';
 import { delay } from '../../../shared/async.js';
 import { logger } from '../../../shared/logger.js';
 import { getDb, eq, and } from '../../../shared/db/client.js';
@@ -124,7 +125,7 @@ export class GitHubPollerService extends EventEmitter {
 
   constructor(token: string, config: Partial<PollerConfig> = {}) {
     super();
-    this.octokit = new Octokit({ auth: token });
+    this.octokit = new Octokit({ auth: token, log: octokitLog });
     this.config = { ...DEFAULT_CONFIG, ...config };
   }
 

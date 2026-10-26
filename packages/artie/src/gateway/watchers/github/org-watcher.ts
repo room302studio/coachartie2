@@ -10,6 +10,7 @@
 
 import { Client, TextChannel } from 'discord.js';
 import { Octokit } from '@octokit/rest';
+import { octokitLog } from './octokit-log.js';
 import { logger } from '../../../shared/logger.js';
 import * as engine from '../../../engine/api.js';
 import { GITHUB_FEED_CHANNEL_ID } from '../../../shared/config/channels.js';
@@ -59,7 +60,7 @@ export class GitHubOrgWatcher {
 
   constructor(client: Client, githubToken: string) {
     this.client = client;
-    this.octokit = new Octokit({ auth: githubToken });
+    this.octokit = new Octokit({ auth: githubToken, log: octokitLog });
   }
 
   start(): void {

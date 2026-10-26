@@ -103,7 +103,8 @@ export async function checkDailyBudget(options: BudgetCheckOptions = {}): Promis
   try {
     spentUsd = (options.spend ?? getTodaySpendUsd)(now);
   } catch (error) {
-    logger.error('💸 Daily budget: spend lookup failed — cap not evaluated this pass', error);
+    // Usually SQLITE_BUSY; the next pass (a minute later) re-checks.
+    logger.warn('💸 Daily budget: spend lookup failed — cap not evaluated this pass', error);
     return { action: 'error', spentUsd: null, budgetUsd };
   }
 

@@ -6,6 +6,7 @@
  */
 
 import { Octokit } from '@octokit/rest';
+import { octokitLog } from './octokit-log.js';
 import { delay } from '../../../shared/async.js';
 import { logger } from '../../../shared/logger.js';
 import type { ForumThreadData, ThreadMessageData } from './forum-traversal.js';
@@ -31,7 +32,7 @@ export class GitHubIntegrationService {
   private octokit: Octokit;
 
   constructor(token: string) {
-    this.octokit = new Octokit({ auth: token });
+    this.octokit = new Octokit({ auth: token, log: octokitLog });
   }
 
   /**

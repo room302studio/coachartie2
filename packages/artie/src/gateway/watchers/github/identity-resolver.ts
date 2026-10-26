@@ -12,6 +12,7 @@
 
 import { Client, GuildMember } from 'discord.js';
 import { Octokit } from '@octokit/rest';
+import { octokitLog } from './octokit-log.js';
 import { logger } from '../../../shared/logger.js';
 import { getDb, eq } from '../../../shared/db/client.js';
 import { githubIdentityMappings, githubRepoWatches } from '../../../shared/db/schema.js';
@@ -39,7 +40,7 @@ export class GitHubIdentityResolver {
 
   constructor(client: Client, githubToken: string) {
     this.client = client;
-    this.octokit = new Octokit({ auth: githubToken });
+    this.octokit = new Octokit({ auth: githubToken, log: octokitLog });
   }
 
   /**

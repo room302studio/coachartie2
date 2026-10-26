@@ -41,10 +41,10 @@ function ensureTable(): void {
     )
   `);
   // Additive: handles they're known by (JSON array), for name matching.
-  try {
+  // Check first: the db wrapper logs every failed statement as an error.
+  const cols = db.all<{ name: string }>(`PRAGMA table_info(privacy_opt_outs)`);
+  if (!cols.some((c) => c.name === 'names')) {
     db.run(`ALTER TABLE privacy_opt_outs ADD COLUMN names TEXT NOT NULL DEFAULT '[]'`);
-  } catch {
-    // column already exists
   }
   tableReady = true;
 }
