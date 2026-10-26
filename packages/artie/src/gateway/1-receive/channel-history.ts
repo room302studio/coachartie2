@@ -54,6 +54,81 @@ export async function fetchReplyContext(message: Message): Promise<{
 }
 
 /**
+ * Who a history line is addressed to, resolved WITHOUT fetching anything extra —
+ * discord.js fills `mentions.repliedUser` and `mentions.users` from the gateway payload
+ * regardless of the MessageContent intent (same fact `isReplyToBot` in speak-gate.ts relies
+ * on), so this works today and gets a richer excerpt automatically once
+ * DISCORD_PRIVILEGED_INTENTS is on (the reply target's own content becomes readable).
+ *
+ * `window` is the same prefetched channel page fetchChannelHistory is rendering — the reply
+ * target is usually in it, which is what lets us attach a short excerpt of Artie's own
+ * message without a second Discord call. A target outside the window still gets an author
+ * (from `repliedUser`), just no excerpt.
+ */
+export function resolveAddressing(
+  msg: Message,
+  window: Collection<string, Message>,
+  botId?: string
+): {
+  replyToAuthor?: string;
+  replyToIsSelf?: boolean;
+  replyToExcerpt?: string;
+  mentions?: string[];
+  addressedElsewhere?: boolean;
+} {
+  const out: {
+    replyToAuthor?: string;
+    replyToIsSelf?: boolean;
+    replyToExcerpt?: string;
+    mentions?: string[];
+    addressedElsewhere?: boolean;
+  } = {};
+
+  const refId = msg.reference?.messageId;
+  let replyTargetId: string | undefined;
+  if (refId) {
+    const target = window.get(refId);
+    const repliedUser = msg.mentions.repliedUser; // populated even without MessageContent
+    const targetAuthorId = target?.author.id ?? repliedUser?.id;
+    const targetAuthorName = target
+      ? target.author.displayName || target.author.username
+      : repliedUser
+        ? repliedUser.displayName || repliedUser.username
+        : undefined;
+    if (targetAuthorName && !isBlockedUser(targetAuthorId ?? '')) {
+      out.replyToAuthor = targetAuthorName;
+      out.replyToIsSelf = targetAuthorId === botId;
+      replyTargetId = targetAuthorId;
+      if (out.replyToIsSelf && target) {
+        const excerpt = (target.cleanContent || target.content || '').trim().slice(0, 120);
+        if (excerpt) out.replyToExcerpt = excerpt;
+      }
+    }
+  }
+
+  if (msg.mentions.users.size > 0) {
+    // A reply-with-ping fills BOTH mentions.repliedUser and mentions.users with the same
+    // person — without this exclusion that renders as the redundant "[↳@Bob →@Bob]"
+    // instead of just "[↳@Bob]".
+    const names = Array.from(msg.mentions.users.values())
+      .filter((u) => u.id !== botId && u.id !== replyTargetId && !isBlockedUser(u.id))
+      .map((u) => u.displayName || u.username);
+    if (names.length > 0) out.mentions = Array.from(new Set(names));
+  }
+
+  // "This message was for someone else": a reply or @-mention naming a human who isn't
+  // Artie, with no mention of Artie anywhere in the same line.
+  const mentionsBot = botId ? msg.mentions.has(botId) : false;
+  const replyTargetsOther = out.replyToAuthor !== undefined && !out.replyToIsSelf;
+  const mentionsOther = (out.mentions?.length ?? 0) > 0;
+  if (!mentionsBot && (replyTargetsOther || mentionsOther)) {
+    out.addressedElsewhere = true;
+  }
+
+  return out;
+}
+
+/**
  * Fetch recent channel history for context
  * Randomly fetches 10-25 messages to give Artie conversational context
  */
@@ -67,6 +142,11 @@ export async function fetchChannelHistory(
     timestamp: string;
     isBot: boolean;
     isSelf: boolean;
+    replyToAuthor?: string;
+    replyToIsSelf?: boolean;
+    replyToExcerpt?: string;
+    mentions?: string[];
+    addressedElsewhere?: boolean;
   }>
 > {
   try {
@@ -119,6 +199,8 @@ export async function fetchChannelHistory(
           if (embedText) content = content ? `${content}\n[embed] ${embedText}` : `[embed] ${embedText}`;
         }
 
+        const addressing = resolveAddressing(msg, messages, message.client.user?.id);
+
         return {
           author: label,
           // cleanContent resolves <@id> mentions to readable @names — raw IDs in
@@ -129,11 +211,19 @@ export async function fetchChannelHistory(
           // Only Artie's OWN messages become assistant turns downstream. Without this,
           // every webhook/other-bot message read as something Artie himself said.
           isSelf: msg.author.id === message.client.user?.id,
+          ...addressing,
         };
       })
       // Without the MessageContent intent, other people's messages arrive blank (only
-      // @mentions of Artie, DMs and his own posts carry text). Blank lines are noise.
-      .filter((h) => h.content.trim().length > 0);
+      // @mentions of Artie, DMs and his own posts carry text). A blank line is only noise
+      // when it ALSO carries no reply/mention metadata — who-replied-to-whom and who got
+      // @-pinged are still worth a line even with nothing to quote.
+      .filter(
+        (h) =>
+          h.content.trim().length > 0 ||
+          h.replyToAuthor !== undefined ||
+          (h.mentions?.length ?? 0) > 0
+      );
   } catch (error) {
     logger.error('Failed to fetch channel history:', error);
     return [];
