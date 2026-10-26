@@ -24,6 +24,45 @@ export interface DiscordHistoryEntry {
   timestamp: string;
   isBot: boolean;
   isSelf?: boolean;
+  /** Display name of whoever this line is a Discord reply to (if any). */
+  replyToAuthor?: string;
+  /** True when replyToAuthor is Artie himself — pairs with replyToExcerpt. */
+  replyToIsSelf?: boolean;
+  /** Short excerpt of Artie's own message, only set when replyToIsSelf. */
+  replyToExcerpt?: string;
+  /** Display names this line @-mentions (Artie excluded). */
+  mentions?: string[];
+  /** This line is a reply/@-mention aimed at someone other than Artie. */
+  addressedElsewhere?: boolean;
+}
+
+/**
+ * Compact "who's talking to whom" suffix for one transcript line — a reply arrow, an
+ * @-mention list, and an "not to you" flag when the line is addressed elsewhere. Pure
+ * and cheap on purpose: this rides on every line of every turn's transcript, so each
+ * added token here is paid on every reply (see MULTIPLAYER-NOTES.md for the measured cost).
+ */
+export function formatAddressingSuffix(
+  entry: Pick<DiscordHistoryEntry, 'replyToAuthor' | 'replyToIsSelf' | 'replyToExcerpt' | 'mentions' | 'addressedElsewhere'>
+): string {
+  const parts: string[] = [];
+  if (entry.replyToAuthor) {
+    if (entry.replyToIsSelf) {
+      const excerpt = entry.replyToExcerpt
+        ? ` ("${entry.replyToExcerpt.slice(0, 60)}${entry.replyToExcerpt.length > 60 ? '…' : ''}")`
+        : '';
+      parts.push(`↳you${excerpt}`);
+    } else {
+      parts.push(`↳@${entry.replyToAuthor}`);
+    }
+  }
+  if (entry.mentions && entry.mentions.length > 0) {
+    parts.push(`→@${entry.mentions.join(',@')}`);
+  }
+  if (entry.addressedElsewhere) {
+    parts.push('(not to you)');
+  }
+  return parts.length > 0 ? ` [${parts.join(' ')}]` : '';
 }
 
 /**
@@ -86,15 +125,27 @@ export function renderDiscordTranscript(
 ): string {
   const recent = discordHistory.slice(-(limit * 2));
   const lines = recent
-    .filter((msg) => msg.content && msg.content.trim().length > 0)
+    // A line with no content is only noise when it ALSO has nothing to say about who it
+    // was addressed to — otherwise "who replied to whom" is worth a line on its own
+    // (the non-privileged-intents case: other people's messages arrive content-blank).
+    .filter(
+      (msg) =>
+        (msg.content && msg.content.trim().length > 0) ||
+        msg.replyToAuthor !== undefined ||
+        (msg.mentions?.length ?? 0) > 0
+    )
     .map((msg) => {
       const isSelf = msg.isSelf ?? msg.isBot;
+      const suffix = formatAddressingSuffix(msg);
       if (isSelf) {
-        return `Coach Artie (you): ${sanitizeAssistantMessage(msg.content)}`;
+        const sanitized = sanitizeAssistantMessage(msg.content);
+        return sanitized ? `Coach Artie (you)${suffix}: ${sanitized}` : '';
       }
       // msg.author already carries "Display (@username)[staff]/[bot]" labeling
-      // from the discord side.
-      return `${msg.author}: ${msg.content}`;
+      // from the discord side. No content (non-privileged intents) still gets a line so
+      // the reply-chain / @-mention metadata isn't lost.
+      const body = msg.content && msg.content.trim().length > 0 ? msg.content : '[no text]';
+      return `${msg.author}${suffix}: ${body}`;
     })
     .filter((l) => l.split(': ').slice(1).join(': ').trim().length > 0);
 
