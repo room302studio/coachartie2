@@ -51,6 +51,9 @@ export interface UserIntent {
   sendFile?: (fileData: { buffer: Buffer; filename: string; content?: string }) => Promise<void>;
   // Context Alchemy: Get the Discord message ID for the response (for feedback correlation)
   getResponseMessageId?: () => string | undefined;
+  // Attach Discord components (buttons/select action rows, raw JSON) to the last message
+  // this turn sent. discord-ui queues these per-turn; see pending-components.ts.
+  attachComponents?: (rows: Array<Record<string, unknown>>) => Promise<void>;
 }
 
 export interface ProcessorOptions {
@@ -543,6 +546,27 @@ export async function processUserIntent(
               }
             } catch (attError) {
               logger.warn(`Failed to send pending attachments [${shortId}]:`, attError);
+            }
+          }
+
+          // Check for and attach any pending Discord components (buttons/select) queued by
+          // discord-ui. Keyed by the TURN id (jobInfo.messageId), not userId — two turns from
+          // the same person must never cross. Never let an attach failure take down the
+          // (already-delivered) text reply.
+          if (intent.attachComponents) {
+            try {
+              const pendingComponentRows = await capabilitiesClient.getPendingComponents(
+                jobInfo.messageId
+              );
+              if (pendingComponentRows.length > 0) {
+                logger.info(
+                  `🔘 Attaching ${pendingComponentRows.length} component row(s) [${shortId}]`
+                );
+                await intent.attachComponents(pendingComponentRows);
+                logger.info(`✅ Attached pending components [${shortId}]`);
+              }
+            } catch (compError) {
+              logger.warn(`Failed to attach pending components [${shortId}]:`, compError);
             }
           }
 

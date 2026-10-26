@@ -5,7 +5,7 @@
  * on-message.ts (wave 5): the closures used to live inline in handleMessageAsIntent.
  */
 
-import { Message, EmbedBuilder, AttachmentBuilder, GuildMember } from 'discord.js';
+import { Message, EmbedBuilder, AttachmentBuilder, ActionRowBuilder, GuildMember } from 'discord.js';
 import { delay } from '../../shared/async.js';
 import { logger } from '../../shared/logger.js';
 import { chunkMessage } from './chunks.js';
@@ -154,6 +154,10 @@ export function createDiscordReplyHandlers(
   proxyOptions?: ProxyOptions
 ) {
   let streamingMessage: Message | null = null;
+  // The actual LAST message this turn sent (streamingMessage is always the FIRST — editResponse
+  // and deleteResponse need that; attachComponents needs the last, since extra chunks ride
+  // channel.send after it and a button on the first chunk would land above trailing text).
+  let lastSentMessage: Message | null = null;
 
   return {
     // Response handlers
@@ -201,12 +205,13 @@ export function createDiscordReplyHandlers(
       if (!streamingMessage) {
         streamingMessage = responseMessage;
       }
+      lastSentMessage = responseMessage;
 
       // Send additional chunks
       for (let i = 1; i < chunks.length; i++) {
         if ('send' in message.channel) {
           logger.info(`📨 DISCORD: Sending chunk ${i + 1}/${chunks.length} [${shortId}]`);
-          await (message.channel as any).send(chunks[i]);
+          lastSentMessage = await (message.channel as any).send(chunks[i]);
           await delay(CHUNK_RATE_LIMIT_DELAY);
         }
       }
@@ -388,5 +393,32 @@ export function createDiscordReplyHandlers(
 
     // Context Alchemy: Get the Discord message ID for the response (for feedback correlation)
     getResponseMessageId: () => streamingMessage?.id,
+
+    // Attach queued components (buttons/select, raw action-row JSON) to the LAST message
+    // this turn sent (lastSentMessage — NOT streamingMessage, which is always the first chunk;
+    // a multi-chunk reply would otherwise put buttons above trailing text). If there's nothing
+    // editable (e.g. the whole reply stayed silent and nothing posted), fall back to a small
+    // follow-up message carrying just the components.
+    attachComponents: async (rows: Array<Record<string, unknown>>) => {
+      try {
+        const actionRows = rows.map((row) => ActionRowBuilder.from(row as any));
+        const target = lastSentMessage ?? streamingMessage;
+        if (target) {
+          await target.edit({ components: actionRows as any });
+          logger.info(
+            `🔘 DISCORD: Attached ${rows.length} component row(s) to message ${target.id} [${shortId}]`
+          );
+        } else if ('send' in message.channel) {
+          const followUp = await (message.channel as any).send({ components: actionRows });
+          logger.info(
+            `🔘 DISCORD: Sent follow-up message ${followUp.id} with ${rows.length} component row(s) [${shortId}]`
+          );
+        } else {
+          logger.warn(`No channel available to deliver components [${shortId}]`);
+        }
+      } catch (error) {
+        logger.warn(`Failed to attach Discord components [${shortId}]:`, error);
+      }
+    },
   };
 }

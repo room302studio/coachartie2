@@ -60,6 +60,7 @@ import {
   getShortCorrelationId,
 } from '../correlation.js';
 import { processUserIntent } from '../4-reply/stream-reply.js';
+import { handleComponentClick } from './on-component-click.js';
 
 // Routed from the same registry register-commands.ts publishes (commands/registry.ts).
 const commands = new Map<string, any>(globalCommands.map((c) => [c.data.name, c]));
@@ -231,6 +232,13 @@ async function handleSlashCommand(interaction: ChatInputCommandInteraction) {
 async function handleButtonInteraction(interaction: ButtonInteraction) {
   const buttonText = (interaction.component as any)?.label || interaction.customId;
 
+  // discord-ui's queued buttons (phase 1 interactive components): server-built custom_id,
+  // routed to the click loopback before anything else gets a chance to claim it.
+  if (interaction.customId.startsWith('artie:')) {
+    await handleComponentClick(interaction);
+    return;
+  }
+
   // Quiz buttons own the live embed — handle them before the generic intent
   // processor so we don't accidentally send "Hint" / "Skip" to the LLM.
   const quizAction = parseQuizButtonId(interaction.customId);
@@ -293,6 +301,12 @@ async function handleSelectMenuInteraction(interaction: SelectMenuInteraction) {
   const selectedValue = interaction.values[0];
   const selectedOption = interaction.component?.options?.find((opt) => opt.value === selectedValue);
   const selectedLabel = selectedOption?.label || selectedValue;
+
+  // discord-ui's queued select menus (phase 1 interactive components).
+  if (interaction.customId.startsWith('artie:')) {
+    await handleComponentClick(interaction);
+    return;
+  }
 
   // Check if this is an ask-question response
   if (interaction.customId.startsWith('ask_')) {
