@@ -396,7 +396,7 @@ export function createDiscordReplyHandlers(
       try {
         const actionRows = rows.map((row) => ActionRowBuilder.from(row as any));
         if (streamingMessage) {
-          await streamingMessage.edit({ components: actionRows });
+          await streamingMessage.edit({ components: actionRows as any });
           logger.info(
             `🔘 DISCORD: Attached ${rows.length} component row(s) to message ${streamingMessage.id} [${shortId}]`
           );
