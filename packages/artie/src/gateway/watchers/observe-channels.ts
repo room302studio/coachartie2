@@ -34,7 +34,10 @@ export function isObservationalLearningEnabled(env: NodeJS.ProcessEnv = process.
 
 export function observationMinMessages(env: NodeJS.ProcessEnv = process.env): number {
   const n = parseInt(env.OBSERVATION_MIN_MESSAGES || '', 10);
-  return Number.isFinite(n) && n > 0 ? n : 5;
+  if (Number.isFinite(n) && n > 0) {
+    return n;
+  }
+  return 5;
 }
 
 // NON_EVENT_PATTERNS (the hedge phrases) live in 4-reply/output-safety.ts since wave 5.
