@@ -1,7 +1,22 @@
-import { RegisteredCapability } from '../../5-tool-loop/registry.js';
+import { RegisteredCapability, CapabilityContext } from '../../5-tool-loop/registry.js';
 import { logger } from '../../../shared/logger.js';
 import { assertGenerationAllowed } from '../../../shared/kill-switch.js';
 import { addPendingAttachment } from '../../3-context/assemble.js';
+import { isOwner } from '../../../shared/config/owner.js';
+import { getBrownoutMode } from '../../budget/brownout.js';
+import { getUserActionCountToday } from '../../budget/daily-cap.js';
+import { UsageTracker } from '../../budget/usage-ledger.js';
+
+/** ARTIE_IMAGE_GEN_PER_USER_DAY, default 3. The owner is exempt (security audit 2026-10-26,
+ * sec-abuse.md Critical #3: image_gen spend was invisible to the daily budget ledger and had
+ * no per-user limit — an uncapped wallet drain for any of the 16k+ guild members). */
+function imageGenPerUserDailyCap(): number {
+  const parsed = parseInt(String(process.env.ARTIE_IMAGE_GEN_PER_USER_DAY ?? ''), 10);
+  if (Number.isFinite(parsed) && parsed > 0) {
+    return parsed;
+  }
+  return 3;
+}
 
 interface ImageGenParams {
   action: 'generate' | 'edit';
@@ -43,6 +58,8 @@ async function handleImageGen(params: ImageGenParams): Promise<{
   text: string;
   imageBase64?: string;
   imageBuffer?: Buffer;
+  model: string;
+  usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number; cost?: number };
 }> {
   const apiKey = process.env.OPENROUTER_API_KEY;
   if (!apiKey) {
@@ -59,6 +76,10 @@ async function handleImageGen(params: ImageGenParams): Promise<{
     model,
     messages: [],
     modalities: ['text', 'image'], // Enable image output
+    // Ask OpenRouter for the real USD cost on the response (usage-ledger.ts's
+    // openrouter.ts does the same for chat generations) so image spend can be billed
+    // accurately instead of guessed.
+    usage: { include: true },
   };
 
   // Add image config for aspect ratio and size
@@ -116,6 +137,12 @@ async function handleImageGen(params: ImageGenParams): Promise<{
         images?: string[];
       };
     }>;
+    usage?: {
+      prompt_tokens?: number;
+      completion_tokens?: number;
+      total_tokens?: number;
+      cost?: number;
+    };
   };
   const choice = data.choices?.[0];
   const message = choice?.message;
@@ -202,6 +229,8 @@ async function handleImageGen(params: ImageGenParams): Promise<{
     text: textContent || 'Image generated successfully.',
     imageBase64,
     imageBuffer,
+    model,
+    usage: data.usage,
   };
 }
 
@@ -217,8 +246,28 @@ export const imageGenCapability: RegisteredCapability = {
     '<image_gen-generate prompt="A futuristic cityscape" aspect_ratio="16:9" />',
     '<image_gen-edit prompt="Add a rainbow in the sky" input_image="https://..." />',
   ],
-  handler: async (params: Record<string, any>, content?: string) => {
+  handler: async (params: Record<string, any>, content?: string, context?: CapabilityContext) => {
     const { action, prompt, aspect_ratio, size, input_image, userId } = params;
+    const callerIsOwner = isOwner(String(userId || ''));
+
+    // Security audit 2026-10-26 (sec-abuse.md Critical #3): under brownout `critical`,
+    // real-money image generation is refused for anyone but EJ — the same posture as the
+    // daily budget mute, applied early instead of waiting for the hard cap to trip.
+    if (!callerIsOwner) {
+      const brownout = await getBrownoutMode();
+      if (brownout.mode === 'critical') {
+        return "Image generation is paused while we're running lean on credits — ask EJ, or try again later.";
+      }
+    }
+
+    // Per-user daily cap (ARTIE_IMAGE_GEN_PER_USER_DAY, default 3). The owner is exempt.
+    if (!callerIsOwner && userId) {
+      const cap = imageGenPerUserDailyCap();
+      const usedToday = getUserActionCountToday(String(userId), 'image_gen');
+      if (usedToday >= cap) {
+        return `You've hit today's image generation limit (${cap}/day). Try again after midnight ET, or ask EJ.`;
+      }
+    }
 
     const result = await handleImageGen({
       action: (action as 'generate' | 'edit') || 'generate',
@@ -226,6 +275,42 @@ export const imageGenCapability: RegisteredCapability = {
       aspect_ratio: aspect_ratio as ImageGenParams['aspect_ratio'],
       size: size as ImageGenParams['size'],
       input_image,
+    });
+
+    // Security audit 2026-10-26 (sec-abuse.md Critical #3): image_gen spend used to be
+    // invisible to the daily budget ledger (model_usage_stats), so it never counted toward
+    // DAILY_BUDGET_USD and never tripped the auto-mute. Record it the same way openrouter.ts
+    // does for chat generations — reported cost when OpenRouter gave one, else the standard
+    // top-tier-for-unknown-model fallback in UsageTracker.calculateCost.
+    const usage = result.usage;
+    const tokenUsage = {
+      prompt_tokens: usage?.prompt_tokens ?? 0,
+      completion_tokens: usage?.completion_tokens ?? 0,
+      total_tokens: usage?.total_tokens ?? (usage?.prompt_tokens ?? 0) + (usage?.completion_tokens ?? 0),
+    };
+    let estimatedCost: number;
+    if (Number.isFinite(usage?.cost)) {
+      estimatedCost = Number(usage!.cost);
+    } else {
+      estimatedCost = UsageTracker.calculateCost(result.model, tokenUsage);
+    }
+    void UsageTracker.recordUsage({
+      model_name: result.model,
+      user_id: String(userId || 'unknown-user'),
+      message_id: String(params.messageId || ''),
+      input_length: String(prompt || content || '').length,
+      output_length: result.text.length,
+      response_time_ms: 0,
+      capabilities_detected: 0,
+      capabilities_executed: 1,
+      capability_types: 'image_gen',
+      success: true,
+      prompt_tokens: tokenUsage.prompt_tokens,
+      completion_tokens: tokenUsage.completion_tokens,
+      total_tokens: tokenUsage.total_tokens,
+      estimated_cost: estimatedCost,
+      guild_id: context?.guildId ?? null,
+      step_type: 'image_gen',
     });
 
     // Queue the image to be sent back via pending attachments

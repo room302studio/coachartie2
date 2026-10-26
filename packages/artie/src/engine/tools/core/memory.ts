@@ -44,6 +44,15 @@ interface MemoryParams {
   [key: string]: unknown;
 }
 
+/**
+ * Importance cap for non-owner writes (security audit 2026-10-26, sec-abuse.md Critical #2):
+ * "There's no reason a random user can set 10 or pin." 10 (pinned) and the >=7 band both get
+ * a model/recall advantage — the low relevance threshold and the always-included "high
+ * importance" set in recall.ts's semanticLayer/fetchCandidates — so non-owner writes are
+ * capped below that band. The owner's own remember/pin calls are unaffected.
+ */
+export const NON_OWNER_MAX_IMPORTANCE = 6;
+
 /** Whose memories a recall searches: EJ may name anyone; everyone else gets only their own. */
 export function recallTargetUser(requestedUser: unknown, callerId: string): string {
   if (requestedUser && isOwner(callerId)) {
@@ -347,16 +356,23 @@ export class MemoryService {
       throw new Error('Unauthorized: you can only pin your own memories');
     }
 
-    // Update importance to 10 (pinned)
+    // Security audit 2026-10-26 (sec-abuse.md Critical #2): true pinning (importance 10) is
+    // owner-only. A non-owner's own memory can still be "pinned" but lands at the same
+    // NON_OWNER_MAX_IMPORTANCE cap as remember, so it can't buy its way into the >=7 band
+    // that lowers recall's relevance threshold and guarantees inclusion.
+    let pinnedImportance = 10;
+    if (!isOwner(userId)) {
+      pinnedImportance = NON_OWNER_MAX_IMPORTANCE;
+    }
     const updatedMemory = {
       ...memory,
-      importance: 10,
+      importance: pinnedImportance,
     };
 
     await hybridDataLayer.updateMemory(updatedMemory);
 
     logger.info(`📌 [HYBRID] Successfully pinned memory ${memoryId}`);
-    return `📌 Pinned memory: "${memory.content.substring(0, 50)}..." (now importance 10/10)`;
+    return `📌 Pinned memory: "${memory.content.substring(0, 50)}..." (now importance ${pinnedImportance}/10)`;
   }
 
   /**
@@ -747,7 +763,14 @@ async function handleMemoryAction(
         }
 
         const context = String(params.context || '');
-        const importance = Math.max(1, Math.min(10, parseInt(String(params.importance)) || 5));
+        let importanceCeiling = 10;
+        if (!isOwner(String(userId))) {
+          importanceCeiling = NON_OWNER_MAX_IMPORTANCE;
+        }
+        const importance = Math.max(
+          1,
+          Math.min(importanceCeiling, parseInt(String(params.importance)) || 5)
+        );
 
         // Get messageId from params (set by capability orchestrator)
         const relatedMessageId = optionalInt(params.messageId);

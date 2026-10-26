@@ -12,6 +12,13 @@ const reply = (status: number, body: any): ApiResult => ({ status, body });
 
 const SUBWAY_BUILDER_GUILD_ID = '1420846272545296470';
 
+// Security audit 2026-10-26 (sec-authority.md MEDIUM finding — autonomous moderation is
+// fully LLM-discretionary with no human-in-the-loop). Keeps the feature but bounds the
+// blast radius of a prompt-injected or social-engineered timeout: at most one per target
+// per day, at most a handful guild-wide per hour.
+const AUTONOMOUS_TIMEOUT_PER_TARGET_PER_DAY = 1;
+const AUTONOMOUS_TIMEOUT_PER_GUILD_PER_HOUR = 3;
+
 // Discord user IDs that can never be moderated, in addition to the
 // username-based list in config/protected-users.ts
 const PROTECTED_IDS = [
@@ -112,9 +119,26 @@ export async function timeoutMember(client: any, body: any): Promise<ApiResult> 
     }
     const member = check.member;
 
+    const now = new Date();
+    const oneDayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString();
+    const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000).toISOString();
+    const targetCount = moderationService.countAutonomousTimeoutsForTarget(userId, oneDayAgo);
+    if (targetCount >= AUTONOMOUS_TIMEOUT_PER_TARGET_PER_DAY) {
+      return reply(429, {
+        error: `Already timed out this person in the last 24h — escalate to a human mod instead of timing out again.`,
+      });
+    }
+    const guildCount = moderationService.countAutonomousTimeoutsForGuild(guildId, oneHourAgo);
+    if (guildCount >= AUTONOMOUS_TIMEOUT_PER_GUILD_PER_HOUR) {
+      return reply(429, {
+        error: `Already issued ${guildCount} autonomous timeouts in this server in the last hour — escalate to a human mod instead.`,
+      });
+    }
+
     const minutes = Math.min(60, Math.max(1, Number(durationMinutes)));
-    const until = new Date(Date.now() + minutes * 60_000);
+    const until = new Date(now.getTime() + minutes * 60_000);
     await member.timeout(minutes * 60_000, reason);
+    moderationService.recordAutonomousTimeout(userId, guildId);
 
     moderationService.logAction({
       issuedByUserId: body.issuedByUserId || 'coach-artie',

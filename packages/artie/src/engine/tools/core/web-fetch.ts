@@ -54,7 +54,7 @@ const CONFIG = {
   // Request timeout in milliseconds
   REQUEST_TIMEOUT: 30000,
   // Maximum number of redirects
-  MAX_REDIRECTS: 5,
+  MAX_REDIRECTS: 5, // also used by http.ts via WEB_FETCH_MAX_REDIRECTS, below
   // User agent string
   USER_AGENT: 'CoachArtie/1.0 (Web Content Fetcher; +https://coachartie.com)',
   // Allowed protocols
@@ -252,8 +252,11 @@ export function makeGuardedLookup(resolve: Resolver = dns.lookup as unknown as R
 }
 
 const guardedLookup = makeGuardedLookup() as unknown as http.AgentOptions['lookup'];
-const httpAgent = new http.Agent({ lookup: guardedLookup });
-const httpsAgent = new https.Agent({ lookup: guardedLookup });
+// Exported so other outbound-HTTP tools (http.ts) share this one guard instead of each
+// growing their own SSRF defense — security audit 2026-10-26 (sec-abuse.md, batch 2).
+export const httpAgent = new http.Agent({ lookup: guardedLookup });
+export const httpsAgent = new https.Agent({ lookup: guardedLookup });
+export const WEB_FETCH_MAX_REDIRECTS = CONFIG.MAX_REDIRECTS;
 
 /**
  * Extracts readable text content from HTML

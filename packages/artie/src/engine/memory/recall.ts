@@ -3,6 +3,49 @@ import { stripInternalMarkup, stripToolCalls } from '../../shared/clean-llm-outp
 import { MemoryEntourageInterface, MemoryEntourageResult } from './types.js';
 import { MemoryService } from '../tools/core/memory.js';
 import { hybridDataLayer } from './store.js';
+import { isOwner } from '../../shared/config/owner.js';
+
+/**
+ * True when `content` names the owner (by Discord id, "ejfox" or the standalone word "EJ").
+ * Word-boundary matched the same way privacy-opt-out.ts's mentionsOptedOutUser is, so "EJ"
+ * doesn't match inside "reject" etc. Exported for the memory-poisoning test.
+ */
+export function mentionsOwner(content: string | undefined | null): boolean {
+  if (!content) return false;
+  return /(^|[^a-z0-9_])(688448399879438340|ejfox|ej)($|[^a-z0-9_])/i.test(content.toLowerCase());
+}
+
+/** importance cap applied to the candidate pool for non-owner guild memories that name the
+ * owner — keeps them below the >=7 threshold that both lowers the relevance bar (0.08→0.02)
+ * and buys a spot in the always-included "high importance" set. */
+const UNVERIFIED_OWNER_MENTION_IMPORTANCE_CAP = 6;
+
+/**
+ * Security audit 2026-10-26 (sec-abuse.md Critical #2 — memory poisoning): a non-owner's
+ * guild memory that names the owner used to join the SAME ranked candidate pool every other
+ * user's recall draws from, with no signal that it was never verified and no cap on how
+ * "important" (and therefore how likely to surface) it could claim to be. This can't change
+ * who it was stored under (execute.ts already force-binds that to the real caller), only how
+ * it's framed and weighted once it's a recall candidate — so the ORIGINAL row in storage is
+ * untouched; only what gets handed to the model is tagged and capped, and only when someone
+ * other than the author is doing the asking.
+ */
+function guardGuildMentionOfOwner<T extends { user_id: string; content: string; importance?: number }>(
+  memory: T,
+  askingUserId: string
+): T {
+  if (memory.user_id === askingUserId || isOwner(memory.user_id)) {
+    return memory; // the author recalling their own words, or the owner's own memory
+  }
+  if (!mentionsOwner(memory.content)) {
+    return memory;
+  }
+  return {
+    ...memory,
+    content: `[unverified, said by ${memory.user_id}] ${memory.content}`,
+    importance: Math.min(memory.importance ?? 5, UNVERIFIED_OWNER_MENTION_IMPORTANCE_CAP),
+  };
+}
 
 /**
  * MemoryRecaller - unified semantic + temporal memory recall.
@@ -160,7 +203,11 @@ export class MemoryRecaller implements MemoryEntourageInterface {
     // (same idea as user memories being capped at 60); the top-K selection stays tiny.
     let guildMemories: any[] = [];
     if (guildId) {
-      guildMemories = await hybridDataLayer.getGuildMemories(guildId, 400);
+      const rawGuildMemories = await hybridDataLayer.getGuildMemories(guildId, 400);
+      // Security audit 2026-10-26 (sec-abuse.md Critical #2): only the shared guild pool
+      // needs this — userMemories is already scoped to the asker, and artieMemories are
+      // Artie's own, not a third party's claim about the owner.
+      guildMemories = rawGuildMemories.map((m) => guardGuildMentionOfOwner(m, userId));
     }
 
     return [...userMemories, ...artieMemories, ...guildMemories].map((m) => {
