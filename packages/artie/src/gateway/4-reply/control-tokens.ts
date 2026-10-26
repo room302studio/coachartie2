@@ -49,41 +49,81 @@ export type ControlTokenKind = ControlToken['kind'];
 
 type Parser<K extends ControlTokenKind> = (text: string) => Extract<ControlToken, { kind: K }> | null;
 
+function parseSilent(text: string): Extract<ControlToken, { kind: 'silent' }> | null {
+  if (!isSilent(text)) {
+    return null;
+  }
+  return { kind: 'silent' };
+}
+
+function parseTimeout(text: string): Extract<ControlToken, { kind: 'timeout' }> | null {
+  const m = text.match(/\[TIMEOUT(?::(\d{1,3}))?\]/i);
+  if (!m) {
+    return null;
+  }
+  return { kind: 'timeout', seconds: Math.min(300, Math.max(5, parseInt(m[1] || '30', 10) || 30)) };
+}
+
+function parseGamble(text: string): Extract<ControlToken, { kind: 'gamble' }> | null {
+  const m = text.match(/\[GAMBLE(?::(\d{1,3})(?::(\d{1,2}))?)?\]/i);
+  if (!m) {
+    return null;
+  }
+  return {
+    kind: 'gamble',
+    stake: Math.min(300, Math.max(5, parseInt(m[1] || '60', 10) || 60)),
+    odds: Math.min(90, Math.max(10, parseInt(m[2] || '50', 10) || 50)),
+  };
+}
+
+function parseDeal(text: string): Extract<ControlToken, { kind: 'deal' }> | null {
+  const m = text.match(/\[DEAL(?::(\d{1,3}))?\]/i);
+  if (!m) {
+    return null;
+  }
+  return { kind: 'deal', stake: Math.min(300, Math.max(5, parseInt(m[1] || '60', 10) || 60)) };
+}
+
+function parseHit(text: string): Extract<ControlToken, { kind: 'hit' }> | null {
+  if (!text.match(/\[HIT\]/i)) {
+    return null;
+  }
+  return { kind: 'hit' };
+}
+
+function parseStand(text: string): Extract<ControlToken, { kind: 'stand' }> | null {
+  if (!text.match(/\[STAND\]/i)) {
+    return null;
+  }
+  return { kind: 'stand' };
+}
+
+function parseSlots(text: string): Extract<ControlToken, { kind: 'slots' }> | null {
+  const m = text.match(/\[SLOTS(?::(\d{1,3}))?\]/i);
+  if (!m) {
+    return null;
+  }
+  return { kind: 'slots', stake: Math.min(120, Math.max(5, parseInt(m[1] || '30', 10) || 30)) };
+}
+
+function parseWheel(text: string): Extract<ControlToken, { kind: 'wheel' }> | null {
+  const m = text.match(/\[WHEEL(?::(\d{1,3}))?(?::([^\]\n]{1,32}))?\]/i);
+  if (!m) {
+    return null;
+  }
+  return { kind: 'wheel', seconds: parseInt(m[1] || '60', 10) || 60, target: m[2]?.trim() || undefined };
+}
+
 const PARSERS: { [K in ControlTokenKind]: Parser<K> } = {
   // Only a LEADING [SILENT] means silence; an embedded one is just stripped.
-  silent: (text) => (isSilent(text) ? { kind: 'silent' } : null),
-  timeout: (text) => {
-    const m = text.match(/\[TIMEOUT(?::(\d{1,3}))?\]/i);
-    return m
-      ? { kind: 'timeout', seconds: Math.min(300, Math.max(5, parseInt(m[1] || '30', 10) || 30)) }
-      : null;
-  },
-  gamble: (text) => {
-    const m = text.match(/\[GAMBLE(?::(\d{1,3})(?::(\d{1,2}))?)?\]/i);
-    return m
-      ? {
-          kind: 'gamble',
-          stake: Math.min(300, Math.max(5, parseInt(m[1] || '60', 10) || 60)),
-          odds: Math.min(90, Math.max(10, parseInt(m[2] || '50', 10) || 50)),
-        }
-      : null;
-  },
-  deal: (text) => {
-    const m = text.match(/\[DEAL(?::(\d{1,3}))?\]/i);
-    return m ? { kind: 'deal', stake: Math.min(300, Math.max(5, parseInt(m[1] || '60', 10) || 60)) } : null;
-  },
-  hit: (text) => (text.match(/\[HIT\]/i) ? { kind: 'hit' } : null),
-  stand: (text) => (text.match(/\[STAND\]/i) ? { kind: 'stand' } : null),
-  slots: (text) => {
-    const m = text.match(/\[SLOTS(?::(\d{1,3}))?\]/i);
-    return m ? { kind: 'slots', stake: Math.min(120, Math.max(5, parseInt(m[1] || '30', 10) || 30)) } : null;
-  },
-  wheel: (text) => {
-    const m = text.match(/\[WHEEL(?::(\d{1,3}))?(?::([^\]\n]{1,32}))?\]/i);
-    return m
-      ? { kind: 'wheel', seconds: parseInt(m[1] || '60', 10) || 60, target: m[2]?.trim() || undefined }
-      : null;
-  },
+  silent: parseSilent,
+  timeout: parseTimeout,
+  gamble: parseGamble,
+  deal: parseDeal,
+  hit: parseHit,
+  stand: parseStand,
+  slots: parseSlots,
+  wheel: parseWheel,
 };
 
 /** The first token of one kind in the text, or null. */
@@ -133,7 +173,10 @@ export function scrubStreamingTokens(text: string): string {
 /** Attach the house's deteriorating inner monologue to a verdict (Discord small-text). */
 function withMelt(verdict: string): string {
   const aside = houseFlourish();
-  return aside ? `${verdict}\n-# ${aside}` : verdict;
+  if (!aside) {
+    return verdict;
+  }
+  return `${verdict}\n-# ${aside}`;
 }
 
 /**
@@ -171,7 +214,12 @@ export async function applyControlTokens(cleanResult: string, intent: UserIntent
   if (!CASINO_OPEN) {
     cleanResult = stripControlTokens(cleanResult, 'casino').trim();
   }
-  const _gMatch = CASINO_OPEN ? parseControlToken(cleanResult, 'gamble') : null;
+  let _gMatch: Extract<ControlToken, { kind: 'gamble' }> | null;
+  if (CASINO_OPEN) {
+    _gMatch = parseControlToken(cleanResult, 'gamble');
+  } else {
+    _gMatch = null;
+  }
   if (_gMatch && typeof (intent as any).timeoutAuthor === 'function') {
     bumpHouseEvents();
     const _stake = _gMatch.stake;
@@ -188,15 +236,22 @@ export async function applyControlTokens(cleanResult: string, intent: UserIntent
         `Walk away. Never come back. (Come back.)`,
         `The house glares, but pays.`,
       ];
+      let _streakLabel: string;
+      if (_e.streak > 1) {
+        _streakLabel = `W${_e.streak} streak`;
+      } else {
+        _streakLabel = 'fresh win';
+      }
       _verdict =
         `🎰 **THE WHEEL** — roll ${_roll}/100, survive ≤${_odds}: 🟩 **SAFE.** ` +
         `${_safe[Math.floor(Math.random() * _safe.length)]} ` +
-        `Payout **+${_payout} cred** → ${_e.cred} cred (${_e.streak > 1 ? `W${_e.streak} streak` : 'fresh win'}).`;
+        `Payout **+${_payout} cred** → ${_e.cred} cred (${_streakLabel}).`;
     } else {
       const _landed = await (intent as any).timeoutAuthor(
         _stake,
         `Timeout roulette — rolled ${_roll} vs ${_odds}, staked ${_stake}s`
       );
+      let _verdict2: string;
       if (_landed) {
         const _e = recordSelfSpin(intent.userId, intent.username || 'gambler', false, 0, _stake);
         const _loss = [
@@ -204,16 +259,27 @@ export async function applyControlTokens(cleanResult: string, intent: UserIntent
           `${_stake} seconds of contemplative silence, effective immediately.`,
           `No refunds. The wheel loves you.`,
         ];
-        _verdict =
+        let _skidLabel: string;
+        if (_e.streak < -1) {
+          _skidLabel = `, L${-_e.streak} skid`;
+        } else {
+          _skidLabel = '';
+        }
+        _verdict2 =
           `🎰 **THE WHEEL** — roll ${_roll}/100, survive ≤${_odds}: 🟥 **THE BOX. ${_stake}s.** ` +
           `${_loss[Math.floor(Math.random() * _loss.length)]} ` +
-          `(${_e.cred} cred, ${_e.served}s lifetime served${_e.streak < -1 ? `, L${-_e.streak} skid` : ''})`;
+          `(${_e.cred} cred, ${_e.served}s lifetime served${_skidLabel})`;
       } else {
-        _verdict = `🎰 **THE WHEEL** — roll ${_roll}/100, survive ≤${_odds}: 🟥 THE BOX — but the mechanism jammed. Sentence commuted. The house is FURIOUS.`;
+        _verdict2 = `🎰 **THE WHEEL** — roll ${_roll}/100, survive ≤${_odds}: 🟥 THE BOX — but the mechanism jammed. Sentence commuted. The house is FURIOUS.`;
       }
+      _verdict = _verdict2;
     }
     _verdict = withMelt(_verdict);
-    cleanResult = cleanResult ? `${cleanResult}\n\n${_verdict}` : _verdict;
+    if (cleanResult) {
+      cleanResult = `${cleanResult}\n\n${_verdict}`;
+    } else {
+      cleanResult = _verdict;
+    }
   }
   // BLACKJACK & SLOTS — real server-side games. The LLM's patter is flavor; the
   // appended TABLE/REELS block is the actual cards/reels, dealt here where the
@@ -221,10 +287,22 @@ export async function applyControlTokens(cleanResult: string, intent: UserIntent
   // timeoutAuthor path as roulette; wins pay yard cred into the ledger.
   const _tableChannel = String((intent.context as any)?.channelId || 'dm');
   const _gambler = intent.username || 'gambler';
-  const _dealM = CASINO_OPEN ? parseControlToken(cleanResult, 'deal') : null;
-  const _hitM = CASINO_OPEN ? parseControlToken(cleanResult, 'hit') : null;
-  const _standM = CASINO_OPEN ? parseControlToken(cleanResult, 'stand') : null;
-  const _slotsM = CASINO_OPEN ? parseControlToken(cleanResult, 'slots') : null;
+  let _dealM: Extract<ControlToken, { kind: 'deal' }> | null;
+  let _hitM: Extract<ControlToken, { kind: 'hit' }> | null;
+  let _standM: Extract<ControlToken, { kind: 'stand' }> | null;
+  let _slotsM: Extract<ControlToken, { kind: 'slots' }> | null;
+  if (CASINO_OPEN) {
+    _dealM = parseControlToken(cleanResult, 'deal');
+    _hitM = parseControlToken(cleanResult, 'hit');
+    _standM = parseControlToken(cleanResult, 'stand');
+    _slotsM = parseControlToken(cleanResult, 'slots');
+  } else {
+    _dealM = null;
+    _hitM = null;
+    _standM = null;
+    _slotsM = null;
+  }
+
   if (_dealM || _hitM || _standM || _slotsM) {
     bumpHouseEvents();
     cleanResult = stripControlTokens(cleanResult, 'table').trim();
@@ -252,10 +330,14 @@ export async function applyControlTokens(cleanResult: string, intent: UserIntent
           h.session.stake,
           `Blackjack bust — ${h.playerValue}, staked ${h.session.stake}s`
         );
-        const _e = _landed
-          ? recordTableServed(intent.userId, _gambler, h.session.stake)
-          : null;
-        _house = `🃏 **THE TABLE** — you draw ${bjFmt([h.drawn])} → ${bjFmt(h.session.player)} (${h.playerValue}). 🟥 **BUST — THE BOX. ${h.session.stake}s.**${_e ? ` (${_e.served}s lifetime served)` : ' The mechanism jammed — sentence commuted, the house seethes.'}`;
+        let _bustMsg: string;
+        if (_landed) {
+          const _e = recordTableServed(intent.userId, _gambler, h.session.stake);
+          _bustMsg = ` (${_e.served}s lifetime served)`;
+        } else {
+          _bustMsg = ' The mechanism jammed — sentence commuted, the house seethes.';
+        }
+        _house = `🃏 **THE TABLE** — you draw ${bjFmt([h.drawn])} → ${bjFmt(h.session.player)} (${h.playerValue}). 🟥 **BUST — THE BOX. ${h.session.stake}s.**${_bustMsg}`;
       } else {
         _house = `🃏 **THE TABLE** — you draw ${bjFmt([h.drawn])} → ${bjFmt(h.session.player)} (${h.playerValue}). Dealer shows ${bjFmt([h.session.dealer[0]])} + 🂠. Hit or stand.`;
       }
@@ -265,7 +347,13 @@ export async function applyControlTokens(cleanResult: string, intent: UserIntent
         _house = `🃏 **THE TABLE** — no live hand for ${_gambler}. Standing on nothing is very zen, but ask for a deal first.`;
       } else if (s.outcome === 'win') {
         const _e = adjustCred(intent.userId, _gambler, s.session.stake);
-        _house = `🃏 **THE TABLE** — dealer: ${bjFmt(s.session.dealer)} (${s.dealerValue}${s.dealerValue > 21 ? ' — BUST' : ''}). You: ${s.playerValue}. 🟩 **WIN +${s.session.stake} cred** → ${_e.cred}.`;
+        let _dealerStatusMsg: string;
+        if (s.dealerValue > 21) {
+          _dealerStatusMsg = ` — BUST`;
+        } else {
+          _dealerStatusMsg = '';
+        }
+        _house = `🃏 **THE TABLE** — dealer: ${bjFmt(s.session.dealer)} (${s.dealerValue}${_dealerStatusMsg}). You: ${s.playerValue}. 🟩 **WIN +${s.session.stake} cred** → ${_e.cred}.`;
       } else if (s.outcome === 'push') {
         _house = `🃏 **THE TABLE** — dealer: ${bjFmt(s.session.dealer)} (${s.dealerValue}). You: ${s.playerValue}. **PUSH.** The felt keeps its secrets.`;
       } else {
@@ -273,10 +361,14 @@ export async function applyControlTokens(cleanResult: string, intent: UserIntent
           s.session.stake,
           `Blackjack loss — ${s.playerValue} vs dealer ${s.dealerValue}, staked ${s.session.stake}s`
         );
-        const _e = _landed
-          ? recordTableServed(intent.userId, _gambler, s.session.stake)
-          : null;
-        _house = `🃏 **THE TABLE** — dealer: ${bjFmt(s.session.dealer)} (${s.dealerValue}). You: ${s.playerValue}. 🟥 **HOUSE WINS — THE BOX. ${s.session.stake}s.**${_e ? ` (${_e.served}s lifetime served)` : ' The mechanism jammed — sentence commuted, the house seethes.'}`;
+        let _lossMsg: string;
+        if (_landed) {
+          const _e = recordTableServed(intent.userId, _gambler, s.session.stake);
+          _lossMsg = ` (${_e.served}s lifetime served)`;
+        } else {
+          _lossMsg = ' The mechanism jammed — sentence commuted, the house seethes.';
+        }
+        _house = `🃏 **THE TABLE** — dealer: ${bjFmt(s.session.dealer)} (${s.dealerValue}). You: ${s.playerValue}. 🟥 **HOUSE WINS — THE BOX. ${s.session.stake}s.**${_lossMsg}`;
       }
     } else if (_slotsM) {
       const _stake = _slotsM.stake;
@@ -291,21 +383,36 @@ export async function applyControlTokens(cleanResult: string, intent: UserIntent
           `Slots — ${r.label}, ${r.boxSeconds}s`
         );
         if (_landed) recordTableServed(intent.userId, _gambler, r.boxSeconds);
-        _house = `🎰 **THE REELS** (${_stake}s a pull) — ${_row} — 🟥 **${r.label.toUpperCase()}. THE BOX: ${r.boxSeconds}s.**${_landed ? '' : ' The mechanism jammed — the toilet gods show mercy.'}`;
+        let _slotsMsg: string;
+        if (_landed) {
+          _slotsMsg = '';
+        } else {
+          _slotsMsg = ' The mechanism jammed — the toilet gods show mercy.';
+        }
+        _house = `🎰 **THE REELS** (${_stake}s a pull) — ${_row} — 🟥 **${r.label.toUpperCase()}. THE BOX: ${r.boxSeconds}s.**${_slotsMsg}`;
       } else {
         _house = `🎰 **THE REELS** (${_stake}s a pull) — ${_row} — nothing. The house keeps your quarter.`;
       }
     }
     if (_house) {
       _house = withMelt(_house);
-      cleanResult = cleanResult ? `${cleanResult}\n\n${_house}` : _house;
+      if (cleanResult) {
+        cleanResult = `${cleanResult}\n\n${_house}`;
+      } else {
+        cleanResult = _house;
+      }
     }
   }
   // WHEEL OF FATE — THIRD-PARTY SPIN: [WHEEL] / [WHEEL:NN] / [WHEEL:NN:name]. The
   // victim pool is humans recently active in the channel (vetted through the same
   // protection list as warden timeouts); target picking, the roll, and the real
   // timeout all happen in the discord handler — server-side, unriggable.
-  const _wMatch = CASINO_OPEN ? parseControlToken(cleanResult, 'wheel') : null;
+  let _wMatch: Extract<ControlToken, { kind: 'wheel' }> | null;
+  if (CASINO_OPEN) {
+    _wMatch = parseControlToken(cleanResult, 'wheel');
+  } else {
+    _wMatch = null;
+  }
   if (_wMatch && typeof (intent as any).spinChannelWheel === 'function') {
     bumpHouseEvents();
     cleanResult = stripControlTokens(cleanResult, 'wheel').trim();
@@ -321,7 +428,11 @@ export async function applyControlTokens(cleanResult: string, intent: UserIntent
       _verdict = `🎡 **WHEEL OF FATE** — the wheel locks onto **${_spin.target}**... roll ${_spin.roll}/100: 🟥 THE BOX — but the mechanism jammed. **${_spin.target}** walks. The house is FURIOUS.`;
     }
     _verdict = withMelt(_verdict);
-    cleanResult = cleanResult ? `${cleanResult}\n\n${_verdict}` : _verdict;
+    if (cleanResult) {
+      cleanResult = `${cleanResult}\n\n${_verdict}`;
+    } else {
+      cleanResult = _verdict;
+    }
   }
   return cleanResult;
 }
