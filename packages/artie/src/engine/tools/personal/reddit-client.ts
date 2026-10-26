@@ -113,8 +113,14 @@ export class RedditClient {
 
   getAllowedSubreddits() {
     const allowed = this.config.allowedSubreddits;
+    let mode: string;
+    if (allowed.length > 0) {
+      mode = 'allowlist';
+    } else {
+      mode = 'open';
+    }
     return {
-      mode: allowed.length > 0 ? 'allowlist' : 'open',
+      mode,
       allowedSubreddits: allowed,
     };
   }
@@ -312,7 +318,12 @@ export class RedditClient {
     }
 
     const client = await this.ensureHttpClient();
-    const kind = options.url ? 'link' : 'self';
+    let kind: string;
+    if (options.url) {
+      kind = 'link';
+    } else {
+      kind = 'self';
+    }
 
     try {
       const response = await client.post(
@@ -330,8 +341,14 @@ export class RedditClient {
 
       const json = response.data?.json;
       const postId = json?.data?.id;
-      const permalink =
-        json?.data?.url || (postId ? `https://reddit.com/comments/${postId}` : undefined);
+      let permalink: string | undefined;
+      if (json?.data?.url) {
+        permalink = json.data.url;
+      } else if (postId) {
+        permalink = `https://reddit.com/comments/${postId}`;
+      } else {
+        permalink = undefined;
+      }
 
       if (json?.errors?.length) {
         throw new Error(json.errors.map((e: any) => e.join(': ')).join('; '));
