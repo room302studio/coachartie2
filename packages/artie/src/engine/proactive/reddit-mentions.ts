@@ -19,6 +19,46 @@ interface MentionJobContext {
   };
 }
 
+/**
+ * Check if a subreddit is in the allowlist
+ */
+function isSubredditAllowed(subreddit: string | undefined, allowedSubreddits: string[]): boolean {
+  if (subreddit) {
+    return allowedSubreddits.includes(subreddit.toLowerCase());
+  }
+  return false;
+}
+
+/**
+ * Format subreddit info for message
+ */
+function formatSubreddit(subreddit: string | undefined): string | null {
+  if (subreddit) {
+    return `Subreddit: r/${subreddit}`;
+  }
+  return null;
+}
+
+/**
+ * Format link title for message
+ */
+function formatLinkTitle(title: string | undefined): string | null {
+  if (title) {
+    return `Thread: ${title}`;
+  }
+  return null;
+}
+
+/**
+ * Format body quote for message
+ */
+function formatBodyQuote(body: string | undefined): string | null {
+  if (body) {
+    return `Quoted: ${body}`;
+  }
+  return null;
+}
+
 export class RedditMentionMonitor {
   private incomingQueue: Queue | null = null;
 
@@ -52,7 +92,7 @@ export class RedditMentionMonitor {
 
     const allowedMentions = mentions.filter((m) => {
       if (allowlist.allowedSubreddits.length === 0) return true;
-      return m.subreddit ? allowlist.allowedSubreddits.includes(m.subreddit.toLowerCase()) : false;
+      return isSubredditAllowed(m.subreddit, allowlist.allowedSubreddits);
     });
 
     const skipped = mentions.length - allowedMentions.length;
@@ -61,14 +101,26 @@ export class RedditMentionMonitor {
     const queue = await this.ensureQueue();
     for (const mention of allowedMentions) {
       const mentionId = mention.name || uuidv4();
-      const messageText = [
+      const messageLines: (string | null)[] = [
         `Reddit mention for bot account`,
         `Author: u/${mention.author}`,
-        mention.subreddit ? `Subreddit: r/${mention.subreddit}` : null,
-        mention.linkTitle ? `Thread: ${mention.linkTitle}` : null,
-        mention.context ? `Context: https://reddit.com${mention.context}` : mention.linkPermalink,
-        mention.body ? `Quoted: ${mention.body}` : null,
-      ]
+        formatSubreddit(mention.subreddit),
+        formatLinkTitle(mention.linkTitle),
+      ];
+
+      let contextLine: string;
+      if (mention.context) {
+        contextLine = `Context: https://reddit.com${mention.context}`;
+      } else {
+        contextLine = mention.linkPermalink || '';
+      }
+      if (contextLine) {
+        messageLines.push(contextLine);
+      }
+
+      messageLines.push(formatBodyQuote(mention.body));
+
+      const messageText = messageLines
         .filter(Boolean)
         .join('\n');
 

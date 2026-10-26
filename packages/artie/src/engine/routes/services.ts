@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { logger } from '../../shared/logger.js';
+import { getErrorMessage } from '../../shared/errors.js';
 import { serviceDiscovery } from '../health/service-discovery.js';
 
 export const servicesRouter: Router = Router();
@@ -20,7 +21,7 @@ servicesRouter.get('/', async (req, res) => {
     res.status(500).json({
       success: false,
       error: 'Failed to get services',
-      details: error instanceof Error ? error.message : 'Unknown error',
+      details: getErrorMessage(error),
     });
   }
 });
@@ -49,7 +50,7 @@ servicesRouter.get('/:serviceName', async (req, res) => {
     res.status(500).json({
       success: false,
       error: 'Failed to get service',
-      details: error instanceof Error ? error.message : 'Unknown error',
+      details: getErrorMessage(error),
     });
   }
 });
@@ -78,7 +79,7 @@ servicesRouter.get('/:serviceName/url', async (req, res) => {
     res.status(500).json({
       success: false,
       error: 'Failed to get service URL',
-      details: error instanceof Error ? error.message : 'Unknown error',
+      details: getErrorMessage(error),
     });
   }
 });

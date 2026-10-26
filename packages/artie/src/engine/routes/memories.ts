@@ -2,6 +2,7 @@ import express from 'express';
 import { getDb, desc } from '../../shared/db/client.js';
 import { memories } from '../../shared/db/schema.js';
 import { logger } from '../../shared/logger.js';
+import { getErrorMessage } from '../../shared/errors.js';
 
 const router: express.Router = express.Router();
 
@@ -19,10 +20,11 @@ router.get('/', async (req, res) => {
         limit: parseInt(limit as string),
       });
 
+      const resultCount = Array.isArray(result) ? result.length : 0;
       return res.json({
         success: true,
         data: result || [],
-        count: Array.isArray(result) ? result.length : 0,
+        count: resultCount,
       });
     } else {
       // Get recent memories directly
@@ -63,7 +65,7 @@ router.get('/', async (req, res) => {
     logger.error('Error fetching memories:', error);
     res.status(500).json({
       success: false,
-      error: error instanceof Error ? error.message : 'Unknown error',
+      error: getErrorMessage(error),
     });
   }
 });

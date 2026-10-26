@@ -12,6 +12,7 @@
 
 import { logger } from '../../shared/logger.js';
 import { canReceiveProactiveDMs, isAdmin } from '../../shared/config/owner.js';
+import { getErrorMessage } from '../../shared/errors.js';
 import { Queue } from 'bullmq';
 import { createRedisConnection, testRedisConnection } from '../../shared/queue/redis.js';
 import { QUEUES } from '../../shared/queue/names.js';
@@ -115,6 +116,26 @@ async function sendDelayedDM(
 }
 
 /**
+ * Format delay in milliseconds as a human-readable string
+ */
+function formatDelayString(delayMs: number): string {
+  if (delayMs > 60000) {
+    return `${Math.round(delayMs / 60000)} minutes`;
+  }
+  return `${Math.round(delayMs / 1000)} seconds`;
+}
+
+/**
+ * Check if a user is an admin
+ */
+function isCallerAdmin(callerUserId: string | undefined): boolean {
+  if (callerUserId) {
+    return isAdmin(callerUserId);
+  }
+  return false;
+}
+
+/**
  * Proactive DM capability handler
  */
 async function handleProactiveDM(
@@ -138,7 +159,7 @@ async function handleProactiveDM(
   // - DMing others requires admin privileges
   // - Target must be in the whitelist to receive proactive DMs
   const isSelfDM = targetUserId === callerUserId;
-  const callerIsAdmin = callerUserId ? isAdmin(callerUserId) : false;
+  const callerIsAdmin = isCallerAdmin(callerUserId);
   const targetCanReceiveDMs = canReceiveProactiveDMs(targetUserId);
 
   if (!isSelfDM && !callerIsAdmin) {
@@ -166,9 +187,7 @@ async function handleProactiveDM(
         if (delay && delay > 0) {
           success = await sendDelayedDM(targetUserId, message, delay, 'user-requested');
           if (success) {
-            const delayStr = delay > 60000
-              ? `${Math.round(delay / 60000)} minutes`
-              : `${Math.round(delay / 1000)} seconds`;
+            const delayStr = formatDelayString(delay);
             return `Message scheduled for delivery in ${delayStr}.`;
           }
         } else {
@@ -206,9 +225,7 @@ async function handleProactiveDM(
         const success = await sendDelayedDM(targetUserId, reminderMessage, delay, 'reminder');
 
         if (success) {
-          const delayStr = delay > 60000
-            ? `${Math.round(delay / 60000)} minutes`
-            : `${Math.round(delay / 1000)} seconds`;
+          const delayStr = formatDelayString(delay);
           return `Reminder set for ${delayStr}.`;
         }
         return 'Failed to set reminder.';
@@ -253,7 +270,7 @@ System ready for proactive messaging.`;
     }
   } catch (error) {
     logger.error('Proactive DM error:', error);
-    return `Error: ${error instanceof Error ? error.message : 'Unknown error'}`;
+    return `Error: ${getErrorMessage(error)}`;
   }
 }
 

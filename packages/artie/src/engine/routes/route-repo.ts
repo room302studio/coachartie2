@@ -37,9 +37,29 @@ export interface RoutePick {
   reason: string;
 }
 
+/**
+ * Format category for display
+ */
+function formatCategory(category: string | null | undefined): string {
+  if (category) {
+    return ` (category: ${category})`;
+  }
+  return '';
+}
+
+/**
+ * Format topic for display
+ */
+function formatTopic(topic: string | null | undefined): string {
+  if (topic) {
+    return ` — ${topic.slice(0, 120)}`;
+  }
+  return '';
+}
+
 export function buildRoutePrompt(repo: RepoInfo, channels: ChannelOption[], existing: Array<{ repo: string; channel: string }>): string {
   const list = channels
-    .map((c) => `- ${c.id} #${c.name}${c.category ? ` (category: ${c.category})` : ''}${c.topic ? ` — ${c.topic.slice(0, 120)}` : ''}`)
+    .map((c) => `- ${c.id} #${c.name}${formatCategory(c.category)}${formatTopic(c.topic)}`)
     .join('\n');
   const prior = existing.map((e) => `- ${e.repo} → #${e.channel}`).join('\n') || '(none yet)';
   return `You route GitHub activity into a team's Discord. A new repository appeared and needs a channel for its pull requests, reviews and CI.
@@ -77,7 +97,12 @@ export function parseRoutePick(raw: string, channels: ChannelOption[]): RoutePic
   try {
     const id = String(j.channelId ?? '').replace(/[^0-9]/g, '');
     if (!channels.some((c) => c.id === id)) return null; // never trust an id we didn't offer
-    const reason = typeof j.reason === 'string' ? j.reason.trim().slice(0, 140) : '';
+    let reason: string;
+    if (typeof j.reason === 'string') {
+      reason = j.reason.trim().slice(0, 140);
+    } else {
+      reason = '';
+    }
     return { channelId: id, reason };
   } catch {
     return null;
@@ -117,8 +142,23 @@ export async function routeRepo(body: any): Promise<ApiResult> {
     if (!repo?.fullName || !Array.isArray(channels)) {
       return reply(400, { error: 'repo.fullName and channels[] required' });
     }
-    const pick = await pickRepoChannel(repo, channels, Array.isArray(existing) ? existing : [], guildId);
-    return reply(pick ? 200 : 422, pick ?? { error: 'no valid pick' });
+    let existingRoutes: Array<{ repo: string; channel: string }>;
+    if (Array.isArray(existing)) {
+      existingRoutes = existing;
+    } else {
+      existingRoutes = [];
+    }
+    const pick = await pickRepoChannel(repo, channels, existingRoutes, guildId);
+    let statusCode: number;
+    let responseBody: RoutePick | { error: string };
+    if (pick) {
+      statusCode = 200;
+      responseBody = pick;
+    } else {
+      statusCode = 422;
+      responseBody = { error: 'no valid pick' };
+    }
+    return reply(statusCode, responseBody);
   } catch (error) {
     logger.warn('Repo routing endpoint error:', error);
     return reply(500, { error: 'routing failed' });

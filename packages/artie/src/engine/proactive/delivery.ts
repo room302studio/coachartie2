@@ -9,6 +9,7 @@
 
 import { logger } from '../../shared/logger.js';
 import { getSyncDb } from '../../shared/db/client.js';
+import { getErrorMessage } from '../../shared/errors.js';
 import { Queue } from 'bullmq';
 import { createRedisConnection, testRedisConnection } from '../../shared/queue/redis.js';
 import { QUEUES } from '../../shared/queue/names.js';
@@ -171,7 +172,12 @@ class DeliveryManager {
 
     for (const attempt of pending) {
       processed++;
-      const payload = attempt.payload ? JSON.parse(attempt.payload) : {};
+      let payload: any;
+      if (attempt.payload) {
+        payload = JSON.parse(attempt.payload);
+      } else {
+        payload = {};
+      }
 
       // Try DM again
       const dmResult = await this.tryDiscordDM(attempt.target_user_id, payload.content);
@@ -286,7 +292,7 @@ class DeliveryManager {
       // We'll track failures via the Discord worker's error handling
       return { success: true };
     } catch (error) {
-      return { success: false, error: error instanceof Error ? error.message : String(error) };
+      return { success: false, error: getErrorMessage(error) };
     }
   }
 
@@ -301,7 +307,12 @@ class DeliveryManager {
 
     try {
       // Add mention prefix if user specified
-      const messageContent = mentionUserId ? `<@${mentionUserId}> ${content}` : content;
+      let messageContent: string;
+      if (mentionUserId) {
+        messageContent = `<@${mentionUserId}> ${content}`;
+      } else {
+        messageContent = content;
+      }
 
       await this.discordQueue.add('send-channel', {
         channelId,
@@ -310,7 +321,7 @@ class DeliveryManager {
       });
       return { success: true };
     } catch (error) {
-      return { success: false, error: error instanceof Error ? error.message : String(error) };
+      return { success: false, error: getErrorMessage(error) };
     }
   }
 

@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { logger } from '../../shared/logger.js';
+import { getErrorMessage } from '../../shared/errors.js';
 import { type ApiResult, sendResult } from '../../shared/api-result.js';
 
 // Wave 9: the handler body is an exported function returning the status + JSON it used to
@@ -205,7 +206,7 @@ router.post('/mcp/test', async (req: Request, res: Response) => {
     logger.error('MCP test endpoint error:', error);
     res.status(500).json({
       success: false,
-      error: error instanceof Error ? error.message : 'Internal server error',
+      error: getErrorMessage(error),
     });
   }
 });
@@ -222,7 +223,12 @@ router.post('/web/test', async (req: Request, res: Response) => {
       });
     }
 
-    const params = action === 'search' ? { query } : { url };
+    let params: any;
+    if (action === 'search') {
+      params = { query };
+    } else {
+      params = { url };
+    }
     const webCapability = capabilityRegistry.get('web', action);
     const startTime = Date.now();
 
@@ -242,7 +248,7 @@ router.post('/web/test', async (req: Request, res: Response) => {
     logger.error('Web test endpoint error:', error);
     res.status(500).json({
       success: false,
-      error: error instanceof Error ? error.message : 'Internal server error',
+      error: getErrorMessage(error),
     });
   }
 });
@@ -319,10 +325,12 @@ export async function executeTool(routeParams: { name: string }, body: any): Pro
     }
 
     // Build context from request body
-    const context =
-      guildId || channelId || userId || messageId
-        ? { guildId, channelId, userId, messageId }
-        : undefined;
+    let context: any;
+    if (guildId || channelId || userId || messageId) {
+      context = { guildId, channelId, userId, messageId };
+    } else {
+      context = undefined;
+    }
 
     const result = await capabilityRegistry.execute(name, action, params, content, context);
 
@@ -334,7 +342,7 @@ export async function executeTool(routeParams: { name: string }, body: any): Pro
     logger.error(`Error executing capability ${routeParams.name}:`, error);
     return reply(500, {
       success: false,
-      error: error instanceof Error ? error.message : 'Internal server error',
+      error: getErrorMessage(error),
     });
   }
 }

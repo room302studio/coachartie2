@@ -18,6 +18,7 @@
  */
 
 import { logger } from '../../shared/logger.js';
+import { getErrorMessage } from '../../shared/errors.js';
 import { getDb } from '../../shared/db/client.js';
 import { errorEvents } from '../../shared/db/schema.js';
 import { isGenerationMuted } from '../../shared/kill-switch.js';
@@ -75,6 +76,127 @@ const briefingConfigs = new Map<string, BriefingConfig>();
 // Helpers
 // ---------------------------------------------------------------------------
 
+/**
+ * Parse minute from ampm match
+ */
+function parseMinute(ampmMatch: RegExpMatchArray | null): number {
+  if (ampmMatch && ampmMatch[2]) {
+    return parseInt(ampmMatch[2]);
+  }
+  return 0;
+}
+
+/**
+ * Format hour to 12-hour with AM/PM
+ */
+function formatHour12(h: number): number {
+  if (h > 12) {
+    return h - 12;
+  }
+  if (h === 0) {
+    return 12;
+  }
+  return h;
+}
+
+/**
+ * Get AM/PM from hour
+ */
+function getAmPm(h: number): string {
+  if (h >= 12) {
+    return 'PM';
+  }
+  return 'AM';
+}
+
+/**
+ * Format hour for display (12-hour format)
+ */
+function formatHourForDisplay(h: number): number {
+  if (h > 12) {
+    return h - 12;
+  }
+  if (h === 0) {
+    return 12;
+  }
+  return h;
+}
+
+/**
+ * Get readiness emoji based on score
+ */
+function getReadinessEmoji(readiness: number): string {
+  if (readiness >= 75) {
+    return '🟢';
+  }
+  if (readiness >= 50) {
+    return '🟡';
+  }
+  return '🔴';
+}
+
+/**
+ * Get sleep quality emoji
+ */
+function getSleepEmoji(total: number): string {
+  if (total >= 7.5) {
+    return '✅';
+  }
+  if (total >= 6) {
+    return '⚠️';
+  }
+  return '🔴';
+}
+
+/**
+ * Get trend direction arrow
+ */
+function getTrendArrow(current: number, baseline: number): string {
+  if (current > baseline * 1.05) {
+    return '↑';
+  }
+  if (current < baseline * 0.95) {
+    return '↓';
+  }
+  return '→';
+}
+
+/**
+ * Get direction indicator
+ */
+function getDirectionIndicator(delta: number): string {
+  if (delta > 0) {
+    return '↑';
+  }
+  return '↓';
+}
+
+/**
+ * Get daylight note
+ */
+function getDaylightNote(mins: number): string {
+  if (mins < 30) {
+    return ' — low, get outside today';
+  }
+  if (mins > 120) {
+    return ' — solid outdoor time';
+  }
+  return '';
+}
+
+/**
+ * Format duration string
+ */
+function formatDuration(hrs: number, mins: number): string {
+  if (hrs > 0) {
+    if (mins > 0) {
+      return `${hrs}h${mins}m`;
+    }
+    return `${hrs}h`;
+  }
+  return `${mins}m`;
+}
+
 function parseTimeToCron(timeStr: string, _timezone: string = 'America/New_York'): string {
   const time = timeStr.toLowerCase().trim();
   let hour = 0;
@@ -82,7 +204,7 @@ function parseTimeToCron(timeStr: string, _timezone: string = 'America/New_York'
   const ampmMatch = time.match(/^(\d{1,2})(?::(\d{2}))?\s*(am|pm)?$/);
   if (ampmMatch) {
     hour = parseInt(ampmMatch[1]);
-    minute = ampmMatch[2] ? parseInt(ampmMatch[2]) : 0;
+    minute = parseMinute(ampmMatch);
     const period = ampmMatch[3];
     if (period === 'pm' && hour !== 12) hour += 12;
     if (period === 'am' && hour === 12) hour = 0;
@@ -195,7 +317,12 @@ async function generateWeatherSection(): Promise<string> {
     // Find today's high from remaining hours
     const currentHour = new Date().getHours();
     const remaining = (data.hourly?.temperature_2m || []).slice(currentHour);
-    const high = remaining.length > 0 ? Math.round(Math.max(...remaining)) : null;
+    let high: number | null;
+    if (remaining.length > 0) {
+      high = Math.round(Math.max(...remaining));
+    } else {
+      high = null;
+    }
 
     // Check for rain
     const rainProbs = (data.hourly?.precipitation_probability || []).slice(currentHour);
@@ -203,8 +330,8 @@ async function generateWeatherSection(): Promise<string> {
     let rainNote = '';
     if (rainIdx >= 0) {
       const rainHour = currentHour + rainIdx;
-      const h = rainHour > 12 ? rainHour - 12 : rainHour;
-      const ampm = rainHour >= 12 ? 'pm' : 'am';
+      const h = formatHourForDisplay(rainHour);
+      const ampm = getAmPm(rainHour);
       rainNote = ` | Rain ${rainProbs[rainIdx]}% ~${h}${ampm}`;
     }
 
@@ -247,7 +374,12 @@ async function generateCalendarSection(): Promise<string> {
     });
     const data: any = await resp.json();
     // n8n returns either { events: [...] } or a raw array from Google Calendar API
-    const rawEvents = Array.isArray(data) ? data : data.events;
+    let rawEvents: any[];
+    if (Array.isArray(data)) {
+      rawEvents = data;
+    } else {
+      rawEvents = data.events;
+    }
     if (!rawEvents || rawEvents.length === 0) return '📅 Calendar: clear day';
     // Filter out Reclaim sync duplicates (they mirror real events)
     const events = rawEvents.filter((e: any) =>
@@ -270,7 +402,9 @@ async function generateCalendarSection(): Promise<string> {
       if (timeMatch) {
         const h = parseInt(timeMatch[1]);
         const m = timeMatch[2];
-        timeStr = `${h > 12 ? h - 12 : h || 12}:${m} ${h >= 12 ? 'PM' : 'AM'}`;
+        const displayHour = formatHour12(h);
+        const ampmStr = getAmPm(h);
+        timeStr = `${displayHour}:${m} ${ampmStr}`;
       }
       return `  · ${timeStr} ${summary}`;
     }).join('\n');
@@ -508,7 +642,11 @@ function generateTasksSection(): string {
     for (const c of active) text += `\n  → ${c.title}`;
     for (const c of blocked) {
       const reason = (c.blocked_reason || c.blockedReason || '').substring(0, 60);
-      text += `\n  ⛔ ${c.title}${reason ? ' — ' + reason : ''}`;
+      let reasonText = '';
+      if (reason) {
+        reasonText = ' — ' + reason;
+      }
+      text += `\n  ⛔ ${c.title}${reasonText}`;
     }
     if (readyCount > 0) text += `\n  (${readyCount} ready)`;
     if (suggestedAll.length > 0) {
@@ -631,7 +769,12 @@ function generateHealthSection(): string {
   let result = '🏥 **Health**';
 
   // --- Body readiness composite ---
-  const sleepTotal = sleep ? parseFloat(sleep.split('|')[0]) || 0 : 0;
+  let sleepTotal: number;
+  if (sleep) {
+    sleepTotal = parseFloat(sleep.split('|')[0]) || 0;
+  } else {
+    sleepTotal = 0;
+  }
   const h7 = parseInt(hrv7d) || 0;
   const h30 = parseInt(hrv30d) || h7;
   const rhrVal = parseInt(rhr) || 0;
@@ -656,7 +799,7 @@ function generateHealthSection(): string {
   }
   readiness = Math.max(0, Math.min(100, readiness));
 
-  const readinessEmoji = readiness >= 75 ? '🟢' : readiness >= 50 ? '🟡' : '🔴';
+  const readinessEmoji = getReadinessEmoji(readiness);
   result += `\n  ${readinessEmoji} Body readiness: ${readiness}/100`;
 
   if (sleep) {
@@ -665,8 +808,13 @@ function generateHealthSection(): string {
     const deep = parseFloat(parts[1]) || 0;
     const rem = parseFloat(parts[2]) || 0;
     const avg = parseFloat(sleepAvg7d) || 0;
-    const sleepEmoji = total >= 7.5 ? '✅' : total >= 6 ? '⚠️' : '🔴';
-    const delta = avg > 0 ? ` (7d avg ${avg}h)` : '';
+    const sleepEmoji = getSleepEmoji(total);
+    let delta: string;
+    if (avg > 0) {
+      delta = ` (7d avg ${avg}h)`;
+    } else {
+      delta = '';
+    }
     let sleepLine = `${sleepEmoji} Sleep: ${total.toFixed(1)}h${delta} — deep ${deep.toFixed(1)}h, REM ${rem.toFixed(1)}h`;
     // Flag fragmented sleep
     if (bd > 0 && bdAvg > 0 && bd > bdAvg * 1.5) {
@@ -676,7 +824,7 @@ function generateHealthSection(): string {
   }
 
   if (hrv7d) {
-    const trend = h7 > h30 * 1.05 ? '↑' : h7 < h30 * 0.95 ? '↓' : '→';
+    const trend = getTrendArrow(h7, h30);
     result += `\n  HRV: ${h7}ms ${trend} (30d: ${h30}) · RHR: ${rhr || '?'}bpm`;
   } else if (rhr) {
     result += `\n  RHR: ${rhr}bpm`;
@@ -688,8 +836,14 @@ function generateHealthSection(): string {
     const avg = parseFloat(wristTempAvg);
     const delta = temp - avg;
     if (Math.abs(delta) > 0.5) {
-      const dir = delta > 0 ? '↑' : '↓';
-      result += `\n  🌡️ Wrist temp ${dir}${Math.abs(delta).toFixed(1)}°F from baseline — ${delta > 0.8 ? 'possible illness onset' : 'notable deviation'}`;
+      const dir = getDirectionIndicator(delta);
+      let tempNote: string;
+      if (delta > 0.8) {
+        tempNote = 'possible illness onset';
+      } else {
+        tempNote = 'notable deviation';
+      }
+      result += `\n  🌡️ Wrist temp ${dir}${Math.abs(delta).toFixed(1)}°F from baseline — ${tempNote}`;
     }
   }
 
@@ -704,7 +858,12 @@ function generateHealthSection(): string {
   if (steps) {
     const s = parseInt(steps) || 0;
     const avg = parseInt(stepsAvg7d) || 0;
-    const delta = avg > 0 ? ` (7d avg ${avg.toLocaleString()})` : '';
+    let delta: string;
+    if (avg > 0) {
+      delta = ` (7d avg ${avg.toLocaleString()})`;
+    } else {
+      delta = '';
+    }
     result += `\n  Steps: ${s.toLocaleString()}${delta}`;
   }
 
@@ -712,7 +871,7 @@ function generateHealthSection(): string {
   if (daylight) {
     const mins = parseInt(daylight) || 0;
     if (mins > 0) {
-      const daylightNote = mins < 30 ? ' — low, get outside today' : mins > 120 ? ' — solid outdoor time' : '';
+      const daylightNote = getDaylightNote(mins);
       result += `\n  ☀️ ${mins}min daylight yesterday${daylightNote}`;
     }
   }
@@ -769,7 +928,12 @@ function generateTensionSection(): string {
   const mt = parseInt(milYesterday) || 0;
   const ma = parseInt(milAvg) || 0;
   if (ma > 5 && Math.abs(mt - ma) / ma >= 0.3) {
-    const dir = mt > ma ? '↑' : '↓';
+    let dir: string;
+    if (mt > ma) {
+      dir = '↑';
+    } else {
+      dir = '↓';
+    }
     const pct = Math.round(Math.abs(mt - ma) / ma * 100);
     tensions.push(`Military flights yesterday: ${mt} vs ${ma} avg/14d (${dir}${pct}%)`);
   }
@@ -782,7 +946,12 @@ function generateTensionSection(): string {
   const ft = parseInt(flightsYesterday) || 0;
   const fa = parseInt(flightsAvg) || 0;
   if (fa > 100 && Math.abs(ft - fa) / fa >= 0.3) {
-    const dir = ft > fa ? '↑' : '↓';
+    let dir: string;
+    if (ft > fa) {
+      dir = '↑';
+    } else {
+      dir = '↓';
+    }
     const pct = Math.round(Math.abs(ft - fa) / fa * 100);
     tensions.push(`Total flights yesterday: ${ft} vs ${fa} avg/14d (${dir}${pct}%)`);
   }
@@ -1033,7 +1202,13 @@ function generateConfidenceMesh(): string {
      WHERE ingested_at >= datetime('now', '-24 hours')
        AND source IN (${primarySources.map(s => `'${s}'`).join(',')})`);
 
-  const activeSet = new Set(activeLast24h ? activeLast24h.split('\n').filter(Boolean) : []);
+  let activeLast24hArray: string[];
+  if (activeLast24h) {
+    activeLast24hArray = activeLast24h.split('\n').filter(Boolean);
+  } else {
+    activeLast24hArray = [];
+  }
+  const activeSet = new Set(activeLast24hArray);
   const darkSources = primarySources.filter(s =>
     !activeSet.has(s) && !['honeypot', 'masintwatch'].includes(s) // these are low-volume by design
   );
@@ -1126,13 +1301,28 @@ function generateRecentTrips(): string {
     for (const f of recentFiles.slice(0, 3)) {
       try {
         const log = JSON.parse(readFileSync(`${logDir}/${f}`, 'utf-8'));
-        const icon = log.motorcycle ? '🏍️' : '🗺️';
+        let icon: string;
+        if (log.motorcycle) {
+          icon = '🏍️';
+        } else {
+          icon = '🗺️';
+        }
         const hrs = Math.floor(log.durationMinutes / 60);
         const mins = log.durationMinutes % 60;
-        const dur = hrs > 0 ? `${hrs}h${mins > 0 ? mins + 'm' : ''}` : `${mins}m`;
+        const dur = formatDuration(hrs, mins);
         const counties = (log.countiesTraversed || []).join(' → ');
-        const elev = log.elevationGainFt > 100 ? ` ↑${log.elevationGainFt}ft` : '';
-        const pois = (log.nearbyPois || []).length > 0 ? ` · near ${log.nearbyPois.join(', ')}` : '';
+        let elev: string;
+        if (log.elevationGainFt > 100) {
+          elev = ` ↑${log.elevationGainFt}ft`;
+        } else {
+          elev = '';
+        }
+        let pois: string;
+        if ((log.nearbyPois || []).length > 0) {
+          pois = ` · near ${log.nearbyPois.join(', ')}`;
+        } else {
+          pois = '';
+        }
         trips.push(`${icon} ${dur}, ${log.distanceMiles}mi — ${counties}${elev}${pois}`);
       } catch { /* skip bad files */ }
     }
@@ -1154,9 +1344,19 @@ function generateCrossDomainInsights(
     const healthRaw = sections['health'] || '';
     const calendarRaw = sections['calendar'] || '';
     const readinessMatch = healthRaw.match(/Body readiness: (\d+)\/100/);
-    const readiness = readinessMatch ? parseInt(readinessMatch[1]) : -1;
+    let readiness: number;
+    if (readinessMatch) {
+      readiness = parseInt(readinessMatch[1]);
+    } else {
+      readiness = -1;
+    }
     const meetingMatch = calendarRaw.match(/\((\d+) today\)/);
-    const meetingCount = meetingMatch ? parseInt(meetingMatch[1]) : 0;
+    let meetingCount: number;
+    if (meetingMatch) {
+      meetingCount = parseInt(meetingMatch[1]);
+    } else {
+      meetingCount = 0;
+    }
 
     if (readiness >= 0 && meetingCount > 0) {
       if (readiness < 50 && meetingCount >= 3) {
@@ -1219,7 +1419,12 @@ function generateCrossDomainInsights(
     if (hrvMatch) {
       const hrv7 = parseInt(hrvMatch[1]);
       const hrv30 = parseInt(hrvMatch[3]);
-      const hrvDrop = hrv30 > 0 ? (hrv30 - hrv7) / hrv30 : 0;
+      let hrvDrop: number;
+      if (hrv30 > 0) {
+        hrvDrop = (hrv30 - hrv7) / hrv30;
+      } else {
+        hrvDrop = 0;
+      }
       const hasHighSignals = anomalyRaw.includes('score >=') || tensionRaw.includes('multi-source');
       if (hrvDrop > 0.15 && hasHighSignals) {
         insights.push(`📡 HRV down ${Math.round(hrvDrop * 100)}% while signal tempo is elevated — physiological stress aligning with intel activity. stay sharp but manage energy`);
@@ -1234,7 +1439,12 @@ function generateCrossDomainInsights(
       const dir = tempMatch[1];
       const delta = parseFloat(tempMatch[2]);
       if (dir === '↑' && delta > 0.8) {
-        const sleepQuality = breathingMatch ? 'with fragmented sleep' : '';
+        let sleepQuality: string;
+        if (breathingMatch) {
+          sleepQuality = 'with fragmented sleep';
+        } else {
+          sleepQuality = '';
+        }
         insights.push(`🌡️ wrist temp elevated ${delta}°F ${sleepQuality} — classic pre-illness pattern. consider clearing tomorrow's calendar preemptively`);
       }
     }
@@ -1356,7 +1566,12 @@ function generateMasintSection(): string {
 
   const n = parseInt(count24h) || 0;
   const avg = parseInt(count7d) || 0;
-  const delta = avg > 0 ? ` (avg ${avg}/day)` : '';
+  let delta: string;
+  if (avg > 0) {
+    delta = ` (avg ${avg}/day)`;
+  } else {
+    delta = '';
+  }
 
   let result = `MASINT: ${n} events${delta}`;
   const items = recentEvents.split('\n').filter(Boolean);
@@ -1391,7 +1606,10 @@ function deltaTag(current: number, avgPerDay: number): string {
   if (avgPerDay <= 0) return '';
   const pct = Math.round(((current - avgPerDay) / avgPerDay) * 100);
   if (Math.abs(pct) < 15) return ' →';
-  return pct > 0 ? ` ↑${pct}%` : ` ↓${Math.abs(pct)}%`;
+  if (pct > 0) {
+    return ` ↑${pct}%`;
+  }
+  return ` ↓${Math.abs(pct)}%`;
 }
 
 // ---------------------------------------------------------------------------
@@ -1663,7 +1881,13 @@ async function generateBriefing(_config: BriefingConfig): Promise<string> {
   if (skyRaw) {
     const ft = parseInt(skyToday) || 0;
     const fa = parseInt(skyAvg) || 0;
-    rawSections['skywatch'] = skyRaw + (fa > 0 ? `\n  Volume${deltaTag(ft, fa)} vs 7d avg` : '');
+    let skywatchSuffix: string;
+    if (fa > 0) {
+      skywatchSuffix = `\n  Volume${deltaTag(ft, fa)} vs 7d avg`;
+    } else {
+      skywatchSuffix = '';
+    }
+    rawSections['skywatch'] = skyRaw + skywatchSuffix;
   }
 
   const countyRaw = generateCountySection();
@@ -1674,7 +1898,13 @@ async function generateBriefing(_config: BriefingConfig): Promise<string> {
   if (countyRaw) {
     const ct = parseInt(countyToday) || 0;
     const ca = parseInt(countyAvg) || 0;
-    rawSections['countywatch'] = countyRaw + (ca > 0 ? `\n  Volume${deltaTag(ct, ca)} vs 7d avg` : '');
+    let countywatchSuffix: string;
+    if (ca > 0) {
+      countywatchSuffix = `\n  Volume${deltaTag(ct, ca)} vs 7d avg`;
+    } else {
+      countywatchSuffix = '';
+    }
+    rawSections['countywatch'] = countyRaw + countywatchSuffix;
   }
 
   rawSections['contracts'] = generateContractSection();
@@ -1795,7 +2025,19 @@ async function handleMorningBriefing(
           return `**Morning Briefing**: Not configured yet.\n\nSet it up with: "set up morning briefing at 8am"`;
         }
 
-        return `**Morning Briefing Status**\n\n**Enabled**: ${config.enabled ? 'Yes' : 'No'}\n**Time**: ${config.cronTime} (${config.timezone})\n**Delivery**: ${config.deliveryChannel}\n**Last Delivered**: ${config.lastDelivered || 'Never'}`;
+        let enabledStatus: string;
+        if (config.enabled) {
+          enabledStatus = 'Yes';
+        } else {
+          enabledStatus = 'No';
+        }
+        let lastDelivered: string;
+        if (config.lastDelivered) {
+          lastDelivered = config.lastDelivered;
+        } else {
+          lastDelivered = 'Never';
+        }
+        return `**Morning Briefing Status**\n\n**Enabled**: ${enabledStatus}\n**Time**: ${config.cronTime} (${config.timezone})\n**Delivery**: ${config.deliveryChannel}\n**Last Delivered**: ${lastDelivered}`;
       }
 
       case 'enable': {
@@ -1818,7 +2060,7 @@ async function handleMorningBriefing(
     }
   } catch (error) {
     logger.error('Morning briefing error:', error);
-    return `Briefing error: ${error instanceof Error ? error.message : 'Unknown error'}`;
+    return `Briefing error: ${getErrorMessage(error)}`;
   }
 }
 

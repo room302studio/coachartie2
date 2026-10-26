@@ -11,6 +11,7 @@
 
 import { and, desc, eq, gte, sql } from 'drizzle-orm';
 import { logger } from '../../shared/logger.js';
+import { getErrorMessage } from '../../shared/errors.js';
 import { getDb } from '../../shared/db/client.js';
 import { relays } from '../../shared/db/schema.js';
 import type { Relay } from '../../shared/db/schema.js';
@@ -68,8 +69,12 @@ async function addRelay(
 
   const recipient = String(params.to || DEFAULT_RECIPIENT).toLowerCase();
   const fromDisplay = String(params.from || params.from_display || fromUserId).trim();
-  const trimmed =
-    message.length > MAX_CONTENT_LENGTH ? message.slice(0, MAX_CONTENT_LENGTH) : message;
+  let trimmed: string;
+  if (message.length > MAX_CONTENT_LENGTH) {
+    trimmed = message.slice(0, MAX_CONTENT_LENGTH);
+  } else {
+    trimmed = message;
+  }
 
   // Same person, same message, still pending — they're repeating themselves, not adding news.
   const duplicate = getDb()
@@ -162,7 +167,7 @@ export const relayCapability: RegisteredCapability = {
       }
     } catch (error) {
       logger.error('📮 Relay capability failed:', error);
-      throw new Error(`Relay failed: ${error instanceof Error ? error.message : 'unknown error'}`);
+      throw new Error(`Relay failed: ${getErrorMessage(error)}`);
     }
   },
 };

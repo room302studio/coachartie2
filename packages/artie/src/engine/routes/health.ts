@@ -4,6 +4,7 @@ import { getDatabasePath } from '../../shared/paths.js';
 import { access } from 'fs/promises';
 import { logger } from '../../shared/logger.js';
 import { type ApiResult, sendResult } from '../../shared/api-result.js';
+import { getErrorMessage } from '../../shared/errors.js';
 
 // Wave 9: the handler body is an exported function returning the status + JSON it used to
 // send; the route sends it and engine/api.ts calls it in-process for the gateway.
@@ -34,7 +35,7 @@ healthRouter.get('/detailed', async (req, res) => {
     } catch (error) {
       checks.redis = {
         status: 'error',
-        error: error instanceof Error ? error.message : 'Unknown error',
+        error: getErrorMessage(error),
       };
       overallStatus = 'degraded';
     }
@@ -50,16 +51,18 @@ healthRouter.get('/detailed', async (req, res) => {
     } catch (error) {
       checks.database = {
         status: 'inaccessible',
-        error: error instanceof Error ? error.message : 'Unknown error',
+        error: getErrorMessage(error),
       };
       overallStatus = 'degraded';
     }
 
     // Check MCP tool registry
     const mcpRegistry = (global as any).mcpToolRegistry;
+    const mcpStatus = mcpRegistry ? 'initialized' : 'not_initialized';
+    const mcpToolCount = mcpRegistry ? mcpRegistry.size : 0;
     checks.mcp = {
-      status: mcpRegistry ? 'initialized' : 'not_initialized',
-      toolCount: mcpRegistry ? mcpRegistry.size : 0,
+      status: mcpStatus,
+      toolCount: mcpToolCount,
     };
 
     // System metrics
@@ -116,7 +119,7 @@ healthRouter.get('/detailed', async (req, res) => {
       service: 'capabilities',
       timestamp: new Date().toISOString(),
       responseTime: Date.now() - startTime,
-      error: error instanceof Error ? error.message : 'Unknown error',
+      error: getErrorMessage(error),
     });
   }
 });
@@ -139,7 +142,7 @@ healthRouter.get('/ready', async (req, res) => {
     res.status(503).json({
       status: 'not_ready',
       timestamp: new Date().toISOString(),
-      error: error instanceof Error ? error.message : 'Unknown error',
+      error: getErrorMessage(error),
     });
   }
 });
@@ -193,7 +196,7 @@ export async function healthSnapshot(deps: EngineDeps = defaultEngineDeps): Prom
       status: 'unhealthy',
       service: 'capabilities',
       timestamp: new Date().toISOString(),
-      error: error instanceof Error ? error.message : 'Unknown error',
+      error: getErrorMessage(error),
     });
   }
 }
