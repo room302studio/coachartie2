@@ -21,25 +21,28 @@ describe('multiplayer feature token cost (measured)', () => {
     for (let i = 0; i < 25; i++) {
       const author = `User${i}`;
       baseline.push({ author, content: '', timestamp: new Date().toISOString(), isBot: false });
-      withAddressing.push(
-        i % 2 === 0
-          ? {
-              author,
-              content: '',
-              timestamp: new Date().toISOString(),
-              isBot: false,
-              replyToAuthor: `User${(i + 1) % 25}`,
-              addressedElsewhere: true,
-            }
-          : {
-              author,
-              content: '',
-              timestamp: new Date().toISOString(),
-              isBot: false,
-              mentions: [`User${(i + 2) % 25}`],
-              addressedElsewhere: true,
-            }
-      );
+
+      let entry: DiscordHistoryEntry;
+      if (i % 2 === 0) {
+        entry = {
+          author,
+          content: '',
+          timestamp: new Date().toISOString(),
+          isBot: false,
+          replyToAuthor: `User${(i + 1) % 25}`,
+          addressedElsewhere: true,
+        };
+      } else {
+        entry = {
+          author,
+          content: '',
+          timestamp: new Date().toISOString(),
+          isBot: false,
+          mentions: [`User${(i + 2) % 25}`],
+          addressedElsewhere: true,
+        };
+      }
+      withAddressing.push(entry);
     }
     const baselineTokens = estimateTokens(renderDiscordTranscript(baseline, 25));
     const withAddressingTokens = estimateTokens(renderDiscordTranscript(withAddressing, 25));
@@ -100,14 +103,22 @@ describe('multiplayer feature token cost (measured)', () => {
   });
 
   it('feature 3: recent-reactions note for 5 reactions', () => {
-    const reactions = Array.from({ length: 5 }, (_, i) => ({
-      messageId: `m${i}`,
-      channelId: 'c1',
-      emoji: i % 2 === 0 ? '👍' : '👎',
-      userLabel: `User${i}`,
-      messageExcerpt: 'here is my take on the plan for next week',
-      at: i * 60000,
-    }));
+    const reactions = Array.from({ length: 5 }, (_, i) => {
+      let emoji: string;
+      if (i % 2 === 0) {
+        emoji = '👍';
+      } else {
+        emoji = '👎';
+      }
+      return {
+        messageId: `m${i}`,
+        channelId: 'c1',
+        emoji,
+        userLabel: `User${i}`,
+        messageExcerpt: 'here is my take on the plan for next week',
+        at: i * 60000,
+      };
+    });
     const note = formatRecentReactionsNote(reactions, 10 * 60000)!;
     const tokens = estimateTokens(note);
     console.log(`[cost] feature 3: recent-reactions note (5 reactions, capped) = ${tokens} tokens`);
