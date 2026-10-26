@@ -1,5 +1,6 @@
 import { RegisteredCapability } from '../../5-tool-loop/registry.js';
 import { logger } from '../../../shared/logger.js';
+import { getErrorMessage } from '../../../shared/errors.js';
 
 enum ButtonStyle {
   Primary = 1,
@@ -123,14 +124,13 @@ const handler = async (params: AskQuestionParams, content?: string): Promise<str
       return await createButtons(question);
     }
   } catch (error) {
+    const errorMsg = getErrorMessage(error);
     logger.error('Ask Question capability error:', {
-      error: error instanceof Error ? error.message : String(error),
+      error: errorMsg,
       params,
       content,
     });
-    throw new Error(
-      `Failed to ask question: ${error instanceof Error ? error.message : String(error)}`
-    );
+    throw new Error(`Failed to ask question: ${errorMsg}`);
   }
 };
 
@@ -204,12 +204,19 @@ async function createSelectMenu(question: Question): Promise<string> {
     description: opt.description?.substring(0, 100), // Discord limit
   }));
 
+  let maxValues: number;
+  if (question.multiSelect) {
+    maxValues = options.length;
+  } else {
+    maxValues = 1;
+  }
+
   const selectMenu = {
     type: 3, // StringSelectMenu
     custom_id: customId,
     placeholder: question.header || 'Choose an option...',
-    min_values: question.multiSelect ? 1 : 1,
-    max_values: question.multiSelect ? options.length : 1,
+    min_values: 1,
+    max_values: maxValues,
     options,
   };
 

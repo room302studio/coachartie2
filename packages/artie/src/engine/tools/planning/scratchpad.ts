@@ -27,6 +27,20 @@ interface ScratchpadParams {
   guildId?: string;
 }
 
+function sectionSuffix(section: string | undefined): string {
+  if (section) {
+    return ` [${section}]`;
+  }
+  return '';
+}
+
+function appendSeparator(current: string): string {
+  if (current) {
+    return '\n';
+  }
+  return '';
+}
+
 // Base path for guild notes
 const NOTES_BASE_PATH = CAPABILITIES_GUILD_NOTES;
 
@@ -168,7 +182,7 @@ When you learn something unique about this guild - a person, a pattern, a soluti
     // Use content from params or from capability content
     const text = content || _content || '';
 
-    logger.info(`📝 Scratchpad [${guildId}]: ${action}${section ? ` [${section}]` : ''}`);
+    logger.info(`📝 Scratchpad [${guildId}]: ${action}${sectionSuffix(section)}`);
 
     try {
       switch (action) {
@@ -206,7 +220,7 @@ When you learn something unique about this guild - a person, a pattern, a soluti
           }
 
           const current = await loadScratchpad(guildId);
-          const separator = current ? '\n' : '';
+          const separator = appendSeparator(current);
           const newContent = current + separator + text;
 
           await saveScratchpad(guildId, newContent);

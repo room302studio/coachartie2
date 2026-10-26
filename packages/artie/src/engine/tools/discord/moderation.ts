@@ -112,12 +112,18 @@ export const discordModerationCapability: RegisteredCapability = {
           return JSON.stringify({ success: false, error: 'Remove role failed' });
         }
 
-      case 'escalate':
-        const userMention = userId ? `<@${userId}>` : 'someone';
+      case 'escalate': {
+        let userMention: string;
+        if (userId) {
+          userMention = `<@${userId}>`;
+        } else {
+          userMention = 'someone';
+        }
         return JSON.stringify({
           success: true,
           message: `@Mods heads up - ${userMention} needs attention: ${reason || 'unspecified issue'}`,
         });
+      }
 
       default:
         return JSON.stringify({ success: false, error: `Unknown action: ${action}` });

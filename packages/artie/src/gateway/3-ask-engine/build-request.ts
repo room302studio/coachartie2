@@ -127,23 +127,35 @@ export async function handleMessageAsIntent(
     }
 
     // ENHANCED: Gather Discord context for Context Alchemy
-    const guildInfo = message.guild
-      ? {
-          guildId: message.guild.id,
-          guildName: message.guild.name,
-          memberCount: message.guild.memberCount,
-        }
-      : null;
+    let guildInfo: { guildId: string; guildName: string; memberCount: number } | null;
+    if (message.guild) {
+      guildInfo = {
+        guildId: message.guild.id,
+        guildName: message.guild.name,
+        memberCount: message.guild.memberCount,
+      };
+    } else {
+      guildInfo = null;
+    }
 
+    let _channelName: string;
+    if ('name' in message.channel) {
+      _channelName = message.channel.name;
+    } else {
+      _channelName = 'DM';
+    }
     const channelInfo = {
       channelId: message.channelId,
       channelType: message.channel.type,
-      channelName: 'name' in message.channel ? message.channel.name : 'DM',
+      channelName: _channelName,
     };
 
-    const memberRoleNames = message.member
-      ? message.member.roles.cache.map((r) => r.name).filter((n) => n && n !== '@everyone')
-      : [];
+    let memberRoleNames: string[];
+    if (message.member) {
+      memberRoleNames = message.member.roles.cache.map((r) => r.name).filter((n) => n && n !== '@everyone');
+    } else {
+      memberRoleNames = [];
+    }
     const userInfo = {
       userId: message.author.id,
       username: message.author.username,
@@ -161,20 +173,32 @@ export async function handleMessageAsIntent(
       const thread = message.channel;
       if (!('parent' in thread)) return null;
 
+      let _threadTags: string[];
+      if ('appliedTags' in thread) {
+        _threadTags = thread.appliedTags;
+      } else {
+        _threadTags = [];
+      }
+      let _threadMessageCount: number | null;
+      if ('messageCount' in thread) {
+        _threadMessageCount = thread.messageCount;
+      } else {
+        _threadMessageCount = null;
+      }
       return {
         isForumThread: true,
         forumId: thread.parent?.id,
         forumName: thread.parent?.name,
         threadId: thread.id,
         threadName: thread.name,
-        threadTags: 'appliedTags' in thread ? thread.appliedTags : [],
+        threadTags: _threadTags,
         threadCreatedAt: thread.createdAt?.toISOString(),
-        threadMessageCount: 'messageCount' in thread ? thread.messageCount : null,
+        threadMessageCount: _threadMessageCount,
         isThreadOwner: 'ownerId' in thread && thread.ownerId === message.author.id,
       };
     })();
 
-    const discordContext = {
+    const discordContext: any = {
       platform: 'discord',
       ...guildInfo,
       ...channelInfo,
@@ -197,49 +221,46 @@ export async function handleMessageAsIntent(
         username: user.username,
         displayName: user.displayName || user.username,
       })),
-      attachments:
-        message.attachments.size > 0
-          ? Array.from(message.attachments.values()).map((att) => ({
-              id: att.id,
-              name: att.name,
-              url: att.url,
-              contentType: att.contentType,
-              size: att.size,
-              proxyUrl: att.proxyURL,
-            }))
-          : [],
+      attachments: ((): typeof recentAttachments => {
+        if (message.attachments.size > 0) {
+          return Array.from(message.attachments.values()).map((att) => ({
+            id: att.id,
+            name: att.name,
+            url: att.url,
+            contentType: att.contentType,
+            size: att.size,
+            proxyUrl: att.proxyURL,
+          }));
+        } else {
+          return [];
+        }
+      })(),
       replyingTo: message.reference?.messageId || null,
-      ...(recentReactionsNote ? { recentReactions: recentReactionsNote } : {}),
-      // Reply context - the message being replied to
-      ...(replyContext
-        ? {
-            replyContext: {
-              messageId: replyContext.messageId,
-              author: replyContext.author,
-              content: replyContext.content,
-              timestamp: replyContext.timestamp,
-            },
-          }
-        : {}),
-      // Proxy context if this is a proxy response
-      ...(proxyOptions?.isProxyResponse
-        ? {
-            isProxyResponse: true,
-            proxyTargetUser: proxyOptions.proxyRule.targetUsername,
-            proxyRuleName: proxyOptions.proxyRule.name,
-            proxySystemContext: proxyOptions.proxyContext,
-          }
-        : {}),
-      // Guild-specific context (always pass if available, not just for proactive answers)
-      ...(guildContext
-        ? {
-            isProactiveAnswer,
-            guildKnowledge: guildContext,
-          }
-        : {}),
-      // Burst debounce (part 2) / recent reactions (part 3) — see handleMessageAsIntent.
-      ...(extraContext ?? {}),
     };
+    if (recentReactionsNote) {
+      discordContext.recentReactions = recentReactionsNote;
+    }
+    if (replyContext) {
+      discordContext.replyContext = {
+        messageId: replyContext.messageId,
+        author: replyContext.author,
+        content: replyContext.content,
+        timestamp: replyContext.timestamp,
+      };
+    }
+    if (proxyOptions?.isProxyResponse) {
+      discordContext.isProxyResponse = true;
+      discordContext.proxyTargetUser = proxyOptions.proxyRule.targetUsername;
+      discordContext.proxyRuleName = proxyOptions.proxyRule.name;
+      discordContext.proxySystemContext = proxyOptions.proxyContext;
+    }
+    if (guildContext) {
+      discordContext.isProactiveAnswer = isProactiveAnswer;
+      discordContext.guildKnowledge = guildContext;
+    }
+    if (extraContext) {
+      Object.assign(discordContext, extraContext);
+    }
 
     // Create unified intent and delegate to shared processor
     await processUserIntent(

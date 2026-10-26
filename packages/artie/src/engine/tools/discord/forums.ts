@@ -1,6 +1,7 @@
 import { RegisteredCapability } from '../../5-tool-loop/registry.js';
 import { logger } from '../../../shared/logger.js';
 import * as gateway from '../../../gateway/api.js';
+import { getErrorMessage } from '../../../shared/errors.js';
 
 /**
  * Discord Forums Capability - Traverse and analyze Discord forum discussions
@@ -21,6 +22,110 @@ interface DiscordForumsParams {
 }
 
 const FETCH_TIMEOUT = 30000; // 30 second timeout
+
+/**
+ * Helper functions for template string formatting
+ */
+function formatTagsList(tags: any[]): string {
+  if (tags.length > 0) {
+    if (tags[0].name) {
+      return tags.map((t: any) => t.name).join(', ');
+    }
+    return tags.join(', ');
+  }
+  return 'None';
+}
+
+function formatStatusEmoji(locked: boolean, archived: boolean): string {
+  if (locked) {
+    return '🔒 Locked';
+  }
+  if (archived) {
+    return '📦 Archived';
+  }
+  return '✅ Active';
+}
+
+function formatTruncated(text: string, limit: number): string {
+  if (text.length >= limit) {
+    return text + '...';
+  }
+  return text;
+}
+
+function formatEditedTimestamp(timestamp: string | undefined): string | null {
+  if (timestamp != null) {
+    return new Date(timestamp).toISOString();
+  }
+  return null;
+}
+
+function formatBooleanYesNo(value: boolean): string {
+  if (value) {
+    return 'Yes';
+  }
+  return 'No';
+}
+
+function calculateAverageMessageLength(messages: any[]): number {
+  if (messages.length === 0) {
+    return 0;
+  }
+  const totalLength = messages.reduce((sum: number, m: any) => sum + m.content.length, 0);
+  return Math.round(totalLength / messages.length);
+}
+
+function formatBotIndicator(isBot: boolean): string {
+  if (isBot) {
+    return ' 🤖';
+  }
+  return '';
+}
+
+function formatEditedInfo(edited: string | null): string {
+  if (edited) {
+    return ` (Edited: ${new Date(edited).toLocaleString()})`;
+  }
+  return '';
+}
+
+function formatReactions(reactions: any[]): string {
+  if (reactions.length === 0) {
+    return '';
+  }
+  return `Reactions: ${reactions.map((r: any) => `${r.emoji} (${r.count})`).join(', ')}`;
+}
+
+function countedNextStepLine(count: number, message: string): string {
+  if (count > 0) {
+    return message;
+  }
+  return '';
+}
+
+function formatAttachments(attachments: any[]): string {
+  if (attachments.length === 0) {
+    return '';
+  }
+  return `Attachments: ${attachments.map((a: any) => a.filename).join(', ')}`;
+}
+
+function formatMentions(mentions: any[]): string {
+  if (mentions.length === 0) {
+    return '';
+  }
+  return `Mentions: ${mentions.join(', ')}`;
+}
+
+function formatStatusName(locked: boolean, archived: boolean): string {
+  if (locked) {
+    return 'locked';
+  }
+  if (archived) {
+    return 'archived';
+  }
+  return 'active';
+}
 
 /**
  * The gateway's forum routes, in-process since wave 9 (were GETs/POSTs to :47321/api/... and
@@ -92,15 +197,14 @@ const handler = async (params: any, content?: string): Promise<string> => {
         throw new Error(`Unsupported action: ${action}`);
     }
   } catch (error) {
+    const errorMsg = getErrorMessage(error);
     logger.error('Discord forums capability error:', {
       action,
-      error: error instanceof Error ? error.message : String(error),
+      error: errorMsg,
       params,
       content,
     });
-    throw new Error(
-      `Failed to execute Discord forums action: ${error instanceof Error ? error.message : String(error)}`
-    );
+    throw new Error(`Failed to execute Discord forums action: ${errorMsg}`);
   }
 };
 
@@ -179,7 +283,7 @@ ${i + 1}. ${f.name}
    ID: ${f.id}
    Description: ${f.description}
    Threads: ${f.threadCount}
-   Tags: ${f.tags.length > 0 ? f.tags.map((t: any) => t.name).join(', ') : 'None'}
+   Tags: ${formatTagsList(f.tags)}
 
    Next Actions:
    - List threads: ${f.nextActions.listThreads}
@@ -191,10 +295,10 @@ ${i + 1}. ${f.name}
 
 💡 Recommended Next Steps:
 1. To see all discussions in a specific forum:
-   ${forumSummaries.length > 0 ? forumSummaries[0].nextActions.listThreads : 'N/A'}
+   ${forumSummaries[0]?.nextActions.listThreads || 'N/A'}
 
 2. To get analytics for a forum:
-   ${forumSummaries.length > 0 ? forumSummaries[0].nextActions.getSummary : 'N/A'}
+   ${forumSummaries[0]?.nextActions.getSummary || 'N/A'}
 
 📦 Raw Data (for programmatic access):
 ${JSON.stringify(forumSummaries, null, 2)}`;
@@ -306,12 +410,12 @@ ${i + 1}. ${t.title}
    Thread ID: ${t.id}
    Author: ${t.author.username} (${t.author.id})
    Messages: ${t.messageCount}
-   Status: ${t.locked ? '🔒 Locked' : t.archived ? '📦 Archived' : '✅ Active'}
+   Status: ${formatStatusEmoji(t.locked, t.archived)}
    Created: ${new Date(t.created).toLocaleDateString()}
    Last Activity: ${new Date(t.lastActivity).toLocaleDateString()}
-   Tags: ${t.tags.length > 0 ? t.tags.join(', ') : 'None'}
+   Tags: ${formatTagsList(t.tags)}
 
-   Preview: ${t.preview}${t.preview.length >= 200 ? '...' : ''}
+   Preview: ${formatTruncated(t.preview, 200)}
 
    Next Actions:
    - View full thread: ${t.nextActions.getFullThread}
@@ -321,10 +425,10 @@ ${i + 1}. ${t.title}
 
 💡 Recommended Next Steps:
 1. To read a specific thread in detail:
-   ${threadSummaries.length > 0 ? threadSummaries[0].nextActions.getFullThread : 'N/A'}
+   ${threadSummaries[0]?.nextActions.getFullThread || 'N/A'}
 
 2. To sync all threads to GitHub:
-   ${threadSummaries.length > 0 ? threadSummaries[0].nextActions.syncToGithub : 'N/A'}
+   ${threadSummaries[0]?.nextActions.syncToGithub || 'N/A'}
 
 📦 Raw Data (for programmatic access):
 ${JSON.stringify(threadSummaries, null, 2)}`;
@@ -367,7 +471,7 @@ async function getThread(params: DiscordForumsParams): Promise<string> {
     },
     content: m.content || '',
     timestamp: m.timestamp || m.created_timestamp || new Date().toISOString(),
-    edited: m.edited_timestamp ? new Date(m.edited_timestamp).toISOString() : null,
+    edited: formatEditedTimestamp(m.edited_timestamp),
     attachments: (m.attachments || []).map((a: any) => ({
       filename: a.filename,
       url: a.url,
@@ -396,25 +500,25 @@ async function getThread(params: DiscordForumsParams): Promise<string> {
 - Title: ${(thread as any).name || (thread as any).title || 'Untitled'}
 - Forum ID: ${(thread as any).parent_id || (thread as any).parentId || 'Unknown'}
 - Created: ${new Date((thread as any).created_timestamp || (thread as any).createdAt || Date.now()).toLocaleString()}
-- Status: ${(thread as any).locked ? '🔒 Locked' : (thread as any).archived ? '📦 Archived' : '✅ Active'}
+- Status: ${formatStatusEmoji((thread as any).locked, (thread as any).archived)}
 - Tags: ${((thread as any).applied_tags || (thread as any).appliedTags || []).join(', ') || 'None'}
 
 📊 Thread Analytics:
 - Total Messages: ${messages.length}
 - Unique Participants: ${uniqueAuthors}
 - Total Reactions: ${totalReactions}
-- Has Attachments: ${hasAttachments ? 'Yes' : 'No'}
-- Average Message Length: ${messages.length > 0 ? Math.round(messages.reduce((sum: number, m: any) => sum + m.content.length, 0) / messages.length) : 0} chars
+- Has Attachments: ${formatBooleanYesNo(hasAttachments)}
+- Average Message Length: ${calculateAverageMessageLength(messages)} chars
 
 💬 Message Timeline:
 ${messages
   .map(
     (m: any) => `
-Message #${m.position} by ${m.author.username} (${m.author.id})${m.author.bot ? ' 🤖' : ''}
-Posted: ${new Date(m.timestamp).toLocaleString()}${m.edited ? ` (Edited: ${new Date(m.edited).toLocaleString()})` : ''}
-${m.reactions.length > 0 ? `Reactions: ${m.reactions.map((r: any) => `${r.emoji} (${r.count})`).join(', ')}` : ''}
-${m.attachments.length > 0 ? `Attachments: ${m.attachments.map((a: any) => a.filename).join(', ')}` : ''}
-${m.mentions.length > 0 ? `Mentions: ${m.mentions.join(', ')}` : ''}
+Message #${m.position} by ${m.author.username} (${m.author.id})${formatBotIndicator(m.author.bot)}
+Posted: ${new Date(m.timestamp).toLocaleString()}${formatEditedInfo(m.edited)}
+${formatReactions(m.reactions)}
+${formatAttachments(m.attachments)}
+${formatMentions(m.mentions)}
 
 Content:
 ${m.content || '(No text content)'}
@@ -429,7 +533,7 @@ To sync this thread to GitHub:
 <capability name="discord-forums" action="sync-to-github" data='{"forumId":"${(thread as any).parent_id || 'FORUM_ID'}","repo":"owner/repo"}' />
 
 📦 Raw Data (for programmatic access):
-${JSON.stringify({ thread: { id: (thread as any).id, name: (thread as any).name, status: (thread as any).locked ? 'locked' : (thread as any).archived ? 'archived' : 'active' }, messages }, null, 2)}`;
+${JSON.stringify({ thread: { id: (thread as any).id, name: (thread as any).name, status: formatStatusName((thread as any).locked, (thread as any).archived) }, messages }, null, 2)}`;
 
   return response_text;
 }
@@ -493,20 +597,10 @@ async function syncToGitHub(params: DiscordForumsParams, _content?: string): Pro
   const failureCount = result.failureCount || issues.filter((i: any) => !i.success).length;
   const skippedCount = result.skippedCount || 0;
 
-  const response_text = `🔄 GITHUB SYNC COMPLETE
-
-📊 Sync Summary:
-- Forum ID: ${forumId}
-- Target Repository: ${repo}
-- Total Threads Processed: ${issues.length}
-- ✅ Successfully Created: ${successCount}
-- ❌ Failed: ${failureCount}
-- ⏭️  Skipped (duplicates): ${skippedCount}
-- Sync Duration: ${(result as any).duration || 'N/A'}
-
-${
-  successCount > 0
-    ? `
+  // Compute conditional sections
+  let successSection: string;
+  if (successCount > 0) {
+    successSection = `
 ✅ Successfully Created Issues:
 ${issues
   .filter((i: any) => i.success)
@@ -521,13 +615,14 @@ ${idx + 1}. ${issue.title || issue.threadTitle || 'Untitled'}
 `
   )
   .join('\n')}
-`
-    : ''
-}
+`;
+  } else {
+    successSection = '';
+  }
 
-${
-  failureCount > 0
-    ? `
+  let failureSection: string;
+  if (failureCount > 0) {
+    failureSection = `
 ❌ Failed Issues:
 ${issues
   .filter((i: any) => !i.success)
@@ -539,25 +634,46 @@ ${idx + 1}. ${issue.title || issue.threadTitle || 'Untitled'}
 `
   )
   .join('\n')}
-`
-    : ''
-}
+`;
+  } else {
+    failureSection = '';
+  }
 
-${
-  (result as any).rateLimitInfo
-    ? `
+  let rateLimitSection: string;
+  if ((result as any).rateLimitInfo) {
+    rateLimitSection = `
 ⚠️  Rate Limit Information:
 - Remaining: ${(result as any).rateLimitInfo.remaining}
 - Limit: ${(result as any).rateLimitInfo.limit}
 - Reset Time: ${new Date((result as any).rateLimitInfo.reset * 1000).toLocaleString()}
-`
-    : ''
-}
+`;
+  } else {
+    rateLimitSection = '';
+  }
+
+  const nextStepsLine1 = countedNextStepLine(successCount, `- View created issues at: https://github.com/${repo}/issues`);
+  const nextStepsLine2 = countedNextStepLine(failureCount, `- Review and retry failed syncs`);
+  const nextStepsLine3 = countedNextStepLine(skippedCount, `- ${skippedCount} threads were skipped (likely already synced)`);
+
+  const response_text = `🔄 GITHUB SYNC COMPLETE
+
+📊 Sync Summary:
+- Forum ID: ${forumId}
+- Target Repository: ${repo}
+- Total Threads Processed: ${issues.length}
+- ✅ Successfully Created: ${successCount}
+- ❌ Failed: ${failureCount}
+- ⏭️  Skipped (duplicates): ${skippedCount}
+- Sync Duration: ${(result as any).duration || 'N/A'}
+
+${successSection}
+${failureSection}
+${rateLimitSection}
 
 💡 Next Steps:
-${successCount > 0 ? `- View created issues at: https://github.com/${repo}/issues` : ''}
-${failureCount > 0 ? `- Review and retry failed syncs` : ''}
-${skippedCount > 0 ? `- ${skippedCount} threads were skipped (likely already synced)` : ''}
+${nextStepsLine1}
+${nextStepsLine2}
+${nextStepsLine3}
 
 📦 Raw Data (for programmatic access):
 ${JSON.stringify(

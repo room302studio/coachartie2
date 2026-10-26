@@ -45,6 +45,27 @@ async function safeExec(command: string): Promise<string> {
   }
 }
 
+function contextLogSuffix(path: string): string {
+  if (path !== '/workspace') {
+    return ` (${path})`;
+  }
+  return '';
+}
+
+function branchStatus(branch: string): string {
+  if (branch) {
+    return `🌿 Branch: ${branch}`;
+  }
+  return '(not a git repo)';
+}
+
+function packageNameSuffix(pkgName: string): string {
+  if (pkgName) {
+    return `: ${pkgName.match(/"name":\s*"([^"]+)"/)?.[1] || ''}`;
+  }
+  return '';
+}
+
 export const contextCapability: RegisteredCapability = {
   name: 'context',
   emoji: '🧭',
@@ -81,7 +102,7 @@ Start complex tasks with context. Know where you are.`,
   handler: async (params: any, _content: string | undefined) => {
     const { action = 'where', path = '/workspace' } = params as ContextParams;
 
-    logger.info(`Context: ${action}${path !== '/workspace' ? ` (${path})` : ''}`);
+    logger.info(`Context: ${action}${contextLogSuffix(path)}`);
 
     try {
       switch (action) {
@@ -94,7 +115,7 @@ Start complex tasks with context. Know where you are.`,
 
           const lines = [
             `📍 ${pwd || '/workspace'}`,
-            branch ? `🌿 Branch: ${branch}` : '(not a git repo)',
+            branchStatus(branch),
             `🖥️  ${hostname}`,
             `📅 ${date}`,
           ];
@@ -126,7 +147,7 @@ Start complex tasks with context. Know where you are.`,
               `cat ${targetPath}/package.json | grep '"name"' | head -1`
             );
             projectIndicators.push(
-              `Node.js project${pkgName ? `: ${pkgName.match(/"name":\s*"([^"]+)"/)?.[1] || ''}` : ''}`
+              `Node.js project${packageNameSuffix(pkgName)}`
             );
           }
           if (await safeExec(`test -f ${targetPath}/requirements.txt && echo yes`)) {

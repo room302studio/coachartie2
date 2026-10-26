@@ -1,3 +1,4 @@
+import { getErrorMessage } from '../../../shared/errors.js';
 import { logger } from '../../../shared/logger.js';
 import { parseModelJson } from '../../../shared/model-json.js';
 import { getSyncDb } from '../../../shared/db/client.js';
@@ -39,6 +40,69 @@ interface MemoryParams {
   content?: string;
   limit?: string;
   [key: string]: unknown;
+}
+
+function parseJsonTags(tagsJson: string | undefined): string[] {
+  if (tagsJson) {
+    return JSON.parse(tagsJson);
+  }
+  return [];
+}
+
+function ensureStringArray(tags: unknown): string[] {
+  if (Array.isArray(tags)) {
+    return [...tags];
+  }
+  return [];
+}
+
+function optionalString(value: unknown): string | undefined {
+  if (value) {
+    return String(value);
+  }
+  return undefined;
+}
+
+function optionalInt(value: unknown): number | undefined {
+  if (value) {
+    return parseInt(String(value));
+  }
+  return undefined;
+}
+
+function relatedMessageNote(messageId: unknown): string {
+  if (messageId) {
+    return ` linked to message ${messageId}`;
+  }
+  return '';
+}
+
+function contextSuffix(context: unknown): string {
+  if (context) {
+    return ` | 📝 ${context}`;
+  }
+  return '';
+}
+
+function pinnedMarker(importance: unknown): string {
+  if (importance === 10) {
+    return ' 📌';
+  }
+  return '';
+}
+
+function mergeTagsIfExplicit(explicitTags: unknown, basicTags: string[]): string[] {
+  if (explicitTags) {
+    return [...new Set([...explicitTags as string[], ...basicTags])];
+  }
+  return basicTags;
+}
+
+function ensureWrappedArray(value: unknown, parser: (v: unknown) => unknown[]): unknown[] {
+  if (Array.isArray(value)) {
+    return value;
+  }
+  return parser(value);
 }
 
 /**
@@ -118,7 +182,7 @@ export class MemoryService {
       try {
         const basicTags = this.extractBasicTags(content, context);
         // Merge explicit tags with extracted tags (explicit tags first for priority)
-        const allTags = explicitTags ? [...new Set([...explicitTags, ...basicTags])] : basicTags;
+        const allTags = mergeTagsIfExplicit(explicitTags, basicTags);
 
         const memory = {
           user_id: userId,
@@ -128,7 +192,7 @@ export class MemoryService {
           timestamp: new Date().toISOString(),
           importance,
           metadata: JSON.stringify({}),
-          related_message_id: relatedMessageId ? String(relatedMessageId) : null,
+          related_message_id: optionalString(relatedMessageId) ?? null,
           guild_id: guildId || null,
           channel_id: channelId || null,
         };
@@ -146,7 +210,7 @@ export class MemoryService {
           logger.error('❌ Failed to generate semantic tags:', error);
         });
 
-        const relationshipNote = relatedMessageId ? ` linked to message ${relatedMessageId}` : '';
+        const relationshipNote = relatedMessageNote(relatedMessageId);
         return `✅ Remembered: "${content}" (ID: ${memoryId}, importance: ${importance}/10, tags: ${allTags.join(', ')}${relationshipNote})`;
       } catch (error) {
         logger.error('❌ [HYBRID] Failed to store memory, falling back to legacy:', error);
@@ -187,9 +251,7 @@ export class MemoryService {
         return formatted;
       } catch (error) {
         logger.error('❌ [HYBRID] Failed to recall memories:', error);
-        throw new Error(
-          `Memory recall failed: ${error instanceof Error ? error.message : String(error)}`
-        );
+        throw new Error(`Memory recall failed: ${getErrorMessage(error)}`);
       }
     }
 
@@ -211,7 +273,7 @@ export class MemoryService {
 
         // Filter memories that have ANY of the requested tags
         const matchingMemories = allMemories.filter((memory) => {
-          const memoryTags = memory.tags ? JSON.parse(memory.tags) : [];
+          const memoryTags = parseJsonTags(memory.tags);
           return tags.some((tag) => memoryTags.includes(tag));
         });
 
@@ -239,7 +301,7 @@ export class MemoryService {
           id: memory.id,
           userId: memory.user_id,
           content: memory.content,
-          tags: memory.tags ? JSON.parse(memory.tags) : [],
+          tags: parseJsonTags(memory.tags),
           context: memory.context || '',
           timestamp: memory.timestamp,
           importance: memory.importance || 5,
@@ -319,7 +381,7 @@ export class MemoryService {
           id: memory.id,
           userId: memory.user_id,
           content: memory.content,
-          tags: memory.tags ? JSON.parse(memory.tags) : [],
+          tags: parseJsonTags(memory.tags),
           context: memory.context || '',
           timestamp: memory.timestamp,
           importance: memory.importance || 5,
@@ -350,9 +412,7 @@ export class MemoryService {
 • Recent (7 days): ${recentCount}
 • Storage: Hybrid layer (in-memory + SQLite)`;
     } catch (error) {
-      throw new Error(
-        `Could not retrieve memory statistics: ${error instanceof Error ? error.message : String(error)}`
-      );
+      throw new Error(`Could not retrieve memory statistics: ${getErrorMessage(error)}`);
     }
   }
 
@@ -421,7 +481,7 @@ export class MemoryService {
   private formatHybridRecallResults(memories: MemoryRecord[], query: string): string {
     const formatted = memories
       .map((memory, index) => {
-        const tags = memory.tags ? JSON.parse(memory.tags) : [];
+        const tags = parseJsonTags(memory.tags);
         const context = memory.context || '';
         const importance = memory.importance || 5;
 
@@ -429,7 +489,7 @@ export class MemoryService {
         const stars = '⭐'.repeat(Math.min(importance, 5));
 
         return `${index + 1}. **${memory.content}** ${stars}
-   📅 ${date} | 🏷️ ${tags.join(', ') || 'no tags'}${context ? ` | 📝 ${context}` : ''}`;
+   📅 ${date} | 🏷️ ${tags.join(', ') || 'no tags'}${contextSuffix(context)}`;
       })
       .join('\n\n');
 
@@ -489,7 +549,7 @@ Example: {"tags": ["food", "pizza", "italian", "preference", "like"]}`;
         // Update memory in hybrid layer
         const memory = await hybridDataLayer.getMemory(memoryId);
         if (memory) {
-          const existingTags = memory.tags ? JSON.parse(memory.tags) : [];
+          const existingTags = parseJsonTags(memory.tags);
           const allTags = [...new Set([...existingTags, ...tags])];
 
           const updatedMemory = {
@@ -572,7 +632,12 @@ Example: {"tags": ["food", "pizza", "italian", "preference", "like"]}`;
     try {
       // {"tags": [...]}; a bare array (a model that ignored the wrapper) is read too.
       const wrapped = parseModelJson<{ tags?: unknown }>(response, 'object')?.tags;
-      const tags = Array.isArray(wrapped) ? wrapped : parseModelJson<unknown[]>(response, 'array');
+      let tags: unknown[];
+      if (Array.isArray(wrapped)) {
+        tags = wrapped;
+      } else {
+        tags = parseModelJson<unknown[]>(response, 'array');
+      }
       if (tags) {
         return tags
           .filter((tag): tag is string => typeof tag === 'string' && tag.length > 1)
@@ -619,7 +684,7 @@ Example: {"tags": ["food", "pizza", "italian", "preference", "like"]}`;
         const importance = '⭐'.repeat(Math.min(memory.importance || 0, 5));
 
         const formattedEntry = `${index + 1}. **${memory.content}** ${importance}
-   📅 ${date} | 🏷️ ${tags.join(', ') || 'no tags'}${memory.context ? ` | 📝 ${memory.context}` : ''}`;
+   📅 ${date} | 🏷️ ${tags.join(', ') || 'no tags'}${contextSuffix(memory.context)}`;
 
         logger.info(`🎨 Formatted entry ${index + 1}: ${formattedEntry.substring(0, 100)}...`);
 
@@ -669,21 +734,26 @@ async function handleMemoryAction(params: MemoryParams, content?: string): Promi
         const importance = Math.max(1, Math.min(10, parseInt(String(params.importance)) || 5));
 
         // Get messageId from params (set by capability orchestrator)
-        const relatedMessageId = params.messageId ? parseInt(String(params.messageId)) : undefined;
+        const relatedMessageId = optionalInt(params.messageId);
 
         // Get explicit tags if provided, plus `kind` (person | guild | pinned | scratch |
         // goal | ...) folded in as just another tag — the memory-zoo collapse (2026-10-26)
         // gives every kind of fact one home with one classification axis instead of a
         // separate tool per kind.
-        const explicitTags = Array.isArray(params.tags) ? [...params.tags] : [];
+        const explicitTags = ensureStringArray(params.tags);
         if (params.kind && typeof params.kind === 'string') {
           explicitTags.push(params.kind);
         }
-        const tags = explicitTags.length > 0 ? explicitTags : undefined;
+        let tags: string[] | undefined;
+        if (explicitTags.length > 0) {
+          tags = explicitTags;
+        } else {
+          tags = undefined;
+        }
 
         // Get guild/channel scope if provided
-        const guildId = params.guildId ? String(params.guildId) : undefined;
-        const channelId = params.channelId ? String(params.channelId) : undefined;
+        const guildId = optionalString(params.guildId);
+        const channelId = optionalString(params.channelId);
 
         const result = await memoryService.remember(
           String(userId),
@@ -729,7 +799,7 @@ async function handleMemoryAction(params: MemoryParams, content?: string): Promi
           .map((memory, index) => {
             const date = new Date(memory.timestamp).toLocaleDateString();
             const importance = '⭐'.repeat(Math.min(memory.importance, 5));
-            const pinnedMark = memory.importance === 10 ? ' 📌' : '';
+            const pinnedMark = pinnedMarker(memory.importance);
             return `${index + 1}. **${memory.content}** ${importance}${pinnedMark} (${date})`;
           })
           .join('\n');

@@ -130,6 +130,24 @@ export class GitHubPollerService extends EventEmitter {
   }
 
   /**
+   * Extract label names from GitHub label objects (handles both string and object formats).
+   */
+  private extractLabelNames(labels: any[] | undefined): string[] {
+    if (!labels) {
+      return [];
+    }
+    const names: string[] = [];
+    for (const label of labels) {
+      if (typeof label === 'string') {
+        names.push(label);
+      } else if (label && label.name) {
+        names.push(label.name);
+      }
+    }
+    return names;
+  }
+
+  /**
    * Start the polling loop
    */
   start(): void {
@@ -250,7 +268,12 @@ export class GitHubPollerService extends EventEmitter {
       logger.info(`First sync for ${watch.repo} - will update state silently without posting`);
     }
 
-    const events = watch.events ? JSON.parse(watch.events) : ['all'];
+    let events: any[];
+    if (watch.events) {
+      events = JSON.parse(watch.events);
+    } else {
+      events = ['all'];
+    }
     const shouldPollAll = events.includes('all');
 
     // On first sync, just update state without emitting events (prevents spam)
@@ -306,9 +329,12 @@ export class GitHubPollerService extends EventEmitter {
         per_page: 30,
       });
 
-      const lastUpdatedAt = syncState.lastPrUpdatedAt
-        ? new Date(syncState.lastPrUpdatedAt)
-        : new Date(0);
+      let lastUpdatedAt: Date;
+      if (syncState.lastPrUpdatedAt) {
+        lastUpdatedAt = new Date(syncState.lastPrUpdatedAt);
+      } else {
+        lastUpdatedAt = new Date(0);
+      }
 
       for (const pr of prs) {
         const prUpdatedAt = new Date(pr.updated_at);
@@ -346,12 +372,23 @@ export class GitHubPollerService extends EventEmitter {
   ): Promise<void> {
     const repoFullName = `${owner}/${repo}`;
     const prCreatedAt = new Date(pr.created_at);
-    const lastPolledAt = syncState.lastPolledAt ? new Date(syncState.lastPolledAt) : new Date(0);
+    let lastPolledAt: Date;
+    if (syncState.lastPolledAt) {
+      lastPolledAt = new Date(syncState.lastPolledAt);
+    } else {
+      lastPolledAt = new Date(0);
+    }
 
     // Check if this is a new PR
     if (prCreatedAt > lastPolledAt) {
+      let _prType: 'pr_draft' | 'pr_opened';
+      if (pr.draft) {
+        _prType = 'pr_draft';
+      } else {
+        _prType = 'pr_opened';
+      }
       this.emitEvent({
-        type: pr.draft ? 'pr_draft' : 'pr_opened',
+        type: _prType,
         repo: repoFullName,
         channelId: watch.channelId,
         guildId: watch.guildId,
@@ -532,10 +569,18 @@ export class GitHubPollerService extends EventEmitter {
     syncState: GithubSyncState
   ): Promise<void> {
     try {
-      const metadata = syncState.metadata ? JSON.parse(syncState.metadata as string) : {};
-      const lastIssueUpdatedAt = metadata.lastIssueUpdatedAt
-        ? new Date(metadata.lastIssueUpdatedAt)
-        : new Date(0);
+      let metadata: any;
+      if (syncState.metadata) {
+        metadata = JSON.parse(syncState.metadata as string);
+      } else {
+        metadata = {};
+      }
+      let lastIssueUpdatedAt: Date;
+      if (metadata.lastIssueUpdatedAt) {
+        lastIssueUpdatedAt = new Date(metadata.lastIssueUpdatedAt);
+      } else {
+        lastIssueUpdatedAt = new Date(0);
+      }
 
       // Fetch recently updated issues (excluding PRs) — retry once on 500
       let issues: any[];
@@ -587,7 +632,7 @@ export class GitHubPollerService extends EventEmitter {
               issueAuthor: issue.user?.login,
               issueState: issue.state,
               issueBody: issue.body || undefined,
-              issueLabels: issue.labels?.map((l: any) => typeof l === 'string' ? l : l.name) || [],
+              issueLabels: this.extractLabelNames(issue.labels),
             },
             timestamp: issue.created_at,
           });
@@ -706,7 +751,12 @@ export class GitHubPollerService extends EventEmitter {
     syncState: GithubSyncState
   ): Promise<void> {
     try {
-      const lastPolledAt = syncState.lastPolledAt ? new Date(syncState.lastPolledAt) : new Date(0);
+      let lastPolledAt: Date;
+      if (syncState.lastPolledAt) {
+        lastPolledAt = new Date(syncState.lastPolledAt);
+      } else {
+        lastPolledAt = new Date(0);
+      }
 
       const { data: events } = await this.octokit.issues.listEventsForTimeline({
         owner,
@@ -792,9 +842,12 @@ export class GitHubPollerService extends EventEmitter {
     syncState: GithubSyncState
   ): Promise<void> {
     try {
-      const metadata = syncState.metadata
-        ? JSON.parse(syncState.metadata)
-        : {};
+      let metadata: any;
+      if (syncState.metadata) {
+        metadata = JSON.parse(syncState.metadata);
+      } else {
+        metadata = {};
+      }
       const lastCommitSha = metadata.lastCommitSha || null;
 
       // Fetch recent commits on default branch
@@ -909,8 +962,12 @@ export class GitHubPollerService extends EventEmitter {
           continue;
         }
 
-        const eventType: GitHubEventType =
-          checkRun.conclusion === 'success' ? 'ci_success' : 'ci_failure';
+        let eventType: GitHubEventType;
+        if (checkRun.conclusion === 'success') {
+          eventType = 'ci_success';
+        } else {
+          eventType = 'ci_failure';
+        }
 
         this.emitEvent({
           type: eventType,
@@ -1063,8 +1120,14 @@ export class GitHubPollerService extends EventEmitter {
       }
 
       // Update sync state to mark everything as "seen"
+      let _lastPrUpdatedAt: string;
+      if (prs.length > 0) {
+        _lastPrUpdatedAt = prs[0].updated_at;
+      } else {
+        _lastPrUpdatedAt = new Date().toISOString();
+      }
       await this.updateSyncState(repoFullName, {
-        lastPrUpdatedAt: prs.length > 0 ? prs[0].updated_at : new Date().toISOString(),
+        lastPrUpdatedAt: _lastPrUpdatedAt,
         lastCommentId,
         lastReviewId,
         lastPolledAt: new Date().toISOString(),

@@ -1,5 +1,6 @@
 import { RegisteredCapability } from '../../5-tool-loop/registry.js';
 import { logger } from '../../../shared/logger.js';
+import { getErrorMessage } from '../../../shared/errors.js';
 
 // Discord.js component types (without importing the library)
 enum TextInputStyle {
@@ -100,15 +101,14 @@ const handler = async (params: DiscordUIParams, content?: string): Promise<strin
         );
     }
   } catch (error) {
+    const errorMsg = getErrorMessage(error);
     logger.error('Discord UI capability error:', {
       action,
-      error: error instanceof Error ? error.message : String(error),
+      error: errorMsg,
       params,
       content,
     });
-    throw new Error(
-      `Failed to create Discord UI component: ${error instanceof Error ? error.message : String(error)}`
-    );
+    throw new Error(`Failed to create Discord UI component: ${errorMsg}`);
   }
 };
 
@@ -133,11 +133,17 @@ async function createModal(params: DiscordUIParams, content?: string): Promise<s
   // Add up to 5 input fields (Discord limit)
   for (let i = 0; i < Math.min(inputs.length, 5); i++) {
     const input = inputs[i];
+    let style: number;
+    if (input.style === 'paragraph') {
+      style = TextInputStyle.Paragraph;
+    } else {
+      style = TextInputStyle.Short;
+    }
     const textInput: any = {
       type: 4, // TextInput component type
       custom_id: input.customId || `input_${i}`,
       label: input.label,
-      style: input.style === 'paragraph' ? TextInputStyle.Paragraph : TextInputStyle.Short,
+      style,
     };
 
     if (input.placeholder) {

@@ -15,7 +15,12 @@ import * as gateway from '../../../gateway/api.js';
 function parseOptions(raw: unknown): string[] {
   if (Array.isArray(raw)) return raw.map((o) => String(o));
   if (typeof raw !== 'string') return [];
-  const sep = raw.includes('|') ? '|' : '\n';
+  let sep: string;
+  if (raw.includes('|')) {
+    sep = '|';
+  } else {
+    sep = '\n';
+  }
   return raw
     .split(sep)
     .map((o) => o.trim())
@@ -78,10 +83,16 @@ export const discordPollCapability: RegisteredCapability = {
       }
 
       // Gateway's POST /api/channels/:id/polls, in-process since wave 9
+      let durationHours: number | undefined;
+      if (params.duration_hours) {
+        durationHours = Number(params.duration_hours);
+      } else {
+        durationHours = undefined;
+      }
       const resp = await gateway.createPoll(String(channelId), {
         question,
         options,
-        durationHours: params.duration_hours ? Number(params.duration_hours) : undefined,
+        durationHours,
         allowMultiselect: params.multi === 'true' || params.multi === true,
       });
       const data = resp.body as any;

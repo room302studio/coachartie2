@@ -1,3 +1,4 @@
+import { getErrorMessage } from '../../../shared/errors.js';
 /**
  * tasks: one tool for tracking work through steps.
  *
@@ -18,6 +19,74 @@
 import { logger } from '../../../shared/logger.js';
 import { initializeDb, getSyncDb } from '../../../shared/db/client.js';
 import type { RegisteredCapability, CapabilityContext } from '../../5-tool-loop/registry.js';
+
+// Helper functions for ternary refactoring
+
+function goalLinkSuffix(goalId: unknown): string {
+  if (goalId) {
+    return ` (linked to goal ${goalId})`;
+  }
+  return '';
+}
+
+function goalSuffix(goalId: unknown): string {
+  if (goalId) {
+    return ` (goal: ${goalId})`;
+  }
+  return '';
+}
+
+function itemStatusEmoji(status: string): string {
+  if (status === 'completed') {
+    return '✅';
+  }
+  return '⏳';
+}
+
+function calculatePercentage(completed: number, total: number): number {
+  if (total > 0) {
+    return Math.round((completed / total) * 100);
+  }
+  return 0;
+}
+
+function parseGoalId(goalId: unknown): number | undefined {
+  if (goalId) {
+    return parseInt(String(goalId));
+  }
+  return undefined;
+}
+
+function questStatusEmoji(status: string): string {
+  if (status === 'completed') {
+    return '✅';
+  }
+  if (status === 'abandoned') {
+    return '❌';
+  }
+  return '🗺️';
+}
+
+function etaSuffix(eta: unknown): string {
+  if (eta) {
+    return ` • ETA: ${eta}`;
+  }
+  return '';
+}
+
+function detailsSuffix(details: unknown): string {
+  if (details) {
+    return `\n${details}`;
+  }
+  return '';
+}
+
+function errorDetailsSuffix(details: unknown): string {
+  if (details) {
+    return `\nError: ${details}`;
+  }
+  return '';
+}
 
 // =====================================================================================
 // tracker="todo" (was the `todo` tool)
@@ -137,13 +206,11 @@ class TodoService {
         `📋 Created todo list "${listName}" for user ${userId} with ${items.length} items`
       );
 
-      const goalText = goalId ? ` (linked to goal ${goalId})` : '';
+      const goalText = goalLinkSuffix(goalId);
       return `✅ Created todo list "${listName}" with ${items.length} items${goalText}:\n${items.map((item, i) => `${i + 1}. ${item}`).join('\n')}`;
     } catch (error) {
       logger.error('❌ Failed to create todo list:', error);
-      throw new Error(
-        `Failed to create todo list "${listName}": ${error instanceof Error ? error.message : 'Unknown error'}`
-      );
+      throw new Error(`Failed to create todo list "${listName}": ${getErrorMessage(error)}`);
     }
   }
 
@@ -178,9 +245,12 @@ class TodoService {
           .map((l: any) => `"${l.name}" (${l.pending_count}/${l.total_count} items)`)
           .join(', ');
 
-        const suggestText = suggestions
-          ? `\n\nYour actual lists: ${suggestions}`
-          : '\n\nNo lists exist yet. Create one with action="create"';
+        let suggestText: string;
+        if (suggestions) {
+          suggestText = `\n\nYour actual lists: ${suggestions}`;
+        } else {
+          suggestText = '\n\nNo lists exist yet. Create one with action="create"';
+        }
 
         throw new Error(`Todo list "${listName}" not found.${suggestText}`);
       }
@@ -220,9 +290,7 @@ class TodoService {
       return `✅ Added ${items.length} items to "${listName}":\n${items.map((item, i) => `${startPosition + i}. ${item}`).join('\n')}`;
     } catch (error) {
       logger.error('❌ Failed to add items to todo list:', error);
-      throw new Error(
-        `Failed to add items to "${listName}": ${error instanceof Error ? error.message : 'Unknown error'}`
-      );
+      throw new Error(`Failed to add items to "${listName}": ${getErrorMessage(error)}`);
     }
   }
 
@@ -252,9 +320,7 @@ class TodoService {
       return `📌 Next task: ${nextItem.content} (item ${nextItem.position})`;
     } catch (error) {
       logger.error('❌ Failed to get next item:', error);
-      throw new Error(
-        `Failed to get next item from "${listName}": ${error instanceof Error ? error.message : 'Unknown error'}`
-      );
+      throw new Error(`Failed to get next item from "${listName}": ${getErrorMessage(error)}`);
     }
   }
 
@@ -303,9 +369,7 @@ class TodoService {
       return `✅ Marked "${item.content}" as complete! Progress: ${progress}`;
     } catch (error) {
       logger.error('❌ Failed to complete item:', error);
-      throw new Error(
-        `Failed to complete item ${itemPosition} in "${listName}": ${error instanceof Error ? error.message : 'Unknown error'}`
-      );
+      throw new Error(`Failed to complete item ${itemPosition} in "${listName}": ${getErrorMessage(error)}`);
     }
   }
 
@@ -348,12 +412,12 @@ class TodoService {
 
       const statusList = items
         .map((item: TodoItemRow) => {
-          const icon = item.status === 'completed' ? '✅' : '⏳';
+          const icon = itemStatusEmoji(item.status);
           return `${icon} ${item.content}`;
         })
         .join('\n');
 
-      const goalText = list.goal_id ? ` (linked to goal ${list.goal_id})` : '';
+      const goalText = goalLinkSuffix(list.goal_id);
 
       return `📋 ${listName}: ${completed}/${total} completed (${percentage}%)${goalText}\n${statusList}`;
     } catch (error) {
@@ -390,8 +454,8 @@ class TodoService {
         .map((list: any) => {
           const completed = list.completed_items || 0;
           const total = list.total_items || 0;
-          const percentage = total > 0 ? Math.round((completed / total) * 100) : 0;
-          const goalText = list.goal_id ? ` (goal: ${list.goal_id})` : '';
+          const percentage = calculatePercentage(completed, total);
+          const goalText = goalSuffix(list.goal_id);
 
           return `📋 **${list.name}**: ${completed}/${total} (${percentage}%)${goalText}`;
         })
@@ -422,7 +486,7 @@ class TodoService {
 
       const completed = progress?.completed || 0;
       const total = progress?.total || 0;
-      const percentage = total > 0 ? Math.round((completed / total) * 100) : 0;
+      const percentage = calculatePercentage(completed, total);
 
       return `${completed}/${total} (${percentage}%)`;
     } catch (error) {
@@ -470,7 +534,7 @@ async function handleTodoAction(params: TodoParams, content?: string): Promise<s
     switch (action) {
       case 'create': {
         const listName = params.list;
-        const goalId = params.goal_id ? parseInt(String(params.goal_id)) : undefined;
+        const goalId = parseGoalId(params.goal_id);
 
         if (!listName) {
           return '❌ Please provide a list name. Example: <capability name="tasks" action="create" list="my_tasks">- Task 1\\n- Task 2</capability>';
@@ -784,9 +848,12 @@ async function handleQuests(
           return 'Please provide a quest title or goal. Example: "start quest: learn TypeScript"';
         }
 
-        const steps = params.steps
-          ? params.steps.map((s, i) => ({ id: i + 1, title: s, description: s, completed: false }))
-          : generateQuestSteps(title);
+        let steps: any[];
+        if (params.steps) {
+          steps = params.steps.map((s, i) => ({ id: i + 1, title: s, description: s, completed: false }));
+        } else {
+          steps = generateQuestSteps(title);
+        }
 
         const quest: Quest = {
           id: `quest-${Date.now()}`,
@@ -887,7 +954,7 @@ async function handleQuests(
 
         const questList = userQuests.map(q => {
           const progress = q.steps.filter(s => s.completed).length;
-          const emoji = q.status === 'completed' ? '✅' : q.status === 'abandoned' ? '❌' : '🗺️';
+          const emoji = questStatusEmoji(q.status);
           return `${emoji} **${q.title}** - ${progress}/${q.steps.length} steps (${q.status})`;
         }).join('\n');
 
@@ -937,7 +1004,7 @@ async function handleQuests(
     }
   } catch (error) {
     logger.error('Quest error:', error);
-    return `Quest error: ${error instanceof Error ? error.message : 'Unknown error'}`;
+    return `Quest error: ${getErrorMessage(error)}`;
   }
 }
 
@@ -1037,9 +1104,12 @@ async function handleTaskStatus(
       case 'update':
       case 'progress': {
         const taskName = params.taskName;
-        const task = taskName
-          ? userTasks.find(t => t.name.toLowerCase().includes(taskName.toLowerCase()))
-          : userTasks[userTasks.length - 1];
+        let task: any;
+        if (taskName) {
+          task = userTasks.find(t => t.name.toLowerCase().includes(taskName.toLowerCase()));
+        } else {
+          task = userTasks[userTasks.length - 1];
+        }
 
         if (!task) {
           return '⚠️ No active task to update.';
@@ -1052,7 +1122,7 @@ async function handleTaskStatus(
         task.lastUpdate = new Date().toISOString();
 
         const elapsed = formatElapsed(task.startedAt);
-        const etaStr = task.eta ? ` • ETA: ${task.eta}` : '';
+        const etaStr = etaSuffix(task.eta);
 
         return `📊 **${task.name}**\n[${progressBar(task.progress)}] ${task.progress}%${etaStr}\n${task.status} (${elapsed})`;
       }
@@ -1061,9 +1131,12 @@ async function handleTaskStatus(
       case 'done':
       case 'finish': {
         const taskName = params.taskName;
-        const taskIndex = taskName
-          ? userTasks.findIndex(t => t.name.toLowerCase().includes(taskName.toLowerCase()))
-          : userTasks.length - 1;
+        let taskIndex: number;
+        if (taskName) {
+          taskIndex = userTasks.findIndex(t => t.name.toLowerCase().includes(taskName.toLowerCase()));
+        } else {
+          taskIndex = userTasks.length - 1;
+        }
 
         if (taskIndex === -1) {
           return '⚠️ No active task to complete.';
@@ -1073,15 +1146,18 @@ async function handleTaskStatus(
         const elapsed = formatElapsed(task.startedAt);
         userTasks.splice(taskIndex, 1);
 
-        return `✅ **Completed:** ${task.name}\nFinished in ${elapsed}${params.details ? `\n${params.details}` : ''}`;
+        return `✅ **Completed:** ${task.name}\nFinished in ${elapsed}${detailsSuffix(params.details)}`;
       }
 
       case 'fail':
       case 'error': {
         const taskName = params.taskName;
-        const taskIndex = taskName
-          ? userTasks.findIndex(t => t.name.toLowerCase().includes(taskName.toLowerCase()))
-          : userTasks.length - 1;
+        let taskIndex: number;
+        if (taskName) {
+          taskIndex = userTasks.findIndex(t => t.name.toLowerCase().includes(taskName.toLowerCase()));
+        } else {
+          taskIndex = userTasks.length - 1;
+        }
 
         if (taskIndex === -1) {
           return '⚠️ No active task.';
@@ -1091,7 +1167,7 @@ async function handleTaskStatus(
         const elapsed = formatElapsed(task.startedAt);
         userTasks.splice(taskIndex, 1);
 
-        return `❌ **Failed:** ${task.name}\nAfter ${elapsed}${params.details ? `\nError: ${params.details}` : ''}`;
+        return `❌ **Failed:** ${task.name}\nAfter ${elapsed}${errorDetailsSuffix(params.details)}`;
       }
 
       case 'list':
@@ -1130,7 +1206,7 @@ async function handleTaskStatus(
     }
   } catch (error) {
     logger.error('Task status error:', error);
-    return `❌ Task status error: ${error instanceof Error ? error.message : 'Unknown error'}`;
+    return `❌ Task status error: ${getErrorMessage(error)}`;
   }
 }
 

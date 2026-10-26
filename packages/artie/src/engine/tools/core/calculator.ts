@@ -1,3 +1,4 @@
+import { getErrorMessage } from '../../../shared/errors.js';
 import { evaluate } from 'mathjs';
 import { logger } from '../../../shared/logger.js';
 import { RegisteredCapability } from '../../5-tool-loop/registry.js';
@@ -67,7 +68,7 @@ export const calculatorCapability: RegisteredCapability = {
       logger.info(`✅ Calculation result: ${resultString}`);
       return resultString;
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
+      const errorMessage = getErrorMessage(error);
       logger.error(`❌ Invalid mathematical expression: ${expression}`, error);
       throw new Error(
         `Invalid mathematical expression: "${expression}"\n` +

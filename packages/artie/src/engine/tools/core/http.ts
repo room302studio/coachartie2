@@ -1,5 +1,13 @@
+import { getErrorMessage } from '../../../shared/errors.js';
 import { logger } from '../../../shared/logger.js';
 import { RegisteredCapability } from '../../5-tool-loop/registry.js';
+
+function serializeBody(content: any): string {
+  if (typeof content === 'string') {
+    return content;
+  }
+  return JSON.stringify(content);
+}
 
 /**
  * HTTP capability - Make HTTP requests (like curl)
@@ -54,7 +62,7 @@ export const httpCapability: RegisteredCapability = {
       const bodyContent = bodyParam || content;
       if (bodyContent) {
         // If it's already a string, use it; if object, stringify
-        body = typeof bodyContent === 'string' ? bodyContent : JSON.stringify(bodyContent);
+        body = serializeBody(bodyContent);
       }
     }
 
@@ -97,9 +105,7 @@ export const httpCapability: RegisteredCapability = {
       return result;
     } catch (error) {
       logger.error(`❌ HTTP request failed:`, error);
-      throw new Error(
-        `HTTP request to ${url} failed: ${error instanceof Error ? error.message : String(error)}`
-      );
+      throw new Error(`HTTP request to ${url} failed: ${getErrorMessage(error)}`);
     }
   },
 };

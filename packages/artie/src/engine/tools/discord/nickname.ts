@@ -50,19 +50,29 @@ export const discordNicknameCapability: RegisteredCapability = {
 
     try {
       // Gateway's POST /api/guilds/:id/nickname, in-process since wave 9
+      let nicknameValue: string | null;
+      if (action === 'reset_nickname') {
+        nicknameValue = null;
+      } else {
+        nicknameValue = String(nickname).trim().slice(0, 32);
+      }
       const response = await gateway.setNickname(String(guildId), {
-        nickname: action === 'reset_nickname' ? null : String(nickname).trim().slice(0, 32),
+        nickname: nicknameValue,
       });
       if (!gateway.isOk(response)) {
         return JSON.stringify({ success: false, error: JSON.stringify(response.body) });
       }
       const result = response.body as { nickname: string | null };
       logger.info(`[nickname] Set guild ${guildId} nickname to: ${result.nickname || '(default)'}`);
+      let message: string;
+      if (result.nickname) {
+        message = `Your display name is now "${result.nickname}"`;
+      } else {
+        message = 'Your display name is back to default';
+      }
       return JSON.stringify({
         success: true,
-        message: result.nickname
-          ? `Your display name is now "${result.nickname}"`
-          : 'Your display name is back to default',
+        message,
       });
     } catch (error) {
       logger.error('[nickname] Change failed:', error);

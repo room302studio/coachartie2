@@ -1,3 +1,4 @@
+import { getErrorMessage } from '../../../shared/errors.js';
 import axios, { AxiosResponse, AxiosRequestConfig } from 'axios';
 import * as cheerio from 'cheerio';
 import { decode as decodeHtmlEntities } from 'html-entities';
@@ -8,6 +9,37 @@ import http from 'node:http';
 import https from 'node:https';
 import { logger } from '../../../shared/logger.js';
 import { collapseWhitespace } from '../../../shared/text.js';
+
+function getDefaultPort(port: string | undefined, protocol: string): number {
+  if (port) {
+    return parseInt(port);
+  }
+  if (protocol === 'https:') {
+    return 443;
+  }
+  return 80;
+}
+
+function ensureAddressArray(address: any): Array<{ address: string }> {
+  if (Array.isArray(address)) {
+    return address;
+  }
+  return [{ address }];
+}
+
+function truncateAndDecode(text: string | undefined, maxLength: number): string | undefined {
+  if (text) {
+    return decodeHtmlEntities(text.substring(0, maxLength));
+  }
+  return undefined;
+}
+
+function parseJsonIfString(data: any): any {
+  if (typeof data === 'string') {
+    return JSON.parse(data);
+  }
+  return data;
+}
 
 // Configuration constants
 const CONFIG = {
@@ -52,6 +84,13 @@ export interface WebFetchOptions {
   followRedirects?: boolean;
   extractText?: boolean;
   includeMetadata?: boolean;
+}
+
+function maxRedirectsIfAllowed(followRedirects: boolean | undefined): number {
+  if (followRedirects !== false) {
+    return CONFIG.MAX_REDIRECTS;
+  }
+  return 0;
 }
 
 // URL validation schema
@@ -107,11 +146,7 @@ export function validateUrl(url: string): {
     }
 
     // Check for blocked ports
-    const port = parsedUrl.port
-      ? parseInt(parsedUrl.port)
-      : parsedUrl.protocol === 'https:'
-        ? 443
-        : 80;
+    const port = getDefaultPort(parsedUrl.port, parsedUrl.protocol);
     if (
       CONFIG.BLOCKED_PORTS.includes(port) &&
       parsedUrl.protocol !== 'https:' &&
@@ -206,7 +241,7 @@ export function makeGuardedLookup(resolve: Resolver = dns.lookup as unknown as R
   return (hostname: string, options: dns.LookupOptions, cb: LookupCallback) => {
     resolve(hostname, options, (err, address, family) => {
       if (err) return cb(err, address, family);
-      const all: { address: string }[] = Array.isArray(address) ? address : [{ address }];
+      const all: { address: string }[] = ensureAddressArray(address);
       if (all.some((a) => isBlockedAddress(a.address))) {
         const blocked = new Error(`Access denied: ${hostname} resolves to a private address`);
         return cb(blocked as NodeJS.ErrnoException, address, family);
@@ -264,13 +299,9 @@ function extractTextFromHtml(
     content = collapseWhitespace(content).trim();
 
     return {
-      title: title ? decodeHtmlEntities(title.substring(0, CONFIG.MAX_TITLE_LENGTH)) : undefined,
-      description: description
-        ? decodeHtmlEntities(description.substring(0, CONFIG.MAX_DESCRIPTION_LENGTH))
-        : undefined,
-      content: content
-        ? decodeHtmlEntities(content.substring(0, CONFIG.MAX_TEXT_LENGTH))
-        : undefined,
+      title: truncateAndDecode(title, CONFIG.MAX_TITLE_LENGTH),
+      description: truncateAndDecode(description, CONFIG.MAX_DESCRIPTION_LENGTH),
+      content: truncateAndDecode(content, CONFIG.MAX_TEXT_LENGTH),
     };
   } catch (error) {
     logger.error('Failed to parse HTML with cheerio:', error);
@@ -300,7 +331,7 @@ function processContent(
   // Handle JSON content
   if (contentType.includes('application/json')) {
     try {
-      const jsonData = typeof data === 'string' ? JSON.parse(data) : data;
+      const jsonData = parseJsonIfString(data);
       return {
         content: JSON.stringify(jsonData, null, 2).substring(0, CONFIG.MAX_TEXT_LENGTH),
       };
@@ -358,7 +389,7 @@ export async function fetchWebContent(
       url: normalizedUrl,
       method: 'GET',
       timeout: options.timeout || CONFIG.REQUEST_TIMEOUT,
-      maxRedirects: options.followRedirects !== false ? CONFIG.MAX_REDIRECTS : 0,
+      maxRedirects: maxRedirectsIfAllowed(options.followRedirects),
       httpAgent,
       httpsAgent,
       maxContentLength: options.maxContentSize || CONFIG.MAX_CONTENT_SIZE,
@@ -604,16 +635,18 @@ export async function searchWeb(query: string): Promise<WebFetchResult> {
   } catch (error) {
     logger.error('Enhanced web search failed:', error);
 
+    const errorMessage = getErrorMessage(error);
+
     return {
       success: false,
       url: `https://duckduckgo.com/?q=${encodeURIComponent(query)}`,
       title: 'Search Error',
       content:
-        `**Search failed**: ${error instanceof Error ? error.message : 'Unknown error'}\n\n` +
+        `**Search failed**: ${errorMessage}\n\n` +
         `**Manual search**: [Click here to search "${query}" on DuckDuckGo](https://duckduckgo.com/?q=${encodeURIComponent(query)})\n\n` +
         `**Try:**\n• Different keywords\n• More specific terms\n• Check your internet connection`,
       contentType: 'text/markdown',
-      error: error instanceof Error ? error.message : 'Search failed',
+      error: errorMessage,
     };
   }
 }

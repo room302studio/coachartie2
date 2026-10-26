@@ -3,6 +3,7 @@ import { UserProfileService } from '../../../shared/db/user-profiles.js';
 import { RegisteredCapability } from '../../5-tool-loop/registry.js';
 import { sanitizeIdentifier } from '../../../shared/text.js';
 import { isEmail } from '../../../shared/email.js';
+import { getErrorMessage } from '../../../shared/errors.js';
 
 /**
  * User Profile Capability
@@ -170,7 +171,7 @@ async function handleUserProfileAction(
           await UserProfileService.setAttributes(userId, attributes);
           return `✅ Set ${Object.keys(attributes).length} attributes for user ${userId}`;
         } catch (error) {
-          const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+          const errorMsg = getErrorMessage(error);
           throw new Error(
             `Invalid JSON: ${errorMsg}\n\nExample format: {"github":"ejfox","timezone":"America/New_York"}`
           );
@@ -187,15 +188,18 @@ async function handleUserProfileAction(
         const val = await UserProfileService.getAttribute(userId, attribute);
         if (val) {
           return `✅ ${attribute} = ${val}`;
-        } else {
+        }
+        {
           const profile = await UserProfileService.getProfile(userId);
           const keys = Object.keys(profile).filter(
             (k) => !k.startsWith('_') && k !== 'created_at' && k !== 'updated_at'
           );
-          const suggestions =
-            keys.length > 0
-              ? `\n\nAvailable attributes: ${keys.join(', ')}`
-              : '\n\nNo profile data exists. Use action="set" to add information.';
+          let suggestions: string;
+          if (keys.length > 0) {
+            suggestions = `\n\nAvailable attributes: ${keys.join(', ')}`;
+          } else {
+            suggestions = '\n\nNo profile data exists. Use action="set" to add information.';
+          }
           throw new Error(`Attribute "${attribute}" not found for user ${userId}.${suggestions}`);
         }
       }
@@ -229,9 +233,13 @@ async function handleUserProfileAction(
 
       case 'has': {
         const hasProfile = await UserProfileService.hasProfile(userId);
-        return hasProfile
-          ? `✅ User ${userId} has a profile`
-          : `User ${userId} has no profile data. Use action="set" to add information.`;
+        let message: string;
+        if (hasProfile) {
+          message = `✅ User ${userId} has a profile`;
+        } else {
+          message = `User ${userId} has no profile data. Use action="set" to add information.`;
+        }
+        return message;
       }
 
       default:

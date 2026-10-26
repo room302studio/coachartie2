@@ -46,6 +46,13 @@ export const discordIssueParserCapability: RegisteredCapability = {
 async function parseIssueLinks(params: { text: string; repo?: string }): Promise<any> {
   const { text, repo } = params;
 
+  function buildIssueLink(repoName: string | undefined, issueNumber: number): string | undefined {
+    if (!repoName) {
+      return undefined;
+    }
+    return `https://github.com/${repoName}/issues/${issueNumber}`;
+  }
+
   logger.info(`Parsing issue references from text (${text.length} chars)`);
 
   if (!text) {
@@ -69,7 +76,7 @@ async function parseIssueLinks(params: { text: string; repo?: string }): Promise
         seenNumbers.add(number);
         issues.push({
           number,
-          link: repo ? `https://github.com/${repo}/issues/${number}` : undefined,
+          link: buildIssueLink(repo, number),
           source: match[0],
         });
       }

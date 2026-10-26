@@ -66,8 +66,18 @@ export function formatRecentReactionsNote(
   const recent = [...reactions].sort((a, b) => b.at - a.at).slice(0, limit);
   const parts = recent.map((r) => {
     const ageMin = Math.max(0, Math.round((now - r.at) / 60000));
-    const ageLabel = ageMin === 0 ? 'just now' : `${ageMin}m ago`;
-    const excerpt = r.messageExcerpt ? ` on "${r.messageExcerpt.slice(0, 40)}"` : '';
+    let ageLabel: string;
+    if (ageMin === 0) {
+      ageLabel = 'just now';
+    } else {
+      ageLabel = `${ageMin}m ago`;
+    }
+    let excerpt: string;
+    if (r.messageExcerpt) {
+      excerpt = ` on "${r.messageExcerpt.slice(0, 40)}"`;
+    } else {
+      excerpt = '';
+    }
     return `@${r.userLabel} ${r.emoji}${excerpt} (${ageLabel})`;
   });
   return `Recent reactions to your messages here: ${parts.join('; ')}.`;

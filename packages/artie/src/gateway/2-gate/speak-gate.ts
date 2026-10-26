@@ -65,7 +65,10 @@ export async function runSpeakGate(
 }
 
 export function resolveAmbientMode(config: { ambientMode?: AmbientMode } | null | undefined): AmbientMode {
-  return config?.ambientMode === 'never' ? 'never' : 'gated';
+  if (config?.ambientMode === 'never') {
+    return 'never';
+  }
+  return 'gated';
 }
 
 /**
