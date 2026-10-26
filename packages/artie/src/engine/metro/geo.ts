@@ -221,12 +221,7 @@ export function analyzeMetroGeo(data: {
       const straightLine = turf.distance(firstPoint, lastPoint, { units: 'kilometers' });
 
       // Efficiency = straight line / actual (1.0 = perfectly straight)
-      let efficiency: number;
-      if (straightLine > 0) {
-        efficiency = straightLine / actualLength;
-      } else {
-        efficiency = 1;
-      }
+      const efficiency = straightLine > 0 ? straightLine / actualLength : 1;
 
       routeEfficiencies.push({
         name: routeName,
@@ -239,13 +234,8 @@ export function analyzeMetroGeo(data: {
   }
 
   stats.totalNetworkKm = Math.round(totalNetworkKm * 10) / 10;
-  let trainsPerStation: number;
-  if (stations.length > 0) {
-    trainsPerStation = Math.round((trains.length / stations.length) * 100) / 100;
-  } else {
-    trainsPerStation = 0;
-  }
-  stats.trainsPerStation = trainsPerStation;
+  stats.trainsPerStation =
+    stations.length > 0 ? Math.round((trains.length / stations.length) * 100) / 100 : 0;
 
   // Flag if there's a very long gap (over 5km between stations)
   if (longestGap && longestGap.distanceKm > 5) {
@@ -387,23 +377,10 @@ export function analyzeMetroGeo(data: {
     // Report dead routes
     if (deadRoutes.length > 0) {
       stats.deadRoutes = deadRoutes;
-      let routeWord: string;
-      if (deadRoutes.length > 1) {
-        routeWord = 's have';
-      } else {
-        routeWord = ' has';
-      }
-      let ellipsis: string;
-      if (deadRoutes.length > 3) {
-        ellipsis = '...';
-      } else {
-        ellipsis = '';
-      }
-      const routeList = deadRoutes.slice(0, 3).join(', ');
       insights.push({
         type: 'warning',
         category: 'service',
-        message: `${deadRoutes.length} route${routeWord} no trains running: ${routeList}${ellipsis}`,
+        message: `${deadRoutes.length} route${deadRoutes.length > 1 ? 's have' : ' has'} no trains running: ${deadRoutes.slice(0, 3).join(', ')}${deadRoutes.length > 3 ? '...' : ''}`,
         details: `Ghost lines bleeding your budget. Either assign trains or delete the route.`,
       });
     }

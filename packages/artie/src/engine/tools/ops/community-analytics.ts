@@ -346,12 +346,7 @@ function topicTrends(db: any, guildId: string, timeRange: string): string {
     let summary = obs.content.replace(/^\[Observation from [^\]]+\]\s*/i, '');
     summary = summary.slice(0, 200).replace(/\n/g, ' ').trim();
     if (summary.length >= 200) summary += '...';
-    let when: string;
-    if (obs.timestamp) {
-      when = ` _(${timeAgo(obs.timestamp)})_`;
-    } else {
-      when = '';
-    }
+    const when = obs.timestamp ? ` _(${timeAgo(obs.timestamp)})_` : '';
     lines.push(`- ${summary}${when}`);
   }
 
@@ -466,24 +461,9 @@ function githubActivity(db: any, timeRange: string): string {
     if (watches.length > 0) {
       lines.push(`\n**Watched Repos (${watches.length}):**`);
       for (const w of watches) {
-        let status: string;
-        if (w.is_active) {
-          status = '✅';
-        } else {
-          status = '❌';
-        }
-        let lastPoll: string;
-        if (w.last_polled_at) {
-          lastPoll = timeAgo(w.last_polled_at);
-        } else {
-          lastPoll = 'never';
-        }
-        let errors: string;
-        if (w.poll_errors > 0) {
-          errors = ` (${w.poll_errors} errors)`;
-        } else {
-          errors = '';
-        }
+        const status = w.is_active ? '✅' : '❌';
+        const lastPoll = w.last_polled_at ? timeAgo(w.last_polled_at) : 'never';
+        const errors = w.poll_errors > 0 ? ` (${w.poll_errors} errors)` : '';
         lines.push(`${status} **${w.repo}** — last polled ${lastPoll}${errors}`);
       }
     }

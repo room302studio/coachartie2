@@ -11,7 +11,6 @@
  */
 
 import { logger } from '../../../shared/logger.js';
-import { getErrorMessage } from '../../../shared/errors.js';
 import type {
   RegisteredCapability,
   CapabilityContext,
@@ -47,16 +46,10 @@ async function handleAutonomous(
         const hbStatus = await heartbeatStatus();
         const summaries = getRecentSummaries(userId, 7);
 
-        let healthStatus: string;
-        if (hbStatus.healthy) {
-          healthStatus = 'Yes';
-        } else {
-          healthStatus = 'No';
-        }
         return `**Autonomous System Status**
 
 **Heartbeat**
-- Healthy: ${healthStatus}
+- Healthy: ${hbStatus.healthy ? 'Yes' : 'No'}
 - Stalled Quests: ${hbStatus.stalledQuests}
 - Stalled Goals: ${hbStatus.stalledGoals}
 - Inactive Users: ${hbStatus.inactiveUsers}
@@ -77,15 +70,9 @@ Say "autonomous config" to customize these settings.`;
       case 'heartbeat': {
         // Trigger heartbeat manually or get status
         const status = await heartbeatStatus();
-        let healthCheck: string;
-        if (status.healthy) {
-          healthCheck = 'Yes';
-        } else {
-          healthCheck = 'No';
-        }
         return `**Heartbeat Status**
 
-- Healthy: ${healthCheck}
+- Healthy: ${status.healthy ? 'Yes' : 'No'}
 - Stalled Quests: ${status.stalledQuests}
 - Stalled Goals: ${status.stalledGoals}
 - Inactive Users: ${status.inactiveUsers}
@@ -135,17 +122,9 @@ This saves costs while maintaining quality. Complex tasks get Opus, simple looku
         const testMessage = content || params.message as string || 'Hello, how are you?';
         const result = routeMessage(testMessage);
 
-        const truncated = testMessage.slice(0, 100);
-        let ellipsis: string;
-        if (testMessage.length > 100) {
-          ellipsis = '...';
-        } else {
-          ellipsis = '';
-        }
-
         return `**Model Routing Test**
 
-Message: "${truncated}${ellipsis}"
+Message: "${testMessage.slice(0, 100)}${testMessage.length > 100 ? '...' : ''}"
 
 Selected: **${result.tier.toUpperCase()}** (${result.model})
 ${result.description}`;
@@ -196,7 +175,7 @@ Artie runs proactive behaviors in the background:
     }
   } catch (error) {
     logger.error('Autonomous error:', error);
-    return `Error: ${getErrorMessage(error)}`;
+    return `Error: ${error instanceof Error ? error.message : 'Unknown error'}`;
   }
 }
 

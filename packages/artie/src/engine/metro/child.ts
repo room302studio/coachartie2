@@ -65,36 +65,13 @@ function buildAnalysisSummary(
   const stats = saveData.stats;
   const data = saveData.data || {};
 
-  let actualStations: number;
-  if (Array.isArray(data.stations)) {
-    actualStations = data.stations.length;
-  } else {
-    actualStations = stats.stations;
-  }
-
-  let actualRoutes: number;
-  if (Array.isArray(data.routes)) {
-    actualRoutes = data.routes.length;
-  } else {
-    actualRoutes = stats.routes;
-  }
-
-  let actualTrains: number;
-  if (Array.isArray(data.trains)) {
-    actualTrains = data.trains.length;
-  } else {
-    actualTrains = stats.trains;
-  }
-
+  const actualStations = Array.isArray(data.stations) ? data.stations.length : stats.stations;
+  const actualRoutes = Array.isArray(data.routes) ? data.routes.length : stats.routes;
+  const actualTrains = Array.isArray(data.trains) ? data.trains.length : stats.trains;
   const money = formatMoney(stats.money || data.money || 0);
   const sizeMb = (originalSize / (1024 * 1024)).toFixed(1);
 
-  let statusEmoji: string;
-  if (errors.length === 0) {
-    statusEmoji = '✅';
-  } else {
-    statusEmoji = '❌';
-  }
+  const statusEmoji = errors.length === 0 ? '✅' : '❌';
 
   // Build detailed analysis
   let summary = `${statusEmoji} **${saveData.name}** (${saveData.cityCode || '?'})\n`;

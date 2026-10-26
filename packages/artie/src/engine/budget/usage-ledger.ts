@@ -150,12 +150,6 @@ export class UsageTracker {
 
       // SQLite can't bind booleans - convert to 0/1
       // Also ensure all values are valid types (no undefined)
-      let successValue: number;
-      if (stats.success) {
-        successValue = 1;
-      } else {
-        successValue = 0;
-      }
       db.run(
         `INSERT INTO model_usage_stats (
           model_name, user_id, message_id, input_length, output_length,
@@ -174,7 +168,7 @@ export class UsageTracker {
           stats.capabilities_detected ?? 0,
           stats.capabilities_executed ?? 0,
           stats.capability_types || '',
-          successValue,
+          stats.success ? 1 : 0, // Convert boolean to integer for SQLite
           stats.error_type || null,
           stats.prompt_tokens ?? 0,
           stats.completion_tokens ?? 0,
@@ -563,12 +557,7 @@ class CostMonitor {
 
       if (runwayHours < warnHours && Date.now() - this.lastRunwayWarnAt > throttleMs) {
         this.lastRunwayWarnAt = Date.now();
-        let sev: string;
-        if (runwayHours < critHours) {
-          sev = '🚨';
-        } else {
-          sev = '⚠️';
-        }
+        const sev = runwayHours < critHours ? '🚨' : '⚠️';
         const warning = `${sev} ~${runwayHours.toFixed(1)}h of credit left at current burn ($${stats.costPerHour.toFixed(2)}/hr, $${this.lastKnownBalance.toFixed(2)} balance)`;
         logger.warn(warning);
         warnings.push(warning);
@@ -678,13 +667,7 @@ class CostMonitor {
       estimatedCost: this.getTotalEstimatedCost(),
       // Cumulative average since boot. Kept for reporting; NOT a rate — see
       // getRecentBurnPerHour, which is what anything making a decision should use.
-      costPerHour: (() => {
-        if (hours > 0) {
-          return this.getTotalEstimatedCost() / hours;
-        } else {
-          return 0;
-        }
-      })(),
+      costPerHour: hours > 0 ? this.getTotalEstimatedCost() / hours : 0,
       recentBurnPerHour: this.getRecentBurnPerHour(),
       burnWindowMinutes: this.burnWindowMs / 60_000,
       uptime: uptime,

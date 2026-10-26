@@ -1,6 +1,5 @@
 import axios, { AxiosInstance } from 'axios';
 import { logger } from '../../../shared/logger.js';
-import { getErrorMessage } from '../../../shared/errors.js';
 
 const REDDIT_OAUTH_URL = 'https://www.reddit.com/api/v1/access_token';
 const REDDIT_API_BASE = 'https://oauth.reddit.com';
@@ -114,14 +113,8 @@ export class RedditClient {
 
   getAllowedSubreddits() {
     const allowed = this.config.allowedSubreddits;
-    let mode: string;
-    if (allowed.length > 0) {
-      mode = 'allowlist';
-    } else {
-      mode = 'open';
-    }
     return {
-      mode: mode,
+      mode: allowed.length > 0 ? 'allowlist' : 'open',
       allowedSubreddits: allowed,
     };
   }
@@ -319,12 +312,7 @@ export class RedditClient {
     }
 
     const client = await this.ensureHttpClient();
-    let kind: string;
-    if (options.url) {
-      kind = 'link';
-    } else {
-      kind = 'self';
-    }
+    const kind = options.url ? 'link' : 'self';
 
     try {
       const response = await client.post(
@@ -342,13 +330,8 @@ export class RedditClient {
 
       const json = response.data?.json;
       const postId = json?.data?.id;
-      let commentPermalink: string | undefined;
-      if (postId) {
-        commentPermalink = `https://reddit.com/comments/${postId}`;
-      } else {
-        commentPermalink = undefined;
-      }
-      const permalink = json?.data?.url || commentPermalink;
+      const permalink =
+        json?.data?.url || (postId ? `https://reddit.com/comments/${postId}` : undefined);
 
       if (json?.errors?.length) {
         throw new Error(json.errors.map((e: any) => e.join(': ')).join('; '));
@@ -397,17 +380,12 @@ export class RedditClient {
         throw new Error(response.data.json.errors.map((e: any) => e.join(': ')).join('; '));
       }
 
-      let permalink: string | undefined;
-      if (data?.things?.[0]?.data?.permalink) {
-        permalink = `https://reddit.com${data.things[0].data.permalink}`;
-      } else {
-        permalink = undefined;
-      }
-
       return {
         success: true,
         thingId,
-        permalink: permalink,
+        permalink: data?.things?.[0]?.data?.permalink
+          ? `https://reddit.com${data.things[0].data.permalink}`
+          : undefined,
         message: 'Comment posted to Reddit',
       };
     } catch (error) {
