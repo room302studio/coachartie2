@@ -256,5 +256,67 @@ describe('Taint Tracking Security', () => {
       expect(result.success).toBe(false);
       expect(result.error).toContain('SECURITY');
     });
+
+    // Security audit 2026-10-26 (sec-abuse.md Critical #4/HIGH #4, batch 2): a hostile
+    // page/issue/thread fetched mid-turn used to be able to make Artie moderate someone,
+    // rename himself, DM a user, answer as a mention-proxy target, or post fake UI — none of
+    // these were in DANGEROUS_WHEN_TAINTED even though taint WAS being set correctly.
+    it.each([
+      ['discord-moderation', 'timeout'],
+      ['discord-moderation', 'add_enemy_role'],
+      ['discord-nickname', 'set_nickname'],
+      ['proactive-dm', 'send'],
+      ['mention_proxy', 'create'],
+      ['discord-ui', 'buttons'],
+    ])('should block %s:%s when tainted', async (name, action) => {
+      const cap: ExtractedCapability = { name, action, params: {}, priority: 0 };
+      const result = await capabilityExecutor.executeCapability(
+        cap,
+        context,
+        (c, err) => `Error: ${err}`
+      );
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('SECURITY');
+      expect(result.error).toContain('tainted');
+    });
+
+    it('still allows discord-moderation:escalate and proactive-dm:status (harmless reads)', async () => {
+      const escalate: ExtractedCapability = {
+        name: 'discord-moderation',
+        action: 'escalate',
+        params: { reason: 'test' },
+        priority: 0,
+      };
+      const escalateResult = await capabilityExecutor.executeCapability(
+        escalate,
+        context,
+        (c, err) => `Error: ${err}`
+      );
+      expect(escalateResult.error || '').not.toContain('SECURITY');
+
+      const status: ExtractedCapability = {
+        name: 'proactive-dm',
+        action: 'status',
+        params: {},
+        priority: 0,
+      };
+      const statusResult = await capabilityExecutor.executeCapability(
+        status,
+        context,
+        (c, err) => `Error: ${err}`
+      );
+      expect(statusResult.error || '').not.toContain('SECURITY');
+      expect(statusResult.error || '').not.toContain('tainted');
+    });
+
+    // sec-abuse.md HIGH #4: reading GitHub/reddit/mediawiki content is still open (read
+    // actions aren't gated), but it must taint the turn the same as a web/http fetch — a
+    // GitHub issue body or a reddit thread is just as attacker-controlled.
+    it.each(['github', 'reddit', 'mediawiki'])(
+      '%s is a tainting capability',
+      (name) => {
+        expect(TAINTING_CAPABILITIES.has(name)).toBe(true);
+      }
+    );
   });
 });

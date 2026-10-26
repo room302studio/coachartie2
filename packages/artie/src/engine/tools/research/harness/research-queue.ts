@@ -263,6 +263,7 @@ class ResearchQueueService {
    */
   private async pollTask(task: QueuedTask): Promise<void> {
     if (!task.handleId) return;
+    this.ensureTable();
     const db = getSyncDb();
 
     try {

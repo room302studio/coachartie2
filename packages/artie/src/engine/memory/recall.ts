@@ -30,7 +30,9 @@ const UNVERIFIED_OWNER_MENTION_IMPORTANCE_CAP = 6;
  * untouched; only what gets handed to the model is tagged and capped, and only when someone
  * other than the author is doing the asking.
  */
-function guardGuildMentionOfOwner<T extends { user_id: string; content: string; importance?: number }>(
+export function guardGuildMentionOfOwner<
+  T extends { user_id: string; content: string; importance?: number },
+>(
   memory: T,
   askingUserId: string
 ): T {
