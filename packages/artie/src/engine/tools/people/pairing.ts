@@ -9,6 +9,7 @@ import { logger } from '../../../shared/logger.js';
 import { dmPairingService } from '../../../shared/dm-pairing.js';
 import { isOwner } from '../../../shared/config/owner.js';
 import type { RegisteredCapability, CapabilityContext } from '../../5-tool-loop/registry.js';
+import { getErrorMessage } from '../../../shared/errors.js';
 
 interface PairingParams {
   action: string;
@@ -47,7 +48,12 @@ async function handlePairing(
 
         const result = dmPairingService.approve(code, callerId, params.reason);
         if (result.success) {
-          const userDisplay = result.username ? `${result.username} (${result.userId})` : result.userId;
+          let userDisplay: string;
+          if (result.username) {
+            userDisplay = `${result.username} (${result.userId})`;
+          } else {
+            userDisplay = result.userId;
+          }
           return `✅ Approved! ${userDisplay} can now DM me.`;
         }
         return `❌ ${result.error}`;
@@ -97,7 +103,14 @@ async function handlePairing(
 
         const list = pending.map(p => {
           const expiresIn = Math.max(0, Math.round((new Date(p.expiresAt).getTime() - Date.now()) / 60000));
-          const preview = p.firstMessage ? `\n   > "${p.firstMessage.slice(0, 80)}${p.firstMessage.length > 80 ? '...' : ''}"` : '';
+          let preview: string;
+          if (p.firstMessage) {
+            const truncated = p.firstMessage.slice(0, 80);
+            const suffix = p.firstMessage.length > 80 ? '...' : '';
+            preview = `\n   > "${truncated}${suffix}"`;
+          } else {
+            preview = '';
+          }
           return `- **${p.code}** - ${p.username || p.userId} (expires in ${expiresIn}m)${preview}`;
         }).join('\n');
 
@@ -180,7 +193,7 @@ OpenClaw-compatible DM access control.
     }
   } catch (error) {
     logger.error('Pairing error:', error);
-    return `Error: ${error instanceof Error ? error.message : 'Unknown error'}`;
+    return `Error: ${getErrorMessage(error)}`;
   }
 }
 
