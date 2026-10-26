@@ -1,5 +1,4 @@
 import { logger } from '../../../shared/logger.js';
-import { getErrorMessage } from '../../../shared/errors.js';
 import type { RegisteredCapability } from '../../5-tool-loop/registry.js';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
@@ -146,12 +145,7 @@ async function getRecentScraps(limit: number = 10, source?: string): Promise<str
   }
 
   const results = data.map((scrap: Scrap, i: number) => `${i + 1}. ${formatScrap(scrap)}`);
-  let sourceStr: string;
-  if (source) {
-    sourceStr = ` from ${source}`;
-  } else {
-    sourceStr = '';
-  }
+  const sourceStr = source ? ` from ${source}` : '';
   return `${data.length} most recent scraps${sourceStr}:\n\n${results.join('\n\n')}`;
 }
 
@@ -179,15 +173,8 @@ async function getScrapById(scrapId: string): Promise<string> {
   if (data.location && data.location !== 'Unknown') parts.push(`Location: ${data.location}`);
 
   if (data.content) {
-    const contentPreview = data.content.substring(0, 500);
-    let ellipsis: string;
-    if (data.content.length > 500) {
-      ellipsis = '...';
-    } else {
-      ellipsis = '';
-    }
     parts.push(
-      `\nContent:\n${contentPreview}${ellipsis}`
+      `\nContent:\n${data.content.substring(0, 500)}${data.content.length > 500 ? '...' : ''}`
     );
   }
 
@@ -265,12 +252,7 @@ async function queryByEntity(entityName: string, limit: number = 20): Promise<st
       const source = String(rel.source || '').toLowerCase();
       const _target = String(rel.target || '').toLowerCase();
       const isSource = source.includes(normalizedQuery);
-      let connectedEntity: string;
-      if (isSource) {
-        connectedEntity = rel.target;
-      } else {
-        connectedEntity = rel.source;
-      }
+      const connectedEntity = isSource ? rel.target : rel.source;
 
       if (connectedEntity) {
         const key = connectedEntity;
@@ -397,7 +379,7 @@ export const scrapbookCapability: RegisteredCapability = {
       }
     } catch (error) {
       logger.error('Scrapbook capability error:', error);
-      return `Scrapbook error: ${getErrorMessage(error)}`;
+      return `Scrapbook error: ${error instanceof Error ? error.message : String(error)}`;
     }
   },
 };
