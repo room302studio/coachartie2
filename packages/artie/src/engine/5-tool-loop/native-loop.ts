@@ -1,5 +1,6 @@
 import { ToolDefinition, toolCallToInvocation } from './tool-schema.js';
 import { NATIVE_TOOL_MAX_ITERATIONS } from './timeouts.js';
+import { getErrorMessage } from '../../shared/errors.js';
 
 /**
  * The native agentic loop (TOOL-USE-MIGRATION.md Phase A; wired in wave 8, the default loop).
@@ -112,7 +113,11 @@ export async function runToolLoop(
         let args: Record<string, unknown> = {};
         try {
           const parsed = JSON.parse(tc.arguments || '{}');
-          args = parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+          if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+            args = parsed;
+          } else {
+            args = {};
+          }
         } catch {
           args = {}; // malformed args — let the handler report what's missing
         }
@@ -120,7 +125,7 @@ export async function runToolLoop(
         try {
           result = await deps.executeTool(toolCallToInvocation(tc.name, args));
         } catch (error) {
-          result = `Error: ${error instanceof Error ? error.message : String(error)}`;
+          result = `Error: ${getErrorMessage(error)}`;
         }
         return { role: 'tool', tool_call_id: tc.id, content: result };
       })
@@ -134,8 +139,14 @@ export async function runToolLoop(
 
   // Hit the safety cap: force a final answer with tools disabled so the model wraps up.
   const { content } = await deps.generate(messages, []);
+  let finalTextValue: string;
+  if (content && content.trim()) {
+    finalTextValue = content;
+  } else {
+    finalTextValue = bestText;
+  }
   return {
-    finalText: content && content.trim() ? content : bestText,
+    finalText: finalTextValue,
     iterations: maxIterations,
     toolCallsMade,
     stoppedReason: 'max_iterations',
