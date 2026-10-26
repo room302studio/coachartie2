@@ -140,7 +140,13 @@ export function listGuildWatches(guildId: string, channelId?: string): GithubRep
     .from(githubRepoWatches)
     .where(eq(githubRepoWatches.guildId, guildId))
     .all();
-  return (channelId ? rows.filter((w) => w.channelId === channelId) : rows).sort(
+  let filteredRows: GithubRepoWatch[];
+  if (channelId) {
+    filteredRows = rows.filter((w) => w.channelId === channelId);
+  } else {
+    filteredRows = rows;
+  }
+  return filteredRows.sort(
     (a, b) => Number(b.isActive) - Number(a.isActive) || a.repo.localeCompare(b.repo)
   );
 }
