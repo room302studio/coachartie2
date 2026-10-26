@@ -315,13 +315,17 @@ async function handleReleaseEvent(payload: GitHubReleasePayload): Promise<void> 
   });
 
   // Queue message for Artie to process - let him decide where to announce based on his memory
+  let prereleaseLine = '';
+  if (release.prerelease) {
+    prereleaseLine = 'Type: Pre-release\n';
+  }
+
   const artieMessage = `A new release was just published for ${repository.full_name}:
 
 Version: ${release.tag_name}
 Name: ${release.name || release.tag_name}
 Author: ${release.author.login}
-${release.prerelease ? 'Type: Pre-release' : ''}
-
+${prereleaseLine}
 Release Notes:
 ${release.body || 'No release notes provided'}
 
@@ -536,7 +540,14 @@ async function handleIssueEvent(payload: GitHubWebhookPayload): Promise<void> {
     return;
   }
 
-  const emoji = action === 'opened' ? '📋' : action === 'closed' ? '✅' : '🔄';
+  let emoji: string;
+  if (action === 'opened') {
+    emoji = '📋';
+  } else if (action === 'closed') {
+    emoji = '✅';
+  } else {
+    emoji = '🔄';
+  }
   const labels = issue.labels?.map((l) => `\`${l.name}\``).join(' ') || '';
 
   let message = `${emoji} **Issue #${issue.number} ${action}** in **${repository.name}**\n\n`;
@@ -546,7 +557,12 @@ async function handleIssueEvent(payload: GitHubWebhookPayload): Promise<void> {
     message += `🏷️ ${labels}\n`;
   }
   if (action === 'opened' && issue.body) {
-    const truncatedBody = issue.body.length > 300 ? issue.body.slice(0, 300) + '...' : issue.body;
+    let truncatedBody: string;
+    if (issue.body.length > 300) {
+      truncatedBody = issue.body.slice(0, 300) + '...';
+    } else {
+      truncatedBody = issue.body;
+    }
     message += `\n${truncatedBody}\n`;
   }
   message += `🔗 [View issue](${issue.html_url})`;
@@ -585,7 +601,12 @@ async function handleIssueCommentEvent(payload: GitHubWebhookPayload): Promise<v
     return;
   }
 
-  const truncatedBody = comment.body.length > 400 ? comment.body.slice(0, 400) + '...' : comment.body;
+  let truncatedBody: string;
+  if (comment.body.length > 400) {
+    truncatedBody = comment.body.slice(0, 400) + '...';
+  } else {
+    truncatedBody = comment.body;
+  }
 
   let message = `💬 **${comment.user.login}** commented on issue #${issue.number} in **${repository.name}**\n\n`;
   message += `> ${truncatedBody}\n\n`;
@@ -606,7 +627,8 @@ function generatePushCelebration(payload: GitHubPushPayload): string {
   const emojis = ['🚀', '✨', '🔥', '⚡', '🎯'];
   const emoji = emojis[Math.floor(Math.random() * emojis.length)];
 
-  let message = `${emoji} **${pusher.name}** just pushed ${commitCount} commit${commitCount > 1 ? 's' : ''} to **${repository.name}**!\n\n`;
+  const commitPlural = commitCount > 1 ? 's' : '';
+  let message = `${emoji} **${pusher.name}** just pushed ${commitCount} commit${commitPlural} to **${repository.name}**!\n\n`;
 
   if (head_commit) {
     message += `📝 Latest: "${head_commit.message}"\n`;
@@ -620,7 +642,9 @@ function generatePushCelebration(payload: GitHubPushPayload): string {
   );
 
   if (totalChanges > 0) {
-    message += `📊 ${totalChanges} file${totalChanges > 1 ? 's' : ''} changed across ${commitCount} commit${commitCount > 1 ? 's' : ''}`;
+    const filePlural = totalChanges > 1 ? 's' : '';
+    const commitPluralAgain = commitCount > 1 ? 's' : '';
+    message += `📊 ${totalChanges} file${filePlural} changed across ${commitCount} commit${commitPluralAgain}`;
   }
 
   return message;

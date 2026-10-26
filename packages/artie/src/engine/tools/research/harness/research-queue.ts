@@ -12,6 +12,7 @@ import { logger } from '../../../../shared/logger.js';
 import { getSyncDb } from '../../../../shared/db/client.js';
 import type { ResearchTask, TaskHandle, TaskResult } from './types.js';
 import { openaiResearchHarness } from './openai-research.js';
+import { getErrorMessage } from '../../../error-utils.js';
 
 // Initialize research queue table
 function ensureTable(): void {
@@ -67,6 +68,11 @@ class ResearchQueueService {
     const db = getSyncDb();
     const id = `research-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
+    let toolsJson: string | null = null;
+    if (task.tools) {
+      toolsJson = JSON.stringify(task.tools);
+    }
+
     db.run(
       `INSERT INTO research_tasks (id, prompt, context, tools, max_budget, user_id)
        VALUES (?, ?, ?, ?, ?, ?)`,
@@ -74,7 +80,7 @@ class ResearchQueueService {
         id,
         task.prompt,
         task.context || null,
-        task.tools ? JSON.stringify(task.tools) : null,
+        toolsJson,
         task.maxBudget || null,
         task.userId,
       ]
@@ -121,20 +127,40 @@ class ResearchQueueService {
   }
 
   private rowToTask(row: Record<string, unknown>): QueuedTask {
+    let tools: unknown | undefined;
+    if (row.tools) {
+      tools = JSON.parse(row.tools as string);
+    }
+
+    let result: TaskResult | undefined;
+    if (row.result) {
+      result = JSON.parse(row.result as string);
+    }
+
+    let startedAt: Date | undefined;
+    if (row.started_at) {
+      startedAt = new Date(row.started_at as string);
+    }
+
+    let completedAt: Date | undefined;
+    if (row.completed_at) {
+      completedAt = new Date(row.completed_at as string);
+    }
+
     return {
       id: row.id as string,
       prompt: row.prompt as string,
       context: row.context as string | undefined,
-      tools: row.tools ? JSON.parse(row.tools as string) : undefined,
+      tools,
       maxBudget: row.max_budget as number | undefined,
       userId: row.user_id as string,
       status: row.status as QueuedTask['status'],
       handleId: row.handle_id as string | undefined,
-      result: row.result ? JSON.parse(row.result as string) : undefined,
+      result,
       error: row.error as string | undefined,
       createdAt: new Date(row.created_at as string),
-      startedAt: row.started_at ? new Date(row.started_at as string) : undefined,
-      completedAt: row.completed_at ? new Date(row.completed_at as string) : undefined,
+      startedAt,
+      completedAt,
     };
   }
 
@@ -218,7 +244,7 @@ class ResearchQueueService {
 
       logger.info(`🔬 Task ${task.id} submitted to ${handle.provider}`);
     } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : String(error);
+      const errorMsg = getErrorMessage(error);
       db.run(`UPDATE research_tasks SET status = 'failed', error = ? WHERE id = ?`, [
         errorMsg,
         task.id,

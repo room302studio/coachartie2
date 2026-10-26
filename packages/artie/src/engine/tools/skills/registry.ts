@@ -194,9 +194,15 @@ export const skillsCapability: RegisteredCapability = {
         if (skills.length === 0) {
           return 'No skills loaded. Add SKILL.md files to your skills directory.';
         }
-        const list = skills.map(s =>
-          `- **${s.name}** (${s.source}) ${s.enabled ? '✅' : '❌'}`
-        ).join('\n');
+        const list = skills.map(s => {
+          let statusEmoji: string;
+          if (s.enabled) {
+            statusEmoji = '✅';
+          } else {
+            statusEmoji = '❌';
+          }
+          return `- **${s.name}** (${s.source}) ${statusEmoji}`;
+        }).join('\n');
         return `**Loaded Skills (${skills.length})**\n\n${list}`;
       }
 
@@ -210,9 +216,15 @@ export const skillsCapability: RegisteredCapability = {
         }
         const capabilities = capabilityRegistry.list();
         const capability = capabilities.find(c => c.name === skillName);
+        let enabledStatus: string;
+        if (skill.enabled) {
+          enabledStatus = 'Yes';
+        } else {
+          enabledStatus = 'No';
+        }
         return `**${skill.name}**
 Source: ${skill.source}
-Enabled: ${skill.enabled ? 'Yes' : 'No'}
+Enabled: ${enabledStatus}
 Loaded: ${skill.loadedAt.toISOString()}
 Actions: ${capability?.supportedActions.join(', ') || 'unknown'}
 
@@ -224,7 +236,11 @@ ${capability?.description || 'No description available.'}`;
           return 'Please specify a skill name.';
         }
         const success = skillRegistry.enable(skillName);
-        return success ? `Skill '${skillName}' enabled.` : `Skill '${skillName}' not found.`;
+        if (success) {
+          return `Skill '${skillName}' enabled.`;
+        } else {
+          return `Skill '${skillName}' not found.`;
+        }
       }
 
       case 'disable': {
@@ -232,13 +248,21 @@ ${capability?.description || 'No description available.'}`;
           return 'Please specify a skill name.';
         }
         const success = skillRegistry.disable(skillName);
-        return success ? `Skill '${skillName}' disabled.` : `Skill '${skillName}' not found.`;
+        if (success) {
+          return `Skill '${skillName}' disabled.`;
+        } else {
+          return `Skill '${skillName}' not found.`;
+        }
       }
 
       case 'reload': {
         if (skillName) {
           const success = skillRegistry.reload(skillName);
-          return success ? `Skill '${skillName}' reloaded.` : `Failed to reload skill '${skillName}'.`;
+          if (success) {
+            return `Skill '${skillName}' reloaded.`;
+          } else {
+            return `Failed to reload skill '${skillName}'.`;
+          }
         } else {
           const count = await skillRegistry.reloadAll();
           return `Reloaded ${count} skills.`;

@@ -1,6 +1,7 @@
 import { logger } from '../../../shared/logger.js';
 import { RegisteredCapability } from '../../5-tool-loop/registry.js';
 import { mediaWikiManager } from '../../jobs/github-push/wiki-updater.js';
+import { getErrorMessage } from '../../../shared/errors.js';
 
 export const mediaWikiCapability: RegisteredCapability = {
   name: 'mediawiki',
@@ -27,9 +28,17 @@ export const mediaWikiCapability: RegisteredCapability = {
 
         return JSON.stringify({
           success: true,
-          wikis: wikis.map(
-            (w) => `${w.name}${w.isActive ? ' (active)' : ''}${w.hasAuth ? ' ✓' : ' (no auth)'}`
-          ),
+          wikis: wikis.map((w) => {
+            let activeStatus = '';
+            if (w.isActive) {
+              activeStatus = ' (active)';
+            }
+            let authStatus = ' (no auth)';
+            if (w.hasAuth) {
+              authStatus = ' ✓';
+            }
+            return `${w.name}${activeStatus}${authStatus}`;
+          }),
           message: `${wikis.length} wiki(s) available`,
         });
       }
@@ -53,9 +62,16 @@ export const mediaWikiCapability: RegisteredCapability = {
           params.password || params.bot_password
         );
 
+        let addMessage: string;
+        if (client) {
+          addMessage = `Added wiki '${name}'`;
+        } else {
+          addMessage = `Failed to add wiki '${name}'`;
+        }
+
         return JSON.stringify({
           success: !!client,
-          message: client ? `Added wiki '${name}'` : `Failed to add wiki '${name}'`,
+          message: addMessage,
         });
       }
 
@@ -74,12 +90,16 @@ export const mediaWikiCapability: RegisteredCapability = {
       if (!client) {
         const available = mediaWikiManager.getAvailableWikis();
 
+        let notFoundMessage: string;
+        if (available.length > 0) {
+          notFoundMessage = `Wiki '${wikiName}' not found. Available: ${available.map((w) => w.name).join(', ')}`;
+        } else {
+          notFoundMessage = "No wikis configured. Set environment variables or use action='add' to add one.";
+        }
+
         return JSON.stringify({
           success: false,
-          message:
-            available.length > 0
-              ? `Wiki '${wikiName}' not found. Available: ${available.map((w) => w.name).join(', ')}`
-              : "No wikis configured. Set environment variables or use action='add' to add one.",
+          message: notFoundMessage,
         });
       }
 
@@ -128,10 +148,17 @@ export const mediaWikiCapability: RegisteredCapability = {
           params.summary || 'Updated by Coach Artie'
         );
 
+        let editMessage: string;
+        if (result.success) {
+          editMessage = `Saved ${pageName}`;
+        } else {
+          editMessage = `Failed: ${result.error}`;
+        }
+
         return JSON.stringify({
           success: result.success,
           wiki: wikiName,
-          message: result.success ? `Saved ${pageName}` : `Failed: ${result.error}`,
+          message: editMessage,
         });
       }
 
@@ -166,7 +193,7 @@ export const mediaWikiCapability: RegisteredCapability = {
       logger.error('MediaWiki error:', error);
       return JSON.stringify({
         success: false,
-        error: error instanceof Error ? error.message : 'MediaWiki error',
+        error: getErrorMessage(error),
       });
     }
   },

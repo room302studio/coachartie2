@@ -1,6 +1,7 @@
 import { logger } from '../../../shared/logger.js';
 import fetch from 'node-fetch';
 import FormData from 'form-data';
+import { getErrorMessage } from '../../error-utils.js';
 
 export interface MediaWikiConfig {
   id: string;
@@ -44,6 +45,17 @@ export class MediaWikiClient {
   }
 
   /**
+   * Build headers with cookies if available
+   */
+  private getHeaders(): Record<string, string> {
+    const headers: Record<string, string> = {};
+    if (this.tokens.cookies) {
+      headers.Cookie = this.tokens.cookies;
+    }
+    return headers;
+  }
+
+  /**
    * Authenticate with MediaWiki API
    */
   async authenticate(): Promise<boolean> {
@@ -78,9 +90,7 @@ export class MediaWikiClient {
       const loginResponse = await fetch(this.config.apiUrl, {
         method: 'POST',
         body: formData,
-        headers: {
-          ...(this.tokens.cookies ? { Cookie: this.tokens.cookies } : {}),
-        },
+        headers: this.getHeaders(),
       });
 
       const loginData = (await loginResponse.json()) as any;
@@ -113,9 +123,7 @@ export class MediaWikiClient {
    */
   private async getCsrfToken(): Promise<void> {
     const response = await fetch(`${this.config.apiUrl}?action=query&meta=tokens&format=json`, {
-      headers: {
-        ...(this.tokens.cookies ? { Cookie: this.tokens.cookies } : {}),
-      },
+      headers: this.getHeaders(),
     });
 
     const data = (await response.json()) as any;
@@ -130,9 +138,7 @@ export class MediaWikiClient {
       const response = await fetch(
         `${this.config.apiUrl}?action=query&titles=${encodeURIComponent(title)}&prop=revisions&rvprop=content|timestamp|ids&format=json`,
         {
-          headers: {
-            ...(this.tokens.cookies ? { Cookie: this.tokens.cookies } : {}),
-          },
+          headers: this.getHeaders(),
         }
       );
 
@@ -199,9 +205,7 @@ export class MediaWikiClient {
       const response = await fetch(this.config.apiUrl, {
         method: 'POST',
         body: formData,
-        headers: {
-          ...(this.tokens.cookies ? { Cookie: this.tokens.cookies } : {}),
-        },
+        headers: this.getHeaders(),
       });
 
       const data = (await response.json()) as any;
@@ -227,7 +231,7 @@ export class MediaWikiClient {
       return {
         success: false,
         pageTitle: title,
-        error: error instanceof Error ? error.message : 'Unknown error',
+        error: getErrorMessage(error),
       };
     }
   }
@@ -240,9 +244,7 @@ export class MediaWikiClient {
       const response = await fetch(
         `${this.config.apiUrl}?action=query&list=search&srsearch=${encodeURIComponent(query)}&srlimit=${limit}&format=json`,
         {
-          headers: {
-            ...(this.tokens.cookies ? { Cookie: this.tokens.cookies } : {}),
-          },
+          headers: this.getHeaders(),
         }
       );
 
@@ -262,9 +264,7 @@ export class MediaWikiClient {
       const response = await fetch(
         `${this.config.apiUrl}?action=query&list=recentchanges&rcprop=title|timestamp|user|comment|sizes&rclimit=${limit}&format=json`,
         {
-          headers: {
-            ...(this.tokens.cookies ? { Cookie: this.tokens.cookies } : {}),
-          },
+          headers: this.getHeaders(),
         }
       );
 
@@ -304,9 +304,7 @@ export class MediaWikiClient {
       const response = await fetch(this.config.apiUrl, {
         method: 'POST',
         body: formData,
-        headers: {
-          ...(this.tokens.cookies ? { Cookie: this.tokens.cookies } : {}),
-        },
+        headers: this.getHeaders(),
       });
 
       const data = (await response.json()) as any;

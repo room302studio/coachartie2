@@ -107,9 +107,13 @@ Examples:
           goals.length > 0
             ? goals
                 .map(
-                  (g) =>
-                    g.objective +
-                    (g.deadline ? ` (due: ${new Date(g.deadline).toLocaleDateString()})` : '')
+                  (g) => {
+                    let deadlineStr = '';
+                    if (g.deadline) {
+                      deadlineStr = ` (due: ${new Date(g.deadline).toLocaleDateString()})`;
+                    }
+                    return g.objective + deadlineStr;
+                  }
                 )
                 .join(', ')
             : 'No active goals',
@@ -210,8 +214,12 @@ For DANGEROUS operations: Explain why unsafe, no approval`;
 
     // Check filesystem paths - be more precise about dangerous paths
     if (capability.name === 'filesystem' && capability.action === 'delete' && capability.params) {
-      const path =
-        typeof capability.params === 'string' ? capability.params : capability.params.path;
+      let path: string | undefined;
+      if (typeof capability.params === 'string') {
+        path = capability.params;
+      } else {
+        path = (capability.params as any).path;
+      }
       if (
         path &&
         typeof path === 'string' &&
@@ -225,8 +233,12 @@ For DANGEROUS operations: Explain why unsafe, no approval`;
 
     // Check shell commands
     if (capability.name === 'sandbox' && capability.params) {
-      const command =
-        typeof capability.params === 'string' ? capability.params : capability.params.command;
+      let command: string | undefined;
+      if (typeof capability.params === 'string') {
+        command = capability.params;
+      } else {
+        command = (capability.params as any).command;
+      }
       if (
         command &&
         typeof command === 'string' &&
@@ -270,8 +282,12 @@ For DANGEROUS operations: Explain why unsafe, no approval`;
       );
       // Immediate failsafe: Block dangerous filesystem operations without LLM
       if (capability.name === 'filesystem' && capability.action === 'delete') {
-        const path =
-          typeof capability.params === 'string' ? capability.params : capability.params?.path || '';
+        let path = '';
+        if (typeof capability.params === 'string') {
+          path = capability.params;
+        } else if (capability.params && typeof capability.params === 'object') {
+          path = (capability.params as any).path || '';
+        }
         const dangerousPaths = [
           '/etc/',
           '/usr/',
@@ -341,16 +357,17 @@ For DANGEROUS operations: Explain why unsafe, no approval`;
 
       // Get dynamic safety warnings
       const blacklistWarnings = this.checkBlacklist(capability);
-      const warningsText =
-        blacklistWarnings.length > 0
-          ? `\n🚨 SECURITY ALERTS:\n${blacklistWarnings.join('\n')}\n`
-          : '';
+      let warningsText = '';
+      if (blacklistWarnings.length > 0) {
+        warningsText = `\n🚨 SECURITY ALERTS:\n${blacklistWarnings.join('\n')}\n`;
+      }
 
       // Get capability-specific guidance
       const manifest = this.SAFETY_MANIFEST[capability.name];
-      const capabilityGuidance = manifest?.dangerousActions?.includes(capability.action)
-        ? `\n⚡ HIGH-RISK CAPABILITY: ${capability.name}:${capability.action} requires extra scrutiny!\n`
-        : '';
+      let capabilityGuidance = '';
+      if (manifest?.dangerousActions?.includes(capability.action)) {
+        capabilityGuidance = `\n⚡ HIGH-RISK CAPABILITY: ${capability.name}:${capability.action} requires extra scrutiny!\n`;
+      }
 
       // Get prompt from database with parameter substitution
       const basePrompt = await this.getConsciencePrompt();
