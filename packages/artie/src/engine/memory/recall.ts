@@ -36,8 +36,16 @@ export function guardGuildMentionOfOwner<
   memory: T,
   askingUserId: string
 ): T {
-  if (memory.user_id === askingUserId || isOwner(memory.user_id) || isOwner(askingUserId)) {
-    return memory; // the author recalling their own words, the owner's own memory, or EJ asking
+  if (
+    memory.user_id === askingUserId ||
+    isOwner(memory.user_id) ||
+    isOwner(askingUserId) ||
+    memory.user_id === 'artie-social'
+  ) {
+    // The author recalling their own words, the owner's own memory, EJ asking, or one of
+    // Artie's own reflections — not a third party's unverified claim about the owner (and
+    // memory write identity is force-bound, so no Discord user can write as artie-social).
+    return memory;
   }
   if (!mentionsOwner(memory.content)) {
     return memory;

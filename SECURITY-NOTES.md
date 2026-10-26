@@ -173,7 +173,7 @@ no human sign-off) — the audit flagged the *lack* of a backstop, not the featu
 bounded: at most 1 Artie-initiated timeout per target per 24h, at most 3 per guild per hour.
 Counted by a small dedicated table, `artie_autonomous_timeouts` (own `created_at` column,
 written as `new Date().toISOString()` explicitly — **not** SQLite's `DEFAULT
-CURRENT_TIMESTAMP**, which formats as `"YYYY-MM-DD HH:MM:SS"`, a different string shape than
+CURRENT_TIMESTAMP`, which formats as `"YYYY-MM-DD HH:MM:SS"`, a different string shape than
 the ISO 8601 bounds callers compare against; mixing the two silently breaks the
 `created_at >= ?` lexicographic comparison). This is deliberately **not** the existing
 `moderation_audit` table/`ModerationService.logAction` — that table has no `CREATE TABLE`
@@ -204,7 +204,7 @@ the existing test harness (no live Discord client in tests). Only the rate limit
 - `isOwner`/`isOwnerConfirmed` (`shared/config/owner.ts`, `approval-gate.ts`) check only
   `userId === OWNER_USER_ID`, never `context.source` — `assemble.ts`'s `<owner_note>` prompt
   injection is the one place in the codebase that already reasons about `source` before
-  trusting `userId`for owner treatment; the actual authority checks don't. Low practical risk
+  trusting `userId` for owner treatment; the actual authority checks don't. Low practical risk
   today (exploitability from outside the box is already closed per `sec-authority.md`'s
   verification of `require-api-token.ts`), but still a defense-in-depth gap for anything with
   loopback/local access.

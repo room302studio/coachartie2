@@ -64,6 +64,12 @@ describe('guardGuildMentionOfOwner', () => {
     expect(guarded).toBe(ownerMemory);
   });
 
+  it('leaves one of Artie\'s own reflections alone (not a third-party claim)', () => {
+    const reflection = { user_id: 'artie-social', content: 'EJ asked me to watch #litigation closely.', importance: 8 };
+    const guarded = guardGuildMentionOfOwner(reflection, VICTIM_ASKER);
+    expect(guarded).toBe(reflection);
+  });
+
   it('leaves non-owner memories alone when they never mention the owner', () => {
     const mundane = { user_id: ATTACKER, content: 'Nadia fixed the signal bug.', importance: 5 };
     const guarded = guardGuildMentionOfOwner(mundane, VICTIM_ASKER);

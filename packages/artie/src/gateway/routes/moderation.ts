@@ -119,6 +119,12 @@ export async function timeoutMember(client: any, body: any): Promise<ApiResult> 
     }
     const member = check.member;
 
+    // fetchModeratableMember already defaults to Subway Builder when guildId is missing
+    // (fetchModeratableMember/resolveUserId both do), so the per-guild counter has to use
+    // the SAME resolved guild — otherwise a no-guild timeout acts in Subway Builder but is
+    // recorded under `null`, never counting toward that guild's hourly cap.
+    const effectiveGuildId = guildId || SUBWAY_BUILDER_GUILD_ID;
+
     const now = new Date();
     const oneDayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString();
     const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000).toISOString();
@@ -128,7 +134,7 @@ export async function timeoutMember(client: any, body: any): Promise<ApiResult> 
         error: `Already timed out this person in the last 24h — escalate to a human mod instead of timing out again.`,
       });
     }
-    const guildCount = moderationService.countAutonomousTimeoutsForGuild(guildId, oneHourAgo);
+    const guildCount = moderationService.countAutonomousTimeoutsForGuild(effectiveGuildId, oneHourAgo);
     if (guildCount >= AUTONOMOUS_TIMEOUT_PER_GUILD_PER_HOUR) {
       return reply(429, {
         error: `Already issued ${guildCount} autonomous timeouts in this server in the last hour — escalate to a human mod instead.`,
@@ -138,7 +144,7 @@ export async function timeoutMember(client: any, body: any): Promise<ApiResult> 
     const minutes = Math.min(60, Math.max(1, Number(durationMinutes)));
     const until = new Date(now.getTime() + minutes * 60_000);
     await member.timeout(minutes * 60_000, reason);
-    moderationService.recordAutonomousTimeout(userId, guildId);
+    moderationService.recordAutonomousTimeout(userId, effectiveGuildId);
 
     moderationService.logAction({
       issuedByUserId: body.issuedByUserId || 'coach-artie',
