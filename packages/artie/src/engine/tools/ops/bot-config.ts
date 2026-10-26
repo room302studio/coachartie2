@@ -13,6 +13,18 @@ import { openRouterService } from '../../4-generate/openrouter.js';
 import { openRouterModelsService } from '../../4-generate/model-catalog.js';
 import { RegisteredCapability } from '../../5-tool-loop/registry.js';
 
+/** Find the value from candidates closest to target. */
+function findClosestValue(candidates: number[], target: number): number {
+  return candidates.reduce((prev, curr) => {
+    const prevDist = Math.abs(prev - target);
+    const currDist = Math.abs(curr - target);
+    if (currDist < prevDist) {
+      return curr;
+    }
+    return prev;
+  });
+}
+
 const RUNTIME_ACTIONS = [
   'get_active_model',
   'set_model_tier',
@@ -158,9 +170,7 @@ async function runRuntimeConfig(params: any, _content?: string): Promise<string>
 
           const newSize = parseInt(size);
           const validSizes = [8000, 16000, 32000, 64000, 128000, 200000];
-          const recommendedSize = validSizes.reduce((prev, curr) =>
-            Math.abs(curr - newSize) < Math.abs(prev - newSize) ? curr : prev
-          );
+          const recommendedSize = findClosestValue(validSizes, newSize);
 
           process.env.CONTEXT_WINDOW_SIZE = newSize.toString();
 
