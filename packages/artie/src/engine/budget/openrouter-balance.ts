@@ -100,9 +100,11 @@ export class CreditMonitor {
       return;
     }
     this.lastLowBalanceAlertAt = new Date();
+    const criticalPrefix = critical ? 'critically ' : '';
+    const source = critical ? 'credit-monitor-low-balance-critical' : 'credit-monitor-low-balance';
     void this.sendOperatorAlert(
-      `OpenRouter balance ${critical ? 'critically ' : ''}low: $${balance.toFixed(2)} — top up: https://openrouter.ai/settings/credits`,
-      critical ? 'credit-monitor-low-balance-critical' : 'credit-monitor-low-balance',
+      `OpenRouter balance ${criticalPrefix}low: $${balance.toFixed(2)} — top up: https://openrouter.ai/settings/credits`,
+      source,
       'warning'
     );
   }
@@ -359,10 +361,19 @@ export class CreditMonitor {
       if (!result || result.credits_remaining === null || result.credits_remaining === undefined) {
         const liveBalance = await this.getRemainingBalance();
         if (liveBalance === null) {
-          return result ? this.rowToCreditInfo(result) : null;
+          if (result) {
+            return this.rowToCreditInfo(result);
+          }
+          return null;
+        }
+        let baseInfo: any;
+        if (result) {
+          baseInfo = this.rowToCreditInfo(result);
+        } else {
+          baseInfo = { provider: 'openrouter' };
         }
         return {
-          ...(result ? this.rowToCreditInfo(result) : { provider: 'openrouter' }),
+          ...baseInfo,
           credits_remaining: liveBalance,
         };
       }
@@ -376,6 +387,11 @@ export class CreditMonitor {
 
   /** Map a credit_balance DB row to a CreditInfo object. */
   private rowToCreditInfo(result: any): CreditInfo {
+    let rate_limit_reset: Date | undefined;
+    if (result.rate_limit_reset) {
+      rate_limit_reset = new Date(result.rate_limit_reset);
+    }
+
     return {
         provider: result.provider,
         credits_remaining: result.credits_remaining,
@@ -383,7 +399,7 @@ export class CreditMonitor {
         daily_spend: result.daily_spend,
         monthly_spend: result.monthly_spend,
         rate_limit_remaining: result.rate_limit_remaining,
-        rate_limit_reset: result.rate_limit_reset ? new Date(result.rate_limit_reset) : undefined,
+        rate_limit_reset,
     };
   }
 
@@ -487,7 +503,12 @@ export class CreditMonitor {
       );
 
       // Log the alert
-      const emoji = alert.severity === 'critical' ? '🚨' : '⚠️';
+      let emoji: string;
+      if (alert.severity === 'critical') {
+        emoji = '🚨';
+      } else {
+        emoji = '⚠️';
+      }
       logger.warn(`${emoji} Credit Alert: ${alert.message}`);
 
       // Critical alerts reach the operator through anomalywatch, never Discord.
