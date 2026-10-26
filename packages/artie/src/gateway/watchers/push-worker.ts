@@ -25,7 +25,10 @@ function resolveKnownMentions(text: string): string {
   // Match @name not already part of a <@id> mention or a word/email.
   return text.replace(/(?<![<\w/])@([a-z0-9_]+)/gi, (whole, name: string) => {
     const id = KNOWN_MENTIONS[name.toLowerCase()];
-    return id ? `<@${id}>` : whole;
+    if (id) {
+      return `<@${id}>`;
+    }
+    return whole;
   });
 }
 
