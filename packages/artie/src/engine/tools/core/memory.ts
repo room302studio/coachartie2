@@ -1,3 +1,4 @@
+import { getErrorMessage } from '../../../shared/errors.js';
 import { logger } from '../../../shared/logger.js';
 import { parseModelJson } from '../../../shared/model-json.js';
 import { getSyncDb } from '../../../shared/db/client.js';
@@ -187,9 +188,7 @@ export class MemoryService {
         return formatted;
       } catch (error) {
         logger.error('❌ [HYBRID] Failed to recall memories:', error);
-        throw new Error(
-          `Memory recall failed: ${error instanceof Error ? error.message : String(error)}`
-        );
+        throw new Error(`Memory recall failed: ${getErrorMessage(error)}`);
       }
     }
 
@@ -350,9 +349,7 @@ export class MemoryService {
 • Recent (7 days): ${recentCount}
 • Storage: Hybrid layer (in-memory + SQLite)`;
     } catch (error) {
-      throw new Error(
-        `Could not retrieve memory statistics: ${error instanceof Error ? error.message : String(error)}`
-      );
+      throw new Error(`Could not retrieve memory statistics: ${getErrorMessage(error)}`);
     }
   }
 
