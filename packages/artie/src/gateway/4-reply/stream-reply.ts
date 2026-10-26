@@ -15,6 +15,7 @@ import { logger } from '../../shared/logger.js';
 import { stripToolCalls, stripInternalMarkup } from '../../shared/clean-llm-output.js';
 import { scrubBlockedUserMentions } from '../../shared/blocklist.js';
 import { isOperatorOnlyError } from '../../shared/anomalywatch.js';
+import { getErrorMessage } from '../../shared/errors.js';
 import { capabilitiesClient } from '../3-ask-engine/engine-client.js';
 import { jobMonitor } from '../3-ask-engine/job-watcher.js';
 import { telemetry } from '../telemetry.js';
@@ -191,9 +192,15 @@ export async function processUserIntent(
 
     // DEFENSIVE: Validate jobInfo structure before using it
     if (!jobInfo || !jobInfo.messageId) {
+      let jobInfoKeys: string[];
+      if (jobInfo) {
+        jobInfoKeys = Object.keys(jobInfo);
+      } else {
+        jobInfoKeys = [];
+      }
       const errorDetails = {
         hasJobInfo: !!jobInfo,
-        jobInfoKeys: jobInfo ? Object.keys(jobInfo) : [],
+        jobInfoKeys,
         jobInfoValue: jobInfo,
       };
       logger.error(`❌ NULL JOB ID DETECTED [${shortId}]:`, errorDetails);
@@ -436,11 +443,13 @@ export async function processUserIntent(
           const containsSlur = OUTPUT_SLUR_BLOCKLIST.test(cleanResult);
           const leaksInternals = INTERNAL_LEAK_BLOCKLIST.test(cleanResult);
           if (!cleanResult.trim() || containsSlur || leaksInternals) {
-            logger.warn(
-              containsSlur
-                ? `🛑 Output blocked by slur blacklist [${shortId}] — staying silent`
-                : `🛑 Empty/failed generation [${shortId}] — staying silent (no fallback message sent)`
-            );
+            let warningMessage: string;
+            if (containsSlur) {
+              warningMessage = `🛑 Output blocked by slur blacklist [${shortId}] — staying silent`;
+            } else {
+              warningMessage = `🛑 Empty/failed generation [${shortId}] — staying silent (no fallback message sent)`;
+            }
+            logger.warn(warningMessage);
             // If a partial message already streamed out, pull it back — otherwise the
             // suppressed content stays half-posted in the channel.
             if (streamedChunks > 0 && typeof (intent as any).deleteResponse === 'function') {
@@ -591,10 +600,12 @@ export async function processUserIntent(
 
         try {
           // ENHANCED: User-friendly error messages while staying transparent
-          const userFriendlyError =
-            typeof error === 'string' && error.length < 100
-              ? `Something went wrong: ${error}`
-              : 'Something went wrong processing your request. The issue has been logged.';
+          let userFriendlyError: string;
+          if (typeof error === 'string' && error.length < 100) {
+            userFriendlyError = `Something went wrong: ${error}`;
+          } else {
+            userFriendlyError = 'Something went wrong processing your request. The issue has been logged.';
+          }
 
           await intent.respond(`❌ ${userFriendlyError}`);
 
@@ -624,9 +635,10 @@ export async function processUserIntent(
       clearInterval(typingInterval);
     }
 
+    const errorMsg = getErrorMessage(error);
     logger.error(`Intent processing setup failed [${shortId}]:`, {
       correlationId,
-      error: error instanceof Error ? error.message : String(error),
+      error: errorMsg,
       source: intent.source,
     });
 
@@ -634,7 +646,7 @@ export async function processUserIntent(
       'intent_setup_failed',
       {
         source: intent.source,
-        error: error instanceof Error ? error.message : String(error),
+        error: errorMsg,
       },
       correlationId,
       intent.userId
@@ -646,7 +658,7 @@ export async function processUserIntent(
         return;
       }
       await intent.respond(
-        `Failed to process your ${intent.source}: ${error instanceof Error ? error.message : String(error)}`
+        `Failed to process your ${intent.source}: ${errorMsg}`
       );
     } catch (replyError) {
       logger.error(`Failed to send setup error response [${shortId}]:`, replyError);
