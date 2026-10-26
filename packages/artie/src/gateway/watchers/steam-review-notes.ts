@@ -193,11 +193,18 @@ export class SteamReviewNotes {
     const up = (log.match(/^- .*?👍/gm) || []).length;
     const down = (log.match(/^- .*?👎/gm) || []).length;
     const total = up + down;
-    const pct = total > 0 ? Math.round((up / total) * 100) : 0;
-    const line =
-      total > 0
-        ? `**Tally:** 👍 ${up} · 👎 ${down} — ${total} total, ${pct}% positive _(auto-counted from #steam-reviews)_`
-        : `**Tally:** (no reviews logged yet)`;
+    let pct: number;
+    if (total > 0) {
+      pct = Math.round((up / total) * 100);
+    } else {
+      pct = 0;
+    }
+    let line: string;
+    if (total > 0) {
+      line = `**Tally:** 👍 ${up} · 👎 ${down} — ${total} total, ${pct}% positive _(auto-counted from #steam-reviews)_`;
+    } else {
+      line = `**Tally:** (no reviews logged yet)`;
+    }
     return notes.replace(/^\*\*Tally:\*\*.*$/m, line);
   }
 
@@ -326,11 +333,14 @@ export class SteamReviewNotes {
     // Hard cap the prompt: express.json() on capabilities defaults to a 100kb body limit,
     // and the log grows forever. Older reviews live on in the tally + previous analysis.
     const LOG_PROMPT_MAX = 60_000;
-    const log =
-      fullLog.length > LOG_PROMPT_MAX
-        ? '(…earlier reviews omitted — totals are in the tally, themes carried in previous analysis)\n' +
-          fullLog.slice(fullLog.length - LOG_PROMPT_MAX).replace(/^[^\n]*\n/, '')
-        : fullLog;
+    let log: string;
+    if (fullLog.length > LOG_PROMPT_MAX) {
+      log =
+        '(…earlier reviews omitted — totals are in the tally, themes carried in previous analysis)\n' +
+        fullLog.slice(fullLog.length - LOG_PROMPT_MAX).replace(/^[^\n]*\n/, '');
+    } else {
+      log = fullLog;
+    }
     const tally = notes.match(/^\*\*Tally:\*\*.*$/m)?.[0] || '';
     const prev = this.getAnalysisSection(notes);
     const chatter = this.chatterBuffer.join('\n') || '(none captured this window)';
@@ -375,7 +385,12 @@ Output ONLY the markdown body of the section — no top-level heading, no code f
           POLL_INTERVAL_MS * Math.pow(2, this.analysisFailures - 1)
         );
         this.analysisRetryAfter = Date.now() + backoffMs;
-        const level = this.analysisFailures === 1 || this.analysisFailures % 10 === 0 ? 'warn' : 'debug';
+        let level: 'warn' | 'debug';
+        if (this.analysisFailures === 1 || this.analysisFailures % 10 === 0) {
+          level = 'warn';
+        } else {
+          level = 'debug';
+        }
         logger[level](
           `📓 Analysis refresh failed: ${response.status} ${engine.statusText(response)} ` +
             `(failure #${this.analysisFailures}, backing off ${Math.round(backoffMs / 60000)}min)`

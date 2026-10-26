@@ -154,10 +154,12 @@ export async function startResponseConsumer(
         // Send regular text message (only if channel supports it)
         if ('send' in channel) {
           // Add debug instance identifier if enabled
-          const debugInfo =
-            process.env.ENABLE_INSTANCE_DEBUG === 'true'
-              ? `\n\n_[${process.env.INSTANCE_NAME || 'unknown'}]_`
-              : '';
+          let debugInfo: string;
+          if (process.env.ENABLE_INSTANCE_DEBUG === 'true') {
+            debugInfo = `\n\n_[${process.env.INSTANCE_NAME || 'unknown'}]_`;
+          } else {
+            debugInfo = '';
+          }
 
           // Chunk the message to preserve formatting and respect Discord limits.
           // Resolve known plain-text @names to real pings so e.g. "@ejfox" actually notifies.

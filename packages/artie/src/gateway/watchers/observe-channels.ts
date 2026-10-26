@@ -568,9 +568,15 @@ Rules:
     const lastProcessedTimes = Array.from(this.processedChannels.values()).map((p) => {
       const guildConfig = getGuildConfig(p.guildId);
       const channel = this.client?.channels.cache.get(p.channelId);
+      let channelName: string | null;
+      if (channel && 'name' in channel) {
+        channelName = channel.name;
+      } else {
+        channelName = null;
+      }
       return {
         guild: guildConfig?.name || p.guildId,
-        channel: (channel && 'name' in channel ? channel.name : null) || p.channelId,
+        channel: channelName || p.channelId,
         lastProcessed: p.lastProcessedAt,
       };
     });

@@ -186,10 +186,14 @@ export class GitHubOrgWatcher {
       // When Artie chose the room himself, say so where it'll be seen, so a wrong pick gets
       // caught in a day instead of never. Explicit routes and fallbacks stay quiet.
       if (route.how === 'artie' && channel && 'send' in channel) {
+        let reasonSuffix = '';
+        if (route.reason) {
+          reasonSuffix = ` (${route.reason.replace(/\.$/, '')})`;
+        }
         await (channel as TextChannel)
           .send(
             `📡 New repo **${repo.full_name}**: I'll post its PRs and reviews here` +
-              (route.reason ? ` (${route.reason.replace(/\.$/, '')})` : '') +
+              reasonSuffix +
               `. Wrong room? \`/unwatch-repo\` here and \`/watch-repo\` in the right one.`
           )
           .catch((err) => logger.warn(`Org watcher: couldn't announce ${repo.full_name}:`, err));
