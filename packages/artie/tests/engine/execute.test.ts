@@ -14,7 +14,11 @@
  *   atomic/error-message-builder       -> "registry: action error messages"
  */
 import { describe, it, expect, beforeAll } from 'vitest';
-import { substituteKeys, capabilityExecutor } from '../../src/engine/5-tool-loop/execute.js';
+import {
+  substituteKeys,
+  capabilityExecutor,
+  looksLikeToolFailure,
+} from '../../src/engine/5-tool-loop/execute.js';
 import {
   CapabilityRegistry,
   type RegisteredCapability,
@@ -365,5 +369,55 @@ describe('registry: action error messages', () => {
       'At least one supported action is required'
     );
     expect(registry.generateActionError('test', 'action')).toBe("Capability 'test' not found");
+  });
+});
+
+/**
+ * Loud fallbacks (2026-10-26): several real handlers catch their own failure and RETURN a
+ * string describing it instead of throwing — scratchpad.ts, system-memory.ts, and (pre-fix)
+ * memory.ts's pinMemory are the three concrete cases found in the audit. Because they don't
+ * throw, executeNativeToolCall's robust.success is true and the un-prefixed string would go
+ * straight to the model looking identical to a real success. looksLikeToolFailure is the
+ * detector that catches that shape before it reaches the model.
+ */
+describe('looksLikeToolFailure: catching self-reported failures that never threw', () => {
+  it('flags a leading ❌ (memory pinMemory pre-fix, email-drafting, autonomous, …)', () => {
+    expect(looksLikeToolFailure('❌ Memory not found: 123')).toBe(true);
+  });
+
+  it('flags "<Words> error: " at the start (scratchpad.ts, goals.ts, context.ts, diagnose.ts)', () => {
+    expect(looksLikeToolFailure('Scratchpad error: ENOENT no such file')).toBe(true);
+    expect(looksLikeToolFailure('Diagnose error: boom')).toBe(true);
+    expect(looksLikeToolFailure('Context error: boom')).toBe(true);
+  });
+
+  it('flags a bare "Error: " prefix (sandbox edit/search, pairing, autonomous)', () => {
+    expect(looksLikeToolFailure('Error: something broke')).toBe(true);
+  });
+
+  it('flags JSON with a top-level success:false (system-memory.ts, stripe.ts, discord reaction/poll)', () => {
+    expect(looksLikeToolFailure(JSON.stringify({ success: false, error: 'content required' }))).toBe(
+      true
+    );
+  });
+
+  it('does not flag JSON with success:true', () => {
+    expect(looksLikeToolFailure(JSON.stringify({ success: true, id: 1 }))).toBe(false);
+  });
+
+  it('does not flag ordinary content that merely mentions "error" mid-sentence', () => {
+    expect(looksLikeToolFailure('The user had an error at work yesterday, feeling better now.')).toBe(
+      false
+    );
+  });
+
+  it('does not flag a normal successful recall/remember confirmation', () => {
+    expect(looksLikeToolFailure('✅ Remembered: "pizza" (ID: 5, importance: 5/10, tags: food)')).toBe(
+      false
+    );
+  });
+
+  it('does not flag an empty string (no data is not the same as a failure)', () => {
+    expect(looksLikeToolFailure('')).toBe(false);
   });
 });

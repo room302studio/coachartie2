@@ -298,3 +298,26 @@ describe('execution through an alias', () => {
     expect(listed).toContain('ship wave four');
   });
 });
+
+// Wave: tool-loop cleanup, 2026-10-26. F1 — merge, don't delete: the hello-world example
+// skill's SKILL.md file stays on disk, but it no longer gets its own roster slot. Its three
+// actions all collapse into diagnose's harmless `ping`.
+describe('hello-world merge (F1: merged, not deleted)', () => {
+  it.each(['greet', 'wave', 'introduce'])('hello-world:%s resolves to diagnose:ping', (action) => {
+    expect(resolveToolCall('hello-world', action, {})).toMatchObject({
+      name: 'diagnose',
+      action: 'ping',
+    });
+  });
+
+  it('hello-world is not its own registered capability', () => {
+    const names = capabilityRegistry.list().map((c) => c.name);
+    expect(names).not.toContain('hello-world');
+    expect(names).toContain('diagnose');
+  });
+
+  it('diagnose:ping actually runs (the merged skill is reachable, not just aliased)', async () => {
+    const out = await capabilityRegistry.execute('hello-world', 'greet', {});
+    expect(out).toContain('pong');
+  });
+});
