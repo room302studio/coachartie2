@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { logger } from '../../shared/logger.js';
 import { type ApiResult, sendResult } from '../../shared/api-result.js';
+import { getErrorMessage } from '../../shared/errors.js';
 
 // Wave 9: the handler body is an exported function returning the status + JSON it used to
 // send; the route sends it and engine/api.ts calls it in-process for the gateway.
@@ -45,7 +46,7 @@ apiRouter.get('/memories', async (_req: Request, res: Response) => {
     logger.error('❌ Error fetching memories:', error);
     res.status(500).json({
       error: 'Failed to fetch memories',
-      message: error instanceof Error ? error.message : 'Unknown error',
+      message: getErrorMessage(error),
     });
   }
 });
@@ -75,7 +76,7 @@ apiRouter.get('/messages', async (_req: Request, res: Response) => {
     logger.error('❌ Error fetching messages:', error);
     res.status(500).json({
       error: 'Failed to fetch messages',
-      message: error instanceof Error ? error.message : 'Unknown error',
+      message: getErrorMessage(error),
     });
   }
 });
@@ -102,7 +103,7 @@ apiRouter.get('/stats', async (_req: Request, res: Response) => {
     logger.error('❌ Error generating stats:', error);
     res.status(500).json({
       error: 'Failed to generate stats',
-      message: error instanceof Error ? error.message : 'Unknown error',
+      message: getErrorMessage(error),
     });
   }
 });
@@ -171,7 +172,7 @@ apiRouter.get('/traces', async (req: Request, res: Response) => {
     logger.error('Failed to query traces:', error);
     res.status(500).json({
       error: 'Failed to query traces',
-      message: error instanceof Error ? error.message : 'Unknown error',
+      message: getErrorMessage(error),
     });
   }
 });
@@ -199,7 +200,7 @@ apiRouter.get('/traces/stats', async (req: Request, res: Response) => {
     logger.error('Failed to get trace stats:', error);
     res.status(500).json({
       error: 'Failed to get trace stats',
-      message: error instanceof Error ? error.message : 'Unknown error',
+      message: getErrorMessage(error),
     });
   }
 });
@@ -220,7 +221,7 @@ apiRouter.get('/traces/:id', async (req: Request, res: Response) => {
     logger.error('Failed to get trace:', error);
     res.status(500).json({
       error: 'Failed to get trace',
-      message: error instanceof Error ? error.message : 'Unknown error',
+      message: getErrorMessage(error),
     });
   }
 });
@@ -251,7 +252,7 @@ apiRouter.get('/experiments', async (req: Request, res: Response) => {
     logger.error('Failed to list experiments:', error);
     res.status(500).json({
       error: 'Failed to list experiments',
-      message: error instanceof Error ? error.message : 'Unknown error',
+      message: getErrorMessage(error),
     });
   }
 });
@@ -272,7 +273,7 @@ apiRouter.get('/experiments/:id', async (req: Request, res: Response) => {
     logger.error('Failed to get experiment:', error);
     res.status(500).json({
       error: 'Failed to get experiment',
-      message: error instanceof Error ? error.message : 'Unknown error',
+      message: getErrorMessage(error),
     });
   }
 });
@@ -332,7 +333,7 @@ apiRouter.post('/experiments', async (req: Request, res: Response) => {
     logger.error('Failed to create experiment:', error);
     res.status(500).json({
       error: 'Failed to create experiment',
-      message: error instanceof Error ? error.message : 'Unknown error',
+      message: getErrorMessage(error),
     });
   }
 });
@@ -348,7 +349,7 @@ apiRouter.post('/experiments/:id/start', async (req: Request, res: Response) => 
     logger.error('Failed to start experiment:', error);
     res.status(500).json({
       error: 'Failed to start experiment',
-      message: error instanceof Error ? error.message : 'Unknown error',
+      message: getErrorMessage(error),
     });
   }
 });
@@ -364,7 +365,7 @@ apiRouter.post('/experiments/:id/end', async (req: Request, res: Response) => {
     logger.error('Failed to end experiment:', error);
     res.status(500).json({
       error: 'Failed to end experiment',
-      message: error instanceof Error ? error.message : 'Unknown error',
+      message: getErrorMessage(error),
     });
   }
 });
@@ -385,7 +386,7 @@ apiRouter.get('/experiments/:id/results', async (req: Request, res: Response) =>
     logger.error('Failed to get experiment results:', error);
     res.status(500).json({
       error: 'Failed to get experiment results',
-      message: error instanceof Error ? error.message : 'Unknown error',
+      message: getErrorMessage(error),
     });
   }
 });
@@ -450,7 +451,7 @@ apiRouter.get('/analysis/feedback-by-model', async (req: Request, res: Response)
     logger.error('Failed to analyze feedback by model:', error);
     res.status(500).json({
       error: 'Failed to analyze feedback by model',
-      message: error instanceof Error ? error.message : 'Unknown error',
+      message: getErrorMessage(error),
     });
   }
 });
@@ -498,7 +499,7 @@ apiRouter.get('/analysis/feedback-by-memory-count', async (_req: Request, res: R
     logger.error('Failed to analyze feedback by memory count:', error);
     res.status(500).json({
       error: 'Failed to analyze feedback by memory count',
-      message: error instanceof Error ? error.message : 'Unknown error',
+      message: getErrorMessage(error),
     });
   }
 });
@@ -548,7 +549,7 @@ apiRouter.get('/analysis/rule-effectiveness', async (_req: Request, res: Respons
     logger.error('Failed to analyze rule effectiveness:', error);
     res.status(500).json({
       error: 'Failed to analyze rule effectiveness',
-      message: error instanceof Error ? error.message : 'Unknown error',
+      message: getErrorMessage(error),
     });
   }
 });
@@ -572,7 +573,7 @@ apiRouter.get('/memories/most-recalled', (_req: Request, res: Response) => {
     logger.error('Failed to get most recalled memories:', error);
     res.status(500).json({
       error: 'Failed to get most recalled memories',
-      message: error instanceof Error ? error.message : 'Unknown error',
+      message: getErrorMessage(error),
     });
   }
 });
@@ -597,7 +598,7 @@ apiRouter.get('/memories/:id/recall-stats', (req: Request, res: Response) => {
     logger.error('Failed to get memory recall stats:', error);
     res.status(500).json({
       error: 'Failed to get memory recall stats',
-      message: error instanceof Error ? error.message : 'Unknown error',
+      message: getErrorMessage(error),
     });
   }
 });
@@ -636,7 +637,7 @@ apiRouter.get('/memories/recall-history', (_req: Request, res: Response) => {
     logger.error('Failed to get recall history:', error);
     res.status(500).json({
       error: 'Failed to get recall history',
-      message: error instanceof Error ? error.message : 'Unknown error',
+      message: getErrorMessage(error),
     });
   }
 });
@@ -673,7 +674,7 @@ apiRouter.get('/analytics/sessions/daily-active-users', (_req: Request, res: Res
     logger.error('Failed to get DAU:', error);
     res.status(500).json({
       error: 'Failed to get DAU',
-      message: error instanceof Error ? error.message : 'Unknown error',
+      message: getErrorMessage(error),
     });
   }
 });
@@ -716,7 +717,7 @@ apiRouter.get('/analytics/sessions/duration-distribution', (_req: Request, res: 
     logger.error('Failed to get session distribution:', error);
     res.status(500).json({
       error: 'Failed to get session distribution',
-      message: error instanceof Error ? error.message : 'Unknown error',
+      message: getErrorMessage(error),
     });
   }
 });
@@ -762,7 +763,7 @@ apiRouter.get('/analytics/capabilities/usage', (_req: Request, res: Response) =>
     logger.error('Failed to get capability usage:', error);
     res.status(500).json({
       error: 'Failed to get capability usage',
-      message: error instanceof Error ? error.message : 'Unknown error',
+      message: getErrorMessage(error),
     });
   }
 });
@@ -796,7 +797,7 @@ apiRouter.get('/analytics/errors/by-type', (_req: Request, res: Response) => {
     logger.error('Failed to get errors by type:', error);
     res.status(500).json({
       error: 'Failed to get errors by type',
-      message: error instanceof Error ? error.message : 'Unknown error',
+      message: getErrorMessage(error),
     });
   }
 });
@@ -827,7 +828,7 @@ apiRouter.get('/analytics/errors/recent', (_req: Request, res: Response) => {
     logger.error('Failed to get recent errors:', error);
     res.status(500).json({
       error: 'Failed to get recent errors',
-      message: error instanceof Error ? error.message : 'Unknown error',
+      message: getErrorMessage(error),
     });
   }
 });
@@ -880,7 +881,7 @@ apiRouter.get('/analytics/traces/with-text', (_req: Request, res: Response) => {
     logger.error('Failed to get traces with text:', error);
     res.status(500).json({
       error: 'Failed to get traces with text',
-      message: error instanceof Error ? error.message : 'Unknown error',
+      message: getErrorMessage(error),
     });
   }
 });
@@ -901,7 +902,7 @@ apiRouter.get('/analytics/delivery/stats', async (_req: Request, res: Response) 
     logger.error('Failed to get delivery stats:', error);
     res.status(500).json({
       error: 'Failed to get delivery stats',
-      message: error instanceof Error ? error.message : 'Unknown error',
+      message: getErrorMessage(error),
     });
   }
 });
@@ -935,7 +936,7 @@ apiRouter.get('/analytics/delivery/recent', (_req: Request, res: Response) => {
     logger.error('Failed to get recent delivery attempts:', error);
     res.status(500).json({
       error: 'Failed to get recent delivery attempts',
-      message: error instanceof Error ? error.message : 'Unknown error',
+      message: getErrorMessage(error),
     });
   }
 });
@@ -974,7 +975,7 @@ export async function linkDiscordMessage(body: any): Promise<ApiResult> {
     logger.error('Failed to link Discord message:', error);
     return reply(500, {
       error: 'Failed to link Discord message',
-      message: error instanceof Error ? error.message : 'Unknown error',
+      message: getErrorMessage(error),
     });
   }
 }
@@ -1007,7 +1008,7 @@ export async function recordTraceFeedback(body: any): Promise<ApiResult> {
     logger.error('Failed to record feedback:', error);
     return reply(500, {
       error: 'Failed to record feedback',
-      message: error instanceof Error ? error.message : 'Unknown error',
+      message: getErrorMessage(error),
     });
   }
 }
