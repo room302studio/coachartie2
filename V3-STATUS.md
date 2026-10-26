@@ -1,8 +1,9 @@
 # v3 status (2026-10-26)
 
 v3 is Coach Artie's rebuild: one package (`packages/artie`), one PM2 app (`coach-artie`),
-native parallel tool calls, a multiplayer-aware gateway. It is **built, tested and not
-deployed**. Prod still runs `artie-lean`. CUTOVER.md is the runbook.
+native parallel tool calls, a multiplayer-aware gateway. **It has been live in prod since
+2026-10-26 14:35 ET** (branch `v3`). CUTOVER.md records the run, its deviations and the
+rollback.
 
 Bench (VPS `/data2/tmp/artie-v3`, HEAD 8261cf9):
 - typecheck clean
@@ -42,7 +43,7 @@ stale dev scripts removed (one could `pkill` prod).
 1. **OpenRouter top-up.** The account balance is about $5 and drives brownout/lean mode.
 2. ~~Load the prompt proposal.~~ **Done 2026-10-26.** It's live in prod (v9/v3). Rollback is in
    the proposal file.
-3. **Run the cutover** (CUTOVER.md). It's a one-way-ish PM2 swap, with rollback documented.
+3. ~~Run the cutover.~~ **Done 2026-10-26.** Soak watch for 24h (CUTOVER.md step 11).
 4. **UX change to confirm:** EJ's own stripe/email calls become two-step: Artie queues the
    call, then EJ approves it. The model can no longer self-confirm.
 5. **After the soak:** move or delete the 618M of plaintext pre-v3 winston logs in
