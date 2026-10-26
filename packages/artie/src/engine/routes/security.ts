@@ -9,6 +9,19 @@ import { securityMonitor } from '../health/security.js';
 const router: Router = Router();
 
 /**
+ * Determine threat level based on incident counts
+ */
+function getThreatLevel(criticalIncidents: number, highIncidentsRecent: number): string {
+  if (criticalIncidents > 0) {
+    return 'high';
+  }
+  if (highIncidentsRecent > 10) {
+    return 'medium';
+  }
+  return 'low';
+}
+
+/**
  * GET /security/status - Get security monitoring statistics
  */
 router.get('/status', (req: Request, res: Response) => {
@@ -23,12 +36,7 @@ router.get('/status', (req: Request, res: Response) => {
       trends: trends,
       security_posture: {
         critical_incidents_24h: trends.criticalIncidents,
-        overall_threat_level:
-          trends.criticalIncidents > 0
-            ? 'high'
-            : trends.highIncidentsRecent > 10
-              ? 'medium'
-              : 'low',
+        overall_threat_level: getThreatLevel(trends.criticalIncidents, trends.highIncidentsRecent),
         pattern_trend_alert: trends.patternTrendAlert,
       },
     });
