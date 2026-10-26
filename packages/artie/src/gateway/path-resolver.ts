@@ -7,6 +7,16 @@ import { MENTION_PROXY_DATA } from '../shared/paths.js';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 /**
+ * Format environment type for logging.
+ */
+function envTypeLabel(isDocker: boolean): string {
+  if (isDocker) {
+    return 'Docker';
+  }
+  return 'Local';
+}
+
+/**
  * Bulletproof path resolver for Discord service
  * Handles both Docker (/app/data) and local development (./data) environments
  */
@@ -33,7 +43,7 @@ export class PathResolver {
     this.ensureDataDirectory();
 
     logger.info(
-      `📁 Path resolver initialized: ${this.isDocker ? 'Docker' : 'Local'} mode, data dir: ${this.dataDir}`
+      `📁 Path resolver initialized: ${envTypeLabel(this.isDocker)} mode, data dir: ${this.dataDir}`
     );
   }
 
@@ -64,7 +74,7 @@ export class PathResolver {
     ];
 
     const isDocker = indicators.some((indicator) => indicator);
-    logger.debug(`🔍 Docker detection: ${isDocker ? 'Docker' : 'Local'}`, {
+    logger.debug(`🔍 Docker detection: ${envTypeLabel(isDocker)}`, {
       dockerenv: existsSync('/.dockerenv'),
       dockerContainer: !!process.env.DOCKER_CONTAINER,
       dirname: __dirname,

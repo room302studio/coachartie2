@@ -195,10 +195,11 @@ export class DiscordTelemetry {
 
     // Update performance metrics
     this.metrics.maxResponseTime = Math.max(this.metrics.maxResponseTime, duration);
-    this.metrics.minResponseTime =
-      this.metrics.minResponseTime === 0
-        ? duration
-        : Math.min(this.metrics.minResponseTime, duration);
+    if (this.metrics.minResponseTime === 0) {
+      this.metrics.minResponseTime = duration;
+    } else {
+      this.metrics.minResponseTime = Math.min(this.metrics.minResponseTime, duration);
+    }
 
     this.metrics.averageResponseTime =
       this.responseTimes.reduce((a, b) => a + b, 0) / this.responseTimes.length;

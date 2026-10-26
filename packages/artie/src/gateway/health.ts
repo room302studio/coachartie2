@@ -5,6 +5,7 @@ import { readFileSync } from 'fs';
 import type { ApiResult } from '../shared/api-result.js';
 import * as engine from '../engine/api.js';
 import { withTimeout } from '../shared/async.js';
+import { getErrorMessage } from '../shared/errors.js';
 
 export interface HealthCheckResponse {
   status: 'healthy' | 'degraded' | 'unhealthy';
@@ -26,6 +27,19 @@ export interface HealthCheckResponse {
   };
   telemetry?: any;
   issues?: string[];
+}
+
+/**
+ * Convert health status to HTTP status code.
+ */
+function healthStatusCode(status: 'healthy' | 'degraded' | 'unhealthy'): number {
+  if (status === 'healthy') {
+    return 200;
+  }
+  if (status === 'degraded') {
+    return 200;
+  }
+  return 503;
 }
 
 export class HealthServer {
@@ -111,7 +125,7 @@ export class HealthServer {
         res.end(
           JSON.stringify({
             error: 'Internal server error',
-            message: error instanceof Error ? error.message : String(error),
+            message: getErrorMessage(error),
           })
         );
       }
@@ -162,6 +176,11 @@ export class HealthServer {
       issues.push('Discord client not connected');
     }
 
+    let responseIssues: string[] | undefined;
+    if (issues.length > 0) {
+      responseIssues = issues;
+    }
+
     const response: HealthCheckResponse = {
       status: overallStatus,
       timestamp: new Date().toISOString(),
@@ -170,10 +189,10 @@ export class HealthServer {
       uptime: process.uptime(),
       discord: discordStatus,
       telemetry: healthSummary.metrics,
-      issues: issues.length > 0 ? issues : undefined,
+      issues: responseIssues,
     };
 
-    const statusCode = overallStatus === 'healthy' ? 200 : overallStatus === 'degraded' ? 200 : 503;
+    const statusCode = healthStatusCode(overallStatus);
 
     return { status: statusCode, body: response };
   }
@@ -206,6 +225,11 @@ export class HealthServer {
     if (!discordConnected) issues.push('Discord client not ready');
     if (!capabilitiesReachable) issues.push('Capabilities service unreachable');
 
+    let responseIssues: string[] | undefined;
+    if (issues.length > 0) {
+      responseIssues = issues;
+    }
+
     const response = {
       ready,
       timestamp: new Date().toISOString(),
@@ -213,10 +237,16 @@ export class HealthServer {
         discord: discordConnected,
         capabilities: capabilitiesReachable,
       },
-      issues: issues.length > 0 ? issues : undefined,
+      issues: responseIssues,
     };
 
-    res.writeHead(ready ? 200 : 503);
+    let readyStatusCode: number;
+    if (ready) {
+      readyStatusCode = 200;
+    } else {
+      readyStatusCode = 503;
+    }
+    res.writeHead(readyStatusCode);
     res.end(JSON.stringify(response, null, 2));
   }
 
@@ -261,11 +291,16 @@ export class HealthServer {
           channels: guild.channels?.cache.size || 0,
         })) || [];
 
+      let latencyValue: number | undefined;
+      if (latency >= 0) {
+        latencyValue = latency;
+      }
+
       return {
         connected,
         guilds,
         users,
-        latency: latency >= 0 ? latency : undefined,
+        latency: latencyValue,
         guildDetails,
       };
     } catch (error) {
@@ -274,7 +309,7 @@ export class HealthServer {
         connected: false,
         guilds: 0,
         users: 0,
-        error: error instanceof Error ? error.message : String(error),
+        error: getErrorMessage(error),
       };
     }
   }
