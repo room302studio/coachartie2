@@ -101,8 +101,18 @@ export class LLMResponseCoordinator {
 
       const generate: ToolLoopDeps['generate'] = async (msgs, offered) => {
         round++;
-        const messageId = round === 1 ? message.id : `${message.id}_tool_${round}`;
-        const toolChoice = offered.length > 0 ? 'auto' : 'none';
+        let messageId: string;
+        if (round === 1) {
+          messageId = message.id;
+        } else {
+          messageId = `${message.id}_tool_${round}`;
+        }
+        let toolChoice: string;
+        if (offered.length > 0) {
+          toolChoice = 'auto';
+        } else {
+          toolChoice = 'none';
+        }
         const result = await openRouterService.generateWithTools(
           msgs,
           tools, // the full list every round, so the cached prefix never changes
@@ -111,7 +121,12 @@ export class LLMResponseCoordinator {
           turn.smartModel,
           { ...turn.generationOptions, toolChoice }
         );
-        const returnToolCalls = offered.length > 0 ? result.toolCalls : [];
+        let returnToolCalls: typeof result.toolCalls;
+        if (offered.length > 0) {
+          returnToolCalls = result.toolCalls;
+        } else {
+          returnToolCalls = [];
+        }
         return { content: result.content, toolCalls: returnToolCalls };
       };
 
@@ -208,10 +223,12 @@ export class LLMResponseCoordinator {
           // Pass Discord channel history - source of truth for DMs (includes webhook/n8n messages)
           discordChannelHistory: message.context?.channelHistory,
           // Pass full Discord context for guild knowledge, proactive answering, etc.
-          discordContext:
-            message.context?.platform === 'discord' || message.context?.guildKnowledge
-              ? message.context
-              : undefined,
+          discordContext: (() => {
+            if (message.context?.platform === 'discord' || message.context?.guildKnowledge) {
+              return message.context;
+            }
+            return undefined;
+          })(),
           // Context Alchemy observability: pass trace ID for metrics capture
           traceId: message.context?.traceId,
           // Experiment feature flags for memory/rules ablation
@@ -226,7 +243,12 @@ export class LLMResponseCoordinator {
       // model; anything moderate/complex (or unclassified) keeps the smart model.
       const simpleChatModel = process.env.SIMPLE_CHAT_MODEL || 'anthropic/claude-sonnet-5';
       const routeSimple = preflight.complexity === 'simple';
-      let smartModel = routeSimple ? simpleChatModel : openRouterService.selectSmartModel();
+      let smartModel: string;
+      if (routeSimple) {
+        smartModel = simpleChatModel;
+      } else {
+        smartModel = openRouterService.selectSmartModel();
+      }
 
       // Brownout override (see brownout.ts): when credit runway shrinks, step
       // down to cheaper models + shorter replies instead of going silent.
@@ -272,7 +294,12 @@ export class LLMResponseCoordinator {
         brownout.mode
       );
 
-      const routeLabel = routeSimple ? 'SIMPLE' : preflight.complexity.toUpperCase();
+      let routeLabel: string;
+      if (routeSimple) {
+        routeLabel = 'SIMPLE';
+      } else {
+        routeLabel = preflight.complexity.toUpperCase();
+      }
       logger.warn(
         `🎯 Model route: ${routeLabel} → ${smartModel} (${modelAwareMessages.length} messages)`
       );
@@ -443,7 +470,11 @@ export class LLMResponseCoordinator {
         const result = context.results[i];
         let status: string;
         if (result) {
-          status = result.success ? 'SUCCESS' : 'FAILED';
+          if (result.success) {
+            status = 'SUCCESS';
+          } else {
+            status = 'FAILED';
+          }
         } else {
           status = 'UNKNOWN';
         }
@@ -547,11 +578,14 @@ ${capabilityDetails}`;
     // Don't care about explicit tags or defaults - just execute what's there.
     const hasAnyCapabilities = hasCapabilities || hasShorthandCapabilities;
     let wantsLoop = hasAnyCapabilities;
-    let decisionSource = hasCapabilities
-      ? 'detected <capability> tags'
-      : hasShorthandCapabilities
-        ? 'detected shorthand capability tags (e.g., <read>, <recall>)'
-        : 'no capabilities found';
+    let decisionSource: string;
+    if (hasCapabilities) {
+      decisionSource = 'detected <capability> tags';
+    } else if (hasShorthandCapabilities) {
+      decisionSource = 'detected shorthand capability tags (e.g., <read>, <recall>)';
+    } else {
+      decisionSource = 'no capabilities found';
+    }
 
     // If there's an explicit wants_loop tag, respect it
     if (wantsLoopMatch) {
@@ -651,10 +685,12 @@ ${capabilityDetails}`;
     }
 
     // Add separator if we truncated
-    const separator =
-      recentMessages.length < history.length - keepFirst
-        ? ['[... earlier messages omitted for context budget ...]']
-        : [];
+    let separator: string[];
+    if (recentMessages.length < history.length - keepFirst) {
+      separator = ['[... earlier messages omitted for context budget ...]'];
+    } else {
+      separator = [];
+    }
 
     const truncated = [...firstMessages, ...separator, ...recentMessages];
     const finalTokens = truncated.reduce((sum, msg) => sum + estimateTokens(msg), 0);
