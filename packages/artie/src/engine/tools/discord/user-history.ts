@@ -68,25 +68,24 @@ async function getUserMessages(params: {
     }
 
     const messages = response.body as any;
+    const messageArray = Array.isArray(messages) ? messages : [];
 
     return {
       success: true,
       data: {
         channelId,
         userId,
-        messageCount: Array.isArray(messages) ? messages.length : 0,
-        messages: Array.isArray(messages)
-          ? messages.map((msg: any) => ({
-              id: msg.id,
-              author: {
-                id: msg.author?.id,
-                username: msg.author?.username || 'Unknown',
-              },
-              content: msg.content,
-              timestamp: msg.timestamp,
-              attachments: msg.attachments?.length || 0,
-            }))
-          : [],
+        messageCount: messageArray.length,
+        messages: messageArray.map((msg: any) => ({
+          id: msg.id,
+          author: {
+            id: msg.author?.id,
+            username: msg.author?.username || 'Unknown',
+          },
+          content: msg.content,
+          timestamp: msg.timestamp,
+          attachments: msg.attachments?.length || 0,
+        })),
       },
     };
   } catch (error) {

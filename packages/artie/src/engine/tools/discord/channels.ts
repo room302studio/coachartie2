@@ -71,21 +71,20 @@ async function getMessages(params: {
     }
 
     const messages = response.body as any;
+    const messageArray = Array.isArray(messages) ? messages : [];
 
     return {
       success: true,
       data: {
         channelId,
-        messageCount: Array.isArray(messages) ? messages.length : 0,
-        messages: Array.isArray(messages)
-          ? messages.map((msg: any) => ({
-              id: msg.id,
-              author: msg.author?.username || 'Unknown',
-              content: msg.content,
-              timestamp: msg.timestamp,
-              attachments: msg.attachments?.length || 0,
-            }))
-          : [],
+        messageCount: messageArray.length,
+        messages: messageArray.map((msg: any) => ({
+          id: msg.id,
+          author: msg.author?.username || 'Unknown',
+          content: msg.content,
+          timestamp: msg.timestamp,
+          attachments: msg.attachments?.length || 0,
+        })),
       },
     };
   } catch (error) {
@@ -114,21 +113,20 @@ async function getPinnedMessages(params: { channelId: string; limit?: number }):
     }
 
     const messages = response.body as any;
+    const messageArray = Array.isArray(messages) ? messages : [];
 
     return {
       success: true,
       data: {
         channelId,
-        pinnedCount: Array.isArray(messages) ? messages.length : 0,
-        messages: Array.isArray(messages)
-          ? messages.map((msg: any) => ({
-              id: msg.id,
-              author: msg.author?.username || 'Unknown',
-              content: msg.content,
-              timestamp: msg.timestamp,
-              pinnedAt: msg.pinned_timestamp,
-            }))
-          : [],
+        pinnedCount: messageArray.length,
+        messages: messageArray.map((msg: any) => ({
+          id: msg.id,
+          author: msg.author?.username || 'Unknown',
+          content: msg.content,
+          timestamp: msg.timestamp,
+          pinnedAt: msg.pinned_timestamp,
+        })),
       },
     };
   } catch (error) {
@@ -165,21 +163,20 @@ async function searchMessages(params: {
     }
 
     const results = response.body as any;
+    const resultArray = Array.isArray(results) ? results : [];
 
     return {
       success: true,
       data: {
         channelId,
         query,
-        resultCount: Array.isArray(results) ? results.length : 0,
-        messages: Array.isArray(results)
-          ? results.map((msg: any) => ({
-              id: msg.id,
-              author: msg.author?.username || 'Unknown',
-              content: msg.content,
-              timestamp: msg.timestamp,
-            }))
-          : [],
+        resultCount: resultArray.length,
+        messages: resultArray.map((msg: any) => ({
+          id: msg.id,
+          author: msg.author?.username || 'Unknown',
+          content: msg.content,
+          timestamp: msg.timestamp,
+        })),
       },
     };
   } catch (error) {
