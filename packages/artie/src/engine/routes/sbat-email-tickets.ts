@@ -61,6 +61,39 @@ function detectPriority(subject: string, body: string): string {
   return 'normal';
 }
 
+/**
+ * Map priority to emoji
+ */
+function priorityEmoji(priority: string): string {
+  if (priority === 'high') {
+    return '🔴';
+  }
+  if (priority === 'low') {
+    return '🟢';
+  }
+  return '🟡';
+}
+
+/**
+ * Format sender name with email
+ */
+function formatFromField(name: string, email: string): string {
+  if (name) {
+    return `${name} <${email}>`;
+  }
+  return email;
+}
+
+/**
+ * Format preview text with quote prefix
+ */
+function formatPreview(text: string): string {
+  if (text) {
+    return `> ${text.replace(/\n/g, '\n> ')}`;
+  }
+  return '*(empty body)*';
+}
+
 // =============================================================================
 // POST /sbat/inbound-email — MailerSend inbound webhook → Discord relay
 // =============================================================================
@@ -102,17 +135,22 @@ sbatRouter.post('/inbound-email', async (req: Request, res: Response) => {
     }
 
     const priority = detectPriority(subject, bodyText);
-    const priorityEmoji =
-      priority === 'high' ? '🔴' : priority === 'low' ? '🟢' : '🟡';
-    const preview = bodyText.substring(0, 300) + (bodyText.length > 300 ? '...' : '');
+    const emojiIcon = priorityEmoji(priority);
+    const previewText = bodyText.substring(0, 300);
+    let preview: string;
+    if (bodyText.length > 300) {
+      preview = previewText + '...';
+    } else {
+      preview = previewText;
+    }
 
     const discordMsg = [
-      `## ${priorityEmoji} Inbound Email`,
-      `**From:** ${fromName ? `${fromName} <${fromEmail}>` : fromEmail}`,
+      `## ${emojiIcon} Inbound Email`,
+      `**From:** ${formatFromField(fromName, fromEmail)}`,
       `**Subject:** ${subject}`,
       `**Priority:** ${priority}`,
       '',
-      preview ? `> ${preview.replace(/\n/g, '\n> ')}` : '*(empty body)*',
+      formatPreview(preview),
     ].join('\n');
 
     await postToDiscord(discordMsg);
