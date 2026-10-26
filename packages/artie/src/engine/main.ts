@@ -138,11 +138,13 @@ export async function startEngine(): Promise<EngineHandle> {
 
   // Which tool loop this process runs (wave 8). warn, so it reaches the PM2 log file.
   const loopMode = toolLoopMode();
-  logger.warn(
-    loopMode === 'native'
-      ? '🔧 Tool loop: native tool calls (default). Rollback: TOOL_LOOP=xml + restart.'
-      : '🔧 Tool loop: XML (TOOL_LOOP=xml, emergency fallback)'
-  );
+  let loopModeMsg: string;
+  if (loopMode === 'native') {
+    loopModeMsg = '🔧 Tool loop: native tool calls (default). Rollback: TOOL_LOOP=xml + restart.';
+  } else {
+    loopModeMsg = '🔧 Tool loop: XML (TOOL_LOOP=xml, emergency fallback)';
+  }
+  logger.warn(loopModeMsg);
   // Native tool turns check the model catalog's supported_parameters; warm it now so the
   // first reply after boot doesn't wait on the fetch.
   if (loopMode === 'native') void openRouterModelsService.fetchLiveModelInfo();

@@ -132,7 +132,8 @@ export function formatStructuredErrorForLLM(error: StructuredCapabilityError): s
   if (error.requiredParams && error.requiredParams.length > 0) {
     formatted += `📋 Required Parameters:\n`;
     for (const param of error.requiredParams) {
-      formatted += `   - ${param.name} (${param.type})${param.required ? ' *required' : ''}: ${param.description}\n`;
+      const requiredMark = param.required ? ' *required' : '';
+      formatted += `   - ${param.name} (${param.type})${requiredMark}: ${param.description}\n`;
       if (param.example !== undefined) {
         formatted += `     Example: ${param.example}\n`;
       }
