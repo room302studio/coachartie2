@@ -79,9 +79,10 @@ const UNKNOWN_ANTHROPIC_MIN = 4096;
  * request lands inside 5 minutes, where the cheaper write wins.
  */
 function cacheTtl(): { type: 'ephemeral'; ttl?: '1h' } {
-  return process.env.PROMPT_CACHE_TTL === '5m'
-    ? { type: 'ephemeral' }
-    : { type: 'ephemeral', ttl: '1h' };
+  if (process.env.PROMPT_CACHE_TTL === '5m') {
+    return { type: 'ephemeral' };
+  }
+  return { type: 'ephemeral', ttl: '1h' };
 }
 
 export type WireContent =
