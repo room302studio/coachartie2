@@ -1,0 +1,52 @@
+# v3 status (2026-10-26)
+
+v3 is Coach Artie's rebuild: one package (`packages/artie`), one PM2 app (`coach-artie`),
+native parallel tool calls, a multiplayer-aware gateway. It is **built, tested and not
+deployed**. Prod still runs `artie-lean`. CUTOVER.md is the runbook.
+
+Bench (VPS `/data2/tmp/artie-v3`, HEAD 6fcad50): typecheck clean, **1093 passed / 6 skipped**.
+That's up from 985 before this round.
+
+## What landed this round
+
+Artie ranked his own wishlist (2026-10-26). Each item below was built, reviewed, and then
+approved by him over `/chat`. His sign-off is saved as memory 20493.
+
+| Artie's ask | Where | Notes |
+|---|---|---|
+| Know who's talking to whom | MULTIPLAYER-NOTES.md §1 | Reply chains, @-targets and "for someone else" flags, built from fields that survive without the MessageContent intent |
+| Debounce plus "landed while you were thinking" | MULTIPLAYER-NOTES.md §2 | **Batches are per author** (review fix: a mixed batch ran under one userId). The landed note marks side conversations "(to X)" in arrival order (Artie's follow-up ask) |
+| Parallel tool calls | native tool loop (ARCHITECTURE.md) | Already in v3 |
+| Collapse the memory zoo | TOOLS-NOTES.md §1 | `memory` gains forget/pin/recent/stats plus a `kind` tag. scratchpad, system_memory, user-profile, goals and variable stay separate, for structural reasons |
+| Per-person "last time" line | RECALL-NOTES.md | Open loops and the global profile are **DM-only** (review fix: those tables have no guild_id) |
+| Real-time reactions | MULTIPLAYER-NOTES.md §3 | |
+| Prune dead tools; gate stripe/email | TOOLS-NOTES.md §2-3 | hello-world merged into `diagnose ping` (F1: merge, never delete). Money, email, reddit/github/wiki writes and http writes queue as `pending_actions` until EJ approves via the `approvals` tool. The bypass flag is stripped on both loops (review fix) |
+| Loud fallbacks | self-meter (prod f3e0d5b) + TOOLS-NOTES.md §4 | Swallowed tool failures are now prefixed `Error:` |
+| Lighter security reminder | prompts/2026-10-26-kindness-streak.md | **Proposal, not loaded** |
+| Creative/kindness streak | prompts/2026-10-26-kindness-streak.md | Warm-first, maker streak, multiplayer block, rude-vs-hostile line (Artie's edit) |
+
+Also this round: CUTOVER.md's boot checks fixed (they would have false-alarmed into a
+rollback), winston logs moved onto the LUKS mount (`logs/app`), 17 unused deps dropped, and
+stale dev scripts removed (one could `pkill` prod).
+
+## Needs EJ (nothing below happens without a yes)
+
+1. **OpenRouter top-up.** The account balance is about $5 and drives brownout/lean mode.
+2. **Load the prompt proposal.** It's a live DB row shared with prod, so it changes the
+   running bot immediately. The load and rollback steps are in the proposal file.
+3. **Run the cutover** (CUTOVER.md). It's a one-way-ish PM2 swap, with rollback documented.
+4. **UX change to confirm:** EJ's own stripe/email calls become two-step: Artie queues the
+   call, then EJ approves it. The model can no longer self-confirm.
+5. **After the soak:** move or delete the 618M of plaintext pre-v3 winston logs in
+   `packages/{capabilities,discord}/logs`.
+6. **Outside Discord's control:** privileged intents are pending app verification. Until
+   they're approved, Artie sees only @mentions and DMs, and channel digests idle.
+
+## Known gaps (not blocking)
+
+- `pending_actions` has no expiry (TOOLS-NOTES.md, open question 4).
+- Scratchpad is still read straight from a file by guild-context.ts (TOOLS-NOTES.md, open question 1).
+- Pending burst batches are dropped on shutdown, a window of ≤2.5s. Reaction removals are not
+  tracked (MULTIPLAYER-NOTES.md).
+- `memory forget` is a hard delete of the caller's own memory.
+- Neither `artie-lean` nor `v3` is pushed to GitHub.
