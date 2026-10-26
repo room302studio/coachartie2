@@ -20,6 +20,7 @@ import { costMonitor } from './budget/usage-ledger.js';
 import { distressMonitor } from './health/distress.js';
 import { vitalsMonitor, simpleHealer } from './health/vitals.js';
 import { startDailyBudgetWatch } from './budget/daily-cap.js';
+import { startJarEarningsWatch } from './budget/jar-earnings.js';
 import { GlobalVariableStore } from './5-tool-loop/variables.js';
 // Import the turn spine FIRST to trigger capability registration (its orchestrator
 // singleton runs the bootstrap at module load). Wave 3 left this path pointing at the
@@ -157,6 +158,11 @@ export async function startEngine(): Promise<EngineHandle> {
   // from a previous ET day and trips the mute if today's spend is already over the cap.
   console.log('💸 Starting daily budget watch...');
   startDailyBudgetWatch();
+
+  // Jar earnings (self-meter line only — no-op until ARTIE_TIP_JAR_URL/STRIPE_JAR_READ_KEY/
+  // ARTIE_TIP_JAR_PAYMENT_LINK_ID are all set; see JAR-NOTES.md).
+  console.log('🫙 Starting jar earnings watch...');
+  startJarEarningsWatch();
 
   // Start scheduler
   console.log('⏰ Starting scheduler...');

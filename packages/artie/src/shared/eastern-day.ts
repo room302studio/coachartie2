@@ -69,3 +69,25 @@ export function easternDayBounds(date: Date = new Date()): { start: Date; end: D
 export function toSqliteUtc(date: Date): string {
   return date.toISOString().replace('T', ' ').slice(0, 19);
 }
+
+/** 'YYYY-MM' of `date` on the America/New_York calendar (the jar earnings reader's "this
+ *  calendar month", added alongside easternDayKey). */
+export function easternMonthKey(date: Date = new Date()): string {
+  const p = zonedParts(date);
+  return `${p.year}-${String(p.month).padStart(2, '0')}`;
+}
+
+/** [start, end) of the ET calendar month containing `date`, as UTC instants. Mirrors
+ *  easternDayBounds, one calendar step up. */
+export function easternMonthBounds(date: Date = new Date()): { start: Date; end: Date } {
+  const p = zonedParts(date);
+  const start = easternMidnightUtc(p.year, p.month, 1);
+  let nextMonth = p.month + 1;
+  let nextYear = p.year;
+  if (nextMonth > 12) {
+    nextMonth = 1;
+    nextYear += 1;
+  }
+  const end = easternMidnightUtc(nextYear, nextMonth, 1);
+  return { start, end };
+}

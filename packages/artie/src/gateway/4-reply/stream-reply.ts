@@ -13,7 +13,7 @@
 
 import { logger } from '../../shared/logger.js';
 import { stripToolCalls, stripInternalMarkup } from '../../shared/clean-llm-output.js';
-import { scrubBlockedUserMentions } from '../../shared/blocklist.js';
+import { isBlockedUser, scrubBlockedUserMentions } from '../../shared/blocklist.js';
 import { isOperatorOnlyError } from '../../shared/anomalywatch.js';
 import { getErrorMessage } from '../../shared/errors.js';
 import { capabilitiesClient } from '../3-ask-engine/engine-client.js';
@@ -24,6 +24,8 @@ import { OUTPUT_SLUR_BLOCKLIST, INTERNAL_LEAK_BLOCKLIST } from './output-safety.
 import { applyControlTokens, scrubStreamingTokens } from './control-tokens.js';
 import { shouldCreateThread, generateThreadName } from './threads.js';
 import { slugify } from '../../shared/text.js';
+import { tipJarUrl } from '../../shared/tip-jar-config.js';
+import { decideJarButton, recordJarButtonShown } from './jar-button.js';
 
 export interface UserIntent {
   content: string;
@@ -445,7 +447,13 @@ export async function processUserIntent(
           // term (even in roast mode). Either case → stay silent instead of posting.
           const containsSlur = OUTPUT_SLUR_BLOCKLIST.test(cleanResult);
           const leaksInternals = INTERNAL_LEAK_BLOCKLIST.test(cleanResult);
+          // Tracked so the pending-components/jar-button block below never fires on a turn
+          // whose text never actually landed (or got pulled back) — a silenced turn should
+          // not quietly grow buttons, and the jar button must never appear without a real
+          // substantial reply sitting above it.
+          let wasSuppressed = false;
           if (!cleanResult.trim() || containsSlur || leaksInternals) {
+            wasSuppressed = true;
             let warningMessage: string;
             if (containsSlur) {
               warningMessage = `🛑 Output blocked by slur blacklist [${shortId}] — staying silent`;
@@ -524,7 +532,9 @@ export async function processUserIntent(
             }
           }
 
-          // Check for and send any pending file attachments (e.g., analyzed .metro files)
+          // Check for and send any pending file attachments (e.g., analyzed .metro files) —
+          // not gated on wasSuppressed: a file attachment isn't the "[SILENT]"/slur-blocked
+          // text, so a suppressed reply can still legitimately carry one.
           if (intent.sendFile) {
             try {
               const pendingAttachments = await capabilitiesClient.getPendingAttachments(
@@ -550,19 +560,38 @@ export async function processUserIntent(
           }
 
           // Check for and attach any pending Discord components (buttons/select) queued by
-          // discord-ui. Keyed by the TURN id (jobInfo.messageId), not userId — two turns from
-          // the same person must never cross. Never let an attach failure take down the
-          // (already-delivered) text reply.
-          if (intent.attachComponents) {
+          // discord-ui, plus the jar button if this reply earned one — ONE combined
+          // attachComponents call, since attaching replaces the whole component set and a
+          // second call would wipe the first. Gated on !wasSuppressed: a silenced/deleted
+          // reply must not grow buttons (and must never grow a jar button with no reply
+          // above it). Never let an attach failure take down the (already-delivered) text.
+          if (intent.attachComponents && !wasSuppressed) {
             try {
-              const pendingComponentRows = await capabilitiesClient.getPendingComponents(
-                jobInfo.messageId
-              );
-              if (pendingComponentRows.length > 0) {
-                logger.info(
-                  `🔘 Attaching ${pendingComponentRows.length} component row(s) [${shortId}]`
-                );
-                await intent.attachComponents(pendingComponentRows);
+              const rows = await capabilitiesClient.getPendingComponents(jobInfo.messageId);
+
+              const channelId =
+                (intent.context?.channelId as string | undefined) ??
+                (intent.metadata?.channelId as string | undefined);
+              const jarRow = decideJarButton({
+                url: tipJarUrl(),
+                channelId,
+                userBlocked: isBlockedUser(intent.userId),
+                replyLength: cleanResult.trim().length,
+                // The only existing tier-list/review-style surface is discord-ui's
+                // buttons/select (🎨) — see jar-button.ts's isSubstantialReply doc comment.
+                usedQualifyingTool: reactedEmojis.has('🎨'),
+                existingRowCount: rows.length,
+              });
+              if (jarRow) {
+                rows.push(jarRow);
+                if (channelId) {
+                  recordJarButtonShown(channelId);
+                }
+              }
+
+              if (rows.length > 0) {
+                logger.info(`🔘 Attaching ${rows.length} component row(s) [${shortId}]`);
+                await intent.attachComponents(rows);
                 logger.info(`✅ Attached pending components [${shortId}]`);
               }
             } catch (compError) {
