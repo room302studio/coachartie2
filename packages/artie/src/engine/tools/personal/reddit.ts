@@ -30,12 +30,17 @@ export const redditCapability: RegisteredCapability = {
 
     if (action === 'list-subreddits') {
       const allowlist = redditClient.getAllowedSubreddits();
+      let note: string | undefined;
+      if (allowlist.mode === 'open') {
+        note = 'Allowlist not set; all subreddits permitted.';
+      } else {
+        note = undefined;
+      }
       return JSON.stringify({
         success: true,
         mode: allowlist.mode,
         allowedSubreddits: allowlist.allowedSubreddits,
-        note:
-          allowlist.mode === 'open' ? 'Allowlist not set; all subreddits permitted.' : undefined,
+        note,
       });
     }
 
@@ -132,11 +137,17 @@ export const redditCapability: RegisteredCapability = {
         const allowlist = redditClient.getAllowedSubreddits();
         const result = await redditClient.fetchMentions(limit);
 
-        const filtered = allowlist.allowedSubreddits.length
-          ? result.mentions.filter((m) =>
-              m.subreddit ? allowlist.allowedSubreddits.includes(m.subreddit.toLowerCase()) : true
-            )
-          : result.mentions;
+        let filtered: typeof result.mentions;
+        if (allowlist.allowedSubreddits.length) {
+          filtered = result.mentions.filter((m) => {
+            if (m.subreddit) {
+              return allowlist.allowedSubreddits.includes(m.subreddit.toLowerCase());
+            }
+            return true;
+          });
+        } else {
+          filtered = result.mentions;
+        }
 
         return JSON.stringify({
           ...result,
