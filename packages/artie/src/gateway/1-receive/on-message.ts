@@ -615,11 +615,24 @@ function burstGuard({ message, shortId, shouldRespond, responseConditions }: Tur
  * ambient chatter from a third person is exactly what "landed" is for.
  */
 function recordActivity({ message }: Turn): StepResult {
+  // Who it was aimed at, if not Artie: the replied-to user, else the first @-mentioned human.
+  // Both survive without the MessageContent intent.
+  const botId = message.client.user?.id;
+  const replied = message.mentions.repliedUser;
+  const target =
+    replied && replied.id !== botId && replied.id !== message.author.id
+      ? replied
+      : message.mentions.users.find(
+          (u) => u.id !== botId && u.id !== message.author.id && !u.bot
+        );
   recordChannelActivity(message.channelId, {
     messageId: message.id,
     authorLabel: message.author.displayName || message.author.username,
     content: message.content,
     ts: Date.now(),
+    ...(target && !isBlockedUser(target.id)
+      ? { toLabel: target.displayName || target.username }
+      : {}),
   });
 }
 

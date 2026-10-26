@@ -100,4 +100,14 @@ describe('formatLandedNote', () => {
     ]);
     expect(note).toContain('2 more messages landed');
   });
+
+  it('marks side conversations so Artie does not answer half of one', () => {
+    const note = formatLandedNote([
+      { messageId: 'm2', authorLabel: 'Bob', content: 'did you push it?', ts: 1, toLabel: 'Carol' },
+      { messageId: 'm3', authorLabel: 'Carol', content: 'yep', ts: 2, toLabel: 'Bob' },
+    ]);
+    expect(note).toContain('Bob (to Carol): "did you push it?"');
+    expect(note).toContain('Carol (to Bob): "yep"');
+    expect(note).toContain('in arrival order');
+  });
 });

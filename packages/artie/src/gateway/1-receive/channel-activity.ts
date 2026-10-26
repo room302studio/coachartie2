@@ -16,6 +16,9 @@ export interface ChannelActivityEntry {
   authorLabel: string;
   content: string;
   ts: number;
+  /** Who this message was aimed at, when it was a reply to or @-mention of someone other
+   *  than Artie. Lets the landed note show a side conversation as one. */
+  toLabel?: string;
 }
 
 const MAX_ENTRIES_PER_CHANNEL = 40;
@@ -64,6 +67,9 @@ export function pickLandedMessages(
 /** Render pickLandedMessages() output as the one-line note that goes in discordContext. */
 export function formatLandedNote(landed: ChannelActivityEntry[]): string | undefined {
   if (landed.length === 0) return undefined;
-  const parts = landed.map((e) => `${e.authorLabel}${e.content ? `: "${e.content.slice(0, 60)}"` : ''}`);
-  return `While you were composing this reply, ${landed.length} more message${landed.length === 1 ? '' : 's'} landed in this channel — ${parts.join('; ')}. You may be answering a question that's already moved on; adjust if so.`;
+  const parts = landed.map(
+    (e) =>
+      `${e.authorLabel}${e.toLabel ? ` (to ${e.toLabel})` : ''}${e.content ? `: "${e.content.slice(0, 60)}"` : ''}`
+  );
+  return `While you were composing this reply, ${landed.length} more message${landed.length === 1 ? '' : 's'} landed in this channel, in arrival order — ${parts.join('; ')}. You may be answering a question that's already moved on; adjust if so. Lines marked (to X) are people talking to each other, not to you.`;
 }
