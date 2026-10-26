@@ -600,6 +600,15 @@ export class CapabilityExecutor {
     context: OrchestrationContext | undefined,
     generateHelpfulError: GenerateHelpfulErrorCallback
   ): Promise<CapabilityResult> {
+    // Strip the approval-gate bypass flag here too, not just in executeNativeToolCall: the
+    // legacy XML loop (TOOL_LOOP=xml, the rollback path) reaches this method without going
+    // through that function. The approvals tool replays through capabilityRegistry.execute
+    // directly, so stripping here never blocks a real approval.
+    if (capability.params && 'confirmed' in capability.params) {
+      const { confirmed: _ignoredConfirmed, ...rest } = capability.params;
+      capability = { ...capability, params: rest };
+    }
+
     // Old merged tool names (shell, git, todo, …) become their canonical tool BEFORE the taint
     // check, so the guard only ever has to know canonical names.
     {
