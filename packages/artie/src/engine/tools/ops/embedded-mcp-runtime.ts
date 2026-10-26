@@ -1,4 +1,5 @@
 import { logger } from '../../../shared/logger.js';
+import { getErrorMessage } from '../../../shared/errors.js';
 import { readFileSync } from 'fs';
 
 /**
@@ -60,7 +61,7 @@ class WikipediaSearchTool implements EmbeddedMCPTool {
       }
     } catch (error) {
       logger.error('Wikipedia search failed:', error);
-      return `Wikipedia search failed: ${error instanceof Error ? error.message : 'Unknown error'}`;
+      return `Wikipedia search failed: ${getErrorMessage(error)}`;
     }
   }
 }
@@ -142,7 +143,7 @@ class CalculatorTool implements EmbeddedMCPTool {
     } catch (error) {
       logger.error('Calculation failed:', error);
       throw new Error(
-        `Calculation failed: ${error instanceof Error ? error.message : 'Invalid expression'}`
+        `Calculation failed: ${getErrorMessage(error)}`
       );
     }
   }
@@ -188,7 +189,12 @@ class OwnTracksLocationTool implements EmbeddedMCPTool {
         return 'No location data available from OwnTracks';
       }
 
-      const timestamp = data.tst ? new Date(data.tst * 1000).toISOString() : 'unknown';
+      let timestamp: string;
+      if (data.tst) {
+        timestamp = new Date(data.tst * 1000).toISOString();
+      } else {
+        timestamp = 'unknown';
+      }
       return JSON.stringify({
         lat: data.lat,
         lon: data.lon,
@@ -198,7 +204,7 @@ class OwnTracksLocationTool implements EmbeddedMCPTool {
       });
     } catch (error) {
       logger.error('OwnTracks location fetch failed:', error);
-      return `OwnTracks location fetch failed: ${error instanceof Error ? error.message : 'Unknown error'}`;
+      return `OwnTracks location fetch failed: ${getErrorMessage(error)}`;
     }
   }
 }
