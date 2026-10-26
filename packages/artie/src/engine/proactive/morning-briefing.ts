@@ -928,7 +928,12 @@ function generateTensionSection(): string {
   const mt = parseInt(milYesterday) || 0;
   const ma = parseInt(milAvg) || 0;
   if (ma > 5 && Math.abs(mt - ma) / ma >= 0.3) {
-    const dir = mt > ma ? '↑' : '↓';
+    let dir: string;
+    if (mt > ma) {
+      dir = '↑';
+    } else {
+      dir = '↓';
+    }
     const pct = Math.round(Math.abs(mt - ma) / ma * 100);
     tensions.push(`Military flights yesterday: ${mt} vs ${ma} avg/14d (${dir}${pct}%)`);
   }
@@ -941,7 +946,12 @@ function generateTensionSection(): string {
   const ft = parseInt(flightsYesterday) || 0;
   const fa = parseInt(flightsAvg) || 0;
   if (fa > 100 && Math.abs(ft - fa) / fa >= 0.3) {
-    const dir = ft > fa ? '↑' : '↓';
+    let dir: string;
+    if (ft > fa) {
+      dir = '↑';
+    } else {
+      dir = '↓';
+    }
     const pct = Math.round(Math.abs(ft - fa) / fa * 100);
     tensions.push(`Total flights yesterday: ${ft} vs ${fa} avg/14d (${dir}${pct}%)`);
   }
