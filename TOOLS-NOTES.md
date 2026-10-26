@@ -100,8 +100,7 @@ blocked along with the write that actually needs sign-off:
 | Tool | Gated actions | Left open |
 |---|---|---|
 | `stripe` | all (`create_payment_link`, `deactivate_payment_link`) | — (it's money, full stop) |
-| `email` | `send` | `status` |
-| `email-drafting` | `send` (the actual send step) | draft/edit/cancel |
+| `email` | `send` (**both** the bare capability and the drafting flow's real send — see below) | `status` |
 | `reddit` | `post`, `comment` | `read`, `search`, `mentions`, `status`, `list-subreddits` |
 | `github` | `create_issue`, `update_issue` | every read action (`list_issues`, `search_issues`, `get_*`, …) |
 | `mediawiki` | `write`, `add` | `read`, `search`, `list` |
@@ -115,6 +114,46 @@ of running. Checked in `CapabilityRegistry.execute()`, right after `resolveToolC
 function every call path (native loop → `robustExecutor` → `registry.execute`, the legacy XML
 loop, and the HTTP `/capabilities/execute` route) already shares, so the gate can't be
 bypassed by calling a tool's old alias name either.
+
+**Audit findings, found by re-checking this design against itself before calling it done:**
+
+- **The real email-send path bypassed the gate entirely.** `email-drafting.ts` is *not* a
+  registered capability (`tests/architecture.test.ts` lists it as a TOOL_HELPER, "routed from
+  run-turn") — it's the flow that detects email intent, drafts with an LLM, and sends on the
+  user's "send" reply, and it's how almost every real email actually goes out. Its
+  `handleSendDraft()` called `emailCapability.handler()` **directly**, never touching
+  `CapabilityRegistry.execute()` — so gating the bare `email` capability's `send` action did
+  nothing for the path that matters. Fixed: it now calls
+  `capabilityRegistry.execute('email', 'send', ..., { userId: message.userId })`, same as any
+  other call, so it hits the gate like everything else. (The `'email-drafting'` row in
+  `GATED_ACTIONS` from the first pass was consequently dead code — a name that's never a
+  registered capability can never be looked up by `isGatedAction`. Removed.)
+- **`confirmed: true` was trustable from a live model tool call, not just from `approvals.ts`'s
+  replay.** `isOwnerConfirmed()` only checks `context.userId === OWNER_USER_ID &&
+  params.confirmed === true` — and `params` comes straight from the model's tool-call
+  arguments. In EJ's own conversation, nothing stopped Artie from deciding on its own to add
+  `confirmed: true` to a stripe call and skip the gate without EJ having said yes to anything.
+  Fixed: `executeNativeToolCall` (the one entry point every native tool call goes through)
+  now strips `confirmed` out of the model's own params before `resolveToolCall` ever sees
+  them. The only remaining path that can set it is `approvals.ts`'s own direct call to
+  `capabilityRegistry.execute()`, which bypasses `executeNativeToolCall` entirely. (The legacy
+  XML loop's equivalent call site wasn't touched — it's `// XML-LOOP`-marked and frozen until
+  the soak ends — so this specific hardening is native-mode-only; XML mode is the emergency
+  rollback, not the live default, but it's listed here rather than assumed fixed everywhere.)
+- **A replayed approval lost its Discord context.** `pending_actions` originally stored only
+  `params`, so `approvals:approve` replayed with `{ userId: owner }` and nothing else — a tool
+  that reads `context.guildId`/`channelId` would behave differently on replay than it would
+  have at the original call site. Fixed: the row now also stores `context_json`
+  (guildId/channelId/messageId at request time) and `approve` merges it back in, overriding
+  only `userId`.
+- **Checked, not a bug:** `deleteMemory`'s plain `DELETE FROM memories WHERE id = ?` doesn't
+  separately touch `memories_fts`. Confirmed this is fine —
+  `reference-docs/migrations/schema.sql` has a `memories_fts_delete` trigger (`AFTER DELETE ON
+  memories`) that keeps the FTS index in sync automatically in any DB that trigger actually
+  ran against. The "no such table: memories_fts" warning that appears in the test suite's
+  stderr is a pre-existing gap in the *test* DB's bootstrap (`client.ts`'s `initializeDb()`
+  never creates the FTS virtual tables or their triggers — that's historical, not something
+  this branch changed), not something `forget` introduced.
 
 The `approvals` tool (owner-only, same `isOwner()` check `pairing.ts` uses) is how EJ actually
 resolves one: `list` shows what's pending, `deny` drops it, `approve` re-runs the **exact**
@@ -209,3 +248,25 @@ over-explained than under-explained while it's new.
    the queue ever actually fills up.
 5. **`variable`** needed no code change (already excluded from the native roster via
    `XML_ONLY_TOOLS`), confirmed rather than assumed by reading `mode.ts`.
+6. **The `confirmed`-stripping fix is native-loop-only.** The legacy XML loop has its own
+   call-execution site (`5-tool-loop/loop.ts`) that also eventually reaches
+   `registry.execute()`; it wasn't given the same strip because its code is `// XML-LOOP`-
+   marked and frozen until the soak ends, and native is the live default. If `TOOL_LOOP=xml`
+   is ever actually flipped on in prod before that code is deleted, re-check whether a model
+   could set `confirmed` through that path too.
+7. **Non-LLM callers of a gated action** (a scheduler job, a script hitting the HTTP
+   `/capabilities/execute` route) now queue as pending with `requestedBy: 'unknown-user'`
+   whenever they don't pass a `context.userId`, rather than running — this is new, fail-closed
+   behavior from this branch, not something that existed before. I didn't find any such
+   caller actually invoking a gated action today (`engine/jobs/`, `engine/proactive/`, and the
+   HTTP route all pass through the same `registry.execute()`, so they'd all be caught the same
+   way), but it's worth EJ knowing this exists as a behavior change, not discovering it from a
+   log line.
+8. **No dedicated unit test for the email-drafting fix itself** — `EmailDraftingService`'s
+   draft state is populated by `handleEmailWritingMode()`, which calls the real
+   `openRouterService`/`contextAlchemy` to draft with an LLM, so testing `handleSendDraft()`
+   directly needs mocking that's out of this task's budget. The fix is covered indirectly:
+   it now goes through the exact same `capabilityRegistry.execute('email', 'send', ...)` call
+   the existing `email:send` gate test in `approval-gate.test.ts` already exercises, and
+   `pnpm typecheck` confirms the new call shape compiles. Worth a real test if this flow gets
+   touched again.
