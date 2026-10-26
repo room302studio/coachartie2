@@ -2,6 +2,36 @@ import { MessageFlags, SlashCommandBuilder, ChatInputCommandInteraction, EmbedBu
 import { logger } from '../../shared/logger.js';
 import { describeEvents, listGuildWatches } from '../watchers/github/watch-list.js';
 
+/**
+ * Format watch scope label.
+ */
+function scopeLabel(channelOnly: boolean): string {
+  if (channelOnly) {
+    return 'in this channel';
+  }
+  return 'in this server';
+}
+
+/**
+ * Format watch scope suffix for title.
+ */
+function scopeSuffix(channelOnly: boolean): string {
+  if (channelOnly) {
+    return ' (this channel)';
+  }
+  return '';
+}
+
+/**
+ * Format field label for continuation.
+ */
+function fieldLabel(label: string, part: number): string {
+  if (part === 1) {
+    return label;
+  }
+  return `${label} (cont.)`;
+}
+
 export const listWatchesCommand = {
   data: new SlashCommandBuilder()
     .setName('list-watches')
@@ -24,10 +54,11 @@ export const listWatchesCommand = {
     const channelOnly = interaction.options.getBoolean('channel-only') ?? false;
 
     try {
-      const watches = listGuildWatches(guildId, channelOnly ? interaction.channelId : undefined);
+      const watchChannelFilter = channelOnly ? interaction.channelId : undefined;
+      const watches = listGuildWatches(guildId, watchChannelFilter);
       if (watches.length === 0) {
         return interaction.reply({
-          content: `📭 No repos watched ${channelOnly ? 'in this channel' : 'in this server'}. \`/watch-repo\` adds one.`,
+          content: `📭 No repos watched ${scopeLabel(channelOnly)}. \`/watch-repo\` adds one.`,
           flags: MessageFlags.Ephemeral,
         });
       }
@@ -39,7 +70,7 @@ export const listWatchesCommand = {
 
       const embed = new EmbedBuilder()
         .setColor(0x1f6feb)
-        .setTitle(`👀 GitHub watches${channelOnly ? ' (this channel)' : ''}`)
+        .setTitle(`👀 GitHub watches${scopeSuffix(channelOnly)}`)
         .setDescription(`${active.length} active · ${paused.length} paused`);
       // Embed field values cap at 1024 chars; chunk long lists across fields.
       const addList = (label: string, rows: typeof watches) => {
@@ -47,13 +78,13 @@ export const listWatchesCommand = {
         let part = 1;
         for (const text of rows.map(line)) {
           if (chunk.length + text.length + 1 > 1000) {
-            embed.addFields({ name: part === 1 ? label : `${label} (cont.)`, value: chunk });
+            embed.addFields({ name: fieldLabel(label, part), value: chunk });
             chunk = '';
             part++;
           }
           chunk += `${text}\n`;
         }
-        if (chunk) embed.addFields({ name: part === 1 ? label : `${label} (cont.)`, value: chunk });
+        if (chunk) embed.addFields({ name: fieldLabel(label, part), value: chunk });
       };
       if (active.length) addList('▶️ Active', active);
       if (paused.length) addList('⏸️ Paused', paused);
