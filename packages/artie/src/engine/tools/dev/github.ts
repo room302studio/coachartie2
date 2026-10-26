@@ -897,7 +897,11 @@ const githubActions = {
 
             if (prDetailResponse.ok) {
               const prDetail = (await prDetailResponse.json()) as any;
-              status = prDetail.merged ? 'merged' : 'closed';
+              if (prDetail.merged) {
+                status = 'merged';
+              } else {
+                status = 'closed';
+              }
             }
           }
 
