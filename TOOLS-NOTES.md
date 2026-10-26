@@ -146,6 +146,16 @@ bypassed by calling a tool's old alias name either.
   have at the original call site. Fixed: the row now also stores `context_json`
   (guildId/channelId/messageId at request time) and `approve` merges it back in, overriding
   only `userId`.
+- **A gated call's `content` (the 4th positional arg to `execute()`, separate from `params`)
+  was dropped on the way into `pending_actions` and never replayed.** This is a defect in the
+  fix above, not a pre-existing bug — found by re-reading the exact path the email-drafting
+  fix now takes: `handleSendDraft()` calls `execute('email', 'send', {to, subject, from},
+  draft.body, ctx)` — the drafted **body** rides in `content`, not `params`. The gate block
+  only captured `params`/`context`; approving a gated drafted email would have sent with no
+  body at all. Fixed the same way as `context_json`: `pending_actions` got a `content` column,
+  `createPendingAction`/`approve` pass it through, and `approvals:list` now shows a preview of
+  it. `tests/engine/approval-gate.test.ts`'s content round-trip test (a stub tool whose result
+  echoes `content`) is the regression test for this specific class of bug.
 - **Checked, not a bug:** `deleteMemory`'s plain `DELETE FROM memories WHERE id = ?` doesn't
   separately touch `memories_fts`. Confirmed this is fine —
   `reference-docs/migrations/schema.sql` has a `memories_fts_delete` trigger (`AFTER DELETE ON
@@ -250,8 +260,10 @@ respect, not an explanation that belongs in this file instead.
 2. **`context.results` success bookkeeping** doesn't know about `looksLikeToolFailure` (see
    §3's known gap) — health/usage stats will undercount these failures until that's wired up
    too.
-3. **Roster token count went up, not down** (see above) — trimming `memory`'s description is
-   the obvious next step if that matters more than the explanation staying in the prompt.
+3. **Roster token count went up, not down** (see above) — already trimmed once (108→91 tok
+   for the `memory` line, after the description rewrite in finding #1 above); further cuts
+   trade directly against the routing text that keeps the model out of scratchpad/user-profile,
+   so I'd weigh that tradeoff explicitly before cutting more rather than cutting blind.
 4. **The approval gate has no expiry/cleanup** — a denied or forgotten pending action sits in
    `pending_actions` forever. Fine at today's volume; worth a TTL or a `scheduler.ts` sweep if
    the queue ever actually fills up.
@@ -291,3 +303,24 @@ respect, not an explanation that belongs in this file instead.
    the existing `email:send` gate test in `approval-gate.test.ts` already exercises, and
    `pnpm typecheck` confirms the new call shape compiles. Worth a real test if this flow gets
    touched again.
+10. **EJ's own stripe/email calls are a two-step flow now, not one-shot.** Stripping
+    `confirmed` (finding #2 above) means even EJ can't tell Artie "send that payment link" and
+    have it happen in one turn — it queues, then he has to separately run
+    `approvals:approve`. That's the correct call under "ambiguity means no" (a model deciding
+    on its own that EJ said yes is exactly the ambiguity that rule exists for), but it's a
+    felt UX change for the one person this gate is supposed to defer to, not just a safety
+    detail — worth confirming he actually wants the two-step every time, versus e.g. some
+    lower-friction "EJ said yes in this exact message" signal that isn't model-settable.
+11. **Nothing notifies EJ when something queues.** The requester gets the ⏸️ message; EJ only
+    learns a pending action exists by running `approvals:list` himself. The task asked for the
+    record (a place pending actions land), not a push notification, so this isn't a defect —
+    but the realistic failure mode is a stripe link or an email sitting unseen in the queue
+    for a week because nothing surfaced it. Worth a line in `heartbeat.ts` or a DM on create
+    if that's wanted.
+12. **A gated drafted email's state after queuing is a little loose.** `handleSendDraft()`
+    leaves the draft as `'draft'` (not `'sent'`) while its pending action waits — correct, so
+    the user could in principle retry — but nothing tells the user it's pending EJ's review
+    instead of sent, and nothing stops them from saying "send" again, which creates a SECOND
+    pending action for the same email (not a double-send — each still needs its own
+    `approvals:approve` — just two queue entries for one draft). Fine at today's volume; worth
+    tightening if gated email drafts turn out to be common.

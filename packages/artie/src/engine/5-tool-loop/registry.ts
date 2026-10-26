@@ -481,6 +481,7 @@ export class CapabilityRegistry {
         tool: name,
         action,
         params,
+        content,
         context,
         requestedBy: context?.userId || 'unknown-user',
       });

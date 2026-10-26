@@ -21,6 +21,9 @@ export interface PendingAction {
   tool: string;
   action: string;
   paramsJson: string;
+  /** The capability call's `content` arg (4th positional arg to execute(), separate from
+   *  params) — e.g. a drafted email's body. Null when the original call had none. */
+  content: string | null;
   /** guildId/channelId/messageId at request time, so approve() can replay with the same
    *  Discord context instead of a bare owner-only context (otherwise a tool that reads
    *  context.channelId/guildId would behave differently on replay than it would have at
@@ -46,6 +49,7 @@ function ensureTable(): void {
       action TEXT NOT NULL,
       params_json TEXT NOT NULL DEFAULT '{}',
       context_json TEXT NOT NULL DEFAULT '{}',
+      content TEXT,
       requested_by TEXT NOT NULL,
       reason TEXT,
       status TEXT NOT NULL DEFAULT 'pending',
@@ -55,11 +59,16 @@ function ensureTable(): void {
     )
   `);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_pending_actions_status ON pending_actions(status)`);
-  // A bench created before context_json existed would otherwise error on every insert.
-  try {
-    db.exec(`ALTER TABLE pending_actions ADD COLUMN context_json TEXT NOT NULL DEFAULT '{}'`);
-  } catch {
-    // already has the column
+  // A bench created before context_json/content existed would otherwise error on every insert.
+  for (const ddl of [
+    `ALTER TABLE pending_actions ADD COLUMN context_json TEXT NOT NULL DEFAULT '{}'`,
+    `ALTER TABLE pending_actions ADD COLUMN content TEXT`,
+  ]) {
+    try {
+      db.exec(ddl);
+    } catch {
+      // already has the column
+    }
   }
   ensured = true;
 }
@@ -70,6 +79,7 @@ function rowToPendingAction(row: Record<string, unknown>): PendingAction {
     tool: row.tool as string,
     action: row.action as string,
     paramsJson: row.params_json as string,
+    content: (row.content as string | null) ?? null,
     contextJson: (row.context_json as string) ?? '{}',
     requestedBy: row.requested_by as string,
     reason: (row.reason as string | null) ?? null,
@@ -85,6 +95,10 @@ export function createPendingAction(input: {
   tool: string;
   action: string;
   params: unknown;
+  /** The call's `content` arg (separate from params) — e.g. a drafted email's body. Without
+   *  this, approving a gated call that carries its payload in `content` (not params) would
+   *  replay with no content at all. */
+  content?: string;
   context?: unknown;
   requestedBy: string;
   reason?: string;
@@ -92,12 +106,13 @@ export function createPendingAction(input: {
   ensureTable();
   const db = getSyncDb();
   const result = db.run(
-    `INSERT INTO pending_actions (tool, action, params_json, context_json, requested_by, reason) VALUES (?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO pending_actions (tool, action, params_json, context_json, content, requested_by, reason) VALUES (?, ?, ?, ?, ?, ?, ?)`,
     [
       input.tool,
       input.action,
       JSON.stringify(input.params ?? {}),
       JSON.stringify(input.context ?? {}),
+      input.content ?? null,
       input.requestedBy,
       input.reason ?? null,
     ]

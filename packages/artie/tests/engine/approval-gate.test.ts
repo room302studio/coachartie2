@@ -9,9 +9,10 @@
  * plain "needs EJ's approval" string back, never the real side effect. The `approvals` tool
  * is how EJ actually resolves one.
  */
-import { describe, it, expect, beforeAll, beforeEach } from 'vitest';
+import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest';
 import { capabilityBootstrap } from '../../src/engine/5-tool-loop/register-tools.js';
 import { capabilityRegistry } from '../../src/engine/5-tool-loop/registry.js';
+import { GATED_ACTIONS } from '../../src/engine/5-tool-loop/approval-gate.js';
 import { OWNER_USER_ID } from '../../src/shared/config/owner.js';
 import { listPendingActions } from '../../src/shared/pending-actions.js';
 
@@ -184,5 +185,55 @@ describe('approvals tool: EJ-only review of the pending queue', () => {
     // The replayed call reached the real stripe handler (not configured in test env, so it
     // reports its own error) rather than being re-queued as pending again.
     expect(out).not.toContain("needs EJ's approval");
+  });
+});
+
+/**
+ * The drafting flow's email:send specifically carries its payload in `content` (the drafted
+ * body), not in `params` — see email-drafting.ts's handleSendDraft(). A bug in the first pass
+ * at this gate dropped `content` on the way into pending_actions and back out on replay, so
+ * approving a gated email would send with no body. Caught on review, fixed in
+ * pending-actions.ts (added a `content` column) and approvals.ts (replays it). This is the
+ * end-to-end check: a stub tool whose result IS its content, gated like any real tool, run
+ * non-owner (queues), then approved (must come back with the content, not "undefined").
+ */
+describe('approval gate: content (not just params) survives the pending/approve round-trip', () => {
+  const STUB_NAME = 'gate-content-stub';
+
+  beforeAll(() => {
+    GATED_ACTIONS[STUB_NAME] = 'all';
+    capabilityRegistry.register({
+      name: STUB_NAME,
+      supportedActions: ['echo'],
+      handler: async (_params: unknown, content?: string) => `echoed: ${content ?? '(none)'}`,
+    });
+  });
+
+  afterAll(() => {
+    delete GATED_ACTIONS[STUB_NAME];
+  });
+
+  it('a gated call with payload in `content` replays with that same content on approve', async () => {
+    const queued = await capabilityRegistry.execute(
+      STUB_NAME,
+      'echo',
+      {},
+      'the drafted body',
+      { userId: NOT_OWNER }
+    );
+    expect(queued).toContain("needs EJ's approval");
+
+    const pending = listPendingActions('pending').find((p) => p.tool === STUB_NAME);
+    expect(pending).toBeTruthy();
+    expect(pending!.content).toBe('the drafted body');
+
+    const approved = await capabilityRegistry.execute(
+      'approvals',
+      'approve',
+      { id: pending!.id },
+      undefined,
+      { userId: OWNER_USER_ID }
+    );
+    expect(approved).toContain('echoed: the drafted body');
   });
 });

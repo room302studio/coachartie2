@@ -44,7 +44,8 @@ async function handleApprovals(
         const formatted = pending
           .map(
             (p) =>
-              `#${p.id} — ${p.tool}:${p.action} (requested by ${p.requestedBy} at ${p.createdAt})\n   params: ${p.paramsJson}`
+              `#${p.id} — ${p.tool}:${p.action} (requested by ${p.requestedBy} at ${p.createdAt})\n   params: ${p.paramsJson}` +
+              (p.content ? `\n   content: ${p.content.slice(0, 300)}${p.content.length > 300 ? '…' : ''}` : '')
           )
           .join('\n');
         return `⏸️ ${pending.length} pending action(s):\n${formatted}`;
@@ -72,7 +73,11 @@ async function handleApprovals(
           pending.tool,
           pending.action,
           { ...originalParams, confirmed: true },
-          undefined,
+          // The original call's `content` arg (e.g. a drafted email's body) — rides
+          // separately from params, so it has to be replayed separately too. Without this,
+          // approving a gated call whose payload is in `content` (the drafting flow's
+          // email:send, specifically) would replay with no body at all.
+          pending.content ?? undefined,
           // Replay with the ORIGINAL guildId/channelId/messageId (so a tool that reads
           // context behaves the way it would have at the original call site), but userId
           // is always the owner now — that's what satisfies isOwnerConfirmed().
