@@ -38,7 +38,21 @@ Also this round: CUTOVER.md's boot checks fixed (they would have false-alarmed i
 rollback), winston logs moved onto the LUKS mount (`logs/app`), 17 unused deps dropped, and
 stale dev scripts removed (one could `pkill` prod).
 
-## Prod vs. this branch (2026-10-26 end of day)
+## DEPLOYED 2026-10-26 18:26 ET: prod = 95f3ddf
+
+Everything below is now live:
+- buttons in replies
+- `/scribe`, registered (15 global commands)
+- the token jar link button (`ARTIE_TIP_JAR_URL` set; earnings stay dark until `STRIPE_JAR_READ_KEY` exists)
+- security batch 2
+
+Checks:
+- sentinels 1/1, health ready, Discord connected (5 guilds)
+- smoke 4/4, PM2 error log empty, 0 restarts
+
+Deploy state and backups are in `/data2/tmp/deploy-20261026-182430`, with the DB backup at `/srv/artie/backups/coachartie.db.pre-deploy-*`. To roll back, ff prod back to 2c87a53, rebuild artie, then `pm2 delete coach-artie`, start it from the ecosystem file, and restore `env.production.bak` from the state dir.
+
+## Prod vs. this branch (2026-10-26 end of day; superseded by the deploy above)
 
 **Live in prod** (HEAD 2c87a53):
 - the v3 cutover
