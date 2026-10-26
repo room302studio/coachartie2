@@ -55,7 +55,7 @@ async function handlePairing(
 
         const result = dmPairingService.approve(code, callerId, params.reason);
         if (result.success) {
-          let userDisplay: string;
+          let userDisplay: string | undefined;
           if (result.username) {
             userDisplay = `${result.username} (${result.userId})`;
           } else {

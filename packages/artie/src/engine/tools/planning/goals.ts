@@ -34,7 +34,7 @@ const GOAL_STATUSES = ['dormant', 'active', 'blocked', 'achieved', 'abandoned'] 
 type GoalType = typeof GOAL_TYPES[number];
 type GoalStatus = typeof GOAL_STATUSES[number];
 
-function statusEmoji(status: string): string {
+function statusEmoji(status: string | null): string {
   if (status === 'active') {
     return '🟢';
   }
@@ -50,9 +50,9 @@ function statusEmoji(status: string): string {
   return '⚫';
 }
 
-function resolveGoalType(type: string | undefined): GoalType {
+function resolveGoalType(type: GoalType | undefined): GoalType {
   if (type && GOAL_TYPES.includes(type)) {
-    return type as GoalType;
+    return type;
   }
   return 'project';
 }

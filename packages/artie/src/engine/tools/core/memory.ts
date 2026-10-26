@@ -632,7 +632,7 @@ Example: {"tags": ["food", "pizza", "italian", "preference", "like"]}`;
     try {
       // {"tags": [...]}; a bare array (a model that ignored the wrapper) is read too.
       const wrapped = parseModelJson<{ tags?: unknown }>(response, 'object')?.tags;
-      let tags: unknown[];
+      let tags: unknown[] | null;
       if (Array.isArray(wrapped)) {
         tags = wrapped;
       } else {

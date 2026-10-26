@@ -28,6 +28,18 @@ const STATUS_UPDATE_INTERVAL = 5; // Update status every 5 progress callbacks
  * Simple adapter: Convert Discord message to UserIntent and delegate to unified processor
  * Replaces ~400 lines of duplicate logic with ~30 lines of adapter code
  */
+/** The attachments on the message being answered (empty when there are none). */
+function currentMessageAttachments(message: Message) {
+  return Array.from(message.attachments.values()).map((att) => ({
+    id: att.id,
+    name: att.name,
+    url: att.url,
+    contentType: att.contentType,
+    size: att.size,
+    proxyUrl: att.proxyURL,
+  }));
+}
+
 export async function handleMessageAsIntent(
   message: Message,
   cleanMessage: string,
@@ -138,7 +150,7 @@ export async function handleMessageAsIntent(
       guildInfo = null;
     }
 
-    let _channelName: string;
+    let _channelName: string | null;
     if ('name' in message.channel) {
       _channelName = message.channel.name;
     } else {
@@ -221,20 +233,7 @@ export async function handleMessageAsIntent(
         username: user.username,
         displayName: user.displayName || user.username,
       })),
-      attachments: ((): typeof recentAttachments => {
-        if (message.attachments.size > 0) {
-          return Array.from(message.attachments.values()).map((att) => ({
-            id: att.id,
-            name: att.name,
-            url: att.url,
-            contentType: att.contentType,
-            size: att.size,
-            proxyUrl: att.proxyURL,
-          }));
-        } else {
-          return [];
-        }
-      })(),
+      attachments: currentMessageAttachments(message),
       replyingTo: message.reference?.messageId || null,
     };
     if (recentReactionsNote) {

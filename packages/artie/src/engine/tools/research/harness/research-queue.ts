@@ -127,7 +127,7 @@ class ResearchQueueService {
   }
 
   private rowToTask(row: Record<string, unknown>): QueuedTask {
-    let tools: unknown | undefined;
+    let tools: QueuedTask['tools'];
     if (row.tools) {
       tools = JSON.parse(row.tools as string);
     }

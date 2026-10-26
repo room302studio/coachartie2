@@ -1004,8 +1004,8 @@ async function flushBurstBatch(unordered: BurstQueueItem[]): Promise<void> {
       );
     }
 
-    let _contextData: {
-      burst?: string;
+    const _contextData: {
+      burst?: ReturnType<typeof renderBurstForContext>;
       landedWhileThinking?: string;
     } = {};
     if (burstForContext) {

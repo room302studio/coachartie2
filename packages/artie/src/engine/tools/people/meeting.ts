@@ -48,6 +48,7 @@ interface MeetingParams {
     channelId?: string;
     mentions?: Array<{ id: string; username: string; displayName: string }>;
   };
+  [key: string]: unknown;
 }
 
 function formatParticipant(type: string, id: string): string {
