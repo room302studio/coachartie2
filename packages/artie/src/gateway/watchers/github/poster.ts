@@ -262,7 +262,12 @@ export class GitHubDiscordPoster {
 
         if (isMainMerge && this.config.verboseMerges) {
           // 🚀 Extra prominent for production merges
-          const branchName = event.data.prBaseBranch === 'main' ? 'Main' : event.data.prBaseBranch;
+          let branchName: string | undefined;
+          if (event.data.prBaseBranch === 'main') {
+            branchName = 'Main';
+          } else {
+            branchName = event.data.prBaseBranch;
+          }
 
           if (hasBreakingLabel) {
             // ⚠️ Breaking change gets extra warning
@@ -364,9 +369,12 @@ export class GitHubDiscordPoster {
         break;
 
       case 'ci_failure': {
-        const ciDesc = event.data.checkRunUrl
-          ? `**[${event.data.checkRunName}](${event.data.checkRunUrl})** failed`
-          : `**${event.data.checkRunName}** failed`;
+        let ciDesc: string;
+        if (event.data.checkRunUrl) {
+          ciDesc = `**[${event.data.checkRunName}](${event.data.checkRunUrl})** failed`;
+        } else {
+          ciDesc = `**${event.data.checkRunName}** failed`;
+        }
         embed
           .setTitle(`${emoji} CI Failed`)
           .setDescription(ciDesc)
@@ -379,13 +387,22 @@ export class GitHubDiscordPoster {
 
       case 'issue_opened': {
         const issueLabels = event.data.issueLabels?.map((l) => `\`${l}\``).join(' ') || '';
-        const issueBody = event.data.issueBody
-          ? `\n\n${this.truncate(event.data.issueBody, 300)}`
-          : '';
+        let issueBody: string;
+        if (event.data.issueBody) {
+          issueBody = `\n\n${this.truncate(event.data.issueBody, 300)}`;
+        } else {
+          issueBody = '';
+        }
+        let labelsClause: string;
+        if (issueLabels) {
+          labelsClause = `\n🏷️ ${issueLabels}`;
+        } else {
+          labelsClause = '';
+        }
         embed
           .setTitle(`${emoji} New Issue #${event.data.issueNumber}`)
           .setURL(event.data.issueUrl || '')
-          .setDescription(`**${event.data.issueTitle}**\nBy **${event.data.issueAuthor}**${issueLabels ? `\n🏷️ ${issueLabels}` : ''}${issueBody}`)
+          .setDescription(`**${event.data.issueTitle}**\nBy **${event.data.issueAuthor}**${labelsClause}${issueBody}`)
           .setFooter({ text: `${owner}/${repo}` });
         break;
       }
@@ -459,8 +476,15 @@ export class GitHubDiscordPoster {
           .map((c: any) => `[\`${c.sha}\`](${c.url}) ${c.message} — ${c.author}`)
           .join('\n');
 
+        let pluralS: string;
+        if (commitCount > 1) {
+          pluralS = 's';
+        } else {
+          pluralS = '';
+        }
+        const branch = event.data.branch || 'main';
         embed
-          .setTitle(`${emoji} ${commitCount} commit${commitCount > 1 ? 's' : ''} pushed to ${event.data.branch || 'main'}`)
+          .setTitle(`${emoji} ${commitCount} commit${pluralS} pushed to ${branch}`)
           .setURL(event.data.commitUrl || '')
           .setDescription(commitList || event.data.commitMessage || '')
           .setFooter({ text: `${owner}/${repo}` });
@@ -695,7 +719,18 @@ export class GitHubDiscordPoster {
     const size = this.getPrSize(additions, deletions);
     const badge = SIZE_BADGES[size];
     const total = (additions || 0) + (deletions || 0);
-    const fileInfo = files ? `, ${files} file${files !== 1 ? 's' : ''}` : '';
+    let fileInfo: string;
+    if (files) {
+      let pluralS: string;
+      if (files !== 1) {
+        pluralS = 's';
+      } else {
+        pluralS = '';
+      }
+      fileInfo = `, ${files} file${pluralS}`;
+    } else {
+      fileInfo = '';
+    }
     return `${badge.emoji} **${badge.label}** (${total} lines${fileInfo})`;
   }
 }
