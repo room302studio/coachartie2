@@ -1,4 +1,4 @@
-import { MemoryService } from '../../src/engine/tools/core/memory.js';
+import { MemoryService, memoryCapability } from '../../src/engine/tools/core/memory.js';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 describe('Memory Capability', () => {
@@ -56,6 +56,73 @@ describe('Memory Capability', () => {
 
       expect(result).toContain('No memories found');
       expect(result).toContain('Try a different search term');
+    });
+  });
+
+  // 2026-10-26: the memory-zoo collapse. `kind` is just another tag (person/guild/pinned/
+  // scratch/goal/...), and `forget` is the new delete action backed by hybridDataLayer's new
+  // deleteMemory. Both are loud on failure (throw), not a quiet ❌-prefixed success string.
+  describe('Forget operation', () => {
+    // storeMemory hands back a temp negative id immediately, then (async, on the write
+    // queue) swaps it for the real auto-increment id once cold storage persists it — so
+    // reading the id back out of getRecentMemories right before use (instead of parsing it
+    // out of remember()'s return string) avoids racing that swap.
+    async function latestMemoryId(userId: string): Promise<number> {
+      const [latest] = await memoryService.getRecentMemories(userId, 1);
+      expect(latest, 'expected at least one recent memory').toBeTruthy();
+      return latest.id;
+    }
+
+    it('forgets a memory the user owns', async () => {
+      await memoryService.remember(testUserId, 'temporary fact to forget', '', 5);
+      const id = await latestMemoryId(testUserId);
+
+      const result = await memoryService.forgetMemory(testUserId, id);
+      expect(result).toContain('Forgot memory');
+    });
+
+    it('throws (loud, not a quiet ❌ string) for a nonexistent id', async () => {
+      await expect(memoryService.forgetMemory(testUserId, 999999999)).rejects.toThrow(
+        'Memory not found'
+      );
+    });
+
+    it("throws for someone else's memory instead of silently no-opping", async () => {
+      await memoryService.remember(testUserId, 'owned by test user', '', 5);
+      const id = await latestMemoryId(testUserId);
+
+      await expect(memoryService.forgetMemory('a-different-user', id)).rejects.toThrow(
+        'Unauthorized'
+      );
+    });
+  });
+
+  // `kind` is the memory-zoo collapse's classification axis (person/guild/pinned/scratch/
+  // goal/...) — the handler folds it into the tags array instead of needing a separate tool
+  // per kind.
+  describe('kind tagging (handler level)', () => {
+    it('folds params.kind into the stored tags', async () => {
+      const result = await memoryCapability.handler(
+        { action: 'remember', userId: testUserId, content: 'EJ prefers dark mode', kind: 'person' },
+        undefined,
+        { userId: testUserId }
+      );
+      expect(result).toContain('person');
+    });
+
+    it('still accepts explicit tags without kind', async () => {
+      const result = await memoryCapability.handler(
+        { action: 'remember', userId: testUserId, content: 'no kind here', tags: ['misc'] },
+        undefined,
+        { userId: testUserId }
+      );
+      expect(result).toContain('misc');
+    });
+  });
+
+  describe('Pin operation', () => {
+    it('throws (loud) for a nonexistent id instead of returning a ❌ string', async () => {
+      await expect(memoryService.pinMemory(testUserId, 999999999)).rejects.toThrow('not found');
     });
   });
 });

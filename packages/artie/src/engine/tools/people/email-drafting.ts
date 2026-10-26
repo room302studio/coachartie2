@@ -3,6 +3,7 @@ import { IncomingMessage } from '../../../shared/queue/types.js';
 import { openRouterService } from '../../4-generate/openrouter.js';
 import { contextAlchemy } from '../../3-context/assemble.js';
 import { promptManager } from '../../3-context/system-prompt.js';
+import { capabilityRegistry } from '../../5-tool-loop/registry.js';
 
 // =====================================================
 // EMAIL DRAFTING SERVICE
@@ -201,17 +202,32 @@ Format your response using XML tags:
           onPartialResponse(`✅ Draft approved!\n\n📤 Sending email to ${draft.to}...\n\n`);
         }
 
-        // Actually send the email using the email capability
-        const { emailCapability } = await import('./email.js');
-        const result = await emailCapability.handler(
+        // Actually send the email — THROUGH the registry, not the handler directly, so the
+        // approval gate (approval-gate.ts) sees this call. This used to call
+        // emailCapability.handler() straight, which bypassed the gate entirely: the drafting
+        // flow is the real way users send email, so gating only the bare `email` capability
+        // and not this path left the owner's "approval before anything leaves Discord" ruling
+        // unenforced for almost every actual send (2026-10-26 audit finding).
+        const result = await capabilityRegistry.execute(
+          'email',
+          'send',
           {
-            action: 'send',
             to: draft.to,
             subject: draft.subject,
             from: 'artie@coachartiebot.com',
           },
-          draft.body
+          draft.body,
+          { userId: message.userId }
         );
+
+        if (result.startsWith('⏸️')) {
+          // Gated: EJ hasn't signed off yet. Leave the draft as 'draft' (not 'sent') so a
+          // later retry after approval has somewhere to come back to; the pending record
+          // itself (not this draft) is what EJ actually approves.
+          draft.status = 'draft';
+          logger.info(`⏸️ Email draft ${draft.id} to ${draft.to} needs EJ's approval before sending`);
+          return result;
+        }
 
         // Mark as sent and clean up
         draft.status = 'sent';

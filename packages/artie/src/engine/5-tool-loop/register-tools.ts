@@ -13,6 +13,8 @@ import { diagnoseCapability } from '../tools/ops/diagnose.js';
 import { userProfileCapability } from '../tools/people/user-profile.js';
 import { autonomousCapability } from '../tools/ops/autonomous.js';
 import { pairingCapability } from '../tools/people/pairing.js';
+// approvals = the owner-review queue for approval-gate.ts's gated (money / outside-Discord) calls
+import { approvalsCapability } from '../tools/ops/approvals.js';
 // Web capabilities
 import { webCapability } from '../tools/core/web.js';
 import { httpCapability } from '../tools/core/http.js';
@@ -122,7 +124,7 @@ export class CapabilityBootstrap {
         systemMonitorCapability, variableStoreCapability, tasksCapability,
         meetingCapability, discordUICapability, askQuestionCapability, discordForumsCapability,
         discordModerationCapability, mentionProxyCapability, emailCapability, proactiveDMCapability,
-        userProfileCapability, pairingCapability, mediaWikiCapability, wolframCapability,
+        userProfileCapability, pairingCapability, approvalsCapability, mediaWikiCapability, wolframCapability,
         schedulerCapability, sequenceCapability, sandboxCapability,
         scratchpadCapability, selfStatsCapability,
         communityAnalyticsCapability, contextCapability, visionCapability, imageGenCapability,

@@ -13,7 +13,7 @@
 
 import { logger } from '../../../shared/logger.js';
 import { discoverSkills, loadSkill, getSkillPaths } from './loader.js';
-import { capabilityRegistry } from '../../5-tool-loop/registry.js';
+import { capabilityRegistry, TOOL_ALIASES } from '../../5-tool-loop/registry.js';
 import type { RegisteredCapability } from '../../5-tool-loop/registry.js';
 
 interface SkillMetadata {
@@ -43,6 +43,13 @@ class SkillRegistry {
     let registered = 0;
 
     for (const [name, capability] of discoveredSkills) {
+      // Skills merged into another tool (F1: hello-world → diagnose's `ping`) keep their
+      // SKILL.md on disk but don't get their own roster slot — TOOL_ALIASES resolves their
+      // old name at call time, same as any other merged tool.
+      if (TOOL_ALIASES[name]) {
+        logger.info(`🦞 Skipping skill '${name}' — merged into '${TOOL_ALIASES[name].to}' (see TOOL_ALIASES)`);
+        continue;
+      }
       try {
         // Register with the main capability registry
         capabilityRegistry.register(capability);
@@ -109,6 +116,12 @@ class SkillRegistry {
    * Reload a specific skill
    */
   reload(name: string): boolean {
+    if (TOOL_ALIASES[name]) {
+      // Same reasoning as initialize(): a merged skill (hello-world -> diagnose) must never
+      // become its own registered capability, even via a targeted reload.
+      logger.info(`🦞 Skipping reload of '${name}' — merged into '${TOOL_ALIASES[name].to}' (see TOOL_ALIASES)`);
+      return false;
+    }
     const capability = loadSkill(name);
     if (capability) {
       try {

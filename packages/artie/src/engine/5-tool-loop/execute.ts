@@ -151,6 +151,43 @@ function toolResultText(data: unknown): string {
 }
 
 /**
+ * Catches a class of bug found 2026-10-26: several tool handlers (scratchpad, system_memory,
+ * stripe, memory's old pinMemory, …) catch their own failures internally and RETURN a string
+ * describing the error instead of throwing. Because they didn't throw, robustExecutor reports
+ * success=true, so this result would otherwise go to the model with no "Error:" prefix at
+ * all — identical in shape to a real success. A failure that looks like a success is worse
+ * than a thrown one: the model has no signal to retry or explain, so it just repeats the
+ * failed intent back to the user as if it had worked.
+ *
+ * Deliberately narrow and prefix-anchored (checked against the START of the string) so it
+ * doesn't flag ordinary content that happens to mention "error" or a TaskStop emoji mid-text —
+ * only the small set of shapes real handlers actually emit for "this call itself failed":
+ *   - a leading ❌ (memory, email-drafting, autonomous, sandbox's edit errors, …)
+ *   - "<Words> error: " at the very start (scratchpad, goals, tasks, context, diagnose, …)
+ *   - "Error: " at the very start (sandbox's edit/search, pairing, autonomous, …)
+ *   - a JSON object/array whose top-level `success` field is false (system_memory, stripe,
+ *     discord reaction/poll/moderation, http, …)
+ */
+const FAILURE_TEXT_PREFIX = /^(?:[A-Za-z][\w -]{0,40}\s)?error:\s/i;
+
+export function looksLikeToolFailure(text: string): boolean {
+  if (!text) return false;
+  if (text.startsWith('❌')) return true;
+  if (FAILURE_TEXT_PREFIX.test(text)) return true;
+  if (text[0] === '{' || text[0] === '[') {
+    try {
+      const parsed = JSON.parse(text);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed) && parsed.success === false) {
+        return true;
+      }
+    } catch {
+      // Not JSON (or not parseable) — not this check's problem.
+    }
+  }
+  return false;
+}
+
+/**
  * Execute ONE native tool call (wave 8): runToolLoop's executeTool in run-turn.ts.
  *
  * The same execute path the XML loop uses, plus the taint guard the XML ReAct loop never ran:
@@ -169,7 +206,14 @@ export async function executeNativeToolCall(
   context: OrchestrationContext,
   invocation: { name: string; action?: string; content?: string; params: Record<string, unknown> }
 ): Promise<string> {
-  const resolved = resolveToolCall(invocation.name, invocation.action ?? '', invocation.params);
+  // `confirmed: true` is the approval-gate's owner-bypass flag (approval-gate.ts's
+  // isOwnerConfirmed). It must ONLY ever be set by approvals.ts replaying an already-approved
+  // call — never by a live model tool call, even the owner's own, or Artie could decide on its
+  // own to add it and skip the gate without EJ actually having said yes. Stripped here, at the
+  // one place every native tool call enters, so the model can't set it no matter what it puts
+  // in the arguments.
+  const { confirmed: _ignoredConfirmed, ...sanitizedParams } = invocation.params ?? {};
+  const resolved = resolveToolCall(invocation.name, invocation.action ?? '', sanitizedParams);
   const capability: ExtractedCapability = {
     name: resolved.name,
     action: resolved.action,
@@ -231,9 +275,11 @@ export async function executeNativeToolCall(
     logger.warn(`🛡️ TAINT SET: context tainted by ${context.taintSource} (native tool call)`);
   }
 
-  const text = robust.success
-    ? toolResultText(robust.data)
-    : `Error: ${toCallNotation(robust.error || 'the tool failed')}`;
+  const successText = robust.success ? toolResultText(robust.data) : null;
+  const text =
+    successText !== null && !looksLikeToolFailure(successText)
+      ? successText
+      : `Error: ${toCallNotation(robust.success ? successText || 'the tool failed' : robust.error || 'the tool failed')}`;
   return text.length > NATIVE_TOOL_RESULT_MAX_CHARS
     ? `${text.slice(0, NATIVE_TOOL_RESULT_MAX_CHARS)}\n[… truncated, ${text.length - NATIVE_TOOL_RESULT_MAX_CHARS} more chars]`
     : text;
@@ -554,6 +600,15 @@ export class CapabilityExecutor {
     context: OrchestrationContext | undefined,
     generateHelpfulError: GenerateHelpfulErrorCallback
   ): Promise<CapabilityResult> {
+    // Strip the approval-gate bypass flag here too, not just in executeNativeToolCall: the
+    // legacy XML loop (TOOL_LOOP=xml, the rollback path) reaches this method without going
+    // through that function. The approvals tool replays through capabilityRegistry.execute
+    // directly, so stripping here never blocks a real approval.
+    if (capability.params && 'confirmed' in capability.params) {
+      const { confirmed: _ignoredConfirmed, ...rest } = capability.params;
+      capability = { ...capability, params: rest };
+    }
+
     // Old merged tool names (shell, git, todo, …) become their canonical tool BEFORE the taint
     // check, so the guard only ever has to know canonical names.
     {

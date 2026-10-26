@@ -17,7 +17,7 @@ const execAsync = promisify(exec);
  */
 
 interface DiagnoseParams {
-  action: 'error' | 'logs' | 'process' | 'network' | 'disk';
+  action: 'error' | 'logs' | 'process' | 'network' | 'disk' | 'ping';
   error?: string;
   file?: string;
   service?: string;
@@ -167,7 +167,7 @@ export function analyzeError(errorText: string): {
 export const diagnoseCapability: RegisteredCapability = {
   name: 'diagnose',
   emoji: '🔬',
-  supportedActions: ['error', 'logs', 'process', 'network', 'disk'],
+  supportedActions: ['error', 'logs', 'process', 'network', 'disk', 'ping'],
   description: `Understand what went wrong. When errors happen, diagnose helps investigate.
 
 Actions:
@@ -176,6 +176,7 @@ Actions:
 - process: Diagnose a failing process
 - network: Check network/connectivity issues
 - disk: Check disk space and file issues
+- ping: Simple liveness check — no args, just confirms the tool loop is working
 
 When something fails, start here. Understand before fixing.`,
   requiredParams: [],
@@ -207,6 +208,12 @@ When something fails, start here. Understand before fixing.`,
 
     try {
       switch (action) {
+        case 'ping': {
+          // The merged home of the old `hello-world` example skill (greet/wave/introduce all
+          // alias to this, 2026-10-26). A harmless liveness check: no side effects, no args.
+          return "🏓 pong — I'm here. (This absorbed the old hello-world skill's greet/wave/introduce.)";
+        }
+
         case 'error': {
           if (!errorText) {
             return `Error: Provide the error message to analyze.
@@ -398,7 +405,7 @@ Usage: action="error" error="your error message here"`;
 
         default:
           return `Unknown action: ${action}
-Available: error, logs, process, network, disk`;
+Available: error, logs, process, network, disk, ping`;
       }
     } catch (error: any) {
       logger.error(`Diagnose failed:`, { action, error: error.message });
