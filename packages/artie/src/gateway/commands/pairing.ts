@@ -10,6 +10,16 @@ import { isOwner } from '../../shared/config/owner.js';
 import { dmPairingService } from '../../shared/dm-pairing.js';
 
 /**
+ * Format first message preview or empty string.
+ */
+function firstMessagePreview(message: string | null | undefined): string {
+  if (message) {
+    return ` — "${message.slice(0, 60)}"`;
+  }
+  return '';
+}
+
+/**
  * /pairing — manage who may DM Artie (the DM gate). Owner-only; works in a server or in a DM
  * with Artie. The phone alert for a new pairing request points here: approving through the
  * slash command is deterministic and free, where "tell Artie: pairing approve <code>" runs
@@ -68,7 +78,7 @@ export const pairingCommand = {
                     .map(
                       (p) =>
                         `• \`${p.code}\` ${p.username ?? p.userId} <@${p.userId}>` +
-                        (p.firstMessage ? ` — "${p.firstMessage.slice(0, 60)}"` : '')
+                        firstMessagePreview(p.firstMessage)
                     )
                     .join('\n')
                     .slice(0, 1024) || 'none',
@@ -87,16 +97,24 @@ export const pairingCommand = {
         case 'approve': {
           const code = interaction.options.getString('code', true).trim();
           const r = dmPairingService.approve(code, by, 'approved via /pairing');
-          return reply(
-            r.success
-              ? `✅ Approved ${r.username ?? r.userId} (<@${r.userId}>). They can DM Artie now.`
-              : `❌ ${r.error}`
-          );
+          let approveMessage: string;
+          if (r.success) {
+            approveMessage = `✅ Approved ${r.username ?? r.userId} (<@${r.userId}>). They can DM Artie now.`;
+          } else {
+            approveMessage = `❌ ${r.error}`;
+          }
+          return reply(approveMessage);
         }
         case 'deny': {
           const code = interaction.options.getString('code', true).trim();
           const r = dmPairingService.deny(code, by);
-          return reply(r.success ? `🚫 Denied \`${code}\`.` : `❌ ${r.error}`);
+          let denyMessage: string;
+          if (r.success) {
+            denyMessage = `🚫 Denied \`${code}\`.`;
+          } else {
+            denyMessage = `❌ ${r.error}`;
+          }
+          return reply(denyMessage);
         }
         case 'allow': {
           const user = interaction.options.getUser('user', true);
@@ -106,9 +124,13 @@ export const pairingCommand = {
         case 'revoke': {
           const user = interaction.options.getUser('user', true);
           const r = dmPairingService.revoke('discord', user.id, by);
-          return reply(
-            r.success ? `🔒 Revoked DM access for ${user.username} (<@${user.id}>).` : `❌ ${r.error}`
-          );
+          let revokeMessage: string;
+          if (r.success) {
+            revokeMessage = `🔒 Revoked DM access for ${user.username} (<@${user.id}>).`;
+          } else {
+            revokeMessage = `❌ ${r.error}`;
+          }
+          return reply(revokeMessage);
         }
         default:
           return reply('Unknown subcommand.');

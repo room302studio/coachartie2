@@ -7,6 +7,64 @@ import {
   type OwnMemory,
 } from './user-memories.js';
 
+/**
+ * Pluralize "match/matches".
+ */
+function matchesPlural(count: number): string {
+  if (count === 1) {
+    return '';
+  }
+  return 'es';
+}
+
+/**
+ * Format average importance or 'n/a'.
+ */
+function importanceValue(avg: number | null): string {
+  if (avg === null) {
+    return 'n/a';
+  }
+  return avg.toFixed(1);
+}
+
+/**
+ * Truncate text to 200 chars with ellipsis.
+ */
+function truncateText(text: string): string {
+  if (text.length > 200) {
+    return `${text.slice(0, 200)}…`;
+  }
+  return text;
+}
+
+/**
+ * Create search results embed or empty state.
+ */
+function createSearchEmbed(query: string, rows: OwnMemory[]): EmbedBuilder {
+  if (rows.length) {
+    return memoryList('🔍 Memory search', `${rows.length} match${matchesPlural(rows.length)} for "${query}"`, rows);
+  }
+  const embed = new EmbedBuilder()
+    .setTitle('🔍 Memory search')
+    .setDescription(`No memories match "${query}". Try other words, or \`/memory recent\`.`)
+    .setColor(0xffaa00);
+  return embed;
+}
+
+/**
+ * Create recent memories embed or empty state.
+ */
+function createRecentEmbed(rows: OwnMemory[]): EmbedBuilder {
+  if (rows.length) {
+    return memoryList('📚 Your recent memories', `Your ${rows.length} most recent`, rows);
+  }
+  const embed = new EmbedBuilder()
+    .setTitle('📚 Your recent memories')
+    .setDescription("I haven't saved anything about you yet. Chat with me and I will.")
+    .setColor(0xffaa00);
+  return embed;
+}
+
 /** /memory: the caller's OWN memories only, always as a private reply (services/user-memories). */
 export const memoryCommand = {
   data: new SlashCommandBuilder()
@@ -56,30 +114,18 @@ export const memoryCommand = {
           const query = interaction.options.getString('query', true);
           const limit = interaction.options.getInteger('limit') ?? 10;
           const rows = searchOwnMemories(userId, query, limit);
+          const embed = createSearchEmbed(query, rows);
           await interaction.editReply({
-            embeds: [
-              rows.length
-                ? memoryList('🔍 Memory search', `${rows.length} match${rows.length === 1 ? '' : 'es'} for "${query}"`, rows)
-                : new EmbedBuilder()
-                    .setTitle('🔍 Memory search')
-                    .setDescription(`No memories match "${query}". Try other words, or \`/memory recent\`.`)
-                    .setColor(0xffaa00),
-            ],
+            embeds: [embed],
           });
           return;
         }
         case 'recent': {
           const limit = interaction.options.getInteger('limit') ?? 10;
           const rows = recentOwnMemories(userId, limit);
+          const embed = createRecentEmbed(rows);
           await interaction.editReply({
-            embeds: [
-              rows.length
-                ? memoryList('📚 Your recent memories', `Your ${rows.length} most recent`, rows)
-                : new EmbedBuilder()
-                    .setTitle('📚 Your recent memories')
-                    .setDescription("I haven't saved anything about you yet. Chat with me and I will.")
-                    .setColor(0xffaa00),
-            ],
+            embeds: [embed],
           });
           return;
         }
@@ -93,7 +139,7 @@ export const memoryCommand = {
               { name: '🕐 Last 7 days', value: String(s.lastWeek), inline: true },
               {
                 name: '⭐ Avg importance',
-                value: s.avgImportance === null ? 'n/a' : s.avgImportance.toFixed(1),
+                value: importanceValue(s.avgImportance),
                 inline: true,
               }
             );
@@ -123,9 +169,14 @@ function memoryList(title: string, description: string, rows: OwnMemory[]): Embe
   const embed = new EmbedBuilder().setTitle(title).setDescription(description).setColor(0x3498db);
   rows.slice(0, 20).forEach((m, i) => {
     const date = (m.timestamp || '').slice(0, 10);
-    const importance = m.importance ? ` · ${m.importance}/10` : '';
-    const text = m.content.length > 200 ? `${m.content.slice(0, 200)}…` : m.content;
-    embed.addFields({ name: `${i + 1}. ${date}${importance}`, value: text || '(empty)' });
+    let importanceStr: string;
+    if (m.importance) {
+      importanceStr = ` · ${m.importance}/10`;
+    } else {
+      importanceStr = '';
+    }
+    const text = truncateText(m.content);
+    embed.addFields({ name: `${i + 1}. ${date}${importanceStr}`, value: text || '(empty)' });
   });
   return embed;
 }

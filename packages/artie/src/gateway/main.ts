@@ -8,6 +8,7 @@
  */
 import { Client, GatewayIntentBits, Events, Partials } from 'discord.js';
 import { logger } from '../shared/logger.js';
+import { getErrorMessage } from '../shared/errors.js';
 import { setupMessageHandler } from './1-receive/on-message.js';
 import { setupInteractionHandler } from './1-receive/on-interaction.js';
 import { setupReactionHandler } from './1-receive/on-reaction.js';
@@ -40,6 +41,26 @@ import { registerGatewayClient } from './api.js';
  */
 export const privilegedIntents = process.env.DISCORD_PRIVILEGED_INTENTS === 'true';
 
+/**
+ * Intent bits for optional privileged intents, if enabled.
+ */
+function privilegedIntentBits(): GatewayIntentBits[] {
+  if (privilegedIntents) {
+    return [GatewayIntentBits.GuildMembers, GatewayIntentBits.MessageContent];
+  }
+  return [];
+}
+
+/**
+ * Format environment variable status for logs.
+ */
+function envStatus(value: string | undefined): string {
+  if (value) {
+    return '✅ Set';
+  }
+  return '❌ Missing';
+}
+
 export const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -47,7 +68,7 @@ export const client = new Client({
     GatewayIntentBits.DirectMessages,
     GatewayIntentBits.GuildIntegrations,
     GatewayIntentBits.GuildMessageReactions,
-    ...(privilegedIntents ? [GatewayIntentBits.GuildMembers, GatewayIntentBits.MessageContent] : []),
+    ...privilegedIntentBits(),
   ],
   partials: [Partials.Message, Partials.Channel, Partials.User, Partials.Reaction],
   // SAFETY: never let Artie ping @everyone/@here or roles, no matter what text he posts.
@@ -120,7 +141,7 @@ export interface GatewayHandle {
 export async function startGateway(): Promise<GatewayHandle> {
   console.log('🚀 DISCORD SERVICE STARTING UP - BOOKITY BOOKITY!');
   console.log('🔌 Environment check:');
-  console.log('  - DISCORD_TOKEN:', process.env.DISCORD_TOKEN ? '✅ Set' : '❌ Missing');
+  console.log('  - DISCORD_TOKEN:', envStatus(process.env.DISCORD_TOKEN));
   console.log('  - REDIS_HOST:', process.env.REDIS_HOST || 'not set');
   console.log('  - REDIS_PORT:', process.env.REDIS_PORT || 'not set');
   console.log('  - DISCORD_PORT:', process.env.DISCORD_PORT || 'not set');
@@ -385,7 +406,7 @@ export async function startGateway(): Promise<GatewayHandle> {
     };
   } catch (error) {
     logger.error('Failed to start Discord bot:', error);
-    const errorMessage = error instanceof Error ? error.message : String(error);
+    const errorMessage = getErrorMessage(error);
     writeStatus('error', { error: errorMessage });
     throw error;
   }
