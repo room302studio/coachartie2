@@ -439,8 +439,16 @@ export class CapabilityExecutor {
           process.env.ENABLE_INTERMEDIATE_RESPONSES === 'true' && !skipIntermediate;
 
         if (skipIntermediate && process.env.ENABLE_INTERMEDIATE_RESPONSES === 'true') {
+          let skipReason: string;
+          if (isLastCapability) {
+            skipReason = 'last';
+          } else if (isWriteOperation) {
+            skipReason = 'write-op';
+          } else {
+            skipReason = 'single';
+          }
           logger.info(
-            `⚡ Skipping intermediate response for ${capability.name} (${isLastCapability ? 'last' : isWriteOperation ? 'write-op' : 'single'}) - cost savings`
+            `⚡ Skipping intermediate response for ${capability.name} (${skipReason}) - cost savings`
           );
         }
 
@@ -513,9 +521,12 @@ export class CapabilityExecutor {
           }
         } else {
           // Just stream the capability result directly without LLM processing
-          const resultSummary = result.success
-            ? `✅ ${capability.name}:${capability.action} completed`
-            : `❌ ${capability.name}:${capability.action} failed: ${result.error}`;
+          let resultSummary: string;
+          if (result.success) {
+            resultSummary = `✅ ${capability.name}:${capability.action} completed`;
+          } else {
+            resultSummary = `❌ ${capability.name}:${capability.action} failed: ${result.error}`;
+          }
           onPartialResponse(resultSummary);
         }
       } catch (_error) {
@@ -658,39 +669,49 @@ export class CapabilityExecutor {
     }
 
     // Get userId for use in both registry and legacy handlers
-    const userId = context !== undefined ? context.userId : 'unknown-user';
+    let userId: string | undefined;
+    if (context !== undefined) {
+      userId = context.userId;
+    } else {
+      userId = 'unknown-user';
+    }
 
     // Build capability context from discord_context (defined outside try for metrics access)
-    const capabilityContext = context?.discord_context
-      ? {
-          guildId: context.discord_context.guildId,
-          channelId: context.discord_context.channelId,
-          userId: context.userId,
-          messageId: context.messageId,
-        }
-      : undefined;
+    let capabilityContext: Record<string, any> | undefined;
+    if (context?.discord_context) {
+      capabilityContext = {
+        guildId: context.discord_context.guildId,
+        channelId: context.discord_context.channelId,
+        userId: context.userId,
+        messageId: context.messageId,
+      };
+    }
 
     try {
       // Inject userId and messageId into params for capabilities that need context
-      const paramsWithContext = ['scheduler', 'memory', 'image_gen'].includes(capability.name)
-        ? {
-            ...capability.params,
-            userId,
-            messageId: context?.messageId,
-            // Inject guild/channel context so memories get scoped properly
-            ...(capabilityContext?.guildId && !capability.params.guildId
-              ? { guildId: capabilityContext.guildId }
-              : {}),
-            ...(capabilityContext?.channelId && !capability.params.channelId
-              ? { channelId: capabilityContext.channelId }
-              : {}),
-          }
-        : capability.name === 'meeting-scheduler'
-          ? {
-              ...capability.params,
-              discord_context: context?.discord_context,
-            }
-          : capability.params;
+      let paramsWithContext: Record<string, any>;
+      if (['scheduler', 'memory', 'image_gen'].includes(capability.name)) {
+        const contextExtensions: Record<string, any> = {};
+        if (capabilityContext?.guildId && !capability.params.guildId) {
+          contextExtensions.guildId = capabilityContext.guildId;
+        }
+        if (capabilityContext?.channelId && !capability.params.channelId) {
+          contextExtensions.channelId = capabilityContext.channelId;
+        }
+        paramsWithContext = {
+          ...capability.params,
+          userId,
+          messageId: context?.messageId,
+          ...contextExtensions,
+        };
+      } else if (capability.name === 'meeting-scheduler') {
+        paramsWithContext = {
+          ...capability.params,
+          discord_context: context?.discord_context,
+        };
+      } else {
+        paramsWithContext = capability.params;
+      }
 
       // Debug: log what we're passing to the registry
       logger.info(
