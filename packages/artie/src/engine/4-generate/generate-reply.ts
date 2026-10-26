@@ -211,6 +211,12 @@ export class LLMResponseCoordinator {
 
       // Use Context Alchemy to build intelligent message chain
       logger.info('🧪 CONTEXT ALCHEMY: Building intelligent message chain');
+      let discordContext: typeof message.context | undefined;
+      if (message.context?.platform === 'discord' || message.context?.guildKnowledge) {
+        discordContext = message.context;
+      } else {
+        discordContext = undefined;
+      }
       const { messages } = await contextAlchemy.buildMessageChain(
         message.message,
         message.userId,
@@ -223,12 +229,7 @@ export class LLMResponseCoordinator {
           // Pass Discord channel history - source of truth for DMs (includes webhook/n8n messages)
           discordChannelHistory: message.context?.channelHistory,
           // Pass full Discord context for guild knowledge, proactive answering, etc.
-          discordContext: (() => {
-            if (message.context?.platform === 'discord' || message.context?.guildKnowledge) {
-              return message.context;
-            }
-            return undefined;
-          })(),
+          discordContext,
           // Context Alchemy observability: pass trace ID for metrics capture
           traceId: message.context?.traceId,
           // Experiment feature flags for memory/rules ablation
