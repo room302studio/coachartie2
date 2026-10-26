@@ -102,25 +102,33 @@ Examples:
         [userId]
       );
 
+      let goalsText: string;
+      if (goals.length > 0) {
+        goalsText = goals
+          .map(
+            (g) => {
+              let deadlineStr = '';
+              if (g.deadline) {
+                deadlineStr = ` (due: ${new Date(g.deadline).toLocaleDateString()})`;
+              }
+              return g.objective + deadlineStr;
+            }
+          )
+          .join(', ');
+      } else {
+        goalsText = 'No active goals';
+      }
+
+      let recentTopicsText: string;
+      if (recentMemories.length > 0) {
+        recentTopicsText = recentMemories.map((m) => m.content.substring(0, 50)).join(', ');
+      } else {
+        recentTopicsText = 'No recent activity';
+      }
+
       return {
-        goals:
-          goals.length > 0
-            ? goals
-                .map(
-                  (g) => {
-                    let deadlineStr = '';
-                    if (g.deadline) {
-                      deadlineStr = ` (due: ${new Date(g.deadline).toLocaleDateString()})`;
-                    }
-                    return g.objective + deadlineStr;
-                  }
-                )
-                .join(', ')
-            : 'No active goals',
-        recentTopics:
-          recentMemories.length > 0
-            ? recentMemories.map((m) => m.content.substring(0, 50)).join(', ')
-            : 'No recent activity',
+        goals: goalsText,
+        recentTopics: recentTopicsText,
       };
     } catch (error) {
       logger.warn('Failed to get context for whisper:', error);
@@ -250,10 +258,12 @@ For DANGEROUS operations: Explain why unsafe, no approval`;
 
     // Check SQL injection patterns
     if (capability.name === 'memory' && capability.params) {
-      const content =
-        typeof capability.params === 'string'
-          ? capability.params
-          : JSON.stringify(capability.params);
+      let content: string;
+      if (typeof capability.params === 'string') {
+        content = capability.params;
+      } else {
+        content = JSON.stringify(capability.params);
+      }
       if (
         manifest.sqlInjectionPatterns?.some((pattern: string) =>
           content.toUpperCase().includes(pattern)
@@ -314,10 +324,12 @@ For DANGEROUS operations: Explain why unsafe, no approval`;
         capability.name === 'sandbox' &&
         (capability.action === 'exec' || capability.action === 'execute')
       ) {
-        const command =
-          typeof capability.params === 'string'
-            ? capability.params
-            : capability.params?.command || '';
+        let command: unknown;
+        if (typeof capability.params === 'string') {
+          command = capability.params;
+        } else {
+          command = capability.params?.command || '';
+        }
         const dangerousCommands = ['rm -rf', 'dd', 'mkfs', 'fdisk', 'format', 'del /s'];
 
         if (

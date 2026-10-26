@@ -66,6 +66,27 @@ interface Fake {
 
 function fakeIntent(opts: { noTimeout?: boolean; noWheel?: boolean; landed?: boolean } = {}): Fake {
   const f: Fake = { sent: [], timeouts: [], wheels: [], intent: null };
+
+  let timeoutPart: Record<string, unknown> = {};
+  if (!opts.noTimeout) {
+    timeoutPart = {
+      timeoutAuthor: vi.fn(async (s: number, r: string) => {
+        f.timeouts.push([s, r]);
+        return opts.landed ?? true;
+      }),
+    };
+  }
+
+  let wheelPart: Record<string, unknown> = {};
+  if (!opts.noWheel) {
+    wheelPart = {
+      spinChannelWheel: vi.fn(async (s: number, name?: string) => {
+        f.wheels.push([s, name]);
+        return { target: 'Vic', roll: 77, boxed: true, landed: true, stake: s };
+      }),
+    };
+  }
+
   f.intent = {
     content: 'hi artie',
     userId: 'u1',
@@ -79,22 +100,8 @@ function fakeIntent(opts: { noTimeout?: boolean; noWheel?: boolean; landed?: boo
       f.sent.push(`EDIT:${c}`);
     }),
     deleteResponse: vi.fn(async () => {}),
-    ...(opts.noTimeout
-      ? {}
-      : {
-          timeoutAuthor: vi.fn(async (s: number, r: string) => {
-            f.timeouts.push([s, r]);
-            return opts.landed ?? true;
-          }),
-        }),
-    ...(opts.noWheel
-      ? {}
-      : {
-          spinChannelWheel: vi.fn(async (s: number, name?: string) => {
-            f.wheels.push([s, name]);
-            return { target: 'Vic', roll: 77, boxed: true, landed: true, stake: s };
-          }),
-        }),
+    ...timeoutPart,
+    ...wheelPart,
   };
   return f;
 }
@@ -105,6 +112,13 @@ async function complete(raw: string, f: Fake = fakeIntent()): Promise<Fake> {
   expect(h.state.handlers).not.toBeNull();
   await h.state.handlers!.onComplete(raw);
   return f;
+}
+
+function expectedSent(reply: string | null): string[] {
+  if (reply === null) {
+    return [];
+  }
+  return [reply];
 }
 
 beforeEach(() => {
@@ -141,7 +155,7 @@ describe('[SILENT] and [TIMEOUT] on the final reply (casino closed)', () => {
   for (const [raw, reply, timeouts] of ROWS) {
     it(JSON.stringify(raw), async () => {
       const f = await complete(raw);
-      expect(f.sent).toEqual(reply === null ? [] : [reply]);
+      expect(f.sent).toEqual(expectedSent(reply));
       expect(f.timeouts).toEqual(timeouts);
     });
   }
@@ -167,7 +181,7 @@ describe('casino tokens while the casino is CLOSED', () => {
   for (const [raw, reply] of ROWS) {
     it(JSON.stringify(raw), async () => {
       const f = await complete(raw);
-      expect(f.sent).toEqual(reply === null ? [] : [reply]);
+      expect(f.sent).toEqual(expectedSent(reply));
       expect(f.timeouts).toEqual([]);
       expect(f.wheels).toEqual([]);
       expect(mocked.bumpHouseEvents).not.toHaveBeenCalled();

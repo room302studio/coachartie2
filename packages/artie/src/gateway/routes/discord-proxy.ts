@@ -97,9 +97,13 @@ function appendPresenceInbox(msg: any): void {
 
 // Rewrite inbox (for ack)
 function rewritePresenceInbox(messages: any[]): void {
+  let trailing = '';
+  if (messages.length) {
+    trailing = '\n';
+  }
   writeFileSync(
     PRESENCE_INBOX_PATH,
-    messages.map((m) => JSON.stringify(m)).join('\n') + (messages.length ? '\n' : '')
+    messages.map((m) => JSON.stringify(m)).join('\n') + trailing
   );
 }
 
@@ -465,7 +469,10 @@ export async function sendChannelMessage(discordClient: Client, params: Record<s
     let contentPreview: string | null;
     if (content) {
       const truncated = content.substring(0, 100);
-      const suffix = content.length > 100 ? '...' : '';
+      let suffix = '';
+      if (content.length > 100) {
+        suffix = '...';
+      }
       contentPreview = truncated + suffix;
     } else {
       contentPreview = null;
@@ -716,13 +723,18 @@ export async function getPresenceStatus(): Promise<ApiResult> {
     const recentOutbox = outbox.slice(-10);
     const unacknowledgedCount = inbox.filter((m) => !m.acknowledged).length;
 
+    let lastCheckIn: PresenceMessage | null = null;
+    if (outbox.length > 0) {
+      lastCheckIn = outbox[outbox.length - 1];
+    }
+
     return reply(200, {
       success: true,
       status: {
         totalCheckIns: outbox.length,
         recentCheckIns: recentOutbox.length,
         pendingResponses: unacknowledgedCount,
-        lastCheckIn: outbox.length > 0 ? outbox[outbox.length - 1] : null,
+        lastCheckIn,
       },
     });
   } catch (error) {

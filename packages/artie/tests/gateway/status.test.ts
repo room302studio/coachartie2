@@ -30,7 +30,12 @@ describe('/status command', () => {
     ];
 
     testCases.forEach(({ input, expected }) => {
-      const formatted = input.includes(':free') ? input.replace(':free', '') + ' (Free)' : input;
+      let formatted: string;
+      if (input.includes(':free')) {
+        formatted = input.replace(':free', '') + ' (Free)';
+      } else {
+        formatted = input;
+      }
       expect(formatted).toBe(expected);
     });
   });

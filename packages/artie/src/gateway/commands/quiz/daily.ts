@@ -376,7 +376,12 @@ export function recordGuess(
   const play = getUserPlay(userId, date, deck);
   if (!play || play.completed) return play;
 
-  const outcome: DailyOutcome = isCorrect ? 'correct' : 'wrong';
+  let outcome: DailyOutcome;
+  if (isCorrect) {
+    outcome = 'correct';
+  } else {
+    outcome = 'wrong';
+  }
   const results = [...play.results, outcome] as DailyOutcome[];
   const guesses = [...play.guesses, guess];
   const nextIndex = play.currentQuestion + 1;
@@ -1094,7 +1099,10 @@ export function diffAchievements(before: UserStats, after: UserStats): Achieveme
 function safeJsonArray<T>(raw: string): T[] {
   try {
     const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? (parsed as T[]) : [];
+    if (Array.isArray(parsed)) {
+      return parsed as T[];
+    }
+    return [];
   } catch {
     return [];
   }

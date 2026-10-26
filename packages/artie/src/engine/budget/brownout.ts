@@ -198,10 +198,12 @@ async function refresh(now: number): Promise<void> {
   const mode = status.mode;
 
   if (mode !== lastMode) {
-    const pct =
-      typeof status.dailySpendFraction === 'number'
-        ? `${Math.round(status.dailySpendFraction * 100)}% of daily budget`
-        : 'daily budget n/a';
+    let pct: string;
+    if (typeof status.dailySpendFraction === 'number') {
+      pct = `${Math.round(status.dailySpendFraction * 100)}% of daily budget`;
+    } else {
+      pct = 'daily budget n/a';
+    }
     let runway: string;
     if (runwayHours === null) {
       runway = 'runway ?';

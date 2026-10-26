@@ -58,8 +58,15 @@ healthRouter.get('/detailed', async (req, res) => {
 
     // Check MCP tool registry
     const mcpRegistry = (global as any).mcpToolRegistry;
-    const mcpStatus = mcpRegistry ? 'initialized' : 'not_initialized';
-    const mcpToolCount = mcpRegistry ? mcpRegistry.size : 0;
+    let mcpStatus: string;
+    let mcpToolCount: number;
+    if (mcpRegistry) {
+      mcpStatus = 'initialized';
+      mcpToolCount = mcpRegistry.size;
+    } else {
+      mcpStatus = 'not_initialized';
+      mcpToolCount = 0;
+    }
     checks.mcp = {
       status: mcpStatus,
       toolCount: mcpToolCount,

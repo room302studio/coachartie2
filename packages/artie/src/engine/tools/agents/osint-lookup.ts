@@ -373,9 +373,12 @@ async function handleOsintLookup(
         if (/^[A-Z]{2,4}\d{1,4}[A-Z]?$/i.test(query) || /^[0-9a-f]{6}$/i.test(query)) {
           try {
             const isHex = /^[0-9a-f]{6}$/i.test(query);
-            const path = isHex
-              ? `/api/flight/${query.toLowerCase()}`
-              : `/api/notable?callsign=${encodeURIComponent(query)}&limit=5`;
+            let path: string;
+            if (isHex) {
+              path = `/api/flight/${query.toLowerCase()}`;
+            } else {
+              path = `/api/notable?callsign=${encodeURIComponent(query)}&limit=5`;
+            }
             const flights = await osintFetch(OSINT_APIS.skywatch, path);
             results.sources.skywatch = flights;
           } catch (e) {
