@@ -11,6 +11,7 @@
  */
 
 import { logger } from '../../../shared/logger.js';
+import { getErrorMessage } from '../../../shared/errors.js';
 import { readFileSync, readdirSync, statSync, existsSync } from 'fs';
 import { join } from 'path';
 import type {
@@ -51,11 +52,17 @@ function getRecentFiles(
         const fullPath = join(dir, f);
         const stat = statSync(fullPath);
         const content = readFileSafe(fullPath) || '';
+        const truncated = content.slice(0, 200).replace(/\n/g, ' ').trim();
+        let ellipsis: string;
+        if (content.length > 200) {
+          ellipsis = '...';
+        } else {
+          ellipsis = '';
+        }
         return {
           name: f,
           modified: stat.mtime,
-          preview:
-            content.slice(0, 200).replace(/\n/g, ' ').trim() + (content.length > 200 ? '...' : ''),
+          preview: truncated + ellipsis,
         };
       })
       .sort((a, b) => b.modified.getTime() - a.modified.getTime())
@@ -186,7 +193,7 @@ async function handleVPSClaude(
     logger.error(`❌ VPS-Claude error for action '${action}':`, error);
     return JSON.stringify({
       success: false,
-      error: error instanceof Error ? error.message : String(error),
+      error: getErrorMessage(error),
     });
   }
 }
