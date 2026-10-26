@@ -48,6 +48,51 @@ interface MeetingParams {
     channelId?: string;
     mentions?: Array<{ id: string; username: string; displayName: string }>;
   };
+}
+
+function formatParticipant(type: string, id: string): string {
+  if (type === 'discord') {
+    return `<@${id}>`;
+  }
+  return id;
+}
+
+function meetingStatusEmoji(status: string): string {
+  if (status === 'scheduled') {
+    return '📅';
+  }
+  if (status === 'completed') {
+    return '✅';
+  }
+  return '❌';
+}
+
+function participantsDisplay(participantCount: number, participantsStr: string): string {
+  if (participantCount > 0) {
+    return participantsStr;
+  }
+  return 'none (solo meeting)';
+}
+
+function parseDuration(duration: string | undefined): number {
+  if (duration) {
+    return parseInt(String(duration));
+  }
+  return 60;
+}
+
+function optionalString(value: unknown): string | undefined {
+  if (value) {
+    return String(value);
+  }
+  return undefined;
+}
+
+function optionalStringWithDefault(value: unknown, defaultVal: string): string {
+  if (value) {
+    return String(value);
+  }
+  return defaultVal;
   [key: string]: unknown;
 }
 
@@ -232,7 +277,7 @@ class MeetingService {
 
           const participantStr = participants
             .map((p: MeetingParticipantRow) =>
-              p.participant_type === 'discord' ? `<@${p.participant_id}>` : p.participant_id
+              formatParticipant(p.participant_type, p.participant_id)
             )
             .join(', ');
 
@@ -246,8 +291,7 @@ class MeetingService {
             hour12: true,
           });
 
-          const statusEmoji =
-            meeting.status === 'scheduled' ? '📅' : meeting.status === 'completed' ? '✅' : '❌';
+          const statusEmoji = meetingStatusEmoji(meeting.status);
 
           return `${statusEmoji} **${meeting.title}** - ${timeStr} (${meeting.duration_minutes}min)\n   Participants: ${participantStr}`;
         })
@@ -542,9 +586,9 @@ async function handleMeetingAction(params: MeetingParams, content?: string): Pro
           : [];
 
         logger.info(
-          `✅ Meeting params validated - Title: ${title}, Time: ${time}, Participants: ${participants.length > 0 ? participantsStr : 'none (solo meeting)'}`
+          `✅ Meeting params validated - Title: ${title}, Time: ${time}, Participants: ${participantsDisplay(participants.length, participantsStr)}`
         );
-        const duration = params.duration ? parseInt(String(params.duration)) : 60;
+        const duration = parseDuration(params.duration);
 
         return await meetingService.createMeeting(
           String(user_id),
@@ -552,10 +596,10 @@ async function handleMeetingAction(params: MeetingParams, content?: string): Pro
           String(time),
           participants,
           {
-            description: params.description ? String(params.description) : undefined,
+            description: optionalString(params.description),
             duration,
-            timezone: params.timezone ? String(params.timezone) : undefined,
-            created_via: params.created_via ? String(params.created_via) : 'api',
+            timezone: optionalString(params.timezone),
+            created_via: optionalStringWithDefault(params.created_via, 'api'),
             discord_context: params.discord_context,
           }
         );
