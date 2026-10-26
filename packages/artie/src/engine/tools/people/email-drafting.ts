@@ -4,6 +4,7 @@ import { openRouterService } from '../../4-generate/openrouter.js';
 import { contextAlchemy } from '../../3-context/assemble.js';
 import { promptManager } from '../../3-context/system-prompt.js';
 import { capabilityRegistry } from '../../5-tool-loop/registry.js';
+import { getErrorMessage } from '../../../shared/errors.js';
 
 // =====================================================
 // EMAIL DRAFTING SERVICE
@@ -79,7 +80,13 @@ export class EmailDraftingService {
         onPartialResponse(`📧 Drafting email to ${emailIntent.to}...\n\n`);
       }
 
-      const draftPrompt = `Write a professional email to ${emailIntent.to}${emailIntent.about ? ` about ${emailIntent.about}` : ''}.
+      let aboutPart: string;
+      if (emailIntent.about) {
+        aboutPart = ` about ${emailIntent.about}`;
+      } else {
+        aboutPart = '';
+      }
+      const draftPrompt = `Write a professional email to ${emailIntent.to}${aboutPart}.
 
 User's request: "${message.message}"
 
@@ -137,7 +144,7 @@ Format your response using XML tags:
       return this.formatDraftDisplay(emailDraft);
     } catch (error) {
       logger.error('❌ Email writing mode failed:', error);
-      return `❌ Failed to draft email: ${error instanceof Error ? error.message : 'Unknown error'}`;
+      return `❌ Failed to draft email: ${getErrorMessage(error)}`;
     }
   }
 
@@ -242,7 +249,7 @@ Format your response using XML tags:
     } catch (error) {
       logger.error('❌ Failed to send email:', error);
       draft.status = 'draft'; // Reset to draft on failure
-      return `❌ Failed to send email: ${error instanceof Error ? error.message : 'Unknown error'}\n\nDraft is still available. Reply "send" to try again or "edit" to revise.`;
+      return `❌ Failed to send email: ${getErrorMessage(error)}\n\nDraft is still available. Reply "send" to try again or "edit" to revise.`;
     }
   }
 
@@ -308,7 +315,7 @@ Format your response using XML tags:
       return this.formatDraftDisplay(draft, `✏️ **Draft revised** (version ${draft.version})\n\n`);
     } catch (error) {
       logger.error('❌ Failed to revise draft:', error);
-      return `❌ Failed to revise draft: ${error instanceof Error ? error.message : 'Unknown error'}\n\nOriginal draft is still available.`;
+      return `❌ Failed to revise draft: ${getErrorMessage(error)}\n\nOriginal draft is still available.`;
     }
   }
 
