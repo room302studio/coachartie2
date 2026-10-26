@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { logger } from '../../shared/logger.js';
+import { getErrorMessage } from '../../shared/errors.js';
 import { type ApiResult, sendResult } from '../../shared/api-result.js';
 
 // Wave 9: the handler body is an exported function returning the status + JSON it used to
@@ -8,6 +9,26 @@ const reply = (status: number, body: any): ApiResult => ({ status, body });
 import { openRouterModelsService } from '../4-generate/model-catalog.js';
 
 const router: Router = Router();
+
+/**
+ * Get the category of a model (free or premium)
+ */
+function modelCategory(isFree: boolean): string {
+  if (isFree) {
+    return 'free';
+  }
+  return 'premium';
+}
+
+/**
+ * Get the tier of a model (standard or multimodal)
+ */
+function modelTier(modality: string): string {
+  if (modality === 'text') {
+    return 'standard';
+  }
+  return 'multimodal';
+}
 
 // GET /api/models - Get current active models with live OpenRouter data
 router.get('/', async (_req: Request, res: Response) => sendResult(res, await listModels()));
@@ -61,8 +82,8 @@ export async function listModels(): Promise<ApiResult> {
         totalModels: availableModels.length,
         all: enhancedModels.map((model) => ({
           name: model.id,
-          category: model.isFree ? 'free' : 'premium',
-          tier: model.modality === 'text' ? 'standard' : 'multimodal',
+          category: modelCategory(model.isFree),
+          tier: modelTier(model.modality),
           provider: model.provider,
           model: model.name,
           active: model.isActive,
@@ -79,7 +100,7 @@ export async function listModels(): Promise<ApiResult> {
     return reply(500, {
       success: false,
       error: 'Failed to fetch model information from OpenRouter',
-      details: error instanceof Error ? error.message : String(error),
+      details: getErrorMessage(error),
       configuredModels,
       hint: 'Check if OPENROUTER_MODELS contains valid model names from https://openrouter.ai/models',
     });
