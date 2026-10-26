@@ -20,6 +20,7 @@ import { checkGuildBudget, reportGuildBudgetSpent } from '../../shared/guild-bud
 import { logger } from '../../shared/logger.js';
 import { BLOCKED_USER_IDS, isBlockedUser } from '../../shared/blocklist.js';
 import { isOperatorOnlyError } from '../../shared/anomalywatch.js';
+import { getErrorMessage, getErrorStackOrUndefined } from '../../shared/errors.js';
 import { getKillSwitchPath, isGenerationMuted } from '../../shared/kill-switch.js';
 import { getStrikeMode } from '../../shared/paths.js';
 import { OWNER_USER_ID } from '../../shared/config/owner.js';
@@ -266,7 +267,7 @@ function dropOptedOut({ message }: Turn): StepResult {
 function requireCoachArtiePlace({ message, shortId, isCoachArtiePlace }: Turn): StepResult {
   // EMERGENCY KILL SWITCH — checked per message, no restart required.
   if (!isCoachArtiePlace) {
-    const _chName = ('name' in message.channel ? message.channel.name : '') || '';
+    const _chName = (message.channel as any).name || '';
     logger.info(`Non-Coach-Artie channel #${_chName} - not responding [${shortId}]`);
     return 'stop';
   }
@@ -463,11 +464,15 @@ function resolveChannelPersona(turn: Turn): StepResult {
   }
 
   // Check for channel personas with respondToAll enabled (e.g., Judge Artie in #litigation)
-  const channelName =
+  let channelName: string;
+  if (
     message.channel.type === ChannelType.GuildText ||
     message.channel.type === ChannelType.PublicThread
-      ? message.channel.name
-      : '';
+  ) {
+    channelName = message.channel.name;
+  } else {
+    channelName = '';
+  }
   const channelPersona = getChannelPersona(message.guildId, channelName);
   let isRespondToAllChannel = shouldRespondToAllInChannel(message.guildId, channelName);
 
@@ -575,8 +580,14 @@ async function speakGate(turn: Turn): Promise<StepResult> {
     shouldRespond = await runSpeakGate(() =>
       shouldProactivelyAnswer(message, gateContext, correlationId)
     );
+    let _verdict: string;
+    if (shouldRespond) {
+      _verdict = 'SPEAK';
+    } else {
+      _verdict = 'stay quiet';
+    }
     logger.info(
-      `🤐 Speak gate (cheap judgment) → ${shouldRespond ? 'SPEAK' : 'stay quiet'} [${shortId}]`
+      `🤐 Speak gate (cheap judgment) → ${_verdict} [${shortId}]`
     );
   } else if (speakRoute.route === 'silent' && ambientCandidate) {
     logger.info(`🤐 Unprompted reply suppressed — ${speakRoute.reason} [${shortId}]`);
@@ -620,23 +631,32 @@ function recordActivity({ message }: Turn): StepResult {
   const botId = message.client.user?.id;
   // A reply to Artie is aimed at Artie even if it also @s someone, so it gets no label.
   const replied = message.mentions.repliedUser;
-  const target =
-    replied?.id === botId
-      ? undefined
-      : replied && replied.id !== message.author.id
-        ? replied
-        : message.mentions.users.find(
-            (u) => u.id !== botId && u.id !== message.author.id && !u.bot
-          );
-  recordChannelActivity(message.channelId, {
+  let target: typeof replied | undefined;
+  if (replied?.id === botId) {
+    target = undefined;
+  } else if (replied && replied.id !== message.author.id) {
+    target = replied;
+  } else {
+    target = message.mentions.users.find(
+      (u) => u.id !== botId && u.id !== message.author.id && !u.bot
+    );
+  }
+  let _activityData: {
+    messageId: string;
+    authorLabel: string;
+    content: string;
+    ts: number;
+    toLabel?: string;
+  } = {
     messageId: message.id,
     authorLabel: message.author.displayName || message.author.username,
     content: message.content,
     ts: Date.now(),
-    ...(target && !isBlockedUser(target.id)
-      ? { toLabel: target.displayName || target.username }
-      : {}),
-  });
+  };
+  if (target && !isBlockedUser(target.id)) {
+    _activityData.toLabel = target.displayName || target.username;
+  }
+  recordChannelActivity(message.channelId, _activityData);
 }
 
 async function respondOrObserve(turn: Turn): Promise<StepResult> {
@@ -697,17 +717,20 @@ async function respondOrObserve(turn: Turn): Promise<StepResult> {
 
     if (shouldRespond) {
       // ACTIVE RESPONSE: Bot will generate and send a response
-      const triggerType = responseConditions.botMentioned
-        ? 'mention'
-        : responseConditions.repliedToBot
-          ? 'reply'
-          : responseConditions.isDM
-          ? 'dm'
-          : responseConditions.isProactiveAnswer
-            ? 'proactive_answer'
-            : isRespondToAllChannel
-              ? `channel_persona:${channelPersona?.personaName || 'unknown'}`
-              : 'robot_channel';
+      let triggerType: string;
+      if (responseConditions.botMentioned) {
+        triggerType = 'mention';
+      } else if (responseConditions.repliedToBot) {
+        triggerType = 'reply';
+      } else if (responseConditions.isDM) {
+        triggerType = 'dm';
+      } else if (responseConditions.isProactiveAnswer) {
+        triggerType = 'proactive_answer';
+      } else if (isRespondToAllChannel) {
+        triggerType = `channel_persona:${channelPersona?.personaName || 'unknown'}`;
+      } else {
+        triggerType = 'robot_channel';
+      }
 
       // Record respondToAll cooldown so the persona doesn't fire on the next message too,
       // and count autonomous (non-mention/DM) responses against the hourly budget.
@@ -718,10 +741,17 @@ async function respondOrObserve(turn: Turn): Promise<StepResult> {
         recordAmbientResponse();
       }
 
+      const _truncatedMsg = cleanMessage.substring(0, 100);
+      let _suffix: string;
+      if (cleanMessage.length > 100) {
+        _suffix = '...';
+      } else {
+        _suffix = '';
+      }
       logger.info(`🤖 Will respond to message [${shortId}] (trigger: ${triggerType})`, {
         correlationId,
         author: message.author.tag,
-        cleanMessage: cleanMessage.substring(0, 100) + (cleanMessage.length > 100 ? '...' : ''),
+        cleanMessage: _truncatedMsg + _suffix,
       });
 
       telemetry.logEvent(
@@ -794,10 +824,12 @@ async function respondOrObserve(turn: Turn): Promise<StepResult> {
       }
     } else {
       // PASSIVE OBSERVATION: Only process for learning if channel is whitelisted
-      const channelName =
-        message.channel.type === GUILD_CHANNEL_TYPE && 'name' in message.channel
-          ? message.channel.name
-          : 'DM';
+      let channelName: string;
+      if (message.channel.type === GUILD_CHANNEL_TYPE && 'name' in message.channel) {
+        channelName = message.channel.name;
+      } else {
+        channelName = 'DM';
+      }
 
       // Check if this channel is in the observation whitelist
       const observationChannels = guildConfig?.observationChannels || [];
@@ -858,20 +890,20 @@ async function reportMessageHandlerError(
 ): Promise<StepResult> {
   logger.error(`❌ Error handling Discord message [${shortId}]:`, {
     correlationId,
-    error: error instanceof Error ? error.message : String(error),
-    stack: error instanceof Error ? error.stack : undefined,
+    error: getErrorMessage(error),
+    stack: getErrorStackOrUndefined(error),
     author: message.author.tag,
     messageId: message.id,
   });
 
   telemetry.incrementMessagesFailed(
     message.author.id,
-    error instanceof Error ? error.message : String(error)
+    getErrorMessage(error)
   );
   telemetry.logEvent(
     'message_error',
     {
-      error: error instanceof Error ? error.message : String(error),
+      error: getErrorMessage(error),
     },
     correlationId,
     message.author.id,
@@ -886,10 +918,12 @@ async function reportMessageHandlerError(
   }
 
   // ENHANCED: User-friendly error with transparency
-  const errorMsg =
-    error instanceof Error && error.message.length < 100
-      ? `Sorry, I encountered an error: ${error.message}`
-      : 'Sorry, I encountered an error processing your message. The issue has been logged.';
+  let errorMsg: string;
+  if (error instanceof Error && error.message.length < 100) {
+    errorMsg = `Sorry, I encountered an error: ${error.message}`;
+  } else {
+    errorMsg = 'Sorry, I encountered an error processing your message. The issue has been logged.';
+  }
 
   await message.reply(`❌ ${errorMsg}`);
 }
@@ -970,6 +1004,16 @@ async function flushBurstBatch(unordered: BurstQueueItem[]): Promise<void> {
       );
     }
 
+    let _contextData: {
+      burst?: string;
+      landedWhileThinking?: string;
+    } = {};
+    if (burstForContext) {
+      _contextData.burst = burstForContext;
+    }
+    if (landedNote) {
+      _contextData.landedWhileThinking = landedNote;
+    }
     await handleMessageAsIntent(
       newest.message,
       combinedMessage,
@@ -977,10 +1021,7 @@ async function flushBurstBatch(unordered: BurstQueueItem[]): Promise<void> {
       undefined,
       newest.guildContextToPass,
       allProactive,
-      {
-        ...(burstForContext ? { burst: burstForContext } : {}),
-        ...(landedNote ? { landedWhileThinking: landedNote } : {}),
-      }
+      _contextData
     );
   } catch (error) {
     await reportMessageHandlerError(newest.message, leader.correlationId, newest.shortId, error);
@@ -1045,7 +1086,13 @@ export function setupMessageHandler(client: Client) {
       // A synchronous step's result is used as-is (no await), so the sync prefix of a turn
       // stays one uninterrupted run, exactly like the old single-function listener.
       const result = step(turn);
-      if ((result instanceof Promise ? await result : result) === 'stop') return;
+      let stepResult: StepResult;
+      if (result instanceof Promise) {
+        stepResult = await result;
+      } else {
+        stepResult = result;
+      }
+      if (stepResult === 'stop') return;
     }
   });
 }
