@@ -205,6 +205,17 @@ export class SteamReviewNotes {
   // Discord fetching + parsing
   // ---------------------------------------------------------------------------
 
+  /** Determine verdict from review title. */
+  private determineVerdict(title: string): ReviewEntry['verdict'] {
+    if (/negative|👎/i.test(title)) {
+      return '👎';
+    }
+    if (/positive|👍/i.test(title)) {
+      return '👍';
+    }
+    return '❓';
+  }
+
   /** Parse a Steamy-bot embed message into a review entry, or null if it isn't one. */
   private parseReview(msg: Message): ReviewEntry | null {
     if (!msg.author.bot || msg.embeds.length === 0) return null;
@@ -212,11 +223,7 @@ export class SteamReviewNotes {
     const title = embed.title || '';
     if (!/review/i.test(title)) return null;
 
-    const verdict: ReviewEntry['verdict'] = /negative|👎/i.test(title)
-      ? '👎'
-      : /positive|👍/i.test(title)
-        ? '👍'
-        : '❓';
+    const verdict: ReviewEntry['verdict'] = this.determineVerdict(title);
     const field = (name: RegExp): string =>
       embed.fields.find((f) => name.test(f.name))?.value || '?';
     // Essay-length reviews get truncated in the log — a handful of untruncated ones
