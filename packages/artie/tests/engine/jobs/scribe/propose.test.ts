@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-const executeMock = vi.fn();
+const { executeMock } = vi.hoisted(() => ({ executeMock: vi.fn() }));
 
 vi.mock('../../../../src/engine/5-tool-loop/registry.js', () => ({
   capabilityRegistry: { execute: executeMock },

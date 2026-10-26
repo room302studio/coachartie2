@@ -2,10 +2,17 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { OWNER_USER_ID } from '../../../src/shared/config/owner.js';
 import { SCRIBE_ALLOWED_GUILD_IDS } from '../../../src/shared/config/guilds.js';
 
-const startVoiceScribeSessionMock = vi.fn();
-const stopVoiceScribeSessionMock = vi.fn();
-const getActiveVoiceSessionMock = vi.fn();
-const ensureVoiceStateListenerMock = vi.fn();
+const {
+  startVoiceScribeSessionMock,
+  stopVoiceScribeSessionMock,
+  getActiveVoiceSessionMock,
+  ensureVoiceStateListenerMock,
+} = vi.hoisted(() => ({
+  startVoiceScribeSessionMock: vi.fn(),
+  stopVoiceScribeSessionMock: vi.fn(),
+  getActiveVoiceSessionMock: vi.fn(),
+  ensureVoiceStateListenerMock: vi.fn(),
+}));
 
 vi.mock('../../../src/gateway/voice/scribe-session.js', () => ({
   startVoiceScribeSession: startVoiceScribeSessionMock,

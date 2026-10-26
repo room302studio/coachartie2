@@ -1,11 +1,19 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { randomUUID } from 'crypto';
 
-const transcribeWavMock = vi.fn();
-const generateScribeSummaryMock = vi.fn();
-const submitScribeProposalsMock = vi.fn();
-const getBrownoutModeMock = vi.fn();
-const sendChunkedChannelMessageMock = vi.fn();
+const {
+  transcribeWavMock,
+  generateScribeSummaryMock,
+  submitScribeProposalsMock,
+  getBrownoutModeMock,
+  sendChunkedChannelMessageMock,
+} = vi.hoisted(() => ({
+  transcribeWavMock: vi.fn(),
+  generateScribeSummaryMock: vi.fn(),
+  submitScribeProposalsMock: vi.fn(),
+  getBrownoutModeMock: vi.fn(),
+  sendChunkedChannelMessageMock: vi.fn(),
+}));
 
 vi.mock('../../../../src/engine/jobs/scribe/stt.js', () => ({
   transcribeWav: transcribeWavMock,
