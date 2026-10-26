@@ -26,6 +26,13 @@ export interface SyncResult {
   error?: string;
 }
 
+function extractLabelName(label: any): string {
+  if (typeof label === 'string') {
+    return label;
+  }
+  return label.name;
+}
+
 /**
  * GitHub Integration Service - Create issues from Discord discussions
  */
@@ -515,7 +522,7 @@ export class GitHubIntegrationService {
         closedAt: data.closed_at,
         url: data.html_url,
         body: data.body ?? null,
-        labels: data.labels?.map((l: any) => (typeof l === 'string' ? l : l.name)) || [],
+        labels: (data.labels?.map((l: any) => extractLabelName(l))) || [],
         assignees: data.assignees?.map((a: any) => a.login) || [],
         comments: data.comments || 0,
       };
