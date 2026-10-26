@@ -9,6 +9,7 @@ import { Octokit } from '@octokit/rest';
 import { octokitLog } from './octokit-log.js';
 import { delay } from '../../../shared/async.js';
 import { logger } from '../../../shared/logger.js';
+import { getErrorMessage } from '../../../shared/errors.js';
 import type { ForumThreadData, ThreadMessageData } from './forum-traversal.js';
 
 export interface GitHubIssueData {
@@ -103,7 +104,13 @@ export class GitHubIntegrationService {
     if (messages.length > 1) {
       body += `---\n\n`;
       body += `### Discussion Summary\n\n`;
-      body += `This thread has ${messages.length - 1} ${messages.length === 2 ? 'reply' : 'replies'}.\n\n`;
+      let replyWord: string;
+      if (messages.length === 2) {
+        replyWord = 'reply';
+      } else {
+        replyWord = 'replies';
+      }
+      body += `This thread has ${messages.length - 1} ${replyWord}.\n\n`;
 
       // Add top 3 responses (excluding starter message)
       const responses = messages.slice(1, 4);
@@ -111,14 +118,24 @@ export class GitHubIntegrationService {
         body += `**Top Responses:**\n\n`;
         responses.forEach((msg, index) => {
           body += `${index + 1}. **@${msg.authorName}** (${msg.createdAt.toISOString().split('T')[0]}):\n`;
-          const preview =
-            msg.content.length > 200 ? msg.content.substring(0, 200) + '...' : msg.content;
+          let preview: string;
+          if (msg.content.length > 200) {
+            preview = msg.content.substring(0, 200) + '...';
+          } else {
+            preview = msg.content;
+          }
           body += `   > ${preview}\n\n`;
         });
       }
 
       if (messages.length > 4) {
-        body += `_...and ${messages.length - 4} more ${messages.length - 4 === 1 ? 'reply' : 'replies'}_\n\n`;
+        let moreWord: string;
+        if (messages.length - 4 === 1) {
+          moreWord = 'reply';
+        } else {
+          moreWord = 'replies';
+        }
+        body += `_...and ${messages.length - 4} more ${moreWord}_\n\n`;
       }
     }
 
@@ -219,7 +236,7 @@ export class GitHubIntegrationService {
       logger.error(`Failed to create GitHub issue for thread "${thread.threadName}":`, error);
       return {
         success: false,
-        error: error instanceof Error ? error.message : String(error),
+        error: getErrorMessage(error),
       };
     }
   }
