@@ -56,6 +56,13 @@ interface MentionProxyParams {
 // API HELPERS
 // =============================================================================
 
+function statusWord(enabled: boolean): string {
+  if (enabled) {
+    return 'Enabled';
+  }
+  return 'Disabled';
+}
+
 async function createProxyRule(params: MentionProxyParams) {
   if (!params.target_user_id || !params.target_username || !params.guild_id || !params.name) {
     throw new Error(
@@ -160,7 +167,7 @@ async function setProxyRuleEnabled(ruleId: string, enabled: boolean) {
     {
       success: true,
       rule: response.data.rule,
-      message: `${enabled ? 'Enabled' : 'Disabled'} mention proxy rule: ${ruleId}`,
+      message: `${statusWord(enabled)} mention proxy rule: ${ruleId}`,
     },
     null,
     2

@@ -14,6 +14,13 @@ interface _DiscordUserHistoryParams {
 // gateway.unservedRoute answers the same 404, so the tool fails exactly as it always has. Serving
 // them is new work, not part of the move.
 
+function ensureArray<T>(value: any): T[] {
+  if (Array.isArray(value)) {
+    return value;
+  }
+  return [];
+}
+
 
 export const discordUserHistoryCapability: RegisteredCapability = {
   name: 'discord-user-history',
@@ -68,7 +75,7 @@ async function getUserMessages(params: {
     }
 
     const messages = response.body as any;
-    const messageArray = Array.isArray(messages) ? messages : [];
+    const messageArray = ensureArray(messages);
 
     return {
       success: true,

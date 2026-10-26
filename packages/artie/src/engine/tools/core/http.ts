@@ -2,6 +2,13 @@ import { getErrorMessage } from '../../../shared/errors.js';
 import { logger } from '../../../shared/logger.js';
 import { RegisteredCapability } from '../../5-tool-loop/registry.js';
 
+function serializeBody(content: any): string {
+  if (typeof content === 'string') {
+    return content;
+  }
+  return JSON.stringify(content);
+}
+
 /**
  * HTTP capability - Make HTTP requests (like curl)
  *
@@ -55,7 +62,7 @@ export const httpCapability: RegisteredCapability = {
       const bodyContent = bodyParam || content;
       if (bodyContent) {
         // If it's already a string, use it; if object, stringify
-        body = typeof bodyContent === 'string' ? bodyContent : JSON.stringify(bodyContent);
+        body = serializeBody(bodyContent);
       }
     }
 

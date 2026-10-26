@@ -6,6 +6,13 @@ import { RegisteredCapability } from '../../5-tool-loop/registry.js';
 // Set reminders, schedule recurring tasks, manage schedules
 // =====================================================
 
+function pluralS(count: number): string {
+  if (count === 1) {
+    return '';
+  }
+  return 's';
+}
+
 export const schedulerCapability: RegisteredCapability = {
   name: 'scheduler',
   emoji: '⏰',
@@ -37,7 +44,7 @@ export const schedulerCapability: RegisteredCapability = {
         );
 
         const delayMinutes = Math.round(delayMs / 60000);
-        return `✅ Reminder set: "${message}" in ${delayMinutes} minute${delayMinutes !== 1 ? 's' : ''}`;
+        return `✅ Reminder set: "${message}" in ${delayMinutes} minute${pluralS(delayMinutes)}`;
       }
 
       case 'schedule': {

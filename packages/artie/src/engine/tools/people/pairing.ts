@@ -11,6 +11,13 @@ import { isOwner } from '../../../shared/config/owner.js';
 import type { RegisteredCapability, CapabilityContext } from '../../5-tool-loop/registry.js';
 import { getErrorMessage } from '../../../shared/errors.js';
 
+function truncationSuffix(text: string, maxLength: number): string {
+  if (text.length > maxLength) {
+    return '...';
+  }
+  return '';
+}
+
 interface PairingParams {
   action: string;
   code?: string;
@@ -106,7 +113,7 @@ async function handlePairing(
           let preview: string;
           if (p.firstMessage) {
             const truncated = p.firstMessage.slice(0, 80);
-            const suffix = p.firstMessage.length > 80 ? '...' : '';
+            const suffix = truncationSuffix(p.firstMessage, 80);
             preview = `\n   > "${truncated}${suffix}"`;
           } else {
             preview = '';

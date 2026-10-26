@@ -3,6 +3,13 @@ import { RegisteredCapability } from '../../5-tool-loop/registry.js';
 
 const FLASHCARD_API_BASE = 'https://ejfox.com/api/flashcards';
 
+function hintsLine(hints: string[]): string {
+  if (hints.length > 0) {
+    return `\n   Hints: ${hints.join(', ')}`;
+  }
+  return '';
+}
+
 interface FlashcardResponse {
   id: string;
   front: string;
@@ -147,7 +154,7 @@ export const flashcardCapability: RegisteredCapability = {
           const cardList = results.results
             .map(
               (card, i) =>
-                `${i + 1}. [${card.deckName}] Q: ${card.front}\n   A: ${card.back}${card.hints.length > 0 ? `\n   Hints: ${card.hints.join(', ')}` : ''}`
+                `${i + 1}. [${card.deckName}] Q: ${card.front}\n   A: ${card.back}${hintsLine(card.hints)}`
             )
             .join('\n\n');
 

@@ -4,6 +4,13 @@ import { RegisteredCapability } from '../../5-tool-loop/registry.js';
 import { isEmail } from '../../../shared/email.js';
 import { getErrorMessage } from '../../../shared/errors.js';
 
+function truncationSuffix(text: string, maxLength: number): string {
+  if (text.length > maxLength) {
+    return '...';
+  }
+  return '';
+}
+
 /**
  * Email capability for sending emails via self-hosted infrastructure
  *
@@ -276,7 +283,7 @@ async function handleEmailCapability(params: any, content?: string): Promise<str
 
         if (result.success) {
           const preview = body.substring(0, 200);
-          const suffix = body.length > 200 ? '...' : '';
+          const suffix = truncationSuffix(body, 200);
           return `✅ ${result.message}\n\n📝 Sent:\nTo: ${to}\nSubject: ${subject}\n\nBody:\n${preview}${suffix}`;
         }
 
