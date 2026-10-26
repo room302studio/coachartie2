@@ -4,6 +4,37 @@ import { telemetry } from '../telemetry.js';
 import * as engine from '../../engine/api.js';
 import { withTimeout } from '../../shared/async.js';
 
+/**
+ * Format response status.
+ */
+function responseStatus(ok: boolean): string {
+  if (ok) {
+    return '🟢 Online';
+  }
+  return '🟡 Issues';
+}
+
+/**
+ * Format latency status.
+ */
+function latencyStatus(ok: boolean): string {
+  if (ok) {
+    return 'Active';
+  }
+  return 'Degraded';
+}
+
+/**
+ * Format average response time or N/A.
+ */
+function avgResponseTime(events: any[]): string {
+  if (events.length > 0) {
+    const avg = events.reduce((sum, event) => sum + (event.duration || 0), 0) / events.length / 1000;
+    return avg.toFixed(1);
+  }
+  return 'N/A';
+}
+
 export const debugCommand = {
   data: new SlashCommandBuilder()
     .setName('debug')
@@ -117,8 +148,8 @@ async function createConnectionTestEmbed(): Promise<EmbedBuilder> {
     const response = await fetch(`${healthServerUrl}/health`);
     tests.push({
       name: '📊 Health Server',
-      status: response.ok ? '🟢 Online' : '🟡 Issues',
-      latency: response.ok ? 'Active' : 'Degraded',
+      status: responseStatus(response.ok),
+      latency: latencyStatus(response.ok),
     });
   } catch (error) {
     tests.push({
@@ -154,14 +185,7 @@ async function createPerformanceEmbed(userId: string): Promise<EmbedBuilder> {
       (event) => event.event === 'job_completed' && event.duration
     );
 
-    const userAvgResponseTime =
-      userCompletions.length > 0
-        ? (
-            userCompletions.reduce((sum, event) => sum + (event.duration || 0), 0) /
-            userCompletions.length /
-            1000
-          ).toFixed(1)
-        : 'N/A';
+    const userAvgResponseTime = avgResponseTime(userCompletions);
 
     embed.addFields(
       { name: '⚡ Global Avg Response', value: metrics.averageResponseTime, inline: true },
