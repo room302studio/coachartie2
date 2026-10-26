@@ -25,14 +25,16 @@ function recallerWithCandidates(candidates: Candidate[]): MemoryRecaller {
 describe('semantic recall reasons', () => {
   it('tags a participant-mention match as "mentions <name>", not a keyword or score', async () => {
     const recaller = recallerWithCandidates([
-      { content: 'Jan is debugging the Piccadilly line signal bug', importance: 5, date: '2020-01-01', tags: [] },
+      { content: 'Nadia is debugging the Piccadilly line signal bug', importance: 5, date: '2020-01-01', tags: [] },
     ]);
 
-    const result = await recaller.getMemoryContext('what has jan been working on', 'someone', {
-      participants: ['jan'],
+    // Participant tokens below 4 chars are filtered out upstream (see semanticLayer),
+    // so "nadia" (not "jan") is what actually exercises the mentions-participant path.
+    const result = await recaller.getMemoryContext('what has nadia been working on', 'someone', {
+      participants: ['nadia'],
     });
 
-    expect(result.content).toContain('[mentions jan]');
+    expect(result.content).toContain('[mentions nadia]');
   });
 
   it('tags a plain keyword/relevance match with a shared term and flags high importance', async () => {
@@ -53,19 +55,19 @@ describe('semantic recall reasons', () => {
 
   it('does not change which memories are selected or their order (reason text only)', async () => {
     const candidates: Candidate[] = [
-      { content: 'Jan is debugging the Piccadilly line signal bug', importance: 5, date: '2020-01-01', tags: [] },
+      { content: 'Nadia is debugging the Piccadilly line signal bug', importance: 5, date: '2020-01-01', tags: [] },
       { content: 'Totally unrelated note about snacks', importance: 5, date: '2020-01-01', tags: [] },
     ];
 
     const recaller = recallerWithCandidates(candidates);
-    const result = await recaller.getMemoryContext('what has jan been working on', 'someone', {
-      participants: ['jan'],
+    const result = await recaller.getMemoryContext('what has nadia been working on', 'someone', {
+      participants: ['nadia'],
     });
 
     // Only the participant-relevant memory clears threshold; the unrelated one is dropped,
     // exactly as it would be without any reason annotation.
     expect(result.memoryCount).toBe(1);
-    expect(result.content).toContain('Jan is debugging');
+    expect(result.content).toContain('Nadia is debugging');
     expect(result.content).not.toContain('snacks');
   });
 });
