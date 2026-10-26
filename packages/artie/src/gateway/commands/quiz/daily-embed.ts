@@ -65,7 +65,8 @@ export function parseDailyCustomId(customId: string): ParsedDailyId | null {
     return null;
   }
   const deckRaw = deckParts.join(':');
-  return { action, date, deck: deckRaw === 'all' ? '' : deckRaw };
+  const deck = deckRaw === 'all' ? '' : deckRaw;
+  return { action, date, deck };
 }
 
 function deckLabel(deck: string): string {
@@ -94,9 +95,10 @@ export function buildDailyGameMessage(play: DailyPlay, puzzle: DailyPuzzle): {
     );
 
   if (card) {
+    const frontText = card.front.length > 1000 ? card.front.slice(0, 997) + '…' : card.front;
     embed.addFields({
       name: `❓ Question ${play.currentQuestion + 1}`,
-      value: card.front.length > 1000 ? card.front.slice(0, 997) + '…' : card.front,
+      value: frontText,
     });
     if (card.hints.length > 0) {
       embed.setFooter({
@@ -109,8 +111,9 @@ export function buildDailyGameMessage(play: DailyPlay, puzzle: DailyPuzzle): {
     const lastIdx = play.results.length - 1;
     const lastCard = puzzle.cards[lastIdx];
     if (lastCard) {
+      const lastAnswerName = play.results[lastIdx] === 'correct' ? '✅ Last answer' : '❌ Last answer';
       embed.addFields({
-        name: play.results[lastIdx] === 'correct' ? '✅ Last answer' : '❌ Last answer',
+        name: lastAnswerName,
         value: `You said: _${play.guesses[lastIdx] || '(empty)'}_\nCorrect: **${lastCard.back}**`,
       });
     }
@@ -139,15 +142,28 @@ export function buildDailyResultMessage(
   const grid = renderEmojiGrid(play.results, DAILY_QUESTION_COUNT);
   const score = play.results.filter((o) => o === 'correct').length;
 
+  function scoreColor(score: number, total: number): number {
+    if (score === total) {
+      return 0x57f287;
+    }
+    return 0xfee75c;
+  }
+
   const embed = new EmbedBuilder()
-    .setColor(score === DAILY_QUESTION_COUNT ? 0x57f287 : 0xfee75c)
+    .setColor(scoreColor(score, DAILY_QUESTION_COUNT))
     .setTitle(`🏁 Daily Quiz · ${deckLabel(puzzle.deck)} · ${play.date}`)
     .setDescription([grid, `**${score} / ${DAILY_QUESTION_COUNT}** correct`].join('\n'))
     .addFields({
       name: '🔎 Answer key',
       value: puzzle.cards
         .map((card, i) => {
-          const mark = play.results[i] === 'correct' ? '🟩' : '🟥';
+          function resultMark(result: string | undefined): string {
+            if (result === 'correct') {
+              return '🟩';
+            }
+            return '🟥';
+          }
+          const mark = resultMark(play.results[i]);
           const yourGuess = play.guesses[i] || '(empty)';
           return `${mark} **${card.back}** — _you said: ${yourGuess}_`;
         })
@@ -160,12 +176,33 @@ export function buildDailyResultMessage(
         : `Tap Share to post your result in the channel`,
     });
 
+  function shareButtonLabel(): string {
+    if (play.shared) {
+      return 'Shared ✓';
+    }
+    return 'Share to channel';
+  }
+
+  function shareButtonEmoji(): string {
+    if (play.shared) {
+      return '✅';
+    }
+    return '📣';
+  }
+
+  function shareButtonStyle(): ButtonStyle {
+    if (play.shared) {
+      return ButtonStyle.Secondary;
+    }
+    return ButtonStyle.Success;
+  }
+
   const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
     new ButtonBuilder()
       .setCustomId(dailyCustomId('share', play.date, play.deck))
-      .setLabel(play.shared ? 'Shared ✓' : 'Share to channel')
-      .setEmoji(play.shared ? '✅' : '📣')
-      .setStyle(play.shared ? ButtonStyle.Secondary : ButtonStyle.Success)
+      .setLabel(shareButtonLabel())
+      .setEmoji(shareButtonEmoji())
+      .setStyle(shareButtonStyle())
       .setDisabled(play.shared)
   );
 
@@ -210,7 +247,8 @@ export function parseScheduleCustomId(customId: string): ParsedScheduleId | null
   const [action, date, ...deckParts] = parts;
   if (action !== 'shuffle' && action !== 'save' && action !== 'cancel') return null;
   const deckRaw = deckParts.join(':');
-  return { action, date, deck: deckRaw === 'all' ? '' : deckRaw };
+  const deck = deckRaw === 'all' ? '' : deckRaw;
+  return { action, date, deck };
 }
 
 /**
@@ -223,14 +261,30 @@ export function buildScheduleDraftMessage(
   cards: FlashcardResponse[],
   options: { saved?: boolean; cancelled?: boolean } = {}
 ): { embeds: EmbedBuilder[]; components: ActionRowBuilder<ButtonBuilder>[] } {
-  const status = options.saved
-    ? '✅ Saved as tomorrow\'s puzzle.'
-    : options.cancelled
-      ? '❌ Cancelled.'
-      : '🪄 Preview — these are the cards your members will see.';
+  function scheduleStatus(): string {
+    if (options.saved) {
+      return '✅ Saved as tomorrow\'s puzzle.';
+    }
+    if (options.cancelled) {
+      return '❌ Cancelled.';
+    }
+    return '🪄 Preview — these are the cards your members will see.';
+  }
+
+  const status = scheduleStatus();
+
+  function scheduleEmbedColor(): number {
+    if (options.saved) {
+      return 0x57f287;
+    }
+    if (options.cancelled) {
+      return 0xed4245;
+    }
+    return 0x5865f2;
+  }
 
   const embed = new EmbedBuilder()
-    .setColor(options.saved ? 0x57f287 : options.cancelled ? 0xed4245 : 0x5865f2)
+    .setColor(scheduleEmbedColor())
     .setTitle(`🗓️ Schedule Daily Quiz · ${date} · ${deck || 'All Decks'}`)
     .setDescription(status);
 
@@ -239,7 +293,13 @@ export function buildScheduleDraftMessage(
       name: `Cards (${cards.length})`,
       value: cards
         .map((c, i) => {
-          const front = c.front.length > 80 ? c.front.slice(0, 77) + '…' : c.front;
+          function cardFrontDisplay(front: string): string {
+            if (front.length > 80) {
+              return front.slice(0, 77) + '…';
+            }
+            return front;
+          }
+          const front = cardFrontDisplay(c.front);
           return `**${i + 1}.** ${front}\n   → _${c.back}_`;
         })
         .join('\n'),
@@ -284,12 +344,30 @@ export function buildGuildConfigEmbed(
   config: GuildQuizConfig,
   guildName: string
 ): { embeds: EmbedBuilder[] } {
-  const allowed =
-    config.allowedDecks.length === 0
-      ? '_All decks (no restriction)_'
-      : config.allowedDecks
-          .map((d) => `• ${d === '' ? 'All Decks (Random)' : d}`)
-          .join('\n');
+  function deckDisplayName(deck: string): string {
+    if (deck === '') {
+      return 'All Decks (Random)';
+    }
+    return deck;
+  }
+
+  let allowed: string;
+  if (config.allowedDecks.length === 0) {
+    allowed = '_All decks (no restriction)_';
+  } else {
+    allowed = config.allowedDecks
+      .map((d) => `• ${deckDisplayName(d)}`)
+      .join('\n');
+  }
+
+  let defaultDeckValue: string;
+  if (config.defaultDeck === null) {
+    defaultDeckValue = '_None_';
+  } else if (config.defaultDeck === '') {
+    defaultDeckValue = 'All Decks (Random)';
+  } else {
+    defaultDeckValue = config.defaultDeck;
+  }
 
   const embed = new EmbedBuilder()
     .setColor(0x5865f2)
@@ -298,11 +376,7 @@ export function buildGuildConfigEmbed(
       { name: 'Allowed Decks', value: allowed, inline: false },
       {
         name: 'Default Deck',
-        value: config.defaultDeck === null
-          ? '_None_'
-          : config.defaultDeck === ''
-            ? 'All Decks (Random)'
-            : config.defaultDeck,
+        value: defaultDeckValue,
         inline: false,
       }
     )
@@ -321,7 +395,8 @@ export function buildGuildConfigEmbed(
  */
 export function voteCustomId(action: VoteAction, pollId: number, deck?: string): string {
   if (action === 'cast') {
-    return `${VOTE_PREFIX}cast:${pollId}:${deck === '' ? 'all' : deck}`;
+    const deckPart = deck === '' ? 'all' : deck;
+    return `${VOTE_PREFIX}cast:${pollId}:${deckPart}`;
   }
   return `${VOTE_PREFIX}close:${pollId}`;
 }
@@ -343,13 +418,17 @@ export function parseVoteCustomId(customId: string): ParsedVoteId | null {
   if (action === 'close') return { action: 'close', pollId, deck: '' };
   if (action === 'cast' && parts.length >= 3) {
     const deckRaw = parts.slice(2).join(':');
-    return { action: 'cast', pollId, deck: deckRaw === 'all' ? '' : deckRaw };
+    const deck = deckRaw === 'all' ? '' : deckRaw;
+    return { action: 'cast', pollId, deck };
   }
   return null;
 }
 
 function deckButtonLabel(deck: string): string {
-  return deck === '' ? 'All Decks' : deck.replace(/_/g, ' ');
+  if (deck === '') {
+    return 'All Decks';
+  }
+  return deck.replace(/_/g, ' ');
 }
 
 function renderTallyBar(votes: number, max: number): string {
@@ -371,37 +450,65 @@ export function buildDeckVoteMessage(
   const maxVotes = Math.max(0, ...tallies.map((t) => t.votes));
   const totalVotes = tallies.reduce((sum, t) => sum + t.votes, 0);
 
+  function voteMarker(deck: string): string {
+    if (isClosed && deck === options.winningDeck) {
+      return '🏆 ';
+    }
+    return '';
+  }
+
   const lines = tallies.map((t) => {
     const bar = renderTallyBar(t.votes, maxVotes);
     const label = deckButtonLabel(t.deck);
-    const marker = isClosed && t.deck === options.winningDeck ? '🏆 ' : '';
+    const marker = voteMarker(t.deck);
     return `${marker}**${label}** ${bar} ${t.votes}`;
   });
 
+  function descriptionHeader(): string {
+    if (isClosed) {
+      return `🔒 Voting closed — picking tomorrow's deck.`;
+    }
+    return `One vote each — change anytime. Admin can close when ready.`;
+  }
+
+  function voteSuffix(): string {
+    if (totalVotes === 1) {
+      return '';
+    }
+    return 's';
+  }
+
   const description = [
-    isClosed
-      ? `🔒 Voting closed — picking tomorrow's deck.`
-      : `One vote each — change anytime. Admin can close when ready.`,
+    descriptionHeader(),
     '',
     ...lines,
     '',
-    `_${totalVotes} vote${totalVotes === 1 ? '' : 's'} cast_`,
+    `_${totalVotes} vote${voteSuffix()} cast_`,
   ].join('\n');
 
+  function embedColor(): number {
+    if (isClosed) {
+      return 0xfee75c;
+    }
+    return 0x5865f2;
+  }
+
   const embed = new EmbedBuilder()
-    .setColor(isClosed ? 0xfee75c : 0x5865f2)
+    .setColor(embedColor())
     .setTitle(`🗳️ Vote · Tomorrow's Deck · ${poll.targetDate}`)
     .setDescription(description);
 
   if (isClosed) {
     if (options.winningDeck) {
+      let statusMessage: string;
+      if (options.scheduledOk) {
+        statusMessage = `cards scheduled for ${poll.targetDate}. Run \`/quiz daily\` tomorrow to play.`;
+      } else {
+        statusMessage = '⚠️ Could not fetch cards; admin may need to `/quiz schedule` manually.';
+      }
       embed.addFields({
         name: '🏆 Winner',
-        value: `**${deckButtonLabel(options.winningDeck)}** — ${
-          options.scheduledOk
-            ? `cards scheduled for ${poll.targetDate}. Run \`/quiz daily\` tomorrow to play.`
-            : '⚠️ Could not fetch cards; admin may need to `/quiz schedule` manually.'
-        }`,
+        value: `**${deckButtonLabel(options.winningDeck)}** — ${statusMessage}`,
       });
     } else {
       embed.addFields({
@@ -452,26 +559,33 @@ export function buildProfileMessage(
   stats: UserStats,
   earnedAchievements: Achievement[]
 ): { embeds: EmbedBuilder[] } {
-  const winRate =
-    stats.totalPlays > 0
-      ? Math.round((stats.totalCorrect / (stats.totalPlays * DAILY_QUESTION_COUNT)) * 100)
-      : 0;
+  let winRate: number;
+  if (stats.totalPlays > 0) {
+    winRate = Math.round((stats.totalCorrect / (stats.totalPlays * DAILY_QUESTION_COUNT)) * 100);
+  } else {
+    winRate = 0;
+  }
+
   const recentGrid = stats.recentResults
     .map((r) => scoreEmoji(r.score, r.total))
     .join(' ');
   const recentLine = recentGrid || '_No daily plays yet — run `/quiz daily` to start._';
 
-  const badgesField =
-    earnedAchievements.length > 0
-      ? earnedAchievements
-          .map((a) => `${a.emoji} **${a.label}** — _${a.description}_`)
-          .join('\n')
-      : '_No badges yet. Play a daily to earn your first._';
+  let badgesField: string;
+  if (earnedAchievements.length > 0) {
+    badgesField = earnedAchievements
+      .map((a) => `${a.emoji} **${a.label}** — _${a.description}_`)
+      .join('\n');
+  } else {
+    badgesField = '_No badges yet. Play a daily to earn your first._';
+  }
 
-  const headline =
-    stats.totalPlays === 0
-      ? 'No plays yet — share this command with the channel to get rolling.'
-      : `${stats.totalCorrect} lifetime points · ${winRate}% win rate`;
+  let headline: string;
+  if (stats.totalPlays === 0) {
+    headline = 'No plays yet — share this command with the channel to get rolling.';
+  } else {
+    headline = `${stats.totalCorrect} lifetime points · ${winRate}% win rate`;
+  }
 
   const embed = new EmbedBuilder()
     .setColor(0x5865f2)
@@ -585,10 +699,45 @@ export function buildLeaderboardMessage(
   }
 
   const lines = rows.map((row, i) => {
-    const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i + 1}.`;
-    const perfect = row.perfectDays > 0 ? ` · ⭐${row.perfectDays}` : '';
-    const streak = row.currentStreak >= 2 ? ` · 🔥${row.currentStreak}` : '';
-    return `${medal} <@${row.userId}> — **${row.totalCorrect}** pts across ${row.plays} day${row.plays === 1 ? '' : 's'}${perfect}${streak}`;
+    function getMedal(position: number): string {
+      if (position === 0) {
+        return '🥇';
+      }
+      if (position === 1) {
+        return '🥈';
+      }
+      if (position === 2) {
+        return '🥉';
+      }
+      return `${position + 1}.`;
+    }
+
+    function getPerfectSuffix(perfectDays: number): string {
+      if (perfectDays > 0) {
+        return ` · ⭐${perfectDays}`;
+      }
+      return '';
+    }
+
+    function getStreakSuffix(streak: number): string {
+      if (streak >= 2) {
+        return ` · 🔥${streak}`;
+      }
+      return '';
+    }
+
+    function getPluralS(count: number): string {
+      if (count === 1) {
+        return '';
+      }
+      return 's';
+    }
+
+    const medal = getMedal(i);
+    const perfect = getPerfectSuffix(row.perfectDays);
+    const streak = getStreakSuffix(row.currentStreak);
+    const plural = getPluralS(row.plays);
+    return `${medal} <@${row.userId}> — **${row.totalCorrect}** pts across ${row.plays} day${plural}${perfect}${streak}`;
   });
 
   embed.setDescription(lines.join('\n'));
