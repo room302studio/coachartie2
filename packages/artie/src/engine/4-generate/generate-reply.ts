@@ -50,22 +50,25 @@ export class LLMResponseCoordinator {
       // Pass the fast model explicitly to ensure consistent model selection
       // Context Alchemy: Include traceId and guildId for observability
       // Preflight: Include maxTokens for dynamic response length
-      const generated = onPartialResponse
-        ? await openRouterService.generateFromMessageChainStreaming(
+      let generated: string;
+      if (onPartialResponse) {
+        generated = await openRouterService.generateFromMessageChainStreaming(
             modelAwareMessages,
             message.userId,
             onPartialResponse,
             message.id,
             smartModel,
             generationOptions
-          )
-        : await openRouterService.generateFromMessageChain(
+          );
+      } else {
+        generated = await openRouterService.generateFromMessageChain(
             modelAwareMessages,
             message.userId,
             message.id,
             smartModel,
             generationOptions
           );
+      }
 
       return this.disarmWarden(generated, turn);
     } catch (error: any) {
@@ -98,15 +101,33 @@ export class LLMResponseCoordinator {
 
       const generate: ToolLoopDeps['generate'] = async (msgs, offered) => {
         round++;
+        let messageId: string;
+        if (round === 1) {
+          messageId = message.id;
+        } else {
+          messageId = `${message.id}_tool_${round}`;
+        }
+        let toolChoice: 'auto' | 'none';
+        if (offered.length > 0) {
+          toolChoice = 'auto';
+        } else {
+          toolChoice = 'none';
+        }
         const result = await openRouterService.generateWithTools(
           msgs,
           tools, // the full list every round, so the cached prefix never changes
           message.userId,
-          round === 1 ? message.id : `${message.id}_tool_${round}`,
+          messageId,
           turn.smartModel,
-          { ...turn.generationOptions, toolChoice: offered.length > 0 ? 'auto' : 'none' }
+          { ...turn.generationOptions, toolChoice }
         );
-        return { content: result.content, toolCalls: offered.length > 0 ? result.toolCalls : [] };
+        let returnToolCalls: typeof result.toolCalls;
+        if (offered.length > 0) {
+          returnToolCalls = result.toolCalls;
+        } else {
+          returnToolCalls = [];
+        }
+        return { content: result.content, toolCalls: returnToolCalls };
       };
 
       let finalText: string;
@@ -190,6 +211,12 @@ export class LLMResponseCoordinator {
 
       // Use Context Alchemy to build intelligent message chain
       logger.info('🧪 CONTEXT ALCHEMY: Building intelligent message chain');
+      let discordContext: typeof message.context | undefined;
+      if (message.context?.platform === 'discord' || message.context?.guildKnowledge) {
+        discordContext = message.context;
+      } else {
+        discordContext = undefined;
+      }
       const { messages } = await contextAlchemy.buildMessageChain(
         message.message,
         message.userId,
@@ -202,10 +229,7 @@ export class LLMResponseCoordinator {
           // Pass Discord channel history - source of truth for DMs (includes webhook/n8n messages)
           discordChannelHistory: message.context?.channelHistory,
           // Pass full Discord context for guild knowledge, proactive answering, etc.
-          discordContext:
-            message.context?.platform === 'discord' || message.context?.guildKnowledge
-              ? message.context
-              : undefined,
+          discordContext,
           // Context Alchemy observability: pass trace ID for metrics capture
           traceId: message.context?.traceId,
           // Experiment feature flags for memory/rules ablation
@@ -220,7 +244,12 @@ export class LLMResponseCoordinator {
       // model; anything moderate/complex (or unclassified) keeps the smart model.
       const simpleChatModel = process.env.SIMPLE_CHAT_MODEL || 'anthropic/claude-sonnet-5';
       const routeSimple = preflight.complexity === 'simple';
-      let smartModel = routeSimple ? simpleChatModel : openRouterService.selectSmartModel();
+      let smartModel: string;
+      if (routeSimple) {
+        smartModel = simpleChatModel;
+      } else {
+        smartModel = openRouterService.selectSmartModel();
+      }
 
       // Brownout override (see brownout.ts): when credit runway shrinks, step
       // down to cheaper models + shorter replies instead of going silent.
@@ -234,34 +263,46 @@ export class LLMResponseCoordinator {
       const route = brownoutRoute(brownout, smartModel);
       smartModel = route.model;
       if (brownout.mode !== 'normal') {
-        const daily =
-          typeof brownout.dailySpendFraction === 'number'
-            ? `${Math.round(brownout.dailySpendFraction * 100)}% of daily budget`
-            : 'daily n/a';
+        let daily: string;
+        if (typeof brownout.dailySpendFraction === 'number') {
+          daily = `${Math.round(brownout.dailySpendFraction * 100)}% of daily budget`;
+        } else {
+          daily = 'daily n/a';
+        }
         logger.warn(
           `🕯️ Brownout ${brownout.mode.toUpperCase()} (runway ${brownout.runwayHours?.toFixed(1) ?? '?'}h, ${daily}) → ${smartModel}, maxTokens ${maxTokens}`
         );
       }
+      let messagesToProcess: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>;
+      if (mode === 'native') {
+        messagesToProcess = messages;
+      } else {
+        // XML-LOOP: delete after v3 soak (TOOL_LOOP=xml). A pass-through today.
+        messagesToProcess = messages.map((msg) => {
+          if (msg.role === 'system') {
+            return {
+              ...msg,
+              content: modelAwarePrompter.generateCapabilityPrompt(smartModel, msg.content),
+            };
+          }
+          return msg;
+        });
+      }
       const modelAwareMessages = applyBrevityNote(
-        mode === 'native'
-          ? messages
-          : // XML-LOOP: delete after v3 soak (TOOL_LOOP=xml). A pass-through today.
-            messages.map((msg) => {
-              if (msg.role === 'system') {
-                return {
-                  ...msg,
-                  content: modelAwarePrompter.generateCapabilityPrompt(smartModel, msg.content),
-                };
-              }
-              return msg;
-            }),
+        messagesToProcess,
         // Lean/critical cap max_tokens; ask for a complete short reply that fits rather than
         // a normal one that gets cut off. Inserted after the cache breakpoint.
         brownout.mode
       );
 
+      let routeLabel: string;
+      if (routeSimple) {
+        routeLabel = 'SIMPLE';
+      } else {
+        routeLabel = preflight.complexity.toUpperCase();
+      }
       logger.warn(
-        `🎯 Model route: ${routeSimple ? 'SIMPLE' : preflight.complexity.toUpperCase()} → ${smartModel} (${modelAwareMessages.length} messages)`
+        `🎯 Model route: ${routeLabel} → ${smartModel} (${modelAwareMessages.length} messages)`
       );
 
       // Context Alchemy: Include traceId and guildId for observability
@@ -428,11 +469,24 @@ export class LLMResponseCoordinator {
     const capabilityDetails = context.capabilities
       .map((cap, i) => {
         const result = context.results[i];
-        const status = result ? (result.success ? 'SUCCESS' : 'FAILED') : 'UNKNOWN';
-        const data = result?.data
-          ? ` - Result: ${JSON.stringify(result.data).substring(0, 100)}`
-          : '';
-        const error = result?.error ? ` - Error: ${result.error}` : '';
+        let status: string;
+        if (result) {
+          if (result.success) {
+            status = 'SUCCESS';
+          } else {
+            status = 'FAILED';
+          }
+        } else {
+          status = 'UNKNOWN';
+        }
+        let data = '';
+        if (result?.data) {
+          data = ` - Result: ${JSON.stringify(result.data).substring(0, 100)}`;
+        }
+        let error = '';
+        if (result?.error) {
+          error = ` - Error: ${result.error}`;
+        }
 
         return `Capability ${i + 1}: ${cap.name}:${cap.action}
 Arguments: ${JSON.stringify(cap.params)}
@@ -525,11 +579,14 @@ ${capabilityDetails}`;
     // Don't care about explicit tags or defaults - just execute what's there.
     const hasAnyCapabilities = hasCapabilities || hasShorthandCapabilities;
     let wantsLoop = hasAnyCapabilities;
-    let decisionSource = hasCapabilities
-      ? 'detected <capability> tags'
-      : hasShorthandCapabilities
-        ? 'detected shorthand capability tags (e.g., <read>, <recall>)'
-        : 'no capabilities found';
+    let decisionSource: string;
+    if (hasCapabilities) {
+      decisionSource = 'detected <capability> tags';
+    } else if (hasShorthandCapabilities) {
+      decisionSource = 'detected shorthand capability tags (e.g., <read>, <recall>)';
+    } else {
+      decisionSource = 'no capabilities found';
+    }
 
     // If there's an explicit wants_loop tag, respect it
     if (wantsLoopMatch) {
@@ -629,10 +686,12 @@ ${capabilityDetails}`;
     }
 
     // Add separator if we truncated
-    const separator =
-      recentMessages.length < history.length - keepFirst
-        ? ['[... earlier messages omitted for context budget ...]']
-        : [];
+    let separator: string[];
+    if (recentMessages.length < history.length - keepFirst) {
+      separator = ['[... earlier messages omitted for context budget ...]'];
+    } else {
+      separator = [];
+    }
 
     const truncated = [...firstMessages, ...separator, ...recentMessages];
     const finalTokens = truncated.reduce((sum, msg) => sum + estimateTokens(msg), 0);

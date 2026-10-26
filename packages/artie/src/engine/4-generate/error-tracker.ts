@@ -6,6 +6,7 @@ import { logger } from '../../shared/logger.js';
 import { getDb } from '../../shared/db/client.js';
 import { errorEvents } from '../../shared/db/schema.js';
 import { desc, sql } from 'drizzle-orm';
+import { getErrorMessage, getErrorStackOrUndefined } from '../../shared/errors.js';
 
 export const ERROR_TYPES = {
   LLM_BILLING: 'llm_billing',
@@ -67,11 +68,15 @@ class ErrorTracker {
 
     try {
       const db = getDb();
-      const errorMessage =
-        typeof options.error === 'string' ? options.error : options.error.message;
-      const stackTrace =
-        typeof options.error === 'string' ? undefined : options.error.stack?.slice(0, 2000);
+      const errorMessage = getErrorMessage(options.error);
+      const fullStack = getErrorStackOrUndefined(options.error);
+      const stackTrace = fullStack?.slice(0, 2000);
       const errorCode = this.extractErrorCode(errorMessage);
+
+      let contextJson: string | null = null;
+      if (options.context) {
+        contextJson = JSON.stringify(options.context);
+      }
 
       await db.insert(errorEvents).values({
         errorType: options.errorType,
@@ -83,7 +88,7 @@ class ErrorTracker {
         service: options.service,
         message: errorMessage?.slice(0, 1000),
         stackTrace,
-        contextJson: options.context ? JSON.stringify(options.context) : null,
+        contextJson,
         recovered: options.recovered || false,
         recoveryAction: options.recoveryAction,
         retryCount: options.retryCount || 0,
@@ -100,7 +105,7 @@ class ErrorTracker {
     code?: string;
     severity: 'warning' | 'error' | 'critical';
   } {
-    const message = typeof error === 'string' ? error : error.message;
+    const message = getErrorMessage(error);
     const lowerMessage = message.toLowerCase();
 
     if (
@@ -195,7 +200,7 @@ class ErrorTracker {
 
   private extractErrorCode(message: string): string | null {
     const match = message.match(/\b(4\d{2}|5\d{2})\b/);
-    return match ? match[1] : null;
+    return match?.[1] ?? null;
   }
 
   isEnabled(): boolean {
