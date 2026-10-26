@@ -44,9 +44,12 @@ beforeAll(async () => {
   msg('artie', 'sure, paste the error', 'g1', 'c1', '2026-10-20T10:00:05Z', 'assistant');
   msg('piper', 'what is up with the metro doctor today', 'g1', 'c1', '2026-10-26T09:00:00Z'); // the "live" turn
 
-  // a speaker whose last message is too short to be a topic, but has a high-importance memory.
+  // a speaker whose last ANSWERED message is too short to be a topic (but it was a real
+  // exchange — Artie replied), has a high-importance memory to fall back to, and then
+  // posts once more with no reply yet (the "live" turn — must not count as the exchange).
   msg('nova', 'thx', 'g1', 'c2', '2026-10-18T12:00:00Z');
-  msg('nova', 'lol', 'g1', 'c2', '2026-10-25T12:00:00Z'); // live turn
+  msg('artie', 'np', 'g1', 'c2', '2026-10-18T12:00:05Z', 'assistant');
+  msg('nova', 'lol', 'g1', 'c2', '2026-10-25T12:00:00Z'); // live turn, unanswered
   db.run(
     `INSERT INTO memories (user_id, content, tags, timestamp, importance, guild_id) VALUES (?, ?, ?, ?, ?, ?)`,
     ['nova', 'Nova is building a Jacquard-loom-inspired animation pipeline', '[]', '2026-10-19T00:00:00Z', 8, 'g1']
@@ -55,11 +58,22 @@ beforeAll(async () => {
   // a speaker with no prior history at all (only the live turn exists).
   msg('ghost', 'hello artie', 'g1', 'c3', '2026-10-26T09:00:00Z');
 
+  // a speaker who chats all day in a passive/ambient channel (stored for history, never
+  // generated on) without a single reply — per queue-worker.ts, messages like these are
+  // still rows in `messages`. There's no real exchange here; must not count as one.
+  msg('chatty', 'anyone awake', 'g1', 'c4', '2026-10-26T08:00:00Z');
+  msg('chatty', 'guess not', 'g1', 'c4', '2026-10-26T08:05:00Z');
+
   // open loop: an objective owned by piper.
   db.run(
     `INSERT INTO objectives (id, title, owner, status, updated_at) VALUES (?, ?, ?, ?, ?)`,
     ['obj1', 'file the signal-loop bug report', 'piper', 'active', '2026-10-21T00:00:00Z']
   );
+
+  // created_at written the way SQLite's own datetime('now') writes it in production
+  // (no timezone suffix) — exercises the strftime normalization in lastExchangeRow.
+  msg('zed', 'any update on the render queue', 'g1', 'c5', '2026-10-24 10:00:00');
+  msg('artie', 'still queued', 'g1', 'c5', '2026-10-24 10:00:05', 'assistant');
 
   lt = await import('../../src/engine/3-context/sources/last-time.js');
 });
@@ -111,5 +125,15 @@ describe('getLastTimeFacts', () => {
 
   it('returns null with no guild or channel scope to anchor to', () => {
     expect(lt.getLastTimeFacts('piper', {})).toBeNull();
+  });
+
+  it('ignores an all-day chatter with no reply — passive history is not an exchange', () => {
+    expect(lt.getLastTimeFacts('chatty', { guildId: 'g1' })).toBeNull();
+  });
+
+  it('normalizes a non-UTC-suffixed created_at (SQLite datetime() format) to a real ISO Z string', () => {
+    const facts = lt.getLastTimeFacts('zed', { guildId: 'g1' });
+    expect(facts).not.toBeNull();
+    expect(facts!.lastAt).toBe('2026-10-24T10:00:00Z');
   });
 });

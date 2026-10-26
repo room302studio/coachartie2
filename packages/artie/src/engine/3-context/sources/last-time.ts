@@ -64,35 +64,48 @@ export function lastTimeLine(facts: LastTimeFacts, now: Date = new Date()): stri
 }
 
 /**
- * The exchange before this one, scoped to this guild (or this DM channel when there's
- * no guild). The CURRENT message is already a row in `messages` by the time context
- * assembly runs — the queue worker inserts it before calling processMessage() — so the
- * newest row for this user/scope is always the one being answered right now, not
- * history. We skip it by position (ORDER BY id DESC LIMIT 2, take the second row), not
- * by a time heuristic, so it's exact regardless of clock skew or fast successive turns.
+ * The last real EXCHANGE with this speaker — a message of theirs that Artie actually
+ * replied to — scoped to this guild (or this DM channel when there's no guild).
+ *
+ * Deliberately NOT "their most recent row in `messages`": the queue worker stores
+ * EVERY forwarded Discord message for history, including passive ones never generated
+ * on (`shouldSkipPassiveGeneration`, checked after the insert) — so in a gated-ambient
+ * guild a chatty regular's most recent row is almost always something said to someone
+ * else, posted seconds ago. The live message being answered right now is also already
+ * a row by this point (inserted before `processMessage()` runs) and is excluded the
+ * same way: it has no assistant reply yet. Same row-pairing shape as
+ * `getConversationHistory` above (reply must land in the next few rows of the SAME
+ * channel, before anything else this user said) — reused here, not reinvented.
+ *
+ * `created_at` is normalized to `...Z` because `messages.created_at` is written via
+ * SQLite's `datetime('now')`, which has no timezone suffix; `strftime` makes it
+ * explicit UTC so `new Date(...)` doesn't get parsed as local time downstream.
  */
 function lastExchangeRow(
   userId: string,
   scope: { guildId?: string; channelId?: string }
 ): { value: string; created_at: string } | null {
   const db = getSyncDb();
-  const where: string[] = ['user_id = ?', "coalesce(role, '') != 'assistant'"];
-  const params: unknown[] = [userId];
-  if (scope.guildId) {
-    where.push('guild_id = ?');
-    params.push(scope.guildId);
-  } else if (scope.channelId) {
-    where.push('channel_id = ?');
-    params.push(scope.channelId);
-  } else {
-    return null; // no scope to anchor "history" to — don't guess
-  }
+  const scopeColumn = scope.guildId ? 'guild_id' : scope.channelId ? 'channel_id' : null;
+  if (!scopeColumn) return null; // no scope to anchor "history" to — don't guess
+  const scopeValue = scope.guildId || scope.channelId;
 
-  const rows = db.all<{ value: string; created_at: string }>(
-    `SELECT value, created_at FROM messages WHERE ${where.join(' AND ')} ORDER BY id DESC LIMIT 2`,
-    params
+  const row = db.get<{ value: string; created_at: string }>(
+    `SELECT m.value AS value, strftime('%Y-%m-%dT%H:%M:%SZ', m.created_at) AS created_at
+     FROM messages m
+     WHERE m.user_id = ? AND m.${scopeColumn} = ? AND coalesce(m.role, '') != 'assistant'
+       AND EXISTS (
+         SELECT 1 FROM messages a
+          WHERE a.channel_id = m.channel_id AND a.role = 'assistant'
+            AND a.id > m.id AND a.id <= m.id + 4
+            AND NOT EXISTS (SELECT 1 FROM messages u
+                             WHERE u.channel_id = m.channel_id AND u.user_id = m.user_id
+                               AND u.id > m.id AND u.id < a.id)
+       )
+     ORDER BY m.id DESC LIMIT 1`,
+    [userId, scopeValue]
   );
-  return rows[1] || null;
+  return row || null;
 }
 
 /** Latest importance >= 7 memory about this person, guild-scoped like getRecentMemories. */

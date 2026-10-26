@@ -21,20 +21,36 @@ extra LLM call per reply.
 DM channel when there's no guild — recall is already guild-scoped elsewhere, so this
 follows that rule rather than inventing a new one):
 
-- **When**: the previous exchange's timestamp, rendered as "3d ago" / "6h ago" / "2mo ago"
-  (`relativeAge`). This is deliberately **not** a MAX(created_at) query — the current
-  message is already a row in `messages` by the time context assembly runs
-  (`engine/1-intake/queue-worker.ts` inserts it before calling `processMessage()`), so
-  the newest row for this user+scope is always the live turn, not history. The query
-  pulls the two most recent rows and takes the second, skipping the live one by
-  position rather than by a time heuristic.
+- **When**: the previous EXCHANGE's timestamp, rendered as "3d ago" / "6h ago" / "2mo ago"
+  (`relativeAge`). This is deliberately not "their most recent row in `messages`":
+  `engine/1-intake/queue-worker.ts` stores every forwarded Discord message for history,
+  including passive ones that are never generated on
+  (`shouldSkipPassiveGeneration` is checked *after* the insert) — confirmed in prod, where
+  user-authored rows outnumber Artie's own replies roughly 4:1. In a gated-ambient guild
+  a regular who chats all day and pings Artie once would otherwise get "last talked 2m
+  ago, about <their reply to someone else>" every time — the opposite of a callback. So
+  `lastExchangeRow` reuses the exact row-pairing shape `getConversationHistory` (above
+  it in `assemble.ts`) already uses: a user row counts only if an assistant reply landed
+  within the next few rows of the same channel, before anything else that user said. The
+  live message being answered right now has no reply yet, so it's excluded the same way,
+  with no separate "skip the newest row" step needed.
+  `messages.created_at` is written via SQLite's own `datetime('now')`, which has no
+  timezone suffix — `strftime` normalizes it to an explicit `...Z` string before it
+  leaves the query, so `new Date(...)` downstream can't get parsed as local time on a
+  non-UTC process.
 - **About what**: the cheapest signal that's actually descriptive, in order:
   1. the user's own previous message, truncated to ~60 chars, if it's at least 10
      characters (filters out "lol"/"thx"/etc.);
-  2. else the latest `importance >= 7` memory about them in this guild;
+  2. else the latest `importance >= 7` memory about them, guild-scoped the same way
+     `getRecentMemories` scopes everything else (this guild's memories plus any
+     ungoverned/global one);
   3. else the latest memory tagged `user-profile` for them (581 of these already exist
      in prod, one per ~every active user — confirmed via a read-only aggregate query
-     before building this, not assumed).
+     before building this, not assumed). **This one is NOT guild-scoped** — a
+     `user-profile` memory is written about the person, not the server, so the same
+     summary can surface in any guild they're active in. Low risk (it's their own
+     profile, not someone else's business) but worth naming since the task's "don't
+     leak across servers" guidance is about recall generally.
   4. If none of the above, the line omits the "about" clause entirely rather than
      printing something empty or made up.
 - **Open loop**: one `objectives` row owned by them with status `active` or `blocked`
@@ -42,7 +58,11 @@ follows that rule rather than inventing a new one):
   row. Confirmed via a read-only prod query that `objectives` has real per-user data
   beyond EJ (one other Discord user had 4 active goals at the time I checked); plain
   `todos`/`todo_lists` barely gets used (1 row total in prod) but it's wired anyway
-  since the query is nearly free.
+  since the query is nearly free. **`objectives` has no `guild_id` column**, so a goal
+  set while active in Subway Builder would also surface as "open:" in Room 302. It's
+  always the speaker's own goal (never someone else's), so the exposure is "you see your
+  own open loop in the wrong server" rather than a privacy leak — but it's a real gap if
+  Artie ever wants goals to feel server-local.
 - The whole thing is skipped — no line at all — when there's no prior exchange in
   scope, when there's no guild/channel to anchor to, or when the speaker is
   blocked/opted-out (`isBlockedUser`, `mentionsOptedOutUser` — same checks the rest of
@@ -117,9 +137,16 @@ rebuilt every turn — nothing added to the cached system prefix.
 
 ## Open questions
 
+- `addRelevantMemories`'s trace metric estimates `memoriesCount` as
+  `tokenWeight / 50` (a rough chars-per-memory guess for observability only, not
+  anything the model or ranking sees). The appended reason tags add a handful of tokens
+  per memory, so that estimate now skews slightly high. Cosmetic — it was already an
+  estimate — but worth a one-line fix if anyone tunes that constant later.
 - `getLastTimeFacts` scopes DMs by `channelId` since there's no `guildId` there. That
   matches "one DM thread = one history", but if Artie ever gets multi-channel DM
   semantics this will need revisiting.
+- See the two guild-scoping caveats inline above (`objectives` has no `guild_id`;
+  `user-profile` memory fallback is deliberately global).
 - The participant-token length floor (`>= 4` chars, in `semanticLayer`, not something
   I added) means short names like "Jan" or "Kai" never trigger the `[mentions X]`
   reason even when they clearly should — pre-existing behavior, just newly visible now
