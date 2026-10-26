@@ -31,7 +31,16 @@ export async function channelDigest(body: any): Promise<ApiResult> {
       lines: lines.map(String),
       lastMessageId: String(lastMessageId),
     });
-    return reply(result ? 200 : 422, result ?? { error: 'digest not produced' });
+    let statusCode: number;
+    let responseBody: any;
+    if (result) {
+      statusCode = 200;
+      responseBody = result;
+    } else {
+      statusCode = 422;
+      responseBody = { error: 'digest not produced' };
+    }
+    return reply(statusCode, responseBody);
   } catch (error) {
     logger.warn('Channel digest endpoint error:', error);
     return reply(500, { error: 'Failed to refresh digest' });
