@@ -60,9 +60,10 @@ follows that rule rather than inventing a new one):
   `todos`/`todo_lists` barely gets used (1 row total in prod) but it's wired anyway
   since the query is nearly free. **`objectives` has no `guild_id` column**, so a goal
   set while active in Subway Builder would also surface as "open:" in Room 302. It's
-  always the speaker's own goal (never someone else's), so the exposure is "you see your
-  own open loop in the wrong server" rather than a privacy leak — but it's a real gap if
-  Artie ever wants goals to feel server-local.
+  always the speaker's own goal, but Artie can say it out loud in a public channel, and
+  a goal set in a DM is private. **Review decision (2026-10-26):** the open loop and the
+  global `user-profile` fallback are used only in DMs. In guilds the line uses
+  guild-scoped rows only. Lift this once `objectives` gets a `guild_id`.
 - The whole thing is skipped — no line at all — when there's no prior exchange in
   scope, when there's no guild/channel to anchor to, or when the speaker is
   blocked/opted-out (`isBlockedUser`, `mentionsOptedOutUser` — same checks the rest of

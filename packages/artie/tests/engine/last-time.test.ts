@@ -64,6 +64,10 @@ beforeAll(async () => {
   msg('chatty', 'anyone awake', 'g1', 'c4', '2026-10-26T08:00:00Z');
   msg('chatty', 'guess not', 'g1', 'c4', '2026-10-26T08:05:00Z');
 
+  // piper's DM history (no guild), so the DM path has a prior exchange.
+  msg('piper', 'can you remind me what I was filing about the signal loop', null, 'dm-piper', '2026-10-22T10:00:00Z');
+  msg('artie', 'the bug report, yes', null, 'dm-piper', '2026-10-22T10:00:05Z', 'assistant');
+
   // open loop: an objective owned by piper.
   db.run(
     `INSERT INTO objectives (id, title, owner, status, updated_at) VALUES (?, ?, ?, ?, ?)`,
@@ -109,6 +113,13 @@ describe('getLastTimeFacts', () => {
     expect(facts).not.toBeNull();
     expect(facts!.lastAt).toBe('2026-10-20T10:00:00Z');
     expect(facts!.topic).toContain('debug the subway save-file loader');
+    // objectives carry no guild_id, so a DM-set goal must not surface in a guild
+    expect(facts!.openLoop).toBeNull();
+  });
+
+  it('shows the open loop in a DM, where nothing unscoped can leak to a public channel', () => {
+    const facts = lt.getLastTimeFacts('piper', { channelId: 'dm-piper' });
+    expect(facts).not.toBeNull();
     expect(facts!.openLoop).toBe('file the signal-loop bug report');
   });
 

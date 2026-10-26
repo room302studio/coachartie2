@@ -189,14 +189,21 @@ export function getLastTimeFacts(
 
   // Cheapest signal first: the user's own last message, if it's descriptive enough and
   // doesn't name someone who opted out. Falls back to stored memory about them.
+  // objectives, todo_items and user-profile memories carry no guild_id, so one set in a DM
+  // could surface in a public channel. Use them only in DMs; in a guild, stick to
+  // guild-scoped rows.
+  const inGuild = Boolean(scope.guildId);
   let topic = mentionsOptedOutUser(prior.value) ? '' : snippet(prior.value);
   if (topic.length < 10) {
-    topic = highImportanceMemoryTopic(userId, scope.guildId) || userProfileSummary(userId) || '';
+    topic =
+      highImportanceMemoryTopic(userId, scope.guildId) ||
+      (inGuild ? null : userProfileSummary(userId)) ||
+      '';
   }
 
   return {
     lastAt: prior.created_at,
     topic: topic || null,
-    openLoop: openLoopFor(userId),
+    openLoop: inGuild ? null : openLoopFor(userId),
   };
 }
