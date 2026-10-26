@@ -326,10 +326,17 @@ function skillToCapability(skill: ParsedSkill): RegisteredCapability | null {
   // Build actions list
   const actions = frontmatter.actions || ['execute', 'run', 'help'];
 
+  let contentSuffix = '';
+  if (skill.content.length > 500) {
+    contentSuffix = '...';
+  }
+
+  const description = `${frontmatter.description || 'OpenClaw skill'}\n\n${skill.content.slice(0, 500)}${contentSuffix}`;
+
   return {
     name: frontmatter.name,
     supportedActions: actions,
-    description: `${frontmatter.description || 'OpenClaw skill'}\n\n${skill.content.slice(0, 500)}${skill.content.length > 500 ? '...' : ''}`,
+    description,
     emoji: frontmatter.emoji,
     handler,
   };
