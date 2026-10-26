@@ -27,7 +27,7 @@ function ensureAutonomousTimeoutsTable(): void {
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         target_user_id TEXT NOT NULL,
         guild_id TEXT,
-        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        created_at TEXT NOT NULL
       )`
     )
     .run();
@@ -42,11 +42,15 @@ export class ModerationService {
   recordAutonomousTimeout(targetUserId: string, guildId: string | undefined): void {
     try {
       ensureAutonomousTimeoutsTable();
+      // Explicit ISO timestamp (not SQLite's CURRENT_TIMESTAMP, which formats as
+      // "YYYY-MM-DD HH:MM:SS" — a different string shape than the ISO 8601 bounds the
+      // callers below compare against; mixing the two breaks the lexicographic comparison
+      // `created_at >= ?` relies on).
       getRawDb()
         .prepare(
-          `INSERT INTO artie_autonomous_timeouts (target_user_id, guild_id) VALUES (?, ?)`
+          `INSERT INTO artie_autonomous_timeouts (target_user_id, guild_id, created_at) VALUES (?, ?, ?)`
         )
-        .run(targetUserId, guildId ?? null);
+        .run(targetUserId, guildId ?? null, new Date().toISOString());
     } catch (error) {
       logger.error('[moderation-rate-limit] Failed to record autonomous timeout:', error);
     }

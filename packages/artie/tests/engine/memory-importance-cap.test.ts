@@ -37,7 +37,7 @@ describe('memory:pin importance cap', () => {
       undefined,
       { userId: ATTACKER }
     );
-    const idMatch = remembered.match(/ID: (\d+)/);
+    const idMatch = remembered.match(/ID: (-?\d+)/);
     expect(idMatch).toBeTruthy();
     const memoryId = idMatch![1];
 

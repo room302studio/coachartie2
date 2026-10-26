@@ -7,6 +7,16 @@ import { describe, it, expect, vi } from 'vitest';
 import { timeoutMember } from '../../src/gateway/routes/moderation.js';
 import { moderationService } from '../../src/gateway/routes/moderation-service.js';
 
+// resolveUserId (moderation.ts) only accepts a raw id without a name lookup when it's a
+// 15-21 digit string (an actual Discord snowflake shape) — anything else sends it through
+// guild.members.search, which this lightweight mock doesn't implement. A counter appended
+// to Date.now() keeps ids unique across calls within the same test run.
+let idCounter = 0;
+function snowflake(): string {
+  idCounter += 1;
+  return `${Date.now()}${String(idCounter).padStart(4, '0')}`;
+}
+
 function makeMember(username: string) {
   return {
     user: { bot: false, username, tag: `${username}#0001` },
@@ -28,7 +38,7 @@ function makeClient(members: Record<string, ReturnType<typeof makeMember>>) {
 describe('autonomous timeout rate limits', () => {
   it('refuses a second timeout on the same target within 24h', async () => {
     const guildId = `guild-rl-target-${Date.now()}`;
-    const targetId = `target-rl-${Date.now()}`;
+    const targetId = snowflake();
     const client = makeClient({ [targetId]: makeMember('target') });
 
     const first = await timeoutMember(client as any, {
@@ -51,7 +61,7 @@ describe('autonomous timeout rate limits', () => {
 
   it('refuses the 4th autonomous timeout in a guild within an hour, even for new targets', async () => {
     const guildId = `guild-rl-guildcap-${Date.now()}`;
-    const targets = ['a', 'b', 'c', 'd'].map((suffix) => `target-${suffix}-${Date.now()}`);
+    const targets = ['a', 'b', 'c', 'd'].map(() => snowflake());
     const members: Record<string, ReturnType<typeof makeMember>> = {};
     for (const t of targets) members[t] = makeMember(t);
     const client = makeClient(members);
@@ -78,8 +88,8 @@ describe('autonomous timeout rate limits', () => {
   it('a different guild is not affected by another guild hitting its cap', async () => {
     const busyGuild = `guild-busy-${Date.now()}`;
     const quietGuild = `guild-quiet-${Date.now()}`;
-    const targets = ['a', 'b', 'c'].map((s) => `t-${s}-${Date.now()}`);
-    const quietTarget = `t-quiet-${Date.now()}`;
+    const targets = ['a', 'b', 'c'].map(() => snowflake());
+    const quietTarget = snowflake();
     const members: Record<string, ReturnType<typeof makeMember>> = {};
     for (const t of [...targets, quietTarget]) members[t] = makeMember(t);
     const client = makeClient(members);

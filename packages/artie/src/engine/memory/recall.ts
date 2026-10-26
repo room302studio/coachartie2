@@ -36,8 +36,8 @@ export function guardGuildMentionOfOwner<
   memory: T,
   askingUserId: string
 ): T {
-  if (memory.user_id === askingUserId || isOwner(memory.user_id)) {
-    return memory; // the author recalling their own words, or the owner's own memory
+  if (memory.user_id === askingUserId || isOwner(memory.user_id) || isOwner(askingUserId)) {
+    return memory; // the author recalling their own words, the owner's own memory, or EJ asking
   }
   if (!mentionsOwner(memory.content)) {
     return memory;
