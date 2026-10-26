@@ -508,12 +508,11 @@ export class CapabilityRegistry {
       const owner = Array.from(this.capabilities.values()).find((c) =>
         c.supportedActions.includes(action)
       );
-      throw new Error(
-        `Capability '${name}' not found in registry.` +
-          (owner
-            ? ` The action "${action}" belongs to capability "${owner.name}" — use <capability name="${owner.name}" action="${action}" ... />`
-            : '')
-      );
+      let errorMessage = `Capability '${name}' not found in registry.`;
+      if (owner) {
+        errorMessage += ` The action "${action}" belongs to capability "${owner.name}" — use <capability name="${owner.name}" action="${action}" ... />`;
+      }
+      throw new Error(errorMessage);
     }
 
     // Auto-correct known action synonyms before validating, so a wrong-but-clear
