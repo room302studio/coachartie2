@@ -12,6 +12,7 @@ import {
   PermissionFlagsBits,
 } from 'discord.js';
 import { logger } from '../../shared/logger.js';
+import { getErrorMessage } from '../../shared/errors.js';
 import { getForumTraversal } from '../watchers/github/forum-traversal.js';
 import { getGitHubIntegration } from '../watchers/github/issue-sync.js';
 
@@ -133,8 +134,14 @@ export async function execute(interaction: ChatInputCommandInteraction) {
     // public repo that publishes people's messages to the internet without their say.
     const repoDetails = await githubService.getRepositoryInfo(repoInfo.owner, repoInfo.repo);
     if (!repoDetails?.isPrivate) {
+      let repoStatus: string;
+      if (repoDetails) {
+        repoStatus = 'public';
+      } else {
+        repoStatus = 'not readable';
+      }
       await interaction.editReply({
-        content: `❌ **${repoInfo.owner}/${repoInfo.repo}** is ${repoDetails ? 'public' : 'not readable'}. Discussions (usernames and messages) only sync to private repos.`,
+        content: `❌ **${repoInfo.owner}/${repoInfo.repo}** is ${repoStatus}. Discussions (usernames and messages) only sync to private repos.`,
       });
       return;
     }
@@ -167,9 +174,16 @@ export async function execute(interaction: ChatInputCommandInteraction) {
       async (current, total, result) => {
         // Update progress every 5 issues
         if (current % 5 === 0 || current === total) {
+          function resultEmoji(): string {
+            if (result.success) {
+              return '✅';
+            }
+            return '❌';
+          }
+
           await interaction
             .editReply({
-              content: `🚀 Creating GitHub issues... (${current}/${total})\n\n${result.success ? '✅' : '❌'} ${result.issueUrl || 'Processing...'}`,
+              content: `🚀 Creating GitHub issues... (${current}/${total})\n\n${resultEmoji()} ${result.issueUrl || 'Processing...'}`,
             })
             .catch(() => {
               /* Ignore rate limit errors on edits */
@@ -210,7 +224,7 @@ export async function execute(interaction: ChatInputCommandInteraction) {
   } catch (error) {
     logger.error(`Failed to execute sync-discussions command:`, error);
 
-    const errorMessage = error instanceof Error ? error.message : String(error);
+    const errorMessage = getErrorMessage(error);
 
     if (interaction.deferred) {
       await interaction.editReply({

@@ -136,11 +136,21 @@ async function createUsageEmbed(userId: string, period: string): Promise<EmbedBu
     // Calculate success rate
     const totalReqs = Number(usage.total_requests || 0);
     const successReqs = Number(usage.successful_requests || 0);
-    const successRate = totalReqs > 0 ? ((successReqs / totalReqs) * 100).toFixed(1) : '0';
+    let successRate: string;
+    if (totalReqs > 0) {
+      successRate = ((successReqs / totalReqs) * 100).toFixed(1);
+    } else {
+      successRate = '0';
+    }
 
     // Calculate cost efficiency
     const totalCost = Number(usage.total_cost || 0);
-    const costPerMessage = totalReqs > 0 ? (totalCost / totalReqs).toFixed(4) : '0.0000';
+    let costPerMessage: string;
+    if (totalReqs > 0) {
+      costPerMessage = (totalCost / totalReqs).toFixed(4);
+    } else {
+      costPerMessage = '0.0000';
+    }
 
     embed.addFields(
       { name: '📊 Total Requests', value: (usage.total_requests || 0).toString(), inline: true },
@@ -200,7 +210,12 @@ async function createUsageEmbed(userId: string, period: string): Promise<EmbedBu
 
       const recentModel =
         recentActivity.model_name.split('/')[1]?.split(':')[0] || recentActivity.model_name;
-      const recentStatus = recentActivity.success ? '✅' : '❌';
+      let recentStatus: string;
+      if (recentActivity.success) {
+        recentStatus = '✅';
+      } else {
+        recentStatus = '❌';
+      }
       const recentTokens = Number(recentActivity.total_tokens || 0);
       const recentCost = Number(recentActivity.estimated_cost || 0);
 
@@ -259,9 +274,18 @@ function formatTimeAgo(ms: number): string {
   const hours = Math.floor(minutes / 60);
   const days = Math.floor(hours / 24);
 
-  if (days > 0) return `${days} day${days > 1 ? 's' : ''} ago`;
-  if (hours > 0) return `${hours} hour${hours > 1 ? 's' : ''} ago`;
-  if (minutes > 0) return `${minutes} minute${minutes > 1 ? 's' : ''} ago`;
+  if (days > 0) {
+    const dayPlural = days > 1 ? 's' : '';
+    return `${days} day${dayPlural} ago`;
+  }
+  if (hours > 0) {
+    const hourPlural = hours > 1 ? 's' : '';
+    return `${hours} hour${hourPlural} ago`;
+  }
+  if (minutes > 0) {
+    const minutePlural = minutes > 1 ? 's' : '';
+    return `${minutes} minute${minutePlural} ago`;
+  }
   if (seconds > 30) return `${seconds} seconds ago`;
   return 'Just now';
 }

@@ -42,9 +42,29 @@ function formatScoreboard(session: QuizSession): string {
   const sorted = [...session.scores.entries()].sort((a, b) => b[1] - a[1]);
   return sorted
     .map(([userId, score], i) => {
-      const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : '▫️';
+      function getMedal(position: number): string {
+        if (position === 0) {
+          return '🥇';
+        }
+        if (position === 1) {
+          return '🥈';
+        }
+        if (position === 2) {
+          return '🥉';
+        }
+        return '▫️';
+      }
+
+      function getStreakBadge(streak: number): string {
+        if (streak >= 2) {
+          return ` · 🔥${streak}`;
+        }
+        return '';
+      }
+
+      const medal = getMedal(i);
       const streak = session.streaks.get(userId) || 0;
-      const streakBadge = streak >= 2 ? ` · 🔥${streak}` : '';
+      const streakBadge = getStreakBadge(streak);
       return `${medal} <@${userId}> — **${score}**${streakBadge}`;
     })
     .join('\n');
@@ -62,14 +82,34 @@ export function buildLiveQuizMessage(session: QuizSession): {
   const card = session.currentCard;
   const progressBar = renderProgressBar(session.progress);
   const deckLabel = session.deckId || 'All Decks';
-  const judgeLabel = session.aiJudge ? ' · 🤖 AI Judge' : '';
+
+  function judgeLabel(): string {
+    if (session.aiJudge) {
+      return ' · 🤖 AI Judge';
+    }
+    return '';
+  }
+
+  function embedColor(): number {
+    if (session.lastBanner?.startsWith('✅')) {
+      return 0x57f287;
+    }
+    return 0x5865f2;
+  }
+
+  function bannerLine(): string | null {
+    if (session.lastBanner) {
+      return `${session.lastBanner}\n`;
+    }
+    return null;
+  }
 
   const embed = new EmbedBuilder()
-    .setColor(session.lastBanner?.startsWith('✅') ? 0x57f287 : 0x5865f2)
-    .setTitle(`🎮 Quiz · ${deckLabel}${judgeLabel}`)
+    .setColor(embedColor())
+    .setTitle(`🎮 Quiz · ${deckLabel}${judgeLabel()}`)
     .setDescription(
       [
-        session.lastBanner ? `${session.lastBanner}\n` : null,
+        bannerLine(),
         progressBar,
         `_Question ${session.questionNumber} of ${session.totalQuestions}_`,
       ]
@@ -77,10 +117,20 @@ export function buildLiveQuizMessage(session: QuizSession): {
         .join('\n')
     );
 
+  function cardFrontText(c: typeof card): string {
+    if (c && c.front.length > 1000) {
+      return c.front.slice(0, 997) + '…';
+    }
+    if (c) {
+      return c.front;
+    }
+    return '';
+  }
+
   if (card) {
     embed.addFields({
       name: `❓ Question ${session.questionNumber}`,
-      value: card.front.length > 1000 ? card.front.slice(0, 997) + '…' : card.front,
+      value: cardFrontText(card),
     });
 
     if (session.hintsRevealed > 0) {
@@ -101,10 +151,17 @@ export function buildLiveQuizMessage(session: QuizSession): {
 
   const hintsLeft = card ? card.hints.length - session.hintsRevealed : 0;
 
+  function hintCountDisplay(): string {
+    if (hintsLeft > 0) {
+      return ` (${hintsLeft})`;
+    }
+    return '';
+  }
+
   const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
     new ButtonBuilder()
       .setCustomId(quizButtonId('hint'))
-      .setLabel(`Hint${hintsLeft > 0 ? ` (${hintsLeft})` : ''}`)
+      .setLabel(`Hint${hintCountDisplay()}`)
       .setEmoji('💡')
       .setStyle(ButtonStyle.Secondary)
       .setDisabled(hintsLeft <= 0 || session.answered),
@@ -170,9 +227,29 @@ export function buildQuizSummary(
     const board = [...finalScores.entries()]
       .sort((a, b) => b[1] - a[1])
       .map(([uid, score], i) => {
-        const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : '▫️';
+        function getMedal(position: number): string {
+          if (position === 0) {
+            return '🥇';
+          }
+          if (position === 1) {
+            return '🥈';
+          }
+          if (position === 2) {
+            return '🥉';
+          }
+          return '▫️';
+        }
+
+        function getStreakBadge(streak: number): string {
+          if (streak >= 2) {
+            return ` · 🔥${streak}`;
+          }
+          return '';
+        }
+
+        const medal = getMedal(i);
         const best = session.bestStreaks.get(uid) || 0;
-        const streakBadge = best >= 2 ? ` · 🔥${best}` : '';
+        const streakBadge = getStreakBadge(best);
         return `${medal} <@${uid}> — **${score}**${streakBadge}`;
       })
       .join('\n');

@@ -62,7 +62,12 @@ export const statusCommand = {
 
       // Determine model type
       const isFreeModel = recentUsage.model_name.includes(':free');
-      const modelType = isFreeModel ? '(Free)' : '(Paid)';
+      let modelType: string;
+      if (isFreeModel) {
+        modelType = '(Free)';
+      } else {
+        modelType = '(Paid)';
+      }
 
       // Create embed with actual data
       const totalTokens = Number(recentUsage.total_tokens || 0);
@@ -71,8 +76,15 @@ export const statusCommand = {
       const capExecuted = Number(recentUsage.capabilities_executed || 0);
       const responseTime = Number(recentUsage.response_time_ms || 0);
 
+      function embedColor(): number {
+        if (recentUsage.success) {
+          return 0x00ff00;
+        }
+        return 0xff0000;
+      }
+
       const embed = new EmbedBuilder()
-        .setColor(recentUsage.success ? 0x00ff00 : 0xff0000)
+        .setColor(embedColor())
         .setTitle('🤖 Model Status')
         .setDescription(`**Current Model:** ${recentUsage.model_name} ${modelType}`)
         .addFields(
@@ -128,9 +140,21 @@ function formatTimeAgo(ms: number): string {
   const hours = Math.floor(minutes / 60);
   const days = Math.floor(hours / 24);
 
-  if (days > 0) return `${days} day${days > 1 ? 's' : ''} ago`;
-  if (hours > 0) return `${hours} hour${hours > 1 ? 's' : ''} ago`;
-  if (minutes > 0) return `${minutes} minute${minutes > 1 ? 's' : ''} ago`;
-  if (seconds > 0) return `${seconds} second${seconds > 1 ? 's' : ''} ago`;
+  if (days > 0) {
+    const dayPlural = days > 1 ? 's' : '';
+    return `${days} day${dayPlural} ago`;
+  }
+  if (hours > 0) {
+    const hourPlural = hours > 1 ? 's' : '';
+    return `${hours} hour${hourPlural} ago`;
+  }
+  if (minutes > 0) {
+    const minutePlural = minutes > 1 ? 's' : '';
+    return `${minutes} minute${minutePlural} ago`;
+  }
+  if (seconds > 0) {
+    const secondPlural = seconds > 1 ? 's' : '';
+    return `${seconds} second${secondPlural} ago`;
+  }
   return 'Just now';
 }

@@ -8,6 +8,7 @@ import {
   type Message,
 } from 'discord.js';
 import { logger } from '../../../shared/logger.js';
+import { getErrorMessage } from '../../../shared/errors.js';
 import { quizSessionManager, QuizSession } from './live-session.js';
 import { buildLiveQuizMessage, buildQuizSummary } from './live-embed.js';
 import {
@@ -273,7 +274,7 @@ export const quizCommand = {
     } catch (error) {
       logger.error('Quiz command error:', error);
 
-      const errorMessage = error instanceof Error ? error.message : 'An unexpected error occurred';
+      const errorMessage = getErrorMessage(error);
 
       return await interaction.reply({
         content: `❌ ${errorMessage}`,
@@ -334,7 +335,14 @@ async function handleStart(
   const questionsOption = interaction.options.getInteger('questions');
   const aiJudgeOption = interaction.options.getBoolean('ai_judge');
 
-  const deckId = deckOption === 'all' ? undefined : deckOption || undefined;
+  let deckId: string | undefined;
+  if (deckOption === 'all') {
+    deckId = undefined;
+  } else if (deckOption) {
+    deckId = deckOption;
+  } else {
+    deckId = undefined;
+  }
   const questionCount = questionsOption || 10;
   const aiJudge = aiJudgeOption ?? false;
 
@@ -388,7 +396,7 @@ async function handleStart(
 
     return undefined;
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Failed to start quiz';
+    const errorMessage = getErrorMessage(error);
     await interaction.editReply({
       content: `❌ ${errorMessage}`,
     });
@@ -475,7 +483,11 @@ async function handleDaily(
     const cfg = getGuildConfig(interaction.guildId);
     deck = cfg.defaultDeck ?? '';
   } else {
-    deck = deckOption && deckOption !== 'all' ? deckOption : '';
+    if (deckOption && deckOption !== 'all') {
+      deck = deckOption;
+    } else {
+      deck = '';
+    }
   }
 
   if (interaction.guildId && !isDeckAllowedForGuild(interaction.guildId, deck)) {
@@ -563,7 +575,12 @@ async function handleSchedule(
   }
 
   const deckOption = interaction.options.getString('deck');
-  const deck = deckOption && deckOption !== 'all' ? deckOption : '';
+  let deck: string;
+  if (deckOption && deckOption !== 'all') {
+    deck = deckOption;
+  } else {
+    deck = '';
+  }
   const date = tomorrowKey();
 
   if (!isDeckAllowedForGuild(interaction.guildId, deck)) {
@@ -621,11 +638,18 @@ async function handleConfig(
   if (subcommand === 'allow-decks') {
     const raw = interaction.options.getString('decks') || '';
     // Parse comma-separated deck IDs; "all" is the empty-deck sentinel.
+    function normalizeDeckName(s: string): string {
+      if (s.toLowerCase() === 'all') {
+        return '';
+      }
+      return s.toUpperCase();
+    }
+
     const tokens = raw
       .split(',')
       .map((s) => s.trim())
       .filter((s) => s.length > 0)
-      .map((s) => (s.toLowerCase() === 'all' ? '' : s.toUpperCase()));
+      .map((s) => normalizeDeckName(s));
     const unknown = tokens.filter((t) => !KNOWN_DECKS.includes(t as any));
     if (unknown.length > 0) {
       return await interaction.reply({
@@ -639,7 +663,14 @@ async function handleConfig(
 
   if (subcommand === 'default-deck') {
     const deckOption = interaction.options.getString('deck');
-    const deck = deckOption === null ? null : deckOption === 'all' ? '' : deckOption;
+    let deck: string | null;
+    if (deckOption === null) {
+      deck = null;
+    } else if (deckOption === 'all') {
+      deck = '';
+    } else {
+      deck = deckOption;
+    }
     const cfg = setGuildDefaultDeck(interaction.guildId, deck);
     return await interaction.reply({ ...buildGuildConfigEmbed(cfg, guildName), ephemeral: true });
   }
@@ -654,7 +685,12 @@ async function handleConfig(
  */
 export function getBallotDecks(guildId: string): string[] {
   const cfg = getGuildConfig(guildId);
-  const candidates = cfg.allowedDecks.length > 0 ? cfg.allowedDecks : (KNOWN_DECKS as readonly string[]);
+  let candidates: readonly string[];
+  if (cfg.allowedDecks.length > 0) {
+    candidates = cfg.allowedDecks;
+  } else {
+    candidates = KNOWN_DECKS as readonly string[];
+  }
   return candidates.filter((d) => d !== '');
 }
 
@@ -795,24 +831,49 @@ export async function handleQuizAnswer(message: Message): Promise<boolean> {
     // String match failed but AI judge is on — fire an async LLM check.
     // Race: another user may answer correctly first; in that case the LLM
     // result is dropped by the manager.
-    const result =
-      initial === 'maybe'
-        ? await quizSessionManager.checkAnswerWithAI(
-            message.channelId,
-            message.author.id,
-            message.content,
-            message.guildId
-          )
-        : initial;
+    let result: string | (Awaited<ReturnType<typeof quizSessionManager.checkAnswerWithAI>>);
+    if (initial === 'maybe') {
+      result = await quizSessionManager.checkAnswerWithAI(
+        message.channelId,
+        message.author.id,
+        message.content,
+        message.guildId
+      );
+    } else {
+      result = initial;
+    }
 
-    if (result && result.correct) {
+    if (result && typeof result === 'object' && 'correct' in result && result.correct) {
+      const answerResult = result;
+
+      function aiIndicator(): string {
+        if (answerResult.judgedByAI) {
+          return ' (AI)';
+        }
+        return '';
+      }
+
+      function reactionEmoji(): string {
+        if (answerResult.judgedByAI) {
+          return '🤖';
+        }
+        return '✅';
+      }
+
+      function judgeNoteSuffix(): string {
+        if (answerResult.judgedByAI) {
+          return ' _(AI judged)_';
+        }
+        return '';
+      }
+
       logger.info(
-        `✅ Quiz answer correct! User: ${message.author.tag}, Channel: ${message.channelId}, streak=${result.winnerStreak}${result.judgedByAI ? ' (AI)' : ''}`
+        `✅ Quiz answer correct! User: ${message.author.tag}, Channel: ${message.channelId}, streak=${answerResult.winnerStreak}${aiIndicator()}`
       );
 
       // React on the user's answer message — the live embed updates separately.
       try {
-        await message.react(result.judgedByAI ? '🤖' : '✅');
+        await message.react(reactionEmoji());
       } catch (e) {
         logger.warn('Failed to add reaction to quiz answer:', e);
       }
@@ -823,12 +884,12 @@ export async function handleQuizAnswer(message: Message): Promise<boolean> {
         message.author.username
       );
 
-      const streakBadge = quizSessionManager.formatStreakBadge(result.winnerStreak);
-      const judgeNote = result.judgedByAI ? ' _(AI judged)_' : '';
-      const banner = `✅ **${message.author.username}** got it!${streakBadge}${judgeNote} · Answer: **${result.correctAnswer}**`;
+      const streakBadge = quizSessionManager.formatStreakBadge(answerResult.winnerStreak);
+      const judgeNote = judgeNoteSuffix();
+      const banner = `✅ **${message.author.username}** got it!${streakBadge}${judgeNote} · Answer: **${answerResult.correctAnswer}**`;
       quizSessionManager.setBanner(message.channelId, banner);
 
-      if (result.quizEnded) {
+      if (answerResult.quizEnded) {
         await postQuizSummary(message.channel, message.channelId);
       } else {
         const nextSession = await quizSessionManager.nextQuestion(message.channelId);

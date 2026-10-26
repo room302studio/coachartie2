@@ -170,9 +170,12 @@ export async function fetchUniqueCards(
   const cards: FlashcardResponse[] = [];
   for (let attempt = 0; attempt < MAX_FETCH_ATTEMPTS && cards.length < count; attempt++) {
     try {
-      const url = deck
-        ? `${FLASHCARD_API_BASE}/random/${deck}`
-        : `${FLASHCARD_API_BASE}/random`;
+      let url: string;
+      if (deck) {
+        url = `${FLASHCARD_API_BASE}/random/${deck}`;
+      } else {
+        url = `${FLASHCARD_API_BASE}/random`;
+      }
       const res = await fetch(url);
       if (!res.ok) {
         logger.warn(`Daily puzzle fetch returned ${res.status}`);
@@ -373,7 +376,8 @@ export function recordGuess(
   const play = getUserPlay(userId, date, deck);
   if (!play || play.completed) return play;
 
-  const results = [...play.results, isCorrect ? 'correct' : 'wrong'] as DailyOutcome[];
+  const outcome: DailyOutcome = isCorrect ? 'correct' : 'wrong';
+  const results = [...play.results, outcome] as DailyOutcome[];
   const guesses = [...play.guesses, guess];
   const nextIndex = play.currentQuestion + 1;
 
@@ -620,7 +624,13 @@ export function renderEmojiGrid(results: DailyOutcome[], total: number): string 
   const cells: string[] = [];
   for (let i = 0; i < total; i++) {
     if (i < results.length) {
-      cells.push(results[i] === 'correct' ? '🟩' : '🟥');
+      function resultEmoji(result: DailyOutcome): string {
+        if (result === 'correct') {
+          return '🟩';
+        }
+        return '🟥';
+      }
+      cells.push(resultEmoji(results[i]));
     } else {
       cells.push('⬜');
     }
@@ -683,7 +693,12 @@ export function setGuildAllowedDecks(guildId: string, decks: string[]): GuildQui
 export function setGuildDefaultDeck(guildId: string, deck: string | null): GuildQuizConfig {
   ensureDailyQuizTables();
   const db = getSyncDb();
-  const normalized = deck && KNOWN_DECKS.includes(deck as any) ? deck : null;
+  let normalized: string | null;
+  if (deck && KNOWN_DECKS.includes(deck as any)) {
+    normalized = deck;
+  } else {
+    normalized = null;
+  }
   db.run(
     `INSERT INTO daily_quiz_guild_config (guild_id, allowed_decks, default_deck)
        VALUES (?, '[]', ?)
@@ -777,14 +792,20 @@ export function getDeckPoll(guildId: string, targetDate: string): DeckPoll | nul
     `SELECT * FROM daily_quiz_deck_polls WHERE guild_id = ? AND target_date = ?`,
     [guildId, targetDate]
   );
-  return row ? rowToPoll(row) : null;
+  if (row) {
+    return rowToPoll(row);
+  }
+  return null;
 }
 
 export function getDeckPollById(pollId: number): DeckPoll | null {
   ensureDailyQuizTables();
   const db = getSyncDb();
   const row = db.get<any>(`SELECT * FROM daily_quiz_deck_polls WHERE id = ?`, [pollId]);
-  return row ? rowToPoll(row) : null;
+  if (row) {
+    return rowToPoll(row);
+  }
+  return null;
 }
 
 /**
@@ -892,8 +913,15 @@ export interface UserStats {
 export function computeUserStats(userId: string, guildId: string | null): UserStats {
   ensureDailyQuizTables();
   const db = getSyncDb();
-  const where = guildId ? 'user_id = ? AND guild_id = ? AND completed = 1' : 'user_id = ? AND completed = 1';
-  const params = guildId ? [userId, guildId] : [userId];
+  let where: string;
+  let params: (string | null)[];
+  if (guildId) {
+    where = 'user_id = ? AND guild_id = ? AND completed = 1';
+    params = [userId, guildId];
+  } else {
+    where = 'user_id = ? AND completed = 1';
+    params = [userId];
+  }
 
   const rows = db.all<{ date: string; results: string }>(
     `SELECT date, results FROM daily_quiz_plays
