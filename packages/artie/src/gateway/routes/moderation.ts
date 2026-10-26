@@ -78,7 +78,10 @@ export async function resolveUserId(
   }
   if (channelId) {
     const channel = await client.channels.fetch(channelId).catch(() => null);
-    const recent = channel && 'messages' in channel ? await channel.messages.fetch({ limit: 100 }).catch(() => null) : null;
+    let recent: any = null;
+    if (channel && 'messages' in channel) {
+      recent = await channel.messages.fetch({ limit: 100 }).catch(() => null);
+    }
     const author = recent && [...recent.values()].find((m: any) => matches(m.author, m.member?.nickname));
     if (author) return author.author.id;
   }
@@ -92,10 +95,14 @@ export async function timeoutMember(client: any, body: any): Promise<ApiResult> 
     const userId = await resolveUserId(client, guildId, who, channelId);
 
     if (!userId || !durationMinutes || !reason) {
+      let errorMsg: string;
+      if (userId) {
+        errorMsg = 'Missing required: durationMinutes, reason';
+      } else {
+        errorMsg = `Couldn't find a member called "${who ?? ''}" in this server`;
+      }
       return reply(400, {
-        error: userId
-          ? 'Missing required: durationMinutes, reason'
-          : `Couldn't find a member called "${who ?? ''}" in this server`,
+        error: errorMsg,
       });
     }
 
