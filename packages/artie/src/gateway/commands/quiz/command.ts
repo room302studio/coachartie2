@@ -844,29 +844,31 @@ export async function handleQuizAnswer(message: Message): Promise<boolean> {
     }
 
     if (result && typeof result === 'object' && result.correct) {
+      const answerResult = result as Exclude<typeof result, string>;
+
       function aiIndicator(): string {
-        if (result.judgedByAI) {
+        if (answerResult.judgedByAI) {
           return ' (AI)';
         }
         return '';
       }
 
       function reactionEmoji(): string {
-        if (result.judgedByAI) {
+        if (answerResult.judgedByAI) {
           return '🤖';
         }
         return '✅';
       }
 
       function judgeNoteSuffix(): string {
-        if (result.judgedByAI) {
+        if (answerResult.judgedByAI) {
           return ' _(AI judged)_';
         }
         return '';
       }
 
       logger.info(
-        `✅ Quiz answer correct! User: ${message.author.tag}, Channel: ${message.channelId}, streak=${result.winnerStreak}${aiIndicator()}`
+        `✅ Quiz answer correct! User: ${message.author.tag}, Channel: ${message.channelId}, streak=${answerResult.winnerStreak}${aiIndicator()}`
       );
 
       // React on the user's answer message — the live embed updates separately.
@@ -882,12 +884,12 @@ export async function handleQuizAnswer(message: Message): Promise<boolean> {
         message.author.username
       );
 
-      const streakBadge = quizSessionManager.formatStreakBadge(result.winnerStreak);
+      const streakBadge = quizSessionManager.formatStreakBadge(answerResult.winnerStreak);
       const judgeNote = judgeNoteSuffix();
-      const banner = `✅ **${message.author.username}** got it!${streakBadge}${judgeNote} · Answer: **${result.correctAnswer}**`;
+      const banner = `✅ **${message.author.username}** got it!${streakBadge}${judgeNote} · Answer: **${answerResult.correctAnswer}**`;
       quizSessionManager.setBanner(message.channelId, banner);
 
-      if (result.quizEnded) {
+      if (answerResult.quizEnded) {
         await postQuizSummary(message.channel, message.channelId);
       } else {
         const nextSession = await quizSessionManager.nextQuestion(message.channelId);
