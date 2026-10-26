@@ -210,7 +210,7 @@ export async function handleMessageAsIntent(
       };
     })();
 
-    const discordContext: any = {
+    const discordContext: Record<string, any> = {
       platform: 'discord',
       ...guildInfo,
       ...channelInfo,

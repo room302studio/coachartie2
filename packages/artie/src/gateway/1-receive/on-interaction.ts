@@ -64,6 +64,14 @@ import { processUserIntent } from '../4-reply/stream-reply.js';
 // Routed from the same registry register-commands.ts publishes (commands/registry.ts).
 const commands = new Map<string, any>(globalCommands.map((c) => [c.data.name, c]));
 
+/** A short label for the DM-gate log: the slash command name, or the interaction type. */
+function describeInteraction(interaction: Interaction): string {
+  if (interaction.isChatInputCommand()) {
+    return `/${interaction.commandName}`;
+  }
+  return `interaction type ${interaction.type}`;
+}
+
 export function setupInteractionHandler(client: Client) {
   client.on(Events.InteractionCreate, async (interaction: Interaction) => {
     // DM gate: outside a guild, only EJ and people he has verified (pairing allowlist) may use
@@ -72,12 +80,7 @@ export function setupInteractionHandler(client: Client) {
       logDMGate('blocked_command', {
         userId: interaction.user.id,
         username: interaction.user.username,
-        detail: (() => {
-          if (interaction.isChatInputCommand()) {
-            return `/${interaction.commandName}`;
-          }
-          return `interaction type ${interaction.type}`;
-        })(),
+        detail: describeInteraction(interaction),
       });
       if (interaction.isRepliable()) {
         await interaction

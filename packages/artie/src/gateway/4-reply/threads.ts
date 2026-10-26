@@ -76,14 +76,13 @@ export function createStatusEmbed(
       },
     ],
     timestamp: new Date().toISOString(),
-    footer: (() => {
-      let text: string;
-      if (streamedChunks > 0) {
-        text = `${streamedChunks} chunks streamed`;
-      } else {
-        text = 'Processing your request...';
-      }
-      return { text };
-    })(),
+    footer: { text: statusFooterText(streamedChunks) },
   };
+}
+
+function statusFooterText(streamedChunks: number): string {
+  if (streamedChunks > 0) {
+    return `${streamedChunks} chunks streamed`;
+  }
+  return 'Processing your request...';
 }

@@ -136,6 +136,17 @@ async function spinWheelOfFate(
  * The delivery hooks for one incoming message. `streamingMessage` is the first reply Artie
  * posted, shared by edit/delete and the feedback-correlation lookup.
  */
+/** A typing-indicator sender for channels that support one; undefined for those that don't. */
+function typingSenderFor(message: Message): (() => Promise<void>) | undefined {
+  if (!('sendTyping' in message.channel)) {
+    return undefined;
+  }
+  return async () => {
+    await (message.channel as any).sendTyping();
+    telemetry.incrementTypingIndicators();
+  };
+}
+
 export function createDiscordReplyHandlers(
   message: Message,
   correlationId: string,
@@ -262,15 +273,7 @@ export function createDiscordReplyHandlers(
 
     updateProgress: undefined,
 
-    sendTyping: (() => {
-      if ('sendTyping' in message.channel) {
-        return async () => {
-          await (message.channel as any).sendTyping();
-          telemetry.incrementTypingIndicators();
-        };
-      }
-      return undefined;
-    })(),
+    sendTyping: typingSenderFor(message),
 
     // ENHANCED: Discord-native reaction support
     addReaction: async (emoji: string) => {

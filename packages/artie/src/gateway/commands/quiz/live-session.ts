@@ -166,6 +166,18 @@ User answer: ${userAnswer}
 
 Answer (yes/no):`;
 
+  const judgePayload: Record<string, unknown> = {
+    model: judge.model,
+    usage: { include: true }, // OpenRouter reports the exact USD cost
+    messages: [{ role: 'user', content: prompt }],
+    max_tokens: 5,
+    temperature: 0,
+  };
+  if (isAutoRouted(judge.model)) {
+    judgePayload.plugins = judge.plugins;
+    judgePayload.reasoning = autoReasoningFor(judge.plugins);
+  }
+
   try {
     const response = await fetch(AI_JUDGE_URL, {
       method: 'POST',
@@ -175,20 +187,7 @@ Answer (yes/no):`;
         'HTTP-Referer': 'https://coach-artie.local',
         'X-Title': 'Coach Artie Quiz Judge',
       },
-      body: JSON.stringify((() => {
-        const payload: Record<string, unknown> = {
-          model: judge.model,
-          usage: { include: true }, // OpenRouter reports the exact USD cost
-          messages: [{ role: 'user', content: prompt }],
-          max_tokens: 5,
-          temperature: 0,
-        };
-        if (isAutoRouted(judge.model)) {
-          payload.plugins = judge.plugins;
-          payload.reasoning = autoReasoningFor(judge.plugins);
-        }
-        return payload;
-      })()),
+      body: JSON.stringify(judgePayload),
     });
 
     if (!response.ok) {
