@@ -147,7 +147,10 @@ export const NATIVE_TOOL_RESULT_MAX_CHARS = 12_000;
 
 function toolResultText(data: unknown): string {
   if (data === undefined || data === null) return '';
-  return typeof data === 'string' ? data : JSON.stringify(data);
+  if (typeof data === 'string') {
+    return data;
+  }
+  return JSON.stringify(data);
 }
 
 /**
@@ -275,14 +278,31 @@ export async function executeNativeToolCall(
     logger.warn(`🛡️ TAINT SET: context tainted by ${context.taintSource} (native tool call)`);
   }
 
-  const successText = robust.success ? toolResultText(robust.data) : null;
-  const text =
-    successText !== null && !looksLikeToolFailure(successText)
-      ? successText
-      : `Error: ${toCallNotation(robust.success ? successText || 'the tool failed' : robust.error || 'the tool failed')}`;
-  return text.length > NATIVE_TOOL_RESULT_MAX_CHARS
-    ? `${text.slice(0, NATIVE_TOOL_RESULT_MAX_CHARS)}\n[… truncated, ${text.length - NATIVE_TOOL_RESULT_MAX_CHARS} more chars]`
-    : text;
+  let successText: string | null;
+  if (robust.success) {
+    successText = toolResultText(robust.data);
+  } else {
+    successText = null;
+  }
+  let text: string;
+  if (successText !== null && !looksLikeToolFailure(successText)) {
+    text = successText;
+  } else {
+    let errorMsg: string;
+    if (robust.success) {
+      errorMsg = successText || 'the tool failed';
+    } else {
+      errorMsg = robust.error || 'the tool failed';
+    }
+    text = `Error: ${toCallNotation(errorMsg)}`;
+  }
+  let result: string;
+  if (text.length > NATIVE_TOOL_RESULT_MAX_CHARS) {
+    result = `${text.slice(0, NATIVE_TOOL_RESULT_MAX_CHARS)}\n[… truncated, ${text.length - NATIVE_TOOL_RESULT_MAX_CHARS} more chars]`;
+  } else {
+    result = text;
+  }
+  return result;
 }
 
 /**
@@ -638,7 +658,7 @@ export class CapabilityExecutor {
     }
 
     // Get userId for use in both registry and legacy handlers
-    const userId = context ? context.userId : 'unknown-user';
+    const userId = context !== undefined ? context.userId : 'unknown-user';
 
     // Build capability context from discord_context (defined outside try for metrics access)
     const capabilityContext = context?.discord_context
