@@ -103,6 +103,27 @@ function judgmentModel(): string {
   );
 }
 
+function getChannelDisplayName(channel: any): string {
+  if ('name' in channel) {
+    return channel.name;
+  }
+  return 'DM';
+}
+
+function getChannelNameOrEmpty(channel: any): string {
+  if ('name' in channel) {
+    return channel.name;
+  }
+  return '';
+}
+
+function booleanToYesNo(value: boolean): string {
+  if (value) {
+    return 'YES';
+  }
+  return 'NO';
+}
+
 // Per-1K-token rates (input, output) for the judgment row in model_usage_stats. Mirrors the
 // capabilities MODEL_PRICING for the cheap models; an unknown model is booked high, not free.
 const JUDGMENT_PRICING: Record<string, [number, number]> = {
@@ -225,6 +246,30 @@ JSON response:`;
     const judgmentSpec = resolveModelSpec(judgmentModel());
     // Never for openrouter/auto (responseFormatForModel's rule), so the auto branch is unchanged.
     const responseFormat = await engine.responseFormatForModel(judgmentSpec.model, JUDGMENT_OUTPUT);
+
+    // Build the request body conditionally based on whether the model is auto-routed
+    let modelConfig: Record<string, any>;
+    if (isAutoRouted(judgmentSpec.model)) {
+      modelConfig = {
+        model: judgmentSpec.model,
+        plugins: judgmentSpec.plugins,
+        usage: { include: true },
+        reasoning: autoReasoningFor(judgmentSpec.plugins),
+      };
+    } else {
+      modelConfig = { model: judgmentSpec.model };
+    }
+
+    // Build request body conditionally based on responseFormat
+    const requestBody: Record<string, any> = {
+      ...modelConfig,
+      messages: [{ role: 'user', content: prompt }],
+      max_tokens: 200, // Small response - just need yes/no JSON
+    };
+    if (responseFormat) {
+      requestBody.response_format = responseFormat;
+    }
+
     const openRouterResponse = await fetch(`${judgmentBaseUrl}/chat/completions`, {
       method: 'POST',
       headers: {
@@ -233,19 +278,7 @@ JSON response:`;
         'HTTP-Referer': 'https://coach-artie.local',
         'X-Title': 'Coach Artie Proactive Judgment',
       },
-      body: JSON.stringify({
-        ...(isAutoRouted(judgmentSpec.model)
-          ? {
-              model: judgmentSpec.model,
-              plugins: judgmentSpec.plugins,
-              usage: { include: true },
-              reasoning: autoReasoningFor(judgmentSpec.plugins),
-            }
-          : { model: judgmentSpec.model }),
-        messages: [{ role: 'user', content: prompt }],
-        max_tokens: 200, // Small response - just need yes/no JSON
-        ...(responseFormat ? { response_format: responseFormat } : {}),
-      }),
+      body: JSON.stringify(requestBody),
     });
 
     if (!openRouterResponse.ok) {
@@ -270,10 +303,12 @@ JSON response:`;
       const [inRate, outRate] = JUDGMENT_PRICING[judgmentModelId] ?? UNKNOWN_JUDGMENT_PRICING;
       // Prefer OpenRouter's reported USD cost (usage accounting) — auto-router picks are often
       // models with no row in JUDGMENT_PRICING, which would book at the high unknown rate.
-      const estimatedCost =
-        typeof usage?.cost === 'number'
-          ? usage.cost
-          : (promptTokens / 1000) * inRate + (completionTokens / 1000) * outRate;
+      let estimatedCost: number;
+      if (typeof usage?.cost === 'number') {
+        estimatedCost = usage.cost;
+      } else {
+        estimatedCost = (promptTokens / 1000) * inRate + (completionTokens / 1000) * outRate;
+      }
       const db = getSyncDb();
       db.run(
         `INSERT INTO model_usage_stats (
@@ -309,8 +344,9 @@ JSON response:`;
 
         // Require confidence > 0.7 to answer (be conservative)
         const shouldAnswer = judgment.answer && judgment.confidence > 0.7;
+        const decisionText = booleanToYesNo(shouldAnswer);
         logger.info(
-          `🤔 Final decision for "${message.content.substring(0, 50)}...": ${shouldAnswer ? 'YES' : 'NO'}`
+          `🤔 Final decision for "${message.content.substring(0, 50)}...": ${decisionText}`
         );
         return shouldAnswer;
       }
@@ -320,10 +356,12 @@ JSON response:`;
 
     // Fallback: check for yes/no in response
     const decision = rawResponse.toLowerCase().trim();
+    const hasYes = decision.includes('yes');
+    const fallbackDecisionText = booleanToYesNo(hasYes);
     logger.info(
-      `🤔 Fallback judgment for "${message.content.substring(0, 50)}...": "${rawResponse}" -> ${decision.includes('yes') ? 'YES' : 'NO'}`
+      `🤔 Fallback judgment for "${message.content.substring(0, 50)}...": "${rawResponse}" -> ${fallbackDecisionText}`
     );
-    return decision.includes('yes');
+    return hasYes;
   } catch (error) {
     logger.warn(`Failed proactive answer judgment, defaulting to no:`, error);
     return false; // Default to not answering if judgment fails
@@ -344,7 +382,7 @@ export async function checkProactiveAnswer(
 ): Promise<string | undefined> {
   // Check for proactive answering (guild has it enabled + message looks like a question)
   let proactiveAnswerContext: string | undefined;
-  const channelNameDebug = ('name' in message.channel ? message.channel.name : 'DM') || 'unknown';
+  const channelNameDebug = getChannelDisplayName(message.channel) || 'unknown';
 
   // Pre-filter: basic sanity + cheap heuristics before expensive LLM judgment
   const wordCount = message.content.trim().split(/\s+/).length;
@@ -392,7 +430,7 @@ export async function checkProactiveAnswer(
     isQuestion
   ) {
     // Check 1: Channel whitelist - only answer in designated help channels
-    const channelName = ('name' in message.channel ? message.channel.name : '') || '';
+    const channelName = getChannelNameOrEmpty(message.channel) || '';
     const channelNameLower = channelName.toLowerCase();
     const allowedChannels = guildConfig.proactiveChannels || [];
     const isAllowedChannel =
