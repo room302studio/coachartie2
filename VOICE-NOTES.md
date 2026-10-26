@@ -82,10 +82,15 @@ summarize, propose GitHub changes through the approval gate. No TTS, no live cap
 ## Env knobs
 
 - `SCRIBE_STT_MODEL` — default `openai/whisper-large-v3-turbo` (OpenRouter routes this to
-  Groq — verified 2026-10-26 against openrouter.ai/openai/whisper-large-v3-turbo's provider
-  table, ~$0.00066/min, matching the research doc's number). OpenRouter's own router (not this
-  code) picks the provider per request; pin `provider: {only:['groq']}` server-side later if
-  the routed provider ever drifts and the cost assumption needs to hold exactly.
+  Groq — verified 2026-10-26, ~$0.00066/min, matching the research doc's number). Verified
+  from the Mac, not the bench as the build spec suggested: `curl
+  https://openrouter.ai/api/v1/models` only lists chat/completions models — transcription
+  models (including this one) aren't in that endpoint at all, on the bench or anywhere else —
+  so the model page itself (openrouter.ai/openai/whisper-large-v3-turbo, which lists its
+  per-provider pricing including Groq's) is what actually confirmed the slug and rate.
+  OpenRouter's own router (not this code) picks the provider per request; pin
+  `provider: {only:['groq']}` server-side later if the routed provider ever drifts and the
+  cost assumption needs to hold exactly.
 - `SCRIBE_MAX_AUDIO_MIN` — default 180 (3h) of cumulative STT audio per session; past that,
   utterances stop being transcribed (not dropped — the session just stops adding to the
   transcript) and the summary notes it.

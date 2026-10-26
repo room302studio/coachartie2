@@ -43,3 +43,36 @@ export function countNonBotMembers(members: Iterable<{ user: { bot: boolean } }>
   }
   return count;
 }
+
+export interface NoHumanStepInput {
+  /** When the channel last had zero non-bot humans, or null if it currently has some (or the
+   *  countdown hasn't started). */
+  noHumanSince: number | null;
+  humanCount: number;
+  nowMs: number;
+  timeoutMs?: number;
+}
+
+export interface NoHumanStepResult {
+  /** The new value to store back on the session. */
+  noHumanSince: number | null;
+  /** True once zero-humans has held for `timeoutMs` — the caller should stop the session. */
+  shouldStop: boolean;
+}
+
+/**
+ * The "no humans left for 2 minutes" auto-stop rule, as a pure state transition — called by
+ * scribe-session.ts's tick() with real data, and directly by tests with plain numbers (no
+ * discord.js/timer mocking needed to exercise the 2-minute countdown itself).
+ */
+export function noHumanStep(input: NoHumanStepInput): NoHumanStepResult {
+  const timeoutMs = input.timeoutMs ?? NO_HUMAN_TIMEOUT_MS;
+  if (input.humanCount > 0) {
+    return { noHumanSince: null, shouldStop: false };
+  }
+  if (input.noHumanSince === null) {
+    return { noHumanSince: input.nowMs, shouldStop: false };
+  }
+  const shouldStop = input.nowMs - input.noHumanSince >= timeoutMs;
+  return { noHumanSince: input.noHumanSince, shouldStop };
+}

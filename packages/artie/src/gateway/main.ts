@@ -396,6 +396,15 @@ export async function startGateway(): Promise<GatewayHandle> {
         telemetry.logEvent('shutdown', { signal });
         telemetry.persistMetrics();
         writeStatus('shutdown');
+        // MUST run before registerGatewayClient(null)/apiServer.stop(): finishing a scribe
+        // session's summary calls back into the engine (stopScribeSession), which posts the
+        // result through gateway/api.ts's sendChannelMessage — that throws
+        // GatewayUnavailableError once the live client is unregistered. Best-effort — a
+        // summary call that fails here just means the session's row is left for the
+        // retention sweep rather than losing the process over it.
+        await stopAllVoiceScribeSessions('shutdown').catch((error) =>
+          logger.warn('🎙️ Scribe shutdown sweep failed:', getErrorMessage(error))
+        );
         registerGatewayClient(null);
         await healthServer.stop();
         await apiServer.stop();
@@ -405,13 +414,6 @@ export async function startGateway(): Promise<GatewayHandle> {
         channelDigestLoop.stop();
         if (statusTimer) clearInterval(statusTimer);
         if (pushWorker) await pushWorker.close();
-        // Graceful: finish each still-running scribe session's summary before the connection
-        // (and the engine API it needs to post that summary) goes away. Best-effort — a
-        // summary call that fails here just means the session's row is left for the
-        // retention sweep rather than losing the process over it.
-        await stopAllVoiceScribeSessions('shutdown').catch((error) =>
-          logger.warn('🎙️ Scribe shutdown sweep failed:', getErrorMessage(error))
-        );
         client.destroy();
         logger.info('✅ Gateway stopped');
       },

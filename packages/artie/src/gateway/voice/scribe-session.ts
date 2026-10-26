@@ -34,8 +34,8 @@ import {
   isUtteranceLongEnough,
   hasHardCapElapsed,
   HARD_CAP_MS,
-  NO_HUMAN_TIMEOUT_MS,
   countNonBotMembers,
+  noHumanStep,
 } from './scribe-timers.js';
 
 /** Discord's voice receiver hands back Opus decoded to interleaved 16-bit PCM at this rate. */
@@ -125,16 +125,13 @@ function tick(guildId: string): void {
 
   const channel = currentVoiceChannel(session);
   if (!channel) return;
-  const humans = nonBotMembersOf(channel);
-  if (humans > 0) {
-    session.noHumanSince = null;
-    return;
-  }
-  if (session.noHumanSince === null) {
-    session.noHumanSince = Date.now();
-    return;
-  }
-  if (Date.now() - session.noHumanSince >= NO_HUMAN_TIMEOUT_MS) {
+  const step = noHumanStep({
+    noHumanSince: session.noHumanSince,
+    humanCount: nonBotMembersOf(channel),
+    nowMs: Date.now(),
+  });
+  session.noHumanSince = step.noHumanSince;
+  if (step.shouldStop) {
     stopVoiceScribeSession(guildId, 'no-humans').catch((error) =>
       logger.error(`🎙️ Scribe no-humans stop failed for ${guildId}:`, getErrorMessage(error))
     );
@@ -199,6 +196,13 @@ function handleSpeakingStart(session: ActiveVoiceSession, userId: string): void 
     logger.warn(`🎙️ Scribe opus decode error (user ${userId}):`, getErrorMessage(error));
     finish().catch(() => {});
   });
+  // .pipe() does NOT forward 'error' from its source — an unhandled error on the
+  // AudioReceiveStream itself (the receiver, not the decoder) would otherwise throw
+  // uncaught and take the whole process down.
+  opusStream.once('error', (error: unknown) => {
+    logger.warn(`🎙️ Scribe receive-stream error (user ${userId}):`, getErrorMessage(error));
+    finish().catch(() => {});
+  });
 
   opusStream.pipe(decoder);
 }
@@ -245,19 +249,9 @@ export async function startVoiceScribeSession(input: {
     return { ok: false, reason: brownout.reason ?? 'Scribe mode is paused right now.' };
   }
 
-  let sessionId: string;
-  try {
-    const created = await engine.scribeStart({
-      guildId,
-      voiceChannelId: channel.id,
-      textChannelId,
-      startedBy,
-    });
-    sessionId = created.sessionId;
-  } catch (error) {
-    return { ok: false, reason: `Could not create the scribe session: ${getErrorMessage(error)}` };
-  }
-
+  // Join BEFORE creating the DB session row: if the join fails there's nothing to clean up.
+  // Creating the row first (the original order) could leave a zombie 'active' row sitting
+  // until the 7-day retention sweep whenever the join itself failed.
   let connection: VoiceConnection;
   try {
     connection = joinVoiceChannel({
@@ -270,6 +264,20 @@ export async function startVoiceScribeSession(input: {
     await entersState(connection, VoiceConnectionStatus.Ready, 15_000);
   } catch (error) {
     return { ok: false, reason: `Could not join the voice channel: ${getErrorMessage(error)}` };
+  }
+
+  let sessionId: string;
+  try {
+    const created = await engine.scribeStart({
+      guildId,
+      voiceChannelId: channel.id,
+      textChannelId,
+      startedBy,
+    });
+    sessionId = created.sessionId;
+  } catch (error) {
+    connection.destroy();
+    return { ok: false, reason: `Could not create the scribe session: ${getErrorMessage(error)}` };
   }
 
   const speakingHandler = (userId: string) => {
