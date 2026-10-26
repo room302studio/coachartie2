@@ -4,8 +4,10 @@ v3 is Coach Artie's rebuild: one package (`packages/artie`), one PM2 app (`coach
 native parallel tool calls, a multiplayer-aware gateway. It is **built, tested and not
 deployed**. Prod still runs `artie-lean`. CUTOVER.md is the runbook.
 
-Bench (VPS `/data2/tmp/artie-v3`, HEAD 6fcad50): typecheck clean, **1093 passed / 6 skipped**.
-That's up from 985 before this round.
+Bench (VPS `/data2/tmp/artie-v3`, HEAD 8261cf9):
+- typecheck clean
+- lint 0 errors
+- **1093 passed / 6 skipped**, up from 985 before this round
 
 ## What landed this round
 
@@ -24,6 +26,12 @@ approved by him over `/chat`. His sign-off is saved as memory 20493.
 | Loud fallbacks | self-meter (prod f3e0d5b) + TOOLS-NOTES.md §4 | Swallowed tool failures are now prefixed `Error:` |
 | Lighter security reminder | prompts/2026-10-26-kindness-streak.md | **Proposal, not loaded** |
 | Creative/kindness streak | prompts/2026-10-26-kindness-streak.md | Warm-first, maker streak, multiplayer block, rude-vs-hostile line (Artie's edit) |
+
+**No ternaries (EJ's rule, 2026-10-26).**
+- All 1,260 ternaries are gone.
+- `eslint.config.mjs` sets `no-ternary: error`, plus a `no-restricted-syntax` ban on sync IIFEs, the ternary in disguise. `pnpm lint` in packages/artie runs both.
+- Shared error helpers live in `src/shared/errors.ts`.
+- Verified: lint 0 errors, tsc clean, 1093 passed / 6 skipped. The test count is unchanged by the rewrite.
 
 Also this round: CUTOVER.md's boot checks fixed (they would have false-alarmed into a
 rollback), winston logs moved onto the LUKS mount (`logs/app`), 17 unused deps dropped, and
