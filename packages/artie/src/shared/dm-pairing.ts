@@ -314,7 +314,12 @@ class DMPairingService {
     let expiryText: string;
     if (expiryMinutes >= 60) {
       const hours = Math.round(expiryMinutes / 60);
-      const plural = expiryMinutes >= 120 ? 's' : '';
+      let plural: string;
+      if (expiryMinutes >= 120) {
+        plural = 's';
+      } else {
+        plural = '';
+      }
       expiryText = `${hours} hour${plural}`;
     } else {
       expiryText = `${expiryMinutes} minutes`;
