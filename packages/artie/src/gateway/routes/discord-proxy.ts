@@ -294,8 +294,8 @@ export async function syncForumToGitHub(discordClient: Client, params: Record<st
     // Get forum name for labeling
     const forum = await discordClient.channels.fetch(forumId);
     let forumName: string;
-    if (forum && 'name' in forum) {
-      forumName = forum.name;
+    if (forum && 'name' in forum && typeof (forum as any).name === 'string') {
+      forumName = (forum as any).name;
     } else {
       forumName = 'Unknown Forum';
     }
