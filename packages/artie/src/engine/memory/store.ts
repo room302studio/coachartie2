@@ -549,6 +549,32 @@ export class HybridDataLayer {
   }
 
   /**
+   * Delete a memory (the `forget` action). Ownership-checked by the caller (memory.ts), not
+   * here — this just removes the row once told to. Removes it from the hot cache and the
+   * user index immediately, and queues the cold-storage delete, mirroring updateMemory's
+   * immediate-hot / async-cold split.
+   */
+  async deleteMemory(id: number): Promise<void> {
+    this.hotData.delete(id);
+    for (const [, ids] of this.userIndex) {
+      ids.delete(id);
+    }
+
+    this.writeQueue
+      .add(async () => {
+        if (!this.coldStorage) return;
+        try {
+          this.coldStorage.run(`DELETE FROM memories WHERE id = ?`, [id]);
+        } catch (error) {
+          logger.error(`Failed to delete memory ${id} from cold storage:`, error);
+        }
+      })
+      .catch((error) => {
+        logger.error('Failed to queue memory delete:', error);
+      });
+  }
+
+  /**
    * Evict oldest memories from hot cache
    */
   private evictOldestMemories(): void {

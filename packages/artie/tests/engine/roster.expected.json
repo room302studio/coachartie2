@@ -1,4 +1,9 @@
 {
+  "approvals": [
+    "approve",
+    "deny",
+    "list"
+  ],
   "ask-question": [
     "ask"
   ],
@@ -65,6 +70,7 @@
     "error",
     "logs",
     "network",
+    "ping",
     "process"
   ],
   "discord-channels": [
@@ -162,11 +168,6 @@
     "subgoal",
     "update"
   ],
-  "hello-world": [
-    "greet",
-    "introduce",
-    "wave"
-  ],
   "hermes": [
     "ask",
     "chat",
@@ -211,15 +212,12 @@
     "update"
   ],
   "memory": [
-    "add",
+    "forget",
     "pin",
     "recall",
     "recent",
     "remember",
-    "save",
-    "search",
-    "stats",
-    "store"
+    "stats"
   ],
   "mention_proxy": [
     "create",

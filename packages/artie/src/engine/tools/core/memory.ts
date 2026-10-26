@@ -258,38 +258,55 @@ export class MemoryService {
    * Pinned memories are prioritized in retrieval
    */
   async pinMemory(userId: string, memoryId: number): Promise<string> {
-    if (this.useHybridLayer) {
-      try {
-        logger.info(`📌 [HYBRID] Pinning memory ${memoryId} for user ${userId}`);
-
-        const memory = await hybridDataLayer.getMemory(memoryId);
-
-        if (!memory) {
-          return `❌ Memory not found: ${memoryId}`;
-        }
-
-        // Security: Verify memory belongs to this user
-        if (memory.user_id !== userId) {
-          return `❌ Unauthorized: You can only pin your own memories`;
-        }
-
-        // Update importance to 10 (pinned)
-        const updatedMemory = {
-          ...memory,
-          importance: 10,
-        };
-
-        await hybridDataLayer.updateMemory(updatedMemory);
-
-        logger.info(`📌 [HYBRID] Successfully pinned memory ${memoryId}`);
-        return `📌 Pinned memory: "${memory.content.substring(0, 50)}..." (now importance 10/10)`;
-      } catch (error) {
-        logger.error('❌ [HYBRID] Failed to pin memory:', error);
-        return `❌ Failed to pin memory: ${error instanceof Error ? error.message : String(error)}`;
-      }
+    if (!this.useHybridLayer) {
+      throw new Error('Pin failed: hybrid memory layer is disabled');
     }
 
-    return '❌ Hybrid layer disabled';
+    logger.info(`📌 [HYBRID] Pinning memory ${memoryId} for user ${userId}`);
+
+    const memory = await hybridDataLayer.getMemory(memoryId);
+
+    if (!memory) {
+      throw new Error(`Memory not found: ${memoryId}`);
+    }
+
+    // Security: Verify memory belongs to this user
+    if (memory.user_id !== userId) {
+      throw new Error('Unauthorized: you can only pin your own memories');
+    }
+
+    // Update importance to 10 (pinned)
+    const updatedMemory = {
+      ...memory,
+      importance: 10,
+    };
+
+    await hybridDataLayer.updateMemory(updatedMemory);
+
+    logger.info(`📌 [HYBRID] Successfully pinned memory ${memoryId}`);
+    return `📌 Pinned memory: "${memory.content.substring(0, 50)}..." (now importance 10/10)`;
+  }
+
+  /**
+   * Forget (delete) a memory. Loud on failure (throws), same as pin/recall/stats — a missing
+   * id or someone else's memory never comes back as a quiet no-op.
+   */
+  async forgetMemory(userId: string, memoryId: number): Promise<string> {
+    if (!this.useHybridLayer) {
+      throw new Error('Forget failed: hybrid memory layer is disabled');
+    }
+
+    const memory = await hybridDataLayer.getMemory(memoryId);
+    if (!memory) {
+      throw new Error(`Memory not found: ${memoryId}`);
+    }
+    if (memory.user_id !== userId) {
+      throw new Error('Unauthorized: you can only forget your own memories');
+    }
+
+    await hybridDataLayer.deleteMemory(memoryId);
+    logger.info(`🗑️ [HYBRID] Forgot memory ${memoryId} for user ${userId}`);
+    return `🗑️ Forgot memory: "${memory.content.substring(0, 50)}..." (ID: ${memoryId})`;
   }
 
   async getRecentMemories(userId: string, limit: number = 10, guildId?: string): Promise<MemoryEntry[]> {
@@ -637,11 +654,11 @@ async function handleMemoryAction(params: MemoryParams, content?: string): Promi
 
   try {
     switch (action) {
-      // Accept common synonyms Artie reaches for instead of 'remember'
-      // (was a chronic ACTION_NOT_FOUND_005 retry loop that burned cost + hit the 120s timeout)
-      case 'store':
-      case 'save':
-      case 'add':
+      // store/save/add (and search below) are old synonyms — ACTION_ALIASES.memory in
+      // registry.ts normalizes them to remember/recall before the handler ever sees them,
+      // so only the canonical action names need a case here. Kept out of supportedActions
+      // too, so the prompt roster shows remember/recall/forget/pin/recent/stats, not nine
+      // names for six actions.
       case 'remember': {
         const contentToRemember = params.content || content;
         if (!contentToRemember || String(contentToRemember).trim() === 'undefined') {
@@ -654,8 +671,15 @@ async function handleMemoryAction(params: MemoryParams, content?: string): Promi
         // Get messageId from params (set by capability orchestrator)
         const relatedMessageId = params.messageId ? parseInt(String(params.messageId)) : undefined;
 
-        // Get explicit tags if provided
-        const explicitTags = Array.isArray(params.tags) ? params.tags : undefined;
+        // Get explicit tags if provided, plus `kind` (person | guild | pinned | scratch |
+        // goal | ...) folded in as just another tag — the memory-zoo collapse (2026-10-26)
+        // gives every kind of fact one home with one classification axis instead of a
+        // separate tool per kind.
+        const explicitTags = Array.isArray(params.tags) ? [...params.tags] : [];
+        if (params.kind && typeof params.kind === 'string') {
+          explicitTags.push(params.kind);
+        }
+        const tags = explicitTags.length > 0 ? explicitTags : undefined;
 
         // Get guild/channel scope if provided
         const guildId = params.guildId ? String(params.guildId) : undefined;
@@ -667,7 +691,7 @@ async function handleMemoryAction(params: MemoryParams, content?: string): Promi
           context,
           importance,
           relatedMessageId,
-          explicitTags,
+          tags,
           guildId,
           channelId
         );
@@ -675,8 +699,7 @@ async function handleMemoryAction(params: MemoryParams, content?: string): Promi
         return result;
       }
 
-      case 'recall':
-      case 'search': {
+      case 'recall': {
         const query = params.query || content;
         if (!query) {
           throw new Error('No query provided for search');
@@ -726,9 +749,21 @@ async function handleMemoryAction(params: MemoryParams, content?: string): Promi
         return result;
       }
 
+      case 'forget': {
+        const memoryId = params.memoryId || params.id || content;
+        if (!memoryId) {
+          throw new Error('No memory ID provided to forget. Use the memory ID from recall results.');
+        }
+
+        logger.info(`🗑️ Forgetting memory ${memoryId} for user ${userId}`);
+        const result = await memoryService.forgetMemory(String(userId), parseInt(String(memoryId)));
+        logger.info(`🗑️ Forget result: ${result}`);
+        return result;
+      }
+
       default:
         throw new Error(
-          `Unknown memory action: ${action}. Supported actions: remember, recall, search, stats, recent, pin`
+          `Unknown memory action: ${action}. Supported actions: remember, recall, forget, pin, recent, stats`
         );
     }
   } catch (error) {
@@ -743,17 +778,20 @@ async function handleMemoryAction(params: MemoryParams, content?: string): Promi
 export const memoryCapability: RegisteredCapability = {
   name: 'memory',
   emoji: '🧠',
-  supportedActions: ['remember', 'store', 'save', 'add', 'recall', 'search', 'stats', 'recent', 'pin'],
+  supportedActions: ['remember', 'recall', 'forget', 'pin', 'recent', 'stats'],
   description:
-    'Persistent memory system for storing and retrieving information across conversations. Use "pin" action to mark important tool learnings (sets importance to 10).',
+    'The one persistent memory store (2026-10-26: replaces scratchpad/variable/system_memory for ' +
+    'ordinary facts — see TOOLS-NOTES.md for what stayed separate and why). Optional `kind` tags ' +
+    'a memory as person, guild, pinned, scratch, goal, etc. — use it instead of guessing which old ' +
+    'tool a fact belonged in. "pin" marks something important (importance 10); "forget" deletes it.',
   handler: handleMemoryAction,
   examples: [
-    '<capability name="memory" action="remember" importance="8">Important user preference or fact</capability>',
-    '<capability name="memory" action="search" query="chocolate preferences" />',
-    '<capability name="memory" action="search" query="food" user="john" limit="3" />',
-    '<capability name="memory" action="recall">search query for previous information</capability>',
+    '<capability name="memory" action="remember" kind="person" importance="8">Important user preference or fact</capability>',
+    '<capability name="memory" action="recall" query="chocolate preferences" />',
+    '<capability name="memory" action="recall" query="food" user="john" limit="3" />',
     '<capability name="memory" action="stats" />',
     '<capability name="memory" action="recent" limit="5" />',
-    '<capability name="memory" action="pin" memoryId="abc123">Pin an important tool learning from recent memories</capability>',
+    '<capability name="memory" action="pin" memoryId="123">Pin an important tool learning from recent memories</capability>',
+    '<capability name="memory" action="forget" memoryId="123" />',
   ],
 };

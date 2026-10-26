@@ -5,6 +5,8 @@ import {
   formatStructuredErrorCompact,
   ParameterSchema,
 } from '../errors.js';
+import { isGatedAction, isOwnerConfirmed } from './approval-gate.js';
+import { createPendingAction } from '../../shared/pending-actions.js';
 
 /**
  * Context passed to capability handlers
@@ -66,6 +68,9 @@ const ACTION_ALIASES: Record<string, Record<string, string>> = {
     add: 'remember',
     retrieve: 'recall',
     get: 'recall',
+    search: 'recall',
+    delete: 'forget',
+    remove: 'forget',
   },
 };
 
@@ -166,6 +171,15 @@ export const TOOL_ALIASES: Record<string, ToolAlias> = {
   model_manager: {
     to: 'bot-config',
     actions: identity(['list_models', 'get_pricing', 'get_recommendation', 'compare_models']),
+  },
+  // ops: hello-world (the OpenClaw-format example skill, zero real use) → diagnose's `ping`
+  // action (wave: tool-loop cleanup 2026-10-26). F1: zero-use tools get merged, not deleted —
+  // the skill's SKILL.md file stays on disk (skills/registry.ts skips auto-registering it as
+  // its own capability because its name is a key here), but it no longer occupies its own
+  // roster slot. greet/wave/introduce all collapse to the one harmless `ping`.
+  'hello-world': {
+    to: 'diagnose',
+    actions: { greet: 'ping', wave: 'ping', introduce: 'ping' },
   },
 };
 
@@ -457,6 +471,21 @@ export class CapabilityRegistry {
     // Old merged tool names (goal, shell, todo, …) resolve to their canonical tool first,
     // before ACTION_ALIASES and before any validation.
     ({ name, action, params } = resolveToolCall(name, action, params));
+
+    // Approval gate: money and anything leaving Discord needs EJ's sign-off, unless EJ is the
+    // one calling and explicitly confirmed. Checked before the capability even has to exist,
+    // so a gated name typo'd by a model still gets a clear "needs approval" rather than a
+    // confusing "not found" (resolveToolCall already ran, so `name` is canonical here).
+    if (isGatedAction(name, action) && !isOwnerConfirmed(context, params)) {
+      const id = createPendingAction({
+        tool: name,
+        action,
+        params,
+        requestedBy: context?.userId || 'unknown-user',
+      });
+      logger.info(`⏸️ Gated call blocked pending approval: ${name}:${action} (#${id})`);
+      return `⏸️ This ${name}:${action} call needs EJ's approval first (pending #${id}). EJ can review it with the approvals tool.`;
+    }
 
     // Get capability (will throw if not found)
     const capability = this.capabilities.get(name);
