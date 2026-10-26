@@ -40,7 +40,7 @@ export interface RoutePick {
 /**
  * Format category for display
  */
-function formatCategory(category: string | undefined): string {
+function formatCategory(category: string | null | undefined): string {
   if (category) {
     return ` (category: ${category})`;
   }
@@ -50,7 +50,7 @@ function formatCategory(category: string | undefined): string {
 /**
  * Format topic for display
  */
-function formatTopic(topic: string | undefined): string {
+function formatTopic(topic: string | null | undefined): string {
   if (topic) {
     return ` — ${topic.slice(0, 120)}`;
   }
