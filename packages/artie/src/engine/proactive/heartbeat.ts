@@ -147,7 +147,7 @@ function formatPluralIes(count: number): string {
 /**
  * Get the priority level for a goal status
  */
-function getPriorityForStatus(status: string): 'high' | 'normal' {
+function getPriorityForStatus(status: string | null): 'high' | 'normal' {
   if (status === 'blocked') {
     return 'high';
   }
