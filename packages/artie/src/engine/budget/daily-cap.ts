@@ -57,11 +57,17 @@ export function decideBudgetAction(input: {
     // Manual mutes belong to a human. Never lift them, never relabel them.
     if (state.kind === 'manual') return 'none';
     // Budget mute from an earlier ET day: midnight has passed, lift it.
-    return state.day !== today ? 'unmute' : 'none';
+    if (state.day !== today) {
+      return 'unmute';
+    }
+    return 'none';
   }
   if (budgetUsd === null) return 'none';
   if (overrideDay === today) return 'none';
-  return spentUsd >= budgetUsd ? 'mute' : 'none';
+  if (spentUsd >= budgetUsd) {
+    return 'mute';
+  }
+  return 'none';
 }
 
 export interface BudgetCheckResult {
