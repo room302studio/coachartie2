@@ -42,11 +42,14 @@ async function handleApprovals(
           return '📭 Nothing waiting on approval.';
         }
         const formatted = pending
-          .map(
-            (p) =>
-              `#${p.id} — ${p.tool}:${p.action} (requested by ${p.requestedBy} at ${p.createdAt})\n   params: ${p.paramsJson}` +
-              (p.content ? `\n   content: ${p.content.slice(0, 300)}${p.content.length > 300 ? '…' : ''}` : '')
-          )
+          .map((p) => {
+            let line = `#${p.id} — ${p.tool}:${p.action} (requested by ${p.requestedBy} at ${p.createdAt})\n   params: ${p.paramsJson}`;
+            if (p.content) {
+              const ellipsis = p.content.length > 300 ? '…' : '';
+              line += `\n   content: ${p.content.slice(0, 300)}${ellipsis}`;
+            }
+            return line;
+          })
           .join('\n');
         return `⏸️ ${pending.length} pending action(s):\n${formatted}`;
       }
