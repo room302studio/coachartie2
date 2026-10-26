@@ -168,11 +168,13 @@ let timer: ReturnType<typeof setInterval> | null = null;
 export function startDailyBudgetWatch(intervalMs = 60_000): void {
   if (timer) return;
   const budget = getDailyBudgetUsd();
-  logger.warn(
-    budget === null
-      ? '💸 Daily budget cap DISABLED (DAILY_BUDGET_USD off/0)'
-      : `💸 Daily budget cap: $${budget.toFixed(2)}/day (America/New_York), auto-mute via kill switch`
-  );
+  let budgetMessage: string;
+  if (budget === null) {
+    budgetMessage = '💸 Daily budget cap DISABLED (DAILY_BUDGET_USD off/0)';
+  } else {
+    budgetMessage = `💸 Daily budget cap: $${budget.toFixed(2)}/day (America/New_York), auto-mute via kill switch`;
+  }
+  logger.warn(budgetMessage);
   scheduleDailyBudgetCheck();
   timer = setInterval(scheduleDailyBudgetCheck, intervalMs);
   timer.unref?.();
