@@ -30,7 +30,9 @@ services:
     ports:
       - "127.0.0.1:47320:47320"  # Expose to localhost for PM2 services
     volumes:
-      - redis_data:/data
+      # Encrypted at rest (LUKS volume /srv/artie, see /etc/crypttab). Queue payloads carry
+      # message text, so the AOF/RDB can't live on a plain docker volume. 2026-10-21
+      - /srv/artie/redis:/data
     healthcheck:
       test: ["CMD", "redis-cli", "-p", "47320", "ping"]
       interval: 30s
