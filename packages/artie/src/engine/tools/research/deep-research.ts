@@ -11,6 +11,7 @@
  */
 
 import { logger } from '../../../shared/logger.js';
+import { getErrorMessage } from '../../../shared/errors.js';
 import type {
   RegisteredCapability,
   CapabilityContext,
@@ -98,11 +99,19 @@ async function handleDeepResearch(
             return JSON.stringify({ success: false, error: 'Task not found' });
           }
 
+          const promptPreview = task.prompt.slice(0, 100);
+          let ellipsis: string;
+          if (task.prompt.length > 100) {
+            ellipsis = '...';
+          } else {
+            ellipsis = '';
+          }
+
           return JSON.stringify({
             success: true,
             task: {
               id: task.id,
-              prompt: task.prompt.slice(0, 100) + (task.prompt.length > 100 ? '...' : ''),
+              prompt: promptPreview + ellipsis,
               status: task.status,
               cost: task.result?.cost?.total,
               createdAt: task.createdAt,
@@ -140,10 +149,17 @@ async function handleDeepResearch(
         }
 
         if (task.status !== 'completed') {
+          let hint: string | undefined;
+          if (task.status === 'running') {
+            hint = 'Check back in a few minutes.';
+          } else {
+            hint = undefined;
+          }
+
           return JSON.stringify({
             success: false,
             error: `Task is not completed yet. Status: ${task.status}`,
-            hint: task.status === 'running' ? 'Check back in a few minutes.' : undefined,
+            hint: hint,
           });
         }
 
@@ -167,15 +183,27 @@ async function handleDeepResearch(
         const available = openaiResearchHarness.isAvailable();
         const usage = openaiResearchHarness.getUsage();
 
+        let message: string;
+        if (available) {
+          message = 'Deep research is ready. Use submit to queue a research task.';
+        } else {
+          message = 'Deep research is not configured. Missing OPENAI_API_KEY.';
+        }
+
+        let reportedUsage: unknown;
+        if (available) {
+          reportedUsage = usage;
+        } else {
+          reportedUsage = undefined;
+        }
+
         return JSON.stringify({
           success: true,
           available,
           harness: 'openai-deep-research',
           model: 'o4-mini-deep-research',
-          usage: available ? usage : undefined,
-          message: available
-            ? 'Deep research is ready. Use submit to queue a research task.'
-            : 'Deep research is not configured. Missing OPENAI_API_KEY.',
+          usage: reportedUsage,
+          message: message,
         });
       }
 
@@ -189,7 +217,7 @@ async function handleDeepResearch(
     logger.error(`❌ Deep research error for action '${action}':`, error);
     return JSON.stringify({
       success: false,
-      error: error instanceof Error ? error.message : String(error),
+      error: getErrorMessage(error),
     });
   }
 }
