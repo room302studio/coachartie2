@@ -1,6 +1,7 @@
 import { RegisteredCapability } from '../../5-tool-loop/registry.js';
 import { logger } from '../../../shared/logger.js';
 import * as gateway from '../../../gateway/api.js';
+import { getErrorMessage } from '../../../shared/errors.js';
 
 // Room 302 Studio Guild whitelist
 const WHITELISTED_GUILD_IDS = ['932719842522443928'];
@@ -92,15 +93,22 @@ async function sendMessage(params: {
       length: message.length,
     });
 
+    let preview: string;
+    if (message.length > 100) {
+      preview = message.substring(0, 100) + '...';
+    } else {
+      preview = message;
+    }
+
     return {
       success: true,
       messageId: (sentMessage as any).id,
       channelId,
       guildId,
-      content: message.substring(0, 100) + (message.length > 100 ? '...' : ''),
+      content: preview,
     };
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : String(error);
+    const errorMessage = getErrorMessage(error);
     logger.error('❌ discord-send-message: Exception', {
       error: errorMessage,
       channelId,
