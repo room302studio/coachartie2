@@ -60,8 +60,14 @@ export const systemMonitorCapability: RegisteredCapability = {
           response += `**Hostname**: ${os.hostname()}`;
 
           // Add visual indicator for memory pressure
-          const memStatus =
-            memPercentNum > 90 ? '🔴 CRITICAL' : memPercentNum > 75 ? '🟡 WARNING' : '🟢 HEALTHY';
+          let memStatus: string;
+          if (memPercentNum > 90) {
+            memStatus = '🔴 CRITICAL';
+          } else if (memPercentNum > 75) {
+            memStatus = '🟡 WARNING';
+          } else {
+            memStatus = '🟢 HEALTHY';
+          }
 
           return JSON.stringify({
             success: true,
@@ -114,11 +120,21 @@ export const systemMonitorCapability: RegisteredCapability = {
               );
               const isRunning = stdout.trim() === 'open';
 
+              let status: string;
+              let emoji: string;
+              if (isRunning) {
+                status = 'running';
+                emoji = '✅';
+              } else {
+                status = 'stopped';
+                emoji = '❌';
+              }
+
               serviceStatus.push({
                 name: service.name,
                 port: service.port,
-                status: isRunning ? 'running' : 'stopped',
-                emoji: isRunning ? '✅' : '❌',
+                status: status,
+                emoji: emoji,
               });
             } catch {
               serviceStatus.push({
@@ -218,8 +234,14 @@ export const systemMonitorCapability: RegisteredCapability = {
           response += `  • Available: ${diskInfo.available}\n`;
 
           const capacityNum = parseInt(diskInfo.capacity);
-          const diskStatus =
-            capacityNum > 90 ? '🔴 CRITICAL' : capacityNum > 75 ? '🟡 WARNING' : '🟢 HEALTHY';
+          let diskStatus: string;
+          if (capacityNum > 90) {
+            diskStatus = '🔴 CRITICAL';
+          } else if (capacityNum > 75) {
+            diskStatus = '🟡 WARNING';
+          } else {
+            diskStatus = '🟢 HEALTHY';
+          }
 
           response += `\n**Status:** ${diskStatus}`;
 
@@ -305,7 +327,13 @@ export const systemMonitorCapability: RegisteredCapability = {
           response += '\n\n';
           response += DiscordFormatter.createDivider('solid');
           response += '\n';
-          response += `**Services Running**: ${runningServices}/${services.length} ${servicesHealth ? '✅' : '❌'}`;
+          let servicesEmoji: string;
+          if (servicesHealth) {
+            servicesEmoji = '✅';
+          } else {
+            servicesEmoji = '❌';
+          }
+          response += `**Services Running**: ${runningServices}/${services.length} ${servicesEmoji}`;
 
           return JSON.stringify({
             success: true,
