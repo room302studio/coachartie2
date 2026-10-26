@@ -29,7 +29,10 @@ function toFtsQuery(text: string): string | null {
         .filter((w) => w.length >= 2)
     ),
   ].slice(0, 16);
-  return words.length ? words.map(escapeFts5).join(' OR ') : null;
+  if (words.length) {
+    return words.map(escapeFts5).join(' OR ');
+  }
+  return null;
 }
 
 /**
