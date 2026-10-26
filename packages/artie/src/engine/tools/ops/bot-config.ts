@@ -25,6 +25,19 @@ function findClosestValue(candidates: number[], target: number): number {
   });
 }
 
+function getOptimizationMode(balance: number): string {
+  if (balance < 5) {
+    return 'survival';
+  }
+  if (balance < 25) {
+    return 'conservative';
+  }
+  if (balance < 50) {
+    return 'efficient';
+  }
+  return 'full_power';
+}
+
 const RUNTIME_ACTIONS = [
   'get_active_model',
   'set_model_tier',
@@ -350,14 +363,7 @@ async function runRuntimeConfig(params: any, _content?: string): Promise<string>
             success: true,
             data: {
               balance,
-              mode:
-                balance < 5
-                  ? 'survival'
-                  : balance < 25
-                    ? 'conservative'
-                    : balance < 50
-                      ? 'efficient'
-                      : 'full_power',
+              mode: getOptimizationMode(balance),
               changes,
             },
             message: response,
