@@ -33,6 +33,33 @@ const JUDGMENT_OUTPUT: JsonOutputSpec = {
   },
 };
 
+function buildHelpCriteria(isRoom302: boolean): string {
+  if (isRoom302) {
+    return `Set answer=true ONLY if:
+- Someone is ASKING a direct question they need help answering
+- Someone describes a problem or blocker and is explicitly looking for solutions
+- Someone is confused or stuck and would welcome input
+- The message has substance (at least 8 words) and contains a clear question or request
+
+Set answer=false if:
+- Someone is SHARING an agenda, plan, update, or status — they're informing, not asking
+- Someone is posting their own work product (designs, schedules, lists, to-do items) — don't critique unless asked
+- The message is an announcement or statement, not a question
+- You'd be giving unsolicited feedback on someone else's decisions or plans
+- The person clearly has the situation handled and isn't asking for help
+- Someone is listing items, bullet points, or action items — that's organizing, not asking
+
+KEY TEST: Would a thoughtful coworker jump in here unprompted, or would they just nod and let the person continue? If "nod and listen" — set answer=false.
+
+This is a small working team. You're a teammate, not a supervisor. Respond to questions and requests for help. Do NOT volunteer opinions on other people's work unless asked.`;
+  }
+  return `Set answer=true ONLY if:
+- They're clearly asking a SPECIFIC question about the game
+- They have a bug/issue AND are asking for help
+- Your knowledge base EXPLICITLY covers what they're asking about
+- The message is at least 10 words and contains a clear question`;
+}
+
 /** How the incoming message reached Artie (on-message's response-conditions step). */
 export interface ResponseConditions {
   botMentioned: boolean;
@@ -171,29 +198,7 @@ export async function shouldProactivelyAnswer(
       // Non-fatal — proceed without profile
     }
 
-    const helpCriteria = isRoom302
-      ? `Set answer=true ONLY if:
-- Someone is ASKING a direct question they need help answering
-- Someone describes a problem or blocker and is explicitly looking for solutions
-- Someone is confused or stuck and would welcome input
-- The message has substance (at least 8 words) and contains a clear question or request
-
-Set answer=false if:
-- Someone is SHARING an agenda, plan, update, or status — they're informing, not asking
-- Someone is posting their own work product (designs, schedules, lists, to-do items) — don't critique unless asked
-- The message is an announcement or statement, not a question
-- You'd be giving unsolicited feedback on someone else's decisions or plans
-- The person clearly has the situation handled and isn't asking for help
-- Someone is listing items, bullet points, or action items — that's organizing, not asking
-
-KEY TEST: Would a thoughtful coworker jump in here unprompted, or would they just nod and let the person continue? If "nod and listen" — set answer=false.
-
-This is a small working team. You're a teammate, not a supervisor. Respond to questions and requests for help. Do NOT volunteer opinions on other people's work unless asked.`
-      : `Set answer=true ONLY if:
-- They're clearly asking a SPECIFIC question about the game
-- They have a bug/issue AND are asking for help
-- Your knowledge base EXPLICITLY covers what they're asking about
-- The message is at least 10 words and contains a clear question`;
+    const helpCriteria = buildHelpCriteria(isRoom302);
 
     const prompt = `You are a helper bot deciding whether to engage with a message. Be CONSERVATIVE - only answer clear help requests or questions you can genuinely help with.
 
