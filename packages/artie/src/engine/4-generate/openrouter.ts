@@ -138,7 +138,12 @@ export function normalizeToolCalls(raw: unknown): ToolCall[] {
       args = JSON.stringify(fn.arguments);
     }
     const id = (tc as { id?: unknown }).id;
-    const callId = typeof id === 'string' && id ? id : `call_${i}`;
+    let callId: string;
+    if (typeof id === 'string' && id) {
+      callId = id;
+    } else {
+      callId = `call_${i}`;
+    }
     calls.push({ id: callId, name: fn.name, arguments: args });
   });
   return calls;
@@ -231,15 +236,16 @@ class OpenRouterService {
         }
       }
 
-      this.models =
-        validModels.length > 0
-          ? validModels
-          : [
-              // Emergency fallback if all models are invalid (no openai/gpt-oss-20b:free - outputs internal reasoning)
-              'z-ai/glm-4.5-air:free',
-              'qwen/qwen3-coder:free',
-              'mistralai/mistral-7b-instruct:free',
-            ];
+      if (validModels.length > 0) {
+        this.models = validModels;
+      } else {
+        // Emergency fallback if all models are invalid (no openai/gpt-oss-20b:free - outputs internal reasoning)
+        this.models = [
+          'z-ai/glm-4.5-air:free',
+          'qwen/qwen3-coder:free',
+          'mistralai/mistral-7b-instruct:free',
+        ];
+      }
 
       logger.info(`🎯 Using ${this.models.length} models:`, this.models);
 
