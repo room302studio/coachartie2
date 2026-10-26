@@ -84,6 +84,10 @@ module.exports = {
       env: {
         ...env,
         DATABASE_PATH,
+        // Winston logs carry message content. On prod <repo>/logs is a symlink onto the LUKS
+        // mount (/srv/artie/logs), so writing under it keeps them encrypted at rest. The
+        // pre-v3 packages/*/logs dirs were plain disk.
+        LOGS_DIR: path.join(LOGS_DIR, 'app'),
         ENABLE_STARTUP_NOTIFICATION: 'false',
         // CAPABILITIES_URL dropped: the engine and gateway are the same process now,
         // so there is no internal HTTP hop left for the bot to point at itself.

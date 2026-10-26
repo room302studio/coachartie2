@@ -153,6 +153,11 @@ to run the new single-process code under the old process's config, or vice versa
 restart loop either way. Delete, then start fresh:
 
 ```bash
+# Mark where the winston combined log ends now, so the checks below (and step 10) only count
+# lines from THIS boot. Boot sentinels are logger.info, and prod runs CONSOLE_LOG_LEVEL=warn,
+# so they never reach `pm2 logs`; they only land in the combined file.
+COMBINED=logs/app/coachartie-combined.log
+MARK=$(stat -c %s "$COMBINED" 2>/dev/null || echo 0)
 pm2 delete coach-artie-capabilities coach-artie-discord
 pm2 start ecosystem.config.cjs --only coach-artie
 pm2 save
@@ -164,7 +169,7 @@ untouched by v3.
 **Check:**
 ```bash
 pm2 status                              # coach-artie: online, uptime > 0, restarts not climbing
-pm2 logs coach-artie --lines 50 --nostream   # boot log reaches "Coach Artie is up: engine :47324, gateway :47321, health :47319"
+tail -c +$((MARK+1)) "$COMBINED" | grep -c "Coach Artie is up"   # expect 1 (NOT pm2 logs: info is filtered from console)
 ```
 If `coach-artie` is stuck `errored`/restarting: check `pm2 logs coach-artie --err --lines 100`
 first — most likely a missing env var (see step 5) or a port already held by a process that
@@ -206,7 +211,9 @@ listed `AUTONOMOUS_PAUSED` as new — that was wrong. Production `e78d1f8` alrea
 today: `scheduler.ts:314`, `social-media-behavior.ts:1420`. ARCHITECTURE.md says "today prod
 runs with it set." So it's an existing flag, not a new one.)
 
-- `AUTONOMOUS_PAUSED` — **confirm it is already set in prod's `.env.production` before step 4**,
+- `AUTONOMOUS_PAUSED` — **confirm it is already set before step 4**. Today it lives only in the
+  root `.env` (not `.env.production`); v3 reads both via the same dotenv fallback, so check with
+  `grep -c '^AUTONOMOUS_PAUSED=' .env .env.production` (expect a hit in at least one),
   the same as it is today. This cutover doesn't change the flag's meaning or its default, but if
   it is somehow NOT set going into this deploy, the proactive chain (heartbeat, morning
   briefing, proactive DMs, relay, reddit mentions, trend watcher) would run unpaused the moment
@@ -236,8 +243,11 @@ show, and diff the `rg` output above against your actual `.env.production` names
 ## 6. Logs
 
 - Winston app logs move from `packages/{capabilities,discord}/logs/*-combined.log` to
-  `packages/artie/logs/*` (same filenames: `coachartie-{combined,error,debug}.log` — only the
-  directory changes; `LOGS_DIR` env still overrides).
+  `logs/app/*` (same filenames: `coachartie-{combined,error,debug}.log`). The ecosystem sets
+  `LOGS_DIR=<repo>/logs/app`; `<repo>/logs` is the symlink onto `/srv/artie/logs`, so these
+  logs (which carry message content) are now encrypted at rest. The old
+  `packages/{capabilities,discord}/logs` dirs were plain disk (618M on 2026-10-26). After the
+  soak, move or delete them, and only with EJ's yes.
 - PM2 out/error logs: the new `ecosystem.config.cjs` writes `logs/coach-artie-{out,error}.log`
   (named to match `vitals.ts`'s in-process reader, which looks for a `coach-artie-out` prefix —
   see ARCHITECTURE.md). The two old prefixes (`capabilities-out`, `discord-out`) stay readable
@@ -246,7 +256,7 @@ show, and diff the `rg` output above against your actual `.env.production` names
 
 **Human steps, outside this repo:**
 - Anyone tailing `packages/capabilities/logs/*` or `packages/discord/logs/*` by hand: switch to
-  `packages/artie/logs/*`.
+  `logs/app/*`.
 - Any Grafana/Alloy/Loki/promtail job scraping `capabilities-out-*.log` / `discord-out-*.log`
   (check `~/observability/promtail/*.yml` on the VPS, read-only) needs a job added for
   `logs/coach-artie-out-*.log` / `logs/coach-artie-error-*.log`. The old jobs can stay pointed
@@ -350,8 +360,13 @@ anything else and never touch schema.
 
 ## 9. Outside the repo — human/VPS steps this cutover requires
 
-- **`~/scripts/check-artie.sh`** hardcodes `coach-artie-capabilities` and `coach-artie-discord`
-  (PM2 names). Update it to check `coach-artie` instead. This repo can't edit `~/scripts`.
+- **`~/scripts/check-artie.sh`** (lines 10-11) hardcodes `coach-artie-capabilities` and
+  `coach-artie-discord` (PM2 names). Update it to check `coach-artie` instead. This repo can't
+  edit `~/scripts`.
+- **`~/observability/promtail/config.yml`** (lines 52, 63) scrapes the old out logs. ADD a
+  `coach-artie-out*` job; don't replace the old ones until those files stop growing.
+- **Mac memory note** `artie-lean-2026-10.md` names the old PM2 apps and log files; update it
+  after the soak.
 - **Uptime monitors** (Kuma, UptimeRobot, or anything else) keyed on the old PM2 app names or
   on the old log paths need repointing at `coach-artie` / the new log paths.
 - **Grafana/Alloy/Loki/promtail** — see step 6's logs section.
@@ -370,7 +385,7 @@ Run after step 4, before calling the cutover done:
 curl :47324/health/ready
 curl 127.0.0.1:47319/health
 tests/smoke.sh calculator dm-contract presence
-pm2 logs coach-artie --lines 300 --nostream | grep -c "Queue consumers started"   # expect 1
+tail -c +$((MARK+1)) "$COMBINED" | grep -c "Queue consumers started"   # expect 1 (MARK/COMBINED from step 4, same shell)
 ```
 
 Then, by hand:
