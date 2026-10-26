@@ -135,28 +135,39 @@ duplicated — this is purely additive, read-only logging for the live-context s
 newest first, as one line: `Recent reactions to your messages here: @Bob 👎 on "here's my
 take..." (4m ago); ...`.
 
-## Token cost per reply
+## Token cost per reply (measured, not estimated)
 
-Measured with `estimateTokens` (the repo's existing `~4 chars/token` estimator) on representative
-rendered blocks:
+`packages/artie/tests/engine/transcript-addressing-cost.test.ts` renders each feature's
+representative fixture through the real functions and prints the result via the repo's own
+`estimateTokens`. Actual numbers from that run:
 
-- **Addressing suffix per history line** (feature 1): `formatAddressingSuffix` output is
-  3–20 chars (`" [↳@Bob]"` to `" [↳you (\"...60 chars...\") (not to you)]"`), i.e. **~1–6 tokens
-  per line**. On a full 25-line transcript where every line carries the richest suffix, that's
-  roughly **25–150 tokens added** to the ~2000-token transcript cap — in practice far less, since
-  most lines have no reply/mention metadata at all (suffix = `""`, 0 tokens) and the richest case
-  (reply-to-Artie-with-excerpt) is rare.
-- **Burst headline line** (feature 2a): one line, ~30–50 tokens, ONLY present when a batch has
-  more than one message (the common single-message case adds nothing).
-- **Landed-while-thinking note** (feature 2b): ~20–40 tokens, only present when something
-  actually landed during the debounce window.
-- **Recent reactions line** (feature 3): ~15–25 tokens for up to 5 reactions, only present when
-  Artie's recent messages in that channel got reacted to in the last 30 minutes.
+- **Feature 1, worst case** — a full 25-line window where EVERY line is from someone who never
+  pinged Artie (so `content` is blank under non-privileged intents) and every line carries
+  reply/mention metadata, alternating reply-to-someone-else and @-mentions-someone-else:
+  **257 tokens**. Under the PREVIOUS behavior every one of those 25 lines would have been
+  dropped entirely (0 tokens) — so this is the true worst-case cost of "don't drop the line,
+  attribute it instead," not a diff against a non-empty baseline. This case is rare in
+  practice (a channel where literally nobody ever addresses Artie directly); typical channels
+  mix in plenty of blank, metadata-free lines that still drop.
+- **Feature 1, normal case** — 25 lines that all HAVE real content, each also carrying a reply
+  target and an @-mention: **+120 tokens** over the same 25 lines with no addressing metadata.
+  This is the overhead on top of an already-populated transcript, which is the common case once
+  privileged intents are on.
+- **Feature 2a** — combined content for a 3-person burst (short, realistic messages): **22
+  tokens** for the combined `<user_message>` body. Only present for a real burst (>1 message);
+  a lone message costs 0 extra (passes through unchanged).
+- **Feature 2b** — the "landed while you were thinking" note for 3 landed messages: **51
+  tokens**. Only present when something actually landed during the debounce window.
+- **Feature 3** — the recent-reactions note at its cap of 5 reactions, each with an excerpt:
+  **93 tokens**. Only present when Artie's recent messages in that channel got reacted to in the
+  last 30 minutes.
 
-Worst case (busy robot channel, real burst, something landed, recent reactions all present):
-**~200–250 extra tokens on top of the existing prompt** — call it a few cents per month at
-current OpenRouter rates for an active channel, and typically $0 added since most of these
-blocks are empty most of the time.
+Realistic worst case per reply (busy robot channel, rich addressing metadata throughout history,
+a real burst, something landed, reactions capped): roughly **257 + 22 + 51 + 93 ≈ 420 extra
+tokens** on top of the existing prompt. Typical case is far lower — most of these blocks are
+absent most of the time (no burst, nothing landed, no recent reactions, and most history lines
+carry no addressing metadata at all), so the common added cost is closer to the "+120" feature-1
+overhead alone, or $0 when even that's absent.
 
 ## Behavior with / without `DISCORD_PRIVILEGED_INTENTS`
 
@@ -170,11 +181,37 @@ blocks are empty most of the time.
   `[no text]` placeholders start carrying real text automatically — same code path, richer
   input. Nothing else changes.
 
+## Bugs found and fixed before shipping (caught by review, not by the pure-function tests)
+
+Both lived in `flushBurstBatch`'s glue code in on-message.ts, which the pure-function tests
+(burst.ts, channel-activity.ts) don't reach — neither has test coverage of its own, since
+on-message.ts isn't unit-tested anywhere in this codebase (confirmed: no existing tests exercise
+the Discord.js-wired STEPS pipeline directly).
+
+1. **Owner-authority leak.** A batch's `userId` was always the newest message's author, and
+   `assemble.ts` appends `<owner_note>` ("his instructions are authoritative, carry them out
+   fully") to the WHOLE `<user_message>` when that userId is EJ's. If EJ's message ever landed
+   in the same batch as someone else's line, the someone-else's words would inherit owner
+   authority. Fixed: EJ's messages (`OWNER_USER_ID`, same id already used as `EJ_USER_ID` in
+   `capturePresenceReply`) now bypass batching entirely, same as DMs.
+2. **Proactive-flag bug.** `isProactiveAnswer` was taken from the newest item only — one ambient
+   message batched a moment after an explicit `@mention` could make the WHOLE combined turn look
+   "proactive," injecting "you were NOT asked, if unsure stay silent" over what was actually a
+   direct question. Fixed: now `items.every((i) => i.isProactiveAnswer)` — true only when every
+   message in the batch was unprompted.
+
+Also fixed in the same pass: batch items are now sorted by Discord's own `createdTimestamp`
+before use (the async steps upstream of `respondOrObserve`, like `isReplyToBot`'s fetch, don't
+guarantee completion order matches arrival order, so enqueue order isn't reliable); a
+reply-with-ping no longer duplicates its target into the rendered `@`-mentions list; and the
+"Talking to: @X — the ONE person" situational line is now skipped in favor of a multi-author
+line when the turn is a real burst (it was actively wrong there).
+
 ## Open questions / things I wasn't fully sure about
 
-1. The "landed while thinking" timing gap above (window-only vs. full-generation-time) — flagged
+1. The "landed while thinking" timing gap (window-only vs. full-generation-time) — flagged
    as a known, bounded limitation rather than solved, per the task's explicit "simpler and safe"
-   allowance.
+   allowance. See the "Known limitation" callout under feature 2.
 2. The ambient-budget overcounting on a batched burst — flagged, not fixed; a real product
    decision about whether to recount at flush time instead of per-arrival.
 3. Reply-target excerpts for out-of-window replies (feature 1) — not fetched, by design (cost
@@ -183,6 +220,13 @@ blocks are empty most of the time.
    or any rate-limit logic beyond routing WHEN `handleMessageAsIntent` gets called — all existing
    gates still run per-message, exactly as before, so nothing about who gets throttled or
    silenced changed, only how an already-approved reply gets batched.
+5. `MessageReactionRemove` isn't handled — a retracted 👎 stays in the 30-minute reaction log
+   (and thus in context) until it ages out, rather than disappearing immediately.
+6. A channel's pending burst batch is dropped (not flushed) if the gateway's `stop()` runs before
+   the debounce timer fires — at most `BURST_DEBOUNCE_MS` (2.5s default) of exposure during a
+   deploy/restart. Judged acceptable rather than adding flush-on-shutdown plumbing for a ≤2.5s
+   window that only loses messages that would otherwise just get re-delivered or re-read on
+   reconnect.
 
 ## Test coverage
 
@@ -196,6 +240,14 @@ New vitest files (mirroring `src/` under `packages/artie/tests/`, flat per the e
 - `tests/gateway/channel-activity.test.ts` — ring buffer, `pickLandedMessages`, `formatLandedNote`
 - `tests/gateway/reaction-log.test.ts` — `recordReaction`/`getRecentReactions`/
   `formatRecentReactionsNote`
+- `tests/engine/transcript-addressing-cost.test.ts` — the token-cost measurement suite behind
+  the numbers above (run it directly: `pnpm -s vitest run
+  packages/artie/tests/engine/transcript-addressing-cost.test.ts`, read the `[cost]` console
+  lines)
 
-Bench run (`/data2/tmp/artie-v3-multiplayer`, VPS): typecheck clean; `1037 passed | 6 skipped`
-(up from the stated baseline of `985 passed | 6 skipped`; zero failures, zero newly-skipped).
+Bench run (`/data2/tmp/artie-v3-multiplayer`, VPS), full suite including the fixes above:
+typecheck clean; `1043 passed | 6 skipped` (up from the stated baseline of `985 passed | 6
+skipped`; zero failures, zero newly-skipped). The `tests/architecture.test.ts` seam check
+(gateway/engine only talk through `engine/api.ts`/`gateway/api.ts`) passed — nothing here
+crosses that line; every new field rides through `discordContext` (already JSON-wired across
+the seam) or stays entirely within one side.
