@@ -158,12 +158,18 @@ export class MemoryRecaller implements MemoryEntourageInterface {
       guildMemories = await hybridDataLayer.getGuildMemories(guildId, 400);
     }
 
-    return [...userMemories, ...artieMemories, ...guildMemories].map((m) => ({
-      content: stripCapabilityTags(m.content),
-      importance: m.importance || 5,
-      date: m.timestamp || new Date().toISOString(),
-      tags: Array.isArray(m.tags) ? m.tags : [],
-    }));
+    return [...userMemories, ...artieMemories, ...guildMemories].map((m) => {
+      let tags: string[] = [];
+      if (Array.isArray(m.tags)) {
+        tags = m.tags;
+      }
+      return {
+        content: stripCapabilityTags(m.content),
+        importance: m.importance || 5,
+        date: m.timestamp || new Date().toISOString(),
+        tags,
+      };
+    });
   }
 
   private tokenBudget(maxTokens?: number): { semantic: number; temporal: number } {
@@ -219,16 +225,27 @@ export class MemoryRecaller implements MemoryEntourageInterface {
       // so recall reflects who's actually here instead of whoever's memory is most generic.
       const mentionsParticipant =
         people.length > 0 && people.some((p) => memory.content.toLowerCase().includes(p));
-      const threshold = memory.importance >= 7 ? 0.02 : 0.08;
+      let threshold = 0.08;
+      if (memory.importance >= 7) {
+        threshold = 0.02;
+      }
       if (similarity > threshold || mentionsParticipant) {
+        let participantBoost = 0;
+        if (mentionsParticipant) {
+          participantBoost = 0.5;
+        }
+
+        let matchedParticipant: string | undefined;
+        if (mentionsParticipant) {
+          matchedParticipant = people.find((p) => memory.content.toLowerCase().includes(p));
+        }
+
         matches.push({
           ...memory,
-          semanticScore: similarity + (mentionsParticipant ? 0.5 : 0),
+          semanticScore: similarity + participantBoost,
           rawSimilarity: similarity,
           mentionsParticipant,
-          matchedParticipant: mentionsParticipant
-            ? people.find((p) => memory.content.toLowerCase().includes(p))
-            : undefined,
+          matchedParticipant,
           topTerm: this.topSharedTerm(queryVector, memoryVector),
         });
       }
@@ -267,7 +284,13 @@ export class MemoryRecaller implements MemoryEntourageInterface {
   }
 
   private importanceBoost(importance: number): number {
-    return importance >= 7 ? 0.3 : importance >= 5 ? 0.1 : 0;
+    if (importance >= 7) {
+      return 0.3;
+    }
+    if (importance >= 5) {
+      return 0.1;
+    }
+    return 0;
   }
 
   /**
@@ -275,12 +298,21 @@ export class MemoryRecaller implements MemoryEntourageInterface {
    * Never feeds back into semanticScore/sort; it only explains a choice already made.
    */
   private semanticReason(m: SemanticMatch): string {
-    const primary = m.mentionsParticipant && m.matchedParticipant
-      ? `mentions ${m.matchedParticipant}`
-      : m.topTerm
-        ? `kw:${m.topTerm}`
-        : `sim ${m.rawSimilarity.toFixed(2)}`;
-    return ` [${primary}${m.importance >= 7 ? ', imp' : ''}]`;
+    let primary: string;
+    if (m.mentionsParticipant && m.matchedParticipant) {
+      primary = `mentions ${m.matchedParticipant}`;
+    } else if (m.topTerm) {
+      primary = `kw:${m.topTerm}`;
+    } else {
+      primary = `sim ${m.rawSimilarity.toFixed(2)}`;
+    }
+
+    let importanceSuffix = '';
+    if (m.importance >= 7) {
+      importanceSuffix = ', imp';
+    }
+
+    return ` [${primary}${importanceSuffix}]`;
   }
 
   /** The single highest-weighted term the query and this memory share — the thing a
@@ -445,7 +477,10 @@ export class MemoryRecaller implements MemoryEntourageInterface {
     const timeOfDayScore = ((6 - hourDiff) / 6) * 0.3;
 
     // Day-of-week match
-    const dayOfWeekScore = currentDate.getDay() === memoryDate.getDay() ? 0.2 : 0;
+    let dayOfWeekScore = 0;
+    if (currentDate.getDay() === memoryDate.getDay()) {
+      dayOfWeekScore = 0.2;
+    }
 
     // Contextual temporal keywords in the query
     const contextualScore = this.matchTemporalContext(
@@ -590,7 +625,10 @@ export class MemoryRecaller implements MemoryEntourageInterface {
       return null;
     }
     const date = new Date(dateString);
-    return isNaN(date.getTime()) ? null : date;
+    if (isNaN(date.getTime())) {
+      return null;
+    }
+    return date;
   }
 
   private daysBetween(a: Date, b: Date): number {
@@ -645,9 +683,16 @@ export class MemoryRecaller implements MemoryEntourageInterface {
       memoryIds.push(...result.memoryIds);
     }
 
+    let confidence: number;
+    if (totalWeight > 0) {
+      confidence = weightedConfidence / totalWeight;
+    } else {
+      confidence = 0;
+    }
+
     return {
       content,
-      confidence: totalWeight > 0 ? weightedConfidence / totalWeight : 0,
+      confidence,
       memoryCount: totalCount,
       categories: Array.from(categories),
       memoryIds,
