@@ -158,6 +158,23 @@ NEW   tests/gateway/on-component-click.test.ts
   `submitTurn`/the capability registry at all, so proactive content never gets a
   `CapabilityContext.messageId` and the `discord-ui` tool's no-turn-id (legacy `DISCORD_UI:`)
   branch is genuinely the only path that content can take — not a guess.
+- **Orphan recovery can orphan the components too.** `stream-reply.ts`'s `onOrphaned` resubmits
+  the job with a brand-new `messageId` on an engine restart mid-turn, but the closure's
+  `jobInfo` binding it reads for `getPendingComponents(jobInfo.messageId)` is never reassigned —
+  so if `discord-ui` ran against the NEW turn id, the lookup still queries the OLD one and the
+  rows sit unseen until TTL. Pending file attachments don't have this problem because they're
+  keyed by userId; components are deliberately keyed by turn id instead (see the TTL-leak
+  rationale above), and this is the one concrete cost of that choice. Narrow window (engine
+  restart during the handful of seconds a turn is in flight, AND the model called discord-ui) —
+  not fixed here, but a real gap: fixing it is reassigning a mutable turn-id ref inside
+  `onOrphaned` before it returns the new id.
+- **A suppressed reply "loses" its buttons by accident, not by design.** If the final text gets
+  slur-blocked or comes back empty, `deleteResponse` deletes `streamingMessage`, but
+  `lastSentMessage` (added in the last-message fix above) still points at the now-deleted
+  message — `attachComponents` then hits a Discord "Unknown Message" error, logs a warn, and
+  nothing posts. The end result (no stray buttons on a silenced turn) is almost certainly what
+  should happen, but it's arrived at via an API failure rather than an explicit check. Would be
+  cleaner to gate the pending-components fetch on the reply not having been suppressed.
 - `parseArtieCustomId` is exported and unit-tested but `handleComponentClick` doesn't actually
   call it — routing off `customId.startsWith('artie:')` and caps off `interaction.message.id`
   are enough. Fine for phase 1; the turn id encoded in the custom_id isn't load-bearing anywhere
