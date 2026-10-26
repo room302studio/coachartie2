@@ -108,8 +108,12 @@ export async function sumCompletedCheckoutSessionsCents(
 // ---------------------------------------------------------------------------
 
 let cachedTotalCents: number | null = null;
-let lastFetchedAt = 0;
-let lastFetchedMonthKey: string | null = null;
+// Tracks the last ATTEMPT (success or failure), not the last success — a persistently
+// failing key (e.g. misconfigured) must still retry on the 15-min cadence instead of every
+// single reply re-hitting Stripe inline. cachedTotalCents staying null is exactly the signal
+// getJarTippedUsd uses to omit the jar clause for those 15 minutes; it's not a staleness flag.
+let lastAttemptAt = 0;
+let lastAttemptMonthKey: string | null = null;
 let inFlight: Promise<void> | null = null;
 
 async function doRefresh(now: number): Promise<void> {
@@ -123,25 +127,25 @@ async function doRefresh(now: number): Promise<void> {
     const createdGteUnixSeconds = Math.floor(start.getTime() / 1000);
     const totalCents = await sumCompletedCheckoutSessionsCents(linkId, createdGteUnixSeconds, key);
     cachedTotalCents = totalCents;
-    lastFetchedMonthKey = easternMonthKey(new Date(now));
   } catch (error) {
     // Fail soft: keep the last known value. Status/message only — never the key.
     logger.warn(`🫙 Jar earnings refresh failed, keeping last known value: ${(error as Error)?.message}`);
   } finally {
-    // Mark the attempt regardless of outcome, so a persistently-failing Stripe call is
+    // Mark the ATTEMPT regardless of outcome, so a persistently-failing Stripe call is
     // retried on the normal 15-min cadence instead of hammered on every reply.
-    lastFetchedAt = now;
+    lastAttemptAt = now;
+    lastAttemptMonthKey = easternMonthKey(new Date(now));
   }
 }
 
 function isStale(now: number): boolean {
-  if (cachedTotalCents === null) {
+  if (lastAttemptAt === 0) {
     return true;
   }
-  if (now - lastFetchedAt >= REFRESH_INTERVAL_MS) {
+  if (now - lastAttemptAt >= REFRESH_INTERVAL_MS) {
     return true;
   }
-  return easternMonthKey(new Date(now)) !== lastFetchedMonthKey;
+  return easternMonthKey(new Date(now)) !== lastAttemptMonthKey;
 }
 
 async function ensureFresh(now: number): Promise<void> {
@@ -196,7 +200,7 @@ export function stopJarEarningsWatch(): void {
 /** Test hook. */
 export function resetJarEarningsCacheForTests(): void {
   cachedTotalCents = null;
-  lastFetchedAt = 0;
-  lastFetchedMonthKey = null;
+  lastAttemptAt = 0;
+  lastAttemptMonthKey = null;
   inFlight = null;
 }

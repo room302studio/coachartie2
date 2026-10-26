@@ -183,4 +183,23 @@ describe('getJarTippedUsd — cache, fail-soft, month boundary', () => {
     const later = t0 + 16 * 60_000;
     await expect(getJarTippedUsd(later)).resolves.toBe(5.0);
   });
+
+  it('a refresh that has NEVER succeeded retries on the 15-min cadence, not on every call', async () => {
+    global.fetch = vi.fn(async () => {
+      throw new Error('bad key');
+    }) as unknown as typeof fetch;
+
+    const t0 = Date.now();
+    expect(await getJarTippedUsd(t0)).toBeNull();
+    expect((global.fetch as any).mock.calls.length).toBe(1);
+
+    // A second call one minute later must NOT hit Stripe again — the attempt, not just a
+    // success, marks the cache fresh for the 15-min window.
+    expect(await getJarTippedUsd(t0 + 60_000)).toBeNull();
+    expect((global.fetch as any).mock.calls.length).toBe(1);
+
+    // Past the window, it retries.
+    expect(await getJarTippedUsd(t0 + 16 * 60_000)).toBeNull();
+    expect((global.fetch as any).mock.calls.length).toBe(2);
+  });
 });
