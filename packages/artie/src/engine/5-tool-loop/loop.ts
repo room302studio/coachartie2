@@ -388,10 +388,12 @@ export class LLMLoopService {
 
       // SYSTEM: Extract suggested next actions from previous capability results
       const suggestedActions = llmResponseCoordinator.extractSuggestedNextActions(context.results);
-      const actionGuidance =
-        suggestedActions.length > 0
-          ? `\n\nSUGGESTED NEXT ACTIONS (from previous capability results):\n${suggestedActions.join('\n')}\n`
-          : '';
+      let actionGuidance: string;
+      if (suggestedActions.length > 0) {
+        actionGuidance = `\n\nSUGGESTED NEXT ACTIONS (from previous capability results):\n${suggestedActions.join('\n')}\n`;
+      } else {
+        actionGuidance = '';
+      }
 
       // Calculate exploration depth requirements
       const iterationCount = context.currentStep;
@@ -401,8 +403,9 @@ export class LLMLoopService {
 
       // Check if previous iteration had errors
       const hasErrors = contextSummary.includes('failed') || contextSummary.includes('error');
-      const errorRecoveryPrompt = hasErrors
-        ? `
+      let errorRecoveryPrompt: string;
+      if (hasErrors) {
+        errorRecoveryPrompt = `
 
 🚨 ERROR RECOVERY PROTOCOL:
 Previous capability FAILED. To fix this:
@@ -413,8 +416,10 @@ Previous capability FAILED. To fix this:
 5. If same capability fails 2+ times, try a DIFFERENT approach
 
 ⚠️ CRITICAL: If you see "Missing required parameters", the error message shows you EXACTLY how to fix it. Copy that syntax.
-`
-        : '';
+`;
+      } else {
+        errorRecoveryPrompt = '';
+      }
 
       // Fetch autonomous mode base prompt from DB (with fallback)
       const autonomousModeBase =
