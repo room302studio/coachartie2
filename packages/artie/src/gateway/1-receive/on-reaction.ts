@@ -17,6 +17,7 @@ import {
 } from 'discord.js';
 import { delay } from '../../shared/async.js';
 import { logger } from '../../shared/logger.js';
+import { getErrorMessage, getErrorStackOrUndefined } from '../../shared/errors.js';
 import { chunkMessage } from '../4-reply/chunks.js';
 import { isBlockedUser } from '../../shared/blocklist.js';
 import { telemetry } from '../telemetry.js';
