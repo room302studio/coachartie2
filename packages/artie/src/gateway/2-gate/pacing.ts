@@ -47,7 +47,7 @@ function recentResponseCount(userId: string): number {
 }
 
 function recordUserResponse(userId: string): void {
-  const times = recentResponseCount(userId) >= 0 ? userResponseHistory.get(userId) || [] : [];
+  const times = userResponseHistory.get(userId) || [];
   times.push(Date.now());
   userResponseHistory.set(userId, times);
 }
@@ -77,18 +77,56 @@ export type AntibodyVerdict =
  * ANTIBODY (non-DM replies): past the hard cap the user is silenced and timed out; past the
  * brevity mark a word-cap nudge is prepended to the guild context. Records the reply.
  */
+function selectAntibodyThreshold(onLeash: boolean): { brevityAt: number; hardCap: number } {
+  if (onLeash) {
+    return { brevityAt: LEASH_BREVITY_AT, hardCap: LEASH_HARD_CAP };
+  }
+  return { brevityAt: ANTIBODY_BREVITY_AT, hardCap: ANTIBODY_HARD_CAP };
+}
+
+function leashPrefix(onLeash: boolean): string {
+  if (onLeash) {
+    return 'leashed ';
+  }
+  return '';
+}
+
+function leashVerb(onLeash: boolean): string {
+  if (onLeash) {
+    return 'leash ';
+  }
+  return '';
+}
+
+function calculateMaxWords(onLeash: boolean, monopolyCount: number): number {
+  if (onLeash) {
+    return 20;
+  }
+  return Math.max(
+    ANTIBODY_BREVITY_FLOOR,
+    Math.round(120 / Math.log2(Math.max(2, monopolyCount)))
+  );
+}
+
+function createAntibodyNudge(heavy: boolean, username: string, monopolyCount: number, maxWords: number): string {
+  if (heavy) {
+    return `⚠️ ANTIBODY — @${username} has pulled ${monopolyCount} replies out of you recently and is monopolizing your time. Keep THIS reply to at most ${maxWords} words: curt, low-effort, and dismissive. Do NOT reward the monopoly with a long or thoughtful answer. If this reads like spam/baiting, you are encouraged to put [TIMEOUT:120] in your reply — they have earned it.`;
+  }
+  return `⚠️ BREVITY — @${username} has already pulled ${monopolyCount} replies out of you recently. Keep THIS reply to at most ${maxWords} words: tight and punchy, one thought, no preamble or wind-down. Still be yourself, just brief.`;
+}
+
 export function applyAntibody(
   message: Message,
   guildContextToPass: string | undefined,
   shortId: string
 ): AntibodyVerdict {
   const onLeash = TIGHT_LEASH_IDS.has(message.author.id);
-  const brevityAt = onLeash ? LEASH_BREVITY_AT : ANTIBODY_BREVITY_AT;
-  const hardCap = onLeash ? LEASH_HARD_CAP : ANTIBODY_HARD_CAP;
+  const { brevityAt, hardCap } = selectAntibodyThreshold(onLeash);
   const monopolyCount = recentResponseCount(message.author.id);
   if (monopolyCount >= hardCap) {
+    const leashPrefixStr = leashPrefix(onLeash);
     logger.info(
-      `🧪 Antibody: silencing ${onLeash ? 'leashed ' : ''}monopolizer ${message.author.tag} (${monopolyCount} in window) [${shortId}]`
+      `🧪 Antibody: silencing ${leashPrefixStr}monopolizer ${message.author.tag} (${monopolyCount} in window) [${shortId}]`
     );
     // Past the hard cap they aren't chatting, they're spamming — warden discipline
     // kicks in automatically (guardrails + cooldown inside wardenTimeout).
@@ -102,21 +140,15 @@ export function applyAntibody(
   }
   recordUserResponse(message.author.id);
   if (monopolyCount >= brevityAt) {
-    const maxWords = onLeash
-      ? 20
-      : Math.max(
-          ANTIBODY_BREVITY_FLOOR,
-          Math.round(120 / Math.log2(Math.max(2, monopolyCount)))
-        );
+    const maxWords = calculateMaxWords(onLeash, monopolyCount);
     // Tone scales with volume: a merely-chatty user (just over the gate) gets a light
     // "keep it short" nudge; a persistent monopolizer gets the dismissive + timeout push.
     const heavy = onLeash || monopolyCount >= 20;
-    const nudge = heavy
-      ? `⚠️ ANTIBODY — @${message.author.username} has pulled ${monopolyCount} replies out of you recently and is monopolizing your time. Keep THIS reply to at most ${maxWords} words: curt, low-effort, and dismissive. Do NOT reward the monopoly with a long or thoughtful answer. If this reads like spam/baiting, you are encouraged to put [TIMEOUT:120] in your reply — they have earned it.`
-      : `⚠️ BREVITY — @${message.author.username} has already pulled ${monopolyCount} replies out of you recently. Keep THIS reply to at most ${maxWords} words: tight and punchy, one thought, no preamble or wind-down. Still be yourself, just brief.`;
+    const nudge = createAntibodyNudge(heavy, message.author.username, monopolyCount, maxWords);
+    const leashVerbStr = leashVerb(onLeash);
     guildContextToPass = `${nudge}\n\n---\n` + (guildContextToPass || '');
     logger.info(
-      `🧪 Antibody: ${onLeash ? 'leash ' : ''}brevity cap ${maxWords}w for ${message.author.tag} (count=${monopolyCount}) [${shortId}]`
+      `🧪 Antibody: ${leashVerbStr}brevity cap ${maxWords}w for ${message.author.tag} (count=${monopolyCount}) [${shortId}]`
     );
   }
   return { silenced: false, guildContext: guildContextToPass };
