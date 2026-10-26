@@ -1,3 +1,4 @@
+import { getErrorMessage } from '../../../shared/errors.js';
 /**
  * tasks: one tool for tracking work through steps.
  *
@@ -141,9 +142,7 @@ class TodoService {
       return `✅ Created todo list "${listName}" with ${items.length} items${goalText}:\n${items.map((item, i) => `${i + 1}. ${item}`).join('\n')}`;
     } catch (error) {
       logger.error('❌ Failed to create todo list:', error);
-      throw new Error(
-        `Failed to create todo list "${listName}": ${error instanceof Error ? error.message : 'Unknown error'}`
-      );
+      throw new Error(`Failed to create todo list "${listName}": ${getErrorMessage(error)}`);
     }
   }
 
@@ -220,9 +219,7 @@ class TodoService {
       return `✅ Added ${items.length} items to "${listName}":\n${items.map((item, i) => `${startPosition + i}. ${item}`).join('\n')}`;
     } catch (error) {
       logger.error('❌ Failed to add items to todo list:', error);
-      throw new Error(
-        `Failed to add items to "${listName}": ${error instanceof Error ? error.message : 'Unknown error'}`
-      );
+      throw new Error(`Failed to add items to "${listName}": ${getErrorMessage(error)}`);
     }
   }
 
@@ -252,9 +249,7 @@ class TodoService {
       return `📌 Next task: ${nextItem.content} (item ${nextItem.position})`;
     } catch (error) {
       logger.error('❌ Failed to get next item:', error);
-      throw new Error(
-        `Failed to get next item from "${listName}": ${error instanceof Error ? error.message : 'Unknown error'}`
-      );
+      throw new Error(`Failed to get next item from "${listName}": ${getErrorMessage(error)}`);
     }
   }
 
@@ -303,9 +298,7 @@ class TodoService {
       return `✅ Marked "${item.content}" as complete! Progress: ${progress}`;
     } catch (error) {
       logger.error('❌ Failed to complete item:', error);
-      throw new Error(
-        `Failed to complete item ${itemPosition} in "${listName}": ${error instanceof Error ? error.message : 'Unknown error'}`
-      );
+      throw new Error(`Failed to complete item ${itemPosition} in "${listName}": ${getErrorMessage(error)}`);
     }
   }
 
@@ -937,7 +930,7 @@ async function handleQuests(
     }
   } catch (error) {
     logger.error('Quest error:', error);
-    return `Quest error: ${error instanceof Error ? error.message : 'Unknown error'}`;
+    return `Quest error: ${getErrorMessage(error)}`;
   }
 }
 
@@ -1130,7 +1123,7 @@ async function handleTaskStatus(
     }
   } catch (error) {
     logger.error('Task status error:', error);
-    return `❌ Task status error: ${error instanceof Error ? error.message : 'Unknown error'}`;
+    return `❌ Task status error: ${getErrorMessage(error)}`;
   }
 }
 
