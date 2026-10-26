@@ -165,9 +165,12 @@ export function createDiscordReplyHandlers(
       });
 
       // Add proxy prefix if this is a proxy response
-      const fullContent = proxyOptions?.proxyPrefix
-        ? `${proxyOptions.proxyPrefix}${content}`
-        : content;
+      let fullContent: string;
+      if (proxyOptions?.proxyPrefix) {
+        fullContent = `${proxyOptions.proxyPrefix}${content}`;
+      } else {
+        fullContent = content;
+      }
 
       const chunks = chunkMessage(fullContent);
       if (!chunks) {
@@ -218,8 +221,12 @@ export function createDiscordReplyHandlers(
 
       try {
         // Discord has 2000 char limit for edits too
-        const truncatedContent =
-          content.length > 2000 ? content.slice(0, 1997) + '...' : content;
+        let truncatedContent: string;
+        if (content.length > 2000) {
+          truncatedContent = content.slice(0, 1997) + '...';
+        } else {
+          truncatedContent = content;
+        }
 
         logger.info(`✏️ DISCORD: Editing message ${streamingMessage.id} [${shortId}]`);
         await streamingMessage.edit(truncatedContent);
@@ -255,13 +262,15 @@ export function createDiscordReplyHandlers(
 
     updateProgress: undefined,
 
-    sendTyping:
-      'sendTyping' in message.channel
-        ? async () => {
-            await (message.channel as any).sendTyping();
-            telemetry.incrementTypingIndicators();
-          }
-        : undefined,
+    sendTyping: (() => {
+      if ('sendTyping' in message.channel) {
+        return async () => {
+          await (message.channel as any).sendTyping();
+          telemetry.incrementTypingIndicators();
+        };
+      }
+      return undefined;
+    })(),
 
     // ENHANCED: Discord-native reaction support
     addReaction: async (emoji: string) => {

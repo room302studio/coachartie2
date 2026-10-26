@@ -9,6 +9,7 @@ import { Router, Request, Response } from 'express';
 import { logger } from '../../shared/logger.js';
 import { getMentionProxyService } from '../2-gate/mention-proxy.js';
 import { type ApiResult, sendResult } from '../../shared/api-result.js';
+import { getErrorMessage } from '../../shared/errors.js';
 
 // Wave 9: each route's handler body is an exported function (below the routes) returning
 // the status + JSON it used to send; gateway/api.ts calls them in-process for the engine's
@@ -73,7 +74,7 @@ export function listProxyRules(): ApiResult {
     logger.error('Failed to list mention proxy rules:', error);
     return reply(500, {
       success: false,
-      error: error instanceof Error ? error.message : 'Unknown error',
+      error: getErrorMessage(error),
     });
   }
 }
@@ -98,7 +99,7 @@ export function getProxyRule(params: Record<string, string>): ApiResult {
     logger.error(`Failed to get mention proxy rule ${params.id}:`, error);
     return reply(500, {
       success: false,
-      error: error instanceof Error ? error.message : 'Unknown error',
+      error: getErrorMessage(error),
     });
   }
 }
@@ -118,7 +119,7 @@ export function listProxyRulesForGuild(params: Record<string, string>): ApiResul
     logger.error(`Failed to get mention proxy rules for guild ${params.guildId}:`, error);
     return reply(500, {
       success: false,
-      error: error instanceof Error ? error.message : 'Unknown error',
+      error: getErrorMessage(error),
     });
   }
 }
@@ -138,7 +139,7 @@ export function listProxyRulesForUser(params: Record<string, string>): ApiResult
     logger.error(`Failed to get mention proxy rules for user ${params.userId}:`, error);
     return reply(500, {
       success: false,
-      error: error instanceof Error ? error.message : 'Unknown error',
+      error: getErrorMessage(error),
     });
   }
 }
@@ -189,7 +190,7 @@ export function createProxyRule(body: any): ApiResult {
     logger.error('Failed to create mention proxy rule:', error);
     return reply(500, {
       success: false,
-      error: error instanceof Error ? error.message : 'Unknown error',
+      error: getErrorMessage(error),
     });
   }
 }
@@ -217,7 +218,7 @@ export function updateProxyRule(params: Record<string, string>, body: any): ApiR
     logger.error(`Failed to update mention proxy rule ${params.id}:`, error);
     return reply(500, {
       success: false,
-      error: error instanceof Error ? error.message : 'Unknown error',
+      error: getErrorMessage(error),
     });
   }
 }
@@ -242,7 +243,7 @@ export function deleteProxyRule(params: Record<string, string>): ApiResult {
     logger.error(`Failed to delete mention proxy rule ${params.id}:`, error);
     return reply(500, {
       success: false,
-      error: error instanceof Error ? error.message : 'Unknown error',
+      error: getErrorMessage(error),
     });
   }
 }

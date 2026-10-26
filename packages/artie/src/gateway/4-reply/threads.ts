@@ -22,7 +22,13 @@ export function generateThreadName(content: string): string {
   // Just use first few words - no keyword heuristics
   const truncated = content.slice(0, 80);
   const words = truncated.split(' ').slice(0, 8);
-  return words.join(' ') + (content.length > 80 ? '...' : '');
+  let ellipsis: string;
+  if (content.length > 80) {
+    ellipsis = '...';
+  } else {
+    ellipsis = '';
+  }
+  return words.join(' ') + ellipsis;
 }
 
 /**
@@ -70,8 +76,14 @@ export function createStatusEmbed(
       },
     ],
     timestamp: new Date().toISOString(),
-    footer: {
-      text: streamedChunks > 0 ? `${streamedChunks} chunks streamed` : 'Processing your request...',
-    },
+    footer: (() => {
+      let text: string;
+      if (streamedChunks > 0) {
+        text = `${streamedChunks} chunks streamed`;
+      } else {
+        text = 'Processing your request...';
+      }
+      return { text };
+    })(),
   };
 }

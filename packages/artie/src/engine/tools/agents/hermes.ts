@@ -70,9 +70,16 @@ async function handleHermes(
 
       logger.info(`[hermes] Delegating task: ${taskText.slice(0, 100)}`);
 
+      let contextStr: string;
+      if (context?.userId) {
+        contextStr = `Requested by user ${context.userId} via Coach Artie`;
+      } else {
+        contextStr = '';
+      }
+
       const result = await fetchHermes('/api/task', {
         task: taskText,
-        context: context?.userId ? `Requested by user ${context.userId} via Coach Artie` : '',
+        context: contextStr,
         max_turns: 15,
       });
 

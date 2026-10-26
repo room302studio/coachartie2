@@ -10,6 +10,7 @@ import { violatesOutputSafety } from '../4-reply/output-safety.js';
 import { readFileSync, writeFileSync, existsSync, appendFileSync } from 'fs';
 import { join } from 'path';
 import { type ApiResult, sendResult } from '../../shared/api-result.js';
+import { getErrorMessage } from '../../shared/errors.js';
 
 // Wave 9: each /api route's handler body is an exported function below, returning the
 // status + JSON it used to send. createApiRouter's routes send that result; gateway/api.ts
@@ -104,9 +105,15 @@ function rewritePresenceInbox(messages: any[]): void {
 
 export function getKillSwitchState(): ApiResult {
   const state = readKillSwitch(KILL_SWITCH_PATH);
+  let kind: string | null;
+  if (state.muted) {
+    kind = state.kind;
+  } else {
+    kind = null;
+  }
   return reply(200, {
     ...state,
-    kind: state.muted ? state.kind : null,
+    kind,
     path: KILL_SWITCH_PATH,
   });
 }
@@ -132,12 +139,18 @@ export function setKillSwitch(body: any): ApiResult {
       }
     }
     const after = readKillSwitch(KILL_SWITCH_PATH);
-    return reply(200, { success: true, muted: after.muted, kind: after.muted ? after.kind : null });
+    let kind: string | null;
+    if (after.muted) {
+      kind = after.kind;
+    } else {
+      kind = null;
+    }
+    return reply(200, { success: true, muted: after.muted, kind });
   } catch (error) {
     logger.error('Failed to toggle kill switch:', error);
     return reply(500, {
       success: false,
-      error: error instanceof Error ? error.message : String(error),
+      error: getErrorMessage(error),
     });
   }
 }
@@ -167,7 +180,7 @@ export async function listGuildForums(discordClient: Client, params: Record<stri
     logger.error('Error listing forums:', error);
     return reply(500, {
       success: false,
-      error: error instanceof Error ? error.message : String(error),
+      error: getErrorMessage(error),
     });
   }
 }
@@ -198,7 +211,7 @@ export async function listForumThreads(discordClient: Client, params: Record<str
     logger.error('Error listing threads:', error);
     return reply(500, {
       success: false,
-      error: error instanceof Error ? error.message : String(error),
+      error: getErrorMessage(error),
     });
   }
 }
@@ -219,7 +232,7 @@ export async function getForumThread(discordClient: Client, params: Record<strin
     logger.error('Error fetching thread:', error);
     return reply(500, {
       success: false,
-      error: error instanceof Error ? error.message : String(error),
+      error: getErrorMessage(error),
     });
   }
 }
@@ -240,7 +253,7 @@ export async function getForumSummary(discordClient: Client, params: Record<stri
     logger.error('Error getting forum summary:', error);
     return reply(500, {
       success: false,
-      error: error instanceof Error ? error.message : String(error),
+      error: getErrorMessage(error),
     });
   }
 }
@@ -280,7 +293,12 @@ export async function syncForumToGitHub(discordClient: Client, params: Record<st
 
     // Get forum name for labeling
     const forum = await discordClient.channels.fetch(forumId);
-    const forumName = (forum && 'name' in forum ? forum.name : null) || 'Unknown Forum';
+    let forumName: string;
+    if (forum && 'name' in forum && typeof (forum as any).name === 'string') {
+      forumName = (forum as any).name;
+    } else {
+      forumName = 'Unknown Forum';
+    }
 
     // Sync to GitHub
     const results = await githubService.syncThreadsToGitHub(
@@ -307,7 +325,7 @@ export async function syncForumToGitHub(discordClient: Client, params: Record<st
     logger.error('Error syncing to GitHub:', error);
     return reply(500, {
       success: false,
-      error: error instanceof Error ? error.message : String(error),
+      error: getErrorMessage(error),
     });
   }
 }
@@ -316,8 +334,12 @@ export async function setNickname(discordClient: Client, params: Record<string, 
   try {
     const { guildId } = params;
     const raw = (body as { nickname?: string | null }).nickname;
-    const nickname =
-      raw == null || !String(raw).trim() ? null : String(raw).trim().slice(0, 32);
+    let nickname: string | null;
+    if (raw == null || !String(raw).trim()) {
+      nickname = null;
+    } else {
+      nickname = String(raw).trim().slice(0, 32);
+    }
     const guild = await discordClient.guilds.fetch(guildId);
     const me = guild.members.me ?? (await guild.members.fetchMe());
     await me.setNickname(nickname, 'Artie renamed himself');
@@ -327,7 +349,7 @@ export async function setNickname(discordClient: Client, params: Record<string, 
     logger.error('Nickname change failed:', error);
     return reply(500, {
       success: false,
-      error: error instanceof Error ? error.message : String(error),
+      error: getErrorMessage(error),
     });
   }
 }
@@ -393,7 +415,7 @@ export async function sendDm(discordClient: Client, body: any): Promise<ApiResul
     logger.error('Error sending DM:', error);
     return reply(500, {
       success: false,
-      error: error instanceof Error ? error.message : String(error),
+      error: getErrorMessage(error),
     });
   }
 }
@@ -440,18 +462,26 @@ export async function sendChannelMessage(discordClient: Client, params: Record<s
 
     logger.info(`✅ Message sent to channel ${channelId} (message ID: ${sentMessage.id})`);
 
+    let contentPreview: string | null;
+    if (content) {
+      const truncated = content.substring(0, 100);
+      const suffix = content.length > 100 ? '...' : '';
+      contentPreview = truncated + suffix;
+    } else {
+      contentPreview = null;
+    }
     return reply(200, {
       success: true,
       id: sentMessage.id,
       channelId,
-      content: content ? content.substring(0, 100) + (content.length > 100 ? '...' : '') : null,
+      content: contentPreview,
       file: fileName || null,
     });
   } catch (error) {
     logger.error('Error sending channel message:', error);
     return reply(500, {
       success: false,
-      error: error instanceof Error ? error.message : String(error),
+      error: getErrorMessage(error),
     });
   }
 }
@@ -511,7 +541,7 @@ export async function createPoll(discordClient: Client, params: Record<string, s
     return reply(200, { success: true, messageId: sent.id, channelId, question: q, options: cleanOptions, durationHours: duration });
   } catch (error) {
     logger.error('Error creating poll:', error);
-    return reply(500, { success: false, error: error instanceof Error ? error.message : String(error) });
+    return reply(500, { success: false, error: getErrorMessage(error) });
   }
 }
 
@@ -540,7 +570,7 @@ export async function readPoll(discordClient: Client, params: Record<string, str
     });
   } catch (error) {
     logger.error('Error reading poll:', error);
-    return reply(500, { success: false, error: error instanceof Error ? error.message : String(error) });
+    return reply(500, { success: false, error: getErrorMessage(error) });
   }
 }
 
@@ -566,7 +596,7 @@ export async function addReaction(discordClient: Client, params: Record<string, 
     return reply(200, { success: true, emoji, messageId });
   } catch (error) {
     // Unknown/invalid emoji is the common failure — report it softly, don't 500 the loop.
-    const message = error instanceof Error ? error.message : String(error);
+    const message = getErrorMessage(error);
     logger.warn(`Reaction failed (${message})`);
     return reply(422, { success: false, error: `could not react (bad/unknown emoji?): ${message}` });
   }
@@ -620,7 +650,7 @@ export async function sendPresenceCheckIn(discordClient: Client, body: any): Pro
     logger.error('PRESENCE: Error sending check-in:', error);
     return reply(500, {
       success: false,
-      error: error instanceof Error ? error.message : String(error),
+      error: getErrorMessage(error),
     });
   }
 }
@@ -640,7 +670,7 @@ export async function getPresenceInbox(): Promise<ApiResult> {
     logger.error('PRESENCE: Error fetching inbox:', error);
     return reply(500, {
       success: false,
-      error: error instanceof Error ? error.message : String(error),
+      error: getErrorMessage(error),
     });
   }
 }
@@ -673,7 +703,7 @@ export async function ackPresenceResponse(params: Record<string, string>): Promi
     logger.error('PRESENCE: Error acknowledging response:', error);
     return reply(500, {
       success: false,
-      error: error instanceof Error ? error.message : String(error),
+      error: getErrorMessage(error),
     });
   }
 }
@@ -699,7 +729,7 @@ export async function getPresenceStatus(): Promise<ApiResult> {
     logger.error('PRESENCE: Error fetching status:', error);
     return reply(500, {
       success: false,
-      error: error instanceof Error ? error.message : String(error),
+      error: getErrorMessage(error),
     });
   }
 }

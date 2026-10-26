@@ -46,7 +46,10 @@ async function realpathOfExisting(p: string): Promise<string> {
   for (;;) {
     try {
       const real = await fs.realpath(current);
-      return tail.length ? path.join(real, ...tail.reverse()) : real;
+      if (tail.length) {
+        return path.join(real, ...tail.reverse());
+      }
+      return real;
     } catch (error) {
       // Anything we can't resolve (EACCES, ELOOP, …) is refused rather than surfaced raw.
       if ((error as NodeError).code !== 'ENOENT') throw new Error(OUTSIDE);
@@ -209,7 +212,12 @@ async function listDirectory(dirPath: string): Promise<string> {
 
     const fileList = items
       .map((item) => {
-        const type = item.isDirectory() ? '📁' : '📄';
+        let type: string;
+        if (item.isDirectory()) {
+          type = '📁';
+        } else {
+          type = '📄';
+        }
         return `${type} ${item.name}`;
       })
       .join('\n');
@@ -233,7 +241,12 @@ async function exists(targetPath: string): Promise<string> {
   try {
     const stats = await fs.stat(validPath);
     const relativePath = path.relative(PROJECT_ROOT, validPath);
-    const type = stats.isDirectory() ? 'directory' : 'file';
+    let type: string;
+    if (stats.isDirectory()) {
+      type = 'directory';
+    } else {
+      type = 'file';
+    }
 
     logger.info(`✅ Checked existence: ${relativePath} (${type})`);
     return `${type.charAt(0).toUpperCase() + type.slice(1)} exists: ${relativePath}`;

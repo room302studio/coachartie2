@@ -133,12 +133,36 @@ const LORE_T3 = [
  * A small italic aside the house mutters under a verdict. Empty string at
  * tier 0; increasingly frequent and unhinged as the melt progresses.
  */
+function getHouseOdds(tier: number): number {
+  if (tier === 1) {
+    return 0.35;
+  }
+  if (tier === 2) {
+    return 0.6;
+  }
+  return 0.9;
+}
+
+function getHouseLore(tier: number): string[] {
+  if (tier === 1) {
+    return LORE_T1;
+  }
+  if (tier === 2) {
+    return [...LORE_T1, ...LORE_T2];
+  }
+  return [...LORE_T2, ...LORE_T3];
+}
+
 export function houseFlourish(): string {
   const tier = houseMadness();
-  if (tier === 0) return '';
-  const odds = tier === 1 ? 0.35 : tier === 2 ? 0.6 : 0.9;
-  if (Math.random() > odds) return '';
-  const pool = tier === 1 ? LORE_T1 : tier === 2 ? [...LORE_T1, ...LORE_T2] : [...LORE_T2, ...LORE_T3];
+  if (tier === 0) {
+    return '';
+  }
+  const odds = getHouseOdds(tier);
+  if (Math.random() > odds) {
+    return '';
+  }
+  const pool = getHouseLore(tier);
   return pool[Math.floor(Math.random() * pool.length)];
 }
 
@@ -156,11 +180,19 @@ export function recordSelfSpin(
   if (won) {
     e.wins += 1;
     e.cred += payout;
-    e.streak = e.streak > 0 ? e.streak + 1 : 1;
+    if (e.streak > 0) {
+      e.streak = e.streak + 1;
+    } else {
+      e.streak = 1;
+    }
   } else {
     e.losses += 1;
     e.served += servedSeconds;
-    e.streak = e.streak < 0 ? e.streak - 1 : -1;
+    if (e.streak < 0) {
+      e.streak = e.streak - 1;
+    } else {
+      e.streak = -1;
+    }
   }
   saveLedger(ledger);
   return e;
@@ -289,17 +321,23 @@ export function bjStand(
 ): (BjState & { outcome: 'win' | 'lose' | 'push' }) | null {
   bjSweep();
   const session = bjTables.get(bjKey(channelId, userId));
-  if (!session) return null;
+  if (!session) {
+    return null;
+  }
   bjTables.delete(bjKey(channelId, userId));
-  while (bjValue(session.dealer) < 17) session.dealer.push(bjDraw());
+  while (bjValue(session.dealer) < 17) {
+    session.dealer.push(bjDraw());
+  }
   const playerValue = bjValue(session.player);
   const dealerValue = bjValue(session.dealer);
-  const outcome =
-    dealerValue > 21 || playerValue > dealerValue
-      ? 'win'
-      : playerValue < dealerValue
-        ? 'lose'
-        : 'push';
+  let outcome: 'win' | 'lose' | 'push';
+  if (dealerValue > 21 || playerValue > dealerValue) {
+    outcome = 'win';
+  } else if (playerValue < dealerValue) {
+    outcome = 'lose';
+  } else {
+    outcome = 'push';
+  }
   return { session, playerValue, dealerValue, outcome };
 }
 

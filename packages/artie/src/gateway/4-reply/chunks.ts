@@ -263,5 +263,8 @@ export function chunkMessage(
 
   // Non-empty input always yields something: fall back to the raw text rather than
   // reporting "nothing to send" for content we were actually handed.
-  return chunks.length > 0 ? (chunks as MessageChunks) : [text];
+  if (chunks.length > 0) {
+    return chunks as MessageChunks;
+  }
+  return [text];
 }

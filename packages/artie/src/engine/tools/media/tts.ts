@@ -143,7 +143,9 @@ function loadTtsCapabilityDescription(): string {
        WHERE name = 'PROMPT_TTS_CAPABILITY' AND is_active = 1
        ORDER BY version DESC LIMIT 1`
     );
-    if (row?.content) return row.content;
+    if (row?.content) {
+      return row.content;
+    }
   } catch (error) {
     logger.warn('Failed to load PROMPT_TTS_CAPABILITY from DB, using fallback:', error);
   }
@@ -163,21 +165,27 @@ function gatherVibeData(channelId: string, guildId?: string | null) {
      ORDER BY created_at DESC LIMIT 50`,
     [channelId]
   );
-  const guildMemories = guildId
-    ? db.all<{ content: string }>(
-        `SELECT content FROM memories
-         WHERE guild_id = ? ORDER BY created_at DESC LIMIT 8`,
-        [guildId]
-      )
-    : [];
-  const stats = guildId
-    ? db.get<{ msgs: number; users: number; channels: number }>(
-        `SELECT COUNT(*) AS msgs, COUNT(DISTINCT user_id) AS users,
-                COUNT(DISTINCT channel_id) AS channels
-         FROM messages WHERE guild_id = ? AND created_at >= datetime('now', '-3 hours')`,
-        [guildId]
-      )
-    : undefined;
+  let guildMemories: { content: string }[];
+  if (guildId) {
+    guildMemories = db.all<{ content: string }>(
+      `SELECT content FROM memories
+       WHERE guild_id = ? ORDER BY created_at DESC LIMIT 8`,
+      [guildId]
+    );
+  } else {
+    guildMemories = [];
+  }
+  let stats: { msgs: number; users: number; channels: number } | undefined;
+  if (guildId) {
+    stats = db.get<{ msgs: number; users: number; channels: number }>(
+      `SELECT COUNT(*) AS msgs, COUNT(DISTINCT user_id) AS users,
+              COUNT(DISTINCT channel_id) AS channels
+       FROM messages WHERE guild_id = ? AND created_at >= datetime('now', '-3 hours')`,
+      [guildId]
+    );
+  } else {
+    stats = undefined;
+  }
 
   return {
     channelChatter: recent
@@ -197,9 +205,19 @@ async function composeBulletin(
 ): Promise<string> {
   const { channelChatter, guildNotes, stats } = gatherVibeData(channelId, guildId);
 
-  const statsLine = stats
-    ? `Guild activity last 3h: ${stats.msgs} messages from ${stats.users} people across ${stats.channels} channels.`
-    : '';
+  let statsLine: string;
+  if (stats) {
+    statsLine = `Guild activity last 3h: ${stats.msgs} messages from ${stats.users} people across ${stats.channels} channels.`;
+  } else {
+    statsLine = '';
+  }
+
+  let anglePrefix: string;
+  if (angle) {
+    anglePrefix = `Requested angle: ${angle}\n\n`;
+  } else {
+    anglePrefix = '';
+  }
 
   const script = await openRouterService.generateFromMessageChain(
     [
@@ -211,7 +229,7 @@ Cover BOTH: (1) what's actually happening in this channel right now (topics, moo
       },
       {
         role: 'user',
-        content: `${angle ? `Requested angle: ${angle}\n\n` : ''}${statsLine}
+        content: `${anglePrefix}${statsLine}
 
 RECENT CHANNEL MESSAGES (oldest first):
 ${channelChatter || '(quiet in here)'}
@@ -269,16 +287,19 @@ export const ttsCapability: RegisteredCapability = {
       const description = String(
         params.description || params.text || params.content || capContent || ''
       ).trim().slice(0, 450);
-      if (!description) return 'Nothing to generate — pass description.';
+      if (!description) {
+        return 'Nothing to generate — pass description.';
+      }
       const dur = parseFloat(params.seconds);
       try {
+        const sfxBody: Record<string, any> = { text: description };
+        if (Number.isFinite(dur)) {
+          sfxBody.duration_seconds = Math.min(22, Math.max(0.5, dur));
+        }
         const sfxResponse = await fetch('https://api.elevenlabs.io/v1/sound-generation', {
           method: 'POST',
           headers: { 'xi-api-key': apiKey, 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            text: description,
-            ...(Number.isFinite(dur) ? { duration_seconds: Math.min(22, Math.max(0.5, dur)) } : {}),
-          }),
+          body: JSON.stringify(sfxBody),
         });
         if (!sfxResponse.ok) {
           const errBody = await sfxResponse.text().catch(() => '');
@@ -310,13 +331,22 @@ export const ttsCapability: RegisteredCapability = {
     if (action === 'sing') {
       let lyrics = String(params.lyrics || params.text || params.content || capContent || '').trim();
       lyrics = salvageTextField(lyrics, ['lyrics', 'text'], /"(?:lyrics|text)"\s*:\s*"([\s\S]+?)"\s*[,}]/);
-      if (!lyrics) return 'Nothing to sing — pass lyrics.';
-      if (lyrics.length > MAX_TTS_CHARS) lyrics = lyrics.slice(0, MAX_TTS_CHARS);
+      if (!lyrics) {
+        return 'Nothing to sing — pass lyrics.';
+      }
+      if (lyrics.length > MAX_TTS_CHARS) {
+        lyrics = lyrics.slice(0, MAX_TTS_CHARS);
+      }
       lyrics = scrubBlockedUserMentions(lyrics);
       // A style Artie explicitly set IS the creative direction (usually because someone
       // asked for a specific vibe). We honor it and add NO random spice on top. Only when
       // he leaves style off do we surprise him — see the spice block below.
-      const requestedStyle = params.style ? String(params.style).slice(0, 300) : '';
+      let requestedStyle: string;
+      if (params.style) {
+        requestedStyle = String(params.style).slice(0, 300);
+      } else {
+        requestedStyle = '';
+      }
       const style =
         requestedStyle || 'over-the-top earnest motivational anthem, huge choir, driving drums';
 
@@ -336,11 +366,15 @@ export const ttsCapability: RegisteredCapability = {
           name = 'Chorus';
         }
         const chars = lines.join(' ').length;
+        let positiveLocalStyles: string[];
+        if (/chorus|hook/i.test(name)) {
+          positiveLocalStyles = ['big memorable chorus, gang vocals'];
+        } else {
+          positiveLocalStyles = ['clear lead vocal, continuous singing'];
+        }
         return {
           section_name: `${name} (${i + 1})`.slice(0, 100),
-          positive_local_styles: /chorus|hook/i.test(name)
-            ? ['big memorable chorus, gang vocals']
-            : ['clear lead vocal, continuous singing'],
+          positive_local_styles: positiveLocalStyles,
           negative_local_styles: ['instrumental gaps'],
           duration_ms: Math.max(8000, Math.min(40000, Math.round(chars / 12) * 1000)),
           lines: lines.slice(0, 30).map((l) => l.slice(0, 200)),
@@ -362,9 +396,12 @@ export const ttsCapability: RegisteredCapability = {
       // ONLY surprise him when he didn't ask for anything specific. If a style was
       // requested, spiceCount = 0 so "sad piano ballad" stays a sad piano ballad instead
       // of getting "dutch house" bolted on. Empty style = open canvas = go wild.
-      const spiceCount = requestedStyle
-        ? 0
-        : Math.max(0, parseInt(process.env.SONG_SPICE_COUNT || '2', 10));
+      let spiceCount: number;
+      if (requestedStyle) {
+        spiceCount = 0;
+      } else {
+        spiceCount = Math.max(0, parseInt(process.env.SONG_SPICE_COUNT || '2', 10));
+      }
       const spice: string[] = [];
       const draw = [...genrePool];
       for (let i = 0; i < spiceCount && draw.length; i++) {
@@ -404,13 +441,12 @@ export const ttsCapability: RegisteredCapability = {
           // ToS rejections (e.g. a real artist name in the style) return a rewritten
           // plan suggestion in the error body — retry once with the house edit.
           const errBody = await musicResponse.text().catch(() => '');
-          const suggestion = (() => {
-            try {
-              return JSON.parse(errBody)?.detail?.data?.composition_plan_suggestion;
-            } catch {
-              return null;
-            }
-          })();
+          let suggestion: unknown = null;
+          try {
+            suggestion = JSON.parse(errBody)?.detail?.data?.composition_plan_suggestion;
+          } catch {
+            // Parsing failed, suggestion stays null
+          }
           if (suggestion) {
             logger.warn('🎤 Music plan rejected — retrying with the API-suggested rewrite');
             musicResponse = await singOnce(suggestion);
@@ -499,9 +535,15 @@ export const ttsCapability: RegisteredCapability = {
       const audio = Buffer.from(await ttsResponse.arrayBuffer());
 
       // Gateway's POST /api/channels/:id/messages, in-process since wave 9
+      let fileName: string;
+      if (action === 'vibe_report') {
+        fileName = 'artie-vibe-report.mp3';
+      } else {
+        fileName = 'artie-voice-note.mp3';
+      }
       const postResponse = await gateway.sendChannelMessage(String(channelId), {
         fileBase64: audio.toString('base64'),
-        fileName: action === 'vibe_report' ? 'artie-vibe-report.mp3' : 'artie-voice-note.mp3',
+        fileName,
       });
 
       if (!gateway.isOk(postResponse)) {

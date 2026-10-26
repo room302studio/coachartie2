@@ -11,6 +11,7 @@
  */
 
 import { logger } from '../../../shared/logger.js';
+import { getErrorMessage } from '../../../shared/errors.js';
 import type {
   RegisteredCapability,
   CapabilityContext,
@@ -28,7 +29,10 @@ function getToken(): string | null {
   try {
     const envContent = readFileSync('/opt/docker/smallweb/data/kanban/.env', 'utf-8');
     const match = envContent.match(/API_TOKEN=(.+)/);
-    return match ? match[1].trim() : null;
+    if (match) {
+      return match[1].trim();
+    }
+    return null;
   } catch {
     return null;
   }
@@ -94,14 +98,23 @@ async function handleKanban(
         const lane = params.lane;
         const cards: KanbanCard[] = await kanbanFetch('/cards');
 
-        const filtered = lane
-          ? cards.filter((c) => c.lane.toLowerCase() === lane.toLowerCase())
-          : cards;
+        let filtered: KanbanCard[];
+        if (lane) {
+          filtered = cards.filter((c) => c.lane.toLowerCase() === lane.toLowerCase());
+        } else {
+          filtered = cards;
+        }
 
         if (filtered.length === 0) {
+          let message: string;
+          if (lane) {
+            message = `No cards in ${lane} lane`;
+          } else {
+            message = 'No cards on the board';
+          }
           return JSON.stringify({
             success: true,
-            message: lane ? `No cards in ${lane} lane` : 'No cards on the board',
+            message,
             cards: [],
           });
         }
@@ -235,7 +248,7 @@ async function handleKanban(
     logger.error(`❌ Kanban error for action '${action}':`, error);
     return JSON.stringify({
       success: false,
-      error: error instanceof Error ? error.message : String(error),
+      error: getErrorMessage(error),
     });
   }
 }
