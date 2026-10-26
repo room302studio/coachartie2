@@ -664,9 +664,14 @@ class OpenRouterService {
       let attemptUsage: { billed: string; usage: TokenUsage; cost: number } | undefined;
 
       try {
-        const responseFormat = sendTools ? undefined : await responseFormatForModel(model, options?.jsonOutput);
+        let responseFormat: Record<string, unknown> | undefined;
+        if (!sendTools) {
+          responseFormat = await responseFormatForModel(model, options?.jsonOutput);
+        }
+        const modelLabel = useSpecificModel && i === 0 ? '(SPECIFIC)' : `(${i + 1}/${modelsToTry.length})`;
+        const toolInfo = toolSpec ? ` (tool turn, ${toolSpec.tools.length} tools, tool_choice ${toolSpec.toolChoice})` : '';
         logger.info(
-          `🤖 MODEL SELECTION: Using ${model} ${useSpecificModel && i === 0 ? '(SPECIFIC)' : `(${i + 1}/${modelsToTry.length})`} for ${messages.length} messages${toolSpec ? ` (tool turn, ${toolSpec.tools.length} tools, tool_choice ${toolSpec.toolChoice})` : ''}`
+          `🤖 MODEL SELECTION: Using ${model} ${modelLabel} for ${messages.length} messages${toolInfo}`
         );
 
         // Use dynamic maxTokens from preflight analysis, or fall back to env default
@@ -675,8 +680,9 @@ class OpenRouterService {
           logger.warn(`📏 Capping max_tokens ${maxTokens} → ${affordabilityCap} (affordability)`);
           maxTokens = affordabilityCap;
         }
+        const maxTokensSource = options?.maxTokens ? ' (preflight)' : ' (default)';
         logger.debug(
-          `📏 Using max_tokens: ${maxTokens}${options?.maxTokens ? ' (preflight)' : ' (default)'}`
+          `📏 Using max_tokens: ${maxTokens}${maxTokensSource}`
         );
 
         // Use experiment temperature if set, otherwise default
@@ -685,16 +691,16 @@ class OpenRouterService {
         // Mark the static system prefix cacheable. No-op for non-Anthropic models and for
         // prefixes under the model's minimum — see prompt-cache.ts for why both matter.
         // On a tool turn the tool list sits ahead of the system prompt in that prefix.
+        const toolTokens = sendTools ? estimateTokens(JSON.stringify(sendTools.tools)) : 0;
         const cache = applyCacheControl(
           messages,
           model,
-          sendTools ? estimateTokens(JSON.stringify(sendTools.tools)) : 0
+          toolTokens
         );
-        logger.info(
-          cache.applied
+        const cacheMessage = cache.applied
             ? `🗄️ Prompt cache: breakpoint on ${cache.prefixTokens}tok ${sendTools ? 'tools + ' : ''}system prefix (${model})`
-            : `🗄️ Prompt cache: not applied — ${cache.reason}`
-        );
+            : `🗄️ Prompt cache: not applied — ${cache.reason}`;
+        logger.info(cacheMessage);
 
         // OpenRouter-only extras (auto-router plugins) aren't in the OpenAI SDK's types.
         const extraBody: Record<string, unknown> = {
@@ -719,7 +725,7 @@ class OpenRouterService {
         });
         // openrouter/auto picks the model; bill what was actually served, or the unknown-model
         // fallback ($15/$75) would trip the daily cap early. Other models bill as requested.
-        const billedModel = isAutoRouted(model) && completion.model ? completion.model : model;
+        const billedModel = (isAutoRouted(model) && completion.model) ? completion.model : model;
 
         const choice = completion.choices?.[0];
         const response = choice?.message?.content ?? '';
@@ -737,13 +743,16 @@ class OpenRouterService {
             cache_write_tokens: readCacheUsage(completion.usage).write,
           };
           const failedReported = Number((completion.usage as { cost?: unknown } | undefined)?.cost);
+          let attemptCost: number;
+          if (isAutoRouted(model) && Number.isFinite(failedReported)) {
+            attemptCost = failedReported;
+          } else {
+            attemptCost = UsageTracker.calculateCost(billedModel, failedUsage);
+          }
           attemptUsage = {
             billed: billedModel,
             usage: failedUsage,
-            cost:
-              isAutoRouted(model) && Number.isFinite(failedReported)
-                ? failedReported
-                : UsageTracker.calculateCost(billedModel, failedUsage),
+            cost: attemptCost,
           };
           // OpenRouter can return HTTP 200 with an embedded error body, a
           // reasoning/thinking-only turn (content: null), or a length-truncated
@@ -756,9 +765,10 @@ class OpenRouterService {
             (completion as any)?.error?.message ||
             (choice as any)?.error?.message ||
             (completion as any)?.error;
-          const reasoningOnly = (choice?.message as any)?.reasoning
-            ? ' (reasoning-only, no text block)'
-            : '';
+          let reasoningOnly = '';
+          if ((choice?.message as any)?.reasoning) {
+            reasoningOnly = ' (reasoning-only, no text block)';
+          }
           logger.warn(`⚠️ Empty completion from ${model}`, {
             finishReason,
             embeddedError,
@@ -769,13 +779,18 @@ class OpenRouterService {
             // Re-throw the upstream error so 402/429/etc. get classified below.
             throw new Error(String(embeddedError));
           }
+          const finalReason = finishReason ?? 'unknown';
           throw new Error(
-            `Empty completion (finish_reason=${finishReason ?? 'unknown'})${reasoningOnly}`
+            `Empty completion (finish_reason=${finalReason})${reasoningOnly}`
           );
         }
 
+        let toolInfo = '';
+        if (toolCalls.length) {
+          toolInfo = ` + ${toolCalls.length} tool call(s): ${toolCalls.map((t) => t.name).join(', ')}`;
+        }
         logger.info(
-          `✅ MODEL RESPONSE: ${model} generated ${response.length} chars${toolCalls.length ? ` + ${toolCalls.length} tool call(s): ${toolCalls.map((t) => t.name).join(', ')}` : ''} successfully`
+          `✅ MODEL RESPONSE: ${model} generated ${response.length} chars${toolInfo} successfully`
         );
 
         const responseTime = Date.now() - startTime;
@@ -817,18 +832,21 @@ class OpenRouterService {
 
         // Calculate cost and record usage
         const reportedCost = Number((completion.usage as { cost?: unknown } | undefined)?.cost);
-        const estimatedCost =
-          isAutoRouted(model) && Number.isFinite(reportedCost)
-            ? reportedCost
-            : UsageTracker.calculateCost(billedModel, usage);
+        let estimatedCost: number;
+        if (isAutoRouted(model) && Number.isFinite(reportedCost)) {
+          estimatedCost = reportedCost;
+        } else {
+          estimatedCost = UsageTracker.calculateCost(billedModel, usage);
+        }
 
         // Track costs in real-time cost monitor
+        const costForMonitor = (isAutoRouted(model) && Number.isFinite(reportedCost)) ? reportedCost : undefined;
         const { warnings } = costMonitor.trackCall(
           usage.prompt_tokens,
           usage.completion_tokens,
           billedModel,
           usage.cached_tokens ?? 0,
-          isAutoRouted(model) && Number.isFinite(reportedCost) ? reportedCost : undefined
+          costForMonitor
         );
 
         // Log warnings if any
@@ -887,7 +905,7 @@ class OpenRouterService {
         logger.info(`🔄 Rotated to next model: ${this.getCurrentModel()}`);
         return { content: response, toolCalls, model };
       } catch (error: unknown) {
-        const errorMessage = error instanceof Error ? error.message : String(error);
+        const errorMessage = getErrorMessage(error);
         const errorStatus = (error as { status?: number }).status;
 
         logger.warn(`❌ Model ${model} failed:`, {
@@ -896,7 +914,8 @@ class OpenRouterService {
           modelIndex: i + 1,
           totalModels: modelsToTry.length,
         });
-        recordLlmHiccup(i === modelsToTry.length - 1 ? 'failed' : 'fallback');
+        const hiccupType = i === modelsToTry.length - 1 ? 'failed' : 'fallback';
+        recordLlmHiccup(hiccupType);
 
         // Record the FAILED attempt. Every one of the 15,122 historical rows has
         // success = 1, because recordUsage was only ever reached on the success path —
@@ -905,6 +924,7 @@ class OpenRouterService {
         // tokens in most cases; prompt_tokens is an estimate here since the API returned
         // no usage object, which is why it is flagged via error_type rather than trusted.
         {
+          const recordErrorType = errorStatus ? `http_${errorStatus}` : errorMessage.slice(0, 80);
           UsageTracker.recordUsage({
             model_name: attemptUsage?.billed ?? model,
             guild_id: options?.guildId ?? null,
@@ -917,7 +937,7 @@ class OpenRouterService {
             capabilities_executed: 0,
             capability_types: '',
             success: false,
-            error_type: errorStatus ? `http_${errorStatus}` : errorMessage.slice(0, 80),
+            error_type: recordErrorType,
             prompt_tokens: attemptUsage?.usage.prompt_tokens ?? 0,
             completion_tokens: attemptUsage?.usage.completion_tokens ?? 0,
             total_tokens: attemptUsage?.usage.total_tokens ?? 0,
@@ -962,8 +982,8 @@ class OpenRouterService {
         } else if (isAffordabilityError && !affordabilityRetried) {
           // Retry the SAME model once with max_tokens capped to what's affordable.
           // Leave a 10% safety margin so token-estimation drift doesn't re-trip it.
-          const affordable = affordMatch ? parseInt(affordMatch[1], 10) : 256;
-          affordabilityCap = Math.max(64, Math.floor(affordable * 0.9));
+          const affordableTokens = affordMatch ? parseInt(affordMatch[1], 10) : 256;
+          affordabilityCap = Math.max(64, Math.floor(affordableTokens * 0.9));
           affordabilityRetried = true;
           logger.warn(
             `💳 402 affordability limit — retrying ${model} with max_tokens=${affordabilityCap} ` +
@@ -972,8 +992,9 @@ class OpenRouterService {
           i--; // retry the same model
           continue;
         } else if (isCreditError) {
+          const nextModelMsg = isLastModel ? '' : ', trying next model...';
           logger.info(
-            '💳 Billing/credit error detected' + (isLastModel ? '' : ', trying next model...')
+            `💳 Billing/credit error detected${nextModelMsg}`
           );
           // Only freeze all API calls if the REAL balance confirms we're actually
           // out — a near-threshold 402 shouldn't lock Artie out while funds remain.
@@ -989,21 +1010,24 @@ class OpenRouterService {
             );
           }
         } else if (errorStatus === 429) {
-          logger.warn('🚦 Rate limit hit' + (isLastModel ? '' : ', trying next model...'));
+          const nextModelMsg = isLastModel ? '' : ', trying next model...';
+          logger.warn(`🚦 Rate limit hit${nextModelMsg}`);
           if (isLastModel) {
             throw new Error(
               '⏱️ RATE LIMITED: Too many requests to OpenRouter. Please wait and try again.'
             );
           }
         } else if (errorStatus === 500 || errorStatus === 502 || errorStatus === 503) {
-          logger.warn('🔧 Server error' + (isLastModel ? '' : ', trying next model...'));
+          const nextModelMsg = isLastModel ? '' : ', trying next model...';
+          logger.warn(`🔧 Server error${nextModelMsg}`);
           if (isLastModel) {
             throw new Error(
               `🔧 SERVER ERROR: OpenRouter returned ${errorStatus}. The service may be temporarily unavailable.`
             );
           }
         } else {
-          logger.warn('🔄 Unknown error' + (isLastModel ? '' : ', trying next model...'));
+          const nextModelMsg = isLastModel ? '' : ', trying next model...';
+          logger.warn(`🔄 Unknown error${nextModelMsg}`);
           if (isLastModel) {
             throw new Error(`❌ LLM ERROR: ${errorMessage.substring(0, 200)}`);
           }
@@ -1089,24 +1113,34 @@ class OpenRouterService {
     // Otherwise check for experiment override, then rotate through models
     const effectiveModel = selectedModel || variantModelOverride;
     const useSpecificModel = effectiveModel && effectiveModel.trim().length > 0;
-    const startIndex = options?.rotationKey
-      ? stickyRotationIndex(options.rotationKey, this.models.length)
-      : this.currentModelIndex;
+    let startIndex: number;
+    if (options?.rotationKey) {
+      startIndex = stickyRotationIndex(options.rotationKey, this.models.length);
+    } else {
+      startIndex = this.currentModelIndex;
+    }
 
     // Specifically-requested model first, then the rotation as fallback (see the
     // non-streaming path — a bare [effectiveModel] turns one transient error into silence).
-    const modelsToTry = useSpecificModel
-      ? [effectiveModel, ...this.models.filter((m) => m !== effectiveModel)]
-      : this.models;
+    let modelsToTry: string[];
+    if (useSpecificModel) {
+      modelsToTry = [effectiveModel, ...this.models.filter((m) => m !== effectiveModel)];
+    } else {
+      modelsToTry = this.models;
+    }
 
+    const generationMode = useSpecificModel ? `using SPECIFIC model ${effectiveModel}` : `using model rotation`;
     logger.info(
-      `🤖 Starting streaming generation for user ${userId} ${useSpecificModel ? `using SPECIFIC model ${effectiveModel}` : `using model rotation`}`
+      `🤖 Starting streaming generation for user ${userId} ${generationMode}`
     );
 
     for (let i = 0; i < modelsToTry.length; i++) {
-      const modelSpec = useSpecificModel
-        ? modelsToTry[i]
-        : this.models[(startIndex + i) % this.models.length];
+      let modelSpec: string;
+      if (useSpecificModel) {
+        modelSpec = modelsToTry[i];
+      } else {
+        modelSpec = this.models[(startIndex + i) % this.models.length];
+      }
       // "auto:<tier>[:allowed]" specs → openrouter/auto + the auto-router plugin (model-spec.ts);
       // plugins passed in by the caller (brownout's final-third route) take precedence.
       const resolved = resolveModelSpec(modelSpec);
@@ -1114,8 +1148,9 @@ class OpenRouterService {
       const plugins = options?.plugins ?? resolved.plugins;
 
       try {
+        const modelLabel = useSpecificModel ? '(SPECIFIC)' : `(${i + 1}/${modelsToTry.length})`;
         logger.info(
-          `📡 Attempting streaming with model ${model} ${useSpecificModel ? '(SPECIFIC)' : `(${i + 1}/${modelsToTry.length})`}`
+          `📡 Attempting streaming with model ${model} ${modelLabel}`
         );
 
         // Use preflight-analyzed maxTokens if provided, otherwise fall back to env default
@@ -1124,11 +1159,10 @@ class OpenRouterService {
 
         // Same breakpoint as the non-streaming path — this is the one Discord actually uses.
         const cache = applyCacheControl(messages, model);
-        logger.info(
-          cache.applied
+        const cacheMessage = cache.applied
             ? `🗄️ Prompt cache: breakpoint on ${cache.prefixTokens}tok system prefix (${model}, streaming)`
-            : `🗄️ Prompt cache: not applied — ${cache.reason}`
-        );
+            : `🗄️ Prompt cache: not applied — ${cache.reason}`;
+        logger.info(cacheMessage);
 
         const extraBody: Record<string, unknown> = {
           ...(plugins ? { plugins } : {}),
@@ -1220,19 +1254,22 @@ class OpenRouterService {
         }
 
         // Calculate cost and track usage
-        const billedModel = isAutoRouted(model) && servedModel ? servedModel : model;
-        const estimatedCost =
-          isAutoRouted(model) && reportedCost !== undefined
-            ? reportedCost
-            : UsageTracker.calculateCost(billedModel, usage);
+        const billedModel = (isAutoRouted(model) && servedModel) ? servedModel : model;
+        let estimatedCost: number;
+        if (isAutoRouted(model) && reportedCost !== undefined) {
+          estimatedCost = reportedCost;
+        } else {
+          estimatedCost = UsageTracker.calculateCost(billedModel, usage);
+        }
 
         // Track costs in real-time cost monitor
+        const streamingCost = isAutoRouted(model) ? reportedCost : undefined;
         const { warnings: streamWarnings } = costMonitor.trackCall(
           usage.prompt_tokens,
           usage.completion_tokens,
           billedModel,
           usage.cached_tokens ?? 0,
-          isAutoRouted(model) ? reportedCost : undefined
+          streamingCost
         );
 
         // Log warnings if any
@@ -1290,7 +1327,7 @@ class OpenRouterService {
         logger.info(`🔄 Rotated to next model: ${this.getCurrentModel()}`);
         return fullResponse.trim();
       } catch (error: unknown) {
-        const errorMessage = error instanceof Error ? error.message : String(error);
+        const errorMessage = getErrorMessage(error);
         const errorStatus = (error as { status?: number }).status;
 
         logger.warn(`❌ Streaming with model ${model} failed:`, {
