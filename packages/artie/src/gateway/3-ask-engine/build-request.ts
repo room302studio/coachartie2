@@ -19,6 +19,7 @@ import {
   isForumThread,
 } from '../1-receive/channel-history.js';
 import { resolveDiscordMessageLinks } from '../1-receive/expand-links.js';
+import { getRecentReactions, formatRecentReactionsNote } from '../1-receive/reaction-log.js';
 
 const MAX_JOB_ATTEMPTS = 100; // ~5 minute max job timeout (100 * 3s checks) - allows for large metro files
 const STATUS_UPDATE_INTERVAL = 5; // Update status every 5 progress callbacks
@@ -33,7 +34,11 @@ export async function handleMessageAsIntent(
   correlationId: string,
   proxyOptions?: ProxyOptions,
   guildContext?: string,
-  isProactiveAnswer: boolean = false
+  isProactiveAnswer: boolean = false,
+  // Burst debounce (part 2) + reactions (part 3): extra discordContext fields merged in
+  // verbatim. Optional and additive on purpose — a turn with no burst/landed/reactions data
+  // passes `undefined` and discordContext is byte-identical to before this feature.
+  extraContext?: Record<string, any>
 ): Promise<void> {
   const shortId = getShortCorrelationId(correlationId);
 
@@ -108,6 +113,10 @@ export async function handleMessageAsIntent(
         `🔗 Resolved ${resolvedDiscordMessages.length} Discord message links [${shortId}]`
       );
     }
+
+    // Recent reactions to Artie's own messages in this channel (part 3 — real-time, not
+    // batch-processed). Reads reaction-log.ts's in-memory ring buffer; no DB round trip.
+    const recentReactionsNote = formatRecentReactionsNote(getRecentReactions(message.channelId));
 
     // ENHANCED: Fetch reply context if this is a reply
     const replyContext = await fetchReplyContext(message);
@@ -200,6 +209,7 @@ export async function handleMessageAsIntent(
             }))
           : [],
       replyingTo: message.reference?.messageId || null,
+      ...(recentReactionsNote ? { recentReactions: recentReactionsNote } : {}),
       // Reply context - the message being replied to
       ...(replyContext
         ? {
@@ -227,6 +237,8 @@ export async function handleMessageAsIntent(
             guildKnowledge: guildContext,
           }
         : {}),
+      // Burst debounce (part 2) / recent reactions (part 3) — see handleMessageAsIntent.
+      ...(extraContext ?? {}),
     };
 
     // Create unified intent and delegate to shared processor

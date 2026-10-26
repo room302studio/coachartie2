@@ -64,6 +64,18 @@ import { handleQuizAnswer } from '../commands/quiz/command.js';
 import { existsSync, unlinkSync } from 'fs';
 import { looksLikeGithubActivity } from './github-signals.js';
 import { replaceMention } from '../../shared/mentions.js';
+import {
+  BurstScheduler,
+  burstDebounceMs,
+  combineBurstContent,
+  renderBurstForContext,
+} from '../3-ask-engine/burst.js';
+import {
+  recordChannelActivity,
+  getChannelActivity,
+  pickLandedMessages,
+  formatLandedNote,
+} from './channel-activity.js';
 
 // =============================================================================
 // CONSTANTS & CONFIGURATION
@@ -594,6 +606,22 @@ function burstGuard({ message, shortId, shouldRespond, responseConditions }: Tur
   }
 }
 
+/**
+ * Record this message's arrival in the per-channel activity ring buffer (channel-activity.ts)
+ * — the raw feed "landed while you were thinking" (part 2b) reads from at flush time. Every
+ * message that gets this far (not blocked/opted-out, in a Coach-Artie place, past the kill
+ * switch/budget/burst-repeat gates) is worth recording, whether or not it ends up answered —
+ * ambient chatter from a third person is exactly what "landed" is for.
+ */
+function recordActivity({ message }: Turn): StepResult {
+  recordChannelActivity(message.channelId, {
+    messageId: message.id,
+    authorLabel: message.author.displayName || message.author.username,
+    content: message.content,
+    ts: Date.now(),
+  });
+}
+
 async function respondOrObserve(turn: Turn): Promise<StepResult> {
   const {
     message,
@@ -705,14 +733,39 @@ async function respondOrObserve(turn: Turn): Promise<StepResult> {
         guildContextToPass = verdict.guildContext;
       }
 
-      await handleMessageAsIntent(
-        message,
-        cleanMessage,
-        correlationId,
-        undefined,
-        guildContextToPass,
-        responseConditions.isProactiveAnswer || isRespondToAllChannel
-      );
+      const isProactiveAnswerFlag = responseConditions.isProactiveAnswer || isRespondToAllChannel;
+
+      // BURST DEBOUNCE (#"batch bursts"): DMs are 1:1 already — never worth batching, and
+      // batching them would add latency with no upside, so they bypass this entirely and
+      // keep the exact pre-existing behavior. Everything else joins (or starts) this
+      // channel's pending batch; the batch is flushed as ONE combined turn once the window
+      // elapses (flushBurstBatch below).
+      if (responseConditions.isDM) {
+        await handleMessageAsIntent(
+          message,
+          cleanMessage,
+          correlationId,
+          undefined,
+          guildContextToPass,
+          isProactiveAnswerFlag
+        );
+      } else {
+        burstScheduler.add(
+          message.channelId,
+          {
+            message,
+            cleanMessage,
+            correlationId,
+            shortId,
+            guildContextToPass,
+            isProactiveAnswer: isProactiveAnswerFlag,
+            authorLabel: message.author.displayName || message.author.username,
+            enqueuedAt: Date.now(),
+          },
+          flushBurstBatch,
+          burstDebounceMs()
+        );
+      }
     } else {
       // PASSIVE OBSERVATION: Only process for learning if channel is whitelisted
       const channelName =
@@ -761,42 +814,137 @@ async function respondOrObserve(turn: Turn): Promise<StepResult> {
       }
     }
   } catch (error) {
-    logger.error(`❌ Error handling Discord message [${shortId}]:`, {
-      correlationId,
+    return reportMessageHandlerError(message, correlationId, shortId, error);
+  }
+}
+
+/**
+ * Shared failure path for a turn, whether it came from respondOrObserve's own try/catch
+ * (the direct, single-message call) or from flushBurstBatch's catch (a batched call, which
+ * runs in a setTimeout callback — outside any STEPS try/catch, so it needs this explicitly).
+ * Identical behavior to the pre-batching inline catch block.
+ */
+async function reportMessageHandlerError(
+  message: Message,
+  correlationId: string,
+  shortId: string,
+  error: unknown
+): Promise<StepResult> {
+  logger.error(`❌ Error handling Discord message [${shortId}]:`, {
+    correlationId,
+    error: error instanceof Error ? error.message : String(error),
+    stack: error instanceof Error ? error.stack : undefined,
+    author: message.author.tag,
+    messageId: message.id,
+  });
+
+  telemetry.incrementMessagesFailed(
+    message.author.id,
+    error instanceof Error ? error.message : String(error)
+  );
+  telemetry.logEvent(
+    'message_error',
+    {
       error: error instanceof Error ? error.message : String(error),
-      stack: error instanceof Error ? error.stack : undefined,
-      author: message.author.tag,
-      messageId: message.id,
-    });
+    },
+    correlationId,
+    message.author.id,
+    undefined,
+    false
+  );
 
-    telemetry.incrementMessagesFailed(
-      message.author.id,
-      error instanceof Error ? error.message : String(error)
-    );
-    telemetry.logEvent(
-      'message_error',
-      {
-        error: error instanceof Error ? error.message : String(error),
-      },
-      correlationId,
-      message.author.id,
-      undefined,
-      false
-    );
+  // Billing / credits / budget / kill-switch failures are operator-only — never reply.
+  if (isOperatorOnlyError(error)) {
+    logger.warn(`🔇 Operator-only failure not echoed to channel [${shortId}]`);
+    return 'stop';
+  }
 
-    // Billing / credits / budget / kill-switch failures are operator-only — never reply.
-    if (isOperatorOnlyError(error)) {
-      logger.warn(`🔇 Operator-only failure not echoed to channel [${shortId}]`);
-      return 'stop';
+  // ENHANCED: User-friendly error with transparency
+  const errorMsg =
+    error instanceof Error && error.message.length < 100
+      ? `Sorry, I encountered an error: ${error.message}`
+      : 'Sorry, I encountered an error processing your message. The issue has been logged.';
+
+  await message.reply(`❌ ${errorMsg}`);
+}
+
+// =============================================================================
+// BURST DEBOUNCE (part 2 — "batch bursts, show me what landed while I was thinking")
+// =============================================================================
+
+/** One message queued into a channel's pending burst batch. */
+interface BurstQueueItem {
+  message: Message;
+  cleanMessage: string;
+  correlationId: string;
+  shortId: string;
+  guildContextToPass: string | undefined;
+  isProactiveAnswer: boolean;
+  authorLabel: string;
+  /** When this item was enqueued — the anchor for "what landed after this" (channel-activity.ts). */
+  enqueuedAt: number;
+}
+
+const burstScheduler = new BurstScheduler<BurstQueueItem>();
+
+/**
+ * Flush one channel's accumulated burst batch as ONE turn. Runs from a setTimeout callback
+ * (burst.ts), not from the per-message STEPS pipeline, so it has its own try/catch mirroring
+ * respondOrObserve's (reportMessageHandlerError) rather than relying on that one.
+ *
+ * Replies to the NEWEST message in the batch (keeps the Discord reply-chain pointed at
+ * whoever is "live" in the conversation) using the combined text of every message in the
+ * batch and that newest message's (most recently antibody-adjusted) guild context. The
+ * correlation id is the batch LEADER's — the trace starts when the batch opened, not when it
+ * closed, so timing/latency traces reflect the batching delay honestly.
+ */
+async function flushBurstBatch(items: BurstQueueItem[]): Promise<void> {
+  if (items.length === 0) return;
+  const leader = items[0];
+  const newest = items[items.length - 1];
+  const channelId = newest.message.channelId;
+
+  try {
+    const burstEntries = items.map((i) => ({
+      messageId: i.message.id,
+      authorLabel: i.authorLabel,
+      content: i.cleanMessage,
+    }));
+    const combinedMessage = combineBurstContent(burstEntries);
+    const burstForContext = renderBurstForContext(burstEntries);
+
+    // "Landed while you were thinking": anything else that arrived in this channel since
+    // the batch opened and isn't one of the batch's own messages (other people's ambient
+    // chatter mostly — a second addressed message that arrives before THIS window closes
+    // already folded into burstEntries above instead).
+    const excludeIds = new Set(items.map((i) => i.message.id));
+    const landed = pickLandedMessages(
+      getChannelActivity(channelId),
+      leader.enqueuedAt,
+      excludeIds
+    );
+    const landedNote = formatLandedNote(landed);
+
+    if (items.length > 1) {
+      logger.info(
+        `📦 Burst: answering ${items.length} messages as one turn in channel ${channelId} [${newest.shortId}]`
+      );
     }
 
-    // ENHANCED: User-friendly error with transparency
-    const errorMsg =
-      error instanceof Error && error.message.length < 100
-        ? `Sorry, I encountered an error: ${error.message}`
-        : 'Sorry, I encountered an error processing your message. The issue has been logged.';
-
-    await message.reply(`❌ ${errorMsg}`);
+    await handleMessageAsIntent(
+      newest.message,
+      combinedMessage,
+      leader.correlationId,
+      undefined,
+      newest.guildContextToPass,
+      newest.isProactiveAnswer,
+      {
+        ...(burstForContext ? { burst: burstForContext } : {}),
+        ...(landedNote ? { landedWhileThinking: landedNote } : {}),
+      }
+    );
+  } catch (error) {
+    await reportMessageHandlerError(newest.message, leader.correlationId, newest.shortId, error);
   }
 }
 
@@ -835,6 +983,7 @@ const STEPS: ReadonlyArray<readonly [name: string, step: Step]> = [
   ['speak-gate', speakGate],
   ['empty-mention', emptyMention],
   ['burst-guard', burstGuard],
+  ['record-activity', recordActivity],
   ['respond-or-observe', respondOrObserve],
   ['cleanup-correlation', cleanupCorrelation],
 ];

@@ -23,6 +23,7 @@ import {
   renderDiscordTranscript,
   DEFAULT_TRANSCRIPT_MAX_TOKENS,
   groupContextByCategory,
+  type DiscordHistoryEntry,
 } from './sources/transcript.js';
 // Extracted context-source builders (behavior-identical; see each module header).
 import {
@@ -190,13 +191,7 @@ export class ContextAlchemy {
       channelId?: string;
       source?: string;
       // Discord channel history - source of truth for DMs (includes webhook/n8n messages)
-      discordChannelHistory?: Array<{
-        author: string;
-        content: string;
-        timestamp: string;
-        isBot: boolean;
-        isSelf?: boolean; // true only for Artie's own messages (optional for rolling deploys)
-      }>;
+      discordChannelHistory?: DiscordHistoryEntry[];
       // Full Discord context (for guild knowledge, proactive answering, etc.)
       discordContext?: Record<string, any>;
       // Context Alchemy observability: trace ID for metrics capture
@@ -698,6 +693,30 @@ Important:
         .map((m: any) => `@${m.displayName || m.username}`)
         .join(', ');
       parts.push(`🏷️  Mentions: ${mentionNames}`);
+    }
+
+    // Burst debounce (gateway 3-ask-engine/burst.ts): several people's messages, batched
+    // into this one turn because they arrived within the same short window. The combined
+    // text in <user_message> already carries each author's line ("Alice: ...\nBob: ..."),
+    // so this is just the headline — it's one reply answering several messages, not one
+    // person who said several things.
+    if (Array.isArray(ctx.burst) && ctx.burst.length > 1) {
+      const authors = Array.from(new Set(ctx.burst.map((b: any) => b.author))).join(', ');
+      parts.push(
+        `📦 This turn answers ${ctx.burst.length} messages that arrived together (${authors}) — see <user_message> below for who said what. Address the burst as a whole; don't treat it as one person's monologue.`
+      );
+    }
+
+    // "Landed while you were thinking" (part 2b): other channel activity that happened
+    // while this turn was being gathered/answered. A nudge, not an instruction — he decides
+    // whether it's still worth mentioning.
+    if (typeof ctx.landedWhileThinking === 'string' && ctx.landedWhileThinking.trim()) {
+      parts.push(`⏳ ${ctx.landedWhileThinking.trim()}`);
+    }
+
+    // Recent reactions to Artie's own messages (part 3 — real-time, not batch-processed).
+    if (typeof ctx.recentReactions === 'string' && ctx.recentReactions.trim()) {
+      parts.push(`🪞 ${ctx.recentReactions.trim()}`);
     }
 
     // His own spend/mode/fallback meter (he asked for it). getBrownoutMode serves a cached

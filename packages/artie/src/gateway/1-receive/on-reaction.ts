@@ -22,6 +22,7 @@ import { isBlockedUser } from '../../shared/blocklist.js';
 import { telemetry } from '../telemetry.js';
 import { generateCorrelationId, getShortCorrelationId } from '../correlation.js';
 import { processUserIntent } from '../4-reply/stream-reply.js';
+import { recordReaction } from './reaction-log.js';
 
 // Import capabilities client for trace feedback correlation
 import { capabilitiesClient } from '../3-ask-engine/engine-client.js';
@@ -190,6 +191,18 @@ export function setupReactionHandler(client: Client) {
 
         // Cache this reaction
         reactionCache.set(reactionKey, now);
+
+        // Real-time reaction log (part 3): record EVERY emoji here, not just the ones
+        // the switch below tracks for sentiment/regenerate — "I want to see it then" means
+        // all of them, surfaced compactly in context (see reaction-log.ts).
+        recordReaction({
+          messageId: reaction.message.id,
+          channelId: reaction.message.channelId,
+          emoji,
+          userLabel: user.displayName || user.username || user.id,
+          messageExcerpt: reaction.message.content?.slice(0, 120) || undefined,
+          at: now,
+        });
 
         // Handle different reaction types
         // At this point, reaction has been fetched and is no longer partial
