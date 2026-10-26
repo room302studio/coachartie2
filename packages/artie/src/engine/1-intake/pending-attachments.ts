@@ -113,11 +113,21 @@ export function readAnalysis(
     const content = fs.readFileSync(filePath, 'utf-8');
     const lines = content.split('\n');
     const filenameLine = lines.find((l) => l.startsWith('FILENAME:'));
-    const filename = filenameLine ? filenameLine.replace('FILENAME:', '').trim() : 'unknown';
+    let filename: string;
+    if (filenameLine) {
+      filename = filenameLine.replace('FILENAME:', '').trim();
+    } else {
+      filename = 'unknown';
+    }
 
     // Everything after the --- line is the summary
     const separatorIndex = content.indexOf('---\n');
-    const summary = separatorIndex >= 0 ? content.slice(separatorIndex + 4) : content;
+    let summary: string;
+    if (separatorIndex >= 0) {
+      summary = content.slice(separatorIndex + 4);
+    } else {
+      summary = content;
+    }
 
     return { filename, summary, age: Math.round(ageMs / 60000) };
   } catch (err) {
@@ -232,7 +242,10 @@ export function clearStoredFile(userId: string, _fileType?: string): void {
 
 export function getAllStoredFiles(userId: string): StoredAnalyzedFile[] {
   const file = getStoredFile(userId);
-  return file ? [file] : [];
+  if (file) {
+    return [file];
+  }
+  return [];
 }
 
 // Metro-specific aliases

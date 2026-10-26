@@ -35,6 +35,16 @@ async function releaseUserLock(userId: string): Promise<void> {
   await redis.del(lockKey);
 }
 
+/**
+ * Extract error message from Error or fallback to 'Unknown error'.
+ */
+function getErrorMessageOrUnknown(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message;
+  }
+  return 'Unknown error';
+}
+
 export async function startMessageConsumer(): Promise<Worker<IncomingMessage, void> | null> {
   const redisHost = process.env.REDIS_HOST || 'localhost';
   const redisPort = process.env.REDIS_PORT || '47320';
@@ -72,7 +82,7 @@ export async function startMessageConsumer(): Promise<Worker<IncomingMessage, vo
       respondToType: message.respondTo.type,
       messageLength: message.message.length,
       hasContext: !!message.context,
-      contextKeys: message.context ? Object.keys(message.context) : [],
+      contextKeys: Object.keys(message.context || {}),
     });
 
     const timer = performanceLogger.startTimer(`Process message ${message.id}`);
@@ -289,16 +299,17 @@ export async function startMessageConsumer(): Promise<Worker<IncomingMessage, vo
       });
       queueLogger.jobCompleted('process-message', job.id!.toString(), duration);
     } catch (error) {
+      const errorMessage = getErrorMessageOrUnknown(error);
       timer.end({
         userId: message.userId,
         messageId: message.id,
-        error: error instanceof Error ? error.message : 'Unknown error',
+        error: errorMessage,
       });
       queueLogger.jobFailed('process-message', job.id!.toString(), error as Error);
 
       // Mark job as failed if it's from API
       if (message.source === 'api' && message.respondTo.type === 'api') {
-        jobTracker.failJob(message.id, error instanceof Error ? error.message : 'Unknown error');
+        jobTracker.failJob(message.id, errorMessage);
         logger.info(`📊 Job ${message.id} marked as failed`);
       }
 
