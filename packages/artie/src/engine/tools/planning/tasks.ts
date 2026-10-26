@@ -245,9 +245,12 @@ class TodoService {
           .map((l: any) => `"${l.name}" (${l.pending_count}/${l.total_count} items)`)
           .join(', ');
 
-        const suggestText = suggestions
-          ? `\n\nYour actual lists: ${suggestions}`
-          : '\n\nNo lists exist yet. Create one with action="create"';
+        let suggestText: string;
+        if (suggestions) {
+          suggestText = `\n\nYour actual lists: ${suggestions}`;
+        } else {
+          suggestText = '\n\nNo lists exist yet. Create one with action="create"';
+        }
 
         throw new Error(`Todo list "${listName}" not found.${suggestText}`);
       }
@@ -483,7 +486,7 @@ class TodoService {
 
       const completed = progress?.completed || 0;
       const total = progress?.total || 0;
-      const percentage = total > 0 ? Math.round((completed / total) * 100) : 0;
+      const percentage = calculatePercentage(completed, total);
 
       return `${completed}/${total} (${percentage}%)`;
     } catch (error) {
@@ -845,9 +848,12 @@ async function handleQuests(
           return 'Please provide a quest title or goal. Example: "start quest: learn TypeScript"';
         }
 
-        const steps = params.steps
-          ? params.steps.map((s, i) => ({ id: i + 1, title: s, description: s, completed: false }))
-          : generateQuestSteps(title);
+        let steps: any[];
+        if (params.steps) {
+          steps = params.steps.map((s, i) => ({ id: i + 1, title: s, description: s, completed: false }));
+        } else {
+          steps = generateQuestSteps(title);
+        }
 
         const quest: Quest = {
           id: `quest-${Date.now()}`,
@@ -1098,9 +1104,12 @@ async function handleTaskStatus(
       case 'update':
       case 'progress': {
         const taskName = params.taskName;
-        const task = taskName
-          ? userTasks.find(t => t.name.toLowerCase().includes(taskName.toLowerCase()))
-          : userTasks[userTasks.length - 1];
+        let task: any;
+        if (taskName) {
+          task = userTasks.find(t => t.name.toLowerCase().includes(taskName.toLowerCase()));
+        } else {
+          task = userTasks[userTasks.length - 1];
+        }
 
         if (!task) {
           return '⚠️ No active task to update.';
@@ -1122,9 +1131,12 @@ async function handleTaskStatus(
       case 'done':
       case 'finish': {
         const taskName = params.taskName;
-        const taskIndex = taskName
-          ? userTasks.findIndex(t => t.name.toLowerCase().includes(taskName.toLowerCase()))
-          : userTasks.length - 1;
+        let taskIndex: number;
+        if (taskName) {
+          taskIndex = userTasks.findIndex(t => t.name.toLowerCase().includes(taskName.toLowerCase()));
+        } else {
+          taskIndex = userTasks.length - 1;
+        }
 
         if (taskIndex === -1) {
           return '⚠️ No active task to complete.';
@@ -1140,9 +1152,12 @@ async function handleTaskStatus(
       case 'fail':
       case 'error': {
         const taskName = params.taskName;
-        const taskIndex = taskName
-          ? userTasks.findIndex(t => t.name.toLowerCase().includes(taskName.toLowerCase()))
-          : userTasks.length - 1;
+        let taskIndex: number;
+        if (taskName) {
+          taskIndex = userTasks.findIndex(t => t.name.toLowerCase().includes(taskName.toLowerCase()));
+        } else {
+          taskIndex = userTasks.length - 1;
+        }
 
         if (taskIndex === -1) {
           return '⚠️ No active task.';
