@@ -107,7 +107,7 @@ export class LLMResponseCoordinator {
         } else {
           messageId = `${message.id}_tool_${round}`;
         }
-        let toolChoice: string;
+        let toolChoice: 'auto' | 'none';
         if (offered.length > 0) {
           toolChoice = 'auto';
         } else {
