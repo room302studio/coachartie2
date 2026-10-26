@@ -50,12 +50,45 @@ export function selfMeterLine(
   bits.push(`mode ${status.mode}`);
   if (status.runwayHours !== null) bits.push(`credit runway ~${Math.round(status.runwayHours)}h`);
 
-  const h = [
-    hiccups.fallback && `${hiccups.fallback} model fallback${hiccups.fallback === 1 ? '' : 's'}`,
-    hiccups.failed && `${hiccups.failed} failed generation${hiccups.failed === 1 ? '' : 's'}`,
-    hiccups['reasoning-retry'] && `${hiccups['reasoning-retry']} reasoning retr${hiccups['reasoning-retry'] === 1 ? 'y' : 'ies'}`,
-  ].filter(Boolean);
-  bits.push(h.length ? `last 6h: ${h.join(', ')}` : 'last 6h: no fallbacks');
+  const fallbackMsg = hiccups.fallback ? (() => {
+    let suffix: string;
+    if (hiccups.fallback === 1) {
+      suffix = '';
+    } else {
+      suffix = 's';
+    }
+    return `${hiccups.fallback} model fallback${suffix}`;
+  })() : undefined;
+
+  const failedMsg = hiccups.failed ? (() => {
+    let suffix: string;
+    if (hiccups.failed === 1) {
+      suffix = '';
+    } else {
+      suffix = 's';
+    }
+    return `${hiccups.failed} failed generation${suffix}`;
+  })() : undefined;
+
+  const reasoningMsg = hiccups['reasoning-retry'] ? (() => {
+    let suffix: string;
+    if (hiccups['reasoning-retry'] === 1) {
+      suffix = 'y';
+    } else {
+      suffix = 'ies';
+    }
+    return `${hiccups['reasoning-retry']} reasoning retr${suffix}`;
+  })() : undefined;
+
+  const h = [fallbackMsg, failedMsg, reasoningMsg].filter(Boolean);
+
+  let lastHoursMsg: string;
+  if (h.length) {
+    lastHoursMsg = `last 6h: ${h.join(', ')}`;
+  } else {
+    lastHoursMsg = 'last 6h: no fallbacks';
+  }
+  bits.push(lastHoursMsg);
 
   let advice: string;
   if (status.mode !== 'normal') {
