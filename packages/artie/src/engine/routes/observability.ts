@@ -14,6 +14,13 @@ import { experimentManager } from '../3-context/experiments.js';
 import type { ExperimentDefinition } from '../3-context/experiments.js';
 import { hybridDataLayer } from '../memory/store.js';
 
+function calculatePercentage(numerator: number, denominator: number): number {
+  if (denominator <= 0) {
+    return 0;
+  }
+  return Math.round((numerator / denominator) * 100);
+}
+
 export const apiRouter: ReturnType<typeof Router> = Router();
 
 // ============================================================================
@@ -153,14 +160,27 @@ apiRouter.get('/traces', async (req: Request, res: Response) => {
       offset?: string;
     };
 
+    let limit: number;
+    if (query.limit) {
+      limit = parseInt(query.limit, 10);
+    } else {
+      limit = 50;
+    }
+    let offset: number;
+    if (query.offset) {
+      offset = parseInt(query.offset, 10);
+    } else {
+      offset = 0;
+    }
+
     const traces = await traceManager.queryTraces({
       guildId: query.guildId,
       userId: query.userId,
       sentiment: query.sentiment as 'positive' | 'negative' | undefined,
       modelUsed: query.modelUsed,
       experimentId: query.experimentId,
-      limit: query.limit ? parseInt(query.limit, 10) : 50,
-      offset: query.offset ? parseInt(query.offset, 10) : 0,
+      limit,
+      offset,
     });
 
     res.json({
@@ -437,10 +457,10 @@ apiRouter.get('/analysis/feedback-by-model', async (req: Request, res: Response)
       positive: r.positive || 0,
       negative: r.negative || 0,
       withFeedback: r.with_feedback || 0,
-      positiveRate:
-        (r.with_feedback as number) > 0
-          ? Math.round(((r.positive as number) / (r.with_feedback as number)) * 100)
-          : 0,
+      positiveRate: calculatePercentage(
+        r.positive as number,
+        r.with_feedback as number
+      ),
     }));
 
     res.json({
@@ -485,10 +505,10 @@ apiRouter.get('/analysis/feedback-by-memory-count', async (_req: Request, res: R
       positive: r.positive || 0,
       negative: r.negative || 0,
       withFeedback: r.with_feedback || 0,
-      positiveRate:
-        (r.with_feedback as number) > 0
-          ? Math.round(((r.positive as number) / (r.with_feedback as number)) * 100)
-          : 0,
+      positiveRate: calculatePercentage(
+        r.positive as number,
+        r.with_feedback as number
+      ),
     }));
 
     res.json({
@@ -535,10 +555,10 @@ apiRouter.get('/analysis/rule-effectiveness', async (_req: Request, res: Respons
       positive: r.positive || 0,
       negative: r.negative || 0,
       withFeedback: r.with_feedback || 0,
-      positiveRate:
-        (r.with_feedback as number) > 0
-          ? Math.round(((r.positive as number) / (r.with_feedback as number)) * 100)
-          : 0,
+      positiveRate: calculatePercentage(
+        r.positive as number,
+        r.with_feedback as number
+      ),
     }));
 
     res.json({
@@ -620,16 +640,23 @@ apiRouter.get('/memories/recall-history', (_req: Request, res: Response) => {
       ) || [];
 
     res.json({
-      recalls: recalls.map((r: Record<string, unknown>) => ({
-        id: r.id,
-        memoryId: r.memory_id,
-        memoryPreview:
-          typeof r.memory_preview === 'string' ? r.memory_preview.substring(0, 100) : '',
-        recalledAt: r.recalled_at,
-        context: r.context,
-        userId: r.user_id,
-        guildId: r.guild_id,
-      })),
+      recalls: recalls.map((r: Record<string, unknown>) => {
+        let memoryPreview: string;
+        if (typeof r.memory_preview === 'string') {
+          memoryPreview = r.memory_preview.substring(0, 100);
+        } else {
+          memoryPreview = '';
+        }
+        return {
+          id: r.id,
+          memoryId: r.memory_id,
+          memoryPreview,
+          recalledAt: r.recalled_at,
+          context: r.context,
+          userId: r.user_id,
+          guildId: r.guild_id,
+        };
+      }),
       count: recalls.length,
       timestamp: new Date().toISOString(),
     });
@@ -750,9 +777,10 @@ apiRouter.get('/analytics/capabilities/usage', (_req: Request, res: Response) =>
         action: r.action,
         total: r.total,
         failures: r.failures || 0,
-        failureRate: (r.total as number) > 0
-          ? Math.round(((r.failures as number || 0) / (r.total as number)) * 100)
-          : 0,
+        failureRate: calculatePercentage(
+          r.failures as number || 0,
+          r.total as number
+        ),
         avgDurationMs: r.avg_duration_ms,
         maxDurationMs: r.max_duration_ms,
       })),
