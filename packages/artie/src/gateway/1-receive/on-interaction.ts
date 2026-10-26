@@ -10,6 +10,7 @@ import {
   PermissionsBitField,
 } from 'discord.js';
 import { logger } from '../../shared/logger.js';
+import { getErrorMessage, getErrorStackOrUndefined } from '../../shared/errors.js';
 import { canDMForTasks } from '../../shared/config/owner.js';
 import { logDMGate } from '../../shared/dm-pairing.js';
 import { globalCommands } from '../commands/registry.js';
@@ -71,9 +72,12 @@ export function setupInteractionHandler(client: Client) {
       logDMGate('blocked_command', {
         userId: interaction.user.id,
         username: interaction.user.username,
-        detail: interaction.isChatInputCommand()
-          ? `/${interaction.commandName}`
-          : `interaction type ${interaction.type}`,
+        detail: (() => {
+          if (interaction.isChatInputCommand()) {
+            return `/${interaction.commandName}`;
+          }
+          return `interaction type ${interaction.type}`;
+        })(),
       });
       if (interaction.isRepliable()) {
         await interaction
@@ -181,8 +185,8 @@ async function handleSlashCommand(interaction: ChatInputCommandInteraction) {
     logger.error(`Command failed [${shortId}]:`, {
       correlationId,
       command: interaction.commandName,
-      error: error instanceof Error ? error.message : String(error),
-      stack: error instanceof Error ? error.stack : undefined,
+      error: getErrorMessage(error),
+      stack: getErrorStackOrUndefined(error),
       duration: `${duration}ms`,
       userId: interaction.user.id,
     });
@@ -191,7 +195,7 @@ async function handleSlashCommand(interaction: ChatInputCommandInteraction) {
       'command_failed',
       {
         command: interaction.commandName,
-        error: error instanceof Error ? error.message : String(error),
+        error: getErrorMessage(error),
         duration,
       },
       correlationId,
@@ -211,7 +215,7 @@ async function handleSlashCommand(interaction: ChatInputCommandInteraction) {
     } catch (replyError) {
       logger.error(`Failed to send error reply [${shortId}]:`, {
         correlationId,
-        replyError: replyError instanceof Error ? replyError.message : String(replyError),
+        replyError: getErrorMessage(replyError),
       });
     }
   }
@@ -731,9 +735,12 @@ async function handleModalSubmit(interaction: ModalSubmitInteraction): Promise<v
       unlockedAchievements = diffAchievements(before, after);
     }
 
-    const payload = isLast
-      ? buildDailyResultMessage(updatedPlay, puzzle, interaction.user.username)
-      : buildDailyGameMessage(updatedPlay, puzzle);
+    let payload: Awaited<ReturnType<typeof buildDailyResultMessage>>;
+    if (isLast) {
+      payload = buildDailyResultMessage(updatedPlay, puzzle, interaction.user.username);
+    } else {
+      payload = buildDailyGameMessage(updatedPlay, puzzle);
+    }
 
     // Edit the ephemeral message the Guess button lived on. Only available
     // when the modal was launched from a message component (which it was —
@@ -815,11 +822,17 @@ async function handleAskQuestionResponse(interaction: ButtonInteraction | Select
       flags: MessageFlags.Ephemeral,
     });
 
+    let answerValue: string | string[];
+    if (Array.isArray(answer)) {
+      answerValue = answer.join(',');
+    } else {
+      answerValue = answer;
+    }
     telemetry.logEvent(
       'ask_question_answered',
       {
         customId: interaction.customId,
-        answer: Array.isArray(answer) ? answer.join(',') : answer,
+        answer: answerValue,
       },
       correlationId,
       interaction.user.id
@@ -831,7 +844,7 @@ async function handleAskQuestionResponse(interaction: ButtonInteraction | Select
   } catch (error) {
     logger.error(`Failed to handle ask-question response [${shortId}]:`, {
       correlationId,
-      error: error instanceof Error ? error.message : String(error),
+      error: getErrorMessage(error),
       customId: interaction.customId,
     });
 
