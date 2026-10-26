@@ -208,9 +208,9 @@ async function createSystemStatusEmbed(): Promise<EmbedBuilder> {
   try {
     // Test capabilities service (the engine's GET /health, in-process since wave 9)
     const capabilitiesStart = Date.now();
-    const testResult = await Promise.race([
+    const testResult = await Promise.race<boolean>([
       engine.healthSnapshot().then((r) => engine.isOk(r)),
-      new Promise((resolve) => setTimeout(() => resolve(false), 5000)),
+      new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 5000)),
     ]);
     const capabilitiesLatency = Date.now() - capabilitiesStart;
 
