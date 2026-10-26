@@ -278,14 +278,22 @@ export class RobustCapabilityExecutor {
       }
     }
 
+    // Every model-originated call (native and legacy XML loop) passes through here, so this is
+    // where the approval-gate bypass flag gets stripped for both. The approvals tool replays
+    // through capabilityRegistry.execute directly and keeps its confirmed:true.
+    const { confirmed: _ignoredConfirmed, ...ungatedParams } = paramsWithContext as Record<
+      string,
+      unknown
+    >;
+
     logger.info(
-      `🎯 REGISTRY: Executing ${capability.name}:${capability.action} with params: ${JSON.stringify(paramsWithContext)}`
+      `🎯 REGISTRY: Executing ${capability.name}:${capability.action} with params: ${JSON.stringify(ungatedParams)}`
     );
 
     return await capabilityRegistry.execute(
       capability.name,
       capability.action,
-      paramsWithContext,
+      ungatedParams,
       interpolatedContent,
       {
         userId: context.userId,

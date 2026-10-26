@@ -269,7 +269,9 @@ respect, not an explanation that belongs in this file instead.
    the queue ever actually fills up.
 5. **`variable`** needed no code change (already excluded from the native roster via
    `XML_ONLY_TOOLS`), confirmed rather than assumed by reading `mode.ts`.
-6. **The `confirmed`-stripping fix is native-loop-only.** The legacy XML loop has its own
+6. **RESOLVED in review (2026-10-26):** `confirmed` is now also stripped in
+   `retry.ts`'s `executeWithRetry`, the choke point both loops share. The original note
+   follows. **The `confirmed`-stripping fix is native-loop-only.** The legacy XML loop has its own
    call-execution site (`5-tool-loop/loop.ts`) that also eventually reaches
    `registry.execute()`; it wasn't given the same strip because its code is `// XML-LOOP`-
    marked and frozen until the soak ends, and native is the live default. If `TOOL_LOOP=xml`
