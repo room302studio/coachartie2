@@ -12,6 +12,7 @@
  */
 
 import { logger } from '../../shared/logger.js';
+import { getErrorMessage } from '../../shared/errors.js';
 import type {
   RegisteredCapability,
   CapabilityContext,
@@ -45,6 +46,39 @@ interface HNStory {
 }
 
 /**
+ * Get days back from 'since' parameter
+ */
+function getDaysBack(since: string): number {
+  if (since === 'monthly') {
+    return 30;
+  }
+  if (since === 'weekly') {
+    return 7;
+  }
+  return 1;
+}
+
+/**
+ * Format language label
+ */
+function formatLanguageLabel(language: string | undefined): string {
+  if (language) {
+    return ` (${language})`;
+  }
+  return '';
+}
+
+/**
+ * Format stars change
+ */
+function formatStarsChange(todayStars: number): string {
+  if (todayStars > 0) {
+    return ` (+${todayStars} today)`;
+  }
+  return '';
+}
+
+/**
  * Fetch trending GitHub repositories using GitHub Search API
  * Searches for repos created in the last week, sorted by stars
  */
@@ -52,7 +86,7 @@ async function fetchGitHubTrending(language?: string, since: string = 'daily'): 
   try {
     // Calculate date range based on 'since' parameter
     const now = new Date();
-    const daysBack = since === 'monthly' ? 30 : since === 'weekly' ? 7 : 1;
+    const daysBack = getDaysBack(since);
     const dateFrom = new Date(now.getTime() - daysBack * 24 * 60 * 60 * 1000);
     const dateStr = dateFrom.toISOString().split('T')[0];
 
@@ -160,7 +194,7 @@ function formatGitHubTrending(repos: GitHubRepo[]): string {
   }
 
   const lines = repos.map((repo, i) => {
-    const stars = repo.todayStars > 0 ? ` (+${repo.todayStars} today)` : '';
+    const stars = formatStarsChange(repo.todayStars);
     return `**${i + 1}. [${repo.fullName}](${repo.url})**\n   ⭐ ${repo.stars.toLocaleString()}${stars} • ${repo.language}\n   ${repo.description?.slice(0, 100) || 'No description'}`;
   });
 
@@ -199,7 +233,7 @@ async function handleTrendWatcher(
       case 'github':
       case 'repos': {
         const repos = await fetchGitHubTrending(language, timeRange);
-        const langLabel = language ? ` (${language})` : '';
+        const langLabel = formatLanguageLabel(language);
         return `🔥 **GitHub Trending${langLabel} - ${timeRange}**\n\n${formatGitHubTrending(repos.slice(0, limit))}`;
       }
 
@@ -219,7 +253,7 @@ async function handleTrendWatcher(
           fetchHackerNews(5),
         ]);
 
-        const langLabel = language ? ` (${language})` : '';
+        const langLabel = formatLanguageLabel(language);
         const githubSection = `🔥 **GitHub Trending${langLabel}**\n\n${formatGitHubTrending(repos.slice(0, 5))}`;
         const hnSection = `📰 **Hacker News**\n\n${formatHackerNews(stories)}`;
 
@@ -228,7 +262,7 @@ async function handleTrendWatcher(
     }
   } catch (error) {
     logger.error('Trend watcher error:', error);
-    return `❌ Error fetching trends: ${error instanceof Error ? error.message : 'Unknown error'}`;
+    return `❌ Error fetching trends: ${getErrorMessage(error)}`;
   }
 }
 
