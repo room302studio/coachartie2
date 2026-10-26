@@ -83,6 +83,13 @@ export class PromptManager {
         return null;
       }
 
+      let metadata: any;
+      if (typeof row.metadata === 'string') {
+        metadata = JSON.parse(row.metadata);
+      } else {
+        metadata = row.metadata;
+      }
+
       const prompt: PromptTemplate = {
         id: row.id,
         name: row.name,
@@ -91,7 +98,7 @@ export class PromptManager {
         description: row.description,
         category: row.category,
         isActive: Boolean(row.is_active),
-        metadata: typeof row.metadata === 'string' ? JSON.parse(row.metadata) : row.metadata,
+        metadata,
         createdAt: row.created_at,
         updatedAt: row.updated_at,
       };
@@ -274,6 +281,11 @@ export class PromptManager {
     try {
       const db = getSyncDb();
 
+      let isActiveValue = 0;
+      if (prompt.isActive) {
+        isActiveValue = 1;
+      }
+
       const result = db.run(
         `INSERT INTO prompts (name, content, description, category, is_active, metadata)
          VALUES (?, ?, ?, ?, ?, ?)`,
@@ -282,7 +294,7 @@ export class PromptManager {
           prompt.content,
           prompt.description || null,
           prompt.category,
-          prompt.isActive ? 1 : 0,
+          isActiveValue,
           JSON.stringify(prompt.metadata),
         ]
       );
@@ -325,18 +337,27 @@ export class PromptManager {
 
       const rows = db.all(query, params);
 
-      return rows.map((row: DatabaseRow) => ({
-        id: row.id,
-        name: row.name,
-        version: row.version,
-        content: row.content,
-        description: row.description,
-        category: row.category,
-        isActive: Boolean(row.is_active),
-        metadata: typeof row.metadata === 'string' ? JSON.parse(row.metadata) : row.metadata,
-        createdAt: row.created_at,
-        updatedAt: row.updated_at,
-      }));
+      return rows.map((row: DatabaseRow) => {
+        let metadata: any;
+        if (typeof row.metadata === 'string') {
+          metadata = JSON.parse(row.metadata);
+        } else {
+          metadata = row.metadata;
+        }
+
+        return {
+          id: row.id,
+          name: row.name,
+          version: row.version,
+          content: row.content,
+          description: row.description,
+          category: row.category,
+          isActive: Boolean(row.is_active),
+          metadata,
+          createdAt: row.created_at,
+          updatedAt: row.updated_at,
+        };
+      });
     } catch (error) {
       logger.error('❌ Failed to list prompts:', error);
       throw error;
@@ -361,18 +382,27 @@ export class PromptManager {
         [name]
       );
 
-      return rows.map((row: DatabaseRow) => ({
-        id: row.id,
-        name: row.name,
-        version: row.version,
-        content: row.content,
-        description: row.description,
-        category: row.category,
-        isActive: Boolean(row.is_active),
-        metadata: typeof row.metadata === 'string' ? JSON.parse(row.metadata) : row.metadata,
-        createdAt: row.created_at,
-        updatedAt: row.updated_at,
-      }));
+      return rows.map((row: DatabaseRow) => {
+        let metadata: any;
+        if (typeof row.metadata === 'string') {
+          metadata = JSON.parse(row.metadata);
+        } else {
+          metadata = row.metadata;
+        }
+
+        return {
+          id: row.id,
+          name: row.name,
+          version: row.version,
+          content: row.content,
+          description: row.description,
+          category: row.category,
+          isActive: Boolean(row.is_active),
+          metadata,
+          createdAt: row.created_at,
+          updatedAt: row.updated_at,
+        };
+      });
     } catch (error) {
       logger.error(`❌ Failed to get prompt history for '${name}':`, error);
       throw error;
