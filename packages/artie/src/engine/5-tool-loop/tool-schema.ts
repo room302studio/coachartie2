@@ -54,7 +54,21 @@ const CONTENT_DESCRIPTION = 'Free text body (lyrics, a fact to remember, code, a
 const OPEN_TAG = new RegExp(`<capability\\b${TAG_ATTRS}\\/?>`);
 
 function clip(text: string, max: number): string {
-  return text.length <= max ? text : `${text.slice(0, max - 1).trimEnd()}…`;
+  if (text.length <= max) {
+    return text;
+  }
+  return `${text.slice(0, max - 1).trimEnd()}…`;
+}
+
+/** Compare two strings for sorting. Returns -1, 0, or 1. */
+function compareStrings(a: string, b: string): number {
+  if (a < b) {
+    return -1;
+  }
+  if (a > b) {
+    return 1;
+  }
+  return 0;
 }
 
 /** Optional param names seen in a capability's XML examples, sorted. */
@@ -106,9 +120,15 @@ export function capabilityToTool(cap: RegisteredCapability): ToolDefinition {
   const examples = (cap.examples ?? [])
     .slice(0, EXAMPLES_SHOWN)
     .map((e) => clip(toCallNotation(e.trim()).replace(/\s+/g, ' '), EXAMPLE_MAX));
+  let exampleLine: string;
+  if (examples.length) {
+    exampleLine = `e.g. ${examples.join(' ; ')}`;
+  } else {
+    exampleLine = '';
+  }
   const description = [
     clip(firstLine || `The ${cap.name} capability.`, DESCRIPTION_FIRST_LINE_MAX),
-    examples.length ? `e.g. ${examples.join(' ; ')}` : '',
+    exampleLine,
   ]
     .filter(Boolean)
     .join(' ');
@@ -131,8 +151,24 @@ export function capabilityToTool(cap: RegisteredCapability): ToolDefinition {
 export function registryToTools(capabilities: RegisteredCapability[]): ToolDefinition[] {
   return [...capabilities]
     .filter((cap) => !XML_ONLY_TOOLS.has(cap.name))
-    .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
+    .sort((a, b) => compareStrings(a.name, b.name))
     .map(capabilityToTool);
+}
+
+/** Ensure a value is a string, or stringify it. */
+function ensureString(value: unknown): string {
+  if (typeof value === 'string') {
+    return value;
+  }
+  return JSON.stringify(value);
+}
+
+/** Ensure a value is a string, or return undefined. */
+function ensureStringOrUndefined(value: unknown): string | undefined {
+  if (typeof value === 'string') {
+    return value;
+  }
+  return undefined;
 }
 
 /**
@@ -152,12 +188,12 @@ export function toolCallToInvocation(toolName: string, args: Record<string, unkn
   const params: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(rest)) {
     if (value === undefined || value === null) continue;
-    params[key] = typeof value === 'string' ? value : JSON.stringify(value);
+    params[key] = ensureString(value);
   }
   return {
     name: toolName,
-    action: typeof action === 'string' ? action : undefined,
-    content: typeof content === 'string' ? content : undefined,
+    action: ensureStringOrUndefined(action),
+    content: ensureStringOrUndefined(content),
     params,
   };
 }

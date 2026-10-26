@@ -108,7 +108,12 @@ export const creditStatusCapability: RegisteredCapability = {
           let alertMessage = '🚨 **Active Credit Alerts (' + activeAlerts.length + '):**\n\n';
 
           activeAlerts.forEach((alert, _index) => {
-            const emoji = alert.severity === 'critical' ? '🔴' : '⚠️';
+            let emoji: string;
+            if (alert.severity === 'critical') {
+              emoji = '🔴';
+            } else {
+              emoji = '⚠️';
+            }
             alertMessage += emoji + ' **' + alert.alert_type.toUpperCase() + '**\n';
             alertMessage += '   ' + alert.message + '\n';
             if (alert.current_value !== undefined && alert.threshold_value !== undefined) {

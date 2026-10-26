@@ -147,6 +147,12 @@ export class SecurityMonitor {
    * Log the security incident with appropriate level
    */
   private logIncident(incident: SecurityIncident, contentPreview: string): void {
+    let ellipsis: string;
+    if (contentPreview.length < incident.originalLength) {
+      ellipsis = '...';
+    } else {
+      ellipsis = '';
+    }
     const logData = {
       userId: incident.userId,
       messageId: incident.messageId,
@@ -154,8 +160,7 @@ export class SecurityMonitor {
       patterns: incident.patterns,
       severity: incident.severity,
       reductionPercent: incident.reductionPercent,
-      contentPreview:
-        contentPreview + (contentPreview.length < incident.originalLength ? '...' : ''),
+      contentPreview: contentPreview + ellipsis,
     };
 
     switch (incident.severity) {

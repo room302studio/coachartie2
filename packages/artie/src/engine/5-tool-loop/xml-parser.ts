@@ -3,6 +3,7 @@
 import { XMLParser } from 'fast-xml-parser';
 import { logger } from '../../shared/logger.js';
 import { capabilityRegistry } from './registry.js';
+import { getErrorMessage } from '../../shared/errors.js';
 
 /**
  * LLMs write multi-line strings (song lyrics, poems) inside data='{"text":"..."}' with
@@ -59,7 +60,10 @@ function* scanSimpleTags(text: string): Generator<SimpleTag> {
     const entry = closes.get(name);
     if (!entry) return -1;
     while (entry.next < entry.at.length && entry.at[entry.next] < from) entry.next++;
-    return entry.next < entry.at.length ? entry.at[entry.next] : -1;
+    if (entry.next < entry.at.length) {
+      return entry.at[entry.next];
+    }
+    return -1;
   };
 
   const nameRe = /[\w-]+/y;
@@ -320,7 +324,7 @@ export class CapabilityXMLParser {
             content = String(params.data);
             delete params.data;
             logger.warn(
-              `⚠️ XML PARSER: Failed to parse data attribute as JSON, using as content. Error: ${error instanceof Error ? error.message : String(error)}`
+              `⚠️ XML PARSER: Failed to parse data attribute as JSON, using as content. Error: ${getErrorMessage(error)}`
             );
           }
         }
@@ -506,10 +510,16 @@ export class CapabilityXMLParser {
 
         logger.info(`🎯 SHORTHAND TAG: <${tagName}> → ${alias.name}:${alias.action}`);
 
+        let capabilityContent: string;
+        if (alias.pathParam) {
+          capabilityContent = ''; // Don't duplicate content if it's a path
+        } else {
+          capabilityContent = content.trim();
+        }
         capabilities.push({
           name: alias.name,
           action: alias.action,
-          content: alias.pathParam ? '' : content.trim(), // Don't duplicate content if it's a path
+          content: capabilityContent,
           params,
         });
         continue;

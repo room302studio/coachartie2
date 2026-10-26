@@ -7,6 +7,20 @@
 import { Registry, Counter, Gauge, Histogram, collectDefaultMetrics } from 'prom-client';
 import { logger } from '../../shared/logger.js';
 
+function getModelProvider(model: string): string {
+  if (model.includes('/')) {
+    return model.split('/')[0];
+  }
+  return 'unknown';
+}
+
+function getStatusString(success: boolean): string {
+  if (success) {
+    return 'success';
+  }
+  return 'error';
+}
+
 // Create a custom registry
 export const metricsRegistry = new Registry();
 
@@ -129,7 +143,7 @@ export function recordApiCall(params: {
   const { model, inputTokens, outputTokens, cost, durationMs, success = true } = params;
 
   // Parse provider from model string (e.g., "openai/gpt-4o" -> "openai")
-  const provider = model.includes('/') ? model.split('/')[0] : 'unknown';
+  const provider = getModelProvider(model);
 
   // Reset daily costs at midnight
   const today = new Date().toDateString();
@@ -144,7 +158,7 @@ export function recordApiCall(params: {
   apiCostPerCall.observe({ model, provider }, cost);
   tokensInputTotal.inc({ model, provider }, inputTokens);
   tokensOutputTotal.inc({ model, provider }, outputTokens);
-  apiCallsTotal.inc({ model, provider, status: success ? 'success' : 'error' });
+  apiCallsTotal.inc({ model, provider, status: getStatusString(success) });
 
   if (durationMs) {
     apiCallDuration.observe({ model, provider }, durationMs / 1000);
@@ -186,7 +200,7 @@ export function recordCapabilityUsage(params: {
     capability,
     action,
     guild,
-    status: success ? 'success' : 'error',
+    status: getStatusString(success),
   });
 }
 

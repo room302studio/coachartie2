@@ -11,6 +11,23 @@ import type { BrownoutStatus } from './brownout.js';
 
 export type LlmHiccup = 'fallback' | 'failed' | 'reasoning-retry';
 
+function pluralSuffix(count: number, singular: string = ''): string {
+  if (count === 1) {
+    return singular;
+  }
+  if (singular === 'y') {
+    return 'ies';
+  }
+  return singular + 's';
+}
+
+function formatHiccupSummary(hiccupMessages: string[]): string {
+  if (hiccupMessages.length) {
+    return `last 6h: ${hiccupMessages.join(', ')}`;
+  }
+  return 'last 6h: no fallbacks';
+}
+
 const WINDOW_MS = 6 * 60 * 60 * 1000;
 const MAX_EVENTS = 200;
 const events: Array<{ at: number; kind: LlmHiccup }> = [];
@@ -51,11 +68,11 @@ export function selfMeterLine(
   if (status.runwayHours !== null) bits.push(`credit runway ~${Math.round(status.runwayHours)}h`);
 
   const h = [
-    hiccups.fallback && `${hiccups.fallback} model fallback${hiccups.fallback === 1 ? '' : 's'}`,
-    hiccups.failed && `${hiccups.failed} failed generation${hiccups.failed === 1 ? '' : 's'}`,
-    hiccups['reasoning-retry'] && `${hiccups['reasoning-retry']} reasoning retr${hiccups['reasoning-retry'] === 1 ? 'y' : 'ies'}`,
-  ].filter(Boolean);
-  bits.push(h.length ? `last 6h: ${h.join(', ')}` : 'last 6h: no fallbacks');
+    hiccups.fallback && `${hiccups.fallback} model fallback${pluralSuffix(hiccups.fallback)}`,
+    hiccups.failed && `${hiccups.failed} failed generation${pluralSuffix(hiccups.failed)}`,
+    hiccups['reasoning-retry'] && `${hiccups['reasoning-retry']} reasoning retr${pluralSuffix(hiccups['reasoning-retry'], 'y')}`,
+  ].filter(Boolean) as string[];
+  bits.push(formatHiccupSummary(h));
 
   let advice: string;
   if (status.mode !== 'normal') {

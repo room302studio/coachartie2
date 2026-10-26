@@ -152,7 +152,7 @@ export class GlobalVariableStore {
     return text.replace(/\{\{(\w+)\}\}/g, (match, key) => {
       const value = values.get(key);
       if (value !== undefined) {
-        return typeof value === 'object' ? JSON.stringify(value) : String(value);
+        return serializeValue(value);
       }
       return match; // Leave unchanged if not found
     });
@@ -212,6 +212,28 @@ export class GlobalVariableStore {
   }
 }
 
+function serializeValue(value: any): string {
+  if (typeof value === 'object') {
+    return JSON.stringify(value);
+  }
+  return String(value);
+}
+
+function formatValuePreview(value: any, maxLength: number): string {
+  const serialized = serializeValue(value);
+  if (serialized.length > maxLength) {
+    return serialized.substring(0, maxLength) + '...';
+  }
+  return serialized;
+}
+
+function formatSuggestions(availableKeys: string[]): string {
+  if (availableKeys.length > 0) {
+    return `\n\nAvailable variables: ${availableKeys.join(', ')}`;
+  }
+  return '\n\nNo variables exist. Use action="set" to create one.';
+}
+
 /**
  * Variable store capability handler
  */
@@ -250,10 +272,7 @@ async function handleVariableAction(params: VariableParams, content?: string): P
         }
 
         await store.set(String(key), parsedValue, params.description as string);
-        const preview =
-          typeof parsedValue === 'object'
-            ? JSON.stringify(parsedValue).substring(0, 100) + '...'
-            : parsedValue;
+        const preview = formatValuePreview(parsedValue, 100);
         return `✅ Variable "${key}" set to: ${preview}`;
       }
 
@@ -267,14 +286,11 @@ async function handleVariableAction(params: VariableParams, content?: string): P
 
         const value = await store.get(String(key));
         if (value !== undefined) {
-          return typeof value === 'object' ? JSON.stringify(value) : String(value);
+          return serializeValue(value);
         } else {
           const allVars = await store.list();
           const availableKeys = Object.keys(allVars);
-          const suggestions =
-            availableKeys.length > 0
-              ? `\n\nAvailable variables: ${availableKeys.join(', ')}`
-              : '\n\nNo variables exist. Use action="set" to create one.';
+          const suggestions = formatSuggestions(availableKeys);
           throw new Error(`Variable "${key}" not found.${suggestions}`);
         }
       }
@@ -302,10 +318,7 @@ async function handleVariableAction(params: VariableParams, content?: string): P
         const varList = keys
           .map((key) => {
             const value = variables[key];
-            const preview =
-              typeof value === 'object'
-                ? JSON.stringify(value).substring(0, 50) + '...'
-                : String(value).substring(0, 50);
+            const preview = formatValuePreview(value, 50);
             return `• ${key}: ${preview}`;
           })
           .join('\n');
@@ -325,10 +338,7 @@ async function handleVariableAction(params: VariableParams, content?: string): P
         if (!deleted) {
           const allVars = await store.list();
           const availableKeys = Object.keys(allVars);
-          const suggestions =
-            availableKeys.length > 0
-              ? `\n\nAvailable variables: ${availableKeys.join(', ')}`
-              : '\n\nNo variables exist.';
+          const suggestions = formatSuggestions(availableKeys);
           throw new Error(`Variable "${key}" not found.${suggestions}`);
         }
         return `✅ Variable "${key}" deleted`;
@@ -336,7 +346,13 @@ async function handleVariableAction(params: VariableParams, content?: string): P
 
       case 'clear': {
         const count = await store.clear();
-        return `✅ Cleared ${count} global variable${count === 1 ? '' : 's'}`;
+        let pluralSuffix: string;
+        if (count === 1) {
+          pluralSuffix = '';
+        } else {
+          pluralSuffix = 's';
+        }
+        return `✅ Cleared ${count} global variable${pluralSuffix}`;
       }
 
       default:

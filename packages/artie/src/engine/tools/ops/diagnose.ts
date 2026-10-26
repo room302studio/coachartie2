@@ -362,7 +362,13 @@ Usage: action="error" error="your error message here"`;
 
           // DNS check
           const dns = await safeExec('nslookup google.com 2>&1 | head -5');
-          lines.push('', 'DNS:', dns.includes('Address') ? '  ✓ DNS working' : '  ✗ DNS issues');
+          let dnsStatus: string;
+          if (dns.includes('Address')) {
+            dnsStatus = '  ✓ DNS working';
+          } else {
+            dnsStatus = '  ✗ DNS issues';
+          }
+          lines.push('', 'DNS:', dnsStatus);
 
           // Active connections
           const conns = await safeExec('ss -tn state established 2>/dev/null | head -10');

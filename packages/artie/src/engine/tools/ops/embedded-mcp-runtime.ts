@@ -1,6 +1,14 @@
 import { logger } from '../../../shared/logger.js';
 import { readFileSync } from 'fs';
 
+/** Extract error message from an error object, or return a fallback. */
+function getErrorMessage(error: unknown, fallback: string): string {
+  if (error instanceof Error) {
+    return error.message;
+  }
+  return fallback;
+}
+
 /**
  * Embedded MCP Tool Interface
  */
@@ -60,7 +68,8 @@ class WikipediaSearchTool implements EmbeddedMCPTool {
       }
     } catch (error) {
       logger.error('Wikipedia search failed:', error);
-      return `Wikipedia search failed: ${error instanceof Error ? error.message : 'Unknown error'}`;
+      const errorMsg = getErrorMessage(error, 'Unknown error');
+      return `Wikipedia search failed: ${errorMsg}`;
     }
   }
 }
@@ -141,9 +150,8 @@ class CalculatorTool implements EmbeddedMCPTool {
       return `${expression} = ${result}`;
     } catch (error) {
       logger.error('Calculation failed:', error);
-      throw new Error(
-        `Calculation failed: ${error instanceof Error ? error.message : 'Invalid expression'}`
-      );
+      const errorMsg = getErrorMessage(error, 'Invalid expression');
+      throw new Error(`Calculation failed: ${errorMsg}`);
     }
   }
 }
@@ -188,7 +196,12 @@ class OwnTracksLocationTool implements EmbeddedMCPTool {
         return 'No location data available from OwnTracks';
       }
 
-      const timestamp = data.tst ? new Date(data.tst * 1000).toISOString() : 'unknown';
+      let timestamp: string;
+      if (data.tst) {
+        timestamp = new Date(data.tst * 1000).toISOString();
+      } else {
+        timestamp = 'unknown';
+      }
       return JSON.stringify({
         lat: data.lat,
         lon: data.lon,
@@ -198,7 +211,8 @@ class OwnTracksLocationTool implements EmbeddedMCPTool {
       });
     } catch (error) {
       logger.error('OwnTracks location fetch failed:', error);
-      return `OwnTracks location fetch failed: ${error instanceof Error ? error.message : 'Unknown error'}`;
+      const errorMsg = getErrorMessage(error, 'Unknown error');
+      return `OwnTracks location fetch failed: ${errorMsg}`;
     }
   }
 }

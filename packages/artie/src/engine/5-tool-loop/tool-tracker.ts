@@ -38,9 +38,47 @@ class CapabilityTracker {
 
     try {
       const db = getSyncDb();
-      const durationMs = data.completedAt
-        ? data.completedAt.getTime() - data.startedAt.getTime()
-        : null;
+      let durationMs: number | null;
+      if (data.completedAt) {
+        durationMs = data.completedAt.getTime() - data.startedAt.getTime();
+      } else {
+        durationMs = null;
+      }
+
+      let paramsJson: string | null;
+      if (data.params) {
+        paramsJson = JSON.stringify(data.params).slice(0, 4000);
+      } else {
+        paramsJson = null;
+      }
+
+      let resultJson: string | null;
+      if (data.result) {
+        resultJson = JSON.stringify(data.result).slice(0, 4000);
+      } else {
+        resultJson = null;
+      }
+
+      let successInt: number;
+      if (data.success) {
+        successInt = 1;
+      } else {
+        successInt = 0;
+      }
+
+      let errorType: string | null;
+      if (data.error) {
+        errorType = 'execution_error';
+      } else {
+        errorType = null;
+      }
+
+      let statusMessage: string;
+      if (data.success) {
+        statusMessage = 'success';
+      } else {
+        statusMessage = 'failed';
+      }
 
       db.run(
         `INSERT INTO capability_invocations
@@ -50,20 +88,20 @@ class CapabilityTracker {
           data.traceId || null,
           data.capabilityName,
           data.action,
-          data.params ? JSON.stringify(data.params).slice(0, 4000) : null,
-          data.result ? JSON.stringify(data.result).slice(0, 4000) : null,
+          paramsJson,
+          resultJson,
           data.startedAt.toISOString(),
           data.completedAt?.toISOString() || null,
           durationMs,
-          data.success ? 1 : 0,
-          data.error ? 'execution_error' : null,
+          successInt,
+          errorType,
           data.error?.slice(0, 1000) || null,
           data.sequenceNumber || 0,
         ]
       );
 
       logger.debug(
-        `📊 Capability invocation logged: ${data.capabilityName}:${data.action} (${data.success ? 'success' : 'failed'})`
+        `📊 Capability invocation logged: ${data.capabilityName}:${data.action} (${statusMessage})`
       );
     } catch (error) {
       logger.error('Failed to log capability invocation:', error);

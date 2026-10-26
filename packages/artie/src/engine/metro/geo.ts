@@ -221,7 +221,12 @@ export function analyzeMetroGeo(data: {
       const straightLine = turf.distance(firstPoint, lastPoint, { units: 'kilometers' });
 
       // Efficiency = straight line / actual (1.0 = perfectly straight)
-      const efficiency = straightLine > 0 ? straightLine / actualLength : 1;
+      let efficiency: number;
+      if (straightLine > 0) {
+        efficiency = straightLine / actualLength;
+      } else {
+        efficiency = 1;
+      }
 
       routeEfficiencies.push({
         name: routeName,
@@ -234,8 +239,13 @@ export function analyzeMetroGeo(data: {
   }
 
   stats.totalNetworkKm = Math.round(totalNetworkKm * 10) / 10;
-  stats.trainsPerStation =
-    stations.length > 0 ? Math.round((trains.length / stations.length) * 100) / 100 : 0;
+  let trainsPerStation: number;
+  if (stations.length > 0) {
+    trainsPerStation = Math.round((trains.length / stations.length) * 100) / 100;
+  } else {
+    trainsPerStation = 0;
+  }
+  stats.trainsPerStation = trainsPerStation;
 
   // Flag if there's a very long gap (over 5km between stations)
   if (longestGap && longestGap.distanceKm > 5) {
@@ -377,10 +387,23 @@ export function analyzeMetroGeo(data: {
     // Report dead routes
     if (deadRoutes.length > 0) {
       stats.deadRoutes = deadRoutes;
+      let pluralForm: string;
+      if (deadRoutes.length > 1) {
+        pluralForm = 's have';
+      } else {
+        pluralForm = ' has';
+      }
+      let ellipsis: string;
+      if (deadRoutes.length > 3) {
+        ellipsis = '...';
+      } else {
+        ellipsis = '';
+      }
+      const message = `${deadRoutes.length} route${pluralForm} no trains running: ${deadRoutes.slice(0, 3).join(', ')}${ellipsis}`;
       insights.push({
         type: 'warning',
         category: 'service',
-        message: `${deadRoutes.length} route${deadRoutes.length > 1 ? 's have' : ' has'} no trains running: ${deadRoutes.slice(0, 3).join(', ')}${deadRoutes.length > 3 ? '...' : ''}`,
+        message,
         details: `Ghost lines bleeding your budget. Either assign trains or delete the route.`,
       });
     }
@@ -406,6 +429,17 @@ export function analyzeMetroGeo(data: {
   return { insights, stats };
 }
 
+/** Select emoji for insight type. */
+function getInsightEmoji(type: string): string {
+  if (type === 'warning') {
+    return '⚠️';
+  }
+  if (type === 'praise') {
+    return '👏';
+  }
+  return '📊';
+}
+
 /**
  * Format geo analysis as a narrative string for the AI to use
  */
@@ -417,7 +451,7 @@ export function formatGeoInsights(result: GeoAnalysisResult): string {
   const lines: string[] = ['📍 **Network Design Feedback** _(manual fixes - not auto-repaired):_'];
 
   for (const insight of result.insights) {
-    const emoji = insight.type === 'warning' ? '⚠️' : insight.type === 'praise' ? '👏' : '📊';
+    const emoji = getInsightEmoji(insight.type);
     lines.push(`${emoji} ${insight.message}`);
     if (insight.details) {
       lines.push(`   _${insight.details}_`);

@@ -43,7 +43,10 @@ const LOG_PREFIXES = ['coach-artie-out', 'capabilities-out', 'discord-out'];
 
 function envNum(name: string, fallback: number): number {
   const n = Number(process.env[name]);
-  return Number.isFinite(n) && n > 0 ? n : fallback;
+  if (Number.isFinite(n) && n > 0) {
+    return n;
+  }
+  return fallback;
 }
 
 export class VitalsMonitor {
@@ -77,12 +80,18 @@ export class VitalsMonitor {
       const runwayHours = await this.getRunwayHours();
 
       // Always visible in prod (CONSOLE_LOG_LEVEL=warn) — this line IS the vitals feed.
+      let runwayStr: string;
+      if (runwayHours === null) {
+        runwayStr = '?';
+      } else {
+        runwayStr = `${runwayHours.toFixed(1)}h`;
+      }
       logger.warn(
         `🩺 Vitals [${Math.round(this.intervalMs / 60000)}min]: ` +
           `deadlineKills=${counts.deadlineKills} emptyGen=${counts.emptyGen} ` +
           `outOfCredits=${counts.outOfCredits} route S/M=${counts.routeSimple}/${counts.routeSmart} ` +
           `warden=${counts.warden} proxy=${counts.proxy} rl429=${counts.rl429} ` +
-          `runway=${runwayHours === null ? '?' : `${runwayHours.toFixed(1)}h`}`
+          `runway=${runwayStr}`
       );
 
       await this.maybeAlarm(counts, runwayHours, now);
@@ -197,10 +206,12 @@ export class VitalsMonitor {
       // Falls back to the constant when there is too little traffic to measure.
       const { costMonitor } = await import('../budget/usage-ledger.js');
       const measured = costMonitor.getRecentBurnPerHour();
-      const burn =
-        typeof measured === 'number' && measured > 0
-          ? measured
-          : envNum('VITALS_ASSUMED_BURN_PER_HOUR', 1.5);
+      let burn: number;
+      if (typeof measured === 'number' && measured > 0) {
+        burn = measured;
+      } else {
+        burn = envNum('VITALS_ASSUMED_BURN_PER_HOUR', 1.5);
+      }
       return balance / burn;
     } catch (error) {
       logger.warn(`🩺 Vitals: runway check failed: ${error}`);

@@ -57,11 +57,17 @@ export function decideBudgetAction(input: {
     // Manual mutes belong to a human. Never lift them, never relabel them.
     if (state.kind === 'manual') return 'none';
     // Budget mute from an earlier ET day: midnight has passed, lift it.
-    return state.day !== today ? 'unmute' : 'none';
+    if (state.day !== today) {
+      return 'unmute';
+    }
+    return 'none';
   }
   if (budgetUsd === null) return 'none';
   if (overrideDay === today) return 'none';
-  return spentUsd >= budgetUsd ? 'mute' : 'none';
+  if (spentUsd >= budgetUsd) {
+    return 'mute';
+  }
+  return 'none';
 }
 
 export interface BudgetCheckResult {
@@ -162,11 +168,13 @@ let timer: ReturnType<typeof setInterval> | null = null;
 export function startDailyBudgetWatch(intervalMs = 60_000): void {
   if (timer) return;
   const budget = getDailyBudgetUsd();
-  logger.warn(
-    budget === null
-      ? '💸 Daily budget cap DISABLED (DAILY_BUDGET_USD off/0)'
-      : `💸 Daily budget cap: $${budget.toFixed(2)}/day (America/New_York), auto-mute via kill switch`
-  );
+  let budgetMessage: string;
+  if (budget === null) {
+    budgetMessage = '💸 Daily budget cap DISABLED (DAILY_BUDGET_USD off/0)';
+  } else {
+    budgetMessage = `💸 Daily budget cap: $${budget.toFixed(2)}/day (America/New_York), auto-mute via kill switch`;
+  }
+  logger.warn(budgetMessage);
   scheduleDailyBudgetCheck();
   timer = setInterval(scheduleDailyBudgetCheck, intervalMs);
   timer.unref?.();

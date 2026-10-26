@@ -12,6 +12,20 @@ import { errorPatternTracker } from './tool-error-patterns.js';
 import { capabilityTracker } from './tool-tracker.js';
 import { collapseWhitespace } from '../../shared/text.js';
 
+function getMaxRetries(capabilityName: string): number {
+  if (capabilityName === 'mcp_auto_installer') {
+    return 1; // No retries for MCP installs
+  }
+  return 3;
+}
+
+function ensureErrorObject(error: unknown): Error {
+  if (error instanceof Error) {
+    return error;
+  }
+  return new Error(String(error));
+}
+
 export interface CapabilityResult {
   capability: ParsedCapability;
   success: boolean;
@@ -38,7 +52,7 @@ export class RobustCapabilityExecutor {
       channelId?: string;
       guildId?: string;
     },
-    maxRetries = capability.name === 'mcp_auto_installer' ? 1 : 3 // No retries for MCP installs
+    maxRetries = getMaxRetries(capability.name)
   ): Promise<CapabilityResult> {
     logger.info(
       `🔧 ROBUST: Executing ${capability.name}:${capability.action} with retry capability`
@@ -84,7 +98,7 @@ export class RobustCapabilityExecutor {
           throw new Error(`Invalid result: ${JSON.stringify(result)}`);
         }
       } catch (error) {
-        lastError = error instanceof Error ? error : new Error(String(error));
+        lastError = ensureErrorObject(error);
         logger.warn(
           `❌ Attempt ${attempt} failed for ${capability.name}:${capability.action}: ${lastError.message}`
         );
@@ -247,13 +261,16 @@ export class RobustCapabilityExecutor {
     context: { userId: string; messageId: string; channelId?: string; guildId?: string }
   ): Promise<unknown> {
     // Inject userId and messageId into params for capabilities that need context
-    let paramsWithContext = ['scheduler', 'memory', 'image_gen'].includes(capability.name)
-      ? {
-          ...capability.params,
-          userId: context.userId,
-          messageId: context.messageId,
-        }
-      : capability.params;
+    let paramsWithContext: Record<string, any>;
+    if (['scheduler', 'memory', 'image_gen'].includes(capability.name)) {
+      paramsWithContext = {
+        ...capability.params,
+        userId: context.userId,
+        messageId: context.messageId,
+      };
+    } else {
+      paramsWithContext = capability.params;
+    }
 
     // Interpolate variables in params
     paramsWithContext = await this.interpolateParams(paramsWithContext, context.userId);
@@ -476,7 +493,10 @@ export class RobustCapabilityExecutor {
           case '*':
             return numA * numB;
           case '/':
-            return numB !== 0 ? numA / numB : NaN;
+            if (numB !== 0) {
+              return numA / numB;
+            }
+            return NaN;
         }
       }
     }

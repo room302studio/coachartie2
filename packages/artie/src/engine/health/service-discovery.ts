@@ -1,5 +1,6 @@
 import { logger } from '../../shared/logger.js';
 import { redis, isRedisAvailable, hasRedisBeenChecked } from '../../shared/queue/redis.js';
+import { getErrorMessage } from '../../shared/errors.js';
 
 /**
  * Service Discovery System
@@ -68,7 +69,7 @@ export class ServiceDiscovery {
         logger.info(`📡 Registered ${serviceName} service at ${serviceInfo.url}`);
       } catch (error) {
         // Only log once, don't spam with full stack trace
-        const errMsg = error instanceof Error ? error.message : String(error);
+        const errMsg = getErrorMessage(error);
         logger.warn(`Failed to register service ${serviceName} in Redis: ${errMsg}`);
         // Continue without Redis - services can still work locally
       }
@@ -101,7 +102,7 @@ export class ServiceDiscovery {
         );
         logger.info(`✅ ${serviceName} service is now running at ${service.url}`);
       } catch (error) {
-        const errMsg = error instanceof Error ? error.message : String(error);
+        const errMsg = getErrorMessage(error);
         logger.warn(`Failed to update service status for ${serviceName}: ${errMsg}`);
       }
     }
@@ -186,7 +187,10 @@ export class ServiceDiscovery {
    */
   async getServiceUrl(serviceName: string): Promise<string | null> {
     const service = await this.findService(serviceName);
-    return service ? service.url : null;
+    if (!service) {
+      return null;
+    }
+    return service.url;
   }
 
   /**
