@@ -1,4 +1,5 @@
 import { logger } from '../../../shared/logger.js';
+import { getErrorMessage } from '../../../shared/errors.js';
 
 export class WolframService {
   private apiKey: string;
@@ -36,7 +37,7 @@ export class WolframService {
     } catch (error) {
       logger.error('Wolfram Alpha query failed:', error);
       throw new Error(
-        `Failed to query Wolfram Alpha: ${error instanceof Error ? error.message : String(error)}`
+        `Failed to query Wolfram Alpha: ${getErrorMessage(error)}`
       );
     }
   }

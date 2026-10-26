@@ -1845,9 +1845,12 @@ async function generateBriefing(_config: BriefingConfig): Promise<string> {
     }
   } catch { /* */ }
 
-  const locationContext = inHV
-    ? `Currently in ${currentTown}, ${currentCounty} Co. (Hudson Valley home base).${rideStateStr}`
-    : `Currently in ${currentTown}, ${currentState} — AWAY FROM HOME BASE.${rideStateStr} Adapt the briefing to this location. HV monitoring continues in background but lead with what's relevant HERE.`;
+  let locationContext: string;
+  if (inHV) {
+    locationContext = `Currently in ${currentTown}, ${currentCounty} Co. (Hudson Valley home base).${rideStateStr}`;
+  } else {
+    locationContext = `Currently in ${currentTown}, ${currentState} — AWAY FROM HOME BASE.${rideStateStr} Adapt the briefing to this location. HV monitoring continues in background but lead with what's relevant HERE.`;
+  }
 
   // --- Gather all raw data sections ---
   const rawSections: Record<string, string> = {};

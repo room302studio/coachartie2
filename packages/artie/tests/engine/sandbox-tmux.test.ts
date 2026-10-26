@@ -4,10 +4,21 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 // and send types the command with `send-keys -l`, unescaped.
 const { execFileMock, execMock } = vi.hoisted(() => {
   const reply = (optsOrCb: unknown, maybeCb?: unknown) => {
-    const cb = (typeof optsOrCb === 'function' ? optsOrCb : maybeCb) as (
+    let cb: (
       err: Error | null,
       out?: { stdout: string; stderr: string }
     ) => void;
+    if (typeof optsOrCb === 'function') {
+      cb = optsOrCb as (
+        err: Error | null,
+        out?: { stdout: string; stderr: string }
+      ) => void;
+    } else {
+      cb = maybeCb as (
+        err: Error | null,
+        out?: { stdout: string; stderr: string }
+      ) => void;
+    }
     cb(null, { stdout: '1\n', stderr: '' });
     return {} as unknown;
   };

@@ -253,6 +253,19 @@ const githubActions = {
         commits.map((commit: GitHubCommit) => commit.commit.author.name)
       );
 
+      // Build latest_release info
+      let latestRelease: { tag_name: string; published_at: string; author: string } | null;
+      if (recentReleases[0]) {
+        const release = recentReleases[0];
+        latestRelease = {
+          tag_name: release.tag_name,
+          published_at: release.published_at,
+          author: release.author.login,
+        };
+      } else {
+        latestRelease = null;
+      }
+
       return {
         success: true,
         data: {
@@ -263,13 +276,7 @@ const githubActions = {
             total_releases: recentReleases.length,
             unique_contributors: contributors.size,
             contributors: Array.from(contributors),
-            latest_release: recentReleases[0]
-              ? {
-                  tag_name: recentReleases[0].tag_name,
-                  published_at: recentReleases[0].published_at,
-                  author: recentReleases[0].author.login,
-                }
-              : null,
+            latest_release: latestRelease,
           },
         },
       };
@@ -740,9 +747,12 @@ const githubActions = {
       const limit = params.limit || 30;
 
       // Convert labels to array if it's a comma-separated string
-      const labelsArray = Array.isArray(params.labels)
-        ? params.labels
-        : params.labels.split(',').map((l) => l.trim());
+      let labelsArray: string[];
+      if (Array.isArray(params.labels)) {
+        labelsArray = params.labels;
+      } else {
+        labelsArray = params.labels.split(',').map((l) => l.trim());
+      }
 
       // Fetch issues for each label and organize by label
       const issuesByLabel: Record<string, any[]> = {};
@@ -1005,6 +1015,18 @@ const githubActions = {
 
       const comments = (await commentsResponse.json()) as any[];
 
+      // Build milestone info
+      let milestoneInfo: { title: string; state: string; due_on: string } | null;
+      if (issue.milestone) {
+        milestoneInfo = {
+          title: issue.milestone.title,
+          state: issue.milestone.state,
+          due_on: issue.milestone.due_on,
+        };
+      } else {
+        milestoneInfo = null;
+      }
+
       return {
         success: true,
         data: {
@@ -1020,13 +1042,7 @@ const githubActions = {
               description: l.description,
             })),
             assignees: issue.assignees.map((a: any) => a.login),
-            milestone: issue.milestone
-              ? {
-                  title: issue.milestone.title,
-                  state: issue.milestone.state,
-                  due_on: issue.milestone.due_on,
-                }
-              : null,
+            milestone: milestoneInfo,
             created_at: issue.created_at,
             updated_at: issue.updated_at,
             closed_at: issue.closed_at,

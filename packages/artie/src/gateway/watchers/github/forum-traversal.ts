@@ -118,8 +118,15 @@ export class ForumTraversalService {
       const batchSize = 100; // Discord API limit
 
       while (true) {
+        let fetchLimit: number;
+        if (limit) {
+          fetchLimit = Math.min(batchSize, limit - messages.length);
+        } else {
+          fetchLimit = batchSize;
+        }
+
         const batch = await thread.messages.fetch({
-          limit: limit ? Math.min(batchSize, limit - messages.length) : batchSize,
+          limit: fetchLimit,
           before: lastMessageId,
         });
 
@@ -157,6 +164,14 @@ export class ForumTraversalService {
       // Get starter message (first message in thread)
       const starterMessage = messages[0];
 
+      // Format starter message if present
+      let formattedStarterMessage: ThreadMessageData | undefined;
+      if (starterMessage) {
+        formattedStarterMessage = this.formatMessage(starterMessage);
+      } else {
+        formattedStarterMessage = undefined;
+      }
+
       const threadData: ForumThreadData = {
         threadId: thread.id,
         threadName: thread.name,
@@ -168,7 +183,7 @@ export class ForumTraversalService {
         isLocked: thread.locked || false,
         isArchived: thread.archived || false,
         messages: messages.map((msg) => this.formatMessage(msg)),
-        starterMessage: starterMessage ? this.formatMessage(starterMessage) : undefined,
+        starterMessage: formattedStarterMessage,
       };
 
       logger.info(`Compiled thread data for "${thread.name}" (${messages.length} messages)`);

@@ -135,7 +135,13 @@ export function chunkMessage(
           const overhead = opener.length + closer.length;
 
           for (const line of codeLines) {
-            const testChunk = codeChunk + (codeChunk ? '\n' : '') + line;
+            let separator: string;
+            if (codeChunk) {
+              separator = '\n';
+            } else {
+              separator = '';
+            }
+            const testChunk = codeChunk + separator + line;
 
             if (testChunk.length + overhead > maxLength) {
               // Flush current code chunk
@@ -173,7 +179,13 @@ export function chunkMessage(
       }
 
       // Normal-sized code block - add to current chunk
-      currentChunk += (currentChunk ? '\n' : '') + segment.content;
+      let separator: string;
+      if (currentChunk) {
+        separator = '\n';
+      } else {
+        separator = '';
+      }
+      currentChunk += separator + segment.content;
     } else {
       // Regular text - preserve newlines while respecting Discord's char limit
       // This is CRITICAL for markdown formatting (headers, lists, paragraphs)
@@ -209,7 +221,13 @@ export function chunkMessage(
 
           // Calculate what we need to add
           const needsNewline = currentChunk.length > 0 && lineIdx > 0;
-          const addition = (needsNewline ? '\n' : '') + line;
+          let linePrefix: string;
+          if (needsNewline) {
+            linePrefix = '\n';
+          } else {
+            linePrefix = '';
+          }
+          const addition = linePrefix + line;
 
           // If adding this line fits, add it
           if (currentChunk.length + addition.length <= maxLength) {
@@ -248,7 +266,13 @@ export function chunkMessage(
                 currentChunk = word;
               }
             } else {
-              currentChunk += (currentChunk ? ' ' : '') + word;
+              let wordSeparator: string;
+              if (currentChunk) {
+                wordSeparator = ' ';
+              } else {
+                wordSeparator = '';
+              }
+              currentChunk += wordSeparator + word;
             }
           }
         }
