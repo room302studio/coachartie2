@@ -265,7 +265,10 @@ export class HybridDataLayer {
   async getMemory(id: number): Promise<MemoryRecord | null> {
     const memory = this.hotData.get(id);
     if (memory) {
-      return isRecallable(memory) ? memory : null;
+      if (isRecallable(memory)) {
+        return memory;
+      }
+      return null;
     }
 
     // If not in hot cache, try cold storage
@@ -284,7 +287,10 @@ export class HybridDataLayer {
         if (row) {
           // Promote to hot cache
           this.hotData.set(row.id, row);
-          return isRecallable(row) ? row : null;
+          if (isRecallable(row)) {
+            return row;
+          }
+          return null;
         }
       } catch (error) {
         logger.error('Failed to get memory from cold storage:', error);
@@ -321,8 +327,14 @@ export class HybridDataLayer {
     if (memories.length < limit && this.coldStorage) {
       try {
         // Build query with optional guild filter
-        const guildFilter = guildId ? 'AND (guild_id = ? OR guild_id IS NULL)' : '';
-        const params = guildId ? [userId, guildId, limit] : [userId, limit];
+        let guildFilter = '';
+        let params: unknown[];
+        if (guildId) {
+          guildFilter = 'AND (guild_id = ? OR guild_id IS NULL)';
+          params = [userId, guildId, limit];
+        } else {
+          params = [userId, limit];
+        }
 
         // Now using synchronous better-sqlite3 (no await needed)
         const rows = this.coldStorage.all<MemoryRecord>(
@@ -416,12 +428,20 @@ export class HybridDataLayer {
     if (query && query.trim().length > 0) {
       try {
         // Build query with optional guild filter
-        const guildFilter = guildId ? 'AND (m.guild_id = ? OR m.guild_id IS NULL)' : '';
+        let guildFilter = '';
+        let params: unknown[];
+        if (guildId) {
+          guildFilter = 'AND (m.guild_id = ? OR m.guild_id IS NULL)';
+        }
 
         // Escape FTS5 query to prevent syntax errors
         // Wrap in quotes and escape internal quotes to make it a phrase search
         const escapedQuery = escapeFts5(query.trim());
-        const params = guildId ? [escapedQuery, userId, guildId] : [escapedQuery, userId];
+        if (guildId) {
+          params = [escapedQuery, userId, guildId];
+        } else {
+          params = [escapedQuery, userId];
+        }
 
         // Now using synchronous better-sqlite3 (no await needed)
         const rows = this.coldStorage.all<MemoryRecord>(
@@ -679,9 +699,10 @@ export class HybridDataLayer {
         last_recalled_at: string | null;
       }>(`SELECT recall_count, last_recalled_at FROM memories WHERE id = ?`, [memoryId]);
 
-      return result
-        ? { recallCount: result.recall_count || 0, lastRecalled: result.last_recalled_at }
-        : null;
+      if (result) {
+        return { recallCount: result.recall_count || 0, lastRecalled: result.last_recalled_at };
+      }
+      return null;
     } catch {
       return null;
     }
