@@ -31,7 +31,15 @@ const fakes = vi.hoisted(() => {
       ...extra,
     };
     const proxy: any = new Proxy(target, {
-      get: (t, p) => (p in t ? t[p] : p === 'then' ? undefined : async () => []),
+      get: (t, p) => {
+        if (p in t) {
+          return t[p];
+        }
+        if (p === 'then') {
+          return undefined;
+        }
+        return async () => [];
+      },
     });
     target.on = () => proxy;
     return proxy;
@@ -39,7 +47,12 @@ const fakes = vi.hoisted(() => {
   const workers: string[] = [];
   const closedWorkers: string[] = [];
   const inert: any = new Proxy(function () {}, {
-    get: (_t, p) => (p === 'then' ? undefined : inert),
+    get: (_t, p) => {
+      if (p === 'then') {
+        return undefined;
+      }
+      return inert;
+    },
     apply: () => inert,
   });
   return { make, workers, closedWorkers, inert, clients: [] as any[] };

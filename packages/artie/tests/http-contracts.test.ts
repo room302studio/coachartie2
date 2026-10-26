@@ -24,7 +24,12 @@ vi.mock('../src/shared/queue/redis.js', async (importOriginal) => {
   // Some modules open a (lazy) connection at import time (shared/db/user-profiles.ts);
   // hand them an inert object whose every property/call is itself, never a socket.
   const inert: any = new Proxy(function () {}, {
-    get: (_t, prop) => (prop === 'then' ? undefined : inert),
+    get: (_t, prop) => {
+      if (prop === 'then') {
+        return undefined;
+      }
+      return inert;
+    },
     apply: () => inert,
   });
   return {
