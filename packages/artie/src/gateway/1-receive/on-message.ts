@@ -755,8 +755,13 @@ async function respondOrObserve(turn: Turn): Promise<StepResult> {
           isProactiveAnswerFlag
         );
       } else {
+        // Keyed per author, not per channel. A batch runs as ONE turn under one userId, and
+        // userId carries more than owner authority: staff-role checks (moderation tools),
+        // memory attribution and per-user tools all read it. Mixing authors would let one
+        // person's words act under another's identity. Other people's messages still reach
+        // the turn through the "landed while you were thinking" note.
         burstScheduler.add(
-          message.channelId,
+          `${message.channelId}:${message.author.id}`,
           {
             message,
             cleanMessage,

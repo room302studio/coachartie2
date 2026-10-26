@@ -64,8 +64,12 @@ the next batch).
 **How it works:** `on-message.ts`'s `respondOrObserve` step runs every existing gate exactly as
 before — dedup, antibody (a message antibody silences never joins a batch at all), the DM
 bypass — and only at the very end, for a non-DM message that will get a response, pushes the
-message into `BurstScheduler` keyed by `channelId` instead of calling `handleMessageAsIntent`
-directly. The scheduler starts a timer on the FIRST item in a channel's batch and does NOT
+message into `BurstScheduler` keyed by `channelId:authorId` instead of calling
+`handleMessageAsIntent` directly. **Review change (2026-10-26):** the builder keyed by channel
+alone, which mixed authors into one turn under the newest author's userId. The owner bypass
+only covered EJ; staff-role checks, memory attribution and per-user tools also read userId.
+So a batch is now one person's rapid-fire messages, and everyone else in the channel arrives
+through the landed note. The scheduler starts a timer on the FIRST item in a channel's batch and does NOT
 reset it for later arrivals — that's the "never waits longer than the window" guarantee: no
 matter how many messages join, the batch fires at `firstArrival + windowMs`, never later. The
 map entry is deleted the instant the timer fires, before the flush callback runs, so a message
