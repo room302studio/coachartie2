@@ -302,10 +302,15 @@ export class ExperimentManager {
         [cached.variantId]
       );
 
+      let config: VariantConfig = {};
+      if (variant) {
+        config = JSON.parse(variant.variant_config) as VariantConfig;
+      }
+
       return {
         experimentId: cached.experimentId,
         variantId: cached.variantId,
-        config: variant ? (JSON.parse(variant.variant_config) as VariantConfig) : {},
+        config,
       };
     } catch {
       return null;
@@ -487,15 +492,24 @@ export class ExperimentManager {
 
       const variantResults = variants.map((v) => {
         const totalFeedback = v.positive_count + v.negative_count;
+        let positiveRate = 0;
+        if (totalFeedback > 0) {
+          positiveRate = Math.round((v.positive_count / totalFeedback) * 100);
+        }
+
+        let conversionRate = 0;
+        if (v.impressions > 0) {
+          conversionRate = Math.round((totalFeedback / v.impressions) * 100);
+        }
+
         return {
           id: v.id,
           name: v.name,
           impressions: v.impressions,
           positiveCount: v.positive_count,
           negativeCount: v.negative_count,
-          positiveRate:
-            totalFeedback > 0 ? Math.round((v.positive_count / totalFeedback) * 100) : 0,
-          conversionRate: v.impressions > 0 ? Math.round((totalFeedback / v.impressions) * 100) : 0,
+          positiveRate,
+          conversionRate,
         };
       });
 
@@ -513,6 +527,11 @@ export class ExperimentManager {
       // Simple significance calculation (placeholder for proper chi-squared test)
       const significance = this.calculateSignificance(variantResults);
 
+      let finalWinner: string | null = null;
+      if (significance > 0.9) {
+        finalWinner = winner;
+      }
+
       return {
         experimentId: experiment.id,
         name: experiment.name,
@@ -520,7 +539,7 @@ export class ExperimentManager {
         startedAt: experiment.started_at,
         endedAt: experiment.ended_at,
         variants: variantResults,
-        winner: significance > 0.9 ? winner : null,
+        winner: finalWinner,
         significance,
       };
     } catch (error) {
@@ -547,7 +566,10 @@ export class ExperimentManager {
     // Simple heuristic: larger difference in rates = higher significance
     const rates = variants.map((v) => {
       const total = v.positiveCount + v.negativeCount;
-      return total > 0 ? v.positiveCount / total : 0;
+      if (total > 0) {
+        return v.positiveCount / total;
+      }
+      return 0;
     });
 
     const maxRate = Math.max(...rates);
