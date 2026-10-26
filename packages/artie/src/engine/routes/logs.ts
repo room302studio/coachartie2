@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { logger } from '../../shared/logger.js';
+import { getErrorMessage } from '../../shared/errors.js';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 
@@ -155,7 +156,7 @@ router.get('/:jobId', async (req, res) => {
     logger.error('Error retrieving logs:', error);
     res.status(500).json({
       error: 'Failed to retrieve logs',
-      details: error instanceof Error ? error.message : String(error),
+      details: getErrorMessage(error),
     });
   }
 });
@@ -215,7 +216,7 @@ router.get('/', async (req, res) => {
     logger.error('Error retrieving service logs:', error);
     res.status(500).json({
       error: 'Failed to retrieve service logs',
-      details: error instanceof Error ? error.message : String(error),
+      details: getErrorMessage(error),
     });
   }
 });
@@ -259,7 +260,7 @@ router.get('/search/:query', async (req, res) => {
     logger.error('Error searching logs:', error);
     res.status(500).json({
       error: 'Failed to search logs',
-      details: error instanceof Error ? error.message : String(error),
+      details: getErrorMessage(error),
     });
   }
 });
