@@ -250,9 +250,12 @@ class MeetingService {
     try {
       const db = getSyncDb();
 
-      const statusFilter = includeCompleted
-        ? "status IN ('scheduled', 'completed', 'cancelled')"
-        : "status = 'scheduled'";
+      let statusFilter: string;
+      if (includeCompleted) {
+        statusFilter = "status IN ('scheduled', 'completed', 'cancelled')";
+      } else {
+        statusFilter = "status = 'scheduled'";
+      }
 
       const meetings = db.all(
         `
@@ -579,11 +582,14 @@ async function handleMeetingAction(params: MeetingParams, content?: string): Pro
         }
 
         // Participants are optional - if none provided, it's a solo meeting
-        const participants = participantsStr
-          ? String(participantsStr)
-              .split(',')
-              .map((p) => p.trim())
-          : [];
+        let participants: string[];
+        if (participantsStr) {
+          participants = String(participantsStr)
+            .split(',')
+            .map((p) => p.trim());
+        } else {
+          participants = [];
+        }
 
         logger.info(
           `✅ Meeting params validated - Title: ${title}, Time: ${time}, Participants: ${participantsDisplay(participants.length, participantsStr)}`
