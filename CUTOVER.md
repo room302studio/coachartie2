@@ -1,9 +1,18 @@
 # CUTOVER: v3 to prod
 
-**Written, not run.** No step in this file has executed against prod or the VPS. This is the
-exact sequence to run once v3 is merged to the branch prod deploys from, with a check and a
-rollback for every step. Read it fully before running anything. Back up before any step marked
-destructive.
+**RUN 2026-10-26 14:35 ET (EJ's yes).** Prod is on branch `v3` as the single `coach-artie` PM2 app.
+- The step-4 sentinels, `/health/ready`, Discord (5 guilds) and `tests/smoke.sh` (4/4) all passed.
+- State and backups are in `/data2/tmp/cutover-20261026-143556`, and the DB backup is in `/srv/artie/backups/coachartie.db.pre-cutover-*`.
+- Rollback: `/data2/tmp/cutover-rollback.sh <state dir>`.
+
+What the run changed vs the text below:
+- The build was `pnpm --filter @coachartie/artie build`, NOT `pnpm build`. That would also build `packages/brain`, a real Nuxt app on prod.
+- Checkout was `git checkout -B v3 FETCH_HEAD`, not detached.
+- The DB backup was `sqlite3 .backup`, not `cp`, because it's a live WAL database.
+- Step 9's `check-artie.sh` and promtail edits are done; backups of both end in `.bak-precutover-20261026`.
+- The LUKS compose edit is now committed (b884cb2), so step 1's patch dance is no longer needed.
+
+The text below is kept as written, for reference and for re-running.
 
 Prod today: two PM2 apps (`coach-artie-capabilities`, `coach-artie-discord`), two processes,
 Docker-removed-but-still-mentioned scripts. After this: one PM2 app (`coach-artie`), one
