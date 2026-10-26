@@ -636,7 +636,12 @@ class OpenRouterService {
     // nothing to retry with, the orchestration failed, and Artie silently said nothing.
     // A tool turn always runs an explicit, tool-capable list (toolModelsToTry): the requested
     // model first when it can take tools, otherwise the pin, then the other capable models.
-    const toolModels = toolSpec ? await this.toolModelsToTry(effectiveModel) : undefined;
+    let toolModels: string[] | undefined;
+    if (toolSpec) {
+      toolModels = await this.toolModelsToTry(effectiveModel);
+    } else {
+      toolModels = undefined;
+    }
     let modelsToTry: string[];
     if (toolModels) {
       modelsToTry = toolModels;
@@ -646,7 +651,12 @@ class OpenRouterService {
       modelsToTry = this.models;
     }
     const explicitList = !!toolModels || !!useSpecificModel;
-    const sendTools = toolSpec && toolSpec.tools.length > 0 ? toolSpec : undefined;
+    let sendTools: typeof toolSpec | undefined;
+    if (toolSpec && toolSpec.tools.length > 0) {
+      sendTools = toolSpec;
+    } else {
+      sendTools = undefined;
+    }
 
     // When OpenRouter returns a 402 of the form "you requested up to X tokens,
     // but can only afford Y", it means there IS still balance — just not enough
@@ -656,26 +666,45 @@ class OpenRouterService {
     let affordabilityRetried = false;
 
     for (let i = 0; i < modelsToTry.length; i++) {
-      const modelSpec = explicitList
-        ? modelsToTry[i]
-        : this.models[(startIndex + i) % this.models.length];
+      let modelSpec: string;
+      if (explicitList) {
+        modelSpec = modelsToTry[i];
+      } else {
+        modelSpec = this.models[(startIndex + i) % this.models.length];
+      }
       // "auto:<tier>[:allowed]" specs → openrouter/auto + the auto-router plugin (model-spec.ts);
       // plugins passed in by the caller (brownout's final-third route) take precedence.
       const resolved = resolveModelSpec(modelSpec);
       const model = resolved.model;
       // The auto-router plugin belongs to openrouter/auto. A tool turn pinned off auto (the
       // brownout route) must not carry it to the concrete model it was pinned to.
-      const plugins =
-        toolSpec && !isAutoRouted(model) ? undefined : (options?.plugins ?? resolved.plugins);
+      let plugins: unknown[] | undefined;
+      if (toolSpec && !isAutoRouted(model)) {
+        plugins = undefined;
+      } else {
+        plugins = options?.plugins ?? resolved.plugins;
+      }
       let attemptUsage: { billed: string; usage: TokenUsage; cost: number } | undefined;
 
       try {
         let responseFormat: Record<string, unknown> | undefined;
         if (!sendTools) {
           responseFormat = await responseFormatForModel(model, options?.jsonOutput);
+        } else {
+          responseFormat = undefined;
         }
-        const modelLabel = useSpecificModel && i === 0 ? '(SPECIFIC)' : `(${i + 1}/${modelsToTry.length})`;
-        const toolInfo = toolSpec ? ` (tool turn, ${toolSpec.tools.length} tools, tool_choice ${toolSpec.toolChoice})` : '';
+        let modelLabel: string;
+        if (useSpecificModel && i === 0) {
+          modelLabel = '(SPECIFIC)';
+        } else {
+          modelLabel = `(${i + 1}/${modelsToTry.length})`;
+        }
+        let toolInfo: string;
+        if (toolSpec) {
+          toolInfo = ` (tool turn, ${toolSpec.tools.length} tools, tool_choice ${toolSpec.toolChoice})`;
+        } else {
+          toolInfo = '';
+        }
         logger.info(
           `🤖 MODEL SELECTION: Using ${model} ${modelLabel} for ${messages.length} messages${toolInfo}`
         );
@@ -686,7 +715,12 @@ class OpenRouterService {
           logger.warn(`📏 Capping max_tokens ${maxTokens} → ${affordabilityCap} (affordability)`);
           maxTokens = affordabilityCap;
         }
-        const maxTokensSource = options?.maxTokens ? ' (preflight)' : ' (default)';
+        let maxTokensSource: string;
+        if (options?.maxTokens) {
+          maxTokensSource = ' (preflight)';
+        } else {
+          maxTokensSource = ' (default)';
+        }
         logger.debug(
           `📏 Using max_tokens: ${maxTokens}${maxTokensSource}`
         );
@@ -697,46 +731,81 @@ class OpenRouterService {
         // Mark the static system prefix cacheable. No-op for non-Anthropic models and for
         // prefixes under the model's minimum — see prompt-cache.ts for why both matter.
         // On a tool turn the tool list sits ahead of the system prompt in that prefix.
-        const toolTokens = sendTools ? estimateTokens(JSON.stringify(sendTools.tools)) : 0;
+        let toolTokens: number;
+        if (sendTools) {
+          toolTokens = estimateTokens(JSON.stringify(sendTools.tools));
+        } else {
+          toolTokens = 0;
+        }
         const cache = applyCacheControl(
           messages,
           model,
           toolTokens
         );
-        const cacheMessage = cache.applied
-            ? `🗄️ Prompt cache: breakpoint on ${cache.prefixTokens}tok ${sendTools ? 'tools + ' : ''}system prefix (${model})`
-            : `🗄️ Prompt cache: not applied — ${cache.reason}`;
+        let toolsLabel: string;
+        if (sendTools) {
+          toolsLabel = 'tools + ';
+        } else {
+          toolsLabel = '';
+        }
+        let cacheMessage: string;
+        if (cache.applied) {
+          cacheMessage = `🗄️ Prompt cache: breakpoint on ${cache.prefixTokens}tok ${toolsLabel}system prefix (${model})`;
+        } else {
+          cacheMessage = `🗄️ Prompt cache: not applied — ${cache.reason}`;
+        }
         logger.info(cacheMessage);
 
         // OpenRouter-only extras (auto-router plugins) aren't in the OpenAI SDK's types.
-        const extraBody: Record<string, unknown> = {
-          ...(plugins ? { plugins } : {}),
-          // Auto-routed picks may be models we have no price for (billed at $15/$75 by
-          // default); OpenRouter's usage accounting reports the exact USD cost instead.
-          ...(isAutoRouted(model) ? { usage: { include: true } } : {}),
-          ...(isAutoRouted(model) && autoReasoningFor(plugins)
-            ? { reasoning: autoReasoningFor(plugins) }
-            : {}),
-        };
-        const completion: OpenAI.Chat.Completions.ChatCompletion = await this.createCompletion({
+        const extraBody: Record<string, unknown> = {};
+        if (plugins) {
+          extraBody.plugins = plugins;
+        }
+        // Auto-routed picks may be models we have no price for (billed at $15/$75 by
+        // default); OpenRouter's usage accounting reports the exact USD cost instead.
+        if (isAutoRouted(model)) {
+          extraBody.usage = { include: true };
+        }
+        if (isAutoRouted(model) && autoReasoningFor(plugins)) {
+          extraBody.reasoning = autoReasoningFor(plugins);
+        }
+        const completionParams: Record<string, unknown> = {
           model,
           messages: cache.messages,
           max_tokens: maxTokens,
           temperature,
           // Native tools (wave 8). The list is pre-sorted and byte-stable (tool-schema.ts), so
           // it stays inside the provider's cached prefix (Anthropic orders tools before system).
-          ...(sendTools ? { tools: sendTools.tools, tool_choice: sendTools.toolChoice } : {}),
-          ...(responseFormat ? { response_format: responseFormat } : {}),
-          ...extraBody,
-        });
+        };
+        if (sendTools) {
+          completionParams.tools = sendTools.tools;
+          completionParams.tool_choice = sendTools.toolChoice;
+        }
+        if (responseFormat) {
+          completionParams.response_format = responseFormat;
+        }
+        Object.assign(completionParams, extraBody);
+        const completion: OpenAI.Chat.Completions.ChatCompletion = await this.createCompletion(
+          completionParams as never
+        );
         // openrouter/auto picks the model; bill what was actually served, or the unknown-model
         // fallback ($15/$75) would trip the daily cap early. Other models bill as requested.
-        const billedModel = (isAutoRouted(model) && completion.model) ? completion.model : model;
+        let billedModel: string;
+        if (isAutoRouted(model) && completion.model) {
+          billedModel = completion.model;
+        } else {
+          billedModel = model;
+        }
 
         const choice = completion.choices?.[0];
         const response = choice?.message?.content ?? '';
         // Only a turn that offered tools can come back with calls; a plain turn ignores them.
-        const toolCalls = sendTools ? normalizeToolCalls(choice?.message?.tool_calls) : [];
+        let toolCalls: ToolCall[];
+        if (sendTools) {
+          toolCalls = normalizeToolCalls(choice?.message?.tool_calls);
+        } else {
+          toolCalls = [];
+        }
 
         if (!response && toolCalls.length === 0) {
           // Still billed (e.g. reasoning tokens that hit max_tokens) — keep the real usage and
