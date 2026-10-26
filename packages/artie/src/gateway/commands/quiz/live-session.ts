@@ -244,7 +244,12 @@ Answer (yes/no):`;
 export function buildInitialProgress(total: number): QuestionOutcome[] {
   const arr: QuestionOutcome[] = [];
   for (let i = 0; i < total; i++) {
-    const outcome: QuestionOutcome = i === 0 ? 'current' : 'upcoming';
+    let outcome: QuestionOutcome;
+    if (i === 0) {
+      outcome = 'current';
+    } else {
+      outcome = 'upcoming';
+    }
     arr.push(outcome);
   }
   return arr;
