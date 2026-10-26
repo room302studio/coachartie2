@@ -920,7 +920,12 @@ class OpenRouterService {
         }
 
         // Track costs in real-time cost monitor
-        const costForMonitor = (isAutoRouted(model) && Number.isFinite(reportedCost)) ? reportedCost : undefined;
+        let costForMonitor: number | undefined;
+        if (isAutoRouted(model) && Number.isFinite(reportedCost)) {
+          costForMonitor = reportedCost;
+        } else {
+          costForMonitor = undefined;
+        }
         const { warnings } = costMonitor.trackCall(
           usage.prompt_tokens,
           usage.completion_tokens,
@@ -1009,7 +1014,12 @@ class OpenRouterService {
         // tokens in most cases; prompt_tokens is an estimate here since the API returned
         // no usage object, which is why it is flagged via error_type rather than trusted.
         {
-          const recordErrorType = errorStatus ? `http_${errorStatus}` : errorMessage.slice(0, 80);
+          let recordErrorType: string;
+          if (errorStatus) {
+            recordErrorType = `http_${errorStatus}`;
+          } else {
+            recordErrorType = errorMessage.slice(0, 80);
+          }
           UsageTracker.recordUsage({
             model_name: attemptUsage?.billed ?? model,
             guild_id: options?.guildId ?? null,
