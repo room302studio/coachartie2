@@ -86,8 +86,13 @@ The sandbox container is STOPPED (restart=no).
    call, then EJ approves it. The model can no longer self-confirm.
 5. **After the soak:** move or delete the 618M of plaintext pre-v3 winston logs in
    `packages/{capabilities,discord}/logs`.
-6. **Outside Discord's control:** privileged intents are pending app verification. Until
-   they're approved, Artie sees only @mentions and DMs, and channel digests idle.
+6. ~~Privileged intents.~~ **Live 2026-10-28 22:20 ET.** Discord approved full
+   MESSAGE_CONTENT + GUILD_MEMBERS (app flags via `GET /applications/@me`), and nobody had
+   flipped the switch. `DISCORD_PRIVILEGED_INTENTS=true` is now in `.env.production` (backup
+   `/srv/artie/backups/env.production.bak-intents-20261028`), applied with `pm2 delete` +
+   `start --only coach-artie`. Channel digests are on (10m tick); observational learning stays
+   OFF; he's still mention-only (unprompted only in robot channels). Rollback: remove the line,
+   then do the same delete + start.
 
 ## Known gaps (not blocking)
 

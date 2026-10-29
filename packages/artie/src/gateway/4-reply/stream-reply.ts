@@ -503,6 +503,20 @@ export async function processUserIntent(
             logger.info(`📝 Sending complete response [${shortId}]: ${cleanResult.length} chars`);
             await intent.respond(cleanResult);
             logger.info(`✅ Sent final response [${shortId}] (no streaming)`);
+
+            // Link the trace here too: this is the path most replies take, and without it
+            // 👍/👎 reactions had no trace to land on (1 of 8,197 traces linked, 2026-10-28).
+            if (!discordMessageLinked && intent.getResponseMessageId) {
+              const discordMsgId = intent.getResponseMessageId();
+              if (discordMsgId && jobInfo?.messageId) {
+                discordMessageLinked = true;
+                capabilitiesClient
+                  .linkDiscordMessage(jobInfo.messageId, discordMsgId)
+                  .catch((err) => {
+                    logger.debug(`Failed to link Discord message [${shortId}]:`, err);
+                  });
+              }
+            }
           } else {
             // Traditional streaming - check for additional content
             const trimmedResult = cleanResult.trim();

@@ -2,9 +2,9 @@
  * Attachment / reply / user-state context source builders extracted verbatim from
  * ContextAlchemy. These depend only on their arguments plus module-level helpers
  * (vision wrapper, metro doctor, memory service, analysis reader) — no instance
- * state — so they live here as plain functions. Behavior is byte-for-byte identical
- * to the original private methods; do not change wording, thresholds, priorities,
- * token weights, or ordering.
+ * state — so they live here as plain functions. Behavior matched the original private
+ * methods at extraction; deliberate changes since are dated in place (2026-10-28:
+ * attachment scoping in addAttachmentContext).
  */
 
 import { logger } from '../../../shared/logger.js';
@@ -99,6 +99,52 @@ export async function addReplyContext(
   }
 }
 
+/** Silence longer than this ends a conversation; an image from before it isn't "recent". */
+const CONVERSATION_GAP_MS = 45 * 60_000;
+/** Hard ceiling on how old an un-replied-to earlier image can be. */
+const EARLIER_MAX_AGE_MS = 60 * 60_000;
+
+/**
+ * Split attachments into the ones this message is about (its own, plus those on the
+ * message it replies to) and earlier ones from the same conversation. Earlier images
+ * are dropped once they're over an hour old or sit behind a 45-minute lull: a quiet
+ * channel's old screenshot belongs to a different conversation.
+ */
+export function splitAttachments(
+  current: any[],
+  recent: any[],
+  replyingTo?: string | null,
+  now: number = Date.now()
+): { addressed: any[]; earlier: any[] } {
+  const hasUrl = (att: any) => !!att?.url;
+  const repliedTo = recent.filter((att) => !!replyingTo && att?.messageId === replyingTo);
+
+  const others = recent
+    .filter((att) => !repliedTo.includes(att))
+    .filter(hasUrl)
+    .map((att) => ({ att, t: new Date(att?.timestamp ?? NaN).getTime() }))
+    .sort((a, b) => b.t - a.t); // newest first; undated sorts last and is dropped below
+  const earlier: any[] = [];
+  let edge = now;
+  for (const { att, t } of others) {
+    if (!Number.isFinite(t) || now - t > EARLIER_MAX_AGE_MS || edge - t > CONVERSATION_GAP_MS) {
+      break;
+    }
+    earlier.push(att);
+    edge = t;
+  }
+
+  return { addressed: [...current, ...repliedTo].filter(hasUrl), earlier };
+}
+
+function ageLabel(timestamp?: string): string {
+  if (!timestamp) return '';
+  const mins = Math.round((Date.now() - new Date(timestamp).getTime()) / 60000);
+  if (!Number.isFinite(mins) || mins < 0) return '';
+  if (mins < 60) return `, ${mins}m ago`;
+  return `, ${Math.round(mins / 60)}h ago`;
+}
+
 /**
  * Attachment context (URLs and metadata). Encourages vision/OCR or user-provided text.
  */
@@ -147,12 +193,23 @@ export async function addAttachmentContext(
   const attachments = [...currentAttachments, ...recentAttachments].filter((att) => !!att?.url);
   logger.info(`📎 ATTACHMENT DEBUG: combined after filter=${attachments.length}`);
 
-  if (attachments.length > 0) {
+  // Only what the speaker attached, or attached to the message they're replying to, is
+  // "their" image. Anything else is someone else's earlier post: listed, never auto-analyzed.
+  // (2026-10-28: auto-vision on another member's UK photos, framed as the speaker's,
+  // made Artie insist an applesauce joke came with "Sharpness Dock" screenshots.)
+  const { addressed, earlier } = splitAttachments(
+    currentAttachments,
+    recentAttachments,
+    message.context?.replyingTo
+  );
+
+  const shown = addressed.length + earlier.length;
+  if (shown > 0) {
     const lines: string[] = [];
-    lines.push(`📎 Attachments detected (${attachments.length})`);
+    lines.push(`📎 Attachments detected (${shown})`);
 
     const seen = new Set<string>();
-    attachments.slice(0, 8).forEach((att: any, idx: number) => {
+    const listAttachment = (att: any, idx: number) => {
       const url = att.url || att.proxyUrl;
       if (!url || seen.has(url)) return;
       seen.add(url);
@@ -166,11 +223,18 @@ export async function addAttachmentContext(
       if (att.author) {
         from = ` by ${att.author}`;
       }
-      lines.push(`- ${label}${type}${from}: ${url}`);
-    });
+      lines.push(`- ${label}${type}${from}${ageLabel(att.timestamp)}: ${url}`);
+    };
+    addressed.slice(0, 8).forEach(listAttachment);
+    if (earlier.length > 0 && addressed.length < 8) {
+      lines.push(
+        'Posted earlier in the channel, NOT attached to this message (only look at these if the person asks about them):'
+      );
+      earlier.slice(0, 8 - addressed.length).forEach(listAttachment);
+    }
 
-    if (attachments.length > 8) {
-      lines.push(`…and ${attachments.length - 8} more (see context)`);
+    if (shown > 8) {
+      lines.push(`…and ${shown - 8} more (see context)`);
     }
 
     // Check for .metro files in attachments
@@ -187,7 +251,7 @@ export async function addAttachmentContext(
         const recentLabel = mostRecent.name || mostRecent.id || 'save.metro';
         lines.push(`Recent save from this user is available: ${recentLabel}`);
       }
-    } else {
+    } else if (addressed.length > 0) {
       lines.push(
         'Vision/OCR recommended: call the vision capability with these URLs to extract text/entities, or ask the user to paste the text if vision is unavailable.'
       );
@@ -210,8 +274,8 @@ export async function addAttachmentContext(
     !!process.env.OPENROUTER_API_KEY &&
     visionCapability !== null;
 
-  if (autoVision && attachments.length > 0) {
-    const urls = attachments
+  if (autoVision && addressed.length > 0) {
+    const urls = addressed
       .map((att: any) => att.url || att.proxyUrl)
       .filter((u: any) => typeof u === 'string')
       .slice(0, 3); // cap auto-processing
@@ -227,7 +291,7 @@ export async function addAttachmentContext(
 
         // Subway Builder guild - images are usually game screenshots
         if (guildId === '1420846272545296470' || guildName?.toLowerCase().includes('subway')) {
-          visionObjective = `These are likely screenshots from "Subway Builder", a hyperrealistic transit simulation game.
+          visionObjective = `These may be screenshots from "Subway Builder", a hyperrealistic transit simulation game, or ordinary photos and memes. Say which they look like.
 IMPORTANT: Read ALL text and numbers EXACTLY as shown - do not approximate or guess. Pay special attention to:
 - Statistics panels (ridership numbers, percentages, costs)
 - Map elements (station names, line colors, route layouts)
@@ -252,7 +316,12 @@ Be precise with numbers - if it says 1.5%, report 1.5% not 1.1%. If you can't re
         }
 
         // Frame the vision output clearly so the LLM knows the images were already analyzed
-        const framedContent = `🖼️ IMAGE ANALYSIS COMPLETE - The following images were analyzed using vision AI:\n\n${truncated}\n\n(Use this analysis to answer questions about the images - do NOT say you cannot view images.)`;
+        const posters = [...new Set(addressed.map((att: any) => att.author).filter(Boolean))];
+        let postedBy = '';
+        if (posters.length > 0) {
+          postedBy = ` (posted by ${posters.join(', ')})`;
+        }
+        const framedContent = `🖼️ IMAGE ANALYSIS COMPLETE - The following images${postedBy} were analyzed using vision AI:\n\n${truncated}\n\n(Use this analysis to answer questions about the images - do NOT say you cannot view images.)`;
 
         sources.push({
           name: 'attachments_vision',
