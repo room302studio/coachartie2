@@ -9,6 +9,7 @@ import { RegisteredCapability } from '../../5-tool-loop/registry.js';
 import type { CapabilityContext } from '../../5-tool-loop/registry.js';
 import { hybridDataLayer, MemoryRecord } from '../../memory/store.js';
 import type { JsonOutputSpec } from '../../../shared/structured-output.js';
+import type { ChatMessage } from '../../3-context/prompt-cache.js';
 
 /** The semantic-tag reply, sent as response_format to models that take it (wave 10). */
 const TAGS_OUTPUT: JsonOutputSpec = {
@@ -68,11 +69,45 @@ function parseJsonTags(tagsJson: string | undefined): string[] {
   return [];
 }
 
-function ensureStringArray(tags: unknown): string[] {
+/**
+ * A two-message chain for the background tagger. It used to run contextAlchemy.buildMessageChain,
+ * i.e. Artie's whole ~18k-token persona + context, to produce 3-8 lowercase tags.
+ */
+function taggingMessages(prompt: string): ChatMessage[] {
+  return [
+    { role: 'system', content: 'You tag memories so they can be found later. Reply with JSON only.' },
+    { role: 'user', content: prompt },
+  ];
+}
+
+/**
+ * Tool params arrive as strings ("a,b" or '["a","b"]'), not arrays — before 2026-10-28 this
+ * returned [] for them, so every tag Artie passed was silently dropped.
+ */
+export function ensureStringArray(tags: unknown): string[] {
+  let list: unknown[] = [];
   if (Array.isArray(tags)) {
-    return [...tags];
+    list = tags;
+  } else if (typeof tags === 'string' && tags.trim()) {
+    const raw = tags.trim();
+    if (raw.startsWith('[')) {
+      try {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) list = parsed;
+      } catch {
+        list = raw.slice(1, -1).split(',');
+      }
+    } else {
+      list = raw.split(',');
+    }
   }
-  return [];
+  return [
+    ...new Set(
+      list
+        .map((t) => String(t).trim().replace(/^["']|["']$/g, '').toLowerCase())
+        .filter(Boolean)
+    ),
+  ];
 }
 
 function optionalString(value: unknown): string | undefined {
@@ -290,10 +325,13 @@ export class MemoryService {
 
         const allMemories = await hybridDataLayer.getRecentMemories(userId, 1000);
 
-        // Filter memories that have ANY of the requested tags
+        // Filter memories that have ANY of the requested tags. Importance <= 2 is stale or
+        // dream-pruned (engine/memory/dream.ts) and stays hidden, same as auto-recall.
+        const wanted = tags.map((t) => t.toLowerCase());
         const matchingMemories = allMemories.filter((memory) => {
-          const memoryTags = parseJsonTags(memory.tags);
-          return tags.some((tag) => memoryTags.includes(tag));
+          if ((memory.importance ?? 5) <= 2) return false;
+          const memoryTags = parseJsonTags(memory.tags).map((t) => String(t).toLowerCase());
+          return wanted.some((tag) => memoryTags.includes(tag));
         });
 
         logger.info(`📊 [HYBRID] Found ${matchingMemories.length} memories with matching tags`);
@@ -551,19 +589,10 @@ Return ONLY JSON with a list of lowercase tag strings, no other text.
 Example: {"tags": ["food", "pizza", "italian", "preference", "like"]}`;
 
       const { openRouterService } = await import('../../4-generate/openrouter.js');
-      const { contextAlchemy } = await import('../../3-context/assemble.js');
-      const { promptManager } = await import('../../3-context/system-prompt.js');
-
-      const baseSystemPrompt = await promptManager.getCapabilityInstructions(prompt);
-      const { messages } = await contextAlchemy.buildMessageChain(
-        prompt,
-        'memory-tagging-system',
-        baseSystemPrompt
-      );
 
       // Use BACKGROUND_MODEL for cost efficiency — tagging is a background task
       const response = await openRouterService.generateFromMessageChain(
-        messages,
+        taggingMessages(prompt),
         'memory-tagging-system',
         undefined,
         process.env.BACKGROUND_MODEL || process.env.FAST_MODEL || 'google/gemini-2.0-flash-001',
@@ -619,18 +648,9 @@ Return ONLY JSON with a list of lowercase tag strings, no other text.
 Example: {"tags": ["food", "pizza", "italian", "preference", "like"]}`;
 
       const { openRouterService } = await import('../../4-generate/openrouter.js');
-      const { contextAlchemy } = await import('../../3-context/assemble.js');
-      const { promptManager } = await import('../../3-context/system-prompt.js');
-
-      const baseSystemPrompt = await promptManager.getCapabilityInstructions(prompt);
-      const { messages } = await contextAlchemy.buildMessageChain(
-        prompt,
-        'memory-tagging-system',
-        baseSystemPrompt
-      );
 
       const response = await openRouterService.generateFromMessageChain(
-        messages,
+        taggingMessages(prompt),
         'memory-tagging-system',
         undefined,
         process.env.BACKGROUND_MODEL || process.env.FAST_MODEL || 'google/gemini-2.0-flash-001',
@@ -810,15 +830,31 @@ async function handleMemoryAction(
 
       case 'recall': {
         const query = params.query || content;
-        if (!query) {
-          throw new Error('No query provided for search');
+        if (!query && ensureStringArray(params.tags).length === 0) {
+          throw new Error('No query or tags provided for search');
         }
 
-        logger.info(`🎯 Memory search starting - Query: "${query}"`);
         const limit = Math.max(1, Math.min(20, parseInt(String(params.limit)) || 5));
         // Only EJ may search someone else's memories; everyone else searches their own, whatever
         // `user` the model passes (security audit 2026-10-26: this used to let anyone read EJ's).
         const targetUserId = recallTargetUser(params.user, String(userId));
+
+        // Tag lookup (Artie's ask, 2026-10-28: "let me find my own notes later").
+        const wantedTags = ensureStringArray(params.tags);
+        if (wantedTags.length > 0) {
+          const tagged = await memoryService.recallByTags(targetUserId, wantedTags, limit);
+          if (tagged.length === 0) {
+            return `🏷️ No memories tagged ${wantedTags.join(', ')}.`;
+          }
+          return tagged
+            .map((m, i) => {
+              const date = new Date(m.timestamp).toLocaleDateString();
+              return `${i + 1}. [#${m.id}, ${date}, importance ${m.importance}] ${m.content}\n   tags: ${m.tags.join(', ')}`;
+            })
+            .join('\n');
+        }
+
+        logger.info(`🎯 Memory search starting - Query: "${query}"`);
         const result = await memoryService.recall(targetUserId, String(query), limit);
         logger.info(`🎯 Memory search completed - Result length: ${result.length} characters`);
         return result;
@@ -891,12 +927,16 @@ export const memoryCapability: RegisteredCapability = {
   emoji: '🧠',
   supportedActions: ['remember', 'recall', 'forget', 'pin', 'recent', 'stats'],
   description:
-    'Store and recall facts about a person across conversations. Optional `kind` (person, ' +
-    'pinned, goal, ...) classifies what the fact is. NOT for guild notes (use scratchpad) or ' +
-    'structured profile fields like email/timezone (use user-profile). "pin" marks something ' +
+    // Native tool schema shows only the first line, clipped at 200 chars (tool-schema.ts).
+    'Remember/recall facts across chats. kind=person|preference|project|event|lore|rule|tool|goal|pinned; ' +
+    'tags="a,b" files a memory, recall tags="a" finds it again.\n' +
+    'A nightly dream pass re-tags memories and prunes junk. NOT for guild notes (use scratchpad) ' +
+    'or structured profile fields like email/timezone (use user-profile). "pin" marks something ' +
     'important (importance 10); "forget" deletes it.',
   handler: handleMemoryAction,
   examples: [
+    '<capability name="memory" action="remember" kind="project" tags="monetization,stripe">Tier-list commissions idea, risk: becomes a chore</capability>',
+    '<capability name="memory" action="recall" tags="monetization" limit="5" />',
     '<capability name="memory" action="remember" kind="person" importance="8">Important user preference or fact</capability>',
     '<capability name="memory" action="recall" query="chocolate preferences" />',
     '<capability name="memory" action="recall" query="food" user="john" limit="3" />',

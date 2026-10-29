@@ -1,0 +1,139 @@
+import { describe, it, expect, vi, beforeAll, beforeEach } from 'vitest';
+import { mkdtempSync } from 'fs';
+import { tmpdir } from 'os';
+import { join } from 'path';
+
+process.env.DATABASE_PATH = join(mkdtempSync(join(tmpdir(), 'memory-dream-')), 'test.db');
+process.env.DREAM_TAGS_URL = 'http://127.0.0.1:9/tags.json'; // unreachable: exercises the fallback
+
+const generate = vi.fn();
+vi.mock('../../src/engine/4-generate/openrouter.js', () => ({
+  openRouterService: { generateFromMessageChain: generate },
+}));
+
+let dreamMod: typeof import('../../src/engine/memory/dream.js');
+let memoryMod: typeof import('../../src/engine/tools/core/memory.js');
+let db: ReturnType<typeof import('../../src/shared/db/client.js').getSyncDb>;
+
+beforeAll(async () => {
+  const { getSyncDb } = await import('../../src/shared/db/client.js');
+  db = getSyncDb();
+  db.run(`CREATE TABLE IF NOT EXISTS memories (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, user_id TEXT NOT NULL, content TEXT NOT NULL,
+    tags TEXT NOT NULL DEFAULT '[]', context TEXT DEFAULT '', timestamp TEXT NOT NULL,
+    importance INTEGER DEFAULT 5, metadata TEXT DEFAULT '{}')`);
+  for (const col of ['metadata TEXT DEFAULT \'{}\'', 'guild_id TEXT']) {
+    try {
+      db.run(`ALTER TABLE memories ADD COLUMN ${col}`);
+    } catch {
+      // bootstrap already has it
+    }
+  }
+  dreamMod = await import('../../src/engine/memory/dream.js');
+  memoryMod = await import('../../src/engine/tools/core/memory.js');
+});
+
+function insert(content: string, importance = 5, tags: string[] = []): number {
+  const r = db.run(
+    `INSERT INTO memories (user_id, content, tags, timestamp, importance, metadata) VALUES (?, ?, ?, ?, ?, '{}')`,
+    ['u1', content, JSON.stringify(tags), new Date().toISOString(), importance]
+  );
+  return Number(r.lastInsertRowid);
+}
+const row = (id: number) => db.get<any>('SELECT * FROM memories WHERE id = ?', [id]);
+
+describe('dream', () => {
+  beforeEach(() => {
+    db.run('DELETE FROM memories');
+    generate.mockReset();
+  });
+
+  it('tags keepers, soft-prunes junk, and never prunes protected memories', async () => {
+    const fact = insert('Member A prefers the night-owl timetable and hates express skips');
+    const junk = insert('The calculator tool computed 123 * 456 = 56088', 4, ['capability-reflection']);
+    const pinned = insert('Never rank real people by appearance', 6, ['pinned']);
+    const vital = insert('Daily summary: 1 messages exchanged', 9);
+
+    generate.mockImplementation(async () =>
+      JSON.stringify({
+        memories: [
+          { id: fact, kind: 'preference', tags: ['Transit', 'timetable'], verdict: 'keep', reason: 'pref' },
+          { id: junk, kind: 'tool', tags: ['math'], verdict: 'junk', reason: 'smoke test' },
+          { id: pinned, kind: 'rule', tags: ['ethics'], verdict: 'junk', reason: 'x' },
+          { id: vital, kind: 'event', tags: ['stub'], verdict: 'junk', reason: 'x' },
+          { id: 99999, kind: 'lore', tags: ['ghost'], verdict: 'junk', reason: 'not given' },
+        ],
+      })
+    );
+
+    const result = await dreamMod.dream(10);
+    // fact, pinned and vital keep (the last two are protected) and gain tags; junk is pruned
+    expect(result).toEqual({ reviewed: 4, tagged: 3, pruned: 1 });
+
+    expect(JSON.parse(row(fact).tags)).toEqual(['preference', 'transit', 'timetable']);
+    expect(row(fact).importance).toBe(5);
+
+    const j = row(junk);
+    expect(j.importance).toBe(1);
+    expect(JSON.parse(j.tags)).toContain('pruned');
+    const meta = JSON.parse(j.metadata);
+    expect(meta.pruned_by).toBe('dream');
+    expect(meta.importance_before_dream).toBe(4);
+
+    expect(row(pinned).importance).toBe(6);
+    expect(row(vital).importance).toBe(9);
+  });
+
+  it('does not re-dream a memory, and leaves a failed chunk for tomorrow', async () => {
+    const a = insert('first');
+    generate.mockResolvedValueOnce(
+      JSON.stringify({ memories: [{ id: a, kind: 'lore', tags: ['x'], verdict: 'keep', reason: '' }] })
+    );
+    await dreamMod.dream(10);
+    const b = insert('second');
+    generate.mockRejectedValueOnce(new Error('model down'));
+    const r = await dreamMod.dream(10);
+    expect(r.reviewed).toBe(0);
+    expect(generate).toHaveBeenCalledTimes(2);
+    expect(JSON.parse(row(b).metadata ?? '{}').dreamt_at).toBeUndefined();
+    // only the undreamt memory was offered the second night
+    const offered = (generate.mock.calls[1][0] as any[])[1].content as string;
+    expect(offered).toContain(`#${b}`);
+    expect(offered).not.toContain(`#${a}`);
+  });
+
+  it('parses wrapped, bare and fenced verdict replies, dropping id-less ones', () => {
+    const v = { id: 1, kind: 'lore', tags: ['a'], verdict: 'keep', reason: '' };
+    expect(dreamMod.parseVerdicts(JSON.stringify({ memories: [v] }))).toEqual([v]);
+    expect(dreamMod.parseVerdicts(JSON.stringify([v]))).toEqual([v]);
+    expect(dreamMod.parseVerdicts('```json\n' + JSON.stringify([v, { kind: 'x' }]) + '\n```')).toEqual([v]);
+    expect(dreamMod.parseVerdicts('no json here')).toBeNull();
+  });
+
+  it('replaces filler tags but keeps vocabulary and structural ones', () => {
+    const id = insert('Member B builds express-only lines', 5, ['this', 'primarily', 'transit', 'quest']);
+    const m = db.get<any>('SELECT id, content, tags, importance, metadata FROM memories WHERE id = ?', [id]);
+    const out = dreamMod.applyVerdict(
+      m,
+      { id, kind: 'preference', tags: ['express'], verdict: 'keep', reason: '' },
+      new Date().toISOString(),
+      new Set(['transit'])
+    );
+    expect(out).toBe('tagged');
+    expect(JSON.parse(row(id).tags)).toEqual(['transit', 'quest', 'preference', 'express']);
+  });
+
+  it('normalizes tags and drops EJ action tags', () => {
+    expect(dreamMod.normalizeTag('!tobuy')).toBe('tobuy');
+    expect(dreamMod.normalizeTag(' Subway Builder ')).toBe('subway-builder');
+  });
+});
+
+describe('memory tags from tool params', () => {
+  it('parses comma strings and JSON-array strings (they used to be dropped)', () => {
+    expect(memoryMod.ensureStringArray('monetization, Stripe')).toEqual(['monetization', 'stripe']);
+    expect(memoryMod.ensureStringArray('["a","b","a"]')).toEqual(['a', 'b']);
+    expect(memoryMod.ensureStringArray(['X'])).toEqual(['x']);
+    expect(memoryMod.ensureStringArray(undefined)).toEqual([]);
+  });
+});

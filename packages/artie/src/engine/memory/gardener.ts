@@ -15,6 +15,7 @@
 
 import { logger } from '../../shared/logger.js';
 import { getSyncDb } from '../../shared/db/client.js';
+import { dream, type DreamResult } from './dream.js';
 
 interface MemoryRecord {
   id: number;
@@ -35,6 +36,7 @@ interface GardeningResult {
   memoriesPruned: number;
   memoriesBoosted: number;
   digestGenerated: boolean;
+  dream?: DreamResult;
 }
 
 interface WeeklyDigest {
@@ -84,6 +86,16 @@ export class MemoryGardener {
         memoriesBoosted: 0,
         digestGenerated: false,
       };
+
+      // Step 0: Dream, an LLM pass that re-tags undreamt memories against a seed vocabulary
+      // and soft-prunes junk (dream.ts). First, so step 1's tag-based linking sees clean tags.
+      if (process.env.MEMORY_DREAM_ENABLED !== 'false') {
+        try {
+          result.dream = await dream();
+        } catch (error) {
+          logger.warn('[gardener] Dream failed, gardening continues:', error);
+        }
+      }
 
       // Step 1: Find and link related memories
       result.memoriesLinked = await this.linkRelatedMemories();
