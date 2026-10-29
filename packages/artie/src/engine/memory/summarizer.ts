@@ -175,7 +175,7 @@ function generateSummary(chunks: ConversationChunk[]): DailySummary | null {
 /**
  * Store summary as a high-importance memory
  */
-function storeSummary(summary: DailySummary): void {
+export function storeSummary(summary: DailySummary): void {
   try {
     const db = getSyncDb();
     const content = `Daily summary (${summary.date}): ${summary.summary}`;
@@ -183,6 +183,13 @@ function storeSummary(summary: DailySummary): void {
     // No summaries for blocked users (mentions of them elsewhere are fine).
     if (isBlockedUser(summary.userId)) {
       logger.debug(`Skipping daily summary for blocked user`);
+      return;
+    }
+    // A day with no topics and no key points summarizes to "N messages exchanged", a stub
+    // recall already ignores and the nightly dream had to prune (Artie, 2026-10-28: "stop
+    // *creating* them"). Don't write it.
+    if (summary.topics.length === 0 && summary.keyPoints.length === 0) {
+      logger.debug(`Skipping empty daily summary for ${summary.userId} (${summary.messageCount} msgs)`);
       return;
     }
     const metadata = JSON.stringify({

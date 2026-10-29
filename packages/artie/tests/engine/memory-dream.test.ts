@@ -58,7 +58,7 @@ describe('dream', () => {
       JSON.stringify({
         memories: [
           { id: fact, kind: 'preference', tags: ['Transit', 'timetable'], verdict: 'keep', reason: 'pref' },
-          { id: junk, kind: 'tool', tags: ['math'], verdict: 'junk', reason: 'smoke test' },
+          { id: junk, kind: 'tool', tags: ['math'], verdict: 'junk', category: 'test', reason: 'smoke test' },
           { id: pinned, kind: 'rule', tags: ['ethics'], verdict: 'junk', reason: 'x' },
           { id: vital, kind: 'event', tags: ['stub'], verdict: 'junk', reason: 'x' },
           { id: 99999, kind: 'lore', tags: ['ghost'], verdict: 'junk', reason: 'not given' },
@@ -68,7 +68,7 @@ describe('dream', () => {
 
     const result = await dreamMod.dream(10);
     // fact, pinned and vital keep (the last two are protected) and gain tags; junk is pruned
-    expect(result).toEqual({ reviewed: 4, tagged: 3, pruned: 1 });
+    expect(result).toEqual({ reviewed: 4, tagged: 3, pruned: 1, prunedBy: { test: 1 } });
 
     expect(JSON.parse(row(fact).tags)).toEqual(['preference', 'transit', 'timetable']);
     expect(row(fact).importance).toBe(5);
@@ -78,6 +78,7 @@ describe('dream', () => {
     expect(JSON.parse(j.tags)).toContain('pruned');
     const meta = JSON.parse(j.metadata);
     expect(meta.pruned_by).toBe('dream');
+    expect(meta.pruned_category).toBe('test');
     expect(meta.importance_before_dream).toBe(4);
 
     expect(row(pinned).importance).toBe(6);
@@ -107,6 +108,8 @@ describe('dream', () => {
     expect(dreamMod.parseVerdicts(JSON.stringify({ memories: [v] }))).toEqual([v]);
     expect(dreamMod.parseVerdicts(JSON.stringify([v]))).toEqual([v]);
     expect(dreamMod.parseVerdicts('```json\n' + JSON.stringify([v, { kind: 'x' }]) + '\n```')).toEqual([v]);
+    const { id: _id, ...rest } = v;
+    expect(dreamMod.parseVerdicts(JSON.stringify({ '1': rest }))).toEqual([v]);
     expect(dreamMod.parseVerdicts('no json here')).toBeNull();
   });
 
@@ -123,9 +126,28 @@ describe('dream', () => {
     expect(JSON.parse(row(id).tags)).toEqual(['transit', 'quest', 'preference', 'express']);
   });
 
+  it('files an unknown junk category under filler', () => {
+    const id = insert('meh');
+    const m = db.get<any>('SELECT id, content, tags, importance, metadata FROM memories WHERE id = ?', [id]);
+    dreamMod.applyVerdict(m, { id, kind: 'lore', tags: [], verdict: 'junk', category: 'vibes' }, new Date().toISOString());
+    expect(JSON.parse(row(id).metadata).pruned_category).toBe('filler');
+  });
+
   it('normalizes tags and drops EJ action tags', () => {
     expect(dreamMod.normalizeTag('!tobuy')).toBe('tobuy');
     expect(dreamMod.normalizeTag(' Subway Builder ')).toBe('subway-builder');
+  });
+});
+
+describe('daily summary stubs', () => {
+  it('skips a day with no topics or key points, stores one with content', async () => {
+    db.run('DELETE FROM memories');
+    const { storeSummary } = await import('../../src/engine/memory/summarizer.js');
+    const base = { userId: 'u9', date: '2026-10-28', sentiment: 'neutral' as const, messageCount: 1 };
+    storeSummary({ ...base, summary: '1 messages exchanged', topics: [], keyPoints: [] });
+    expect(db.get<any>('SELECT COUNT(*) AS n FROM memories').n).toBe(0);
+    storeSummary({ ...base, summary: '4 messages exchanged. Topics discussed: express trains', topics: ['express trains'], keyPoints: [] });
+    expect(db.get<any>('SELECT COUNT(*) AS n FROM memories').n).toBe(1);
   });
 });
 

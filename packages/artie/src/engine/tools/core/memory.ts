@@ -316,14 +316,20 @@ export class MemoryService {
   /**
    * Recall memories filtered by specific tags (for capability-specific retrieval)
    */
-  async recallByTags(userId: string, tags: string[], limit: number = 5): Promise<MemoryEntry[]> {
+  async recallByTags(
+    userId: string,
+    tags: string[],
+    limit: number = 5,
+    guildId?: string
+  ): Promise<MemoryEntry[]> {
     if (this.useHybridLayer) {
       try {
         logger.info(
           `🏷️ [HYBRID] Recalling memories with tags: ${tags.join(', ')} for user ${userId}`
         );
 
-        const allMemories = await hybridDataLayer.getRecentMemories(userId, 1000);
+        // guildId keeps other servers' memories out, same isolation as auto-recall.
+        const allMemories = await hybridDataLayer.getRecentMemories(userId, 1000, guildId);
 
         // Filter memories that have ANY of the requested tags. Importance <= 2 is stale or
         // dream-pruned (engine/memory/dream.ts) and stays hidden, same as auto-recall.
@@ -842,7 +848,12 @@ async function handleMemoryAction(
         // Tag lookup (Artie's ask, 2026-10-28: "let me find my own notes later").
         const wantedTags = ensureStringArray(params.tags);
         if (wantedTags.length > 0) {
-          const tagged = await memoryService.recallByTags(targetUserId, wantedTags, limit);
+          const tagged = await memoryService.recallByTags(
+            targetUserId,
+            wantedTags,
+            limit,
+            optionalString(params.guildId)
+          );
           if (tagged.length === 0) {
             return `🏷️ No memories tagged ${wantedTags.join(', ')}.`;
           }

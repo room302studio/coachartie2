@@ -67,11 +67,18 @@ interface Candidate {
   metadata: string | null;
 }
 
+/**
+ * Why something was junk. Counted per night so the junk Artie keeps *creating* is visible
+ * (Artie, 2026-10-28: "helps me understand what patterns to stop creating in the first place").
+ */
+export const JUNK_CATEGORIES = ['stub', 'duplicate', 'outdated', 'test', 'filler'] as const;
+
 export interface DreamVerdict {
   id: number;
   kind: string;
   tags: string[];
   verdict: 'keep' | 'junk';
+  category?: string;
   reason?: string;
 }
 
@@ -79,6 +86,7 @@ export interface DreamResult {
   reviewed: number;
   tagged: number;
   pruned: number;
+  prunedBy?: Record<string, number>;
 }
 
 const DREAM_OUTPUT: JsonOutputSpec = {
@@ -95,9 +103,10 @@ const DREAM_OUTPUT: JsonOutputSpec = {
             kind: { type: 'string', enum: [...KINDS] },
             tags: { type: 'array', items: { type: 'string' } },
             verdict: { type: 'string', enum: ['keep', 'junk'] },
+            category: { type: 'string', enum: [...JUNK_CATEGORIES, 'none'] },
             reason: { type: 'string' },
           },
-          required: ['id', 'kind', 'tags', 'verdict', 'reason'],
+          required: ['id', 'kind', 'tags', 'verdict', 'category', 'reason'],
           additionalProperties: false,
         },
       },
@@ -172,6 +181,7 @@ function dreamMessages(vocab: string[], batch: Candidate[]): ChatMessage[] {
 - kind: exactly one of ${KINDS.join(', ')}
 - tags: 2-5 lowercase topic tags. Reuse tags from VOCABULARY whenever one fits; invent at most ONE new tag per memory, only if nothing fits. No names of the kind itself, no "memory"/"reflection".
 - verdict: "junk" only if it holds nothing worth recalling later: test runs or smoke tests, tool-success trivia (e.g. "the calculator computed 123*456"), empty stubs ("N messages exchanged"), or pure filler. Opinions, jokes with context, facts about people, plans and lore are "keep". When unsure, keep.
+- category: for junk, exactly one of stub (auto-generated summary/digest with no content), duplicate (repeats another memory in this batch), outdated (superseded or no longer true), test (test runs, tool trivia), filler (vague or contentless). For keep: "none".
 - reason: a few words.
 Reply with JSON only.
 
@@ -186,6 +196,11 @@ VOCABULARY: ${vocab.join(', ')}`;
     { role: 'system', content: system },
     { role: 'user', content: user },
   ];
+}
+
+function junkCategory(category: unknown): string {
+  const c = String(category ?? '').toLowerCase();
+  return (JUNK_CATEGORIES as readonly string[]).includes(c) ? c : 'filler';
 }
 
 /**
@@ -207,8 +222,14 @@ export function parseVerdicts(raw: string): DreamVerdict[] | null {
   }
   let list: unknown = whole;
   if (whole && typeof whole === 'object' && !Array.isArray(whole)) {
-    // {"memories": [...]}, or whatever key the model chose ({"m": [...]} seen 2026-10-28)
-    list = Object.values(whole).find(Array.isArray);
+    // {"memories": [...]}, or whatever key the model chose ({"m": [...]} seen 2026-10-28),
+    // or verdicts keyed by id: {"20508": {...}, ...} (also seen 2026-10-28).
+    const entries = Object.entries(whole);
+    list =
+      Object.values(whole).find(Array.isArray) ??
+      (entries.length > 0 && entries.every(([k, v]) => /^\d+$/.test(k) && v && typeof v === 'object')
+        ? entries.map(([k, v]) => ({ id: Number(k), ...(v as object) }))
+        : undefined);
   }
   if (!Array.isArray(list)) return null;
   return list.filter((v): v is DreamVerdict => !!v && typeof v === 'object' && 'id' in v);
@@ -243,9 +264,17 @@ export function applyVerdict(
     db.run(
       `UPDATE memories SET importance = 1, tags = ?,
          metadata = json_set(CASE WHEN json_valid(metadata) THEN metadata ELSE '{}' END,
-           '$.dreamt_at', ?, '$.pruned_by', 'dream', '$.pruned_reason', ?, '$.importance_before_dream', ?)
+           '$.dreamt_at', ?, '$.pruned_by', 'dream', '$.pruned_category', ?, '$.pruned_reason', ?,
+           '$.importance_before_dream', ?)
        WHERE id = ?`,
-      [JSON.stringify([...new Set([...merged, 'pruned'])]), now, String(v.reason || ''), memory.importance, memory.id]
+      [
+        JSON.stringify([...new Set([...merged, 'pruned'])]),
+        now,
+        junkCategory(v.category),
+        String(v.reason || ''),
+        memory.importance,
+        memory.id,
+      ]
     );
     return 'pruned';
   }
@@ -296,7 +325,11 @@ export async function dream(limit = DREAM_BATCH): Promise<DreamResult> {
         if (!memory) continue; // the model named an id it wasn't given
         const outcome = applyVerdict(memory, v, now, vocabSet);
         result.reviewed++;
-        if (outcome === 'pruned') result.pruned++;
+        if (outcome === 'pruned') {
+          result.pruned++;
+          const category = junkCategory(v.category);
+          result.prunedBy = { ...result.prunedBy, [category]: (result.prunedBy?.[category] ?? 0) + 1 };
+        }
         if (outcome === 'tagged') result.tagged++;
       }
     } catch (error) {
@@ -306,7 +339,8 @@ export async function dream(limit = DREAM_BATCH): Promise<DreamResult> {
   }
 
   logger.info(
-    `[dream] 💭 Reviewed ${result.reviewed}, tagged ${result.tagged}, pruned ${result.pruned} (vocab ${vocab.length})`
+    `[dream] 💭 Reviewed ${result.reviewed}, tagged ${result.tagged}, pruned ${result.pruned}` +
+      ` ${JSON.stringify(result.prunedBy ?? {})} (vocab ${vocab.length})`
   );
   return result;
 }

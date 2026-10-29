@@ -418,7 +418,11 @@ export class MemoryGardener {
         `[gardener] 📋 Weekly digest: ${newMemories} new memories, top themes: ${topThemes.slice(0, 3).join(', ')}`
       );
 
-      // Store the digest as a memory itself
+      // Store the digest as a memory itself, but only when it carries something: a digest of
+      // counts and themes alone ("0 new memories. Top themes: .") was pure stub the dream pruned.
+      if (notableInteractions.length === 0 && lessonsLearned.length === 0) {
+        return digest;
+      }
       db.run(
         `
         INSERT INTO memories (user_id, content, tags, context, timestamp, importance, metadata, created_at, updated_at)
