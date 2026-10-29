@@ -173,7 +173,7 @@ describe('dream journal + recall', () => {
       reviewed: 5, tagged: 3, pruned: 0,
     });
     const now = Date.now();
-    expect(dreamMod.dreamRecallLine(now)).toContain('💭 Your dream last night was real');
+    expect(dreamMod.dreamRecallLine(now)).toContain("💭 Last night's memory dream:");
     expect(dreamMod.dreamRecallLine(now)).toContain('reviewed 5 of 5');
     expect(dreamMod.dreamRecallLine(now + 37 * 3_600_000)).toBe('');
   });
