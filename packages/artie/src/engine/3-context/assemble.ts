@@ -513,6 +513,19 @@ Important:
     // Current date/time - temporal awareness
     await addCurrentDateTime(sources);
 
+    // What his nightly memory dream did, while it's fresh (dream.ts dreamRecallLine). Its own
+    // source, not part of Discord situational awareness, so he remembers it on every surface.
+    const dreamLine = dreamRecallLine();
+    if (dreamLine) {
+      sources.push({
+        name: 'dream_recall',
+        priority: 60,
+        tokenWeight: estimateTokens(dreamLine),
+        content: dreamLine,
+        category: 'temporal',
+      });
+    }
+
     // Discord situational awareness - explicit "where am I" context
     await this.addDiscordSituationalAwareness(message, sources);
 
@@ -782,10 +795,6 @@ Important:
     } catch (error) {
       logger.warn('🔋 Self-meter unavailable for this reply', error);
     }
-
-    // What his nightly memory dream did, while it's fresh (dream.ts dreamRecallLine).
-    const dreamLine = dreamRecallLine();
-    if (dreamLine) parts.push(dreamLine);
 
     // System notes (e.g., recovery from downtime)
     if (ctx.systemNote) {
