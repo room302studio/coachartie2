@@ -35,11 +35,23 @@ export function hasHardCapElapsed(
 }
 
 /** Non-bot member count from anything shaped like a discord.js member collection — kept as a
- *  plain array of `{ user: { bot: boolean } }` so a test can pass plain objects. */
-export function countNonBotMembers(members: Iterable<{ user: { bot: boolean } }>): number {
+ *  plain array of `{ user: { bot: boolean } }` so a test can pass plain objects.
+ *  SCRIBE_COUNT_AS_HUMAN_IDS (comma-separated user ids) counts those bots as people: the hook
+ *  that lets a test-speaker bot drive an end-to-end scribe test (join, transcribe, leave). */
+export function countNonBotMembers(
+  members: Iterable<{ id?: string; user: { bot: boolean; id?: string } }>,
+  env: NodeJS.ProcessEnv = process.env
+): number {
+  const asHuman = new Set(
+    (env.SCRIBE_COUNT_AS_HUMAN_IDS || '')
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean)
+  );
   let count = 0;
   for (const member of members) {
-    if (!member.user.bot) count++;
+    const id = member.user.id ?? member.id;
+    if (!member.user.bot || (id !== undefined && asHuman.has(id))) count++;
   }
   return count;
 }

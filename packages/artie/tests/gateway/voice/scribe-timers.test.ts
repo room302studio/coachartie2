@@ -51,6 +51,12 @@ describe('countNonBotMembers', () => {
     expect(countNonBotMembers(members)).toBe(2);
   });
 
+  it('counts bots listed in SCRIBE_COUNT_AS_HUMAN_IDS (e2e test speaker)', () => {
+    const members = [{ user: { bot: true, id: 'speaker' } }, { user: { bot: true, id: 'other' } }];
+    expect(countNonBotMembers(members, {})).toBe(0);
+    expect(countNonBotMembers(members, { SCRIBE_COUNT_AS_HUMAN_IDS: 'speaker' })).toBe(1);
+  });
+
   it('is 0 for an empty or all-bot channel', () => {
     expect(countNonBotMembers([])).toBe(0);
     expect(countNonBotMembers([{ user: { bot: true } }])).toBe(0);
