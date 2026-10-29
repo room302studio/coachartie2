@@ -246,7 +246,9 @@ export async function startVoiceScribeSession(input: {
     return { ok: false, reason: 'A scribe session is already running in this server.' };
   }
 
-  const brownout = await engine.scribeCanStart();
+  // A scheduled auto-scribe meeting (summaryOnly) is EJ's standing ask and costs cents
+  // (per-utterance STT + one summary), so the critical-runway gate only applies to ad-hoc /scribe.
+  const brownout = summaryOnly ? { allowed: true as const, reason: undefined } : await engine.scribeCanStart();
   if (!brownout.allowed) {
     return { ok: false, reason: brownout.reason ?? 'Scribe mode is paused right now.' };
   }
