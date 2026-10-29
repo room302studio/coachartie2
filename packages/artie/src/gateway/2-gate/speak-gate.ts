@@ -65,7 +65,12 @@ export async function runSpeakGate(
 }
 
 export function resolveAmbientMode(config: { ambientMode?: AmbientMode } | null | undefined): AmbientMode {
-  if (config?.ambientMode === 'never') {
+  // No config at all = a guild whitelisted only through DISCORD_GUILD_WHITELIST. Nobody has
+  // tuned it, so it's mention-only until someone gives it a config entry.
+  if (!config) {
+    return 'never';
+  }
+  if (config.ambientMode === 'never') {
     return 'never';
   }
   return 'gated';

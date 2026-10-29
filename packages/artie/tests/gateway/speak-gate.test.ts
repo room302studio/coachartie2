@@ -83,8 +83,9 @@ describe('runSpeakGate', () => {
 });
 
 describe('resolveAmbientMode', () => {
-  it("defaults to 'gated' everywhere", () => {
-    expect(resolveAmbientMode(null)).toBe('gated');
+  it("defaults to 'gated' for a configured guild, 'never' for one with no config (env-only whitelist)", () => {
+    expect(resolveAmbientMode(null)).toBe('never');
+    expect(resolveAmbientMode(undefined)).toBe('never');
     expect(resolveAmbientMode({})).toBe('gated');
     expect(resolveAmbientMode({ ambientMode: 'never' })).toBe('never');
   });
