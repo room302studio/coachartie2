@@ -58,7 +58,8 @@ cd "$DEPLOY_PATH"
 echo "--- Pre-deploy: backup + state (for rollback) ---"
 mkdir -p "$DEPLOY_PATH/backups"
 if [ -f data/coachartie.db ]; then
-  cp data/coachartie.db "backups/coachartie-$(date +%Y%m%d-%H%M%S).db"
+  # .backup, not cp: in WAL mode the newest writes are still in coachartie.db-wal.
+  sqlite3 data/coachartie.db ".timeout 10000" ".backup backups/coachartie-$(date +%Y%m%d-%H%M%S).db"
 fi
 PREV_HEAD="$(git rev-parse HEAD)"
 echo "Previous HEAD: $PREV_HEAD"

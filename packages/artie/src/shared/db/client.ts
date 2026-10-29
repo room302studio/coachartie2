@@ -39,9 +39,12 @@ export function getDb(dbPath?: string): BetterSQLite3Database<typeof schema> {
   const path = dbPath || getDefaultDbPath();
   rawDb = new Database(path);
 
-  // Use DELETE journal mode - more crash-resistant than WAL
-  // WAL mode corrupts easily with frequent restarts (62+ restarts causing corruption)
-  rawDb.pragma('journal_mode = DELETE');
+  // WAL: readers no longer block on the writer (DELETE mode gave "database is locked" to any
+  // outside reader and SQLITE_BUSY overnight). DELETE mode was adopted in Dec 2025 blaming WAL
+  // for corruption, but the cause was sql.js rewriting the whole file over better-sqlite3
+  // (5485a4b); sql.js is gone and this is the only driver in-process. Back up with
+  // `sqlite3 db ".backup out"`, never `cp` — the newest writes live in coachartie.db-wal.
+  rawDb.pragma('journal_mode = WAL');
   // Wait up to 30 seconds for locks (prevents SQLITE_BUSY errors)
   rawDb.pragma('busy_timeout = 30000');
   // NORMAL (not FULL) synchronous: with DELETE journaling this is still crash-safe
