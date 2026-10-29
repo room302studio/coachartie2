@@ -322,6 +322,9 @@
     "send",
     "split"
   ],
+  "sb_changelog": [
+    "get"
+  ],
   "scheduler": [
     "cancel",
     "list",

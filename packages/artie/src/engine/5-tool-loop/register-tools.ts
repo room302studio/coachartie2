@@ -2,6 +2,7 @@ import { logger } from '../../shared/logger.js';
 import { capabilityRegistry } from './registry.js';
 // System capabilities
 import { calculatorCapability } from '../tools/core/calculator.js';
+import { sbChangelogCapability } from '../tools/core/sb-changelog.js';
 import { creditStatusCapability } from '../tools/ops/credit-status.js';
 // bot-config = runtime_config + model_manager (wave 4; old names alias in registry.ts)
 import { botConfigCapability } from '../tools/ops/bot-config.js';
@@ -118,7 +119,7 @@ export class CapabilityBootstrap {
       // order in the cached system prompt.
       const ALL_CAPABILITIES = [
         embeddedMCPCapability, scrapbookCapability,
-        calculatorCapability, webCapability, httpCapability,
+        calculatorCapability, sbChangelogCapability, webCapability, httpCapability,
         filesystemCapability, memoryCapability,
         githubCapability, creditStatusCapability, botConfigCapability,
         systemMonitorCapability, variableStoreCapability, tasksCapability,

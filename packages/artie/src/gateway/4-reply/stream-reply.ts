@@ -21,6 +21,7 @@ import { jobMonitor } from '../3-ask-engine/job-watcher.js';
 import { telemetry } from '../telemetry.js';
 import { generateCorrelationId, getShortCorrelationId } from '../correlation.js';
 import { OUTPUT_SLUR_BLOCKLIST, INTERNAL_LEAK_BLOCKLIST } from './output-safety.js';
+import { stripDeadLinks } from './link-check.js';
 import { applyControlTokens, scrubStreamingTokens } from './control-tokens.js';
 import { shouldCreateThread, generateThreadName } from './threads.js';
 import { slugify } from '../../shared/text.js';
@@ -433,6 +434,9 @@ export async function processUserIntent(
           // rule handles this most of the time; this is the insurance for when a
           // budget model slips.
           cleanResult = scrubBlockedUserMentions(cleanResult);
+          // Invented URLs (a made-up "whatsnew" page, 2026-10-29) come out before anyone sees them.
+          const linkCheck = await stripDeadLinks(cleanResult).catch(() => ({ text: cleanResult, removed: [] }));
+          cleanResult = linkCheck.text;
 
           logger.info(`📝 FINAL RESPONSE DELIVERY [${shortId}]:`, {
             cleanResultLength: cleanResult.length,
@@ -483,7 +487,11 @@ export async function processUserIntent(
               needsEdit: trimmedResult !== trimmedSent && trimmedResult.length > trimmedSent.length,
             });
 
-            if (trimmedResult !== trimmedSent && trimmedResult.length > trimmedSent.length) {
+            // A removed dead link may make the final text shorter than what streamed: edit anyway.
+            if (
+              trimmedResult !== trimmedSent &&
+              (trimmedResult.length > trimmedSent.length || linkCheck.removed.length > 0)
+            ) {
               try {
                 if (intent.editResponse) {
                   logger.info(
