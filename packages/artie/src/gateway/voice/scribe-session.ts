@@ -236,8 +236,10 @@ export async function startVoiceScribeSession(input: {
   channel: VoiceBasedChannel;
   textChannelId: string;
   startedBy: string;
+  /** End with the summary alone, no GitHub proposals (auto-joined meetings). */
+  summaryOnly?: boolean;
 }): Promise<StartVoiceResult> {
-  const { client, channel, textChannelId, startedBy } = input;
+  const { client, channel, textChannelId, startedBy, summaryOnly } = input;
   const guildId = channel.guild.id;
 
   if (activeSessions.has(guildId)) {
@@ -273,6 +275,7 @@ export async function startVoiceScribeSession(input: {
       voiceChannelId: channel.id,
       textChannelId,
       startedBy,
+      summaryOnly,
     });
     sessionId = created.sessionId;
   } catch (error) {

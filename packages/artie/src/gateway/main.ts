@@ -28,6 +28,7 @@ import { initializeGitHubSync } from './watchers/github/watch-loop.js';
 import { observationalLearning } from './watchers/observe-channels.js';
 import { steamReviewNotes } from './watchers/steam-review-notes.js';
 import { channelDigestLoop } from './watchers/channel-digests.js';
+import { initAutoScribe, stopAutoScribe } from './voice/scribe-auto.js';
 import { registerGatewayClient } from './api.js';
 import { stopAllVoiceScribeSessions } from './voice/scribe-session.js';
 
@@ -310,6 +311,13 @@ export async function startGateway(): Promise<GatewayHandle> {
         logger.warn('Failed to initialize channel digests:', error);
       }
 
+      // Auto-scribe: join a scheduled meeting on his own, summarize, leave (scribe-auto.ts)
+      try {
+        initAutoScribe(client);
+      } catch (error) {
+        logger.warn('Failed to initialize auto-scribe:', error);
+      }
+
       // Initialize Steam review note-taking (#steam-reviews → ongoing situation doc)
       try {
         steamReviewNotes.initialize(client);
@@ -412,6 +420,7 @@ export async function startGateway(): Promise<GatewayHandle> {
         observationalLearning.shutdown();
         steamReviewNotes.shutdown();
         channelDigestLoop.stop();
+        stopAutoScribe();
         if (statusTimer) clearInterval(statusTimer);
         if (pushWorker) await pushWorker.close();
         client.destroy();

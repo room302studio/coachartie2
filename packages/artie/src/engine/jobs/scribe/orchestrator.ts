@@ -65,12 +65,19 @@ export async function scribeCanStart(): Promise<{ allowed: boolean; reason?: str
   return { allowed: true };
 }
 
-export function startScribeSession(input: {
+/** Sessions that end with the summary alone, no GitHub proposals (auto-joined meetings, EJ
+ *  2026-10-29: "send a summary at the end, that's it"). In memory: a restart stops and
+ *  summarizes every live session before the process exits, so nothing outlives the set. */
+const summaryOnlySessions = new Set<string>();
+
+export function startScribeSession(rawInput: {
   guildId: string;
   voiceChannelId: string;
   textChannelId: string;
   startedBy: string;
+  summaryOnly?: boolean;
 }): { sessionId: string } {
+  const { summaryOnly, ...input } = rawInput;
   // Any previous session's retention window may have lapsed by the time a new one starts;
   // sweeping here means the 7-day cleanup never needs its own scheduler wiring.
   const swept = sweepExpiredScribeData();
@@ -79,6 +86,7 @@ export function startScribeSession(input: {
   }
   const sessionId = randomUUID();
   createScribeSession({ sessionId, ...input });
+  if (summaryOnly) summaryOnlySessions.add(sessionId);
   logger.info(`📝 Scribe session ${sessionId} started in guild ${input.guildId} by ${input.startedBy}`);
   return { sessionId };
 }
@@ -175,6 +183,7 @@ export async function stopScribeSession(
 
   let summaryText: string;
   let pendingIds: number[] = [];
+  const summaryOnly = summaryOnlySessions.delete(sessionId);
   try {
     const { summaryText: text, proposals } = await generateScribeSummary({
       sessionId,
@@ -185,7 +194,7 @@ export async function stopScribeSession(
     });
     summaryText = text;
 
-    if (proposals.length > 0) {
+    if (proposals.length > 0 && !summaryOnly) {
       const outcomes = await submitScribeProposals(proposals, {
         userId: OWNER_USER_ID,
         guildId: session.guildId,

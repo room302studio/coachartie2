@@ -22,7 +22,7 @@ import {
   ensureVoiceStateListener,
 } from '../voice/scribe-session.js';
 
-const ANNOUNCE_TEXT =
+export const ANNOUNCE_TEXT =
   '📝 Artie is taking notes on this call. Opted-out people (`/artie-optout`) are never ' +
   'transcribed. `/scribe stop` ends it.';
 

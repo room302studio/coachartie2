@@ -159,6 +159,7 @@ export async function scribeStart(body: {
   voiceChannelId: string;
   textChannelId: string;
   startedBy: string;
+  summaryOnly?: boolean;
 }): Promise<{ sessionId: string }> {
   return (await scribe()).startScribeSession(wire(body));
 }

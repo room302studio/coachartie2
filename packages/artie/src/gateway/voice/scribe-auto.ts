@@ -1,0 +1,162 @@
+/**
+ * Auto-scribe: Artie joins a meeting on his own and leaves on his own (EJ, 2026-10-29: "he
+ * should join, listen, and send a summary at the end, that's it").
+ *
+ * During a configured window, once SCRIBE_AUTO_MIN_HUMANS people are in the configured voice
+ * channel, he starts a summary-only scribe session there and posts the usual notes notice.
+ * Leaving is the existing scribe rule: two minutes after the last human leaves, the session
+ * stops and the summary is posted (scribe-session.ts tick / NO_HUMAN_TIMEOUT_MS).
+ *
+ * Env (all required to arm it, none of it secret):
+ *   SCRIBE_AUTO_CHANNEL_ID       voice channel to watch
+ *   SCRIBE_AUTO_TEXT_CHANNEL_ID  where the notice + summary go (default: the voice channel's
+ *                                own text chat)
+ *   SCRIBE_AUTO_WINDOWS          comma-separated ISO "start/end" pairs with offsets, e.g.
+ *                                2026-10-29T12:30:00-04:00/2026-10-29T15:30:00-04:00
+ *   SCRIBE_AUTO_MIN_HUMANS       people needed to count as a meeting (default 2)
+ *
+ * One auto-start per window: if the meeting ends and someone drifts back in, he stays out.
+ */
+import { Events, type Client, type VoiceBasedChannel } from 'discord.js';
+import { logger } from '../../shared/logger.js';
+import { getErrorMessage } from '../../shared/errors.js';
+import { isScribeAllowedGuild } from '../../shared/config/guilds.js';
+import { OWNER_USER_ID } from '../../shared/config/owner.js';
+import { ANNOUNCE_TEXT } from '../commands/scribe.js';
+import { countNonBotMembers } from './scribe-timers.js';
+import { ensureVoiceStateListener, getActiveVoiceSession, startVoiceScribeSession } from './scribe-session.js';
+
+const CHECK_MS = 60_000;
+
+export interface AutoWindow {
+  start: number;
+  end: number;
+  key: string;
+}
+
+export interface AutoScribeConfig {
+  voiceChannelId: string;
+  textChannelId: string;
+  windows: AutoWindow[];
+  minHumans: number;
+}
+
+/** Parse the env; null when auto-scribe isn't armed. Bad window entries are skipped, loudly. */
+export function autoScribeConfig(env: NodeJS.ProcessEnv = process.env): AutoScribeConfig | null {
+  const voiceChannelId = (env.SCRIBE_AUTO_CHANNEL_ID || '').trim();
+  if (!voiceChannelId) return null;
+  const windows: AutoWindow[] = [];
+  for (const raw of (env.SCRIBE_AUTO_WINDOWS || '').split(',').map((s) => s.trim()).filter(Boolean)) {
+    const [a, b] = raw.split('/');
+    const start = Date.parse(a ?? '');
+    const end = Date.parse(b ?? '');
+    if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) {
+      logger.warn(`🎙️ Auto-scribe: ignoring bad window "${raw}" (want ISO start/end with offsets)`);
+      continue;
+    }
+    windows.push({ start, end, key: raw });
+  }
+  if (windows.length === 0) return null;
+  const min = parseInt(env.SCRIBE_AUTO_MIN_HUMANS || '', 10);
+  return {
+    voiceChannelId,
+    textChannelId: (env.SCRIBE_AUTO_TEXT_CHANNEL_ID || '').trim() || voiceChannelId,
+    windows,
+    minHumans: Number.isFinite(min) && min > 0 ? min : 2,
+  };
+}
+
+/** The window `now` falls in, if any. */
+export function activeWindow(windows: AutoWindow[], now: number): AutoWindow | null {
+  return windows.find((w) => now >= w.start && now < w.end) ?? null;
+}
+
+/** Pure decision: start now? */
+export function shouldAutoStart(input: {
+  window: AutoWindow | null;
+  humans: number;
+  minHumans: number;
+  sessionActive: boolean;
+  alreadyStarted: boolean;
+}): boolean {
+  return (
+    input.window !== null && !input.sessionActive && !input.alreadyStarted && input.humans >= input.minHumans
+  );
+}
+
+const startedWindows = new Set<string>();
+let starting = false;
+
+async function check(client: Client, cfg: AutoScribeConfig): Promise<void> {
+  if (starting) return;
+  const window = activeWindow(cfg.windows, Date.now());
+  if (!window) return;
+
+  const channel = client.channels.cache.get(cfg.voiceChannelId) as VoiceBasedChannel | undefined;
+  if (!channel || !('members' in channel) || !isScribeAllowedGuild(channel.guild.id)) return;
+
+  const humans = countNonBotMembers(channel.members.values());
+  const go = shouldAutoStart({
+    window,
+    humans,
+    minHumans: cfg.minHumans,
+    sessionActive: getActiveVoiceSession(channel.guild.id) !== null,
+    alreadyStarted: startedWindows.has(window.key),
+  });
+  if (!go) return;
+
+  starting = true;
+  try {
+    ensureVoiceStateListener(client);
+    const result = await startVoiceScribeSession({
+      client,
+      channel,
+      textChannelId: cfg.textChannelId,
+      startedBy: OWNER_USER_ID, // standing ask from EJ; spend is ledgered against him like /scribe
+      summaryOnly: true,
+    });
+    if (!result.ok) {
+      // Not marked started: the next check retries (e.g. brownout eased, join hiccup).
+      logger.warn(`🎙️ Auto-scribe could not start in #${channel.name}: ${result.reason}`);
+      return;
+    }
+    startedWindows.add(window.key);
+    logger.info(`🎙️ Auto-scribe joined #${channel.name} (${humans} people), session ${result.sessionId}`);
+    const text = client.channels.cache.get(cfg.textChannelId);
+    if (text && 'send' in text) {
+      await text.send(ANNOUNCE_TEXT).catch((error: unknown) =>
+        logger.warn('🎙️ Auto-scribe notice failed:', getErrorMessage(error))
+      );
+    }
+  } catch (error) {
+    logger.error('🎙️ Auto-scribe start failed:', getErrorMessage(error));
+  } finally {
+    starting = false;
+  }
+}
+
+let timer: NodeJS.Timeout | null = null;
+
+export function initAutoScribe(client: Client): void {
+  const cfg = autoScribeConfig();
+  if (!cfg) {
+    logger.info('🎙️ Auto-scribe off (SCRIBE_AUTO_CHANNEL_ID / SCRIBE_AUTO_WINDOWS unset)');
+    return;
+  }
+  logger.info(
+    `🎙️ Auto-scribe armed for voice ${cfg.voiceChannelId}: ${cfg.windows.map((w) => w.key).join(', ')} (min ${cfg.minHumans} people)`
+  );
+  client.on(Events.VoiceStateUpdate, (oldState, newState) => {
+    if (oldState.channelId === cfg.voiceChannelId || newState.channelId === cfg.voiceChannelId) {
+      void check(client, cfg);
+    }
+  });
+  // Also poll: people already sitting in the channel when the window opens fire no event.
+  timer = setInterval(() => void check(client, cfg), CHECK_MS);
+  void check(client, cfg);
+}
+
+export function stopAutoScribe(): void {
+  if (timer) clearInterval(timer);
+  timer = null;
+}
