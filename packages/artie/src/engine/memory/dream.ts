@@ -408,7 +408,13 @@ export function dreamRecallLine(now: number = Date.now()): string {
     );
     if (!row) return '';
     if (now - Date.parse(row.timestamp) > JOURNAL_RECALL_HOURS * 3_600_000) return '';
-    return `💭 Last night you dreamed (your nightly memory tidy-up): ${row.content.replace(/^Dream journal \([^)]*\): /, '')}`;
+    // Framed as fact + instruction: as a bare data line, "what did you dream?" got an invented
+    // dream instead (2026-10-29), because it read like trivia and the question read like a bit.
+    return (
+      `💭 Your dream last night was real: your nightly memory dream ran while everyone slept. ` +
+      `If anyone asks what you dreamed (or what you did overnight), this is the true answer; tell it in your own voice, ` +
+      `don't invent a different dream: ${row.content.replace(/^Dream journal \([^)]*\): /, '')}`
+    );
   } catch {
     return '';
   }
