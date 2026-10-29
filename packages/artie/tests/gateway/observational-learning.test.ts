@@ -4,6 +4,8 @@ import {
   isObservationalLearningEnabled,
   observationMinMessages,
   isNonEventSummary,
+  observedGuildConfigs,
+  observationProfilesOnly,
 } from '../../src/gateway/watchers/observe-channels.js';
 
 describe('observation firehose flag (#91)', () => {
@@ -34,6 +36,28 @@ describe('observation firehose flag (#91)', () => {
     expect(observationMinMessages({})).toBe(5);
     expect(observationMinMessages({ OBSERVATION_MIN_MESSAGES: '8' })).toBe(8);
     expect(observationMinMessages({ OBSERVATION_MIN_MESSAGES: 'nope' })).toBe(5);
+  });
+});
+
+describe('observer scope (OBSERVATION_GUILD_IDS, OBSERVATION_PROFILES_ONLY)', () => {
+  const configs = [
+    { id: 'r302', name: 'R302', type: 'working', observationChannels: [] },
+    { id: 'sb', name: 'SB', type: 'working', observationChannels: ['mods'] },
+    { id: 'quiet', name: 'Quiet', type: 'working' },
+  ] as never[];
+
+  it('observes every learning guild when unset, only the listed ones when set', () => {
+    expect(observedGuildConfigs(configs, {}).map((g: any) => g.id)).toEqual(['r302', 'sb']);
+    expect(observedGuildConfigs(configs, { OBSERVATION_GUILD_IDS: 'r302' }).map((g: any) => g.id)).toEqual([
+      'r302',
+    ]);
+    // listing a guild the config doesn't mark as learning doesn't force it on
+    expect(observedGuildConfigs(configs, { OBSERVATION_GUILD_IDS: 'quiet' })).toEqual([]);
+  });
+
+  it('profiles-only is opt-in', () => {
+    expect(observationProfilesOnly({})).toBe(false);
+    expect(observationProfilesOnly({ OBSERVATION_PROFILES_ONLY: 'true' })).toBe(true);
   });
 });
 

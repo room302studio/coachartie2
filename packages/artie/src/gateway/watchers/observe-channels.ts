@@ -3,7 +3,7 @@ import { getSyncDb } from '../../shared/db/client.js';
 import { isBlockedUser } from '../../shared/blocklist.js';
 import { Client, TextChannel, Message, Collection } from 'discord.js';
 import * as engine from '../../engine/api.js';
-import { getGuildConfig, GUILD_CONFIGS, GuildType } from '../../shared/config/guilds.js';
+import { getGuildConfig, GUILD_CONFIGS, GuildType, type GuildConfig } from '../../shared/config/guilds.js';
 import { NON_EVENT_PATTERNS } from '../4-reply/output-safety.js';
 
 /**
@@ -30,6 +30,35 @@ import { NON_EVENT_PATTERNS } from '../4-reply/output-safety.js';
  */
 export function isObservationalLearningEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
   return env.OBSERVATIONAL_LEARNING_ENABLED === 'true';
+}
+
+/**
+ * OBSERVATION_GUILD_IDS (comma-separated) limits the observer to those guilds; unset = every
+ * guild the config marks as learning. (EJ, 2026-10-29: passive observation on Room 302 only.)
+ */
+export function observedGuildConfigs(
+  configs: GuildConfig[] = Object.values(GUILD_CONFIGS),
+  env: NodeJS.ProcessEnv = process.env
+): GuildConfig[] {
+  const only = (env.OBSERVATION_GUILD_IDS || '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+  return configs.filter(
+    (g) =>
+      (g.type === 'watching' ||
+        (g.type === 'working' && (g.proactiveAnswering || g.observationChannels !== undefined))) &&
+      (only.length === 0 || only.includes(g.id))
+  );
+}
+
+/**
+ * OBSERVATION_PROFILES_ONLY=true refreshes per-person profiles but skips the per-batch
+ * channel "observation" summary: recall hides those (store.ts isStaleNoise) and channel
+ * digests already summarize channels, so writing them only costs a model call.
+ */
+export function observationProfilesOnly(env: NodeJS.ProcessEnv = process.env): boolean {
+  return env.OBSERVATION_PROFILES_ONLY === 'true';
 }
 
 export function observationMinMessages(env: NodeJS.ProcessEnv = process.env): number {
@@ -94,11 +123,8 @@ export class ObservationalLearning {
     // - All 'watching' type guilds
     // - 'working' guilds with proactiveAnswering enabled (learn from communities we help)
     // - 'working' guilds with observationChannels explicitly configured
-    const learningGuilds = Object.values(GUILD_CONFIGS).filter(
-      (g) =>
-        g.type === 'watching' ||
-        (g.type === 'working' && (g.proactiveAnswering || g.observationChannels !== undefined))
-    );
+    // narrowed by OBSERVATION_GUILD_IDS when set
+    const learningGuilds = observedGuildConfigs();
 
     if (learningGuilds.length > 0) {
       logger.info('👁️ Observational learning initialized', {
@@ -139,11 +165,7 @@ export class ObservationalLearning {
       return;
     }
 
-    const learningGuilds = Object.values(GUILD_CONFIGS).filter(
-      (g) =>
-        g.type === 'watching' ||
-        (g.type === 'working' && (g.proactiveAnswering || g.observationChannels !== undefined))
-    );
+    const learningGuilds = observedGuildConfigs();
 
     for (const guildConfig of learningGuilds) {
       try {
@@ -222,7 +244,9 @@ export class ObservationalLearning {
           return;
         }
 
-        await this.summarizeAndStore(messages, guildId, guildName, channel.id, channel.name);
+        if (!observationProfilesOnly()) {
+          await this.summarizeAndStore(messages, guildId, guildName, channel.id, channel.name);
+        }
 
         // Update user profiles for anyone who spoke in this batch
         await this.updateUserProfiles(messages, guildId, guildName);
