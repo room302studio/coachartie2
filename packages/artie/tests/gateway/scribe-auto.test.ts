@@ -10,9 +10,15 @@ describe('autoScribeConfig', () => {
     expect(autoScribeConfig({ SCRIBE_AUTO_CHANNEL_ID: 'vc', SCRIBE_AUTO_WINDOWS: 'tomorrow/later' })).toBeNull();
   });
 
-  it('defaults the text channel to the voice chat and min people to 2', () => {
+  it('watches every listed voice channel; text defaults to the meeting channel chat', () => {
+    const cfg = autoScribeConfig({ SCRIBE_AUTO_CHANNEL_ID: 'studio, private ', SCRIBE_AUTO_WINDOWS: W })!;
+    expect(cfg.voiceChannelIds).toEqual(['studio', 'private']);
+    expect(cfg.textChannelId).toBeUndefined();
+    expect(autoScribeConfig({ SCRIBE_AUTO_CHANNEL_ID: 'vc', SCRIBE_AUTO_WINDOWS: W, SCRIBE_AUTO_TEXT_CHANNEL_ID: 'txt' })!.textChannelId).toBe('txt');
+  });
+
+  it('defaults min people to 2', () => {
     const cfg = autoScribeConfig({ SCRIBE_AUTO_CHANNEL_ID: 'vc', SCRIBE_AUTO_WINDOWS: W })!;
-    expect(cfg.textChannelId).toBe('vc');
     expect(cfg.minHumans).toBe(2);
     expect(cfg.windows).toHaveLength(1);
     expect(new Date(cfg.windows[0].start).toISOString()).toBe('2026-10-29T16:30:00.000Z');
