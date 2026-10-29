@@ -32,10 +32,10 @@ export const KINDS = [
 ] as const;
 
 const DREAM_BATCH = Number(process.env.DREAM_BATCH) || 60;
-const CHUNK = 15; // memories per model call
-// ~70 output tokens per verdict. Without an explicit budget the call gets LLM_MAX_TOKENS (400)
-// and the verdict array is cut off mid-JSON.
-const CHUNK_MAX_TOKENS = 1600;
+const CHUNK = 10; // memories per model call
+// ~70 output tokens per verdict compact, ~2x that when a model pretty-prints. 15 per call at 1600
+// tokens got cut off mid-JSON on the first real night (91 of 256 unreviewed, 2026-10-29).
+const CHUNK_MAX_TOKENS = 2500;
 const CONTENT_CLIP = 400;
 const SEED_URL = process.env.DREAM_TAGS_URL || 'https://ejfox.com/tags.json';
 const PROTECTED_IMPORTANCE = 9;
@@ -57,6 +57,7 @@ const STRUCTURAL_TAGS = new Set([
   'user-profile',
   'passive-learning', // recall filters on it (store.ts)
   'channel-fact',
+  'dream-journal', // the dream's own nightly record (dreamRecallLine reads it)
 ]);
 
 interface Candidate {
@@ -183,7 +184,7 @@ function dreamMessages(vocab: string[], batch: Candidate[]): ChatMessage[] {
 - verdict: "junk" only if it holds nothing worth recalling later: test runs or smoke tests, tool-success trivia (e.g. "the calculator computed 123*456"), empty stubs ("N messages exchanged"), or pure filler. Opinions, jokes with context, facts about people, plans and lore are "keep". When unsure, keep.
 - category: for junk, exactly one of stub (auto-generated summary/digest with no content), duplicate (repeats another memory in this batch), outdated (superseded or no longer true), test (test runs, tool trivia), filler (vague or contentless). For keep: "none".
 - reason: a few words.
-Reply with JSON only.
+Reply with compact JSON only (no indentation or line breaks): {"memories":[{"id":123,"kind":"...","tags":[...],"verdict":"...","category":"...","reason":"..."}, ...]}.
 
 VOCABULARY: ${vocab.join(', ')}`;
   const user = batch
@@ -303,6 +304,9 @@ export async function dream(limit = DREAM_BATCH): Promise<DreamResult> {
   const model = process.env.BACKGROUND_MODEL || process.env.FAST_MODEL || 'google/gemini-2.0-flash-001';
   const now = new Date().toISOString();
 
+  const examples: Record<string, string> = {};
+  const newTagCounts = new Map<string, number>();
+  let failedChunks = 0;
   for (let i = 0; i < pool.length; i += CHUNK) {
     const batch = pool.slice(i, i + CHUNK);
     try {
@@ -316,6 +320,7 @@ export async function dream(limit = DREAM_BATCH): Promise<DreamResult> {
       // auto-routed models don't all honor response_format; some answer with a bare array.
       const verdicts = parseVerdicts(raw);
       if (!Array.isArray(verdicts)) {
+        failedChunks++;
         logger.warn(`[dream] Unparseable reply for chunk at #${batch[0]?.id}: ${String(raw).slice(0, 300)}`);
         continue;
       }
@@ -329,11 +334,17 @@ export async function dream(limit = DREAM_BATCH): Promise<DreamResult> {
           result.pruned++;
           const category = junkCategory(v.category);
           result.prunedBy = { ...result.prunedBy, [category]: (result.prunedBy?.[category] ?? 0) + 1 };
+          examples[category] ??= memory.content.replace(/\s+/g, ' ').slice(0, 70);
+        } else {
+          for (const t of (Array.isArray(v.tags) ? v.tags : []).map(normalizeTag).filter(Boolean)) {
+            newTagCounts.set(t, (newTagCounts.get(t) ?? 0) + 1);
+          }
         }
         if (outcome === 'tagged') result.tagged++;
       }
     } catch (error) {
       // One bad chunk shouldn't cost the rest of the night; its memories stay undreamt for tomorrow.
+      failedChunks++;
       logger.warn(`[dream] Chunk starting at #${batch[0]?.id} failed:`, error);
     }
   }
@@ -342,5 +353,63 @@ export async function dream(limit = DREAM_BATCH): Promise<DreamResult> {
     `[dream] 💭 Reviewed ${result.reviewed}, tagged ${result.tagged}, pruned ${result.pruned}` +
       ` ${JSON.stringify(result.prunedBy ?? {})} (vocab ${vocab.length})`
   );
+  if (result.reviewed > 0 || failedChunks > 0) {
+    const topTags = [...newTagCounts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 6).map(([t]) => t);
+    writeDreamJournal(journalText({ ...result, offered: pool.length, failedChunks, examples, topTags }, now), result);
+  }
   return result;
+}
+
+// ---------------------------------------------------------------------------------------------
+// Dream journal (EJ, 2026-10-29: "improve his dream recollection"). Artie couldn't say what his
+// dream did; now each night leaves one journal memory, and the latest one rides in his context
+// for a day and a half (dreamRecallLine), so he remembers without being told.
+// ---------------------------------------------------------------------------------------------
+export const DREAM_JOURNAL_TAG = 'dream-journal';
+const JOURNAL_RECALL_HOURS = 36;
+
+export function journalText(
+  r: DreamResult & { offered: number; failedChunks: number; examples: Record<string, string>; topTags: string[] },
+  nowIso: string
+): string {
+  const day = new Date(nowIso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'America/New_York' });
+  const parts = [`Dream journal (${day}): reviewed ${r.reviewed} of ${r.offered} memories, re-tagged ${r.tagged}`];
+  if (r.pruned > 0) {
+    const cats = Object.entries(r.prunedBy ?? {})
+      .sort((a, b) => b[1] - a[1])
+      .map(([c, n]) => `${n} ${c}` + (r.examples[c] ? ` (e.g. "${r.examples[c]}")` : ''));
+    parts.push(`let go of ${r.pruned} that held nothing worth keeping: ${cats.join(', ')}`);
+  } else {
+    parts.push('let go of nothing');
+  }
+  if (r.topTags.length) parts.push(`the memories kept were mostly about ${r.topTags.join(', ')}`);
+  if (r.failedChunks > 0) parts.push(`${r.failedChunks} batch(es) didn't come back readable; those memories wait for the next dream`);
+  return parts.join('; ') + '. Pruned memories are hidden, not deleted, and can be restored.';
+}
+
+export function writeDreamJournal(content: string, result: DreamResult): void {
+  try {
+    getSyncDb().run(
+      `INSERT INTO memories (user_id, content, tags, context, timestamp, importance, metadata)
+       VALUES ('artie-system', ?, ?, 'Nightly memory dream', ?, 6, ?)`,
+      [content, JSON.stringify([DREAM_JOURNAL_TAG, 'event']), new Date().toISOString(), JSON.stringify({ dream: result, dreamt_at: new Date().toISOString() })]
+    );
+  } catch (error) {
+    logger.warn('[dream] Could not write the dream journal:', error);
+  }
+}
+
+/** The latest dream journal as one context line, while it's fresh; '' otherwise. */
+export function dreamRecallLine(now: number = Date.now()): string {
+  try {
+    const row = getSyncDb().get<{ content: string; timestamp: string }>(
+      `SELECT content, timestamp FROM memories WHERE user_id = 'artie-system' AND tags LIKE ? ORDER BY id DESC LIMIT 1`,
+      [`%"${DREAM_JOURNAL_TAG}"%`]
+    );
+    if (!row) return '';
+    if (now - Date.parse(row.timestamp) > JOURNAL_RECALL_HOURS * 3_600_000) return '';
+    return `💭 Last night you dreamed (your nightly memory tidy-up): ${row.content.replace(/^Dream journal \([^)]*\): /, '')}`;
+  } catch {
+    return '';
+  }
 }

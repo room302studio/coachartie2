@@ -139,6 +139,46 @@ describe('dream', () => {
   });
 });
 
+describe('dream journal + recall', () => {
+  beforeEach(() => {
+    db.run('DELETE FROM memories');
+    generate.mockReset();
+  });
+
+  it('writes one journal entry per night with counts, examples and top tags', async () => {
+    const junk = insert('Daily summary (2026-10-24): 1 messages exchanged', 8);
+    const keep = insert('Alex wants deliveries in both games');
+    generate.mockResolvedValueOnce(
+      JSON.stringify({
+        memories: [
+          { id: junk, kind: 'event', tags: [], verdict: 'junk', category: 'stub', reason: 'empty stub' },
+          { id: keep, kind: 'project', tags: ['subway-builder', 'deliveries'], verdict: 'keep', category: 'none', reason: '' },
+        ],
+      })
+    );
+    await dreamMod.dream(10);
+    const j = db.get<any>(`SELECT * FROM memories WHERE tags LIKE '%dream-journal%'`);
+    expect(j.user_id).toBe('artie-system');
+    expect(j.content).toContain('reviewed 2 of 2');
+    expect(j.content).toContain('1 stub (e.g. "Daily summary (2026-10-24): 1 messages exchanged")');
+    expect(j.content).toContain('subway-builder');
+    // the journal is never offered to tomorrow's dream
+    generate.mockReset();
+    await dreamMod.dream(10);
+    expect(generate).not.toHaveBeenCalled();
+  });
+
+  it('recalls the latest journal for 36 hours, then goes quiet', () => {
+    dreamMod.writeDreamJournal('Dream journal (Oct 30): reviewed 5 of 5 memories, re-tagged 3; let go of nothing.', {
+      reviewed: 5, tagged: 3, pruned: 0,
+    });
+    const now = Date.now();
+    expect(dreamMod.dreamRecallLine(now)).toContain('💭 Last night you dreamed');
+    expect(dreamMod.dreamRecallLine(now)).toContain('reviewed 5 of 5');
+    expect(dreamMod.dreamRecallLine(now + 37 * 3_600_000)).toBe('');
+  });
+});
+
 describe('daily summary stubs', () => {
   it('skips a day with no topics or key points, stores one with content', async () => {
     db.run('DELETE FROM memories');

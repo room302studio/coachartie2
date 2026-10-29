@@ -49,6 +49,7 @@ import {
 import { getBrownoutMode } from '../budget/brownout.js';
 import { getDailyBudgetUsd } from '../budget/daily-cap.js';
 import { recentHiccups, selfMeterLine } from '../budget/self-meter.js';
+import { dreamRecallLine } from '../memory/dream.js';
 import { getJarTippedUsd } from '../budget/jar-earnings.js';
 import { getLastTimeFacts, lastTimeLine } from './sources/last-time.js';
 
@@ -781,6 +782,10 @@ Important:
     } catch (error) {
       logger.warn('🔋 Self-meter unavailable for this reply', error);
     }
+
+    // What his nightly memory dream did, while it's fresh (dream.ts dreamRecallLine).
+    const dreamLine = dreamRecallLine();
+    if (dreamLine) parts.push(dreamLine);
 
     // System notes (e.g., recovery from downtime)
     if (ctx.systemNote) {
