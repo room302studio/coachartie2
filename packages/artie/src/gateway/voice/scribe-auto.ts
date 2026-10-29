@@ -9,8 +9,9 @@
  *
  * Env (all required to arm it, none of it secret):
  *   SCRIBE_AUTO_CHANNEL_ID       voice channel(s) to watch, comma-separated
- *   SCRIBE_AUTO_TEXT_CHANNEL_ID  where the notice + summary go (default: the chat of whichever
- *                                voice channel the meeting is in)
+ *   SCRIBE_AUTO_TEXT_CHANNEL_ID  where the summary goes, e.g. EJ's DM channel (default: the chat
+ *                                of whichever voice channel the meeting is in). The "taking notes"
+ *                                notice always goes to the voice channel's chat.
  *   SCRIBE_AUTO_WINDOWS          comma-separated ISO "start/end" pairs with offsets, e.g.
  *                                2026-10-29T12:30:00-04:00/2026-10-29T15:30:00-04:00
  *   SCRIBE_AUTO_MIN_HUMANS       people needed to count as a meeting (default 2)
@@ -137,7 +138,10 @@ async function check(client: Client, cfg: AutoScribeConfig): Promise<void> {
     }
     startedWindows.add(window.key);
     logger.info(`🎙️ Auto-scribe joined #${channel.name} (${humans} people), session ${result.sessionId}`);
-    const text = client.channels.cache.get(textChannelId);
+    // The notice always goes where the people being recorded are (the voice channel's chat);
+    // only the summary follows SCRIBE_AUTO_TEXT_CHANNEL_ID (EJ, 2026-10-29: summaries to his DM,
+    // never public).
+    const text = client.channels.cache.get(channel.id);
     if (text && 'send' in text) {
       await text.send(ANNOUNCE_TEXT).catch((error: unknown) =>
         logger.warn('🎙️ Auto-scribe notice failed:', getErrorMessage(error))

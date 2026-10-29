@@ -3,6 +3,9 @@ import {
   buildTranscriptBlock,
   buildSummaryPrompt,
   parseScribeSummaryResponse,
+  windowUtterances,
+  parseWindowFacts,
+  concatWindowFacts,
 } from '../../../../src/engine/jobs/scribe/summary.js';
 import type { ScribeUtterance } from '../../../../src/shared/db/scribe-store.js';
 
@@ -24,6 +27,39 @@ describe('buildTranscriptBlock', () => {
     const block = buildTranscriptBlock([utterance({ text: 'first' }), utterance({ displayName: 'Dev', text: 'second' })]);
     expect(block).toContain('EJ: first');
     expect(block).toContain('Dev: second');
+  });
+});
+
+describe('fact summary: window → concat', () => {
+  const at = (min: number, text: string, name = 'EJ') =>
+    utterance({ ts: new Date(Date.UTC(2026, 9, 29, 17, min)).toISOString(), text, displayName: name });
+
+  it('splits a 37-minute meeting into ~5-minute windows and keeps every utterance', () => {
+    const us = Array.from({ length: 38 }, (_, i) => at(i, `line ${i}`));
+    const windows = windowUtterances(us);
+    expect(windows.length).toBe(8);
+    expect(windows.flat().length).toBe(38);
+    expect(windows[0][0].text).toBe('line 0'); // the start of the meeting survives (it used to be cut)
+  });
+
+  it('parses window facts tolerantly', () => {
+    expect(parseWindowFacts('{"discussed":["a"," "],"decisions":[],"actions":["EJ: x"]}')).toEqual({
+      discussed: ['a'], decisions: [], actions: ['EJ: x'], questions: [],
+    });
+    expect(parseWindowFacts('not json')).toBeNull();
+  });
+
+  it('concatenates in time order, de-dupes decisions/actions, marks failed windows', () => {
+    const text = concatWindowFacts([
+      { from: at(0, '').ts, to: at(4, '').ts, facts: { discussed: ['Alex: save bug needs a day'], decisions: ['Release Monday'], actions: ['EJ: text Alex'], questions: [] } },
+      { from: at(5, '').ts, to: at(9, '').ts, facts: null },
+      { from: at(10, '').ts, to: at(14, '').ts, facts: { discussed: ['Tuesday plans'], decisions: ['release monday.'], actions: [], questions: ['Where to meet?'] } },
+    ]);
+    expect(text.indexOf('save bug')).toBeLessThan(text.indexOf('Tuesday plans'));
+    expect(text).toContain("couldn't summarize");
+    expect(text.match(/elease Monday/gi)?.length).toBe(1);
+    expect(text).toContain('**Action items**\n- EJ: text Alex');
+    expect(text).toContain('**Open questions**\n- Where to meet?');
   });
 });
 

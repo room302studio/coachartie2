@@ -186,6 +186,7 @@ export async function stopScribeSession(
   const summaryOnly = summaryOnlySessions.delete(sessionId);
   try {
     const { summaryText: text, proposals } = await generateScribeSummary({
+      withProposals: !summaryOnly,
       sessionId,
       userId: session.startedBy,
       guildId: session.guildId,
