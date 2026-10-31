@@ -560,7 +560,7 @@ export async function processUserIntent(
           if (intent.sendFile) {
             try {
               const pendingAttachments = await capabilitiesClient.getPendingAttachments(
-                intent.userId
+                jobInfo.messageId
               );
               if (pendingAttachments.length > 0) {
                 logger.info(

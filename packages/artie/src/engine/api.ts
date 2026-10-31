@@ -59,9 +59,9 @@ export async function watchTurn(
   (await chat()).watchTurn(messageId, onEvent, end);
 }
 
-/** Take (and clear) the files a turn queued for a user (GET /chat/pending-attachments/:userId). */
-export async function pendingAttachments(userId: string): Promise<ApiResult> {
-  return (await chat()).takePendingAttachments({ userId });
+/** Take (and clear) the files a turn queued, keyed by turn id (GET /chat/pending-attachments/:turnId). */
+export async function pendingAttachments(turnId: string): Promise<ApiResult> {
+  return (await chat()).takePendingAttachments({ turnId });
 }
 
 const pendingComponentsStore = () => import('./1-intake/pending-components.js');

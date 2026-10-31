@@ -1,4 +1,4 @@
-import { RegisteredCapability } from '../../5-tool-loop/registry.js';
+import { RegisteredCapability, CapabilityContext } from '../../5-tool-loop/registry.js';
 import { logger } from '../../../shared/logger.js';
 import {
   addPendingAttachment,
@@ -22,12 +22,12 @@ export const sendMetroFileCapability: RegisteredCapability = {
     '<capability name="send-metro-file" action="send" userId="USER_ID">Sending your repaired metro file</capability>',
   ],
 
-  handler: async (params: any, _content: string | undefined) => {
+  handler: async (params: any, _content: string | undefined, context?: CapabilityContext) => {
     const { action } = params;
 
     switch (action) {
       case 'send':
-        return JSON.stringify(await sendMetroFile(params));
+        return JSON.stringify(await sendMetroFile({ ...params, turnId: context?.messageId }));
       default:
         return JSON.stringify({
           success: false,
@@ -37,13 +37,24 @@ export const sendMetroFileCapability: RegisteredCapability = {
   },
 };
 
-async function sendMetroFile(params: { userId?: string; message?: string }): Promise<any> {
-  const { userId, message } = params;
+async function sendMetroFile(params: {
+  userId?: string;
+  message?: string;
+  turnId?: string;
+}): Promise<any> {
+  const { userId, message, turnId } = params;
 
   if (!userId) {
     return {
       success: false,
       error: 'Missing required parameter: userId',
+    };
+  }
+  // The file rides on this turn's reply (2026-10-31); without a turn there's nothing to attach to.
+  if (!turnId) {
+    return {
+      success: false,
+      error: 'No reply to attach the file to (missing turn context).',
     };
   }
 
@@ -57,7 +68,7 @@ async function sendMetroFile(params: { userId?: string; message?: string }): Pro
   }
 
   // Queue the file for sending
-  addPendingAttachment(userId, {
+  addPendingAttachment(turnId, {
     buffer: stored.buffer,
     filename: stored.filename,
     content: message || stored.summary,

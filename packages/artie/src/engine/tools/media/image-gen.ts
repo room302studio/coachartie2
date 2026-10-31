@@ -18,6 +18,14 @@ function imageGenPerUserDailyCap(): number {
   return 3;
 }
 
+/** The injected params.messageId as a turn id, or '' when absent. */
+function optionalTurnId(messageId: unknown): string {
+  if (messageId) {
+    return String(messageId);
+  }
+  return '';
+}
+
 interface ImageGenParams {
   action: 'generate' | 'edit';
   prompt: string;
@@ -313,10 +321,11 @@ export const imageGenCapability: RegisteredCapability = {
       step_type: 'image_gen',
     });
 
-    // Queue the image to be sent back via pending attachments
-    if (result.imageBuffer && userId) {
+    // Queue the image on THIS turn's reply (keyed by turn id, not user: 2026-10-31)
+    const turnId = context?.messageId || optionalTurnId(params.messageId);
+    if (result.imageBuffer && turnId) {
       const filename = `artie-${Date.now()}.png`;
-      addPendingAttachment(userId, {
+      addPendingAttachment(turnId, {
         buffer: result.imageBuffer,
         filename,
         content: `🎨 Here's your generated image!`,
@@ -327,9 +336,9 @@ export const imageGenCapability: RegisteredCapability = {
 
       return `🎨 Image Generated!\n\n${result.text}`;
     } else if (result.imageBuffer) {
-      // No userId available - log warning but still return success
-      logger.warn('Image generated but no userId available for pending attachment');
-      return `🎨 Image Generated!\n\n${result.text}\n\n(Note: Image couldn't be attached - no user context)`;
+      // No turn to attach to - log warning but still return success
+      logger.warn('Image generated but no turn id available for pending attachment');
+      return `🎨 Image Generated!\n\n${result.text}\n\n(Note: Image couldn't be attached - no reply context)`;
     }
 
     return result.text;
