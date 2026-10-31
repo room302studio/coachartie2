@@ -42,6 +42,49 @@ const RULES_OUTPUT: JsonOutputSpec = {
   },
 };
 
+/** A rule's state as stored in learned_rules_history.old_value/new_value (JSON). */
+interface RuleSnapshot {
+  rule_text: string;
+  confidence: number;
+  source_count?: number;
+}
+
+function snapshotJson(snapshot: RuleSnapshot | null): string | null {
+  if (snapshot) {
+    return JSON.stringify(snapshot);
+  }
+  return null;
+}
+
+/**
+ * One learned_rules_history row, in prod's columns (action, old_value, new_value, reason,
+ * created_by). The inserts used the drizzle shape (rule_text, change_type, ...), which prod's
+ * table doesn't have, so every history write threw after the rule write: 17 rules, 0 history
+ * rows, and a weekly review aborted on its first modify (2026-10-31).
+ */
+export function recordRuleHistory(entry: {
+  ruleId: number | bigint;
+  action: string; // 'created' | 'updated' | 'retired'
+  oldValue: RuleSnapshot | null;
+  newValue: RuleSnapshot | null;
+  reason: string;
+  createdAt: string;
+}): void {
+  getSyncDb().run(
+    `INSERT INTO learned_rules_history
+       (rule_id, action, old_value, new_value, reason, created_at, created_by)
+     VALUES (?, ?, ?, ?, ?, ?, 'reflection')`,
+    [
+      entry.ruleId,
+      entry.action,
+      snapshotJson(entry.oldValue),
+      snapshotJson(entry.newValue),
+      entry.reason,
+      entry.createdAt,
+    ]
+  );
+}
+
 // Minimum confidence threshold for a rule to be active
 const MIN_RULE_CONFIDENCE = parseFloat(process.env.REFLECTION_MIN_CONFIDENCE || '0.6');
 
@@ -662,9 +705,14 @@ If no clear patterns emerge, return {"rules": []}`;
     const db = getSyncDb();
 
     // Check if a similar rule already exists
-    const existing = db.get<{ id: number; confidence: number; source_count: number }>(
+    const existing = db.get<{
+      id: number;
+      rule_text: string;
+      confidence: number;
+      source_count: number;
+    }>(
       `
-      SELECT id, confidence, source_count
+      SELECT id, rule_text, confidence, source_count
       FROM learned_rules
       WHERE rule_type = ?
         AND (scope_id = ? OR (scope_id IS NULL AND ? IS NULL))
@@ -697,14 +745,18 @@ If no clear patterns emerge, return {"rules": []}`;
       );
 
       // Record history
-      db.run(
-        `
-        INSERT INTO learned_rules_history
-          (rule_id, rule_text, confidence, source_count, change_type, change_reason, created_at)
-        VALUES (?, ?, ?, ?, 'updated', 'Daily consolidation update', ?)
-      `,
-        [existing.id, rule.ruleText, newConfidence, newSourceCount, now]
-      );
+      recordRuleHistory({
+        ruleId: existing.id,
+        action: 'updated',
+        oldValue: {
+          rule_text: existing.rule_text,
+          confidence: existing.confidence,
+          source_count: existing.source_count,
+        },
+        newValue: { rule_text: rule.ruleText, confidence: newConfidence, source_count: newSourceCount },
+        reason: 'Daily consolidation update',
+        createdAt: now,
+      });
 
       logger.debug(`[reflection] Updated rule #${existing.id}`);
       return false; // Not a new rule
@@ -732,14 +784,18 @@ If no clear patterns emerge, return {"rules": []}`;
       const ruleId = result.lastInsertRowid;
 
       // Record history
-      db.run(
-        `
-        INSERT INTO learned_rules_history
-          (rule_id, rule_text, confidence, source_count, change_type, change_reason, created_at)
-        VALUES (?, ?, ?, ?, 'created', 'Generated from feedback consolidation', ?)
-      `,
-        [ruleId, rule.ruleText, rule.confidence, rule.sourceCount, now]
-      );
+      recordRuleHistory({
+        ruleId,
+        action: 'created',
+        oldValue: null,
+        newValue: {
+          rule_text: rule.ruleText,
+          confidence: rule.confidence,
+          source_count: rule.sourceCount,
+        },
+        reason: 'Generated from feedback consolidation',
+        createdAt: now,
+      });
 
       logger.debug(
         `[reflection] Created ${ruleType} rule #${ruleId} (conf=${rule.confidence.toFixed(2)})`
@@ -844,6 +900,10 @@ If no clear patterns emerge, return {"rules": []}`;
   ): Promise<void> {
     const db = getSyncDb();
     const now = new Date().toISOString();
+    const before = db.get<RuleSnapshot>(
+      `SELECT rule_text, confidence FROM learned_rules WHERE id = ?`,
+      [ruleId]
+    );
 
     db.run(
       `
@@ -854,14 +914,14 @@ If no clear patterns emerge, return {"rules": []}`;
       [updates.ruleText, updates.confidence, now, ruleId]
     );
 
-    db.run(
-      `
-      INSERT INTO learned_rules_history
-        (rule_id, rule_text, confidence, change_type, change_reason, created_at)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `,
-      [ruleId, updates.ruleText, updates.confidence, updates.changeType, updates.changeReason, now]
-    );
+    recordRuleHistory({
+      ruleId,
+      action: updates.changeType,
+      oldValue: before ?? null,
+      newValue: { rule_text: updates.ruleText, confidence: updates.confidence },
+      reason: updates.changeReason,
+      createdAt: now,
+    });
   }
 
   private async retireRule(ruleId: number, reason: string): Promise<void> {
@@ -885,14 +945,14 @@ If no clear patterns emerge, return {"rules": []}`;
       [now, ruleId]
     );
 
-    db.run(
-      `
-      INSERT INTO learned_rules_history
-        (rule_id, rule_text, confidence, change_type, change_reason, created_at)
-      VALUES (?, ?, ?, 'retired', ?, ?)
-    `,
-      [ruleId, rule.rule_text, rule.confidence, reason, now]
-    );
+    recordRuleHistory({
+      ruleId,
+      action: 'retired',
+      oldValue: rule,
+      newValue: null,
+      reason,
+      createdAt: now,
+    });
 
     logger.debug(`[reflection] Retired rule #${ruleId}`);
   }
