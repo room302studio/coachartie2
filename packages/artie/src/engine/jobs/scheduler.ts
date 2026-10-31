@@ -253,16 +253,22 @@ export class SchedulerService {
   /**
    * Schedule a one-time job with delay
    */
-  async scheduleOnce(name: string, data: Record<string, unknown>, delay: number): Promise<void> {
+  async scheduleOnce(
+    name: string,
+    data: Record<string, unknown>,
+    delay: number,
+    jobId?: string
+  ): Promise<void> {
     if (!this.initialized || !this.schedulerQueue) {
       logger.warn(`Cannot schedule one-time job '${name}' - scheduler not initialized`);
       return;
     }
 
     try {
+      // A caller-chosen jobId lets it cancel the job later (meetings, 2026-10-31).
       await this.schedulerQueue.add(name, data, {
         delay,
-        jobId: `once-${name}-${Date.now()}`,
+        jobId: jobId || `once-${name}-${Date.now()}`,
       });
 
       logger.info(`Scheduled one-time job '${name}' with ${delay}ms delay`);
@@ -270,6 +276,22 @@ export class SchedulerService {
       logger.error(`Failed to schedule one-time job '${name}':`, error);
       throw error;
     }
+  }
+
+  /**
+   * Remove a pending one-time job by the jobId given to scheduleOnce. Returns false if there
+   * was none (already ran, or never queued).
+   */
+  async cancelOnce(jobId: string): Promise<boolean> {
+    if (!this.initialized || !this.schedulerQueue) {
+      return false;
+    }
+    const job = await this.schedulerQueue.getJob(jobId);
+    if (!job) {
+      return false;
+    }
+    await job.remove();
+    return true;
   }
 
   /**
@@ -491,6 +513,18 @@ export class SchedulerService {
   private async executeUserReminder(data: ReminderJobData): Promise<void> {
     const { userId, reminderType, message, meetingId } = data;
     const reminderMessage = message || reminderType || 'Scheduled reminder';
+
+    // A cancelled or deleted meeting's reminder stays silent (2026-10-31). Checked before
+    // anything is queued; removing the job on cancel is only best effort.
+    if (meetingId) {
+      const status = getSyncDb().get<{ status: string }>('SELECT status FROM meetings WHERE id = ?', [
+        meetingId,
+      ])?.status;
+      if (status !== 'scheduled') {
+        logger.info(`🔕 Meeting ${String(meetingId)} is ${status ?? 'gone'} — reminder skipped`);
+        return;
+      }
+    }
 
     // Log the reminder prominently
     logger.info(`\n${'='.repeat(60)}`);

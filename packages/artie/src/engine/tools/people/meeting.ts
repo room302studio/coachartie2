@@ -1,5 +1,5 @@
 import { logger } from '../../../shared/logger.js';
-import { getSyncDb } from '../../../shared/db/client.js';
+import { getSyncDb, getRawDb } from '../../../shared/db/client.js';
 import { schedulerService } from '../../jobs/scheduler.js';
 import { RegisteredCapability } from '../../5-tool-loop/registry.js';
 import { isEmail } from '../../../shared/email.js';
@@ -10,6 +10,12 @@ import { getErrorMessage } from '../../../shared/errors.js';
 // =====================================================
 // MEETING SCHEDULER SERVICE & CAPABILITY
 // =====================================================
+
+// The BullMQ id of a meeting's reminder, derived from the meeting so cancel can find it
+// without a stored column (2026-10-31).
+function meetingReminderJobId(meetingId: number | bigint): string {
+  return `meeting-reminder-${String(meetingId)}`;
+}
 
 interface MeetingRow {
   id: number;
@@ -158,70 +164,79 @@ class MeetingService {
       const userTimezone = options.timezone || 'America/New_York'; // Default EST
       const parsedTime = await this.parseFlexibleDate(meetingTime, userTimezone);
 
-      // Create the meeting
-      const participantsJson = JSON.stringify(participants);
-      const result = db.run(
-        `
-        INSERT INTO meetings (user_id, title, description, scheduled_time, duration_minutes, timezone, participants, created_via)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-      `,
-        [
-          userId,
-          title,
-          options.description || null,
-          parsedTime.toISOString(),
-          options.duration || 30,
-          options.timezone || 'UTC',
-          participantsJson,
-          options.created_via || 'api',
-        ]
-      );
-
-      const meetingId = result.lastInsertRowid!;
-
-      // Add participants
-      const participantNames: string[] = [];
-      for (const participant of participants) {
-        const { id, type, displayName } = this.parseParticipant(
-          participant,
-          options.discord_context
-        );
-
-        db.run(
-          `
-          INSERT INTO meeting_participants (meeting_id, participant_id, participant_type)
-          VALUES (?, ?, ?)
-        `,
-          [meetingId, id, type]
-        );
-
-        participantNames.push(displayName);
-      }
-
-      // Schedule reminder 15 minutes before meeting
       const reminderTime = new Date(parsedTime.getTime() - 15 * 60 * 1000);
-      if (reminderTime > new Date()) {
-        const delay = reminderTime.getTime() - Date.now();
-        const jobId = `meeting-reminder-${meetingId}`;
+      const wantsReminder = reminderTime > new Date();
 
-        await schedulerService.scheduleOnce(
-          'user-reminder',
-          {
-            userId,
-            reminderType: 'meeting-reminder',
-            message: `Meeting reminder: "${title}" starts in 15 minutes`,
-            meetingId,
-          },
-          delay
-        );
-
-        db.run(
+      // Every row in one transaction, and only then queue the reminder (2026-10-31): the
+      // reminder INSERT named a scheduler_job_id column prod never had, so it threw after the
+      // job was already queued. The user saw "Failed to create meeting" and still got pinged.
+      const participantNames: string[] = [];
+      const writeRows = getRawDb().transaction((): number | bigint => {
+        const participantsJson = JSON.stringify(participants);
+        const result = db.run(
           `
-          INSERT INTO meeting_reminders (meeting_id, reminder_time, scheduler_job_id)
-          VALUES (?, ?, ?)
+          INSERT INTO meetings (user_id, title, description, scheduled_time, duration_minutes, timezone, participants, created_via)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         `,
-          [meetingId, reminderTime.toISOString(), jobId]
+          [
+            userId,
+            title,
+            options.description || null,
+            parsedTime.toISOString(),
+            options.duration || 30,
+            options.timezone || 'UTC',
+            participantsJson,
+            options.created_via || 'api',
+          ]
         );
+        const newId = result.lastInsertRowid;
+
+        for (const participant of participants) {
+          const { id, type, displayName } = this.parseParticipant(
+            participant,
+            options.discord_context
+          );
+          db.run(
+            `
+            INSERT INTO meeting_participants (meeting_id, participant_id, participant_type)
+            VALUES (?, ?, ?)
+          `,
+            [newId, id, type]
+          );
+          participantNames.push(displayName);
+        }
+
+        if (wantsReminder) {
+          db.run(`INSERT INTO meeting_reminders (meeting_id, reminder_time) VALUES (?, ?)`, [
+            newId,
+            reminderTime.toISOString(),
+          ]);
+        }
+        return newId;
+      });
+      const meetingId = writeRows();
+
+      // Schedule reminder 15 minutes before meeting. The meeting is saved either way, so a
+      // queue failure is reported, not rethrown (a retry would duplicate the meeting).
+      let reminderNote = '';
+      if (wantsReminder) {
+        try {
+          await schedulerService.scheduleOnce(
+            'user-reminder',
+            {
+              type: 'user-reminder',
+              userId,
+              reminderType: 'meeting-reminder',
+              message: `Meeting reminder: "${title}" starts in 15 minutes`,
+              meetingId,
+            },
+            reminderTime.getTime() - Date.now(),
+            meetingReminderJobId(meetingId)
+          );
+        } catch (error) {
+          logger.error(`❌ Meeting ${meetingId} saved but its reminder wasn't queued:`, error);
+          reminderNote = ' (heads up: I couldn\'t schedule the 15-minute reminder)';
+        }
       }
 
       logger.info(
@@ -239,7 +254,7 @@ class MeetingService {
 
       const participantStr = participantNames.join(', ');
 
-      return `✅ Meeting scheduled: "${title}" on ${timeStr} with ${participantStr}`;
+      return `✅ Meeting scheduled: "${title}" on ${timeStr} with ${participantStr}${reminderNote}`;
     } catch (error) {
       logger.error('❌ Failed to create meeting:', error);
       throw new Error(`Failed to create meeting: ${getErrorMessage(error)}`);
@@ -491,6 +506,13 @@ class MeetingService {
         `UPDATE meetings SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
         [meetingId]
       );
+
+      // Best effort: the reminder job also re-checks the meeting's status when it fires.
+      try {
+        await schedulerService.cancelOnce(meetingReminderJobId(meetingId));
+      } catch (error) {
+        logger.warn(`Couldn't remove reminder job for meeting ${meetingId}:`, error);
+      }
 
       logger.info(`📅 Cancelled meeting ${meetingId} for user ${userId}`);
 
