@@ -31,6 +31,8 @@ import {
   type PosterConfig,
 } from './poster.js';
 import { GUILD_CONFIGS } from '../../../shared/config/guilds.js';
+import { readState, writeState } from '../../../shared/db/kv-state.js';
+import { easternDayKey, easternHour, isEasternWeekend } from '../../../shared/eastern-day.js';
 
 export interface GitHubSyncConfig {
   poller?: Partial<PollerConfig>;
@@ -64,6 +66,13 @@ function overflowLabel(count: number, threshold: number): string {
 // Max events per poll cycle before triggering digest mode
 // Raised to 5 - only trigger digest when there's truly a lot of activity
 const MAX_EVENTS_BEFORE_DIGEST = 5;
+
+// How long shutdown waits for the final batch posts: leaves most of PM2's 12 s kill_timeout
+// for the scribe sweep and the rest of teardown.
+const SHUTDOWN_FLUSH_TIMEOUT_MS = 4000;
+
+const DRAFT_DIGEST_TICK_MS = 5 * 60 * 1000;
+const DRAFT_DIGEST_DAY_KEY = 'draft_digest_last_day';
 
 export class GitHubSyncService {
   private client: Client;
@@ -147,7 +156,7 @@ export class GitHubSyncService {
 
     this.poller?.start();
 
-    // Schedule daily draft digest at 9 AM ET (14:00 UTC)
+    // Schedule daily draft digest at 9 AM ET
     this.scheduleDraftDigest();
 
     logger.info('GitHub sync service started');
@@ -157,20 +166,30 @@ export class GitHubSyncService {
    * Schedule daily draft PR digest
    */
   private scheduleDraftDigest(): void {
-    // Check every hour if it's time for the daily digest
-    this.draftDigestTimer = setInterval(async () => {
-      const now = new Date();
-      const utcHour = now.getUTCHours();
-      const utcMinute = now.getUTCMinutes();
-
-      // Post at 14:00 UTC (9 AM ET) — only in the first 3 minutes of the hour
-      if (utcHour === 14 && utcMinute < 3) {
-        await this.postDraftDigest();
-      }
-    }, 60 * 60 * 1000); // Check hourly
+    // A short tick plus a durable day key, like the studio digest (2026-10-31). The old hourly
+    // interval was anchored to boot time and only posted if a tick happened to land in
+    // 14:00-14:02 UTC, so after the 10-16 deploy it never fired again.
+    this.draftDigestTimer = setInterval(() => {
+      this.checkAndPostDraftDigest().catch((err) => logger.error('Draft digest error:', err));
+    }, DRAFT_DIGEST_TICK_MS);
 
     // Also do an initial check for any existing open drafts
     setTimeout(() => this.collectOpenDrafts(), 30 * 1000);
+  }
+
+  /** Post the draft digest once per ET weekday, in the 9 AM hour. */
+  async checkAndPostDraftDigest(now: Date = new Date()): Promise<void> {
+    // Weekdays only: it's a work digest, and weekends are Artie's off days (EJ, 2026-10-31).
+    if (isEasternWeekend(now)) {
+      return;
+    }
+    const today = easternDayKey(now);
+    if (easternHour(now) !== 9 || readState(DRAFT_DIGEST_DAY_KEY) === today) {
+      return;
+    }
+    // Marked before posting: a crash mid-post skips a day rather than posting twice.
+    writeState(DRAFT_DIGEST_DAY_KEY, today);
+    await this.postDraftDigest();
   }
 
   /**
@@ -285,13 +304,36 @@ export class GitHubSyncService {
   /**
    * Stop the sync service
    */
-  stop(): void {
-    // Flush any pending batches
-    if (this.processor && this.poster) {
-      this.processor.flushAll((batch) => this.handleBatch(batch));
+  async stop(timeoutMs = SHUTDOWN_FLUSH_TIMEOUT_MS): Promise<void> {
+    this.poller?.stop();
+    // Never cleared before (2026-10-31): a re-init left the old instance's digest timer running.
+    if (this.draftDigestTimer) {
+      clearInterval(this.draftDigestTimer);
+      this.draftDigestTimer = null;
     }
 
-    this.poller?.stop();
+    // Post what's still sitting in a batch window, and wait for the sends (2026-10-31). Nothing
+    // called this on shutdown, and the cursors had already moved past these events, so every
+    // deploy silently lost up to 15 minutes of feed. Capped so a stuck send can't hold up
+    // PM2's 12 s kill_timeout.
+    if (this.processor && this.poster) {
+      const posts: Promise<void>[] = [];
+      this.processor.flushAll((batch) => {
+        posts.push(this.handleBatch(batch));
+      });
+      if (posts.length > 0) {
+        let timer: NodeJS.Timeout | undefined;
+        const cap = new Promise<void>((resolve) => {
+          timer = setTimeout(() => {
+            logger.warn(`GitHub shutdown flush hit its ${timeoutMs}ms cap; some batches may not have posted`);
+            resolve();
+          }, timeoutMs);
+        });
+        await Promise.race([Promise.allSettled(posts), cap]);
+        clearTimeout(timer);
+      }
+    }
+
     logger.info('GitHub sync service stopped');
   }
 
@@ -321,10 +363,12 @@ export class GitHubSyncService {
 
     // Track FILTERED events in this poll cycle for digest mode
     this.pollCycleEventCount++;
-    this.pollCycleEvents.push(event);
 
-    // If we've exceeded the threshold, we'll handle as digest at end of cycle
+    // If we've exceeded the threshold, we'll handle as digest at end of cycle. Only the overflow
+    // goes in the digest (2026-10-31): events 1-5 already went to the batcher and post on their
+    // own, and listing them in the digest too posted each of them twice.
     if (this.pollCycleEventCount > MAX_EVENTS_BEFORE_DIGEST) {
+      this.pollCycleEvents.push(event);
       logger.debug(
         `Event ${this.pollCycleEventCount} queued for digest (threshold: ${MAX_EVENTS_BEFORE_DIGEST})`
       );
@@ -433,13 +477,14 @@ export class GitHubSyncService {
   /**
    * Handle a batch of events ready for posting
    */
-  private handleBatch(batch: BatchedEvents): void {
+  private handleBatch(batch: BatchedEvents): Promise<void> {
     if (!this.poster) {
       logger.error('Poster not initialized');
-      return;
+      return Promise.resolve();
     }
 
-    this.poster.postBatch(batch).catch((err) => {
+    // Returned so the shutdown flush can wait for it; normal callers still fire and forget.
+    return this.poster.postBatch(batch).catch((err) => {
       logger.error('Error posting batch:', err);
     });
   }
@@ -538,7 +583,7 @@ export async function initializeGitHubSync(
 ): Promise<GitHubSyncService> {
   if (syncService) {
     logger.warn('GitHub sync service already exists, stopping old instance');
-    syncService.stop();
+    await syncService.stop();
   }
 
   syncService = new GitHubSyncService(client, config);
@@ -554,6 +599,17 @@ export function getGitHubSync(): GitHubSyncService {
     throw new Error('GitHub sync service not initialized');
   }
   return syncService;
+}
+
+/**
+ * Stop the service if it ever started (shutdown path). Init is fire-and-forget at boot, so a
+ * SIGTERM can arrive before there is anything to stop.
+ */
+export async function stopGitHubSync(): Promise<void> {
+  if (!syncService) {
+    return;
+  }
+  await syncService.stop();
 }
 
 /**
