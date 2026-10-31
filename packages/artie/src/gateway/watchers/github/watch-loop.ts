@@ -31,6 +31,8 @@ import {
   type PosterConfig,
 } from './poster.js';
 import { GUILD_CONFIGS } from '../../../shared/config/guilds.js';
+import { readState, writeState } from '../../../shared/db/kv-state.js';
+import { easternDayKey, easternHour, isEasternWeekend } from '../../../shared/eastern-day.js';
 
 export interface GitHubSyncConfig {
   poller?: Partial<PollerConfig>;
@@ -68,6 +70,9 @@ const MAX_EVENTS_BEFORE_DIGEST = 5;
 // How long shutdown waits for the final batch posts: leaves most of PM2's 12 s kill_timeout
 // for the scribe sweep and the rest of teardown.
 const SHUTDOWN_FLUSH_TIMEOUT_MS = 4000;
+
+const DRAFT_DIGEST_TICK_MS = 5 * 60 * 1000;
+const DRAFT_DIGEST_DAY_KEY = 'draft_digest_last_day';
 
 export class GitHubSyncService {
   private client: Client;
@@ -151,7 +156,7 @@ export class GitHubSyncService {
 
     this.poller?.start();
 
-    // Schedule daily draft digest at 9 AM ET (14:00 UTC)
+    // Schedule daily draft digest at 9 AM ET
     this.scheduleDraftDigest();
 
     logger.info('GitHub sync service started');
@@ -161,20 +166,30 @@ export class GitHubSyncService {
    * Schedule daily draft PR digest
    */
   private scheduleDraftDigest(): void {
-    // Check every hour if it's time for the daily digest
-    this.draftDigestTimer = setInterval(async () => {
-      const now = new Date();
-      const utcHour = now.getUTCHours();
-      const utcMinute = now.getUTCMinutes();
-
-      // Post at 14:00 UTC (9 AM ET) — only in the first 3 minutes of the hour
-      if (utcHour === 14 && utcMinute < 3) {
-        await this.postDraftDigest();
-      }
-    }, 60 * 60 * 1000); // Check hourly
+    // A short tick plus a durable day key, like the studio digest (2026-10-31). The old hourly
+    // interval was anchored to boot time and only posted if a tick happened to land in
+    // 14:00-14:02 UTC, so after the 10-16 deploy it never fired again.
+    this.draftDigestTimer = setInterval(() => {
+      this.checkAndPostDraftDigest().catch((err) => logger.error('Draft digest error:', err));
+    }, DRAFT_DIGEST_TICK_MS);
 
     // Also do an initial check for any existing open drafts
     setTimeout(() => this.collectOpenDrafts(), 30 * 1000);
+  }
+
+  /** Post the draft digest once per ET weekday, in the 9 AM hour. */
+  async checkAndPostDraftDigest(now: Date = new Date()): Promise<void> {
+    // Weekdays only: it's a work digest, and weekends are Artie's off days (EJ, 2026-10-31).
+    if (isEasternWeekend(now)) {
+      return;
+    }
+    const today = easternDayKey(now);
+    if (easternHour(now) !== 9 || readState(DRAFT_DIGEST_DAY_KEY) === today) {
+      return;
+    }
+    // Marked before posting: a crash mid-post skips a day rather than posting twice.
+    writeState(DRAFT_DIGEST_DAY_KEY, today);
+    await this.postDraftDigest();
   }
 
   /**
@@ -291,6 +306,11 @@ export class GitHubSyncService {
    */
   async stop(timeoutMs = SHUTDOWN_FLUSH_TIMEOUT_MS): Promise<void> {
     this.poller?.stop();
+    // Never cleared before (2026-10-31): a re-init left the old instance's digest timer running.
+    if (this.draftDigestTimer) {
+      clearInterval(this.draftDigestTimer);
+      this.draftDigestTimer = null;
+    }
 
     // Post what's still sitting in a batch window, and wait for the sends (2026-10-31). Nothing
     // called this on shutdown, and the cursors had already moved past these events, so every
@@ -343,10 +363,12 @@ export class GitHubSyncService {
 
     // Track FILTERED events in this poll cycle for digest mode
     this.pollCycleEventCount++;
-    this.pollCycleEvents.push(event);
 
-    // If we've exceeded the threshold, we'll handle as digest at end of cycle
+    // If we've exceeded the threshold, we'll handle as digest at end of cycle. Only the overflow
+    // goes in the digest (2026-10-31): events 1-5 already went to the batcher and post on their
+    // own, and listing them in the digest too posted each of them twice.
     if (this.pollCycleEventCount > MAX_EVENTS_BEFORE_DIGEST) {
+      this.pollCycleEvents.push(event);
       logger.debug(
         `Event ${this.pollCycleEventCount} queued for digest (threshold: ${MAX_EVENTS_BEFORE_DIGEST})`
       );
