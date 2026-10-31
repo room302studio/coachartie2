@@ -13,6 +13,7 @@ import { errorTracker, ERROR_TYPES } from './error-tracker.js';
 import { CapabilityResult, OrchestrationContext } from '../2-turn/types.js';
 import { runToolLoop, type ToolLoopDeps } from '../5-tool-loop/native-loop.js';
 import { registryToTools } from '../5-tool-loop/tool-schema.js';
+import { recordToolTurn, shadowRouters, type ToolTurnContext } from '../2-turn/tool-exposure.js';
 import { capabilityRegistry } from '../5-tool-loop/registry.js';
 import { getErrorMessage } from '../error-utils.js';
 import { generateReflectionFacts, type ReflectionType } from '../2-turn/reflection-facts.js';
@@ -96,6 +97,17 @@ export class LLMResponseCoordinator {
       const turn = await this.prepareTurn(message, undefined, 'native');
       // Built per turn (skills can register after boot); same registry → same bytes.
       const tools = registryToTools(capabilityRegistry.list());
+      // Tool exposure log: what he was offered, what he called, what shadow routers would
+      // have offered (EJ, 2026-10-31: every live turn should be an eval sample).
+      const exposure: ToolTurnContext = {
+        messageId: message.id,
+        traceId: message.context?.traceId,
+        userId: message.userId,
+        guildId: message.context?.guildId,
+        channelId: message.context?.channelId,
+      };
+      const shadow = shadowRouters(exposure);
+      const called: string[] = [];
       let round = 0;
       let lastText = '';
 
@@ -134,7 +146,10 @@ export class LLMResponseCoordinator {
       try {
         const result = await runToolLoop(turn.modelAwareMessages, tools, {
           generate,
-          executeTool: deps.executeTool,
+          executeTool: (invocation) => {
+            called.push(invocation.name);
+            return deps.executeTool(invocation);
+          },
           deadlineAt: deps.deadlineAt,
           onStep: (step) => {
             if (step.content.trim()) lastText = step.content;
@@ -154,6 +169,8 @@ export class LLMResponseCoordinator {
         } else {
           throw loopError;
         }
+      } finally {
+        recordToolTurn({ ctx: exposure, offered: tools, called, shadow });
       }
 
       return this.disarmWarden(this.stripThinkingTags(finalText, message.userId, message.id), turn);
