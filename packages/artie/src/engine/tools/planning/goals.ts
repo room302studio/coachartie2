@@ -492,6 +492,12 @@ export async function logGoalAction(
     result,
   });
 
+  // A reminder is Artie's action, not work on the goal (2026-10-31): bumping lastWorkedAt
+  // for it made every nudge un-stall the goal for three days.
+  if (actionType === 'reminder') {
+    return;
+  }
+
   // Update lastWorkedAt
   await db.update(objectives).set({
     lastWorkedAt: new Date().toISOString(),

@@ -18,7 +18,7 @@ export const schedulerCapability: RegisteredCapability = {
   emoji: '⏰',
   supportedActions: ['remind', 'schedule', 'list', 'cancel'],
   description:
-    'Set one-time reminders (e.g., "remind me in 5 minutes"), schedule recurring tasks with cron expressions, view scheduled tasks, or cancel scheduled reminders. Perfect for time-based automation and remembering things.',
+    'Set one-time reminders (e.g., "remind me in 5 minutes"), view scheduled tasks, or cancel scheduled tasks. Recurring (cron) reminders are not supported yet.',
   handler: async (params, _content, context) => {
     const { action } = params;
     // Who the reminder belongs to comes from the real caller, never from model params: a
@@ -52,25 +52,10 @@ export const schedulerCapability: RegisteredCapability = {
       }
 
       case 'schedule': {
-        const { name, cron, message } = params;
-        if (!name || !cron) {
-          throw new Error('Task name and cron expression are required');
-        }
-
-        const taskId = `task-${Date.now()}`;
-
-        await schedulerService.scheduleTask({
-          id: taskId,
-          name,
-          cron,
-          data: {
-            type: 'user-task',
-            message: message || `Scheduled task: ${name}`,
-            userId: callerId,
-          },
-        });
-
-        return `✅ Recurring task scheduled: "${name}" (${cron})`;
+        // Refused (2026-10-31): no handler ever ran a 'user-task', and the task registry is
+        // in memory, so after a restart a user's cron can't be listed or cancelled and fires
+        // forever from Redis. Say so instead of "✅ scheduled".
+        return '❌ Recurring reminders aren\'t supported yet. I can set a one-time reminder instead (action "remind" with a delay).';
       }
 
       case 'list': {

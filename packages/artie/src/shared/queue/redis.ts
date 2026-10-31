@@ -16,6 +16,14 @@ export const isRedisAvailable = (): boolean => redisAvailable;
 // Check if Redis has been tested
 export const hasRedisBeenChecked = (): boolean => redisChecked;
 
+/**
+ * Reconnect delay for every long-lived connection: always retry, capped at 60 s (2026-10-31).
+ * It used to return null once any error had flipped `redisAvailable` to false, so a single
+ * Redis blip (restart, OOM, network) stopped every queue and worker reconnecting until Artie
+ * restarted. `redisAvailable` is now status for logging and health only. Exported for tests.
+ */
+export const reconnectDelay = (times: number): number => Math.min(times * 2000, 60000);
+
 // Get Redis config
 // Default to standard Redis port 6379 - Docker containers override via REDIS_PORT env var
 const getRedisConfig = () => ({
@@ -76,15 +84,7 @@ export const createRedisConnection = (): Redis => {
     maxRetriesPerRequest: null,
     enableReadyCheck: false,
     lazyConnect: true, // Don't connect immediately
-    retryStrategy: (times) => {
-      // If we've determined Redis is unavailable, don't retry
-      if (redisChecked && !redisAvailable) {
-        return null; // Stop retrying
-      }
-      // Exponential backoff with max 60 seconds
-      const delay = Math.min(times * 2000, 60000);
-      return delay;
-    },
+    retryStrategy: reconnectDelay,
   });
 
   redisConnection.on('error', (err: Error) => {
@@ -142,12 +142,7 @@ const getBullMQConnectionConfig = () => {
     maxRetriesPerRequest: null,
     enableReadyCheck: false,
     lazyConnect: true,
-    retryStrategy: (times: number) => {
-      if (redisChecked && !redisAvailable) {
-        return null; // Stop retrying if we know Redis is down
-      }
-      return Math.min(times * 2000, 60000);
-    },
+    retryStrategy: reconnectDelay,
   };
 };
 

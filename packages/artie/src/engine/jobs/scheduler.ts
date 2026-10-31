@@ -33,6 +33,7 @@ export interface ScheduledJob {
 }
 
 interface BullJob {
+  id?: string;
   name: string;
   data: {
     taskId?: string;
@@ -67,6 +68,38 @@ export function restDayReason(jobType: string, proactiveJobTypes: Set<string>, n
   return '';
 }
 
+// Every job type executeScheduledJob has a handler for.
+const HANDLED_JOB_TYPES = new Set([
+  'health-check',
+  'daily-summary',
+  'user-reminder',
+  'cleanup-old-data',
+  'reddit-mentions',
+  'daily-reflection',
+  'weekly-rule-review',
+  'memory-gardening',
+  'morning-briefing',
+  'trend-digest',
+  'heartbeat',
+  'daily-summarization',
+  'delivery-retries',
+]);
+
+/**
+ * Which handler a job goes to, or '' if none (2026-10-31). BullMQ job names are free text
+ * from callers (`reminder-<ts>`, a user's label, `<name>-immediate`), so dispatching on the
+ * name sent every one-time reminder to the unknown branch. `data.type` wins when it names a
+ * handler; the name is the fallback because the built-in crons carry descriptive types
+ * (`system-health`, `daily-report`) and those repeatables already live in Redis as-is.
+ * Exported for tests.
+ */
+export function resolveJobType(name: string, data: Record<string, unknown> | undefined): string {
+  const dataType = data?.type;
+  if (typeof dataType === 'string' && HANDLED_JOB_TYPES.has(dataType)) return dataType;
+  if (HANDLED_JOB_TYPES.has(name)) return name;
+  return '';
+}
+
 interface ReminderJobData {
   userId: string;
   reminderType: string;
@@ -82,6 +115,8 @@ export class SchedulerService {
   private tasks = new Map<string, ScheduledTask>();
   private initialized = false;
   private initializationFailed = false;
+  // Unknown jobs already logged this boot, so an orphan repeatable errors once, not every run.
+  private unknownJobsLogged = new Set<string>();
   private completedReminders: Array<{
     timestamp: Date;
     message: string;
@@ -98,15 +133,16 @@ export class SchedulerService {
    */
   async initialize(): Promise<boolean> {
     if (this.initialized) return true;
-    if (this.initializationFailed) return false;
 
-    // Check Redis availability first
+    // Re-test on every call rather than trusting an earlier failure (2026-10-31): the flag
+    // used to be sticky, so Redis down at boot meant no scheduler until the next restart.
     const redisOk = await testRedisConnection();
     if (!redisOk) {
       logger.warn('⚠️ Scheduler: Redis unavailable - scheduler disabled');
       this.initializationFailed = true;
       return false;
     }
+    this.initializationFailed = false;
 
     try {
       const connection = createRedisConnection();
@@ -217,16 +253,22 @@ export class SchedulerService {
   /**
    * Schedule a one-time job with delay
    */
-  async scheduleOnce(name: string, data: Record<string, unknown>, delay: number): Promise<void> {
+  async scheduleOnce(
+    name: string,
+    data: Record<string, unknown>,
+    delay: number,
+    jobId?: string
+  ): Promise<void> {
     if (!this.initialized || !this.schedulerQueue) {
       logger.warn(`Cannot schedule one-time job '${name}' - scheduler not initialized`);
       return;
     }
 
     try {
+      // A caller-chosen jobId lets it cancel the job later (meetings, 2026-10-31).
       await this.schedulerQueue.add(name, data, {
         delay,
-        jobId: `once-${name}-${Date.now()}`,
+        jobId: jobId || `once-${name}-${Date.now()}`,
       });
 
       logger.info(`Scheduled one-time job '${name}' with ${delay}ms delay`);
@@ -234,6 +276,22 @@ export class SchedulerService {
       logger.error(`Failed to schedule one-time job '${name}':`, error);
       throw error;
     }
+  }
+
+  /**
+   * Remove a pending one-time job by the jobId given to scheduleOnce. Returns false if there
+   * was none (already ran, or never queued).
+   */
+  async cancelOnce(jobId: string): Promise<boolean> {
+    if (!this.initialized || !this.schedulerQueue) {
+      return false;
+    }
+    const job = await this.schedulerQueue.getJob(jobId);
+    if (!job) {
+      return false;
+    }
+    await job.remove();
+    return true;
   }
 
   /**
@@ -308,8 +366,11 @@ export class SchedulerService {
     try {
       logger.info(`⏰ EXECUTING SCHEDULED JOB: ${job.name} (ID: ${taskId})`);
 
-      // Determine job type: use job.name first, fall back to job.data.type for dynamic names
-      const jobType = job.name || job.data.type;
+      const jobType = resolveJobType(job.name, job.data);
+      if (!jobType) {
+        this.reportUnknownJob(job);
+        return;
+      }
 
       // Pause switch: when AUTONOMOUS_PAUSED=true, skip every unprompted/outbound job
       // (briefings, heartbeat, social, digests, reddit) while leaving internal maintenance
@@ -323,11 +384,11 @@ export class SchedulerService {
         'heartbeat',
         'delivery-retries', // also gated: don't flush queued proactive DMs while paused
       ]);
-      if (process.env.AUTONOMOUS_PAUSED === 'true' && PROACTIVE_JOB_TYPES.has(jobType as string)) {
+      if (process.env.AUTONOMOUS_PAUSED === 'true' && PROACTIVE_JOB_TYPES.has(jobType)) {
         logger.info(`⏸️  AUTONOMOUS_PAUSED — skipping proactive job "${jobType}" (ID: ${taskId})`);
         return;
       }
-      const resting = restDayReason(String(jobType), PROACTIVE_JOB_TYPES);
+      const resting = restDayReason(jobType, PROACTIVE_JOB_TYPES);
       if (resting) {
         logger.info(`🛋️ ${resting} — skipping "${jobType}" (ID: ${taskId})`);
         return;
@@ -388,7 +449,9 @@ export class SchedulerService {
           break;
 
         default:
-          logger.warn(`Unknown scheduled job type: ${jobType} (job name: ${job.name})`);
+          // Unreachable while the switch matches HANDLED_JOB_TYPES; kept loud in case they drift.
+          this.reportUnknownJob(job);
+          return;
       }
 
       logger.info(`✅ Scheduled job '${job.name}' completed successfully`);
@@ -396,6 +459,25 @@ export class SchedulerService {
       logger.error(`❌ Scheduled job '${job.name}' failed:`, error);
       throw error;
     }
+  }
+
+  /**
+   * A job no handler claims (2026-10-31): error once per name+type per boot (an orphan
+   * repeatable like an old cron fires forever, so warn-every-run was noise nobody read), then
+   * debug. Not thrown: a throwing repeatable only adds failed-job churn.
+   */
+  private reportUnknownJob(job: BullJob): void {
+    const key = `${job.name}|${String(job.data.type)}`;
+    const detail = `name="${job.name}" data.type="${String(job.data.type)}" taskId=${String(job.data.taskId)} jobId=${String(job.id)}`;
+    if (this.unknownJobsLogged.has(key)) {
+      logger.debug(`Unknown scheduled job again: ${detail}`);
+      return;
+    }
+    this.unknownJobsLogged.add(key);
+    logger.error(
+      `❓ Unknown scheduled job type, no handler ran: ${detail}. ` +
+        `If it's an orphan repeatable it fires on every run until removed from Redis.`
+    );
   }
 
   /**
@@ -431,6 +513,18 @@ export class SchedulerService {
   private async executeUserReminder(data: ReminderJobData): Promise<void> {
     const { userId, reminderType, message, meetingId } = data;
     const reminderMessage = message || reminderType || 'Scheduled reminder';
+
+    // A cancelled or deleted meeting's reminder stays silent (2026-10-31). Checked before
+    // anything is queued; removing the job on cancel is only best effort.
+    if (meetingId) {
+      const status = getSyncDb().get<{ status: string }>('SELECT status FROM meetings WHERE id = ?', [
+        meetingId,
+      ])?.status;
+      if (status !== 'scheduled') {
+        logger.info(`🔕 Meeting ${String(meetingId)} is ${status ?? 'gone'} — reminder skipped`);
+        return;
+      }
+    }
 
     // Log the reminder prominently
     logger.info(`\n${'='.repeat(60)}`);
@@ -480,6 +574,17 @@ export class SchedulerService {
       }
     } catch (error) {
       logger.error('Failed to queue reminder message for processing:', error);
+    }
+
+    // A plain reminder has to reach the person (2026-10-31): the replay above answers to
+    // 'api', which only logs, so nothing a user asked to be reminded of ever arrived.
+    if (!meetingId && this.discordQueue && userId && userId !== 'unknown-user') {
+      await this.discordQueue.add('send-message', {
+        userId,
+        content: `⏰ Reminder: ${reminderMessage}`,
+        source: 'user-reminder',
+      });
+      logger.info(`✅ Reminder DM queued for ${userId}`);
     }
 
     // Get meeting details if meetingId is provided
