@@ -48,6 +48,24 @@ export { PER_REQUEST_TIMEOUT_MS };
 /**
  * Determine step type for usage tracking
  */
+/** The model OpenRouter says it ran (auto and ~latest aliases resolve server-side), else the request. */
+export function servedModelName(served: string | undefined | null, requested: string): string {
+  if (served) return served;
+  return requested;
+}
+
+export function finiteOrUndefined(value: number | undefined): number | undefined {
+  if (value === undefined || !Number.isFinite(value)) return undefined;
+  return value;
+}
+
+/** OpenRouter's reported USD cost when it sent one; the price table only as a fallback. */
+export function billedCost(reported: number | undefined, billedModel: string, usage: TokenUsage): number {
+  const exact = finiteOrUndefined(reported);
+  if (exact !== undefined) return exact;
+  return UsageTracker.calculateCost(billedModel, usage);
+}
+
 function getStepType(userId: string, messageId: string | undefined, explicit?: string): string {
   if (explicit) {
     return explicit;
@@ -766,11 +784,10 @@ class OpenRouterService {
         if (plugins) {
           extraBody.plugins = plugins;
         }
-        // Auto-routed picks may be models we have no price for (billed at $15/$75 by
-        // default); OpenRouter's usage accounting reports the exact USD cost instead.
-        if (isAutoRouted(model)) {
-          extraBody.usage = { include: true };
-        }
+        // OpenRouter's usage accounting reports the exact USD cost of every call, so new
+        // models and ~latest aliases bill correctly without a price-table entry (EJ,
+        // 2026-10-31: models change too fast to hardcode). The table is only a fallback.
+        extraBody.usage = { include: true };
         if (isAutoRouted(model) && autoReasoningFor(plugins)) {
           extraBody.reasoning = autoReasoningFor(plugins);
         }
@@ -793,14 +810,9 @@ class OpenRouterService {
         const completion: OpenAI.Chat.Completions.ChatCompletion = await this.createCompletion(
           completionParams as never
         );
-        // openrouter/auto picks the model; bill what was actually served, or the unknown-model
-        // fallback ($15/$75) would trip the daily cap early. Other models bill as requested.
-        let billedModel: string;
-        if (isAutoRouted(model) && completion.model) {
-          billedModel = completion.model;
-        } else {
-          billedModel = model;
-        }
+        // Bill what OpenRouter actually served: openrouter/auto and ~latest aliases resolve
+        // server-side, and the requested name would hit the unknown-model fallback ($15/$75).
+        const billedModel = servedModelName(completion.model, model);
 
         const choice = completion.choices?.[0];
         const response = choice?.message?.content ?? '';
@@ -823,12 +835,7 @@ class OpenRouterService {
             cache_write_tokens: readCacheUsage(completion.usage).write,
           };
           const failedReported = Number((completion.usage as { cost?: unknown } | undefined)?.cost);
-          let attemptCost: number;
-          if (isAutoRouted(model) && Number.isFinite(failedReported)) {
-            attemptCost = failedReported;
-          } else {
-            attemptCost = UsageTracker.calculateCost(billedModel, failedUsage);
-          }
+          const attemptCost = billedCost(failedReported, billedModel, failedUsage);
           attemptUsage = {
             billed: billedModel,
             usage: failedUsage,
@@ -912,20 +919,10 @@ class OpenRouterService {
 
         // Calculate cost and record usage
         const reportedCost = Number((completion.usage as { cost?: unknown } | undefined)?.cost);
-        let estimatedCost: number;
-        if (isAutoRouted(model) && Number.isFinite(reportedCost)) {
-          estimatedCost = reportedCost;
-        } else {
-          estimatedCost = UsageTracker.calculateCost(billedModel, usage);
-        }
+        const estimatedCost = billedCost(reportedCost, billedModel, usage);
 
         // Track costs in real-time cost monitor
-        let costForMonitor: number | undefined;
-        if (isAutoRouted(model) && Number.isFinite(reportedCost)) {
-          costForMonitor = reportedCost;
-        } else {
-          costForMonitor = undefined;
-        }
+        const costForMonitor = finiteOrUndefined(reportedCost);
         const { warnings } = costMonitor.trackCall(
           usage.prompt_tokens,
           usage.completion_tokens,
@@ -1301,11 +1298,10 @@ class OpenRouterService {
         if (plugins) {
           extraBody.plugins = plugins;
         }
-        // Auto-routed picks may be models we have no price for (billed at $15/$75 by
-        // default); OpenRouter's usage accounting reports the exact USD cost instead.
-        if (isAutoRouted(model)) {
-          extraBody.usage = { include: true };
-        }
+        // OpenRouter's usage accounting reports the exact USD cost of every call, so new
+        // models and ~latest aliases bill correctly without a price-table entry (EJ,
+        // 2026-10-31: models change too fast to hardcode). The table is only a fallback.
+        extraBody.usage = { include: true };
         if (isAutoRouted(model) && autoReasoningFor(plugins)) {
           extraBody.reasoning = autoReasoningFor(plugins);
         }
@@ -1318,8 +1314,8 @@ class OpenRouterService {
           stream_options: { include_usage: true }, // Request usage data in stream
           ...extraBody,
         });
-        let servedModel: string | undefined; // openrouter/auto reports its pick on each chunk
-        let reportedCost: number | undefined; // usage accounting, final chunk (auto-routed only)
+        let servedModel: string | undefined; // the concrete model, reported on each chunk
+        let reportedCost: number | undefined; // usage accounting, final chunk
 
         let fullResponse = '';
         let lastSentLength = 0;
@@ -1390,26 +1386,11 @@ class OpenRouterService {
         }
 
         // Calculate cost and track usage
-        let billedModel: string;
-        if (isAutoRouted(model) && servedModel) {
-          billedModel = servedModel;
-        } else {
-          billedModel = model;
-        }
-        let estimatedCost: number;
-        if (isAutoRouted(model) && reportedCost !== undefined) {
-          estimatedCost = reportedCost;
-        } else {
-          estimatedCost = UsageTracker.calculateCost(billedModel, usage);
-        }
+        const billedModel = servedModelName(servedModel, model);
+        const estimatedCost = billedCost(reportedCost, billedModel, usage);
 
         // Track costs in real-time cost monitor
-        let streamingCost: number | undefined;
-        if (isAutoRouted(model)) {
-          streamingCost = reportedCost;
-        } else {
-          streamingCost = undefined;
-        }
+        const streamingCost = finiteOrUndefined(reportedCost);
         const { warnings: streamWarnings } = costMonitor.trackCall(
           usage.prompt_tokens,
           usage.completion_tokens,

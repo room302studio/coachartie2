@@ -116,7 +116,8 @@ function isStaticSecondBlock(messages: Array<{ content: string }>, i: number): b
 }
 
 export function supportsPromptCaching(model: string): boolean {
-  return model.startsWith('anthropic/');
+  // "~anthropic/claude-haiku-latest" is OpenRouter's always-newest alias: still Anthropic.
+  return model.replace(/^~/, '').startsWith('anthropic/');
 }
 
 export function cacheMinimumFor(model: string): number {
