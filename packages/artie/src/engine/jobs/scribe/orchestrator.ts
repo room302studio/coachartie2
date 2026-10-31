@@ -177,7 +177,34 @@ export async function stopScribeSession(
   if (!session) {
     throw new Error(`No scribe session ${sessionId}`);
   }
+  // Only an active session gets summarized, once: a second stop (SIGTERM racing the no-humans
+  // timer, or a ghost row) used to run the paid summary and post it again (2026-10-31).
+  if (session.status !== 'active' || stoppingSessions.has(sessionId)) {
+    summaryOnlySessions.delete(sessionId);
+    logger.info(`📝 Scribe session ${sessionId} already ${session.status}; not stopping it again`);
+    return {
+      pendingCount: 0,
+      textChannelId: session.textChannelId,
+      capped: session.capped,
+      posted: false,
+    };
+  }
+  stoppingSessions.add(sessionId);
+  try {
+    return await summarizeAndFinish(session, stopReason);
+  } finally {
+    stoppingSessions.delete(sessionId);
+  }
+}
 
+/** Sessions whose stop is in flight (the summary call is awaited before the row flips). */
+const stoppingSessions = new Set<string>();
+
+async function summarizeAndFinish(
+  session: ScribeSession,
+  stopReason: string
+): Promise<StopScribeSessionResult> {
+  const { sessionId } = session;
   const utterances = listScribeUtterances(sessionId);
   const defaultRepo = defaultScribeRepo(session.guildId) ?? 'room302studio/coachartie2';
 

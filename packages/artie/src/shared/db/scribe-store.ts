@@ -214,6 +214,21 @@ export function finishScribeSession(
   );
 }
 
+/**
+ * Boot reconcile: no voice session survives a process restart, so any row still 'active' was
+ * left by a crash or a shutdown that ran out of time. Left alone it stays 'active' forever and
+ * getActiveScribeSessionForGuild keeps returning it (2026-10-31). Returns how many it closed.
+ * The transcript stays for the retention window; only the summary is lost.
+ */
+export function endCrashedScribeSessions(): number {
+  ensureTables();
+  const result = getSyncDb().run(
+    `UPDATE scribe_sessions SET status = 'error', stop_reason = 'crash', ended_at = ? WHERE status = 'active'`,
+    [new Date().toISOString()]
+  );
+  return result.changes;
+}
+
 export function appendScribeUtterance(input: {
   sessionId: string;
   speakerId: string;
