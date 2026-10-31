@@ -5,7 +5,7 @@
  * Synthesizes repo activity into actionable summaries,
  * nudges about stale PRs, and highlights what needs attention.
  *
- * Posts to the configured channel once daily (morning).
+ * Posts to the configured channel once each weekday morning (9 AM ET).
  */
 
 import { Client, EmbedBuilder } from 'discord.js';
@@ -13,6 +13,8 @@ import { Octokit } from '@octokit/rest';
 import { octokitLog } from './octokit-log.js';
 import { logger } from '../../../shared/logger.js';
 import { getDb, eq } from '../../../shared/db/client.js';
+import { readState, writeState } from '../../../shared/db/kv-state.js';
+import { easternDayKey, easternHour, isEasternWeekend } from '../../../shared/eastern-day.js';
 import { githubRepoWatches, githubIdentityMappings } from '../../../shared/db/schema.js';
 
 function pluralS(count: number): string {
@@ -36,11 +38,15 @@ function getAgeString(ageHours: number): string {
   return `${Math.round(ageHours / 24)}d`;
 }
 
-function getETOffset(isDST: boolean): number {
-  if (isDST) {
-    return 4;
-  }
-  return 5;
+const DIGEST_DAY_KEY = 'studio_digest_last_day';
+
+/** The ET day the morning digest last went out (survives restarts). */
+export function lastDigestDay(): string {
+  return readState(DIGEST_DAY_KEY) ?? '';
+}
+
+export function rememberDigestDay(day: string): void {
+  writeState(DIGEST_DAY_KEY, day);
 }
 
 function extractLabelName(label: any): string {
@@ -66,7 +72,6 @@ export class GitHubStudioManager {
   private client: Client;
   private octokit: Octokit;
   private digestTimer: NodeJS.Timeout | null = null;
-  private lastDigestDate: string = '';
 
   constructor(client: Client, githubToken: string) {
     this.client = client;
@@ -104,22 +109,14 @@ export class GitHubStudioManager {
 
   private async checkAndPostDigest(): Promise<void> {
     const now = new Date();
-    const etHour = this.getETHour(now);
-    const today = now.toISOString().split('T')[0];
-
-    // Post at 9 AM ET, only once per day
-    if (etHour >= 9 && etHour < 10 && this.lastDigestDate !== today) {
-      this.lastDigestDate = today;
-      await this.postMorningDigest();
-    }
-  }
-
-  private getETHour(date: Date): number {
-    // Simple ET offset (handles EST/EDT approximately)
-    const month = date.getUTCMonth();
-    const isDST = month >= 2 && month <= 10; // March-November
-    const offset = getETOffset(isDST);
-    return (date.getUTCHours() - offset + 24) % 24;
+    // Weekdays only: it's a work digest, and weekends are Artie's off days (EJ, 2026-10-31).
+    if (isEasternWeekend(now)) return;
+    // Post at 9 AM ET, once per ET day. The "once" is persisted: kept in memory, every restart
+    // inside the 9 o'clock hour posted it again (twice on 2026-10-31, from two deploys).
+    const today = easternDayKey(now);
+    if (easternHour(now) !== 9 || lastDigestDay() === today) return;
+    rememberDigestDay(today);
+    await this.postMorningDigest();
   }
 
   async postMorningDigest(): Promise<void> {

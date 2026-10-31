@@ -12,6 +12,7 @@ import { logger } from '../../../shared/logger.js';
 import { getDb, eq, and } from '../../../shared/db/client.js';
 import { githubRepoWatches, githubSyncState, type GithubRepoWatch, type GithubSyncState } from '../../../shared/db/schema.js';
 import { EventEmitter } from 'events';
+import { isEasternSunday } from '../../../shared/eastern-day.js';
 
 // Event types for GitHub sync
 export type GitHubEventType =
@@ -204,6 +205,12 @@ export class GitHubPollerService extends EventEmitter {
   async poll(): Promise<void> {
     if (this.isPolling) {
       logger.debug('Poll already in progress, skipping');
+      return;
+    }
+    // Sunday is Artie's day off (EJ, 2026-10-31). Watermarks don't move, so Monday's first
+    // poll picks up everything from Sunday: held, not dropped.
+    if (isEasternSunday()) {
+      logger.debug('GitHub feed resting: Sunday');
       return;
     }
 

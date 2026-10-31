@@ -3,6 +3,7 @@ import { logger } from '../../shared/logger.js';
 import { createRedisConnection, createWorker, testRedisConnection } from '../../shared/queue/redis.js';
 import { getSyncDb } from '../../shared/db/client.js';
 import { withTimeout } from '../../shared/async.js';
+import { isEasternSunday, isEasternWeekend } from '../../shared/eastern-day.js';
 import * as gateway from '../../gateway/api.js';
 import { IncomingMessage } from '../../shared/queue/types.js';
 import { QUEUES } from '../../shared/queue/names.js';
@@ -49,6 +50,21 @@ interface SchedulerStats {
   };
   repeatable: number;
   tasks: number;
+}
+
+// Daily work digests: weekdays only.
+const WEEKDAY_ONLY_JOB_TYPES = new Set(['daily-summary', 'morning-briefing', 'trend-digest']);
+
+/**
+ * Why a job sits out today, or '' if it runs (EJ, 2026-10-31: "no daily code/work digests on
+ * the weekends, and take Sundays off"). Saturday drops the daily digests; Sunday drops every
+ * unprompted job. Replies and reminders people asked for aren't in either list, so they run.
+ * Exported for tests.
+ */
+export function restDayReason(jobType: string, proactiveJobTypes: Set<string>, now: Date = new Date()): string {
+  if (isEasternSunday(now) && proactiveJobTypes.has(jobType)) return 'Sunday off';
+  if (isEasternWeekend(now) && WEEKDAY_ONLY_JOB_TYPES.has(jobType)) return 'Weekend';
+  return '';
 }
 
 interface ReminderJobData {
@@ -309,6 +325,11 @@ export class SchedulerService {
       ]);
       if (process.env.AUTONOMOUS_PAUSED === 'true' && PROACTIVE_JOB_TYPES.has(jobType as string)) {
         logger.info(`⏸️  AUTONOMOUS_PAUSED — skipping proactive job "${jobType}" (ID: ${taskId})`);
+        return;
+      }
+      const resting = restDayReason(String(jobType), PROACTIVE_JOB_TYPES);
+      if (resting) {
+        logger.info(`🛋️ ${resting} — skipping "${jobType}" (ID: ${taskId})`);
         return;
       }
 

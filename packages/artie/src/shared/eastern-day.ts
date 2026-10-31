@@ -45,6 +45,30 @@ export function easternDayKey(date: Date = new Date()): string {
   return `${p.year}-${String(p.month).padStart(2, '0')}-${String(p.day).padStart(2, '0')}`;
 }
 
+/** Hour (0-23) of `date` on the America/New_York clock. */
+export function easternHour(date: Date = new Date()): number {
+  return zonedParts(date).hour;
+}
+
+/** Day of the week of `date` in America/New_York: 0 = Sunday ... 6 = Saturday. */
+export function easternWeekday(date: Date = new Date()): number {
+  const p = zonedParts(date);
+  return new Date(Date.UTC(p.year, p.month - 1, p.day)).getUTCDay();
+}
+
+/**
+ * Artie's days off (EJ, 2026-10-31): no work digests on weekends, and Sunday off altogether
+ * unless something sparks joy for him. Replies to people are never "work" for this purpose.
+ */
+export function isEasternWeekend(date: Date = new Date()): boolean {
+  const day = easternWeekday(date);
+  return day === 0 || day === 6;
+}
+
+export function isEasternSunday(date: Date = new Date()): boolean {
+  return easternWeekday(date) === 0;
+}
+
 /** The UTC instant of local midnight at the start of the given ET calendar day. */
 function easternMidnightUtc(year: number, month: number, day: number): Date {
   const guess = Date.UTC(year, month - 1, day, 0, 0, 0);
