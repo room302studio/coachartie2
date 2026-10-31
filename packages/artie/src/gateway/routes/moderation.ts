@@ -1,6 +1,10 @@
 import express from 'express';
 import { logger } from '../../shared/logger.js';
-import { moderationService } from './moderation-service.js';
+import {
+  moderationService,
+  AUTONOMOUS_TIMEOUT_PER_TARGET_PER_DAY,
+  AUTONOMOUS_TIMEOUT_PER_GUILD_PER_HOUR,
+} from './moderation-service.js';
 import { isProtectedUser } from '../../shared/config/protected-users.js';
 import { isStaffRole } from '../../shared/staff-role.js';
 import { type ApiResult, sendResult } from '../../shared/api-result.js';
@@ -11,13 +15,6 @@ import { type ApiResult, sendResult } from '../../shared/api-result.js';
 const reply = (status: number, body: any): ApiResult => ({ status, body });
 
 const SUBWAY_BUILDER_GUILD_ID = '1420846272545296470';
-
-// Security audit 2026-10-26 (sec-authority.md MEDIUM finding — autonomous moderation is
-// fully LLM-discretionary with no human-in-the-loop). Keeps the feature but bounds the
-// blast radius of a prompt-injected or social-engineered timeout: at most one per target
-// per day, at most a handful guild-wide per hour.
-const AUTONOMOUS_TIMEOUT_PER_TARGET_PER_DAY = 1;
-const AUTONOMOUS_TIMEOUT_PER_GUILD_PER_HOUR = 3;
 
 // Discord user IDs that can never be moderated, in addition to the
 // username-based list in config/protected-users.ts

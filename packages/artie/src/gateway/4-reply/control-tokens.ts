@@ -35,6 +35,10 @@ import {
 // can't import the gateway); re-exported so gateway code has one control-token module.
 export { isSilent, stripSilentMarkers };
 
+// A lost casino stake is a game the player opted into, not discipline: it skips the warden's
+// 1-per-day/3-per-hour DB limit (it's still audited). Only [TIMEOUT] counts (2026-10-31).
+const CASINO_STAKE = { game: true };
+
 export type ControlToken =
   | { kind: 'silent' }
   | { kind: 'timeout'; seconds: number }
@@ -249,7 +253,8 @@ export async function applyControlTokens(cleanResult: string, intent: UserIntent
     } else {
       const _landed = await (intent as any).timeoutAuthor(
         _stake,
-        `Timeout roulette — rolled ${_roll} vs ${_odds}, staked ${_stake}s`
+        `Timeout roulette — rolled ${_roll} vs ${_odds}, staked ${_stake}s`,
+        CASINO_STAKE
       );
       let _verdict2: string;
       if (_landed) {
@@ -328,7 +333,8 @@ export async function applyControlTokens(cleanResult: string, intent: UserIntent
       } else if (h.bust) {
         const _landed = await (intent as any).timeoutAuthor?.(
           h.session.stake,
-          `Blackjack bust — ${h.playerValue}, staked ${h.session.stake}s`
+          `Blackjack bust — ${h.playerValue}, staked ${h.session.stake}s`,
+          CASINO_STAKE
         );
         let _bustMsg: string;
         if (_landed) {
@@ -359,7 +365,8 @@ export async function applyControlTokens(cleanResult: string, intent: UserIntent
       } else {
         const _landed = await (intent as any).timeoutAuthor?.(
           s.session.stake,
-          `Blackjack loss — ${s.playerValue} vs dealer ${s.dealerValue}, staked ${s.session.stake}s`
+          `Blackjack loss — ${s.playerValue} vs dealer ${s.dealerValue}, staked ${s.session.stake}s`,
+          CASINO_STAKE
         );
         let _lossMsg: string;
         if (_landed) {
@@ -380,7 +387,8 @@ export async function applyControlTokens(cleanResult: string, intent: UserIntent
       } else if (r.boxSeconds > 0) {
         const _landed = await (intent as any).timeoutAuthor?.(
           r.boxSeconds,
-          `Slots — ${r.label}, ${r.boxSeconds}s`
+          `Slots — ${r.label}, ${r.boxSeconds}s`,
+          CASINO_STAKE
         );
         if (_landed) recordTableServed(intent.userId, _gambler, r.boxSeconds);
         let _slotsMsg: string;

@@ -41,7 +41,7 @@ export interface UserIntent {
   // ENHANCED: Discord-native features
   addReaction?: (emoji: string) => Promise<void>;
   removeReaction?: (emoji: string) => Promise<void>;
-  timeoutAuthor?: (seconds: number, reason: string) => Promise<boolean>;
+  timeoutAuthor?: (seconds: number, reason: string, options?: { game?: boolean }) => Promise<boolean>;
   spinChannelWheel?: (
     seconds: number,
     targetName?: string
