@@ -444,11 +444,15 @@ export class HybridDataLayer {
         `
         SELECT m.id, m.user_id, m.content, m.tags, m.context, m.timestamp, m.importance,
                m.metadata, m.related_message_id, m.guild_id, m.channel_id, m.created_at, m.updated_at
-        FROM memories_fts f
+        FROM (
+          -- FTS first, scope after: with the scope in the same WHERE, SQLite drove the join
+          -- from memories and ran MATCH per row (4s on prod; this is ~20ms).
+          SELECT rowid, rank FROM memories_fts WHERE memories_fts MATCH ? ORDER BY rank LIMIT 500
+        ) f
         JOIN memories m ON m.id = f.rowid
-        WHERE memories_fts MATCH ? AND ${scope}
+        WHERE ${scope}
           AND COALESCE(m.importance, 5) > 2
-        ORDER BY bm25(memories_fts) - COALESCE(m.importance, 5) * 0.3
+        ORDER BY f.rank - COALESCE(m.importance, 5) * 0.3
         LIMIT ?
         `,
         [match, ...params, (opts.limit ?? 20) * 2]
