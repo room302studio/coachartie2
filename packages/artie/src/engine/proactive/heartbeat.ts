@@ -21,8 +21,39 @@ import type { Objective } from '../../shared/db/schema.js';
 import { sendDiscordDM } from './proactive-dm.js';
 import { getStalledGoals, logGoalAction } from '../tools/planning/goals.js';
 import { deliveryManager } from './delivery.js';
+import { readState, writeState } from '../../shared/db/kv-state.js';
 
 const NUDGE_COOLDOWN_HOURS = 24;
+
+// Goals created by the tool are owned by the caller's Discord id; older ones by 'ej'.
+const LEGACY_OWNER_ID = 'ej';
+
+/**
+ * Durable per-item nudge cooldown in kv_state, key `nudge:<kind>:<id>` (2026-10-31). Todo
+ * lists and quests had none (nothing updates todo_lists.updated_at), so lifting
+ * AUTONOMOUS_PAUSED would have DMed the same stale list every hour, forever.
+ */
+function nudgedRecently(kind: string, id: string | number): boolean {
+  const last = readState(`nudge:${kind}:${id}`);
+  if (!last) return false;
+  const hoursSince = (Date.now() - new Date(last).getTime()) / (1000 * 60 * 60);
+  return hoursSince < NUDGE_COOLDOWN_HOURS;
+}
+
+function markNudged(kind: string, id: string | number): void {
+  writeState(`nudge:${kind}:${id}`, new Date().toISOString());
+}
+
+/** Stalled goals under the owner's real id plus the legacy 'ej' owner, deduped. */
+async function getOwnerStalledGoals(): Promise<Objective[]> {
+  const byId = new Map<string, Objective>();
+  for (const owner of [OWNER_USER_ID, LEGACY_OWNER_ID]) {
+    for (const goal of await getStalledGoals(owner)) {
+      byId.set(goal.id, goal);
+    }
+  }
+  return [...byId.values()];
+}
 
 interface StuckQuest {
   questId: string;
@@ -262,18 +293,19 @@ async function generateDailyInsights(userId: string): Promise<string | null> {
 /**
  * Find stalled todos (lists with pending items not touched in 2+ days)
  */
-function findStalledTodos(): Array<{ userId: string; listName: string; pendingCount: number; staleDays: number }> {
+function findStalledTodos(): Array<{ listId: number; userId: string; listName: string; pendingCount: number; staleDays: number }> {
   try {
     const db = getSyncDb();
     const twoDaysAgo = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString();
 
     const rows = db.all<{
+      id: number;
       user_id: string;
       name: string;
       pending_count: number;
       updated_at: string;
     }>(`
-      SELECT tl.user_id, tl.name, tl.updated_at,
+      SELECT tl.id, tl.user_id, tl.name, tl.updated_at,
              COUNT(ti.id) as pending_count
       FROM todo_lists tl
       JOIN todo_items ti ON tl.id = ti.list_id
@@ -286,6 +318,7 @@ function findStalledTodos(): Array<{ userId: string; listName: string; pendingCo
     return rows
       .filter(row => canReceiveProactiveDMs(row.user_id))
       .map(row => ({
+        listId: row.id,
         userId: row.user_id,
         listName: row.name,
         pendingCount: row.pending_count,
@@ -386,9 +419,13 @@ export async function executeHeartbeat(): Promise<{
     for (const userData of stalledUsers) {
       for (const quest of userData.activeQuests) {
         try {
+          if (nudgedRecently('quest', quest.questId)) {
+            continue;
+          }
           const message = generateNudgeMessage(quest);
           const sent = await sendDiscordDM(userData.userId, message, 'heartbeat-nudge');
           if (sent) {
+            markNudged('quest', quest.questId);
             stats.questNudges++;
             logger.info(`Heartbeat: Sent quest nudge to ${userData.userId} about "${quest.title}"`);
           }
@@ -405,9 +442,13 @@ export async function executeHeartbeat(): Promise<{
 
     for (const todo of stalledTodos) {
       try {
+        if (nudgedRecently('todo', todo.listId)) {
+          continue;
+        }
         const message = `📋 Your todo list "${todo.listName}" has ${todo.pendingCount} pending items and hasn't been touched in ${todo.staleDays} days. Say "todo status ${todo.listName}" to review.`;
         const sent = await sendDiscordDM(todo.userId, message, 'heartbeat-todo');
         if (sent) {
+          markNudged('todo', todo.listId);
           stats.todoNudges++;
         }
       } catch (error) {
@@ -419,7 +460,9 @@ export async function executeHeartbeat(): Promise<{
     // 3. Goal nudges - stalled autonomous objectives (3+ days inactive)
     // Uses delivery manager for reliable delivery with retry
     try {
-      const stalledGoals = await getStalledGoals('ej'); // Goals use 'ej' as owner
+      // By the owner's real id as well as legacy 'ej' (2026-10-31): querying 'ej' alone
+      // skipped every goal the tool had created (4 of 6 in prod).
+      const stalledGoals = await getOwnerStalledGoals();
       logger.info(`Heartbeat: Found ${stalledGoals.length} stalled goals`);
 
       // Initialize delivery manager if needed
@@ -436,6 +479,11 @@ export async function executeHeartbeat(): Promise<{
               continue;
             }
           }
+          // last_nudged_at is only written on success; a nudge left with the delivery manager
+          // for retry must not be sent again next hour too.
+          if (nudgedRecently('goal', goal.id)) {
+            continue;
+          }
 
           const message = generateGoalNudgeMessage(goal);
 
@@ -448,6 +496,7 @@ export async function executeHeartbeat(): Promise<{
             relatedId: goal.id,
             priority,
           });
+          markNudged('goal', goal.id);
 
           if (result.success) {
             stats.goalNudges++;
@@ -507,7 +556,7 @@ export async function heartbeatStatus(): Promise<{
 }> {
   const stalledUsers = findStalledQuests();
   const stalledTodos = findStalledTodos();
-  const stalledGoals = await getStalledGoals('ej'); // Goals use 'ej' as owner
+  const stalledGoals = await getOwnerStalledGoals();
   const inactiveUsers = findInactiveUsers();
 
   return {
