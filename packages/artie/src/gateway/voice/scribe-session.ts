@@ -63,6 +63,8 @@ interface ActiveVoiceSession {
 }
 
 const activeSessions = new Map<string, ActiveVoiceSession>();
+/** Guilds whose start is between the has() check and activeSessions.set (joining). */
+const startingGuilds = new Set<string>();
 
 export interface VoiceSessionSnapshot {
   sessionId: string;
@@ -239,12 +241,31 @@ export async function startVoiceScribeSession(input: {
   /** End with the summary alone, no GitHub proposals (auto-joined meetings). */
   summaryOnly?: boolean;
 }): Promise<StartVoiceResult> {
-  const { client, channel, textChannelId, startedBy, summaryOnly } = input;
-  const guildId = channel.guild.id;
+  const guildId = input.channel.guild.id;
 
-  if (activeSessions.has(guildId)) {
+  if (activeSessions.has(guildId) || startingGuilds.has(guildId)) {
     return { ok: false, reason: 'A scribe session is already running in this server.' };
   }
+  // Reserve the guild before the awaits below (brownout check, up to 15s of voice join,
+  // session create): with only the has() check, a /scribe and an auto-start in that window
+  // both joined and both opened a session (2026-10-31).
+  startingGuilds.add(guildId);
+  try {
+    return await joinAndStart(input);
+  } finally {
+    startingGuilds.delete(guildId);
+  }
+}
+
+async function joinAndStart(input: {
+  client: Client;
+  channel: VoiceBasedChannel;
+  textChannelId: string;
+  startedBy: string;
+  summaryOnly?: boolean;
+}): Promise<StartVoiceResult> {
+  const { client, channel, textChannelId, startedBy, summaryOnly } = input;
+  const guildId = channel.guild.id;
 
   // A scheduled auto-scribe meeting (summaryOnly) is EJ's standing ask and costs cents
   // (per-utterance STT + one summary), so the critical-runway gate only applies to ad-hoc /scribe.

@@ -10,6 +10,7 @@ import { isOwner } from '../../../shared/config/owner.js';
 import {
   getPendingAction,
   listPendingActions,
+  markPendingActionOutcome,
   resolvePendingAction,
 } from '../../../shared/pending-actions.js';
 import type { RegisteredCapability, CapabilityContext } from '../../5-tool-loop/registry.js';
@@ -75,22 +76,31 @@ async function handleApprovals(
         resolvePendingAction(id, 'approved', callerId);
         logger.info(`✅ Approval #${id} approved by ${callerId}: ${pending.tool}:${pending.action}`);
 
-        const originalParams = JSON.parse(pending.paramsJson || '{}');
-        const originalContext = JSON.parse(pending.contextJson || '{}');
-        const result = await capabilityRegistry.execute(
-          pending.tool,
-          pending.action,
-          { ...originalParams, confirmed: true },
-          // The original call's `content` arg (e.g. a drafted email's body) — rides
-          // separately from params, so it has to be replayed separately too. Without this,
-          // approving a gated call whose payload is in `content` (the drafting flow's
-          // email:send, specifically) would replay with no body at all.
-          pending.content ?? undefined,
-          // Replay with the ORIGINAL guildId/channelId/messageId (so a tool that reads
-          // context behaves the way it would have at the original call site), but userId
-          // is always the owner now — that's what satisfies isOwnerConfirmed().
-          { ...originalContext, userId: callerId }
-        );
+        // 'approved' (written above, before the run) is the claim that stops a double approve
+        // from running it twice; the outcome lands after (2026-10-31).
+        let result: string;
+        try {
+          const originalParams = JSON.parse(pending.paramsJson || '{}');
+          const originalContext = JSON.parse(pending.contextJson || '{}');
+          result = await capabilityRegistry.execute(
+            pending.tool,
+            pending.action,
+            { ...originalParams, confirmed: true },
+            // The original call's `content` arg (e.g. a drafted email's body) — rides
+            // separately from params, so it has to be replayed separately too. Without this,
+            // approving a gated call whose payload is in `content` (the drafting flow's
+            // email:send, specifically) would replay with no body at all.
+            pending.content ?? undefined,
+            // Replay with the ORIGINAL guildId/channelId/messageId (so a tool that reads
+            // context behaves the way it would have at the original call site), but userId
+            // is always the owner now — that's what satisfies isOwnerConfirmed().
+            { ...originalContext, userId: callerId }
+          );
+        } catch (error) {
+          markPendingActionOutcome(id, 'failed');
+          throw error;
+        }
+        markPendingActionOutcome(id, 'executed');
         return `✅ Approved #${id} and ran ${pending.tool}:${pending.action}:\n${result}`;
       }
 

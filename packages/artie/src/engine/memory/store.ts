@@ -297,17 +297,16 @@ export class HybridDataLayer {
       this.evictOldestMemories();
     }
 
-    // Async persistence (non-blocking) - will update with real ID
-    this.writeQueue
-      .add(async () => {
-        const realId = await this.persistMemory(memory, tempId);
-        return realId;
-      })
-      .catch((error) => {
-        logger.error('Failed to persist memory:', error);
-      });
-
-    return tempId; // Return temp ID immediately for fast response
+    // Wait for the (synchronous, sub-ms) insert and hand back the REAL id. Returning the temp
+    // id meant the semantic tagger looked it up after the swap and found nothing (0 of 65
+    // tags landed Oct 29-31), and the model was shown a negative id (2026-10-31).
+    try {
+      return await this.writeQueue.add(() => this.persistMemory(memory, tempId));
+    } catch (error) {
+      // Same as before on a failed insert: the memory stays in the hot cache under its temp id.
+      logger.error('Failed to persist memory:', error);
+      return tempId;
+    }
   }
 
   /**

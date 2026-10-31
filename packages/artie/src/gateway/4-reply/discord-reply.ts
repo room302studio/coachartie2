@@ -13,10 +13,15 @@ import { isSilent } from './control-tokens.js';
 import { telemetry } from '../telemetry.js';
 import { checkOutbound, isProtectedTimeoutTarget, SUBWAY_BUILDER_GUILD_ID } from './outbound-gate.js';
 import { recordWheelVictim } from '../games/casino.js';
+import {
+  moderationService,
+  AUTONOMOUS_TIMEOUT_PER_TARGET_PER_DAY,
+  AUTONOMOUS_TIMEOUT_PER_GUILD_PER_HOUR,
+} from '../routes/moderation-service.js';
 
 const CHUNK_RATE_LIMIT_DELAY = 200; // 200ms delay between message chunks
 
-// Per-user cooldown for the warden timeout power (one mute per user / 5 min).
+// Per-user cooldown for the warden timeout power (one mute per user / 2 min).
 const timeoutCooldownCache = new Map<string, number>();
 
 /** A mention-proxy reply (on-message's mention-proxy step) carries its rule and prefix. */
@@ -32,11 +37,39 @@ export interface ProxyOptions {
 // only, never bots/staff/protected users) live in the outbound gate; only the per-user
 // cooldown stays here — that's rate-limiting, not permission.
 const WARDEN_TIMEOUT_COOLDOWN_MS = 2 * 60 * 1000;
+
+/** `game`: a casino stake or the Wheel of Fate, which play by their own caps. Anything else
+ *  (the LLM's [TIMEOUT], the antibody) is discipline and counts toward the DB limits. */
+interface TimeoutOptions {
+  game?: boolean;
+}
+
+/** Why the DB limiter refuses a discipline timeout right now, or null if it may go ahead. */
+function autonomousTimeoutRefusal(member: GuildMember): string | null {
+  const now = Date.now();
+  const oneDayAgo = new Date(now - 24 * 60 * 60 * 1000).toISOString();
+  const oneHourAgo = new Date(now - 60 * 60 * 1000).toISOString();
+  if (
+    moderationService.countAutonomousTimeoutsForTarget(member.id, oneDayAgo) >=
+    AUTONOMOUS_TIMEOUT_PER_TARGET_PER_DAY
+  ) {
+    return 'already timed out in the last 24h';
+  }
+  if (
+    moderationService.countAutonomousTimeoutsForGuild(member.guild.id, oneHourAgo) >=
+    AUTONOMOUS_TIMEOUT_PER_GUILD_PER_HOUR
+  ) {
+    return 'guild hourly cap reached';
+  }
+  return null;
+}
+
 async function timeoutMember(
   member: GuildMember,
   seconds: number,
   reason: string,
-  shortId: string
+  shortId: string,
+  options: TimeoutOptions = {}
 ): Promise<boolean> {
   try {
     if (isProtectedTimeoutTarget(member)) {
@@ -48,9 +81,38 @@ async function timeoutMember(
       logger.info(`Timeout skipped - per-user cooldown ${member.user.tag} [${shortId}]`);
       return false;
     }
+    // Discipline goes through the same DB limiter as the moderation tool; it used to bypass
+    // it (and the audit log) entirely: 2 warden timeouts in the logs, 0 rows (2026-10-31).
+    if (!options.game) {
+      const refusal = autonomousTimeoutRefusal(member);
+      if (refusal) {
+        logger.warn(`🚧 Timeout refused: ${member.user.tag} — ${refusal} [${shortId}]`);
+        return false;
+      }
+    }
     const ms = Math.min(300, Math.max(5, Math.floor(seconds || 30))) * 1000;
-    await member.timeout(ms, reason || 'Coach Artie warden discipline');
+    // Stamp the cooldown BEFORE the await, so two replies racing for the same person can't
+    // both pass the check above (2026-10-31). Cleared again if the timeout fails.
     timeoutCooldownCache.set(member.id, Date.now());
+    try {
+      await member.timeout(ms, reason || 'Coach Artie warden discipline');
+    } catch (error) {
+      timeoutCooldownCache.delete(member.id);
+      throw error;
+    }
+    if (!options.game) {
+      moderationService.recordAutonomousTimeout(member.id, member.guild.id);
+    }
+    moderationService.logAction({
+      issuedByUserId: 'coach-artie',
+      issuedByName: 'Coach Artie',
+      targetUserId: member.id,
+      targetUsername: member.user.username,
+      action: 'timeout',
+      durationMinutes: Math.max(1, Math.round(ms / 60000)),
+      reason: reason || 'Coach Artie warden discipline',
+      discordUntil: new Date(Date.now() + ms).toISOString(),
+    });
     // warn, not info: prod console level is warn, and the vitals monitor counts this line
     logger.warn(`Timed out ${member.user.tag} for ${ms / 1000}s: ${reason} [${shortId}]`);
     return true;
@@ -64,11 +126,12 @@ export async function wardenTimeout(
   message: Message,
   seconds: number,
   reason: string,
-  shortId: string
+  shortId: string,
+  options: TimeoutOptions = {}
 ): Promise<boolean> {
   if (!checkOutbound('timeout', message).allowed) return false; // gate logs the denial
   if (!message.member) return false; // gate guarantees this; kept for the type narrowing
-  return timeoutMember(message.member, seconds, reason, shortId);
+  return timeoutMember(message.member, seconds, reason, shortId, options);
 }
 
 // WHEEL OF FATE — third-party roulette. Picks a victim from humans recently active in
@@ -121,7 +184,8 @@ async function spinWheelOfFate(
         target,
         stake,
         `Wheel of Fate — rolled ${roll}, ${stake}s`,
-        shortId
+        shortId,
+        { game: true }
       );
       if (landed) recordWheelVictim(target.id, target.user.username, stake);
     }
@@ -305,8 +369,8 @@ export function createDiscordReplyHandlers(
     // WARDEN POWER: time out the message author (the person being replied to) for <=300s.
     // Guardrails (SB guild only, never staff/protected, per-user cooldown) live in wardenTimeout.
     // Returns whether the timeout actually landed (roulette needs an honest verdict).
-    timeoutAuthor: async (seconds: number, reason: string) =>
-      wardenTimeout(message, seconds, reason, shortId),
+    timeoutAuthor: async (seconds: number, reason: string, options?: { game?: boolean }) =>
+      wardenTimeout(message, seconds, reason, shortId, options),
 
     // WHEEL OF FATE: third-party roulette on anyone recently active in this channel.
     spinChannelWheel: async (seconds: number, targetName?: string) =>

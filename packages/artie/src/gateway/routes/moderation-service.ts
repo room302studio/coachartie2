@@ -12,6 +12,14 @@ import { getRawDb } from '../../shared/db/client.js';
 
 let autonomousTimeoutsTableReady = false;
 
+// Security audit 2026-10-26 (sec-authority.md MEDIUM finding — autonomous moderation is
+// fully LLM-discretionary with no human-in-the-loop). Keeps the feature but bounds the
+// blast radius of a prompt-injected or social-engineered timeout: at most one per target
+// per day, at most a handful guild-wide per hour. Shared by the moderation tool route and
+// the warden path (2026-10-31).
+export const AUTONOMOUS_TIMEOUT_PER_TARGET_PER_DAY = 1;
+export const AUTONOMOUS_TIMEOUT_PER_GUILD_PER_HOUR = 3;
+
 /**
  * Own small table for the autonomous-timeout rate limit (security audit 2026-10-26,
  * sec-authority.md MEDIUM finding), separate from moderation_audit above: that table has no

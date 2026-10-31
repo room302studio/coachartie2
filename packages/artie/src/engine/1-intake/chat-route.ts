@@ -315,9 +315,9 @@ router.get('/:messageId/stream', async (req: Request, res: Response) => {
 // GET /chat/:messageId - Check job status and get result (MUST BE LAST)
 router.get('/:messageId', (req: Request, res: Response) => sendResult(res, getTurn(req.params)));
 
-// GET /chat/pending-attachments/:userId - Get and clear pending file attachments for a user
-router.get('/pending-attachments/:userId', async (req: Request, res: Response) =>
-  sendResult(res, await takePendingAttachments(req.params as { userId: string }))
+// GET /chat/pending-attachments/:turnId - Get and clear pending file attachments for a turn
+router.get('/pending-attachments/:turnId', async (req: Request, res: Response) =>
+  sendResult(res, await takePendingAttachments(req.params as { turnId: string }))
 );
 
 /**
@@ -587,11 +587,11 @@ export function getTurn(params: { messageId?: string }): ApiResult {
   }
 }
 
-/** GET /chat/pending-attachments/:userId's body: take (and clear) a user's queued files, base64. */
-export async function takePendingAttachments(params: { userId: string }): Promise<ApiResult> {
+/** GET /chat/pending-attachments/:turnId's body: take (and clear) a turn's queued files, base64. */
+export async function takePendingAttachments(params: { turnId: string }): Promise<ApiResult> {
   try {
-    const { userId } = params;
-    const attachments = getPendingAttachments(userId);
+    const { turnId } = params;
+    const attachments = getPendingAttachments(turnId);
 
     if (attachments.length === 0) {
       return reply(200, { success: true, attachments: [] });
@@ -605,7 +605,7 @@ export async function takePendingAttachments(params: { userId: string }): Promis
       size: att.buffer.length,
     }));
 
-    logger.info(`📎 Returning ${attachments.length} pending attachments for user ${userId}`);
+    logger.info(`📎 Returning ${attachments.length} pending attachments for turn ${turnId.slice(-8)}`);
     return reply(200, { success: true, attachments: serialized });
   } catch (error) {
     logger.error('Error getting pending attachments:', error);

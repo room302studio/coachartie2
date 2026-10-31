@@ -6,6 +6,7 @@ import * as engine from '../../engine/api.js';
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs';
 import { dirname } from 'path';
 import { collapseWhitespace } from '../../shared/text.js';
+import { readState, writeState } from '../../shared/db/kv-state.js';
 
 /**
  * Steam Review Notes Service
@@ -47,6 +48,9 @@ const ANALYSIS_MAX_BACKOFF_MS = parseInt(
   process.env.STEAM_REVIEW_ANALYSIS_MAX_BACKOFF_MS || '21600000', // 6h
   10
 );
+
+const ANALYSIS_PENDING_KEY = 'steam-review-notes:analysis-pending';
+const LAST_ANALYSIS_AT_KEY = 'steam-review-notes:last-analysis-at';
 
 const CURSOR_RE = /<!-- cursor:(\d+) -->/;
 const ANALYSIS_START = '<!-- analysis:start -->';
@@ -92,9 +96,11 @@ export class SteamReviewNotes {
   /** Consecutive analysis-refresh failures, and when the backoff permits another attempt. */
   private analysisFailures = 0;
   private analysisRetryAfter = 0;
-  // True when the log has entries the analysis hasn't seen. Starts true so the first
-  // cycle after a restart reconciles any refresh that failed before the restart.
-  private analysisPending = true;
+  // True when the log has entries the analysis hasn't seen. Persisted in kv_state with
+  // lastAnalysisAt and loaded in initialize(): starting true on every boot forced a paid
+  // rewrite per deploy (~32 of 38 refreshes were boot noise), while a refresh that failed
+  // before a restart still gets reconciled after it (2026-10-31).
+  private analysisPending = false;
   private chatterBuffer: string[] = [];
 
   private constructor() {}
@@ -108,6 +114,7 @@ export class SteamReviewNotes {
 
   initialize(client: Client): void {
     this.client = client;
+    this.loadAnalysisState();
     logger.info(
       `📓 Steam review notes: watching channel ${STEAM_REVIEWS_CHANNEL_ID}, notes at ${NOTES_PATH}, every ${POLL_INTERVAL_MS / 60000}min`
     );
@@ -124,6 +131,30 @@ export class SteamReviewNotes {
     if (this.timer) {
       clearInterval(this.timer);
       this.timer = null;
+    }
+  }
+
+  private loadAnalysisState(): void {
+    try {
+      this.analysisPending = readState(ANALYSIS_PENDING_KEY) === '1';
+      this.lastAnalysisAt = Number(readState(LAST_ANALYSIS_AT_KEY)) || 0;
+    } catch (error) {
+      logger.warn('📓 Could not read steam analysis state, starting clean:', error);
+    }
+  }
+
+  private saveAnalysisState(): void {
+    try {
+      let pending: string;
+      if (this.analysisPending) {
+        pending = '1';
+      } else {
+        pending = '0';
+      }
+      writeState(ANALYSIS_PENDING_KEY, pending);
+      writeState(LAST_ANALYSIS_AT_KEY, String(this.lastAnalysisAt));
+    } catch (error) {
+      logger.warn('📓 Could not save steam analysis state:', error);
     }
   }
 
@@ -314,7 +345,10 @@ export class SteamReviewNotes {
         writeFileSync(this.notesFullPath(), notes, 'utf-8');
       }
 
-      if (reviews.length > 0) this.analysisPending = true;
+      if (reviews.length > 0) {
+        this.analysisPending = true;
+        this.saveAnalysisState();
+      }
       // Respect the failure backoff as well as the normal cadence, or a persistent 500
       // gets retried every single poll tick regardless of how long it has been failing.
       const analysisDue =
@@ -413,6 +447,7 @@ Output ONLY the markdown body of the section — no top-level heading, no code f
       writeFileSync(this.notesFullPath(), this.replaceAnalysis(fresh, stamped), 'utf-8');
       this.lastAnalysisAt = Date.now();
       this.analysisPending = false;
+      this.saveAnalysisState();
       this.chatterBuffer = [];
       logger.warn(`📓 Steam review situation analysis refreshed (est. $${result.cost?.toFixed(4)})`);
     } catch (error) {

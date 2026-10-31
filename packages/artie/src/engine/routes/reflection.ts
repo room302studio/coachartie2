@@ -57,6 +57,12 @@ reflectionRouter.get('/reflection/stats', async (req, res) => {
 /** POST /api/reflection/check-threshold's body: emergency reflection past N negative reactions. */
 export async function checkReflectionThreshold(body: any): Promise<ApiResult> {
   try {
+    // Same switch as the daily/weekly runs (scheduler.ts). on-reaction checks it before
+    // calling in-process, but the HTTP route didn't, so it could still write rules (2026-10-31).
+    if (process.env.ENABLE_REFLECTION_CONSOLIDATION !== 'true') {
+      return reply(200, { triggered: false, disabled: true });
+    }
+
     const { guildId, threshold, hours } = body;
 
     if (!guildId || !threshold) {

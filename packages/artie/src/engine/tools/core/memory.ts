@@ -131,6 +131,15 @@ function relatedMessageNote(messageId: unknown): string {
   return '';
 }
 
+/** "ID: n, " for a persisted memory. A negative temp id (the insert failed, or memory-only
+ *  mode) is not something the model can act on later, so it's left out (2026-10-31). */
+function memoryIdNote(memoryId: number): string {
+  if (memoryId > 0) {
+    return `ID: ${memoryId}, `;
+  }
+  return '';
+}
+
 function contextSuffix(context: unknown): string {
   if (context) {
     return ` | 📝 ${context}`;
@@ -265,7 +274,7 @@ export class MemoryService {
         });
 
         const relationshipNote = relatedMessageNote(relatedMessageId);
-        return `✅ Remembered: "${content}" (ID: ${memoryId}, importance: ${importance}/10, tags: ${allTags.join(', ')}${relationshipNote})`;
+        return `✅ Remembered: "${content}" (${memoryIdNote(memoryId)}importance: ${importance}/10, tags: ${allTags.join(', ')}${relationshipNote})`;
       } catch (error) {
         logger.error('❌ [HYBRID] Failed to store memory, falling back to legacy:', error);
         this.useHybridLayer = false; // Fallback to legacy

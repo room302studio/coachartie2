@@ -23,26 +23,58 @@ export interface PendingAttachment {
   content?: string;
 }
 
-// In-memory store for pending attachments to SEND (keyed by userId)
-const pendingAttachments = new Map<string, PendingAttachment[]>();
+// In-memory store for pending attachments to SEND, keyed by turn id (the job/message id the
+// gateway holds as jobInfo.messageId, which tools see as context.messageId) with a TTL, the
+// same as pending-components.ts. Keyed by userId it was drained only when a reply succeeded,
+// so a failed turn's image landed on that person's next, unrelated reply (2026-10-31).
+const TTL_MS = 10 * 60 * 1000; // 10 minutes — can't leak past a turn's realistic lifetime
 
-/**
- * Get and clear pending attachments for a user
- */
-export function getPendingAttachments(key: string): PendingAttachment[] {
-  const attachments = pendingAttachments.get(key) || [];
-  pendingAttachments.delete(key);
-  return attachments;
+interface Entry {
+  attachments: PendingAttachment[];
+  expiresAt: number;
+}
+
+const pendingAttachments = new Map<string, Entry>();
+
+function pruneExpired(now: number): void {
+  if (pendingAttachments.size < 500) return;
+  for (const [turnId, entry] of pendingAttachments) {
+    if (entry.expiresAt <= now) {
+      pendingAttachments.delete(turnId);
+    }
+  }
 }
 
 /**
- * Add a pending attachment for a user
+ * Take (and clear) the attachments queued for a turn. Returns [] if none, or if they expired.
  */
-export function addPendingAttachment(key: string, attachment: PendingAttachment): void {
-  const existing = pendingAttachments.get(key) || [];
-  existing.push(attachment);
-  pendingAttachments.set(key, existing);
-  logger.info(`📎 Queued pending attachment for ${key}: ${attachment.filename}`);
+export function getPendingAttachments(turnId: string): PendingAttachment[] {
+  const entry = pendingAttachments.get(turnId);
+  pendingAttachments.delete(turnId);
+  if (!entry) return [];
+  if (entry.expiresAt <= Date.now()) return [];
+  return entry.attachments;
+}
+
+/**
+ * Queue an attachment for a turn. Appends to anything already queued for the same turn.
+ */
+export function addPendingAttachment(turnId: string, attachment: PendingAttachment): void {
+  if (!turnId) {
+    logger.warn(`📎 Dropped pending attachment ${attachment.filename}: no turn id to attach it to`);
+    return;
+  }
+  const now = Date.now();
+  pruneExpired(now);
+  const existing = pendingAttachments.get(turnId);
+  let attachments: PendingAttachment[];
+  if (existing && existing.expiresAt > now) {
+    attachments = [...existing.attachments, attachment];
+  } else {
+    attachments = [attachment];
+  }
+  pendingAttachments.set(turnId, { attachments, expiresAt: now + TTL_MS });
+  logger.info(`📎 Queued pending attachment for turn ${turnId.slice(-8)}: ${attachment.filename}`);
 }
 
 // ============================================

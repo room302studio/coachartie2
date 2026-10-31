@@ -31,6 +31,7 @@ import { capabilityRegistry } from './5-tool-loop/registry.js';
 import { toolLoopMode } from './5-tool-loop/mode.js';
 import { openRouterModelsService } from './4-generate/model-catalog.js';
 import { hybridDataLayer } from './memory/store.js';
+import { endCrashedScribeSessions } from '../shared/db/scribe-store.js';
 
 // Export openRouterService for models endpoint
 export { openRouterService } from './4-generate/openrouter.js';
@@ -159,6 +160,17 @@ export async function startEngine(): Promise<EngineHandle> {
   // Native tool turns check the model catalog's supported_parameters; warm it now so the
   // first reply after boot doesn't wait on the fetch.
   if (loopMode === 'native') void openRouterModelsService.fetchLiveModelInfo();
+
+  // Scribe rows a crash left 'active' are ghosts (no voice session survives a restart), and
+  // the gateway, which starts after this, would otherwise treat them as live (2026-10-31).
+  try {
+    const ended = endCrashedScribeSessions();
+    if (ended > 0) {
+      logger.warn(`📝 Marked ${ended} scribe session(s) left active by a crash as ended`);
+    }
+  } catch (error) {
+    logger.error('Scribe boot reconcile failed:', error);
+  }
 
   // Start queue workers first
   console.log('👷 Starting queue workers...');

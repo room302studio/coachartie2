@@ -14,7 +14,8 @@
 import { getSyncDb } from './db/client.js';
 import { logger } from './logger.js';
 
-export type PendingActionStatus = 'pending' | 'approved' | 'denied';
+/** pending → approved (claimed, about to run) → executed | failed; or pending → denied. */
+export type PendingActionStatus = 'pending' | 'approved' | 'denied' | 'executed' | 'failed';
 
 export interface PendingAction {
   id: number;
@@ -158,4 +159,16 @@ export function resolvePendingAction(
     [status, resolvedBy, id]
   );
   return { ...existing, status, resolvedBy };
+}
+
+/**
+ * Record how an approved action's run went. 'approved' alone used to be the final state, so
+ * an approved action whose replay threw looked done (2026-10-31). Only moves an 'approved' row.
+ */
+export function markPendingActionOutcome(id: number, outcome: 'executed' | 'failed'): void {
+  ensureTable();
+  getSyncDb().run(`UPDATE pending_actions SET status = ? WHERE id = ? AND status = 'approved'`, [
+    outcome,
+    id,
+  ]);
 }

@@ -192,9 +192,10 @@ export class CapabilitiesClient {
   }
 
   /**
-   * Fetch pending file attachments for a user (and clear them from the server)
+   * Fetch pending file attachments for a turn (and clear them from the server). Keyed by turn
+   * id (jobInfo.messageId), like getPendingComponents (2026-10-31).
    */
-  async getPendingAttachments(userId: string): Promise<
+  async getPendingAttachments(turnId: string): Promise<
     Array<{
       filename: string;
       content?: string;
@@ -203,7 +204,7 @@ export class CapabilitiesClient {
     }>
   > {
     try {
-      const response = await engine.pendingAttachments(userId);
+      const response = await engine.pendingAttachments(turnId);
       if (!engine.isOk(response)) {
         logger.warn(`Failed to fetch pending attachments: ${response.status}`);
         return [];

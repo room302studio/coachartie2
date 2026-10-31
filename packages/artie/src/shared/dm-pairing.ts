@@ -265,11 +265,13 @@ class DMPairingService {
     const db = getSyncDb();
     const policy = this.getPolicy(platform);
 
-    // Check for existing valid code
+    // Check for existing valid code. expires_at is ISO ("…T…Z"), so compare against an ISO
+    // "now": against datetime('now') ("… ") a code that expired earlier today still looked
+    // valid until UTC midnight, because 'T' sorts after ' ' (2026-10-31).
     const existing = db.get<{ code: string; expires_at: string }>(
       `SELECT code, expires_at FROM dm_pairing_codes
        WHERE platform = ? AND user_id = ? AND status = 'pending'
-       AND expires_at > datetime('now')
+       AND expires_at > strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
        ORDER BY created_at DESC LIMIT 1`,
       [platform, userId]
     );
@@ -439,8 +441,11 @@ class DMPairingService {
     this.initialize();
     const db = getSyncDb();
 
-    // Clean up expired codes first
-    db.run(`UPDATE dm_pairing_codes SET status = 'expired' WHERE status = 'pending' AND expires_at < datetime('now')`);
+    // Clean up expired codes first (ISO "now" to match the ISO expires_at, 2026-10-31)
+    db.run(
+      `UPDATE dm_pairing_codes SET status = 'expired'
+       WHERE status = 'pending' AND expires_at < strftime('%Y-%m-%dT%H:%M:%fZ', 'now')`
+    );
 
     let query: string;
     let params: string[];
