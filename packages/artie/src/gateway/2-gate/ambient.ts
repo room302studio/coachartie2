@@ -159,6 +159,7 @@ const JUDGMENT_PRICING: Record<string, [number, number]> = {
   'google/gemini-2.5-flash': [0.0003, 0.0025],
   'openai/gpt-4o-mini': [0.00015, 0.0006],
   'anthropic/claude-haiku-4.5': [0.001, 0.005],
+  'anthropic/claude-haiku-5.5': [0.0001, 0.0005],
 };
 const UNKNOWN_JUDGMENT_PRICING: [number, number] = [0.005, 0.025];
 

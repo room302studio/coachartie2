@@ -78,6 +78,9 @@ const MODEL_PRICING: Record<string, { input: number; output: number }> = {
   // reported $0.00 for 100% of traffic. Rates read from the live OpenRouter /models API
   // (per-token there, per-1K here), not estimated.
   'anthropic/claude-haiku-4.5': { input: 0.001, output: 0.005 },
+  // Brownout/tool-pin model from 2026-10-31: won a same-prompt bake-off against Haiku 4.5,
+  // GPT-6 Luna, DeepSeek v4.1 Flash and MiniMax M3.1 Flash at ~1/7 of Haiku 4.5's cost.
+  'anthropic/claude-haiku-5.5': { input: 0.0001, output: 0.0005 },
   'anthropic/claude-sonnet-5': { input: 0.002, output: 0.01 },
   'anthropic/claude-opus-4.8': { input: 0.005, output: 0.025 },
   // Persona model from 2026-09-29. Its cache reads list at $0.20/M (0.05x), cheaper than the
