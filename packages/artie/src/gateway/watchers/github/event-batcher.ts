@@ -257,8 +257,27 @@ export class GitHubEventProcessor {
    * Generate a unique key for dedup tracking
    */
   private getDedupeKey(event: GitHubSyncEvent): string {
+    // Most specific id first (2026-10-31): keyed on the PR/issue number, a second comment,
+    // review or review-request on the same PR within 30 min was dropped as a "duplicate".
+    // event.type leads every key, so the action is part of it too.
+    if (event.data.reviewId) {
+      return `${event.type}:${event.repo}:review-${event.data.reviewId}`;
+    }
+    if (event.data.commentId) {
+      return `${event.type}:${event.repo}:comment-${event.data.commentId}`;
+    }
+    if (event.data.checkRunId) {
+      return `${event.type}:${event.repo}:check-${event.data.checkRunId}`;
+    }
     if (event.data.commitSha) {
       return `${event.type}:${event.repo}:commit-${event.data.commitSha}`;
+    }
+    // Timeline events carry no id of their own: who was requested/assigned or what label went on
+    // tells a new ping apart from a replay of the same one.
+    const target = this.timelineTarget(event);
+    if (target) {
+      const number = event.data.prNumber ?? event.data.issueNumber;
+      return `${event.type}:${event.repo}:${number}:${target}`;
     }
     if (event.data.issueNumber) {
       return `${event.type}:${event.repo}:issue-${event.data.issueNumber}`;
@@ -266,10 +285,21 @@ export class GitHubEventProcessor {
     if (event.data.prNumber) {
       return `${event.type}:${event.repo}:pr-${event.data.prNumber}`;
     }
-    if (event.data.commentId) {
-      return `${event.type}:${event.repo}:comment-${event.data.commentId}`;
-    }
     return `${event.type}:${event.repo}:${event.timestamp}`;
+  }
+
+  /** The person or label a review-request / assignment / label event is about, if any. */
+  private timelineTarget(event: GitHubSyncEvent): string {
+    if (event.type === 'pr_review_requested') {
+      return `req-${(event.data.reviewers ?? []).join(',')}`;
+    }
+    if (event.type === 'issue_assigned') {
+      return `assign-${event.data.assignee ?? ''}`;
+    }
+    if (event.type === 'issue_labeled') {
+      return `label-${event.data.label ?? ''}`;
+    }
+    return '';
   }
 
   /**
