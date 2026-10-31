@@ -181,7 +181,7 @@ export async function stopScribeSession(
   // timer, or a ghost row) used to run the paid summary and post it again (2026-10-31).
   if (session.status !== 'active' || stoppingSessions.has(sessionId)) {
     summaryOnlySessions.delete(sessionId);
-    logger.info(`📝 Scribe session ${sessionId} already ${session.status}; not stopping it again`);
+    logger.info(`📝 Scribe session ${sessionId} is already stopped or stopping; not stopping it again`);
     return {
       pendingCount: 0,
       textChannelId: session.textChannelId,

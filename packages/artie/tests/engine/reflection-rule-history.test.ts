@@ -38,8 +38,7 @@ beforeAll(() => {
     created_at TEXT DEFAULT CURRENT_TIMESTAMP,
     updated_at TEXT DEFAULT CURRENT_TIMESTAMP
   )`);
-  db.run(`DROP TABLE IF EXISTS learned_rules_history`);
-  db.run(`CREATE TABLE learned_rules_history (
+  db.run(`CREATE TABLE IF NOT EXISTS learned_rules_history (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     rule_id INTEGER NOT NULL,
     action TEXT NOT NULL,
