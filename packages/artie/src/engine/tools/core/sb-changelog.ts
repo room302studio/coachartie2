@@ -38,7 +38,8 @@ export async function parseChangelogSource(source: string): Promise<ChangelogEnt
     if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.PlusToken) {
       const l = text(node.left);
       const r = text(node.right);
-      return l !== undefined && r !== undefined ? l + r : undefined;
+      if (l === undefined || r === undefined) return undefined;
+      return l + r;
     }
     return undefined;
   };
@@ -81,8 +82,31 @@ export async function parseChangelogSource(source: string): Promise<ChangelogEnt
   return entries;
 }
 
-export function formatChangelogEntry(entry: ChangelogEntry, channel: 'beta' | 'public'): string {
-  let out = `Subway Builder ${entry.version} (${channel}${entry.date ? `, ${entry.date}` : ''})`;
+type ReleaseChannel = 'beta' | 'public';
+
+function releaseLabel(channel: ReleaseChannel, date: string): string {
+  if (!date) return channel;
+  return `${channel}, ${date}`;
+}
+
+function channelOf(version: string, publicVersions: Set<string>): ReleaseChannel {
+  if (publicVersions.has(version)) return 'public';
+  return 'beta';
+}
+
+function requestedVersion(raw: unknown): string {
+  if (typeof raw !== 'string') return '';
+  return raw.trim().replace(/^v/i, '');
+}
+
+function githubHeaders(): Record<string, string> {
+  const headers: Record<string, string> = { Accept: 'application/vnd.github.raw', 'User-Agent': 'coachartie' };
+  if (process.env.GITHUB_TOKEN) headers.Authorization = `Bearer ${process.env.GITHUB_TOKEN}`;
+  return headers;
+}
+
+export function formatChangelogEntry(entry: ChangelogEntry, channel: ReleaseChannel): string {
+  let out = `Subway Builder ${entry.version} (${releaseLabel(channel, entry.date)})`;
   if (entry.info) out += `\n${entry.info}`;
   for (const s of SECTIONS) {
     const items = entry.changes.filter((c) => c.type === s.type);
@@ -98,9 +122,8 @@ const cache = new Map<string, { at: number; entries: ChangelogEntry[] }>();
 async function load(ref: 'beta' | 'main'): Promise<ChangelogEntry[]> {
   const hit = cache.get(ref);
   if (hit && Date.now() - hit.at < CACHE_MS) return hit.entries;
-  const token = process.env.GITHUB_TOKEN;
   const res = await fetch(`https://api.github.com/repos/${REPO}/contents/${PATH}?ref=${ref}`, {
-    headers: { Accept: 'application/vnd.github.raw', ...(token ? { Authorization: `Bearer ${token}` } : {}), 'User-Agent': 'coachartie' },
+    headers: githubHeaders(),
     signal: AbortSignal.timeout(10_000),
   });
   if (!res.ok) throw new Error(`changelog fetch (${ref}) failed: HTTP ${res.status}`);
@@ -118,7 +141,7 @@ export const sbChangelogCapability: RegisteredCapability = {
     "Use it for any what's-new, patch-notes or 'what changed in X' question.",
   examples: ['<capability name="sb_changelog" action="get" version="1.7.27" />', '<capability name="sb_changelog" action="get" />'],
   handler: async (params) => {
-    const wanted = typeof params.version === 'string' ? params.version.trim().replace(/^v/i, '') : '';
+    const wanted = requestedVersion(params.version);
     try {
       const beta = await load('beta');
       const pub = await load('main').catch(() => [] as ChangelogEntry[]);
@@ -129,12 +152,12 @@ export const sbChangelogCapability: RegisteredCapability = {
           const recent = beta.slice(0, 5).map((e) => e.version).join(', ');
           return `No changelog entry for ${wanted}. Most recent versions: ${recent}.`;
         }
-        return formatChangelogEntry(entry, publicVersions.has(entry.version) ? 'public' : 'beta');
+        return formatChangelogEntry(entry, channelOf(entry.version, publicVersions));
       }
       const latest = beta[0] ?? pub[0];
       if (!latest) return 'The changelog is empty or unreadable right now.';
       const latestPublic = pub[0];
-      let out = formatChangelogEntry(latest, publicVersions.has(latest.version) ? 'public' : 'beta');
+      let out = formatChangelogEntry(latest, channelOf(latest.version, publicVersions));
       if (latestPublic && latestPublic.version !== latest.version) out += `\n\n(Latest public release: ${latestPublic.version}.)`;
       return out;
     } catch (error) {

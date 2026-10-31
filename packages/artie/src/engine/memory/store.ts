@@ -34,6 +34,57 @@ export function isStaleNoise(
   return isHiddenLegacyReflection(memory);
 }
 
+/**
+ * Other guilds whose memories a guild may also recall, one way, from
+ * MEMORY_GUILD_READS_FROM="reader:source|source,reader2:source". For a private server whose
+ * members all come from a bigger one, it can remember the bigger one's history, never the
+ * reverse. Keyword matches only; ids live in env, never in code.
+ */
+export function readableGuilds(guildId: string, spec = process.env.MEMORY_GUILD_READS_FROM || ''): string[] {
+  for (const pair of spec.split(',')) {
+    const [reader, sources] = pair.split(':').map((s) => s?.trim());
+    if (reader === guildId && sources) return sources.split('|').map((s) => s.trim()).filter(Boolean);
+  }
+  return [];
+}
+
+/** The guilds a recall in `guildId` may draw from: itself plus any it reads from. None outside a guild. */
+export function recallGuildIds(guildId?: string): string[] {
+  if (!guildId) return [];
+  return [guildId, ...readableGuilds(guildId)];
+}
+
+// Words that say "this is a question about memory" rather than what it's about.
+const RECALL_STOPWORDS = new Set(
+  ('the and for you your are was were with that this what when where who why how does did ' +
+    'have has had about from into they them their there then than just like know remember ' +
+    'recall tell think thing things some any can could would should will artie coach hey yeah ' +
+    'please again ever still also our out its not all get got one people here').split(' ')
+);
+
+/**
+ * An FTS5 MATCH string for a recall question: distinctive words OR'd together, each also
+ * matched in singular form ("trolls" finds "troll"). Exact tokens, not prefixes: troll*
+ * matched "Trolley". Returns '' when nothing distinctive is left.
+ */
+export function ftsKeywordQuery(text: string): string {
+  const words = Array.from(
+    new Set(
+      text
+        .toLowerCase()
+        .replace(/<@!?\d+>|https?:\/\/\S+/g, ' ')
+        .split(/[^a-z0-9]+/)
+        .filter((w) => w.length >= 3 && !RECALL_STOPWORDS.has(w) && !/^\d+$/.test(w))
+    )
+  ).slice(0, 8);
+  const terms = new Set<string>();
+  for (const w of words) {
+    terms.add(w);
+    if (w.length > 4 && w.endsWith('s') && !w.endsWith('ss')) terms.add(w.slice(0, -1));
+  }
+  return [...terms].map(escapeFts5).join(' OR ');
+}
+
 // Read-time legacy filter only (the write path no longer calls it); re-exported for its tests.
 export { isInCharacterReflection } from './legacy-reflection-filter.js';
 
@@ -359,6 +410,54 @@ export class HybridDataLayer {
     }
 
     return memories;
+  }
+
+  /**
+   * Full-text keyword search for recall, ranked by bm25. The other candidate fetches are
+   * recency windows (the newest 60/150/400), so anything older could never be remembered:
+   * asked about "the bee movie incident" (February), the pool reached back only to April
+   * and he said he had no record of it (2026-10-30). This pass lets an old memory that
+   * matches the question join the pool.
+   *
+   * Scope matches the recency pool: the asker's own memories (this guild or unscoped), plus
+   * anything stored in `guildIds`; outside a guild, the asker's and Artie's own.
+   */
+  keywordSearch(
+    query: string,
+    opts: { userId: string; guildIds?: string[]; limit?: number }
+  ): MemoryRecord[] {
+    const match = ftsKeywordQuery(query);
+    if (!this.coldStorage || !match) return [];
+    const guildIds = (opts.guildIds ?? []).filter(Boolean);
+    let scope: string;
+    let params: unknown[];
+    if (guildIds.length) {
+      const marks = guildIds.map(() => '?').join(', ');
+      scope = `((m.user_id = ? AND (m.guild_id IS NULL OR m.guild_id IN (${marks}))) OR m.guild_id IN (${marks}))`;
+      params = [opts.userId, ...guildIds, ...guildIds];
+    } else {
+      scope = `m.user_id IN (?, 'artie-social')`;
+      params = [opts.userId];
+    }
+    try {
+      const rows = this.coldStorage.all<MemoryRecord>(
+        `
+        SELECT m.id, m.user_id, m.content, m.tags, m.context, m.timestamp, m.importance,
+               m.metadata, m.related_message_id, m.guild_id, m.channel_id, m.created_at, m.updated_at
+        FROM memories_fts f
+        JOIN memories m ON m.id = f.rowid
+        WHERE memories_fts MATCH ? AND ${scope}
+          AND COALESCE(m.importance, 5) > 2
+        ORDER BY bm25(memories_fts) - COALESCE(m.importance, 5) * 0.3
+        LIMIT ?
+        `,
+        [match, ...params, (opts.limit ?? 20) * 2]
+      );
+      return rows.filter(isRecallable).slice(0, opts.limit ?? 20);
+    } catch (error) {
+      logger.warn('Keyword memory search failed:', error);
+      return [];
+    }
   }
 
   /**

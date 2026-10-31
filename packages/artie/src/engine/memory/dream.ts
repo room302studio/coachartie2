@@ -201,7 +201,32 @@ VOCABULARY: ${vocab.join(', ')}`;
 
 function junkCategory(category: unknown): string {
   const c = String(category ?? '').toLowerCase();
-  return (JUNK_CATEGORIES as readonly string[]).includes(c) ? c : 'filler';
+  if ((JUNK_CATEGORIES as readonly string[]).includes(c)) return c;
+  return 'filler';
+}
+
+function isKind(kind: unknown): kind is string {
+  return (KINDS as readonly string[]).includes(kind as string);
+}
+
+/** A verdict's tags, normalized; the model sometimes omits or mangles the list. */
+function verdictTags(v: DreamVerdict): string[] {
+  if (!Array.isArray(v.tags)) return [];
+  return v.tags.map(normalizeTag).filter(Boolean);
+}
+
+/** A reply wrapped in a ``` fence, without the fence. */
+function stripCodeFence(text: string): string {
+  if (!text.startsWith('```')) return text;
+  return text.slice(text.indexOf('\n') + 1, text.lastIndexOf('```')).trim();
+}
+
+/** Verdicts keyed by memory id ({"20508": {...}}) as a list, or undefined if not that shape. */
+function verdictsKeyedById(whole: object): unknown[] | undefined {
+  const entries = Object.entries(whole);
+  const keyedById = entries.length > 0 && entries.every(([k, v]) => /^\d+$/.test(k) && v && typeof v === 'object');
+  if (!keyedById) return undefined;
+  return entries.map(([k, v]) => ({ id: Number(k), ...(v as object) }));
 }
 
 /**
@@ -212,9 +237,7 @@ function junkCategory(category: unknown): string {
  */
 export function parseVerdicts(raw: string): DreamVerdict[] | null {
   const text = String(raw ?? '').trim();
-  const unfenced = text.startsWith('```')
-    ? text.slice(text.indexOf('\n') + 1, text.lastIndexOf('```')).trim()
-    : text;
+  const unfenced = stripCodeFence(text);
   let whole: unknown = null;
   try {
     whole = JSON.parse(unfenced);
@@ -225,12 +248,7 @@ export function parseVerdicts(raw: string): DreamVerdict[] | null {
   if (whole && typeof whole === 'object' && !Array.isArray(whole)) {
     // {"memories": [...]}, or whatever key the model chose ({"m": [...]} seen 2026-10-28),
     // or verdicts keyed by id: {"20508": {...}, ...} (also seen 2026-10-28).
-    const entries = Object.entries(whole);
-    list =
-      Object.values(whole).find(Array.isArray) ??
-      (entries.length > 0 && entries.every(([k, v]) => /^\d+$/.test(k) && v && typeof v === 'object')
-        ? entries.map(([k, v]) => ({ id: Number(k), ...(v as object) }))
-        : undefined);
+    list = Object.values(whole).find(Array.isArray) ?? verdictsKeyedById(whole);
   }
   if (!Array.isArray(list)) return null;
   return list.filter((v): v is DreamVerdict => !!v && typeof v === 'object' && 'id' in v);
@@ -246,16 +264,16 @@ export function applyVerdict(
   vocab: Set<string> = new Set()
 ): 'tagged' | 'pruned' | 'skipped' {
   const db = getSyncDb();
-  const kind = (KINDS as readonly string[]).includes(v.kind) ? v.kind : null;
-  const newTags = (Array.isArray(v.tags) ? v.tags : []).map(normalizeTag).filter(Boolean).slice(0, 5);
+  const kindTags = [v.kind].filter(isKind);
+  const newTags = verdictTags(v).slice(0, 5);
   const existing = parseTags(memory.tags);
   // Old write-time tags were often filler ("this", "main", "primarily"). Keep the ones that
   // carry meaning (vocabulary, kinds, structural markers); the model's tags replace the rest.
   const keptExisting = existing.filter((t) => {
     const n = normalizeTag(t);
-    return vocab.has(n) || BOOKKEEPING_TAGS.has(n) || STRUCTURAL_TAGS.has(n) || (KINDS as readonly string[]).includes(n);
+    return vocab.has(n) || BOOKKEEPING_TAGS.has(n) || STRUCTURAL_TAGS.has(n) || isKind(n);
   });
-  const merged = [...new Set([...keptExisting, ...(kind ? [kind] : []), ...newTags])];
+  const merged = [...new Set([...keptExisting, ...kindTags, ...newTags])];
 
   const protectedMemory =
     memory.importance >= PROTECTED_IMPORTANCE || existing.map((t) => t.toLowerCase()).includes('pinned');
@@ -285,7 +303,8 @@ export function applyVerdict(
      WHERE id = ?`,
     [JSON.stringify(merged), now, memory.id]
   );
-  return JSON.stringify(merged) === JSON.stringify(existing) ? 'skipped' : 'tagged';
+  if (JSON.stringify(merged) === JSON.stringify(existing)) return 'skipped';
+  return 'tagged';
 }
 
 export async function dream(limit = DREAM_BATCH): Promise<DreamResult> {
@@ -336,7 +355,7 @@ export async function dream(limit = DREAM_BATCH): Promise<DreamResult> {
           result.prunedBy = { ...result.prunedBy, [category]: (result.prunedBy?.[category] ?? 0) + 1 };
           examples[category] ??= memory.content.replace(/\s+/g, ' ').slice(0, 70);
         } else {
-          for (const t of (Array.isArray(v.tags) ? v.tags : []).map(normalizeTag).filter(Boolean)) {
+          for (const t of verdictTags(v)) {
             newTagCounts.set(t, (newTagCounts.get(t) ?? 0) + 1);
           }
         }
@@ -368,6 +387,11 @@ export async function dream(limit = DREAM_BATCH): Promise<DreamResult> {
 export const DREAM_JOURNAL_TAG = 'dream-journal';
 const JOURNAL_RECALL_HOURS = 36;
 
+function exampleSuffix(example: string | undefined): string {
+  if (!example) return '';
+  return ` (e.g. "${example}")`;
+}
+
 export function journalText(
   r: DreamResult & { offered: number; failedChunks: number; examples: Record<string, string>; topTags: string[] },
   nowIso: string
@@ -377,7 +401,7 @@ export function journalText(
   if (r.pruned > 0) {
     const cats = Object.entries(r.prunedBy ?? {})
       .sort((a, b) => b[1] - a[1])
-      .map(([c, n]) => `${n} ${c}` + (r.examples[c] ? ` (e.g. "${r.examples[c]}")` : ''));
+      .map(([c, n]) => `${n} ${c}${exampleSuffix(r.examples[c])}`);
     parts.push(`let go of ${r.pruned} that held nothing worth keeping: ${cats.join(', ')}`);
   } else {
     parts.push('let go of nothing');

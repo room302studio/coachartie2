@@ -184,21 +184,24 @@ Use [] for anything empty. No commentary, no preamble. Transcription errors are 
 export function parseWindowFacts(raw: string): WindowFacts | null {
   const parsed = parseModelJson<Partial<WindowFacts>>(raw, 'object');
   if (!parsed) return null;
-  const list = (v: unknown) =>
-    (Array.isArray(v) ? v : []).filter((s): s is string => typeof s === 'string' && s.trim().length > 0).map((s) => s.trim());
   return {
-    discussed: list(parsed.discussed),
-    decisions: list(parsed.decisions),
-    actions: list(parsed.actions),
-    questions: list(parsed.questions),
+    discussed: nonEmptyStrings(parsed.discussed),
+    decisions: nonEmptyStrings(parsed.decisions),
+    actions: nonEmptyStrings(parsed.actions),
+    questions: nonEmptyStrings(parsed.questions),
   };
+}
+
+/** The trimmed, non-blank strings of a model-supplied list; anything else is dropped. */
+function nonEmptyStrings(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((s): s is string => typeof s === 'string' && s.trim().length > 0).map((s) => s.trim());
 }
 
 function clock(ts: string): string {
   const d = new Date(ts);
-  return Number.isNaN(d.getTime())
-    ? ''
-    : d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: process.env.TZ_DISPLAY || 'America/New_York' });
+  if (Number.isNaN(d.getTime())) return '';
+  return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: process.env.TZ_DISPLAY || 'America/New_York' });
 }
 
 /** Concatenate window facts: discussed grouped under time headers, the rest merged + de-duped. */

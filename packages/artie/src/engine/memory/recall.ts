@@ -2,7 +2,7 @@ import { logger } from '../../shared/logger.js';
 import { stripInternalMarkup, stripToolCalls } from '../../shared/clean-llm-output.js';
 import { MemoryEntourageInterface, MemoryEntourageResult } from './types.js';
 import { MemoryService } from '../tools/core/memory.js';
-import { hybridDataLayer } from './store.js';
+import { hybridDataLayer, recallGuildIds } from './store.js';
 import { isOwner } from '../../shared/config/owner.js';
 
 /**
@@ -19,6 +19,14 @@ export function mentionsOwner(content: string | undefined | null): boolean {
  * owner — keeps them below the >=7 threshold that both lowers the relevance bar (0.08→0.02)
  * and buys a spot in the always-included "high importance" set. */
 const UNVERIFIED_OWNER_MENTION_IMPORTANCE_CAP = 6;
+
+/** Old memories that match the question by keyword, scoped like the recency pools. */
+function keywordCandidates(query: string, userId: string, guildId?: string) {
+  if (!query) return [];
+  const hits = hybridDataLayer.keywordSearch(query, { userId, guildIds: recallGuildIds(guildId) });
+  if (!guildId) return hits;
+  return hits.map((m) => guardGuildMentionOfOwner(m, userId));
+}
 
 /**
  * Security audit 2026-10-26 (sec-abuse.md Critical #2 — memory poisoning): a non-owner's
@@ -155,7 +163,7 @@ export class MemoryRecaller implements MemoryEntourageInterface {
 
     try {
       const budget = this.tokenBudget(options.maxTokens);
-      const candidates = await this.fetchCandidates(userId, options.guildId);
+      const candidates = await this.fetchCandidates(userId, options.guildId, userMessage);
 
       let semantic: MemoryEntourageResult;
       if (candidates.length > 0) {
@@ -187,7 +195,7 @@ export class MemoryRecaller implements MemoryEntourageInterface {
   // --------------------------------------------------------------------------
   // Candidate fetch (single pass — superset of what the old two layers pulled)
   // --------------------------------------------------------------------------
-  private async fetchCandidates(userId: string, guildId?: string): Promise<Candidate[]> {
+  private async fetchCandidates(userId: string, guildId?: string, query = ''): Promise<Candidate[]> {
     // Scoped to this server when there is one (Artie flagged 2026-10-22 that memories from
     // one server were surfacing in another; the data layer could isolate, nobody asked it to).
     const userMemories = await this.memoryService.getRecentMemories(userId, 60, guildId);
@@ -220,18 +228,37 @@ export class MemoryRecaller implements MemoryEntourageInterface {
       guildMemories = rawGuildMemories.map((m) => guardGuildMentionOfOwner(m, userId));
     }
 
-    return [...userMemories, ...artieMemories, ...guildMemories].map((m) => {
-      let tags: string[] = [];
-      if (Array.isArray(m.tags)) {
-        tags = m.tags;
-      }
-      return {
-        content: stripCapabilityTags(m.content),
-        importance: m.importance || 5,
-        date: m.timestamp || new Date().toISOString(),
-        tags,
-      };
-    });
+    // Keyword pass: the pools above are recency windows (newest 60/150/400), so without this
+    // nothing older than a few months could ever be recalled, however exactly it matched.
+    const keywordMemories = keywordCandidates(query, userId, guildId);
+
+    const seen = new Set<string>();
+    return [...keywordMemories, ...userMemories, ...artieMemories, ...guildMemories]
+      .filter((m) => {
+        const key = m.content;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      })
+      .map((m) => {
+        let tags: string[] = [];
+        if (Array.isArray(m.tags)) {
+          tags = m.tags;
+        } else if (typeof m.tags === 'string') {
+          try {
+            const parsed = JSON.parse(m.tags);
+            if (Array.isArray(parsed)) tags = parsed;
+          } catch {
+            // untagged
+          }
+        }
+        return {
+          content: stripCapabilityTags(m.content),
+          importance: m.importance || 5,
+          date: m.timestamp || new Date().toISOString(),
+          tags,
+        };
+      });
   }
 
   private tokenBudget(maxTokens?: number): { semantic: number; temporal: number } {

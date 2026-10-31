@@ -34,8 +34,14 @@ function isPrivateAddress(ip: string): boolean {
 }
 
 /** True only when the link is plainly dead. */
+/** Bare "example.com/path" links as fetchable https URLs. */
+function withScheme(raw: string): string {
+  if (/^https?:\/\//i.test(raw)) return raw;
+  return `https://${raw}`;
+}
+
 export async function isDeadLink(raw: string): Promise<boolean> {
-  const url = /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
+  const url = withScheme(raw);
   const hit = cache.get(url);
   if (hit && Date.now() - hit.at < CACHE_MS) return hit.dead;
 

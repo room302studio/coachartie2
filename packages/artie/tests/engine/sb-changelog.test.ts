@@ -50,11 +50,12 @@ describe('sb_changelog tool', () => {
   afterEach(() => vi.unstubAllGlobals());
 
   it('answers a specific version, labelling betas, and says so when a version is unknown', async () => {
-    const main = SOURCE.replace(/\{\s*version: '2\.0\.1'[\s\S]*?\},\n    \{/, '{');
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async (url: string) => new Response(url.includes('ref=beta') ? SOURCE : main, { status: 200 }))
-    );
+    const main = SOURCE.replace(/\{\s*version: '2\.0\.1'[\s\S]*?\},\n {4}\{/, '{');
+    const branchSource = (url: string) => {
+      if (url.includes('ref=beta')) return SOURCE;
+      return main;
+    };
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => new Response(branchSource(url), { status: 200 })));
     const v200 = await sbChangelogCapability.handler({ action: 'get', version: 'v2.0.0' }, undefined);
     expect(v200).toContain('Subway Builder 2.0.0 (public');
     const latest = await sbChangelogCapability.handler({ action: 'get' }, undefined);

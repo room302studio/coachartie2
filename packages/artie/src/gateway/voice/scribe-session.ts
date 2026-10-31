@@ -248,9 +248,11 @@ export async function startVoiceScribeSession(input: {
 
   // A scheduled auto-scribe meeting (summaryOnly) is EJ's standing ask and costs cents
   // (per-utterance STT + one summary), so the critical-runway gate only applies to ad-hoc /scribe.
-  const brownout = summaryOnly ? { allowed: true as const, reason: undefined } : await engine.scribeCanStart();
-  if (!brownout.allowed) {
-    return { ok: false, reason: brownout.reason ?? 'Scribe mode is paused right now.' };
+  if (!summaryOnly) {
+    const brownout = await engine.scribeCanStart();
+    if (!brownout.allowed) {
+      return { ok: false, reason: brownout.reason ?? 'Scribe mode is paused right now.' };
+    }
   }
 
   // Join BEFORE creating the DB session row: if the join fails there's nothing to clean up.

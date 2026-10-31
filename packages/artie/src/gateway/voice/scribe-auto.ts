@@ -62,13 +62,19 @@ export function autoScribeConfig(env: NodeJS.ProcessEnv = process.env): AutoScri
     windows.push({ start, end, key: raw });
   }
   if (windows.length === 0) return null;
-  const min = parseInt(env.SCRIBE_AUTO_MIN_HUMANS || '', 10);
   return {
     voiceChannelIds,
     textChannelId: (env.SCRIBE_AUTO_TEXT_CHANNEL_ID || '').trim() || undefined,
     windows,
-    minHumans: Number.isFinite(min) && min > 0 ? min : 2,
+    minHumans: minHumansFrom(env.SCRIBE_AUTO_MIN_HUMANS),
   };
+}
+
+/** SCRIBE_AUTO_MIN_HUMANS as a positive count, defaulting to 2. */
+function minHumansFrom(raw: string | undefined): number {
+  const min = parseInt(raw || '', 10);
+  if (Number.isFinite(min) && min > 0) return min;
+  return 2;
 }
 
 /** The window `now` falls in, if any. */

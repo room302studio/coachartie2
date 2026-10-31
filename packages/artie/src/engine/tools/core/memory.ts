@@ -7,7 +7,7 @@ import { isOwner } from '../../../shared/config/owner.js';
 import { mentionsOptedOutUser } from '../../../shared/privacy-opt-out.js';
 import { RegisteredCapability } from '../../5-tool-loop/registry.js';
 import type { CapabilityContext } from '../../5-tool-loop/registry.js';
-import { hybridDataLayer, MemoryRecord } from '../../memory/store.js';
+import { hybridDataLayer, MemoryRecord, recallGuildIds } from '../../memory/store.js';
 import type { JsonOutputSpec } from '../../../shared/structured-output.js';
 import type { ChatMessage } from '../../3-context/prompt-cache.js';
 
@@ -276,13 +276,24 @@ export class MemoryService {
     throw new Error('Legacy memory system disabled - use hybrid layer');
   }
 
-  async recall(userId: string, query: string, limit: number = 5): Promise<string> {
+  async recall(userId: string, query: string, limit: number = 5, guildId?: string): Promise<string> {
     if (this.useHybridLayer) {
       // FAST PATH: Use hybrid layer for instant search
       try {
         logger.info(`🔍 [HYBRID] Memory recall started - User: ${userId}, Query: "${query}"`);
 
-        const memories = await hybridDataLayer.searchMemories(userId, query, limit);
+        const memories = await hybridDataLayer.searchMemories(userId, query, limit, guildId);
+        // The search above is an exact phrase over the asker's own memories only. Top up with
+        // keywords across Artie's own notes and this server's, the same scope as auto-recall:
+        // his notes on the bee movie incident were unreachable both ways (2026-10-30).
+        if (memories.length < limit) {
+          const have = new Set(memories.map((m) => m.id));
+          const guildIds = recallGuildIds(guildId);
+          for (const m of hybridDataLayer.keywordSearch(query, { userId, guildIds, limit })) {
+            if (memories.length >= limit) break;
+            if (!have.has(m.id)) memories.push(m);
+          }
+        }
 
         logger.info(`📊 [HYBRID] Search results: ${memories.length} memories found`);
 
@@ -866,7 +877,7 @@ async function handleMemoryAction(
         }
 
         logger.info(`🎯 Memory search starting - Query: "${query}"`);
-        const result = await memoryService.recall(targetUserId, String(query), limit);
+        const result = await memoryService.recall(targetUserId, String(query), limit, context?.guildId);
         logger.info(`🎯 Memory search completed - Result length: ${result.length} characters`);
         return result;
       }
