@@ -9,7 +9,7 @@ import { Octokit } from '@octokit/rest';
 import { octokitLog } from './octokit-log.js';
 import { delay } from '../../../shared/async.js';
 import { logger } from '../../../shared/logger.js';
-import { getDb, eq, and } from '../../../shared/db/client.js';
+import { getDb, eq, and, sql } from '../../../shared/db/client.js';
 import { githubRepoWatches, githubSyncState, type GithubRepoWatch, type GithubSyncState } from '../../../shared/db/schema.js';
 import { EventEmitter } from 'events';
 import { isEasternSunday } from '../../../shared/eastern-day.js';
@@ -677,10 +677,7 @@ export class GitHubPollerService extends EventEmitter {
       if (issues.length > 0) {
         const latestNonPR = issues.find(i => !i.pull_request);
         if (latestNonPR) {
-          const updatedMetadata = { ...metadata, lastIssueUpdatedAt: latestNonPR.updated_at };
-          await this.updateSyncState(watch.repo, {
-            metadata: JSON.stringify(updatedMetadata),
-          });
+          await this.mergeSyncMetadata(watch.repo, { lastIssueUpdatedAt: latestNonPR.updated_at });
         }
       }
     } catch (error) {
@@ -868,10 +865,7 @@ export class GitHubPollerService extends EventEmitter {
 
       // On first run, just save the latest SHA without posting
       if (!lastCommitSha) {
-        metadata.lastCommitSha = commits[0].sha;
-        await this.updateSyncState(watch.repo, {
-          metadata: JSON.stringify(metadata),
-        });
+        await this.mergeSyncMetadata(watch.repo, { lastCommitSha: commits[0].sha });
         return;
       }
 
@@ -892,10 +886,7 @@ export class GitHubPollerService extends EventEmitter {
 
       if (humanCommits.length === 0) {
         // Still update the SHA even for bot-only commits
-        metadata.lastCommitSha = commits[0].sha;
-        await this.updateSyncState(watch.repo, {
-          metadata: JSON.stringify(metadata),
-        });
+        await this.mergeSyncMetadata(watch.repo, { lastCommitSha: commits[0].sha });
         return;
       }
 
@@ -924,10 +915,7 @@ export class GitHubPollerService extends EventEmitter {
       });
 
       // Update last commit SHA
-      metadata.lastCommitSha = commits[0].sha;
-      await this.updateSyncState(watch.repo, {
-        metadata: JSON.stringify(metadata),
-      });
+      await this.mergeSyncMetadata(watch.repo, { lastCommitSha: commits[0].sha });
 
       logger.info(`Found ${humanCommits.length} new commits on ${repoFullName}`);
     } catch (error) {
@@ -1178,17 +1166,45 @@ export class GitHubPollerService extends EventEmitter {
    * Update sync state for a repo
    */
   private async updateSyncState(repo: string, updates: Partial<GithubSyncState>): Promise<void> {
+    // The id cursors only ever move forward (2026-10-31). They're per-repo but written from
+    // per-PR loops, so a plain SET let PR B's older comment id overwrite PR A's newer one and
+    // the next poll re-posted (and re-pinged) everything in between.
+    const set: Record<string, unknown> = { ...updates, updatedAt: new Date().toISOString() };
+    if (updates.lastReviewId !== undefined && updates.lastReviewId !== null) {
+      set.lastReviewId = sql`MAX(COALESCE(${githubSyncState.lastReviewId}, 0), ${updates.lastReviewId})`;
+    }
+    if (updates.lastCommentId !== undefined && updates.lastCommentId !== null) {
+      set.lastCommentId = sql`MAX(COALESCE(${githubSyncState.lastCommentId}, 0), ${updates.lastCommentId})`;
+    }
+    if (updates.lastCheckRunId !== undefined && updates.lastCheckRunId !== null) {
+      set.lastCheckRunId = sql`MAX(COALESCE(${githubSyncState.lastCheckRunId}, 0), ${updates.lastCheckRunId})`;
+    }
     try {
       await getDb()
         .update(githubSyncState)
-        .set({
-          ...updates,
-          updatedAt: new Date().toISOString(),
-        })
+        .set(set)
         .where(eq(githubSyncState.repo, repo));
     } catch (error) {
       logger.error(`Failed to update sync state for ${repo}:`, error);
     }
+  }
+
+  /**
+   * Merge keys into the row's metadata JSON (2026-10-31). pollIssues and pollCommits each
+   * parsed the snapshot taken at the start of pollRepo and wrote the whole blob back, so
+   * pollCommits undid the lastIssueUpdatedAt that pollIssues had just saved.
+   */
+  private async mergeSyncMetadata(repo: string, patch: Record<string, unknown>): Promise<void> {
+    let current: Record<string, unknown> = {};
+    const state = await this.getSyncState(repo);
+    if (state?.metadata) {
+      try {
+        current = JSON.parse(state.metadata);
+      } catch {
+        current = {};
+      }
+    }
+    await this.updateSyncState(repo, { metadata: JSON.stringify({ ...current, ...patch }) });
   }
 
   /**

@@ -65,6 +65,10 @@ function overflowLabel(count: number, threshold: number): string {
 // Raised to 5 - only trigger digest when there's truly a lot of activity
 const MAX_EVENTS_BEFORE_DIGEST = 5;
 
+// How long shutdown waits for the final batch posts: leaves most of PM2's 12 s kill_timeout
+// for the scribe sweep and the rest of teardown.
+const SHUTDOWN_FLUSH_TIMEOUT_MS = 4000;
+
 export class GitHubSyncService {
   private client: Client;
   private poller: GitHubPollerService | null = null;
@@ -285,13 +289,31 @@ export class GitHubSyncService {
   /**
    * Stop the sync service
    */
-  stop(): void {
-    // Flush any pending batches
+  async stop(timeoutMs = SHUTDOWN_FLUSH_TIMEOUT_MS): Promise<void> {
+    this.poller?.stop();
+
+    // Post what's still sitting in a batch window, and wait for the sends (2026-10-31). Nothing
+    // called this on shutdown, and the cursors had already moved past these events, so every
+    // deploy silently lost up to 15 minutes of feed. Capped so a stuck send can't hold up
+    // PM2's 12 s kill_timeout.
     if (this.processor && this.poster) {
-      this.processor.flushAll((batch) => this.handleBatch(batch));
+      const posts: Promise<void>[] = [];
+      this.processor.flushAll((batch) => {
+        posts.push(this.handleBatch(batch));
+      });
+      if (posts.length > 0) {
+        let timer: NodeJS.Timeout | undefined;
+        const cap = new Promise<void>((resolve) => {
+          timer = setTimeout(() => {
+            logger.warn(`GitHub shutdown flush hit its ${timeoutMs}ms cap; some batches may not have posted`);
+            resolve();
+          }, timeoutMs);
+        });
+        await Promise.race([Promise.allSettled(posts), cap]);
+        clearTimeout(timer);
+      }
     }
 
-    this.poller?.stop();
     logger.info('GitHub sync service stopped');
   }
 
@@ -433,13 +455,14 @@ export class GitHubSyncService {
   /**
    * Handle a batch of events ready for posting
    */
-  private handleBatch(batch: BatchedEvents): void {
+  private handleBatch(batch: BatchedEvents): Promise<void> {
     if (!this.poster) {
       logger.error('Poster not initialized');
-      return;
+      return Promise.resolve();
     }
 
-    this.poster.postBatch(batch).catch((err) => {
+    // Returned so the shutdown flush can wait for it; normal callers still fire and forget.
+    return this.poster.postBatch(batch).catch((err) => {
       logger.error('Error posting batch:', err);
     });
   }
@@ -538,7 +561,7 @@ export async function initializeGitHubSync(
 ): Promise<GitHubSyncService> {
   if (syncService) {
     logger.warn('GitHub sync service already exists, stopping old instance');
-    syncService.stop();
+    await syncService.stop();
   }
 
   syncService = new GitHubSyncService(client, config);
@@ -554,6 +577,17 @@ export function getGitHubSync(): GitHubSyncService {
     throw new Error('GitHub sync service not initialized');
   }
   return syncService;
+}
+
+/**
+ * Stop the service if it ever started (shutdown path). Init is fire-and-forget at boot, so a
+ * SIGTERM can arrive before there is anything to stop.
+ */
+export async function stopGitHubSync(): Promise<void> {
+  if (!syncService) {
+    return;
+  }
+  await syncService.stop();
 }
 
 /**

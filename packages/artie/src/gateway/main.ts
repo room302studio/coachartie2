@@ -24,7 +24,7 @@ import { jobMonitor } from './3-ask-engine/job-watcher.js';
 import { initializeForumTraversal } from './watchers/github/forum-traversal.js';
 import { initializeGitHubIntegration } from './watchers/github/issue-sync.js';
 import { initializeMentionProxyService } from './2-gate/mention-proxy.js';
-import { initializeGitHubSync } from './watchers/github/watch-loop.js';
+import { initializeGitHubSync, stopGitHubSync } from './watchers/github/watch-loop.js';
 import { observationalLearning } from './watchers/observe-channels.js';
 import { steamReviewNotes } from './watchers/steam-review-notes.js';
 import { channelDigestLoop } from './watchers/channel-digests.js';
@@ -404,6 +404,11 @@ export async function startGateway(): Promise<GatewayHandle> {
         telemetry.logEvent('shutdown', { signal });
         telemetry.persistMetrics();
         writeStatus('shutdown');
+        // GitHub feed first (2026-10-31): post the batches still inside their 15-min window
+        // while Discord is connected; the poll cursors are already past them. Self-capped.
+        await stopGitHubSync().catch((error) =>
+          logger.warn('GitHub shutdown flush failed:', getErrorMessage(error))
+        );
         // MUST run before registerGatewayClient(null)/apiServer.stop(): finishing a scribe
         // session's summary calls back into the engine (stopScribeSession), which posts the
         // result through gateway/api.ts's sendChannelMessage — that throws
