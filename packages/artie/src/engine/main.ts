@@ -62,12 +62,22 @@ async function startQueueWorkers(): Promise<Worker | null> {
   }
 }
 
+// Redis down at boot used to mean no scheduler (no reminders, no crons) until the next
+// restart (2026-10-31). Retry once a minute until it comes up; stop() clears the timer.
+const SCHEDULER_RETRY_MS = 60_000;
+let schedulerRetry: NodeJS.Timeout | null = null;
+
 async function startScheduler() {
+  schedulerRetry = null;
   try {
     // Initialize scheduler (checks Redis availability)
     const initialized = await schedulerService.initialize();
     if (!initialized) {
-      logger.warn('Scheduler not initialized (Redis unavailable)');
+      logger.warn(`Scheduler not initialized (Redis unavailable) — retrying in ${SCHEDULER_RETRY_MS / 1000}s`);
+      schedulerRetry = setTimeout(() => {
+        void startScheduler();
+      }, SCHEDULER_RETRY_MS);
+      schedulerRetry.unref();
       return;
     }
 
@@ -203,6 +213,10 @@ export async function startEngine(): Promise<EngineHandle> {
       simpleHealer.stop();
 
       logger.info('Shutting down scheduler...');
+      if (schedulerRetry) {
+        clearTimeout(schedulerRetry);
+        schedulerRetry = null;
+      }
       await schedulerService.close();
 
       if (incomingWorker) {

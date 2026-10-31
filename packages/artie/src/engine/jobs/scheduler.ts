@@ -133,15 +133,16 @@ export class SchedulerService {
    */
   async initialize(): Promise<boolean> {
     if (this.initialized) return true;
-    if (this.initializationFailed) return false;
 
-    // Check Redis availability first
+    // Re-test on every call rather than trusting an earlier failure (2026-10-31): the flag
+    // used to be sticky, so Redis down at boot meant no scheduler until the next restart.
     const redisOk = await testRedisConnection();
     if (!redisOk) {
       logger.warn('⚠️ Scheduler: Redis unavailable - scheduler disabled');
       this.initializationFailed = true;
       return false;
     }
+    this.initializationFailed = false;
 
     try {
       const connection = createRedisConnection();
