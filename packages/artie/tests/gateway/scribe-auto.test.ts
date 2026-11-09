@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { autoScribeConfig, activeWindow, shouldAutoStart } from '../../src/gateway/voice/scribe-auto.js';
+import { autoScribeConfig, activeWindow, shouldAutoStart, startKey } from '../../src/gateway/voice/scribe-auto.js';
 
 const W = '2026-10-29T12:30:00-04:00/2026-10-29T15:30:00-04:00';
 
@@ -43,5 +43,20 @@ describe('activeWindow / shouldAutoStart', () => {
     expect(shouldAutoStart({ ...base, sessionActive: true })).toBe(false);
     expect(shouldAutoStart({ ...base, alreadyStarted: true })).toBe(false);
     expect(shouldAutoStart({ ...base, window: null })).toBe(false);
+  });
+});
+
+describe('always mode', () => {
+  it('arms with no dates and is active at any time', () => {
+    const cfg = autoScribeConfig({ SCRIBE_AUTO_CHANNEL_ID: 'vc', SCRIBE_AUTO_WINDOWS: ' Always ' })!;
+    expect(cfg).not.toBeNull();
+    expect(activeWindow(cfg.windows, Date.parse('2031-01-01T03:00:00Z'))).not.toBeNull();
+  });
+
+  it('latches per channel, dated windows per window', () => {
+    const always = autoScribeConfig({ SCRIBE_AUTO_CHANNEL_ID: 'vc', SCRIBE_AUTO_WINDOWS: 'always' })!.windows[0];
+    expect(startKey(always, 'a')).not.toBe(startKey(always, 'b'));
+    const dated = autoScribeConfig({ SCRIBE_AUTO_CHANNEL_ID: 'vc', SCRIBE_AUTO_WINDOWS: W })!.windows[0];
+    expect(startKey(dated, 'a')).toBe(startKey(dated, 'b'));
   });
 });
