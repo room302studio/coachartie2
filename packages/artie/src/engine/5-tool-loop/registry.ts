@@ -7,7 +7,8 @@ import {
 } from '../errors.js';
 import { isGatedAction, isOwnerConfirmed } from './approval-gate.js';
 import { blocksNonOwner, OWNER_ONLY_REFUSAL } from './owner-only.js';
-import { createPendingAction } from '../../shared/pending-actions.js';
+import { createPendingAction, findPendingDuplicate } from '../../shared/pending-actions.js';
+import { pingApprovalNeeded } from './approval-ping.js';
 
 /**
  * Context passed to capability handlers
@@ -493,6 +494,13 @@ export class CapabilityRegistry {
     // so a gated name typo'd by a model still gets a clear "needs approval" rather than a
     // confusing "not found" (resolveToolCall already ran, so `name` is canonical here).
     if (isGatedAction(name, action) && !isOwnerConfirmed(context, params)) {
+      // An identical ask already waiting (a model retry, a re-proposed scribe issue) reuses
+      // that row instead of stacking a duplicate EJ would have to deny, and pings nobody.
+      const existingId = findPendingDuplicate({ tool: name, action, params, content });
+      if (existingId !== null) {
+        logger.info(`⏸️ Gated call already pending: ${name}:${action} (#${existingId})`);
+        return `⏸️ This ${name}:${action} call needs EJ's approval first and is already waiting (pending #${existingId}). EJ can review it with the approvals tool.`;
+      }
       const id = createPendingAction({
         tool: name,
         action,
@@ -502,6 +510,7 @@ export class CapabilityRegistry {
         requestedBy: context?.userId || 'unknown-user',
       });
       logger.info(`⏸️ Gated call blocked pending approval: ${name}:${action} (#${id})`);
+      pingApprovalNeeded({ id, tool: name, action, params });
       return `⏸️ This ${name}:${action} call needs EJ's approval first (pending #${id}). EJ can review it with the approvals tool.`;
     }
 

@@ -507,6 +507,19 @@ async function handlePullRequestEvent(payload: GitHubWebhookPayload): Promise<vo
   await publishMessage('github-bot', celebrationMessage, GITHUB_FEED_CHANNEL_ID, 'GitHub Bot', true, undefined, { rethrow: true });
 }
 
+/**
+ * Artie's own GitHub login. His token is a plain user (`coachartie`), not an app, so the
+ * `[bot]` checks below miss him; without this, every issue or comment he writes once approved
+ * would echo straight back into #robot. The gateway poller resolves the login live
+ * (watchers/github/self-identity.ts); this side can't import that across the engine/gateway
+ * line, so it takes the env override or the known login.
+ */
+function isArtieLogin(login: string | undefined): boolean {
+  if (!login) return false;
+  const self = (process.env.GITHUB_SELF_LOGIN || 'coachartie').toLowerCase();
+  return login.toLowerCase() === self;
+}
+
 async function handleIssueEvent(payload: GitHubWebhookPayload): Promise<void> {
   const { action, issue, repository } = payload;
 
@@ -537,6 +550,13 @@ async function handleIssueEvent(payload: GitHubWebhookPayload): Promise<void> {
   // Skip bot-created issues
   if (issue.user.login.includes('[bot]') || issue.user.login === 'github-actions') {
     logger.info(`📝 Skipping bot-created issue by ${issue.user.login}`);
+    return;
+  }
+
+  // Skip Artie's own actions: issues he filed, and closes/reopens he made on anyone's issue.
+  const sender = (payload as { sender?: { login?: string } }).sender?.login;
+  if (isArtieLogin(sender) || (action === 'opened' && isArtieLogin(issue.user.login))) {
+    logger.info(`📝 Skipping Artie's own issue ${action} on ${repository.full_name}#${issue.number}`);
     return;
   }
 
@@ -585,6 +605,11 @@ async function handleIssueCommentEvent(payload: GitHubWebhookPayload): Promise<v
 
   // Skip bot comments
   if (comment.user.login.includes('[bot]') || comment.user.login === 'github-actions') {
+    return;
+  }
+
+  // Skip Artie's own comments (see isArtieLogin).
+  if (isArtieLogin(comment.user.login)) {
     return;
   }
 

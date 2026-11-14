@@ -8,6 +8,7 @@
 import { logger } from '../../../shared/logger.js';
 import { isOwner } from '../../../shared/config/owner.js';
 import {
+  expireStalePendingActions,
   getPendingAction,
   listPendingActions,
   markPendingActionOutcome,
@@ -34,6 +35,9 @@ async function handleApprovals(
 
   const { action } = params;
   const idRaw = params.id ?? content;
+
+  // Lapse anything past its TTL before reading, so approve can never replay a stale ask.
+  expireStalePendingActions();
 
   try {
     switch (action) {

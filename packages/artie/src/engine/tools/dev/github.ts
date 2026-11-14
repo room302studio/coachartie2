@@ -2,11 +2,181 @@ import { logger } from '../../../shared/logger.js';
 
 import { RegisteredCapability } from '../../5-tool-loop/registry.js';
 
-interface _GitHubParams {
-  action?: string;
-  repo?: string;
-  limit?: number;
-  days?: number;
+// =====================================================
+// Issue-clerk helpers (2026-11-13). Shared by the write actions and the triage reads.
+// =====================================================
+
+const GITHUB_API = 'https://api.github.com';
+
+/** Headers for every GitHub REST call. Content-Type matters on POST/PATCH: fetch defaults a
+ *  string body to text/plain, which GitHub tolerates today but isn't promised to. */
+function ghHeaders(): Record<string, string> {
+  return {
+    Authorization: `Bearer ${process.env.GITHUB_TOKEN}`,
+    Accept: 'application/vnd.github+json',
+    'Content-Type': 'application/json',
+    'User-Agent': 'CoachArtie-Bot/1.0',
+  };
+}
+
+function requireToken(): void {
+  if (!process.env.GITHUB_TOKEN) {
+    throw new Error('GITHUB_TOKEN not configured. Set GITHUB_TOKEN environment variable.');
+  }
+}
+
+/** "owner/repo" from any of the synonyms models reach for, or a thrown, model-readable error. */
+function requireRepo(params: Record<string, unknown>, action: string): string {
+  const raw = params.repo ?? params.repository ?? params.project;
+  if (typeof raw !== 'string' || !raw.trim()) {
+    throw new Error(`Missing required parameter "repo" (owner/repository) for github:${action}.`);
+  }
+  const repo = raw.trim();
+  if (!/^[\w.-]+\/[\w.-]+$/.test(repo)) {
+    throw new Error(`Invalid repo "${repo}". Use "owner/repository", e.g. "Subway-Builder/metro-maker4".`);
+  }
+  return repo;
+}
+
+/** A positive issue number from issueNumber/issue/number, or a thrown error. */
+function requireIssueNumber(params: Record<string, unknown>, action: string): number {
+  const raw = params.issueNumber ?? params.issue ?? params.number;
+  const n = Number(String(raw ?? '').replace(/^#/, ''));
+  if (!Number.isInteger(n) || n <= 0) {
+    throw new Error(`Missing or invalid "issueNumber" for github:${action} (got "${String(raw ?? '')}").`);
+  }
+  return n;
+}
+
+/**
+ * Labels arrive as strings from the native tool loop (every schema param is typed string) and
+ * as attributes from the XML loop, so accept a real array, a JSON array string, or a csv.
+ * Before this, create/update_issue called .join/.length on whatever came in, and a csv string
+ * went to GitHub as a bare string (422).
+ */
+export function normalizeLabels(raw: unknown): string[] {
+  let items: unknown[] = [];
+  if (Array.isArray(raw)) {
+    items = raw;
+  } else if (typeof raw === 'string') {
+    const text = raw.trim();
+    if (text.startsWith('[')) {
+      try {
+        const parsed = JSON.parse(text);
+        if (Array.isArray(parsed)) {
+          items = parsed;
+        }
+      } catch {
+        items = text.slice(1, -1).split(',');
+      }
+    } else {
+      items = text.split(',');
+    }
+  }
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const item of items) {
+    const label = String(item ?? '').trim().replace(/^["']|["']$/g, '');
+    if (label && !seen.has(label)) {
+      seen.add(label);
+      out.push(label);
+    }
+  }
+  return out;
+}
+
+/** Hidden marker on everything Artie writes, so tools (and the echo filter) can recognize it. */
+export const ARTIE_WRITE_MARKER = '<!-- coachartie -->';
+
+/**
+ * Provenance on every issue and comment Artie writes. The token's login (`coachartie`) already
+ * shows who posted, but agent-filed issues were indistinguishable from EJ's (backlog survey,
+ * 2026-11-13), and a reader should know a human signed off. Only EJ can approve (approvals.ts),
+ * so "approved by EJ" is a fact, not a guess. Idempotent: a body already carrying the marker
+ * is left alone.
+ */
+export function withProvenance(body: string): string {
+  if (body.includes(ARTIE_WRITE_MARKER)) {
+    return body;
+  }
+  return `${body.trimEnd()}\n\n---\n<sub>Posted by Coach Artie (Room 302's Discord bot), approved by EJ.</sub>\n${ARTIE_WRITE_MARKER}`;
+}
+
+async function ghError(response: Response, what: string): Promise<Error> {
+  let message = response.statusText;
+  try {
+    const data = (await response.json()) as { message?: string };
+    if (data.message) {
+      message = data.message;
+    }
+  } catch {
+    // non-JSON error body; statusText is all we have
+  }
+  if (response.status === 404) {
+    return new Error(`${what}: not found (404). Check the repo and issue number, and that Artie's account can see it.`);
+  }
+  if (response.status === 403) {
+    return new Error(`${what}: forbidden (403). Artie's GitHub account may lack write access to this repo. ${message}`);
+  }
+  return new Error(`${what}: GitHub API error ${response.status} ${message}`);
+}
+
+/** Words that say nothing about which bug an issue is, dropped before similarity matching. */
+const STOPWORDS = new Set(
+  (
+    'a an the and or but if then else when of in on at to for from by with without into onto is are was were be ' +
+    'been being it its this that these those i you he she we they my your our their me us them not no yes can ' +
+    'cant cannot could should would will wont do does did doesnt dont didnt have has had get gets got after before ' +
+    'while so too very just also some any all more most other such than up down out over under again still ' +
+    'when where why how what which who issue bug error problem feature request please fix fixed broken working ' +
+    'doesnt works work game'
+  ).split(' ')
+);
+
+/** Lowercased content words of a title, for similarity scoring. Exported for tests. */
+export function titleTerms(text: string): string[] {
+  const words = text
+    .toLowerCase()
+    .replace(/[`'’]/g, '')
+    .split(/[^a-z0-9]+/)
+    .filter((w) => w.length > 2 && !STOPWORDS.has(w) && !/^\d+$/.test(w));
+  return [...new Set(words)];
+}
+
+/** Overlap of two term sets, 0..1 (Jaccard). Exported for tests. */
+export function similarity(a: string[], b: string[]): number {
+  if (a.length === 0 || b.length === 0) {
+    return 0;
+  }
+  const setB = new Set(b);
+  let shared = 0;
+  for (const term of a) {
+    if (setB.has(term)) shared += 1;
+  }
+  return shared / (a.length + b.length - shared);
+}
+
+function clampInt(raw: unknown, fallback: number, min: number, max: number): number {
+  const n = Number(raw);
+  if (!Number.isFinite(n)) {
+    return fallback;
+  }
+  return Math.min(max, Math.max(min, Math.floor(n)));
+}
+
+function isoDaysAgo(days: number): string {
+  return new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10);
+}
+
+async function searchCount(q: string): Promise<number | null> {
+  const response = await fetch(`${GITHUB_API}/search/issues?q=${encodeURIComponent(q)}&per_page=1`, {
+    headers: ghHeaders(),
+  });
+  if (!response.ok) {
+    return null;
+  }
+  const data = (await response.json()) as { total_count?: number };
+  return data.total_count ?? null;
 }
 
 interface GitHubRelease {
@@ -48,9 +218,26 @@ export const githubCapability: RegisteredCapability = {
     'get_issues_by_label',
     'get_issue_details',
     'get_related_prs',
+    'find_similar_issues',
+    'list_triage',
+    'add_comment',
+    'add_labels',
+    'remove_label',
   ],
-  description: 'GitHub integration for repository monitoring, issue tracking, and celebration',
+  description:
+    'GitHub repos and issues: read, search, find duplicates (find_similar_issues), triage counts (list_triage); ' +
+    'writes (create_issue, update_issue, add_comment, add_labels, remove_label) wait for EJ\'s approval',
   requiredParams: ['action'],
+  // The first example is the one the native tool schema shows; all of them teach param names.
+  examples: [
+    '<capability name="github" action="find_similar_issues" repo="owner/repo" title="Trains vanish after save" />',
+    '<capability name="github" action="list_triage" repo="owner/repo" filter="unassigned" staleDays="60" limit="10" />',
+    '<capability name="github" action="add_comment" repo="owner/repo" issueNumber="12" body="Possible duplicate of #9" />',
+    '<capability name="github" action="add_labels" repo="owner/repo" issueNumber="12" labels="bug,P2" />',
+    '<capability name="github" action="remove_label" repo="owner/repo" issueNumber="12" label="needs-triage" />',
+    '<capability name="github" action="update_issue" repo="owner/repo" issueNumber="12" state="closed" state_reason="duplicate" duplicateOf="9" assignees="ejfox" />',
+    '<capability name="github" action="create_issue" repo="owner/repo" title="Bug title" body="Details" labels="bug" />',
+  ],
 
   handler: async (params: any, _content: string | undefined) => {
     const action = params.action;
@@ -78,9 +265,19 @@ export const githubCapability: RegisteredCapability = {
         return JSON.stringify(await githubActions.get_issue_details(params));
       case 'get_related_prs':
         return JSON.stringify(await githubActions.get_related_prs(params));
+      case 'find_similar_issues':
+        return JSON.stringify(await issueClerk.find_similar_issues(params, _content));
+      case 'list_triage':
+        return JSON.stringify(await issueClerk.list_triage(params));
+      case 'add_comment':
+        return JSON.stringify(await issueClerk.add_comment(params, _content));
+      case 'add_labels':
+        return JSON.stringify(await issueClerk.add_labels(params));
+      case 'remove_label':
+        return JSON.stringify(await issueClerk.remove_label(params));
       default:
         throw new Error(
-          `Missing or unknown github "action" (you sent action="${action ?? '(none)'}"). You MUST include an action attribute, e.g. <capability name="github" action="create_issue" repo="owner/repo" title="Bug title" body="Details" />. Available actions: get_releases, get_recent_commits, get_deployment_stats, search_repositories, list_issues, search_issues, create_issue, update_issue, get_issues_by_label, get_issue_details, get_related_prs`
+          `Missing or unknown github "action" (you sent action="${action ?? '(none)'}"). You MUST include an action attribute, e.g. <capability name="github" action="create_issue" repo="owner/repo" title="Bug title" body="Details" />. Available actions: ${githubCapability.supportedActions.join(', ')}`
         );
     }
   },
@@ -508,7 +705,7 @@ const githubActions = {
       title?: string;
       body?: string;
       description?: string;
-      labels?: string[];
+      labels?: unknown;
     },
     content?: string
   ) => {
@@ -546,20 +743,17 @@ const githubActions = {
         labels?: string[];
       } = {
         title: title,
-        body: body,
+        body: withProvenance(body),
       };
 
-      if (params.labels && params.labels.length > 0) {
-        issuePayload.labels = params.labels;
+      const labels = normalizeLabels(params.labels);
+      if (labels.length > 0) {
+        issuePayload.labels = labels;
       }
 
       const response = await fetch(`https://api.github.com/repos/${repoName}/issues`, {
         method: 'POST',
-        headers: {
-          Authorization: `Bearer ${process.env.GITHUB_TOKEN}`,
-          Accept: 'application/vnd.github.v3+json',
-          'User-Agent': 'CoachArtie-Bot/1.0',
-        },
+        headers: ghHeaders(),
         body: JSON.stringify(issuePayload),
       });
 
@@ -592,12 +786,29 @@ const githubActions = {
     query?: string;
     issueNumber?: number;
     state?: string;
-    labels?: string[];
+    labels?: unknown;
     description?: string;
+    body?: string;
     title?: string;
+    assignees?: unknown;
+    state_reason?: string;
+    stateReason?: string;
+    duplicateOf?: string | number;
   }) => {
     try {
       const repoName = params.repo || params.query;
+      // Scribe update proposals send `body` alongside `description`; both mean the issue body.
+      const newBody = params.description || params.body;
+      const labels = normalizeLabels(params.labels);
+      const assignees = normalizeLabels(params.assignees).map((login) => login.replace(/^@/, ''));
+      const stateReason = params.state_reason || params.stateReason;
+      let duplicateOf: number | null = null;
+      if (params.duplicateOf !== undefined && params.duplicateOf !== '') {
+        duplicateOf = Number(String(params.duplicateOf).replace(/^#/, ''));
+        if (!Number.isInteger(duplicateOf) || duplicateOf <= 0) {
+          throw new Error(`Invalid duplicateOf "${String(params.duplicateOf)}": use the other issue's number.`);
+        }
+      }
 
       logger.info(`✏️ Updating GitHub issue #${params.issueNumber} for ${repoName}`);
 
@@ -618,15 +829,29 @@ const githubActions = {
       }
 
       // Validate that at least one field to update is provided
-      if (!params.state && !params.labels && !params.description && !params.title) {
+      if (
+        !params.state &&
+        labels.length === 0 &&
+        !newBody &&
+        !params.title &&
+        assignees.length === 0 &&
+        !stateReason &&
+        duplicateOf === null
+      ) {
         throw new Error(
-          'At least one field to update must be provided: state, labels, description, or title.'
+          'At least one field to update must be provided: state, state_reason, duplicateOf, labels, assignees, description, or title.'
         );
       }
 
       // Validate state if provided
       if (params.state && params.state !== 'open' && params.state !== 'closed') {
         throw new Error('Invalid state. Must be either "open" or "closed".');
+      }
+
+      // GitHub's accepted close reasons (REST api.github.com description, checked 2026-11-13).
+      const STATE_REASONS = ['completed', 'not_planned', 'duplicate', 'reopened'];
+      if (stateReason && !STATE_REASONS.includes(stateReason)) {
+        throw new Error(`Invalid state_reason "${stateReason}". Use one of: ${STATE_REASONS.join(', ')}.`);
       }
 
       if (!process.env.GITHUB_TOKEN) {
@@ -636,7 +861,10 @@ const githubActions = {
       // Build the update payload
       const updatePayload: {
         state?: string;
+        state_reason?: string;
+        duplicate_issue_id?: number;
         labels?: string[];
+        assignees?: string[];
         body?: string;
         title?: string;
       } = {};
@@ -645,12 +873,41 @@ const githubActions = {
         updatePayload.state = params.state;
       }
 
-      if (params.labels && params.labels.length > 0) {
-        updatePayload.labels = params.labels;
+      if (duplicateOf !== null) {
+        // "Close as duplicate of #N" — GitHub links the two issues when it gets the other
+        // issue's database id (not its number), so look that up first.
+        const dupResponse = await fetch(`${GITHUB_API}/repos/${repoName}/issues/${duplicateOf}`, {
+          headers: ghHeaders(),
+        });
+        if (!dupResponse.ok) {
+          throw await ghError(dupResponse, `Looking up duplicate target #${duplicateOf}`);
+        }
+        const dup = (await dupResponse.json()) as { id: number };
+        updatePayload.state = 'closed';
+        updatePayload.state_reason = 'duplicate';
+        updatePayload.duplicate_issue_id = dup.id;
+      } else if (stateReason) {
+        updatePayload.state_reason = stateReason;
+        // A reason implies the state it belongs to, so "reopened" alone actually reopens.
+        if (!updatePayload.state && stateReason === 'reopened') {
+          updatePayload.state = 'open';
+        } else if (!updatePayload.state) {
+          updatePayload.state = 'closed';
+        }
       }
 
-      if (params.description) {
-        updatePayload.body = params.description;
+      // Replaces the whole label set (PATCH semantics). add_labels / remove_label change one
+      // label without needing to know the rest.
+      if (labels.length > 0) {
+        updatePayload.labels = labels;
+      }
+
+      if (assignees.length > 0) {
+        updatePayload.assignees = assignees;
+      }
+
+      if (newBody) {
+        updatePayload.body = newBody;
       }
 
       if (params.title) {
@@ -661,11 +918,7 @@ const githubActions = {
         `https://api.github.com/repos/${repoName}/issues/${params.issueNumber}`,
         {
           method: 'PATCH',
-          headers: {
-            Authorization: `Bearer ${process.env.GITHUB_TOKEN}`,
-            Accept: 'application/vnd.github.v3+json',
-            'User-Agent': 'CoachArtie-Bot/1.0',
-          },
+          headers: ghHeaders(),
           body: JSON.stringify(updatePayload),
         }
       );
@@ -685,10 +938,13 @@ const githubActions = {
 
       // Build a summary of what was updated
       const updatedFields: string[] = [];
-      if (params.state) updatedFields.push(`state to "${params.state}"`);
+      if (updatePayload.state) updatedFields.push(`state to "${updatePayload.state}"`);
+      if (updatePayload.state_reason) updatedFields.push(`reason "${updatePayload.state_reason}"`);
+      if (duplicateOf !== null) updatedFields.push(`duplicate of #${duplicateOf}`);
       if (params.title) updatedFields.push('title');
-      if (params.description) updatedFields.push('description');
-      if (params.labels) updatedFields.push(`labels to [${params.labels.join(', ')}]`);
+      if (newBody) updatedFields.push('description');
+      if (labels.length > 0) updatedFields.push(`labels to [${labels.join(', ')}]`);
+      if (assignees.length > 0) updatedFields.push(`assignees to [${assignees.join(', ')}]`);
 
       return {
         success: true,
@@ -1071,5 +1327,218 @@ const githubActions = {
       logger.error('❌ Failed to fetch GitHub issue details:', error);
       throw error;
     }
+  },
+};
+
+// =====================================================
+// Issue clerk (2026-11-13): duplicate search, triage lists, and small reversible writes.
+// The writes are gated in approval-gate.ts; nothing here checks approval itself.
+// =====================================================
+
+interface SearchItem {
+  number: number;
+  title: string;
+  state: string;
+  html_url: string;
+  updated_at: string;
+  created_at: string;
+  comments: number;
+  user?: { login: string };
+  labels?: Array<{ name: string }>;
+  assignees?: Array<{ login: string }>;
+  pull_request?: unknown;
+}
+
+function summarizeIssue(item: SearchItem) {
+  return {
+    number: item.number,
+    title: item.title,
+    state: item.state,
+    url: item.html_url,
+    author: item.user?.login,
+    labels: (item.labels ?? []).map((l) => l.name),
+    assignees: (item.assignees ?? []).map((a) => a.login),
+    comments: item.comments,
+    created_at: item.created_at,
+    updated_at: item.updated_at,
+  };
+}
+
+const TRIAGE_FILTERS: Record<string, (staleDays: number) => string> = {
+  unassigned: () => 'no:assignee',
+  unlabeled: () => 'no:label',
+  stale: (days) => `updated:<${isoDaysAgo(days)}`,
+};
+
+export const issueClerk = {
+  /**
+   * Likely duplicates of a title (or free text) among a repo's issues, open and closed. No LLM:
+   * GitHub search on the strongest title terms (OR'd, so one odd word doesn't sink recall), then
+   * a local term-overlap score so the best match is first, not the most recently updated.
+   */
+  find_similar_issues: async (params: Record<string, unknown>, content?: string) => {
+    requireToken();
+    const repo = requireRepo(params, 'find_similar_issues');
+    const text = String(params.title ?? params.text ?? params.keywords ?? content ?? '').trim();
+    if (!text) {
+      throw new Error('find_similar_issues needs "title" (the bug report or issue title to match).');
+    }
+    const terms = titleTerms(text);
+    if (terms.length === 0) {
+      return { success: true, data: { repo, query: text, matches: [], note: 'No distinctive words to match on.' } };
+    }
+    const limit = clampInt(params.limit, 5, 1, 20);
+    let stateFilter = '';
+    if (params.state === 'open' || params.state === 'closed') {
+      stateFilter = ` is:${params.state}`;
+    }
+    // Longest terms first: they're usually the most specific (e.g. "pathfinding" over "save").
+    const searchTerms = [...terms].sort((a, b) => b.length - a.length).slice(0, 6);
+    const q = `repo:${repo} is:issue${stateFilter} ${searchTerms.join(' OR ')} in:title`;
+    const response = await fetch(`${GITHUB_API}/search/issues?q=${encodeURIComponent(q)}&per_page=50`, {
+      headers: ghHeaders(),
+    });
+    if (!response.ok) {
+      throw await ghError(response, `Searching ${repo}`);
+    }
+    const data = (await response.json()) as { items?: SearchItem[] };
+    const exclude = Number(params.excludeNumber ?? params.issueNumber ?? 0);
+    const matches = (data.items ?? [])
+      .filter((item) => !item.pull_request && item.number !== exclude)
+      .map((item) => ({ item, score: similarity(terms, titleTerms(item.title)) }))
+      .filter((m) => m.score > 0)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, limit)
+      .map((m) => ({ ...summarizeIssue(m.item), score: Math.round(m.score * 100) / 100 }));
+    return {
+      success: true,
+      data: {
+        repo,
+        query: text,
+        terms,
+        matches,
+        note: 'score is title-word overlap (0-1); 0.5+ is a strong duplicate candidate, but read both before calling it one.',
+      },
+    };
+  },
+
+  /**
+   * Open issues needing a human, by facet: unassigned, unlabeled, stale (no update in staleDays).
+   * Always returns the three counts (cheap: one search each), plus a list for the asked filter.
+   */
+  list_triage: async (params: Record<string, unknown>) => {
+    requireToken();
+    const repo = requireRepo(params, 'list_triage');
+    const staleDays = clampInt(params.staleDays, 60, 7, 730);
+    const limit = clampInt(params.limit, 10, 1, 50);
+    const base = `repo:${repo} is:issue is:open`;
+    const counts: Record<string, number | null> = {};
+    for (const [name, facet] of Object.entries(TRIAGE_FILTERS)) {
+      counts[name] = await searchCount(`${base} ${facet(staleDays)}`);
+    }
+    counts.open = await searchCount(base);
+
+    let filter = String(params.filter ?? 'stale');
+    if (!(filter in TRIAGE_FILTERS)) {
+      filter = 'stale';
+    }
+    let sort = 'updated&order=asc';
+    if (filter !== 'stale') {
+      sort = 'created&order=desc';
+    }
+    const q = `${base} ${TRIAGE_FILTERS[filter](staleDays)}`;
+    const response = await fetch(
+      `${GITHUB_API}/search/issues?q=${encodeURIComponent(q)}&per_page=${limit}&sort=${sort}`,
+      { headers: ghHeaders() }
+    );
+    if (!response.ok) {
+      throw await ghError(response, `Listing ${filter} issues in ${repo}`);
+    }
+    const data = (await response.json()) as { items?: SearchItem[] };
+    return {
+      success: true,
+      data: {
+        repo,
+        staleDays,
+        counts,
+        filter,
+        issues: (data.items ?? []).map(summarizeIssue),
+      },
+    };
+  },
+
+  /** Comment on an issue or PR. Gated. Carries the provenance footer. */
+  add_comment: async (params: Record<string, unknown>, content?: string) => {
+    requireToken();
+    const repo = requireRepo(params, 'add_comment');
+    const issueNumber = requireIssueNumber(params, 'add_comment');
+    const body = String(params.body ?? params.comment ?? params.text ?? content ?? '').trim();
+    if (!body) {
+      throw new Error('add_comment needs "body" (the comment text).');
+    }
+    const response = await fetch(`${GITHUB_API}/repos/${repo}/issues/${issueNumber}/comments`, {
+      method: 'POST',
+      headers: ghHeaders(),
+      body: JSON.stringify({ body: withProvenance(body) }),
+    });
+    if (!response.ok) {
+      throw await ghError(response, `Commenting on ${repo}#${issueNumber}`);
+    }
+    const comment = (await response.json()) as { id: number; html_url: string };
+    return { success: true, data: { repo, issueNumber, commentId: comment.id, url: comment.html_url } };
+  },
+
+  /** Add labels without touching the rest (POST is additive). Gated. */
+  add_labels: async (params: Record<string, unknown>) => {
+    requireToken();
+    const repo = requireRepo(params, 'add_labels');
+    const issueNumber = requireIssueNumber(params, 'add_labels');
+    const labels = normalizeLabels(params.labels ?? params.label);
+    if (labels.length === 0) {
+      throw new Error('add_labels needs "labels" (comma-separated, e.g. "bug,P2").');
+    }
+    const response = await fetch(`${GITHUB_API}/repos/${repo}/issues/${issueNumber}/labels`, {
+      method: 'POST',
+      headers: ghHeaders(),
+      body: JSON.stringify({ labels }),
+    });
+    if (!response.ok) {
+      throw await ghError(response, `Labeling ${repo}#${issueNumber}`);
+    }
+    const now = (await response.json()) as Array<{ name: string }>;
+    return { success: true, data: { repo, issueNumber, added: labels, labelsNow: now.map((l) => l.name) } };
+  },
+
+  /** Remove one label. Gated. A label that isn't on the issue is reported, not an error. */
+  remove_label: async (params: Record<string, unknown>) => {
+    requireToken();
+    const repo = requireRepo(params, 'remove_label');
+    const issueNumber = requireIssueNumber(params, 'remove_label');
+    const [label] = normalizeLabels(params.label ?? params.labels);
+    if (!label) {
+      throw new Error('remove_label needs "label" (one label name).');
+    }
+    const response = await fetch(
+      `${GITHUB_API}/repos/${repo}/issues/${issueNumber}/labels/${encodeURIComponent(label)}`,
+      { method: 'DELETE', headers: ghHeaders() }
+    );
+    if (response.status === 404) {
+      // GitHub 404s both "label not on this issue" and "no such issue/repo". Only the first
+      // is a harmless no-op; the second must surface as an error.
+      let message = '';
+      try {
+        message = String(((await response.clone().json()) as { message?: string }).message ?? '');
+      } catch {
+        // fall through to the error below
+      }
+      if (/label does not exist/i.test(message)) {
+        return { success: true, data: { repo, issueNumber, removed: null, note: `"${label}" was not on the issue.` } };
+      }
+    }
+    if (!response.ok) {
+      throw await ghError(response, `Unlabeling ${repo}#${issueNumber}`);
+    }
+    const now = (await response.json()) as Array<{ name: string }>;
+    return { success: true, data: { repo, issueNumber, removed: label, labelsNow: now.map((l) => l.name) } };
   },
 };

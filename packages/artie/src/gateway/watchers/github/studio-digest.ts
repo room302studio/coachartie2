@@ -66,6 +66,59 @@ interface RepoDigest {
   recentMerges: Array<{ number: number; title: string; author: string; mergedBy: string }>;
   recentCommits: Array<{ sha: string; message: string; author: string }>;
   openIssues: { total: number; unassigned: number; recent: Array<{ number: number; title: string; author: string; labels: string[] }> };
+  /** Search API totals; absent when the searches failed. */
+  needsHuman?: NeedsHumanCounts;
+}
+
+export interface NeedsHumanCounts {
+  unassigned: number;
+  unlabeled: number;
+  stale: number;
+}
+
+const STALE_ISSUE_DAYS = 60;
+
+/** One compact line, or null when there is nothing to say. Zero counts are left out. */
+export function formatNeedsHumanLine(counts: NeedsHumanCounts | undefined): string | null {
+  if (!counts) {
+    return null;
+  }
+  const bits: string[] = [];
+  if (counts.unassigned > 0) bits.push(`${counts.unassigned} unassigned`);
+  if (counts.unlabeled > 0) bits.push(`${counts.unlabeled} unlabeled`);
+  if (counts.stale > 0) bits.push(`${counts.stale} stale ${STALE_ISSUE_DAYS}d+`);
+  if (bits.length === 0) {
+    return null;
+  }
+  return `Needs a human: ${bits.join(' / ')}`;
+}
+
+/**
+ * Search total_count rather than paginating listForRepo. Sequential on purpose: the search API
+ * has its own 30/min limit. Any failure omits the whole line instead of showing partial counts.
+ */
+export async function fetchNeedsHumanCounts(
+  octokit: Octokit,
+  owner: string,
+  repo: string,
+  now: Date = new Date()
+): Promise<NeedsHumanCounts | undefined> {
+  const base = `is:issue is:open repo:${owner}/${repo}`;
+  const cutoff = new Date(now.getTime() - STALE_ISSUE_DAYS * 24 * 60 * 60 * 1000)
+    .toISOString()
+    .slice(0, 10);
+  const queries = [`${base} no:assignee`, `${base} no:label`, `${base} updated:<${cutoff}`];
+  const totals: number[] = [];
+  try {
+    for (const q of queries) {
+      const { data } = await octokit.search.issuesAndPullRequests({ q, per_page: 1 });
+      totals.push(data.total_count);
+    }
+  } catch (error) {
+    logger.debug(`Needs-a-human search failed for ${owner}/${repo}:`, error);
+    return undefined;
+  }
+  return { unassigned: totals[0], unlabeled: totals[1], stale: totals[2] };
 }
 
 export class GitHubStudioManager {
@@ -262,6 +315,8 @@ export class GitHubStudioManager {
       logger.debug(`Failed to fetch issues for ${watch.repo}:`, error);
     }
 
+    digest.needsHuman = await fetchNeedsHumanCounts(this.octokit, owner, repo);
+
     // Only post if there's something worth saying
     const hasContent = digest.prsNeedingReview.length > 0 ||
       digest.stalePrs.length > 0 ||
@@ -352,6 +407,11 @@ export class GitHubStudioManager {
         issueStr += ` (${digest.openIssues.unassigned} unassigned)`;
       }
       parts.push(issueStr);
+
+      const needsLine = formatNeedsHumanLine(digest.needsHuman);
+      if (needsLine) {
+        parts.push(needsLine);
+      }
 
       if (digest.openIssues.recent.length > 0) {
         parts.push(`New this week:`);

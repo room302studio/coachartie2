@@ -14,8 +14,18 @@
 import { getSyncDb } from './db/client.js';
 import { logger } from './logger.js';
 
-/** pending → approved (claimed, about to run) → executed | failed; or pending → denied. */
-export type PendingActionStatus = 'pending' | 'approved' | 'denied' | 'executed' | 'failed';
+/**
+ * pending → approved (claimed, about to run) → executed | failed; or pending → denied; or
+ * pending → expired (nobody acted within PENDING_TTL_DAYS).
+ */
+export type PendingActionStatus = 'pending' | 'approved' | 'denied' | 'executed' | 'failed' | 'expired';
+
+/**
+ * How long a gated call waits for a yes. Approving a weeks-old GitHub write would replay stale
+ * params against an issue that has since moved on (closed, relabeled, answered), so old asks
+ * lapse instead of lingering as a trap in the queue (2026-11-13, issue-clerk prep).
+ */
+export const PENDING_TTL_DAYS = 7;
 
 export interface PendingAction {
   id: number;
@@ -91,6 +101,68 @@ function rowToPendingAction(row: Record<string, unknown>): PendingAction {
   };
 }
 
+/**
+ * JSON with object keys sorted at every depth, so the same call stores (and dedupes) the same
+ * way whatever order a model emitted its arguments in. Replay parses it back, so order never
+ * mattered for running it, only for matching it.
+ */
+export function canonicalJson(value: unknown): string {
+  return JSON.stringify(value ?? {}, (_key, v: unknown) => {
+    if (v && typeof v === 'object' && !Array.isArray(v)) {
+      const sorted: Record<string, unknown> = {};
+      for (const k of Object.keys(v as Record<string, unknown>).sort()) {
+        sorted[k] = (v as Record<string, unknown>)[k];
+      }
+      return sorted;
+    }
+    return v;
+  });
+}
+
+/**
+ * Mark every pending row older than PENDING_TTL_DAYS as expired. Called before anything reads
+ * the queue, so no reader ever sees (or approves) a lapsed ask. Returns how many expired.
+ */
+export function expireStalePendingActions(ttlDays: number = PENDING_TTL_DAYS): number {
+  ensureTable();
+  const result = getSyncDb().run(
+    `UPDATE pending_actions SET status = 'expired', resolved_at = CURRENT_TIMESTAMP, resolved_by = 'ttl'
+      WHERE status = 'pending' AND created_at < datetime('now', ?)`,
+    [`-${ttlDays} days`]
+  );
+  const expired = Number(result.changes ?? 0);
+  if (expired > 0) {
+    logger.info(`⌛ Expired ${expired} pending action(s) older than ${ttlDays} days`);
+  }
+  return expired;
+}
+
+/**
+ * The id of an identical call already waiting (same tool, action, params and content), or null.
+ * A model that retries a gated call, or a scribe run that re-proposes the same issue, would
+ * otherwise stack duplicate rows that EJ has to deny one by one.
+ */
+export function findPendingDuplicate(input: {
+  tool: string;
+  action: string;
+  params: unknown;
+  content?: string;
+}): number | null {
+  ensureTable();
+  expireStalePendingActions();
+  const row = getSyncDb().get<{ id: number }>(
+    `SELECT id FROM pending_actions
+      WHERE status = 'pending' AND tool = ? AND action = ? AND params_json = ?
+        AND COALESCE(content, '') = ?
+      ORDER BY id DESC LIMIT 1`,
+    [input.tool, input.action, canonicalJson(input.params), input.content ?? '']
+  );
+  if (row) {
+    return row.id;
+  }
+  return null;
+}
+
 /** Create a pending action record for a gated call that was blocked. Returns its id. */
 export function createPendingAction(input: {
   tool: string;
@@ -111,7 +183,7 @@ export function createPendingAction(input: {
     [
       input.tool,
       input.action,
-      JSON.stringify(input.params ?? {}),
+      canonicalJson(input.params),
       JSON.stringify(input.context ?? {}),
       input.content ?? null,
       input.requestedBy,
@@ -135,6 +207,7 @@ export function getPendingAction(id: number): PendingAction | null {
 
 export function listPendingActions(status: PendingActionStatus = 'pending'): PendingAction[] {
   ensureTable();
+  expireStalePendingActions();
   const db = getSyncDb();
   const rows = db.all<Record<string, unknown>>(
     `SELECT * FROM pending_actions WHERE status = ? ORDER BY created_at DESC`,
@@ -150,6 +223,7 @@ export function resolvePendingAction(
   resolvedBy: string
 ): PendingAction | null {
   ensureTable();
+  expireStalePendingActions();
   const db = getSyncDb();
   const existing = getPendingAction(id);
   if (!existing) return null;

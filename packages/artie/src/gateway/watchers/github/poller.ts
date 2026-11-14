@@ -7,6 +7,7 @@
 
 import { Octokit } from '@octokit/rest';
 import { octokitLog } from './octokit-log.js';
+import { resolveSelfLogin } from './self-identity.js';
 import { delay } from '../../../shared/async.js';
 import { logger } from '../../../shared/logger.js';
 import { getDb, eq, and, sql } from '../../../shared/db/client.js';
@@ -26,7 +27,6 @@ export type GitHubEventType =
   | 'pr_review'
   | 'ci_success'
   | 'ci_failure'
-  | 'pr_stale'
   | 'issue_opened'
   | 'issue_closed'
   | 'issue_comment'
@@ -74,6 +74,8 @@ export interface GitHubSyncEvent {
     labels?: string[];
     reviewers?: string[];
     mergedBy?: string;
+    /** Who closed the issue (single-issue GET only; the list endpoint omits it). */
+    closedBy?: string;
     changedFiles?: number;
     // Label/assignment fields
     label?: string;
@@ -117,6 +119,23 @@ const DEFAULT_CONFIG: PollerConfig = {
  * GitHub Poller Service
  * Polls repos and emits events for new activity
  */
+const MAX_ISSUE_PAGES = 3;
+
+/** Issue-comment cursor from sync metadata, falling back to the legacy shared cursor. */
+export function readIssueCommentCursor(state: GithubSyncState): number {
+  if (state.metadata) {
+    try {
+      const parsed = JSON.parse(state.metadata as string);
+      if (typeof parsed.lastIssueCommentId === 'number') {
+        return parsed.lastIssueCommentId;
+      }
+    } catch {
+      // fall through to legacy cursor
+    }
+  }
+  return state.lastCommentId || 0;
+}
+
 export class GitHubPollerService extends EventEmitter {
   private octokit: Octokit;
   private config: PollerConfig;
@@ -217,6 +236,9 @@ export class GitHubPollerService extends EventEmitter {
     this.isPolling = true;
 
     try {
+      // Cached after the first success; lets the batcher drop Artie's own writes
+      await resolveSelfLogin(this.octokit);
+
       // Check rate limit before polling
       const rateLimit = await this.checkRateLimit();
       if (rateLimit.remaining < this.config.rateLimitBuffer) {
@@ -589,25 +611,13 @@ export class GitHubPollerService extends EventEmitter {
         lastIssueUpdatedAt = new Date(0);
       }
 
-      // Fetch recently updated issues (excluding PRs) — retry once on 500
-      let issues: any[];
-      try {
-        const resp = await this.octokit.issues.listForRepo({
-          owner, repo, state: 'all', sort: 'updated', direction: 'desc', per_page: 30,
-        });
-        issues = resp.data;
-      } catch (firstErr: any) {
-        if (firstErr?.status === 500) {
-          logger.debug(`GitHub 500 on issues for ${owner}/${repo}, retrying in 5s...`);
-          await delay(5000);
-          const resp = await this.octokit.issues.listForRepo({
-            owner, repo, state: 'all', sort: 'updated', direction: 'desc', per_page: 30,
-          });
-          issues = resp.data;
-        } else {
-          throw firstErr;
-        }
-      }
+      const issues = await this.fetchUpdatedIssues(owner, repo, lastIssueUpdatedAt);
+
+      // One comment cursor per sweep: every issue is compared against where the sweep STARTED,
+      // and the highest id seen is committed once at the end. Advancing it per issue would let
+      // issue A's newer comment (id 200) hide issue B's unseen older one (id 150) forever.
+      const sweepCommentCursor = readIssueCommentCursor((await this.getSyncState(watch.repo)) || syncState);
+      let newestCommentId = sweepCommentCursor;
 
       for (const issue of issues) {
         // Skip pull requests (GitHub API returns PRs in issues endpoint)
@@ -649,6 +659,16 @@ export class GitHubPollerService extends EventEmitter {
         if (issue.state === 'closed' && issue.closed_at) {
           const closedAt = new Date(issue.closed_at);
           if (closedAt > lastIssueUpdatedAt) {
+            // The list endpoint has no closed_by, and the echo filter needs the closer (Artie
+            // closing an issue after an approval must not post back into #robot). One GET per
+            // newly closed issue; on failure the event still posts, just without a closer.
+            let closedBy: string | undefined;
+            try {
+              const { data: full } = await this.octokit.issues.get({ owner, repo, issue_number: issue.number });
+              closedBy = full.closed_by?.login;
+            } catch (closerErr) {
+              logger.debug(`Could not read closer of ${owner}/${repo}#${issue.number}: ${String(closerErr)}`);
+            }
             this.emitEvent({
               type: 'issue_closed',
               repo: repoFullName,
@@ -660,6 +680,7 @@ export class GitHubPollerService extends EventEmitter {
                 issueUrl: issue.html_url,
                 issueAuthor: issue.user?.login,
                 issueState: issue.state,
+                closedBy,
               },
               timestamp: issue.closed_at,
             });
@@ -669,8 +690,15 @@ export class GitHubPollerService extends EventEmitter {
         // For updated (not new) issues, check timeline for label/assignment changes
         if (issueUpdatedAt > lastIssueUpdatedAt && issueCreatedAt <= lastIssueUpdatedAt) {
           await this.pollIssueTimeline(owner, repo, issue.number, issue.title, issue.html_url, watch, syncState);
-          await this.pollIssueComments(owner, repo, issue.number, watch, syncState);
+          const seen = await this.pollIssueComments(owner, repo, issue.number, watch, sweepCommentCursor);
+          if (seen > newestCommentId) {
+            newestCommentId = seen;
+          }
         }
+      }
+
+      if (newestCommentId > sweepCommentCursor) {
+        await this.mergeSyncMetadata(watch.repo, { lastIssueCommentId: newestCommentId });
       }
 
       // Update last issue updated timestamp in metadata
@@ -687,15 +715,52 @@ export class GitHubPollerService extends EventEmitter {
   }
 
   /**
-   * Poll for new comments on an issue
+   * List recently updated issues, newest first. Pages of 100, at most MAX_ISSUE_PAGES, stopping
+   * once a page reaches items at or older than the watermark: a bulk edit (a label sweep) can
+   * touch far more than 30 issues between polls. Retries a page once on GitHub 500.
+   */
+  private async fetchUpdatedIssues(owner: string, repo: string, watermark: Date): Promise<any[]> {
+    const all: any[] = [];
+    for (let page = 1; page <= MAX_ISSUE_PAGES; page++) {
+      const params = {
+        owner, repo, state: 'all' as const, sort: 'updated' as const,
+        direction: 'desc' as const, per_page: 100, page,
+      };
+      let batch: any[];
+      try {
+        batch = (await this.octokit.issues.listForRepo(params)).data;
+      } catch (firstErr: any) {
+        if (firstErr?.status !== 500) {
+          throw firstErr;
+        }
+        logger.debug(`GitHub 500 on issues for ${owner}/${repo}, retrying in 5s...`);
+        await delay(5000);
+        batch = (await this.octokit.issues.listForRepo(params)).data;
+      }
+      all.push(...batch);
+      if (batch.length < 100) {
+        break;
+      }
+      const oldest = batch[batch.length - 1];
+      if (new Date(oldest.updated_at) <= watermark) {
+        break;
+      }
+    }
+    return all;
+  }
+
+  /**
+   * Emit an issue's comments newer than the sweep's starting cursor. Returns the highest
+   * comment id seen; the caller commits the cursor once per sweep (see pollIssues).
    */
   private async pollIssueComments(
     owner: string,
     repo: string,
     issueNumber: number,
     watch: GithubRepoWatch,
-    syncState: GithubSyncState
-  ): Promise<void> {
+    lastCommentId: number
+  ): Promise<number> {
+    let newest = lastCommentId;
     try {
       const { data: comments } = await this.octokit.issues.listComments({
         owner,
@@ -706,11 +771,16 @@ export class GitHubPollerService extends EventEmitter {
         direction: 'desc',
       });
 
-      const lastCommentId = syncState.lastCommentId || 0;
-
+      // Own cursor in sync metadata (lastIssueCommentId): issue and PR comments share an id
+      // space, so one shared cursor let whichever was polled first suppress unseen comments on
+      // the other. readIssueCommentCursor falls back to the legacy shared cursor so the first
+      // poll after deploy does not replay old comments.
       for (const comment of comments) {
         if (comment.id <= lastCommentId) {
           continue;
+        }
+        if (comment.id > newest) {
+          newest = comment.id;
         }
 
         // Skip bot comments
@@ -732,14 +802,12 @@ export class GitHubPollerService extends EventEmitter {
           },
           timestamp: comment.created_at,
         });
-
-        if (comment.id > lastCommentId) {
-          await this.updateSyncState(watch.repo, { lastCommentId: comment.id });
-        }
       }
+
     } catch (error) {
       logger.error(`Error polling comments for issue #${issueNumber} in ${owner}/${repo}:`, error);
     }
+    return newest;
   }
 
   /**

@@ -25,8 +25,10 @@ export const GATED_ACTIONS: Record<string, Set<string> | 'all'> = {
   email: new Set(['send']),
   // Public posts outside Discord; reading/searching Reddit is fine unattended.
   reddit: new Set(['post', 'comment']),
-  // Writes a public GitHub issue/comment; every read action (list/search/get_*) stays open.
-  github: new Set(['create_issue', 'update_issue']),
+  // Writes a public GitHub issue/comment/label; every read action (list/search/get_*,
+  // find_similar_issues, list_triage) stays open. tests/engine/approval-gate.test.ts fails if a
+  // write-shaped github action is added to the tool without being listed here.
+  github: new Set(['create_issue', 'update_issue', 'add_comment', 'add_labels', 'remove_label']),
   // Publishes to the public wiki; read/search/list stay open.
   mediawiki: new Set(['write', 'add']),
   // Generic outbound HTTP to an arbitrary URL with a body — gate the write verbs, not GET.

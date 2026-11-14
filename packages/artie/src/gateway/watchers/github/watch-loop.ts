@@ -555,7 +555,6 @@ export class GitHubSyncService {
       pr_review: { singular: 'review', plural: 'reviews' },
       ci_success: { singular: 'CI passed', plural: 'CI passed' },
       ci_failure: { singular: 'CI failed', plural: 'CI failed' },
-      pr_stale: { singular: 'stale PR', plural: 'stale PRs' },
     };
 
     const label = labels[type];

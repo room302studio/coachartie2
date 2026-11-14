@@ -143,7 +143,10 @@
     "stats"
   ],
   "github": [
+    "add_comment",
+    "add_labels",
     "create_issue",
+    "find_similar_issues",
     "get_deployment_stats",
     "get_issue_details",
     "get_issues_by_label",
@@ -151,6 +154,8 @@
     "get_related_prs",
     "get_releases",
     "list_issues",
+    "list_triage",
+    "remove_label",
     "search_issues",
     "search_repositories",
     "update_issue"

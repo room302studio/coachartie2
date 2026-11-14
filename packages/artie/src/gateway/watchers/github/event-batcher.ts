@@ -12,6 +12,7 @@ import { logger } from '../../../shared/logger.js';
 import { getDb, eq } from '../../../shared/db/client.js';
 import { githubIdentityMappings, type GithubIdentityMapping } from '../../../shared/db/schema.js';
 import type { GitHubSyncEvent, GitHubEventType } from './poller.js';
+import { isSelfLogin } from './self-identity.js';
 
 // Bot usernames to filter out (excludes Copilot since those are human-initiated)
 const BOT_USERNAMES = [
@@ -118,6 +119,13 @@ export class GitHubEventProcessor {
     if (this.config.filterBots && this.isBotEvent(event)) {
       processed.shouldPost = false;
       processed.skipReason = 'Bot-generated event';
+      return processed;
+    }
+
+    // Artie's own writes (his token is a plain user, so the [bot] check misses them)
+    if (this.isSelfEvent(event)) {
+      processed.shouldPost = false;
+      processed.skipReason = 'Self-generated event';
       return processed;
     }
 
@@ -254,6 +262,41 @@ export class GitHubEventProcessor {
   }
 
   /**
+   * Check if Artie himself caused the event. The actor field depends on the event type: a PR
+   * author must not mask a human reviewer, and a closed issue's author is not its closer.
+   */
+  private isSelfEvent(event: GitHubSyncEvent): boolean {
+    const d = event.data;
+    switch (event.type) {
+      case 'issue_opened':
+        return isSelfLogin(d.issueAuthor);
+      case 'issue_comment':
+      case 'pr_comment':
+      case 'issue_labeled':
+        return isSelfLogin(d.commentAuthor);
+      case 'issue_assigned':
+        return isSelfLogin(d.assignedBy);
+      case 'pr_review_requested':
+        return isSelfLogin(d.reviewRequestedBy);
+      case 'pr_review':
+      case 'pr_approved':
+      case 'pr_changes_requested':
+        return isSelfLogin(d.reviewAuthor);
+      case 'issue_closed':
+        return isSelfLogin(d.closedBy);
+      // pr_ready_for_review is deliberately absent: the author isn't necessarily who flipped
+      // it, and nothing records the actor, so it always posts.
+      case 'pr_opened':
+      case 'pr_draft':
+        return isSelfLogin(d.prAuthor);
+      case 'pr_merged':
+        return isSelfLogin(d.mergedBy);
+      default:
+        return false;
+    }
+  }
+
+  /**
    * Generate a unique key for dedup tracking
    */
   private getDedupeKey(event: GitHubSyncEvent): string {
@@ -338,7 +381,6 @@ export class GitHubEventProcessor {
       pr_comment: 3,
       ci_success: 2,
       pr_closed: 1,
-      pr_stale: 1, // Disabled feature, kept for type compatibility
       issue_opened: 6,
       issue_closed: 4,
       issue_comment: 3,

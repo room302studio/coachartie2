@@ -31,7 +31,6 @@ const EVENT_COLORS: Record<GitHubEventType, number> = {
   pr_review: 0x6e7681, // Gray
   ci_success: 0x238636, // Green
   ci_failure: 0xda3633, // Red
-  pr_stale: 0xda3633, // Red for stale
   issue_opened: 0x238636, // Green
   issue_closed: 0x8957e5, // Purple
   issue_comment: 0x6e7681, // Gray
@@ -54,7 +53,6 @@ const EVENT_EMOJI: Record<GitHubEventType, string> = {
   pr_review: '📝',
   ci_success: '✅',
   ci_failure: '❌',
-  pr_stale: '⏰',
   issue_opened: '📋',
   issue_closed: '✅',
   issue_comment: '💬',
