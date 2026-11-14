@@ -80,7 +80,8 @@ export function formatApprovalPing(input: { id: number; tool: string; action: st
   if (detail) {
     line += ` (${clip(detail, DETAIL_MAX)})`;
   }
-  return `${line}. Ask Artie "approvals approve ${input.id}" or "deny ${input.id}".`;
+  // Room 302 is ambientMode 'never': Artie only hears a message that @mentions him.
+  return `${line}. @mention Artie with "approve ${input.id}" or "deny ${input.id}".`;
 }
 
 /** Post the ping. Never throws. */

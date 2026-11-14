@@ -120,6 +120,8 @@ const DEFAULT_CONFIG: PollerConfig = {
  * Polls repos and emits events for new activity
  */
 const MAX_ISSUE_PAGES = 3;
+/** Seeding a new watch pages further, once, to cover a large same-second cohort. */
+const SEED_MAX_PAGES = 10;
 
 /** Issue-comment cursor from sync metadata, falling back to the legacy shared cursor. */
 export function readIssueCommentCursor(state: GithubSyncState): number {
@@ -134,6 +136,65 @@ export function readIssueCommentCursor(state: GithubSyncState): number {
     }
   }
   return state.lastCommentId || 0;
+}
+
+/** Issue numbers already handled at the issue watermark's exact second (sync metadata). */
+export function readIssuesAtWatermark(state: GithubSyncState): number[] {
+  if (!state.metadata) {
+    return [];
+  }
+  try {
+    const parsed = JSON.parse(state.metadata as string);
+    if (Array.isArray(parsed.issuesAtWatermark)) {
+      return parsed.issuesAtWatermark.filter((n: unknown) => typeof n === 'number');
+    }
+  } catch {
+    // no list yet
+  }
+  return [];
+}
+
+/**
+ * True when a timestamp is past the watermark, or exactly on it for an issue not yet handled
+ * at that second. Shared by "opened" and "closed" so both survive same-second batches.
+ */
+export function isAfterMark(at: Date, markMs: number, issueNumber: number, seenAtMark: Set<number>): boolean {
+  const t = at.getTime();
+  if (t > markMs) {
+    return true;
+  }
+  return t === markMs && !seenAtMark.has(issueNumber);
+}
+
+/**
+ * The next watermark: the newest updated_at in this sweep, plus every issue number handled at
+ * that exact second. If the watermark didn't move, the old list carries over, so an issue
+ * handled two polls ago at the same second isn't re-announced.
+ */
+export function nextIssueWatermark(
+  markMs: number,
+  seenAtMark: Set<number>,
+  swept: Array<{ number: number; updatedAt: string }>
+): { updatedAt: string; numbers: number[] } {
+  let newestMs = markMs;
+  let newestIso = new Date(markMs).toISOString();
+  for (const issue of swept) {
+    const ms = new Date(issue.updatedAt).getTime();
+    if (ms > newestMs) {
+      newestMs = ms;
+      newestIso = issue.updatedAt;
+    }
+  }
+  const numbers = new Set<number>();
+  if (newestMs === markMs) {
+    for (const n of seenAtMark) numbers.add(n);
+  }
+  for (const issue of swept) {
+    if (new Date(issue.updatedAt).getTime() === newestMs) {
+      numbers.add(issue.number);
+    }
+  }
+  return { updatedAt: newestIso, numbers: [...numbers].sort((a, b) => a - b) };
 }
 
 export class GitHubPollerService extends EventEmitter {
@@ -604,6 +665,13 @@ export class GitHubPollerService extends EventEmitter {
       } else {
         metadata = {};
       }
+      // No watermark and never seeded: a row from before seeding existed, or a first sync that
+      // failed partway. Seed silently instead of replaying the repo's history from 1970.
+      if (!metadata.lastIssueUpdatedAt && !metadata.issueSeeded) {
+        logger.info(`Seeding issue cursors for ${owner}/${repo} (no watermark yet), posting nothing this poll`);
+        await this.seedIssueCursors(owner, repo, watch.repo);
+        return;
+      }
       let lastIssueUpdatedAt: Date;
       if (metadata.lastIssueUpdatedAt) {
         lastIssueUpdatedAt = new Date(metadata.lastIssueUpdatedAt);
@@ -619,6 +687,19 @@ export class GitHubPollerService extends EventEmitter {
       const sweepCommentCursor = readIssueCommentCursor((await this.getSyncState(watch.repo)) || syncState);
       let newestCommentId = sweepCommentCursor;
 
+      // GitHub timestamps are whole seconds, and issues are often batch-filed in the same
+      // second (metro-maker4 had 150+ agent-filed issues at identical timestamps). A strict
+      // "newer than the watermark" test lost every issue that shared the watermark's second but
+      // wasn't visible yet when it was set (list lag, or a poll landing mid-batch): found by
+      // scripts/issue-clerk-e2e.ts, 2026-11-13. So the watermark second is inclusive, and the
+      // issues already handled AT that second are remembered and skipped.
+      const markMs = lastIssueUpdatedAt.getTime();
+      const seenAtMark = new Set<number>(readIssuesAtWatermark(syncState));
+      // A watermark written before issuesAtWatermark existed has no list: treat everything on
+      // that exact second as already handled (the old strict behaviour) for this one sweep, so
+      // the first poll after deploy doesn't re-announce the issue that set it.
+      const legacyMark = Boolean(metadata.lastIssueUpdatedAt) && !('issuesAtWatermark' in metadata);
+
       for (const issue of issues) {
         // Skip pull requests (GitHub API returns PRs in issues endpoint)
         if (issue.pull_request) {
@@ -626,8 +707,20 @@ export class GitHubPollerService extends EventEmitter {
         }
 
         const issueUpdatedAt = new Date(issue.updated_at);
-        if (issueUpdatedAt <= lastIssueUpdatedAt) {
+        if (issueUpdatedAt.getTime() < markMs) {
           continue;
+        }
+        // Known gap (Codex review, accepted): an issue seen at second T that is then closed
+        // within that same second keeps updated_at T and is skipped here, so that close isn't
+        // announced. It needs a poll landing inside the one second between two edits.
+        if (issueUpdatedAt.getTime() === markMs && (legacyMark || seenAtMark.has(issue.number))) {
+          continue;
+        }
+        if (legacyMark) {
+          // Later-updated issues created/closed on the legacy mark second were announced then.
+          for (const at of [issue.created_at, issue.closed_at]) {
+            if (at && new Date(at).getTime() === markMs) seenAtMark.add(issue.number);
+          }
         }
 
         const repoFullName = `${owner}/${repo}`;
@@ -636,7 +729,8 @@ export class GitHubPollerService extends EventEmitter {
         // New issue — use lastIssueUpdatedAt as watermark (not lastPolledAt)
         // because GitHub 500 errors can cause lastPolledAt to advance
         // past issue creation times without the issues being processed
-        if (issueCreatedAt > lastIssueUpdatedAt) {
+        const isNew = isAfterMark(issueCreatedAt, markMs, issue.number, seenAtMark);
+        if (isNew) {
           this.emitEvent({
             type: 'issue_opened',
             repo: repoFullName,
@@ -658,7 +752,7 @@ export class GitHubPollerService extends EventEmitter {
         // Closed issue
         if (issue.state === 'closed' && issue.closed_at) {
           const closedAt = new Date(issue.closed_at);
-          if (closedAt > lastIssueUpdatedAt) {
+          if (isAfterMark(closedAt, markMs, issue.number, seenAtMark)) {
             // The list endpoint has no closed_by, and the echo filter needs the closer (Artie
             // closing an issue after an approval must not post back into #robot). One GET per
             // newly closed issue; on failure the event still posts, just without a closer.
@@ -687,8 +781,10 @@ export class GitHubPollerService extends EventEmitter {
           }
         }
 
-        // For updated (not new) issues, check timeline for label/assignment changes
-        if (issueUpdatedAt > lastIssueUpdatedAt && issueCreatedAt <= lastIssueUpdatedAt) {
+        // For issues that existed at the watermark, check timeline and comments. Keyed on the
+        // creation time, not isNew: an issue created ON the watermark second but only listed
+        // now is announced as opened AND may already have later comments (Codex review).
+        if (issueCreatedAt.getTime() <= markMs) {
           await this.pollIssueTimeline(owner, repo, issue.number, issue.title, issue.html_url, watch, syncState);
           const seen = await this.pollIssueComments(owner, repo, issue.number, watch, sweepCommentCursor);
           if (seen > newestCommentId) {
@@ -701,12 +797,18 @@ export class GitHubPollerService extends EventEmitter {
       // first sweep and stops falling back to the shared PR cursor, which keeps advancing.
       await this.mergeSyncMetadata(watch.repo, { lastIssueCommentId: newestCommentId });
 
-      // Update last issue updated timestamp in metadata
-      if (issues.length > 0) {
-        const latestNonPR = issues.find(i => !i.pull_request);
-        if (latestNonPR) {
-          await this.mergeSyncMetadata(watch.repo, { lastIssueUpdatedAt: latestNonPR.updated_at });
-        }
+      // Advance the watermark, remembering which issues were handled at its exact second.
+      const nonPr = issues.filter((i) => !i.pull_request);
+      if (nonPr.length > 0) {
+        const next = nextIssueWatermark(
+          markMs,
+          seenAtMark,
+          nonPr.map((i) => ({ number: i.number, updatedAt: i.updated_at }))
+        );
+        await this.mergeSyncMetadata(watch.repo, {
+          lastIssueUpdatedAt: next.updatedAt,
+          issuesAtWatermark: next.numbers,
+        });
       }
     } catch (error) {
       logger.error(`Error polling issues for ${owner}/${repo}:`, error);
@@ -1120,6 +1222,62 @@ export class GitHubPollerService extends EventEmitter {
   }
 
   /**
+   * Mark every existing issue and issue comment as seen (2026-11-13). Without this the first
+   * real poll started from 1970 and announced every issue in the repo (up to 300) as newly
+   * opened: found by scripts/issue-clerk-e2e.ts on a sandbox with history. Pages until it has
+   * the whole newest-second cohort (metro-maker4 has 150+ issues stamped the same second, and
+   * PRs share the list), and sets issueSeeded so a repo with no issues isn't re-seeded.
+   */
+  private async seedIssueCursors(owner: string, repo: string, repoFullName: string): Promise<void> {
+    const swept: Array<{ number: number; updatedAt: string }> = [];
+    let newestMs = 0;
+    let oldestScanned = '';
+    for (let page = 1; page <= SEED_MAX_PAGES; page++) {
+      const { data } = await this.octokit.issues.listForRepo({
+        owner, repo, state: 'all', sort: 'updated', direction: 'desc', per_page: 100, page,
+      });
+      if (data.length > 0) {
+        oldestScanned = data[data.length - 1].updated_at;
+      }
+      for (const item of data) {
+        if (!item.pull_request) {
+          swept.push({ number: item.number, updatedAt: item.updated_at });
+          newestMs = Math.max(newestMs, new Date(item.updated_at).getTime());
+        }
+      }
+      if (data.length < 100) {
+        break;
+      }
+      // Done once this page reaches past the newest second (or holds no issues yet, all PRs).
+      const oldestMs = new Date(data[data.length - 1].updated_at).getTime();
+      if (newestMs > 0 && oldestMs < newestMs) {
+        break;
+      }
+    }
+    const seed: Record<string, unknown> = { issueSeeded: true };
+    if (swept.length > 0) {
+      const mark = nextIssueWatermark(0, new Set<number>(), swept);
+      seed.lastIssueUpdatedAt = mark.updatedAt;
+      seed.issuesAtWatermark = mark.numbers;
+    } else if (oldestScanned) {
+      // Only PRs within the scan (possibly capped): anything not yet seen is older than the
+      // oldest item scanned, so that is a safe baseline. Without it the next poll compares
+      // against 1970 and a bulk touch of old issues would announce them all (Codex review).
+      seed.lastIssueUpdatedAt = oldestScanned;
+      seed.issuesAtWatermark = [];
+    }
+    const { data: latestComments } = await this.octokit.issues.listCommentsForRepo({
+      owner, repo, sort: 'created', direction: 'desc', per_page: 1,
+    });
+    let lastIssueCommentId = 0;
+    if (latestComments.length > 0) {
+      lastIssueCommentId = latestComments[0].id;
+    }
+    seed.lastIssueCommentId = lastIssueCommentId;
+    await this.mergeSyncMetadata(repoFullName, seed);
+  }
+
+  /**
    * Silent first sync - updates state markers without emitting events
    * This prevents spamming Discord when a repo is first added
    */
@@ -1196,6 +1354,8 @@ export class GitHubPollerService extends EventEmitter {
         lastPolledAt: new Date().toISOString(),
         pollErrors: 0,
       });
+
+      await this.seedIssueCursors(owner, repo, repoFullName);
 
       logger.info(
         `Silent first sync complete for ${repoFullName} - marked as seen: lastComment=${lastCommentId}, lastReview=${lastReviewId}`

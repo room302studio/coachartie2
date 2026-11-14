@@ -93,44 +93,46 @@ export function formatNeedsHumanLine(counts: NeedsHumanCounts | undefined): stri
   return `Needs a human: ${bits.join(' / ')}`;
 }
 
-/**
- * Gap between search calls. The search API allows 30/min but also has a secondary limit that
- * trips on bursts (a smoke test hit it after ~6 back-to-back calls, 2026-11-13); 9 repos x 3
- * searches at 2.5s each is ~70s for the morning digest, which nobody is waiting on.
- */
-export const NEEDS_HUMAN_SEARCH_GAP_MS = 2500;
+/** 10 pages of 100 open issues; a repo past that gets no line rather than a wrong count. */
+export const NEEDS_HUMAN_MAX_PAGES = 10;
 
 /**
- * Search total_count rather than paginating listForRepo. Sequential and spaced on purpose (see
- * NEEDS_HUMAN_SEARCH_GAP_MS). Any failure omits the whole line instead of showing partial
- * counts, and says so at warn so a line that silently vanishes from the digest is findable.
+ * Counted from the open-issue list, not the search API (2026-11-13). Search has a secondary
+ * limit that trips on short bursts and stays tripped for minutes; the live e2e hit it twice,
+ * and the morning digest firing 3 searches per watched repo would have dropped this line on
+ * most days. The list endpoint uses the 5000/hr core quota and has no index lag. Any failure
+ * omits the whole line instead of showing partial counts, and says so at warn so a line that
+ * silently vanishes from the digest is findable.
  */
 export async function fetchNeedsHumanCounts(
   octokit: Octokit,
   owner: string,
   repo: string,
-  now: Date = new Date(),
-  gapMs: number = NEEDS_HUMAN_SEARCH_GAP_MS
+  now: Date = new Date()
 ): Promise<NeedsHumanCounts | undefined> {
-  const base = `is:issue is:open repo:${owner}/${repo}`;
-  const cutoff = new Date(now.getTime() - STALE_ISSUE_DAYS * 24 * 60 * 60 * 1000)
-    .toISOString()
-    .slice(0, 10);
-  const queries = [`${base} no:assignee`, `${base} no:label`, `${base} updated:<${cutoff}`];
-  const totals: number[] = [];
+  // Same day-granular cutoff the search qualifier updated:<YYYY-MM-DD used.
+  const cutoffDay = new Date(now.getTime() - STALE_ISSUE_DAYS * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const cutoffMs = new Date(`${cutoffDay}T00:00:00Z`).getTime();
+  const counts: NeedsHumanCounts = { unassigned: 0, unlabeled: 0, stale: 0 };
   try {
-    for (const q of queries) {
-      if (gapMs > 0) {
-        await new Promise((resolve) => setTimeout(resolve, gapMs));
+    for (let page = 1; page <= NEEDS_HUMAN_MAX_PAGES; page++) {
+      const { data } = await octokit.issues.listForRepo({ owner, repo, state: 'open', per_page: 100, page });
+      for (const item of data as any[]) {
+        if (item.pull_request) continue;
+        if ((item.assignees ?? []).length === 0) counts.unassigned += 1;
+        if ((item.labels ?? []).length === 0) counts.unlabeled += 1;
+        if (new Date(item.updated_at).getTime() < cutoffMs) counts.stale += 1;
       }
-      const { data } = await octokit.search.issuesAndPullRequests({ q, per_page: 1 });
-      totals.push(data.total_count);
+      if (data.length < 100) {
+        return counts;
+      }
     }
+    logger.warn(`Needs-a-human line dropped for ${owner}/${repo}: more than ${NEEDS_HUMAN_MAX_PAGES * 100} open items`);
+    return undefined;
   } catch (error) {
     logger.warn(`Needs-a-human line dropped for ${owner}/${repo}: ${String(error)}`);
     return undefined;
   }
-  return { unassigned: totals[0], unlabeled: totals[1], stale: totals[2] };
 }
 
 export class GitHubStudioManager {

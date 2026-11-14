@@ -131,6 +131,8 @@ describe('approval ping text', () => {
     expect(line).toContain('github:add_labels');
     expect(line).toContain('Subway-Builder/metro-maker4#831');
     expect(line).toContain('bug,P2');
+    // ambientMode 'never': the how-to must say to @mention him, or the approval goes unheard
+    expect(line).toContain('@mention Artie with "approve 12"');
   });
 
   it('non-github asks never leak params into the channel', () => {

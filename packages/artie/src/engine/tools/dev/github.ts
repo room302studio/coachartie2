@@ -229,9 +229,11 @@ export const githubCapability: RegisteredCapability = {
     'add_labels',
     'remove_label',
   ],
+  // The native schema shows only the first 200 chars of the first line (tool-schema.ts), so the
+  // approval note has to land inside that; tests/engine/issue-clerk-surfaces.test.ts checks it.
   description:
-    'GitHub repos and issues: read, search, find duplicates (find_similar_issues), triage counts (list_triage); ' +
-    'writes (create_issue, update_issue, add_comment, add_labels, remove_label) wait for EJ\'s approval',
+    'GitHub issues: read, search, find_similar_issues (duplicates), list_triage. ' +
+    "Writes (create/update_issue, add_comment, add_labels, remove_label) wait for EJ's approval.",
   requiredParams: ['action'],
   // The first example is the one the native tool schema shows; all of them teach param names.
   examples: [
@@ -242,6 +244,7 @@ export const githubCapability: RegisteredCapability = {
     '<capability name="github" action="remove_label" repo="owner/repo" issueNumber="12" label="needs-triage" />',
     '<capability name="github" action="update_issue" repo="owner/repo" issueNumber="12" state="closed" state_reason="duplicate" duplicateOf="9" assignees="ejfox" />',
     '<capability name="github" action="create_issue" repo="owner/repo" title="Bug title" body="Details" labels="bug" />',
+    '<capability name="github" action="search_issues" repo="owner/repo" keywords="save crash" />',
   ],
 
   handler: async (params: any, _content: string | undefined) => {
