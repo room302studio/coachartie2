@@ -115,6 +115,11 @@ async function ghError(response: Response, what: string): Promise<Error> {
   if (response.status === 404) {
     return new Error(`${what}: not found (404). Check the repo and issue number, and that Artie's account can see it.`);
   }
+  // GitHub uses 403 (and 429) for rate limits too, and the search API's limit is low (30/min),
+  // so say "slow down" for those instead of blaming access.
+  if (response.status === 429 || (response.status === 403 && /rate limit/i.test(message))) {
+    return new Error(`${what}: GitHub rate limit hit. Wait a minute and try again.`);
+  }
   if (response.status === 403) {
     return new Error(`${what}: forbidden (403). Artie's GitHub account may lack write access to this repo. ${message}`);
   }

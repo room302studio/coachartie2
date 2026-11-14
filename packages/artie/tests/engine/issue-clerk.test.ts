@@ -197,6 +197,13 @@ describe('issue clerk actions (owner-confirmed, fetch stubbed)', () => {
     expect(result.data.removed).toBeNull();
   });
 
+  it('a 403 rate limit says slow down, not "no access"', async () => {
+    stubFetch(() => ({ status: 403, body: { message: 'You have exceeded a secondary rate limit.' } }));
+    await expect(issueClerk.add_labels({ repo: 'o/r', issueNumber: '5', labels: 'bug' })).rejects.toThrow(
+      /rate limit hit/
+    );
+  });
+
   it('remove_label on a missing issue is an error, not a silent no-op', async () => {
     stubFetch(() => ({ status: 404, body: { message: 'Not Found' } }));
     await expect(issueClerk.remove_label({ repo: 'o/r', issueNumber: '99999', label: 'bug' })).rejects.toThrow(
