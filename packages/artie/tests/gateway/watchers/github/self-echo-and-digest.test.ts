@@ -157,7 +157,7 @@ describe('needs-a-human digest line', () => {
       .mockResolvedValueOnce({ data: { total_count: 2 } })
       .mockResolvedValueOnce({ data: { total_count: 1 } });
     const octokit: any = { search: { issuesAndPullRequests: search } };
-    const counts = await digest.fetchNeedsHumanCounts(octokit, 'o', 'r', new Date('2026-11-13T00:00:00Z'));
+    const counts = await digest.fetchNeedsHumanCounts(octokit, 'o', 'r', new Date('2026-11-13T00:00:00Z'), 0);
     expect(counts).toEqual({ unassigned: 4, unlabeled: 2, stale: 1 });
     const qs = search.mock.calls.map((c) => c[0].q);
     expect(qs[0]).toBe('is:issue is:open repo:o/r no:assignee');
@@ -169,6 +169,6 @@ describe('needs-a-human digest line', () => {
     const octokit: any = {
       search: { issuesAndPullRequests: vi.fn().mockRejectedValue(new Error('rate limited')) },
     };
-    expect(await digest.fetchNeedsHumanCounts(octokit, 'o', 'r')).toBeUndefined();
+    expect(await digest.fetchNeedsHumanCounts(octokit, 'o', 'r', new Date(), 0)).toBeUndefined();
   });
 });

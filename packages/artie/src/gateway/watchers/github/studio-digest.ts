@@ -94,14 +94,23 @@ export function formatNeedsHumanLine(counts: NeedsHumanCounts | undefined): stri
 }
 
 /**
- * Search total_count rather than paginating listForRepo. Sequential on purpose: the search API
- * has its own 30/min limit. Any failure omits the whole line instead of showing partial counts.
+ * Gap between search calls. The search API allows 30/min but also has a secondary limit that
+ * trips on bursts (a smoke test hit it after ~6 back-to-back calls, 2026-11-13); 9 repos x 3
+ * searches at 2.5s each is ~70s for the morning digest, which nobody is waiting on.
+ */
+export const NEEDS_HUMAN_SEARCH_GAP_MS = 2500;
+
+/**
+ * Search total_count rather than paginating listForRepo. Sequential and spaced on purpose (see
+ * NEEDS_HUMAN_SEARCH_GAP_MS). Any failure omits the whole line instead of showing partial
+ * counts, and says so at warn so a line that silently vanishes from the digest is findable.
  */
 export async function fetchNeedsHumanCounts(
   octokit: Octokit,
   owner: string,
   repo: string,
-  now: Date = new Date()
+  now: Date = new Date(),
+  gapMs: number = NEEDS_HUMAN_SEARCH_GAP_MS
 ): Promise<NeedsHumanCounts | undefined> {
   const base = `is:issue is:open repo:${owner}/${repo}`;
   const cutoff = new Date(now.getTime() - STALE_ISSUE_DAYS * 24 * 60 * 60 * 1000)
@@ -111,11 +120,14 @@ export async function fetchNeedsHumanCounts(
   const totals: number[] = [];
   try {
     for (const q of queries) {
+      if (gapMs > 0) {
+        await new Promise((resolve) => setTimeout(resolve, gapMs));
+      }
       const { data } = await octokit.search.issuesAndPullRequests({ q, per_page: 1 });
       totals.push(data.total_count);
     }
   } catch (error) {
-    logger.debug(`Needs-a-human search failed for ${owner}/${repo}:`, error);
+    logger.warn(`Needs-a-human line dropped for ${owner}/${repo}: ${String(error)}`);
     return undefined;
   }
   return { unassigned: totals[0], unlabeled: totals[1], stale: totals[2] };

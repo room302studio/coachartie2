@@ -697,9 +697,9 @@ export class GitHubPollerService extends EventEmitter {
         }
       }
 
-      if (newestCommentId > sweepCommentCursor) {
-        await this.mergeSyncMetadata(watch.repo, { lastIssueCommentId: newestCommentId });
-      }
+      // Written every sweep (not only when it moved) so the issue cursor gets pinned on the
+      // first sweep and stops falling back to the shared PR cursor, which keeps advancing.
+      await this.mergeSyncMetadata(watch.repo, { lastIssueCommentId: newestCommentId });
 
       // Update last issue updated timestamp in metadata
       if (issues.length > 0) {
