@@ -160,7 +160,7 @@ export async function getBrownoutMode(): Promise<BrownoutStatus> {
 // Now: the durable ledger's trailing-24h burn is the baseline (survives restarts), and the
 // in-process last-hour burn can only raise it, so a live spike still tightens the loop
 // quickly. The guessed constant is used only when the ledger can't be read at all.
-function currentBurnPerHour(): number {
+export function burnPerHour(): number {
   const floor = envNumber('BROWNOUT_BURN_FLOOR', 0.15); // never divide by ~0 → false infinite runway
   let burn: number;
   try {
@@ -189,7 +189,7 @@ async function refresh(now: number): Promise<void> {
     const balance = await CreditMonitor.getInstance().getCurrentBalance();
     const credits = balance?.credits_remaining;
     if (typeof credits === 'number' && Number.isFinite(credits)) {
-      runwayHours = credits / currentBurnPerHour();
+      runwayHours = credits / burnPerHour();
     }
   } catch (error) {
     logger.error('🕯️ Brownout: balance check failed, staying in normal mode', error);
@@ -229,19 +229,20 @@ async function refresh(now: number): Promise<void> {
 
 // =====================================================
 // BROWNOUT BREVITY
-// Under lean/critical the reply is token-capped. Without
-// telling the model, it writes a normal-length answer and
-// the cap truncates it mid-sentence. This note asks for a
-// COMPLETE short reply that fits instead. Length and word
-// choice only — voice, persona and [SILENT] are untouched.
+// The taper is in the PROMPT, not max_tokens. A token cap
+// never saves money (every generated token is billed, and
+// a capped reply is wasted whole); it only cut replies off
+// (2026-11-17). So brownout's levers are this note plus
+// reasoning off (generate-reply.ts). Length and word choice
+// only: voice, persona and [SILENT] are untouched.
 // =====================================================
 
 const BREVITY_NOTES: Record<Exclude<BrownoutMode, 'normal'>, string> = {
   lean:
-    'Length note: keep this reply brief — a few short sentences, plain small words. ' +
+    'Length note: keep this reply short, under 80 words, plain small words. ' +
     'Your voice and everything else (including choosing [SILENT]) is unchanged.',
   critical:
-    'Length note: reply in one or two short sentences, simple words. ' +
+    'Length note: keep this reply short, under 30 words, one or two sentences. ' +
     'Your voice and everything else (including choosing [SILENT]) is unchanged.',
 };
 
@@ -255,7 +256,7 @@ export function brevityNoteFor(mode: BrownoutMode): string | null {
 /**
  * Which model answers under brownout. EJ's call (2026-09-29): Artie's voice IS the persona
  * model — swapping to a cheaper one "loses his creativity and flavor". So the taper is by
- * LENGTH only (max_tokens + brevity note) and the model never changes, with one exception:
+ * LENGTH only (brevity note + reasoning off) and the model never changes, with one exception:
  * when the OpenRouter balance itself is nearly gone (runway-driven critical), a cheap model
  * keeps him answering instead of failing. Daily-budget pressure never swaps models — the
  * budget mute handles the end of the day.
@@ -274,6 +275,11 @@ export interface BrownoutRoute {
  * DAILY_BUDGET_USD. Total: the balance runway is lean or critical — Artie can't know what a
  * "full" OpenRouter tank was, so runway (balance ÷ measured burn, < BROWNOUT_LEAN_HOURS) is
  * the proxy. Before that, his persona model answers — length tapering still applies.
+ *
+ * KNOWN GAP (2026-11-17): this route only takes effect on the XML/streaming rollback path.
+ * The default native tool loop rejects auto-routed models (openrouter.ts toolModelsToTry) and
+ * pins back to the first tool-capable OPENROUTER_MODELS entry, so on normal chats the model
+ * never actually swaps. Whether to delete the lever or make it real is EJ's call.
  * BROWNOUT_AUTO_COST_TIER (low) and BROWNOUT_AUTO_ALLOWED_MODELS (comma-separated wildcards,
  * e.g. "anthropic/*,google/*"; unset = auto-router's own pool) keep a quality floor.
  */
@@ -298,13 +304,6 @@ export function brownoutRoute(status: BrownoutStatus, persona: string): Brownout
     model: 'openrouter/auto',
     plugins: [routerConfig],
   };
-}
-
-/** max_tokens cap per mode (BROWNOUT_LEAN_MAX_TOKENS 500, BROWNOUT_CRITICAL_MAX_TOKENS 250). */
-export function brownoutMaxTokens(mode: BrownoutMode, requested: number): number {
-  if (mode === 'lean') return Math.min(requested, envNumber('BROWNOUT_LEAN_MAX_TOKENS', 500));
-  if (mode === 'critical') return Math.min(requested, envNumber('BROWNOUT_CRITICAL_MAX_TOKENS', 250));
-  return requested;
 }
 
 /**

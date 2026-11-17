@@ -200,19 +200,11 @@ export class VitalsMonitor {
       const info = await CreditMonitor.getInstance().getCurrentBalance();
       const balance = info?.credits_remaining;
       if (typeof balance !== 'number') return null;
-      // Prefer MEASURED burn over the assumed constant. VITALS_ASSUMED_BURN_PER_HOUR
-      // defaults to 1.5, against a real monthly average nearer $0.26/hr — so runway was
-      // understated ~6x and VITALS_MIN_RUNWAY_HOURS was being compared against a guess.
-      // Falls back to the constant when there is too little traffic to measure.
-      const { costMonitor } = await import('../budget/usage-ledger.js');
-      const measured = costMonitor.getRecentBurnPerHour();
-      let burn: number;
-      if (typeof measured === 'number' && measured > 0) {
-        burn = measured;
-      } else {
-        burn = envNum('VITALS_ASSUMED_BURN_PER_HOUR', 1.5);
-      }
-      return balance / burn;
+      // The same burn brownout uses (durable ledger, live spikes can raise it), so the two
+      // never disagree about runway. Before 2026-11-17 this fell back to an assumed $1.5/hr
+      // after every restart (~75× the real burn) and would page on a healthy balance.
+      const { burnPerHour } = await import('../budget/brownout.js');
+      return balance / burnPerHour();
     } catch (error) {
       logger.warn(`🩺 Vitals: runway check failed: ${error}`);
       return null;

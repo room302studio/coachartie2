@@ -6,7 +6,6 @@ import {
   deriveBrownoutStatus,
   brownoutDriver,
   readDailySpendFraction,
-  brownoutMaxTokens,
   brownoutRoute,
   applyBrevityNote,
   brevityNoteFor,
@@ -17,8 +16,6 @@ import { applyCacheControl } from '../../src/engine/3-context/prompt-cache.js';
 const ENV_KEYS = [
   'BROWNOUT_DAILY_LEAN_FRACTION',
   'BROWNOUT_DAILY_CRITICAL_FRACTION',
-  'BROWNOUT_LEAN_MAX_TOKENS',
-  'BROWNOUT_CRITICAL_MAX_TOKENS',
 ];
 const saved = Object.fromEntries(ENV_KEYS.map((k) => [k, process.env[k]]));
 afterEach(() => {
@@ -91,22 +88,6 @@ describe('combining runway and daily signals', () => {
   it('computes the fraction against the budget, and is null when the cap is off', () => {
     expect(readDailySpendFraction(() => 1.8, 3)).toBeCloseTo(0.6);
     expect(readDailySpendFraction(() => 1.8, null)).toBeNull();
-  });
-});
-
-describe('brownoutMaxTokens', () => {
-  it('caps at 500 / 250 by default and leaves normal alone', () => {
-    expect(brownoutMaxTokens('normal', 2000)).toBe(2000);
-    expect(brownoutMaxTokens('lean', 2000)).toBe(500);
-    expect(brownoutMaxTokens('critical', 2000)).toBe(250);
-    expect(brownoutMaxTokens('critical', 100)).toBe(100);
-  });
-
-  it('is configurable', () => {
-    process.env.BROWNOUT_LEAN_MAX_TOKENS = '700';
-    process.env.BROWNOUT_CRITICAL_MAX_TOKENS = '320';
-    expect(brownoutMaxTokens('lean', 2000)).toBe(700);
-    expect(brownoutMaxTokens('critical', 2000)).toBe(320);
   });
 });
 

@@ -27,7 +27,7 @@ vi.mock('../../src/engine/4-generate/model-catalog.js', () => ({
   },
 }));
 
-import { openRouterService, normalizeToolCalls, trimCutOffReply } from '../../src/engine/4-generate/openrouter.js';
+import { openRouterService, normalizeToolCalls, wireMaxTokens } from '../../src/engine/4-generate/openrouter.js';
 import { brownoutRoute } from '../../src/engine/budget/brownout.js';
 import { applyCacheControl } from '../../src/engine/3-context/prompt-cache.js';
 import type { ToolDefinition } from '../../src/engine/5-tool-loop/tool-schema.js';
@@ -117,43 +117,56 @@ describe('generateWithTools: the request', () => {
     expect(out.content).toBe('final words');
   });
 
-  it('a reply cut off by max_tokens is trimmed to its last complete line (2026-11-17 "- **")', async () => {
-    const cut = 'Honest caveat first.\n\n- **Memory is the weak spot.** recall is lossy.\n- **';
-    createMock.mockResolvedValueOnce({
-      ...completion({ content: cut }),
-      choices: [{ index: 0, finish_reason: 'length', message: { role: 'assistant', content: cut } }],
-    });
+  function truncatedCompletion(content: string | null, toolCalls?: unknown[]) {
+    return {
+      ...completion({ content }),
+      choices: [
+        { index: 0, finish_reason: 'length', message: { role: 'assistant', content, tool_calls: toolCalls } },
+      ],
+    };
+  }
+
+  it('a cut-off reply is never delivered: same model retries once with double room, reasoning off', async () => {
+    createMock
+      .mockResolvedValueOnce(truncatedCompletion('Honest caveat first.\n- **'))
+      .mockResolvedValueOnce(completion({ content: 'the whole answer' }));
     const out = await openRouterService.generateWithTools(MESSAGES, TOOLS, 'u', 'm', 'anthropic/claude-sonnet-5', {
       toolChoice: 'none',
     });
-    expect(out.content).toBe('Honest caveat first.\n\n- **Memory is the weak spot.** recall is lossy.');
+    const [first, second] = createMock.mock.calls.map((c) => c[0]);
+    expect(second.model).toBe(first.model);
+    expect(second.max_tokens).toBe(first.max_tokens * 2);
+    expect(second.reasoning).toEqual({ effort: 'none', exclude: true });
+    expect(out.content).toBe('the whole answer');
   });
 
-  it('trimCutOffReply: last line, else last sentence, else an ellipsis', () => {
-    expect(trimCutOffReply('one thing.\ntwo and thr')).toBe('one thing.');
-    expect(trimCutOffReply('First thing here. Second thi')).toBe('First thing here.');
-    expect(trimCutOffReply('no end in sight')).toBe('no end in sight…');
+  it('reasoning-only (no answer) is the same failure, and two truncations fall down the ladder', async () => {
+    createMock
+      .mockResolvedValueOnce(truncatedCompletion(null))
+      .mockResolvedValueOnce(truncatedCompletion('still cut'))
+      .mockResolvedValueOnce(completion({ content: 'from the next model' }));
+    const out = await openRouterService.generateWithTools(MESSAGES, TOOLS, 'u', 'm', 'anthropic/claude-sonnet-5');
+    const models = createMock.mock.calls.map((c) => c[0].model);
+    expect(models[0]).toBe(models[1]);
+    expect(models[2]).not.toBe(models[0]);
+    expect(out.content).toBe('from the next model');
   });
 
-  it('trimCutOffReply keeps what was really said (Codex round 1)', () => {
-    // newline-terminated: the last line is complete
-    expect(trimCutOffReply('Answer:\n42\n')).toBe('Answer:\n42');
-    // cut inside a code block: never just the opening fence
-    expect(trimCutOffReply("```js\nconsole.log('hel")).toBe("```js\nconsole.log('hel…\n```");
-    expect(trimCutOffReply("Run this first.\n```js\nconsole.log('hel")).toBe('Run this first.');
-    // cut inside a table: no header without rows
-    expect(trimCutOffReply('Results so far:\n| a | b |\n|---|---|\n| 1 | 2')).toBe('Results so far:');
-    // list markers and abbreviations aren't sentence ends
-    expect(trimCutOffReply('1. Install the dependenc')).toBe('1. Install the dependenc…');
-    expect(trimCutOffReply('Ask Dr. Smith about')).toBe('Ask Dr. Smith about…');
+  it('a truncated tool call (half-written JSON) is retried, not run', async () => {
+    createMock
+      .mockResolvedValueOnce(
+        truncatedCompletion(null, [{ id: 'c1', type: 'function', function: { name: 'web', arguments: '{"act' } }])
+      )
+      .mockResolvedValueOnce(completion({ content: 'done' }));
+    const out = await openRouterService.generateWithTools(MESSAGES, TOOLS, 'u', 'm', 'anthropic/claude-sonnet-5');
+    expect(createMock).toHaveBeenCalledTimes(2);
+    expect(out.toolCalls).toEqual([]);
   });
 
-  it('trimCutOffReply round 2: finished blocks and tables stay, numbers can end sentences', () => {
-    expect(trimCutOffReply('Use this example.\n```js\nconst x = 42;\n```')).toBe('Use this example.\n```js\nconst x = 42;\n```');
-    const table = 'Results are below.\n| Name | Score |\n| --- | --- |\n| Alice | 9 |';
-    expect(trimCutOffReply(`${table}\nNext point is`)).toBe(table);
-    expect(trimCutOffReply('```js\nconst marker = "```";\n```\n')).toBe('```js\nconst marker = "```";\n```');
-    expect(trimCutOffReply('The build passed. It scored 100. Next we')).toBe('The build passed. It scored 100.');
+  it('wireMaxTokens: a ceiling that never binds, plus any explicit reasoning budget on top', () => {
+    expect(wireMaxTokens(undefined, undefined)).toBe(4096);
+    expect(wireMaxTokens(undefined, { max_tokens: 2048 })).toBe(6144);
+    expect(wireMaxTokens(120, { enabled: false })).toBe(120);
   });
 
   it('per-call reasoning is sent as given (brownout turns it off)', async () => {

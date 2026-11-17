@@ -116,7 +116,7 @@ function stepTypeFor(userId: string, messageId: string | undefined, explicit?: s
 export interface GenerateOptions {
   traceId?: string | null;
   guildId?: string;
-  maxTokens?: number; // Dynamic token limit from preflight analysis
+  maxTokens?: number; // answer ceiling for a known-short output; default wireMaxTokens
   plugins?: unknown[]; // OpenRouter plugins, e.g. [{ id: 'auto-router', cost_tier: 'low' }]
   rotationKey?: string; // sticky rotation per conversation (see stickyRotationIndex)
   stepType?: string; // Cost attribution: 'response' | 'observational_learning' | 'capability' | 'planning'
@@ -143,97 +143,61 @@ export interface GenerateTurnResult {
 }
 
 /**
+ * A completion that hit max_tokens (finish_reason=length). Never delivered: cut-off text
+ * reads as a broken bot, and a cut-off tool call has half-written JSON arguments. The
+ * fallback ladder retries the same model once with double the room and reasoning off, then
+ * moves down the ladder (2026-11-17: Opus spent a 500-token cap thinking and said nothing;
+ * the fallback was cut mid-bullet).
+ */
+export class ReplyTruncated extends Error {
+  constructor(
+    readonly model: string,
+    readonly maxTokens: number,
+    /** True when the model produced reasoning but no answer at all. */
+    readonly reasoningOnly: boolean
+  ) {
+    let what = 'reply truncated';
+    if (reasoningOnly) {
+      what = 'reasoning used the whole budget, no answer';
+    }
+    super(`${model}: ${what} at max_tokens=${maxTokens}`);
+    this.name = 'ReplyTruncated';
+  }
+}
+
+/**
+ * The one place the wire max_tokens is computed. max_tokens is a seatbelt, not a steering
+ * wheel: brevity comes from the prompt, cost from model and reasoning choice, so the answer
+ * ceiling (LLM_MAX_TOKENS, 4096) is set high enough never to bind. A caller can ask for a
+ * smaller ceiling for a known-short output (a 12-word headline). OpenRouter carves an explicit
+ * reasoning budget OUT of max_tokens, so that budget is added on top, or thinking would eat
+ * the answer's room.
+ */
+export function wireMaxTokens(answerCeiling: number | undefined, reasoning: Record<string, unknown> | undefined): number {
+  let ceiling = answerCeiling;
+  if (!ceiling) {
+    ceiling = positiveIntEnv('LLM_MAX_TOKENS', 4096);
+  }
+  const reasoningBudget = reasoning?.max_tokens;
+  if (typeof reasoningBudget === 'number' && reasoningBudget > 0) {
+    return ceiling + reasoningBudget;
+  }
+  return ceiling;
+}
+
+function positiveIntEnv(name: string, fallback: number): number {
+  const parsed = parseInt(process.env[name] || '', 10);
+  if (Number.isFinite(parsed) && parsed > 0) {
+    return parsed;
+  }
+  return fallback;
+}
+
+/**
  * Normalize a completion's tool_calls to {id, name, arguments}. `arguments` is always a
  * string (some providers hand back an object); a call with no id gets a positional one so
  * its tool result can still be matched to it.
  */
-/** Periods that don't end a sentence ("Ask Dr. Smith", "e.g. this"). */
-const ABBREVIATIONS = new Set(['dr', 'mr', 'mrs', 'ms', 'st', 'vs', 'etc', 'eg', 'ie', 'jr', 'sr', 'no', 'approx']);
-
-/** Counts fence LINES (a line starting with ```), not backticks inside code. */
-function hasOddFences(text: string): boolean {
-  return text.split('\n').filter((line) => line.trim().startsWith('```')).length % 2 === 1;
-}
-
-/** Real words, not just Markdown scaffolding (fences, table rules, list markers). */
-function isSubstantive(text: string): boolean {
-  const prose = text
-    .split('\n')
-    .filter((line) => !line.trim().startsWith('```') && !/^[\s|:-]+$/.test(line))
-    .join(' ');
-  return (prose.match(/[\p{L}\p{N}]{2,}/gu) || []).length >= 2;
-}
-
-/** The text up to its last finished sentence, skipping list markers ("1.") and abbreviations. */
-function lastSentence(text: string): string | null {
-  let best: string | null = null;
-  for (const match of text.matchAll(/[.!?](?=\s)/g)) {
-    const end = (match.index ?? 0) + 1;
-    const candidate = text.slice(0, end);
-    const lastWord = (candidate.split(/\s+/).pop() || '').toLowerCase().replace(/\./g, '');
-    const lastLine = candidate.slice(candidate.lastIndexOf('\n') + 1);
-    // "1." opening a line is a list marker; "scored 100." mid-sentence is a real end.
-    if (/^\s*\d+\.$/.test(lastLine) || ABBREVIATIONS.has(lastWord)) {
-      continue;
-    }
-    if (isSubstantive(candidate)) {
-      best = candidate;
-    }
-  }
-  return best;
-}
-
-/**
- * A reply cut off by max_tokens ends mid-thought ("- **", 2026-11-17). Keep it up to the last
- * complete line, backing out of an unfinished code block or table; failing that, the last
- * finished sentence; failing that, the whole text with an ellipsis (never less than was said).
- */
-export function trimCutOffReply(text: string): string {
-  // Ends on a line break: the last line finished, nothing was cut mid-line.
-  if (/\n[ \t]*$/.test(text)) {
-    return closeFence(text.trimEnd());
-  }
-  const lastBreak = text.lastIndexOf('\n');
-  const partialLine = text.slice(lastBreak + 1).trim();
-  // Ends on a closing fence that balances the text: the block finished.
-  if (partialLine === '```' && !hasOddFences(text)) {
-    return text.trimEnd();
-  }
-  if (lastBreak > 0) {
-    let kept = text.slice(0, lastBreak);
-    if (hasOddFences(kept)) {
-      // Cut inside a code block: keep what came before the block.
-      const lines = kept.split('\n');
-      const opener = lines.map((line) => line.trim().startsWith('```')).lastIndexOf(true);
-      kept = lines.slice(0, opener).join('\n');
-    } else if (partialLine.startsWith('|')) {
-      // Cut inside a table row: drop the partial table rather than leave a header with no rows.
-      // (A finished table followed by cut-off prose stays.)
-      const lines = kept.split('\n');
-      while (lines.length > 0 && lines[lines.length - 1].trim().startsWith('|')) {
-        lines.pop();
-      }
-      kept = lines.join('\n');
-    }
-    kept = kept.trimEnd();
-    if (isSubstantive(kept)) {
-      return kept;
-    }
-  }
-  const sentence = lastSentence(text);
-  if (sentence && !hasOddFences(sentence)) {
-    return sentence;
-  }
-  return closeFence(`${text.trimEnd()}…`);
-}
-
-function closeFence(text: string): string {
-  if (hasOddFences(text)) {
-    return `${text}\n\`\`\``;
-  }
-  return text;
-}
-
 export function normalizeToolCalls(raw: unknown): ToolCall[] {
   if (!Array.isArray(raw)) return [];
   const calls: ToolCall[] = [];
@@ -780,6 +744,9 @@ class OpenRouterService {
     // retry the SAME model once, instead of freezing all calls for 5 minutes.
     let affordabilityCap: number | undefined;
     let affordabilityRetried = false;
+    // A truncated reply (finish_reason=length) gets ONE same-model retry with double the room
+    // and reasoning off, then falls down the ladder. Cut-off text never reaches a user.
+    let truncationRetry = false;
 
     for (let i = 0; i < modelsToTry.length; i++) {
       let modelSpec: string;
@@ -825,21 +792,26 @@ class OpenRouterService {
           `🤖 MODEL SELECTION: Using ${model} ${modelLabel} for ${messages.length} messages${toolInfo}`
         );
 
-        // Use dynamic maxTokens from preflight analysis, or fall back to env default
-        let maxTokens = options?.maxTokens || parseInt(process.env.LLM_MAX_TOKENS || '400', 10);
+        // Reasoning for this attempt: the caller's, else the auto-router's default. A retry
+        // after truncation turns it off so the doubled room goes to the answer.
+        let reasoning: Record<string, unknown> | undefined;
+        if (options?.reasoning) {
+          reasoning = options.reasoning;
+        } else if (isAutoRouted(model) && autoReasoningFor(plugins)) {
+          reasoning = autoReasoningFor(plugins);
+        }
+        if (truncationRetry) {
+          reasoning = { effort: 'none', exclude: true };
+        }
+        let maxTokens = wireMaxTokens(options?.maxTokens, reasoning);
+        if (truncationRetry) {
+          maxTokens *= 2;
+        }
         if (affordabilityCap !== undefined && affordabilityCap < maxTokens) {
           logger.warn(`📏 Capping max_tokens ${maxTokens} → ${affordabilityCap} (affordability)`);
           maxTokens = affordabilityCap;
         }
-        let maxTokensSource: string;
-        if (options?.maxTokens) {
-          maxTokensSource = ' (preflight)';
-        } else {
-          maxTokensSource = ' (default)';
-        }
-        logger.debug(
-          `📏 Using max_tokens: ${maxTokens}${maxTokensSource}`
-        );
+        logger.debug(`📏 Using max_tokens: ${maxTokens}`);
 
         // Use experiment temperature if set, otherwise default
         const temperature = variantTemperature ?? 0.7;
@@ -881,10 +853,8 @@ class OpenRouterService {
         // models and ~latest aliases bill correctly without a price-table entry (EJ,
         // 2026-10-31: models change too fast to hardcode). The table is only a fallback.
         extraBody.usage = { include: true };
-        if (options?.reasoning) {
-          extraBody.reasoning = options.reasoning;
-        } else if (isAutoRouted(model) && autoReasoningFor(plugins)) {
-          extraBody.reasoning = autoReasoningFor(plugins);
+        if (reasoning) {
+          extraBody.reasoning = reasoning;
         }
         const completionParams: Record<string, unknown> = {
           model,
@@ -910,7 +880,7 @@ class OpenRouterService {
         const billedModel = servedModelName(completion.model, model);
 
         const choice = completion.choices?.[0];
-        let response = choice?.message?.content ?? '';
+        const response = choice?.message?.content ?? '';
         // Only a turn that offered tools can come back with calls; a plain turn ignores them.
         let toolCalls: ToolCall[];
         if (sendTools) {
@@ -919,7 +889,8 @@ class OpenRouterService {
           toolCalls = [];
         }
 
-        if (!response && toolCalls.length === 0) {
+        const truncated = choice?.finish_reason === 'length';
+        if (truncated || (!response && toolCalls.length === 0)) {
           // Still billed (e.g. reasoning tokens that hit max_tokens) — keep the real usage and
           // cost for the failure row below instead of booking the attempt at $0.
           const failedUsage: TokenUsage = {
@@ -961,16 +932,14 @@ class OpenRouterService {
             // Re-throw the upstream error so 402/429/etc. get classified below.
             throw new Error(String(embeddedError));
           }
+          if (truncated) {
+            // Cut-off text (or half-written tool-call JSON) is never delivered.
+            throw new ReplyTruncated(model, maxTokens, !response && toolCalls.length === 0);
+          }
           const finalReason = finishReason ?? 'unknown';
           throw new Error(
             `Empty completion (finish_reason=${finalReason})${reasoningOnly}`
           );
-        }
-
-        if (choice?.finish_reason === 'length' && toolCalls.length === 0 && response) {
-          const trimmed = trimCutOffReply(response);
-          logger.warn(`✂️ Reply from ${model} hit max_tokens=${maxTokens}; trimmed ${response.length} → ${trimmed.length} chars to the last complete line`);
-          response = trimmed;
         }
 
         let responseToolInfo = '';
@@ -1158,6 +1127,21 @@ class OpenRouterService {
 
         const isLastModel = i === modelsToTry.length - 1;
 
+        if (error instanceof ReplyTruncated) {
+          if (!truncationRetry) {
+            truncationRetry = true;
+            logger.warn(`✂️ ${error.message}; retrying ${model} once with double the room, reasoning off`);
+            i--; // retry the same model
+            continue;
+          }
+          truncationRetry = false; // the next model starts with a normal attempt
+          if (isLastModel) {
+            throw error;
+          }
+          continue;
+        }
+        truncationRetry = false;
+
         // Detect specific error types and throw clear errors on last model
         if (
           errorStatus === 404 ||
@@ -1281,8 +1265,9 @@ class OpenRouterService {
     options?: {
       traceId?: string | null;
       guildId?: string;
-      maxTokens?: number; // Dynamic token limit from preflight analysis
+      maxTokens?: number; // answer ceiling for a known-short output; default wireMaxTokens
       plugins?: unknown[]; // OpenRouter plugins, e.g. [{ id: 'auto-router', cost_tier: 'low' }]
+      reasoning?: Record<string, unknown>;
       rotationKey?: string; // sticky rotation per conversation (see stickyRotationIndex)
       stepType?: string; // Cost attribution: 'response' | 'observational_learning' | 'capability' | 'planning'
     }
@@ -1381,8 +1366,13 @@ class OpenRouterService {
           `📡 Attempting streaming with model ${model} ${modelLabel}`
         );
 
-        // Use preflight-analyzed maxTokens if provided, otherwise fall back to env default
-        const maxTokens = requestedMaxTokens || parseInt(process.env.LLM_MAX_TOKENS || '400', 10);
+        let reasoning: Record<string, unknown> | undefined;
+        if (options?.reasoning) {
+          reasoning = options.reasoning;
+        } else if (isAutoRouted(model) && autoReasoningFor(plugins)) {
+          reasoning = autoReasoningFor(plugins);
+        }
+        const maxTokens = wireMaxTokens(requestedMaxTokens, reasoning);
         const temperature = variantTemperature ?? 0.7;
 
         // Same breakpoint as the non-streaming path — this is the one Discord actually uses.
@@ -1403,8 +1393,8 @@ class OpenRouterService {
         // models and ~latest aliases bill correctly without a price-table entry (EJ,
         // 2026-10-31: models change too fast to hardcode). The table is only a fallback.
         extraBody.usage = { include: true };
-        if (isAutoRouted(model) && autoReasoningFor(plugins)) {
-          extraBody.reasoning = autoReasoningFor(plugins);
+        if (reasoning) {
+          extraBody.reasoning = reasoning;
         }
         const completion: AsyncIterable<OpenAI.Chat.Completions.ChatCompletionChunk> = await this.createCompletion({
           model,
@@ -1423,8 +1413,12 @@ class OpenRouterService {
         let usage: TokenUsage | undefined;
 
         // Process streaming chunks - send new paragraphs as they complete
+        let finishReason: string | null | undefined;
         for await (const chunk of completion) {
           if (chunk.model) servedModel = chunk.model;
+          if (chunk.choices[0]?.finish_reason) {
+            finishReason = chunk.choices[0].finish_reason;
+          }
           const delta = chunk.choices[0]?.delta?.content;
           if (delta) {
             fullResponse += delta;
@@ -1553,6 +1547,10 @@ class OpenRouterService {
           `✅ Streaming completed for user ${userId} using ${model} (${usage.total_tokens} tokens, $${estimatedCost.toFixed(4)})`
         );
         logger.info(`🔄 Rotated to next model: ${this.getCurrentModel()}`);
+        if (finishReason === 'length') {
+          // Booked above (it was billed), but never delivered as if complete.
+          throw new ReplyTruncated(model, maxTokens, fullResponse.trim().length === 0);
+        }
         return fullResponse.trim();
       } catch (error: unknown) {
         const errorMessage = getErrorMessage(error);

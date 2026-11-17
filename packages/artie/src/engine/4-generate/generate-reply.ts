@@ -7,7 +7,8 @@ import { promptManager } from '../3-context/system-prompt.js';
 import { contextAlchemy } from '../3-context/assemble.js';
 import { modelAwarePrompter } from './model-prompt-style.js';
 import { preflightAnalyzer } from './preflight.js';
-import { getBrownoutMode, applyBrevityNote, brownoutMaxTokens, brownoutRoute } from '../budget/brownout.js';
+import { getBrownoutMode, applyBrevityNote, brownoutRoute } from '../budget/brownout.js';
+import { isAutoRouted } from '../../shared/model-spec.js';
 import { experimentManager } from '../3-context/experiments.js';
 import { errorTracker, ERROR_TYPES } from './error-tracker.js';
 import { CapabilityResult, OrchestrationContext } from '../2-turn/types.js';
@@ -22,9 +23,17 @@ import { generateReflectionFacts, type ReflectionType } from '../2-turn/reflecti
 interface TurnGenerationOptions {
   traceId?: string | null;
   guildId?: string;
-  maxTokens: number;
   plugins?: unknown[];
   reasoning?: Record<string, unknown>;
+}
+
+/** Thinking budget for a normal-mode reply (LLM_REASONING_BUDGET, default 2048, min 1024). */
+function reasoningBudget(): number {
+  const parsed = parseInt(process.env.LLM_REASONING_BUDGET || '', 10);
+  if (Number.isFinite(parsed) && parsed >= 1024) {
+    return parsed;
+  }
+  return 2048;
 }
 
 // =====================================================
@@ -285,7 +294,6 @@ export class LLMResponseCoordinator {
       // His persona model until the final third of either tank, then OpenRouter's auto-router
       // at a low cost tier (see brownoutRoute). Length tapering applies throughout.
       const brownout = await getBrownoutMode();
-      const maxTokens = brownoutMaxTokens(brownout.mode, preflight.responseTokens);
       const route = brownoutRoute(brownout, smartModel);
       smartModel = route.model;
       if (brownout.mode !== 'normal') {
@@ -296,7 +304,7 @@ export class LLMResponseCoordinator {
           daily = 'daily n/a';
         }
         logger.warn(
-          `🕯️ Brownout ${brownout.mode.toUpperCase()} (runway ${brownout.runwayHours?.toFixed(1) ?? '?'}h, ${daily}) → ${smartModel}, maxTokens ${maxTokens}`
+          `🕯️ Brownout ${brownout.mode.toUpperCase()} (runway ${brownout.runwayHours?.toFixed(1) ?? '?'}h, ${daily}) → ${smartModel}, brevity note + reasoning off`
         );
       }
       let messagesToProcess: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>;
@@ -331,20 +339,22 @@ export class LLMResponseCoordinator {
         `🎯 Model route: ${routeLabel} → ${smartModel} (${modelAwareMessages.length} messages)`
       );
 
-      // Context Alchemy: Include traceId and guildId for observability
-      // Preflight: Include maxTokens for dynamic response length
+      // No maxTokens here: the wire ceiling is openrouter.ts wireMaxTokens, high enough never
+      // to bind. Length is steered by the brevity note; thinking gets its own budget so it can
+      // never eat the answer (2026-11-17: Opus spent a 500-token cap reasoning and said nothing).
       const generationOptions: TurnGenerationOptions = {
         traceId: message.context?.traceId,
         guildId: message.context?.guildId,
-        maxTokens,
         plugins: route.plugins,
       };
       if (brownout.mode !== 'normal') {
-        // Reasoning tokens count against max_tokens. Under the lean 500 cap Opus thought
-        // through the whole budget and wrote nothing, then the fallback was cut mid-bullet
-        // (2026-11-17; 48 reasoning-only empties in the logs). A short reply doesn't need to
-        // think first. "none" falls back to hidden low effort on reasoning-mandatory models.
+        // A short reply doesn't need to think first. "none" falls back to hidden low effort
+        // on reasoning-mandatory models (openrouter.ts createCompletion).
         generationOptions.reasoning = { effort: 'none' };
+      } else if (!isAutoRouted(smartModel)) {
+        // OpenRouter adds nothing for this: the budget is carved OUT of max_tokens, and
+        // wireMaxTokens adds it on top of the answer ceiling. Minimum 1024 (OpenRouter).
+        generationOptions.reasoning = { max_tokens: reasoningBudget() };
       }
 
       return { modelAwareMessages, smartModel, generationOptions, brownout };
