@@ -1,4 +1,66 @@
-# Cost guardrails (Sept 2026)
+# Cost guardrails
+
+## The control loop (current, 2026-11-17): read this first
+
+One loop: sensors → one comparator → a few actuators → outcomes back into the ledger. Paths
+are under `packages/artie/src/engine/`. Everything below this section is the Sept 2026 history
+(v2 paths, some levers since removed); where it disagrees with this section, this section wins.
+
+**Sensors**
+- **Balance:** OpenRouter `/credits` via `budget/openrouter-balance.ts` (`CreditMonitor`).
+- **Burn:** `budget/brownout.ts burnPerHour()`. The baseline is the durable ledger, trailing
+  `BURN_LEDGER_HOURS` (24) of `model_usage_stats.estimated_cost`
+  (`budget/daily-cap.ts getTrailingBurnPerHour`). The in-process last-hour burn can only raise it,
+  and only after 15 min of uptime. Floor `BROWNOUT_BURN_FLOOR` (0.15). A restart no longer
+  zeroes it: before 11-17 every restart fell back to an assumed 0.75/hr and showed LEAN.
+- **Today's spend:** the same ledger over the America/New_York day.
+
+**Comparator** (`getBrownoutMode()`): one status, the more conservative of two signals.
+- runway = balance ÷ `burnPerHour()`: lean < `BROWNOUT_LEAN_HOURS` (24), critical <
+  `BROWNOUT_CRITICAL_HOURS` (6)
+- daily = spent ÷ `DAILY_BUDGET_USD`: lean ≥ 0.60, critical ≥ 0.85, mute at 1.0
+- The vitals alarm (`health/vitals.ts`, runway < 12h → anomalywatch) reads the same `burnPerHour()`.
+
+**Actuators**
+| Status | What changes |
+|---|---|
+| normal | Opus (`SMART_MODEL`), reasoning budget `LLM_REASONING_BUDGET` (2048) |
+| lean / critical (either signal) | brevity note after the cache breakpoint ("under 80 / 30 words"), reasoning off |
+| runway-critical only | model → `BROWNOUT_CRITICAL_MODEL` (default `anthropic/claude-sonnet-5`, tool-capable, half Opus's price) |
+| daily ≥ 100% | kill-switch budget mute until ET midnight |
+
+`max_tokens` is **not** a lever. It is a seatbelt that never binds on purpose
+(`4-generate/openrouter.ts wireMaxTokens`): `LLM_MAX_TOKENS` (4096) plus any explicit reasoning
+budget, because OpenRouter carves reasoning out of `max_tokens` (minimum 1024). A 500-token
+brownout cap was what produced empty, reasoning-only replies and cut-off text on 11-17.
+
+**Feedback:** every call, background included, is booked in `model_usage_stats`, so the burn
+and daily signals see it. `finish_reason=length` (cut text, reasoning-only, or half-written
+tool JSON) is a `ReplyTruncated` failure, never a reply. The same model retries once with
+double the room and reasoning off, then the call falls to the next model. Retry state is per
+model. On the streaming (XML) path, if paragraphs already went out, the reply ends with a
+visible "…".
+
+**Scope and decisions (EJ):**
+- The voice is Opus. The only swap is at runway-critical (11-17). Daily pressure never swaps models.
+- Brownout governs the main reply only. Background calls (reflection, digests, headlines,
+  preflight, vision) run until the daily mute (EJ 11-17: leave them alone). Reflection
+  context is never trimmed.
+- `DAILY_BUDGET_USD=3` stays as the hard stop. Real spend is about $0.30–0.50/day, so it only
+  trips on a runaway, which is its job. The OpenRouter key's $25/month limit is the
+  provider-side backstop.
+
+**Not consolidated yet (next):** hysteresis on the comparator. Three other runway readers
+(the usage-ledger trackCall warning, the exhaustion flag, the dollar alerts) still compute
+their own numbers. Inert setpoints `MAX_COST_PER_HOUR`, `MAX_TOKENS_PER_CALL` and
+`AUTO_CHECK_CREDITS_EVERY`, plus the empty `credit_balance` table path. Retired env, safe to
+delete from `.env.production`: `BROWNOUT_LEAN_MAX_TOKENS`, `BROWNOUT_CRITICAL_MAX_TOKENS`,
+`BROWNOUT_AUTO_COST_TIER`, `BROWNOUT_AUTO_ALLOWED_MODELS`, `BROWNOUT_DAILY_AUTO_FRACTION`,
+`VITALS_ASSUMED_BURN_PER_HOUR`.
+
+---
+
+# History: the Sept 2026 guardrails
 
 Branch `cost-guardrails-2026-09`. Context is epic #97. Persona and restraint rules (`[SILENT]`, mention-only, staying quiet when people share rather than ask) are unchanged. The point is fewer, better-timed generations, not a chattier bot.
 
@@ -26,7 +88,7 @@ Branch `cost-guardrails-2026-09`. Context is epic #97. Persona and restraint rul
   - **daily**: spent ÷ `DAILY_BUDGET_USD`. At or above `BROWNOUT_DAILY_LEAN_FRACTION` the mode is lean; at or above `BROWNOUT_DAILY_CRITICAL_FRACTION` it is critical; at 1.0 the hard mute takes over.
 
   A failed spend lookup means the daily signal has no opinion, so the runway signal decides. The transition log line names the driver.
-- **Brownout brevity.** Lean and critical cap `max_tokens`. They also insert a short length note as its own system message **after** the cached prefix, so the prefix stays byte-identical across modes (tested). The model then writes a complete short reply instead of a normal one that gets cut off. The note is about length only.
+- **Brownout brevity.** Lean and critical capped `max_tokens` (removed 2026-11-17, see the top). They also insert a short length note as its own system message **after** the cached prefix, so the prefix stays byte-identical across modes (tested). The model then writes a complete short reply instead of a normal one that gets cut off. The note is about length only.
 - **Brownout coverage.** Brownout only applies to the main reply path (`llm-response-coordinator.ts`). The paths below use their own model choice and caps, and only the budget mute and kill switch bound them:
   - tool-loop steps (`llm-loop-service.ts`, rotation models)
   - capability triage (`capability-selector.ts`) and error recovery (`capability-executor.ts`)
@@ -81,8 +143,10 @@ Branch `cost-guardrails-2026-09`. Context is epic #97. Persona and restraint rul
 | `KILL_SWITCH_PATH` | `<repo>/KILL_SWITCH` | both | Shared mute file. Both PM2 apps must resolve the same path. |
 | `BROWNOUT_DAILY_LEAN_FRACTION` | `0.60` | capabilities | Fraction of the daily budget at which brownout goes lean. |
 | `BROWNOUT_DAILY_CRITICAL_FRACTION` | `0.85` | capabilities | Fraction of the daily budget at which brownout goes critical. |
-| `BROWNOUT_LEAN_MAX_TOKENS` | `500` | capabilities | `max_tokens` cap in lean mode. Was hardcoded. |
-| `BROWNOUT_CRITICAL_MAX_TOKENS` | `250` | capabilities | `max_tokens` cap in critical mode. Was hardcoded. |
+| `BROWNOUT_CRITICAL_MODEL` | `anthropic/claude-sonnet-5` | artie | Model at runway-critical only (2026-11-17). |
+| `LLM_MAX_TOKENS` | `4096` | artie | Answer ceiling (seatbelt, never a lever). |
+| `LLM_REASONING_BUDGET` | `2048` | artie | Reasoning tokens in normal mode, added on top of the ceiling. |
+| `BURN_LEDGER_HOURS` | `24` | artie | Trailing ledger window for burn. |
 | `ALERT_SH_PATH` | tries `/home/debian/scripts/scripts/alert.sh`, then `/home/debian/scripts/alert.sh` | capabilities | Anomalywatch sender. |
 | `CREDIT_ALERTS_DISABLED` | unset | capabilities | `true` silences all credit alerts, as before. |
 | `PROACTIVE_JUDGMENT_MODEL` | → `BACKGROUND_MODEL` → `FAST_MODEL` → `google/gemini-2.0-flash-001` | discord | Model for the cheap speak gate. |
@@ -141,10 +205,7 @@ WHERE timestamp >= <ET midnight in UTC> AND timestamp < <next ET midnight in UTC
 ## Voice: taper by length, never by model (2026-09-29)
 
 EJ's call: Artie's persona model *is* his voice — cheaper models lose his creativity and flavor.
-So brownout (lean/critical, from either signal) shortens replies (max_tokens + brevity note) but
-keeps the persona model. The single exception: when the OpenRouter **balance** runway itself is
-critical, `brownoutModel()` falls back to `BROWNOUT_CRITICAL_MODEL` (default Haiku 4.5) so he keeps
-answering instead of failing. Daily-budget pressure never swaps models; the budget mute ends the day.
+(Current rule: see the top. Only runway-critical swaps, to Sonnet 5.)
 
 **Persona model: `anthropic/claude-opus-5.5`** — newest flagship and cheaper than opus-4.8
 ($4/$20 per M vs $5/$25; cache reads $0.20/M vs $0.50/M, per OpenRouter's live /api/v1/models).
@@ -157,23 +218,13 @@ It's priced in `usage-tracker.ts` MODEL_PRICING — required: unknown models bil
 falls back to the conservative 4096-token default in `prompt-cache.ts` (the static prefix is
 ~7.2k tokens, so it still caches).
 
-### Final third → OpenRouter auto-router (supersedes "never swap models", same day)
+### Final third → OpenRouter auto-router (RETIRED 2026-11-17)
 
-EJ: in the final third of either tank, hand model choice to OpenRouter's auto-router so no
-hardcoded "cheap model" needs updating. `brownoutRoute()`:
-
-| Condition | Route |
-|---|---|
-| daily spend < 67% of `DAILY_BUDGET_USD` and balance runway normal | persona model (`SMART_MODEL`) |
-| daily spend ≥ `BROWNOUT_DAILY_AUTO_FRACTION` (0.67) **or** runway lean/critical | `openrouter/auto` + `plugins: [{id:'auto-router', cost_tier: BROWNOUT_AUTO_COST_TIER ('low')}]` |
-| daily spend ≥ 100% | budget mute until ET midnight |
-
-Length tapering (lean 60% / critical 85%, brevity note after the cache breakpoint) applies on top.
-`BROWNOUT_AUTO_ALLOWED_MODELS` (comma wildcards, e.g. `anthropic/*,google/*`) sets a quality
-floor; unset = the auto-router's own pool. "Total tank" = balance runway (Artie can't know what
-a full OpenRouter balance was). Auto-routed calls are billed at the **served** model
-(`completion.model` / the stream chunks' `model`), not `openrouter/auto` — otherwise the
-unknown-model fallback ($15/$75) would trip the daily cap early. Docs: openrouter.ai/docs/guides/routing/routers/auto-router
+From 09-29 to 11-17, the final third of either tank went to `openrouter/auto`. The native tool
+loop can't use auto-routed models, so it silently pinned those turns to the first
+OPENROUTER_MODELS entry (Haiku). Nobody had chosen that. Replaced by the runway-critical swap
+at the top. Auto-routed calls (still used by `auto:<tier>` roles below) are billed at the
+**served** model, not `openrouter/auto`.
 
 ## Model roles and `auto:<tier>` specs (2026-09-29)
 
@@ -189,7 +240,7 @@ Deploy values (`.env.production` — also delete the duplicate FAST_MODEL / MANA
 
 | Role | Setting | Why |
 |---|---|---|
-| His voice | `SMART_MODEL=anthropic/claude-opus-5.5` | pinned — creativity/flavor (auto only in the final third via brownoutRoute) |
+| His voice | `SMART_MODEL=anthropic/claude-opus-5.5` | pinned — creativity/flavor (Sonnet 5 only at runway-critical via brownoutRoute) |
 | Simple one-liners | `SIMPLE_CHAT_MODEL=auto:medium:anthropic/*` | current Anthropic model, voice-adjacent |
 | Planning / reasoning | `MANAGER_MODEL=auto:high` | was pinned to an old opus-4.7 |
 | Background chores | `BACKGROUND_MODEL=auto:low` | grunt work: cheapest capable |
