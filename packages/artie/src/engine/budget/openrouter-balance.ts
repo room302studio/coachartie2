@@ -54,8 +54,13 @@ export class CreditMonitor {
    * Mark credits as exhausted (call this when we get a 402 error)
    */
   markCreditsExhausted(): void {
+    const wasExhausted = this.creditsExhaustedAt !== null;
     this.creditsExhaustedAt = new Date();
-    logger.warn('💳 Credits marked as EXHAUSTED - will skip API calls for 5 minutes');
+    if (wasExhausted) {
+      logger.debug('💳 Credits still exhausted; cooldown restarted');
+    } else {
+      logger.warn('💳 Credits marked as EXHAUSTED - skipping API calls until the balance recovers');
+    }
     // DM the operator (never the channel that hit the error), throttled to 1/hr.
     const now = Date.now();
     if (
@@ -148,12 +153,45 @@ export class CreditMonitor {
     }
     const timeSinceExhaustion = Date.now() - this.creditsExhaustedAt.getTime();
     if (timeSinceExhaustion > CreditMonitor.EXHAUSTION_COOLDOWN_MS) {
-      // Cooldown expired, clear the flag and allow retrying
-      this.creditsExhaustedAt = null;
-      logger.info('💳 Credit exhaustion cooldown expired - will retry API calls');
-      return false;
+      // Cooldown expired. Ask the (free) balance endpoint before letting a paid call probe:
+      // blind retries every 5 min while broke made ~290 402s and error banners a day.
+      this.recheckBalanceAfterCooldown();
     }
     return true;
+  }
+
+  private balanceRecheck: Promise<void> | null = null;
+
+  /**
+   * One background balance read after the cooldown. Recovered (or unreadable, the old
+   * behavior) → clear the flag so calls resume; still dry → restart the cooldown quietly.
+   */
+  private recheckBalanceAfterCooldown(): void {
+    if (this.balanceRecheck) {
+      return;
+    }
+    this.balanceRecheck = this.getRemainingBalance()
+      .then((balance) => {
+        if (balance === null || balance > CreditMonitor.TRUE_EXHAUSTION_THRESHOLD) {
+          this.creditsExhaustedAt = null;
+          let shown: string;
+          if (balance === null) {
+            shown = 'unknown';
+          } else {
+            shown = `$${balance.toFixed(2)}`;
+          }
+          logger.info(`💳 Credit cooldown over (balance ${shown}) - resuming API calls`);
+        } else {
+          this.creditsExhaustedAt = new Date();
+          logger.debug(`💳 Still out of credits ($${balance.toFixed(2)}); cooldown restarted`);
+        }
+      })
+      .catch(() => {
+        this.creditsExhaustedAt = null;
+      })
+      .finally(() => {
+        this.balanceRecheck = null;
+      });
   }
 
   /**
@@ -215,7 +253,11 @@ export class CreditMonitor {
     }
 
     if (balance <= CreditMonitor.TRUE_EXHAUSTION_THRESHOLD) {
-      logger.error(`🚨 Confirmed out of credits — $${balance.toFixed(2)} remaining`);
+      if (this.creditsExhaustedAt === null) {
+        logger.error(`🚨 Confirmed out of credits — $${balance.toFixed(2)} remaining`);
+      } else {
+        logger.debug(`💳 Still out of credits — $${balance.toFixed(2)} remaining`);
+      }
       this.markCreditsExhausted();
       return true;
     }
@@ -273,11 +315,19 @@ export class CreditMonitor {
         costMonitor.updateBalance(balance);
 
         // Log and alert based on balance
+        if (balance > CreditMonitor.TRUE_EXHAUSTION_THRESHOLD && this.creditsExhaustedAt !== null) {
+          // A top-up landed: resume now instead of waiting out the cooldown.
+          this.clearExhaustedFlag();
+        }
+
         if (balance <= 0) {
-          logger.error(`\n${'='.repeat(60)}`);
-          logger.error(`🚨 CREDITS EXHAUSTED! Balance: $${balance.toFixed(2)}`);
-          logger.error(`   Add credits at: https://openrouter.ai/settings/credits`);
-          logger.error(`${'='.repeat(60)}\n`);
+          if (this.creditsExhaustedAt === null) {
+            logger.error(
+              `🚨 CREDITS EXHAUSTED! Balance: $${balance.toFixed(2)} — add credits at https://openrouter.ai/settings/credits`
+            );
+          } else {
+            logger.warn(`💳 Still out of credits: $${balance.toFixed(2)}`);
+          }
           this.markCreditsExhausted();
         } else if (balance <= this.alertThresholds.low_balance_critical) {
           logger.error(`🚨 CRITICAL: Only $${balance.toFixed(2)} credits remaining!`);

@@ -570,7 +570,14 @@ class CostMonitor {
     const stats = this.getStats();
     const uptimeHours = (Date.now() - this.startTime) / 3_600_000;
     const MIN_SAMPLE_HOURS = 0.25; // ignore burn rate in the first 15 min (tiny sample skews it)
-    if (uptimeHours >= MIN_SAMPLE_HOURS && this.lastKnownBalance !== null && stats.costPerHour > 0) {
+    // A zero/negative balance is exhaustion (openrouter-balance.ts reports it); runway math
+    // on it printed nonsense like "~-62201.3h of credit left".
+    if (
+      uptimeHours >= MIN_SAMPLE_HOURS &&
+      this.lastKnownBalance !== null &&
+      this.lastKnownBalance > 0 &&
+      stats.costPerHour > 0
+    ) {
       const runwayHours = this.lastKnownBalance / stats.costPerHour;
       const warnHours = parseFloat(process.env.RUNWAY_WARN_HOURS || '24');
       const critHours = parseFloat(process.env.RUNWAY_CRITICAL_HOURS || '6');

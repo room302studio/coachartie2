@@ -527,7 +527,12 @@ export class GitHubIntegrationService {
         comments: data.comments || 0,
       };
     } catch (error) {
-      logger.error(`Failed to fetch issue #${issueNumber} for ${owner}/${repo}:`, error);
+      // A 404 is someone typing a number that isn't an issue; expected, not an error.
+      if ((error as { status?: number })?.status === 404) {
+        logger.debug(`Issue #${issueNumber} not found in ${owner}/${repo}`);
+      } else {
+        logger.warn(`Failed to fetch issue #${issueNumber} for ${owner}/${repo}:`, error);
+      }
       return null;
     }
   }

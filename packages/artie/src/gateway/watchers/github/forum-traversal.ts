@@ -159,7 +159,9 @@ export class ForumTraversalService {
       const messages = await this.getMessagesInThread(threadId);
 
       // Get thread owner info
-      const owner = await thread.guild?.members.fetch(thread.ownerId!);
+      // An owner who left the server is Discord "Unknown User" (10013); that used to fail
+      // the whole thread fetch.
+      const owner = await thread.guild?.members.fetch(thread.ownerId!).catch(() => null);
 
       // Get starter message (first message in thread)
       const starterMessage = messages[0];

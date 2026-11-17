@@ -166,7 +166,11 @@ export class ChannelDigestLoop {
       lines,
       lastMessageId: newest.id,
     });
-    if (!engine.isOk(res)) logger.warn(`📰 Digest #${channel.name}: capabilities ${res.status}`);
+    if (res.status === 503) {
+      logger.debug(`📰 Digest #${channel.name}: skipped, credits exhausted`);
+    } else if (!engine.isOk(res)) {
+      logger.warn(`📰 Digest #${channel.name}: capabilities ${res.status}`);
+    }
   }
 
   stop(): void {

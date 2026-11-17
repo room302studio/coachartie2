@@ -1155,7 +1155,8 @@ export class GitHubPollerService extends EventEmitter {
         }
       }
     } catch (error) {
-      logger.error(`Error polling check runs for ${owner}/${repo}:`, error);
+      // GitHub 5xx blips; the next poll retries.
+      logger.warn(`Error polling check runs for ${owner}/${repo}:`, error);
     }
   }
 

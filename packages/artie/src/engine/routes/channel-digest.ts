@@ -22,6 +22,11 @@ export async function channelDigest(body: any): Promise<ApiResult> {
     if (!guildId || !channelId || !lastMessageId || !Array.isArray(lines)) {
       return reply(400, { error: 'guildId, channelId, lastMessageId and lines[] required' });
     }
+    // Out of credits: skip quietly rather than throw a stack per channel per tick.
+    const { creditMonitor } = await import('../budget/openrouter-balance.js');
+    if (creditMonitor.areCreditsExhausted()) {
+      return reply(503, { error: 'credits exhausted' });
+    }
     const { refreshChannelDigest } = await import('../memory/channel-digest.js');
     const result = await refreshChannelDigest({
       guildId,
