@@ -16,6 +16,12 @@ function pluralS(count: number): string {
 export const schedulerCapability: RegisteredCapability = {
   name: 'scheduler',
   emoji: '⏰',
+  actions: {
+    remind: { effect: 'discord' }, // sends a DM later
+    schedule: { effect: 'discord' },
+    list: { effect: 'read' },
+    cancel: { effect: 'discord' }, // not scoped to the caller yet: keep it taint-blocked
+  },
   supportedActions: ['remind', 'schedule', 'list', 'cancel'],
   description:
     'Set one-time reminders (e.g., "remind me in 5 minutes"), view scheduled tasks, or cancel scheduled tasks. Recurring (cron) reminders are not supported yet.',

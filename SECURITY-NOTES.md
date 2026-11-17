@@ -4,50 +4,60 @@ What's gated, what's capped, how to add a tool to each list, and what's still op
 Source audits: `sec-authority.md`, `sec-leaks.md`, `sec-abuse.md` (scratchpad reports this
 branch was built from).
 
+## 0. How a tool is gated (since 2026-11-17): declare it, don't list it
+
+Each tool declares, per action, what it touches and who may run it, in its own file
+(`actions:` on the capability; types and gate rules in
+`packages/artie/src/engine/5-tool-loop/tool-policy.ts`). The three gates below are DERIVED:
+
+| Gate | Derived from | Enforced in |
+|---|---|---|
+| owner only (§1) | `who: 'owner'` | `registry.execute`, first |
+| approval (§2) | `effect` is `outside` or `money` (override: `approval: false`, with a reason) | `registry.execute`, second |
+| blocked when tainted (§3) | `effect` is anything but `read` or `own` | `execute.ts checkTaintBlock` |
+
+Effects: `read` · `own` (Artie's own memory/goals/notes) · `discord` (acts on people or channels)
+· `workspace` (sandbox/filesystem) · `host` (the VPS itself) · `outside` · `money`.
+
+An action the tool doesn't declare (an old synonym, a typo) gets that tool's strictest gates.
+An undeclared TOOL is open (EJ's pick: fail loudly, not closed): startup logs
+`🔓 Tool policy: N actions on M tools have no declared effect`, and
+`tests/engine/tool-policy.test.ts` fails if a tool outside its shrink-only `KNOWN_UNDECLARED`
+list ships undeclared. That test's `GATE_FLOOR` is the per-action matrix for every gated tool,
+written as static data: loosening a row is a deliberate, visible edit.
+
+Why: until 2026-11-17 these were four hand-kept name tables in three files. `hermes` (an agent
+with a shell on the VPS host) was in none of them, and the filesystem taint exemptions named
+actions that didn't exist.
+
+**To add a tool:** give every action an `effect` (and `who: 'owner'` where needed) next to its
+handler. Nothing else to wire.
+
 ## 1. Owner-only tools
 
-File: `packages/artie/src/engine/5-tool-loop/owner-only.ts`.
+Refused in `CapabilityRegistry.execute()` (the one choke point every call path shares: native
+tool loop, legacy XML loop, HTTP execute-tool route), right after `resolveToolCall`, so aliases
+(`shell` → `sandbox`) are canonical first. Fixed refusal string (`OWNER_ONLY_REFUSAL`) before
+the handler or the approval gate see the call.
 
-Checked in `CapabilityRegistry.execute()` — the one choke point every call path shares
-(native tool loop, the legacy XML loop, and the HTTP execute-tool route) — right after
-`resolveToolCall`, so aliases (e.g. `shell` → `sandbox`) are already resolved to their
-canonical name before the check runs. Refuses with a fixed string
-(`OWNER_ONLY_REFUSAL`) before the handler, the approval gate, or anything else sees the call.
-
-Current list (`OWNER_ONLY_ACTIONS`):
-
-| Tool | Scope | Why |
-|---|---|---|
-| `sandbox` | all | `docker exec` forwards `GITHUB_TOKEN`/`OPENAI_API_KEY` into the container |
-| `http` | all | raw outbound fetch; see §5, it's now also SSRF-guarded as defense in depth |
-| `osint` | all | EJ's private intelligence-monitoring stack |
-| `system_memory` | all | cross-agent (Artie ↔ VPS-Claude) handoff notes |
-| `mention_proxy` | all | lets Artie answer @mentions *as* someone, undisclosed |
-| `self-stats` | `user_costs` | per-user LLM spend/usage profiling |
-| `deep_research` | `submit` | real OpenAI $ outside the normal budget pipeline |
-
-**To add a tool here:** add an entry to `OWNER_ONLY_ACTIONS` (`'all'` or a `Set` of actions).
-Nothing else to wire — the registry check is automatic. Caller identity comes from
-`context.userId`, which the registry's callers set from the *real*, Discord-verified id (or
-the HTTP API's `userId`, which is why `isOwner`/`isOwnerConfirmed` not checking `source` is
-still an open item, below).
+Owner-only today: `sandbox`, `hermes`, `http`, `osint`, `system_memory`, `mention_proxy` (all
+actions), `self-stats:user_costs`, `deep_research:submit`. The per-tool reasons are comments on
+the declarations. Caller identity comes from `context.userId`, which callers set from the
+*real*, Discord-verified id (or the HTTP API's `userId`, which is why `isOwner`/
+`isOwnerConfirmed` not checking `source` is still an open item, below).
 
 ## 2. Approval gate (money / leaves Discord)
 
-File: `packages/artie/src/engine/5-tool-loop/approval-gate.ts`. Same choke point as §1,
-checked right after it. A gated call is queued (`createPendingAction`) and returns a
-"needs EJ's approval" message instead of running; EJ clears it with the `approvals` tool,
-which is the only path that may set `confirmed: true` — `execute.ts`'s
-`executeNativeToolCall` and `retry.ts`'s `tryRegistryExecution` both strip a model-supplied
-`confirmed` before it reaches `resolveToolCall`/`registry.execute`, so a model can never
-self-grant the bypass, even in EJ's own conversation.
+Same choke point as §1, checked right after it. A gated call is queued
+(`createPendingAction`) and returns a "needs EJ's approval" message instead of running; EJ
+clears it with the `approvals` tool, which is the only path that may set `confirmed: true` —
+`execute.ts`'s `executeNativeToolCall` and `retry.ts`'s `tryRegistryExecution` both strip a
+model-supplied `confirmed` before it reaches `resolveToolCall`/`registry.execute`, so a model
+can never self-grant the bypass, even in EJ's own conversation.
 
-Current list (`GATED_ACTIONS`): `stripe` (all), `email:send`, `reddit:post/comment`,
-`github:create_issue/update_issue`, `mediawiki:write/add`, `http:post/put/delete`.
-
-**To add a tool here:** add `{ toolName: 'all' | new Set([...actions]) }` to `GATED_ACTIONS`.
-Gate the write verb, not the whole tool, if reads should stay open (that's why `github`
-read actions and `http:get` aren't gated — `http:get` is instead SSRF-guarded, §5).
+Gated today (effect `outside`/`money`): `stripe`, `email:send`, `reddit:post/comment`, github
+writes, `mediawiki:write/add`, `http:post/put/delete`. Reads on the same tools stay open
+(`http:get` is SSRF-guarded instead, §5).
 
 ## 3. Taint tracking (indirect prompt injection)
 
@@ -66,20 +76,12 @@ File: `packages/artie/src/engine/5-tool-loop/execute.ts`.
   (`taintSource: 'discord-link-expansion'`). `handleGitHubAutoExpansion` does **not** need
   this: it returns `'stop'` in `on-message.ts` and never feeds its embed content into a turn
   the model sees.
-- `DANGEROUS_WHEN_TAINTED` — blocked while the turn is tainted: `sandbox`, `filesystem`,
-  `email`, `scheduler`, and (batch 2) `discord-moderation`, `discord-nickname`,
-  `proactive-dm`, `mention_proxy`, `discord-ui`. `mention_proxy` is already owner-only (§1);
-  it's listed here too as defense in depth, because an *owner's own* turn can still be
+- **Blocked while tainted:** every action whose declared effect is beyond `read`/`own` (§0).
+  That covers owner-only tools too, as defense in depth: an *owner's own* turn can still be
   prompt-injected mid-conversation (same reasoning as §5's http fix).
-- `SAFE_ACTIONS_WHEN_TAINTED` — narrow exceptions for read-only/harmless actions on an
-  otherwise-dangerous tool: `filesystem: read/list/exists`, `sandbox: <read-only git + file
-  ops>`, and (batch 2) `discord-moderation: escalate` (just posts a string asking a human
-  mod to look), `proactive-dm: status` (reads the queue, sends nothing).
 
-**To add a tool here:** add the canonical registered name (not an alias — a dedicated test,
-`tests/engine/taint-tracking.test.ts`, asserts every name in these three sets is registered
-and isn't a `TOOL_ALIASES` key) to `TAINTING_CAPABILITIES` and/or `DANGEROUS_WHEN_TAINTED`,
-and list any safe actions in `SAFE_ACTIONS_WHEN_TAINTED`.
+`TAINTING_CAPABILITIES` (what SETS taint) is still a list; a name there must be registered
+and canonical (`tests/engine/taint-tracking.test.ts`).
 
 ## 4. Memory poisoning
 

@@ -2,7 +2,7 @@
  * Approval gate (2026-10-26): "Any tool that sends email, moves money (stripe), or acts
  * outside Discord must require the owner's approval" (owner ruling, 2026-10-23).
  *
- * Gated by (canonical tool, action) in approval-gate.ts's GATED_ACTIONS, enforced in
+ * Gated by each action's declared effect (outside/money, tool-policy.ts), enforced in
  * CapabilityRegistry.execute() — the one choke point every call path (native loop, the
  * legacy XML loop, and the HTTP execute-tool route) shares. A gated call from anyone but the
  * owner — or from the owner without `confirmed: true` — gets parked in pending_actions and a
@@ -12,7 +12,6 @@
 import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest';
 import { capabilityBootstrap } from '../../src/engine/5-tool-loop/register-tools.js';
 import { capabilityRegistry } from '../../src/engine/5-tool-loop/registry.js';
-import { GATED_ACTIONS } from '../../src/engine/5-tool-loop/approval-gate.js';
 import { OWNER_USER_ID } from '../../src/shared/config/owner.js';
 import { listPendingActions } from '../../src/shared/pending-actions.js';
 
@@ -203,16 +202,16 @@ describe('approval gate: content (not just params) survives the pending/approve 
   const STUB_NAME = 'gate-content-stub';
 
   beforeAll(() => {
-    GATED_ACTIONS[STUB_NAME] = 'all';
     capabilityRegistry.register({
       name: STUB_NAME,
       supportedActions: ['echo'],
+      actions: { echo: { effect: 'outside' } }, // declared outside => approval-gated
       handler: async (_params: unknown, content?: string) => `echoed: ${content ?? '(none)'}`,
     });
   });
 
   afterAll(() => {
-    delete GATED_ACTIONS[STUB_NAME];
+    capabilityRegistry.unregister(STUB_NAME);
   });
 
   it('a gated call with payload in `content` replays with that same content on approve', async () => {

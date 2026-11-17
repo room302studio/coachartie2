@@ -152,6 +152,15 @@ function formatUptime(seconds: number): string {
 export const selfStatsCapability: RegisteredCapability = {
   name: 'self-stats',
   emoji: '📊',
+  actions: {
+    overview: { effect: 'read' },
+    costs: { effect: 'read' },
+    capabilities: { effect: 'read' },
+    health: { effect: 'read' },
+    errors: { effect: 'read' },
+    top_spenders: { effect: 'read' }, // a public leaderboard by design
+    user_costs: { effect: 'read', who: 'owner' }, // one named person's spend
+  },
   supportedActions: [
     'overview',
     'costs',

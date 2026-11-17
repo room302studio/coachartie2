@@ -24,12 +24,7 @@ vi.mock('child_process', async (importOriginal) => {
   return { ...actual, exec, execFile, default: { ...actual, exec, execFile } };
 });
 
-import {
-  capabilityExecutor,
-  TAINTING_CAPABILITIES,
-  DANGEROUS_WHEN_TAINTED,
-  SAFE_ACTIONS_WHEN_TAINTED,
-} from '../../src/engine/5-tool-loop/execute.js';
+import { capabilityExecutor, TAINTING_CAPABILITIES } from '../../src/engine/5-tool-loop/execute.js';
 import { capabilityBootstrap } from '../../src/engine/5-tool-loop/register-tools.js';
 import { capabilityRegistry, TOOL_ALIASES } from '../../src/engine/5-tool-loop/registry.js';
 import { OrchestrationContext, ExtractedCapability } from '../../src/engine/2-turn/types.js';
@@ -39,23 +34,13 @@ describe('Taint sets name only registered canonical tools', () => {
     capabilityBootstrap.initializeCapabilityRegistry();
   });
 
-  it('every taint-set name is registered and is not an alias', () => {
+  // Which actions are blocked when tainted is derived from declarations; tool-policy.test.ts
+  // holds that matrix and checks declarations against supportedActions.
+  it('every taint-source name is registered and is not an alias', () => {
     const registered = new Set(capabilityRegistry.list().map((c) => c.name));
-    const names = [
-      ...TAINTING_CAPABILITIES,
-      ...DANGEROUS_WHEN_TAINTED,
-      ...Object.keys(SAFE_ACTIONS_WHEN_TAINTED),
-    ];
-    for (const name of names) {
+    for (const name of TAINTING_CAPABILITIES) {
       expect(registered.has(name), `${name} is not a registered tool`).toBe(true);
       expect(TOOL_ALIASES[name], `${name} is an alias, not canonical`).toBeUndefined();
-    }
-  });
-
-  it("sandbox's taint-safe actions are real sandbox actions", () => {
-    const sandbox = capabilityRegistry.list().find((c) => c.name === 'sandbox')!;
-    for (const action of SAFE_ACTIONS_WHEN_TAINTED.sandbox) {
-      expect(sandbox.supportedActions).toContain(action);
     }
   });
 });
@@ -145,10 +130,11 @@ describe('Taint Tracking Security', () => {
       expect(writeResult.success).toBe(false);
       expect(writeResult.error).toContain('SECURITY');
 
-      // Read should be allowed
+      // Read should be allowed (read_file: the real action; until 2026-11-17 the exemption list
+      // named 'read', which isn't one, so read_file was blocked)
       const readCap: ExtractedCapability = {
         name: 'filesystem',
-        action: 'read',
+        action: 'read_file',
         params: { path: '/tmp/test.txt' },
         priority: 0,
       };
@@ -218,7 +204,8 @@ describe('Taint Tracking Security', () => {
     });
 
     it('blocks sandbox:exec and sandbox writes by canonical name, allows sandbox reads', async () => {
-      for (const action of ['exec', 'send', 'replace', 'insert', 'delete', 'read_pane']) {
+      // read_pane is a pure read since 2026-11-17 (tool-policy.test.ts lists the change).
+      for (const action of ['exec', 'send', 'replace', 'insert', 'delete', 'split']) {
         const blocked = await capabilityExecutor.executeCapability(
           { name: 'sandbox', action, params: { command: 'rm -rf /', file: '/x' }, priority: 0 },
           context,

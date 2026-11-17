@@ -280,6 +280,16 @@ export { sendDiscordDM };
 export const proactiveDMCapability: RegisteredCapability = {
   name: 'proactive-dm',
   emoji: '📤',
+  actions: {
+    send: { effect: 'discord' },
+    dm: { effect: 'discord' },
+    message: { effect: 'discord' },
+    notify: { effect: 'discord' },
+    alert: { effect: 'discord' },
+    remind: { effect: 'discord' },
+    followup: { effect: 'discord' },
+    status: { effect: 'read' },
+  },
   supportedActions: ['send', 'dm', 'message', 'notify', 'alert', 'remind', 'followup', 'status'],
   description: `Send messages to users proactively - Clawdbot-style. Actions:
 - send/dm/message: Send a message to a user (optional delay in ms)

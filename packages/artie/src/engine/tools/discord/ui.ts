@@ -583,6 +583,13 @@ function getButtonStyle(style?: string): ButtonStyle {
 export const discordUICapability: RegisteredCapability = {
   name: 'discord-ui',
   emoji: '🎨',
+  // Posts buttons/selects/modals a user could mistake for a real prompt.
+  actions: {
+    modal: { effect: 'discord' },
+    buttons: { effect: 'discord' },
+    select: { effect: 'discord' },
+    'context-menu': { effect: 'discord' },
+  },
   supportedActions: ['modal', 'buttons', 'select', 'context-menu'],
   description:
     'Create interactive Discord UI components. buttons/select attach under THIS reply automatically ' +

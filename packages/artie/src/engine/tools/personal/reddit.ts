@@ -5,6 +5,15 @@ import { redditClient } from './reddit-client.js';
 export const redditCapability: RegisteredCapability = {
   name: 'reddit',
   emoji: '👽',
+  actions: {
+    status: { effect: 'read' },
+    'list-subreddits': { effect: 'read' },
+    read: { effect: 'read' },
+    search: { effect: 'read' },
+    mentions: { effect: 'read' },
+    post: { effect: 'outside' },
+    comment: { effect: 'outside' },
+  },
   description:
     'Read and write to Reddit using the configured account. Supports allowlisted subreddits to keep activity scoped while expanding later.',
   supportedActions: ['status', 'list-subreddits', 'read', 'search', 'post', 'comment', 'mentions'],

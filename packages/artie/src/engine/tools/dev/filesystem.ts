@@ -262,6 +262,12 @@ async function exists(targetPath: string): Promise<string> {
 export const filesystemCapability: RegisteredCapability = {
   name: 'filesystem',
   emoji: '📁',
+  // Reads inside the project dir only; .env* and data/ refused (resolveSafePath).
+  actions: {
+    read_file: { effect: 'read' },
+    list_directory: { effect: 'read' },
+    exists: { effect: 'read' },
+  },
   // Read-only. This runs on the production host (not the sandbox), so write/append/
   // create/delete were a way for any chat turn to change the bot's own code. Removed 2026-10-23.
   supportedActions: ['read_file', 'list_directory', 'exists'],

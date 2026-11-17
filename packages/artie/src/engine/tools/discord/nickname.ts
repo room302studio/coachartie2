@@ -13,6 +13,10 @@ import * as gateway from '../../../gateway/api.js';
 export const discordNicknameCapability: RegisteredCapability = {
   name: 'discord-nickname',
   emoji: '🏷️',
+  actions: {
+    set_nickname: { effect: 'discord' },
+    reset_nickname: { effect: 'discord' },
+  },
   supportedActions: ['set_nickname', 'reset_nickname'],
   description:
     'Change YOUR OWN display name (nickname) in the current server — and USE it: your nickname ' +

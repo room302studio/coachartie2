@@ -1,5 +1,6 @@
 import { logger } from '../../shared/logger.js';
 import { capabilityRegistry } from './registry.js';
+import { undeclaredActions, strayDeclarations } from './tool-policy.js';
 // System capabilities
 import { calculatorCapability } from '../tools/core/calculator.js';
 import { sbChangelogCapability } from '../tools/core/sb-changelog.js';
@@ -155,6 +156,19 @@ export class CapabilityBootstrap {
           logger.warn('⚠️ Skill system initialization failed (non-fatal):', skillError);
         }
       });
+
+      // Policy coverage (tool-policy.ts): undeclared actions run open, so say so once, loudly.
+      const undeclared = undeclaredActions(capabilityRegistry.list());
+      if (undeclared.length > 0) {
+        const tools = new Set(undeclared.map((a) => a.split(':')[0]));
+        logger.warn(
+          `🔓 Tool policy: ${undeclared.length} actions on ${tools.size} tools have no declared effect and run with no gates: ${[...tools].join(', ')}`
+        );
+      }
+      const stray = strayDeclarations(capabilityRegistry.list());
+      if (stray.length > 0) {
+        logger.warn(`🔓 Tool policy: declared but not supported (typo?): ${stray.join(', ')}`);
+      }
 
       const totalCaps = capabilityRegistry.list().length;
       logger.info(

@@ -1,6 +1,7 @@
 import { logger } from '../../shared/logger.js';
 import { escapeRegex } from '../../shared/regex.js';
 import { capabilityRegistry, resolveToolCall } from './registry.js';
+import { gatesFor } from './tool-policy.js';
 import { robustExecutor } from './retry.js';
 import { getErrorMessage } from '../error-utils.js';
 import { openRouterService } from '../4-generate/openrouter.js';
@@ -44,48 +45,10 @@ export const TAINTING_CAPABILITIES = new Set([
   'mediawiki',
 ]);
 
-// Capabilities that are dangerous when context is tainted by external content
-// These are blocked to prevent "rm -rf" style attacks via prompt injection
-export const DANGEROUS_WHEN_TAINTED = new Set([
-  'sandbox', // Command execution, file edits and git in the sandbox (was shell/git; bash never existed)
-  'hermes', // delegates shell work to an agent on the VPS host; status is the only safe read
-  'filesystem', // File operations (write/delete)
-  'email', // Sending emails (could exfiltrate data)
-  'scheduler', // Scheduling future actions
-  // Security audit 2026-10-26 (sec-abuse.md, batch 2): a hostile page/issue/thread fetched
-  // mid-turn could otherwise instruct Artie to moderate someone, rename himself, DM/notify
-  // a user, answer as a mention-proxy target, or post fake UI — none of these leave the
-  // DANGEROUS_WHEN_TAINTED list before this, even though taint WAS being set correctly.
-  'discord-moderation', // timeout / enemy-role actions on a real person
-  'discord-nickname', // renames Artie himself
-  'proactive-dm', // sends an unsolicited DM/notification
-  'mention_proxy', // already owner-only at the registry gate; this is defense in depth for
-  // an owner turn that got prompt-injected mid-conversation (same reasoning as the http
-  // SSRF fix below — owner-only is not injection-proof).
-  'discord-ui', // posts buttons/selects/modals a user could mistake for a real prompt
-]);
-
-// Actions within dangerous capabilities that are safe even when tainted
-export const SAFE_ACTIONS_WHEN_TAINTED: Record<string, Set<string>> = {
-  filesystem: new Set(['read', 'list', 'exists']), // Read-only is fine
-  sandbox: new Set([
-    // Read-only git ops (the old git tool's safe set; show/blame were never on it)
-    'git_status',
-    'git_log',
-    'git_diff',
-    'git_branch',
-    // The old edit:read and dev search were not in the dangerous set at all
-    'read_file',
-    'find_files',
-    'grep',
-    'search',
-  ]),
-  // escalate just returns a string asking a human mod to look — no action against anyone.
-  'discord-moderation': new Set(['escalate']),
-  // status is a read of the proactive-DM allowlist/queue, not a send.
-  'proactive-dm': new Set(['status']),
-  hermes: new Set(['status']),
-};
+// Which actions are blocked once the turn is tainted is no longer a list here: it is derived
+// from each tool's declared `effect` (anything beyond read/own), in tool-policy.ts. Until
+// 2026-11-17 two hand-kept tables did this; the filesystem exemptions named actions that
+// didn't exist (read/list instead of read_file/list_directory), and hermes was missing.
 
 // Callback types for dependencies the executor needs from orchestrator
 export type ExtractCapabilitiesCallback = (
@@ -138,15 +101,9 @@ function checkTaintBlock(
   // Canonical name + action (an old name like shell/git maps to sandbox first).
   const resolved = resolveToolCall(capability.name, capability.action, undefined, { log: false });
   const capName = String(resolved.name).toLowerCase();
-
-  if (!DANGEROUS_WHEN_TAINTED.has(capName)) {
-    return null; // Not a dangerous capability
-  }
-
-  // Check if this specific action is safe
-  const safeActions = SAFE_ACTIONS_WHEN_TAINTED[capName];
-  if (safeActions && safeActions.has(String(resolved.action).toLowerCase())) {
-    return null; // This action is safe even when tainted
+  const declared = capabilityRegistry.list().find((c) => c.name === capName)?.actions;
+  if (!gatesFor(declared, String(resolved.action).toLowerCase()).dangerousWhenTainted) {
+    return null; // read/own actions (or undeclared ones) stay available
   }
 
   // Block the capability

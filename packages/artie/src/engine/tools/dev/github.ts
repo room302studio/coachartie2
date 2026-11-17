@@ -211,6 +211,25 @@ interface GitHubCommit {
 export const githubCapability: RegisteredCapability = {
   name: 'github',
   emoji: '🐙',
+  // Public writes are `outside` (approval + taint-blocked); every read stays open.
+  actions: {
+    get_releases: { effect: 'read' },
+    get_recent_commits: { effect: 'read' },
+    get_deployment_stats: { effect: 'read' },
+    search_repositories: { effect: 'read' },
+    list_issues: { effect: 'read' },
+    search_issues: { effect: 'read' },
+    get_issues_by_label: { effect: 'read' },
+    get_issue_details: { effect: 'read' },
+    get_related_prs: { effect: 'read' },
+    find_similar_issues: { effect: 'read' },
+    list_triage: { effect: 'read' },
+    create_issue: { effect: 'outside' },
+    update_issue: { effect: 'outside' },
+    add_comment: { effect: 'outside' },
+    add_labels: { effect: 'outside' },
+    remove_label: { effect: 'outside' },
+  },
   supportedActions: [
     'get_releases',
     'get_recent_commits',

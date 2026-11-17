@@ -5,12 +5,7 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import { capabilityBootstrap } from '../../src/engine/5-tool-loop/register-tools.js';
 import { capabilityRegistry } from '../../src/engine/5-tool-loop/registry.js';
-import {
-  OWNER_ONLY_ACTIONS,
-  OWNER_ONLY_REFUSAL,
-  isOwnerOnlyAction,
-  blocksNonOwner,
-} from '../../src/engine/5-tool-loop/owner-only.js';
+import { OWNER_ONLY_REFUSAL, gatesFor } from '../../src/engine/5-tool-loop/tool-policy.js';
 import { recallTargetUser } from '../../src/engine/tools/core/memory.js';
 import { OWNER_USER_ID } from '../../src/shared/config/owner.js';
 
@@ -20,30 +15,33 @@ beforeAll(() => {
   capabilityBootstrap.initializeCapabilityRegistry();
 });
 
-describe('owner-only policy table', () => {
-  it('locks every action of the dangerous tools', () => {
+function ownerOnly(tool: string, action: string): boolean {
+  const cap = capabilityRegistry.list().find((c) => c.name === tool);
+  return gatesFor(cap?.actions, action).ownerOnly;
+}
+
+// The full per-action matrix lives in tool-policy.test.ts; these are the headline rules.
+describe('owner-only, derived from each tool declaration', () => {
+  it('locks every action of the dangerous tools, including an undeclared synonym', () => {
     for (const tool of ['sandbox', 'hermes', 'http', 'osint', 'system_memory', 'mention_proxy']) {
-      expect(OWNER_ONLY_ACTIONS[tool]).toBe('all');
-      expect(isOwnerOnlyAction(tool, 'anything')).toBe(true);
+      const cap = capabilityRegistry.list().find((c) => c.name === tool)!;
+      for (const action of cap.supportedActions) {
+        expect(ownerOnly(tool, action), `${tool}:${action}`).toBe(true);
+      }
+      expect(ownerOnly(tool, 'anything')).toBe(true);
     }
   });
 
-  it('locks only the named actions where a Set is given', () => {
-    expect(isOwnerOnlyAction('self-stats', 'user_costs')).toBe(true);
-    expect(isOwnerOnlyAction('self-stats', 'summary')).toBe(false);
-    expect(isOwnerOnlyAction('deep_research', 'submit')).toBe(true);
-    expect(isOwnerOnlyAction('deep_research', 'status')).toBe(false);
+  it('locks only the named actions on mixed tools', () => {
+    expect(ownerOnly('self-stats', 'user_costs')).toBe(true);
+    expect(ownerOnly('self-stats', 'overview')).toBe(false);
+    expect(ownerOnly('deep_research', 'submit')).toBe(true);
+    expect(ownerOnly('deep_research', 'status')).toBe(false);
   });
 
   it('leaves ordinary tools alone', () => {
-    expect(isOwnerOnlyAction('calculator', 'calculate')).toBe(false);
-    expect(isOwnerOnlyAction('web', 'search')).toBe(false);
-  });
-
-  it('blocks non-owners and context-less calls, never the owner', () => {
-    expect(blocksNonOwner('sandbox', 'exec', { userId: NOT_OWNER })).toBe(true);
-    expect(blocksNonOwner('sandbox', 'exec', undefined)).toBe(true);
-    expect(blocksNonOwner('sandbox', 'exec', { userId: OWNER_USER_ID })).toBe(false);
+    expect(ownerOnly('calculator', 'calculate')).toBe(false);
+    expect(ownerOnly('web', 'search')).toBe(false);
   });
 });
 
@@ -53,6 +51,8 @@ describe('registry refuses owner-only calls from anyone else', () => {
     ['http', 'get', { url: 'http://127.0.0.1:47324/api/memories' }],
     ['osint', 'investigations', {}],
     ['system_memory', 'read', {}],
+    ['hermes', 'execute', { task: 'df -h' }],
+    ['hermes', 'run', { task: 'df -h' }], // an old synonym gets the tool's strictest gates
     ['mention_proxy', 'create', { target_user_id: OWNER_USER_ID, response_mode: 'direct' }],
   ];
 

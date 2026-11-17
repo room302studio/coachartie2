@@ -38,7 +38,8 @@ summarize, propose GitHub changes through the approval gate. No TTS, no live cap
     `SMART_MODEL` or rotation), tolerant JSON parsing (`parseModelJson`).
   - `propose.ts` — turns proposed GitHub changes into `capabilityRegistry.execute('github',
     'create_issue'|'update_issue', …)` calls, **without** `confirmed` — these are already in
-    `approval-gate.ts`'s `GATED_ACTIONS.github` set, so no new gate code was needed.
+    approval-gated (github writes are declared `effect: 'outside'`, tool-policy.ts), so no new
+    gate code was needed.
   - `orchestrator.ts` — the actual functions behind the seam: `scribeCanStart` (brownout
     check), `startScribeSession`, `submitScribeUtterance` (STT + usage-ledger write + transcript
     row, opt-out/blocked defense-in-depth, audio-cap enforcement), `stopScribeSession` (summary

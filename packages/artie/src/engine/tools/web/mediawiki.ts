@@ -6,6 +6,13 @@ import { getErrorMessage } from '../../../shared/errors.js';
 export const mediaWikiCapability: RegisteredCapability = {
   name: 'mediawiki',
   emoji: '📚',
+  actions: {
+    read: { effect: 'read' },
+    search: { effect: 'read' },
+    list: { effect: 'read' },
+    write: { effect: 'outside' },
+    add: { effect: 'outside' },
+  },
   supportedActions: ['read', 'write', 'search', 'list', 'add'],
   description: 'Read and write to MediaWiki instances',
   requiredParams: [],

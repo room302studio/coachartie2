@@ -5,8 +5,9 @@ import {
   formatStructuredErrorCompact,
   ParameterSchema,
 } from '../errors.js';
-import { isGatedAction, isOwnerConfirmed } from './approval-gate.js';
-import { blocksNonOwner, OWNER_ONLY_REFUSAL } from './owner-only.js';
+import { isOwnerConfirmed } from './approval-gate.js';
+import { gatesFor, OWNER_ONLY_REFUSAL, type ToolActions } from './tool-policy.js';
+import { isOwner } from '../../shared/config/owner.js';
 import { createPendingAction, findPendingDuplicate } from '../../shared/pending-actions.js';
 import { pingApprovalNeeded } from './approval-ping.js';
 
@@ -40,6 +41,11 @@ export interface RegisteredCapability {
   requiredParams?: string[];
   examples?: string[];
   emoji?: string; // Visual signature for Discord reactions
+  /**
+   * Per-action policy: what each action touches and who may run it. The owner-only, taint and
+   * approval gates are derived from this (tool-policy.ts). Undeclared = open + flagged.
+   */
+  actions?: ToolActions;
 }
 
 /**
@@ -482,18 +488,20 @@ export class CapabilityRegistry {
     // before ACTION_ALIASES and before any validation.
     ({ name, action, params } = resolveToolCall(name, action, params));
 
-    // Owner-only tools (owner-only.ts): refused outright for anyone but EJ, before the
-    // approval gate, so a non-owner can't even queue them for approval.
-    if (blocksNonOwner(name, action, context)) {
+    // Gates derived from the tool's own declaration (tool-policy.ts).
+    const gates = gatesFor(this.capabilities.get(name)?.actions, action);
+
+    // Owner-only: refused outright for anyone but EJ, before the approval gate, so a
+    // non-owner can't even queue them for approval.
+    if (gates.ownerOnly && !isOwner(context?.userId || '')) {
       logger.warn(`🔒 Owner-only call refused: ${name}:${action} from ${context?.userId || 'no-context'}`);
       return OWNER_ONLY_REFUSAL;
     }
 
-    // Approval gate: money and anything leaving Discord needs EJ's sign-off, unless EJ is the
-    // one calling and explicitly confirmed. Checked before the capability even has to exist,
-    // so a gated name typo'd by a model still gets a clear "needs approval" rather than a
-    // confusing "not found" (resolveToolCall already ran, so `name` is canonical here).
-    if (isGatedAction(name, action) && !isOwnerConfirmed(context, params)) {
+    // Approval gate: money and anything leaving Discord (effect outside/money) needs EJ's
+    // sign-off, unless EJ is the one calling and explicitly confirmed. resolveToolCall already
+    // ran, so `name` is canonical here.
+    if (gates.needsApproval && !isOwnerConfirmed(context, params)) {
       // An identical ask already waiting (a model retry, a re-proposed scribe issue) reuses
       // that row instead of stacking a duplicate EJ would have to deny, and pings nobody.
       const existingId = findPendingDuplicate({ tool: name, action, params, content });

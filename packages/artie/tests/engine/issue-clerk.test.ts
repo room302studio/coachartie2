@@ -5,7 +5,7 @@
 import { describe, it, expect, beforeAll, afterEach, vi } from 'vitest';
 import { capabilityBootstrap } from '../../src/engine/5-tool-loop/register-tools.js';
 import { capabilityRegistry } from '../../src/engine/5-tool-loop/registry.js';
-import { GATED_ACTIONS, isGatedAction } from '../../src/engine/5-tool-loop/approval-gate.js';
+import { gatesFor } from '../../src/engine/5-tool-loop/tool-policy.js';
 import { formatApprovalPing } from '../../src/engine/5-tool-loop/approval-ping.js';
 import {
   githubCapability,
@@ -53,14 +53,16 @@ function stubFetch(handler: (url: string, init?: RequestInit) => { status?: numb
 }
 
 describe('github gating', () => {
-  it('every write-shaped github action is gated, every read is not', () => {
-    const gate = GATED_ACTIONS.github;
-    expect(gate).not.toBe('all');
+  it('every github action declares an effect; write-shaped ones are outside (gated), reads open', () => {
     for (const action of githubCapability.supportedActions) {
+      const spec = githubCapability.actions?.[action];
+      expect(spec, `github:${action} has no declared effect`).toBeDefined();
+      const gated = gatesFor(githubCapability.actions, action).needsApproval;
       if (WRITE_SHAPED.test(action)) {
-        expect(isGatedAction('github', action), `${action} must be in GATED_ACTIONS.github`).toBe(true);
+        expect(spec!.effect, `${action} is write-shaped and must be 'outside'`).toBe('outside');
+        expect(gated).toBe(true);
       } else {
-        expect(isGatedAction('github', action), `${action} is a read and must stay open`).toBe(false);
+        expect(gated, `${action} is a read and must stay open`).toBe(false);
       }
     }
   });

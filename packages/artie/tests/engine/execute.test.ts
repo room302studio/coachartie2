@@ -490,6 +490,11 @@ describe('executeNativeToolCall: a self-reported failure is never swallowed as a
     // to actually confirm — a model-supplied `confirmed` param must be stripped before the
     // gate check, not trusted.
     const { OWNER_USER_ID } = await import('../../src/shared/config/owner.js');
+    // Gates come from stripe's own declaration now, so the real tool must be registered.
+    const { stripePaymentsCapability } = await import('../../src/engine/tools/money/stripe.js');
+    if (!capabilityRegistry.has('stripe')) {
+      capabilityRegistry.register(stripePaymentsCapability);
+    }
     const context = makeContext(OWNER_USER_ID);
     const out = await executeNativeToolCall(context, {
       name: 'stripe',

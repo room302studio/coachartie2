@@ -420,6 +420,20 @@ async function handleOsintLookup(
 export const osintLookupCapability: RegisteredCapability = {
   name: 'osint',
   emoji: '🔍',
+  // EJ's private intelligence stack: every action is a read, all owner only.
+  actions: {
+    'recent-signals': { effect: 'read', who: 'owner' },
+    'lookup-signal': { effect: 'read', who: 'owner' },
+    'search-signals': { effect: 'read', who: 'owner' },
+    investigations: { effect: 'read', who: 'owner' },
+    'lookup-flight': { effect: 'read', who: 'owner' },
+    'recent-flights': { effect: 'read', who: 'owner' },
+    'military-activity': { effect: 'read', who: 'owner' },
+    'flight-anomalies': { effect: 'read', who: 'owner' },
+    'nearby-aircraft': { effect: 'read', who: 'owner' },
+    'lookup-entity': { effect: 'read', who: 'owner' },
+    explain: { effect: 'read', who: 'owner' },
+  },
   supportedActions: [
     'recent-signals',
     'lookup-signal',

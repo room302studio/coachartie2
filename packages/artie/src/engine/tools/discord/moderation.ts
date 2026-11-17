@@ -15,6 +15,12 @@ const ARTIE_ENEMY_ROLE_NAME = 'artie-enemy';
 export const discordModerationCapability: RegisteredCapability = {
   name: 'discord-moderation',
   emoji: '🛡️',
+  actions: {
+    timeout: { effect: 'discord' },
+    add_enemy_role: { effect: 'discord' },
+    remove_enemy_role: { effect: 'discord' },
+    escalate: { effect: 'own' }, // returns a note asking a human mod to look; acts on no one
+  },
   supportedActions: ['timeout', 'add_enemy_role', 'remove_enemy_role', 'escalate'],
   description:
     'Moderate Discord users - timeout troublemakers, mark enemies, escalate to humans. ' +

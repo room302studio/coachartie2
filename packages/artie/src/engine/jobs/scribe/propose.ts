@@ -1,7 +1,7 @@
 /**
  * Turn a scribe summary's proposed GitHub changes into real tool calls, routed through the
  * EXACT SAME entry point the live tool loop uses: capabilityRegistry.execute(). Called
- * without `confirmed`, every one of these hits approval-gate.ts's GATED_ACTIONS.github set
+ * without `confirmed`, every one of these hits the approval gate (github writes are effect 'outside')
  * (create_issue/update_issue are both gated) and comes back queued as a pending_actions row —
  * no new approval logic, no bypass. EJ reviews and runs them with the `approvals` tool.
  */

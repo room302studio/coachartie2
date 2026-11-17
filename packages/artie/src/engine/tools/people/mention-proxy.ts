@@ -277,6 +277,18 @@ const handler = async (params: any, _content?: string): Promise<string> => {
 export const mentionProxyCapability: RegisteredCapability = {
   name: 'mention_proxy',
   emoji: '🎭',
+  // Owner only: makes Artie answer @mentions of a person on their behalf.
+  actions: {
+    list: { effect: 'read', who: 'owner' },
+    get: { effect: 'read', who: 'owner' },
+    list_for_guild: { effect: 'read', who: 'owner' },
+    list_for_user: { effect: 'read', who: 'owner' },
+    create: { effect: 'discord', who: 'owner' },
+    update: { effect: 'discord', who: 'owner' },
+    delete: { effect: 'discord', who: 'owner' },
+    enable: { effect: 'discord', who: 'owner' },
+    disable: { effect: 'discord', who: 'owner' },
+  },
   supportedActions: [
     'create',
     'list',

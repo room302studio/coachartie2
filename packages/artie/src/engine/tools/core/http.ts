@@ -42,6 +42,13 @@ function serializeBody(content: any): string {
 export const httpCapability: RegisteredCapability = {
   name: 'http',
   emoji: '🌐',
+  // Owner only: a raw fetch; loopback calls once skipped the API token.
+  actions: {
+    get: { effect: 'read', who: 'owner' },
+    post: { effect: 'outside', who: 'owner' },
+    put: { effect: 'outside', who: 'owner' },
+    delete: { effect: 'outside', who: 'owner' },
+  },
   supportedActions: ['get', 'post', 'put', 'delete'],
   description:
     'Make HTTP requests to public APIs and endpoints (like curl). Owner-only; private/internal/loopback addresses are blocked, same guard as the web tool.',

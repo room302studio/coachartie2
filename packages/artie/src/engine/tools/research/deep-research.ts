@@ -228,6 +228,14 @@ async function handleDeepResearch(
 export const deepResearchCapability: RegisteredCapability = {
   name: 'deep_research',
   emoji: '🔬',
+  actions: {
+    // Spends real OpenAI money outside the daily budget ledger. Owner only; no approval step,
+    // since only EJ can run it and he is the approver.
+    submit: { effect: 'money', who: 'owner', approval: false },
+    status: { effect: 'read' },
+    results: { effect: 'read' },
+    harness_status: { effect: 'read' },
+  },
   supportedActions: ['submit', 'status', 'results', 'harness_status'],
   description:
     'Submit complex research tasks to run in the background using specialized AI models (o4-mini-deep-research) with web search and code execution.',

@@ -262,6 +262,13 @@ async function handleSystemMemory(
 export const systemMemoryCapability: RegisteredCapability = {
   name: 'system_memory',
   emoji: '🧠',
+  actions: {
+    read: { effect: 'read', who: 'owner' },
+    recent: { effect: 'read', who: 'owner' },
+    check_handoffs: { effect: 'read', who: 'owner' },
+    write: { effect: 'own', who: 'owner' },
+    handoff: { effect: 'own', who: 'owner' },
+  },
   supportedActions: ['write', 'read', 'handoff', 'check_handoffs', 'recent'],
   description:
     'Shared memory for cross-agent communication. Leave notes, handoffs, and context for VPS Claude.',

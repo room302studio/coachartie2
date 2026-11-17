@@ -66,6 +66,10 @@ function sanitizeName(raw: string): string {
 export const stripePaymentsCapability: RegisteredCapability = {
   name: 'stripe',
   emoji: '💳',
+  actions: {
+    create_payment_link: { effect: 'money' },
+    deactivate_payment_link: { effect: 'money' },
+  },
   supportedActions: ['create_payment_link', 'deactivate_payment_link'],
   description:
     'Create REAL Stripe payment links (money goes to Room 302 Studio). ' +

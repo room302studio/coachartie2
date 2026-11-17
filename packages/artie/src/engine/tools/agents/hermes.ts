@@ -126,6 +126,11 @@ async function handleHermes(
 export const hermesCapability: RegisteredCapability = {
   name: 'hermes',
   emoji: '⚕',
+  actions: {
+    execute: { effect: 'host', who: 'owner' },
+    ask: { effect: 'host', who: 'owner' }, // the agent it asks has a shell; asking can act
+    status: { effect: 'read', who: 'owner' },
+  },
   // The handler still accepts run/do/chat/health as synonyms; the model sees three.
   supportedActions: ['execute', 'ask', 'status'],
   description:

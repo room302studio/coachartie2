@@ -1294,6 +1294,27 @@ const SANDBOX_ACTIONS: Record<string, { run: SectionRunner; inner: string }> = {
 export const sandboxCapability: RegisteredCapability = {
   name: 'sandbox',
   emoji: '💻',
+  // Owner only: docker exec forwards GITHUB_TOKEN and OPENAI_API_KEY into the container.
+  actions: {
+    exec: { effect: 'workspace', who: 'owner' },
+    send: { effect: 'workspace', who: 'owner' },
+    split: { effect: 'workspace', who: 'owner' },
+    insert: { effect: 'workspace', who: 'owner' },
+    replace: { effect: 'workspace', who: 'owner' },
+    delete: { effect: 'workspace', who: 'owner' },
+    read_file: { effect: 'read', who: 'owner' },
+    find_files: { effect: 'read', who: 'owner' },
+    grep: { effect: 'read', who: 'owner' },
+    search: { effect: 'read', who: 'owner' },
+    list_panes: { effect: 'read', who: 'owner' },
+    read_pane: { effect: 'read', who: 'owner' },
+    git_status: { effect: 'read', who: 'owner' },
+    git_log: { effect: 'read', who: 'owner' },
+    git_diff: { effect: 'read', who: 'owner' },
+    git_branch: { effect: 'read', who: 'owner' },
+    git_show: { effect: 'read', who: 'owner' },
+    git_blame: { effect: 'read', who: 'owner' },
+  },
   supportedActions: Object.keys(SANDBOX_ACTIONS),
   description: `Your Linux laptop. A persistent Debian environment where you can do real work.
 
