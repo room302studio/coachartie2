@@ -147,25 +147,80 @@ export interface GenerateTurnResult {
  * string (some providers hand back an object); a call with no id gets a positional one so
  * its tool result can still be matched to it.
  */
+/** Periods that don't end a sentence ("Ask Dr. Smith", "e.g. this"). */
+const ABBREVIATIONS = new Set(['dr', 'mr', 'mrs', 'ms', 'st', 'vs', 'etc', 'eg', 'ie', 'jr', 'sr', 'no', 'approx']);
+
+function hasOddFences(text: string): boolean {
+  return (text.match(/```/g) || []).length % 2 === 1;
+}
+
+/** Real words, not just Markdown scaffolding (fences, table rules, list markers). */
+function isSubstantive(text: string): boolean {
+  const prose = text
+    .split('\n')
+    .filter((line) => !line.trim().startsWith('```') && !/^[\s|:-]+$/.test(line))
+    .join(' ');
+  return (prose.match(/[\p{L}\p{N}]{2,}/gu) || []).length >= 2;
+}
+
+/** The text up to its last finished sentence, skipping list markers ("1.") and abbreviations. */
+function lastSentence(text: string): string | null {
+  let best: string | null = null;
+  for (const match of text.matchAll(/[.!?](?=\s)/g)) {
+    const end = (match.index ?? 0) + 1;
+    const candidate = text.slice(0, end);
+    const lastWord = (candidate.split(/\s+/).pop() || '').toLowerCase().replace(/\./g, '');
+    if (/^\d+$/.test(lastWord) || ABBREVIATIONS.has(lastWord)) {
+      continue;
+    }
+    if (isSubstantive(candidate)) {
+      best = candidate;
+    }
+  }
+  return best;
+}
+
 /**
- * A reply cut off by max_tokens ends mid-thought ("- **", 2026-11-17). Keep everything up to
- * the last complete line; with no line break, up to the last finished sentence. If neither
- * exists, keep the text and mark it with an ellipsis rather than send nothing.
+ * A reply cut off by max_tokens ends mid-thought ("- **", 2026-11-17). Keep it up to the last
+ * complete line, backing out of an unfinished code block or table; failing that, the last
+ * finished sentence; failing that, the whole text with an ellipsis (never less than was said).
  */
 export function trimCutOffReply(text: string): string {
-  const lastBreak = text.trimEnd().lastIndexOf('\n');
+  // Ends on a line break: the last line finished, nothing was cut mid-line.
+  if (/\n[ \t]*$/.test(text)) {
+    return closeFence(text.trimEnd());
+  }
+  const lastBreak = text.lastIndexOf('\n');
   if (lastBreak > 0) {
-    const kept = text.slice(0, lastBreak).trimEnd();
-    if (kept) {
+    let kept = text.slice(0, lastBreak);
+    if (hasOddFences(kept)) {
+      // Cut inside a code block: keep what came before the block.
+      kept = kept.slice(0, kept.lastIndexOf('```'));
+    } else {
+      // Cut inside a table: drop the partial table rather than leave a header with no rows.
+      const lines = kept.split('\n');
+      while (lines.length > 0 && lines[lines.length - 1].trim().startsWith('|')) {
+        lines.pop();
+      }
+      kept = lines.join('\n');
+    }
+    kept = kept.trimEnd();
+    if (isSubstantive(kept)) {
       return kept;
     }
   }
-  const sentenceEnds = [...text.matchAll(/[.!?](?=\s|$)/g)];
-  if (sentenceEnds.length > 0) {
-    const end = sentenceEnds[sentenceEnds.length - 1].index ?? 0;
-    return text.slice(0, end + 1);
+  const sentence = lastSentence(text);
+  if (sentence && !hasOddFences(sentence)) {
+    return sentence;
   }
-  return `${text.trimEnd()}…`;
+  return closeFence(`${text.trimEnd()}…`);
+}
+
+function closeFence(text: string): string {
+  if (hasOddFences(text)) {
+    return `${text}\n\`\`\``;
+  }
+  return text;
 }
 
 export function normalizeToolCalls(raw: unknown): ToolCall[] {

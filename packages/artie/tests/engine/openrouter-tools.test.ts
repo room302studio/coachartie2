@@ -130,9 +130,22 @@ describe('generateWithTools: the request', () => {
   });
 
   it('trimCutOffReply: last line, else last sentence, else an ellipsis', () => {
-    expect(trimCutOffReply('one.\ntwo and thr')).toBe('one.');
-    expect(trimCutOffReply('First thing. Second thi')).toBe('First thing.');
+    expect(trimCutOffReply('one thing.\ntwo and thr')).toBe('one thing.');
+    expect(trimCutOffReply('First thing here. Second thi')).toBe('First thing here.');
     expect(trimCutOffReply('no end in sight')).toBe('no end in sight…');
+  });
+
+  it('trimCutOffReply keeps what was really said (Codex round 1)', () => {
+    // newline-terminated: the last line is complete
+    expect(trimCutOffReply('Answer:\n42\n')).toBe('Answer:\n42');
+    // cut inside a code block: never just the opening fence
+    expect(trimCutOffReply("```js\nconsole.log('hel")).toBe("```js\nconsole.log('hel…\n```");
+    expect(trimCutOffReply("Run this first.\n```js\nconsole.log('hel")).toBe('Run this first.');
+    // cut inside a table: no header without rows
+    expect(trimCutOffReply('Results so far:\n| a | b |\n|---|---|\n| 1 | 2')).toBe('Results so far:');
+    // list markers and abbreviations aren't sentence ends
+    expect(trimCutOffReply('1. Install the dependenc')).toBe('1. Install the dependenc…');
+    expect(trimCutOffReply('Ask Dr. Smith about')).toBe('Ask Dr. Smith about…');
   });
 
   it('per-call reasoning is sent as given (brownout turns it off)', async () => {
