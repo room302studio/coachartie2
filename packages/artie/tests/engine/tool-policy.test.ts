@@ -55,6 +55,7 @@ const GATE_FLOOR: Record<string, Record<string, string>> = {
   scheduler: { remind: 'T', schedule: 'T', cancel: 'T', list: '' },
   'discord-moderation': { timeout: 'T', add_enemy_role: 'T', remove_enemy_role: 'T', escalate: '' },
   'discord-nickname': { set_nickname: 'T', reset_nickname: 'T' },
+  'discord-reaction': { react: 'T', read: '' },
   'proactive-dm': {
     send: 'T', dm: 'T', message: 'T', notify: 'T', alert: 'T', remind: 'T', followup: 'T',
     status: '',
@@ -90,7 +91,7 @@ const GATE_FLOOR: Record<string, Record<string, string>> = {
 const KNOWN_UNDECLARED = new Set([
   'ask-question', 'autonomous', 'bot-config', 'calculator', 'community-analytics',
   'context', 'credit_status', 'diagnose', 'discord-channels',
-  'discord-issue-parser', 'discord-poll', 'discord-reaction', 'discord-send-message',
+  'discord-issue-parser', 'discord-poll', 'discord-send-message',
   'discord-threads', 'discord-user-history', 'embedded_mcp', 'flashcard', 'goals', 'image_gen',
   'kanban', 'morning-briefing', 'n8n_browser', 'pairing',
   'quiz-game', 'relay', 'sb_changelog', 'scrapbook', 'scratchpad', 'send-metro-file', 'sequence',

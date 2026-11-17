@@ -236,6 +236,8 @@ export function setupReactionHandler(client: Client) {
           emoji,
           userLabel: user.displayName || user.username || user.id,
           messageExcerpt: reaction.message.content?.slice(0, 120) || undefined,
+          guildId: reaction.message.guildId ?? null,
+          userId: user.id,
           at: now,
         });
 
@@ -302,6 +304,37 @@ export function setupReactionHandler(client: Client) {
           undefined,
           false
         );
+      }
+    }
+  );
+
+  // Removals only update the persisted log (so "who reacted" stays true); no feedback or
+  // regenerate side effects.
+  client.on(
+    Events.MessageReactionRemove,
+    async (reaction: MessageReaction | PartialMessageReaction, user: User | PartialUser) => {
+      try {
+        if (reaction.partial) await reaction.fetch();
+        if (user.partial) await user.fetch();
+        if (user.bot) return;
+        if (!reaction.message.author?.bot || reaction.message.author.id !== client.user?.id) return;
+        const emoji = reaction.emoji.name;
+        if (!emoji) return;
+        // A re-add right after a removal must not be swallowed by the 60s dedupe.
+        reactionCache.delete(`${reaction.message.id}-${user.id}-${emoji}`);
+        recordReaction({
+          messageId: reaction.message.id,
+          channelId: reaction.message.channelId,
+          emoji,
+          userLabel: user.displayName || user.username || user.id,
+          messageExcerpt: reaction.message.content?.slice(0, 120) || undefined,
+          guildId: reaction.message.guildId ?? null,
+          userId: user.id,
+          action: 'removed',
+          at: Date.now(),
+        });
+      } catch (error) {
+        logger.debug('Failed to log reaction removal:', error);
       }
     }
   );

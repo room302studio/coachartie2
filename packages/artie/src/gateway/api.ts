@@ -112,6 +112,21 @@ export async function addReaction(
   return (await proxy()).addReaction(c, { channelId, messageId }, wire(body));
 }
 
+/**
+ * Live reactions on one message (message.reactions + a capped users fetch). The channel and
+ * guild come from the conversation, never from the model; a channel outside that guild is
+ * refused (403).
+ */
+export async function readMessageReactions(
+  channelId: string,
+  messageId: string,
+  guildId: string | null
+): Promise<ApiResult> {
+  const c = client();
+  const { fetchLiveReactions } = await import('./1-receive/reaction-log.js');
+  return fetchLiveReactions(c, channelId, messageId, guildId);
+}
+
 export async function setNickname(guildId: string, body: { nickname?: string | null }): Promise<ApiResult> {
   const c = client();
   return (await proxy()).setNickname(c, { guildId }, wire(body));

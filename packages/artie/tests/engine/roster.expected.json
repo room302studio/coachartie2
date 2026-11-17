@@ -103,7 +103,8 @@
     "read_poll"
   ],
   "discord-reaction": [
-    "react"
+    "react",
+    "read"
   ],
   "discord-send-message": [
     "send_message"

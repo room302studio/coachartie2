@@ -653,6 +653,33 @@ export const relays = sqliteTable(
   })
 );
 
+/**
+ * Reaction log - every reaction people add to (or remove from) Artie's own messages, kept 14
+ * days so he can answer "who reacted to what". Created on first use by shared/db/reaction-store.ts
+ * (same ensure-on-first-touch pattern as channel_digests); pruned there too.
+ * guildId is NULL for DMs. `action` is 'added' | 'removed'; `at` is epoch ms.
+ */
+export const reactionLog = sqliteTable(
+  'reaction_log',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    guildId: text('guild_id'),
+    channelId: text('channel_id').notNull(),
+    messageId: text('message_id').notNull(),
+    emoji: text('emoji').notNull(),
+    userId: text('user_id').notNull(),
+    userLabel: text('user_label').notNull(),
+    messageExcerpt: text('message_excerpt'),
+    action: text('action').notNull().default('added'),
+    at: integer('at').notNull(),
+  },
+  (table) => ({
+    channelAtIdx: index('idx_reaction_log_channel_at').on(table.channelId, table.at),
+    messageIdx: index('idx_reaction_log_message').on(table.messageId),
+    atIdx: index('idx_reaction_log_at').on(table.at),
+  })
+);
+
 // ============================================================================
 // TYPE EXPORTS
 // ============================================================================
