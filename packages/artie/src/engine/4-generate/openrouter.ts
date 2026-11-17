@@ -126,6 +126,12 @@ export interface GenerateOptions {
    * unknown); the caller parses the reply with parseModelJson either way.
    */
   jsonOutput?: JsonOutputSpec;
+  /**
+   * OpenRouter `reasoning` for this call, e.g. `{ enabled: false }` for a one-line answer from a
+   * model that otherwise thinks first: DeepSeek Flash spent a 400-token budget reasoning and
+   * returned no content (github-gist probe, 2026-11-17). Overrides the auto-router default.
+   */
+  reasoning?: Record<string, unknown>;
 }
 
 /** One generate turn's result. `toolCalls` is always [] unless the turn offered tools. */
@@ -788,7 +794,9 @@ class OpenRouterService {
         // models and ~latest aliases bill correctly without a price-table entry (EJ,
         // 2026-10-31: models change too fast to hardcode). The table is only a fallback.
         extraBody.usage = { include: true };
-        if (isAutoRouted(model) && autoReasoningFor(plugins)) {
+        if (options?.reasoning) {
+          extraBody.reasoning = options.reasoning;
+        } else if (isAutoRouted(model) && autoReasoningFor(plugins)) {
           extraBody.reasoning = autoReasoningFor(plugins);
         }
         const completionParams: Record<string, unknown> = {

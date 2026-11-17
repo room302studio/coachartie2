@@ -103,7 +103,9 @@ export async function githubGist(req: GistRequest): Promise<string | null> {
         'github-gist',
         undefined,
         gistModel(),
-        { guildId: req.guildId, maxTokens: 60, stepType: 'github_gist' }
+        // Reasoning off: with it on, DeepSeek Flash spent even a 400-token budget thinking and
+        // returned no content on 2 of 3 real PRs (probe, 2026-11-17). Off: 3/3, ~$0.00004 each.
+        { guildId: req.guildId, maxTokens: 120, stepType: 'github_gist', reasoning: { enabled: false } }
       )
       .then((raw) => {
         const gist = cleanGist(raw);
