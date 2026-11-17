@@ -178,21 +178,37 @@ describe('generateWithTools: the request', () => {
     expect(out.content).toBe('next model answered');
   });
 
+  it('under a clamp with room left, the truncation retry still happens, capped', async () => {
+    createMock
+      .mockRejectedValueOnce(Object.assign(new Error('can only afford 1000'), { status: 402 }))
+      .mockResolvedValueOnce(truncatedCompletion('cut'))
+      .mockResolvedValueOnce(completion({ content: 'fits in 240' }));
+    const out = await openRouterService.generateWithTools(MESSAGES, TOOLS, 'u', 'm', 'anthropic/claude-sonnet-5', {
+      maxTokens: 120,
+      reasoning: { max_tokens: 2048 },
+    });
+    const calls = createMock.mock.calls.map((c) => c[0]);
+    expect(calls[2].model).toBe(calls[1].model);
+    expect(calls[2].max_tokens).toBe(240);
+    expect(out.content).toBe('fits in 240');
+  });
+
   it('the clamp is per model: the next model gets its full ceiling and its own truncation retry', async () => {
     createMock
       .mockRejectedValueOnce(Object.assign(new Error('can only afford 1000'), { status: 402 }))
       .mockResolvedValueOnce(truncatedCompletion('cut'))
       .mockResolvedValueOnce(truncatedCompletion('cut again'))
-      .mockResolvedValueOnce(completion({ content: 'retry on the next model worked' }));
+      .mockResolvedValueOnce(completion({ content: 'the next model answered' }));
     const out = await openRouterService.generateWithTools(MESSAGES, TOOLS, 'u', 'm', 'anthropic/claude-sonnet-5', {
       maxTokens: 120,
       reasoning: { max_tokens: 2048 },
     });
     const calls = createMock.mock.calls.map((c) => c[0]);
     expect(calls[1].max_tokens).toBe(120); // reasoning dropped, so the caller's ceiling, under the clamp
-    expect(calls[2].max_tokens).toBe(120 + 2048); // next model: no clamp, its normal attempt
-    expect(calls[3].model).toBe(calls[2].model); // and its own truncation retry
-    expect(out.content).toBe('retry on the next model worked');
+    expect(calls[2].model).toBe(calls[1].model); // its one truncation retry
+    expect(calls[3].model).not.toBe(calls[1].model);
+    expect(calls[3].max_tokens).toBe(120 + 2048); // next model: no clamp carried over
+    expect(out.content).toBe('the next model answered');
   });
 
   it('wireMaxTokens: a ceiling that never binds, plus any explicit reasoning budget on top', () => {

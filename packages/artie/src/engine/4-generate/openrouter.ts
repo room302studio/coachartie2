@@ -1137,9 +1137,10 @@ class OpenRouterService {
         const isLastModel = i === modelsToTry.length - 1;
 
         if (error instanceof ReplyTruncated) {
-          // Under an affordability clamp the retry can't get more room, so it would only pay
-          // twice for the same cut: go straight down the ladder.
-          if (!truncationRetry && affordabilityCap === undefined) {
+          // Retry only if it can actually get more room: under an affordability clamp that the
+          // cut attempt already filled, it would pay twice for the same cut.
+          const roomToGrow = affordabilityCap === undefined || error.maxTokens < affordabilityCap;
+          if (!truncationRetry && roomToGrow) {
             truncationRetry = true;
             logger.warn(`✂️ ${error.message}; retrying ${model} once with double the room, reasoning off`);
             i--; // retry the same model
