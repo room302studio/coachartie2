@@ -613,7 +613,7 @@ export class GitHubDiscordPoster {
       case 'issue_comment':
         return `${this.numberedLine(event.data.issueNumber, event.data.issueUrl, undefined)} ${event.data.commentAuthor}: "${this.truncate(event.data.commentBody || '', 50)}"`;
       case 'issue_labeled':
-        return `${this.numberedLine(event.data.issueNumber, event.data.issueUrl, undefined)} +\`${event.data.label}\``;
+        return `${this.numberedLine(event.data.issueNumber, event.data.issueUrl, undefined)} +\`${(event.data.label || '').replace(/`/g, "'")}\``;
       case 'issue_assigned':
         return `${this.numberedLine(event.data.issueNumber, event.data.issueUrl, undefined)} → ${event.data.assignee}`;
       case 'pr_opened':

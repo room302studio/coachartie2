@@ -170,8 +170,15 @@ export class CreditMonitor {
     if (this.balanceRecheck) {
       return;
     }
+    // Act only if nothing marked or cleared exhaustion while the read was in flight
+    // (each mark is a new Date, a clear is null), so a stale result can't undo newer state.
+    const seen = this.creditsExhaustedAt;
+    const stillCurrent = (): boolean => this.creditsExhaustedAt === seen;
     this.balanceRecheck = this.getRemainingBalance()
       .then((balance) => {
+        if (!stillCurrent()) {
+          return;
+        }
         if (balance === null || balance > CreditMonitor.TRUE_EXHAUSTION_THRESHOLD) {
           this.creditsExhaustedAt = null;
           let shown: string;
@@ -187,7 +194,9 @@ export class CreditMonitor {
         }
       })
       .catch(() => {
-        this.creditsExhaustedAt = null;
+        if (stillCurrent()) {
+          this.creditsExhaustedAt = null;
+        }
       })
       .finally(() => {
         this.balanceRecheck = null;

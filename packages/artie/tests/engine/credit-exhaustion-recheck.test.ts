@@ -54,6 +54,19 @@ describe('credit exhaustion recheck', () => {
     expect(creditMonitor.areCreditsExhausted()).toBe(false);
   });
 
+  it('ignores a stale dry result after a top-up cleared the flag mid-read', async () => {
+    exhaustAndExpire();
+    let release: (v: number) => void = () => {};
+    vi.spyOn(creditMonitor, 'getRemainingBalance').mockImplementation(
+      () => new Promise<number>((r) => (release = r))
+    );
+    creditMonitor.areCreditsExhausted();
+    creditMonitor.clearExhaustedFlag();
+    release(-0.2);
+    await settle();
+    expect(creditMonitor.areCreditsExhausted()).toBe(false);
+  });
+
   it('only runs one recheck at a time', async () => {
     exhaustAndExpire();
     let release: (v: number) => void = () => {};
