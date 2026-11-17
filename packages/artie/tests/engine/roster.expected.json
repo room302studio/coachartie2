@@ -175,11 +175,7 @@
   ],
   "hermes": [
     "ask",
-    "chat",
-    "do",
     "execute",
-    "health",
-    "run",
     "status"
   ],
   "http": [

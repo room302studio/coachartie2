@@ -48,6 +48,7 @@ export const TAINTING_CAPABILITIES = new Set([
 // These are blocked to prevent "rm -rf" style attacks via prompt injection
 export const DANGEROUS_WHEN_TAINTED = new Set([
   'sandbox', // Command execution, file edits and git in the sandbox (was shell/git; bash never existed)
+  'hermes', // delegates shell work to an agent on the VPS host; status is the only safe read
   'filesystem', // File operations (write/delete)
   'email', // Sending emails (could exfiltrate data)
   'scheduler', // Scheduling future actions
@@ -83,6 +84,7 @@ export const SAFE_ACTIONS_WHEN_TAINTED: Record<string, Set<string>> = {
   'discord-moderation': new Set(['escalate']),
   // status is a read of the proactive-DM allowlist/queue, not a send.
   'proactive-dm': new Set(['status']),
+  hermes: new Set(['status']),
 };
 
 // Callback types for dependencies the executor needs from orchestrator

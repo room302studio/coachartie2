@@ -20,6 +20,8 @@ import type { CapabilityContext } from './registry.js';
 /** `'all'` locks every action on that tool; a Set locks just the named actions. */
 export const OWNER_ONLY_ACTIONS: Record<string, Set<string> | 'all'> = {
   sandbox: 'all',
+  // A separate agent with a real shell on the VPS host (:47400). Ungated until 2026-11-17.
+  hermes: 'all',
   http: 'all',
   osint: 'all',
   system_memory: 'all',

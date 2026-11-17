@@ -22,7 +22,7 @@ beforeAll(() => {
 
 describe('owner-only policy table', () => {
   it('locks every action of the dangerous tools', () => {
-    for (const tool of ['sandbox', 'http', 'osint', 'system_memory', 'mention_proxy']) {
+    for (const tool of ['sandbox', 'hermes', 'http', 'osint', 'system_memory', 'mention_proxy']) {
       expect(OWNER_ONLY_ACTIONS[tool]).toBe('all');
       expect(isOwnerOnlyAction(tool, 'anything')).toBe(true);
     }

@@ -126,11 +126,12 @@ async function handleHermes(
 export const hermesCapability: RegisteredCapability = {
   name: 'hermes',
   emoji: '⚕',
-  supportedActions: ['execute', 'run', 'do', 'ask', 'chat', 'status', 'health'],
+  // The handler still accepts run/do/chat/health as synonyms; the model sees three.
+  supportedActions: ['execute', 'ask', 'status'],
   description:
-    'Delegate ops and terminal work to Hermes Agent (Nous Research, Hermes 4 405B). ' +
-    'Hermes has shell access and can run multi-step tasks autonomously. ' +
-    'Use for system admin, script execution, log checking, OSINT scanning.',
+    'Hand a multi-step job on the VPS HOST (the real server: services, disk, logs, docker) to ' +
+    'Hermes, a separate agent with its own shell. Slow (up to 2 min). Not for code, files or ' +
+    'git in your own workspace: that is sandbox. Owner only.',
   handler: handleHermes,
   requiredParams: ['action'],
   examples: [
