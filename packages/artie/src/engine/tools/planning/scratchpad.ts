@@ -48,6 +48,29 @@ const NOTES_BASE_PATH = CAPABILITIES_GUILD_NOTES;
 const scratchpadCache = new Map<string, string>();
 
 // Get the file path for a guild's scratchpad
+/**
+ * Which pad a call uses (2026-11-17 merge). Inside a conversation: that server's pad, or in a DM
+ * a pad for that one person (it used to be one 'default' pad shared by every DM user). A
+ * model-supplied guildId is honored only for context-less internal callers, so a conversation
+ * can't read or write another server's pad.
+ */
+export function scratchpadKey(
+  context: { guildId?: string; userId?: string } | undefined,
+  paramGuildId: unknown
+): string {
+  if (context) {
+    if (context.guildId) {
+      return context.guildId;
+    }
+    const who = String(context.userId || 'unknown').replace(/[^A-Za-z0-9_-]/g, '');
+    return `dm-${who}`;
+  }
+  if (typeof paramGuildId === 'string' && /^[A-Za-z0-9_-]+$/.test(paramGuildId)) {
+    return paramGuildId;
+  }
+  return 'default';
+}
+
 function getGuildNotesPath(guildId: string): string {
   // Map known guild IDs to their note files
   const guildFiles: Record<string, string> = {
@@ -189,8 +212,7 @@ Use it for community quirks, recurring questions, solutions that worked. Facts a
   handler: async (params: any, _content: string | undefined, context?: CapabilityContext) => {
     const { action = 'read', content, section } = params as ScratchpadParams;
 
-    // Get guild ID from context or params
-    const guildId = context?.guildId || params.guildId || 'default';
+    const guildId = scratchpadKey(context, params.guildId);
     logger.info(
       `📝 Scratchpad context: guildId=${guildId} (from context: ${context?.guildId}, from params: ${params.guildId})`
     );

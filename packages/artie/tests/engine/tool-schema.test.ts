@@ -131,6 +131,22 @@ describe('registryToTools over the real registry', () => {
     }
   });
 
+  // Guard (2026-11-17): content is opt-in once a tool declares params, so adding params to a
+  // tool whose handler reads `content` would silently drop the field the model fills. These
+  // tools read it (audited when the opt-in landed); each must keep offering it. If one stops
+  // reading content, remove it here on purpose.
+  it('tools whose handlers read content keep offering it', () => {
+    const CONTENT_READERS = [
+      'hermes', 'email', 'stripe', 'mediawiki', 'approvals', 'reddit', 'deep_research', 'http',
+      'discord-ui', 'github', 'memory', 'scratchpad', 'system_memory',
+    ];
+    for (const name of CONTENT_READERS) {
+      const tool = tools.find((t) => t.function.name === name);
+      expect(tool, `${name} not registered`).toBeDefined();
+      expect(tool!.function.parameters.properties.content, name).toBeDefined();
+    }
+  });
+
   it('the overlapping-tool use-when sentence lands inside the clipped first line', () => {
     for (const name of ['memory', 'scratchpad', 'system_memory', 'relay', 'proactive-dm']) {
       const desc = tools.find((t) => t.function.name === name)!.function.description;

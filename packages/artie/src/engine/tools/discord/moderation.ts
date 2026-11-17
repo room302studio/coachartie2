@@ -85,6 +85,16 @@ export const discordModerationCapability: RegisteredCapability = {
     const guildId = context?.guildId;
     const channelId = context?.channelId;
 
+    // Acting on someone needs the server the conversation is in. In a DM there is none, and the
+    // discord side would fall back to Subway Builder: anyone could DM "time out X" and land it
+    // on a Subway Builder member they aren't even talking next to. Refuse (2026-11-17 merge).
+    if (action !== 'escalate' && !guildId) {
+      return JSON.stringify({
+        success: false,
+        error: 'Moderation only works inside a server channel, not in a DM. Ask in the server where it is happening.',
+      });
+    }
+
     switch (action) {
       case 'timeout':
         if (!userId || !durationMinutes || !reason) {

@@ -266,3 +266,17 @@ describe('addRole uses the same resolver', () => {
     expect((r.body as any).error).toContain('No member named "ghost"');
   });
 });
+
+describe('moderation in a DM', () => {
+  it('refuses to act on anyone without a server (no Subway Builder fallback from DMs)', async () => {
+    const { discordModerationCapability } = await import('../../src/engine/tools/discord/moderation.js');
+    for (const action of ['timeout', 'add_enemy_role', 'remove_enemy_role']) {
+      const out = await discordModerationCapability.handler(
+        { action, user: 'someone', durationMinutes: 5, reason: 'x' },
+        undefined,
+        { userId: 'dm-user', channelId: 'dm-channel' }
+      );
+      expect(JSON.parse(out as string).error, action).toMatch(/not in a DM/);
+    }
+  });
+});
