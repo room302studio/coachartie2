@@ -10,6 +10,7 @@ import {
   checkDailyBudget,
   getDailyBudgetUsd,
   getTodaySpendUsd,
+  getTrailingBurnPerHour,
   BUDGET_ALERT_KIND,
 } from '../../src/engine/budget/daily-cap.js';
 
@@ -214,5 +215,23 @@ describe('getTodaySpendUsd', () => {
     insert('2027-01-16 04:59:59', 0.25); // 23:59:59 ET — included
     insert('2027-01-16 05:00:00', 100); // next ET day — excluded
     expect(getTodaySpendUsd(new Date('2027-01-15T17:00:00Z')) - before).toBeCloseTo(2.0, 6);
+  });
+});
+
+describe('getTrailingBurnPerHour', () => {
+  it('averages the ledger over the trailing window, so a restart cannot reset it', () => {
+    const db = getSyncDb();
+    const insert = (ts: string, cost: number) =>
+      db.run(
+        `INSERT INTO model_usage_stats (model_name, user_id, message_id, estimated_cost, timestamp)
+         VALUES ('m', 'burn-test', 'x', ?, ?)`,
+        [cost, ts]
+      );
+    const now = new Date('2028-03-10T12:00:00Z');
+    const before = getTrailingBurnPerHour(24, now);
+    insert('2028-03-09 11:59:00', 50); // just outside 24h — excluded
+    insert('2028-03-09 13:00:00', 1.2); // inside
+    insert('2028-03-10 11:30:00', 1.2); // inside
+    expect(getTrailingBurnPerHour(24, now) - before).toBeCloseTo(0.1, 6); // $2.40 / 24h
   });
 });

@@ -1,7 +1,7 @@
 import { logger } from '../../shared/logger.js';
 import { CreditMonitor } from './openrouter-balance.js';
 import { costMonitor } from './usage-ledger.js';
-import { getDailyBudgetUsd, getTodaySpendUsd } from './daily-cap.js';
+import { getDailyBudgetUsd, getTodaySpendUsd, getTrailingBurnPerHour } from './daily-cap.js';
 
 // =====================================================
 // BROWNOUT CONTROLLER
@@ -151,33 +151,36 @@ export async function getBrownoutMode(): Promise<BrownoutStatus> {
   return cached?.status ?? { mode: 'normal', runwayHours: null };
 }
 
-// Runway = balance ÷ burn rate. The burn rate must reflect what Artie is ACTUALLY
-// spending, not a fixed guess. For months this used a hardcoded $1.5/hr constant while
-// the real burn was $0.3–0.6/hr, so a healthy balance looked like ~4h of runway and
-// pinned Artie in CRITICAL (Haiku, 250 tokens) all day — the root cause of most
-// "he's acting dumb" reports. We now read the measured burn from the cost monitor and
-// only fall back to the constant when the sample is too fresh to trust (right after a
-// restart). The fallback default is also lowered to a realistic 0.75/hr.
+// Runway = balance ÷ burn rate, and the burn must be what Artie ACTUALLY spends. History:
+// a hardcoded $1.5/hr pinned him in CRITICAL for months; then the in-process rolling window
+// was right except after a restart, when its empty window fell back to a guessed $0.75/hr
+// (≈30× real) and every deploy meant 15 minutes of LEAN (2026-11-17: both LEANs that day
+// landed on restart minutes, and one cut a reply mid-bullet).
+//
+// Now: the durable ledger's trailing-24h burn is the baseline (survives restarts), and the
+// in-process last-hour burn can only raise it, so a live spike still tightens the loop
+// quickly. The guessed constant is used only when the ledger can't be read at all.
 function currentBurnPerHour(): number {
   const floor = envNumber('BROWNOUT_BURN_FLOOR', 0.15); // never divide by ~0 → false infinite runway
-  const fallback = envNumber('BROWNOUT_BURN_PER_HOUR', 0.75);
+  let burn: number;
+  try {
+    burn = getTrailingBurnPerHour();
+  } catch (error) {
+    logger.warn('🕯️ Brownout: ledger burn unreadable, using BROWNOUT_BURN_PER_HOUR', error);
+    burn = envNumber('BROWNOUT_BURN_PER_HOUR', 0.75);
+  }
   try {
     const stats = costMonitor.getStats();
-    const uptimeHours = stats.uptime / 3_600_000;
-    // Use the ROLLING burn, not costPerHour. costPerHour is cost-since-boot over
-    // hours-since-boot — a cumulative average that divides a post-restart burst by a tiny
-    // uptime and reads enormous. Measured over July it ran a median $11.39/hr against a real
-    // $0.26/hr, roughly 40x, which is exactly the kind of overstatement that pins Artie in
-    // CRITICAL and produces the "he's acting dumb" reports this function was written to fix.
+    // The rolling window, never costPerHour (a cumulative since-boot average that read ~40×
+    // high in July). Needs 15 min of uptime to mean anything.
     const recent = stats.recentBurnPerHour;
-    // Still need a stable sample: a fresh process hasn't spent enough to estimate.
-    if (uptimeHours >= 0.25 && typeof recent === 'number' && recent > 0) {
-      return Math.max(floor, recent);
+    if (stats.uptime >= 15 * 60_000 && typeof recent === 'number' && recent > burn) {
+      burn = recent;
     }
   } catch {
-    // cost monitor unavailable → fallback below
+    // cost monitor unavailable: the ledger baseline stands
   }
-  return Math.max(floor, fallback);
+  return Math.max(floor, burn);
 }
 
 async function refresh(now: number): Promise<void> {

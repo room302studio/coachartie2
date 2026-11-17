@@ -43,6 +43,31 @@ export function getTodaySpendUsd(now: Date = new Date()): number {
 }
 
 /**
+ * Average spend per hour over the trailing `hours` (default BURN_LEDGER_HOURS, 24), from the
+ * ledger. Durable: a restart can't reset it, unlike the in-process rolling window, whose empty
+ * window after a deploy used to fall back to a guessed $0.75/hr (≈30× the real burn) and put
+ * Artie in LEAN for 15 minutes after every restart (2026-11-17). Throws on DB failure.
+ */
+export function getTrailingBurnPerHour(hours: number = ledgerBurnHours(), now: Date = new Date()): number {
+  const since = new Date(now.getTime() - hours * 3_600_000);
+  const row = getSyncDb().get<{ spent: number | null }>(
+    `SELECT COALESCE(SUM(estimated_cost), 0) AS spent
+       FROM model_usage_stats
+      WHERE timestamp >= ?`,
+    [toSqliteUtc(since)]
+  );
+  return (row?.spent ?? 0) / hours;
+}
+
+function ledgerBurnHours(): number {
+  const parsed = parseFloat(process.env.BURN_LEDGER_HOURS || '');
+  if (Number.isFinite(parsed) && parsed > 0) {
+    return parsed;
+  }
+  return 24;
+}
+
+/**
  * How many model_usage_stats rows a user has logged today (ET day) for a given step_type.
  * Zero new state: the ledger write IS the counter, so a restart can't reset it. Used by the
  * per-user image_gen cap (security audit 2026-10-26, sec-abuse.md Critical #3).
