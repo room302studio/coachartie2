@@ -607,9 +607,50 @@ export class GitHubDiscordPoster {
         return `${event.data.checkRunName} passed`;
       case 'ci_failure':
         return `${event.data.checkRunName} failed`;
+      case 'issue_opened':
+      case 'issue_closed':
+        return this.numberedLine(event.data.issueNumber, event.data.issueUrl, event.data.issueTitle);
+      case 'issue_comment':
+        return `${this.numberedLine(event.data.issueNumber, event.data.issueUrl, undefined)} ${event.data.commentAuthor}: "${this.truncate(event.data.commentBody || '', 50)}"`;
+      case 'issue_labeled':
+        return `${this.numberedLine(event.data.issueNumber, event.data.issueUrl, undefined)} +\`${event.data.label}\``;
+      case 'issue_assigned':
+        return `${this.numberedLine(event.data.issueNumber, event.data.issueUrl, undefined)} → ${event.data.assignee}`;
+      case 'pr_opened':
+      case 'pr_draft':
+      case 'pr_ready_for_review':
+      case 'pr_merged':
+      case 'pr_closed':
+        return this.numberedLine(event.data.prNumber, event.data.prUrl, event.data.prTitle);
       default:
-        return event.type;
+        // Never print a bare raw event type (the 4× "issue_opened" card, 2026-11-17).
+        return this.fallbackLine(event);
     }
+  }
+
+  private fallbackLine(event: GitHubSyncEvent): string {
+    const kind = event.type.replace(/_/g, ' ');
+    if (event.data.issueNumber) {
+      return `${this.numberedLine(event.data.issueNumber, event.data.issueUrl, event.data.issueTitle)} (${kind})`;
+    }
+    if (event.data.prNumber) {
+      return `${this.numberedLine(event.data.prNumber, event.data.prUrl, event.data.prTitle)} (${kind})`;
+    }
+    return kind;
+  }
+
+  /** "[#1502](url) Title", trimmed to one scannable line. */
+  private numberedLine(num: number | undefined, url: string | undefined, title: string | undefined): string {
+    let ref: string;
+    if (url) {
+      ref = `[#${num}](${url})`;
+    } else {
+      ref = `#${num}`;
+    }
+    if (!title) {
+      return ref;
+    }
+    return `${ref} ${this.truncate(title, 80)}`;
   }
 
   /**
