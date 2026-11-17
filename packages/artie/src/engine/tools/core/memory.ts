@@ -791,6 +791,13 @@ async function handleMemoryAction(
   // The conversation's guild (undefined in DMs). Read here: `remember` shadows `context` below.
   const callerGuildId = context?.guildId;
   const fromConversation = context !== undefined;
+  // Conversations use their own guild; only context-less internal callers may name one.
+  const tagGuild = (): string | undefined => {
+    if (fromConversation) {
+      return callerGuildId;
+    }
+    return optionalString(params.guildId);
+  };
   const memoryService = MemoryService.getInstance();
 
   logger.info(`🎯 Memory handler called - Action: ${action}, UserId: ${userId}, Params:`, params);
@@ -851,6 +858,11 @@ async function handleMemoryAction(
           // A conversation's own guild; only internal callers with no context (observation,
           // reaction feedback) may name one, so a DM can't plant a memory in a server.
           if (fromConversation) {
+            // In a DM there is no "here": guild-free would mean "follows them everywhere" and
+            // a private fact about someone else would surface in every server (Codex).
+            if (!callerGuildId) {
+              throw new Error('scope "here" needs a server; in a DM only scope "me" (facts about the person asking) can be remembered');
+            }
             guildId = callerGuildId;
           } else {
             guildId = optionalString(params.guildId);
@@ -892,7 +904,7 @@ async function handleMemoryAction(
             targetUserId,
             wantedTags,
             limit,
-            callerGuildId
+            tagGuild()
           );
           if (tagged.length === 0) {
             return `🏷️ No memories tagged ${wantedTags.join(', ')}.`;

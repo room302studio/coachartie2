@@ -4,6 +4,7 @@ import { MemoryEntourageInterface, MemoryEntourageResult } from './types.js';
 import { MemoryService } from '../tools/core/memory.js';
 import { hybridDataLayer, recallGuildIds } from './store.js';
 import { isOwner } from '../../shared/config/owner.js';
+import { getSyncDb } from '../../shared/db/client.js';
 
 /**
  * True when `content` names the owner (by Discord id, "ejfox" or the standalone word "EJ").
@@ -119,6 +120,39 @@ const ABOUT_YOU_MAX_CHARS = 200;
  * words didn't overlap. The asker's few most important facts about themselves ride along on
  * every reply, unless the ranked layers already picked them.
  */
+/**
+ * The asker's most important PERSONAL facts (scope "me" = guild-free), queried directly so an old
+ * importance-10 fact isn't lost behind 60 newer trivial ones, and server-scoped notes about
+ * projects or other people never take the "about you" slots (Codex 2026-11-17).
+ */
+function personalFacts(userId: string): OwnMemory[] {
+  try {
+    return getSyncDb()
+      .all<{ content: string; importance: number; timestamp: string }>(
+        `SELECT content, importance, timestamp FROM memories
+          WHERE user_id = ? AND guild_id IS NULL AND importance >= ?
+          ORDER BY importance DESC, timestamp DESC LIMIT ?`,
+        [userId, ABOUT_YOU_MIN_IMPORTANCE, ABOUT_YOU_SLOTS * 2]
+      )
+      .map((m) => ({
+        content: stripCapabilityTags(m.content),
+        importance: m.importance,
+        date: m.timestamp || '',
+      }));
+  } catch (error) {
+    logger.warn('about-you lookup failed (recall continues without it):', error);
+    return [];
+  }
+}
+
+/** Rough tokens the about-you line will take, reserved out of the recall budget first. */
+function aboutYouTokens(own: OwnMemory[]): number {
+  const chars = own
+    .slice(0, ABOUT_YOU_SLOTS)
+    .reduce((n, m) => n + Math.min(m.content.length, ABOUT_YOU_MAX_CHARS) + 2, 40);
+  return Math.ceil(chars / 4);
+}
+
 export function withAboutYou(result: MemoryEntourageResult, own: OwnMemory[]): MemoryEntourageResult {
   const picks = own
     .filter((m) => m.importance >= ABOUT_YOU_MIN_IMPORTANCE && m.content.trim() !== '')
@@ -207,8 +241,14 @@ export class MemoryRecaller implements MemoryEntourageInterface {
     }
 
     try {
-      const budget = this.tokenBudget(options.maxTokens);
       const { candidates, own } = await this.fetchCandidates(userId, options.guildId, userMessage);
+      // The about-you line comes out of the same budget, reserved first (Codex 2026-11-17).
+      let rankedBudget = options.maxTokens;
+      if (rankedBudget !== undefined && own.length > 0) {
+        // Floor of 1, not 0: tokenBudget reads 0 as "unset" and would hand back 800.
+        rankedBudget = Math.max(1, rankedBudget - aboutYouTokens(own));
+      }
+      const budget = this.tokenBudget(rankedBudget);
 
       let semantic: MemoryEntourageResult;
       if (candidates.length > 0) {
@@ -281,11 +321,7 @@ export class MemoryRecaller implements MemoryEntourageInterface {
     // nothing older than a few months could ever be recalled, however exactly it matched.
     const keywordMemories = keywordCandidates(query, userId, guildId);
 
-    const own: OwnMemory[] = userMemories.map((m: any) => ({
-      content: stripCapabilityTags(m.content),
-      importance: m.importance || 5,
-      date: m.timestamp || '',
-    }));
+    const own = personalFacts(userId);
 
     const seen = new Set<string>();
     const candidates = [...keywordMemories, ...userMemories, ...artieMemories, ...guildMemories]

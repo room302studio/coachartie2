@@ -146,6 +146,15 @@ describe('Memory Capability', () => {
           { userId: testUserId, guildId: 'g-room302' }
         )
       ).rejects.toThrow(/scope/);
+
+      // A DM has no "here": guild-free would make it follow them into every server.
+      await expect(
+        memoryCapability.handler(
+          { action: 'remember', scope: 'here', content: 'scope-test: dm here' },
+          undefined,
+          { userId: testUserId }
+        )
+      ).rejects.toThrow(/needs a server/);
       remember.mockRestore();
     });
   });
