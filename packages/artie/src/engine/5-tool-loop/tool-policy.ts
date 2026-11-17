@@ -99,11 +99,11 @@ export function gatesFor(actions: ToolActions | undefined, action: string): Tool
   if (!actions) {
     return OPEN;
   }
-  const spec = actions[action];
-  if (!spec) {
+  // Own keys only: `constructor`/`toString` must not read as a declared action (Codex).
+  if (!Object.hasOwn(actions, action)) {
     return strictest(actions);
   }
-  return gatesOf(spec);
+  return gatesOf(actions[action]);
 }
 
 /** "tool:action" for every supported action with no declaration, sorted. */
@@ -113,7 +113,7 @@ export function undeclaredActions(
   const missing: string[] = [];
   for (const cap of capabilities) {
     for (const action of cap.supportedActions) {
-      if (!cap.actions?.[action]) {
+      if (!cap.actions || !Object.hasOwn(cap.actions, action)) {
         missing.push(`${cap.name}:${action}`);
       }
     }

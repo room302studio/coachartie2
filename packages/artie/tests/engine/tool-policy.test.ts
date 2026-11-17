@@ -149,6 +149,11 @@ describe('gatesFor', () => {
     });
   });
 
+  it('inherited object keys are not declarations (sandbox:constructor stays owner-only)', () => {
+    expect(gatesFor(actions, 'constructor').ownerOnly).toBe(true);
+    expect(gatesFor(actions, 'toString').needsApproval).toBe(true);
+  });
+
   it('approval can be switched off explicitly (owner-run money, e.g. deep_research)', () => {
     expect(gatesFor({ x: { effect: 'money', approval: false } }, 'x').needsApproval).toBe(false);
   });
