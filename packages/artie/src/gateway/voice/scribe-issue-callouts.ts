@@ -46,7 +46,8 @@ function asIssueNumber(word: string, allowBare: boolean): number | null {
 export function extractIssueRefs(text: string): number[] {
   const words = text
     .toLowerCase()
-    .split(/\s+/)
+    // Spaces, commas and slashes all separate words: "#1502,#1503" is two refs.
+    .split(/[\s,/]+/)
     .map((w) => w.replace(/[.,!?;:()"']+$/, '').replace(/^[("']+/, ''));
   const out: number[] = [];
   let afterCue = false;

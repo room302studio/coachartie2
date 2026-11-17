@@ -111,6 +111,7 @@ describe('meeting issue callouts', () => {
     expect(extractIssueRefs('Issue number 88 is the tunnel thing')).toEqual([88]);
     expect(extractIssueRefs('that was #1503, right')).toEqual([1503]);
     expect(extractIssueRefs('pull request 1501 merged')).toEqual([1501]);
+    expect(extractIssueRefs('see #1502,#1503/#1504')).toEqual([1502, 1503, 1504]);
   });
 
   it('ignores ordinary numbers and single digits', () => {
