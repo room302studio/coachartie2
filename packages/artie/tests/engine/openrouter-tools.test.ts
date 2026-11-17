@@ -279,22 +279,18 @@ describe('generateWithTools: the tool-capable pin', () => {
     expect(createMock.mock.calls[0][0].model).toBe('anthropic/claude-opus-5.5');
   });
 
-  it("brownout's final-third route (openrouter/auto) stays inside the tool-capable set", async () => {
+  it("brownout's runway-critical model really answers on the tool loop (no silent pin)", async () => {
     const route = brownoutRoute(
-      { mode: 'lean', runwayHours: 10, runwayMode: 'lean', dailyMode: 'normal', dailySpendFraction: 0.5 },
+      { mode: 'critical', runwayHours: 3, runwayMode: 'critical', dailyMode: 'normal', dailySpendFraction: 0.1 },
       'anthropic/claude-opus-5.5'
     );
-    expect(route.model).toBe('openrouter/auto'); // the downgrade itself is unchanged
+    expect(route.model).toBe('anthropic/claude-sonnet-5');
 
-    createMock.mockResolvedValueOnce(completion({ content: 'short reply' }));
-    await openRouterService.generateWithTools(MESSAGES, TOOLS, 'u', 'm', route.model, {
-      plugins: route.plugins,
-      maxTokens: 500,
-    });
+    createMock.mockResolvedValueOnce(completion({ content: 'short reply' }, 'anthropic/claude-sonnet-5'));
+    await openRouterService.generateWithTools(MESSAGES, TOOLS, 'u', 'm', route.model);
     const params = createMock.mock.calls[0][0];
-    expect(params.model).toBe('anthropic/claude-haiku-4.5');
+    expect(params.model).toBe('anthropic/claude-sonnet-5');
     expect(params.plugins).toBeUndefined();
-    expect(params.max_tokens).toBe(500); // brownout's length cap still applies
   });
 
   it('skips a configured model that lacks tools when pinning', async () => {

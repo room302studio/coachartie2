@@ -253,57 +253,29 @@ export function brevityNoteFor(mode: BrownoutMode): string | null {
   return BREVITY_NOTES[mode];
 }
 
-/**
- * Which model answers under brownout. EJ's call (2026-09-29): Artie's voice IS the persona
- * model — swapping to a cheaper one "loses his creativity and flavor". So the taper is by
- * LENGTH only (brevity note + reasoning off) and the model never changes, with one exception:
- * when the OpenRouter balance itself is nearly gone (runway-driven critical), a cheap model
- * keeps him answering instead of failing. Daily-budget pressure never swaps models — the
- * budget mute handles the end of the day.
- */
 export interface BrownoutRoute {
   model: string;
-  /** OpenRouter plugins for the request (the auto-router's cost tier lives here). */
+  /** OpenRouter plugins for the request (unused by brownout since 2026-11-17). */
   plugins?: unknown[];
 }
 
 /**
- * The final third of either tank goes to OpenRouter's auto-router at a low cost tier
- * (EJ, 2026-09-29: "if we're in our final 33% of tokens, daily or total, revert to
- * openrouter auto-routing" — it tracks the cheapest capable models, so nobody has to keep a
- * hardcoded "cheap model" current). Daily: spend >= BROWNOUT_DAILY_AUTO_FRACTION (0.67) of
- * DAILY_BUDGET_USD. Total: the balance runway is lean or critical — Artie can't know what a
- * "full" OpenRouter tank was, so runway (balance ÷ measured burn, < BROWNOUT_LEAN_HOURS) is
- * the proxy. Before that, his persona model answers — length tapering still applies.
+ * Which model answers. EJ (2026-09-29): Artie's voice IS the persona model; swapping "loses
+ * his creativity and flavor". EJ (2026-11-17): swap ONLY at runway-critical (the real balance
+ * nearly gone), so he keeps answering instead of going silent. Daily-budget pressure never
+ * swaps; the $3/day mute ends the day instead.
  *
- * KNOWN GAP (2026-11-17): this route only takes effect on the XML/streaming rollback path.
- * The default native tool loop rejects auto-routed models (openrouter.ts toolModelsToTry) and
- * pins back to the first tool-capable OPENROUTER_MODELS entry, so on normal chats the model
- * never actually swaps. Whether to delete the lever or make it real is EJ's call.
- * BROWNOUT_AUTO_COST_TIER (low) and BROWNOUT_AUTO_ALLOWED_MODELS (comma-separated wildcards,
- * e.g. "anthropic/*,google/*"; unset = auto-router's own pool) keep a quality floor.
+ * The critical model must be a concrete, tool-capable model (BROWNOUT_CRITICAL_MODEL, default
+ * Sonnet): the native tool loop can't use openrouter/auto. History: until 11-17 this sent the
+ * final third of either tank to openrouter/auto, which the tool loop silently pinned to the
+ * first tool-capable OPENROUTER_MODELS entry (Haiku in prod), so lean meant Haiku and nobody
+ * had chosen that.
  */
 export function brownoutRoute(status: BrownoutStatus, persona: string): BrownoutRoute {
-  const fraction = status.dailySpendFraction;
-  const dailyLow =
-    typeof fraction === 'number' && fraction >= envNumber('BROWNOUT_DAILY_AUTO_FRACTION', 0.67);
-  const totalLow = status.runwayMode === 'lean' || status.runwayMode === 'critical';
-  if (!dailyLow && !totalLow) return { model: persona };
-  const allowed = (process.env.BROWNOUT_AUTO_ALLOWED_MODELS || '')
-    .split(',')
-    .map((m) => m.trim())
-    .filter(Boolean);
-  const routerConfig: Record<string, unknown> = {
-    id: 'auto-router',
-    cost_tier: process.env.BROWNOUT_AUTO_COST_TIER || 'low',
-  };
-  if (allowed.length) {
-    routerConfig.allowed_models = allowed;
+  if (status.runwayMode === 'critical') {
+    return { model: process.env.BROWNOUT_CRITICAL_MODEL || 'anthropic/claude-sonnet-5' };
   }
-  return {
-    model: 'openrouter/auto',
-    plugins: [routerConfig],
-  };
+  return { model: persona };
 }
 
 /**

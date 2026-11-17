@@ -286,13 +286,9 @@ export class LLMResponseCoordinator {
         smartModel = openRouterService.selectSmartModel();
       }
 
-      // Brownout override (see brownout.ts): when credit runway shrinks, step
-      // down to cheaper models + shorter replies instead of going silent.
-      // 'normal' mode leaves the complexity route above completely untouched.
-      // The mode is the more conservative of credit runway and today's spend vs
-      // DAILY_BUDGET_USD — see brownout.ts.
-      // His persona model until the final third of either tank, then OpenRouter's auto-router
-      // at a low cost tier (see brownoutRoute). Length tapering applies throughout.
+      // Brownout (see brownout.ts): the mode is the more conservative of credit runway and
+      // today's spend vs DAILY_BUDGET_USD. Lean/critical = brevity note + reasoning off; the
+      // model stays his persona except at runway-critical (brownoutRoute).
       const brownout = await getBrownoutMode();
       const route = brownoutRoute(brownout, smartModel);
       smartModel = route.model;
