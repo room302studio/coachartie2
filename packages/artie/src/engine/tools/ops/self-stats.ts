@@ -1,7 +1,13 @@
 import { logger } from '../../../shared/logger.js';
 import { getSyncDb } from '../../../shared/db/client.js';
 import { isBlockedUser, BLOCKED_USER_EPITHET, BLOCKED_USER_IDS } from '../../../shared/blocklist.js';
-import { RegisteredCapability } from '../../5-tool-loop/registry.js';
+import { RegisteredCapability, capabilityRegistry } from '../../5-tool-loop/registry.js';
+import {
+  ledgerCounts,
+  ledgerFirstTs,
+  ledgerToolsCalled,
+  ledgerTopFailures,
+} from '../../5-tool-loop/tool-ledger.js';
 import { metricsRegistry } from '../../health/metrics.js';
 
 /**
@@ -16,7 +22,15 @@ import { metricsRegistry } from '../../health/metrics.js';
  */
 
 interface SelfStatsParams {
-  action: 'overview' | 'costs' | 'capabilities' | 'health' | 'errors' | 'user_costs' | 'top_spenders';
+  action:
+    | 'overview'
+    | 'costs'
+    | 'capabilities'
+    | 'health'
+    | 'errors'
+    | 'tools'
+    | 'user_costs'
+    | 'top_spenders';
   timeRange?: string; // e.g., '1h', '24h', '7d'
   user_id?: string; // for user_costs — defaults to whoever is asking
   limit?: number; // for top_spenders
@@ -107,6 +121,183 @@ function topSpendersReport(db: ReturnType<typeof getSyncDb>, limit: number): str
   return lines.join('\n');
 }
 
+// ── Windows ────────────────────────────────────────────────────────────────
+
+const MAX_WINDOW_MINUTES = 30 * 24 * 60; // the tool ledger keeps 30 days
+
+/** '30m' | '6h' | '7d' (bare number = hours) -> minutes. Falls back to `fallbackMinutes`. */
+export function parseWindowMinutes(raw: unknown, fallbackMinutes: number): number {
+  const match = String(raw ?? '').trim().toLowerCase().match(/^(\d+(?:\.\d+)?)\s*(m|h|d)?$/);
+  if (!match) return fallbackMinutes;
+  const n = parseFloat(match[1]);
+  const unit = match[2] ?? 'h';
+  let minutes = n * 60;
+  if (unit === 'm') minutes = n;
+  if (unit === 'd') minutes = n * 24 * 60;
+  if (!(minutes > 0)) return fallbackMinutes;
+  return Math.min(Math.round(minutes), MAX_WINDOW_MINUTES);
+}
+
+function describeWindow(minutes: number): string {
+  if (minutes % (24 * 60) === 0) return `${minutes / (24 * 60)}d`;
+  if (minutes % 60 === 0) return `${minutes / 60}h`;
+  return `${minutes}m`;
+}
+
+function pct(part: number, whole: number): string {
+  if (whole <= 0) return '0%';
+  return `${Math.round((part / whole) * 100)}%`;
+}
+
+// ── tools: the persisted tool-call ledger ──────────────────────────────────
+
+/**
+ * Per tool:action: calls, ok %, top failure outcomes; then the top failure causes and the
+ * tools that were never called in the window. Reads tool_call_ledger (persisted, 30 days), so
+ * it survives restarts. Outcomes only: no params, content or results are ever stored.
+ */
+export function toolsReport(windowMinutes: number, now: number = Date.now()): string {
+  const since = now - windowMinutes * 60 * 1000;
+  const label = describeWindow(windowMinutes);
+  const cells = ledgerCounts(since);
+  const firstTs = ledgerFirstTs();
+
+  const lines: string[] = [`## Tool calls, last ${label}`];
+  if (firstTs !== null && firstTs > since) {
+    lines.push(`(ledger only began ${new Date(firstTs).toISOString().slice(0, 16)}Z, so the window is shorter)`);
+  }
+
+  const byKey = new Map<string, { calls: number; ok: number; failures: Map<string, number> }>();
+  let total = 0;
+  let totalOk = 0;
+  for (const cell of cells) {
+    const key = `${cell.tool}:${cell.action}`;
+    let row = byKey.get(key);
+    if (!row) {
+      row = { calls: 0, ok: 0, failures: new Map() };
+      byKey.set(key, row);
+    }
+    row.calls += cell.n;
+    total += cell.n;
+    if (cell.outcome === 'ok') {
+      row.ok += cell.n;
+      totalOk += cell.n;
+    } else {
+      row.failures.set(cell.outcome, (row.failures.get(cell.outcome) ?? 0) + cell.n);
+    }
+  }
+
+  if (total === 0) {
+    lines.push('No tool calls recorded in this window.');
+  } else {
+    lines.push(`${total} calls, ${pct(totalOk, total)} ok. Outcomes other than ok: invalid_args (failed validation), refused_owner, blocked_taint, queued_approval, error, unknown_tool, unknown_action.`);
+    lines.push('');
+    lines.push('tool:action | calls | ok | not ok');
+    const sorted = [...byKey.entries()].sort((a, b) => b[1].calls - a[1].calls);
+    for (const [key, row] of sorted.slice(0, 25)) {
+      const fails = [...row.failures.entries()]
+        .sort((a, b) => b[1] - a[1])
+        .map(([outcome, n]) => `${outcome} ${n}`)
+        .join(', ');
+      lines.push(`${key} | ${row.calls} | ${pct(row.ok, row.calls)} | ${fails || '-'}`);
+    }
+    if (sorted.length > 25) lines.push(`(+${sorted.length - 25} more tool:actions)`);
+
+    const failures = ledgerTopFailures(since, 8);
+    if (failures.length > 0) {
+      lines.push('');
+      lines.push('Top failure causes:');
+      for (const f of failures) {
+        let cause = '';
+        if (f.errorClass) cause = ` - ${f.errorClass}`;
+        lines.push(`- ${f.tool}:${f.action} ${f.outcome}${cause} (${f.n})`);
+      }
+    }
+  }
+
+  const called = ledgerToolsCalled(since);
+  const never = capabilityRegistry
+    .list()
+    .map((c) => c.name)
+    .filter((name) => !called.has(name))
+    .sort();
+  lines.push('');
+  if (never.length === 0) {
+    lines.push(`Every registered tool was called at least once in the last ${label}.`);
+  } else {
+    lines.push(`Never called in the last ${label} (${never.length}): ${never.join(', ')}`);
+  }
+  return lines.join('\n');
+}
+
+// ── errors: LLM calls + tool calls, from the DB, with the definition stated ─
+
+/**
+ * What "errors" means, in one place. Both numbers come from the database, so a restart does
+ * not zero them, and the LLM-call rate uses the same rows and the same success flag as the
+ * "N% API errors" figure the distress monitor puts in your own context (distress.ts
+ * getApiErrorRate: model_usage_stats, success = 0, but only over the last hour).
+ *
+ * The old version read the in-memory Prometheus counters, which (a) reset on restart and
+ * (b) never counted a failed LLM call at all (recordApiCall only runs on the success path),
+ * so it printed "no errors" while the DB showed failures.
+ */
+export function errorsReport(windowMinutes: number, now: number = Date.now()): string {
+  const db = getSyncDb();
+  const label = describeWindow(windowMinutes);
+  const lines: string[] = [`## Errors, last ${label}`, ''];
+
+  const llm = db.get<{ failed: number | null; total: number }>(
+    `SELECT SUM(CASE WHEN success = 0 THEN 1 ELSE 0 END) AS failed, COUNT(*) AS total
+     FROM model_usage_stats WHERE timestamp > datetime('now', ?)`,
+    [`-${windowMinutes} minutes`]
+  );
+  const failed = llm?.failed ?? 0;
+  const llmTotal = llm?.total ?? 0;
+  lines.push(`**LLM calls:** ${failed} failed of ${llmTotal} (${pct(failed, llmTotal)})`);
+  if (failed > 0) {
+    const kinds = db.all<{ error_type: string | null; n: number }>(
+      `SELECT error_type, COUNT(*) AS n FROM model_usage_stats
+       WHERE success = 0 AND timestamp > datetime('now', ?)
+       GROUP BY error_type ORDER BY n DESC LIMIT 5`,
+      [`-${windowMinutes} minutes`]
+    );
+    for (const k of kinds) lines.push(`- ${k.error_type || 'unknown'}: ${k.n}`);
+  }
+
+  const since = now - windowMinutes * 60 * 1000;
+  const cells = ledgerCounts(since);
+  // Failures are things that went wrong; policy stops (refused / taint-blocked / queued for
+  // approval) are the system working as designed, so they are counted on their own line.
+  const POLICY_STOPS = new Set(['refused_owner', 'blocked_taint', 'queued_approval']);
+  let toolTotal = 0;
+  let policyStops = 0;
+  const bad = new Map<string, number>();
+  for (const cell of cells) {
+    toolTotal += cell.n;
+    if (POLICY_STOPS.has(cell.outcome)) {
+      policyStops += cell.n;
+    } else if (cell.outcome !== 'ok') {
+      const key = `${cell.tool}:${cell.action} ${cell.outcome}`;
+      bad.set(key, (bad.get(key) ?? 0) + cell.n);
+    }
+  }
+  let toolBad = 0;
+  for (const n of bad.values()) toolBad += n;
+  lines.push('');
+  lines.push(`**Tool calls:** ${toolBad} failed of ${toolTotal} (${pct(toolBad, toolTotal)}), plus ${policyStops} policy stops (refused / taint-blocked / queued for approval)`);
+  for (const [key, n] of [...bad.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8)) {
+    lines.push(`- ${key}: ${n}`);
+  }
+  if (toolTotal > 0) lines.push('(use action "tools" for the per-tool table and causes)');
+
+  lines.push('');
+  lines.push(
+    '_Counts: LLM calls = model_usage_stats rows (success flag), the same source as the distress "API errors" figure in your context (that one only looks at the last hour). Tool calls = the persisted tool-call ledger. Neither resets on restart._'
+  );
+  return lines.join('\n');
+}
+
 // Parse Prometheus metrics text format
 function parsePrometheusMetrics(metricsText: string): Record<string, any> {
   const result: Record<string, any> = {};
@@ -157,9 +348,30 @@ export const selfStatsCapability: RegisteredCapability = {
     costs: { effect: 'read' },
     capabilities: { effect: 'read' },
     health: { effect: 'read' },
-    errors: { effect: 'read' },
-    top_spenders: { effect: 'read' }, // a public leaderboard by design
-    user_costs: { effect: 'read', who: 'owner' }, // one named person's spend
+    errors: {
+      effect: 'read',
+      params: {
+        timeRange: { type: 'string', description: 'Window, e.g. 1h, 24h, 7d (default 24h)' },
+      },
+    },
+    // Aggregate per tool, no user ids, params or results: open like errors/capabilities.
+    tools: {
+      effect: 'read',
+      params: {
+        timeRange: { type: 'string', description: 'Window, e.g. 24h, 7d, 30d (default 7d)' },
+      },
+    },
+    top_spenders: {
+      effect: 'read', // a public leaderboard by design
+      params: { limit: { type: 'integer', description: 'How many spenders to list (default 10, max 25)' } },
+    },
+    user_costs: {
+      effect: 'read',
+      who: 'owner', // one named person's spend
+      params: {
+        user_id: { type: 'string', description: 'Discord user id (defaults to whoever is asking)' },
+      },
+    },
   },
   supportedActions: [
     'overview',
@@ -167,6 +379,7 @@ export const selfStatsCapability: RegisteredCapability = {
     'capabilities',
     'health',
     'errors',
+    'tools',
     'user_costs',
     'top_spenders',
   ],
@@ -177,7 +390,8 @@ Actions:
 - costs: API costs and token usage today
 - capabilities: Which capabilities you've used most
 - health: Memory, CPU, uptime
-- errors: Recent errors (if any)
+- errors: Failed LLM calls and failed tool calls over a window (default 24h, timeRange e.g. "7d"), from the database, so a restart does not reset it. States what it counts.
+- tools: Your tool-call ledger over a window (default 7d): per tool:action calls, ok %, failure outcomes (invalid args, refused, taint-blocked, queued for approval, errors, unknown tool/action), top failure causes, and tools never called. Use when asked which tools you avoid or which calls fail.
 - user_costs: How much a specific user has cost in credits (lifetime, today, rank, worst days). Defaults to whoever is asking. Use when someone asks "how much money have I cost?", "what's my bill?", "how much have I spent?"
 - top_spenders: Leaderboard of the biggest credit consumers. Use when someone asks who costs the most / top spenders / biggest credit users.
 
@@ -188,6 +402,8 @@ Use this when you want to reflect on your performance, check if something's wron
     '<capability name="self-stats" action="costs" />',
     '<capability name="self-stats" action="capabilities" />',
     '<capability name="self-stats" action="health" />',
+    '<capability name="self-stats" action="errors" data=\'{"timeRange":"24h"}\' />',
+    '<capability name="self-stats" action="tools" data=\'{"timeRange":"7d"}\' />',
     '<capability name="self-stats" action="user_costs" />',
     '<capability name="self-stats" action="user_costs" data=\'{"user_id":"703107274293641266"}\' />',
     '<capability name="self-stats" action="top_spenders" data=\'{"limit":10}\' />',
@@ -199,6 +415,18 @@ Use this when you want to reflect on your performance, check if something's wron
     logger.info(`📊 Self-stats: ${action}`);
 
     // DB-backed actions don't need the metrics registry — handle them first.
+    if (action === 'errors' || action === 'tools') {
+      try {
+        if (action === 'tools') {
+          return toolsReport(parseWindowMinutes(params.timeRange, 7 * 24 * 60));
+        }
+        return errorsReport(parseWindowMinutes(params.timeRange, 24 * 60));
+      } catch (error: any) {
+        logger.error(`Self-stats ${action} error:`, error);
+        return `Error running ${action}: ${error.message}`;
+      }
+    }
+
     if (action === 'user_costs' || action === 'top_spenders') {
       try {
         const db = getSyncDb();
@@ -384,44 +612,10 @@ Use this when you want to reflect on your performance, check if something's wron
           return lines.join('\n');
         }
 
-        case 'errors': {
-          const lines: string[] = ['## Recent Errors\n'];
-
-          // Check for failed API calls
-          const apiCalls = metrics['artie_api_calls_total'] || [];
-          const errorCalls = apiCalls.filter((m: any) => m.labels.includes('status="error"'));
-          const totalErrors = errorCalls.reduce((sum: number, m: any) => sum + m.value, 0);
-
-          if (totalErrors > 0) {
-            lines.push(`**API Errors:** ${totalErrors}`);
-            for (const m of errorCalls) {
-              const model = m.labels.match(/model="([^"]+)"/)?.[1] || 'unknown';
-              lines.push(`- ${model}: ${m.value} errors`);
-            }
-          }
-
-          // Check capability errors
-          const capUsage = metrics['artie_capability_usage_total'] || [];
-          const capErrors = capUsage.filter((m: any) => m.labels.includes('status="error"'));
-          const totalCapErrors = capErrors.reduce((sum: number, m: any) => sum + m.value, 0);
-
-          if (totalCapErrors > 0) {
-            lines.push(`\n**Capability Errors:** ${totalCapErrors}`);
-            for (const m of capErrors) {
-              const cap = m.labels.match(/capability="([^"]+)"/)?.[1] || 'unknown';
-              lines.push(`- ${cap}: ${m.value} errors`);
-            }
-          }
-
-          if (totalErrors === 0 && totalCapErrors === 0) {
-            lines.push('No errors recorded since last restart. 🎉');
-          }
-
-          return lines.join('\n');
-        }
+        // 'errors' and 'tools' are DB-backed and handled above (errorsReport, toolsReport).
 
         default:
-          return `Unknown action: ${action}. Use: overview, costs, capabilities, health, errors`;
+          return `Unknown action: ${action}. Use: overview, costs, capabilities, health, errors, tools, user_costs, top_spenders`;
       }
     } catch (error: any) {
       logger.error('Self-stats error:', error);

@@ -1255,6 +1255,33 @@ export const errorEvents = sqliteTable(
 );
 
 /**
+ * Tool Call Ledger - one row per logical tool call (outcome only, never params/results).
+ * Created lazily by engine/5-tool-loop/tool-ledger.ts (same CREATE IF NOT EXISTS idiom as
+ * pending_actions); this definition documents the shape. ts is epoch milliseconds.
+ * Pruned past 30 days by the ledger itself.
+ */
+export const toolCallLedger = sqliteTable(
+  'tool_call_ledger',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    ts: integer('ts').notNull(),
+    tool: text('tool').notNull(),
+    action: text('action').notNull(),
+    // ok | invalid_args | refused_owner | blocked_taint | queued_approval | error |
+    // unknown_tool | unknown_action
+    outcome: text('outcome').notNull(),
+    errorClass: text('error_class'), // short class/message, max 200 chars
+    durationMs: integer('duration_ms'),
+    attempts: integer('attempts').notNull().default(1),
+    userId: text('user_id'),
+    guildId: text('guild_id'),
+  },
+  (table) => ({
+    tsIdx: index('idx_tool_call_ledger_ts').on(table.ts),
+  })
+);
+
+/**
  * User Sessions - Track user engagement sessions
  */
 export const userSessions = sqliteTable(

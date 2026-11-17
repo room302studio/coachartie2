@@ -11,6 +11,7 @@ import { GlobalVariableStore } from './variables.js';
 import { jobTracker } from '../1-intake/job-tracker.js';
 import { recordCapabilityUsage } from '../health/metrics.js';
 import { toCallNotation } from './mode.js';
+import { looksLikeToolFailure, writeLedgerRow } from './tool-ledger.js';
 import {
   ExtractedCapability,
   CapabilityResult,
@@ -106,6 +107,17 @@ function checkTaintBlock(
     return null; // read/own actions (or undeclared ones) stay available
   }
 
+  // Ledger: the registry is never reached for a blocked call, so this is its one row. Every
+  // call site (native, streaming chain, executeCapability) calls checkTaintBlock once per call.
+  writeLedgerRow({
+    tool: capName,
+    action: String(resolved.action).toLowerCase(),
+    outcome: 'blocked_taint',
+    errorClass: `tainted_by:${context.taintSource ?? 'unknown'}`,
+    userId: context.userId,
+    guildId: context.discord_context?.guildId,
+  });
+
   // Block the capability
   return (
     `🛡️ SECURITY: Capability "${capability.name}:${capability.action}" blocked. ` +
@@ -152,24 +164,9 @@ function toolResultText(data: unknown): string {
  *   - a JSON object/array whose top-level `success` field is false (system_memory, stripe,
  *     discord reaction/poll/moderation, http, …)
  */
-const FAILURE_TEXT_PREFIX = /^(?:[A-Za-z][\w -]{0,40}\s)?error:\s/i;
-
-export function looksLikeToolFailure(text: string): boolean {
-  if (!text) return false;
-  if (text.startsWith('❌')) return true;
-  if (FAILURE_TEXT_PREFIX.test(text)) return true;
-  if (text[0] === '{' || text[0] === '[') {
-    try {
-      const parsed = JSON.parse(text);
-      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed) && parsed.success === false) {
-        return true;
-      }
-    } catch {
-      // Not JSON (or not parseable) — not this check's problem.
-    }
-  }
-  return false;
-}
+// The implementation moved to tool-ledger.ts (the registry classifies outcomes with it and
+// can't import this file); re-exported so existing importers keep working.
+export { looksLikeToolFailure };
 
 /**
  * Execute ONE native tool call (wave 8): runToolLoop's executeTool in run-turn.ts.

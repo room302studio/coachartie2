@@ -50,7 +50,7 @@ const GATE_FLOOR: Record<string, Record<string, string>> = {
     create: 'OT', update: 'OT', delete: 'OT', enable: 'OT', disable: 'OT',
   },
   'self-stats': {
-    overview: '', costs: '', capabilities: '', health: '', errors: '', top_spenders: '',
+    overview: '', costs: '', capabilities: '', health: '', errors: '', tools: '', top_spenders: '',
     user_costs: 'O',
   },
   deep_research: { submit: 'OT', status: '', results: '', harness_status: '' },

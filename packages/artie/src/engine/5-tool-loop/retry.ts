@@ -10,6 +10,7 @@ import {
 } from '../errors.js';
 import { errorPatternTracker } from './tool-error-patterns.js';
 import { capabilityTracker } from './tool-tracker.js';
+import { runInLedgerScope, looksLikeToolFailure } from './tool-ledger.js';
 import { collapseWhitespace } from '../../shared/text.js';
 
 function getMaxRetries(capabilityName: string): number {
@@ -53,6 +54,38 @@ export class RobustCapabilityExecutor {
       guildId?: string;
     },
     maxRetries = getMaxRetries(capability.name)
+  ): Promise<CapabilityResult> {
+    // One ledger row for the whole retried call (final outcome), not one per attempt.
+    return runInLedgerScope(
+      {
+        tool: capability.name,
+        action: capability.action,
+        userId: context.userId,
+        guildId: context.guildId,
+      },
+      () => this.executeWithRetryInner(capability, context, maxRetries),
+      (result) => {
+        // validateResult only checks "not empty", so a handler that RETURNS "Error: ..." comes
+        // back success=true here; the ledger must not call that ok (or "rescued").
+        let success = result.success;
+        if (success && typeof result.data === 'string' && looksLikeToolFailure(result.data)) {
+          success = false;
+        }
+        return { success, error: result.error, fallbackUsed: result.fallbackUsed === true };
+      }
+    );
+  }
+
+  private async executeWithRetryInner(
+    capability: ParsedCapability,
+    context: {
+      userId: string;
+      messageId: string;
+      traceId?: string;
+      channelId?: string;
+      guildId?: string;
+    },
+    maxRetries: number
   ): Promise<CapabilityResult> {
     logger.info(
       `🔧 ROBUST: Executing ${capability.name}:${capability.action} with retry capability`

@@ -16,6 +16,7 @@ import {
 import { isOwner } from '../../shared/config/owner.js';
 import { createPendingAction, findPendingDuplicate } from '../../shared/pending-actions.js';
 import { pingApprovalNeeded } from './approval-ping.js';
+import { trackRegistryCall, type RegistryCallRecord } from './tool-ledger.js';
 
 /**
  * Context passed to capability handlers
@@ -490,9 +491,29 @@ export class CapabilityRegistry {
     content?: string,
     context?: CapabilityContext
   ): Promise<string> {
+    // Every call, whatever its outcome, leaves one row in the tool-call ledger (tool-ledger.ts).
+    const rec: RegistryCallRecord = {
+      tool: name,
+      action,
+      userId: context?.userId,
+      guildId: context?.guildId,
+    };
+    return trackRegistryCall(rec, () => this.executeInner(rec, name, action, params, content, context));
+  }
+
+  private async executeInner(
+    rec: RegistryCallRecord,
+    name: string,
+    action: string,
+    params: any,
+    content?: string,
+    context?: CapabilityContext
+  ): Promise<string> {
     // Old merged tool names (goal, shell, todo, …) resolve to their canonical tool first,
     // before ACTION_ALIASES and before any validation.
     ({ name, action, params } = resolveToolCall(name, action, params));
+    rec.tool = name;
+    rec.action = action;
 
     // Gates derived from the tool's own declaration (tool-policy.ts).
     const gates = gatesFor(this.capabilities.get(name)?.actions, action);
@@ -501,6 +522,7 @@ export class CapabilityRegistry {
     // non-owner can't even queue them for approval.
     if (gates.ownerOnly && !isOwner(context?.userId || '')) {
       logger.warn(`🔒 Owner-only call refused: ${name}:${action} from ${context?.userId || 'no-context'}`);
+      rec.outcome = 'refused_owner';
       return OWNER_ONLY_REFUSAL;
     }
 
@@ -510,6 +532,7 @@ export class CapabilityRegistry {
     if (gates.needsApproval && !isOwnerConfirmed(context, params)) {
       // An identical ask already waiting (a model retry, a re-proposed scribe issue) reuses
       // that row instead of stacking a duplicate EJ would have to deny, and pings nobody.
+      rec.outcome = 'queued_approval';
       const existingId = findPendingDuplicate({ tool: name, action, params, content });
       if (existingId !== null) {
         logger.info(`⏸️ Gated call already pending: ${name}:${action} (#${existingId})`);
@@ -532,6 +555,8 @@ export class CapabilityRegistry {
     const capability = this.capabilities.get(name);
 
     if (!capability) {
+      rec.outcome = 'unknown_tool';
+      rec.errorClass = 'tool_not_found';
       // The model often knows the ACTION but invents the capability name (e.g.
       // "Dev Support:create_payment_link" — the product name, not the tool name).
       // If exactly the requested action exists elsewhere, say where, so the
@@ -553,11 +578,14 @@ export class CapabilityRegistry {
       if (aliased && capability.supportedActions.includes(aliased)) {
         logger.info(`🔀 Aliased ${name}:${action} → ${name}:${aliased}`);
         action = aliased;
+        rec.action = action;
       }
     }
 
     // Validate action is supported
     if (!capability.supportedActions.includes(action)) {
+      rec.outcome = 'unknown_action';
+      rec.errorClass = 'action_not_supported';
       const structuredError = this.createActionError(name, action, capability);
       logger.warn(`⚠️ ${formatStructuredErrorCompact(structuredError)}`);
       throw new Error(JSON.stringify(structuredError));
@@ -584,6 +612,8 @@ export class CapabilityRegistry {
           missingParams.length === 1 && content && content.trim().length > 0;
 
         if (!canUseContentAsFallback) {
+          rec.outcome = 'invalid_args';
+          rec.errorClass = `missing_params:${missingParams.join(',')}`;
           const structuredError = this.createMissingParamsError(
             name,
             action,
