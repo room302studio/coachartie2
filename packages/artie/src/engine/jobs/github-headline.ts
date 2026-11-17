@@ -1,8 +1,8 @@
 /**
- * One-line "gists" for GitHub cards (EJ 2026-11-17: "very short summaries … like tufte, any
+ * One-line "headlines" for GitHub cards (EJ 2026-11-17: "very short summaries … like tufte, any
  * text shown should contain data, no duplication"). A cheap model reads the title plus the
  * body and writes at most ~12 words of what actually changed, with the specifics (numbers,
- * components, causes) that make a card worth scanning. The card shows the gist INSTEAD of the
+ * components, causes) that make a card worth scanning. The card shows the headline INSTEAD of the
  * title, never both.
  *
  * Never blocks a post: out of credits, muted, slow, or unparseable → null, and the caller
@@ -13,7 +13,7 @@ import { openRouterService } from '../4-generate/openrouter.js';
 import { creditMonitor } from '../budget/openrouter-balance.js';
 import { isGenerationMuted } from '../../shared/kill-switch.js';
 
-export interface GistRequest {
+export interface HeadlineRequest {
   /** Stable cache key, e.g. "owner/repo#1499:merged". */
   key: string;
   /** What the item is: "pull request", "issue", "comment on #12 …", "review". */
@@ -23,21 +23,21 @@ export interface GistRequest {
   guildId?: string;
 }
 
-const GIST_MAX_CHARS = 110;
+const HEADLINE_MAX_CHARS = 110;
 const BODY_MAX_CHARS = 2500;
 const CACHE_MAX = 500;
 const TIMEOUT_MS = 8000;
 
-/** Successful gists only (a failure retries next time). Insertion-ordered, oldest evicted. */
+/** Successful headlines only (a failure retries next time). Insertion-ordered, oldest evicted. */
 const cache = new Map<string, string | null>();
 /** Calls in progress, shared so a batch and a single post for the same item make one call. */
 const inFlight = new Map<string, Promise<string | null>>();
 
-export function gistModel(env: NodeJS.ProcessEnv = process.env): string {
-  return env.GIST_MODEL || env.DIGEST_MODEL || 'deepseek/deepseek-v4-flash-0731';
+export function headlineModel(env: NodeJS.ProcessEnv = process.env): string {
+  return env.HEADLINE_MODEL || env.DIGEST_MODEL || 'deepseek/deepseek-v4-flash-0731';
 }
 
-export function buildGistPrompt(req: GistRequest): string {
+export function buildHeadlinePrompt(req: HeadlineRequest): string {
   const body = (req.body || '').replace(/<!--[\s\S]*?-->/g, '').trim().slice(0, BODY_MAX_CHARS);
   let bodyBlock: string;
   if (body) {
@@ -60,18 +60,18 @@ export function buildGistPrompt(req: GistRequest): string {
 }
 
 /** Trim a model reply to one clean line; null if it's empty or junk. */
-export function cleanGist(raw: string | null | undefined): string | null {
+export function cleanHeadline(raw: string | null | undefined): string | null {
   if (!raw) {
     return null;
   }
   let line = raw.split('\n').map((l) => l.trim()).find((l) => l.length > 0) || '';
-  line = line.replace(/^(summary|gist)\s*:\s*/i, '');
+  line = line.replace(/^(summary|headline)\s*:\s*/i, '');
   line = line.replace(/^["'`*_]+|["'`*_]+$/g, '').replace(/\.$/, '').trim();
   if (line.length < 4) {
     return null;
   }
-  if (line.length > GIST_MAX_CHARS) {
-    line = `${line.slice(0, GIST_MAX_CHARS - 1).trimEnd()}…`;
+  if (line.length > HEADLINE_MAX_CHARS) {
+    line = `${line.slice(0, HEADLINE_MAX_CHARS - 1).trimEnd()}…`;
   }
   return line;
 }
@@ -86,7 +86,7 @@ function remember(key: string, value: string | null): void {
   cache.set(key, value);
 }
 
-export async function githubGist(req: GistRequest): Promise<string | null> {
+export async function githubHeadline(req: HeadlineRequest): Promise<string | null> {
   if (!req.title) {
     return null;
   }
@@ -102,24 +102,24 @@ export async function githubGist(req: GistRequest): Promise<string | null> {
   if (!call) {
     call = openRouterService
       .generateFromMessageChain(
-        [{ role: 'user', content: buildGistPrompt(req) }],
-        'github-gist',
+        [{ role: 'user', content: buildHeadlinePrompt(req) }],
+        'github-headline',
         undefined,
-        gistModel(),
+        headlineModel(),
         // Reasoning off: with it on, DeepSeek Flash spent even a 400-token budget thinking and
         // returned no content on 2 of 3 real PRs (probe, 2026-11-17). Off: 3/3, ~$0.00004 each.
-        { guildId: req.guildId, maxTokens: 120, stepType: 'github_gist', reasoning: { enabled: false } }
+        { guildId: req.guildId, maxTokens: 120, stepType: 'github_headline', reasoning: { enabled: false } }
       )
       .then((raw) => {
-        const gist = cleanGist(raw);
+        const headline = cleanHeadline(raw);
         // Only cache real answers: an outage should get another try next post.
-        if (gist) {
-          remember(req.key, gist);
+        if (headline) {
+          remember(req.key, headline);
         }
-        return gist;
+        return headline;
       })
       .catch((error) => {
-        logger.debug(`GitHub gist failed for ${req.key}: ${error}`);
+        logger.debug(`GitHub headline failed for ${req.key}: ${error}`);
         return null;
       })
       .finally(() => {
@@ -131,14 +131,14 @@ export async function githubGist(req: GistRequest): Promise<string | null> {
   const timeout = new Promise<null>((resolve) => {
     timer = setTimeout(() => resolve(null), TIMEOUT_MS);
   });
-  const gist = await Promise.race([call, timeout]);
+  const headline = await Promise.race([call, timeout]);
   if (timer) {
     clearTimeout(timer);
   }
-  return gist;
+  return headline;
 }
 
 /** Test hook. */
-export function clearGistCache(): void {
+export function clearHeadlineCache(): void {
   cache.clear();
 }

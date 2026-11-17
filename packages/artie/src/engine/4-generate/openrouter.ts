@@ -129,7 +129,7 @@ export interface GenerateOptions {
   /**
    * OpenRouter `reasoning` for this call, e.g. `{ enabled: false }` for a one-line answer from a
    * model that otherwise thinks first: DeepSeek Flash spent a 400-token budget reasoning and
-   * returned no content (github-gist probe, 2026-11-17). Overrides the auto-router default.
+   * returned no content (github-headline probe, 2026-11-17). Overrides the auto-router default.
    */
   reasoning?: Record<string, unknown>;
 }

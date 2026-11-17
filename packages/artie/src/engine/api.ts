@@ -102,14 +102,14 @@ export async function observe(body: {
 }
 
 /** A ≤12-word data-dense summary for a GitHub card (null → show the plain title). */
-export async function githubGist(req: {
+export async function githubHeadline(req: {
   key: string;
   kind: string;
   title: string;
   body?: string;
   guildId?: string;
 }): Promise<string | null> {
-  return (await import('./jobs/github-gist.js')).githubGist(wire(req));
+  return (await import('./jobs/github-headline.js')).githubHeadline(wire(req));
 }
 
 /** POST /api/channel-digest: fold new lines into a channel's rolling digest. */

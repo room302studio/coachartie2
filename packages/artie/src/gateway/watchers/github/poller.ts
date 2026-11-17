@@ -49,7 +49,7 @@ export interface GitHubSyncEvent {
     prState?: string;
     prDraft?: boolean;
     prBaseBranch?: string;
-    /** PR description, for the one-line card summary (gist). */
+    /** PR description, for the one-line card headline. */
     prBody?: string;
     commentId?: number;
     commentBody?: string;

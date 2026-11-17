@@ -1,17 +1,17 @@
 /**
- * What a GitHub card SAYS. Pure: event (+ optional gist) in, card data out. No Discord I/O,
- * no model calls (poster.ts fetches gists and sends; this file only renders).
+ * What a GitHub card SAYS. Pure: event (+ optional headline) in, card data out. No Discord I/O,
+ * no model calls (poster.ts fetches headlines and sends; this file only renders).
  *
  * The house style (EJ 2026-11-17: "like tufte, any text shown should contain data, no
  * duplication"):
- *   title        `#N <gist or title>`  (the gist REPLACES the title, never sits beside it)
+ *   title        `#N <headline or title>`  (the headline REPLACES the title, never sits beside it)
  *   description  ONE facts line joined by " · "  (state, +adds −dels, files, who, labels),
  *                plus at most one quoted line for comments/reviews
  *   footer       the repo, once
  *   color        the state (open/merged/failed …), so no emoji headline is needed
  *
  * To change how a card reads, edit the matching case in `renderCard` or `batchLine`.
- * To change limits (lines per batch, title lengths, when a gist is worth asking for), edit
+ * To change limits (lines per batch, title lengths, when a headline is worth asking for), edit
  * the constants just below. Every event type has a fixture in tests/gateway/github-cards.test.ts.
  */
 import { createHash } from 'node:crypto';
@@ -25,14 +25,14 @@ import type { ProcessedEvent } from './event-batcher.js';
 export const BATCH_LINES_SHOWN = 5;
 /** Max chars of a title inside a one-line list entry. */
 const LINE_TITLE_CHARS = 80;
-/** Max chars of a comment/review quoted inline when there's no gist. */
+/** Max chars of a comment/review quoted inline when there's no headline. */
 const QUOTE_CHARS = 280;
-/** Max chars of a comment in a batch line when there's no gist. */
+/** Max chars of a comment in a batch line when there's no headline. */
 const BATCH_QUOTE_CHARS = 80;
-/** Bodies shorter than this aren't worth a gist call: the title already says it all. */
-const GIST_MIN_BODY_CHARS = 40;
+/** Bodies shorter than this aren't worth a headline call: the title already says it all. */
+const HEADLINE_MIN_BODY_CHARS = 40;
 /** Comments/reviews at or under this length are shown whole instead of summarized. */
-const GIST_MIN_COMMENT_CHARS = 160;
+const HEADLINE_MIN_COMMENT_CHARS = 160;
 /** Commits listed on a push card. */
 const PUSH_COMMITS_SHOWN = 5;
 /** Base branches whose merges are "live". */
@@ -114,7 +114,7 @@ export function cardToEmbed(card: CardData): EmbedBuilder {
 
 // --- single-event cards ------------------------------------------------------------------
 
-export function renderCard(event: GitHubSyncEvent, gist: string | null = null): CardData {
+export function renderCard(event: GitHubSyncEvent, headline: string | null = null): CardData {
   const d = event.data;
   const stats = statFacts(d.additions, d.deletions, d.changedFiles);
   const labels = cleanLabels(d.labels || d.issueLabels || []);
@@ -131,7 +131,7 @@ export function renderCard(event: GitHubSyncEvent, gist: string | null = null): 
 
   switch (event.type) {
     case 'pr_opened': {
-      title = numbered(d.prNumber, gist || d.prTitle);
+      title = numbered(d.prNumber, headline || d.prTitle);
       url = d.prUrl;
       const size = prSize(d.additions, d.deletions);
       color = size.color;
@@ -143,12 +143,12 @@ export function renderCard(event: GitHubSyncEvent, gist: string | null = null): 
       break;
     }
     case 'pr_draft':
-      title = numbered(d.prNumber, gist || d.prTitle);
+      title = numbered(d.prNumber, headline || d.prTitle);
       url = d.prUrl;
       facts = ['draft', ...stats, d.prAuthor];
       break;
     case 'pr_ready_for_review': {
-      title = numbered(d.prNumber, gist || d.prTitle);
+      title = numbered(d.prNumber, headline || d.prTitle);
       url = d.prUrl;
       let reviewFact: string | undefined;
       if (d.reviewers && d.reviewers.length > 0) {
@@ -158,7 +158,7 @@ export function renderCard(event: GitHubSyncEvent, gist: string | null = null): 
       break;
     }
     case 'pr_merged': {
-      title = numbered(d.prNumber, gist || d.prTitle);
+      title = numbered(d.prNumber, headline || d.prTitle);
       url = d.prUrl;
       const base = d.prBaseBranch || 'main';
       let mergedFact = `merged → ${base}`;
@@ -177,7 +177,7 @@ export function renderCard(event: GitHubSyncEvent, gist: string | null = null): 
       break;
     }
     case 'pr_closed':
-      title = numbered(d.prNumber, gist || d.prTitle);
+      title = numbered(d.prNumber, headline || d.prTitle);
       url = d.prUrl;
       facts = ['closed unmerged', d.prAuthor];
       break;
@@ -194,7 +194,7 @@ export function renderCard(event: GitHubSyncEvent, gist: string | null = null): 
       }
       facts = [verdict];
       if (d.reviewBody) {
-        quote = gist || truncate(d.reviewBody, QUOTE_CHARS);
+        quote = headline || truncate(d.reviewBody, QUOTE_CHARS);
       }
       break;
     }
@@ -212,16 +212,16 @@ export function renderCard(event: GitHubSyncEvent, gist: string | null = null): 
     case 'issue_comment': {
       title = numbered(d.prNumber ?? d.issueNumber, d.prTitle || d.issueTitle || 'comment');
       url = d.commentUrl || d.prUrl || d.issueUrl;
-      quote = `**${d.commentAuthor || 'someone'}**: ${gist || truncate(d.commentBody || '', QUOTE_CHARS)}`;
+      quote = `**${d.commentAuthor || 'someone'}**: ${headline || truncate(d.commentBody || '', QUOTE_CHARS)}`;
       break;
     }
     case 'issue_opened':
-      title = numbered(d.issueNumber, gist || d.issueTitle);
+      title = numbered(d.issueNumber, headline || d.issueTitle);
       url = d.issueUrl;
       facts = ['new issue', d.issueAuthor, labelFact];
       break;
     case 'issue_closed': {
-      title = numbered(d.issueNumber, gist || d.issueTitle);
+      title = numbered(d.issueNumber, headline || d.issueTitle);
       url = d.issueUrl;
       let closedFact = 'closed';
       if (d.closedBy) {
@@ -297,8 +297,8 @@ export function renderCard(event: GitHubSyncEvent, gist: string | null = null): 
 
 // --- batch cards -------------------------------------------------------------------------
 
-/** Batch lines that render a gist; the others ("X approved", "CI passed") don't pay for one. */
-export const BATCH_GIST_TYPES: ReadonlySet<GitHubEventType> = new Set<GitHubEventType>([
+/** Batch lines that render a headline; the others ("X approved", "CI passed") don't pay for one. */
+export const BATCH_HEADLINE_TYPES: ReadonlySet<GitHubEventType> = new Set<GitHubEventType>([
   'issue_opened',
   'issue_closed',
   'issue_comment',
@@ -310,10 +310,10 @@ export const BATCH_GIST_TYPES: ReadonlySet<GitHubEventType> = new Set<GitHubEven
   'pr_closed',
 ]);
 
-/** `gists[i]` belongs to `events[i]` (only the first BATCH_LINES_SHOWN are read). */
-export function renderBatchCard(events: ProcessedEvent[], gists: Array<string | null> = []): CardData {
+/** `headlines[i]` belongs to `events[i]` (only the first BATCH_LINES_SHOWN are read). */
+export function renderBatchCard(events: ProcessedEvent[], headlines: Array<string | null> = []): CardData {
   const first = events[0].event;
-  const lines = events.slice(0, BATCH_LINES_SHOWN).map((e, i) => batchLine(e.event, gists[i] ?? null));
+  const lines = events.slice(0, BATCH_LINES_SHOWN).map((e, i) => batchLine(e.event, headlines[i] ?? null));
   if (events.length > BATCH_LINES_SHOWN) {
     lines.push(`+${events.length - BATCH_LINES_SHOWN} more`);
   }
@@ -366,7 +366,8 @@ export function batchTitle(events: ProcessedEvent[]): string {
       if (parts.length === 0) {
         parts.push(`${count} reviews`);
       }
-      return `PR #${first.data.prNumber}: ${parts.join(', ')}`;
+      // The PR title once, here, so the per-review lines don't each repeat it.
+      return `${numbered(first.data.prNumber, truncate(first.data.prTitle || '', LINE_TITLE_CHARS))}: ${parts.join(', ')}`;
     }
     case 'issue_opened':
       return `${count} new issues · ${authorsOf((e) => e.data.issueAuthor)}`;
@@ -378,13 +379,13 @@ export function batchTitle(events: ProcessedEvent[]): string {
 }
 
 /** One list line for a batch card: `[#N](url) title`, plus who/what where that's the data. */
-export function batchLine(event: GitHubSyncEvent, gist: string | null = null): string {
+export function batchLine(event: GitHubSyncEvent, headline: string | null = null): string {
   const d = event.data;
   switch (event.type) {
     case 'pr_comment':
-      return `${d.commentAuthor}: ${gist || truncate(d.commentBody || '', BATCH_QUOTE_CHARS)}`;
+      return `${d.commentAuthor}: ${headline || truncate(d.commentBody || '', BATCH_QUOTE_CHARS)}`;
     case 'issue_comment':
-      return `${linked(d.issueNumber, d.issueUrl)} ${d.commentAuthor}: ${gist || truncate(d.commentBody || '', BATCH_QUOTE_CHARS)}`;
+      return `${linked(d.issueNumber, d.issueUrl)} ${d.commentAuthor}: ${headline || truncate(d.commentBody || '', BATCH_QUOTE_CHARS)}`;
     case 'pr_approved':
       return `${d.reviewAuthor} approved`;
     case 'pr_changes_requested':
@@ -403,7 +404,7 @@ export function batchLine(event: GitHubSyncEvent, gist: string | null = null): s
       return `${d.checkRunName} failed`;
     case 'issue_opened':
     case 'issue_closed':
-      return listEntry(d.issueNumber, d.issueUrl, gist || d.issueTitle);
+      return listEntry(d.issueNumber, d.issueUrl, headline || d.issueTitle);
     case 'issue_labeled':
       return `${linked(d.issueNumber, d.issueUrl)} +\`${cleanLabels([d.label || '?'])[0]}\``;
     case 'issue_assigned':
@@ -413,15 +414,15 @@ export function batchLine(event: GitHubSyncEvent, gist: string | null = null): s
     case 'pr_ready_for_review':
     case 'pr_merged':
     case 'pr_closed':
-      return listEntry(d.prNumber, d.prUrl, gist || d.prTitle);
+      return listEntry(d.prNumber, d.prUrl, headline || d.prTitle);
     default:
       return fallbackLine(event);
   }
 }
 
-// --- gists -------------------------------------------------------------------------------
+// --- headlines -------------------------------------------------------------------------------
 
-export interface GistRequest {
+export interface HeadlineRequest {
   key: string;
   kind: string;
   title: string;
@@ -429,11 +430,11 @@ export interface GistRequest {
 }
 
 /**
- * What to send the gist model for this event, or null when the plain text is already the best
+ * What to send the headline model for this event, or null when the plain text is already the best
  * data (no body to distill, or a comment short enough to show whole). The key carries a content
- * hash so an edited title/body gets a fresh gist instead of a cached stale one.
+ * hash so an edited title/body gets a fresh headline instead of a cached stale one.
  */
-export function gistRequestFor(event: GitHubSyncEvent): GistRequest | null {
+export function headlineRequestFor(event: GitHubSyncEvent): HeadlineRequest | null {
   const d = event.data;
   switch (event.type) {
     case 'pr_opened':
@@ -441,7 +442,7 @@ export function gistRequestFor(event: GitHubSyncEvent): GistRequest | null {
     case 'pr_ready_for_review':
     case 'pr_merged':
     case 'pr_closed':
-      if (!d.prTitle || !d.prBody || d.prBody.trim().length < GIST_MIN_BODY_CHARS) {
+      if (!d.prTitle || !d.prBody || d.prBody.trim().length < HEADLINE_MIN_BODY_CHARS) {
         return null;
       }
       return {
@@ -452,7 +453,7 @@ export function gistRequestFor(event: GitHubSyncEvent): GistRequest | null {
       };
     case 'issue_opened':
     case 'issue_closed':
-      if (!d.issueTitle || !d.issueBody || d.issueBody.trim().length < GIST_MIN_BODY_CHARS) {
+      if (!d.issueTitle || !d.issueBody || d.issueBody.trim().length < HEADLINE_MIN_BODY_CHARS) {
         return null;
       }
       return {
@@ -464,7 +465,7 @@ export function gistRequestFor(event: GitHubSyncEvent): GistRequest | null {
     case 'pr_comment':
     case 'issue_comment': {
       const body = d.commentBody || '';
-      if (body.length <= GIST_MIN_COMMENT_CHARS) {
+      if (body.length <= HEADLINE_MIN_COMMENT_CHARS) {
         return null;
       }
       return {
@@ -478,7 +479,7 @@ export function gistRequestFor(event: GitHubSyncEvent): GistRequest | null {
     case 'pr_changes_requested':
     case 'pr_review': {
       const body = d.reviewBody || '';
-      if (body.length <= GIST_MIN_COMMENT_CHARS) {
+      if (body.length <= HEADLINE_MIN_COMMENT_CHARS) {
         return null;
       }
       return {

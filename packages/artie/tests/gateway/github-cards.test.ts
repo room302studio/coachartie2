@@ -9,7 +9,7 @@ import {
   batchLine,
   batchTitle,
   cardToEmbed,
-  gistRequestFor,
+  headlineRequestFor,
   isLinkable,
   renderBatchCard,
   renderCard,
@@ -44,7 +44,7 @@ const merged = event('pr_merged', {
 });
 
 describe('single-event cards', () => {
-  it('merged PR: #N gist title, one facts line, repo footer, no emoji or "By" restated', () => {
+  it('merged PR: #N headline title, one facts line, repo footer, no emoji or "By" restated', () => {
     const card = renderCard(merged, 'City downloads fall back to TCP; 8 feedback fixes (#1491–98)');
     expect(card.title).toBe('#1499 City downloads fall back to TCP; 8 feedback fixes (#1491–98)');
     expect(card.description).toBe('merged → beta, live · +412 −88 · 14 files · ejfox');
@@ -52,7 +52,7 @@ describe('single-event cards', () => {
     expect(card.title).not.toMatch(/🚀|Shipped/);
   });
 
-  it('falls back to the PR title when there is no gist', () => {
+  it('falls back to the PR title when there is no headline', () => {
     expect(renderCard(merged).title).toBe(`#1499 ${merged.data.prTitle}`);
   });
 
@@ -91,18 +91,18 @@ describe('single-event cards', () => {
   });
 });
 
-describe('gist requests', () => {
+describe('headline requests', () => {
   it('only asks the model when there is a body worth distilling', () => {
-    expect(gistRequestFor({ ...merged, data: { ...merged.data, prBody: '' } })).toBeNull();
-    const key = gistRequestFor(merged)?.key || '';
+    expect(headlineRequestFor({ ...merged, data: { ...merged.data, prBody: '' } })).toBeNull();
+    const key = headlineRequestFor(merged)?.key || '';
     expect(key.startsWith(`${REPO}#1499:pr:`)).toBe(true);
     const shortComment = event('issue_comment', { issueNumber: 1, commentBody: 'lgtm' });
-    expect(gistRequestFor(shortComment)).toBeNull();
+    expect(headlineRequestFor(shortComment)).toBeNull();
   });
 
-  it('an edited body gets a fresh key instead of a cached stale gist', () => {
+  it('an edited body gets a fresh key instead of a cached stale headline', () => {
     const edited = { ...merged, data: { ...merged.data, prBody: `${merged.data.prBody} Also fixes tunnels.` } };
-    expect(gistRequestFor(edited)?.key).not.toBe(gistRequestFor(merged)?.key);
+    expect(headlineRequestFor(edited)?.key).not.toBe(headlineRequestFor(merged)?.key);
   });
 });
 
@@ -118,7 +118,7 @@ describe('batch cards', () => {
     expect(card.description).not.toContain('issue_opened');
   });
 
-  it('uses gists for the lines when given, and "+N more" past the cap', () => {
+  it('uses headlines for the lines when given, and "+N more" past the cap', () => {
     const many = Array.from({ length: 7 }, (_, i) => issues[i % 2]);
     const card = renderBatchCard(many, ['Tunnel snap ignored on slopes']);
     expect(card.description).toContain('Tunnel snap ignored on slopes');
@@ -131,6 +131,14 @@ describe('batch cards', () => {
       processed(event('ci_failure', { checkRunName: 'test' })),
     ];
     expect(batchTitle(ci)).toBe('CI: 1 passed, 1 failed');
+  });
+
+  it('review batches name the PR once, in the title (Codex: the subject was lost)', () => {
+    const reviews = [
+      processed(event('pr_approved', { prNumber: 1499, prTitle: 'City downloads on QUIC', reviewAuthor: 'alex' })),
+      processed(event('pr_changes_requested', { prNumber: 1499, prTitle: 'City downloads on QUIC', reviewAuthor: 'colin' })),
+    ];
+    expect(batchTitle(reviews)).toBe('#1499 City downloads on QUIC: 1 approved, 1 requested changes');
   });
 });
 

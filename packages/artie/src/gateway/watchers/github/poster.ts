@@ -1,5 +1,5 @@
 /**
- * Posts GitHub events to Discord. This file is the I/O half: fetch a gist, render, send, and
+ * Posts GitHub events to Discord. This file is the I/O half: fetch a headline, render, send, and
  * fall back to the studio feed when a channel refuses. What a card SAYS lives in cards.ts.
  */
 import { Client, TextChannel, NewsChannel, ThreadChannel } from 'discord.js';
@@ -9,10 +9,10 @@ import type { GitHubSyncEvent } from './poller.js';
 import type { ProcessedEvent, BatchedEvents, DiscordMention } from './event-batcher.js';
 import * as engine from '../../../engine/api.js';
 import {
-  BATCH_GIST_TYPES,
+  BATCH_HEADLINE_TYPES,
   BATCH_LINES_SHOWN,
   cardToEmbed,
-  gistRequestFor,
+  headlineRequestFor,
   renderBatchCard,
   renderCard,
 } from './cards.js';
@@ -35,8 +35,8 @@ export class GitHubDiscordPoster {
       return;
     }
 
-    const gist = await this.gistFor(processed.event);
-    const embed = cardToEmbed(renderCard(processed.event, gist));
+    const headline = await this.headlineFor(processed.event);
+    const embed = cardToEmbed(renderCard(processed.event, headline));
     const content = formatMentions(processed.mentions);
 
     try {
@@ -74,16 +74,16 @@ export class GitHubDiscordPoster {
       return;
     }
 
-    // Gists only for the lines that are shown and render one, fetched in parallel.
-    const gists = await Promise.all(
+    // Headlines only for the lines that are shown and render one, fetched in parallel.
+    const headlines = await Promise.all(
       batch.events.slice(0, BATCH_LINES_SHOWN).map((e) => {
-        if (BATCH_GIST_TYPES.has(e.event.type)) {
-          return this.gistFor(e.event);
+        if (BATCH_HEADLINE_TYPES.has(e.event.type)) {
+          return this.headlineFor(e.event);
         }
         return Promise.resolve(null);
       })
     );
-    const embed = cardToEmbed(renderBatchCard(batch.events, gists));
+    const embed = cardToEmbed(renderBatchCard(batch.events, headlines));
     const content = formatMentions(collectMentions(batch.events));
 
     try {
@@ -94,14 +94,14 @@ export class GitHubDiscordPoster {
     }
   }
 
-  /** Never throws and never blocks a post: no gist → the card shows the plain title. */
-  private async gistFor(event: GitHubSyncEvent): Promise<string | null> {
-    const req = gistRequestFor(event);
+  /** Never throws and never blocks a post: no headline → the card shows the plain title. */
+  private async headlineFor(event: GitHubSyncEvent): Promise<string | null> {
+    const req = headlineRequestFor(event);
     if (!req) {
       return null;
     }
     try {
-      return await engine.githubGist({ ...req, guildId: event.guildId });
+      return await engine.githubHeadline({ ...req, guildId: event.guildId });
     } catch {
       return null;
     }
