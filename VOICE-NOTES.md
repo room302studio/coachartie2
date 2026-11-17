@@ -98,6 +98,24 @@ summarize, propose GitHub changes through the approval gate. No TTS, no live cap
 - `SMART_MODEL` — reused for the one summary call per session (no new env var; this is the
   model summary.ts falls back to when picking a quality-sensitive one-shot model, same
   pattern as the rest of the codebase).
+- Auto-join (`gateway/voice/scribe-auto.ts`, its header documents each var):
+  `SCRIBE_AUTO_CHANNEL_ID` (voice channels to watch, comma-separated),
+  `SCRIBE_AUTO_TEXT_CHANNEL_ID` (where the summary goes), `SCRIBE_AUTO_WINDOWS` (`always` or
+  time windows), `SCRIBE_AUTO_MIN_HUMANS` (default 2). Prod 2026-11-17: Studio +
+  studio-private, `always`, summary to EJ's DM.
+- `SCRIBE_ISSUE_REPO` — repo for meeting issue callouts when the voice channel's chat has no
+  single watched repo (default `Subway-Builder/metro-maker4`).
+
+## Meeting issue callouts (2026-11-17)
+
+`gateway/voice/scribe-issue-callouts.ts`. Every accepted utterance is scanned word by word for
+"issue 1502" / "issue number 1502" / "PR 1499" / "pull request 1501" / "#1502" (a bare number
+only counts right after a cue word, so "30 minutes" never fires). Each number is looked up on
+GitHub and posted once per meeting as a dense card (same renderer as the GitHub feed,
+`watchers/github/cards.ts cardToEmbed`) in the **voice channel's own chat**, not the summary
+destination. Max 3 per utterance; no model call. The repo is the one repo watched in that
+channel, else `SCRIBE_ISSUE_REPO`, never both (so #12 can't pull a same-numbered issue from
+another repo). Cue words and limits are constants at the top of the file.
 
 ## Cost estimate
 

@@ -59,6 +59,19 @@ lists canonical names.
   to the `#🤖robot` channel in Room 302 (`GITHUB_FEED_CHANNEL_ID`). @mentions
   (`github_identity_mappings`) only fire on review-requested / ready-for-review / approved /
   changes-requested / CI-failure / issue-assigned — a new PR pings nobody, by design.
+- The pipeline: `poller.ts` (fetch) → `event-batcher.ts` (dedupe, batch, mentions) →
+  `poster.ts` (I/O: gist, send, fall back to the feed on no-access) → `cards.ts` (pure: what a
+  card says). Cards follow one shape (EJ 2026-11-17, "like tufte, any text shown should contain
+  data, no duplication"): title `#N <gist or title>`, ONE ` · ` facts line, repo footer,
+  state as color, no emoji headlines. Tunables (lines per batch, title lengths, when a gist is
+  worth asking for, PR size thresholds) are constants at the top of `cards.ts`; every event
+  type has a fixture in `tests/gateway/github-cards.test.ts`.
+- Gists: `engine/jobs/github-gist.ts`, a ≤110-char summary of a PR/issue body or long comment
+  that replaces the title. Model `GIST_MODEL` (else `DIGEST_MODEL`, else DeepSeek Flash) with
+  reasoning OFF (Flash otherwise spends the whole budget thinking and returns nothing).
+  Cached by content hash; muted, out of credits, or >8s → the plain title. Never blocks a post.
+- The 09:21 standup digest is `studio-digest.ts` (counts in the title, capped sections with
+  `[+N more]` links).
 - `engine/jobs/github-push/handle-push.ts` handles the inbound webhook (push, release,
   pull_request, issues, issue_comment) and posts to the same channel, rate-limited and
   bot-filtered.

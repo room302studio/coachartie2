@@ -202,7 +202,6 @@ export class GitHubStudioManager {
 
 
     logger.info('GitHub studio manager started');
-    console.log('📋 GitHub studio manager started');
   }
 
   stop(): void {
@@ -519,7 +518,6 @@ export class GitHubStudioManager {
 
     try {
       await (channel as any).send({ embeds: [embed] });
-      console.log(`📋 Posted morning digest for ${digest.repo}`);
       logger.info(`Posted studio manager digest for ${digest.repo}`);
     } catch (error) {
       logger.error(`Failed to post studio manager digest:`, error);

@@ -28,7 +28,10 @@ const BODY_MAX_CHARS = 2500;
 const CACHE_MAX = 500;
 const TIMEOUT_MS = 8000;
 
+/** Successful gists only (a failure retries next time). Insertion-ordered, oldest evicted. */
 const cache = new Map<string, string | null>();
+/** Calls in progress, shared so a batch and a single post for the same item make one call. */
+const inFlight = new Map<string, Promise<string | null>>();
 
 export function gistModel(env: NodeJS.ProcessEnv = process.env): string {
   return env.GIST_MODEL || env.DIGEST_MODEL || 'deepseek/deepseek-v4-flash-0731';
@@ -134,8 +137,6 @@ export async function githubGist(req: GistRequest): Promise<string | null> {
   }
   return gist;
 }
-
-const inFlight = new Map<string, Promise<string | null>>();
 
 /** Test hook. */
 export function clearGistCache(): void {

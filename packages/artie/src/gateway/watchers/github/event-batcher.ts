@@ -60,7 +60,6 @@ export interface DiscordMention {
 export interface BatchedEvents {
   batchKey: string;
   events: ProcessedEvent[];
-  summary: string;
   channelId: string;
   guildId: string;
 }
@@ -234,7 +233,6 @@ export class GitHubEventProcessor {
     const batch: BatchedEvents = {
       batchKey,
       events,
-      summary: this.createBatchSummary(events),
       channelId: events[0].event.channelId,
       guildId: events[0].event.guildId,
     };
@@ -469,122 +467,6 @@ export class GitHubEventProcessor {
    */
   private getDefaultBatchKey(event: GitHubSyncEvent): string {
     return `default:${event.repo}:${event.channelId}:${Date.now()}`;
-  }
-
-  /**
-   * Create summary text for a batch of events
-   */
-  private createBatchSummary(events: ProcessedEvent[]): string {
-    if (events.length === 1) {
-      return this.getEventSummary(events[0].event);
-    }
-
-    const firstEvent = events[0].event;
-
-    // Comments batch
-    if (firstEvent.type === 'pr_comment') {
-      const authors = [...new Set(events.map((e) => e.event.data.commentAuthor))];
-      return `${events.length} new comments on PR #${firstEvent.data.prNumber} from ${authors.join(', ')}`;
-    }
-
-    // CI batch
-    if (firstEvent.type === 'ci_success' || firstEvent.type === 'ci_failure') {
-      const successes = events.filter((e) => e.event.type === 'ci_success').length;
-      const failures = events.filter((e) => e.event.type === 'ci_failure').length;
-      if (failures > 0 && successes > 0) {
-        return `CI: ${successes} passed, ${failures} failed`;
-      } else if (failures > 0) {
-        return `CI: ${failures} checks failed`;
-      } else {
-        return `CI: ${successes} checks passed`;
-      }
-    }
-
-    // Reviews batch
-    if (
-      firstEvent.type === 'pr_review' ||
-      firstEvent.type === 'pr_approved' ||
-      firstEvent.type === 'pr_changes_requested'
-    ) {
-      const approved = events.filter((e) => e.event.type === 'pr_approved').length;
-      const changesRequested = events.filter((e) => e.event.type === 'pr_changes_requested').length;
-      const parts: string[] = [];
-      if (approved > 0) parts.push(`${approved} approved`);
-      if (changesRequested > 0) parts.push(`${changesRequested} requested changes`);
-      return `PR #${firstEvent.data.prNumber}: ${parts.join(', ')}`;
-    }
-
-    // Issues batch
-    if (firstEvent.type === 'issue_opened') {
-      const authors = [...new Set(events.map((e) => e.event.data.issueAuthor))];
-      return `${events.length} new issues opened by ${authors.join(', ')}`;
-    }
-
-    if (firstEvent.type === 'issue_closed') {
-      return `${events.length} issues closed`;
-    }
-
-    // Issue comments batch
-    if (firstEvent.type === 'issue_comment') {
-      const authors = [...new Set(events.map((e) => e.event.data.commentAuthor))];
-      return `${events.length} new comments on issue #${firstEvent.data.issueNumber} from ${authors.join(', ')}`;
-    }
-
-    return `${events.length} events for ${firstEvent.repo}`;
-  }
-
-  /**
-   * Get summary text for a single event
-   */
-  private getEventSummary(event: GitHubSyncEvent): string {
-    switch (event.type) {
-      case 'pr_opened':
-        return `New PR #${event.data.prNumber}: ${event.data.prTitle}`;
-      case 'pr_ready_for_review':
-        return `PR #${event.data.prNumber} ready for review`;
-      case 'pr_merged':
-        return `PR #${event.data.prNumber} merged to ${event.data.prBaseBranch}`;
-      case 'pr_closed':
-        return `PR #${event.data.prNumber} closed`;
-      case 'pr_approved':
-        return `PR #${event.data.prNumber} approved by ${event.data.reviewAuthor}`;
-      case 'pr_changes_requested':
-        return `Changes requested on PR #${event.data.prNumber} by ${event.data.reviewAuthor}`;
-      case 'pr_comment':
-        return `New comment on PR #${event.data.prNumber} by ${event.data.commentAuthor}`;
-      case 'pr_review':
-        return `Review on PR #${event.data.prNumber} by ${event.data.reviewAuthor}`;
-      case 'ci_success':
-        return `CI passed: ${event.data.checkRunName}`;
-      case 'ci_failure':
-        return `CI failed: ${event.data.checkRunName}`;
-      case 'issue_opened':
-        return `New issue #${event.data.issueNumber}: ${event.data.issueTitle}`;
-      case 'issue_closed':
-        return `Issue #${event.data.issueNumber} closed`;
-      case 'issue_comment':
-        return `Comment on issue #${event.data.issueNumber} by ${event.data.commentAuthor}`;
-      case 'push': {
-        const commitCount = event.data.commitCount || 1;
-        let commitPlural: string;
-        if (commitCount > 1) {
-          commitPlural = 's';
-        } else {
-          commitPlural = '';
-        }
-        return `${commitCount} commit${commitPlural} pushed by ${event.data.commitAuthor}`;
-      }
-      case 'issue_labeled':
-        return `Label \`${event.data.label}\` added to #${event.data.issueNumber}`;
-      case 'issue_assigned':
-        return `#${event.data.issueNumber} assigned to ${event.data.assignee}`;
-      case 'pr_review_requested':
-        return `Review requested on PR #${event.data.prNumber} from ${event.data.reviewers?.join(', ')}`;
-      case 'pr_draft':
-        return `Draft PR #${event.data.prNumber}: ${event.data.prTitle} (by ${event.data.prAuthor})`;
-      default:
-        return `GitHub event: ${event.type}`;
-    }
   }
 
   /**

@@ -47,6 +47,8 @@ export class CreditMonitor {
 
   // Periodic balance polling
   private balanceCheckTimer: ReturnType<typeof setInterval> | null = null;
+  /** The one post-cooldown balance read in progress, so concurrent callers don't stack them. */
+  private balanceRecheck: Promise<void> | null = null;
 
   private constructor() {}
 
@@ -159,8 +161,6 @@ export class CreditMonitor {
     }
     return true;
   }
-
-  private balanceRecheck: Promise<void> | null = null;
 
   /**
    * One background balance read after the cooldown. Recovered (or unreadable, the old

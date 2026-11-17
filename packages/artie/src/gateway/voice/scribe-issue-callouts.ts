@@ -4,15 +4,21 @@
  * that text for "issue 1502" / "PR 1499" / "#1502", looks the number up on GitHub, and posts a
  * one-line card in the meeting's text channel. Once per number per meeting, no model call.
  */
-import { EmbedBuilder, type Client } from 'discord.js';
+import type { Client, EmbedBuilder } from 'discord.js';
 import { logger } from '../../shared/logger.js';
 import { getGitHubIntegrationSafe } from '../watchers/github/issue-sync.js';
 import { listGuildWatches } from '../watchers/github/watch-list.js';
+import { cardToEmbed, numbered, truncate } from '../watchers/github/cards.js';
 
+// --- tunables ---------------------------------------------------------------------------
+/** Repo for numbers said in a channel with no (or several) watched repos. Env: SCRIBE_ISSUE_REPO. */
 const DEFAULT_REPO = 'Subway-Builder/metro-maker4';
+/** Cards per utterance, so a rattled-off list doesn't flood the chat. */
 const MAX_PER_UTTERANCE = 3;
 const MAX_LABELS_SHOWN = 4;
 const DESCRIPTION_MAX = 1000;
+const OPEN_COLOR = 0x238636;
+const CLOSED_COLOR = 0x8957e5;
 
 /** Words that, said right before a number, mean "this is an issue/PR number". */
 const CUE_WORDS = new Set(['issue', 'issues', 'ticket', 'tickets', 'bug', 'bugs', 'pr', 'prs']);
@@ -120,24 +126,17 @@ export function calloutEmbed(repo: string, issue: CalloutIssue): EmbedBuilder {
     }
     facts.push(labels);
   }
-  let color = 0x8957e5;
+  let color = CLOSED_COLOR;
   if (issue.state === 'open') {
-    color = 0x238636;
+    color = OPEN_COLOR;
   }
-  let title = `#${issue.number} ${issue.title}`;
-  if (title.length > 256) {
-    title = `${title.slice(0, 255)}…`;
-  }
-  let description = facts.join(' · ');
-  if (description.length > DESCRIPTION_MAX) {
-    description = `${description.slice(0, DESCRIPTION_MAX - 1)}…`;
-  }
-  return new EmbedBuilder()
-    .setColor(color)
-    .setTitle(title)
-    .setURL(issue.url)
-    .setDescription(description)
-    .setFooter({ text: `${repo} · mentioned in the meeting` });
+  return cardToEmbed({
+    title: numbered(issue.number, issue.title),
+    url: issue.url,
+    description: truncate(facts.join(' · '), DESCRIPTION_MAX),
+    footer: `${repo} · mentioned in the meeting`,
+    color,
+  });
 }
 
 /**

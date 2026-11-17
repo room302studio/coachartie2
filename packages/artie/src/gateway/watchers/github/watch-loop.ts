@@ -20,16 +20,10 @@ import {
 import {
   GitHubEventProcessor,
   initializeEventProcessor,
-  getEventProcessor,
   type ProcessorConfig,
   type BatchedEvents,
 } from './event-batcher.js';
-import {
-  GitHubDiscordPoster,
-  initializeDiscordPoster,
-  getDiscordPoster,
-  type PosterConfig,
-} from './poster.js';
+import { GitHubDiscordPoster, initializeDiscordPoster } from './poster.js';
 import { GUILD_CONFIGS } from '../../../shared/config/guilds.js';
 import { readState, writeState } from '../../../shared/db/kv-state.js';
 import { easternDayKey, easternHour, isEasternWeekend } from '../../../shared/eastern-day.js';
@@ -37,7 +31,6 @@ import { easternDayKey, easternHour, isEasternWeekend } from '../../../shared/ea
 export interface GitHubSyncConfig {
   poller?: Partial<PollerConfig>;
   processor?: Partial<ProcessorConfig>;
-  poster?: Partial<PosterConfig>;
   autoStart?: boolean;
 }
 
@@ -113,7 +106,7 @@ export class GitHubSyncService {
       // Initialize components
       this.poller = initializeGitHubPoller(githubToken, this.config.poller);
       this.processor = initializeEventProcessor(this.config.processor);
-      this.poster = initializeDiscordPoster(this.client, this.config.poster);
+      this.poster = initializeDiscordPoster(this.client);
 
       // Wire up event flow
       this.poller.on('github-event', (event: GitHubSyncEvent) => {
