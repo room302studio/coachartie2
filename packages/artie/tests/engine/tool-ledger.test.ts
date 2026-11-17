@@ -460,7 +460,7 @@ describe('describeError never keeps raw text', () => {
       'PARAM_MISSING_001'
     );
     // Codex: a well-formed-looking code is still not trusted unless it is on the list.
-    expect(describeError(new Error(JSON.stringify({ errorCode: 'sk_live_SECRET123' })))).toBe(
+    expect(describeError(new Error(JSON.stringify({ errorCode: 'live_key_SECRET123' })))).toBe(
       'structured_error'
     );
     class SecretTokenError extends Error {

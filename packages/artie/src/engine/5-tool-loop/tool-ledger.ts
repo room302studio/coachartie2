@@ -113,7 +113,7 @@ const ERROR_CATEGORIES: Array<[RegExp, string]> = [
 ];
 
 /**
- * Explicit allowlists, not a character check: `{"errorCode":"sk_live_..."}` or a custom
+ * Explicit allowlists, not a character check: an errorCode holding a payment key or a custom
  * `class LeakyError` would pass a regex (Codex). Unknown codes become 'structured_error'.
  * Codes from createStructuredError in registry.ts / tools (grep "_00").
  */
