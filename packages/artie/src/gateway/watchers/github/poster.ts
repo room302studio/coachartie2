@@ -6,12 +6,44 @@
  * Now with Discord ↔ GitHub cross-referencing!
  */
 
+import { createHash } from 'node:crypto';
 import { Client, EmbedBuilder, TextChannel, NewsChannel, ThreadChannel } from 'discord.js';
 import { logger } from '../../../shared/logger.js';
 import { GITHUB_FEED_CHANNEL_ID } from '../../../shared/config/channels.js';
 import type { GitHubSyncEvent, GitHubEventType } from './poller.js';
 import type { ProcessedEvent, BatchedEvents, DiscordMention } from './event-batcher.js';
 import * as engine from '../../../engine/api.js';
+
+/** Short content fingerprint so an edited title/body gets a fresh gist, not a stale one. */
+function contentHash(title: string, body: string): string {
+  return createHash('sha1').update(title).update('\0').update(body).digest('hex').slice(0, 10);
+}
+
+/** Only real http(s) URLs: discord.js throws on anything else, which would drop the post. */
+function isLinkable(url: string | undefined): url is string {
+  if (!url) {
+    return false;
+  }
+  try {
+    const parsed = new URL(url);
+    return (parsed.protocol === 'https:' || parsed.protocol === 'http:') && parsed.hostname.length > 0;
+  } catch {
+    return false;
+  }
+}
+
+/** Batch lines that actually render a gist; others don't pay for one. */
+const BATCH_GIST_TYPES = new Set<string>([
+  'issue_opened',
+  'issue_closed',
+  'issue_comment',
+  'pr_comment',
+  'pr_opened',
+  'pr_draft',
+  'pr_ready_for_review',
+  'pr_merged',
+  'pr_closed',
+]);
 
 function formatContentWithPrefix(content: string): string {
   if (content) {
@@ -182,7 +214,14 @@ export class GitHubDiscordPoster {
     }
 
     // Create batch embed (gists for the lines it shows, in parallel)
-    const gists = await Promise.all(batch.events.slice(0, 5).map((e) => this.gistFor(e.event)));
+    const gists = await Promise.all(
+      batch.events.slice(0, 5).map((e) => {
+        if (BATCH_GIST_TYPES.has(e.event.type)) {
+          return this.gistFor(e.event);
+        }
+        return Promise.resolve(null);
+      })
+    );
     const embed = this.createBatchEmbed(batch, gists);
 
     // Collect all unique mentions
@@ -437,7 +476,7 @@ export class GitHubDiscordPoster {
 
     embed.setTitle(this.truncate(headline || repoName, 256));
     // discord.js throws on a non-URL, which would drop the whole post.
-    if (url && (url.startsWith('https://') || url.startsWith('http://'))) {
+    if (isLinkable(url)) {
       embed.setURL(url);
     }
     const factLine = facts.filter((f): f is string => Boolean(f)).join(' · ');
@@ -487,13 +526,23 @@ export class GitHubDiscordPoster {
         if (!d.prTitle || !d.prBody || d.prBody.trim().length < 40) {
           return null;
         }
-        return { key: `${event.repo}#${d.prNumber}:pr`, kind: 'pull request', title: d.prTitle, body: d.prBody };
+        return {
+          key: `${event.repo}#${d.prNumber}:pr:${contentHash(d.prTitle, d.prBody)}`,
+          kind: 'pull request',
+          title: d.prTitle,
+          body: d.prBody,
+        };
       case 'issue_opened':
       case 'issue_closed':
         if (!d.issueTitle || !d.issueBody || d.issueBody.trim().length < 40) {
           return null;
         }
-        return { key: `${event.repo}#${d.issueNumber}:issue`, kind: 'issue', title: d.issueTitle, body: d.issueBody };
+        return {
+          key: `${event.repo}#${d.issueNumber}:issue:${contentHash(d.issueTitle, d.issueBody)}`,
+          kind: 'issue',
+          title: d.issueTitle,
+          body: d.issueBody,
+        };
       case 'pr_comment':
       case 'issue_comment': {
         const body = d.commentBody || '';

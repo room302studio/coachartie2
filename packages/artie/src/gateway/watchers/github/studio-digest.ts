@@ -498,13 +498,15 @@ export class GitHubStudioManager {
     // Safety net only: the caps above keep it far under Discord's 4096.
     let description = parts.join('\n');
     if (description.length > 4096) {
+      const more = `\n[more on GitHub](${gh}/pulls)`;
+      const budget = 4096 - more.length;
       const lines = description.split('\n');
       let kept = '';
       for (const line of lines) {
-        if ((kept + line + '\n').length > 4000) break;
+        if ((kept + line + '\n').length > budget) break;
         kept += line + '\n';
       }
-      description = `${kept.trimEnd()}\n[more on GitHub](${gh}/pulls)`;
+      description = `${kept.trimEnd()}${more}`;
     }
 
     const embed = new EmbedBuilder()

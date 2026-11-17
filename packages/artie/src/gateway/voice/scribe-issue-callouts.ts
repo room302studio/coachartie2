@@ -11,9 +11,11 @@ import { listGuildWatches } from '../watchers/github/watch-list.js';
 
 const DEFAULT_REPO = 'Subway-Builder/metro-maker4';
 const MAX_PER_UTTERANCE = 3;
+const MAX_LABELS_SHOWN = 4;
+const DESCRIPTION_MAX = 1000;
 
 /** Words that, said right before a number, mean "this is an issue/PR number". */
-const CUE_WORDS = new Set(['issue', 'issues', 'ticket', 'tickets', 'bug', 'bugs', 'pr', 'prs', 'request', 'requests']);
+const CUE_WORDS = new Set(['issue', 'issues', 'ticket', 'tickets', 'bug', 'bugs', 'pr', 'prs']);
 /** Filler allowed between the cue and the number: "issue number 1502", "PR no. 12". */
 const FILLER_WORDS = new Set(['number', 'no', 'num']);
 
@@ -38,7 +40,8 @@ function asIssueNumber(word: string, allowBare: boolean): number | null {
 /**
  * Walk the transcript word by word. A number counts when it follows a cue word ("issue 1502",
  * "issue number 1502", "PR 1499", "pull request 1501") or carries its own hash ("#1502";
- * Whisper writes the hash when people say it). Ordinary numbers ("30 minutes") never count.
+ * Whisper writes the hash when people say it). Ordinary numbers ("30 minutes", "request 30
+ * minutes") never count.
  */
 export function extractIssueRefs(text: string): number[] {
   const words = text
@@ -47,34 +50,36 @@ export function extractIssueRefs(text: string): number[] {
     .map((w) => w.replace(/[.,!?;:()"']+$/, '').replace(/^[("']+/, ''));
   const out: number[] = [];
   let afterCue = false;
+  let previous = '';
   for (const word of words) {
     const n = asIssueNumber(word, afterCue);
     if (n !== null && !out.includes(n)) {
       out.push(n);
     }
-    if (CUE_WORDS.has(word)) {
+    const isPullRequest = (word === 'request' || word === 'requests') && previous === 'pull';
+    if (CUE_WORDS.has(word) || isPullRequest) {
       afterCue = true;
     } else if (afterCue && FILLER_WORDS.has(word)) {
       afterCue = true;
     } else {
       afterCue = false;
     }
+    previous = word;
   }
   return out.slice(0, MAX_PER_UTTERANCE);
 }
 
-/** Repos to try, in order: the one watched in this text channel, then the default. */
-export function candidateRepos(guildId: string, textChannelId: string): string[] {
-  const repos: string[] = [];
+/**
+ * The repo a meeting's numbers refer to: the one repo watched in its text channel, or (only if
+ * the channel has none, or several) SCRIBE_ISSUE_REPO / metro-maker4. Never both: a number
+ * missing from the channel's repo must not pull a same-numbered issue from another one.
+ */
+export function meetingRepo(guildId: string, textChannelId: string): string {
   const inChannel = listGuildWatches(guildId, textChannelId).filter((w) => w.isActive);
   if (inChannel.length === 1) {
-    repos.push(inChannel[0].repo);
+    return inChannel[0].repo;
   }
-  const fallback = process.env.SCRIBE_ISSUE_REPO || DEFAULT_REPO;
-  if (!repos.includes(fallback)) {
-    repos.push(fallback);
-  }
-  return repos;
+  return process.env.SCRIBE_ISSUE_REPO || DEFAULT_REPO;
 }
 
 export interface CalloutIssue {
@@ -96,7 +101,7 @@ export function calloutEmbed(repo: string, issue: CalloutIssue): EmbedBuilder {
   }
   const facts = [`${kind} ${issue.state}`];
   if (issue.assignees.length > 0) {
-    facts.push(issue.assignees.join(', '));
+    facts.push(issue.assignees.slice(0, MAX_LABELS_SHOWN).join(', '));
   } else if (!isPull && issue.state === 'open') {
     facts.push('unassigned');
   }
@@ -108,7 +113,11 @@ export function calloutEmbed(repo: string, issue: CalloutIssue): EmbedBuilder {
     facts.push(`${issue.comments} ${noun}`);
   }
   if (issue.labels.length > 0) {
-    facts.push(issue.labels.join(', '));
+    let labels = issue.labels.slice(0, MAX_LABELS_SHOWN).join(', ');
+    if (issue.labels.length > MAX_LABELS_SHOWN) {
+      labels += ` +${issue.labels.length - MAX_LABELS_SHOWN}`;
+    }
+    facts.push(labels);
   }
   let color = 0x8957e5;
   if (issue.state === 'open') {
@@ -118,19 +127,35 @@ export function calloutEmbed(repo: string, issue: CalloutIssue): EmbedBuilder {
   if (title.length > 256) {
     title = `${title.slice(0, 255)}…`;
   }
+  let description = facts.join(' · ');
+  if (description.length > DESCRIPTION_MAX) {
+    description = `${description.slice(0, DESCRIPTION_MAX - 1)}…`;
+  }
   return new EmbedBuilder()
     .setColor(color)
     .setTitle(title)
     .setURL(issue.url)
-    .setDescription(facts.join(' · '))
+    .setDescription(description)
     .setFooter({ text: `${repo} · mentioned in the meeting` });
 }
 
-const announced = new Map<string, Set<number>>();
+/**
+ * Per meeting: numbers already posted, and numbers being looked up right now. A failed lookup
+ * or send releases its claim so a later mention can try again. Entries exist only between
+ * startMeetingCallouts and clearMeetingCallouts, so a late utterance after stop can't revive one.
+ */
+interface MeetingState {
+  posted: Set<number>;
+  inFlight: Set<number>;
+}
+const meetings = new Map<string, MeetingState>();
 
-/** Forget a finished meeting's numbers. */
+export function startMeetingCallouts(sessionId: string): void {
+  meetings.set(sessionId, { posted: new Set(), inFlight: new Set() });
+}
+
 export function clearMeetingCallouts(sessionId: string): void {
-  announced.delete(sessionId);
+  meetings.delete(sessionId);
 }
 
 export async function postIssueCallouts(opts: {
@@ -141,43 +166,48 @@ export async function postIssueCallouts(opts: {
   text: string;
 }): Promise<number> {
   const refs = extractIssueRefs(opts.text);
-  if (refs.length === 0) {
+  const state = meetings.get(opts.sessionId);
+  if (refs.length === 0 || !state) {
     return 0;
   }
   const github = getGitHubIntegrationSafe();
   if (!github) {
     return 0;
   }
-  let seen = announced.get(opts.sessionId);
-  if (!seen) {
-    seen = new Set<number>();
-    announced.set(opts.sessionId, seen);
-  }
-  const channel = await opts.client.channels.fetch(opts.textChannelId).catch(() => null);
-  if (!channel || !channel.isSendable()) {
+  const fresh = refs.filter((n) => !state.posted.has(n) && !state.inFlight.has(n));
+  if (fresh.length === 0) {
     return 0;
   }
+  for (const n of fresh) {
+    state.inFlight.add(n);
+  }
 
+  const fullRepo = meetingRepo(opts.guildId, opts.textChannelId);
+  const [owner, repo] = fullRepo.split('/');
   let posted = 0;
-  for (const n of refs) {
-    if (seen.has(n)) {
-      continue;
+  try {
+    const channel = await opts.client.channels.fetch(opts.textChannelId).catch(() => null);
+    if (!channel || !channel.isSendable()) {
+      return 0;
     }
-    seen.add(n);
-    for (const fullRepo of candidateRepos(opts.guildId, opts.textChannelId)) {
-      const [owner, repo] = fullRepo.split('/');
+    for (const n of fresh) {
       const issue = await github.getIssueInfo(owner, repo, n);
-      if (!issue) {
+      // The meeting ended while we were looking it up: say nothing.
+      if (!issue || meetings.get(opts.sessionId) !== state) {
         continue;
       }
       try {
         await channel.send({ embeds: [calloutEmbed(fullRepo, issue)] });
+        state.posted.add(n);
         posted++;
         logger.info(`🎙️ Meeting callout: ${fullRepo}#${n} in ${opts.textChannelId}`);
       } catch (error) {
         logger.warn(`🎙️ Meeting callout post failed for ${fullRepo}#${n}:`, error);
       }
-      break;
+    }
+  } finally {
+    for (const n of fresh) {
+      state.inFlight.delete(n);
     }
   }
   return posted;

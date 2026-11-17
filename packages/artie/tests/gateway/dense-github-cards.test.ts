@@ -69,7 +69,11 @@ describe('dense PR/issue cards', () => {
 
   it('only asks the model when there is a body worth distilling', () => {
     expect(poster.gistRequestFor({ ...merged, data: { ...merged.data, prBody: '' } } as any)).toBeNull();
-    expect(poster.gistRequestFor(merged as any)?.key).toBe('Subway-Builder/metro-maker4#1499:pr');
+    const key = poster.gistRequestFor(merged as any)?.key || '';
+    expect(key.startsWith('Subway-Builder/metro-maker4#1499:pr:')).toBe(true);
+    // An edited body gets a fresh gist instead of the cached stale one.
+    const edited = poster.gistRequestFor({ ...merged, data: { ...merged.data, prBody: `${merged.data.prBody} Also fixes tunnels.` } } as any);
+    expect(edited?.key).not.toBe(key);
     const shortComment = { type: 'issue_comment', repo: 'r', data: { issueNumber: 1, commentBody: 'lgtm' } };
     expect(poster.gistRequestFor(shortComment as any)).toBeNull();
   });
@@ -112,6 +116,21 @@ describe('meeting issue callouts', () => {
   it('ignores ordinary numbers and single digits', () => {
     expect(extractIssueRefs('we have 1500 issues and 30 minutes')).toEqual([]);
     expect(extractIssueRefs('issue 1 is fine')).toEqual([]);
+    expect(extractIssueRefs('please request 30 minutes')).toEqual([]);
+  });
+
+  it('caps label lists so the card stays valid', () => {
+    const d = calloutEmbed('r/x', {
+      number: 12,
+      title: 't',
+      state: 'open',
+      url: 'https://github.com/r/x/issues/12',
+      labels: Array.from({ length: 80 }, (_, i) => `label-${i}-${'z'.repeat(40)}`),
+      assignees: [],
+      comments: 0,
+    }).data;
+    expect(d.description!.length).toBeLessThanOrEqual(1000);
+    expect(d.description).toContain('+76');
   });
 
   it('dedupes within an utterance and caps at three', () => {

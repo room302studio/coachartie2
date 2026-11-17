@@ -29,7 +29,7 @@ import { getErrorMessage } from '../../shared/errors.js';
 import { isBlockedUser } from '../../shared/blocklist.js';
 import * as engine from '../../engine/api.js';
 import { pcmToWav, pcmDurationSeconds, stereoToMonoPcm16 } from './wav.js';
-import { postIssueCallouts, clearMeetingCallouts } from './scribe-issue-callouts.js';
+import { postIssueCallouts, clearMeetingCallouts, startMeetingCallouts } from './scribe-issue-callouts.js';
 import {
   SILENCE_MS,
   isUtteranceLongEnough,
@@ -182,7 +182,7 @@ function handleSpeakingStart(session: ActiveVoiceSession, userId: string): void 
         durationSeconds,
       });
       session.utteranceCount++;
-      if (result.accepted && result.text) {
+      if (result.accepted && result.text && !session.stopping) {
         // "issue 1502" said out loud → that issue's card in the meeting chat.
         void postIssueCallouts({
           client: session.client,
@@ -348,6 +348,7 @@ async function joinAndStart(input: {
     tickTimer: setInterval(() => tick(guildId), TICK_MS),
   };
   activeSessions.set(guildId, session);
+  startMeetingCallouts(session.sessionId);
   logger.info(`🎙️ Scribe session ${sessionId} joined voice channel ${channel.id} in guild ${guildId}`);
 
   return { ok: true, sessionId };

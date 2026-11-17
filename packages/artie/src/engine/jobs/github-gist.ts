@@ -93,8 +93,11 @@ export async function githubGist(req: GistRequest): Promise<string | null> {
   if (isGenerationMuted() || creditMonitor.areCreditsExhausted()) {
     return null;
   }
-  try {
-    const call = openRouterService
+  // One paid call per key: concurrent posts share it, and an answer that lands after the
+  // timeout is still cached for the next card instead of being paid for again.
+  let call = inFlight.get(req.key);
+  if (!call) {
+    call = openRouterService
       .generateFromMessageChain(
         [{ role: 'user', content: buildGistPrompt(req) }],
         'github-gist',
@@ -102,29 +105,35 @@ export async function githubGist(req: GistRequest): Promise<string | null> {
         gistModel(),
         { guildId: req.guildId, maxTokens: 60, stepType: 'github_gist' }
       )
+      .then((raw) => {
+        const gist = cleanGist(raw);
+        // Only cache real answers: an outage should get another try next post.
+        if (gist) {
+          remember(req.key, gist);
+        }
+        return gist;
+      })
       .catch((error) => {
         logger.debug(`GitHub gist failed for ${req.key}: ${error}`);
         return null;
+      })
+      .finally(() => {
+        inFlight.delete(req.key);
       });
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const timeout = new Promise<null>((resolve) => {
-      timer = setTimeout(() => resolve(null), TIMEOUT_MS);
-    });
-    const raw = await Promise.race([call, timeout]);
-    if (timer) {
-      clearTimeout(timer);
-    }
-    const gist = cleanGist(raw);
-    // Only cache real answers: a timeout or outage should get another try next post.
-    if (gist) {
-      remember(req.key, gist);
-    }
-    return gist;
-  } catch (error) {
-    logger.debug(`GitHub gist failed for ${req.key}: ${error}`);
-    return null;
+    inFlight.set(req.key, call);
   }
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<null>((resolve) => {
+    timer = setTimeout(() => resolve(null), TIMEOUT_MS);
+  });
+  const gist = await Promise.race([call, timeout]);
+  if (timer) {
+    clearTimeout(timer);
+  }
+  return gist;
 }
+
+const inFlight = new Map<string, Promise<string | null>>();
 
 /** Test hook. */
 export function clearGistCache(): void {
