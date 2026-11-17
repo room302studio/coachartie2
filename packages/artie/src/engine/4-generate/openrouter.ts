@@ -150,8 +150,9 @@ export interface GenerateTurnResult {
 /** Periods that don't end a sentence ("Ask Dr. Smith", "e.g. this"). */
 const ABBREVIATIONS = new Set(['dr', 'mr', 'mrs', 'ms', 'st', 'vs', 'etc', 'eg', 'ie', 'jr', 'sr', 'no', 'approx']);
 
+/** Counts fence LINES (a line starting with ```), not backticks inside code. */
 function hasOddFences(text: string): boolean {
-  return (text.match(/```/g) || []).length % 2 === 1;
+  return text.split('\n').filter((line) => line.trim().startsWith('```')).length % 2 === 1;
 }
 
 /** Real words, not just Markdown scaffolding (fences, table rules, list markers). */
@@ -170,7 +171,9 @@ function lastSentence(text: string): string | null {
     const end = (match.index ?? 0) + 1;
     const candidate = text.slice(0, end);
     const lastWord = (candidate.split(/\s+/).pop() || '').toLowerCase().replace(/\./g, '');
-    if (/^\d+$/.test(lastWord) || ABBREVIATIONS.has(lastWord)) {
+    const lastLine = candidate.slice(candidate.lastIndexOf('\n') + 1);
+    // "1." opening a line is a list marker; "scored 100." mid-sentence is a real end.
+    if (/^\s*\d+\.$/.test(lastLine) || ABBREVIATIONS.has(lastWord)) {
       continue;
     }
     if (isSubstantive(candidate)) {
@@ -191,13 +194,21 @@ export function trimCutOffReply(text: string): string {
     return closeFence(text.trimEnd());
   }
   const lastBreak = text.lastIndexOf('\n');
+  const partialLine = text.slice(lastBreak + 1).trim();
+  // Ends on a closing fence that balances the text: the block finished.
+  if (partialLine === '```' && !hasOddFences(text)) {
+    return text.trimEnd();
+  }
   if (lastBreak > 0) {
     let kept = text.slice(0, lastBreak);
     if (hasOddFences(kept)) {
       // Cut inside a code block: keep what came before the block.
-      kept = kept.slice(0, kept.lastIndexOf('```'));
-    } else {
-      // Cut inside a table: drop the partial table rather than leave a header with no rows.
+      const lines = kept.split('\n');
+      const opener = lines.map((line) => line.trim().startsWith('```')).lastIndexOf(true);
+      kept = lines.slice(0, opener).join('\n');
+    } else if (partialLine.startsWith('|')) {
+      // Cut inside a table row: drop the partial table rather than leave a header with no rows.
+      // (A finished table followed by cut-off prose stays.)
       const lines = kept.split('\n');
       while (lines.length > 0 && lines[lines.length - 1].trim().startsWith('|')) {
         lines.pop();

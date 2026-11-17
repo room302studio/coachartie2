@@ -148,6 +148,14 @@ describe('generateWithTools: the request', () => {
     expect(trimCutOffReply('Ask Dr. Smith about')).toBe('Ask Dr. Smith about…');
   });
 
+  it('trimCutOffReply round 2: finished blocks and tables stay, numbers can end sentences', () => {
+    expect(trimCutOffReply('Use this example.\n```js\nconst x = 42;\n```')).toBe('Use this example.\n```js\nconst x = 42;\n```');
+    const table = 'Results are below.\n| Name | Score |\n| --- | --- |\n| Alice | 9 |';
+    expect(trimCutOffReply(`${table}\nNext point is`)).toBe(table);
+    expect(trimCutOffReply('```js\nconst marker = "```";\n```\n')).toBe('```js\nconst marker = "```";\n```');
+    expect(trimCutOffReply('The build passed. It scored 100. Next we')).toBe('The build passed. It scored 100.');
+  });
+
   it('per-call reasoning is sent as given (brownout turns it off)', async () => {
     createMock.mockResolvedValueOnce(completion({ content: 'ok' }));
     await openRouterService.generateWithTools(MESSAGES, TOOLS, 'u', 'm', 'anthropic/claude-sonnet-5', {
