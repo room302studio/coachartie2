@@ -47,6 +47,16 @@ export interface ToolActionSpec {
    */
   approval?: boolean;
   params?: Record<string, ToolParamSpec>;
+  /**
+   * What this action reads from the free-text `content` argument (the body the XML format put
+   * between the tags), in one short phrase. Absence = the handler ignores `content`.
+   * It only matters for a tool that declares params: the native schema then lists `content`
+   * only when some action sets this, instead of offering every tool a free-text field it never
+   * reads. A tool with NO declared params keeps `content` (its handlers were never audited).
+   * Declare it whenever the handler reads `content` as the primary input; a mere fallback for a
+   * param that is already declared does not need it.
+   */
+  content?: string;
 }
 
 export type ToolActions = Record<string, ToolActionSpec>;
@@ -170,6 +180,35 @@ export function declaredToolParams(
     if (a > b) return 1;
     return 0;
   });
+}
+
+/**
+ * The `content` argument a tool's declaration accepts: what it is (the distinct per-action
+ * phrases, in action order) and which actions read it. undefined when no action declares it.
+ */
+export function declaredToolContent(
+  actions: ToolActions | undefined
+): { description: string; usedBy: string[] } | undefined {
+  const usedBy: string[] = [];
+  const phrases: string[] = [];
+  for (const [action, spec] of Object.entries(actions ?? {})) {
+    if (!spec.content) {
+      continue;
+    }
+    usedBy.push(action);
+    if (!phrases.includes(spec.content)) {
+      phrases.push(spec.content);
+    }
+  }
+  if (usedBy.length === 0) {
+    return undefined;
+  }
+  return { description: phrases.join(' / '), usedBy };
+}
+
+/** True when any action declares typed params (the tool's schema is then fully declared). */
+export function declaresParams(actions: ToolActions | undefined): boolean {
+  return Object.values(actions ?? {}).some((spec) => Object.keys(spec.params ?? {}).length > 0);
 }
 
 /** "tool:action" for every supported action with no declaration, sorted. */

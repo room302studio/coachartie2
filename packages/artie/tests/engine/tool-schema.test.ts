@@ -13,6 +13,7 @@ import {
   toToolName,
   type ToolDefinition,
 } from '../../src/engine/5-tool-loop/tool-schema.js';
+import { declaredToolContent, declaresParams } from '../../src/engine/5-tool-loop/tool-policy.js';
 import { toCallNotation, stripXmlToolTeaching } from '../../src/engine/5-tool-loop/mode.js';
 
 async function bootRegistry(): Promise<void> {
@@ -107,8 +108,41 @@ describe('registryToTools over the real registry', () => {
   it('declared params replace the data= blob: discord-forums shows forumId/threadId/repo', () => {
     const forums = tools.find((t) => t.function.name === 'discord-forums')!;
     const props = Object.keys(forums.function.parameters.properties).sort();
-    expect(props).toEqual(['action', 'content', 'forumId', 'repo', 'threadId']);
+    // No free-text `content`: no forums action reads it.
+    expect(props).toEqual(['action', 'forumId', 'repo', 'threadId']);
     expect(forums.function.parameters.required).toEqual(['action']);
+  });
+
+  it('content is offered only where a declared action reads it', () => {
+    const byName = (name: string) => tools.find((t) => t.function.name === name)!;
+    const memory = byName('memory').function.parameters.properties;
+    expect(memory.content).toBeDefined();
+    expect((memory.content as { description: string }).description).toContain('for remember');
+    expect(byName('discord-forums').function.parameters.properties.content).toBeUndefined();
+    expect(byName('meeting-scheduler').function.parameters.properties.content).toBeUndefined();
+    // Undeclared-param tools keep the generic field.
+    expect(byName('calculator').function.parameters.properties.content).toBeDefined();
+    // Every tool that declares params and offers content has an action that says so.
+    for (const cap of capabilityRegistry.list()) {
+      const tool = byName(cap.name);
+      if (!tool || !declaresParams(cap.actions)) continue;
+      const declared = declaredToolContent(cap.actions) !== undefined;
+      expect(tool.function.parameters.properties.content !== undefined, cap.name).toBe(declared);
+    }
+  });
+
+  it('the overlapping-tool use-when sentence lands inside the clipped first line', () => {
+    for (const name of ['memory', 'scratchpad', 'system_memory', 'relay', 'proactive-dm']) {
+      const desc = tools.find((t) => t.function.name === name)!.function.description;
+      expect(desc.length, name).toBeGreaterThan(0);
+    }
+    const desc = (name: string) => tools.find((t) => t.function.name === name)!.function.description;
+    expect(desc('relay')).toContain('scheduler');
+    expect(desc('proactive-dm')).toContain('scheduler');
+    expect(desc('proactive-dm')).toContain('relay');
+    expect(desc('scratchpad')).toContain('memory');
+    expect(desc('system_memory')).toContain('memory');
+    expect(desc('memory')).toContain('scope');
   });
 
   it('teaches no XML: descriptions carry no <capability> tags', () => {
@@ -142,6 +176,37 @@ describe('capabilityToTool / toolCallToInvocation', () => {
     expect(Object.keys(tool.function.parameters.properties)).toEqual(
       expect.arrayContaining(['guildId', 'channelId', 'message', 'content'])
     );
+  });
+
+  it('content follows the declaration: omitted, described, or generic', () => {
+    const base = { name: 't', supportedActions: ['a', 'b'], handler: async () => 'ok' };
+    const noContent = capabilityToTool({
+      ...base,
+      actions: {
+        a: { effect: 'read', params: { q: { type: 'string', description: 'query' } } },
+        b: { effect: 'read' },
+      },
+    });
+    expect(noContent.function.parameters.properties.content).toBeUndefined();
+
+    const withContent = capabilityToTool({
+      ...base,
+      actions: {
+        a: { effect: 'own', content: 'The note', params: { q: { type: 'string', description: 'query' } } },
+        b: { effect: 'read' },
+      },
+    });
+    expect(withContent.function.parameters.properties.content).toEqual({
+      type: 'string',
+      description: 'The note (for a)',
+    });
+
+    // Declared actions but no params at all: handlers were never audited, keep the generic field.
+    const noParams = capabilityToTool({
+      ...base,
+      actions: { a: { effect: 'read' }, b: { effect: 'read' } },
+    });
+    expect(noParams.function.parameters.properties.content).toBeDefined();
   });
 
   it('splits action and content out, and stringifies non-string args', () => {

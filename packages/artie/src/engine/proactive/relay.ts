@@ -143,9 +143,33 @@ function clearRelays(params: Record<string, unknown>): string {
 export const relayCapability: RegisteredCapability = {
   name: 'relay',
   emoji: '📮',
+  // add queues a note for the recipient's briefing (discord: it reaches a person). list shows
+  // other people's queued messages and clear marks them delivered for ANY recipient (the handler
+  // takes `to` from params), so both are owner-only: anyone could read or wipe EJ's queue.
+  actions: {
+    add: {
+      effect: 'discord',
+      params: {
+        message: { type: 'string', description: 'What to pass along (max 500 chars)', required: true },
+        to: { type: 'string', description: 'Who it is for (default ej)' },
+        from: { type: 'string', description: "The sender's name as it should read in the briefing" },
+      },
+    },
+    list: {
+      effect: 'read',
+      who: 'owner',
+      params: { to: { type: 'string', description: 'Whose queue (default ej)' } },
+    },
+    clear: {
+      effect: 'discord',
+      who: 'owner',
+      params: { to: { type: 'string', description: 'Whose queue (default ej)' } },
+    },
+  },
   supportedActions: ['add', 'list', 'clear'],
   description:
-    'Stack a message for someone to read in their morning briefing. Use when a person asks you to tell/remind/pass something along to someone who is not in the conversation, instead of interrupting them.',
+    'Leave a note for someone who is not here; it shows in their NEXT MORNING BRIEFING, not now. Timed reminder ("in 20 min"): scheduler. Message right now: proactive-dm.\n' +
+    'Max 3 per sender per day, 500 chars each. Use when someone says "tell EJ ..." instead of interrupting them.',
   examples: [
     '<capability name="relay" action="add" from="alice" message="the metro-maker deploy is green" />',
     '<capability name="relay" action="add" to="ej" from="bob" message="needs a review on PR 42" />',

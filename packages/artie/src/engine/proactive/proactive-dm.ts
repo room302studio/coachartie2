@@ -181,7 +181,8 @@ async function handleProactiveDM(
           return 'Message content required.';
         }
 
-        const delay = params.delay;
+        // The native tool path hands every param over as a string; BullMQ wants a number.
+        const delay = Number(params.delay) || 0;
         let success: boolean;
 
         if (delay && delay > 0) {
@@ -220,7 +221,7 @@ async function handleProactiveDM(
           return 'Reminder content required.';
         }
 
-        const delay = params.delay || 60000; // Default 1 minute
+        const delay = Number(params.delay) || 60000; // Default 1 minute
         const reminderMessage = `**Reminder**\n\n${message}`;
         const success = await sendDelayedDM(targetUserId, reminderMessage, delay, 'reminder');
 
@@ -277,27 +278,36 @@ System ready for proactive messaging.`;
 // Export for use by other services
 export { sendDiscordDM };
 
+const DM_MESSAGE = { type: 'string', description: 'The text to send', required: true } as const;
+const DM_DELAY = { type: 'integer', description: 'Delay in milliseconds before sending' } as const;
+
 export const proactiveDMCapability: RegisteredCapability = {
   name: 'proactive-dm',
   emoji: '📤',
+  // The handler takes the recipient from ctx.userId (the asker); a model-supplied userId only
+  // works for admins, so userId is deliberately not offered as a param.
   actions: {
-    send: { effect: 'discord' },
-    dm: { effect: 'discord' },
-    message: { effect: 'discord' },
-    notify: { effect: 'discord' },
-    alert: { effect: 'discord' },
-    remind: { effect: 'discord' },
-    followup: { effect: 'discord' },
+    send: { effect: 'discord', params: { message: DM_MESSAGE, delay: DM_DELAY } },
+    dm: { effect: 'discord', params: { message: DM_MESSAGE, delay: DM_DELAY } },
+    message: { effect: 'discord', params: { message: DM_MESSAGE, delay: DM_DELAY } },
+    notify: { effect: 'discord', params: { message: DM_MESSAGE } },
+    alert: { effect: 'discord', params: { message: DM_MESSAGE } },
+    remind: { effect: 'discord', params: { message: DM_MESSAGE, delay: DM_DELAY } },
+    followup: {
+      effect: 'discord',
+      params: { message: { type: 'string', description: 'Follow-up text (default: a short task-done line)' } },
+    },
     status: { effect: 'read' },
   },
   supportedActions: ['send', 'dm', 'message', 'notify', 'alert', 'remind', 'followup', 'status'],
-  description: `Send messages to users proactively - Clawdbot-style. Actions:
-- send/dm/message: Send a message to a user (optional delay in ms)
-- notify/alert: Send an alert notification
-- remind: Set a reminder with delay
-- followup: Send a follow-up after task completion
-- status: Check proactive messaging system status
+  description: `DM the person asking, now or after a short delay, outside this chat ("DM me when it's done"). Timed reminders: use scheduler. Note for someone's morning briefing: use relay.
+Actions:
+- send/dm/message: DM now (or after delay in ms)
+- notify/alert: DM an alert-styled message
+- remind: DM a reminder after delay in ms (default 1 min); for real reminders prefer scheduler
+- followup: DM a follow-up after finishing a task
+- status: queue depth
 
-Used internally by scheduler for briefings, trend digests, and alerts.`,
+You can only DM yourself unless you are an admin and the target opted in. Also used internally for briefings, trend digests and alerts.`,
   handler: handleProactiveDM,
 };

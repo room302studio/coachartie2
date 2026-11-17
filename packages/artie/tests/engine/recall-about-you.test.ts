@@ -24,13 +24,16 @@ const own = [
 describe('aboutYou', () => {
   it('picks importance >= 6, most important first', () => {
     const a = aboutYou(own, 1000);
-    expect(a.line).toBe("About the person you're talking to: name is Sam; is vegetarian; lives in Queens.");
+    expect(a.line).toBe(
+      "About the person you're talking to (personal, fine to use anywhere): name is Sam; is vegetarian; lives in Queens."
+    );
     expect(a.picked).toEqual(['name is Sam', 'is vegetarian', 'lives in Queens']);
   });
 
   it('never exceeds its character cap, dropping whole facts', () => {
-    const a = aboutYou(own, 70);
-    expect(a.line.length).toBeLessThanOrEqual(70);
+    // The label counts toward the cap: 100 fits the prefix plus two short facts, not three.
+    const a = aboutYou(own, 100);
+    expect(a.line.length).toBeLessThanOrEqual(100);
     expect(a.picked).toEqual(['name is Sam', 'is vegetarian']);
     expect(aboutYou(own, 10).line).toBe('');
   });
@@ -52,7 +55,7 @@ describe('aboutYou', () => {
 describe('withAboutYou', () => {
   it('prepends the line to ranked recall', () => {
     const out = withAboutYou(ranked, aboutYou(own, 1000));
-    expect(out.content.startsWith("About the person you're talking to:")).toBe(true);
+    expect(out.content.startsWith("About the person you're talking to (personal, fine to use anywhere):")).toBe(true);
     expect(out.content).toContain('the dinner thread');
     expect(out.memoryCount).toBe(4);
   });

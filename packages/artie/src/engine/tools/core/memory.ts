@@ -1014,17 +1014,23 @@ export const memoryCapability: RegisteredCapability = {
   actions: {
     remember: {
       effect: 'own',
+      // The fact itself: handleMemoryAction reads params.content || content.
+      content: 'The fact to remember, one self-contained sentence',
       params: {
         scope: {
           type: 'string',
           enum: ['me', 'here'],
           description:
-            'me = a fact about the person asking (follows them to every server); here = about this server, its projects or other people (stays here)',
+            'Where the fact may travel. In a DM only me works. ' +
+            'me = true anywhere (pronouns, timezone, "hates long replies"); it follows the person to every server. ' +
+            'here = server-specific, even about a person ("Jan builds Tokyo maps in Subway Builder"); it stays in this server. ' +
+            'Unsure: here (a wrong here stays put, a wrong me leaks across servers).',
           required: true,
         },
         kind: {
           type: 'string',
-          description: 'person|preference|project|event|lore|rule|tool|goal|pinned',
+          description:
+            'What the fact is about (a label, not where it travels; scope does that): person|preference|project|event|lore|rule|tool|goal|pinned. kind=person works with either scope.',
         },
         tags: { type: 'string', description: 'Comma-separated tags to find it again' },
         importance: { type: 'integer', description: '1-10 (default 5)' },
@@ -1052,12 +1058,14 @@ export const memoryCapability: RegisteredCapability = {
     stats: { effect: 'read' },
   },
   description:
-    // Native tool schema shows only the first line, clipped at 200 chars (tool-schema.ts).
-    'Remember/recall facts across chats. kind=person|preference|project|event|lore|rule|tool|goal|pinned; ' +
-    'tags="a,b" files a memory, recall tags="a" finds it again.\n' +
-    'A nightly dream pass re-tags memories and prunes junk. NOT for guild notes (use scratchpad) ' +
-    'or structured profile fields like email/timezone (use user-profile). "pin" marks something ' +
-    'important (importance 10); "forget" deletes it.',
+    // Native tool schema shows only the first line, clipped at 200 chars (tool-schema.ts), so the
+    // use-when sentence comes first; the scope guidance lives in the scope param description.
+    'Save or find ONE fact (tagged, searchable) about a person or this server; the default place to remember things. Set scope: me or here. Running server notebook: scratchpad.\n' +
+    'scope=me facts follow a person to every server and DMs are me-only; scope=here stays in this server (when unsure, here). ' +
+    'kind=person|preference|project|event|lore|rule|tool|goal|pinned says what the fact is about; scope says where it may travel. ' +
+    'tags="a,b" files a memory, recall tags="a" finds it again. A nightly dream pass re-tags memories and prunes junk. ' +
+    'NOT for structured profile fields like email/timezone (use user-profile) or agent handoffs (system_memory, EJ only). ' +
+    '"pin" marks something important (importance 10); "forget" deletes it.',
   handler: handleMemoryAction,
   examples: [
     '<capability name="memory" action="remember" scope="here" kind="project" tags="monetization,stripe">Tier-list commissions idea, risk: becomes a chore</capability>',

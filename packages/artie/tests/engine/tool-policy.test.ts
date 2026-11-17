@@ -41,6 +41,10 @@ const GATE_FLOOR: Record<string, Record<string, string>> = {
     'flight-anomalies': 'O', 'nearby-aircraft': 'O', 'lookup-entity': 'O', explain: 'O',
   },
   system_memory: { read: 'O', recent: 'O', check_handoffs: 'O', write: 'O', handoff: 'O' },
+  // relay list/clear take any recipient's queue (`to`), so they are owner-only; add reaches a person.
+  relay: { add: 'T', list: 'O', clear: 'OT' },
+  // write/clear replace or wipe the whole notebook (taint-blocked); note/append/section add a line.
+  scratchpad: { read: '', note: '', append: '', section: '', write: 'T', clear: 'T' },
   mention_proxy: {
     list: 'O', get: 'O', list_for_guild: 'O', list_for_user: 'O',
     create: 'OT', update: 'OT', delete: 'OT', enable: 'OT', disable: 'OT',
@@ -94,7 +98,7 @@ const KNOWN_UNDECLARED = new Set([
   'discord-issue-parser', 'discord-poll', 'discord-send-message',
   'discord-threads', 'discord-user-history', 'embedded_mcp', 'flashcard', 'goals', 'image_gen',
   'kanban', 'morning-briefing', 'n8n_browser', 'pairing',
-  'quiz-game', 'relay', 'sb_changelog', 'scrapbook', 'scratchpad', 'send-metro-file', 'sequence',
+  'quiz-game', 'sb_changelog', 'scrapbook', 'send-metro-file', 'sequence',
   'skills', 'system-info', 'system_monitor', 'tasks', 'trend-watcher', 'tts', 'user-profile',
   'variable', 'vision', 'vps_claude', 'web', 'wolfram',
 ]);

@@ -135,26 +135,42 @@ function formatPad(content: string): string {
 export const scratchpadCapability: RegisteredCapability = {
   name: 'scratchpad',
   emoji: '📝',
+  // The pad is ONE markdown file per server (guild-<id>.md), shared by everyone Artie talks to
+  // there; in a DM there is no guild, so every DM shares the single 'default' pad. Two kinds of
+  // write: adding a line (note/append/section) is Artie's own state; replacing or wiping the whole
+  // file (write/clear) is destructive, so it is taint-blocked like other workspace writes.
+  actions: {
+    read: { effect: 'read' },
+    note: { effect: 'own', content: 'The note, one line' },
+    append: { effect: 'own', content: 'Text to add at the end' },
+    section: {
+      effect: 'own',
+      content: 'Text to add under that section',
+      params: {
+        section: {
+          type: 'string',
+          description: 'Section heading, e.g. Community Members (created if missing)',
+          required: true,
+        },
+      },
+    },
+    write: { effect: 'workspace', content: 'The whole new notebook text (replaces everything)' },
+    clear: { effect: 'workspace' },
+  },
   supportedActions: ['write', 'read', 'append', 'clear', 'section', 'note'],
-  description: `Your persistent notes for this guild. Write down observations, community member quirks, recurring issues - things you want to remember.
+  description: `Your running free-form notebook for THIS server: patterns and observations, not single searchable facts (use memory for those). Shared by everyone there; no tags or search.
 
-IMPORTANT: These notes persist across restarts. Use them to build knowledge over time!
-
-Use this to:
-- Note interesting community members and what they're into
-- Track recurring questions or issues
-- Remember solutions that worked
-- Observe patterns in the community
+Notes persist across restarts and may be shown back to you in this server's context.
 
 Actions:
-- note: Quick note (appends with timestamp) - USE THIS MOST
-- read: See your notes
-- section: Add to a specific section (Community Members, Recurring Topics, etc.)
-- append: Add to the end
+- note: Quick dated line at the end - USE THIS MOST
+- read: See the whole notebook
+- section: Add a line under a heading (Community Members, Recurring Topics, ...)
+- append: Add text to the end
 - write: Replace everything (careful!)
-- clear: Wipe notes (very careful!)
+- clear: Wipe it (very careful!)
 
-When you learn something unique about this guild - a person, a pattern, a solution - jot it down!`,
+Use it for community quirks, recurring questions, solutions that worked. Facts about a person that should follow them across servers go in memory (scope me).`,
   requiredParams: [],
   examples: [
     // Quick note (most common)

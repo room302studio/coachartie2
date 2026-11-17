@@ -1,5 +1,5 @@
 import { AUTO_INJECTED_PARAMS, type RegisteredCapability } from './registry.js';
-import { declaredToolParams } from './tool-policy.js';
+import { declaredToolParams, declaredToolContent, declaresParams } from './tool-policy.js';
 import { parseTagAttributes, toCallNotation, TAG_ATTRS, XML_ONLY_TOOLS } from './mode.js';
 
 /**
@@ -160,7 +160,21 @@ export function capabilityToTool(cap: RegisteredCapability): ToolDefinition {
   // Most handlers also accept free-text `content` (the CapabilityHandler 2nd arg).
   // The whole list rides on every tool turn (~63 tools), so per-tool text stays short: the
   // action enum already lists the actions, and this one description is repeated 63 times.
-  properties.content = { type: 'string', description: CONTENT_DESCRIPTION };
+  // A tool that declares typed params has been audited: `content` is offered only when an action
+  // declares it reads it (ToolActionSpec.content), so the model is not handed a free-text field
+  // the handler ignores. Tools with no declared params keep the generic field.
+  const declaredContent = declaredToolContent(cap.actions);
+  if (declaredContent) {
+    properties.content = {
+      type: 'string',
+      description: paramDescription(
+        { description: declaredContent.description, usedBy: declaredContent.usedBy, requiredBy: [] },
+        cap.supportedActions.length
+      ),
+    };
+  } else if (!declaresParams(cap.actions)) {
+    properties.content = { type: 'string', description: CONTENT_DESCRIPTION };
+  }
 
   const firstLine = toCallNotation((cap.description || '').split('\n')[0].trim());
   const examples = (cap.examples ?? [])

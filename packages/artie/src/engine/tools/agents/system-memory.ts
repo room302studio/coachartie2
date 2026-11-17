@@ -262,16 +262,44 @@ async function handleSystemMemory(
 export const systemMemoryCapability: RegisteredCapability = {
   name: 'system_memory',
   emoji: '🧠',
+  // Rows in one shared SQLite table (system_memory) that Artie and VPS Claude both read; nothing
+  // here is per user or per server, and nothing is recalled into conversations automatically.
   actions: {
-    read: { effect: 'read', who: 'owner' },
+    read: {
+      effect: 'read',
+      who: 'owner',
+      params: {
+        category: { type: 'string', description: 'Only this category (observation, handoff, ...)' },
+        agent: { type: 'string', description: 'Only notes written by this agent' },
+        limit: { type: 'integer', description: 'Max rows (default 10)' },
+      },
+    },
     recent: { effect: 'read', who: 'owner' },
-    check_handoffs: { effect: 'read', who: 'owner' },
-    write: { effect: 'own', who: 'owner' },
-    handoff: { effect: 'own', who: 'owner' },
+    check_handoffs: {
+      effect: 'read',
+      who: 'owner',
+      params: { agent: { type: 'string', description: 'Whose inbox to check (default artie)' } },
+    },
+    write: {
+      effect: 'own',
+      who: 'owner',
+      content: 'The note text',
+      params: {
+        category: { type: 'string', description: 'Note category (default observation)' },
+        agent: { type: 'string', description: 'Who is writing (default artie)' },
+      },
+    },
+    handoff: {
+      effect: 'own',
+      who: 'owner',
+      content: 'What the other agent should pick up',
+      params: { agent: { type: 'string', description: 'Who is writing (default artie)' } },
+    },
   },
   supportedActions: ['write', 'read', 'handoff', 'check_handoffs', 'recent'],
   description:
-    'Shared memory for cross-agent communication. Leave notes, handoffs, and context for VPS Claude.',
+    'EJ-only shared notebook between Artie and VPS Claude (the other agent): handoffs and agent-to-agent notes. NOT for facts about users or servers (use memory).\n' +
+    'Rows are not per user or per server and are never recalled into chats automatically; read or check_handoffs to see them.',
   handler: handleSystemMemory,
   examples: [
     '<capability name="system_memory" action="handoff" content="User asked about X, needs follow-up research" />',

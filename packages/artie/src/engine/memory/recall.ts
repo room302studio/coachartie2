@@ -154,7 +154,9 @@ function personalFacts(userId: string): OwnMemory[] {
   }
 }
 
-const ABOUT_YOU_PREFIX = "About the person you're talking to: ";
+// These are always scope:me facts, so the label tells Artie they are safe to use in any server.
+// The prefix counts toward maxChars in aboutYou, so the budget math stays correct.
+const ABOUT_YOU_PREFIX = "About the person you're talking to (personal, fine to use anywhere): ";
 
 /**
  * Picks the facts and builds the line, never longer than maxChars (whole facts only). Decided
