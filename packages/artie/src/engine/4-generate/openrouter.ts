@@ -810,6 +810,11 @@ class OpenRouterService {
         if (affordabilityCap !== undefined && affordabilityCap < maxTokens) {
           logger.warn(`📏 Capping max_tokens ${maxTokens} → ${affordabilityCap} (affordability)`);
           maxTokens = affordabilityCap;
+          // A reasoning budget must fit inside max_tokens; with the room this tight, spend it
+          // all on the answer (Codex: a 2048 budget inside a clamped 2048 total is invalid).
+          if (reasoning?.max_tokens !== undefined) {
+            reasoning = { effort: 'none', exclude: true };
+          }
         }
         logger.debug(`📏 Using max_tokens: ${maxTokens}`);
 
@@ -1128,7 +1133,9 @@ class OpenRouterService {
         const isLastModel = i === modelsToTry.length - 1;
 
         if (error instanceof ReplyTruncated) {
-          if (!truncationRetry) {
+          // Under an affordability clamp the retry can't get more room, so it would only pay
+          // twice for the same cut: go straight down the ladder.
+          if (!truncationRetry && affordabilityCap === undefined) {
             truncationRetry = true;
             logger.warn(`✂️ ${error.message}; retrying ${model} once with double the room, reasoning off`);
             i--; // retry the same model
@@ -1548,8 +1555,15 @@ class OpenRouterService {
         );
         logger.info(`🔄 Rotated to next model: ${this.getCurrentModel()}`);
         if (finishReason === 'length') {
-          // Booked above (it was billed), but never delivered as if complete.
-          throw new ReplyTruncated(model, maxTokens, fullResponse.trim().length === 0);
+          // XML/streaming rollback path (no same-model retry here; that lives in generateTurn).
+          // Nothing shown yet: fail over to the next model. Paragraphs already streamed can't
+          // be taken back, so a restarted answer would contradict them: end the one on screen
+          // and mark it visibly unfinished instead.
+          if (lastSentLength === 0) {
+            throw new ReplyTruncated(model, maxTokens, fullResponse.trim().length === 0);
+          }
+          logger.warn(`✂️ ${model}: streamed reply hit max_tokens=${maxTokens} after paragraphs were sent`);
+          return `${fullResponse.trim()} …`;
         }
         return fullResponse.trim();
       } catch (error: unknown) {

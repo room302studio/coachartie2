@@ -163,6 +163,21 @@ describe('generateWithTools: the request', () => {
     expect(out.toolCalls).toEqual([]);
   });
 
+  it('under an affordability clamp the reasoning budget is dropped and truncation skips the same-model retry', async () => {
+    createMock
+      .mockRejectedValueOnce(Object.assign(new Error('requested up to 6144 tokens, but can only afford 1000'), { status: 402 }))
+      .mockResolvedValueOnce(truncatedCompletion('cut'))
+      .mockResolvedValueOnce(completion({ content: 'next model answered' }));
+    const out = await openRouterService.generateWithTools(MESSAGES, TOOLS, 'u', 'm', 'anthropic/claude-sonnet-5', {
+      reasoning: { max_tokens: 2048 },
+    });
+    const calls = createMock.mock.calls.map((c) => c[0]);
+    expect(calls[1].max_tokens).toBe(900);
+    expect(calls[1].reasoning).toEqual({ effort: 'none', exclude: true });
+    expect(calls[2].model).not.toBe(calls[1].model);
+    expect(out.content).toBe('next model answered');
+  });
+
   it('wireMaxTokens: a ceiling that never binds, plus any explicit reasoning budget on top', () => {
     expect(wireMaxTokens(undefined, undefined)).toBe(4096);
     expect(wireMaxTokens(undefined, { max_tokens: 2048 })).toBe(6144);
