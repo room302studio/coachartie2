@@ -119,22 +119,48 @@ export function canonicalJson(value: unknown): string {
   });
 }
 
+type ExpiryListener = (expired: PendingAction[]) => void;
+let expiryListener: ExpiryListener | null = null;
+
+/**
+ * Who hears about rows that lapse. shared/ can't import the engine or gateway, so the engine
+ * (approvals.ts, which tells the requester) subscribes here. One listener; the last one wins.
+ */
+export function onPendingActionsExpired(listener: ExpiryListener | null): void {
+  expiryListener = listener;
+}
+
 /**
  * Mark every pending row older than PENDING_TTL_DAYS as expired. Called before anything reads
  * the queue, so no reader ever sees (or approves) a lapsed ask. Returns how many expired.
  */
 export function expireStalePendingActions(ttlDays: number = PENDING_TTL_DAYS): number {
   ensureTable();
-  const result = getSyncDb().run(
-    `UPDATE pending_actions SET status = 'expired', resolved_at = CURRENT_TIMESTAMP, resolved_by = 'ttl'
-      WHERE status = 'pending' AND created_at < datetime('now', ?)`,
-    [`-${ttlDays} days`]
-  );
-  const expired = Number(result.changes ?? 0);
-  if (expired > 0) {
-    logger.info(`⌛ Expired ${expired} pending action(s) older than ${ttlDays} days`);
+  const db = getSyncDb();
+  const rows = db
+    .all<Record<string, unknown>>(
+      `SELECT * FROM pending_actions WHERE status = 'pending' AND created_at < datetime('now', ?)`,
+      [`-${ttlDays} days`]
+    )
+    .map(rowToPendingAction);
+  if (rows.length === 0) {
+    return 0;
   }
-  return expired;
+  const placeholders = rows.map(() => '?').join(',');
+  db.run(
+    `UPDATE pending_actions SET status = 'expired', resolved_at = CURRENT_TIMESTAMP, resolved_by = 'ttl'
+      WHERE status = 'pending' AND id IN (${placeholders})`,
+    rows.map((r) => r.id)
+  );
+  logger.info(`⌛ Expired ${rows.length} pending action(s) older than ${ttlDays} days`);
+  if (expiryListener) {
+    try {
+      expiryListener(rows.map((r) => ({ ...r, status: 'expired' as PendingActionStatus })));
+    } catch (error) {
+      logger.warn(`⌛ Expiry listener failed (rows are still expired): ${error}`);
+    }
+  }
+  return rows.length;
 }
 
 /**

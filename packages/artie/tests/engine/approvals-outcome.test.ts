@@ -66,3 +66,56 @@ describe('approvals:approve outcome', () => {
     expect(again).toContain('already executed');
   });
 });
+
+describe('the requester hears how it ended (Artie, 2026-11-17)', () => {
+  function pendingFrom(requestedBy: string, context: Record<string, unknown>) {
+    return {
+      id: 7,
+      tool: 'email',
+      action: 'send',
+      paramsJson: '{"to":"x@example.com"}',
+      content: 'the secret draft body',
+      contextJson: JSON.stringify(context),
+      requestedBy,
+      reason: null,
+      status: 'pending' as const,
+      createdAt: '2026-11-17 12:00:00',
+      resolvedAt: null,
+      resolvedBy: null,
+    };
+  }
+
+  it('pings them in the original channel with the outcome, never the content', () => {
+    const notice = approvals.requesterNotice(pendingFrom('u1', { channelId: 'c9' }), 'denied');
+    expect(notice).toEqual({
+      userId: 'u1',
+      channelId: 'c9',
+      text: "<@u1> your request #7 (email:send): EJ didn't approve it, so it didn't happen.",
+    });
+    expect(notice!.text).not.toContain('secret');
+  });
+
+  it('falls back to a DM when there was no channel, and covers every outcome', () => {
+    for (const outcome of ['executed', 'failed', 'denied', 'expired'] as const) {
+      const notice = approvals.requesterNotice(pendingFrom('u1', {}), outcome);
+      expect(notice!.channelId).toBeUndefined();
+      expect(notice!.text).toMatch(/^<@u1> your request #7/);
+    }
+  });
+
+  it('says nothing to EJ himself or to system callers', () => {
+    expect(approvals.requesterNotice(pendingFrom(owner, { channelId: 'c' }), 'executed')).toBeNull();
+    expect(approvals.requesterNotice(pendingFrom('unknown-user', {}), 'denied')).toBeNull();
+  });
+
+  it('expiry hands the lapsed rows to the listener', async () => {
+    const heard: number[] = [];
+    pendingActions.onPendingActionsExpired((rows) => heard.push(...rows.map((r) => r.id)));
+    const id = park();
+    const { getSyncDb } = await import('../../src/shared/db/client.js');
+    getSyncDb().run(`UPDATE pending_actions SET created_at = datetime('now', '-8 days') WHERE id = ?`, [id]);
+    expect(pendingActions.expireStalePendingActions()).toBeGreaterThanOrEqual(1);
+    expect(heard).toContain(id);
+    pendingActions.onPendingActionsExpired(null);
+  });
+});

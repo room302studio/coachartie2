@@ -76,6 +76,8 @@ const GATE_FLOOR: Record<string, Record<string, string>> = {
     'list-forums': '', 'list-threads': '', 'get-thread': '', 'get-forum-summary': '',
     'sync-to-github': 'TA',
   },
+  // approve replays an email/payment: taint-blocked so injected text can't approve for EJ.
+  approvals: { list: 'O', approve: 'OT', deny: 'O' },
   'meeting-scheduler': {
     create: 'T', update: 'T', cancel: 'T', 'suggest-time': '', 'check-availability': '', list: '',
   },
@@ -86,7 +88,7 @@ const GATE_FLOOR: Record<string, Record<string, string>> = {
  * must ship declared, and a tool that becomes fully declared must be removed from here.
  */
 const KNOWN_UNDECLARED = new Set([
-  'approvals', 'ask-question', 'autonomous', 'bot-config', 'calculator', 'community-analytics',
+  'ask-question', 'autonomous', 'bot-config', 'calculator', 'community-analytics',
   'context', 'credit_status', 'diagnose', 'discord-channels',
   'discord-issue-parser', 'discord-poll', 'discord-reaction', 'discord-send-message',
   'discord-threads', 'discord-user-history', 'embedded_mcp', 'flashcard', 'goals', 'image_gen',

@@ -16,6 +16,70 @@ import {
 } from '../../../shared/pending-actions.js';
 import type { RegisteredCapability, CapabilityContext } from '../../5-tool-loop/registry.js';
 import { capabilityRegistry } from '../../5-tool-loop/registry.js';
+import {
+  onPendingActionsExpired,
+  type PendingAction,
+} from '../../../shared/pending-actions.js';
+import * as gateway from '../../../gateway/api.js';
+
+type Outcome = 'executed' | 'failed' | 'denied' | 'expired';
+
+const OUTCOME_LINE: Record<Outcome, string> = {
+  executed: 'EJ approved it and it ran.',
+  failed: 'EJ approved it, but it failed when it ran.',
+  denied: "EJ didn't approve it, so it didn't happen.",
+  expired: 'Nobody decided within 7 days, so it lapsed and nothing happened.',
+};
+
+/**
+ * Tell the person who asked how their gated request ended (Artie's own ask, 2026-11-17: the
+ * requester never heard back). Plain text, no LLM call. Says what was asked and the outcome,
+ * never the tool's output or the request's content (an email body, a payload). Goes to the
+ * original channel, else a DM. Skipped for EJ himself (he made the call) and system callers.
+ * Never throws: a failed notice must not undo or fail the decision.
+ */
+export function requesterNotice(
+  pending: PendingAction,
+  outcome: Outcome
+): { userId: string; channelId?: string; text: string } | null {
+  const who = pending.requestedBy;
+  if (!who || who === 'unknown-user' || isOwner(who)) {
+    return null;
+  }
+  let channelId: string | undefined;
+  try {
+    channelId = JSON.parse(pending.contextJson || '{}').channelId || undefined;
+  } catch {
+    channelId = undefined;
+  }
+  return {
+    userId: who,
+    channelId,
+    text: `<@${who}> your request #${pending.id} (${pending.tool}:${pending.action}): ${OUTCOME_LINE[outcome]}`,
+  };
+}
+
+export async function notifyRequester(pending: PendingAction, outcome: Outcome): Promise<void> {
+  const notice = requesterNotice(pending, outcome);
+  if (!notice || process.env.VITEST) {
+    return;
+  }
+  try {
+    if (notice.channelId) {
+      await gateway.sendChannelMessage(notice.channelId, { content: notice.text });
+      return;
+    }
+    await gateway.sendDm({ userId: notice.userId, message: notice.text });
+  } catch (error) {
+    logger.warn(`⏸️ Couldn't tell ${notice.userId} about #${pending.id} (${outcome}): ${error}`);
+  }
+}
+
+onPendingActionsExpired((expired) => {
+  for (const pending of expired) {
+    void notifyRequester(pending, 'expired');
+  }
+});
 
 interface ApprovalsParams {
   action: string;
@@ -102,9 +166,11 @@ async function handleApprovals(
           );
         } catch (error) {
           markPendingActionOutcome(id, 'failed');
+          void notifyRequester(pending, 'failed');
           throw error;
         }
         markPendingActionOutcome(id, 'executed');
+        void notifyRequester(pending, 'executed');
         return `✅ Approved #${id} and ran ${pending.tool}:${pending.action}:\n${result}`;
       }
 
@@ -122,6 +188,7 @@ async function handleApprovals(
         }
         resolvePendingAction(id, 'denied', callerId);
         logger.info(`🚫 Approval #${id} denied by ${callerId}: ${pending.tool}:${pending.action}`);
+        void notifyRequester(pending, 'denied');
         return `🚫 Denied #${id} (${pending.tool}:${pending.action}).`;
       }
 
@@ -138,6 +205,14 @@ export const approvalsCapability: RegisteredCapability = {
   name: 'approvals',
   emoji: '⏸️',
   supportedActions: ['list', 'approve', 'deny'],
+  actions: {
+    list: { effect: 'read', who: 'owner' },
+    // Approve replays a gated call (an email, a payment). Taint-blocked: a GitHub issue or web
+    // page read mid-turn must not be able to say "approve #5" in EJ's own conversation.
+    // approval:false because this IS the approval step.
+    approve: { effect: 'outside', who: 'owner', approval: false },
+    deny: { effect: 'own', who: 'owner' },
+  },
   description:
     "EJ-only. Review gated tool calls (money, email, or anything that leaves Discord) waiting on approval. " +
     'list shows what\'s pending; approve re-runs the exact call; deny drops it.',

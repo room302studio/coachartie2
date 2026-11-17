@@ -139,10 +139,13 @@ describe('approvals tool: EJ-only review of the pending queue', () => {
   });
 
   it('a non-owner cannot list/approve/deny', async () => {
-    const out = await capabilityRegistry.execute('approvals', 'list', {}, undefined, {
-      userId: NOT_OWNER,
-    });
-    expect(out).toContain('Only EJ');
+    // Refused at the registry (approvals declares who:'owner') before the handler's own check.
+    for (const action of ['list', 'approve', 'deny']) {
+      const out = await capabilityRegistry.execute('approvals', action, { id: 1 }, undefined, {
+        userId: NOT_OWNER,
+      });
+      expect(out, action).toContain('EJ-only');
+    }
   });
 
   it('EJ can list pending actions', async () => {
