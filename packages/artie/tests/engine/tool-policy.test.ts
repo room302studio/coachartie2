@@ -77,7 +77,7 @@ const GATE_FLOOR: Record<string, Record<string, string>> = {
     'sync-to-github': 'TA',
   },
   // approve replays an email/payment: taint-blocked so injected text can't approve for EJ.
-  approvals: { list: 'O', approve: 'OT', deny: 'O' },
+  approvals: { list: 'O', approve: 'OT', deny: 'OT' },
   'meeting-scheduler': {
     create: 'T', update: 'T', cancel: 'T', 'suggest-time': '', 'check-availability': '', list: '',
   },

@@ -211,7 +211,8 @@ export const approvalsCapability: RegisteredCapability = {
     // page read mid-turn must not be able to say "approve #5" in EJ's own conversation.
     // approval:false because this IS the approval step.
     approve: { effect: 'outside', who: 'owner', approval: false },
-    deny: { effect: 'own', who: 'owner' },
+    // Drops someone's request and pings them that EJ said no: taint-blocked too (Codex).
+    deny: { effect: 'discord', who: 'owner' },
   },
   description:
     "EJ-only. Review gated tool calls (money, email, or anything that leaves Discord) waiting on approval. " +
