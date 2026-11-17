@@ -103,6 +103,51 @@ interface RecallOptions {
   participants?: string[]; // lowercased name tokens of people present in the conversation
 }
 
+type OwnMemory = { content: string; importance: number; date: string };
+
+/**
+ * Asker's own memories at or above this importance always get a slot (Artie's "lossy memory").
+ * 6, not 7: non-owners are capped at NON_OWNER_MAX_IMPORTANCE (6), and this slot only ever shows
+ * a person their OWN memories (written under their verified id), so it can't be poisoned by others.
+ */
+const ABOUT_YOU_MIN_IMPORTANCE = 6;
+const ABOUT_YOU_SLOTS = 3;
+const ABOUT_YOU_MAX_CHARS = 200;
+
+/**
+ * Keyword ranking alone could drop "I'm vegetarian" from a reply about dinner because the
+ * words didn't overlap. The asker's few most important facts about themselves ride along on
+ * every reply, unless the ranked layers already picked them.
+ */
+export function withAboutYou(result: MemoryEntourageResult, own: OwnMemory[]): MemoryEntourageResult {
+  const picks = own
+    .filter((m) => m.importance >= ABOUT_YOU_MIN_IMPORTANCE && m.content.trim() !== '')
+    .filter((m) => !result.content.includes(m.content))
+    .sort((a, b) => b.importance - a.importance || b.date.localeCompare(a.date))
+    .slice(0, ABOUT_YOU_SLOTS);
+  if (picks.length === 0) {
+    return result;
+  }
+  const line = `About the person you're talking to: ${picks
+    .map((m) => m.content.slice(0, ABOUT_YOU_MAX_CHARS))
+    .join('; ')}.`;
+  let content = line;
+  if (result.content) {
+    content = `${line}\n\n${result.content}`;
+  }
+  let confidence = result.confidence;
+  if (result.memoryCount === 0) {
+    confidence = 0.7;
+  }
+  return {
+    content,
+    confidence,
+    memoryCount: result.memoryCount + picks.length,
+    categories: [...result.categories.filter((c) => c !== 'no_matches'), 'about_you'],
+    memoryIds: [...result.memoryIds, ...picks.map((_, i) => `about_you_${i}`)],
+  };
+}
+
 const empty = (categories: string[], confidence = 0): MemoryEntourageResult => ({
   content: '',
   confidence,
@@ -163,7 +208,7 @@ export class MemoryRecaller implements MemoryEntourageInterface {
 
     try {
       const budget = this.tokenBudget(options.maxTokens);
-      const candidates = await this.fetchCandidates(userId, options.guildId, userMessage);
+      const { candidates, own } = await this.fetchCandidates(userId, options.guildId, userMessage);
 
       let semantic: MemoryEntourageResult;
       if (candidates.length > 0) {
@@ -185,7 +230,7 @@ export class MemoryRecaller implements MemoryEntourageInterface {
         temporal = empty(['no_memories']);
       }
 
-      return this.fuse(semantic, temporal);
+      return withAboutYou(this.fuse(semantic, temporal), own);
     } catch (error) {
       logger.error('❌ MemoryRecaller failed:', error);
       return empty(['error']);
@@ -195,7 +240,11 @@ export class MemoryRecaller implements MemoryEntourageInterface {
   // --------------------------------------------------------------------------
   // Candidate fetch (single pass — superset of what the old two layers pulled)
   // --------------------------------------------------------------------------
-  private async fetchCandidates(userId: string, guildId?: string, query = ''): Promise<Candidate[]> {
+  private async fetchCandidates(
+    userId: string,
+    guildId?: string,
+    query = ''
+  ): Promise<{ candidates: Candidate[]; own: OwnMemory[] }> {
     // Scoped to this server when there is one (Artie flagged 2026-10-22 that memories from
     // one server were surfacing in another; the data layer could isolate, nobody asked it to).
     const userMemories = await this.memoryService.getRecentMemories(userId, 60, guildId);
@@ -232,8 +281,14 @@ export class MemoryRecaller implements MemoryEntourageInterface {
     // nothing older than a few months could ever be recalled, however exactly it matched.
     const keywordMemories = keywordCandidates(query, userId, guildId);
 
+    const own: OwnMemory[] = userMemories.map((m: any) => ({
+      content: stripCapabilityTags(m.content),
+      importance: m.importance || 5,
+      date: m.timestamp || '',
+    }));
+
     const seen = new Set<string>();
-    return [...keywordMemories, ...userMemories, ...artieMemories, ...guildMemories]
+    const candidates = [...keywordMemories, ...userMemories, ...artieMemories, ...guildMemories]
       .filter((m) => {
         const key = m.content;
         if (seen.has(key)) return false;
@@ -259,6 +314,7 @@ export class MemoryRecaller implements MemoryEntourageInterface {
           tags,
         };
       });
+    return { candidates, own };
   }
 
   private tokenBudget(maxTokens?: number): { semantic: number; temporal: number } {

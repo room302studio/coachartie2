@@ -103,7 +103,7 @@ describe('Memory Capability', () => {
   describe('kind tagging (handler level)', () => {
     it('folds params.kind into the stored tags', async () => {
       const result = await memoryCapability.handler(
-        { action: 'remember', userId: testUserId, content: 'EJ prefers dark mode', kind: 'person' },
+        { action: 'remember', scope: 'me', userId: testUserId, content: 'EJ prefers dark mode', kind: 'person' },
         undefined,
         { userId: testUserId }
       );
@@ -112,11 +112,41 @@ describe('Memory Capability', () => {
 
     it('still accepts explicit tags without kind', async () => {
       const result = await memoryCapability.handler(
-        { action: 'remember', userId: testUserId, content: 'no kind here', tags: ['misc'] },
+        { action: 'remember', scope: 'me', userId: testUserId, content: 'no kind here', tags: ['misc'] },
         undefined,
         { userId: testUserId }
       );
       expect(result).toContain('misc');
+    });
+
+    // EJ 2026-11-17: "personal facts follow you", the rest stays in its server.
+    it('scope "me" stores guild-free; "here" stores the conversation guild; missing scope is refused', async () => {
+      // remember(userId, content, context, importance, messageId, tags, guildId, channelId)
+      const remember = vi.spyOn(MemoryService.getInstance(), 'remember').mockResolvedValue('ok');
+      const guildOf = (text: string) => remember.mock.calls.find((c) => c[1] === text)?.[6];
+
+      await memoryCapability.handler(
+        { action: 'remember', scope: 'me', content: 'scope-test: likes rye' },
+        undefined,
+        { userId: testUserId, guildId: 'g-room302' }
+      );
+      expect(guildOf('scope-test: likes rye')).toBeUndefined();
+
+      await memoryCapability.handler(
+        { action: 'remember', scope: 'here', content: 'scope-test: server ships fridays', guildId: 'g-forged' },
+        undefined,
+        { userId: testUserId, guildId: 'g-room302' }
+      );
+      expect(guildOf('scope-test: server ships fridays')).toBe('g-room302'); // never the forged id
+
+      await expect(
+        memoryCapability.handler(
+          { action: 'remember', content: 'scope-test: no scope' },
+          undefined,
+          { userId: testUserId, guildId: 'g-room302' }
+        )
+      ).rejects.toThrow(/scope/);
+      remember.mockRestore();
     });
   });
 

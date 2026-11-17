@@ -592,6 +592,7 @@ async function handleFeedbackReaction(
       params: {
         content: feedbackNote,
         userId: 'reaction-feedback-system',
+        scope: 'here', // feedback from this server: stays in its guild
         importance,
         tags: ['community', 'feedback', sentiment, 'response-style', channelName.toLowerCase()],
         guildId: guildId, // Store with guild scope so it's recalled in that guild

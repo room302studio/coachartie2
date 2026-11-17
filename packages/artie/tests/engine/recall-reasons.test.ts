@@ -17,8 +17,9 @@ interface Candidate {
 
 function recallerWithCandidates(candidates: Candidate[]): MemoryRecaller {
   const recaller = new MemoryRecaller();
-  (recaller as unknown as { fetchCandidates: () => Promise<Candidate[]> }).fetchCandidates =
-    async () => candidates;
+  (
+    recaller as unknown as { fetchCandidates: () => Promise<{ candidates: Candidate[]; own: [] }> }
+  ).fetchCandidates = async () => ({ candidates, own: [] });
   return recaller;
 }
 

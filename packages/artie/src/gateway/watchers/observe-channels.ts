@@ -390,6 +390,7 @@ Focus on patterns that would help understand this community's needs and interest
         params: {
           content: `[Observation from ${guildName} #${channelName} (${messageCount} messages)] ${summary}`,
           userId: 'observational-system',
+          scope: 'here', // about this server: stays in its guild
           importance: 2,
           tags: [
             'observation',

@@ -92,7 +92,7 @@ const KNOWN_UNDECLARED = new Set([
   'context', 'credit_status', 'diagnose', 'discord-channels',
   'discord-issue-parser', 'discord-poll', 'discord-reaction', 'discord-send-message',
   'discord-threads', 'discord-user-history', 'embedded_mcp', 'flashcard', 'goals', 'image_gen',
-  'kanban', 'memory', 'morning-briefing', 'n8n_browser', 'pairing',
+  'kanban', 'morning-briefing', 'n8n_browser', 'pairing',
   'quiz-game', 'relay', 'sb_changelog', 'scrapbook', 'scratchpad', 'send-metro-file', 'sequence',
   'skills', 'system-info', 'system_monitor', 'tasks', 'trend-watcher', 'tts', 'user-profile',
   'variable', 'vision', 'vps_claude', 'web', 'wolfram',

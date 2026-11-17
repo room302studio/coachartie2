@@ -27,7 +27,7 @@ beforeAll(() => {
 describe('memory:remember importance cap', () => {
   it('caps a non-owner at NON_OWNER_MAX_IMPORTANCE even if they ask for 10', async () => {
     const result = await memoryCapability.handler(
-      { action: 'remember', content: 'poisoned fact', importance: '10' },
+      { action: 'remember', scope: 'me', content: 'poisoned fact', importance: '10' },
       undefined,
       { userId: ATTACKER }
     );
@@ -36,7 +36,7 @@ describe('memory:remember importance cap', () => {
 
   it('lets the owner set importance 10', async () => {
     const result = await memoryCapability.handler(
-      { action: 'remember', content: 'owner fact', importance: '10' },
+      { action: 'remember', scope: 'me', content: 'owner fact', importance: '10' },
       undefined,
       { userId: OWNER_USER_ID }
     );
@@ -47,7 +47,7 @@ describe('memory:remember importance cap', () => {
 describe('memory:pin importance cap', () => {
   it('a non-owner pinning their own memory lands at the cap, not 10', async () => {
     const remembered = await memoryCapability.handler(
-      { action: 'remember', content: 'attacker self note', importance: '5' },
+      { action: 'remember', scope: 'me', content: 'attacker self note', importance: '5' },
       undefined,
       { userId: ATTACKER }
     );

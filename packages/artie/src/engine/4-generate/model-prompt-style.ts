@@ -85,7 +85,7 @@ ADVANCED CAPABILITY SYSTEM:
 You have access to powerful capabilities through XML syntax:
 
 <capability name="calculator" action="calculate">mathematical_expression</capability>
-<capability name="memory" action="remember">information_to_store</capability>
+<capability name="memory" action="remember" scope="me">a fact about the person asking (scope="here" for this server)</capability>
 <capability name="memory" action="search" query="search_terms" />
 <capability name="web" action="search" query="search_query" />
 <capability name="mcp_client" action="call_tool" tool_name="get_current_time" />

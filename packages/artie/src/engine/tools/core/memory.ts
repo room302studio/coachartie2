@@ -788,6 +788,9 @@ async function handleMemoryAction(
   const { action } = params;
   // The real caller's context wins over any model-supplied userId (security audit 2026-10-26).
   const userId = context?.userId || params.userId || 'unknown-user';
+  // The conversation's guild (undefined in DMs). Read here: `remember` shadows `context` below.
+  const callerGuildId = context?.guildId;
+  const fromConversation = context !== undefined;
   const memoryService = MemoryService.getInstance();
 
   logger.info(`🎯 Memory handler called - Action: ${action}, UserId: ${userId}, Params:`, params);
@@ -836,8 +839,25 @@ async function handleMemoryAction(
           tags = undefined;
         }
 
-        // Get guild/channel scope if provided
-        const guildId = optionalString(params.guildId);
+        // Scope (EJ 2026-11-17: "personal facts follow you"). Artie must choose every time:
+        //  me   = a fact about the person asking: stored guild-free, recalled in any server/DM
+        //  here = about this server, its projects or other people: stays in this guild
+        // Before this, guildId was never passed in, so EVERY remembered fact was guild-free
+        // and crossed between Room 302 and Subway Builder.
+        let guildId: string | undefined;
+        if (params.scope === 'me') {
+          guildId = undefined;
+        } else if (params.scope === 'here') {
+          // A conversation's own guild; only internal callers with no context (observation,
+          // reaction feedback) may name one, so a DM can't plant a memory in a server.
+          if (fromConversation) {
+            guildId = callerGuildId;
+          } else {
+            guildId = optionalString(params.guildId);
+          }
+        } else {
+          throw new Error('remember needs scope: "me" (about the asker, follows them) or "here" (this server)');
+        }
         const channelId = optionalString(params.channelId);
 
         const result = await memoryService.remember(
@@ -872,7 +892,7 @@ async function handleMemoryAction(
             targetUserId,
             wantedTags,
             limit,
-            optionalString(params.guildId)
+            callerGuildId
           );
           if (tagged.length === 0) {
             return `🏷️ No memories tagged ${wantedTags.join(', ')}.`;
@@ -957,6 +977,47 @@ export const memoryCapability: RegisteredCapability = {
   name: 'memory',
   emoji: '🧠',
   supportedActions: ['remember', 'recall', 'forget', 'pin', 'recent', 'stats'],
+  // Params as handleMemoryAction reads them. Writes are Artie's own state (`own`).
+  actions: {
+    remember: {
+      effect: 'own',
+      params: {
+        scope: {
+          type: 'string',
+          enum: ['me', 'here'],
+          description:
+            'me = a fact about the person asking (follows them to every server); here = about this server, its projects or other people (stays here)',
+          required: true,
+        },
+        kind: {
+          type: 'string',
+          description: 'person|preference|project|event|lore|rule|tool|goal|pinned',
+        },
+        tags: { type: 'string', description: 'Comma-separated tags to find it again' },
+        importance: { type: 'integer', description: '1-10 (default 5)' },
+        context: { type: 'string', description: 'Where or why this came up' },
+      },
+    },
+    recall: {
+      effect: 'read',
+      params: {
+        query: { type: 'string', description: 'What to look for' },
+        tags: { type: 'string', description: 'Comma-separated tags to find it again' },
+        limit: { type: 'integer', description: 'Max results (default 5, max 20)' },
+        user: { type: 'string', description: "Someone else's memories (EJ only)" },
+      },
+    },
+    forget: {
+      effect: 'own',
+      params: { memoryId: { type: 'integer', description: 'Memory id', required: true, aliases: ['id'] } },
+    },
+    pin: {
+      effect: 'own',
+      params: { memoryId: { type: 'integer', description: 'Memory id', aliases: ['id'] } },
+    },
+    recent: { effect: 'read', params: { limit: { type: 'integer', description: 'How many' } } },
+    stats: { effect: 'read' },
+  },
   description:
     // Native tool schema shows only the first line, clipped at 200 chars (tool-schema.ts).
     'Remember/recall facts across chats. kind=person|preference|project|event|lore|rule|tool|goal|pinned; ' +
@@ -966,9 +1027,9 @@ export const memoryCapability: RegisteredCapability = {
     'important (importance 10); "forget" deletes it.',
   handler: handleMemoryAction,
   examples: [
-    '<capability name="memory" action="remember" kind="project" tags="monetization,stripe">Tier-list commissions idea, risk: becomes a chore</capability>',
+    '<capability name="memory" action="remember" scope="here" kind="project" tags="monetization,stripe">Tier-list commissions idea, risk: becomes a chore</capability>',
     '<capability name="memory" action="recall" tags="monetization" limit="5" />',
-    '<capability name="memory" action="remember" kind="person" importance="8">Important user preference or fact</capability>',
+    '<capability name="memory" action="remember" scope="me" kind="preference" importance="8">Prefers short answers</capability>',
     '<capability name="memory" action="recall" query="chocolate preferences" />',
     '<capability name="memory" action="recall" query="food" user="john" limit="3" />',
     '<capability name="memory" action="stats" />',
