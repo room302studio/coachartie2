@@ -103,6 +103,28 @@ export function insertReaction(r: PersistedReaction): void {
   }
 }
 
+/** Bulk removal: drop the logged reactions on a message (one emoji key, or all of them). */
+export function clearReactions(messageId: string, emoji?: string): number {
+  ensureTable();
+  let result: unknown;
+  if (emoji === undefined) {
+    result = getSyncDb().run(`DELETE FROM reaction_log WHERE message_id = ?`, [messageId]);
+  } else {
+    result = getSyncDb().run(`DELETE FROM reaction_log WHERE message_id = ? AND emoji = ?`, [
+      messageId,
+      emoji,
+    ]);
+  }
+  return Number((result as any)?.changes ?? 0);
+}
+
+/** `name:123` (a custom emoji's stored key) shows as `:name:`; unicode is shown as is. */
+export function displayEmoji(stored: string): string {
+  const custom = /^(.+):(\d{5,})$/.exec(stored);
+  if (custom) return `:${custom[1]}:`;
+  return stored;
+}
+
 export interface ReactionQuery {
   /** The conversation's guild; null/undefined for a DM (then only channelId rows match). */
   guildId?: string | null;
@@ -160,7 +182,7 @@ export function listStandingReactions(q: ReactionQuery): PersistedReaction[] {
       guildId: row.guild_id,
       channelId: row.channel_id,
       messageId: row.message_id,
-      emoji: row.emoji,
+      emoji: displayEmoji(row.emoji),
       userId: row.user_id,
       userLabel: row.user_label,
       messageExcerpt: row.message_excerpt ?? undefined,

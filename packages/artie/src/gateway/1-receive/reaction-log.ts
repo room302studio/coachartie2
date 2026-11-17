@@ -13,12 +13,14 @@
 
 import type { Client } from 'discord.js';
 import { logger } from '../../shared/logger.js';
-import { insertReaction } from '../../shared/db/reaction-store.js';
+import { insertReaction, clearReactions } from '../../shared/db/reaction-store.js';
 
 export interface ReactionLogEntry {
   messageId: string;
   channelId: string;
   emoji: string;
+  /** Custom emoji id (null/absent for unicode). Two custom emojis can share a name. */
+  emojiId?: string | null;
   userLabel: string;
   /** Guild of the channel; null for a DM. Persisted with the entry. */
   guildId?: string | null;
@@ -37,6 +39,16 @@ const RECENT_WINDOW_MS = 30 * 60 * 1000; // "last ~30 min" per the feature reque
 
 const byChannel = new Map<string, ReactionLogEntry[]>();
 
+/**
+ * The persisted identity of an emoji: the unicode character, or `name:id` for a custom one, so
+ * two custom emojis that share a name never collapse into one reaction (Codex). The store turns
+ * `name:id` back into `:name:` for display.
+ */
+export function emojiKey(emoji: string, emojiId?: string | null): string {
+  if (emojiId) return `${emoji}:${emojiId}`;
+  return emoji;
+}
+
 function persistReaction(entry: ReactionLogEntry): void {
   if (!entry.userId) return;
   try {
@@ -46,7 +58,7 @@ function persistReaction(entry: ReactionLogEntry): void {
       guildId: entry.guildId ?? null,
       channelId: entry.channelId,
       messageId: entry.messageId,
-      emoji: entry.emoji,
+      emoji: emojiKey(entry.emoji, entry.emojiId),
       userId: entry.userId,
       userLabel: entry.userLabel,
       messageExcerpt: entry.messageExcerpt,
@@ -67,6 +79,36 @@ export function recordReaction(entry: ReactionLogEntry): void {
   const cutoff = entry.at - RECENT_WINDOW_MS;
   const pruned = list.filter((e) => e.at >= cutoff);
   byChannel.set(entry.channelId, pruned.slice(-MAX_ENTRIES_PER_CHANNEL));
+}
+
+/**
+ * A bulk removal (someone cleared all reactions, or one emoji entirely). Discord sends no
+ * per-user removal events for these, so the logged adds are dropped here; otherwise "read"
+ * keeps reporting reactions that were cleared (Codex). emoji undefined = every emoji.
+ */
+export function clearLoggedReactions(
+  channelId: string,
+  messageId: string,
+  emoji?: string,
+  emojiId?: string | null
+): void {
+  let key: string | undefined;
+  if (emoji) key = emojiKey(emoji, emojiId);
+  try {
+    clearReactions(messageId, key);
+  } catch (error) {
+    logger.warn('[reaction-log] clear failed:', error);
+  }
+  const list = byChannel.get(channelId);
+  if (!list) return;
+  byChannel.set(
+    channelId,
+    list.filter((e) => {
+      if (e.messageId !== messageId) return true;
+      if (key === undefined) return false;
+      return emojiKey(e.emoji, e.emojiId) !== key;
+    })
+  );
 }
 
 /** Reactions on Artie's messages in `channelId` within the last ~30 minutes, newest last. */

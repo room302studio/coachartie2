@@ -381,7 +381,11 @@ export function cancelRecurringReminder(id: number): boolean {
   return res.changes === 1;
 }
 
-export type SendReminder = (userId: string, content: string) => Promise<void>;
+/**
+ * occurrenceKey is stable for one scheduled occurrence (reminder id + its slot time): the
+ * queue uses it as a job id so a retried enqueue can't deliver the same occurrence twice.
+ */
+export type SendReminder = (userId: string, content: string, occurrenceKey: string) => Promise<void>;
 
 /**
  * Fire every due reminder once. Returns how many messages were sent. See the file header for
@@ -413,7 +417,9 @@ export async function fireDueRecurringReminders(now: Date, send: SendReminder): 
     );
     if (claimed.changes !== 1) continue;
     try {
-      await send(row.user_id, `⏰ Reminder: ${row.message}`);
+      // BullMQ job ids can't contain ':'; the ISO slot time is made safe.
+      const occurrenceKey = `recurring-${row.id}-${row.next_fire_at.replace(/[^0-9A-Za-z]/g, '')}`;
+      await send(row.user_id, `⏰ Reminder: ${row.message}`, occurrenceKey);
       sent++;
     } catch (error) {
       logger.error(`Recurring reminder ${row.id} could not be queued, will retry next tick:`, error);

@@ -38,15 +38,18 @@ function norm(s: string | null | undefined): string {
   return (s || '').trim().toLowerCase();
 }
 
+/**
+ * One entry per member id, LAST one wins: callers append fresher sources (REST search, recent
+ * messages) after the cache, so a renamed member is judged by their current names, not a stale
+ * cached snapshot (Codex).
+ */
 function dedupe(list: MemberCandidate[]): MemberCandidate[] {
-  const seen = new Set<string>();
-  const out: MemberCandidate[] = [];
+  const byId = new Map<string, MemberCandidate>();
   for (const c of list) {
-    if (seen.has(c.id)) continue;
-    seen.add(c.id);
-    out.push(c);
+    byId.delete(c.id);
+    byId.set(c.id, c);
   }
-  return out;
+  return [...byId.values()];
 }
 
 /** "name (aka nick) [id]" for an error message the model can relay. */

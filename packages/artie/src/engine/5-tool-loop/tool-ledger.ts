@@ -93,7 +93,28 @@ function clip(text: string, max: number): string {
   return flat.slice(0, max);
 }
 
-/** Short class/message for an error. Structured registry errors keep only their error code. */
+/**
+ * Allowlisted categories. Raw exception text is NEVER stored: it can carry user input, URLs
+ * with tokens, or private content, and self-stats:tools shows these to everyone (Codex
+ * 2026-11-17). The message is only pattern-matched to pick a fixed label.
+ */
+const ERROR_CATEGORIES: Array<[RegExp, string]> = [
+  [/missing required|is required|required param/i, 'missing_param'],
+  [/timed? ?out|ETIMEDOUT|ESOCKETTIMEDOUT|AbortError/i, 'timeout'],
+  [/ECONNREFUSED|ECONNRESET|ENOTFOUND|EAI_AGAIN|socket hang up|fetch failed/i, 'network'],
+  [/\b401\b|unauthori[sz]ed|invalid (api )?key/i, 'http_401'],
+  [/\b403\b|forbidden|missing permissions?/i, 'http_403'],
+  [/\b404\b|not found|unknown (member|user|message|channel)/i, 'not_found'],
+  [/\b402\b|insufficient credits?|payment required/i, 'http_402'],
+  [/\b429\b|rate.?limit|too many requests/i, 'rate_limited'],
+  [/\b5\d\d\b|internal server error|bad gateway|service unavailable/i, 'http_5xx'],
+  [/JSON|Unexpected token|parse/i, 'parse_error'],
+  [/invalid|must be|out of range|not allowed/i, 'invalid_input'],
+];
+
+const SAFE_CODE = /^[A-Za-z0-9_.:-]{1,64}$/;
+
+/** A fixed category for an error. Structured registry errors keep only their (safe) code. */
 export function describeError(error: unknown): string {
   let message: string;
   let name = 'Error';
@@ -106,14 +127,23 @@ export function describeError(error: unknown): string {
   if (message.startsWith('{')) {
     try {
       const parsed = JSON.parse(message);
-      if (parsed && typeof parsed.errorCode === 'string') {
-        return clip(parsed.errorCode, MAX_ERROR_CHARS);
+      if (parsed && typeof parsed.errorCode === 'string' && SAFE_CODE.test(parsed.errorCode)) {
+        return parsed.errorCode;
       }
     } catch {
       // not JSON after all
     }
   }
-  return clip(`${name}: ${message}`, MAX_ERROR_CHARS);
+  for (const [pattern, label] of ERROR_CATEGORIES) {
+    if (pattern.test(message)) {
+      return label;
+    }
+  }
+  // Built-in error names (TypeError, RangeError...) are safe; anything else is just "error".
+  if (SAFE_CODE.test(name) && /Error$/.test(name) && name !== 'Error') {
+    return name;
+  }
+  return 'error';
 }
 
 // ── storage ────────────────────────────────────────────────────────────────
@@ -328,7 +358,7 @@ function flushScope(
     // registry said ok but the result was rejected, or nothing reached the registry
     outcome = 'error';
     errorClass = 'invalid_result';
-    if (!last && errorText) errorClass = errorText;
+    if (!last && errorText) errorClass = describeError(errorText);
   }
   writeLedgerRow({
     tool: last?.tool ?? meta.tool,

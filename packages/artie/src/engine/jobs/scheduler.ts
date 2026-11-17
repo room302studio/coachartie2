@@ -628,11 +628,17 @@ export class SchedulerService {
    * A plain message: no LLM replay, no tools.
    */
   private async executeRecurringReminders(): Promise<void> {
-    const sent = await fireDueRecurringReminders(new Date(), async (userId, content) => {
+    const sent = await fireDueRecurringReminders(new Date(), async (userId, content, occurrenceKey) => {
       if (!this.discordQueue) {
         throw new Error('Discord queue not available');
       }
-      await this.discordQueue.add('send-message', { userId, content, source: 'user-reminder' });
+      // Stable per-occurrence jobId: if Redis took the job but the ack was lost, the retry next
+      // tick adds the same id and BullMQ drops it instead of DMing twice (Codex).
+      await this.discordQueue.add(
+        'send-message',
+        { userId, content, source: 'user-reminder' },
+        { jobId: occurrenceKey }
+      );
     });
     if (sent > 0) {
       logger.info(`⏰ ${sent} recurring reminder(s) sent`);
@@ -648,7 +654,15 @@ export class SchedulerService {
     if (!this.initialized || !this.schedulerQueue) {
       return [];
     }
-    const jobs = await this.schedulerQueue.getDelayed(0, 200);
+    // Page through ALL delayed jobs before filtering: one capped page could be filled by other
+    // users' or system jobs and hide the caller's reminders (Codex). Bounded at 50 pages.
+    const PAGE = 500;
+    const jobs: Awaited<ReturnType<NonNullable<typeof this.schedulerQueue>['getDelayed']>> = [];
+    for (let start = 0; start < PAGE * 50; start += PAGE) {
+      const page = await this.schedulerQueue.getDelayed(start, start + PAGE - 1);
+      jobs.push(...page);
+      if (page.length < PAGE) break;
+    }
     const out: Array<{ id: string; userId: string; message: string; runAt: Date }> = [];
     for (const job of jobs) {
       const data = job.data as Record<string, unknown>;

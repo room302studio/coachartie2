@@ -106,10 +106,10 @@ export async function resolveTarget(
       if (found) for (const m of found.values()) candidates.push(toCandidate(m));
     }
   }
-  let result = resolveByName(ref.name, candidates);
-  if (result.ok || result.reason === 'ambiguous') return result;
-
-  // Display names (globalName) are not searchable over REST: fall back to who has just spoken.
+  // Display names (globalName) are not searchable over REST, so who has just spoken is ALWAYS
+  // gathered too, before any match is accepted: an early return on a cached "Sam" could hide a
+  // second, uncached "Sam" in the channel and time out the wrong person (Codex). One resolve
+  // over every source means two people with the name come back as ambiguous.
   if (channelId) {
     const channel = await client.channels?.fetch(channelId).catch(() => null);
     let recent: any = null;
@@ -125,10 +125,9 @@ export async function resolveTarget(
           nickname: m.member?.nickname,
         });
       }
-      result = resolveByName(ref.name, candidates);
     }
   }
-  return result;
+  return resolveByName(ref.name, candidates);
 }
 
 /** Facts for the pure preflight, read defensively (a partial guild just means "unknown"). */

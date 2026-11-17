@@ -319,7 +319,10 @@ describe('scheduler tool', () => {
     expect(await call({ action: 'cancel', taskId: 'health-check' }, bob)).toContain('❌');
     expect(removeTask).not.toHaveBeenCalled();
 
-    expect(await call({ action: 'cancel', taskId: String(id) }, alice)).toContain('✅');
+    // A bare number is NOT a recurring id (it could be a one-time job): R prefix required.
+    expect(await call({ action: 'cancel', taskId: String(id) }, alice)).toContain('❌');
+    expect(listRecurringReminders(alice)).toHaveLength(1);
+    expect(await call({ action: 'cancel', taskId: `r${id}` }, alice)).toContain('✅');
     expect(listRecurringReminders(alice)).toHaveLength(0);
 
     const again = createRecurringReminder({ userId: alice, message: 'second', every: 'every day', timezone: 'UTC' });

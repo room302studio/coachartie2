@@ -23,7 +23,7 @@ import { isBlockedUser } from '../../shared/blocklist.js';
 import { telemetry } from '../telemetry.js';
 import { generateCorrelationId, getShortCorrelationId } from '../correlation.js';
 import { processUserIntent } from '../4-reply/stream-reply.js';
-import { recordReaction } from './reaction-log.js';
+import { recordReaction, clearLoggedReactions } from './reaction-log.js';
 
 // Import capabilities client for trace feedback correlation
 import { capabilitiesClient } from '../3-ask-engine/engine-client.js';
@@ -234,6 +234,7 @@ export function setupReactionHandler(client: Client) {
           messageId: reaction.message.id,
           channelId: reaction.message.channelId,
           emoji,
+          emojiId: reaction.emoji.id,
           userLabel: user.displayName || user.username || user.id,
           messageExcerpt: reaction.message.content?.slice(0, 120) || undefined,
           guildId: reaction.message.guildId ?? null,
@@ -326,6 +327,7 @@ export function setupReactionHandler(client: Client) {
           messageId: reaction.message.id,
           channelId: reaction.message.channelId,
           emoji,
+          emojiId: reaction.emoji.id,
           userLabel: user.displayName || user.username || user.id,
           messageExcerpt: reaction.message.content?.slice(0, 120) || undefined,
           guildId: reaction.message.guildId ?? null,
@@ -338,6 +340,29 @@ export function setupReactionHandler(client: Client) {
       }
     }
   );
+
+  // Bulk removals (a mod clears every reaction, or one emoji entirely) send no per-user remove
+  // events, so the logged adds are dropped here (Codex).
+  client.on(Events.MessageReactionRemoveAll, async (message: any) => {
+    try {
+      clearLoggedReactions(message.channelId, message.id);
+    } catch (error) {
+      logger.debug('Failed to clear logged reactions:', error);
+    }
+  });
+  client.on(Events.MessageReactionRemoveEmoji, async (reaction: any) => {
+    try {
+      if (!reaction.emoji?.name) return;
+      clearLoggedReactions(
+        reaction.message.channelId,
+        reaction.message.id,
+        reaction.emoji.name,
+        reaction.emoji.id
+      );
+    } catch (error) {
+      logger.debug('Failed to clear logged emoji reactions:', error);
+    }
+  });
 
   logger.info('Reaction handler setup complete');
 }

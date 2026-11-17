@@ -193,3 +193,29 @@ describe('reaction tool declaration', () => {
     expect(discordReactionCapability.actions?.read.effect).toBe('read');
   });
 });
+
+// Codex 2026-11-17 on the merge.
+describe('emoji identity and bulk removals', () => {
+  const q = () => listStandingReactions({ guildId: 'g1', channelId: 'c1', sinceMs: 60 * MIN, now: NOW });
+
+  it('two custom emojis with the same name stay separate; removing one keeps the other', async () => {
+    const { emojiKey } = await import('../../src/gateway/1-receive/reaction-log.js');
+    add({ emoji: emojiKey('party', '111111111') });
+    add({ emoji: emojiKey('party', '222222222') });
+    add({ emoji: emojiKey('party', '111111111'), action: 'removed', at: NOW - 4 * MIN });
+    const rows = q();
+    expect(rows).toHaveLength(1);
+    expect(rows[0].emoji).toBe(':party:');
+  });
+
+  it('clearing all reactions, or one emoji, drops them from read', async () => {
+    const { clearLoggedReactions } = await import('../../src/gateway/1-receive/reaction-log.js');
+    add({ emoji: '👍' });
+    add({ emoji: '🔥' });
+    add({ emoji: '👍', messageId: 'm2' });
+    clearLoggedReactions('c1', 'm1', '👍');
+    expect(q().map((r) => `${r.messageId}${r.emoji}`).sort()).toEqual(['m1🔥', 'm2👍']);
+    clearLoggedReactions('c1', 'm1');
+    expect(q().map((r) => r.messageId)).toEqual(['m2']);
+  });
+});

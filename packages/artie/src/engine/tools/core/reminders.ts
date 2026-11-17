@@ -53,7 +53,9 @@ async function resolveTimezone(
 }
 
 function isRecurringId(raw: string): number | null {
-  const m = /^r?(\d+)$/i.exec(raw.trim());
+  // The R prefix is required: a bare number can be a one-time job id, and cancelling it must
+  // never hit an unrelated recurring reminder that happens to share the number (Codex).
+  const m = /^r(\d+)$/i.exec(raw.trim());
   if (!m) return null;
   return Number(m[1]);
 }
@@ -245,6 +247,9 @@ export const schedulerCapability: RegisteredCapability = {
 
         // Not a reminder: system tasks (health checks, digests) are the owner's alone.
         if (!owner) {
+          if (/^\d+$/.test(String(taskId).trim())) {
+            return `❌ I don't see a reminder "${taskId}" of yours. Repeating reminders are cancelled as R${String(taskId).trim()} (see list).`;
+          }
           return `❌ I don't see a reminder "${taskId}" of yours.`;
         }
         await schedulerService.removeTask(taskId);

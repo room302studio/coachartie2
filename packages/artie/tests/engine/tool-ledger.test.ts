@@ -414,3 +414,30 @@ describe('self-stats: health (reported as cut off after the heap line)', () => {
     expect(text).toContain('**Messages Processed:**');
   });
 });
+
+// Codex 2026-11-17: self-stats:tools is open to everyone, so a stored error must be a fixed
+// category, never the exception text (which can carry tokens or a user's private input).
+describe('describeError never keeps raw text', () => {
+  it('maps messages to fixed categories', () => {
+    const secret = 'tok_SECRET123';
+    const cases: Array<[unknown, string]> = [
+      [new Error(`GET https://api.x/v1?key=${secret} failed with 401`), 'http_401'],
+      [new Error(`user said "${secret}" and it was not found`), 'not_found'],
+      [new Error('connect ECONNREFUSED 127.0.0.1:6379'), 'network'],
+      [new TypeError(`Cannot read properties of undefined (reading '${secret}')`), 'TypeError'],
+      [`something odd happened with ${secret}`, 'error'],
+    ];
+    for (const [err, label] of cases) {
+      const out = describeError(err);
+      expect(out).toBe(label);
+      expect(out).not.toContain(secret);
+    }
+  });
+
+  it('keeps a structured registry error code only when it is a safe token', () => {
+    expect(describeError(new Error(JSON.stringify({ errorCode: 'ACTION_NOT_SUPPORTED' })))).toBe(
+      'ACTION_NOT_SUPPORTED'
+    );
+    expect(describeError(new Error(JSON.stringify({ errorCode: 'leak tok_SECRET123 here' })))).toBe('error');
+  });
+});
