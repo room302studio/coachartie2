@@ -84,6 +84,6 @@ describe('scheduler tool', () => {
       { userId: 'u-1' } as any
     );
     expect(String(out)).not.toContain('✅');
-    expect(String(out)).toContain('supported yet');
+    expect(String(out)).toContain('remind_every');
   });
 });

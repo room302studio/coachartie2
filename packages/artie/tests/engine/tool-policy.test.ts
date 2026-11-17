@@ -56,7 +56,7 @@ const GATE_FLOOR: Record<string, Record<string, string>> = {
   deep_research: { submit: 'OT', status: '', results: '', harness_status: '' },
   filesystem: { read_file: '', list_directory: '', exists: '' },
   email: { send: 'TA', status: '' },
-  scheduler: { remind: 'T', schedule: 'T', cancel: 'T', list: '' },
+  scheduler: { remind: 'T', remind_every: 'T', schedule: 'T', cancel: 'T', list: '' },
   'discord-moderation': { timeout: 'T', add_enemy_role: 'T', remove_enemy_role: 'T', escalate: '' },
   'discord-nickname': { set_nickname: 'T', reset_nickname: 'T' },
   'discord-reaction': { react: 'T', read: '' },

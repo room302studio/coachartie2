@@ -9,6 +9,7 @@ import { IncomingMessage } from '../../shared/queue/types.js';
 import { QUEUES } from '../../shared/queue/names.js';
 import { redditMentionMonitor } from '../proactive/reddit-mentions.js';
 import { memoryGardener } from '../memory/gardener.js';
+import { ensureRecurringRemindersTable, fireDueRecurringReminders } from './recurring-reminders.js';
 
 export interface ScheduledTask {
   id: string;
@@ -73,6 +74,7 @@ const HANDLED_JOB_TYPES = new Set([
   'health-check',
   'daily-summary',
   'user-reminder',
+  'recurring-reminders',
   'cleanup-old-data',
   'reddit-mentions',
   'daily-reflection',
@@ -408,6 +410,10 @@ export class SchedulerService {
           await this.executeUserReminder(job.data as ReminderJobData);
           break;
 
+        case 'recurring-reminders':
+          await this.executeRecurringReminders();
+          break;
+
         case 'cleanup-old-data':
           await this.executeCleanup(job.data);
           break;
@@ -615,6 +621,62 @@ export class SchedulerService {
         throw error;
       }
     }
+  }
+
+  /**
+   * Per-minute tick: DM every due recurring reminder once (see recurring-reminders.ts).
+   * A plain message: no LLM replay, no tools.
+   */
+  private async executeRecurringReminders(): Promise<void> {
+    const sent = await fireDueRecurringReminders(new Date(), async (userId, content) => {
+      if (!this.discordQueue) {
+        throw new Error('Discord queue not available');
+      }
+      await this.discordQueue.add('send-message', { userId, content, source: 'user-reminder' });
+    });
+    if (sent > 0) {
+      logger.info(`⏰ ${sent} recurring reminder(s) sent`);
+    }
+  }
+
+  /**
+   * One-time reminders still waiting to fire (delayed jobs), optionally only one user's.
+   */
+  async listOneTimeReminders(
+    userId: string | null
+  ): Promise<Array<{ id: string; userId: string; message: string; runAt: Date }>> {
+    if (!this.initialized || !this.schedulerQueue) {
+      return [];
+    }
+    const jobs = await this.schedulerQueue.getDelayed(0, 200);
+    const out: Array<{ id: string; userId: string; message: string; runAt: Date }> = [];
+    for (const job of jobs) {
+      const data = job.data as Record<string, unknown>;
+      if (data.type !== 'user-reminder' || data.meetingId) continue;
+      const owner = String(data.userId ?? '');
+      if (userId !== null && owner !== userId) continue;
+      out.push({
+        id: String(job.id),
+        userId: owner,
+        message: String(data.message ?? ''),
+        runAt: new Date(job.timestamp + (job.opts.delay ?? 0)),
+      });
+    }
+    return out.sort((a, b) => a.runAt.getTime() - b.runAt.getTime());
+  }
+
+  /**
+   * Who owns a pending one-time reminder, or null if there is no such job.
+   */
+  async getOneTimeReminderOwner(jobId: string): Promise<string | null> {
+    if (!this.initialized || !this.schedulerQueue) {
+      return null;
+    }
+    const job = await this.schedulerQueue.getJob(jobId);
+    if (!job || job.data?.type !== 'user-reminder') {
+      return null;
+    }
+    return String(job.data.userId ?? '');
   }
 
   /**
@@ -888,6 +950,16 @@ export class SchedulerService {
       name: 'cleanup-old-data',
       cron: '0 2 * * 0',
       data: { type: 'system-cleanup', maxAge: '7d' },
+      options: { immediate: false },
+    });
+
+    // Recurring user reminders: the due-row tick, every minute (state lives in SQLite)
+    ensureRecurringRemindersTable();
+    await this.scheduleTask({
+      id: 'recurring-reminders',
+      name: 'recurring-reminders',
+      cron: '* * * * *',
+      data: { type: 'recurring-reminders' },
       options: { immediate: false },
     });
 

@@ -483,6 +483,34 @@ export const meetings = sqliteTable(
 );
 
 /**
+ * Recurring reminders ("every weekday at 9:00"). Created lazily by
+ * engine/jobs/recurring-reminders.ts (CREATE TABLE IF NOT EXISTS); this mirrors it for typing.
+ */
+export const recurringReminders = sqliteTable(
+  'recurring_reminders',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    userId: text('user_id').notNull(),
+    message: text('message').notNull(),
+    scheduleText: text('schedule_text').notNull(),
+    kind: text('kind').notNull(), // 'interval' | 'calendar'
+    intervalMs: integer('interval_ms'),
+    days: text('days').notNull().default(''), // CSV of 0-6 (Sunday = 0)
+    timeOfDay: text('time_of_day'), // HH:MM in `timezone`
+    timezone: text('timezone').notNull().default('UTC'),
+    anchorAt: text('anchor_at').notNull(),
+    nextFireAt: text('next_fire_at').notNull(),
+    lastFiredAt: text('last_fired_at'),
+    createdAt: text('created_at').notNull(),
+    active: integer('active').notNull().default(1),
+  },
+  (table) => ({
+    dueIdx: index('idx_recurring_reminders_due').on(table.active, table.nextFireAt),
+    userIdx: index('idx_recurring_reminders_user').on(table.userId),
+  })
+);
+
+/**
  * Meeting Participants
  */
 export const meetingParticipants = sqliteTable(

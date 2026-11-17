@@ -331,6 +331,7 @@
     "cancel",
     "list",
     "remind",
+    "remind_every",
     "schedule"
   ],
   "scrapbook": [
