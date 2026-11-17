@@ -178,6 +178,23 @@ describe('generateWithTools: the request', () => {
     expect(out.content).toBe('next model answered');
   });
 
+  it('the clamp is per model: the next model gets its full ceiling and its own truncation retry', async () => {
+    createMock
+      .mockRejectedValueOnce(Object.assign(new Error('can only afford 1000'), { status: 402 }))
+      .mockResolvedValueOnce(truncatedCompletion('cut'))
+      .mockResolvedValueOnce(truncatedCompletion('cut again'))
+      .mockResolvedValueOnce(completion({ content: 'retry on the next model worked' }));
+    const out = await openRouterService.generateWithTools(MESSAGES, TOOLS, 'u', 'm', 'anthropic/claude-sonnet-5', {
+      maxTokens: 120,
+      reasoning: { max_tokens: 2048 },
+    });
+    const calls = createMock.mock.calls.map((c) => c[0]);
+    expect(calls[1].max_tokens).toBe(120); // reasoning dropped, so the caller's ceiling, under the clamp
+    expect(calls[2].max_tokens).toBe(120 + 2048); // next model: no clamp, its normal attempt
+    expect(calls[3].model).toBe(calls[2].model); // and its own truncation retry
+    expect(out.content).toBe('retry on the next model worked');
+  });
+
   it('wireMaxTokens: a ceiling that never binds, plus any explicit reasoning budget on top', () => {
     expect(wireMaxTokens(undefined, undefined)).toBe(4096);
     expect(wireMaxTokens(undefined, { max_tokens: 2048 })).toBe(6144);

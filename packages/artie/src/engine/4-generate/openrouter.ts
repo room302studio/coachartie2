@@ -738,17 +738,24 @@ class OpenRouterService {
       sendTools = undefined;
     }
 
-    // When OpenRouter returns a 402 of the form "you requested up to X tokens,
-    // but can only afford Y", it means there IS still balance — just not enough
-    // for this request's max_tokens. We cap max_tokens to what's affordable and
-    // retry the SAME model once, instead of freezing all calls for 5 minutes.
+    // Per-MODEL retry state, reset whenever the ladder moves to a new model (an affordable
+    // token count depends on that model's price; Codex 2026-11-17):
+    //  - affordability: a 402 "can only afford Y" means there IS balance, just not for this
+    //    max_tokens. Cap to Y and retry the same model once, instead of freezing for 5 min.
+    //  - truncation: finish_reason=length gets ONE same-model retry with double the room and
+    //    reasoning off, then falls down the ladder. Cut-off text never reaches a user.
     let affordabilityCap: number | undefined;
     let affordabilityRetried = false;
-    // A truncated reply (finish_reason=length) gets ONE same-model retry with double the room
-    // and reasoning off, then falls down the ladder. Cut-off text never reaches a user.
     let truncationRetry = false;
+    let attemptIndex = -1;
 
     for (let i = 0; i < modelsToTry.length; i++) {
+      if (i !== attemptIndex) {
+        attemptIndex = i;
+        affordabilityCap = undefined;
+        affordabilityRetried = false;
+        truncationRetry = false;
+      }
       let modelSpec: string;
       if (explicitList) {
         modelSpec = modelsToTry[i];
@@ -800,7 +807,9 @@ class OpenRouterService {
         } else if (isAutoRouted(model) && autoReasoningFor(plugins)) {
           reasoning = autoReasoningFor(plugins);
         }
-        if (truncationRetry) {
+        // Under an affordability clamp a reasoning budget can't fit inside max_tokens; spend
+        // the little room there is on the answer.
+        if (truncationRetry || (affordabilityCap !== undefined && reasoning?.max_tokens !== undefined)) {
           reasoning = { effort: 'none', exclude: true };
         }
         let maxTokens = wireMaxTokens(options?.maxTokens, reasoning);
@@ -810,11 +819,6 @@ class OpenRouterService {
         if (affordabilityCap !== undefined && affordabilityCap < maxTokens) {
           logger.warn(`📏 Capping max_tokens ${maxTokens} → ${affordabilityCap} (affordability)`);
           maxTokens = affordabilityCap;
-          // A reasoning budget must fit inside max_tokens; with the room this tight, spend it
-          // all on the answer (Codex: a 2048 budget inside a clamped 2048 total is invalid).
-          if (reasoning?.max_tokens !== undefined) {
-            reasoning = { effort: 'none', exclude: true };
-          }
         }
         logger.debug(`📏 Using max_tokens: ${maxTokens}`);
 
@@ -1141,13 +1145,11 @@ class OpenRouterService {
             i--; // retry the same model
             continue;
           }
-          truncationRetry = false; // the next model starts with a normal attempt
           if (isLastModel) {
             throw error;
           }
           continue;
         }
-        truncationRetry = false;
 
         // Detect specific error types and throw clear errors on last model
         if (
@@ -1563,6 +1565,9 @@ class OpenRouterService {
             throw new ReplyTruncated(model, maxTokens, fullResponse.trim().length === 0);
           }
           logger.warn(`✂️ ${model}: streamed reply hit max_tokens=${maxTokens} after paragraphs were sent`);
+          // The reader sees paragraph emissions, so the "unfinished" mark goes there too.
+          const unsentTail = fullResponse.slice(lastSentLength).trim();
+          onPartialResponse?.(`${unsentTail} …`.trim());
           return `${fullResponse.trim()} …`;
         }
         return fullResponse.trim();
