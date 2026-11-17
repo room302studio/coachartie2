@@ -1,4 +1,5 @@
 import { AUTO_INJECTED_PARAMS, type RegisteredCapability } from './registry.js';
+import { declaredToolParams } from './tool-policy.js';
 import { parseTagAttributes, toCallNotation, TAG_ATTRS, XML_ONLY_TOOLS } from './mode.js';
 
 /**
@@ -84,6 +85,22 @@ function exampleParams(cap: RegisteredCapability): string[] {
   return [...names].sort();
 }
 
+/** "what it is (for list-threads, get-forum-summary; required)" — compact, repeated per call. */
+function paramDescription(
+  spec: { description: string; usedBy: string[]; requiredBy: string[] },
+  actionCount: number
+): string {
+  let scope = '';
+  if (spec.usedBy.length < actionCount) {
+    scope = ` (for ${spec.usedBy.join(', ')}`;
+    if (spec.requiredBy.length > 0) {
+      scope += '; required';
+    }
+    scope += ')';
+  }
+  return `${spec.description}${scope}`;
+}
+
 export function capabilityToTool(cap: RegisteredCapability): ToolDefinition {
   const properties: Record<string, unknown> = {};
   const required: string[] = [];
@@ -105,10 +122,33 @@ export function capabilityToTool(cap: RegisteredCapability): ToolDefinition {
     }
   }
 
+  // Typed params declared per action (tool-policy.ts) win. They are the truth about what the
+  // handler reads, so example scraping is skipped for that tool (an example's `data='{json}'`
+  // blob would otherwise surface as a param the native path never unpacks).
+  const declared = declaredToolParams(cap.actions);
+  for (const [param, spec] of declared) {
+    if (!PROPERTY_NAME.test(param) || param in properties || NOT_A_PARAM.has(param)) continue;
+    const prop: Record<string, unknown> = {
+      type: spec.type,
+      description: paramDescription(spec, cap.supportedActions.length),
+    };
+    if (spec.enum) {
+      prop.enum = [...spec.enum];
+    }
+    properties[param] = prop;
+    // Top-level required only when EVERY action needs it; per-action requirements are
+    // enforced in registry.execute with an error naming the field.
+    if (spec.requiredBy.length === cap.supportedActions.length && !required.includes(param)) {
+      required.push(param);
+    }
+  }
+
   // Optional params the examples use (durationMinutes, query, user, ...): declared so the model
-  // learns their names, never required.
-  for (const param of exampleParams(cap)) {
-    if (!(param in properties)) properties[param] = { type: 'string' };
+  // learns their names, never required. Only for tools without declared params.
+  if (declared.length === 0) {
+    for (const param of exampleParams(cap)) {
+      if (!(param in properties)) properties[param] = { type: 'string' };
+    }
   }
 
   // Most handlers also accept free-text `content` (the CapabilityHandler 2nd arg).

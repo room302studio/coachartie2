@@ -6,7 +6,7 @@ import {
   ParameterSchema,
 } from '../errors.js';
 import { isOwnerConfirmed } from './approval-gate.js';
-import { gatesFor, OWNER_ONLY_REFUSAL, type ToolActions } from './tool-policy.js';
+import { gatesFor, requiredParamsFor, OWNER_ONLY_REFUSAL, type ToolActions } from './tool-policy.js';
 import { isOwner } from '../../shared/config/owner.js';
 import { createPendingAction, findPendingDuplicate } from '../../shared/pending-actions.js';
 import { pingApprovalNeeded } from './approval-ping.js';
@@ -557,9 +557,14 @@ export class CapabilityRegistry {
       throw new Error(JSON.stringify(structuredError));
     }
 
-    // Validate required parameters
-    if (capability.requiredParams && capability.requiredParams.length > 0) {
-      const missingParams = capability.requiredParams.filter(
+    // Validate required parameters: the tool-wide list plus this action's declared ones
+    // (tool-policy.ts). The schema can't require per-action params, so this is where they bind.
+    const requiredForCall = [
+      ...(capability.requiredParams ?? []),
+      ...requiredParamsFor(capability.actions, action),
+    ];
+    if (requiredForCall.length > 0) {
+      const missingParams = requiredForCall.filter(
         (param) => !AUTO_INJECTED_PARAMS.has(param) && !(param in params)
       );
 

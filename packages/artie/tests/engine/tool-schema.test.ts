@@ -83,12 +83,32 @@ describe('registryToTools over the real registry', () => {
     expect(JSON.stringify(again)).toBe(JSON.stringify(tools));
   });
 
-  it('every param is a string (the XML path only ever passed strings)', () => {
-    for (const tool of tools) {
-      for (const [key, schema] of Object.entries(tool.function.parameters.properties)) {
-        expect((schema as { type: string }).type, `${tool.function.name}.${key}`).toBe('string');
+  it('params are strings unless a tool declares a type (handlers still receive strings)', () => {
+    const declaredTypes = new Map<string, string>();
+    for (const cap of capabilityRegistry.list()) {
+      for (const spec of Object.values(cap.actions ?? {})) {
+        for (const [name, param] of Object.entries(spec.params ?? {})) {
+          declaredTypes.set(`${toToolName(cap.name)}.${name}`, param.type);
+        }
       }
     }
+    for (const tool of tools) {
+      for (const [key, schema] of Object.entries(tool.function.parameters.properties)) {
+        const id = `${tool.function.name}.${key}`;
+        expect((schema as { type: string }).type, id).toBe(declaredTypes.get(id) ?? 'string');
+      }
+    }
+    // toolCallToInvocation stringifies typed values, so a handler written for the XML path
+    // still sees "30", not 30.
+    expect(toolCallToInvocation('meeting-scheduler', { action: 'create', duration: 30 }).params)
+      .toEqual({ duration: '30' });
+  });
+
+  it('declared params replace the data= blob: discord-forums shows forumId/threadId/repo', () => {
+    const forums = tools.find((t) => t.function.name === 'discord-forums')!;
+    const props = Object.keys(forums.function.parameters.properties).sort();
+    expect(props).toEqual(['action', 'content', 'forumId', 'repo', 'threadId']);
+    expect(forums.function.parameters.required).toEqual(['action']);
   });
 
   it('teaches no XML: descriptions carry no <capability> tags', () => {

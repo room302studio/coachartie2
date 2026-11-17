@@ -106,6 +106,44 @@ export function gatesFor(actions: ToolActions | undefined, action: string): Tool
   return gatesOf(actions[action]);
 }
 
+/** Params this action declares as required (none for an undeclared action). */
+export function requiredParamsFor(actions: ToolActions | undefined, action: string): string[] {
+  if (!actions || !Object.hasOwn(actions, action)) {
+    return [];
+  }
+  const params = actions[action].params ?? {};
+  return Object.keys(params).filter((name) => params[name].required);
+}
+
+/**
+ * The model-facing params of a tool: the union of every action's declared params, sorted by
+ * name (byte-stable for the prompt cache), each described with the actions that use it.
+ * Empty when no action declares params (the schema then falls back to example scraping).
+ */
+export function declaredToolParams(
+  actions: ToolActions | undefined
+): Array<[string, ToolParamSpec & { usedBy: string[]; requiredBy: string[] }]> {
+  const merged = new Map<string, ToolParamSpec & { usedBy: string[]; requiredBy: string[] }>();
+  for (const [action, spec] of Object.entries(actions ?? {})) {
+    for (const [name, param] of Object.entries(spec.params ?? {})) {
+      let entry = merged.get(name);
+      if (!entry) {
+        entry = { ...param, usedBy: [], requiredBy: [] };
+        merged.set(name, entry);
+      }
+      entry.usedBy.push(action);
+      if (param.required) {
+        entry.requiredBy.push(action);
+      }
+    }
+  }
+  return [...merged.entries()].sort(([a], [b]) => {
+    if (a < b) return -1;
+    if (a > b) return 1;
+    return 0;
+  });
+}
+
 /** "tool:action" for every supported action with no declaration, sorted. */
 export function undeclaredActions(
   capabilities: Array<{ name: string; supportedActions: string[]; actions?: ToolActions }>

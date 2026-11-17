@@ -1,7 +1,7 @@
 import { logger } from '../../../shared/logger.js';
 import { getSyncDb, getRawDb } from '../../../shared/db/client.js';
 import { schedulerService } from '../../jobs/scheduler.js';
-import { RegisteredCapability } from '../../5-tool-loop/registry.js';
+import type { RegisteredCapability, CapabilityContext } from '../../5-tool-loop/registry.js';
 import { isEmail } from '../../../shared/email.js';
 import { parse, parseISO, isValid, addDays } from 'date-fns';
 import { fromZonedTime } from 'date-fns-tz';
@@ -578,8 +578,15 @@ class MeetingService {
   }
 }
 
-async function handleMeetingAction(params: MeetingParams, content?: string): Promise<string> {
-  const { action, user_id = 'unknown-user' } = params;
+async function handleMeetingAction(
+  params: MeetingParams,
+  content?: string,
+  context?: CapabilityContext
+): Promise<string> {
+  const { action } = params;
+  // The verified caller owns the meeting. user_id from params is only for internal callers with
+  // no context; a model-supplied id must never pick whose meetings get listed or cancelled.
+  const user_id = context?.userId || params.user_id || 'unknown-user';
   const meetingService = MeetingService.getInstance();
 
   logger.info(`📅 Meeting handler called - Action: ${action}, UserId: ${user_id}, Params:`, params);
@@ -705,8 +712,46 @@ async function handleMeetingAction(params: MeetingParams, content?: string): Pro
   }
 }
 
+const MEETING_TIME = { type: 'string', description: 'When, in plain words ("tomorrow 2pm")' } as const;
+const MEETING_ID = { type: 'integer', description: 'Meeting id (from list)', required: true } as const;
+const PARTICIPANTS = {
+  type: 'string',
+  description: 'Comma-separated Discord mentions or emails',
+} as const;
+
 export const meetingCapability: RegisteredCapability = {
   name: 'meeting-scheduler',
+  // Meetings are rows plus a queued Discord reminder; nothing leaves Discord.
+  actions: {
+    create: {
+      effect: 'discord',
+      params: {
+        title: { type: 'string', description: 'Meeting title', required: true },
+        time: { ...MEETING_TIME, required: true },
+        participants: PARTICIPANTS,
+        duration: { type: 'integer', description: 'Minutes (default 30)' },
+        description: { type: 'string', description: 'Agenda or notes' },
+        timezone: { type: 'string', description: 'IANA zone, e.g. America/New_York' },
+      },
+    },
+    'suggest-time': { effect: 'read', params: { participants: { ...PARTICIPANTS, required: true } } },
+    'check-availability': { effect: 'read', params: { time: { ...MEETING_TIME, required: true } } },
+    list: {
+      effect: 'read',
+      params: { include_completed: { type: 'boolean', description: 'Include past meetings' } },
+    },
+    update: {
+      effect: 'discord',
+      params: {
+        meeting_id: MEETING_ID,
+        title: { type: 'string', description: 'Meeting title' },
+        time: MEETING_TIME,
+        duration: { type: 'integer', description: 'Minutes (default 30)' },
+        description: { type: 'string', description: 'Agenda or notes' },
+      },
+    },
+    cancel: { effect: 'discord', params: { meeting_id: MEETING_ID } },
+  },
   supportedActions: ['create', 'suggest-time', 'check-availability', 'list', 'update', 'cancel'],
   description:
     'Schedule and manage meetings with participants, check availability, get AI-powered time suggestions, and receive reminders',

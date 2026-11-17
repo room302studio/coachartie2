@@ -417,22 +417,55 @@ async function handleOsintLookup(
   }
 }
 
+const OSINT_QUERY = { type: 'string', description: 'What to look up, in words' } as const;
+const OSINT_LIMIT = { type: 'integer', description: 'Max results (default 10)' } as const;
+
 export const osintLookupCapability: RegisteredCapability = {
   name: 'osint',
   emoji: '🔍',
   // EJ's private intelligence stack: every action is a read, all owner only.
+  // Params as the handler reads them (osint-lookup.ts handleOsintLookup). `query` also falls
+  // back to the free-text content, so it is never hard-required.
   actions: {
-    'recent-signals': { effect: 'read', who: 'owner' },
-    'lookup-signal': { effect: 'read', who: 'owner' },
-    'search-signals': { effect: 'read', who: 'owner' },
+    'recent-signals': { effect: 'read', who: 'owner', params: { limit: OSINT_LIMIT } },
+    'lookup-signal': {
+      effect: 'read',
+      who: 'owner',
+      params: { signal_id: { type: 'string', description: 'Signal id' }, query: OSINT_QUERY },
+    },
+    'search-signals': {
+      effect: 'read',
+      who: 'owner',
+      params: { query: OSINT_QUERY, limit: OSINT_LIMIT },
+    },
     investigations: { effect: 'read', who: 'owner' },
-    'lookup-flight': { effect: 'read', who: 'owner' },
+    'lookup-flight': {
+      effect: 'read',
+      who: 'owner',
+      params: {
+        icao24: { type: 'string', description: 'ICAO 24-bit hex address' },
+        callsign: { type: 'string', description: 'Flight callsign' },
+        query: OSINT_QUERY,
+      },
+    },
     'recent-flights': { effect: 'read', who: 'owner' },
     'military-activity': { effect: 'read', who: 'owner' },
     'flight-anomalies': { effect: 'read', who: 'owner' },
-    'nearby-aircraft': { effect: 'read', who: 'owner' },
-    'lookup-entity': { effect: 'read', who: 'owner' },
-    explain: { effect: 'read', who: 'owner' },
+    'nearby-aircraft': {
+      effect: 'read',
+      who: 'owner',
+      params: {
+        lat: { type: 'number', description: 'Latitude (default: home)' },
+        lon: { type: 'number', description: 'Longitude (default: home)' },
+        dist: { type: 'number', description: 'Radius in nautical miles (default 25)' },
+      },
+    },
+    'lookup-entity': {
+      effect: 'read',
+      who: 'owner',
+      params: { entity_id: { type: 'string', description: 'Entity id' }, query: OSINT_QUERY },
+    },
+    explain: { effect: 'read', who: 'owner', params: { query: OSINT_QUERY } },
   },
   supportedActions: [
     'recent-signals',

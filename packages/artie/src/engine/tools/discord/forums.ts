@@ -1,4 +1,4 @@
-import { RegisteredCapability } from '../../5-tool-loop/registry.js';
+import type { RegisteredCapability, CapabilityContext } from '../../5-tool-loop/registry.js';
 import { logger } from '../../../shared/logger.js';
 import * as gateway from '../../../gateway/api.js';
 import { getErrorMessage } from '../../../shared/errors.js';
@@ -153,9 +153,14 @@ async function callWithTimeout(
   }
 }
 
-const handler = async (params: any, content?: string): Promise<string> => {
-  // Normalize parameters: accept both snake_case and camelCase from LLM
-  const guildId = params.guildId || params.guild_id;
+const handler = async (
+  params: any,
+  content?: string,
+  context?: CapabilityContext
+): Promise<string> => {
+  // Normalize parameters: accept both snake_case and camelCase from LLM. The guild defaults to
+  // the conversation's (guildId is engine-filled, never part of the model's schema).
+  const guildId = params.guildId || params.guild_id || context?.guildId;
   const forumId = params.forumId || params.forum_id;
   const threadId = params.threadId || params.thread_id;
   const action = params.action;
@@ -702,8 +707,30 @@ ${JSON.stringify(
   return response_text;
 }
 
+const FORUM_ID = { type: 'string', description: 'Forum channel id (from list-forums)' } as const;
+
 export const discordForumsCapability: RegisteredCapability = {
   name: 'discord-forums',
+  // Typed params replace the old data='{json}' blob, which the native tool loop passed through
+  // as one unparsed string, so every id arrived undefined (2026-11-17).
+  actions: {
+    'list-forums': { effect: 'read' }, // the conversation's guild
+    'list-threads': { effect: 'read', params: { forumId: { ...FORUM_ID, required: true } } },
+    'get-thread': {
+      effect: 'read',
+      params: { threadId: { type: 'string', description: 'Forum thread id', required: true } },
+    },
+    'get-forum-summary': { effect: 'read', params: { forumId: { ...FORUM_ID, required: true } } },
+    // Creates GitHub issues through the gateway: outside Discord, so it needs EJ's approval
+    // (it skipped the gate before declarations existed).
+    'sync-to-github': {
+      effect: 'outside',
+      params: {
+        forumId: { ...FORUM_ID, required: true },
+        repo: { type: 'string', description: 'GitHub repo, owner/repo', required: true },
+      },
+    },
+  },
   supportedActions: [
     'list-forums',
     'list-threads',
@@ -715,11 +742,10 @@ export const discordForumsCapability: RegisteredCapability = {
     'Traverse Discord forum channels, read discussions, and sync them to GitHub issues. Use list-forums to discover available forums, list-threads to see discussions, get-thread for full thread details, get-forum-summary for overview, and sync-to-github to create GitHub issues from forum threads.',
   requiredParams: [],
   examples: [
-    '<capability name="discord-forums" action="list-forums" data=\'{"guildId":"1420846272545296470"}\' />',
-    '<capability name="discord-forums" action="list-threads" data=\'{"forumId":"123456789"}\' />',
-    '<capability name="discord-forums" action="get-thread" data=\'{"threadId":"987654321"}\' />',
-    '<capability name="discord-forums" action="get-forum-summary" data=\'{"forumId":"123456789"}\' />',
-    '<capability name="discord-forums" action="sync-to-github" data=\'{"forumId":"123456789","repo":"owner/repo"}\' />',
+    '<capability name="discord-forums" action="list-threads" forumId="123456789" />',
+    '<capability name="discord-forums" action="list-forums" />',
+    '<capability name="discord-forums" action="get-thread" threadId="987654321" />',
+    '<capability name="discord-forums" action="sync-to-github" forumId="123456789" repo="owner/repo" />',
   ],
   handler,
 };

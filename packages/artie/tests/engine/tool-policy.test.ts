@@ -69,6 +69,14 @@ const GATE_FLOOR: Record<string, Record<string, string>> = {
     create_issue: 'TA', update_issue: 'TA', add_comment: 'TA', add_labels: 'TA', remove_label: 'TA',
   },
   mediawiki: { read: '', search: '', list: '', write: 'TA', add: 'TA' },
+  // sync-to-github creates GitHub issues: approval-gated from 2026-11-17 (it skipped the gate).
+  'discord-forums': {
+    'list-forums': '', 'list-threads': '', 'get-thread': '', 'get-forum-summary': '',
+    'sync-to-github': 'TA',
+  },
+  'meeting-scheduler': {
+    create: 'T', update: 'T', cancel: 'T', 'suggest-time': '', 'check-availability': '', list: '',
+  },
 };
 
 /**
@@ -77,10 +85,10 @@ const GATE_FLOOR: Record<string, Record<string, string>> = {
  */
 const KNOWN_UNDECLARED = new Set([
   'approvals', 'ask-question', 'autonomous', 'bot-config', 'calculator', 'community-analytics',
-  'context', 'credit_status', 'diagnose', 'discord-channels', 'discord-forums',
+  'context', 'credit_status', 'diagnose', 'discord-channels',
   'discord-issue-parser', 'discord-poll', 'discord-reaction', 'discord-send-message',
   'discord-threads', 'discord-user-history', 'embedded_mcp', 'flashcard', 'goals', 'image_gen',
-  'kanban', 'meeting-scheduler', 'memory', 'morning-briefing', 'n8n_browser', 'pairing',
+  'kanban', 'memory', 'morning-briefing', 'n8n_browser', 'pairing',
   'quiz-game', 'relay', 'sb_changelog', 'scrapbook', 'scratchpad', 'send-metro-file', 'sequence',
   'skills', 'system-info', 'system_monitor', 'tasks', 'trend-watcher', 'tts', 'user-profile',
   'variable', 'vision', 'vps_claude', 'web', 'wolfram',
@@ -152,6 +160,12 @@ describe('gatesFor', () => {
   it('inherited object keys are not declarations (sandbox:constructor stays owner-only)', () => {
     expect(gatesFor(actions, 'constructor').ownerOnly).toBe(true);
     expect(gatesFor(actions, 'toString').needsApproval).toBe(true);
+  });
+
+  it('per-action required params bind in registry.execute, with the field named', async () => {
+    await expect(
+      capabilityRegistry.execute('discord-forums', 'list-threads', {}, undefined, { userId: 'u' })
+    ).rejects.toThrow(/forumId/);
   });
 
   it('approval can be switched off explicitly (owner-run money, e.g. deep_research)', () => {
