@@ -1,7 +1,7 @@
 import { logger } from '../../shared/logger.js';
 import { stripInternalMarkup, stripToolCalls } from '../../shared/clean-llm-output.js';
 import { MemoryEntourageInterface, MemoryEntourageResult } from './types.js';
-import { MemoryService } from '../tools/core/memory.js';
+import { MemoryService, PERSONAL_TAG } from '../tools/core/memory.js';
 import { hybridDataLayer, recallGuildIds } from './store.js';
 import { isOwner } from '../../shared/config/owner.js';
 import { getSyncDb } from '../../shared/db/client.js';
@@ -113,6 +113,8 @@ type OwnMemory = { content: string; importance: number; date: string };
  */
 const ABOUT_YOU_MIN_IMPORTANCE = 6;
 const ABOUT_YOU_SLOTS = 3;
+const DEFAULT_RECALL_TOKENS = 800;
+const CHARS_PER_TOKEN = 4;
 const ABOUT_YOU_MAX_CHARS = 200;
 
 /**
@@ -129,10 +131,16 @@ function personalFacts(userId: string): OwnMemory[] {
   try {
     return getSyncDb()
       .all<{ content: string; importance: number; timestamp: string }>(
+        // Tagged "personal" by memory:remember scope="me" only. Older guild-free rows are NOT
+        // personal facts (the tool never passed a guild before 2026-11-17, so server notes and
+        // notes about other people are in there too); they keep recalling as before, by rank.
         `SELECT content, importance, timestamp FROM memories
           WHERE user_id = ? AND guild_id IS NULL AND importance >= ?
+            AND EXISTS (SELECT 1 FROM json_each(
+              CASE WHEN json_valid(memories.tags) THEN memories.tags ELSE '[]' END
+            ) WHERE value = '${PERSONAL_TAG}')
           ORDER BY importance DESC, timestamp DESC LIMIT ?`,
-        [userId, ABOUT_YOU_MIN_IMPORTANCE, ABOUT_YOU_SLOTS * 2]
+        [userId, ABOUT_YOU_MIN_IMPORTANCE, ABOUT_YOU_SLOTS]
       )
       .map((m) => ({
         content: stripCapabilityTags(m.content),
@@ -145,26 +153,43 @@ function personalFacts(userId: string): OwnMemory[] {
   }
 }
 
-/** Rough tokens the about-you line will take, reserved out of the recall budget first. */
-function aboutYouTokens(own: OwnMemory[]): number {
-  const chars = own
-    .slice(0, ABOUT_YOU_SLOTS)
-    .reduce((n, m) => n + Math.min(m.content.length, ABOUT_YOU_MAX_CHARS) + 2, 40);
-  return Math.ceil(chars / 4);
-}
+const ABOUT_YOU_PREFIX = "About the person you're talking to: ";
 
-export function withAboutYou(result: MemoryEntourageResult, own: OwnMemory[]): MemoryEntourageResult {
-  const picks = own
+/**
+ * Picks the facts and builds the line, never longer than maxChars (whole facts only). Decided
+ * BEFORE ranking so its exact size comes out of the budget and its facts leave the ranked pool.
+ */
+export function aboutYou(own: OwnMemory[], maxChars: number): { line: string; picked: string[] } {
+  const ranked = own
     .filter((m) => m.importance >= ABOUT_YOU_MIN_IMPORTANCE && m.content.trim() !== '')
-    .filter((m) => !result.content.includes(m.content))
     .sort((a, b) => b.importance - a.importance || b.date.localeCompare(a.date))
     .slice(0, ABOUT_YOU_SLOTS);
-  if (picks.length === 0) {
+  const picked: string[] = [];
+  const parts: string[] = [];
+  for (const m of ranked) {
+    const part = m.content.slice(0, ABOUT_YOU_MAX_CHARS);
+    const next = `${ABOUT_YOU_PREFIX}${[...parts, part].join('; ')}.`;
+    if (next.length > maxChars) {
+      break;
+    }
+    parts.push(part);
+    picked.push(m.content);
+  }
+  if (parts.length === 0) {
+    return { line: '', picked: [] };
+  }
+  return { line: `${ABOUT_YOU_PREFIX}${parts.join('; ')}.`, picked };
+}
+
+export function withAboutYou(
+  result: MemoryEntourageResult,
+  about: { line: string; picked: string[] }
+): MemoryEntourageResult {
+  if (!about.line) {
     return result;
   }
-  const line = `About the person you're talking to: ${picks
-    .map((m) => m.content.slice(0, ABOUT_YOU_MAX_CHARS))
-    .join('; ')}.`;
+  const line = about.line;
+  const picks = about.picked;
   let content = line;
   if (result.content) {
     content = `${line}\n\n${result.content}`;
@@ -241,14 +266,15 @@ export class MemoryRecaller implements MemoryEntourageInterface {
     }
 
     try {
-      const { candidates, own } = await this.fetchCandidates(userId, options.guildId, userMessage);
-      // The about-you line comes out of the same budget, reserved first (Codex 2026-11-17).
-      let rankedBudget = options.maxTokens;
-      if (rankedBudget !== undefined && own.length > 0) {
-        // Floor of 1, not 0: tokenBudget reads 0 as "unset" and would hand back 800.
-        rankedBudget = Math.max(1, rankedBudget - aboutYouTokens(own));
-      }
-      const budget = this.tokenBudget(rankedBudget);
+      const fetched = await this.fetchCandidates(userId, options.guildId, userMessage);
+      // The about-you line is decided first, sized within at most a third of the real budget,
+      // and its exact tokens come out of what ranking gets (Codex 2026-11-17).
+      const total = options.maxTokens || DEFAULT_RECALL_TOKENS;
+      const about = aboutYou(fetched.own, Math.floor((total * CHARS_PER_TOKEN) / 3));
+      const candidates = fetched.candidates.filter((c) => !about.picked.includes(c.content));
+      // Floor of 1, not 0: tokenBudget reads 0 as "unset" and would hand back the default.
+      const rankedTokens = Math.max(1, total - Math.ceil(about.line.length / CHARS_PER_TOKEN));
+      const budget = this.tokenBudget(rankedTokens);
 
       let semantic: MemoryEntourageResult;
       if (candidates.length > 0) {
@@ -270,7 +296,7 @@ export class MemoryRecaller implements MemoryEntourageInterface {
         temporal = empty(['no_memories']);
       }
 
-      return withAboutYou(this.fuse(semantic, temporal), own);
+      return withAboutYou(this.fuse(semantic, temporal), about);
     } catch (error) {
       logger.error('❌ MemoryRecaller failed:', error);
       return empty(['error']);
@@ -354,7 +380,7 @@ export class MemoryRecaller implements MemoryEntourageInterface {
   }
 
   private tokenBudget(maxTokens?: number): { semantic: number; temporal: number } {
-    const total = maxTokens || 800;
+    const total = maxTokens || DEFAULT_RECALL_TOKENS;
     // 60% semantic, 40% temporal (guild memories now flow through both, no separate slice)
     return { semantic: Math.floor(total * 0.6), temporal: Math.floor(total * 0.4) };
   }

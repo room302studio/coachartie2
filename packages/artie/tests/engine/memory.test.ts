@@ -131,6 +131,8 @@ describe('Memory Capability', () => {
         { userId: testUserId, guildId: 'g-room302' }
       );
       expect(guildOf('scope-test: likes rye')).toBeUndefined();
+      const tagsOf = (text: string) => remember.mock.calls.find((c) => c[1] === text)?.[5];
+      expect(tagsOf('scope-test: likes rye')).toContain('personal');
 
       await memoryCapability.handler(
         { action: 'remember', scope: 'here', content: 'scope-test: server ships fridays', guildId: 'g-forged' },
@@ -138,6 +140,12 @@ describe('Memory Capability', () => {
         { userId: testUserId, guildId: 'g-room302' }
       );
       expect(guildOf('scope-test: server ships fridays')).toBe('g-room302'); // never the forged id
+      expect(tagsOf('scope-test: server ships fridays') ?? []).not.toContain('personal');
+
+      // Internal (context-less) "here" writes need a guild too.
+      await expect(
+        memoryCapability.handler({ action: 'remember', scope: 'here', content: 'scope-test: no guild' })
+      ).rejects.toThrow(/needs a guildId/);
 
       await expect(
         memoryCapability.handler(

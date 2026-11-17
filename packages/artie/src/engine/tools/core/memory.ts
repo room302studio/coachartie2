@@ -54,6 +54,9 @@ interface MemoryParams {
  */
 export const NON_OWNER_MAX_IMPORTANCE = 6;
 
+/** remember scope="me" tags its row with this; recall's "about you" slot reads only these. */
+export const PERSONAL_TAG = 'personal';
+
 /** Whose memories a recall searches: EJ may name anyone; everyone else gets only their own. */
 export function recallTargetUser(requestedUser: unknown, callerId: string): string {
   if (requestedUser && isOwner(callerId)) {
@@ -839,13 +842,6 @@ async function handleMemoryAction(
         if (params.kind && typeof params.kind === 'string') {
           explicitTags.push(params.kind);
         }
-        let tags: string[] | undefined;
-        if (explicitTags.length > 0) {
-          tags = explicitTags;
-        } else {
-          tags = undefined;
-        }
-
         // Scope (EJ 2026-11-17: "personal facts follow you"). Artie must choose every time:
         //  me   = a fact about the person asking: stored guild-free, recalled in any server/DM
         //  here = about this server, its projects or other people: stays in this guild
@@ -854,6 +850,11 @@ async function handleMemoryAction(
         let guildId: string | undefined;
         if (params.scope === 'me') {
           guildId = undefined;
+          // Marks it as a personal fact for recall's "about you" slot. Untagged guild-free rows
+          // (everything written before 2026-11-17) are not treated as personal.
+          if (!explicitTags.includes(PERSONAL_TAG)) {
+            explicitTags.push(PERSONAL_TAG);
+          }
         } else if (params.scope === 'here') {
           // A conversation's own guild; only internal callers with no context (observation,
           // reaction feedback) may name one, so a DM can't plant a memory in a server.
@@ -867,8 +868,18 @@ async function handleMemoryAction(
           } else {
             guildId = optionalString(params.guildId);
           }
+          // Every "here" write needs a real guild, internal callers included (Codex).
+          if (!guildId) {
+            throw new Error('scope "here" needs a guildId');
+          }
         } else {
           throw new Error('remember needs scope: "me" (about the asker, follows them) or "here" (this server)');
+        }
+        let tags: string[] | undefined;
+        if (explicitTags.length > 0) {
+          tags = explicitTags;
+        } else {
+          tags = undefined;
         }
         const channelId = optionalString(params.channelId);
 
