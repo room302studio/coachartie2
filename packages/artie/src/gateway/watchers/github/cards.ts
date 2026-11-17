@@ -8,7 +8,7 @@
  *   description  ONE facts line joined by " · "  (state, +adds −dels, files, who, labels),
  *                plus at most one quoted line for comments/reviews
  *   footer       the repo, once
- *   color        the state (open/merged/failed …), so no emoji headline is needed
+ *   color        the state (open/merged/failed …), so no emoji is needed
  *
  * To change how a card reads, edit the matching case in `renderCard` or `batchLine`.
  * To change limits (lines per batch, title lengths, when a headline is worth asking for), edit

@@ -18,6 +18,15 @@ import { capabilityRegistry } from '../5-tool-loop/registry.js';
 import { getErrorMessage } from '../error-utils.js';
 import { generateReflectionFacts, type ReflectionType } from '../2-turn/reflection-facts.js';
 
+/** Per-turn options handed to every openRouterService call in this turn. */
+interface TurnGenerationOptions {
+  traceId?: string | null;
+  guildId?: string;
+  maxTokens: number;
+  plugins?: unknown[];
+  reasoning?: Record<string, unknown>;
+}
+
 // =====================================================
 // LLM RESPONSE COORDINATOR
 // Handles all LLM interactions and response generation
@@ -190,7 +199,7 @@ export class LLMResponseCoordinator {
   ): Promise<{
     modelAwareMessages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>;
     smartModel: string;
-    generationOptions: { traceId?: string | null; guildId?: string; maxTokens: number; plugins?: unknown[] };
+    generationOptions: TurnGenerationOptions;
     brownout: Awaited<ReturnType<typeof getBrownoutMode>>;
   }> {
     {
@@ -324,12 +333,19 @@ export class LLMResponseCoordinator {
 
       // Context Alchemy: Include traceId and guildId for observability
       // Preflight: Include maxTokens for dynamic response length
-      const generationOptions = {
+      const generationOptions: TurnGenerationOptions = {
         traceId: message.context?.traceId,
         guildId: message.context?.guildId,
         maxTokens,
         plugins: route.plugins,
       };
+      if (brownout.mode !== 'normal') {
+        // Reasoning tokens count against max_tokens. Under the lean 500 cap Opus thought
+        // through the whole budget and wrote nothing, then the fallback was cut mid-bullet
+        // (2026-11-17; 48 reasoning-only empties in the logs). A short reply doesn't need to
+        // think first. "none" falls back to hidden low effort on reasoning-mandatory models.
+        generationOptions.reasoning = { effort: 'none' };
+      }
 
       return { modelAwareMessages, smartModel, generationOptions, brownout };
     }

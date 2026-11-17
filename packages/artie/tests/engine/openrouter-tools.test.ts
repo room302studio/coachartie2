@@ -27,7 +27,7 @@ vi.mock('../../src/engine/4-generate/model-catalog.js', () => ({
   },
 }));
 
-import { openRouterService, normalizeToolCalls } from '../../src/engine/4-generate/openrouter.js';
+import { openRouterService, normalizeToolCalls, trimCutOffReply } from '../../src/engine/4-generate/openrouter.js';
 import { brownoutRoute } from '../../src/engine/budget/brownout.js';
 import { applyCacheControl } from '../../src/engine/3-context/prompt-cache.js';
 import type { ToolDefinition } from '../../src/engine/5-tool-loop/tool-schema.js';
@@ -115,6 +115,32 @@ describe('generateWithTools: the request', () => {
     expect(params.tools).toEqual(TOOLS);
     expect(params.tool_choice).toBe('none');
     expect(out.content).toBe('final words');
+  });
+
+  it('a reply cut off by max_tokens is trimmed to its last complete line (2026-11-17 "- **")', async () => {
+    const cut = 'Honest caveat first.\n\n- **Memory is the weak spot.** recall is lossy.\n- **';
+    createMock.mockResolvedValueOnce({
+      ...completion({ content: cut }),
+      choices: [{ index: 0, finish_reason: 'length', message: { role: 'assistant', content: cut } }],
+    });
+    const out = await openRouterService.generateWithTools(MESSAGES, TOOLS, 'u', 'm', 'anthropic/claude-sonnet-5', {
+      toolChoice: 'none',
+    });
+    expect(out.content).toBe('Honest caveat first.\n\n- **Memory is the weak spot.** recall is lossy.');
+  });
+
+  it('trimCutOffReply: last line, else last sentence, else an ellipsis', () => {
+    expect(trimCutOffReply('one.\ntwo and thr')).toBe('one.');
+    expect(trimCutOffReply('First thing. Second thi')).toBe('First thing.');
+    expect(trimCutOffReply('no end in sight')).toBe('no end in sight…');
+  });
+
+  it('per-call reasoning is sent as given (brownout turns it off)', async () => {
+    createMock.mockResolvedValueOnce(completion({ content: 'ok' }));
+    await openRouterService.generateWithTools(MESSAGES, TOOLS, 'u', 'm', 'anthropic/claude-sonnet-5', {
+      reasoning: { effort: 'none' },
+    });
+    expect(createMock.mock.calls[0][0].reasoning).toEqual({ effort: 'none' });
   });
 
   it('a plain generate sends no tools (the XML path is unchanged)', async () => {

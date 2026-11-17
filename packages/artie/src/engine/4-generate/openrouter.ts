@@ -147,6 +147,27 @@ export interface GenerateTurnResult {
  * string (some providers hand back an object); a call with no id gets a positional one so
  * its tool result can still be matched to it.
  */
+/**
+ * A reply cut off by max_tokens ends mid-thought ("- **", 2026-11-17). Keep everything up to
+ * the last complete line; with no line break, up to the last finished sentence. If neither
+ * exists, keep the text and mark it with an ellipsis rather than send nothing.
+ */
+export function trimCutOffReply(text: string): string {
+  const lastBreak = text.trimEnd().lastIndexOf('\n');
+  if (lastBreak > 0) {
+    const kept = text.slice(0, lastBreak).trimEnd();
+    if (kept) {
+      return kept;
+    }
+  }
+  const sentenceEnds = [...text.matchAll(/[.!?](?=\s|$)/g)];
+  if (sentenceEnds.length > 0) {
+    const end = sentenceEnds[sentenceEnds.length - 1].index ?? 0;
+    return text.slice(0, end + 1);
+  }
+  return `${text.trimEnd()}…`;
+}
+
 export function normalizeToolCalls(raw: unknown): ToolCall[] {
   if (!Array.isArray(raw)) return [];
   const calls: ToolCall[] = [];
@@ -823,7 +844,7 @@ class OpenRouterService {
         const billedModel = servedModelName(completion.model, model);
 
         const choice = completion.choices?.[0];
-        const response = choice?.message?.content ?? '';
+        let response = choice?.message?.content ?? '';
         // Only a turn that offered tools can come back with calls; a plain turn ignores them.
         let toolCalls: ToolCall[];
         if (sendTools) {
@@ -878,6 +899,12 @@ class OpenRouterService {
           throw new Error(
             `Empty completion (finish_reason=${finalReason})${reasoningOnly}`
           );
+        }
+
+        if (choice?.finish_reason === 'length' && toolCalls.length === 0 && response) {
+          const trimmed = trimCutOffReply(response);
+          logger.warn(`✂️ Reply from ${model} hit max_tokens=${maxTokens}; trimmed ${response.length} → ${trimmed.length} chars to the last complete line`);
+          response = trimmed;
         }
 
         let responseToolInfo = '';
