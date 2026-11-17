@@ -8,6 +8,16 @@ import {
 import { isProtectedUser } from '../../shared/config/protected-users.js';
 import { isStaffRole } from '../../shared/staff-role.js';
 import { type ApiResult, sendResult } from '../../shared/api-result.js';
+import {
+  type MemberCandidate,
+  type ResolveResult,
+  parseUserRef,
+  resolveByName,
+  resolveUserRef,
+  parseTimeoutMinutes,
+  preflight,
+  describeDiscordError,
+} from './moderation-resolve.js';
 
 // Wave 9: each moderation route's handler body is an exported function returning the
 // status + JSON it used to send; gateway/api.ts calls them in-process for the engine's
@@ -35,10 +45,12 @@ async function fetchModeratableMember(
   userId: string
 ): Promise<{ ok: true; member: any } | { ok: false; error: string; status: number }> {
   const guild = client.guilds.cache.get(guildId || SUBWAY_BUILDER_GUILD_ID);
-  if (!guild) return { ok: false, error: 'Guild not found', status: 500 };
+  if (!guild) {
+    return { ok: false, error: 'This server is not available to Artie (guild not found in the Discord client).', status: 500 };
+  }
 
   const member = await guild.members.fetch(userId).catch(() => null);
-  if (!member) return { ok: false, error: 'User not in guild', status: 404 };
+  if (!member) return { ok: false, error: `User ${userId} is not a member of this server.`, status: 404 };
 
   if (member.user.bot) return { ok: false, error: 'Cannot moderate bots', status: 403 };
   if (
@@ -47,7 +59,11 @@ async function fetchModeratableMember(
     isProtectedUser(member.displayName, userId) ||
     member.roles.cache.some((r: any) => isStaffRole(r.name))
   ) {
-    return { ok: false, error: 'Cannot moderate protected user or staff', status: 403 };
+    return {
+      ok: false,
+      error: `Cannot moderate ${member.displayName || member.user.username}: they are a protected user or staff (exempt by policy). Use escalate if a human should look.`,
+      status: 403,
+    };
   }
 
   return { ok: true, member };
@@ -60,54 +76,103 @@ async function fetchModeratableMember(
  * an id or <@id>, the guild member search (REST; no privileged intent needed), then the
  * authors of recent messages in the channel he was talking in.
  */
-export async function resolveUserId(
+export async function resolveTarget(
   client: any,
   guildId: string | undefined,
   who: string | undefined,
   channelId?: string
-): Promise<string | null> {
-  const raw = String(who || '').trim();
-  if (!raw) return null;
-  const id = raw.match(/^<@!?(\d{15,21})>$/)?.[1] || raw.match(/^(\d{15,21})$/)?.[1];
-  if (id) return id;
-  const name = raw.replace(/^@/, '').toLowerCase();
-  const matches = (u: { username?: string; globalName?: string | null }, nick?: string | null) =>
-    [u.username, u.globalName, nick].some((n) => (n || '').toLowerCase() === name);
+): Promise<ResolveResult> {
+  const ref = parseUserRef(who);
+  if (ref.kind !== 'name') return resolveUserRef(who, []);
+
+  const toCandidate = (m: any): MemberCandidate => ({
+    id: m.user?.id ?? m.id,
+    username: m.user?.username,
+    globalName: m.user?.globalName,
+    nickname: m.nickname,
+  });
+  const candidates: MemberCandidate[] = [];
 
   const guild = client.guilds.cache.get(guildId || SUBWAY_BUILDER_GUILD_ID);
   if (guild) {
-    const found = await guild.members.search({ query: name.slice(0, 32), limit: 10 }).catch(() => null);
-    const hit = found && [...found.values()].find((m: any) => matches(m.user, m.nickname));
-    if (hit) return hit.user.id;
+    // Cache first (free), then the REST search (prefix match on username/nickname). Never a
+    // full member list fetch: that is huge on a big guild and needs a privileged intent.
+    const cached = guild.members?.cache;
+    if (cached && typeof cached.values === 'function') {
+      for (const m of cached.values()) candidates.push(toCandidate(m));
+    }
+    if (typeof guild.members?.search === 'function') {
+      const found = await guild.members.search({ query: ref.name.slice(0, 32), limit: 25 }).catch(() => null);
+      if (found) for (const m of found.values()) candidates.push(toCandidate(m));
+    }
   }
+  let result = resolveByName(ref.name, candidates);
+  if (result.ok || result.reason === 'ambiguous') return result;
+
+  // Display names (globalName) are not searchable over REST: fall back to who has just spoken.
   if (channelId) {
-    const channel = await client.channels.fetch(channelId).catch(() => null);
+    const channel = await client.channels?.fetch(channelId).catch(() => null);
     let recent: any = null;
     if (channel && 'messages' in channel) {
       recent = await channel.messages.fetch({ limit: 100 }).catch(() => null);
     }
-    const author = recent && [...recent.values()].find((m: any) => matches(m.author, m.member?.nickname));
-    if (author) return author.author.id;
+    if (recent) {
+      for (const m of recent.values()) {
+        candidates.push({
+          id: m.author.id,
+          username: m.author.username,
+          globalName: m.author.globalName,
+          nickname: m.member?.nickname,
+        });
+      }
+      result = resolveByName(ref.name, candidates);
+    }
   }
-  return null;
+  return result;
+}
+
+/** Facts for the pure preflight, read defensively (a partial guild just means "unknown"). */
+function preflightFacts(
+  member: any,
+  action: 'timeout' | 'role',
+  role?: any
+): Parameters<typeof preflight>[0] {
+  const guild = member.guild;
+  const me = guild?.members?.me;
+  const facts: Parameters<typeof preflight>[0] = {
+    action,
+    targetName: member.displayName || member.user?.username || 'that user',
+    roleName: role?.name,
+    rolePosition: role?.position,
+  };
+  if (guild?.ownerId !== undefined) facts.targetIsOwner = guild.ownerId === member.id;
+  if (member.permissions?.has) facts.targetIsAdministrator = member.permissions.has('Administrator');
+  if (me?.permissions?.has) {
+    let needed = 'ManageRoles';
+    if (action === 'timeout') needed = 'ModerateMembers';
+    facts.botHasPermission = me.permissions.has(needed);
+  }
+  facts.botHighestRolePosition = me?.roles?.highest?.position;
+  facts.targetHighestRolePosition = member.roles?.highest?.position;
+  return facts;
 }
 
 export async function timeoutMember(client: any, body: any): Promise<ApiResult> {
   try {
     const { guildId, durationMinutes, reason, channelId } = body;
     const who = body.userId || body.targetUserId || body.user || body.username;
-    const userId = await resolveUserId(client, guildId, who, channelId);
+    const resolved = await resolveTarget(client, guildId, who, channelId);
+    if (!resolved.ok) {
+      return reply(resolved.status, { error: resolved.error });
+    }
+    const userId = resolved.id;
 
-    if (!userId || !durationMinutes || !reason) {
-      let errorMsg: string;
-      if (userId) {
-        errorMsg = 'Missing required: durationMinutes, reason';
-      } else {
-        errorMsg = `Couldn't find a member called "${who ?? ''}" in this server`;
-      }
-      return reply(400, {
-        error: errorMsg,
-      });
+    if (!durationMinutes || !reason) {
+      return reply(400, { error: 'Missing required: durationMinutes, reason' });
+    }
+    const parsed = parseTimeoutMinutes(durationMinutes);
+    if (!parsed.ok) {
+      return reply(parsed.status, { error: parsed.error });
     }
 
     const check = await fetchModeratableMember(client, guildId, userId);
@@ -115,6 +180,10 @@ export async function timeoutMember(client: any, body: any): Promise<ApiResult> 
       return reply(check.status, { error: check.error });
     }
     const member = check.member;
+    const gate = preflight(preflightFacts(member, 'timeout'));
+    if (!gate.ok) {
+      return reply(gate.status, { error: gate.error });
+    }
 
     // fetchModeratableMember already defaults to Subway Builder when guildId is missing
     // (fetchModeratableMember/resolveUserId both do), so the per-guild counter has to use
@@ -138,7 +207,7 @@ export async function timeoutMember(client: any, body: any): Promise<ApiResult> 
       });
     }
 
-    const minutes = Math.min(60, Math.max(1, Number(durationMinutes)));
+    const minutes = parsed.minutes;
     const until = new Date(now.getTime() + minutes * 60_000);
     await member.timeout(minutes * 60_000, reason);
     moderationService.recordAutonomousTimeout(userId, effectiveGuildId);
@@ -163,16 +232,21 @@ export async function timeoutMember(client: any, body: any): Promise<ApiResult> 
     });
   } catch (error) {
     logger.error('[moderation/timeout] Error:', error);
-    return reply(500, { error: 'Timeout failed' });
+    const why = describeDiscordError(error, 'Timeout failed');
+    return reply(why.status, { error: why.error });
   }
 }
 
 export async function addRole(client: any, body: any): Promise<ApiResult> {
   try {
     const { guildId, roleName, reason, channelId } = body;
-    const userId = await resolveUserId(client, guildId, body.userId || body.user, channelId);
-    if (!userId || !roleName) {
-      return reply(400, { error: 'Missing required: userId, roleName' });
+    const resolved = await resolveTarget(client, guildId, body.userId || body.user, channelId);
+    if (!resolved.ok) {
+      return reply(resolved.status, { error: resolved.error });
+    }
+    const userId = resolved.id;
+    if (!roleName) {
+      return reply(400, { error: 'Missing required: roleName' });
     }
 
     const check = await fetchModeratableMember(client, guildId, userId);
@@ -185,7 +259,11 @@ export async function addRole(client: any, body: any): Promise<ApiResult> {
       (r: any) => r.name.toLowerCase() === String(roleName).toLowerCase()
     );
     if (!role) {
-      return reply(404, { error: `Role "${roleName}" not found in guild` });
+      return reply(404, { error: `Role "${roleName}" not found in this server.` });
+    }
+    const gate = preflight(preflightFacts(member, 'role', role));
+    if (!gate.ok) {
+      return reply(gate.status, { error: gate.error });
     }
 
     await member.roles.add(role, reason || 'Coach Artie moderation');
@@ -193,16 +271,21 @@ export async function addRole(client: any, body: any): Promise<ApiResult> {
     return reply(200, { success: true, message: `Added ${role.name} to ${member.user.username}` });
   } catch (error) {
     logger.error('[moderation/add-role] Error:', error);
-    return reply(500, { error: 'Add role failed - may lack permissions' });
+    const why = describeDiscordError(error, 'Add role failed');
+    return reply(why.status, { error: why.error });
   }
 }
 
 export async function removeRole(client: any, body: any): Promise<ApiResult> {
   try {
     const { guildId, roleName, channelId } = body;
-    const userId = await resolveUserId(client, guildId, body.userId || body.user, channelId);
-    if (!userId || !roleName) {
-      return reply(400, { error: 'Missing required: userId, roleName' });
+    const resolved = await resolveTarget(client, guildId, body.userId || body.user, channelId);
+    if (!resolved.ok) {
+      return reply(resolved.status, { error: resolved.error });
+    }
+    const userId = resolved.id;
+    if (!roleName) {
+      return reply(400, { error: 'Missing required: roleName' });
     }
 
     // Same protected-user/staff/bot guard as addRole and timeoutMember (security audit
@@ -218,7 +301,11 @@ export async function removeRole(client: any, body: any): Promise<ApiResult> {
       (r: any) => r.name.toLowerCase() === String(roleName).toLowerCase()
     );
     if (!role) {
-      return reply(404, { error: `Role "${roleName}" not found in guild` });
+      return reply(404, { error: `Role "${roleName}" not found in this server.` });
+    }
+    const gate = preflight(preflightFacts(member, 'role', role));
+    if (!gate.ok) {
+      return reply(gate.status, { error: gate.error });
     }
 
     await member.roles.remove(role, 'Coach Artie moderation');
@@ -226,7 +313,8 @@ export async function removeRole(client: any, body: any): Promise<ApiResult> {
     return reply(200, { success: true, message: `Removed ${role.name} from ${member.user.username}` });
   } catch (error) {
     logger.error('[moderation/remove-role] Error:', error);
-    return reply(500, { error: 'Remove role failed' });
+    const why = describeDiscordError(error, 'Remove role failed');
+    return reply(why.status, { error: why.error });
   }
 }
 
