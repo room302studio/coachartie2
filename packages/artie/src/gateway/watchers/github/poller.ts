@@ -49,6 +49,8 @@ export interface GitHubSyncEvent {
     prState?: string;
     prDraft?: boolean;
     prBaseBranch?: string;
+    /** PR description, for the one-line card summary (gist). */
+    prBody?: string;
     commentId?: number;
     commentBody?: string;
     commentAuthor?: string;
@@ -490,6 +492,7 @@ export class GitHubPollerService extends EventEmitter {
           prState: pr.state,
           prDraft: pr.draft,
           prBaseBranch: pr.base?.ref,
+          prBody: pr.body ?? undefined,
           additions: pr.additions,
           deletions: pr.deletions,
           labels: pr.labels?.map((l: any) => l.name) || [],
@@ -518,6 +521,7 @@ export class GitHubPollerService extends EventEmitter {
             prUrl: pr.html_url,
             prAuthor: pr.user?.login,
             prBaseBranch: pr.base?.ref,
+            prBody: pr.body ?? undefined,
             additions: pr.additions,
             deletions: pr.deletions,
             labels: pr.labels?.map((l: any) => l.name) || [],

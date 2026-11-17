@@ -17,18 +17,56 @@ import { readState, writeState } from '../../../shared/db/kv-state.js';
 import { easternDayKey, easternHour, isEasternWeekend } from '../../../shared/eastern-day.js';
 import { githubRepoWatches, githubIdentityMappings } from '../../../shared/db/schema.js';
 
-function pluralS(count: number): string {
-  if (count > 1) {
-    return 's';
-  }
-  return '';
-}
-
 function formatLabels(labels: any[]): string {
   if (labels.length > 0) {
     return ` \`${labels.join('` `')}\``;
   }
   return '';
+}
+
+const MERGES_SHOWN = 8;
+const LIST_SHOWN = 5;
+const TITLE_CHARS = 72;
+
+/** Show the first `max` lines, then one "+N more" link instead of a mid-list cut. */
+export function capped(lines: string[], max: number, moreUrl: string): string[] {
+  if (lines.length <= max) {
+    return lines;
+  }
+  return [...lines.slice(0, max), `[+${lines.length - max} more](${moreUrl})`];
+}
+
+export function shortTitle(title: string): string {
+  const clean = title.replace(/\s+/g, ' ').trim();
+  if (clean.length <= TITLE_CHARS) {
+    return clean;
+  }
+  return `${clean.slice(0, TITLE_CHARS - 1).trimEnd()}…`;
+}
+
+/** "metro-maker4 · 9 merged · 3 awaiting review · 42 open issues": the counts are the headline. */
+export function digestTitle(digest: {
+  repo: string;
+  recentMerges: unknown[];
+  prsNeedingReview: unknown[];
+  stalePrs: unknown[];
+  openIssues: { total: number };
+}): string {
+  const [, repo] = digest.repo.split('/');
+  const bits = [repo || digest.repo];
+  if (digest.recentMerges.length > 0) {
+    bits.push(`${digest.recentMerges.length} merged`);
+  }
+  if (digest.prsNeedingReview.length > 0) {
+    bits.push(`${digest.prsNeedingReview.length} awaiting review`);
+  }
+  if (digest.stalePrs.length > 0) {
+    bits.push(`${digest.stalePrs.length} stale`);
+  }
+  if (digest.openIssues.total > 0) {
+    bits.push(`${digest.openIssues.total} open issues`);
+  }
+  return bits.join(' · ');
 }
 
 function getAgeString(ageHours: number): string {
@@ -364,61 +402,76 @@ export class GitHubStudioManager {
       return `**${ghUser}**`;
     };
 
+    // Dense standup (EJ 2026-11-17, "like tufte … no duplication"): the title carries the
+    // counts, each section is capped with a "+N more" link instead of truncating mid-list,
+    // and there's no greeting/filler line or emoji.
+    const gh = `https://github.com/${digest.repo}`;
     const parts: string[] = [];
-    const [, repo] = digest.repo.split('/');
 
-    // Header
-    parts.push(`Good morning! Here's what's going on with **${repo}**:\n`);
-
-    // Yesterday's activity
-    if (digest.recentCommits.length > 0 || digest.recentMerges.length > 0) {
+    if (digest.recentMerges.length > 0) {
       const commitAuthors = [...new Set(digest.recentCommits.map((c) => c.author))];
-      const authorMentions = await Promise.all(commitAuthors.map(mention));
-
-      if (digest.recentMerges.length > 0) {
-        parts.push(`**Shipped yesterday:** ${digest.recentMerges.length} PR${pluralS(digest.recentMerges.length)} merged`);
-        for (const pr of digest.recentMerges) {
-          parts.push(`  → [#${pr.number}](https://github.com/${digest.repo}/pull/${pr.number}) ${pr.title}`);
-        }
-      }
-
+      let commitsClause = '';
       if (digest.recentCommits.length > 0) {
-        parts.push(`\n${digest.recentCommits.length} commits from ${authorMentions.join(', ')}`);
+        commitsClause = ` · ${digest.recentCommits.length} commits · ${commitAuthors.join(', ')}`;
       }
+      parts.push(`**merged yesterday** ${digest.recentMerges.length}${commitsClause}`);
+      parts.push(
+        ...capped(
+          digest.recentMerges.map((pr) => {
+            let by = pr.author;
+            if (pr.mergedBy && pr.mergedBy !== pr.author) {
+              by = `${pr.author} → ${pr.mergedBy}`;
+            }
+            return `[#${pr.number}](${gh}/pull/${pr.number}) ${shortTitle(pr.title)} · ${by}`;
+          }),
+          MERGES_SHOWN,
+          `${gh}/pulls?q=is%3Apr+is%3Amerged`
+        )
+      );
+    } else if (digest.recentCommits.length > 0) {
+      const commitAuthors = [...new Set(digest.recentCommits.map((c) => c.author))];
+      parts.push(`**commits yesterday** ${digest.recentCommits.length} · ${commitAuthors.join(', ')}`);
     }
 
-    // Needs attention
     if (digest.prsNeedingReview.length > 0) {
-      parts.push(`\n**Waiting for review:**`);
+      const lines: string[] = [];
       for (const pr of digest.prsNeedingReview) {
         const reviewerMentions = await Promise.all(pr.reviewers.map(mention));
-        const ageStr = getAgeString(pr.age);
-        parts.push(`  → [#${pr.number}](${pr.url}) ${pr.title} (${ageStr} old, needs ${reviewerMentions.join(', ')})`);
+        let needs = '';
+        if (reviewerMentions.length > 0) {
+          needs = ` · ${reviewerMentions.join(', ')}`;
+        }
+        lines.push(`[#${pr.number}](${pr.url}) ${shortTitle(pr.title)} · ${getAgeString(pr.age)}${needs}`);
       }
+      parts.push(`\n**awaiting review** ${digest.prsNeedingReview.length}`);
+      parts.push(...capped(lines, LIST_SHOWN, `${gh}/pulls?q=is%3Apr+is%3Aopen+review%3Arequired`));
     }
 
-    // Stale PRs
     if (digest.stalePrs.length > 0) {
-      parts.push(`\n**Getting stale** (no updates in 3+ days):`);
+      const lines: string[] = [];
       for (const pr of digest.stalePrs) {
         const authorMention = await mention(pr.author);
-        parts.push(`  → [#${pr.number}](${pr.url}) ${pr.title} — ${authorMention}, ${pr.daysSinceUpdate}d idle`);
+        lines.push(`[#${pr.number}](${pr.url}) ${shortTitle(pr.title)} · ${authorMention} · ${pr.daysSinceUpdate}d idle`);
       }
+      parts.push(`\n**stale, 3+ days** ${digest.stalePrs.length}`);
+      parts.push(...capped(lines, LIST_SHOWN, `${gh}/pulls?q=is%3Apr+is%3Aopen+sort%3Aupdated-asc`));
     }
 
-    // Draft PRs (lighter touch)
     if (digest.draftPrs.length > 0) {
-      parts.push(`\n**In progress** (${digest.draftPrs.length} draft${pluralS(digest.draftPrs.length)}):`);
-      for (const pr of digest.draftPrs) {
-        parts.push(`  → [#${pr.number}](${pr.url}) ${pr.title} — ${pr.author}`);
-      }
+      parts.push(`\n**drafts** ${digest.draftPrs.length}`);
+      parts.push(
+        ...capped(
+          digest.draftPrs.map((pr) => `[#${pr.number}](${pr.url}) ${shortTitle(pr.title)} · ${pr.author}`),
+          LIST_SHOWN,
+          `${gh}/pulls?q=is%3Apr+is%3Aopen+draft%3Atrue`
+        )
+      );
     }
 
-    // Open issues
     if (digest.openIssues.total > 0) {
-      let issueStr = `\n**Issues:** ${digest.openIssues.total} open`;
+      let issueStr = `\n**issues** ${digest.openIssues.total} open`;
       if (digest.openIssues.unassigned > 0) {
-        issueStr += ` (${digest.openIssues.unassigned} unassigned)`;
+        issueStr += ` · ${digest.openIssues.unassigned} unassigned`;
       }
       parts.push(issueStr);
 
@@ -428,36 +481,38 @@ export class GitHubStudioManager {
       }
 
       if (digest.openIssues.recent.length > 0) {
-        parts.push(`New this week:`);
-        for (const issue of digest.openIssues.recent) {
-          const labels = formatLabels(issue.labels);
-          parts.push(`  → [#${issue.number}](https://github.com/${digest.repo}/issues/${issue.number}) ${issue.title}${labels}`);
-        }
+        parts.push(`new this week ${digest.openIssues.recent.length}`);
+        parts.push(
+          ...capped(
+            digest.openIssues.recent.map((issue) => {
+              const labels = formatLabels(issue.labels);
+              return `[#${issue.number}](${gh}/issues/${issue.number}) ${shortTitle(issue.title)}${labels}`;
+            }),
+            LIST_SHOWN,
+            `${gh}/issues?q=is%3Aissue+is%3Aopen+sort%3Acreated-desc`
+          )
+        );
       }
     }
 
-    // Nothing needs attention
-    if (digest.prsNeedingReview.length === 0 && digest.stalePrs.length === 0) {
-      parts.push(`\nNothing blocking — keep building! 🚇`);
-    }
-
-    // Discord embed description limit is 4096 chars — truncate at line boundaries
+    // Safety net only: the caps above keep it far under Discord's 4096.
     let description = parts.join('\n');
     if (description.length > 4096) {
       const lines = description.split('\n');
-      let truncated = '';
+      let kept = '';
       for (const line of lines) {
-        if ((truncated + line + '\n').length > 4000) break;
-        truncated += line + '\n';
+        if ((kept + line + '\n').length > 4000) break;
+        kept += line + '\n';
       }
-      description = truncated.trimEnd() + '\n\n...(truncated — full digest too long for embed)';
+      description = `${kept.trimEnd()}\n[more on GitHub](${gh}/pulls)`;
     }
 
     const embed = new EmbedBuilder()
       .setColor(0xf59e0b) // Amber
-      .setTitle(`📋 Morning Standup — ${repo}`)
-      .setDescription(description)
-      .setFooter({ text: 'Daily digest from Coach Artie' })
+      .setTitle(digestTitle(digest))
+      .setURL(gh)
+      .setDescription(description || 'quiet: no merges, reviews or new issues')
+      .setFooter({ text: digest.repo })
       .setTimestamp();
 
     try {

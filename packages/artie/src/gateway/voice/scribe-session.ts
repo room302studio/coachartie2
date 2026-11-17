@@ -29,6 +29,7 @@ import { getErrorMessage } from '../../shared/errors.js';
 import { isBlockedUser } from '../../shared/blocklist.js';
 import * as engine from '../../engine/api.js';
 import { pcmToWav, pcmDurationSeconds, stereoToMonoPcm16 } from './wav.js';
+import { postIssueCallouts, clearMeetingCallouts } from './scribe-issue-callouts.js';
 import {
   SILENCE_MS,
   isUtteranceLongEnough,
@@ -172,7 +173,7 @@ function handleSpeakingStart(session: ActiveVoiceSession, userId: string): void 
     const wavBase64 = pcmToWav(monoPcm, { sampleRate: OPUS_SAMPLE_RATE, channels: 1 }).toString('base64');
 
     try {
-      await engine.scribeSubmitUtterance({
+      const result = await engine.scribeSubmitUtterance({
         sessionId: session.sessionId,
         userId,
         displayName,
@@ -181,6 +182,16 @@ function handleSpeakingStart(session: ActiveVoiceSession, userId: string): void 
         durationSeconds,
       });
       session.utteranceCount++;
+      if (result.accepted && result.text) {
+        // "issue 1502" said out loud → that issue's card in the meeting chat.
+        void postIssueCallouts({
+          client: session.client,
+          sessionId: session.sessionId,
+          guildId: session.guildId,
+          textChannelId: session.textChannelId,
+          text: result.text,
+        }).catch((error) => logger.warn('🎙️ Meeting callout failed:', getErrorMessage(error)));
+      }
     } catch (error) {
       logger.warn(
         `🎙️ Scribe utterance submit failed (session ${session.sessionId}, user ${userId}):`,
@@ -358,6 +369,7 @@ export async function stopVoiceScribeSession(guildId: string, stopReason: string
   }
   session.stopping = true;
   activeSessions.delete(guildId);
+  clearMeetingCallouts(session.sessionId);
 
   clearInterval(session.tickTimer);
   try {

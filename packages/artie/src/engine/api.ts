@@ -101,6 +101,17 @@ export async function observe(body: {
   return (await import('./routes/observe.js')).observe(wire(body));
 }
 
+/** A ≤12-word data-dense summary for a GitHub card (null → show the plain title). */
+export async function githubGist(req: {
+  key: string;
+  kind: string;
+  title: string;
+  body?: string;
+  guildId?: string;
+}): Promise<string | null> {
+  return (await import('./jobs/github-gist.js')).githubGist(wire(req));
+}
+
 /** POST /api/channel-digest: fold new lines into a channel's rolling digest. */
 export async function channelDigest(body: any): Promise<ApiResult> {
   return (await import('./routes/channel-digest.js')).channelDigest(wire(body));

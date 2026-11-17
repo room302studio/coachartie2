@@ -1,0 +1,132 @@
+/**
+ * One-line "gists" for GitHub cards (EJ 2026-11-17: "very short summaries … like tufte, any
+ * text shown should contain data, no duplication"). A cheap model reads the title plus the
+ * body and writes at most ~12 words of what actually changed, with the specifics (numbers,
+ * components, causes) that make a card worth scanning. The card shows the gist INSTEAD of the
+ * title, never both.
+ *
+ * Never blocks a post: out of credits, muted, slow, or unparseable → null, and the caller
+ * shows the plain title. Cached per item so a batch and a single card don't pay twice.
+ */
+import { logger } from '../../shared/logger.js';
+import { openRouterService } from '../4-generate/openrouter.js';
+import { creditMonitor } from '../budget/openrouter-balance.js';
+import { isGenerationMuted } from '../../shared/kill-switch.js';
+
+export interface GistRequest {
+  /** Stable cache key, e.g. "owner/repo#1499:merged". */
+  key: string;
+  /** What the item is: "pull request", "issue", "comment on #12 …", "review". */
+  kind: string;
+  title: string;
+  body?: string;
+  guildId?: string;
+}
+
+const GIST_MAX_CHARS = 110;
+const BODY_MAX_CHARS = 2500;
+const CACHE_MAX = 500;
+const TIMEOUT_MS = 8000;
+
+const cache = new Map<string, string | null>();
+
+export function gistModel(env: NodeJS.ProcessEnv = process.env): string {
+  return env.GIST_MODEL || env.DIGEST_MODEL || 'deepseek/deepseek-v4-flash-0731';
+}
+
+export function buildGistPrompt(req: GistRequest): string {
+  const body = (req.body || '').replace(/<!--[\s\S]*?-->/g, '').trim().slice(0, BODY_MAX_CHARS);
+  let bodyBlock: string;
+  if (body) {
+    bodyBlock = `Body:\n${body}`;
+  } else {
+    bodyBlock = 'Body: (none)';
+  }
+  return [
+    `Write a one-line summary of this GitHub ${req.kind} for a team chat feed.`,
+    'Rules:',
+    '- At most 12 words. Plain text: no markdown, no emoji, no quotes, no trailing period.',
+    '- Say what changes or what is wrong, with the most specific data available: numbers, versions, components, causes.',
+    '- It replaces the title, so fold the title in; never just repeat it word for word if the body adds anything.',
+    '- Never mention the author, the repo, or "this PR"/"this issue".',
+    '- If there is nothing beyond the title, return the title tightened.',
+    '',
+    `Title: ${req.title}`,
+    bodyBlock,
+  ].join('\n');
+}
+
+/** Trim a model reply to one clean line; null if it's empty or junk. */
+export function cleanGist(raw: string | null | undefined): string | null {
+  if (!raw) {
+    return null;
+  }
+  let line = raw.split('\n').map((l) => l.trim()).find((l) => l.length > 0) || '';
+  line = line.replace(/^(summary|gist)\s*:\s*/i, '');
+  line = line.replace(/^["'`*_]+|["'`*_]+$/g, '').replace(/\.$/, '').trim();
+  if (line.length < 4) {
+    return null;
+  }
+  if (line.length > GIST_MAX_CHARS) {
+    line = `${line.slice(0, GIST_MAX_CHARS - 1).trimEnd()}…`;
+  }
+  return line;
+}
+
+function remember(key: string, value: string | null): void {
+  if (cache.size >= CACHE_MAX) {
+    const oldest = cache.keys().next().value;
+    if (oldest !== undefined) {
+      cache.delete(oldest);
+    }
+  }
+  cache.set(key, value);
+}
+
+export async function githubGist(req: GistRequest): Promise<string | null> {
+  if (!req.title) {
+    return null;
+  }
+  if (cache.has(req.key)) {
+    return cache.get(req.key) ?? null;
+  }
+  if (isGenerationMuted() || creditMonitor.areCreditsExhausted()) {
+    return null;
+  }
+  try {
+    const call = openRouterService
+      .generateFromMessageChain(
+        [{ role: 'user', content: buildGistPrompt(req) }],
+        'github-gist',
+        undefined,
+        gistModel(),
+        { guildId: req.guildId, maxTokens: 60, stepType: 'github_gist' }
+      )
+      .catch((error) => {
+        logger.debug(`GitHub gist failed for ${req.key}: ${error}`);
+        return null;
+      });
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<null>((resolve) => {
+      timer = setTimeout(() => resolve(null), TIMEOUT_MS);
+    });
+    const raw = await Promise.race([call, timeout]);
+    if (timer) {
+      clearTimeout(timer);
+    }
+    const gist = cleanGist(raw);
+    // Only cache real answers: a timeout or outage should get another try next post.
+    if (gist) {
+      remember(req.key, gist);
+    }
+    return gist;
+  } catch (error) {
+    logger.debug(`GitHub gist failed for ${req.key}: ${error}`);
+    return null;
+  }
+}
+
+/** Test hook. */
+export function clearGistCache(): void {
+  cache.clear();
+}

@@ -11,6 +11,7 @@ import { logger } from '../../../shared/logger.js';
 import { GITHUB_FEED_CHANNEL_ID } from '../../../shared/config/channels.js';
 import type { GitHubSyncEvent, GitHubEventType } from './poller.js';
 import type { ProcessedEvent, BatchedEvents, DiscordMention } from './event-batcher.js';
+import * as engine from '../../../engine/api.js';
 
 function formatContentWithPrefix(content: string): string {
   if (content) {
@@ -137,7 +138,8 @@ export class GitHubDiscordPoster {
       return;
     }
 
-    const embed = this.createEmbed(processed.event);
+    const gist = await this.gistFor(processed.event);
+    const embed = this.createEmbed(processed.event, gist);
     const content = this.formatMentions(processed.mentions);
 
     try {
@@ -179,8 +181,9 @@ export class GitHubDiscordPoster {
       return;
     }
 
-    // Create batch embed
-    const embed = this.createBatchEmbed(batch);
+    // Create batch embed (gists for the lines it shows, in parallel)
+    const gists = await Promise.all(batch.events.slice(0, 5).map((e) => this.gistFor(e.event)));
+    const embed = this.createBatchEmbed(batch, gists);
 
     // Collect all unique mentions
     const allMentions = this.collectMentions(batch.events);
@@ -200,7 +203,7 @@ export class GitHubDiscordPoster {
   /**
    * Create Discord embed for a single event
    */
-  private createEmbed(event: GitHubSyncEvent): EmbedBuilder {
+  private createEmbed(event: GitHubSyncEvent, gist: string | null = null): EmbedBuilder {
     const embed = new EmbedBuilder()
       .setColor(EVENT_COLORS[event.type] || 0x6e7681)
       .setTimestamp(new Date(event.timestamp));
@@ -208,157 +211,12 @@ export class GitHubDiscordPoster {
     const emoji = EVENT_EMOJI[event.type] || '📌';
     const [owner, repo] = event.repo.split('/');
 
+    const dense = this.createDenseEmbed(event, embed, gist);
+    if (dense) {
+      return dense;
+    }
+
     switch (event.type) {
-      case 'pr_opened': {
-        const prSize = this.getPrSize(event.data.additions, event.data.deletions);
-        const sizeBadge = SIZE_BADGES[prSize];
-
-        embed
-          .setTitle(`${emoji} New PR [${sizeBadge.label}]`)
-          .setURL(event.data.prUrl || '')
-          .setColor(sizeBadge.color)
-          .setDescription(this.formatPrDescription(event))
-          .setFooter({
-            text: `${owner}/${repo} • ${this.formatSizeBadge(event.data.additions, event.data.deletions, event.data.changedFiles)}`,
-          });
-
-        // Large PRs get extra visibility
-        if (prSize === 'L' || prSize === 'XL') {
-          embed.setTitle(`${sizeBadge.emoji} Large PR [${sizeBadge.label}] - Needs Extra Review`);
-        }
-        break;
-      }
-
-      case 'pr_ready_for_review': {
-        const reviewSize = this.getPrSize(event.data.additions, event.data.deletions);
-        const reviewSizeBadge = SIZE_BADGES[reviewSize];
-
-        embed
-          .setTitle(`${emoji} Review Needed [${reviewSizeBadge.label}]`)
-          .setURL(event.data.prUrl || '')
-          .setColor(0x1f6feb) // Blue for review needed
-          .setDescription(`**#${event.data.prNumber}** ${event.data.prTitle}`)
-          .addFields({
-            name: 'Author',
-            value: event.data.prAuthor || 'Unknown',
-            inline: true,
-          });
-
-        // Show requested reviewers if available
-        if (event.data.reviewers && event.data.reviewers.length > 0) {
-          embed.addFields({
-            name: 'Reviewers',
-            value: event.data.reviewers.map((r) => `@${r}`).join(', '),
-            inline: true,
-          });
-        }
-
-        embed.setFooter({
-          text: `${owner}/${repo} • ${this.formatSizeBadge(event.data.additions, event.data.deletions, event.data.changedFiles)}`,
-        });
-        break;
-      }
-
-      case 'pr_merged': {
-        const isMainMerge = ['main', 'master', 'beta', 'production', 'prod'].includes(
-          event.data.prBaseBranch?.toLowerCase() || ''
-        );
-        const hasBreakingLabel = this.hasImportantLabel(event.data.labels);
-
-        if (isMainMerge && this.config.verboseMerges) {
-          // 🚀 Extra prominent for production merges
-          let branchName: string | undefined;
-          if (event.data.prBaseBranch === 'main') {
-            branchName = 'Main';
-          } else {
-            branchName = event.data.prBaseBranch;
-          }
-
-          if (hasBreakingLabel) {
-            // ⚠️ Breaking change gets extra warning
-            embed
-              .setTitle(`⚠️ Breaking Change Shipped to ${branchName}!`)
-              .setColor(0xd29922) // Orange/yellow for warning
-              .setURL(event.data.prUrl || '')
-              .setDescription(this.formatMergeDescription(event))
-              .setFooter({ text: `${owner}/${repo} • ⚠️ May require migration` });
-          } else {
-            embed
-              .setTitle(`🚀 Shipped to ${branchName}!`)
-              .setColor(0x238636) // Bright green for shipping
-              .setURL(event.data.prUrl || '')
-              .setDescription(this.formatMergeDescription(event))
-              .setFooter({ text: `${owner}/${repo} • Now live` });
-          }
-        } else {
-          embed
-            .setTitle(`${emoji} Pull Request Merged`)
-            .setURL(event.data.prUrl || '')
-            .setDescription(this.formatMergeDescription(event))
-            .setFooter({ text: `${owner}/${repo}` });
-        }
-        break;
-      }
-
-      case 'pr_closed':
-        embed
-          .setTitle(`${emoji} Pull Request Closed`)
-          .setURL(event.data.prUrl || '')
-          .setDescription(`**#${event.data.prNumber}** ${event.data.prTitle}`)
-          .setFooter({ text: `${owner}/${repo}` });
-        break;
-
-      case 'pr_approved':
-        embed
-          .setTitle(`${emoji} Approved by ${event.data.reviewAuthor}`)
-          .setColor(0x238636) // Green for approval
-          .setDescription(`**#${event.data.prNumber}** ${event.data.prTitle || ''}`.trim())
-          .addFields({
-            name: 'Reviewer',
-            value: event.data.reviewAuthor || 'Unknown',
-            inline: true,
-          })
-          .setFooter({ text: `${owner}/${repo} • Ready to merge?` });
-        if (event.data.reviewBody) {
-          embed.addFields({
-            name: 'Comment',
-            value: this.truncate(event.data.reviewBody, 200),
-          });
-        }
-        break;
-
-      case 'pr_changes_requested':
-        embed
-          .setTitle(`${emoji} Changes Requested on #${event.data.prNumber}`)
-          .setColor(0xd29922) // Yellow/orange for attention needed
-          .setDescription(`**${event.data.reviewAuthor}** needs changes before approval`)
-          .addFields({
-            name: 'PR',
-            value: event.data.prTitle || `#${event.data.prNumber}`,
-            inline: false,
-          })
-          .setFooter({ text: `${owner}/${repo} • Action needed` });
-        if (event.data.reviewBody) {
-          embed.addFields({
-            name: 'Feedback',
-            value: this.truncate(event.data.reviewBody, 300),
-          });
-        }
-        break;
-
-      case 'pr_comment':
-        embed
-          .setTitle(`${emoji} New Comment on PR #${event.data.prNumber}`)
-          .setURL(event.data.commentUrl || '')
-          .setDescription(this.truncate(event.data.commentBody || '', 400))
-          .addFields({
-            name: 'Author',
-            value: event.data.commentAuthor || 'Unknown',
-            inline: true,
-          })
-          .setFooter({ text: `${owner}/${repo}` });
-        break;
-
       case 'pr_review':
         embed
           .setTitle(`${emoji} Review on PR #${event.data.prNumber}`)
@@ -389,49 +247,6 @@ export class GitHubDiscordPoster {
         }
         break;
       }
-
-      case 'issue_opened': {
-        const issueLabels = event.data.issueLabels?.map((l) => `\`${l}\``).join(' ') || '';
-        let issueBody: string;
-        if (event.data.issueBody) {
-          issueBody = `\n\n${this.truncate(event.data.issueBody, 300)}`;
-        } else {
-          issueBody = '';
-        }
-        let labelsClause: string;
-        if (issueLabels) {
-          labelsClause = `\n🏷️ ${issueLabels}`;
-        } else {
-          labelsClause = '';
-        }
-        embed
-          .setTitle(`${emoji} New Issue #${event.data.issueNumber}`)
-          .setURL(event.data.issueUrl || '')
-          .setDescription(`**${event.data.issueTitle}**\nBy **${event.data.issueAuthor}**${labelsClause}${issueBody}`)
-          .setFooter({ text: `${owner}/${repo}` });
-        break;
-      }
-
-      case 'issue_closed':
-        embed
-          .setTitle(`${emoji} Issue #${event.data.issueNumber} Closed`)
-          .setURL(event.data.issueUrl || '')
-          .setDescription(`**${event.data.issueTitle}**`)
-          .setFooter({ text: `${owner}/${repo}` });
-        break;
-
-      case 'issue_comment':
-        embed
-          .setTitle(`${emoji} Comment on Issue #${event.data.issueNumber}`)
-          .setURL(event.data.commentUrl || '')
-          .setDescription(this.truncate(event.data.commentBody || '', 400))
-          .addFields({
-            name: 'Author',
-            value: event.data.commentAuthor || 'Unknown',
-            inline: true,
-          })
-          .setFooter({ text: `${owner}/${repo}` });
-        break;
 
       case 'issue_labeled':
         embed
@@ -507,9 +322,225 @@ export class GitHubDiscordPoster {
   }
 
   /**
+   * Dense cards (EJ 2026-11-17, "like tufte, any text shown should contain data, no
+   * duplication"): the title is `#N gist` (the gist replaces the title, falling back to the
+   * title itself), ONE facts line joined by " · ", the repo in the footer, and the state in the
+   * color. No emoji headlines, no "By X" restated in fields, no body dumps. Returns null for
+   * event types that keep their old card.
+   */
+  private createDenseEmbed(
+    event: GitHubSyncEvent,
+    embed: EmbedBuilder,
+    gist: string | null
+  ): EmbedBuilder | null {
+    const d = event.data;
+    const repoName = event.repo;
+    const stats = this.statFacts(d.additions, d.deletions, d.changedFiles);
+    const labels = (d.labels || d.issueLabels || []).map((l) => l.replace(/`/g, "'"));
+    let labelFact: string | undefined;
+    if (labels.length > 0) {
+      labelFact = labels.join(', ');
+    }
+
+    let headline: string | undefined;
+    let url: string | undefined;
+    let facts: Array<string | undefined> = [];
+    let quote: string | undefined;
+
+    switch (event.type) {
+      case 'pr_opened': {
+        headline = this.cardTitle(d.prNumber, gist || d.prTitle);
+        url = d.prUrl;
+        const size = SIZE_BADGES[this.getPrSize(d.additions, d.deletions)];
+        embed.setColor(size.color);
+        let sizeFact: string | undefined;
+        if (size.label === 'L' || size.label === 'XL') {
+          sizeFact = `${size.label}, needs extra review`;
+        }
+        facts = [`opened → ${d.prBaseBranch || 'main'}`, ...stats, sizeFact, d.prAuthor, labelFact];
+        break;
+      }
+      case 'pr_ready_for_review': {
+        headline = this.cardTitle(d.prNumber, gist || d.prTitle);
+        url = d.prUrl;
+        let reviewFact: string | undefined;
+        if (d.reviewers && d.reviewers.length > 0) {
+          reviewFact = `review: ${d.reviewers.join(', ')}`;
+        }
+        facts = ['ready for review', ...stats, d.prAuthor, reviewFact];
+        break;
+      }
+      case 'pr_merged': {
+        headline = this.cardTitle(d.prNumber, gist || d.prTitle);
+        url = d.prUrl;
+        const base = d.prBaseBranch || 'main';
+        let mergedFact = `merged → ${base}`;
+        if (this.hasImportantLabel(d.labels)) {
+          mergedFact = `BREAKING, merged → ${base}`;
+          embed.setColor(0xd29922);
+        } else if (['main', 'master', 'beta', 'production', 'prod'].includes(base.toLowerCase())) {
+          mergedFact = `merged → ${base}, live`;
+          embed.setColor(0x238636);
+        }
+        let byFact = d.prAuthor;
+        if (d.mergedBy && d.prAuthor && d.mergedBy !== d.prAuthor) {
+          byFact = `${d.prAuthor}, merged by ${d.mergedBy}`;
+        }
+        facts = [mergedFact, ...stats, byFact];
+        break;
+      }
+      case 'pr_closed':
+        headline = this.cardTitle(d.prNumber, gist || d.prTitle);
+        url = d.prUrl;
+        facts = ['closed unmerged', d.prAuthor];
+        break;
+      case 'issue_opened':
+        headline = this.cardTitle(d.issueNumber, gist || d.issueTitle);
+        url = d.issueUrl;
+        facts = ['new issue', d.issueAuthor, labelFact];
+        break;
+      case 'issue_closed': {
+        headline = this.cardTitle(d.issueNumber, gist || d.issueTitle);
+        url = d.issueUrl;
+        let closedFact = 'closed';
+        if (d.closedBy) {
+          closedFact = `closed by ${d.closedBy}`;
+        }
+        facts = [closedFact];
+        break;
+      }
+      case 'pr_comment':
+      case 'issue_comment': {
+        const num = d.prNumber ?? d.issueNumber;
+        headline = this.cardTitle(num, d.prTitle || d.issueTitle || 'comment');
+        url = d.commentUrl || d.prUrl || d.issueUrl;
+        quote = `**${d.commentAuthor || 'someone'}**: ${gist || this.truncate(d.commentBody || '', 280)}`;
+        break;
+      }
+      case 'pr_approved':
+      case 'pr_changes_requested': {
+        headline = this.cardTitle(d.prNumber, d.prTitle);
+        url = d.prUrl;
+        let verdict = `approved by ${d.reviewAuthor}`;
+        if (event.type === 'pr_changes_requested') {
+          verdict = `changes requested by ${d.reviewAuthor}`;
+        }
+        facts = [verdict];
+        if (d.reviewBody) {
+          quote = gist || this.truncate(d.reviewBody, 280);
+        }
+        break;
+      }
+      default:
+        return null;
+    }
+
+    embed.setTitle(this.truncate(headline || repoName, 256));
+    // discord.js throws on a non-URL, which would drop the whole post.
+    if (url && (url.startsWith('https://') || url.startsWith('http://'))) {
+      embed.setURL(url);
+    }
+    const factLine = facts.filter((f): f is string => Boolean(f)).join(' · ');
+    const description = [factLine, quote].filter((s): s is string => Boolean(s)).join('\n');
+    if (description) {
+      embed.setDescription(description);
+    }
+    embed.setFooter({ text: repoName });
+    return embed;
+  }
+
+  private cardTitle(num: number | undefined, text: string | undefined): string {
+    if (num === undefined) {
+      return text || '';
+    }
+    return `#${num} ${text || ''}`.trim();
+  }
+
+  /** "+412 −88", "14 files": only what's known. */
+  private statFacts(additions?: number, deletions?: number, files?: number): string[] {
+    const out: string[] = [];
+    if (additions !== undefined || deletions !== undefined) {
+      out.push(`+${additions || 0} −${deletions || 0}`);
+    }
+    if (files) {
+      let noun = 'files';
+      if (files === 1) {
+        noun = 'file';
+      }
+      out.push(`${files} ${noun}`);
+    }
+    return out;
+  }
+
+  /**
+   * What to send the gist model for this event, or null when the plain text is already the
+   * best data (no body to distill, or a comment short enough to show whole).
+   */
+  gistRequestFor(event: GitHubSyncEvent): { key: string; kind: string; title: string; body: string } | null {
+    const d = event.data;
+    const SHORT = 160;
+    switch (event.type) {
+      case 'pr_opened':
+      case 'pr_ready_for_review':
+      case 'pr_merged':
+      case 'pr_closed':
+        if (!d.prTitle || !d.prBody || d.prBody.trim().length < 40) {
+          return null;
+        }
+        return { key: `${event.repo}#${d.prNumber}:pr`, kind: 'pull request', title: d.prTitle, body: d.prBody };
+      case 'issue_opened':
+      case 'issue_closed':
+        if (!d.issueTitle || !d.issueBody || d.issueBody.trim().length < 40) {
+          return null;
+        }
+        return { key: `${event.repo}#${d.issueNumber}:issue`, kind: 'issue', title: d.issueTitle, body: d.issueBody };
+      case 'pr_comment':
+      case 'issue_comment': {
+        const body = d.commentBody || '';
+        if (body.length <= SHORT) {
+          return null;
+        }
+        return {
+          key: `${event.repo}#${d.prNumber ?? d.issueNumber}:comment:${d.commentId ?? body.length}`,
+          kind: 'comment (summarize only what the comment says)',
+          title: this.truncate(body.split('\n')[0], 120),
+          body,
+        };
+      }
+      case 'pr_approved':
+      case 'pr_changes_requested': {
+        const body = d.reviewBody || '';
+        if (body.length <= SHORT) {
+          return null;
+        }
+        return {
+          key: `${event.repo}#${d.prNumber}:review:${d.reviewId ?? body.length}`,
+          kind: 'code review (summarize only what the reviewer asks for)',
+          title: this.truncate(body.split('\n')[0], 120),
+          body,
+        };
+      }
+      default:
+        return null;
+    }
+  }
+
+  private async gistFor(event: GitHubSyncEvent): Promise<string | null> {
+    const req = this.gistRequestFor(event);
+    if (!req) {
+      return null;
+    }
+    try {
+      return await engine.githubGist({ ...req, guildId: event.guildId });
+    } catch {
+      return null;
+    }
+  }
+
+  /**
    * Create embed for a batch of events
    */
-  private createBatchEmbed(batch: BatchedEvents): EmbedBuilder {
+  private createBatchEmbed(batch: BatchedEvents, gists: Array<string | null> = []): EmbedBuilder {
     const firstEvent = batch.events[0].event;
     const [owner, repo] = firstEvent.repo.split('/');
 
@@ -522,10 +553,7 @@ export class GitHubDiscordPoster {
     // Add individual event summaries
     const eventSummaries = batch.events
       .slice(0, 5)
-      .map((e) => {
-        const emoji = EVENT_EMOJI[e.event.type] || '•';
-        return `${emoji} ${this.getShortEventSummary(e.event)}`;
-      })
+      .map((e, i) => this.getShortEventSummary(e.event, gists[i] ?? null))
       .join('\n');
 
     embed.setDescription(eventSummaries);
@@ -541,64 +569,12 @@ export class GitHubDiscordPoster {
   }
 
   /**
-   * Format PR description for embed
-   */
-  private formatPrDescription(event: GitHubSyncEvent): string {
-    const parts: string[] = [];
-
-    parts.push(`**#${event.data.prNumber}** ${event.data.prTitle}`);
-
-    if (event.data.prAuthor) {
-      parts.push(`\nBy **${event.data.prAuthor}**`);
-    }
-
-    if (this.config.showLineChanges && (event.data.additions || event.data.deletions)) {
-      parts.push(`\n\`+${event.data.additions || 0}\` / \`-${event.data.deletions || 0}\``);
-    }
-
-    if (this.config.showLabels && event.data.labels && event.data.labels.length > 0) {
-      parts.push(`\nLabels: ${event.data.labels.map((l) => `\`${l}\``).join(' ')}`);
-    }
-
-    return parts.join('');
-  }
-
-  /**
-   * Format merge description with extra detail
-   */
-  private formatMergeDescription(event: GitHubSyncEvent): string {
-    const parts: string[] = [];
-
-    parts.push(`**#${event.data.prNumber}** ${event.data.prTitle}`);
-
-    // Show author and merger (if different)
-    const author = event.data.prAuthor || 'unknown';
-    const merger = event.data.mergedBy || author;
-    if (merger !== author) {
-      parts.push(`\nBy **${author}** • Merged by **${merger}**`);
-    } else {
-      parts.push(`\nBy **${author}**`);
-    }
-
-    if (this.config.showLineChanges && (event.data.additions || event.data.deletions)) {
-      parts.push(`\n\`+${event.data.additions || 0}\` / \`-${event.data.deletions || 0}\``);
-    }
-
-    // Show labels on merges (especially useful for breaking changes, features, etc.)
-    if (this.config.showLabels && event.data.labels && event.data.labels.length > 0) {
-      parts.push(`\n${event.data.labels.map((l) => `\`${l}\``).join(' ')}`);
-    }
-
-    return parts.join('');
-  }
-
-  /**
    * Get short summary for event (for batch display)
    */
-  private getShortEventSummary(event: GitHubSyncEvent): string {
+  private getShortEventSummary(event: GitHubSyncEvent, gist: string | null = null): string {
     switch (event.type) {
       case 'pr_comment':
-        return `${event.data.commentAuthor}: "${this.truncate(event.data.commentBody || '', 50)}"`;
+        return `${event.data.commentAuthor}: ${gist || this.truncate(event.data.commentBody || '', 80)}`;
       case 'pr_approved':
         return `${event.data.reviewAuthor} approved`;
       case 'pr_changes_requested':
@@ -609,9 +585,9 @@ export class GitHubDiscordPoster {
         return `${event.data.checkRunName} failed`;
       case 'issue_opened':
       case 'issue_closed':
-        return this.numberedLine(event.data.issueNumber, event.data.issueUrl, event.data.issueTitle);
+        return this.numberedLine(event.data.issueNumber, event.data.issueUrl, gist || event.data.issueTitle);
       case 'issue_comment':
-        return `${this.numberedLine(event.data.issueNumber, event.data.issueUrl, undefined)} ${event.data.commentAuthor}: "${this.truncate(event.data.commentBody || '', 50)}"`;
+        return `${this.numberedLine(event.data.issueNumber, event.data.issueUrl, undefined)} ${event.data.commentAuthor}: ${gist || this.truncate(event.data.commentBody || '', 80)}`;
       case 'issue_labeled':
         return `${this.numberedLine(event.data.issueNumber, event.data.issueUrl, undefined)} +\`${(event.data.label || '').replace(/`/g, "'")}\``;
       case 'issue_assigned':
@@ -621,7 +597,7 @@ export class GitHubDiscordPoster {
       case 'pr_ready_for_review':
       case 'pr_merged':
       case 'pr_closed':
-        return this.numberedLine(event.data.prNumber, event.data.prUrl, event.data.prTitle);
+        return this.numberedLine(event.data.prNumber, event.data.prUrl, gist || event.data.prTitle);
       default:
         // Never print a bare raw event type (the 4× "issue_opened" card, 2026-11-17).
         return this.fallbackLine(event);
@@ -756,28 +732,6 @@ export class GitHubDiscordPoster {
     if (total <= SIZE_THRESHOLDS.M) return 'M';
     if (total <= SIZE_THRESHOLDS.L) return 'L';
     return 'XL';
-  }
-
-  /**
-   * Format size badge for display
-   */
-  private formatSizeBadge(additions?: number, deletions?: number, files?: number): string {
-    const size = this.getPrSize(additions, deletions);
-    const badge = SIZE_BADGES[size];
-    const total = (additions || 0) + (deletions || 0);
-    let fileInfo: string;
-    if (files) {
-      let pluralS: string;
-      if (files !== 1) {
-        pluralS = 's';
-      } else {
-        pluralS = '';
-      }
-      fileInfo = `, ${files} file${pluralS}`;
-    } else {
-      fileInfo = '';
-    }
-    return `${badge.emoji} **${badge.label}** (${total} lines${fileInfo})`;
   }
 }
 
