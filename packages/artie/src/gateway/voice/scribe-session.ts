@@ -183,12 +183,14 @@ function handleSpeakingStart(session: ActiveVoiceSession, userId: string): void 
       });
       session.utteranceCount++;
       if (result.accepted && result.text && !session.stopping) {
-        // "issue 1502" said out loud → that issue's card in the meeting chat.
+        // "issue 1502" said out loud → that issue's card in the meeting chat: the voice
+        // channel's own text chat, where people in the call see it. Not textChannelId, which
+        // for auto-scribe is the summary destination (EJ's DM in prod).
         void postIssueCallouts({
           client: session.client,
           sessionId: session.sessionId,
           guildId: session.guildId,
-          textChannelId: session.textChannelId,
+          textChannelId: session.voiceChannelId,
           text: result.text,
         }).catch((error) => logger.warn('🎙️ Meeting callout failed:', getErrorMessage(error)));
       }
