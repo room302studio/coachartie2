@@ -23,6 +23,8 @@ import {
   gatesFor,
   undeclaredActions,
   strayDeclarations,
+  canonicalParams,
+  requiredParamsFor,
 } from '../../src/engine/5-tool-loop/tool-policy.js';
 
 const GATE_FLOOR: Record<string, Record<string, string>> = {
@@ -166,6 +168,15 @@ describe('gatesFor', () => {
     await expect(
       capabilityRegistry.execute('discord-forums', 'list-threads', {}, undefined, { userId: 'u' })
     ).rejects.toThrow(/forumId/);
+  });
+
+  it('declared aliases are renamed before validation (forum_id satisfies forumId)', () => {
+    const forums = capabilityRegistry.list().find((c) => c.name === 'discord-forums')!;
+    expect(canonicalParams(forums.actions, 'list-threads', { forum_id: '1' })).toEqual({ forumId: '1' });
+    expect(canonicalParams(forums.actions, 'list-threads', { forum_id: '1', forumId: '2' })).toEqual({
+      forumId: '2',
+    });
+    expect(requiredParamsFor(forums.actions, 'list-threads')).toEqual(['forumId']);
   });
 
   it('approval can be switched off explicitly (owner-run money, e.g. deep_research)', () => {

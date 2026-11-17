@@ -30,9 +30,11 @@ export type ToolAudience = 'anyone' | 'owner';
 export interface ToolParamSpec {
   type: 'string' | 'number' | 'integer' | 'boolean';
   description: string;
-  enum?: string[];
+  enum?: readonly string[];
   /** Required for THIS action (checked in registry.execute, reported back to the model). */
   required?: boolean;
+  /** Other spellings accepted (forum_id for forumId); mapped to this name before validation. */
+  aliases?: readonly string[];
 }
 
 export interface ToolActionSpec {
@@ -104,6 +106,32 @@ export function gatesFor(actions: ToolActions | undefined, action: string): Tool
     return strictest(actions);
   }
   return gatesOf(actions[action]);
+}
+
+/**
+ * Rename declared aliases (forum_id) to their canonical param (forumId) for this action. The
+ * canonical name wins if both are present. Returns a new object; undeclared actions pass through.
+ */
+export function canonicalParams(
+  actions: ToolActions | undefined,
+  action: string,
+  params: Record<string, unknown>
+): Record<string, unknown> {
+  if (!actions || !Object.hasOwn(actions, action)) {
+    return params;
+  }
+  const out = { ...params };
+  for (const [name, spec] of Object.entries(actions[action].params ?? {})) {
+    for (const alias of spec.aliases ?? []) {
+      if (Object.hasOwn(out, alias)) {
+        if (!Object.hasOwn(out, name)) {
+          out[name] = out[alias];
+        }
+        delete out[alias];
+      }
+    }
+  }
+  return out;
 }
 
 /** Params this action declares as required (none for an undeclared action). */

@@ -6,7 +6,13 @@ import {
   ParameterSchema,
 } from '../errors.js';
 import { isOwnerConfirmed } from './approval-gate.js';
-import { gatesFor, requiredParamsFor, OWNER_ONLY_REFUSAL, type ToolActions } from './tool-policy.js';
+import {
+  gatesFor,
+  requiredParamsFor,
+  canonicalParams,
+  OWNER_ONLY_REFUSAL,
+  type ToolActions,
+} from './tool-policy.js';
 import { isOwner } from '../../shared/config/owner.js';
 import { createPendingAction, findPendingDuplicate } from '../../shared/pending-actions.js';
 import { pingApprovalNeeded } from './approval-ping.js';
@@ -556,6 +562,9 @@ export class CapabilityRegistry {
       logger.warn(`⚠️ ${formatStructuredErrorCompact(structuredError)}`);
       throw new Error(JSON.stringify(structuredError));
     }
+
+    // Declared aliases (forum_id) become their canonical names (forumId) first.
+    params = canonicalParams(capability.actions, action, params ?? {});
 
     // Validate required parameters: the tool-wide list plus this action's declared ones
     // (tool-policy.ts). The schema can't require per-action params, so this is where they bind.

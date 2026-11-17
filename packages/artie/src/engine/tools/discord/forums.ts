@@ -707,7 +707,11 @@ ${JSON.stringify(
   return response_text;
 }
 
-const FORUM_ID = { type: 'string', description: 'Forum channel id (from list-forums)' } as const;
+const FORUM_ID = {
+  type: 'string',
+  description: 'Forum channel id (from list-forums)',
+  aliases: ['forum_id'],
+} as const;
 
 export const discordForumsCapability: RegisteredCapability = {
   name: 'discord-forums',
@@ -718,7 +722,14 @@ export const discordForumsCapability: RegisteredCapability = {
     'list-threads': { effect: 'read', params: { forumId: { ...FORUM_ID, required: true } } },
     'get-thread': {
       effect: 'read',
-      params: { threadId: { type: 'string', description: 'Forum thread id', required: true } },
+      params: {
+        threadId: {
+          type: 'string',
+          description: 'Forum thread id',
+          required: true,
+          aliases: ['thread_id'],
+        },
+      },
     },
     'get-forum-summary': { effect: 'read', params: { forumId: { ...FORUM_ID, required: true } } },
     // Creates GitHub issues through the gateway: outside Discord, so it needs EJ's approval

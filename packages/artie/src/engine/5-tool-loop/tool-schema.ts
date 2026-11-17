@@ -85,20 +85,26 @@ function exampleParams(cap: RegisteredCapability): string[] {
   return [...names].sort();
 }
 
-/** "what it is (for list-threads, get-forum-summary; required)" — compact, repeated per call. */
+/**
+ * "what it is (for create, update; required for create)": compact, repeated per call. Names
+ * which actions take it and, separately, which require it, so an optional-on-update param
+ * never reads as required there (Codex).
+ */
 function paramDescription(
   spec: { description: string; usedBy: string[]; requiredBy: string[] },
   actionCount: number
 ): string {
-  let scope = '';
+  const parts: string[] = [];
   if (spec.usedBy.length < actionCount) {
-    scope = ` (for ${spec.usedBy.join(', ')}`;
-    if (spec.requiredBy.length > 0) {
-      scope += '; required';
-    }
-    scope += ')';
+    parts.push(`for ${spec.usedBy.join(', ')}`);
   }
-  return `${spec.description}${scope}`;
+  if (spec.requiredBy.length > 0 && spec.requiredBy.length < actionCount) {
+    parts.push(`required for ${spec.requiredBy.join(', ')}`);
+  }
+  if (parts.length === 0) {
+    return spec.description;
+  }
+  return `${spec.description} (${parts.join('; ')})`;
 }
 
 export function capabilityToTool(cap: RegisteredCapability): ToolDefinition {
