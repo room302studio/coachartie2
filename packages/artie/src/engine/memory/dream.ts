@@ -53,6 +53,7 @@ const BOOKKEEPING_TAGS = new Set([
 /** Tags other code reads by name: never dropped by the re-tag. */
 const STRUCTURAL_TAGS = new Set([
   'pinned',
+  'scope:me', // memory.ts PERSONAL_TAG: recall's "about you" slot reads only rows carrying it
   'quest', // tasks tool queries tags LIKE '%"quest"%'
   'user-profile',
   'passive-learning', // recall filters on it (store.ts)

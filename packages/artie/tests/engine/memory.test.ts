@@ -132,7 +132,15 @@ describe('Memory Capability', () => {
       );
       expect(guildOf('scope-test: likes rye')).toBeUndefined();
       const tagsOf = (text: string) => remember.mock.calls.find((c) => c[1] === text)?.[5];
-      expect(tagsOf('scope-test: likes rye')).toContain('personal');
+      expect(tagsOf('scope-test: likes rye')).toContain('scope:me');
+
+      // The marker can't be forged through tags or kind on a "here" write.
+      await memoryCapability.handler(
+        { action: 'remember', scope: 'here', kind: 'scope:me', tags: ['scope:me', 'ok'], content: 'scope-test: forged' },
+        undefined,
+        { userId: testUserId, guildId: 'g-room302' }
+      );
+      expect(tagsOf('scope-test: forged')).toEqual(['ok']);
 
       await memoryCapability.handler(
         { action: 'remember', scope: 'here', content: 'scope-test: server ships fridays', guildId: 'g-forged' },
@@ -140,7 +148,7 @@ describe('Memory Capability', () => {
         { userId: testUserId, guildId: 'g-room302' }
       );
       expect(guildOf('scope-test: server ships fridays')).toBe('g-room302'); // never the forged id
-      expect(tagsOf('scope-test: server ships fridays') ?? []).not.toContain('personal');
+      expect(tagsOf('scope-test: server ships fridays') ?? []).not.toContain('scope:me');
 
       // Internal (context-less) "here" writes need a guild too.
       await expect(

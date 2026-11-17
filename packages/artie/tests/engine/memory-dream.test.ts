@@ -114,7 +114,8 @@ describe('dream', () => {
   });
 
   it('replaces filler tags but keeps vocabulary and structural ones', () => {
-    const id = insert('Member B builds express-only lines', 5, ['this', 'primarily', 'transit', 'quest']);
+    // scope:me is the personal-fact marker recall's "about you" slot reads: dreaming must keep it.
+    const id = insert('Member B builds express-only lines', 5, ['this', 'primarily', 'transit', 'quest', 'scope:me']);
     const m = db.get<any>('SELECT id, content, tags, importance, metadata FROM memories WHERE id = ?', [id]);
     const out = dreamMod.applyVerdict(
       m,
@@ -123,7 +124,7 @@ describe('dream', () => {
       new Set(['transit'])
     );
     expect(out).toBe('tagged');
-    expect(JSON.parse(row(id).tags)).toEqual(['transit', 'quest', 'preference', 'express']);
+    expect(JSON.parse(row(id).tags)).toEqual(['transit', 'quest', 'scope:me', 'preference', 'express']);
   });
 
   it('files an unknown junk category under filler', () => {

@@ -34,6 +34,19 @@ describe('aboutYou', () => {
     expect(a.picked).toEqual(['name is Sam', 'is vegetarian']);
     expect(aboutYou(own, 10).line).toBe('');
   });
+
+  it('skips a fact that does not fit and keeps going; never truncates', () => {
+    const long = { content: `prefers ${'x'.repeat(150)}`, importance: 10, date: '2026-11-15' };
+    const a = aboutYou([long, ...own], 120);
+    expect(a.picked).not.toContain(long.content);
+    expect(a.picked).toContain('name is Sam');
+    expect(a.line).not.toContain('xxx');
+  });
+
+  it('stops at three facts', () => {
+    const many = Array.from({ length: 6 }, (_, i) => ({ content: `fact ${i}`, importance: 7, date: '' }));
+    expect(aboutYou(many, 1000).picked).toHaveLength(3);
+  });
 });
 
 describe('withAboutYou', () => {

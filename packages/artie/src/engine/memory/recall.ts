@@ -140,7 +140,8 @@ function personalFacts(userId: string): OwnMemory[] {
               CASE WHEN json_valid(memories.tags) THEN memories.tags ELSE '[]' END
             ) WHERE value = '${PERSONAL_TAG}')
           ORDER BY importance DESC, timestamp DESC LIMIT ?`,
-        [userId, ABOUT_YOU_MIN_IMPORTANCE, ABOUT_YOU_SLOTS]
+        // Spares, so a fact too long to fit can be skipped for the next one.
+        [userId, ABOUT_YOU_MIN_IMPORTANCE, ABOUT_YOU_SLOTS * 3]
       )
       .map((m) => ({
         content: stripCapabilityTags(m.content),
@@ -162,15 +163,23 @@ const ABOUT_YOU_PREFIX = "About the person you're talking to: ";
 export function aboutYou(own: OwnMemory[], maxChars: number): { line: string; picked: string[] } {
   const ranked = own
     .filter((m) => m.importance >= ABOUT_YOU_MIN_IMPORTANCE && m.content.trim() !== '')
-    .sort((a, b) => b.importance - a.importance || b.date.localeCompare(a.date))
-    .slice(0, ABOUT_YOU_SLOTS);
+    .sort((a, b) => b.importance - a.importance || b.date.localeCompare(a.date));
   const picked: string[] = [];
   const parts: string[] = [];
   for (const m of ranked) {
-    const part = m.content.slice(0, ABOUT_YOU_MAX_CHARS);
+    if (parts.length >= ABOUT_YOU_SLOTS) {
+      break;
+    }
+    // Whole facts only (a cut-off preference can say the opposite of the full one). A fact that
+    // doesn't fit is skipped, not a stop: shorter ones behind it still get their slot, and the
+    // skipped one stays in the ranked pool (Codex).
+    const part = m.content;
+    if (part.length > ABOUT_YOU_MAX_CHARS) {
+      continue;
+    }
     const next = `${ABOUT_YOU_PREFIX}${[...parts, part].join('; ')}.`;
     if (next.length > maxChars) {
-      break;
+      continue;
     }
     parts.push(part);
     picked.push(m.content);

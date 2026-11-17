@@ -54,8 +54,13 @@ interface MemoryParams {
  */
 export const NON_OWNER_MAX_IMPORTANCE = 6;
 
-/** remember scope="me" tags its row with this; recall's "about you" slot reads only these. */
-export const PERSONAL_TAG = 'personal';
+/**
+ * remember scope="me" tags its row with this; recall's "about you" slot reads only these.
+ * Not 'personal': 46 legacy rows already carry that as a free-form tag (Codex). No row had any
+ * 'scope:' tag on 2026-11-17, and the model can't supply one (stripped in remember).
+ */
+export const PERSONAL_TAG = 'scope:me';
+const RESERVED_TAG_PREFIX = 'scope:';
 
 /** Whose memories a recall searches: EJ may name anyone; everyone else gets only their own. */
 export function recallTargetUser(requestedUser: unknown, callerId: string): string {
@@ -838,8 +843,15 @@ async function handleMemoryAction(
         // goal | ...) folded in as just another tag — the memory-zoo collapse (2026-10-26)
         // gives every kind of fact one home with one classification axis instead of a
         // separate tool per kind.
-        const explicitTags = ensureStringArray(params.tags);
-        if (params.kind && typeof params.kind === 'string') {
+        // 'scope:*' is reserved for the scope marker below; a model can't forge it.
+        const explicitTags = ensureStringArray(params.tags).filter(
+          (t) => !t.startsWith(RESERVED_TAG_PREFIX)
+        );
+        if (
+          params.kind &&
+          typeof params.kind === 'string' &&
+          !params.kind.startsWith(RESERVED_TAG_PREFIX)
+        ) {
           explicitTags.push(params.kind);
         }
         // Scope (EJ 2026-11-17: "personal facts follow you"). Artie must choose every time:
@@ -852,9 +864,7 @@ async function handleMemoryAction(
           guildId = undefined;
           // Marks it as a personal fact for recall's "about you" slot. Untagged guild-free rows
           // (everything written before 2026-11-17) are not treated as personal.
-          if (!explicitTags.includes(PERSONAL_TAG)) {
-            explicitTags.push(PERSONAL_TAG);
-          }
+          explicitTags.push(PERSONAL_TAG);
         } else if (params.scope === 'here') {
           // A conversation's own guild; only internal callers with no context (observation,
           // reaction feedback) may name one, so a DM can't plant a memory in a server.
