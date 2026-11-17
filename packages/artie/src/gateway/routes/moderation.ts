@@ -136,7 +136,20 @@ export async function resolveTarget(
       }
     }
   }
-  return requireCompleteSearch(resolveByName(ref.name, candidates), searchComplete, ref.name);
+  const result = resolveByName(ref.name, candidates);
+  // The REST search only covers username and nickname. A match made ONLY on a display name
+  // (globalName) can't be proven unique: another member could share it and be in neither the
+  // cache nor recent messages (Codex). Those need an @mention or id.
+  let coveredBySearch = false;
+  if (result.ok) {
+    const wanted = ref.name.trim().toLowerCase();
+    coveredBySearch = candidates.some(
+      (c) =>
+        c.id === result.id &&
+        [c.username, c.nickname].some((n) => (n || '').trim().toLowerCase() === wanted)
+    );
+  }
+  return requireCompleteSearch(result, searchComplete && coveredBySearch, ref.name);
 }
 
 /** Facts for the pure preflight, read defensively (a partial guild just means "unknown"). */

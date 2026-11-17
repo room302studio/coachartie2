@@ -112,7 +112,16 @@ const ERROR_CATEGORIES: Array<[RegExp, string]> = [
   [/invalid|must be|out of range|not allowed/i, 'invalid_input'],
 ];
 
-const SAFE_CODE = /^[A-Za-z0-9_.:-]{1,64}$/;
+/**
+ * Explicit allowlists, not a character check: `{"errorCode":"sk_live_..."}` or a custom
+ * `class LeakyError` would pass a regex (Codex). Unknown codes become 'structured_error'.
+ * Codes from createStructuredError in registry.ts / tools (grep "_00").
+ */
+const KNOWN_ERROR_CODES = new Set(['ACTION_NOT_FOUND_005', 'PARAM_MISSING_001', 'PARAM_MISSING_003']);
+const BUILTIN_ERROR_NAMES = new Set([
+  'TypeError', 'RangeError', 'SyntaxError', 'ReferenceError', 'EvalError', 'URIError',
+  'AggregateError', 'AbortError', 'TimeoutError',
+]);
 
 /** A fixed category for an error. Structured registry errors keep only their (safe) code. */
 export function describeError(error: unknown): string {
@@ -127,8 +136,11 @@ export function describeError(error: unknown): string {
   if (message.startsWith('{')) {
     try {
       const parsed = JSON.parse(message);
-      if (parsed && typeof parsed.errorCode === 'string' && SAFE_CODE.test(parsed.errorCode)) {
-        return parsed.errorCode;
+      if (parsed && typeof parsed.errorCode === 'string') {
+        if (KNOWN_ERROR_CODES.has(parsed.errorCode)) {
+          return parsed.errorCode;
+        }
+        return 'structured_error';
       }
     } catch {
       // not JSON after all
@@ -140,7 +152,7 @@ export function describeError(error: unknown): string {
     }
   }
   // Built-in error names (TypeError, RangeError...) are safe; anything else is just "error".
-  if (SAFE_CODE.test(name) && /Error$/.test(name) && name !== 'Error') {
+  if (BUILTIN_ERROR_NAMES.has(name)) {
     return name;
   }
   return 'error';

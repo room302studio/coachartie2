@@ -71,6 +71,28 @@ const THUMBS_DOWN_EMOJI = '👎';
 
 // Reaction deduplication cache
 const reactionCache = new Map<string, number>();
+
+/**
+ * Drop the 60s add-dedupe entries for a bulk-cleared message (every emoji, or one), so a re-add
+ * right after the clear is recorded instead of swallowed (Codex). Keys: `${msg}-${user}-${emoji}`.
+ */
+export function forgetDedupe(messageId: string, emoji?: string): void {
+  for (const key of [...reactionCache.keys()]) {
+    if (!key.startsWith(`${messageId}-`)) continue;
+    if (emoji !== undefined && !key.endsWith(`-${emoji}`)) continue;
+    reactionCache.delete(key);
+  }
+}
+
+/** Test hook. */
+export function dedupeKeysForTest(): string[] {
+  return [...reactionCache.keys()];
+}
+
+/** Test hook. */
+export function markDedupeForTest(key: string): void {
+  reactionCache.set(key, Date.now());
+}
 const REACTION_CACHE_TTL = 60000; // 60 seconds TTL
 
 // Emoji sentiment categories - based on REAL observed reactions (no regex - simple lookup)
@@ -345,6 +367,7 @@ export function setupReactionHandler(client: Client) {
   // events, so the logged adds are dropped here (Codex).
   client.on(Events.MessageReactionRemoveAll, async (message: any) => {
     try {
+      forgetDedupe(message.id);
       clearLoggedReactions(message.channelId, message.id);
     } catch (error) {
       logger.debug('Failed to clear logged reactions:', error);
@@ -353,6 +376,7 @@ export function setupReactionHandler(client: Client) {
   client.on(Events.MessageReactionRemoveEmoji, async (reaction: any) => {
     try {
       if (!reaction.emoji?.name) return;
+      forgetDedupe(reaction.message.id, reaction.emoji.name);
       clearLoggedReactions(
         reaction.message.channelId,
         reaction.message.id,

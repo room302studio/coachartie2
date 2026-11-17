@@ -196,9 +196,20 @@ function fakeClient(opts: { timeout?: () => Promise<unknown>; withSearch?: boole
 }
 
 describe('resolveTarget (fake discord.js client)', () => {
-  it('finds a display name in the member cache', async () => {
+  it('a username in the cache resolves when the search is complete', async () => {
     const { client } = fakeClient();
-    expect(await resolveTarget(client, 'g', 'salty pancakes')).toEqual({ ok: true, id: members[1].id });
+    expect(await resolveTarget(client, 'g', 'pancake_42')).toEqual({ ok: true, id: members[1].id });
+  });
+  // Codex: REST search can't see display names, so a display-name-only match could hide a
+  // second member with the same display name. For a timeout, ask for the @mention instead.
+  it('a display-name-only match asks for an @mention (uniqueness unprovable)', async () => {
+    const { client } = fakeClient();
+    const r = await resolveTarget(client, 'g', 'salty pancakes');
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.reason).toBe('uncertain');
+      expect(r.error).toContain('@mention');
+    }
   });
   it('uses REST search too, without fetching the whole member list', async () => {
     const { client, search } = fakeClient({ withSearch: true });
@@ -243,7 +254,7 @@ describe('timeoutMember errors', () => {
         throw Object.assign(new Error('Missing Permissions'), { code: 50013 });
       },
     });
-    const r = await timeoutMember(client, { guildId: unique(), userId: 'salty pancakes', durationMinutes: 5, reason: 'off-topic' });
+    const r = await timeoutMember(client, { guildId: unique(), userId: 'pancake_42', durationMinutes: 5, reason: 'off-topic' });
     expect(r.status).toBe(403);
     expect((r.body as any).error).toContain('missing permissions');
   });
@@ -257,7 +268,7 @@ describe('timeoutMember errors', () => {
 
   it('rejects an out-of-range duration before touching Discord', async () => {
     const { client, target } = fakeClient();
-    const r = await timeoutMember(client, { guildId: unique(), user: 'salty pancakes', durationMinutes: 500, reason: 'x' });
+    const r = await timeoutMember(client, { guildId: unique(), user: 'pancake_42', durationMinutes: 500, reason: 'x' });
     expect(r.status).toBe(400);
     expect((r.body as any).error).toContain('out of range');
     expect(target.timeout).not.toHaveBeenCalled();
@@ -266,17 +277,24 @@ describe('timeoutMember errors', () => {
   it('refuses a target above the bot with the role explanation', async () => {
     const { client, target } = fakeClient();
     target.roles.highest.position = 10;
-    const r = await timeoutMember(client, { guildId: unique(), user: 'salty pancakes', durationMinutes: 5, reason: 'x' });
+    const r = await timeoutMember(client, { guildId: unique(), user: 'pancake_42', durationMinutes: 5, reason: 'x' });
     expect(r.status).toBe(403);
     expect((r.body as any).error).toContain("at or above Artie's");
     expect(target.timeout).not.toHaveBeenCalled();
   });
 
-  it('resolves a display name and times them out', async () => {
+  it('resolves a username and times them out', async () => {
     const { client, target } = fakeClient();
-    const r = await timeoutMember(client, { guildId: unique(), user: 'Salty Pancakes', durationMinutes: 5, reason: 'off-topic' });
+    const r = await timeoutMember(client, { guildId: unique(), user: 'Pancake_42', durationMinutes: 5, reason: 'off-topic' });
     expect(r.status).toBe(200);
     expect(target.timeout).toHaveBeenCalledWith(5 * 60_000, 'off-topic');
+  });
+
+  it('a display name alone asks for the @mention and never times anyone out', async () => {
+    const { client, target } = fakeClient();
+    const r = await timeoutMember(client, { guildId: unique(), user: 'Salty Pancakes', durationMinutes: 5, reason: 'off-topic' });
+    expect(r.status).toBe(409);
+    expect(target.timeout).not.toHaveBeenCalled();
   });
 });
 

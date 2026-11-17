@@ -187,6 +187,32 @@ const LIVE_MAX_USERS = 25;
  * channel and guild; the fetched channel must belong to that guild (or be a DM when guildId is
  * null), so a message id from elsewhere can never be read.
  */
+/**
+ * Whether the person asking may see this channel's history (View Channel + Read Message History).
+ * Reaction reads return earlier message snippets and who reacted, which the bot can see with
+ * its own permissions; the asker's must decide (Codex). A DM is the asker's own: allowed.
+ * Fails closed: any error is "no".
+ */
+export async function requesterCanReadHistory(
+  discordClient: Client,
+  channelId: string,
+  guildId: string | null,
+  userId: string
+): Promise<boolean> {
+  if (!guildId) return true;
+  try {
+    const channel: any = await discordClient.channels.fetch(channelId);
+    if (!channel || (channel.guildId ?? null) !== guildId) return false;
+    const member = await channel.guild.members.fetch(userId);
+    const perms = channel.permissionsFor(member);
+    if (!perms) return false;
+    return perms.has('ViewChannel') && perms.has('ReadMessageHistory');
+  } catch (error) {
+    logger.debug('[reaction-log] history permission check failed (denying):', error);
+    return false;
+  }
+}
+
 export async function fetchLiveReactions(
   discordClient: Client,
   channelId: string,

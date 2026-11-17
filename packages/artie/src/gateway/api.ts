@@ -127,6 +127,17 @@ export async function readMessageReactions(
   return fetchLiveReactions(c, channelId, messageId, guildId);
 }
 
+/** Whether userId may read this channel's history (always true in a DM). Fails closed. */
+export async function canReadHistory(
+  channelId: string,
+  guildId: string | null,
+  userId: string
+): Promise<boolean> {
+  const c = client();
+  const { requesterCanReadHistory } = await import('./1-receive/reaction-log.js');
+  return requesterCanReadHistory(c, channelId, guildId, userId);
+}
+
 export async function setNickname(guildId: string, body: { nickname?: string | null }): Promise<ApiResult> {
   const c = client();
   return (await proxy()).setNickname(c, { guildId }, wire(body));

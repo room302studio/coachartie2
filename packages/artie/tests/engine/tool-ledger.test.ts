@@ -455,10 +455,20 @@ describe('describeError never keeps raw text', () => {
     }
   });
 
-  it('keeps a structured registry error code only when it is a safe token', () => {
-    expect(describeError(new Error(JSON.stringify({ errorCode: 'ACTION_NOT_SUPPORTED' })))).toBe(
-      'ACTION_NOT_SUPPORTED'
+  it('keeps a structured error code only when it is a known registry code', () => {
+    expect(describeError(new Error(JSON.stringify({ errorCode: 'PARAM_MISSING_001' })))).toBe(
+      'PARAM_MISSING_001'
     );
-    expect(describeError(new Error(JSON.stringify({ errorCode: 'leak tok_SECRET123 here' })))).toBe('error');
+    // Codex: a well-formed-looking code is still not trusted unless it is on the list.
+    expect(describeError(new Error(JSON.stringify({ errorCode: 'sk_live_SECRET123' })))).toBe(
+      'structured_error'
+    );
+    class SecretTokenError extends Error {
+      constructor() {
+        super('x');
+        this.name = 'tok_SECRET123Error';
+      }
+    }
+    expect(describeError(new SecretTokenError())).toBe('error');
   });
 });

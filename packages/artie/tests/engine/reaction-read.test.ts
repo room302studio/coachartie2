@@ -3,6 +3,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 vi.mock('../../src/gateway/api.js', () => ({
   addReaction: vi.fn(),
   readMessageReactions: vi.fn(),
+  canReadHistory: vi.fn(async () => true),
   isOk: (r: any) => r.status >= 200 && r.status < 300,
 }));
 
@@ -41,9 +42,26 @@ function add(over: Partial<Parameters<typeof insertReaction>[0]> = {}) {
 
 function run(params: any, ctx: any): Promise<any> {
   return discordReactionCapability
-    .handler({ action: 'read', ...params }, undefined, ctx)
+    .handler({ action: 'read', ...params }, undefined, { userId: 'asker', ...ctx })
     .then((s: string) => JSON.parse(s));
 }
+
+describe('reaction read: the asker needs history access', () => {
+  it('refuses when the asker cannot read history here, and never touches the log', async () => {
+    add({ messageId: 'secret' });
+    vi.mocked(gateway.canReadHistory).mockResolvedValueOnce(false);
+    const out = await run({}, { guildId: 'g1', channelId: 'c1' });
+    expect(out.success).toBe(false);
+    expect(JSON.stringify(out)).not.toContain('secret');
+  });
+
+  it('refuses with no asker at all (fails closed)', async () => {
+    const out = await discordReactionCapability
+      .handler({ action: 'read' }, undefined, { guildId: 'g1', channelId: 'c1' })
+      .then((s: string) => JSON.parse(s));
+    expect(out.success).toBe(false);
+  });
+});
 
 beforeEach(() => {
   getSyncDb().run(`DELETE FROM reaction_log`);
@@ -224,6 +242,18 @@ describe('emoji identity and bulk removals', () => {
     const view = formatPersisted(rows, NOW, 5);
     expect(view[0].reactions).toHaveLength(2);
     expect(view[0].reactions.every((r) => r.count === 1 && r.emoji === ':party:')).toBe(true);
+  });
+
+  it('a bulk clear also forgets the 60s add-dedupe, so a re-add is recorded', async () => {
+    const mod = await import('../../src/gateway/1-receive/on-reaction.js');
+    mod.markDedupeForTest('m1-u1-👍');
+    mod.markDedupeForTest('m1-u2-🔥');
+    mod.markDedupeForTest('m2-u1-👍');
+    mod.forgetDedupe('m1', '👍');
+    expect(mod.dedupeKeysForTest().sort()).toEqual(['m1-u2-🔥', 'm2-u1-👍']);
+    mod.forgetDedupe('m1');
+    expect(mod.dedupeKeysForTest()).toEqual(['m2-u1-👍']);
+    mod.forgetDedupe('m2');
   });
 
   it('clearing all reactions, or one emoji, drops them from read', async () => {

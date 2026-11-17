@@ -122,6 +122,24 @@ async function readReactions(params: any, context?: CapabilityContext): Promise<
   const now = Date.now();
   const messageId = String(params.message_id || '').trim();
 
+  // Both read paths show earlier messages and who reacted: the asker must be allowed to read
+  // this channel's history themselves, not just the bot (Codex). Fails closed.
+  const askerId = context?.userId;
+  let allowed = false;
+  if (askerId) {
+    try {
+      allowed = await gateway.canReadHistory(String(channelId), guildId, String(askerId));
+    } catch {
+      allowed = false;
+    }
+  }
+  if (!allowed) {
+    return JSON.stringify({
+      success: false,
+      error: "you'd need Read Message History in this channel to look up reactions here",
+    });
+  }
+
   if (messageId) {
     try {
       const resp = await gateway.readMessageReactions(String(channelId), messageId, guildId);
