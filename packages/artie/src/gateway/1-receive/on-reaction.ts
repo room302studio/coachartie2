@@ -23,7 +23,7 @@ import { isBlockedUser } from '../../shared/blocklist.js';
 import { telemetry } from '../telemetry.js';
 import { generateCorrelationId, getShortCorrelationId } from '../correlation.js';
 import { processUserIntent } from '../4-reply/stream-reply.js';
-import { recordReaction, clearLoggedReactions } from './reaction-log.js';
+import { recordReaction, clearLoggedReactions, emojiKey } from './reaction-log.js';
 
 // Import capabilities client for trace feedback correlation
 import { capabilitiesClient } from '../3-ask-engine/engine-client.js';
@@ -74,7 +74,8 @@ const reactionCache = new Map<string, number>();
 
 /**
  * Drop the 60s add-dedupe entries for a bulk-cleared message (every emoji, or one), so a re-add
- * right after the clear is recorded instead of swallowed (Codex). Keys: `${msg}-${user}-${emoji}`.
+ * right after the clear is recorded instead of swallowed (Codex).
+ * Keys: `${msg}-${user}-${emojiKey}` (emojiKey = unicode emoji or custom:<id>); pass the key.
  */
 export function forgetDedupe(messageId: string, emoji?: string): void {
   for (const key of [...reactionCache.keys()]) {
@@ -230,7 +231,9 @@ export function setupReactionHandler(client: Client) {
         );
 
         // Deduplication: prevent processing same reaction multiple times
-        const reactionKey = `${reaction.message.id}-${user.id}-${emoji}`;
+        // Keyed by emoji identity (a custom emoji's id), so two custom emojis that share a name
+        // aren't deduped into one (Codex).
+        const reactionKey = `${reaction.message.id}-${user.id}-${emojiKey(emoji, reaction.emoji.id)}`;
         const now = Date.now();
 
         // Cleanup expired cache entries
@@ -344,7 +347,7 @@ export function setupReactionHandler(client: Client) {
         const emoji = reaction.emoji.name;
         if (!emoji) return;
         // A re-add right after a removal must not be swallowed by the 60s dedupe.
-        reactionCache.delete(`${reaction.message.id}-${user.id}-${emoji}`);
+        reactionCache.delete(`${reaction.message.id}-${user.id}-${emojiKey(emoji, reaction.emoji.id)}`);
         recordReaction({
           messageId: reaction.message.id,
           channelId: reaction.message.channelId,
@@ -376,7 +379,7 @@ export function setupReactionHandler(client: Client) {
   client.on(Events.MessageReactionRemoveEmoji, async (reaction: any) => {
     try {
       if (!reaction.emoji?.name) return;
-      forgetDedupe(reaction.message.id, reaction.emoji.name);
+      forgetDedupe(reaction.message.id, emojiKey(reaction.emoji.name, reaction.emoji.id));
       clearLoggedReactions(
         reaction.message.channelId,
         reaction.message.id,

@@ -137,6 +137,11 @@ export async function resolveTarget(
     }
   }
   const result = resolveByName(ref.name, candidates);
+  // Known limit (accepted 2026-11-17, after four Codex rounds): an exact USERNAME match acts,
+  // because Discord usernames are globally unique, so it is a real identity. The residual risk is
+  // intent, not identity: someone types "sam" meaning a different member whose display name is
+  // Sam. An id or @mention is always exact; the tool description steers toward those.
+  //
   // The REST search only covers username and nickname. A match made ONLY on a display name
   // (globalName) can't be proven unique: another member could share it and be in neither the
   // cache nor recent messages (Codex). Those need an @mention or id.

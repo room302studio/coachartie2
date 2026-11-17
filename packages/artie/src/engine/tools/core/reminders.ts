@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { formatInTimeZone } from 'date-fns-tz';
 import { schedulerService } from '../../jobs/scheduler.js';
 import { RegisteredCapability } from '../../5-tool-loop/registry.js';
@@ -128,7 +129,9 @@ export const schedulerCapability: RegisteredCapability = {
 
         const delayMs = parseInt(String(delay)) || 60000; // Default 1 minute
         const reminderName = `reminder-${Date.now()}`;
-        const jobId = `rem-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 4)}`;
+        // Short but collision-safe: two reminders in the same millisecond must not share a BullMQ
+        // id (BullMQ would silently drop the second while both callers hear "set") (Codex).
+        const jobId = `rem-${randomUUID().replace(/-/g, '').slice(0, 12)}`;
 
         await schedulerService.scheduleOnce(
           reminderName,
@@ -241,7 +244,10 @@ export const schedulerCapability: RegisteredCapability = {
           if (jobOwner !== callerId && !owner) {
             return `❌ I don't see a reminder "${taskId}" of yours.`;
           }
-          await schedulerService.cancelOnce(taskId);
+          const removed = await schedulerService.cancelOnce(taskId);
+          if (!removed) {
+            return `❌ Reminder "${taskId}" couldn't be cancelled (it may have just fired or already been removed).`;
+          }
           return `✅ Reminder "${taskId}" cancelled`;
         }
 
