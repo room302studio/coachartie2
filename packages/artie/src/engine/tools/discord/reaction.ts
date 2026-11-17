@@ -68,14 +68,16 @@ export function formatPersisted(rows: PersistedReaction[], now: number, limit: n
   }
   const out: MessageReactionsView[] = [];
   for (const [messageId, list] of byMessage) {
-    const byEmoji = new Map<string, string[]>();
+    // Grouped by the emoji's identity (a custom emoji's id), labeled afterwards: two different
+    // custom emojis that share a name stay separate (Codex).
+    const byEmoji = new Map<string, { label: string; who: string[] }>();
     for (const r of list) {
-      const who = byEmoji.get(r.emoji) ?? [];
-      who.push(r.userLabel);
-      byEmoji.set(r.emoji, who);
+      const entry = byEmoji.get(r.emoji) ?? { label: r.emojiLabel || r.emoji, who: [] };
+      entry.who.push(r.userLabel);
+      byEmoji.set(r.emoji, entry);
     }
-    const reactions: ReactionView[] = [...byEmoji.entries()].map(([emoji, who]) => ({
-      emoji,
+    const reactions: ReactionView[] = [...byEmoji.values()].map(({ label, who }) => ({
+      emoji: label,
       count: who.length,
       who: who.slice(0, WHO_MAX),
     }));
@@ -149,13 +151,13 @@ async function readReactions(params: any, context?: CapabilityContext): Promise<
 
   const hours = clampInt(params.hours, DEFAULT_HOURS, 1, MAX_HOURS);
   const limit = clampInt(params.limit, DEFAULT_LIMIT, 1, MAX_LIMIT);
-  let scope: 'channel' | 'guild' = 'channel';
-  if (params.scope === 'guild') scope = 'guild';
+  // Current channel only. A server-wide read returned snippets and reactor names from private
+  // channels the asker can't see (Codex), and per-channel permission checks aren't worth it.
   try {
     const rows = listStandingReactions({
       guildId,
       channelId: String(channelId),
-      scope,
+      scope: 'channel',
       sinceMs: hours * HOUR_MS,
       now,
     });
@@ -194,11 +196,6 @@ export const discordReactionCapability: RegisteredCapability = {
         },
         hours: { type: 'integer', description: 'Look back this many hours (default 24, max 336)' },
         limit: { type: 'integer', description: 'Max messages to return (default 10, max 25)' },
-        scope: {
-          type: 'string',
-          enum: ['channel', 'guild'],
-          description: 'channel (default) or the whole server; DMs only ever see their own channel',
-        },
       },
     },
   },
@@ -210,7 +207,7 @@ export const discordReactionCapability: RegisteredCapability = {
     '🫀 🧷 🪬 🚽 🦟 🧫) instead of explaining the joke. Optional message_id to react to a specific message. ' +
     'action="read" looks reactions up: with message_id it reads that message live (emoji, counts, who); ' +
     'without it, it lists who reacted to your recent messages in this conversation (last 24h by default, ' +
-    'kept 14 days). It only sees this server/channel, or this DM.',
+    'kept 14 days). It only sees this channel, or this DM.',
   requiredParams: [],
   examples: [
     '<capability name="discord-reaction" action="read" />',

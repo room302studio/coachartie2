@@ -16,7 +16,7 @@ import {
 import { isOwner } from '../../shared/config/owner.js';
 import { createPendingAction, findPendingDuplicate } from '../../shared/pending-actions.js';
 import { pingApprovalNeeded } from './approval-ping.js';
-import { trackRegistryCall, type RegistryCallRecord } from './tool-ledger.js';
+import { trackRegistryCall, setLedgerNameCheck, type RegistryCallRecord } from './tool-ledger.js';
 
 /**
  * Context passed to capability handlers
@@ -890,3 +890,18 @@ export class CapabilityRegistry {
 // register-tools.ts (capabilityBootstrap), which also logs the roster. The old
 // module-load side-door here (embedded_mcp, scrapbook) moved there in wave 7.
 export const capabilityRegistry = new CapabilityRegistry();
+
+// The ledger stores only registered names (anything else becomes "(unknown)"): a model-invented
+// tool/action string can carry arbitrary text and self-stats:tools is open to everyone (Codex).
+setLedgerNameCheck((tool, action) => {
+  if (!capabilityRegistry.has(tool)) {
+    return { tool: false, action: false };
+  }
+  const canonical = resolveToolCall(tool, action, undefined, { log: false });
+  const cap = capabilityRegistry.list().find((c) => c.name === canonical.name);
+  let actionKnown = false;
+  if (cap) {
+    actionKnown = cap.supportedActions.includes(action) || cap.supportedActions.includes(canonical.action);
+  }
+  return { tool: true, action: actionKnown };
+});

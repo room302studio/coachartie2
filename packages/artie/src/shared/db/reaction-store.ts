@@ -18,7 +18,10 @@ export interface PersistedReaction {
   guildId: string | null;
   channelId: string;
   messageId: string;
+  /** Identity: the unicode emoji, or `custom:<id>` (rename-proof). Group and match on this. */
   emoji: string;
+  /** What to show: the unicode emoji, or `:name:` as it was when the reaction was added. */
+  emojiLabel?: string;
   userId: string;
   userLabel: string;
   messageExcerpt?: string;
@@ -31,6 +34,7 @@ interface ReactionRow {
   channel_id: string;
   message_id: string;
   emoji: string;
+  emoji_label: string | null;
   user_id: string;
   user_label: string;
   message_excerpt: string | null;
@@ -51,6 +55,7 @@ function ensureTable(): void {
       channel_id TEXT NOT NULL,
       message_id TEXT NOT NULL,
       emoji TEXT NOT NULL,
+      emoji_label TEXT,
       user_id TEXT NOT NULL,
       user_label TEXT NOT NULL,
       message_excerpt TEXT,
@@ -84,13 +89,14 @@ export function insertReaction(r: PersistedReaction): void {
   ensureTable();
   getSyncDb().run(
     `INSERT INTO reaction_log
-       (guild_id, channel_id, message_id, emoji, user_id, user_label, message_excerpt, action, at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       (guild_id, channel_id, message_id, emoji, emoji_label, user_id, user_label, message_excerpt, action, at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       r.guildId,
       r.channelId,
       r.messageId,
       r.emoji,
+      r.emojiLabel ?? null,
       r.userId,
       r.userLabel,
       r.messageExcerpt ?? null,
@@ -116,13 +122,6 @@ export function clearReactions(messageId: string, emoji?: string): number {
     ]);
   }
   return Number((result as any)?.changes ?? 0);
-}
-
-/** `name:123` (a custom emoji's stored key) shows as `:name:`; unicode is shown as is. */
-export function displayEmoji(stored: string): string {
-  const custom = /^(.+):(\d{5,})$/.exec(stored);
-  if (custom) return `:${custom[1]}:`;
-  return stored;
 }
 
 export interface ReactionQuery {
@@ -166,7 +165,7 @@ export function listStandingReactions(q: ReactionQuery): PersistedReaction[] {
   }
 
   const rows = getSyncDb().all<ReactionRow>(
-    `SELECT guild_id, channel_id, message_id, emoji, user_id, user_label, message_excerpt, action, at
+    `SELECT guild_id, channel_id, message_id, emoji, emoji_label, user_id, user_label, message_excerpt, action, at
        FROM reaction_log WHERE ${where.join(' AND ')} ORDER BY at DESC, id DESC`,
     args
   );
@@ -182,7 +181,8 @@ export function listStandingReactions(q: ReactionQuery): PersistedReaction[] {
       guildId: row.guild_id,
       channelId: row.channel_id,
       messageId: row.message_id,
-      emoji: displayEmoji(row.emoji),
+      emoji: row.emoji,
+      emojiLabel: row.emoji_label ?? row.emoji,
       userId: row.user_id,
       userLabel: row.user_label,
       messageExcerpt: row.message_excerpt ?? undefined,

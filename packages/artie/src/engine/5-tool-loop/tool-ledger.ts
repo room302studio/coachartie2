@@ -187,6 +187,33 @@ export function pruneToolLedger(now: number = Date.now()): number {
   }
 }
 
+/**
+ * Which (tool, action) pairs are real. Set by the registry (it imports this module, so the
+ * ledger can't import it back). A model-invented name can carry arbitrary text, and
+ * self-stats:tools shows names to everyone, so anything unregistered is stored as UNKNOWN (Codex).
+ */
+type NameCheck = (tool: string, action: string) => { tool: boolean; action: boolean };
+let nameCheck: NameCheck | null = null;
+const UNKNOWN_NAME = '(unknown)';
+
+export function setLedgerNameCheck(check: NameCheck | null): void {
+  nameCheck = check;
+}
+
+function safeNames(tool: string, action: string): { tool: string; action: string } {
+  if (!nameCheck) {
+    return { tool: clip(tool, MAX_NAME_CHARS), action: clip(action, MAX_NAME_CHARS) };
+  }
+  const known = nameCheck(tool, action);
+  let safeTool = UNKNOWN_NAME;
+  let safeAction = UNKNOWN_NAME;
+  if (known.tool) {
+    safeTool = clip(tool, MAX_NAME_CHARS);
+    if (known.action) safeAction = clip(action, MAX_NAME_CHARS);
+  }
+  return { tool: safeTool, action: safeAction };
+}
+
 /** Insert one row. Never throws. Prunes on first use and then at most once a day. */
 export function writeLedgerRow(entry: LedgerEntry, now: number = Date.now()): void {
   try {
@@ -194,13 +221,14 @@ export function writeLedgerRow(entry: LedgerEntry, now: number = Date.now()): vo
     if (now - lastPruneAt > PRUNE_EVERY_MS) pruneToolLedger(now);
     let errorClass: string | null = null;
     if (entry.errorClass) errorClass = clip(entry.errorClass, MAX_ERROR_CHARS);
+    const names = safeNames(String(entry.tool ?? ''), String(entry.action ?? ''));
     getSyncDb().run(
       `INSERT INTO tool_call_ledger (ts, tool, action, outcome, error_class, duration_ms, attempts, user_id, guild_id)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         now,
-        clip(String(entry.tool ?? ''), MAX_NAME_CHARS),
-        clip(String(entry.action ?? ''), MAX_NAME_CHARS),
+        names.tool,
+        names.action,
         entry.outcome,
         errorClass,
         Math.max(0, Math.round(entry.durationMs ?? 0)),

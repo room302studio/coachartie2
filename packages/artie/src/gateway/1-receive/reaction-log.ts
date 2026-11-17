@@ -40,12 +40,17 @@ const RECENT_WINDOW_MS = 30 * 60 * 1000; // "last ~30 min" per the feature reque
 const byChannel = new Map<string, ReactionLogEntry[]>();
 
 /**
- * The persisted identity of an emoji: the unicode character, or `name:id` for a custom one, so
- * two custom emojis that share a name never collapse into one reaction (Codex). The store turns
- * `name:id` back into `:name:` for display.
+ * The persisted identity of an emoji: the unicode character, or `custom:<id>` for a custom one.
+ * The id alone (not the name): two custom emojis can share a name, and a renamed emoji must
+ * still match its earlier add on removal (Codex). The label is stored separately for display.
  */
 export function emojiKey(emoji: string, emojiId?: string | null): string {
-  if (emojiId) return `${emoji}:${emojiId}`;
+  if (emojiId) return `custom:${emojiId}`;
+  return emoji;
+}
+
+export function emojiLabel(emoji: string, emojiId?: string | null): string {
+  if (emojiId) return `:${emoji}:`;
   return emoji;
 }
 
@@ -59,6 +64,7 @@ function persistReaction(entry: ReactionLogEntry): void {
       channelId: entry.channelId,
       messageId: entry.messageId,
       emoji: emojiKey(entry.emoji, entry.emojiId),
+      emojiLabel: emojiLabel(entry.emoji, entry.emojiId),
       userId: entry.userId,
       userLabel: entry.userLabel,
       messageExcerpt: entry.messageExcerpt,

@@ -190,7 +190,8 @@ function fakeClient(opts: { timeout?: () => Promise<unknown>; withSearch?: boole
       }),
     },
   };
-  if (opts.withSearch) guild.members.search = search;
+  // discord.js always has members.search; a complete (empty, under-limit) result by default.
+  guild.members.search = search;
   return { client: { guilds: { cache: { get: () => guild } } }, target, search };
 }
 
@@ -209,6 +210,27 @@ describe('resolveTarget (fake discord.js client)', () => {
     const r = await resolveTarget(client, 'g', 'chef');
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.reason).toBe('ambiguous');
+  });
+  // Codex: an incomplete search could hide a second member with the same name.
+  it('a failed member search means a name match is not trusted (asks for a mention/id)', async () => {
+    const { client, search } = fakeClient();
+    search.mockRejectedValueOnce(new Error('rate limited'));
+    const r = await resolveTarget(client, 'g', 'salty pancakes');
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toBe('uncertain');
+  });
+  it('a search that hits its result cap is not trusted either', async () => {
+    const { client, search } = fakeClient();
+    const full = new Map(Array.from({ length: 25 }, (_, i) => [`x${i}`, { id: `9000000000000000${i}`, user: { id: `9000000000000000${i}`, username: `other${i}` } }]));
+    search.mockResolvedValueOnce(full as any);
+    const r = await resolveTarget(client, 'g', 'salty pancakes');
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toBe('uncertain');
+  });
+  it('an id or mention never needs the search', async () => {
+    const { client, search } = fakeClient();
+    search.mockRejectedValueOnce(new Error('down'));
+    expect(await resolveTarget(client, 'g', `<@${members[1].id}>`)).toEqual({ ok: true, id: members[1].id });
   });
 });
 

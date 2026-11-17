@@ -72,7 +72,30 @@ function listCandidates(list: MemberCandidate[]): string {
 
 export type ResolveResult =
   | { ok: true; id: string }
-  | { ok: false; reason: 'empty' | 'not_found' | 'ambiguous'; status: number; error: string; candidates?: MemberCandidate[] };
+  | {
+      ok: false;
+      reason: 'empty' | 'not_found' | 'ambiguous' | 'uncertain';
+      status: number;
+      error: string;
+      candidates?: MemberCandidate[];
+    };
+
+/**
+ * A name match only counts when the member search was complete. If the REST search failed or
+ * hit its result cap, an unseen second member with the same name could exist, and moderation
+ * must not pick the cached one (Codex). Then the caller has to name them exactly.
+ */
+export function requireCompleteSearch(result: ResolveResult, searchComplete: boolean, name: string): ResolveResult {
+  if (!result.ok || searchComplete) return result;
+  return {
+    ok: false,
+    reason: 'uncertain',
+    status: 409,
+    error:
+      `I couldn't confirm "${name}" is the only member with that name (the member search ` +
+      `failed or was cut off). Use their @mention or user id so I act on the right person.`,
+  };
+}
 
 /**
  * Resolve a name against a candidate list. Exact, case-insensitive match on username,

@@ -90,12 +90,13 @@ describe('reaction read: scope isolation', () => {
     expect(out.messages.map((m: any) => m.message_id)).toEqual(['mine']);
   });
 
-  it('guild scope widens to the guild but never past it', async () => {
+  // Codex 2026-11-17: a server-wide read leaked private channels' snippets and reactors.
+  it('scope "guild" is ignored: reads stay in the current channel', async () => {
     add({ messageId: 'mine' });
     add({ messageId: 'sibling', channelId: 'c2' });
     add({ messageId: 'other-guild', guildId: 'g2', channelId: 'c9' });
     const out = await run({ scope: 'guild' }, { guildId: 'g1', channelId: 'c1' });
-    expect(out.messages.map((m: any) => m.message_id).sort()).toEqual(['mine', 'sibling']);
+    expect(out.messages.map((m: any) => m.message_id)).toEqual(['mine']);
   });
 
   it('model-supplied guild/channel params are ignored', async () => {
@@ -200,12 +201,29 @@ describe('emoji identity and bulk removals', () => {
 
   it('two custom emojis with the same name stay separate; removing one keeps the other', async () => {
     const { emojiKey } = await import('../../src/gateway/1-receive/reaction-log.js');
-    add({ emoji: emojiKey('party', '111111111') });
-    add({ emoji: emojiKey('party', '222222222') });
+    add({ emoji: emojiKey('party', '111111111'), emojiLabel: ':party:' });
+    add({ emoji: emojiKey('party', '222222222'), emojiLabel: ':party:' });
     add({ emoji: emojiKey('party', '111111111'), action: 'removed', at: NOW - 4 * MIN });
     const rows = q();
     expect(rows).toHaveLength(1);
-    expect(rows[0].emoji).toBe(':party:');
+    expect(rows[0].emojiLabel).toBe(':party:');
+  });
+
+  it('a renamed custom emoji still cancels its earlier add (keyed by id, not name)', async () => {
+    const { emojiKey } = await import('../../src/gateway/1-receive/reaction-log.js');
+    add({ emoji: emojiKey('old_name', '333333333'), emojiLabel: ':old_name:' });
+    add({ emoji: emojiKey('new_name', '333333333'), action: 'removed', at: NOW - 4 * MIN });
+    expect(q()).toHaveLength(0);
+  });
+
+  it('read groups by identity: same-named custom emojis are two lines, not one merged count', () => {
+    const rows = [
+      { guildId: 'g1', channelId: 'c1', messageId: 'm1', emoji: 'custom:1', emojiLabel: ':party:', userId: 'a', userLabel: 'A', action: 'added' as const, at: NOW },
+      { guildId: 'g1', channelId: 'c1', messageId: 'm1', emoji: 'custom:2', emojiLabel: ':party:', userId: 'b', userLabel: 'B', action: 'added' as const, at: NOW },
+    ];
+    const view = formatPersisted(rows, NOW, 5);
+    expect(view[0].reactions).toHaveLength(2);
+    expect(view[0].reactions.every((r) => r.count === 1 && r.emoji === ':party:')).toBe(true);
   });
 
   it('clearing all reactions, or one emoji, drops them from read', async () => {

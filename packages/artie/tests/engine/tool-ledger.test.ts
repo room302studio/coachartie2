@@ -158,7 +158,9 @@ describe('ledger: one row per outcome, registry path', () => {
     await expect(
       capabilityRegistry.execute('ledger-probe', 'nope', {}, undefined, { userId: OWNER_USER_ID })
     ).rejects.toThrow();
-    expect(rows('no-such-tool-xyz').map((x) => x.outcome)).toEqual(['unknown_tool']);
+    // An invented tool name is never stored (it can carry arbitrary text): "(unknown)".
+    expect(rows('no-such-tool-xyz')).toEqual([]);
+    expect(rows('(unknown)').map((x) => x.outcome)).toEqual(['unknown_tool']);
     expect(rows().map((x) => x.outcome)).toEqual(['unknown_action']);
   });
 
@@ -281,23 +283,42 @@ describe('ledger: never throws, prunes', () => {
     resetToolLedgerState();
   });
 
-  it('clips error text to 200 chars and tool names to 64', () => {
+  it('clips error text to 200 chars; an unregistered tool/action name is never stored', () => {
     writeLedgerRow({ tool: 'x'.repeat(300), action: 'a', outcome: 'error', errorClass: 'e'.repeat(500) });
-    const row = getSyncDb().get<{ tool: string; error_class: string }>(`SELECT tool, error_class FROM tool_call_ledger`);
-    expect(row!.tool.length).toBe(64);
+    const row = getSyncDb().get<{ tool: string; action: string; error_class: string }>(
+      `SELECT tool, action, error_class FROM tool_call_ledger`
+    );
+    // Codex: a model-invented name can carry arbitrary text, and self-stats:tools is public.
+    expect(row!.tool).toBe('(unknown)');
+    expect(row!.action).toBe('(unknown)');
     expect(row!.error_class.length).toBe(200);
+  });
+
+  it('a real tool with an invented action keeps the tool, hides the action', () => {
+    writeLedgerRow({ tool: 'memory', action: 'secret-text-here', outcome: 'unknown_action' });
+    writeLedgerRow({ tool: 'memory', action: 'recall', outcome: 'ok' });
+    const rows = getSyncDb().all<{ tool: string; action: string }>(
+      `SELECT tool, action FROM tool_call_ledger ORDER BY id`
+    );
+    expect(rows.slice(-2)).toEqual([
+      { tool: 'memory', action: '(unknown)' },
+      { tool: 'memory', action: 'recall' },
+    ]);
   });
 
   it('prunes rows older than the retention window and keeps newer ones', () => {
     const now = Date.now();
     pruneToolLedger(now); // first-use prune done; the explicit prune below is the one under test
-    writeLedgerRow({ tool: 'old', action: 'a', outcome: 'ok' }, now - (LEDGER_RETENTION_DAYS + 1) * DAY);
-    writeLedgerRow({ tool: 'edge', action: 'a', outcome: 'ok' }, now - (LEDGER_RETENTION_DAYS - 1) * DAY);
-    writeLedgerRow({ tool: 'new', action: 'a', outcome: 'ok' }, now);
+    // Told apart by outcome: names must be registered to be stored (unregistered = "(unknown)").
+    writeLedgerRow({ tool: 'memory', action: 'recall', outcome: 'error' }, now - (LEDGER_RETENTION_DAYS + 1) * DAY);
+    writeLedgerRow({ tool: 'memory', action: 'recall', outcome: 'invalid_args' }, now - (LEDGER_RETENTION_DAYS - 1) * DAY);
+    writeLedgerRow({ tool: 'memory', action: 'recall', outcome: 'ok' }, now);
     const removed = pruneToolLedger(now);
     expect(removed).toBeGreaterThanOrEqual(1);
-    const left = getSyncDb().all<{ tool: string }>(`SELECT tool FROM tool_call_ledger ORDER BY tool`).map((r) => r.tool);
-    expect(left).toEqual(['edge', 'new']);
+    const left = getSyncDb()
+      .all<{ outcome: string }>(`SELECT outcome FROM tool_call_ledger ORDER BY outcome`)
+      .map((r) => r.outcome);
+    expect(left).toEqual(['invalid_args', 'ok']);
   });
 
   it('describeError keeps structured registry errors to their code', () => {

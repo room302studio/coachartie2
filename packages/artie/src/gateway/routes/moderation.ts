@@ -13,6 +13,7 @@ import {
   type ResolveResult,
   parseUserRef,
   resolveByName,
+  requireCompleteSearch,
   resolveUserRef,
   parseTimeoutMinutes,
   preflight,
@@ -92,6 +93,8 @@ export async function resolveTarget(
     nickname: m.nickname,
   });
   const candidates: MemberCandidate[] = [];
+  const SEARCH_LIMIT = 25;
+  let searchComplete = false;
 
   const guild = client.guilds.cache.get(guildId || SUBWAY_BUILDER_GUILD_ID);
   if (guild) {
@@ -102,8 +105,14 @@ export async function resolveTarget(
       for (const m of cached.values()) candidates.push(toCandidate(m));
     }
     if (typeof guild.members?.search === 'function') {
-      const found = await guild.members.search({ query: ref.name.slice(0, 32), limit: 25 }).catch(() => null);
-      if (found) for (const m of found.values()) candidates.push(toCandidate(m));
+      const found = await guild.members
+        .search({ query: ref.name.slice(0, 32), limit: SEARCH_LIMIT })
+        .catch(() => null);
+      if (found) {
+        for (const m of found.values()) candidates.push(toCandidate(m));
+        // A full page may hide more matches; a failed search hides everything uncached.
+        searchComplete = found.size < SEARCH_LIMIT;
+      }
     }
   }
   // Display names (globalName) are not searchable over REST, so who has just spoken is ALWAYS
@@ -127,7 +136,7 @@ export async function resolveTarget(
       }
     }
   }
-  return resolveByName(ref.name, candidates);
+  return requireCompleteSearch(resolveByName(ref.name, candidates), searchComplete, ref.name);
 }
 
 /** Facts for the pure preflight, read defensively (a partial guild just means "unknown"). */

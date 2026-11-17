@@ -695,6 +695,7 @@ export const reactionLog = sqliteTable(
     channelId: text('channel_id').notNull(),
     messageId: text('message_id').notNull(),
     emoji: text('emoji').notNull(),
+    emojiLabel: text('emoji_label'),
     userId: text('user_id').notNull(),
     userLabel: text('user_label').notNull(),
     messageExcerpt: text('message_excerpt'),
