@@ -136,26 +136,23 @@ export function onPendingActionsExpired(listener: ExpiryListener | null): void {
  */
 export function expireStalePendingActions(ttlDays: number = PENDING_TTL_DAYS): number {
   ensureTable();
-  const db = getSyncDb();
-  const rows = db
+  // One statement, fixed params, atomic: the rows it expires are exactly the rows it returns
+  // (no select-then-update race, no bind-variable limit on a big backlog; Codex).
+  const rows = getSyncDb()
     .all<Record<string, unknown>>(
-      `SELECT * FROM pending_actions WHERE status = 'pending' AND created_at < datetime('now', ?)`,
+      `UPDATE pending_actions SET status = 'expired', resolved_at = CURRENT_TIMESTAMP, resolved_by = 'ttl'
+        WHERE status = 'pending' AND created_at < datetime('now', ?)
+        RETURNING *`,
       [`-${ttlDays} days`]
     )
     .map(rowToPendingAction);
   if (rows.length === 0) {
     return 0;
   }
-  const placeholders = rows.map(() => '?').join(',');
-  db.run(
-    `UPDATE pending_actions SET status = 'expired', resolved_at = CURRENT_TIMESTAMP, resolved_by = 'ttl'
-      WHERE status = 'pending' AND id IN (${placeholders})`,
-    rows.map((r) => r.id)
-  );
   logger.info(`⌛ Expired ${rows.length} pending action(s) older than ${ttlDays} days`);
   if (expiryListener) {
     try {
-      expiryListener(rows.map((r) => ({ ...r, status: 'expired' as PendingActionStatus })));
+      expiryListener(rows);
     } catch (error) {
       logger.warn(`⌛ Expiry listener failed (rows are still expired): ${error}`);
     }
