@@ -146,20 +146,35 @@ export function selfNotesLine(viewerId: string, guildId: string | null): string 
   }
 }
 
-/** Search his self-notes, only the ones visible in this conversation. Words are ANDed. */
+/**
+ * Search his self-notes, only the ones visible in this conversation. Ranked by how many query
+ * words a note contains, so a list of topics ("born, one year old, four thousand memories")
+ * finds each of them; requiring every word in one note found nothing (Artie, 2026-11-18).
+ */
 export function searchSelfNotes(query: string, viewerId: string, guildId: string | null, limit: number): string {
   // Every non-empty word counts (short ones like "AI" too); only an empty query lists them all.
-  const words = query.toLowerCase().split(/\s+/).filter((w) => w.length > 0).slice(0, 6);
-  let match = '';
+  const words = [
+    ...new Set(
+      query
+        .toLowerCase()
+        .split(/[\s,;]+/)
+        .map((w) => w.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, ''))
+        .filter((w) => w.length > 0)
+    ),
+  ].slice(0, 12);
+  let score = '0';
   const wordParams: string[] = [];
   for (const w of words) {
-    match += ` AND lower(content) LIKE ? ESCAPE '\\'`;
+    score += ` + (CASE WHEN lower(content) LIKE ? ESCAPE '\\' THEN 1 ELSE 0 END)`;
     wordParams.push(`%${w.replace(/[\\%_]/g, (c) => `\\${c}`)}%`);
   }
+  let minScore = 0;
+  if (words.length > 0) minScore = 1;
   const rows = getSyncDb().all<{ id: number; content: string; timestamp: string }>(
-    `SELECT id, content, timestamp FROM memories WHERE ${SELF_VISIBLE_SQL}${match}
-      ORDER BY importance DESC, timestamp DESC LIMIT ?`,
-    [...selfVisibleParams(viewerId, guildId), ...wordParams, limit]
+    `SELECT id, content, timestamp, (${score}) AS score FROM memories WHERE ${SELF_VISIBLE_SQL}
+       AND (${score}) >= ?
+      ORDER BY score DESC, importance DESC, timestamp DESC LIMIT ?`,
+    [...wordParams, ...selfVisibleParams(viewerId, guildId), ...wordParams, minScore, limit]
   );
   if (rows.length === 0) return '🪞 No self-notes match that here.';
   return rows
