@@ -67,40 +67,9 @@ export const SELF_TAG = 'scope:self';
 const SELF_NOTES_SHOWN = 5;
 
 /**
- * Who he was talking with when he wrote a self-note, on the row's metadata. Visibility and forget
- * both read it, so a note without it is useless: if it can't be written, the note is rolled back
- * and the save fails out loud (Codex r2).
+ * Who he was talking with when he wrote a self-note (written_with, written_in_guild), stored in
+ * the row's metadata at insert (remember's metadata param). Visibility and forget read it.
  */
-async function recordSelfNoteTrail(rememberResult: string, meta: Record<string, unknown>): Promise<void> {
-  // The id note sits after the quoted content ("... (ID: 12, importance: ..."), so take the last
-  // match; the content itself could contain "ID: 5".
-  const all = [...rememberResult.matchAll(/\(ID: (\d+), importance: \d+\/10/g)];
-  const match = all[all.length - 1];
-  if (!match) {
-    throw new Error('Self-note was not saved (no stored id came back); nothing to keep');
-  }
-  const id = Number(match[1]);
-  let changed = 0;
-  try {
-    const r = getSyncDb().run(
-      `UPDATE memories SET metadata = json_patch(CASE WHEN json_valid(metadata) THEN metadata ELSE '{}' END, ?)
-       WHERE id = ? AND user_id = ?`,
-      [JSON.stringify(meta), id, ARTIE_SELF_USER_ID]
-    );
-    changed = Number(r?.changes ?? 0);
-  } catch (error) {
-    logger.warn('self-note trail not recorded:', error);
-  }
-  if (changed !== 1) {
-    // If even the rollback fails, the row is invisible everywhere (no provenance) and EJ can forget
-    // it; log it loudly so it can be found.
-    await hybridDataLayer.deleteMemory(id).catch((error) => {
-      logger.error(`self-note #${id} saved without provenance and rollback failed; EJ can forget it`, error);
-    });
-    throw new Error('Self-note was not saved (could not record who it was written with); try again');
-  }
-}
-
 interface SelfTrail {
   written_with?: string;
   written_in_guild?: string | null;
@@ -304,7 +273,8 @@ export class MemoryService {
     relatedMessageId?: number,
     explicitTags?: string[],
     guildId?: string,
-    channelId?: string
+    channelId?: string,
+    metadata?: Record<string, unknown>
   ): Promise<string> {
     // Filter out internal markers that should never be stored as memories
     const trimmedContent = content.trim();
@@ -349,7 +319,9 @@ export class MemoryService {
           context,
           timestamp: new Date().toISOString(),
           importance,
-          metadata: JSON.stringify({}),
+          // Written with the row, never patched in after: the async semantic-tag pass rewrites the
+          // whole row from the hot cache and would wipe a later metadata UPDATE.
+          metadata: JSON.stringify(metadata ?? {}),
           related_message_id: optionalString(relatedMessageId) ?? null,
           guild_id: guildId || null,
           channel_id: channelId || null,
@@ -1065,9 +1037,9 @@ async function handleMemoryAction(
           relatedMessageId,
           tags,
           guildId,
-          channelId
+          channelId,
+          selfMeta
         );
-        if (selfMeta) await recordSelfNoteTrail(result, selfMeta);
         logger.info(`🎯 Memory remember result: ${result}`);
         return result;
       }
