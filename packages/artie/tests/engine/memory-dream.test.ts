@@ -11,6 +11,9 @@ const generate = vi.fn();
 vi.mock('../../src/engine/4-generate/openrouter.js', () => ({
   openRouterService: { generateFromMessageChain: generate },
 }));
+vi.mock('../../src/engine/budget/openrouter-balance.js', () => ({
+  creditMonitor: { canAffordBackgroundWork: async () => true },
+}));
 
 let dreamMod: typeof import('../../src/engine/memory/dream.js');
 let memoryMod: typeof import('../../src/engine/tools/core/memory.js');

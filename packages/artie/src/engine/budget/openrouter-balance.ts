@@ -204,6 +204,20 @@ export class CreditMonitor {
   }
 
   /**
+   * Preflight for scheduled background work (the nightly dream): false when we already know
+   * we're out, or the free balance read says the account is dry. An unreadable balance counts
+   * as "go" (same as the cooldown recheck), so a flaky balance endpoint can't stop the night.
+   * EJ 2026-11-18: "we should not even initiate an attempt to dream if we are out of credits"
+   * (Nov 8-17 the dream fired 26 doomed calls a night).
+   */
+  async canAffordBackgroundWork(): Promise<boolean> {
+    if (this.creditsExhaustedAt) return false;
+    const balance = await this.getRemainingBalance().catch(() => null);
+    if (balance === null) return true;
+    return balance > CreditMonitor.TRUE_EXHAUSTION_THRESHOLD;
+  }
+
+  /**
    * Clear the exhausted flag (call this after adding credits)
    */
   clearExhaustedFlag(): void {

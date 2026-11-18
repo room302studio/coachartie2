@@ -320,6 +320,18 @@ export async function dream(limit = DREAM_BATCH): Promise<DreamResult> {
   const pool = candidates(limit);
   if (pool.length === 0) return result;
 
+  // Don't start a night we can't pay for. Leave one plain journal line so Artie knows why there
+  // was no dream, instead of a night of failed calls he'd read as a problem with his memories.
+  const { creditMonitor } = await import('../budget/openrouter-balance.js');
+  if (!(await creditMonitor.canAffordBackgroundWork())) {
+    logger.warn('[dream] 💤 Skipped: out of model credits');
+    writeDreamJournal(
+      `Dream journal (${journalDay(new Date().toISOString())}): no dream; the model account was out of credits, so nothing was reviewed. Your memories are untouched and wait for the next dream.`,
+      result
+    );
+    return result;
+  }
+
   const vocab = [...new Set([...(await fetchSeedTags()), ...topExistingTags()])];
   const vocabSet = new Set(vocab);
   const { openRouterService } = await import('../4-generate/openrouter.js');
@@ -435,6 +447,10 @@ export function unreachedReasonFor(error: unknown): string {
   return 'the model call errored';
 }
 
+function journalDay(iso: string): string {
+  return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'America/New_York' });
+}
+
 export function journalText(
   r: DreamResult & {
     offered: number;
@@ -448,7 +464,7 @@ export function journalText(
 ): string {
   // Counts only. The journal rides in every channel's context, so no memory text or ids from any
   // one person or server go in it; those live in the journal row's metadata (journalDetails).
-  const day = new Date(nowIso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'America/New_York' });
+  const day = journalDay(nowIso);
   const parts = [`Dream journal (${day}): reviewed ${r.reviewed} of ${r.offered} memories, re-tagged ${r.tagged}`];
   if (r.pruned > 0) {
     const cats = Object.entries(r.prunedBy ?? {})
