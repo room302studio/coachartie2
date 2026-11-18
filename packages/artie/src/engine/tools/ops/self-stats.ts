@@ -6,6 +6,7 @@ import {
   BLOCKED_USER_IDS,
   BLOCKED_USERS,
 } from '../../../shared/blocklist.js';
+import { isOptedOut } from '../../../shared/privacy-opt-out.js';
 import { RegisteredCapability, capabilityRegistry } from '../../5-tool-loop/registry.js';
 import {
   ledgerCounts,
@@ -61,13 +62,15 @@ function redactUser(userId: string): string {
  * a private choice and never listed.
  */
 function banlistReport(): string {
-  if (BLOCKED_USERS.length === 0) return 'Banlist: empty. Nobody is banned right now.';
-  const rows = BLOCKED_USERS.map((u) => {
+  // Anyone who also opted out is never named (Codex 2026-11-18); ids are never shown either.
+  const listed = BLOCKED_USERS.filter((u) => !isOptedOut(u.id) && u.names.length > 0);
+  if (listed.length === 0) return 'Banlist: empty. Nobody is banned right now.';
+  const rows = listed.map((u) => {
     let since = '';
     if (u.since) since = ` (since ${u.since})`;
-    return `- ${u.names[0] ?? u.id}${since}`;
+    return `- ${u.names[0]}${since}`;
   });
-  return `Banlist (${BLOCKED_USERS.length}, set by EJ; I ignore these people until EJ lifts it):\n${rows.join('\n')}`;
+  return `Banlist (${listed.length}, set by EJ; I ignore these people until EJ lifts it):\n${rows.join('\n')}`;
 }
 
 function userCostsReport(db: ReturnType<typeof getSyncDb>, userId: string): string {
