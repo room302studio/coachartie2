@@ -328,17 +328,29 @@ export async function dream(limit = DREAM_BATCH): Promise<DreamResult> {
   const newTagCounts = new Map<string, number>();
   let failedChunks = 0;
   const unreachedBy = new Map<string, number>();
+  let unsavedChunks = 0;
   const letGo: Array<{ id: number; category: string }> = [];
   for (let i = 0; i < pool.length; i += CHUNK) {
     const batch = pool.slice(i, i + CHUNK);
+    let raw: string;
     try {
-      const raw = await openRouterService.generateFromMessageChain(
+      raw = await openRouterService.generateFromMessageChain(
         dreamMessages(vocab, batch),
         'memory-dream',
         undefined,
         model,
         { jsonOutput: DREAM_OUTPUT, maxTokens: CHUNK_MAX_TOKENS }
       );
+    } catch (error) {
+      // One bad chunk shouldn't cost the rest of the night; its memories stay undreamt for tomorrow.
+      // A call that never got an answer is not an unreadable answer: Nov 15-17 the account was out
+      // of credits and the journal told Artie his batches "didn't come back readable".
+      const reason = unreachedReasonFor(error);
+      unreachedBy.set(reason, (unreachedBy.get(reason) ?? 0) + 1);
+      logger.warn(`[dream] Chunk starting at #${batch[0]?.id} failed:`, error);
+      continue;
+    }
+    try {
       // auto-routed models don't all honor response_format; some answer with a bare array.
       const verdicts = parseVerdicts(raw);
       if (!Array.isArray(verdicts)) {
@@ -367,12 +379,9 @@ export async function dream(limit = DREAM_BATCH): Promise<DreamResult> {
         if (outcome === 'tagged') result.tagged++;
       }
     } catch (error) {
-      // One bad chunk shouldn't cost the rest of the night; its memories stay undreamt for tomorrow.
-      // A call that never got an answer is not an unreadable answer: Nov 15-17 the account was out
-      // of credits and the journal told Artie his batches "didn't come back readable".
-      const reason = unreachedReasonFor(error);
-      unreachedBy.set(reason, (unreachedBy.get(reason) ?? 0) + 1);
-      logger.warn(`[dream] Chunk starting at #${batch[0]?.id} failed:`, error);
+      // The model answered; saving its verdicts broke (a DB error). Verdicts already applied stay.
+      unsavedChunks++;
+      logger.warn(`[dream] Saving verdicts for chunk at #${batch[0]?.id} failed:`, error);
     }
   }
 
@@ -381,11 +390,11 @@ export async function dream(limit = DREAM_BATCH): Promise<DreamResult> {
       ` ${JSON.stringify(result.prunedBy ?? {})} (vocab ${vocab.length})`
   );
   const unreached = Object.fromEntries(unreachedBy);
-  if (result.reviewed > 0 || failedChunks > 0 || unreachedBy.size > 0) {
+  if (result.reviewed > 0 || failedChunks > 0 || unreachedBy.size > 0 || unsavedChunks > 0) {
     const topTags = [...newTagCounts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 6).map(([t]) => t);
     writeDreamJournal(
       journalText(
-        { ...result, offered: pool.length, failedChunks, unreached, examples, topTags, letGo },
+        { ...result, offered: pool.length, failedChunks, unreached, unsavedChunks, examples, topTags, letGo },
         now
       ),
       result
@@ -429,6 +438,8 @@ export function journalText(
     failedChunks: number;
     /** Batches whose model call threw, counted per plain reason (unreachedReasonFor). */
     unreached?: Record<string, number>;
+    /** Batches the model answered but whose verdicts failed to save (DB error mid-batch). */
+    unsavedChunks?: number;
     examples: Record<string, string>;
     topTags: string[];
     letGo?: Array<{ id: number; category: string }>;
@@ -453,6 +464,10 @@ export function journalText(
     );
   }
   if (r.failedChunks > 0) parts.push(`${r.failedChunks} batch(es) came back unreadable; those memories wait for the next dream`);
+  const unsaved = r.unsavedChunks ?? 0;
+  if (unsaved > 0) {
+    parts.push(`${unsaved} batch(es) were answered but couldn't be fully saved (a database error); the unsaved ones wait for the next dream`);
+  }
   const letGo = r.letGo ?? [];
   if (letGo.length > 0) {
     const shown = letGo.slice(0, LET_GO_SHOWN).map((m) => `#${m.id} ${m.category}`);

@@ -195,6 +195,15 @@ describe('dream journal + recall', () => {
     );
   });
 
+  it('a save failure after a real answer is worded as a save failure, not "never got an answer"', () => {
+    const text = dreamMod.journalText(
+      { reviewed: 3, tagged: 3, pruned: 0, offered: 10, failedChunks: 0, unsavedChunks: 1, examples: {}, topTags: [] },
+      '2026-11-18T10:00:00Z'
+    );
+    expect(text).toContain("1 batch(es) were answered but couldn't be fully saved");
+    expect(text).not.toContain('never got an answer');
+  });
+
   it('counts mixed failures per reason, so a timeout does not hide a credit failure', async () => {
     for (let i = 0; i < 12; i++) insert(`memory number ${i} about trains`);
     generate
