@@ -12,6 +12,7 @@ import { escapeRegex } from './regex.js';
 export interface BlockedUser {
   id: string; // Discord snowflake — immutable, survives renames
   names: string[]; // usernames/display names they're known by, for content matching
+  since?: string; // YYYY-MM-DD the ban started, for the on-demand banlist report
 }
 
 export const BLOCKED_USERS: BlockedUser[] = [
@@ -19,7 +20,7 @@ export const BLOCKED_USERS: BlockedUser[] = [
   // with hour-long troll spam; served their sentence, unblocked 2026-07-21 as a
   // (nearly) model citizen. Empty list = nobody is invisible and no 💔 reactions fire.
   // rhodie3587: banned 2026-11-18 by EJ after Artie hit his daily cap mid-reply in #prison.
-  { id: '929158677133402122', names: ['rhodie3587', 'rhodie'] },
+  { id: '929158677133402122', names: ['rhodie3587', 'rhodie'], since: '2026-11-18' },
 ];
 
 // What Artie calls a blocked user when one comes up. Policy (EJ, 2026-07-16):

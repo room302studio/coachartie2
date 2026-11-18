@@ -1,6 +1,11 @@
 import { logger } from '../../../shared/logger.js';
 import { getSyncDb } from '../../../shared/db/client.js';
-import { isBlockedUser, BLOCKED_USER_EPITHET, BLOCKED_USER_IDS } from '../../../shared/blocklist.js';
+import {
+  isBlockedUser,
+  BLOCKED_USER_EPITHET,
+  BLOCKED_USER_IDS,
+  BLOCKED_USERS,
+} from '../../../shared/blocklist.js';
 import { RegisteredCapability, capabilityRegistry } from '../../5-tool-loop/registry.js';
 import {
   ledgerCounts,
@@ -31,7 +36,8 @@ interface SelfStatsParams {
     | 'errors'
     | 'tools'
     | 'user_costs'
-    | 'top_spenders';
+    | 'top_spenders'
+    | 'banlist';
   timeRange?: string; // e.g., '1h', '24h', '7d'
   user_id?: string; // for user_costs — defaults to whoever is asking
   limit?: number; // for top_spenders
@@ -47,6 +53,21 @@ function redactUser(userId: string): string {
     return 'someone who opted out';
   }
   return `<@${userId}>`;
+}
+
+/**
+ * The current banlist, on demand (EJ 2026-11-18: "have him report the current banlist").
+ * The one place banned users are named: a moderation record, public on purpose. Opt-outs are
+ * a private choice and never listed.
+ */
+function banlistReport(): string {
+  if (BLOCKED_USERS.length === 0) return 'Banlist: empty. Nobody is banned right now.';
+  const rows = BLOCKED_USERS.map((u) => {
+    let since = '';
+    if (u.since) since = ` (since ${u.since})`;
+    return `- ${u.names[0] ?? u.id}${since}`;
+  });
+  return `Banlist (${BLOCKED_USERS.length}, set by EJ; I ignore these people until EJ lifts it):\n${rows.join('\n')}`;
 }
 
 function userCostsReport(db: ReturnType<typeof getSyncDb>, userId: string): string {
@@ -373,6 +394,7 @@ export const selfStatsCapability: RegisteredCapability = {
         timeRange: { type: 'string', description: 'Window, e.g. 24h, 7d, 30d (default 7d)' },
       },
     },
+    banlist: { effect: 'read' }, // a public moderation record by design
     top_spenders: {
       effect: 'read', // a public leaderboard by design
       params: { limit: { type: 'integer', description: 'How many spenders to list (default 10, max 25)' } },
@@ -394,6 +416,7 @@ export const selfStatsCapability: RegisteredCapability = {
     'tools',
     'user_costs',
     'top_spenders',
+    'banlist',
   ],
   description: `Check your own stats, health, and metrics — including what specific users have cost in LLM credits. Use this to understand how you're doing.
 
@@ -405,6 +428,7 @@ Actions:
 - errors: Failed LLM calls and failed tool calls over a window (default 24h, timeRange e.g. "7d"), from the database, so a restart does not reset it. States what it counts.
 - tools: Your tool-call ledger over a window (default 7d): per tool:action calls, ok %, failure outcomes (invalid args, refused, taint-blocked, queued for approval, errors, unknown tool/action), top failure causes, and tools never called. Use when asked which tools you avoid or which calls fail.
 - user_costs: How much a specific user has cost in credits (lifetime, today, rank, worst days). Defaults to whoever is asking. Use when someone asks "how much money have I cost?", "what's my bill?", "how much have I spent?"
+- banlist: Who is currently banned from talking to you, and since when. Use when anyone asks who's banned / the banlist. Opt-outs are never listed.
 - top_spenders: Leaderboard of the biggest credit consumers. Use when someone asks who costs the most / top spenders / biggest credit users.
 
 Use this when you want to reflect on your performance, check if something's wrong, or answer questions about who is costing what.`,
@@ -425,6 +449,8 @@ Use this when you want to reflect on your performance, check if something's wron
     const { action = 'overview' } = params as SelfStatsParams;
 
     logger.info(`📊 Self-stats: ${action}`);
+
+    if (action === 'banlist') return banlistReport();
 
     // DB-backed actions don't need the metrics registry — handle them first.
     if (action === 'errors' || action === 'tools') {
