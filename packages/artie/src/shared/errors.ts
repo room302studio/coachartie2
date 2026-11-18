@@ -3,6 +3,18 @@
  * either side). Named so call sites read as a decision, not a ternary.
  */
 
+/**
+ * A tool call that was wrong as asked (bad scope, not allowed, no such id). Running it again
+ * gives the same answer, so the retry wrapper stops at the first one instead of repeating it
+ * three times (2026-11-18: a refused memory save was retried 3x, then sent to fallbacks).
+ */
+export class CallerError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'CallerError';
+  }
+}
+
 /** The message of an Error, or the value stringified. */
 export function getErrorMessage(error: unknown): string {
   if (error instanceof Error) {

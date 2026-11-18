@@ -50,6 +50,7 @@ import { getBrownoutMode } from '../budget/brownout.js';
 import { getDailyBudgetUsd } from '../budget/daily-cap.js';
 import { recentHiccups, selfMeterLine } from '../budget/self-meter.js';
 import { dreamRecallLine } from '../memory/dream.js';
+import { selfNotesLine } from '../tools/core/memory.js';
 import { getJarTippedUsd } from '../budget/jar-earnings.js';
 import { getLastTimeFacts, lastTimeLine, promisesLine } from './sources/last-time.js';
 import { listOpenPromises, withApprovalStatus } from '../../shared/db/promise-store.js';
@@ -525,6 +526,18 @@ Important:
         tokenWeight: estimateTokens(dreamLine),
         content: dreamLine,
         category: 'temporal',
+      });
+    }
+
+    // What he has written down about himself (memory scope="self"), on every surface.
+    const selfLine = selfNotesLine();
+    if (selfLine) {
+      sources.push({
+        name: 'self_notes',
+        priority: 65,
+        tokenWeight: estimateTokens(selfLine),
+        content: selfLine,
+        category: 'system',
       });
     }
 

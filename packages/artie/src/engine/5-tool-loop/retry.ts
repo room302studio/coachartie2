@@ -12,6 +12,7 @@ import { errorPatternTracker } from './tool-error-patterns.js';
 import { capabilityTracker } from './tool-tracker.js';
 import { runInLedgerScope, looksLikeToolFailure } from './tool-ledger.js';
 import { collapseWhitespace } from '../../shared/text.js';
+import { CallerError } from '../../shared/errors.js';
 
 function getMaxRetries(capabilityName: string): number {
   if (capabilityName === 'mcp_auto_installer') {
@@ -135,6 +136,8 @@ export class RobustCapabilityExecutor {
         logger.warn(
           `❌ Attempt ${attempt} failed for ${capability.name}:${capability.action}: ${lastError.message}`
         );
+        // Wrong as asked: the same call gives the same answer, so don't repeat it.
+        if (lastError instanceof CallerError) break;
 
         // Wait with exponential backoff (but not on last attempt)
         if (attempt < maxRetries) {
@@ -150,6 +153,8 @@ export class RobustCapabilityExecutor {
     );
 
     try {
+      // No fallback for a call that was wrong as asked: the error itself says what to change.
+      if (lastError instanceof CallerError) throw lastError;
       const fallbackResult = await this.tryFallbackExecution(capability, context);
       return {
         capability,
