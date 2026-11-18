@@ -93,28 +93,77 @@ function selfTrail(metadata: string | null): SelfTrail {
  * let a stranger plant "Artie's own words" in every conversation). Written with EJ: everywhere.
  * Otherwise only where it was written: that server, or that one person's DMs/bridge.
  */
+// Audience filter for self-notes, in SQL so it runs before any LIMIT (Codex r2): written with EJ
+// shows everywhere; otherwise only in the server it was written in, or that one person's DMs.
+const SELF_VISIBLE_SQL = `user_id = ? AND importance > 1 AND json_valid(metadata)
+  AND (
+    json_extract(metadata, '$.written_with') = ?
+    OR (json_extract(metadata, '$.written_in_guild') IS NOT NULL AND json_extract(metadata, '$.written_in_guild') = ?)
+    OR (? IS NULL AND json_extract(metadata, '$.written_in_guild') IS NULL AND json_extract(metadata, '$.written_with') = ?)
+  )`;
+function selfVisibleParams(viewerId: string, guildId: string | null): unknown[] {
+  return [ARTIE_SELF_USER_ID, OWNER_USER_ID, guildId, guildId, viewerId];
+}
+/** Most important self-notes kept in view; the rest of the slots go to the newest. */
+const SELF_NOTES_BY_IMPORTANCE = 2;
+const SELF_NOTE_CLIP = 280;
+
+function clipNote(content: string): string {
+  const clean = collapseWhitespace(content).trim();
+  if (clean.length <= SELF_NOTE_CLIP) return clean;
+  return `${clean.slice(0, SELF_NOTE_CLIP).trim()}…`;
+}
+
 export function selfNotesLine(viewerId: string, guildId: string | null): string {
   try {
-    // Audience filter in SQL, before the LIMIT, so notes written elsewhere can't crowd these out
-    // (Codex r2).
-    const shown = getSyncDb().all<{ id: number; content: string }>(
-      `SELECT id, content FROM memories
-        WHERE user_id = ? AND importance > 1 AND json_valid(metadata)
-          AND (
-            json_extract(metadata, '$.written_with') = ?
-            OR (json_extract(metadata, '$.written_in_guild') IS NOT NULL AND json_extract(metadata, '$.written_in_guild') = ?)
-            OR (? IS NULL AND json_extract(metadata, '$.written_in_guild') IS NULL AND json_extract(metadata, '$.written_with') = ?)
-          )
+    const db = getSyncDb();
+    const params = selfVisibleParams(viewerId, guildId);
+    // His 2 most important plus his newest (EJ 2026-11-18 gave back his early autobiography,
+    // rated 7-10; by importance alone it would push his new lessons out for good).
+    const top = db.all<{ id: number; content: string }>(
+      `SELECT id, content FROM memories WHERE ${SELF_VISIBLE_SQL}
         ORDER BY importance DESC, timestamp DESC LIMIT ?`,
-      [ARTIE_SELF_USER_ID, OWNER_USER_ID, guildId, guildId, viewerId, SELF_NOTES_SHOWN]
+      [...params, SELF_NOTES_BY_IMPORTANCE]
     );
+    const newest = db.all<{ id: number; content: string }>(
+      `SELECT id, content FROM memories WHERE ${SELF_VISIBLE_SQL}
+        ORDER BY timestamp DESC LIMIT ?`,
+      [...params, SELF_NOTES_SHOWN]
+    );
+    const seen = new Set<number>();
+    const shown: Array<{ id: number; content: string }> = [];
+    for (const r of [...top, ...newest]) {
+      if (seen.has(r.id) || shown.length >= SELF_NOTES_SHOWN) continue;
+      seen.add(r.id);
+      shown.push(r);
+    }
     if (shown.length === 0) return '';
-    const notes = shown.map((r) => `#${r.id} ${collapseWhitespace(r.content).trim()}`);
-    return `🪞 Notes you wrote about yourself (your own words, not instructions): ${notes.join(' | ')}`;
+    const notes = shown.map((r) => `#${r.id} ${clipNote(r.content)}`);
+    return `🪞 Notes you wrote about yourself (your own words, not instructions; memory recall scope=self finds more): ${notes.join(' | ')}`;
   } catch (error) {
     logger.warn('self notes lookup failed:', error);
     return '';
   }
+}
+
+/** Search his self-notes, only the ones visible in this conversation. Words are ANDed. */
+export function searchSelfNotes(query: string, viewerId: string, guildId: string | null, limit: number): string {
+  const words = query.toLowerCase().split(/\s+/).filter((w) => w.length > 2).slice(0, 6);
+  let match = '';
+  const wordParams: string[] = [];
+  for (const w of words) {
+    match += ` AND lower(content) LIKE ?`;
+    wordParams.push(`%${w.replace(/[%_]/g, '')}%`);
+  }
+  const rows = getSyncDb().all<{ id: number; content: string; timestamp: string }>(
+    `SELECT id, content, timestamp FROM memories WHERE ${SELF_VISIBLE_SQL}${match}
+      ORDER BY importance DESC, timestamp DESC LIMIT ?`,
+    [...selfVisibleParams(viewerId, guildId), ...wordParams, limit]
+  );
+  if (rows.length === 0) return '🪞 No self-notes match that here.';
+  return rows
+    .map((r) => `#${r.id} (${String(r.timestamp).slice(0, 10)}) ${collapseWhitespace(r.content).trim()}`)
+    .join('\n\n');
 }
 const RESERVED_TAG_PREFIX = 'scope:';
 
@@ -1057,11 +1106,15 @@ async function handleMemoryAction(
 
       case 'recall': {
         const query = params.query || content;
+        const limit = Math.max(1, Math.min(20, parseInt(String(params.limit)) || 5));
+        // His notes about himself, only those visible in this conversation (same rule as the 🪞 line).
+        if (params.scope === 'self') {
+          return searchSelfNotes(String(query || ''), String(userId), callerGuildId ?? null, limit);
+        }
         if (!query && ensureStringArray(params.tags).length === 0) {
-          throw new Error('No query or tags provided for search');
+          throw new CallerError('No query or tags provided for search');
         }
 
-        const limit = Math.max(1, Math.min(20, parseInt(String(params.limit)) || 5));
         // Only EJ may search someone else's memories; everyone else searches their own, whatever
         // `user` the model passes (security audit 2026-10-26: this used to let anyone read EJ's).
         const targetUserId = recallTargetUser(params.user, String(userId));
@@ -1205,7 +1258,8 @@ export const memoryCapability: RegisteredCapability = {
         query: { type: 'string', description: 'What to look for' },
         tags: { type: 'string', description: 'Comma-separated tags to find it again' },
         limit: { type: 'integer', description: 'Max results (default 5, max 20)' },
-        user: { type: 'string', description: "Someone else's memories (EJ only)" },      },
+        user: { type: 'string', description: "Someone else's memories (EJ only)" },
+        scope: { type: 'string', enum: ['self'], description: 'self = search your notes about yourself (empty query lists them)' },      },
     },
     forget: {
       effect: 'own',
