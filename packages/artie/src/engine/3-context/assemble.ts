@@ -530,7 +530,7 @@ Important:
     }
 
     // What he has written down about himself (memory scope="self"), on every surface.
-    const selfLine = selfNotesLine();
+    const selfLine = selfNotesLine(message.userId, message.context?.guildId ?? null);
     if (selfLine) {
       sources.push({
         name: 'self_notes',
