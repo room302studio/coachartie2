@@ -148,12 +148,13 @@ export function selfNotesLine(viewerId: string, guildId: string | null): string 
 
 /** Search his self-notes, only the ones visible in this conversation. Words are ANDed. */
 export function searchSelfNotes(query: string, viewerId: string, guildId: string | null, limit: number): string {
-  const words = query.toLowerCase().split(/\s+/).filter((w) => w.length > 2).slice(0, 6);
+  // Every non-empty word counts (short ones like "AI" too); only an empty query lists them all.
+  const words = query.toLowerCase().split(/\s+/).filter((w) => w.length > 0).slice(0, 6);
   let match = '';
   const wordParams: string[] = [];
   for (const w of words) {
-    match += ` AND lower(content) LIKE ?`;
-    wordParams.push(`%${w.replace(/[%_]/g, '')}%`);
+    match += ` AND lower(content) LIKE ? ESCAPE '\\'`;
+    wordParams.push(`%${w.replace(/[\\%_]/g, (c) => `\\${c}`)}%`);
   }
   const rows = getSyncDb().all<{ id: number; content: string; timestamp: string }>(
     `SELECT id, content, timestamp FROM memories WHERE ${SELF_VISIBLE_SQL}${match}
