@@ -169,6 +169,30 @@ describe('dream journal + recall', () => {
     expect(generate).not.toHaveBeenCalled();
   });
 
+  it('says "out of credits", not "unreadable", when the model call itself fails', async () => {
+    insert('Alex wants deliveries in both games');
+    generate.mockRejectedValue(new Error('💳 OUT OF CREDITS: OpenRouter account needs more credits.'));
+    await dreamMod.dream(10);
+    const j = db.get<any>(`SELECT * FROM memories WHERE tags LIKE '%dream-journal%'`);
+    expect(j.content).toContain('never got an answer because the model account was out of credits');
+    expect(j.content).not.toContain('unreadable');
+  });
+
+  it('still calls a garbled reply unreadable', async () => {
+    insert('Alex wants deliveries in both games');
+    generate.mockResolvedValueOnce('not json at all');
+    await dreamMod.dream(10);
+    const j = db.get<any>(`SELECT * FROM memories WHERE tags LIKE '%dream-journal%'`);
+    expect(j.content).toContain('1 batch(es) came back unreadable');
+    expect(j.content).not.toContain('never got an answer');
+  });
+
+  it('names a plain cause for a failed call, never the raw message', () => {
+    expect(dreamMod.unreachedReasonFor(new Error('HTTP 402 Payment Required'))).toBe('the model account was out of credits');
+    expect(dreamMod.unreachedReasonFor(new Error('fetch failed'))).toBe('the model could not be reached');
+    expect(dreamMod.unreachedReasonFor('weird https://x/y?token=abc')).toBe('the model call errored');
+  });
+
   it('recalls the latest journal for 36 hours, then goes quiet', () => {
     dreamMod.writeDreamJournal('Dream journal (Oct 30): reviewed 5 of 5 memories, re-tagged 3; let go of nothing.', {
       reviewed: 5, tagged: 3, pruned: 0,

@@ -327,6 +327,8 @@ export async function dream(limit = DREAM_BATCH): Promise<DreamResult> {
   const examples: Record<string, string> = {};
   const newTagCounts = new Map<string, number>();
   let failedChunks = 0;
+  let unreachedChunks = 0;
+  let unreachedReason: string | undefined;
   for (let i = 0; i < pool.length; i += CHUNK) {
     const batch = pool.slice(i, i + CHUNK);
     try {
@@ -364,7 +366,10 @@ export async function dream(limit = DREAM_BATCH): Promise<DreamResult> {
       }
     } catch (error) {
       // One bad chunk shouldn't cost the rest of the night; its memories stay undreamt for tomorrow.
-      failedChunks++;
+      // A call that never got an answer is not an unreadable answer: Nov 15-17 the account was out
+      // of credits and the journal told Artie his batches "didn't come back readable".
+      unreachedChunks++;
+      unreachedReason ??= unreachedReasonFor(error);
       logger.warn(`[dream] Chunk starting at #${batch[0]?.id} failed:`, error);
     }
   }
@@ -373,9 +378,15 @@ export async function dream(limit = DREAM_BATCH): Promise<DreamResult> {
     `[dream] 💭 Reviewed ${result.reviewed}, tagged ${result.tagged}, pruned ${result.pruned}` +
       ` ${JSON.stringify(result.prunedBy ?? {})} (vocab ${vocab.length})`
   );
-  if (result.reviewed > 0 || failedChunks > 0) {
+  if (result.reviewed > 0 || failedChunks > 0 || unreachedChunks > 0) {
     const topTags = [...newTagCounts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 6).map(([t]) => t);
-    writeDreamJournal(journalText({ ...result, offered: pool.length, failedChunks, examples, topTags }, now), result);
+    writeDreamJournal(
+      journalText(
+        { ...result, offered: pool.length, failedChunks, unreachedChunks, unreachedReason, examples, topTags },
+        now
+      ),
+      result
+    );
   }
   return result;
 }
@@ -393,8 +404,29 @@ function exampleSuffix(example: string | undefined): string {
   return ` (e.g. "${example}")`;
 }
 
+/** Short, plain cause for a model call that threw. Never the raw message (it can carry URLs/ids). */
+export function unreachedReasonFor(error: unknown): string {
+  let message = '';
+  if (error instanceof Error) {
+    message = error.message;
+  } else {
+    message = String(error);
+  }
+  if (/OUT OF CREDITS|\b402\b/i.test(message)) return 'the model account was out of credits';
+  if (/GENERATION MUTED|kill ?switch/i.test(message)) return 'generation was muted';
+  if (/timeout|timed out|ETIMEDOUT|ECONNRESET|ENOTFOUND|fetch failed/i.test(message)) return 'the model could not be reached';
+  return 'the model call errored';
+}
+
 export function journalText(
-  r: DreamResult & { offered: number; failedChunks: number; examples: Record<string, string>; topTags: string[] },
+  r: DreamResult & {
+    offered: number;
+    failedChunks: number;
+    unreachedChunks?: number;
+    unreachedReason?: string;
+    examples: Record<string, string>;
+    topTags: string[];
+  },
   nowIso: string
 ): string {
   const day = new Date(nowIso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'America/New_York' });
@@ -408,7 +440,14 @@ export function journalText(
     parts.push('let go of nothing');
   }
   if (r.topTags.length) parts.push(`the memories kept were mostly about ${r.topTags.join(', ')}`);
-  if (r.failedChunks > 0) parts.push(`${r.failedChunks} batch(es) didn't come back readable; those memories wait for the next dream`);
+  const unreached = r.unreachedChunks ?? 0;
+  if (unreached > 0) {
+    parts.push(
+      `${unreached} batch(es) never got an answer because ${r.unreachedReason ?? 'the model call errored'}` +
+        ` (not a problem with the memories); they wait for the next dream`
+    );
+  }
+  if (r.failedChunks > 0) parts.push(`${r.failedChunks} batch(es) came back unreadable; those memories wait for the next dream`);
   return parts.join('; ') + '. Pruned memories are hidden, not deleted, and can be restored.';
 }
 
