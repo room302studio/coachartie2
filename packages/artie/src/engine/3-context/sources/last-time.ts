@@ -57,6 +57,29 @@ function snippet(text: string): string {
   return clean;
 }
 
+const PROMISE_LINE_SLOTS = 3;
+const PROMISE_SNIPPET_MAX = 80;
+
+/**
+ * Open promises Artie made to this speaker, oldest first (most overdue), at most 3. Pure.
+ * Separate from the last-time line: a promise shows even with no prior paired exchange.
+ * Null when there are none. Scope is the caller's job (listOpenPromises).
+ */
+export function promisesLine(
+  open: Array<{ id: number; text: string; created_at: number }>,
+  now: Date = new Date()
+): string | null {
+  if (open.length === 0) return null;
+  const shown = open.slice(0, PROMISE_LINE_SLOTS).map((p) => {
+    let text = p.text;
+    if (text.length > PROMISE_SNIPPET_MAX) text = `${text.slice(0, PROMISE_SNIPPET_MAX).trim()}…`;
+    return `P${p.id} ${text} (${relativeAge(new Date(p.created_at).toISOString(), now)})`;
+  });
+  let more = '';
+  if (open.length > PROMISE_LINE_SLOTS) more = ` (+${open.length - PROMISE_LINE_SLOTS} more: promises list)`;
+  return `🤝 You promised them: ${shown.join('; ')}${more}. Follow through if it fits, or close with promises done/drop.`;
+}
+
 /** The one line. Pure — same shape as self-meter's selfMeterLine. */
 export function lastTimeLine(facts: LastTimeFacts, now: Date = new Date()): string {
   const bits = [`last talked ${relativeAge(facts.lastAt, now)}`];

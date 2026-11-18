@@ -286,6 +286,12 @@
     "send",
     "status"
   ],
+  "promises": [
+    "add",
+    "done",
+    "drop",
+    "list"
+  ],
   "quiz-game": [
     "help",
     "info"

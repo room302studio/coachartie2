@@ -38,6 +38,7 @@ import { imageGenCapability } from '../tools/media/image-gen.js';
 // tasks = todo + quests + task-status (told apart by `tracker`)
 import { tasksCapability } from '../tools/planning/tasks.js';
 import { schedulerCapability } from '../tools/core/reminders.js';
+import { promisesCapability } from '../tools/core/promises.js';
 import { scratchpadCapability } from '../tools/planning/scratchpad.js';
 import { flashcardCapability } from '../tools/planning/flashcard.js';
 import { quizGameCapability } from '../tools/planning/quiz-game.js';
@@ -127,7 +128,7 @@ export class CapabilityBootstrap {
         meetingCapability, discordUICapability, askQuestionCapability, discordForumsCapability,
         discordModerationCapability, mentionProxyCapability, emailCapability, proactiveDMCapability,
         userProfileCapability, pairingCapability, approvalsCapability, mediaWikiCapability, wolframCapability,
-        schedulerCapability, sequenceCapability, sandboxCapability,
+        schedulerCapability, promisesCapability, sequenceCapability, sandboxCapability,
         scratchpadCapability, selfStatsCapability,
         communityAnalyticsCapability, contextCapability, visionCapability, imageGenCapability,
         diagnoseCapability, autonomousCapability, n8nBrowserCapability, flashcardCapability,

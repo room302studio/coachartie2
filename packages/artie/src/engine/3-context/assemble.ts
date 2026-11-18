@@ -51,7 +51,8 @@ import { getDailyBudgetUsd } from '../budget/daily-cap.js';
 import { recentHiccups, selfMeterLine } from '../budget/self-meter.js';
 import { dreamRecallLine } from '../memory/dream.js';
 import { getJarTippedUsd } from '../budget/jar-earnings.js';
-import { getLastTimeFacts, lastTimeLine } from './sources/last-time.js';
+import { getLastTimeFacts, lastTimeLine, promisesLine } from './sources/last-time.js';
+import { listOpenPromises } from '../../shared/db/promise-store.js';
 
 // Guild ID to context path mapping (mirrors Discord guild-whitelist.ts)
 const GUILD_CONTEXT_PATHS: Record<string, string> = {
@@ -744,6 +745,16 @@ Important:
         if (lastTimeFacts) parts.push(lastTimeLine(lastTimeFacts));
       } catch (error) {
         logger.warn('⏱️ Last-time line unavailable for this reply', error);
+      }
+
+      // Open promises to this speaker (Artie's request: "I said I'd check on your map" kind).
+      // Server: only promises made in this server. DM: all of theirs. See promise-store.ts.
+      try {
+        const open = listOpenPromises(message.userId, ctx.guildId ?? null);
+        const line = promisesLine(open);
+        if (line) parts.push(line);
+      } catch (error) {
+        logger.warn('🤝 Promises line unavailable for this reply', error);
       }
     }
 
