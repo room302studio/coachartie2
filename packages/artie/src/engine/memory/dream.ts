@@ -396,11 +396,11 @@ export async function dream(limit = DREAM_BATCH): Promise<DreamResult> {
     const topTags = [...newTagCounts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 6).map(([t]) => t);
     writeDreamJournal(
       journalText(
-        { ...result, offered: pool.length, failedChunks, unreached, unsavedChunks, topTags },
+        { ...result, offered: pool.length, failedChunks, unreached, unsavedChunks },
         now
       ),
       result,
-      { examples, letGo }
+      { examples, letGo, topTags }
     );
   }
   return result;
@@ -443,7 +443,6 @@ export function journalText(
     unreached?: Record<string, number>;
     /** Batches the model answered but whose verdicts failed to save (DB error mid-batch). */
     unsavedChunks?: number;
-    topTags: string[];
   },
   nowIso: string
 ): string {
@@ -459,7 +458,6 @@ export function journalText(
   } else {
     parts.push('let go of nothing');
   }
-  if (r.topTags.length) parts.push(`the memories kept were mostly about ${r.topTags.join(', ')}`);
   for (const [reason, n] of Object.entries(r.unreached ?? {}).sort((a, b) => b[1] - a[1])) {
     parts.push(
       `${n} batch(es) never got an answer because ${reason}` +
@@ -485,17 +483,22 @@ export interface LetGo {
 export interface JournalDetails {
   examples?: Record<string, string>;
   letGo?: LetGo[];
+  /** Topics of the memories kept; drawn from every server, so EJ-only like the examples. */
+  topTags?: string[];
 }
 
 /**
- * The part of the journal only some viewers may see. EJ sees the examples and every judgment
- * call; anyone else sees only the calls on their own memories, which they can restore. Pure.
+ * The part of the journal only some viewers may see, and only in private (a DM or the bridge):
+ * in a shared channel everyone there reads the reply, not just the person asking. EJ sees the
+ * topics, examples and every judgment call; anyone else sees only the calls on their own
+ * memories, which they can restore. Pure.
  */
-export function journalDetails(details: JournalDetails, viewerId: string | undefined): string {
-  if (!viewerId) return '';
+export function journalDetails(details: JournalDetails, viewerId: string | undefined, isPrivate = false): string {
+  if (!viewerId || !isPrivate) return '';
   const owner = isOwner(viewerId);
   const parts: string[] = [];
   if (owner) {
+    if (details.topTags?.length) parts.push(`the memories kept were mostly about ${details.topTags.join(', ')}`);
     const ex = Object.entries(details.examples ?? {}).map(([c, text]) => `${c}${exampleSuffix(text)}`);
     if (ex.length) parts.push(`examples: ${ex.join(', ')}`);
   }
@@ -532,7 +535,7 @@ export function writeDreamJournal(content: string, result: DreamResult, details:
  * The latest dream journal as one context line, while it's fresh; '' otherwise. The counts are
  * for everyone; examples and ids only for the viewer allowed to see them (journalDetails).
  */
-export function dreamRecallLine(now: number = Date.now(), viewerId?: string): string {
+export function dreamRecallLine(now: number = Date.now(), viewerId?: string, isPrivate = false): string {
   try {
     const row = getSyncDb().get<{ content: string; timestamp: string; metadata: string | null }>(
       `SELECT content, timestamp, metadata FROM memories WHERE user_id = 'artie-system' AND tags LIKE ? ORDER BY id DESC LIMIT 1`,
@@ -540,14 +543,17 @@ export function dreamRecallLine(now: number = Date.now(), viewerId?: string): st
     );
     if (!row) return '';
     if (now - Date.parse(row.timestamp) > JOURNAL_RECALL_HOURS * 3_600_000) return '';
-    let details: JournalDetails = {};
+    // Journals written before 2026-11-18 carry no `details` and quote memory text in their public
+    // content; they are not safe for every channel, so say nothing until tonight's dream.
+    let details: JournalDetails | null = null;
     try {
       const meta = JSON.parse(row.metadata || '{}');
       if (meta && typeof meta.details === 'object' && meta.details) details = meta.details;
     } catch {
-      details = {};
+      details = null;
     }
-    const extra = journalDetails(details, viewerId);
+    if (!details) return '';
+    const extra = journalDetails(details, viewerId, isPrivate);
     let tail = '';
     if (extra) tail = ` ${extra}.`;
     // A plain fact, no instructions (EJ: "that's a lot of handholding"). He may riff on a

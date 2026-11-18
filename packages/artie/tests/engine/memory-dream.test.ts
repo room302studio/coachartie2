@@ -165,12 +165,18 @@ describe('dream journal + recall', () => {
     expect(j.content).toContain('1 stub');
     // the public journal rides in every channel: no memory text in it
     expect(j.content).not.toContain('Daily summary (2026-10-24)');
-    expect(j.content).toContain('subway-builder');
-    // EJ sees the example
-    expect(dreamMod.dreamRecallLine(Date.now(), OWNER_USER_ID)).toContain(
-      'stub (e.g. "Daily summary (2026-10-24): 1 messages exchanged")'
-    );
-    expect(dreamMod.dreamRecallLine(Date.now(), 'someone-else')).not.toContain('Daily summary');
+    // topics come from every server: not public either
+    expect(j.content).not.toContain('subway-builder');
+    // EJ sees topics and the example, in private only
+    const ejPrivate = dreamMod.dreamRecallLine(Date.now(), OWNER_USER_ID, true);
+    expect(ejPrivate).toContain('stub (e.g. "Daily summary (2026-10-24): 1 messages exchanged")');
+    expect(ejPrivate).toContain('subway-builder');
+    // in a shared channel the whole room reads the reply, so EJ asking there gets counts only
+    const ejPublic = dreamMod.dreamRecallLine(Date.now(), OWNER_USER_ID, false);
+    expect(ejPublic).toContain('1 stub');
+    expect(ejPublic).not.toContain('Daily summary');
+    expect(ejPublic).not.toContain('subway-builder');
+    expect(dreamMod.dreamRecallLine(Date.now(), 'someone-else', true)).not.toContain('Daily summary');
     // the journal is never offered to tomorrow's dream
     generate.mockReset();
     await dreamMod.dream(10);
@@ -205,7 +211,7 @@ describe('dream journal + recall', () => {
 
   it('a save failure after a real answer is worded as a save failure, not "never got an answer"', () => {
     const text = dreamMod.journalText(
-      { reviewed: 3, tagged: 3, pruned: 0, offered: 10, failedChunks: 0, unsavedChunks: 1, topTags: [] },
+      { reviewed: 3, tagged: 3, pruned: 0, offered: 10, failedChunks: 0, unsavedChunks: 1 },
       '2026-11-18T10:00:00Z'
     );
     expect(text).toContain("1 batch(es) were answered but couldn't be fully saved");
@@ -239,12 +245,13 @@ describe('dream journal + recall', () => {
     const j = db.get<any>(`SELECT * FROM memories WHERE tags LIKE '%dream-journal%'`);
     // no ids in the public text; the owner of the memory (and EJ) see theirs
     expect(j.content).not.toContain(`#${stub}`);
-    const forOwner = dreamMod.dreamRecallLine(Date.now(), 'u1');
+    expect(dreamMod.dreamRecallLine(Date.now(), 'u1', false)).not.toContain(`#${stub}`);
+    const forOwner = dreamMod.dreamRecallLine(Date.now(), 'u1', true);
     expect(forOwner).toContain(`#${stub} stub`);
     expect(forOwner).not.toContain(`#${dup}`);
     expect(forOwner).toContain('memory restore id brings one back');
-    expect(dreamMod.dreamRecallLine(Date.now(), 'someone-else')).not.toContain(`#${stub}`);
-    expect(dreamMod.dreamRecallLine(Date.now(), OWNER_USER_ID)).toContain(`#${stub} stub`);
+    expect(dreamMod.dreamRecallLine(Date.now(), 'someone-else', true)).not.toContain(`#${stub}`);
+    expect(dreamMod.dreamRecallLine(Date.now(), OWNER_USER_ID, true)).toContain(`#${stub} stub`);
 
     await expect(
       memoryMod.memoryCapability.handler({ action: 'restore', memoryId: String(stub) }, undefined, { userId: 'someone-else' })
@@ -277,6 +284,20 @@ describe('dream journal + recall', () => {
     expect(dreamMod.dreamRecallLine(now)).toContain("💭 Last night's memory dream:");
     expect(dreamMod.dreamRecallLine(now)).toContain('reviewed 5 of 5');
     expect(dreamMod.dreamRecallLine(now + 37 * 3_600_000)).toBe('');
+  });
+
+  it('stays quiet about an old-format journal (no details), whose text quoted memories', () => {
+    db.run(
+      `INSERT INTO memories (user_id, content, tags, timestamp, importance, metadata)
+       VALUES ('artie-system', ?, ?, ?, 6, ?)`,
+      [
+        'Dream journal (Nov 18): let go of 1: 1 filler (e.g. "someone private")',
+        JSON.stringify(['dream-journal', 'event']),
+        new Date().toISOString(),
+        JSON.stringify({ dream: { reviewed: 1, tagged: 0, pruned: 1 } }),
+      ]
+    );
+    expect(dreamMod.dreamRecallLine(Date.now(), OWNER_USER_ID, true)).toBe('');
   });
 });
 
