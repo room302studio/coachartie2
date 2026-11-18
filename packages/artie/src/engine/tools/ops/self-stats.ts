@@ -64,7 +64,8 @@ function redactUser(userId: string): string {
 function banlistReport(): string {
   // Anyone who also opted out is never named (Codex 2026-11-18); ids are never shown either.
   const listed = BLOCKED_USERS.filter((u) => !isOptedOut(u.id) && u.names.length > 0);
-  if (listed.length === 0) return 'Banlist: empty. Nobody is banned right now.';
+  if (BLOCKED_USERS.length === 0) return 'Banlist: empty. Nobody is banned right now.';
+  if (listed.length === 0) return 'Banlist: no public entries.';
   const rows = listed.map((u) => {
     let since = '';
     if (u.since) since = ` (since ${u.since})`;
