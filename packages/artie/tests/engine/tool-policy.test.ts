@@ -51,7 +51,7 @@ const GATE_FLOOR: Record<string, Record<string, string>> = {
   },
   'self-stats': {
     overview: '', costs: '', capabilities: '', health: '', errors: '', tools: '', top_spenders: '',
-    user_costs: 'O',
+    banlist: '', user_costs: 'O',
   },
   deep_research: { submit: 'OT', status: '', results: '', harness_status: '' },
   filesystem: { read_file: '', list_directory: '', exists: '' },
