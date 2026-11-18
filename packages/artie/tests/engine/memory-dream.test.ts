@@ -190,6 +190,20 @@ describe('dream journal + recall', () => {
   it('names a plain cause for a failed call, never the raw message', () => {
     expect(dreamMod.unreachedReasonFor(new Error('HTTP 402 Payment Required'))).toBe('the model account was out of credits');
     expect(dreamMod.unreachedReasonFor(new Error('fetch failed'))).toBe('the model could not be reached');
+    expect(dreamMod.unreachedReasonFor(new Error('fetch failed: https://provider.example/jobs/402'))).toBe(
+      'the model could not be reached'
+    );
+  });
+
+  it('counts mixed failures per reason, so a timeout does not hide a credit failure', async () => {
+    for (let i = 0; i < 12; i++) insert(`memory number ${i} about trains`);
+    generate
+      .mockRejectedValueOnce(new Error('fetch failed'))
+      .mockRejectedValueOnce(new Error('💳 OUT OF CREDITS'));
+    await dreamMod.dream(20);
+    const j = db.get<any>(`SELECT * FROM memories WHERE tags LIKE '%dream-journal%'`);
+    expect(j.content).toContain('1 batch(es) never got an answer because the model could not be reached');
+    expect(j.content).toContain('1 batch(es) never got an answer because the model account was out of credits');
     expect(dreamMod.unreachedReasonFor('weird https://x/y?token=abc')).toBe('the model call errored');
   });
 
