@@ -516,7 +516,7 @@ Important:
 
     // What his nightly memory dream did, while it's fresh (dream.ts dreamRecallLine). Its own
     // source, not part of Discord situational awareness, so he remembers it on every surface.
-    const dreamLine = dreamRecallLine();
+    const dreamLine = dreamRecallLine(Date.now(), message.userId);
     if (dreamLine) {
       sources.push({
         name: 'dream_recall',

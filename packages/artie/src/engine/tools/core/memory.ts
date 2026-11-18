@@ -1054,7 +1054,12 @@ async function handleMemoryAction(
         if (!memoryId) {
           throw new Error('No memory ID provided to restore. Use the #id from the dream journal.');
         }
-        return memoryService.restoreMemory(String(userId), parseInt(String(memoryId)));
+        // The journal writes ids as "#123"; accept that form too.
+        const parsedId = Number(String(memoryId).trim().replace(/^#/, ''));
+        if (!Number.isInteger(parsedId) || parsedId <= 0) {
+          throw new Error(`"${String(memoryId).slice(0, 20)}" isn't a memory id. Use the number from the dream journal, like 123.`);
+        }
+        return memoryService.restoreMemory(String(userId), parsedId);
       }
 
       default:

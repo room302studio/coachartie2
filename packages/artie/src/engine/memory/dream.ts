@@ -16,6 +16,7 @@
 import { logger } from '../../shared/logger.js';
 import { getSyncDb } from '../../shared/db/client.js';
 import { isGenerationMuted } from '../../shared/kill-switch.js';
+import { isOwner } from '../../shared/config/owner.js';
 import { parseModelJson } from '../../shared/model-json.js';
 import type { JsonOutputSpec } from '../../shared/structured-output.js';
 import type { ChatMessage } from '../3-context/prompt-cache.js';
@@ -63,6 +64,7 @@ const STRUCTURAL_TAGS = new Set([
 
 interface Candidate {
   id: number;
+  user_id: string;
   content: string;
   tags: string;
   importance: number;
@@ -170,7 +172,7 @@ function topExistingTags(limit = 60): string[] {
 function candidates(limit: number): Candidate[] {
   const db = getSyncDb();
   return db.all<Candidate>(
-    `SELECT id, content, tags, importance, metadata FROM memories
+    `SELECT id, user_id, content, tags, importance, metadata FROM memories
       WHERE importance > 1
         AND (metadata IS NULL OR NOT json_valid(metadata) OR json_extract(metadata, '$.dreamt_at') IS NULL)
       ORDER BY id DESC LIMIT ?`,
@@ -329,7 +331,7 @@ export async function dream(limit = DREAM_BATCH): Promise<DreamResult> {
   let failedChunks = 0;
   const unreachedBy = new Map<string, number>();
   let unsavedChunks = 0;
-  const letGo: Array<{ id: number; category: string }> = [];
+  const letGo: LetGo[] = [];
   for (let i = 0; i < pool.length; i += CHUNK) {
     const batch = pool.slice(i, i + CHUNK);
     let raw: string;
@@ -370,7 +372,7 @@ export async function dream(limit = DREAM_BATCH): Promise<DreamResult> {
           result.prunedBy = { ...result.prunedBy, [category]: (result.prunedBy?.[category] ?? 0) + 1 };
           examples[category] ??= memory.content.replace(/\s+/g, ' ').slice(0, 70);
           // Plain duplicates lose nothing; the rest are judgment calls Artie may want to overrule.
-          if (category !== 'duplicate') letGo.push({ id: memory.id, category });
+          if (category !== 'duplicate') letGo.push({ id: memory.id, category, userId: memory.user_id });
         } else {
           for (const t of verdictTags(v)) {
             newTagCounts.set(t, (newTagCounts.get(t) ?? 0) + 1);
@@ -394,10 +396,11 @@ export async function dream(limit = DREAM_BATCH): Promise<DreamResult> {
     const topTags = [...newTagCounts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 6).map(([t]) => t);
     writeDreamJournal(
       journalText(
-        { ...result, offered: pool.length, failedChunks, unreached, unsavedChunks, examples, topTags, letGo },
+        { ...result, offered: pool.length, failedChunks, unreached, unsavedChunks, topTags },
         now
       ),
-      result
+      result,
+      { examples, letGo }
     );
   }
   return result;
@@ -440,18 +443,18 @@ export function journalText(
     unreached?: Record<string, number>;
     /** Batches the model answered but whose verdicts failed to save (DB error mid-batch). */
     unsavedChunks?: number;
-    examples: Record<string, string>;
     topTags: string[];
-    letGo?: Array<{ id: number; category: string }>;
   },
   nowIso: string
 ): string {
+  // Counts only. The journal rides in every channel's context, so no memory text or ids from any
+  // one person or server go in it; those live in the journal row's metadata (journalDetails).
   const day = new Date(nowIso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'America/New_York' });
   const parts = [`Dream journal (${day}): reviewed ${r.reviewed} of ${r.offered} memories, re-tagged ${r.tagged}`];
   if (r.pruned > 0) {
     const cats = Object.entries(r.prunedBy ?? {})
       .sort((a, b) => b[1] - a[1])
-      .map(([c, n]) => `${n} ${c}${exampleSuffix(r.examples[c])}`);
+      .map(([c, n]) => `${n} ${c}`);
     parts.push(`let go of ${r.pruned} that held nothing worth keeping: ${cats.join(', ')}`);
   } else {
     parts.push('let go of nothing');
@@ -468,40 +471,88 @@ export function journalText(
   if (unsaved > 0) {
     parts.push(`${unsaved} batch(es) were answered but couldn't be fully saved (a database error); the unsaved ones wait for the next dream`);
   }
-  const letGo = r.letGo ?? [];
-  if (letGo.length > 0) {
-    const shown = letGo.slice(0, LET_GO_SHOWN).map((m) => `#${m.id} ${m.category}`);
-    let more = '';
-    if (letGo.length > LET_GO_SHOWN) more = ` (+${letGo.length - LET_GO_SHOWN} more)`;
-    parts.push(`judgment calls you can overrule: ${shown.join(', ')}${more}`);
-  }
-  return parts.join('; ') + '. Pruned memories are hidden, not deleted; memory restore #id brings one back.';
+  return parts.join('; ') + '. Pruned memories are hidden, not deleted.';
 }
 
-export function writeDreamJournal(content: string, result: DreamResult): void {
+export interface LetGo {
+  id: number;
+  category: string;
+  userId: string;
+}
+
+/** What a journal row keeps out of its public text: one example per category, and the
+ *  non-duplicate prunes (Artie: "here are 5 that weren't plain duplicates, so I can object"). */
+export interface JournalDetails {
+  examples?: Record<string, string>;
+  letGo?: LetGo[];
+}
+
+/**
+ * The part of the journal only some viewers may see. EJ sees the examples and every judgment
+ * call; anyone else sees only the calls on their own memories, which they can restore. Pure.
+ */
+export function journalDetails(details: JournalDetails, viewerId: string | undefined): string {
+  if (!viewerId) return '';
+  const owner = isOwner(viewerId);
+  const parts: string[] = [];
+  if (owner) {
+    const ex = Object.entries(details.examples ?? {}).map(([c, text]) => `${c}${exampleSuffix(text)}`);
+    if (ex.length) parts.push(`examples: ${ex.join(', ')}`);
+  }
+  const mine = (details.letGo ?? []).filter((m) => owner || m.userId === viewerId);
+  if (mine.length > 0) {
+    const shown = mine.slice(0, LET_GO_SHOWN).map((m) => `#${m.id} ${m.category}`);
+    let more = '';
+    if (mine.length > LET_GO_SHOWN) more = ` (+${mine.length - LET_GO_SHOWN} more)`;
+    let whose = 'theirs';
+    if (owner) whose = 'all, EJ can see them';
+    parts.push(`judgment calls this person can overrule (${whose}): ${shown.join(', ')}${more}; memory restore id brings one back`);
+  }
+  return parts.join('; ');
+}
+
+export function writeDreamJournal(content: string, result: DreamResult, details: JournalDetails = {}): void {
   try {
     getSyncDb().run(
       `INSERT INTO memories (user_id, content, tags, context, timestamp, importance, metadata)
        VALUES ('artie-system', ?, ?, 'Nightly memory dream', ?, 6, ?)`,
-      [content, JSON.stringify([DREAM_JOURNAL_TAG, 'event']), new Date().toISOString(), JSON.stringify({ dream: result, dreamt_at: new Date().toISOString() })]
+      [
+        content,
+        JSON.stringify([DREAM_JOURNAL_TAG, 'event']),
+        new Date().toISOString(),
+        JSON.stringify({ dream: result, dreamt_at: new Date().toISOString(), details }),
+      ]
     );
   } catch (error) {
     logger.warn('[dream] Could not write the dream journal:', error);
   }
 }
 
-/** The latest dream journal as one context line, while it's fresh; '' otherwise. */
-export function dreamRecallLine(now: number = Date.now()): string {
+/**
+ * The latest dream journal as one context line, while it's fresh; '' otherwise. The counts are
+ * for everyone; examples and ids only for the viewer allowed to see them (journalDetails).
+ */
+export function dreamRecallLine(now: number = Date.now(), viewerId?: string): string {
   try {
-    const row = getSyncDb().get<{ content: string; timestamp: string }>(
-      `SELECT content, timestamp FROM memories WHERE user_id = 'artie-system' AND tags LIKE ? ORDER BY id DESC LIMIT 1`,
+    const row = getSyncDb().get<{ content: string; timestamp: string; metadata: string | null }>(
+      `SELECT content, timestamp, metadata FROM memories WHERE user_id = 'artie-system' AND tags LIKE ? ORDER BY id DESC LIMIT 1`,
       [`%"${DREAM_JOURNAL_TAG}"%`]
     );
     if (!row) return '';
     if (now - Date.parse(row.timestamp) > JOURNAL_RECALL_HOURS * 3_600_000) return '';
+    let details: JournalDetails = {};
+    try {
+      const meta = JSON.parse(row.metadata || '{}');
+      if (meta && typeof meta.details === 'object' && meta.details) details = meta.details;
+    } catch {
+      details = {};
+    }
+    const extra = journalDetails(details, viewerId);
+    let tail = '';
+    if (extra) tail = ` ${extra}.`;
     // A plain fact, no instructions (EJ: "that's a lot of handholding"). He may riff on a
     // "what did you dream?" anyway; that's his call.
-    return `💭 Last night's memory dream: ${row.content.replace(/^Dream journal \([^)]*\): /, '')}`;
+    return `💭 Last night's memory dream: ${row.content.replace(/^Dream journal \([^)]*\): /, '')}${tail}`;
   } catch {
     return '';
   }

@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeAll, beforeEach } from 'vitest';
+import { OWNER_USER_ID } from '../../src/shared/config/owner.js';
 import { mkdtempSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
@@ -161,8 +162,15 @@ describe('dream journal + recall', () => {
     const j = db.get<any>(`SELECT * FROM memories WHERE tags LIKE '%dream-journal%'`);
     expect(j.user_id).toBe('artie-system');
     expect(j.content).toContain('reviewed 2 of 2');
-    expect(j.content).toContain('1 stub (e.g. "Daily summary (2026-10-24): 1 messages exchanged")');
+    expect(j.content).toContain('1 stub');
+    // the public journal rides in every channel: no memory text in it
+    expect(j.content).not.toContain('Daily summary (2026-10-24)');
     expect(j.content).toContain('subway-builder');
+    // EJ sees the example
+    expect(dreamMod.dreamRecallLine(Date.now(), OWNER_USER_ID)).toContain(
+      'stub (e.g. "Daily summary (2026-10-24): 1 messages exchanged")'
+    );
+    expect(dreamMod.dreamRecallLine(Date.now(), 'someone-else')).not.toContain('Daily summary');
     // the journal is never offered to tomorrow's dream
     generate.mockReset();
     await dreamMod.dream(10);
@@ -197,7 +205,7 @@ describe('dream journal + recall', () => {
 
   it('a save failure after a real answer is worded as a save failure, not "never got an answer"', () => {
     const text = dreamMod.journalText(
-      { reviewed: 3, tagged: 3, pruned: 0, offered: 10, failedChunks: 0, unsavedChunks: 1, examples: {}, topTags: [] },
+      { reviewed: 3, tagged: 3, pruned: 0, offered: 10, failedChunks: 0, unsavedChunks: 1, topTags: [] },
       '2026-11-18T10:00:00Z'
     );
     expect(text).toContain("1 batch(es) were answered but couldn't be fully saved");
@@ -229,15 +237,20 @@ describe('dream journal + recall', () => {
     );
     await dreamMod.dream(10);
     const j = db.get<any>(`SELECT * FROM memories WHERE tags LIKE '%dream-journal%'`);
-    expect(j.content).toContain(`judgment calls you can overrule: #${stub} stub`);
-    expect(j.content).not.toContain(`#${dup} duplicate`);
-    expect(j.content).toContain('memory restore #id brings one back');
+    // no ids in the public text; the owner of the memory (and EJ) see theirs
+    expect(j.content).not.toContain(`#${stub}`);
+    const forOwner = dreamMod.dreamRecallLine(Date.now(), 'u1');
+    expect(forOwner).toContain(`#${stub} stub`);
+    expect(forOwner).not.toContain(`#${dup}`);
+    expect(forOwner).toContain('memory restore id brings one back');
+    expect(dreamMod.dreamRecallLine(Date.now(), 'someone-else')).not.toContain(`#${stub}`);
+    expect(dreamMod.dreamRecallLine(Date.now(), OWNER_USER_ID)).toContain(`#${stub} stub`);
 
     await expect(
       memoryMod.memoryCapability.handler({ action: 'restore', memoryId: String(stub) }, undefined, { userId: 'someone-else' })
     ).rejects.toThrow(/belongs to someone else/);
 
-    const out = await memoryMod.memoryCapability.handler({ action: 'restore', memoryId: String(stub) }, undefined, { userId: 'u1' });
+    const out = await memoryMod.memoryCapability.handler({ action: 'restore', id: `#${stub}` }, undefined, { userId: 'u1' });
     expect(out).toContain(`Restored memory #${stub} (importance 4)`);
     for (let i = 0; i < 50 && row(stub).importance === 1; i++) await new Promise((r) => setTimeout(r, 10));
     expect(row(stub).importance).toBe(4);
