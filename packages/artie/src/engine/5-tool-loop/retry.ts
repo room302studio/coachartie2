@@ -410,13 +410,9 @@ export class RobustCapabilityExecutor {
           capability.content || String(capability.params.expression || '')
         );
 
-      case 'memory':
-        if (capability.action === 'remember') {
-          return this.fallbackMemoryStore(capability.content);
-        } else if (capability.action === 'search') {
-          return this.fallbackMemorySearch(String(capability.params.query || ''));
-        }
-        break;
+      // No memory fallback: it answered a failed remember with "I've noted ... (stored
+      // temporarily)" while storing nothing, which hid real errors from Artie, e.g. scope
+      // "here" from a DM (2026-11-17, he caught it). The real error reaches him instead.
 
       case 'web':
         return this.fallbackWebSearch(String(capability.params.query || capability.content));
@@ -427,8 +423,6 @@ export class RobustCapabilityExecutor {
       default:
         throw new Error(`No fallback available for ${capability.name}`);
     }
-
-    throw new Error(`Fallback not implemented for ${capability.name}:${capability.action}`);
   }
 
   /**
@@ -453,23 +447,6 @@ export class RobustCapabilityExecutor {
       logger.warn(`🧮 FALLBACK: Failed to calculate "${expression}":`, error);
       return `I tried to calculate "${expression}" but couldn't parse the mathematical expression. Please try rephrasing it like "42 * 42" or "100 + 50".`;
     }
-  }
-
-  /**
-   * Fallback memory storage
-   */
-  private fallbackMemoryStore(content: string): string {
-    // Simple in-memory fallback (not persistent)
-    logger.info(`💾 FALLBACK: Storing memory: "${content}"`);
-    return `I've noted: "${content}" (stored temporarily until the memory system is restored)`;
-  }
-
-  /**
-   * Fallback memory search
-   */
-  private fallbackMemorySearch(query: string): string {
-    logger.info(`🔍 FALLBACK: Searching for: "${query}"`);
-    return `I tried to search my memories for "${query}" but the memory system is currently unavailable. Please try again later or rephrase your question.`;
   }
 
   /**
@@ -608,7 +585,7 @@ export class RobustCapabilityExecutor {
 
     const suggestions = {
       calculator: 'Try using a simpler mathematical expression like "42 * 42" or "100 + 50"',
-      memory: 'Try rephrasing your memory request or check if the memory system is available',
+      memory: 'Nothing was stored. The error above says what to change.',
       web: 'Try rephrasing your search query or check your internet connection',
       mcp_client: 'The external tool service might be temporarily unavailable',
     };

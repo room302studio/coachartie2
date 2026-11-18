@@ -326,6 +326,19 @@ describe('ledger: never throws, prunes', () => {
     expect(describeError(e)).toBe('PARAM_MISSING_001');
   });
 
+  // 2026-11-17, Artie caught it: a failed remember came back "I've noted ... (stored
+  // temporarily until the memory system is restored)" while nothing was stored.
+  it('a failed memory remember reports the real error, never a fake "noted"', async () => {
+    const result = await robustExecutor.executeWithRetry(
+      { name: 'memory', action: 'remember', content: 'x', params: { content: 'a fact', scope: 'here' } },
+      { userId: NOT_OWNER, messageId: 'm' },
+      1
+    );
+    expect(result.success).toBe(false);
+    expect(String(result.error)).toContain('needs a server');
+    expect(JSON.stringify(result)).not.toContain('stored temporarily');
+  });
+
   it('looksLikeToolFailure is still exported from execute.ts', () => {
     expect(looksLikeToolFailure('Error: nope')).toBe(true);
     expect(looksLikeToolFailure('all good')).toBe(false);
