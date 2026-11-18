@@ -1041,7 +1041,18 @@ async function handleMemoryAction(
           selfMeta
         );
         logger.info(`🎯 Memory remember result: ${result}`);
-        return result;
+        // A receipt, not a guess (Artie 2026-11-18: "I asked for 7 and it saved as 6, no warning").
+        if (!result.startsWith('✅')) return result;
+        const notes = [`scope: ${String(params.scope)}`];
+        const asked = parseInt(String(params.importance));
+        if (Number.isFinite(asked) && asked !== importance) {
+          let why = 'importance runs 1-10';
+          if (asked > importanceCeiling && importanceCeiling < 10) {
+            why = `above ${importanceCeiling} needs EJ in the conversation`;
+          }
+          notes.push(`importance ${asked} asked, ${importance} stored (${why})`);
+        }
+        return `${result} [${notes.join('; ')}]`;
       }
 
       case 'recall': {
