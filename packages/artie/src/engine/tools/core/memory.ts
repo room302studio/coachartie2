@@ -92,7 +92,11 @@ async function recordSelfNoteTrail(rememberResult: string, meta: Record<string, 
     logger.warn('self-note trail not recorded:', error);
   }
   if (changed !== 1) {
-    await hybridDataLayer.deleteMemory(id).catch(() => undefined);
+    // If even the rollback fails, the row is invisible everywhere (no provenance) and EJ can forget
+    // it; log it loudly so it can be found.
+    await hybridDataLayer.deleteMemory(id).catch((error) => {
+      logger.error(`self-note #${id} saved without provenance and rollback failed; EJ can forget it`, error);
+    });
     throw new Error('Self-note was not saved (could not record who it was written with); try again');
   }
 }
