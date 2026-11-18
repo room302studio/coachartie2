@@ -97,13 +97,18 @@ export function addPromise(
   if (text.length > MAX_PROMISE_CHARS) {
     return { ok: false, error: `Keep it under ${MAX_PROMISE_CHARS} characters: the promise, not the whole plan.` };
   }
+  // The cap counts only this scope (this server, or DMs): a server-side error must not reveal
+  // how many DM promises someone has (Codex).
   const open = db()
-    .prepare(`SELECT COUNT(*) AS n FROM artie_promises WHERE user_id = ? AND status = 'open' AND created_at >= ?`)
-    .get(input.userId, windowStart(now)) as { n: number };
+    .prepare(
+      `SELECT COUNT(*) AS n FROM artie_promises
+       WHERE user_id = ? AND status = 'open' AND created_at >= ? AND guild_id IS ?`
+    )
+    .get(input.userId, windowStart(now), input.guildId ?? null) as { n: number };
   if (open.n >= MAX_OPEN_PER_PERSON) {
     return {
       ok: false,
-      error: `You already have ${open.n} open promises to this person. Mark some done or drop them first.`,
+      error: `There are already ${MAX_OPEN_PER_PERSON} open promises to this person here. Mark some done or drop them first.`,
     };
   }
   const info = db()

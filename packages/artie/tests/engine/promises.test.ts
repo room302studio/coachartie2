@@ -58,6 +58,8 @@ describe('promise store scope', () => {
       expect(addPromise({ userId: 'u1', guildId: null, channelId: null, text: `p${i}` }).ok).toBe(true);
     }
     expect(addPromise({ userId: 'u1', guildId: null, channelId: null, text: 'one more' }).ok).toBe(false);
+    // Full in DMs says nothing in a server: the cap is per scope (Codex).
+    expect(addPromise({ userId: 'u1', guildId: 'gA', channelId: 'c1', text: 'server one' }).ok).toBe(true);
     expect(addPromise({ userId: 'u2', guildId: null, channelId: null, text: '   ' }).ok).toBe(false);
     expect(addPromise({ userId: 'u2', guildId: null, channelId: null, text: 'x'.repeat(201) }).ok).toBe(false);
   });
