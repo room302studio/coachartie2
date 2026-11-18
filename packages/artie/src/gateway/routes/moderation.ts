@@ -95,6 +95,9 @@ export async function resolveTarget(
   const candidates: MemberCandidate[] = [];
   const SEARCH_LIMIT = 25;
   let searchComplete = false;
+  // What the REST search returned just now: only these can vouch for a username/nickname match
+  // (a cached nickname may be stale; the member could have renamed) (Codex).
+  const searchFresh: MemberCandidate[] = [];
 
   const guild = client.guilds.cache.get(guildId || SUBWAY_BUILDER_GUILD_ID);
   if (guild) {
@@ -109,7 +112,11 @@ export async function resolveTarget(
         .search({ query: ref.name.slice(0, 32), limit: SEARCH_LIMIT })
         .catch(() => null);
       if (found) {
-        for (const m of found.values()) candidates.push(toCandidate(m));
+        for (const m of found.values()) {
+          const fresh = toCandidate(m);
+          candidates.push(fresh);
+          searchFresh.push(fresh);
+        }
         // A full page may hide more matches; a failed search hides everything uncached.
         searchComplete = found.size < SEARCH_LIMIT;
       }
@@ -148,7 +155,7 @@ export async function resolveTarget(
   let coveredBySearch = false;
   if (result.ok) {
     const wanted = ref.name.trim().toLowerCase();
-    coveredBySearch = candidates.some(
+    coveredBySearch = searchFresh.some(
       (c) =>
         c.id === result.id &&
         [c.username, c.nickname].some((n) => (n || '').trim().toLowerCase() === wanted)

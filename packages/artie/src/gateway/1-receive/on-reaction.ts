@@ -344,8 +344,9 @@ export function setupReactionHandler(client: Client) {
         if (user.partial) await user.fetch();
         if (user.bot) return;
         if (!reaction.message.author?.bot || reaction.message.author.id !== client.user?.id) return;
-        const emoji = reaction.emoji.name;
-        if (!emoji) return;
+        // A custom emoji's removal can arrive with an id but no name; the id is its identity.
+        const emoji = reaction.emoji.name || '?';
+        if (!reaction.emoji.name && !reaction.emoji.id) return;
         // A re-add right after a removal must not be swallowed by the 60s dedupe.
         reactionCache.delete(`${reaction.message.id}-${user.id}-${emojiKey(emoji, reaction.emoji.id)}`);
         recordReaction({
@@ -378,14 +379,11 @@ export function setupReactionHandler(client: Client) {
   });
   client.on(Events.MessageReactionRemoveEmoji, async (reaction: any) => {
     try {
-      if (!reaction.emoji?.name) return;
-      forgetDedupe(reaction.message.id, emojiKey(reaction.emoji.name, reaction.emoji.id));
-      clearLoggedReactions(
-        reaction.message.channelId,
-        reaction.message.id,
-        reaction.emoji.name,
-        reaction.emoji.id
-      );
+      // A custom emoji can arrive with an id but no name; the id alone is its identity.
+      if (!reaction.emoji?.name && !reaction.emoji?.id) return;
+      const name = reaction.emoji.name || '?';
+      forgetDedupe(reaction.message.id, emojiKey(name, reaction.emoji.id));
+      clearLoggedReactions(reaction.message.channelId, reaction.message.id, name, reaction.emoji.id);
     } catch (error) {
       logger.debug('Failed to clear logged emoji reactions:', error);
     }

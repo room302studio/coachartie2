@@ -180,7 +180,15 @@ function fakeClient(opts: { timeout?: () => Promise<unknown>; withSearch?: boole
     guild: { ownerId: 'someone-else', members: { me: { permissions: { has: () => true }, roles: { highest: { position: 10 } } } } },
     timeout: vi.fn(opts.timeout ?? (async () => undefined)),
   };
-  const search = vi.fn(async () => new Map());
+  // Like Discord's REST search: prefix match on username or nickname (not display name).
+  const search = vi.fn(async ({ query }: { query: string }) => {
+    const q = query.toLowerCase();
+    return new Map(
+      members
+        .filter((m) => [m.username, m.nickname].some((n) => (n || '').toLowerCase().startsWith(q)))
+        .map((m) => [m.id, fakeMember(m)])
+    );
+  });
   const guild: any = {
     members: {
       cache,
@@ -235,6 +243,14 @@ describe('resolveTarget (fake discord.js client)', () => {
     const full = new Map(Array.from({ length: 25 }, (_, i) => [`x${i}`, { id: `9000000000000000${i}`, user: { id: `9000000000000000${i}`, username: `other${i}` } }]));
     search.mockResolvedValueOnce(full as any);
     const r = await resolveTarget(client, 'g', 'salty pancakes');
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toBe('uncertain');
+  });
+  it('a stale cached nickname cannot vouch for a match the fresh search does not confirm', async () => {
+    const { client, search } = fakeClient();
+    // Cache says yellowaquarium; the REST search (fresh) no longer finds anyone by that name.
+    search.mockResolvedValueOnce(new Map());
+    const r = await resolveTarget(client, 'g', 'yellowaquarium');
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.reason).toBe('uncertain');
   });
