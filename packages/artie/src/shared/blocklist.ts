@@ -18,6 +18,8 @@ export const BLOCKED_USERS: BlockedUser[] = [
   // yellowaquarium (id 1064472458448617502) — banned 2026-07-15 for burning credits
   // with hour-long troll spam; served their sentence, unblocked 2026-07-21 as a
   // (nearly) model citizen. Empty list = nobody is invisible and no 💔 reactions fire.
+  // rhodie3587: banned 2026-11-18 by EJ after Artie hit his daily cap mid-reply in #prison.
+  { id: '929158677133402122', names: ['rhodie3587', 'rhodie'] },
 ];
 
 // What Artie calls a blocked user when one comes up. Policy (EJ, 2026-07-16):
