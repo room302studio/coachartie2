@@ -363,6 +363,22 @@ describe('self-stats: tools', () => {
     expect(text).not.toMatch(/Never called[^\n]*ledger-probe/);
   });
 
+  it('skips the never-called list while the ledger is younger than half the window', () => {
+    getSyncDb().run('DELETE FROM tool_call_ledger');
+    const now = Date.now();
+    writeLedgerRow({ tool: 'self-stats', action: 'tools', outcome: 'ok' }, now - 60 * 60 * 1000);
+    const text = toolsReport(7 * 24 * 60, now);
+    expect(text).toContain('Never-called list skipped');
+    expect(text).not.toContain('Never called in the last');
+  });
+
+  it('never lists internal plumbing the model is not offered', async () => {
+    const now = Date.now();
+    writeLedgerRow({ tool: 'self-stats', action: 'tools', outcome: 'ok' }, now - 20 * DAY);
+    const text = toolsReport(7 * 24 * 60, now);
+    expect(text).not.toMatch(/Never called[^\n]*\bvariable\b/);
+  });
+
   it('honours timeRange and has an empty-window message', () => {
     expect(toolsReport(60)).toContain('No tool calls recorded in this window.');
     writeLedgerRow({ tool: 'ledger-probe', action: 'fine', outcome: 'ok' }, Date.now() - 3 * DAY);

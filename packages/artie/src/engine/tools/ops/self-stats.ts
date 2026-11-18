@@ -9,6 +9,7 @@ import {
   ledgerTopFailures,
 } from '../../5-tool-loop/tool-ledger.js';
 import { metricsRegistry } from '../../health/metrics.js';
+import { registryToTools } from '../../5-tool-loop/tool-schema.js';
 
 /**
  * Self-Stats capability - Artie can check his own health and metrics
@@ -188,7 +189,9 @@ export function toolsReport(windowMinutes: number, now: number = Date.now()): st
   }
 
   if (total === 0) {
-    lines.push('No tool calls recorded in this window.');
+    lines.push(
+      'No tool calls recorded in this window. A call is recorded when it finishes, so this one is not counted yet.'
+    );
   } else {
     lines.push(`${total} calls, ${pct(totalOk, total)} ok. Outcomes other than ok: invalid_args (failed validation), refused_owner, blocked_taint, queued_approval, error, unknown_tool, unknown_action.`);
     lines.push('');
@@ -216,13 +219,22 @@ export function toolsReport(windowMinutes: number, now: number = Date.now()): st
   }
 
   const called = ledgerToolsCalled(since);
-  const never = capabilityRegistry
-    .list()
-    .map((c) => c.name)
+  // Only tools the model is actually offered: internal plumbing (e.g. `variable`) can't be
+  // "never used" by it (Artie asked what `variable` was).
+  const never = registryToTools(capabilityRegistry.list())
+    .map((t) => t.function.name)
     .filter((name) => !called.has(name))
     .sort();
   lines.push('');
-  if (never.length === 0) {
+  // "Never called" means little until the ledger covers most of the window (Artie saw 65 of 65
+  // tools "never called" an hour after it shipped).
+  const coveredMs = now - Math.max(since, firstTs ?? now);
+  const windowMs = now - since;
+  if (coveredMs < windowMs / 2) {
+    lines.push(
+      `Never-called list skipped: the ledger only covers ${Math.round(coveredMs / 3_600_000)}h of this ${label} window, too short to say a tool is unused.`
+    );
+  } else if (never.length === 0) {
     lines.push(`Every registered tool was called at least once in the last ${label}.`);
   } else {
     lines.push(`Never called in the last ${label} (${never.length}): ${never.join(', ')}`);

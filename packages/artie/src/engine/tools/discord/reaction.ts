@@ -117,7 +117,11 @@ async function readReactions(params: any, context?: CapabilityContext): Promise<
   const channelId = context?.channelId;
   const guildId = context?.guildId ?? null;
   if (!channelId) {
-    return JSON.stringify({ success: false, error: 'no channel in context to read reactions from' });
+    return JSON.stringify({
+      success: false,
+      error:
+        "this message didn't come from a Discord channel (it arrived through the API/bridge), so there are no reactions to read here. Reactions can only be read from inside the Discord channel or DM where they happened.",
+    });
   }
   const now = Date.now();
   const messageId = String(params.message_id || '').trim();
