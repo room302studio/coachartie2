@@ -469,6 +469,63 @@ export class MemoryService {
     return `🗑️ Forgot memory: "${memory.content.substring(0, 50)}..." (ID: ${memoryId})`;
   }
 
+  /**
+   * Undo a nightly-dream prune (dream.ts applyVerdict): importance back to what it was, the
+   * 'pruned' tag off. The dream journal said pruned memories "can be restored" with no way to do
+   * it (Artie, 2026-11-18: "show me what it let go, so I can object"). Same ownership rule as
+   * pin/forget, plus EJ. Only dream prunes: a gardener consolidation is a merge, not a verdict.
+   * Reads the row directly because getMemory hides importance-1 rows. The memory stays dreamt,
+   * so the next dream won't re-judge it.
+   */
+  async restoreMemory(userId: string, memoryId: number): Promise<string> {
+    if (!this.useHybridLayer) {
+      throw new Error('Restore failed: hybrid memory layer is disabled');
+    }
+    const row = getSyncDb().get<MemoryRecord>(
+      `SELECT * FROM memories WHERE id = ?`,
+      [memoryId]
+    );
+    if (!row) {
+      throw new Error(`Memory not found: ${memoryId}`);
+    }
+    if (row.user_id !== userId && !isOwner(userId)) {
+      throw new Error(
+        `Memory #${memoryId} belongs to someone else; only they or EJ can restore it (ask in a turn with them or EJ)`
+      );
+    }
+    let meta: Record<string, unknown> = {};
+    try {
+      const parsed = JSON.parse(row.metadata || '{}');
+      if (parsed && typeof parsed === 'object') meta = parsed;
+    } catch {
+      meta = {};
+    }
+    if (meta.pruned_by !== 'dream') {
+      throw new Error(`Memory ${memoryId} wasn't let go by the dream, so there is nothing to restore`);
+    }
+    if (row.importance > 1) {
+      throw new Error(`Memory ${memoryId} is already restored (importance ${row.importance})`);
+    }
+    let before = Number(meta.importance_before_dream);
+    if (!Number.isFinite(before) || before < 2) before = 5;
+    let tags: string[] = [];
+    try {
+      const parsed = JSON.parse(row.tags || '[]');
+      if (Array.isArray(parsed)) tags = parsed.map(String);
+    } catch {
+      tags = [];
+    }
+    const restored: MemoryRecord = {
+      ...row,
+      importance: before,
+      tags: JSON.stringify(tags.filter((t) => t !== 'pruned')),
+      metadata: JSON.stringify({ ...meta, restored_at: new Date().toISOString(), restored_by: userId }),
+    };
+    await hybridDataLayer.updateMemory(restored);
+    logger.info(`♻️ [HYBRID] Restored dream-pruned memory ${memoryId} for ${userId}`);
+    return `Restored memory #${memoryId} (importance ${before}); the dream had filed it as ${String(meta.pruned_category || 'junk')}.`;
+  }
+
   async getRecentMemories(userId: string, limit: number = 10, guildId?: string): Promise<MemoryEntry[]> {
     if (this.useHybridLayer) {
       // FAST PATH: Use hybrid layer. guildId (when given) keeps other servers' memories out.
@@ -992,9 +1049,17 @@ async function handleMemoryAction(
         return result;
       }
 
+      case 'restore': {
+        const memoryId = params.memoryId || params.id || content;
+        if (!memoryId) {
+          throw new Error('No memory ID provided to restore. Use the #id from the dream journal.');
+        }
+        return memoryService.restoreMemory(String(userId), parseInt(String(memoryId)));
+      }
+
       default:
         throw new Error(
-          `Unknown memory action: ${action}. Supported actions: remember, recall, forget, pin, recent, stats`
+          `Unknown memory action: ${action}. Supported actions: remember, recall, forget, pin, restore, recent, stats`
         );
     }
   } catch (error) {
@@ -1009,7 +1074,7 @@ async function handleMemoryAction(
 export const memoryCapability: RegisteredCapability = {
   name: 'memory',
   emoji: '🧠',
-  supportedActions: ['remember', 'recall', 'forget', 'pin', 'recent', 'stats'],
+  supportedActions: ['remember', 'recall', 'forget', 'pin', 'restore', 'recent', 'stats'],
   // Params as handleMemoryAction reads them. Writes are Artie's own state (`own`).
   actions: {
     remember: {
@@ -1054,6 +1119,12 @@ export const memoryCapability: RegisteredCapability = {
       effect: 'own',
       params: { memoryId: { type: 'integer', description: 'Memory id', aliases: ['id'] } },
     },
+    restore: {
+      effect: 'own',
+      params: {
+        memoryId: { type: 'integer', description: 'Id of a memory the nightly dream let go (#id in the dream journal)', required: true, aliases: ['id'] },
+      },
+    },
     recent: { effect: 'read', params: { limit: { type: 'integer', description: 'How many' } } },
     stats: { effect: 'read' },
   },
@@ -1065,7 +1136,7 @@ export const memoryCapability: RegisteredCapability = {
     'kind=person|preference|project|event|lore|rule|tool|goal|pinned says what the fact is about; scope says where it may travel. ' +
     'tags="a,b" files a memory, recall tags="a" finds it again. A nightly dream pass re-tags memories and prunes junk. ' +
     'NOT for structured profile fields like email/timezone (use user-profile) or agent handoffs (system_memory, EJ only). ' +
-    '"pin" marks something important (importance 10); "forget" deletes it.',
+    '"pin" marks something important (importance 10); "forget" deletes it; "restore" undoes a dream prune you disagree with.',
   handler: handleMemoryAction,
   examples: [
     '<capability name="memory" action="remember" scope="here" kind="project" tags="monetization,stripe">Tier-list commissions idea, risk: becomes a chore</capability>',

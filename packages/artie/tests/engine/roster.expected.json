@@ -219,6 +219,7 @@
     "recall",
     "recent",
     "remember",
+    "restore",
     "stats"
   ],
   "mention_proxy": [

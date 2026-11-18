@@ -193,6 +193,46 @@ describe('dream journal + recall', () => {
     expect(dreamMod.unreachedReasonFor('weird https://x/y?token=abc')).toBe('the model call errored');
   });
 
+  it('names non-duplicate prunes by id, and restore brings one back for its owner', async () => {
+    const stub = insert('Daily summary (2026-11-16): 1 messages exchanged', 4);
+    const dup = insert('Alex wants deliveries in both games');
+    generate.mockResolvedValueOnce(
+      JSON.stringify({
+        memories: [
+          { id: stub, kind: 'event', tags: [], verdict: 'junk', category: 'stub', reason: 'empty' },
+          { id: dup, kind: 'project', tags: [], verdict: 'junk', category: 'duplicate', reason: 'dup' },
+        ],
+      })
+    );
+    await dreamMod.dream(10);
+    const j = db.get<any>(`SELECT * FROM memories WHERE tags LIKE '%dream-journal%'`);
+    expect(j.content).toContain(`judgment calls you can overrule: #${stub} stub`);
+    expect(j.content).not.toContain(`#${dup} duplicate`);
+    expect(j.content).toContain('memory restore #id brings one back');
+
+    await expect(
+      memoryMod.memoryCapability.handler({ action: 'restore', memoryId: String(stub) }, undefined, { userId: 'someone-else' })
+    ).rejects.toThrow(/belongs to someone else/);
+
+    const out = await memoryMod.memoryCapability.handler({ action: 'restore', memoryId: String(stub) }, undefined, { userId: 'u1' });
+    expect(out).toContain(`Restored memory #${stub} (importance 4)`);
+    for (let i = 0; i < 50 && row(stub).importance === 1; i++) await new Promise((r) => setTimeout(r, 10));
+    expect(row(stub).importance).toBe(4);
+    expect(JSON.parse(row(stub).tags)).not.toContain('pruned');
+    expect(JSON.parse(row(stub).metadata).restored_by).toBe('u1');
+
+    await expect(
+      memoryMod.memoryCapability.handler({ action: 'restore', memoryId: String(stub) }, undefined, { userId: 'u1' })
+    ).rejects.toThrow(/already restored/);
+  });
+
+  it("won't restore a memory the dream never pruned", async () => {
+    const plain = insert('Jan builds Tokyo maps', 1);
+    await expect(
+      memoryMod.memoryCapability.handler({ action: 'restore', memoryId: String(plain) }, undefined, { userId: 'u1' })
+    ).rejects.toThrow(/wasn't let go by the dream/);
+  });
+
   it('recalls the latest journal for 36 hours, then goes quiet', () => {
     dreamMod.writeDreamJournal('Dream journal (Oct 30): reviewed 5 of 5 memories, re-tagged 3; let go of nothing.', {
       reviewed: 5, tagged: 3, pruned: 0,

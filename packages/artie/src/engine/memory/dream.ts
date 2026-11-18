@@ -182,7 +182,7 @@ function dreamMessages(vocab: string[], batch: Candidate[]): ChatMessage[] {
   const system = `You curate a Discord bot's long-term memory. For each memory decide:
 - kind: exactly one of ${KINDS.join(', ')}
 - tags: 2-5 lowercase topic tags. Reuse tags from VOCABULARY whenever one fits; invent at most ONE new tag per memory, only if nothing fits. No names of the kind itself, no "memory"/"reflection".
-- verdict: "junk" only if it holds nothing worth recalling later: test runs or smoke tests, tool-success trivia (e.g. "the calculator computed 123*456"), empty stubs ("N messages exchanged"), or pure filler. Opinions, jokes with context, facts about people, plans and lore are "keep". When unsure, keep.
+- verdict: "junk" only if it holds nothing worth recalling later: test runs or smoke tests, tool-success trivia (e.g. "the calculator computed 123*456"), empty stubs ("N messages exchanged"), or pure filler. Opinions, jokes with context, facts about people, plans and lore are "keep". Small facts about a specific person are always "keep", however minor they look: what they're building, a name, place or pet they mentioned once, a plan they have; those are what let Artie ask "how's the Tokyo map going?". When unsure, keep.
 - category: for junk, exactly one of stub (auto-generated summary/digest with no content), duplicate (repeats another memory in this batch), outdated (superseded or no longer true), test (test runs, tool trivia), filler (vague or contentless). For keep: "none".
 - reason: a few words.
 Reply with compact JSON only (no indentation or line breaks): {"memories":[{"id":123,"kind":"...","tags":[...],"verdict":"...","category":"...","reason":"..."}, ...]}.
@@ -329,6 +329,7 @@ export async function dream(limit = DREAM_BATCH): Promise<DreamResult> {
   let failedChunks = 0;
   let unreachedChunks = 0;
   let unreachedReason: string | undefined;
+  const letGo: Array<{ id: number; category: string }> = [];
   for (let i = 0; i < pool.length; i += CHUNK) {
     const batch = pool.slice(i, i + CHUNK);
     try {
@@ -357,6 +358,8 @@ export async function dream(limit = DREAM_BATCH): Promise<DreamResult> {
           const category = junkCategory(v.category);
           result.prunedBy = { ...result.prunedBy, [category]: (result.prunedBy?.[category] ?? 0) + 1 };
           examples[category] ??= memory.content.replace(/\s+/g, ' ').slice(0, 70);
+          // Plain duplicates lose nothing; the rest are judgment calls Artie may want to overrule.
+          if (category !== 'duplicate') letGo.push({ id: memory.id, category });
         } else {
           for (const t of verdictTags(v)) {
             newTagCounts.set(t, (newTagCounts.get(t) ?? 0) + 1);
@@ -382,7 +385,7 @@ export async function dream(limit = DREAM_BATCH): Promise<DreamResult> {
     const topTags = [...newTagCounts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 6).map(([t]) => t);
     writeDreamJournal(
       journalText(
-        { ...result, offered: pool.length, failedChunks, unreachedChunks, unreachedReason, examples, topTags },
+        { ...result, offered: pool.length, failedChunks, unreachedChunks, unreachedReason, examples, topTags, letGo },
         now
       ),
       result
@@ -397,6 +400,8 @@ export async function dream(limit = DREAM_BATCH): Promise<DreamResult> {
 // for a day and a half (dreamRecallLine), so he remembers without being told.
 // ---------------------------------------------------------------------------------------------
 export const DREAM_JOURNAL_TAG = 'dream-journal';
+/** How many non-duplicate prunes the journal names by id (Artie: "here are 5 that weren't plain duplicates"). */
+const LET_GO_SHOWN = 5;
 const JOURNAL_RECALL_HOURS = 36;
 
 function exampleSuffix(example: string | undefined): string {
@@ -426,6 +431,7 @@ export function journalText(
     unreachedReason?: string;
     examples: Record<string, string>;
     topTags: string[];
+    letGo?: Array<{ id: number; category: string }>;
   },
   nowIso: string
 ): string {
@@ -448,7 +454,14 @@ export function journalText(
     );
   }
   if (r.failedChunks > 0) parts.push(`${r.failedChunks} batch(es) came back unreadable; those memories wait for the next dream`);
-  return parts.join('; ') + '. Pruned memories are hidden, not deleted, and can be restored.';
+  const letGo = r.letGo ?? [];
+  if (letGo.length > 0) {
+    const shown = letGo.slice(0, LET_GO_SHOWN).map((m) => `#${m.id} ${m.category}`);
+    let more = '';
+    if (letGo.length > LET_GO_SHOWN) more = ` (+${letGo.length - LET_GO_SHOWN} more)`;
+    parts.push(`judgment calls you can overrule: ${shown.join(', ')}${more}`);
+  }
+  return parts.join('; ') + '. Pruned memories are hidden, not deleted; memory restore #id brings one back.';
 }
 
 export function writeDreamJournal(content: string, result: DreamResult): void {
