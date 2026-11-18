@@ -11,7 +11,10 @@ import {
   resetPromiseStoreState,
   MAX_OPEN_PER_PERSON,
   PROMISE_WINDOW_DAYS,
+  waitNote,
+  withApprovalStatus,
 } from '../../src/shared/db/promise-store.js';
+import { createPendingAction, resolvePendingAction } from '../../src/shared/pending-actions.js';
 import { promisesCapability } from '../../src/engine/tools/core/promises.js';
 import { promisesLine } from '../../src/engine/3-context/sources/last-time.js';
 import { OWNER_USER_ID } from '../../src/shared/config/owner.js';
@@ -115,6 +118,34 @@ describe('promises tool', () => {
   });
 });
 
+describe('promises waiting on an approval', () => {
+  it('links only to an approval this person requested, and shows its live outcome first', async () => {
+    const mine = createPendingAction({ tool: 'github', action: 'create_issue', params: {}, requestedBy: 'u1' });
+    const theirs = createPendingAction({ tool: 'github', action: 'create_issue', params: {}, requestedBy: 'u2' });
+
+    const refused = await call({ action: 'add', text: 'tell them', waits_on: `#${theirs}` }, { userId: 'u1' });
+    expect(refused).toContain('❌');
+    expect(await call({ action: 'add', text: 'tell them', waits_on: '#999999' }, { userId: 'u1' })).toContain('❌');
+
+    const added = await call({ action: 'add', text: 'ping once EJ approves the issue', waits_on: `#${mine}` }, { userId: 'u1' });
+    expect(added).toContain(`waiting on approval #${mine}`);
+    await call({ action: 'add', text: 'an older plain one' }, { userId: 'u1' });
+
+    resolvePendingAction(mine, 'approved', OWNER_USER_ID);
+    const views = withApprovalStatus(listOpenPromises('u1', null));
+    // The actionable one (approval resolved) comes first, ahead of creation order.
+    expect(views[0].text).toBe('ping once EJ approves the issue');
+    const line = promisesLine(views) ?? '';
+    expect(line).toContain(`approval #${mine} went through: tell them`);
+  });
+
+  it('says denied and expired plainly', () => {
+    expect(waitNote(4, 'denied')).toContain('was denied');
+    expect(waitNote(4, 'expired')).toContain('expired');
+    expect(waitNote(null, null)).toBe('');
+  });
+});
+
 describe('promisesLine', () => {
   it('shows up to three, oldest first, with a pointer to the rest', () => {
     const now = new Date('2026-11-17T12:00:00Z');
@@ -125,6 +156,15 @@ describe('promisesLine', () => {
     expect(line).toContain('P3 thing 3');
     expect(line).not.toContain('P4');
     expect(line).toContain('+1 more');
+  });
+
+  it('warns in the last days before a promise fades', () => {
+    const now = new Date('2026-11-17T12:00:00Z');
+    const old = { id: 9, text: 'old one', created_at: now.getTime() - (PROMISE_WINDOW_DAYS - 2) * DAY };
+    const fresh = { id: 10, text: 'fresh one', created_at: now.getTime() - DAY };
+    const line = promisesLine([old, fresh], now) ?? '';
+    expect(line).toContain('fades in 2d');
+    expect(line.split('P10')[1]).not.toContain('fades');
   });
 
   it('is null with nothing open', () => {

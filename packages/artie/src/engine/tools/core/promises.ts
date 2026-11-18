@@ -7,8 +7,11 @@ import {
   getPromise,
   listOpenPromises,
   resolvePromise,
-  type PromiseRow,
+  waitNote,
+  withApprovalStatus,
+  type PromiseView,
 } from '../../../shared/db/promise-store.js';
+import { getPendingAction } from '../../../shared/pending-actions.js';
 
 // =====================================================
 // PROMISES: what Artie told someone he'd do (Artie's request, 2026-11-17).
@@ -29,8 +32,10 @@ function age(createdAt: number, now: number): string {
   return `${days}d ago`;
 }
 
-export function formatPromise(p: PromiseRow, now: number): string {
-  return `P${p.id} ${p.text} (${age(p.created_at, now)})`;
+export function formatPromise(p: PromiseView, now: number): string {
+  let wait = waitNote(p.waits_on, p.waitStatus);
+  if (wait) wait = `; ${wait}`;
+  return `P${p.id} ${p.text} (${age(p.created_at, now)}${wait})`;
 }
 
 export const promisesCapability: RegisteredCapability = {
@@ -45,6 +50,12 @@ export const promisesCapability: RegisteredCapability = {
           description: `What you said you'd do, short (max ${MAX_PROMISE_CHARS} chars), e.g. "check on their map once the tiles render"`,
           required: true,
           aliases: ['promise', 'what'],
+        },
+        waits_on: {
+          type: 'string',
+          description:
+            'Optional approval id this waits on, e.g. #12 (one THIS person asked for). The promise then shows whether EJ approved, denied or let it expire.',
+          aliases: ['approval', 'approval_id'],
         },
       },
     },
@@ -72,16 +83,36 @@ export const promisesCapability: RegisteredCapability = {
 
     switch (action) {
       case 'add': {
+        let waitsOn: number | null = null;
+        const rawWait = String(params.waits_on ?? '').trim();
+        if (rawWait) {
+          const m = /^#?(\d+)$/.exec(rawWait);
+          // Only an approval this person asked for (or anything, for the owner): the promise
+          // line reveals the approval's outcome, which isn't anyone else's to see.
+          let approval = null;
+          if (m) approval = getPendingAction(Number(m[1]));
+          if (!m || !approval || (approval.requestedBy !== callerId && !isOwner(callerId))) {
+            return `❌ I don't see an approval ${rawWait} requested by this person. Check approvals list, or leave waits_on out.`;
+          }
+          waitsOn = approval.id;
+        }
         const result = addPromise(
-          { userId: callerId, guildId, channelId: context?.channelId ?? null, text: String(params.text ?? '') },
+          {
+            userId: callerId,
+            guildId,
+            channelId: context?.channelId ?? null,
+            text: String(params.text ?? ''),
+            waitsOn,
+          },
           now
         );
         if (!result.ok) return `❌ ${result.error}`;
-        return `✅ Noted promise ${formatPromise(result.row, now)}. It'll show up when they talk to you next; mark it done when you've done it.`;
+        const [view] = withApprovalStatus([result.row]);
+        return `✅ Noted promise ${formatPromise(view, now)}. It'll show up when they talk to you next; mark it done when you've done it.`;
       }
 
       case 'list': {
-        const open = listOpenPromises(callerId, guildId, now);
+        const open = withApprovalStatus(listOpenPromises(callerId, guildId, now));
         if (open.length === 0) return '📋 No open promises to this person here.';
         return `📋 Open promises (${open.length}):\n${open.map((p) => `• ${formatPromise(p, now)}`).join('\n')}`;
       }

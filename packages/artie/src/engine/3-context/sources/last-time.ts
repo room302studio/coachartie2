@@ -17,6 +17,7 @@ import { mentionsOptedOutUser } from '../../../shared/privacy-opt-out.js';
 import { stripCapabilityTags } from '../../memory/recall.js';
 import { collapseWhitespace } from '../../../shared/text.js';
 import { logger } from '../../../shared/logger.js';
+import { PROMISE_WINDOW_DAYS, waitNote } from '../../../shared/db/promise-store.js';
 
 export interface LastTimeFacts {
   /** ISO timestamp of the previous exchange — never the message being answered right now. */
@@ -58,6 +59,8 @@ function snippet(text: string): string {
 }
 
 const PROMISE_LINE_SLOTS = 3;
+const PROMISE_FADE_WARN_DAYS = 5;
+const DAY_MS = 24 * 60 * 60 * 1000;
 const PROMISE_SNIPPET_MAX = 80;
 
 /**
@@ -66,14 +69,20 @@ const PROMISE_SNIPPET_MAX = 80;
  * Null when there are none. Scope is the caller's job (listOpenPromises).
  */
 export function promisesLine(
-  open: Array<{ id: number; text: string; created_at: number }>,
+  open: Array<{ id: number; text: string; created_at: number; waits_on?: number | null; waitStatus?: string | null }>,
   now: Date = new Date()
 ): string | null {
   if (open.length === 0) return null;
   const shown = open.slice(0, PROMISE_LINE_SLOTS).map((p) => {
     let text = p.text;
     if (text.length > PROMISE_SNIPPET_MAX) text = `${text.slice(0, PROMISE_SNIPPET_MAX).trim()}…`;
-    return `P${p.id} ${text} (${relativeAge(new Date(p.created_at).toISOString(), now)})`;
+    // Warn before the silent fade (Artie: "a promise that silently disappears is still broken").
+    const fadesInDays = Math.ceil((p.created_at + PROMISE_WINDOW_DAYS * DAY_MS - now.getTime()) / DAY_MS);
+    let fade = '';
+    if (fadesInDays <= PROMISE_FADE_WARN_DAYS) fade = `, fades in ${Math.max(0, fadesInDays)}d: do it or drop it`;
+    const wait = waitNote(p.waits_on ?? null, p.waitStatus ?? null);
+    if (wait) fade += `; ${wait}`;
+    return `P${p.id} ${text} (${relativeAge(new Date(p.created_at).toISOString(), now)}${fade})`;
   });
   let more = '';
   if (open.length > PROMISE_LINE_SLOTS) more = ` (+${open.length - PROMISE_LINE_SLOTS} more: promises list)`;

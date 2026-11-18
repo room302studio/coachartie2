@@ -52,7 +52,7 @@ import { recentHiccups, selfMeterLine } from '../budget/self-meter.js';
 import { dreamRecallLine } from '../memory/dream.js';
 import { getJarTippedUsd } from '../budget/jar-earnings.js';
 import { getLastTimeFacts, lastTimeLine, promisesLine } from './sources/last-time.js';
-import { listOpenPromises } from '../../shared/db/promise-store.js';
+import { listOpenPromises, withApprovalStatus } from '../../shared/db/promise-store.js';
 
 // Guild ID to context path mapping (mirrors Discord guild-whitelist.ts)
 const GUILD_CONTEXT_PATHS: Record<string, string> = {
@@ -530,6 +530,26 @@ Important:
     // Discord situational awareness - explicit "where am I" context
     await this.addDiscordSituationalAwareness(message, sources);
 
+    // Open promises to this speaker (Artie's request: the "I said I'd check on your map" kind).
+    // Its own source on every surface, the API bridge included (Artie: promises to the
+    // maintainer are the ones he makes most). Server: only that server's; otherwise (DM,
+    // bridge) all of this person's. See shared/db/promise-store.ts.
+    try {
+      const open = withApprovalStatus(listOpenPromises(message.userId, message.context?.guildId ?? null));
+      const line = promisesLine(open);
+      if (line) {
+        sources.push({
+          name: 'open_promises',
+          priority: 90,
+          tokenWeight: estimateTokens(line),
+          content: line,
+          category: 'user_state',
+        });
+      }
+    } catch (error) {
+      logger.warn('🤝 Promises line unavailable for this reply', error);
+    }
+
     // Reply context - the message being replied to (if any)
     await addReplyContext(message, sources);
 
@@ -745,18 +765,7 @@ Important:
         if (lastTimeFacts) parts.push(lastTimeLine(lastTimeFacts));
       } catch (error) {
         logger.warn('⏱️ Last-time line unavailable for this reply', error);
-      }
-
-      // Open promises to this speaker (Artie's request: "I said I'd check on your map" kind).
-      // Server: only promises made in this server. DM: all of theirs. See promise-store.ts.
-      try {
-        const open = listOpenPromises(message.userId, ctx.guildId ?? null);
-        const line = promisesLine(open);
-        if (line) parts.push(line);
-      } catch (error) {
-        logger.warn('🤝 Promises line unavailable for this reply', error);
-      }
-    }
+      }    }
 
     // Forum thread context (if applicable)
     if (ctx.isForumThread && ctx.threadName) {

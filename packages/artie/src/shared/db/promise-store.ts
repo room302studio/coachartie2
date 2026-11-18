@@ -12,6 +12,7 @@
  */
 
 import { getRawDb } from './client.js';
+import { getPendingAction } from '../pending-actions.js';
 
 export const PROMISE_WINDOW_DAYS = 30;
 export const MAX_OPEN_PER_PERSON = 10;
@@ -27,6 +28,42 @@ export interface PromiseRow {
   status: 'open' | 'done' | 'dropped';
   created_at: number;
   resolved_at: number | null;
+  /** The approval (pending_actions id) this promise waits on, if any. */
+  waits_on: number | null;
+}
+
+/** A row plus the live status of the approval it waits on (null if none or unreadable). */
+export type PromiseView = PromiseRow & { waitStatus: string | null };
+
+/**
+ * Attach the live approval status, read at display time (no listener needed), and put
+ * promises whose approval has resolved first: those are the ones Artie can act on now.
+ */
+export function withApprovalStatus(rows: PromiseRow[]): PromiseView[] {
+  const views = rows.map((r) => {
+    let waitStatus: string | null = null;
+    if (r.waits_on !== null && r.waits_on !== undefined) {
+      try {
+        waitStatus = getPendingAction(r.waits_on)?.status ?? 'missing';
+      } catch {
+        waitStatus = null;
+      }
+    }
+    return { ...r, waitStatus };
+  });
+  const actionable = (v: PromiseView) => v.waitStatus !== null && v.waitStatus !== 'pending';
+  return [...views.filter(actionable), ...views.filter((v) => !actionable(v))];
+}
+
+/** Short words for an approval status on the promise line. */
+export function waitNote(waitsOn: number | null, status: string | null): string {
+  if (waitsOn === null || waitsOn === undefined || status === null) return '';
+  if (status === 'pending') return `waiting on approval #${waitsOn}`;
+  if (status === 'approved' || status === 'executed') return `approval #${waitsOn} went through: tell them`;
+  if (status === 'denied') return `approval #${waitsOn} was denied: tell them`;
+  if (status === 'expired') return `approval #${waitsOn} expired unanswered: tell them`;
+  if (status === 'failed') return `approval #${waitsOn} was approved but failed: tell them`;
+  return `approval #${waitsOn} is ${status}`;
 }
 
 let ensuredFor: unknown = null;
@@ -43,9 +80,15 @@ function db() {
         text TEXT NOT NULL,
         status TEXT NOT NULL DEFAULT 'open',
         created_at INTEGER NOT NULL,
-        resolved_at INTEGER
+        resolved_at INTEGER,
+        waits_on INTEGER
       )
     `);
+    // The first deploy (2026-11-17, d5fd0f0) created the table without waits_on.
+    const cols = raw.prepare(`PRAGMA table_info(artie_promises)`).all() as Array<{ name: string }>;
+    if (!cols.some((c) => c.name === 'waits_on')) {
+      raw.exec(`ALTER TABLE artie_promises ADD COLUMN waits_on INTEGER`);
+    }
     raw.exec(`CREATE INDEX IF NOT EXISTS idx_artie_promises_user ON artie_promises(user_id, status)`);
     ensuredFor = raw;
   }
@@ -88,7 +131,7 @@ export function listOpenPromises(userId: string, guildId: string | null, now: nu
 export type AddResult = { ok: true; row: PromiseRow } | { ok: false; error: string };
 
 export function addPromise(
-  input: { userId: string; guildId: string | null; channelId: string | null; text: string },
+  input: { userId: string; guildId: string | null; channelId: string | null; text: string; waitsOn?: number | null },
   now: number = Date.now()
 ): AddResult {
   const text = String(input.text ?? '').replace(/\s+/g, ' ').trim();
@@ -113,10 +156,10 @@ export function addPromise(
   }
   const info = db()
     .prepare(
-      `INSERT INTO artie_promises (user_id, guild_id, channel_id, text, status, created_at)
-       VALUES (?, ?, ?, ?, 'open', ?)`
+      `INSERT INTO artie_promises (user_id, guild_id, channel_id, text, status, created_at, waits_on)
+       VALUES (?, ?, ?, ?, 'open', ?, ?)`
     )
-    .run(input.userId, input.guildId ?? null, input.channelId ?? null, text, now);
+    .run(input.userId, input.guildId ?? null, input.channelId ?? null, text, now, input.waitsOn ?? null);
   const row = db().prepare(`SELECT * FROM artie_promises WHERE id = ?`).get(info.lastInsertRowid) as PromiseRow;
   return { ok: true, row };
 }
