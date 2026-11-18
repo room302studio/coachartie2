@@ -61,7 +61,6 @@ function snippet(text: string): string {
 const PROMISE_LINE_SLOTS = 3;
 const PROMISE_FADE_WARN_DAYS = 5;
 const DAY_MS = 24 * 60 * 60 * 1000;
-const PROMISE_SNIPPET_MAX = 80;
 
 /**
  * Open promises Artie made to this speaker, oldest first (most overdue), at most 3. Pure.
@@ -74,8 +73,9 @@ export function promisesLine(
 ): string | null {
   if (open.length === 0) return null;
   const shown = open.slice(0, PROMISE_LINE_SLOTS).map((p) => {
-    let text = p.text;
-    if (text.length > PROMISE_SNIPPET_MAX) text = `${text.slice(0, PROMISE_SNIPPET_MAX).trim()}…`;
+    // Whole text, no trim: promises are capped at 200 chars when added, and the specifics sit
+    // at the end ("...what helped, what nagged"); an 80-char cut dropped them (Artie).
+    const text = p.text;
     // Warn before the silent fade (Artie: "a promise that silently disappears is still broken").
     const fadesInDays = Math.ceil((p.created_at + PROMISE_WINDOW_DAYS * DAY_MS - now.getTime()) / DAY_MS);
     let fade = '';
