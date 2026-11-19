@@ -55,6 +55,7 @@ describe('buildRollup', () => {
     const out = buildRollup(rows, NOW, 10, null);
     expect(out.taken_back).toBe(1);
     expect(out.totals).toEqual([]);
+    expect(out.messages).toMatchObject([{ message_id: 'm1', taken_back: 1, reactions: [] }]);
   });
 
   it('in a server shows reply text only from the current channel', () => {

@@ -297,7 +297,16 @@ export function buildRollup(
   const perMessage = new Map<string, { rows: PersistedReaction[]; byEmoji: Map<string, RollupEmoji> }>();
   let withoutText = 0;
   for (const r of latest.values()) {
-    if (r.action !== 'added') continue;
+    if (r.action !== 'added') {
+      // A reply whose reactions were all taken back still gets listed (Artie: "taken_back 1,
+      // but the message it came from appears nowhere").
+      if (!takenBackBy.has(r.messageId)) continue;
+      if (textChannelId !== null && r.channelId !== textChannelId) continue;
+      const entry = perMessage.get(r.messageId) ?? { rows: [], byEmoji: new Map<string, RollupEmoji>() };
+      entry.rows.push(r);
+      perMessage.set(r.messageId, entry);
+      continue;
+    }
     const total = totals.get(r.emoji) ?? { emoji: r.emojiLabel || r.emoji, count: 0, ...emptyCounts() };
     total.count++;
     addRole(total, r.reactorRole);
