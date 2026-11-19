@@ -13,7 +13,9 @@ const waiting: Array<{ row: unknown; costUsd: number }> = [];
 
 export function holdUnrecorded<T>(row: T, costUsd: number): void {
   if (waiting.length >= MAX_WAITING) waiting.shift();
-  waiting.push({ row, costUsd: Number.isFinite(costUsd) ? costUsd : 0 });
+  let cost = 0;
+  if (Number.isFinite(costUsd)) cost = costUsd;
+  waiting.push({ row, costUsd: cost });
 }
 
 /** Take every waiting row out, to retry. Anything that fails again goes back via holdUnrecorded. */

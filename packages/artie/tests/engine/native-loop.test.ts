@@ -209,7 +209,10 @@ describe('runToolLoop', () => {
       now: () => clock,
     });
 
-    expect(result).toMatchObject({ stoppedReason: 'deadline', finalText: 'checking the scoreboard' });
+    // The best text, plus what the tools actually did (a deadline exit no longer hides them).
+    expect(result.stoppedReason).toBe('deadline');
+    expect(result.finalText).toContain('checking the scoreboard');
+    expect(result.finalText).toContain('calculator: r');
     expect(generate).toHaveBeenCalledTimes(1);
   });
 

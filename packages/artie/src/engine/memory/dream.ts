@@ -350,9 +350,9 @@ export function applyVerdict(
       vocab.has(n) ||
       BOOKKEEPING_TAGS.has(n) ||
       STRUCTURAL_TAGS.has(n) ||
-      isKind(n) ||
       n.startsWith('scope:') ||
-      explicit.has(n)
+      explicit.has(n) ||
+      isKind(n)
     );
   });
   const merged = [...new Set([...keptExisting, ...kindTags, ...newTags])];
