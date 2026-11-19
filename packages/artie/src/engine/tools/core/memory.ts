@@ -75,6 +75,23 @@ interface SelfTrail {
   written_in_guild?: string | null;
 }
 
+/**
+ * A server's memories can only be acted on from that server (Codex crew 2026-11-18: pin and
+ * forget checked ownership only and echoed the content, so a studio-only note could surface in
+ * Subway Builder). DMs and the bridge (no guild) see all of a person's own memories, matching
+ * recall. Never echoes the content.
+ */
+function assertSameServer(
+  memoryGuildId: string | null | undefined,
+  callerGuildId: string | null | undefined,
+  userId: string,
+  memoryId: number
+): void {
+  if (!callerGuildId || !memoryGuildId || memoryGuildId === callerGuildId) return;
+  logger.info(`🔒 memory #${memoryId} belongs to another server; refused for ${userId}`);
+  throw new CallerError(`Memory #${memoryId} belongs to another server; act on it there or in a DM`);
+}
+
 function selfTrail(metadata: string | null): SelfTrail {
   try {
     const parsed = JSON.parse(metadata || '{}');
@@ -283,6 +300,15 @@ function pinnedMarker(importance: unknown): string {
   return '';
 }
 
+function withExplicitTags(
+  metadata: Record<string, unknown> | undefined,
+  explicitTags: string[] | undefined
+): Record<string, unknown> {
+  const meta = { ...(metadata ?? {}) };
+  if (explicitTags && explicitTags.length > 0) meta.explicit_tags = [...new Set(explicitTags)];
+  return meta;
+}
+
 function mergeTagsIfExplicit(explicitTags: unknown, basicTags: string[]): string[] {
   if (explicitTags) {
     return [...new Set([...explicitTags as string[], ...basicTags])];
@@ -386,7 +412,10 @@ export class MemoryService {
           importance,
           // Written with the row, never patched in after: the async semantic-tag pass rewrites the
           // whole row from the hot cache and would wipe a later metadata UPDATE.
-          metadata: JSON.stringify(metadata ?? {}),
+          // explicit_tags: the tags the caller chose, which the nightly dream keeps even when
+          // they aren't in its vocabulary (Codex crew 2026-11-18: a rare label vanished
+          // overnight and `recall tags="label"` stopped finding the fact).
+          metadata: JSON.stringify(withExplicitTags(metadata, explicitTags)),
           related_message_id: optionalString(relatedMessageId) ?? null,
           guild_id: guildId || null,
           channel_id: channelId || null,
@@ -536,7 +565,7 @@ export class MemoryService {
    * Pin a memory by setting its importance to 10 (maximum)
    * Pinned memories are prioritized in retrieval
    */
-  async pinMemory(userId: string, memoryId: number): Promise<string> {
+  async pinMemory(userId: string, memoryId: number, callerGuildId?: string | null): Promise<string> {
     if (!this.useHybridLayer) {
       throw new Error('Pin failed: hybrid memory layer is disabled');
     }
@@ -553,6 +582,7 @@ export class MemoryService {
     if (memory.user_id !== userId) {
       throw new CallerError('Unauthorized: you can only pin your own memories');
     }
+    assertSameServer(memory.guild_id, callerGuildId, userId, memoryId);
 
     // Security audit 2026-10-26 (sec-abuse.md Critical #2): true pinning (importance 10) is
     // owner-only. A non-owner's own memory can still be "pinned" but lands at the same
@@ -577,7 +607,7 @@ export class MemoryService {
    * Forget (delete) a memory. Loud on failure (throws), same as pin/recall/stats — a missing
    * id or someone else's memory never comes back as a quiet no-op.
    */
-  async forgetMemory(userId: string, memoryId: number): Promise<string> {
+  async forgetMemory(userId: string, memoryId: number, callerGuildId?: string | null): Promise<string> {
     if (!this.useHybridLayer) {
       throw new Error('Forget failed: hybrid memory layer is disabled');
     }
@@ -594,6 +624,7 @@ export class MemoryService {
     if (!allowed) {
       throw new CallerError('Unauthorized: you can only forget your own memories');
     }
+    assertSameServer(memory.guild_id, callerGuildId, userId, memoryId);
 
     await hybridDataLayer.deleteMemory(memoryId);
     logger.info(`🗑️ [HYBRID] Forgot memory ${memoryId} for user ${userId}`);
@@ -608,7 +639,7 @@ export class MemoryService {
    * Reads the row directly because getMemory hides importance-1 rows. The memory stays dreamt,
    * so the next dream won't re-judge it.
    */
-  async restoreMemory(userId: string, memoryId: number): Promise<string> {
+  async restoreMemory(userId: string, memoryId: number, callerGuildId?: string | null): Promise<string> {
     if (!this.useHybridLayer) {
       throw new Error('Restore failed: hybrid memory layer is disabled');
     }
@@ -619,11 +650,18 @@ export class MemoryService {
     if (!row) {
       throw new CallerError(`Memory not found: ${memoryId}`);
     }
-    if (row.user_id !== userId && !isOwner(userId)) {
+    // Same rule as forget: a self-note can be restored with the person it was written with
+    // (Codex crew 2026-11-18: it was EJ-only, though the note was theirs too).
+    let allowed = row.user_id === userId || isOwner(userId);
+    if (row.user_id === ARTIE_SELF_USER_ID && selfTrail(row.metadata).written_with === userId) {
+      allowed = true;
+    }
+    if (!allowed) {
       throw new CallerError(
         `Memory #${memoryId} belongs to someone else; only they or EJ can restore it (ask in a turn with them or EJ)`
       );
     }
+    assertSameServer(row.guild_id, callerGuildId, userId, memoryId);
     let meta: Record<string, unknown> = {};
     try {
       const parsed = JSON.parse(row.metadata || '{}');
@@ -1195,7 +1233,11 @@ async function handleMemoryAction(
         }
 
         logger.info(`📌 Pinning memory ${memoryId} for user ${userId}`);
-        const result = await memoryService.pinMemory(String(userId), parseInt(String(memoryId)));
+        const result = await memoryService.pinMemory(
+          String(userId),
+          parseInt(String(memoryId).trim().replace(/^#/, '')),
+          callerGuildId
+        );
         logger.info(`📌 Pin result: ${result}`);
         return result;
       }
@@ -1207,7 +1249,11 @@ async function handleMemoryAction(
         }
 
         logger.info(`🗑️ Forgetting memory ${memoryId} for user ${userId}`);
-        const result = await memoryService.forgetMemory(String(userId), parseInt(String(memoryId)));
+        const result = await memoryService.forgetMemory(
+          String(userId),
+          parseInt(String(memoryId).trim().replace(/^#/, '')),
+          callerGuildId
+        );
         logger.info(`🗑️ Forget result: ${result}`);
         return result;
       }
@@ -1222,7 +1268,7 @@ async function handleMemoryAction(
         if (!Number.isInteger(parsedId) || parsedId <= 0) {
           throw new Error(`"${String(memoryId).slice(0, 20)}" isn't a memory id. Use the number from the dream journal, like 123.`);
         }
-        return memoryService.restoreMemory(String(userId), parsedId);
+        return memoryService.restoreMemory(String(userId), parsedId, callerGuildId);
       }
 
       default:

@@ -69,6 +69,23 @@ interface Candidate {
   tags: string;
   importance: number;
   metadata: string | null;
+  guild_id?: string | null;
+}
+
+/** Who can see a memory: its owner plus its server (or none). Duplicates only count within one. */
+function audienceKey(m: Candidate): string {
+  return `${m.user_id}|${m.guild_id ?? ''}`;
+}
+
+/** Tags the caller chose at save time (memory.ts withExplicitTags); the dream never drops them. */
+function explicitTagsOf(metadata: string | null): string[] {
+  try {
+    const parsed = JSON.parse(metadata || '{}');
+    if (parsed && Array.isArray(parsed.explicit_tags)) return parsed.explicit_tags.map(String);
+  } catch {
+    // unreadable metadata: nothing explicit to keep
+  }
+  return [];
 }
 
 /**
@@ -172,7 +189,7 @@ function topExistingTags(limit = 60): string[] {
 function candidates(limit: number): Candidate[] {
   const db = getSyncDb();
   return db.all<Candidate>(
-    `SELECT id, user_id, content, tags, importance, metadata FROM memories
+    `SELECT id, user_id, content, tags, importance, metadata, guild_id FROM memories
       WHERE importance > 1
         AND (metadata IS NULL OR NOT json_valid(metadata) OR json_extract(metadata, '$.dreamt_at') IS NULL)
       ORDER BY id DESC LIMIT ?`,
@@ -185,21 +202,74 @@ function dreamMessages(vocab: string[], batch: Candidate[]): ChatMessage[] {
 - kind: exactly one of ${KINDS.join(', ')}
 - tags: 2-5 lowercase topic tags. Reuse tags from VOCABULARY whenever one fits; invent at most ONE new tag per memory, only if nothing fits. No names of the kind itself, no "memory"/"reflection".
 - verdict: "junk" only if it holds nothing worth recalling later: test runs or smoke tests, tool-success trivia (e.g. "the calculator computed 123*456"), empty stubs ("N messages exchanged"), or pure filler. Opinions, jokes with context, facts about people, plans and lore are "keep". Small facts about a specific person are always "keep", however minor they look: what they're building, a name, place or pet they mentioned once, a plan they have; those are what let Artie ask "how's the Tokyo map going?". When unsure, keep.
-- category: for junk, exactly one of stub (auto-generated summary/digest with no content), duplicate (repeats another memory in this batch), outdated (superseded or no longer true), test (test runs, tool trivia), filler (vague or contentless). For keep: "none".
+- category: for junk, exactly one of stub (auto-generated summary/digest with no content), duplicate (repeats another memory in this batch with the SAME audience letter; a repeat under a different audience is not a duplicate), outdated (superseded or no longer true), test (test runs, tool trivia), filler (vague or contentless). For keep: "none".
 - reason: a few words.
 Reply with compact JSON only (no indentation or line breaks): {"memories":[{"id":123,"kind":"...","tags":[...],"verdict":"...","category":"...","reason":"..."}, ...]}.
 
 VOCABULARY: ${vocab.join(', ')}`;
+  // Audience as a letter, not ids: enough for "same people can see it", nothing to leak.
+  const letters = new Map<string, string>();
+  const letterFor = (m: Candidate): string => {
+    const key = audienceKey(m);
+    if (!letters.has(key)) letters.set(key, audienceLetter(letters.size));
+    return letters.get(key) as string;
+  };
   const user = batch
     .map(
       (m) =>
-        `#${m.id} (importance ${m.importance}, current tags: ${parseTags(m.tags).join(', ') || 'none'})\n${m.content.slice(0, CONTENT_CLIP)}`
+        `#${m.id} (audience ${letterFor(m)}, importance ${m.importance}, current tags: ${parseTags(m.tags).join(', ') || 'none'})\n${m.content.slice(0, CONTENT_CLIP)}`
     )
     .join('\n\n');
   return [
     { role: 'system', content: system },
     { role: 'user', content: user },
   ];
+}
+
+/**
+ * Who sees a let-go in the journal and may restore it. A self-note (artie-self) belongs to the
+ * person it was written with, same as forget/restore (Codex crew 2026-11-18).
+ */
+function letGoOwner(memory: Candidate): string {
+  if (memory.user_id !== 'artie-self') return memory.user_id;
+  try {
+    const parsed = JSON.parse(memory.metadata || '{}');
+    if (parsed && typeof parsed.written_with === 'string') return parsed.written_with;
+  } catch {
+    // no trail: falls back to artie-self, which only EJ sees
+  }
+  return memory.user_id;
+}
+
+/** 0 → A, 25 → Z, 26 → AA. */
+function audienceLetter(n: number): string {
+  let s = '';
+  let i = n;
+  do {
+    s = String.fromCharCode(65 + (i % 26)) + s;
+    i = Math.floor(i / 26) - 1;
+  } while (i >= 0);
+  return s;
+}
+
+/**
+ * A "duplicate" prune only stands when another memory with the same audience in this batch was
+ * kept; otherwise it becomes a keep (Codex crew 2026-11-18: the same note saved in two servers
+ * could lose one server's only copy). Exported for tests.
+ */
+export function guardDuplicates(batch: Candidate[], verdicts: DreamVerdict[]): DreamVerdict[] {
+  const byId = new Map(batch.map((m) => [m.id, m]));
+  const keptAudiences = new Set<string>();
+  for (const v of verdicts) {
+    const m = byId.get(Number(v.id));
+    if (m && v.verdict !== 'junk') keptAudiences.add(audienceKey(m));
+  }
+  return verdicts.map((v) => {
+    const m = byId.get(Number(v.id));
+    if (!m || v.verdict !== 'junk' || junkCategory(v.category) !== 'duplicate') return v;
+    if (keptAudiences.has(audienceKey(m))) return v;
+    return { ...v, verdict: 'keep', category: 'none', reason: 'duplicate of a memory in another audience' };
+  });
 }
 
 function junkCategory(category: unknown): string {
@@ -272,9 +342,18 @@ export function applyVerdict(
   const existing = parseTags(memory.tags);
   // Old write-time tags were often filler ("this", "main", "primarily"). Keep the ones that
   // carry meaning (vocabulary, kinds, structural markers); the model's tags replace the rest.
+  // Also kept: every scope marker (scope:me / scope:self / ...) and the caller's own tags.
+  const explicit = new Set(explicitTagsOf(memory.metadata).map(normalizeTag));
   const keptExisting = existing.filter((t) => {
     const n = normalizeTag(t);
-    return vocab.has(n) || BOOKKEEPING_TAGS.has(n) || STRUCTURAL_TAGS.has(n) || isKind(n);
+    return (
+      vocab.has(n) ||
+      BOOKKEEPING_TAGS.has(n) ||
+      STRUCTURAL_TAGS.has(n) ||
+      isKind(n) ||
+      n.startsWith('scope:') ||
+      explicit.has(n)
+    );
   });
   const merged = [...new Set([...keptExisting, ...kindTags, ...newTags])];
 
@@ -282,13 +361,16 @@ export function applyVerdict(
     memory.importance >= PROTECTED_IMPORTANCE || existing.map((t) => t.toLowerCase()).includes('pinned');
   const prune = v.verdict === 'junk' && !protectedMemory;
 
+  // Both writes only land if the row is still what the model saw (same importance and tags):
+  // a memory pinned or raised while its verdict was pending must not be pruned or re-tagged
+  // from the stale snapshot (Codex crew 2026-11-18).
   if (prune) {
-    db.run(
+    const pruned = db.run(
       `UPDATE memories SET importance = 1, tags = ?,
          metadata = json_set(CASE WHEN json_valid(metadata) THEN metadata ELSE '{}' END,
            '$.dreamt_at', ?, '$.pruned_by', 'dream', '$.pruned_category', ?, '$.pruned_reason', ?,
            '$.importance_before_dream', ?)
-       WHERE id = ?`,
+       WHERE id = ? AND importance = ? AND tags IS ?`,
       [
         JSON.stringify([...new Set([...merged, 'pruned'])]),
         now,
@@ -296,18 +378,36 @@ export function applyVerdict(
         String(v.reason || ''),
         memory.importance,
         memory.id,
+        memory.importance,
+        memory.tags,
       ]
     );
-    return 'pruned';
+    if (pruned.changes > 0) return 'pruned';
+    markDreamtOnly(memory.id, now);
+    return 'skipped';
   }
-  db.run(
+  const retagged = db.run(
     `UPDATE memories SET tags = ?,
        metadata = json_set(CASE WHEN json_valid(metadata) THEN metadata ELSE '{}' END, '$.dreamt_at', ?)
-     WHERE id = ?`,
-    [JSON.stringify(merged), now, memory.id]
+     WHERE id = ? AND importance = ? AND tags IS ?`,
+    [JSON.stringify(merged), now, memory.id, memory.importance, memory.tags]
   );
+  if (retagged.changes === 0) {
+    markDreamtOnly(memory.id, now);
+    return 'skipped';
+  }
   if (JSON.stringify(merged) === JSON.stringify(existing)) return 'skipped';
   return 'tagged';
+}
+
+/** The row changed under the dream: leave it as it is now, just don't review it again. */
+function markDreamtOnly(id: number, now: string): void {
+  getSyncDb().run(
+    `UPDATE memories SET
+       metadata = json_set(CASE WHEN json_valid(metadata) THEN metadata ELSE '{}' END, '$.dreamt_at', ?)
+     WHERE id = ?`,
+    [now, id]
+  );
 }
 
 export async function dream(limit = DREAM_BATCH): Promise<DreamResult> {
@@ -373,7 +473,7 @@ export async function dream(limit = DREAM_BATCH): Promise<DreamResult> {
         continue;
       }
       const byId = new Map(batch.map((m) => [m.id, m]));
-      for (const v of verdicts) {
+      for (const v of guardDuplicates(batch, verdicts)) {
         const memory = byId.get(Number(v.id));
         if (!memory) continue; // the model named an id it wasn't given
         const outcome = applyVerdict(memory, v, now, vocabSet);
@@ -384,7 +484,7 @@ export async function dream(limit = DREAM_BATCH): Promise<DreamResult> {
           result.prunedBy = { ...result.prunedBy, [category]: (result.prunedBy?.[category] ?? 0) + 1 };
           examples[category] ??= memory.content.replace(/\s+/g, ' ').slice(0, 70);
           // Plain duplicates lose nothing; the rest are judgment calls Artie may want to overrule.
-          if (category !== 'duplicate') letGo.push({ id: memory.id, category, userId: memory.user_id });
+          if (category !== 'duplicate') letGo.push({ id: memory.id, category, userId: letGoOwner(memory) });
         } else {
           for (const t of verdictTags(v)) {
             newTagCounts.set(t, (newTagCounts.get(t) ?? 0) + 1);
