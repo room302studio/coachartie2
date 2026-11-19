@@ -7,7 +7,7 @@ import { getErrorMessage } from '../error-utils.js';
 import { openRouterService } from '../4-generate/openrouter.js';
 import { contextAlchemy } from '../3-context/assemble.js';
 import { capabilityParser } from './parse-tool-calls.js';
-import { GlobalVariableStore } from './variables.js';
+import { GlobalVariableStore, scopedOutputKey } from './variables.js';
 import { jobTracker } from '../1-intake/job-tracker.js';
 import { recordCapabilityUsage } from '../health/metrics.js';
 import { toCallNotation } from './mode.js';
@@ -237,8 +237,8 @@ export async function executeNativeToolCall(
       traceId: context.traceId || undefined,
       channelId: context.discord_context?.channelId,
       guildId: context.discord_context?.guildId,
-    },
-    3
+    }
+    // Attempts: the executor's per-tool default (installs get 1), not a hardcoded 3 (Codex crew).
   );
 
   context.results.push({
@@ -364,8 +364,8 @@ export class CapabilityExecutor {
             messageId: context.messageId,
             channelId: context.discord_context?.channelId,
             guildId: context.discord_context?.guildId,
-          },
-          3
+          }
+          // Attempts: the executor's per-tool default (installs get 1), not a hardcoded 3.
         );
 
         const result: CapabilityResult = {
@@ -394,7 +394,7 @@ export class CapabilityExecutor {
         if (outputVar && result.success && result.data) {
           const globalStore = GlobalVariableStore.getInstance();
           await globalStore.set(
-            String(outputVar),
+            scopedOutputKey(context.userId, context.discord_context?.guildId, String(outputVar)),
             result.data,
             `Auto-stored from ${capability.name}:${capability.action}`
           );

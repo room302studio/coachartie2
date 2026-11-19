@@ -283,12 +283,12 @@ export class LLMLoopService {
           // Auto-store result to global variable if 'output' param is specified
           const outputVar = processedCapability.params.output;
           if (outputVar && result.success && result.data) {
-            const { GlobalVariableStore } = await import(
+            const { GlobalVariableStore, scopedOutputKey } = await import(
               './variables.js'
             );
             const globalStore = GlobalVariableStore.getInstance();
             await globalStore.set(
-              String(outputVar),
+              scopedOutputKey(context.userId, context.discord_context?.guildId, String(outputVar)),
               result.data,
               `Auto-stored from ${capability.name}:${capability.action}`
             );

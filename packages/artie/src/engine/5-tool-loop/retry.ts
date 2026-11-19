@@ -2,7 +2,7 @@ import { logger } from '../../shared/logger.js';
 import { delay } from '../../shared/async.js';
 import { ParsedCapability } from './xml-parser.js';
 import { capabilityRegistry } from './registry.js';
-import { GlobalVariableStore } from './variables.js';
+import { GlobalVariableStore, scopedOutputPrefix } from './variables.js';
 import Handlebars from 'handlebars';
 import {
   StructuredCapabilityError,
@@ -108,6 +108,31 @@ export class RobustCapabilityExecutor {
         const result = await this.tryRegistryExecution(cleanedCapability, context);
 
         // Validate result
+        // A handler that returns its own error text ("Error: database unavailable") failed,
+        // whatever the return path. Report it as a failure, without retrying (it may have half
+        // run) or a fallback (Codex crew 2026-11-18: it stayed success:true in results).
+        if (typeof result === 'string' && looksLikeToolFailure(result)) {
+          await capabilityTracker
+            .logInvocation({
+              traceId: context.traceId,
+              capabilityName: cleanedCapability.name,
+              action: cleanedCapability.action,
+              params: cleanedCapability.params,
+              startedAt,
+              completedAt: new Date(),
+              success: false,
+              error: result,
+            })
+            .catch((error: unknown) => logger.warn('Tool invocation log failed:', error));
+          return {
+            capability: cleanedCapability,
+            success: false,
+            error: result,
+            timestamp: new Date().toISOString(),
+            attempts: attempt,
+          };
+        }
+
         if (this.validateResult(cleanedCapability, result)) {
           // Log successful invocation. A logging failure must not re-run a tool that already
           // succeeded (duplicate promises, reminders, paid images; Codex crew 2026-11-18).
@@ -251,12 +276,13 @@ export class RobustCapabilityExecutor {
    */
   private async interpolateParams(
     params: Record<string, any>,
-    userId: string
+    userId: string,
+    guildId?: string
   ): Promise<Record<string, any>> {
     const interpolated: Record<string, any> = {};
 
-    // Get all global variables as a flat object for Handlebars
-    const userVariables = await this.getUserVariablesForHandlebars(userId);
+    // This caller's saved results as a flat object for Handlebars
+    const userVariables = await this.getUserVariablesForHandlebars(userId, guildId);
 
     for (const [key, value] of Object.entries(params)) {
       if (typeof value === 'string') {
@@ -279,7 +305,7 @@ export class RobustCapabilityExecutor {
         }
       } else if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
         // Recursively interpolate nested objects
-        interpolated[key] = await this.interpolateParams(value, userId);
+        interpolated[key] = await this.interpolateParams(value, userId, guildId);
       } else {
         interpolated[key] = value;
       }
@@ -291,10 +317,18 @@ export class RobustCapabilityExecutor {
   /**
    * Get all global variables as a flat object for Handlebars
    */
-  private async getUserVariablesForHandlebars(_userId: string): Promise<Record<string, any>> {
-    const variableStore = GlobalVariableStore.getInstance();
-    // Global store - get all variables
-    return await variableStore.list();
+  private async getUserVariablesForHandlebars(
+    userId: string,
+    guildId?: string
+  ): Promise<Record<string, any>> {
+    // Only this person's results from this server, under their plain names.
+    const all = await GlobalVariableStore.getInstance().list();
+    const prefix = scopedOutputPrefix(userId, guildId);
+    const mine: Record<string, any> = {};
+    for (const [key, value] of Object.entries(all)) {
+      if (key.startsWith(prefix)) mine[key.slice(prefix.length)] = value;
+    }
+    return mine;
   }
 
   private async tryRegistryExecution(
@@ -314,7 +348,7 @@ export class RobustCapabilityExecutor {
     }
 
     // Interpolate variables in params
-    paramsWithContext = await this.interpolateParams(paramsWithContext, context.userId);
+    paramsWithContext = await this.interpolateParams(paramsWithContext, context.userId, context.guildId);
 
     // Interpolate variables in content as well
     let interpolatedContent = capability.content;
@@ -322,7 +356,7 @@ export class RobustCapabilityExecutor {
       try {
         const normalizedTemplate = capability.content.replace(/\$\{([^}]+)\}/g, '{{$1}}');
         const template = Handlebars.compile(normalizedTemplate, { noEscape: true });
-        const userVariables = await this.getUserVariablesForHandlebars(context.userId);
+        const userVariables = await this.getUserVariablesForHandlebars(context.userId, context.guildId);
         interpolatedContent = template(userVariables);
 
         if (interpolatedContent !== capability.content) {
@@ -437,54 +471,48 @@ export class RobustCapabilityExecutor {
    * Fallback calculator using basic math evaluation
    * NEVER THROWS - always returns a user-friendly message
    */
+  /**
+   * Fallbacks return a result only when they actually produced one; otherwise they throw, so
+   * the call stays a failure with the real error (Codex crew 2026-11-18: "unavailable" prose
+   * came back as success with fallbackUsed, which looked rescued and hid the failure).
+   */
   private fallbackCalculation(expression: string): string {
-    try {
-      if (!expression || expression.trim().length === 0) {
-        logger.warn(`🧮 FALLBACK: No expression provided for fallback calculation`);
-        return `I couldn't find a mathematical expression to calculate. Please use: <calc>2+2</calc>`;
-      }
-
-      // Clean the expression
-      const cleaned = this.cleanMathExpression(expression);
-      logger.info(`🧮 FALLBACK: Calculating "${cleaned}"`);
-
-      // Basic math evaluation (secure approach)
-      const result = this.safeEvaluate(cleaned);
-      return `The result of ${cleaned} is ${result}`;
-    } catch (error) {
-      logger.warn(`🧮 FALLBACK: Failed to calculate "${expression}":`, error);
-      return `I tried to calculate "${expression}" but couldn't parse the mathematical expression. Please try rephrasing it like "42 * 42" or "100 + 50".`;
+    if (!expression || expression.trim().length === 0) {
+      throw new Error('No expression to calculate');
     }
+    const cleaned = this.cleanMathExpression(expression);
+    // Only plain arithmetic; anything else (^, sqrt, ...) is the real calculator's job.
+    if (!/^[0-9+\-*/(). ]+$/.test(cleaned)) {
+      throw new Error(`Fallback can't evaluate "${cleaned}"`);
+    }
+    logger.info(`🧮 FALLBACK: Calculating "${cleaned}"`);
+    const result = this.safeEvaluate(cleaned);
+    if (!Number.isFinite(result)) throw new Error(`"${cleaned}" has no finite result`);
+    return `The result of ${cleaned} is ${result}`;
   }
 
-  /**
-   * Fallback web search
-   */
+  /** No substitute for web search exists, so this is a failure, not a rescue. */
   private fallbackWebSearch(query: string): string {
-    logger.info(`🌐 FALLBACK: Web search for: "${query}"`);
-    return `I would search the web for "${query}" but the web search capability is currently unavailable. You might want to try searching directly on your preferred search engine.`;
+    logger.info(`🌐 FALLBACK: none for web search ("${query}")`);
+    throw new Error('Web search is unavailable right now');
   }
 
-  /**
-   * Fallback MCP tool execution
-   */
+  /** Only the time tool has a real substitute (the local clock). */
   private fallbackMCPTool(toolName: string): string {
     logger.info(`🔧 FALLBACK: MCP tool: "${toolName}"`);
-
-    // Specific fallbacks for common tools
     if (toolName.includes('time') || toolName.includes('current_time')) {
       return `The current time is approximately ${new Date().toLocaleString()} (MCP time service unavailable)`;
     }
-
-    return `I tried to use the ${toolName} tool but it's currently unavailable. The system administrator might need to check the MCP server connections.`;
+    throw new Error(`The ${toolName} tool is unavailable right now`);
   }
 
   /**
    * Clean mathematical expressions
    */
   private cleanMathExpression(expression: string): string {
-    // Only allow math characters, then normalize whitespace
-    return collapseWhitespace(expression.replace(/[^0-9+\-*/(). ]/g, '')).trim();
+    // Whitespace only. Deleting "unsupported" characters changed the meaning: 2^3+1 became
+    // 23+1 and the fallback confidently answered 24 (Codex crew 2026-11-18).
+    return collapseWhitespace(expression).trim();
   }
 
   /**

@@ -79,10 +79,19 @@ export async function runToolLoop(
   // Text the model wrote alongside its tool calls ("let me check..."): the best answer we have
   // if the deadline hits before a final turn.
   let bestText = '';
+  // What the most recent tools actually did, so a deadline exit can say it plainly instead of
+  // leaving "I'll follow up" over a promise that failed to save (Codex crew 2026-11-18).
+  let lastOutcomes: string[] = [];
+  const deadlineText = (): string => {
+    if (lastOutcomes.length === 0) return bestText;
+    const note = `(Ran out of time before finishing. What the tools did: ${lastOutcomes.join('; ')})`;
+    if (!bestText.trim()) return note;
+    return `${bestText}\n\n${note}`;
+  };
 
   for (let iteration = 1; iteration <= maxIterations; iteration++) {
     if (iteration > 1 && outOfTime()) {
-      return { finalText: bestText, iterations: iteration - 1, toolCallsMade, stoppedReason: 'deadline' };
+      return { finalText: deadlineText(), iterations: iteration - 1, toolCallsMade, stoppedReason: 'deadline' };
     }
 
     const { content, toolCalls } = await deps.generate(messages, tools);
@@ -131,10 +140,14 @@ export async function runToolLoop(
       })
     );
     messages.push(...toolMessages);
+    lastOutcomes = toolCalls.map((tc, i) => {
+      const text = String(toolMessages[i]?.content ?? '').replace(/\s+/g, ' ').trim();
+      return `${tc.name}: ${text.slice(0, 160)}`;
+    });
   }
 
   if (outOfTime()) {
-    return { finalText: bestText, iterations: maxIterations, toolCallsMade, stoppedReason: 'deadline' };
+    return { finalText: deadlineText(), iterations: maxIterations, toolCallsMade, stoppedReason: 'deadline' };
   }
 
   // Hit the safety cap: force a final answer with tools disabled so the model wraps up.

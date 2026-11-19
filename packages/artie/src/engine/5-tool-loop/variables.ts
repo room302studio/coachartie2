@@ -17,6 +17,19 @@ interface VariableParams {
  * Global Variable Store - Simple DB-backed key/value store for mustache templates
  * No sessions, no complexity - just global persistent storage
  */
+/**
+ * Key for a tool result saved with `output="name"`: scoped to the person and server that ran
+ * it, so `{{name}}` in one person's call can't read another's result (Codex crew 2026-11-18:
+ * outputs were global and interpolation exposed every stored variable to everyone).
+ */
+export function scopedOutputPrefix(userId: string, guildId?: string | null): string {
+  return `out:${userId}:${guildId || 'dm'}:`;
+}
+
+export function scopedOutputKey(userId: string, guildId: string | null | undefined, name: string): string {
+  return `${scopedOutputPrefix(userId, guildId)}${name}`;
+}
+
 export class GlobalVariableStore {
   private static instance: GlobalVariableStore;
 
