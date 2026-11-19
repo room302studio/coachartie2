@@ -7,6 +7,7 @@
 // the discord package gates intake/context, capabilities gates memory formation/recall.
 
 import { isOptedOut } from './privacy-opt-out.js';
+import { escapeRegex } from './regex.js';
 
 export interface BlockedUser {
   id: string; // Discord snowflake — immutable, survives renames
@@ -68,6 +69,16 @@ export function scrubBlockedUserMentions(
   if (!text) return text;
   let out = text;
   for (const u of users) {
+    // Someone who is banned AND opted out keeps full anonymity: no name, id or ping
+    // (Codex 2026-11-19). Opting out is their choice; the ban doesn't override it.
+    if (isOptedOut(u.id)) {
+      out = out.replace(new RegExp(`<@!?${u.id}>`, 'g'), BLOCKED_USER_EPITHET);
+      out = out.replace(new RegExp(u.id, 'g'), BLOCKED_USER_EPITHET);
+      for (const name of u.names) {
+        out = out.replace(new RegExp(`(?<!\\w)@?${escapeRegex(name)}(?!\\w)`, 'gi'), BLOCKED_USER_EPITHET);
+      }
+      continue;
+    }
     let plain = BLOCKED_USER_EPITHET;
     if (u.names.length > 0) plain = u.names[0];
     out = out.replace(new RegExp(`<@!?${u.id}>`, 'g'), plain);

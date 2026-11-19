@@ -1,4 +1,9 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
+
+vi.mock('../../src/shared/privacy-opt-out.js', () => ({
+  isOptedOut: (id?: string | null) => id === '42',
+}));
+
 import { scrubBlockedUserMentions, BLOCKED_USER_EPITHET } from '../../src/shared/blocklist.js';
 import { escapeRegex } from '../../src/shared/regex.js';
 
@@ -15,6 +20,11 @@ describe('scrubBlockedUserMentions', () => {
 
   it('turns a ping into the plain name', () => {
     expect(scrub('<@111222333444555666> and <@!111222333444555666>')).toBe('kai and kai');
+  });
+
+  it('keeps a banned user who also opted out fully anonymous', () => {
+    const both = [{ id: '42', names: ['quiet'] }];
+    expect(scrubBlockedUserMentions('quiet, <@42>, 42', both)).toBe(`${E}, ${E}, ${E}`);
   });
 
   it('falls back to the epithet when a banned user has no known name', () => {
