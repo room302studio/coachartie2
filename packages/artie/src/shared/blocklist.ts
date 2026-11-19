@@ -7,7 +7,6 @@
 // the discord package gates intake/context, capabilities gates memory formation/recall.
 
 import { isOptedOut } from './privacy-opt-out.js';
-import { escapeRegex } from './regex.js';
 
 export interface BlockedUser {
   id: string; // Discord snowflake — immutable, survives renames
@@ -23,8 +22,8 @@ export const BLOCKED_USERS: BlockedUser[] = [
   { id: '929158677133402122', names: ['rhodie3587', 'rhodie'], since: '2026-11-18' },
 ];
 
-// What Artie calls a blocked user when one comes up. Policy (EJ, 2026-07-16):
-// mentioning them is fine, naming or @-pinging them is not.
+// Fallback label for a banned user with no known name. Naming them is fine; @-pinging
+// them is not (EJ 2026-11-19 struck the old "never name them" rule).
 export const BLOCKED_USER_EPITHET = 'the banned one';
 
 export const BLOCKED_USER_IDS: ReadonlySet<string> = new Set(BLOCKED_USERS.map((u) => u.id));
@@ -57,14 +56,10 @@ export function mentionsBlockedUser(text?: string | null): boolean {
 }
 
 /**
- * Replace blocked users' names and @-mentions in OUTBOUND text with a neutral
- * epithet. Referring to them is allowed; naming or pinging them is not. This is
- * the output-side guarantee — names can still reach Artie's context via other
- * people's messages, but they can't leave his mouth.
- *
- * Names match as whole words (ledger #4): a short blocked name inside a longer word
- * ("kai" in "kaiser") is left alone. Lookarounds rather than \b, so a name that starts
- * or ends with punctuation still matches. `users` is injectable for tests.
+ * Turn @-pings of banned users in OUTBOUND text into their plain name, so Artie never
+ * pings someone he's ignoring. Naming them is fine (EJ 2026-11-19: "i never told you to
+ * never name them"); the old name-to-epithet scrub was removed then. `users` is
+ * injectable for tests.
  */
 export function scrubBlockedUserMentions(
   text: string,
@@ -73,15 +68,9 @@ export function scrubBlockedUserMentions(
   if (!text) return text;
   let out = text;
   for (const u of users) {
-    out = out.replace(new RegExp(`<@!?${u.id}>`, 'g'), BLOCKED_USER_EPITHET);
-    out = out.replace(new RegExp(u.id, 'g'), BLOCKED_USER_EPITHET);
-    for (const name of u.names) {
-      // "@name" and possessives read fine after replacement ("the banned one's")
-      out = out.replace(
-        new RegExp(`(?<!\\w)@?${escapeRegex(name)}(?!\\w)`, 'gi'),
-        BLOCKED_USER_EPITHET
-      );
-    }
+    let plain = BLOCKED_USER_EPITHET;
+    if (u.names.length > 0) plain = u.names[0];
+    out = out.replace(new RegExp(`<@!?${u.id}>`, 'g'), plain);
   }
   return out;
 }

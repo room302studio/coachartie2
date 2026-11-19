@@ -8,22 +8,17 @@ describe('scrubBlockedUserMentions', () => {
   const scrub = (t: string) => scrubBlockedUserMentions(t, users);
   const E = BLOCKED_USER_EPITHET;
 
-  it('leaves a short blocked name inside a longer word untouched', () => {
-    expect(scrub('the kaiser and makai stay')).toBe('the kaiser and makai stay');
+  // EJ 2026-11-19: naming banned people is fine; only pings are defused.
+  it('leaves names alone', () => {
+    expect(scrub('Banlist:\n- kai (since 2026-11-18)')).toBe('Banlist:\n- kai (since 2026-11-18)');
   });
 
-  it('replaces the name, @name, possessives and any case', () => {
-    expect(scrub('kai said hi')).toBe(`${E} said hi`);
-    expect(scrub('ask @Kai')).toBe(`ask ${E}`);
-    expect(scrub("KAI's turn")).toBe(`${E}'s turn`);
+  it('turns a ping into the plain name', () => {
+    expect(scrub('<@111222333444555666> and <@!111222333444555666>')).toBe('kai and kai');
   });
 
-  it('replaces ids and mentions', () => {
-    expect(scrub('<@111222333444555666> and <@!111222333444555666>')).toBe(`${E} and ${E}`);
-  });
-
-  it('treats regex metacharacters in names literally', () => {
-    expect(scrub('x.y is here, xzy is not')).toBe(`${E} is here, xzy is not`);
+  it('falls back to the epithet when a banned user has no known name', () => {
+    expect(scrubBlockedUserMentions('<@9>', [{ id: '9', names: [] }])).toBe(E);
   });
 
   it('is a no-op with the real (empty) list', () => {

@@ -430,9 +430,7 @@ export async function processUserIntent(
           // GUARDRAIL: no "No response received" fallback — empty stays empty so we can stay silent.
           let cleanResult = cleanCapabilityTags(result || '');
           cleanResult = await applyControlTokens(cleanResult, intent);
-          // Banned users may be referenced but never named or @-pinged. The prompt
-          // rule handles this most of the time; this is the insurance for when a
-          // budget model slips.
+          // Banned users can be named but never @-pinged: pings become plain names.
           cleanResult = scrubBlockedUserMentions(cleanResult);
           // Invented URLs (a made-up "whatsnew" page, 2026-10-29) come out before anyone sees them.
           const linkCheck = await stripDeadLinks(cleanResult).catch(() => ({ text: cleanResult, removed: [] }));
