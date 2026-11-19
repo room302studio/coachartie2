@@ -234,7 +234,7 @@ export function redactReactors(excerpt: string | undefined, reactors: PersistedR
   for (const r of reactors) {
     text = text.split(`<@${r.userId}>`).join('someone').split(`<@!${r.userId}>`).join('someone');
     const label = r.userLabel.trim();
-    if (label.length < 2) continue;
+    if (label.length === 0) continue;
     const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     text = text.replace(new RegExp(`(^|[^\\p{L}\\p{N}_])@?${escaped}(?=$|[^\\p{L}\\p{N}_])`, 'giu'), '$1someone');
   }
@@ -287,8 +287,9 @@ export function buildRollup(
   }
 
   // Everyone who reacted to each message in the window, to blank them out of its excerpt.
+  // All rows, not just kept: an opted-out or banned reactor must not stay named either (Codex).
   const reactorsOn = new Map<string, PersistedReaction[]>();
-  for (const r of kept) {
+  for (const r of rows) {
     const list = reactorsOn.get(r.messageId) ?? [];
     list.push(r);
     reactorsOn.set(r.messageId, list);

@@ -834,7 +834,8 @@ export class MemoryService {
     assertSameServer(row.guild_id, callerGuildId, userId, memoryId);
     const meta = parseMeta(row.metadata);
     const asked = Number(meta.asked_importance);
-    if (!Number.isFinite(asked) || asked <= row.importance || meta.cap_review) {
+    // Same eligibility as listCapped: a note the dream let go is restored first, not approved.
+    if (row.importance <= 1 || !Number.isFinite(asked) || asked <= row.importance || meta.cap_review) {
       throw new CallerError(`Memory #${memoryId} has no capped importance waiting for review`);
     }
     let importance = row.importance;
