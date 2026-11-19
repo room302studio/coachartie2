@@ -233,6 +233,8 @@ export function redactReactors(excerpt: string | undefined, reactors: PersistedR
   let text = excerpt;
   for (const r of reactors) {
     text = text.split(`<@${r.userId}>`).join('someone').split(`<@!${r.userId}>`).join('someone');
+    // A raw id anywhere (plain text, a profile link) goes too.
+    if (r.userId.length > 0) text = text.split(r.userId).join('someone');
     const label = r.userLabel.trim();
     if (label.length === 0) continue;
     const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -286,14 +288,9 @@ export function buildRollup(
     latest.set(key, r);
   }
 
-  // Everyone who reacted to each message in the window, to blank them out of its excerpt.
-  // All rows, not just kept: an opted-out or banned reactor must not stay named either (Codex).
-  const reactorsOn = new Map<string, PersistedReaction[]>();
-  for (const r of rows) {
-    const list = reactorsOn.get(r.messageId) ?? [];
-    list.push(r);
-    reactorsOn.set(r.messageId, list);
-  }
+  // Everyone who reacted to anything in the window is blanked out of every excerpt. All rows,
+  // not just kept: an opted-out or banned reactor must not stay named either (Codex).
+  const allReactors = [...new Map(rows.map((r) => [r.userId, r])).values()];
 
   const totals = new Map<string, RollupEmoji>();
   const perMessage = new Map<string, { rows: PersistedReaction[]; byEmoji: Map<string, RollupEmoji> }>();
@@ -323,7 +320,7 @@ export function buildRollup(
       return {
         message_id: messageId,
         snippet: snippetOf(
-          redactReactors(entry.rows.find((r) => r.messageExcerpt)?.messageExcerpt, reactorsOn.get(messageId))
+          redactReactors(entry.rows.find((r) => r.messageExcerpt)?.messageExcerpt, allReactors)
         ),
         age: ageLabel(last, now),
         taken_back: takenBackBy.get(messageId) ?? 0,
