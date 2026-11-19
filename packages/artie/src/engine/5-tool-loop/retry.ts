@@ -109,17 +109,20 @@ export class RobustCapabilityExecutor {
 
         // Validate result
         if (this.validateResult(cleanedCapability, result)) {
-          // Log successful invocation
-          await capabilityTracker.logInvocation({
-            traceId: context.traceId,
-            capabilityName: cleanedCapability.name,
-            action: cleanedCapability.action,
-            params: cleanedCapability.params,
-            result,
-            startedAt,
-            completedAt: new Date(),
-            success: true,
-          });
+          // Log successful invocation. A logging failure must not re-run a tool that already
+          // succeeded (duplicate promises, reminders, paid images; Codex crew 2026-11-18).
+          await capabilityTracker
+            .logInvocation({
+              traceId: context.traceId,
+              capabilityName: cleanedCapability.name,
+              action: cleanedCapability.action,
+              params: cleanedCapability.params,
+              result,
+              startedAt,
+              completedAt: new Date(),
+              success: true,
+            })
+            .catch((error: unknown) => logger.warn('Tool invocation log failed (tool succeeded):', error));
 
           return {
             capability: cleanedCapability,

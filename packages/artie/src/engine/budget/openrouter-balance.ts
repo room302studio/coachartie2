@@ -42,6 +42,7 @@ export class CreditMonitor {
   // Throttle operator DMs so we don't spam on every check/cooldown cycle
   private lastExhaustionAlertAt: Date | null = null;
   private lastLowBalanceAlertAt: Date | null = null;
+  private lastLowBalanceAlertCritical = false;
   private static EXHAUSTION_ALERT_THROTTLE_MS = 60 * 60 * 1000; // 1 hour
   private static LOW_BALANCE_ALERT_THROTTLE_MS = 6 * 60 * 60 * 1000; // 6 hours
 
@@ -100,13 +101,18 @@ export class CreditMonitor {
    */
   private maybeAlertLowBalance(balance: number, critical: boolean): void {
     const now = Date.now();
+    // Escalating from warning to critical always gets through (Codex crew 2026-11-18: one
+    // shared 6h throttle let a $5.10 warning swallow the $4.90 critical).
+    const escalating = critical && !this.lastLowBalanceAlertCritical;
     if (
+      !escalating &&
       this.lastLowBalanceAlertAt &&
       now - this.lastLowBalanceAlertAt.getTime() < CreditMonitor.LOW_BALANCE_ALERT_THROTTLE_MS
     ) {
       return;
     }
     this.lastLowBalanceAlertAt = new Date();
+    this.lastLowBalanceAlertCritical = critical;
     let criticalPrefix: string;
     if (critical) {
       criticalPrefix = 'critically ';
@@ -211,10 +217,13 @@ export class CreditMonitor {
    * (Nov 8-17 the dream fired 26 doomed calls a night).
    */
   async canAffordBackgroundWork(): Promise<boolean> {
-    if (this.creditsExhaustedAt) return false;
+    // Always read fresh, even when flagged exhausted: with Artie quiet nothing else clears the
+    // flag, so a top-up would still skip that night's dream (Codex crew 2026-11-18).
     const balance = await this.getRemainingBalance().catch(() => null);
-    if (balance === null) return true;
-    return balance > CreditMonitor.TRUE_EXHAUSTION_THRESHOLD;
+    if (balance === null) return this.creditsExhaustedAt === null;
+    const affordable = balance > CreditMonitor.TRUE_EXHAUSTION_THRESHOLD;
+    if (affordable && this.creditsExhaustedAt) this.clearExhaustedFlag();
+    return affordable;
   }
 
   /**

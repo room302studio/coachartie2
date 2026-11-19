@@ -408,8 +408,10 @@ export class MemoryService {
         const relationshipNote = relatedMessageNote(relatedMessageId);
         return `✅ Remembered: "${content}" (${memoryIdNote(memoryId)}importance: ${importance}/10, tags: ${allTags.join(', ')}${relationshipNote})`;
       } catch (error) {
-        logger.error('❌ [HYBRID] Failed to store memory, falling back to legacy:', error);
-        this.useHybridLayer = false; // Fallback to legacy
+        // Report this one failure. Never switch the hybrid layer off: the legacy backend is
+        // gone, so that turned one bad write into no memory at all until a restart (Codex crew).
+        logger.error('❌ [HYBRID] Failed to store memory:', error);
+        throw error;
       }
     }
 
@@ -772,7 +774,7 @@ export class MemoryService {
         const date = new Date(memory.timestamp).toLocaleDateString();
         const stars = '⭐'.repeat(Math.min(importance, 5));
 
-        return `${index + 1}. **${memory.content}** ${stars}
+        return `${index + 1}. #${memory.id} **${memory.content}** ${stars}
    📅 ${date} | 🏷️ ${tags.join(', ') || 'no tags'}${contextSuffix(context)}`;
       })
       .join('\n\n');
@@ -1167,7 +1169,8 @@ async function handleMemoryAction(
 
       case 'recent': {
         const limit = Math.max(1, Math.min(20, parseInt(String(params.limit)) || 10));
-        const memories = await memoryService.getRecentMemories(String(userId), limit);
+        // This server's only (Codex crew: recent used to show other servers' "here" notes).
+        const memories = await memoryService.getRecentMemories(String(userId), limit, callerGuildId);
 
         if (memories.length === 0) {
           return '📭 No recent memories found. Start remembering things to build your memory!';
@@ -1178,7 +1181,7 @@ async function handleMemoryAction(
             const date = new Date(memory.timestamp).toLocaleDateString();
             const importance = '⭐'.repeat(Math.min(memory.importance, 5));
             const pinnedMark = pinnedMarker(memory.importance);
-            return `${index + 1}. **${memory.content}** ${importance}${pinnedMark} (${date})`;
+            return `${index + 1}. #${memory.id} **${memory.content}** ${importance}${pinnedMark} (${date})`;
           })
           .join('\n');
 

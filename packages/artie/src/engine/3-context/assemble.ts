@@ -1118,8 +1118,10 @@ Important:
       // gets told a speaker named "Date" said something untrusted. This block is
       // per-request (so it never touches the cache) and still system-role (so the clock
       // keeps its authority).
+      // Every temporal source, not just [0]: the date always won [0], so the 💭 dream line
+      // (same bucket) never reached him on any surface (Codex crew 2026-11-18; Artie noticed).
       if (contextByCategory.temporal.length > 0) {
-        contextContent += `${contextByCategory.temporal[0].content}\n`;
+        contextContent += `${contextByCategory.temporal.map((s) => s.content).join('\n')}\n`;
       }
 
       // Render EVERY selected source in each bucket, not just [0]. These sources already

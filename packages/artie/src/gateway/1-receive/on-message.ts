@@ -173,7 +173,8 @@ function rawLogAndLearnIdentity({ message: msg }: Turn): StepResult {
   );
 
   // Identity learning: check if message mentions GitHub activity
-  if (!msg.author.bot && msg.content.length > 5) {
+  // Banned and opted-out authors are dropped later in STEPS; learn nothing from them first.
+  if (!msg.author.bot && msg.content.length > 5 && !isBlockedUser(msg.author.id)) {
     if (looksLikeGithubActivity(msg.content)) {
       import('../watchers/github/identity-resolver.js')
         .then(({ getIdentityResolver }) => {

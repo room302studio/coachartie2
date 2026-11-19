@@ -7,7 +7,8 @@ import {
   BLOCKED_USERS,
 } from '../../../shared/blocklist.js';
 import { isOptedOut } from '../../../shared/privacy-opt-out.js';
-import { RegisteredCapability, capabilityRegistry } from '../../5-tool-loop/registry.js';
+import { RegisteredCapability, capabilityRegistry, CapabilityContext } from '../../5-tool-loop/registry.js';
+import { isOwner } from '../../../shared/config/owner.js';
 import {
   ledgerCounts,
   ledgerFirstTs,
@@ -122,20 +123,41 @@ function userCostsReport(db: ReturnType<typeof getSyncDb>, userId: string): stri
   return lines.join('\n');
 }
 
-function topSpendersReport(db: ReturnType<typeof getSyncDb>, limit: number): string {
+/**
+ * Biggest spenders. In a server: that server's usage only (Codex crew 2026-11-18: it showed
+ * every server's people and totals). Outside a server only EJ gets the all-servers view.
+ */
+function topSpendersReport(
+  db: ReturnType<typeof getSyncDb>,
+  limit: number,
+  guildId: string | null,
+  viewerId: string
+): string {
+  let scope = 'this server';
+  let where = 'WHERE guild_id = ?';
+  let args: unknown[] = [guildId];
+  if (guildId === null) {
+    if (!isOwner(viewerId)) return 'The spending leaderboard is per server. Ask in a server.';
+    scope = 'all servers';
+    where = '';
+    args = [];
+  }
+  // SQLite reads LIMIT -1 as "no limit", so clamp to 1-25 here (Codex crew).
+  const capped = Math.max(1, Math.min(Math.trunc(limit) || 10, 25));
   const rows = db.all<{ user_id: string; calls: number; cost: number }>(
     `SELECT user_id, COUNT(*) AS calls, SUM(estimated_cost) AS cost
-     FROM model_usage_stats
+     FROM model_usage_stats ${where}
      GROUP BY user_id ORDER BY cost DESC LIMIT ?`,
-    [Math.min(limit, 25)]
+    [...args, capped]
   );
   if (rows.length === 0) return 'No usage recorded yet.';
   const serverTotal = db.get<{ cost: number }>(
-    `SELECT COALESCE(SUM(estimated_cost),0) AS cost FROM model_usage_stats`
+    `SELECT COALESCE(SUM(estimated_cost),0) AS cost FROM model_usage_stats ${where}`,
+    args
   );
   const lines = [
-    `## Top ${rows.length} credit consumers (lifetime)`,
-    `Server total: $${(serverTotal?.cost ?? 0).toFixed(2)}`,
+    `## Top ${rows.length} credit consumers (lifetime, ${scope})`,
+    `Total: $${(serverTotal?.cost ?? 0).toFixed(2)}`,
     '',
     ...rows.map(
       (r, i) =>
@@ -449,7 +471,7 @@ Use this when you want to reflect on your performance, check if something's wron
     '<capability name="self-stats" action="top_spenders" data=\'{"limit":10}\' />',
   ],
 
-  handler: async (params: any) => {
+  handler: async (params: any, _content?: string, context?: CapabilityContext) => {
     const { action = 'overview' } = params as SelfStatsParams;
 
     logger.info(`📊 Self-stats: ${action}`);
@@ -479,7 +501,12 @@ Use this when you want to reflect on your performance, check if something's wron
           }
           return userCostsReport(db, String(targetId));
         }
-        return topSpendersReport(db, Number(params.limit) || 10);
+        return topSpendersReport(
+          db,
+          Number(params.limit) || 10,
+          context?.guildId ?? null,
+          String(context?.userId ?? '')
+        );
       } catch (error: any) {
         logger.error(`Self-stats ${action} error:`, error);
         return `Error running ${action}: ${error.message}`;
