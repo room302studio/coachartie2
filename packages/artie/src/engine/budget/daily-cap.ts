@@ -4,6 +4,7 @@ import { getSyncDb } from '../../shared/db/client.js';
 import { easternDayKey, easternDayBounds, toSqliteUtc } from '../../shared/eastern-day.js';
 import { readKillSwitch, writeBudgetMute, clearKillSwitch, readBudgetOverrideDay, getKillSwitchPath, type KillSwitchState } from '../../shared/kill-switch.js';
 import { reportToAnomalywatch } from '../../shared/anomalywatch.js';
+import { unrecordedSpendUsd } from './unrecorded-spend.js';
 
 /**
  * DAILY SPEND CAP → AUTO-MUTE.
@@ -39,7 +40,8 @@ export function getTodaySpendUsd(now: Date = new Date()): number {
       WHERE timestamp >= ? AND timestamp < ?`,
     [toSqliteUtc(start), toSqliteUtc(end)]
   );
-  return row?.spent ?? 0;
+  // Plus billed spend whose ledger write failed and is waiting for a retry.
+  return (row?.spent ?? 0) + unrecordedSpendUsd();
 }
 
 /**

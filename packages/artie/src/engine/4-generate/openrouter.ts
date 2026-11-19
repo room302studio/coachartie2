@@ -1000,14 +1000,15 @@ class OpenRouterService {
         const reportedCost = Number((completion.usage as { cost?: unknown } | undefined)?.cost);
         const estimatedCost = billedCost(reportedCost, billedModel, usage);
 
-        // Track costs in real-time cost monitor
-        const costForMonitor = finiteOrUndefined(reportedCost);
+        // Track costs in real-time cost monitor. The same billed figure the ledger records
+        // (cache writes included), so burn and brownout see what was actually spent (Codex crew).
         const { warnings } = costMonitor.trackCall(
           usage.prompt_tokens,
           usage.completion_tokens,
           billedModel,
           usage.cached_tokens ?? 0,
-          costForMonitor
+          finiteOrUndefined(estimatedCost),
+          usage.cache_write_tokens ?? 0
         );
 
         // Log warnings if any
@@ -1495,13 +1496,13 @@ class OpenRouterService {
         const estimatedCost = billedCost(reportedCost, billedModel, usage);
 
         // Track costs in real-time cost monitor
-        const streamingCost = finiteOrUndefined(reportedCost);
         const { warnings: streamWarnings } = costMonitor.trackCall(
           usage.prompt_tokens,
           usage.completion_tokens,
           billedModel,
           usage.cached_tokens ?? 0,
-          streamingCost
+          finiteOrUndefined(estimatedCost),
+          usage.cache_write_tokens ?? 0
         );
 
         // Log warnings if any

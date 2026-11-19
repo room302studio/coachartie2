@@ -148,7 +148,40 @@ export async function getBrownoutMode(): Promise<BrownoutStatus> {
       refreshing = false;
     });
   }
-  return cached?.status ?? { mode: 'normal', runwayHours: null };
+  if (!cached) return { mode: 'normal', runwayHours: null };
+  // Only the balance (runway) is cached. Today's spend is one indexed SUM, so it's read fresh
+  // every time; caching it let spend cross 60% and 85% inside one 5-minute window with no
+  // taper before the hard mute (Codex crew 2026-11-18).
+  const status = deriveBrownoutStatus(cached.status.runwayHours, readDailySpendFraction());
+  noteModeChange(status);
+  return status;
+}
+
+/** One loud line on each mode change, not one per message. */
+function noteModeChange(status: BrownoutStatus): void {
+  const mode = status.mode;
+  if (mode === lastMode) return;
+  let pct: string;
+  if (typeof status.dailySpendFraction === 'number') {
+    pct = `${Math.round(status.dailySpendFraction * 100)}% of daily budget`;
+  } else {
+    pct = 'daily budget n/a';
+  }
+  let runway: string;
+  if (status.runwayHours === null) {
+    runway = 'runway ?';
+  } else {
+    runway = `~${status.runwayHours.toFixed(1)}h runway`;
+  }
+  if (mode !== 'normal') {
+    logger.error(
+      `🚨🕯️ BROWNOUT ENGAGED: ${lastMode} → ${mode.toUpperCase()} ` +
+        `(driven by ${brownoutDriver(status)}: ${runway}, ${pct})`
+    );
+  } else {
+    logger.warn(`🕯️ Brownout cleared: ${lastMode} → normal (${runway}, ${pct})`);
+  }
+  lastMode = mode;
 }
 
 // Runway = balance ÷ burn rate, and the burn must be what Artie ACTUALLY spends. History:
@@ -198,32 +231,7 @@ async function refresh(now: number): Promise<void> {
   // Unknown balance → runway says normal. Fail toward full service: the credit monitor
   // already guards true exhaustion, and the daily budget has its own hard mute.
   const status = deriveBrownoutStatus(runwayHours, readDailySpendFraction());
-  const mode = status.mode;
-
-  if (mode !== lastMode) {
-    let pct: string;
-    if (typeof status.dailySpendFraction === 'number') {
-      pct = `${Math.round(status.dailySpendFraction * 100)}% of daily budget`;
-    } else {
-      pct = 'daily budget n/a';
-    }
-    let runway: string;
-    if (runwayHours === null) {
-      runway = 'runway ?';
-    } else {
-      runway = `~${runwayHours.toFixed(1)}h runway`;
-    }
-    if (mode !== 'normal') {
-      logger.error(
-        `🚨🕯️ BROWNOUT ENGAGED: ${lastMode} → ${mode.toUpperCase()} ` +
-          `(driven by ${brownoutDriver(status)}: ${runway}, ${pct})`
-      );
-    } else {
-      logger.warn(`🕯️ Brownout cleared: ${lastMode} → normal (${runway}, ${pct})`);
-    }
-    lastMode = mode;
-  }
-
+  noteModeChange(status);
   cached = { status, fetchedAt: now };
 }
 

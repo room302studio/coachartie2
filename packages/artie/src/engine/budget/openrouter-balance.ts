@@ -4,6 +4,19 @@ import { logger } from '../../shared/logger.js';
 import { trimTrailingSlash } from '../../shared/text.js';
 import { costMonitor } from './usage-ledger.js';
 
+/** How long a stored credit_balance row may stand in for a live read. */
+const STORED_BALANCE_MAX_AGE_MS = 10 * 60 * 1000;
+
+/** last_updated is SQLite CURRENT_TIMESTAMP ("YYYY-MM-DD HH:MM:SS", UTC). Unparseable = stale. */
+function storedBalanceIsFresh(lastUpdated: unknown, now: number = Date.now()): boolean {
+  if (typeof lastUpdated !== 'string' || lastUpdated.length === 0) return false;
+  let iso = lastUpdated.replace(' ', 'T');
+  if (!/[zZ]|[+-]\d\d:?\d\d$/.test(iso)) iso += 'Z';
+  const at = Date.parse(iso);
+  if (!Number.isFinite(at)) return false;
+  return now - at < STORED_BALANCE_MAX_AGE_MS;
+}
+
 export interface CreditInfo {
   provider: string;
   credits_remaining?: number;
@@ -454,7 +467,15 @@ export class CreditMonitor {
       // The credit_balance table is only populated from completion responses,
       // which OpenRouter usually omits — so it's frequently empty. Fall back to
       // a live /credits fetch so the credit_status tool can still answer.
-      if (!result || result.credits_remaining === null || result.credits_remaining === undefined) {
+      // A stored balance only counts while it's recent; an old row used to shadow live reads
+      // forever, so brownout kept an old high balance, or an old low one after a top-up
+      // (Codex crew 2026-11-18).
+      if (
+        !result ||
+        result.credits_remaining === null ||
+        result.credits_remaining === undefined ||
+        !storedBalanceIsFresh(result.last_updated)
+      ) {
         const liveBalance = await this.getRemainingBalance();
         if (liveBalance === null) {
           if (result) {

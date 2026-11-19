@@ -1,6 +1,7 @@
 import { getSyncDb } from '../../shared/db/client.js';
 import { logger } from '../../shared/logger.js';
 import { scheduleDailyBudgetCheck } from './daily-cap.js';
+import { holdUnrecorded, takeUnrecorded } from './unrecorded-spend.js';
 import { recordApiCall } from '../health/metrics.js';
 
 /**
@@ -156,6 +157,10 @@ export class UsageTracker {
    * Record usage statistics to database
    */
   static async recordUsage(stats: UsageStats): Promise<void> {
+    // Rows that failed earlier get another try first (unrecorded-spend.ts).
+    for (const waiting of takeUnrecorded<UsageStats>()) {
+      await UsageTracker.recordUsage(waiting.row);
+    }
     try {
       const db = getSyncDb();
 
@@ -214,8 +219,11 @@ export class UsageTracker {
       // Spend just changed — re-evaluate the daily cap (coalesced, fire-and-forget).
       if ((stats.estimated_cost ?? 0) > 0) scheduleDailyBudgetCheck();
     } catch (error) {
-      logger.error('❌ Failed to record usage stats:', error);
-      // Don't throw - usage tracking failure shouldn't break the main flow
+      // Don't throw - usage tracking failure shouldn't break the main flow. But keep the row
+      // (and its cost, which the daily cap still counts) for the next write to retry.
+      logger.error('❌ Failed to record usage stats (held for retry):', error);
+      holdUnrecorded(stats, stats.estimated_cost ?? 0);
+      if ((stats.estimated_cost ?? 0) > 0) scheduleDailyBudgetCheck();
     }
   }
 
@@ -513,7 +521,9 @@ class CostMonitor {
     model: string,
     cachedTokens = 0,
     /** Exact USD from OpenRouter usage accounting (auto-routed calls); overrides the table. */
-    reportedCost?: number
+    reportedCost?: number,
+    /** Prompt tokens written to the cache (billed above list price); see calculateCost. */
+    cacheWriteTokens = 0
   ): { shouldCheckCredits: boolean; warnings: string[] } {
     this.totalInputTokens += inputTokens;
     this.totalOutputTokens += outputTokens;
@@ -524,7 +534,7 @@ class CostMonitor {
     if (reportedCost !== undefined && Number.isFinite(reportedCost)) {
       estimatedCost = reportedCost;
     } else {
-      estimatedCost = this.calculateCost(inputTokens, outputTokens, cachedTokens, model);
+      estimatedCost = this.calculateCost(inputTokens, outputTokens, cachedTokens, model, cacheWriteTokens);
     }
     this.totalCost += estimatedCost;
 
@@ -572,13 +582,16 @@ class CostMonitor {
     const MIN_SAMPLE_HOURS = 0.25; // ignore burn rate in the first 15 min (tiny sample skews it)
     // A zero/negative balance is exhaustion (openrouter-balance.ts reports it); runway math
     // on it printed nonsense like "~-62201.3h of credit left".
+    // The faster of the since-boot average and the recent rolling burn (Codex crew 2026-11-18:
+    // the average alone hid a sudden spike after a quiet day, so the warning never fired).
+    const burnPerHour = Math.max(stats.costPerHour, stats.recentBurnPerHour ?? 0);
     if (
       uptimeHours >= MIN_SAMPLE_HOURS &&
       this.lastKnownBalance !== null &&
       this.lastKnownBalance > 0 &&
-      stats.costPerHour > 0
+      burnPerHour > 0
     ) {
-      const runwayHours = this.lastKnownBalance / stats.costPerHour;
+      const runwayHours = this.lastKnownBalance / burnPerHour;
       const warnHours = parseFloat(process.env.RUNWAY_WARN_HOURS || '24');
       const critHours = parseFloat(process.env.RUNWAY_CRITICAL_HOURS || '6');
       const throttleMs = parseInt(process.env.RUNWAY_WARN_THROTTLE_MS || '600000'); // 10 min
@@ -591,7 +604,7 @@ class CostMonitor {
         } else {
           sev = '⚠️';
         }
-        const warning = `${sev} ~${runwayHours.toFixed(1)}h of credit left at current burn ($${stats.costPerHour.toFixed(2)}/hr, $${this.lastKnownBalance.toFixed(2)} balance)`;
+        const warning = `${sev} ~${runwayHours.toFixed(1)}h of credit left at current burn ($${burnPerHour.toFixed(2)}/hr, $${this.lastKnownBalance.toFixed(2)} balance)`;
         logger.warn(warning);
         warnings.push(warning);
       }
@@ -627,7 +640,8 @@ class CostMonitor {
     inputTokens: number,
     outputTokens: number,
     cachedTokens = 0,
-    model = 'unknown'
+    model = 'unknown',
+    cacheWriteTokens = 0
   ): number {
     // Delegated so there is exactly one pricing table. UsageTracker.calculateCost already
     // applies the per-model rate and the 0.1x cache-read discount, and bills an unknown
@@ -637,6 +651,7 @@ class CostMonitor {
       completion_tokens: outputTokens,
       total_tokens: inputTokens + outputTokens,
       cached_tokens: cachedTokens,
+      cache_write_tokens: cacheWriteTokens,
     });
   }
 
