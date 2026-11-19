@@ -290,7 +290,8 @@ export function buildRollup(
 
   // Everyone who reacted to anything in the window is blanked out of every excerpt. All rows,
   // not just kept: an opted-out or banned reactor must not stay named either (Codex).
-  const allReactors = [...new Map(rows.map((r) => [r.userId, r])).values()];
+  // Per (id, name) pair, so a name changed mid-window is blanked in both spellings (Codex).
+  const allReactors = [...new Map(rows.map((r) => [`${r.userId}\u0000${r.userLabel}`, r])).values()];
 
   const totals = new Map<string, RollupEmoji>();
   const perMessage = new Map<string, { rows: PersistedReaction[]; byEmoji: Map<string, RollupEmoji> }>();
