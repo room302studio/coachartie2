@@ -259,8 +259,9 @@ export function buildRollup(
   let takenBack = 0;
   for (const r of kept) {
     const key = `${r.messageId}\u0000${r.emoji}\u0000${r.userId}`;
+    // A removal counts unless it repeats one already seen; its add may predate the window.
     if (r.action === 'removed') {
-      if (latest.get(key)?.action === 'added') {
+      if (latest.get(key)?.action !== 'removed') {
         takenBack++;
         takenBackBy.set(r.messageId, (takenBackBy.get(r.messageId) ?? 0) + 1);
       }

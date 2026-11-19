@@ -231,8 +231,8 @@ function parseMeta(metadata: string | null | undefined): Record<string, unknown>
   return {};
 }
 
-/** Keep the incoming order when there's no query; otherwise rows matching more words first. */
-export function rankByWords<T extends { content: string }>(rows: T[], query: string): T[] {
+/** SQL scoring how many of the query's words (max 12) appear in content, LIKE-escaped. */
+function wordMatchScore(query: string): { sql: string; args: string[]; words: number } {
   const words = [
     ...new Set(
       query
@@ -241,16 +241,14 @@ export function rankByWords<T extends { content: string }>(rows: T[], query: str
         .map((w) => w.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, ''))
         .filter((w) => w.length > 0)
     ),
-  ];
-  if (words.length === 0) return rows;
-  return rows
-    .map((row, index) => {
-      const text = row.content.toLowerCase();
-      return { row, index, score: words.filter((w) => text.includes(w)).length };
-    })
-    .filter((r) => r.score > 0)
-    .sort((a, b) => b.score - a.score || a.index - b.index)
-    .map((r) => r.row);
+  ].slice(0, 12);
+  let sql = '0';
+  const args: string[] = [];
+  for (const w of words) {
+    sql += ` + (CASE WHEN lower(content) LIKE ? ESCAPE '\\' THEN 1 ELSE 0 END)`;
+    args.push(`%${w.replace(/[\\%_]/g, (c) => `\\${c}`)}%`);
+  }
+  return { sql, args, words: words.length };
 }
 
 /** Whose memories a recall searches: EJ may name anyone; everyone else gets only their own. */
@@ -644,9 +642,10 @@ export class MemoryService {
     let pinnedImportance = 10;
     let metadata = memory.metadata;
     if (!isOwner(userId)) {
-      pinnedImportance = NON_OWNER_MAX_IMPORTANCE;
-      // A capped pin waits for EJ's review like a capped remember (memory capped).
-      if (memory.importance < 10) {
+      // Never lower a note (one EJ approved can sit above the cap); a capped pin waits for EJ's
+      // review like a capped remember (memory capped).
+      pinnedImportance = Math.max(memory.importance, NON_OWNER_MAX_IMPORTANCE);
+      if (pinnedImportance < 10) {
         const meta = parseMeta(memory.metadata);
         delete meta.cap_review;
         delete meta.cap_reviewed_at;
@@ -764,14 +763,19 @@ export class MemoryService {
    */
   listDropped(userId: string, callerGuildId: string | null, query: string, limit: number): string {
     const scope = reviewScope(userId, callerGuildId);
-    const rows = getSyncDb().all<MemoryRecord>(
-      `SELECT * FROM memories
-        WHERE importance <= 1 AND json_valid(metadata)
-          AND json_extract(metadata, '$.pruned_by') = 'dream' AND ${scope.sql}
-        ORDER BY json_extract(metadata, '$.dreamt_at') DESC, id DESC LIMIT 500`,
-      scope.args
+    const match = wordMatchScore(query);
+    let minScore = 0;
+    if (match.words > 0) minScore = 1;
+    // Ranked in SQL over every restorable row, so an old match isn't cut off by a row limit.
+    const ranked = getSyncDb().all<MemoryRecord>(
+      `SELECT * FROM (
+         SELECT *, (${match.sql}) AS score FROM memories
+          WHERE importance <= 1 AND json_valid(metadata)
+            AND json_extract(metadata, '$.pruned_by') = 'dream' AND ${scope.sql}
+       ) WHERE score >= ?
+       ORDER BY score DESC, json_extract(metadata, '$.dreamt_at') DESC, id DESC LIMIT ?`,
+      [...match.args, ...scope.args, minScore, limit]
     );
-    const ranked = rankByWords(rows, query).slice(0, limit);
     if (ranked.length === 0) {
       if (query.trim()) return `Nothing the dream let go matches "${query.trim()}" (that you can restore here).`;
       return 'The dream has not let go of anything you can restore here.';
