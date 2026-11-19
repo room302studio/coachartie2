@@ -2,6 +2,9 @@ import { getSyncDb } from '../../shared/db/client.js';
 import { logger } from '../../shared/logger.js';
 import { scheduleDailyBudgetCheck } from './daily-cap.js';
 import { holdUnrecorded, takeUnrecorded } from './unrecorded-spend.js';
+
+/** True while recordUsage is replaying held rows (see recordUsage). */
+let replayingHeldUsage = false;
 import { recordApiCall } from '../health/metrics.js';
 
 /**
@@ -157,9 +160,18 @@ export class UsageTracker {
    * Record usage statistics to database
    */
   static async recordUsage(stats: UsageStats): Promise<void> {
-    // Rows that failed earlier get another try first (unrecorded-spend.ts).
-    for (const waiting of takeUnrecorded<UsageStats>()) {
-      await UsageTracker.recordUsage(waiting.row);
+    // Rows that failed earlier get one more try first (unrecorded-spend.ts). Only from the
+    // outermost call: a retried row that failed again must not replay the queue itself, or a
+    // failing DB turns n held rows into ~2^n retries (review 2026-11-19).
+    if (!replayingHeldUsage) {
+      replayingHeldUsage = true;
+      try {
+        for (const waiting of takeUnrecorded<UsageStats>()) {
+          await UsageTracker.recordUsage(waiting.row);
+        }
+      } finally {
+        replayingHeldUsage = false;
+      }
     }
     try {
       const db = getSyncDb();
