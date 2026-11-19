@@ -27,8 +27,10 @@ interface OptOutCache {
   at: number;
   ids: Set<string>;
   names: string[]; // lowercased handles + ids
+  untrusted?: boolean; // the read failed and there was no earlier list to fall back on
 }
 let cache: OptOutCache | null = null;
+let lastTrusted: OptOutCache | null = null;
 let tableReady = false;
 
 function ensureTable(): void {
@@ -68,16 +70,24 @@ function load(): OptOutCache {
       }
     });
     cache = { at: now, ids: new Set(rows.map((r) => r.user_id)), names };
+    lastTrusted = cache;
   } catch (error) {
-    // Keep serving the last known list rather than silently forgetting opt-outs.
+    // Keep serving the last list we actually read (it survives cache clears after writes).
+    // With none, fail closed and don't cache the failure: the next call reads again
+    // (Codex crew 2026-11-18: an empty list was cached for 30s and let opted-out people in).
     logger.warn('privacy-opt-out: could not read opt-out list', error);
-    cache = { at: now, ids: cache?.ids ?? new Set(), names: cache?.names ?? [] };
+    if (!lastTrusted) return { at: now, ids: new Set(), names: [], untrusted: true };
+    cache = { at: now, ids: lastTrusted.ids, names: lastTrusted.names };
   }
   return cache;
 }
 
+/** With no trustworthy list, everyone counts as opted out until a read succeeds. */
 export function isOptedOut(userId?: string | null): boolean {
-  return !!userId && load().ids.has(userId);
+  if (!userId) return false;
+  const list = load();
+  if (list.untrusted) return true;
+  return list.ids.has(userId);
 }
 
 /**

@@ -18,7 +18,7 @@
 import { Client, Events, Message, ChannelType } from 'discord.js';
 import { checkGuildBudget, reportGuildBudgetSpent } from '../../shared/guild-budget.js';
 import { logger } from '../../shared/logger.js';
-import { BLOCKED_USER_IDS, isBlockedUser } from '../../shared/blocklist.js';
+import { BLOCKED_USER_IDS, BLOCKED_USER_EPITHET, isBlockedUser } from '../../shared/blocklist.js';
 import { isOperatorOnlyError } from '../../shared/anomalywatch.js';
 import { getErrorMessage, getErrorStackOrUndefined } from '../../shared/errors.js';
 import { getKillSwitchPath, isGenerationMuted } from '../../shared/kill-switch.js';
@@ -687,7 +687,14 @@ async function respondOrObserve(turn: Turn): Promise<StepResult> {
     // is being talked about (raw IDs were causing Artie to confuse people)
     for (const [id, user] of message.mentions.users) {
       if (id === client.user!.id) continue;
-      const name = user.displayName || user.username;
+      // A banned or opted-out account is never expanded to its current name: a renamed
+      // banned account would otherwise slip past every name matcher (Codex crew 2026-11-18).
+      let name = user.displayName || user.username;
+      if (BLOCKED_USER_IDS.has(id)) {
+        name = BLOCKED_USER_EPITHET;
+      } else if (isBlockedUser(id)) {
+        name = 'someone';
+      }
       cleanMessage = replaceMention(cleanMessage, id, `@${name}`);
     }
 
