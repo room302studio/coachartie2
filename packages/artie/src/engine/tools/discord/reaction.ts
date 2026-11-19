@@ -11,7 +11,13 @@ import {
 } from '../../5-tool-loop/registry.js';
 import { logger } from '../../../shared/logger.js';
 import * as gateway from '../../../gateway/api.js';
-import { listStandingReactions, type PersistedReaction } from '../../../shared/db/reaction-store.js';
+import {
+  listStandingReactions,
+  listReactionEvents,
+  type PersistedReaction,
+} from '../../../shared/db/reaction-store.js';
+import { isOptedOut } from '../../../shared/privacy-opt-out.js';
+import { isBlockedUser } from '../../../shared/blocklist.js';
 
 /** Shape of gateway.readMessageReactions' body.message (mirrors gateway reaction-log.ts). */
 export interface LiveMessageReactions {
@@ -195,6 +201,163 @@ async function readReactions(params: any, context?: CapabilityContext): Promise<
   }
 }
 
+const ROLLUP_DEFAULT_HOURS = 7 * 24;
+
+interface RoleCounts {
+  from_asker: number;
+  from_others: number;
+  unknown: number;
+}
+
+interface RollupEmoji extends RoleCounts {
+  emoji: string;
+  count: number;
+}
+
+function emptyCounts(): RoleCounts {
+  return { from_asker: 0, from_others: 0, unknown: 0 };
+}
+
+function addRole(counts: RoleCounts, role: PersistedReaction['reactorRole']): void {
+  if (role === 'asker') counts.from_asker++;
+  else if (role === 'other') counts.from_others++;
+  else counts.unknown++;
+}
+
+function emojiList(byEmoji: Map<string, RollupEmoji>): RollupEmoji[] {
+  return [...byEmoji.values()].sort((a, b) => b.count - a.count);
+}
+
+/**
+ * Feedback rollup over a longer window (Artie 2026-11-19: "a rollup over a longer window, so I
+ * see patterns", whether the reactor was the person he answered, removed reactions, and the
+ * reply text). The privacy rule, approved with the feature by EJ the same day:
+ *  - never a reactor's name or id, only asker / someone else / unknown
+ *  - opted-out and banned people's reactions are left out entirely
+ *  - in a server: that server's counts, reply text only from the current channel (whose
+ *    history the asker can read); other channels are counts with no text
+ *  - in a DM: that DM only
+ *  - off Discord (API/bridge, loopback or token only): every server, never a DM
+ * `rows` is the window's events, oldest first; `textChannelId` limits which replies show text
+ * (null = all of them).
+ */
+export function buildRollup(
+  rows: PersistedReaction[],
+  now: number,
+  limit: number,
+  textChannelId: string | null
+): {
+  totals: RollupEmoji[];
+  taken_back: number;
+  messages: Array<{ message_id: string; snippet: string; age: string; taken_back: number; reactions: RollupEmoji[] }>;
+  counted_without_text: number;
+} {
+  const kept = rows.filter((r) => !isOptedOut(r.userId) && !isBlockedUser(r.userId));
+  // Latest event per (message, emoji, person) decides whether the reaction still stands.
+  const latest = new Map<string, PersistedReaction>();
+  const takenBackBy = new Map<string, number>();
+  let takenBack = 0;
+  for (const r of kept) {
+    const key = `${r.messageId}\u0000${r.emoji}\u0000${r.userId}`;
+    if (r.action === 'removed') {
+      if (latest.get(key)?.action === 'added') {
+        takenBack++;
+        takenBackBy.set(r.messageId, (takenBackBy.get(r.messageId) ?? 0) + 1);
+      }
+    }
+    latest.set(key, r);
+  }
+
+  const totals = new Map<string, RollupEmoji>();
+  const perMessage = new Map<string, { rows: PersistedReaction[]; byEmoji: Map<string, RollupEmoji> }>();
+  let withoutText = 0;
+  for (const r of latest.values()) {
+    if (r.action !== 'added') continue;
+    const total = totals.get(r.emoji) ?? { emoji: r.emojiLabel || r.emoji, count: 0, ...emptyCounts() };
+    total.count++;
+    addRole(total, r.reactorRole);
+    totals.set(r.emoji, total);
+    if (textChannelId !== null && r.channelId !== textChannelId) {
+      withoutText++;
+      continue;
+    }
+    const entry = perMessage.get(r.messageId) ?? { rows: [], byEmoji: new Map<string, RollupEmoji>() };
+    entry.rows.push(r);
+    const e = entry.byEmoji.get(r.emoji) ?? { emoji: r.emojiLabel || r.emoji, count: 0, ...emptyCounts() };
+    e.count++;
+    addRole(e, r.reactorRole);
+    entry.byEmoji.set(r.emoji, e);
+    perMessage.set(r.messageId, entry);
+  }
+
+  const messages = [...perMessage.entries()]
+    .map(([messageId, entry]) => {
+      const last = Math.max(...entry.rows.map((r) => r.at));
+      return {
+        message_id: messageId,
+        snippet: snippetOf(entry.rows.find((r) => r.messageExcerpt)?.messageExcerpt),
+        age: ageLabel(last, now),
+        taken_back: takenBackBy.get(messageId) ?? 0,
+        reactions: emojiList(entry.byEmoji),
+        weight: entry.rows.length,
+        last,
+      };
+    })
+    .sort((a, b) => b.weight - a.weight || b.last - a.last)
+    .slice(0, limit)
+    .map(({ weight: _w, last: _l, ...rest }) => rest);
+
+  return { totals: emojiList(totals), taken_back: takenBack, messages, counted_without_text: withoutText };
+}
+
+async function rollupReactions(params: any, context?: CapabilityContext): Promise<string> {
+  // Scope comes ONLY from the conversation, never from model-supplied params.
+  const channelId = context?.channelId ?? null;
+  const guildId = context?.guildId ?? null;
+  const now = Date.now();
+  const hours = clampInt(params.hours, ROLLUP_DEFAULT_HOURS, 1, MAX_HOURS);
+  const limit = clampInt(params.limit, DEFAULT_LIMIT, 1, MAX_LIMIT);
+
+  let scope = 'every server, no DMs (API/bridge view)';
+  let textChannelId: string | null = null;
+  if (channelId) {
+    let allowed = false;
+    const askerId = context?.userId;
+    if (askerId) {
+      try {
+        allowed = await gateway.canReadHistory(String(channelId), guildId, String(askerId));
+      } catch {
+        allowed = false;
+      }
+    }
+    if (!allowed) {
+      return JSON.stringify({
+        success: false,
+        error: "you'd need Read Message History in this channel to look up reactions here",
+      });
+    }
+    scope = 'this DM';
+    if (guildId) {
+      scope = 'this server (reply text from this channel only)';
+      textChannelId = String(channelId);
+    }
+  }
+
+  try {
+    const rows = listReactionEvents({ guildId, channelId, sinceMs: hours * HOUR_MS, now });
+    return JSON.stringify({
+      success: true,
+      window_hours: hours,
+      scope,
+      privacy: 'reactors are never named: asker = the person that reply answered',
+      ...buildRollup(rows, now, limit, textChannelId),
+    });
+  } catch (error) {
+    logger.error('[reaction] rollup failed:', error);
+    return JSON.stringify({ success: false, error: 'reaction log unavailable' });
+  }
+}
+
 export const discordReactionCapability: RegisteredCapability = {
   name: 'discord-reaction',
   emoji: '😶',
@@ -220,8 +383,15 @@ export const discordReactionCapability: RegisteredCapability = {
         limit: { type: 'integer', description: 'Max messages to return (default 10, max 25)' },
       },
     },
+    rollup: {
+      effect: 'read',
+      params: {
+        hours: { type: 'integer', description: 'Look back this many hours (default 168 = a week, max 336)' },
+        limit: { type: 'integer', description: 'Max replies to list (default 10, max 25)' },
+      },
+    },
   },
-  supportedActions: ['react', 'read'],
+  supportedActions: ['react', 'read', 'rollup'],
   description:
     'React to a message with a single emoji. By default you react to the message you are ' +
     'responding to right now — just pass an emoji. When a message is genuinely poignant, ' +
@@ -229,7 +399,12 @@ export const discordReactionCapability: RegisteredCapability = {
     '🫀 🧷 🪬 🚽 🦟 🧫) instead of explaining the joke. Optional message_id to react to a specific message. ' +
     'action="read" looks reactions up: with message_id it reads that message live (emoji, counts, who); ' +
     'without it, it lists who reacted to your recent messages in this conversation (last 24h by default, ' +
-    'kept 14 days). It only sees this channel, or this DM.',
+    'kept 14 days). It only sees this channel, or this DM. ' +
+    'action="rollup" is your feedback pattern over a longer window (default a week): emoji totals, ' +
+    'how many came from the person each reply answered vs someone else, reactions taken back, and ' +
+    'your most-reacted replies with their text. Never names anyone. In a server it counts the whole ' +
+    'server but shows reply text only from this channel; in a DM only that DM; through the API it ' +
+    'covers every server and no DMs.',
   requiredParams: [],
   examples: [
     '<capability name="discord-reaction" action="read" />',
@@ -241,6 +416,9 @@ export const discordReactionCapability: RegisteredCapability = {
   handler: async (params: any, _content: string | undefined, context?: CapabilityContext) => {
     if (params.action === 'read') {
       return readReactions(params, context);
+    }
+    if (params.action === 'rollup') {
+      return rollupReactions(params, context);
     }
     // channelId is auto-injected into params (like discord-threads); context is a fallback.
     const channelId = params.channelId || context?.channelId;

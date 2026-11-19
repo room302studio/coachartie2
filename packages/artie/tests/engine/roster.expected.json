@@ -104,7 +104,8 @@
   ],
   "discord-reaction": [
     "react",
-    "read"
+    "read",
+    "rollup"
   ],
   "discord-send-message": [
     "send_message"
@@ -214,12 +215,15 @@
     "update"
   ],
   "memory": [
+    "capped",
+    "dropped",
     "forget",
     "pin",
     "recall",
     "recent",
     "remember",
     "restore",
+    "review",
     "stats"
   ],
   "mention_proxy": [

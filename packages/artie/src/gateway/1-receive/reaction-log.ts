@@ -13,7 +13,7 @@
 
 import type { Client } from 'discord.js';
 import { logger } from '../../shared/logger.js';
-import { insertReaction, clearReactions } from '../../shared/db/reaction-store.js';
+import { insertReaction, clearReactions, type ReactorRole } from '../../shared/db/reaction-store.js';
 
 export interface ReactionLogEntry {
   messageId: string;
@@ -31,6 +31,8 @@ export interface ReactionLogEntry {
   /** A short excerpt of the message that got reacted to, when available (it's always
    * Artie's own message, so content is normally present regardless of privileged intents). */
   messageExcerpt?: string;
+  /** 'asker' when the reactor is the person this reply answered, 'other' when not, unset if unknown. */
+  reactorRole?: ReactorRole;
   at: number;
 }
 
@@ -70,6 +72,7 @@ function persistReaction(entry: ReactionLogEntry): void {
       messageExcerpt: entry.messageExcerpt,
       action,
       at: entry.at,
+      reactorRole: entry.reactorRole,
     });
   } catch (error) {
     // The prompt buffer still works without the table; never break reaction handling.

@@ -24,6 +24,7 @@ import { telemetry } from '../telemetry.js';
 import { generateCorrelationId, getShortCorrelationId } from '../correlation.js';
 import { processUserIntent } from '../4-reply/stream-reply.js';
 import { recordReaction, clearLoggedReactions, emojiKey } from './reaction-log.js';
+import type { ReactorRole } from '../../shared/db/reaction-store.js';
 
 // Import capabilities client for trace feedback correlation
 import { capabilitiesClient } from '../3-ask-engine/engine-client.js';
@@ -54,6 +55,17 @@ function getSendTypingFunction(channel: any): any {
     };
   }
   return undefined;
+}
+
+/**
+ * Was the reactor the person this reply answered? Only the first chunk of a reply is a Discord
+ * reply (message.reply), so later chunks and plain sends come back unknown.
+ */
+function reactorRoleOf(message: any, reactorId: string): ReactorRole | undefined {
+  const answeredId = message?.mentions?.repliedUser?.id;
+  if (!answeredId) return undefined;
+  if (answeredId === reactorId) return 'asker';
+  return 'other';
 }
 
 function buildFeedbackNote(sentiment: string, emoji: string, guildName: string, channelName: string, messageSnippet: string): string {
@@ -264,6 +276,7 @@ export function setupReactionHandler(client: Client) {
           messageExcerpt: reaction.message.content?.slice(0, 120) || undefined,
           guildId: reaction.message.guildId ?? null,
           userId: user.id,
+          reactorRole: reactorRoleOf(reaction.message, user.id),
           at: now,
         });
 
@@ -358,6 +371,7 @@ export function setupReactionHandler(client: Client) {
           messageExcerpt: reaction.message.content?.slice(0, 120) || undefined,
           guildId: reaction.message.guildId ?? null,
           userId: user.id,
+          reactorRole: reactorRoleOf(reaction.message, user.id),
           action: 'removed',
           at: Date.now(),
         });

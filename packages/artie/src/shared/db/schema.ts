@@ -701,6 +701,8 @@ export const reactionLog = sqliteTable(
     messageExcerpt: text('message_excerpt'),
     action: text('action').notNull().default('added'),
     at: integer('at').notNull(),
+    /** 'asker' (the person Artie's reply answered) | 'other' | null (unknown). */
+    reactorRole: text('reactor_role'),
   },
   (table) => ({
     channelAtIdx: index('idx_reaction_log_channel_at').on(table.channelId, table.at),

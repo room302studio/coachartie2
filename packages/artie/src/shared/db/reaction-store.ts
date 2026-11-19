@@ -27,7 +27,11 @@ export interface PersistedReaction {
   messageExcerpt?: string;
   action: 'added' | 'removed';
   at: number;
+  /** Whether the reactor is the person Artie's reply answered. Unknown when not a reply. */
+  reactorRole?: ReactorRole;
 }
+
+export type ReactorRole = 'asker' | 'other';
 
 interface ReactionRow {
   guild_id: string | null;
@@ -66,6 +70,12 @@ function ensureTable(): void {
   db.run(`CREATE INDEX IF NOT EXISTS idx_reaction_log_channel_at ON reaction_log(channel_id, at)`);
   db.run(`CREATE INDEX IF NOT EXISTS idx_reaction_log_message ON reaction_log(message_id)`);
   db.run(`CREATE INDEX IF NOT EXISTS idx_reaction_log_at ON reaction_log(at)`);
+  // Added 2026-11-19 (Artie: "whether the reactor is the person I was answering"). Checked
+  // first, so a restart doesn't log a duplicate-column error.
+  const columns = db.all<{ name: string }>(`PRAGMA table_info(reaction_log)`);
+  if (!columns.some((c) => c.name === 'reactor_role')) {
+    db.run(`ALTER TABLE reaction_log ADD COLUMN reactor_role TEXT`);
+  }
   tableReady = true;
 }
 
@@ -89,8 +99,8 @@ export function insertReaction(r: PersistedReaction): void {
   ensureTable();
   getSyncDb().run(
     `INSERT INTO reaction_log
-       (guild_id, channel_id, message_id, emoji, emoji_label, user_id, user_label, message_excerpt, action, at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       (guild_id, channel_id, message_id, emoji, emoji_label, user_id, user_label, message_excerpt, action, at, reactor_role)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       r.guildId,
       r.channelId,
@@ -102,6 +112,7 @@ export function insertReaction(r: PersistedReaction): void {
       r.messageExcerpt ?? null,
       r.action,
       r.at,
+      r.reactorRole ?? null,
     ]
   );
   if (r.at - lastPruneAt > PRUNE_EVERY_MS) {
@@ -191,4 +202,56 @@ export function listStandingReactions(q: ReactionQuery): PersistedReaction[] {
     });
   }
   return standing;
+}
+
+/**
+ * Every logged event (adds and removals) in a window, oldest first, for the rollup. Where:
+ *  - guildId: that server's rows only
+ *  - channelId with no guildId: that DM only
+ *  - neither: every server, never a DM (the API/bridge view)
+ * Callers fill these from the conversation, never from model params.
+ */
+export function listReactionEvents(q: {
+  guildId?: string | null;
+  channelId?: string | null;
+  sinceMs: number;
+  now?: number;
+}): PersistedReaction[] {
+  ensureTable();
+  const now = q.now ?? Date.now();
+  const where: string[] = [`at >= ?`, `at <= ?`];
+  const args: unknown[] = [now - q.sinceMs, now];
+  if (q.guildId) {
+    where.push(`guild_id = ?`);
+    args.push(q.guildId);
+  } else if (q.channelId) {
+    where.push(`guild_id IS NULL`, `channel_id = ?`);
+    args.push(q.channelId);
+  } else {
+    where.push(`guild_id IS NOT NULL`);
+  }
+  const rows = getSyncDb().all<ReactionRow & { reactor_role: string | null }>(
+    `SELECT guild_id, channel_id, message_id, emoji, emoji_label, user_id, user_label, message_excerpt, action, at, reactor_role
+       FROM reaction_log WHERE ${where.join(' AND ')} ORDER BY at ASC, id ASC`,
+    args
+  );
+  return rows.map((row) => {
+    let action: 'added' | 'removed' = 'added';
+    if (row.action === 'removed') action = 'removed';
+    let reactorRole: ReactorRole | undefined;
+    if (row.reactor_role === 'asker' || row.reactor_role === 'other') reactorRole = row.reactor_role;
+    return {
+      guildId: row.guild_id,
+      channelId: row.channel_id,
+      messageId: row.message_id,
+      emoji: row.emoji,
+      emojiLabel: row.emoji_label ?? row.emoji,
+      userId: row.user_id,
+      userLabel: row.user_label,
+      messageExcerpt: row.message_excerpt ?? undefined,
+      action,
+      at: row.at,
+      reactorRole,
+    };
+  });
 }

@@ -200,6 +200,59 @@ export function searchSelfNotes(query: string, viewerId: string, guildId: string
 }
 const RESERVED_TAG_PREFIX = 'scope:';
 
+/**
+ * Rows a caller may list for dropped/capped review, the same people restore allows: their own
+ * memories and self-notes written with them; EJ any. In a server, only that server's rows and
+ * guild-free ones (for EJ, guild-free means his own or self-notes, so another person's
+ * follow-them-everywhere facts don't get listed into a server channel).
+ */
+export function reviewScope(userId: string, callerGuildId: string | null): { sql: string; args: unknown[] } {
+  if (isOwner(userId)) {
+    if (!callerGuildId) return { sql: '1 = 1', args: [] };
+    return {
+      sql: `(guild_id = ? OR (guild_id IS NULL AND user_id IN (?, ?)))`,
+      args: [callerGuildId, userId, ARTIE_SELF_USER_ID],
+    };
+  }
+  return {
+    sql: `(user_id = ? OR (user_id = ? AND json_extract(metadata, '$.written_with') = ?))
+      AND (? IS NULL OR guild_id IS NULL OR guild_id = ?)`,
+    args: [userId, ARTIE_SELF_USER_ID, userId, callerGuildId, callerGuildId],
+  };
+}
+
+function parseMeta(metadata: string | null | undefined): Record<string, unknown> {
+  try {
+    const parsed = JSON.parse(metadata || '{}');
+    if (parsed && typeof parsed === 'object') return parsed as Record<string, unknown>;
+  } catch {
+    // unreadable metadata counts as empty
+  }
+  return {};
+}
+
+/** Keep the incoming order when there's no query; otherwise rows matching more words first. */
+export function rankByWords<T extends { content: string }>(rows: T[], query: string): T[] {
+  const words = [
+    ...new Set(
+      query
+        .toLowerCase()
+        .split(/[\s,;]+/)
+        .map((w) => w.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, ''))
+        .filter((w) => w.length > 0)
+    ),
+  ];
+  if (words.length === 0) return rows;
+  return rows
+    .map((row, index) => {
+      const text = row.content.toLowerCase();
+      return { row, index, score: words.filter((w) => text.includes(w)).length };
+    })
+    .filter((r) => r.score > 0)
+    .sort((a, b) => b.score - a.score || a.index - b.index)
+    .map((r) => r.row);
+}
+
 /** Whose memories a recall searches: EJ may name anyone; everyone else gets only their own. */
 export function recallTargetUser(requestedUser: unknown, callerId: string): string {
   if (requestedUser && isOwner(callerId)) {
@@ -589,12 +642,21 @@ export class MemoryService {
     // NON_OWNER_MAX_IMPORTANCE cap as remember, so it can't buy its way into the >=7 band
     // that lowers recall's relevance threshold and guarantees inclusion.
     let pinnedImportance = 10;
+    let metadata = memory.metadata;
     if (!isOwner(userId)) {
       pinnedImportance = NON_OWNER_MAX_IMPORTANCE;
+      // A capped pin waits for EJ's review like a capped remember (memory capped).
+      if (memory.importance < 10) {
+        const meta = parseMeta(memory.metadata);
+        delete meta.cap_review;
+        delete meta.cap_reviewed_at;
+        metadata = JSON.stringify({ ...meta, asked_importance: 10 });
+      }
     }
     const updatedMemory = {
       ...memory,
       importance: pinnedImportance,
+      metadata,
     };
 
     await hybridDataLayer.updateMemory(updatedMemory);
@@ -693,6 +755,93 @@ export class MemoryService {
     await hybridDataLayer.updateMemory(restored);
     logger.info(`♻️ [HYBRID] Restored dream-pruned memory ${memoryId} for ${userId}`);
     return `Restored memory #${memoryId} (importance ${before}); the dream had filed it as ${String(meta.pruned_category || 'junk')}.`;
+  }
+
+  /**
+   * What the dream let go that this caller could restore, newest first; a query ranks by how many
+   * of its words match (Artie 2026-11-19: "someone says 'you used to know this' and I can't tell
+   * whether I never saved it or last night's dream pruned it"). Same rows restore accepts.
+   */
+  listDropped(userId: string, callerGuildId: string | null, query: string, limit: number): string {
+    const scope = reviewScope(userId, callerGuildId);
+    const rows = getSyncDb().all<MemoryRecord>(
+      `SELECT * FROM memories
+        WHERE importance <= 1 AND json_valid(metadata)
+          AND json_extract(metadata, '$.pruned_by') = 'dream' AND ${scope.sql}
+        ORDER BY json_extract(metadata, '$.dreamt_at') DESC, id DESC LIMIT 500`,
+      scope.args
+    );
+    const ranked = rankByWords(rows, query).slice(0, limit);
+    if (ranked.length === 0) {
+      if (query.trim()) return `Nothing the dream let go matches "${query.trim()}" (that you can restore here).`;
+      return 'The dream has not let go of anything you can restore here.';
+    }
+    const lines = ranked.map((row) => {
+      const meta = parseMeta(row.metadata);
+      const when = String(meta.dreamt_at || '').slice(0, 10);
+      let why = String(meta.pruned_category || 'junk');
+      if (meta.pruned_reason) why = `${why}: ${String(meta.pruned_reason).slice(0, 80)}`;
+      return `#${row.id} (let go ${when}, ${why}) ${clipNote(row.content)}`;
+    });
+    return `${lines.join('\n')}\nUndo one with memory restore id=<number>.`;
+  }
+
+  /**
+   * Notes saved below the importance someone asked for, because only EJ may write above
+   * NON_OWNER_MAX_IMPORTANCE (Artie 2026-11-19: "a note I meant as a 7 lands as a 6... I'd like
+   * the clamp to be reviewable"). The cap stays; EJ approves or declines each one with review.
+   */
+  listCapped(userId: string, callerGuildId: string | null, limit: number): string {
+    const scope = reviewScope(userId, callerGuildId);
+    const rows = getSyncDb().all<MemoryRecord>(
+      `SELECT * FROM memories
+        WHERE importance > 1 AND json_valid(metadata)
+          AND CAST(json_extract(metadata, '$.asked_importance') AS INTEGER) > importance
+          AND json_extract(metadata, '$.cap_review') IS NULL AND ${scope.sql}
+        ORDER BY id DESC LIMIT ?`,
+      [...scope.args, limit]
+    );
+    if (rows.length === 0) return 'No capped notes waiting for review here.';
+    const lines = rows.map((row) => {
+      const asked = Number(parseMeta(row.metadata).asked_importance);
+      return `#${row.id} (asked ${asked}, stored ${row.importance}) ${clipNote(row.content)}`;
+    });
+    let tail = 'EJ can approve or decline each with memory review id=<number> decision=approve|decline.';
+    if (isOwner(userId)) tail = 'Approve or decline with memory review id=<number> decision=approve|decline.';
+    return `${lines.join('\n')}\n${tail}`;
+  }
+
+  /** EJ's decision on one capped note: approve raises it to what was asked, decline keeps it. */
+  async reviewCapped(
+    userId: string,
+    memoryId: number,
+    decision: string,
+    callerGuildId?: string | null
+  ): Promise<string> {
+    if (!isOwner(userId)) {
+      throw new CallerError('Only EJ can review capped notes; list them with memory capped and ask him');
+    }
+    if (decision !== 'approve' && decision !== 'decline') {
+      throw new CallerError('decision must be approve or decline');
+    }
+    const row = getSyncDb().get<MemoryRecord>(`SELECT * FROM memories WHERE id = ?`, [memoryId]);
+    if (!row) throw new CallerError(`Memory not found: ${memoryId}`);
+    assertSameServer(row.guild_id, callerGuildId, userId, memoryId);
+    const meta = parseMeta(row.metadata);
+    const asked = Number(meta.asked_importance);
+    if (!Number.isFinite(asked) || asked <= row.importance || meta.cap_review) {
+      throw new CallerError(`Memory #${memoryId} has no capped importance waiting for review`);
+    }
+    let importance = row.importance;
+    if (decision === 'approve') importance = Math.min(10, Math.max(row.importance, asked));
+    await hybridDataLayer.updateMemory({
+      ...row,
+      importance,
+      metadata: JSON.stringify({ ...meta, cap_review: decision, cap_reviewed_at: new Date().toISOString() }),
+    });
+    logger.info(`🧾 [HYBRID] Capped memory ${memoryId} ${decision}d by ${userId}`);
+    if (decision === 'approve') return `Approved #${memoryId}: importance ${row.importance} → ${importance}.`;
+    return `Declined #${memoryId}: it stays at importance ${row.importance}.`;
   }
 
   async getRecentMemories(userId: string, limit: number = 10, guildId?: string): Promise<MemoryEntry[]> {
@@ -1133,6 +1282,11 @@ async function handleMemoryAction(
           tags = undefined;
         }
         const channelId = optionalString(params.channelId);
+        // Capped below what was asked: keep the ask so EJ can review it (memory capped / review).
+        const askedImportance = parseInt(String(params.importance));
+        if (Number.isFinite(askedImportance) && askedImportance > importance && importanceCeiling < 10) {
+          selfMeta = { ...selfMeta, asked_importance: Math.min(10, askedImportance) };
+        }
 
         const result = await memoryService.remember(
           ownerId,
@@ -1153,7 +1307,7 @@ async function handleMemoryAction(
         if (Number.isFinite(asked) && asked !== importance) {
           let why = 'importance runs 1-10';
           if (asked > importanceCeiling && importanceCeiling < 10) {
-            why = `above ${importanceCeiling} needs EJ in the conversation`;
+            why = `above ${importanceCeiling} needs EJ in the conversation; queued for his review, see memory capped`;
           }
           notes.push(`importance ${asked} asked, ${importance} stored (${why})`);
         }
@@ -1271,9 +1425,27 @@ async function handleMemoryAction(
         return memoryService.restoreMemory(String(userId), parsedId, callerGuildId);
       }
 
+      case 'dropped': {
+        const limit = Math.max(1, Math.min(20, parseInt(String(params.limit)) || 10));
+        return memoryService.listDropped(String(userId), callerGuildId ?? null, String(params.query || content || ''), limit);
+      }
+
+      case 'capped': {
+        const limit = Math.max(1, Math.min(20, parseInt(String(params.limit)) || 10));
+        return memoryService.listCapped(String(userId), callerGuildId ?? null, limit);
+      }
+
+      case 'review': {
+        const parsedId = Number(String(params.memoryId || params.id || '').trim().replace(/^#/, ''));
+        if (!Number.isInteger(parsedId) || parsedId <= 0) {
+          throw new CallerError('review needs the id of a capped note (memory capped lists them)');
+        }
+        return memoryService.reviewCapped(String(userId), parsedId, String(params.decision || ''), callerGuildId);
+      }
+
       default:
         throw new Error(
-          `Unknown memory action: ${action}. Supported actions: remember, recall, forget, pin, restore, recent, stats`
+          `Unknown memory action: ${action}. Supported actions: remember, recall, forget, pin, restore, dropped, capped, review, recent, stats`
         );
     }
   } catch (error) {
@@ -1288,7 +1460,7 @@ async function handleMemoryAction(
 export const memoryCapability: RegisteredCapability = {
   name: 'memory',
   emoji: '🧠',
-  supportedActions: ['remember', 'recall', 'forget', 'pin', 'restore', 'recent', 'stats'],
+  supportedActions: ['remember', 'recall', 'forget', 'pin', 'restore', 'dropped', 'capped', 'review', 'recent', 'stats'],
   // Params as handleMemoryAction reads them. Writes are Artie's own state (`own`).
   actions: {
     remember: {
@@ -1340,6 +1512,24 @@ export const memoryCapability: RegisteredCapability = {
         memoryId: { type: 'integer', description: 'Id of a memory the nightly dream let go (#id in the dream journal)', required: true, aliases: ['id'] },
       },
     },
+    dropped: {
+      effect: 'read',
+      params: {
+        query: { type: 'string', description: 'Words to look for among what the dream let go (empty = newest)' },
+        limit: { type: 'integer', description: 'Max results (default 10, max 20)' },
+      },
+    },
+    capped: {
+      effect: 'read',
+      params: { limit: { type: 'integer', description: 'Max results (default 10, max 20)' } },
+    },
+    review: {
+      effect: 'own',
+      params: {
+        memoryId: { type: 'integer', description: 'Id of a capped note (from memory capped)', required: true, aliases: ['id'] },
+        decision: { type: 'string', enum: ['approve', 'decline'], description: 'approve raises it to the importance asked; decline keeps it', required: true },
+      },
+    },
     recent: { effect: 'read', params: { limit: { type: 'integer', description: 'How many' } } },
     stats: { effect: 'read' },
   },
@@ -1351,7 +1541,9 @@ export const memoryCapability: RegisteredCapability = {
     'kind=person|preference|project|event|lore|rule|tool|goal|pinned says what the fact is about; scope says where it may travel. ' +
     'tags="a,b" files a memory, recall tags="a" finds it again. A nightly dream pass re-tags memories and prunes junk. ' +
     'NOT for structured profile fields like email/timezone (use user-profile) or agent handoffs (system_memory, EJ only). ' +
-    '"pin" marks something important (importance 10); "forget" deletes it; "restore" undoes a dream prune you disagree with.',
+    '"pin" marks something important (importance 10); "forget" deletes it; "restore" undoes a dream prune you disagree with. ' +
+    '"dropped" searches what the dream let go (when someone says "you used to know this", look there before asking them again). ' +
+    '"capped" lists notes stored below the importance asked (only EJ writes above 6); EJ approves or declines each with "review".',
   handler: handleMemoryAction,
   examples: [
     '<capability name="memory" action="remember" scope="here" kind="project" tags="monetization,stripe">Tier-list commissions idea, risk: becomes a chore</capability>',
