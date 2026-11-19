@@ -81,7 +81,8 @@ export function scrubBlockedUserMentions(
     }
     let plain = BLOCKED_USER_EPITHET;
     if (u.names.length > 0) plain = u.names[0];
-    out = out.replace(new RegExp(`<@!?${u.id}>`, 'g'), plain);
+    // A callback, so a "$&" in a name is inserted literally and can't re-insert the ping.
+    out = out.replace(new RegExp(`<@!?${u.id}>`, 'g'), () => plain);
   }
   return out;
 }
