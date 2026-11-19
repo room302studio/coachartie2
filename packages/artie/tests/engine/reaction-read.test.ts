@@ -206,10 +206,11 @@ describe('reaction read: formatting', () => {
 });
 
 describe('reaction tool declaration', () => {
-  it('declares react (discord) and read (read)', () => {
-    expect(discordReactionCapability.supportedActions).toEqual(['react', 'read']);
+  it('declares react (discord), read and rollup (read)', () => {
+    expect(discordReactionCapability.supportedActions).toEqual(['react', 'read', 'rollup']);
     expect(discordReactionCapability.actions?.react.effect).toBe('discord');
     expect(discordReactionCapability.actions?.read.effect).toBe('read');
+    expect(discordReactionCapability.actions?.rollup.effect).toBe('read');
   });
 });
 

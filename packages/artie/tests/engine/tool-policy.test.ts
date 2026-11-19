@@ -59,7 +59,7 @@ const GATE_FLOOR: Record<string, Record<string, string>> = {
   scheduler: { remind: 'T', remind_every: 'T', schedule: 'T', cancel: 'T', list: '' },
   'discord-moderation': { timeout: 'T', add_enemy_role: 'T', remove_enemy_role: 'T', escalate: '' },
   'discord-nickname': { set_nickname: 'T', reset_nickname: 'T' },
-  'discord-reaction': { react: 'T', read: '' },
+  'discord-reaction': { react: 'T', read: '', rollup: '' },
   'proactive-dm': {
     send: 'T', dm: 'T', message: 'T', notify: 'T', alert: 'T', remind: 'T', followup: 'T',
     status: '',
