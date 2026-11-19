@@ -301,13 +301,26 @@ export class PromptManager {
 
       logger.info(`✅ Created new prompt '${prompt.name}' with ID ${result.lastInsertRowid}`);
 
-      // Return the created prompt
-      const created = await this.getPrompt(prompt.name, true);
-      if (!created) {
+      // Return the row just written, by id: getPrompt only sees active prompts, so creating an
+      // inactive one used to succeed and then throw (Codex crew 2026-11-18).
+      const row = db.get(`SELECT * FROM prompts WHERE id = ?`, [Number(result.lastInsertRowid)]);
+      if (!row) {
         throw new Error(`Failed to retrieve created prompt '${prompt.name}'`);
       }
-
-      return created;
+      let metadata: any = row.metadata;
+      if (typeof row.metadata === 'string') metadata = JSON.parse(row.metadata);
+      return {
+        id: row.id,
+        name: row.name,
+        version: row.version,
+        content: row.content,
+        description: row.description,
+        category: row.category,
+        isActive: Boolean(row.is_active),
+        metadata,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+      };
     } catch (error) {
       logger.error(`❌ Failed to create prompt '${prompt.name}':`, error);
       throw error;

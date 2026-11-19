@@ -109,8 +109,8 @@ export async function startMessageConsumer(): Promise<Worker<IncomingMessage, vo
           const { database } = await import('../memory/sync-db.js');
           await database.run(
             `
-              INSERT INTO messages (value, user_id, message_type, channel_id, guild_id, created_at)
-              VALUES (?, ?, ?, ?, ?, datetime('now'))
+              INSERT INTO messages (value, user_id, message_type, channel_id, guild_id, metadata, created_at)
+              VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
             `,
             [
               message.message,
@@ -118,6 +118,9 @@ export async function startMessageConsumer(): Promise<Worker<IncomingMessage, vo
               'discord',
               message.context?.channelId || message.respondTo?.channelId || null,
               message.context?.guildId || null,
+              // The reply row stores this as related_message_id, so history can pair a question
+              // with its own answer instead of guessing by row distance (Codex crew 2026-11-18).
+              JSON.stringify({ messageId: message.id }),
             ]
           );
           logger.info(`💾 Stored Discord message in database for context history`);

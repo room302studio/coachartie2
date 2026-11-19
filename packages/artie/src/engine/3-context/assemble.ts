@@ -309,7 +309,15 @@ export class ContextAlchemy {
         }
       );
 
-      // 4. Prioritize and select context within budget
+      // 4. Prioritize and select context within budget. History, the transcript and the
+      // caller's existing messages ride outside selection but still fill the window, so they
+      // come off the allowance first; otherwise a full allowance ate the space reserved for
+      // the reply (Codex crew 2026-11-18).
+      const alreadyCommitted =
+        estimateTokens(groupTranscript) +
+        conversationHistory.reduce((sum, m) => sum + estimateTokens(m.content), 0) +
+        existingMessages.reduce((sum, m) => sum + estimateTokens(m.content), 0);
+      budget.availableForContext = Math.max(0, budget.availableForContext - alreadyCommitted);
       selectedContext = this.selectOptimalContext(contextSources, budget);
     } else {
       // Minimal mode: only add temporal context for date/time awareness
@@ -666,17 +674,29 @@ Important:
     try {
       const { database } = await import('../memory/sync-db.js');
 
-      // The reply must land within the next few rows of the channel, before anything else
-      // the user said, or it was an answer to someone else.
+      // A reply is paired with its question by id: the question row carries the engine
+      // messageId and the reply row stores it as related_message_id (queue-worker.ts).
+      // Older rows have no messageId; for those the reply must be the very next thing said in
+      // that channel by anyone, within 4 channel rows. The old rule (any reply within 4 global
+      // row ids, before this user spoke again) paired A's question with Artie's answer to B,
+      // and missed real answers when other channels were busy (Codex crew 2026-11-18).
       const rows: Array<{ asked: string; reply: string | null }> = await database.all(
         `SELECT m.value AS asked,
-                (SELECT a.value FROM messages a
-                  WHERE a.channel_id = m.channel_id AND a.role = 'assistant'
-                    AND a.id > m.id AND a.id <= m.id + 4
-                    AND NOT EXISTS (SELECT 1 FROM messages u
-                                     WHERE u.channel_id = m.channel_id AND u.user_id = m.user_id
-                                       AND u.id > m.id AND u.id < a.id)
-                  ORDER BY a.id LIMIT 1) AS reply
+                CASE WHEN json_valid(m.metadata) AND json_extract(m.metadata, '$.messageId') IS NOT NULL
+                  THEN (SELECT a.value FROM messages a
+                         WHERE a.role = 'assistant'
+                           AND a.related_message_id = json_extract(m.metadata, '$.messageId')
+                         ORDER BY a.id LIMIT 1)
+                  ELSE (SELECT a.value FROM messages a
+                         WHERE a.channel_id = m.channel_id AND a.role = 'assistant' AND a.id > m.id
+                           AND NOT EXISTS (SELECT 1 FROM messages u
+                                            WHERE u.channel_id = m.channel_id
+                                              AND coalesce(u.role, '') != 'assistant'
+                                              AND u.id > m.id AND u.id < a.id)
+                           AND (SELECT COUNT(*) FROM messages x
+                                 WHERE x.channel_id = m.channel_id AND x.id > m.id AND x.id < a.id) < 4
+                         ORDER BY a.id LIMIT 1)
+                END AS reply
            FROM messages m
           WHERE m.user_id = ? AND m.channel_id = ? AND coalesce(m.role, '') != 'assistant'
           ORDER BY m.id DESC
