@@ -234,9 +234,10 @@ function parseMeta(metadata: string | null | undefined): Record<string, unknown>
 /** SQL scoring how many of the query's words (max 12) appear in content, LIKE-escaped. */
 function wordMatchScore(query: string): { sql: string; args: string[]; words: number } {
   const words = [
+    // Not lowercased here: SQLite LIKE already ignores ASCII case, and folding "É" in JS but
+    // not in SQLite would make "Élodie" miss itself (Codex).
     ...new Set(
       query
-        .toLowerCase()
         .split(/[\s,;]+/)
         .map((w) => w.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, ''))
         .filter((w) => w.length > 0)
@@ -245,7 +246,7 @@ function wordMatchScore(query: string): { sql: string; args: string[]; words: nu
   let sql = '0';
   const args: string[] = [];
   for (const w of words) {
-    sql += ` + (CASE WHEN lower(content) LIKE ? ESCAPE '\\' THEN 1 ELSE 0 END)`;
+    sql += ` + (CASE WHEN content LIKE ? ESCAPE '\\' THEN 1 ELSE 0 END)`;
     args.push(`%${w.replace(/[\\%_]/g, (c) => `\\${c}`)}%`);
   }
   return { sql, args, words: words.length };

@@ -224,6 +224,23 @@ function addRole(counts: RoleCounts, role: PersistedReaction['reactorRole']): vo
   else counts.unknown++;
 }
 
+/**
+ * A reply excerpt can name the very person who reacted ("thanks Alice"), which would undo the
+ * anonymity (Codex). Their @-mentions and display names become "someone".
+ */
+export function redactReactors(excerpt: string | undefined, reactors: PersistedReaction[] | undefined): string | undefined {
+  if (!excerpt || !reactors) return excerpt;
+  let text = excerpt;
+  for (const r of reactors) {
+    text = text.split(`<@${r.userId}>`).join('someone').split(`<@!${r.userId}>`).join('someone');
+    const label = r.userLabel.trim();
+    if (label.length < 2) continue;
+    const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    text = text.replace(new RegExp(`(^|[^\\p{L}\\p{N}_])@?${escaped}(?=$|[^\\p{L}\\p{N}_])`, 'giu'), '$1someone');
+  }
+  return text;
+}
+
 function emojiList(byEmoji: Map<string, RollupEmoji>): RollupEmoji[] {
   return [...byEmoji.values()].sort((a, b) => b.count - a.count);
 }
@@ -269,6 +286,14 @@ export function buildRollup(
     latest.set(key, r);
   }
 
+  // Everyone who reacted to each message in the window, to blank them out of its excerpt.
+  const reactorsOn = new Map<string, PersistedReaction[]>();
+  for (const r of kept) {
+    const list = reactorsOn.get(r.messageId) ?? [];
+    list.push(r);
+    reactorsOn.set(r.messageId, list);
+  }
+
   const totals = new Map<string, RollupEmoji>();
   const perMessage = new Map<string, { rows: PersistedReaction[]; byEmoji: Map<string, RollupEmoji> }>();
   let withoutText = 0;
@@ -296,7 +321,9 @@ export function buildRollup(
       const last = Math.max(...entry.rows.map((r) => r.at));
       return {
         message_id: messageId,
-        snippet: snippetOf(entry.rows.find((r) => r.messageExcerpt)?.messageExcerpt),
+        snippet: snippetOf(
+          redactReactors(entry.rows.find((r) => r.messageExcerpt)?.messageExcerpt, reactorsOn.get(messageId))
+        ),
         age: ageLabel(last, now),
         taken_back: takenBackBy.get(messageId) ?? 0,
         reactions: emojiList(entry.byEmoji),

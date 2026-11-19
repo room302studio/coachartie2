@@ -36,7 +36,7 @@ function ev(over: Partial<PersistedReaction>): PersistedReaction {
 describe('buildRollup', () => {
   it('counts by role, never names anyone, and drops opted-out and banned reactors', () => {
     const rows = [
-      ev({ reactorRole: 'asker' }),
+      ev({ reactorRole: 'asker', messageExcerpt: 'thanks Asker Name and <@u-other>, here is how the metro file loads' }),
       ev({ userId: 'u-other', userLabel: 'Bystander Name', reactorRole: 'other' }),
       ev({ userId: 'u-optout', userLabel: 'Private Person', reactorRole: 'other' }),
       ev({ userId: 'u-banned', userLabel: 'Banned Person', reactorRole: 'other' }),
