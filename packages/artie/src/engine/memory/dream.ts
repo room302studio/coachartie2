@@ -36,7 +36,10 @@ const DREAM_BATCH = Number(process.env.DREAM_BATCH) || 60;
 const CHUNK = 10; // memories per model call
 // ~70 output tokens per verdict compact, ~2x that when a model pretty-prints. 15 per call at 1600
 // tokens got cut off mid-JSON on the first real night (91 of 256 unreviewed, 2026-10-29).
-const CHUNK_MAX_TOKENS = 2500;
+// 2026-11-20: auto:low models spent all 2500 on reasoning, every chunk, and only the ladder's
+// retry (double room, reasoning off) answered: 12 wasted calls a night and a distress alert.
+// Ask the way the retry does from the start.
+const CHUNK_MAX_TOKENS = 5000;
 const CONTENT_CLIP = 400;
 const SEED_URL = process.env.DREAM_TAGS_URL || 'https://ejfox.com/tags.json';
 const PROTECTED_IMPORTANCE = 9;
@@ -453,7 +456,7 @@ export async function dream(limit = DREAM_BATCH): Promise<DreamResult> {
         'memory-dream',
         undefined,
         model,
-        { jsonOutput: DREAM_OUTPUT, maxTokens: CHUNK_MAX_TOKENS }
+        { jsonOutput: DREAM_OUTPUT, maxTokens: CHUNK_MAX_TOKENS, reasoning: { enabled: false } }
       );
     } catch (error) {
       // One bad chunk shouldn't cost the rest of the night; its memories stay undreamt for tomorrow.
