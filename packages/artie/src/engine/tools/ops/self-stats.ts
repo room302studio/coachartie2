@@ -483,7 +483,7 @@ Use this when you want to reflect on your performance, check if something's wron
     logger.info(`📊 Self-stats: ${action}`);
 
     if (action === 'banlist') return banlistReport();
-    if (action === 'rules') return loadRulesReport(context?.guildId);
+    if (action === 'rules') return loadRulesReport(context?.userId ?? 'unknown-user', context?.guildId);
 
     // DB-backed actions don't need the metrics registry — handle them first.
     if (action === 'errors' || action === 'tools') {

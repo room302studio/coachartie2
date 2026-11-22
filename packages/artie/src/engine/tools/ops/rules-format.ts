@@ -6,6 +6,8 @@
  * removed line, so he can fix or drop them. Deterministic, no model call: candidates, not verdicts.
  */
 import { getSyncDb } from '../../../shared/db/client.js';
+import { isOwner } from '../../../shared/config/owner.js';
+import { SELF_VISIBLE_SQL, selfVisibleParams } from '../core/memory.js';
 
 export const CHANGED_WINDOW_DAYS = 30;
 const MAX_CANDIDATES = 8;
@@ -113,8 +115,18 @@ function sqliteUtcMs(s: string): number {
   return Date.parse(`${s.replace(' ', 'T')}Z`);
 }
 
-/** The report. Pure: prompts and notes come in, text goes out. */
-export function rulesReport(prompts: LivePrompt[], notes: Note[], now: Date = new Date()): string {
+/**
+ * The report. Pure: prompts and notes come in, text goes out. Prompt wording (the diffs) shows
+ * only when `showDiffs` (EJ asking): anyone can make Artie call this, and the security prompt's
+ * exact wording shouldn't be one call away for a stranger (review 2026-11-21). Everyone gets the
+ * versions, dates, and Artie's own visible notes that look stale.
+ */
+export function rulesReport(
+  prompts: LivePrompt[],
+  notes: Note[],
+  now: Date = new Date(),
+  showDiffs = true
+): string {
   const out: string[] = ['## Live rules', ''];
   out.push('Database prompts (these override the copies in code):');
   for (const p of prompts) out.push(`- ${p.name} v${p.version}, changed ${p.updatedAt.slice(0, 10)}`);
@@ -126,19 +138,27 @@ export function rulesReport(prompts: LivePrompt[], notes: Note[], now: Date = ne
     out.push('Nothing. Your prompts are as they were a month ago.');
     return out.join('\n');
   }
-  const allRemoved: string[] = [];
-  const allAdded: string[] = [];
+  if (!showDiffs) {
+    out.push(`${changed.map((p) => p.name).join(', ')}. The exact wording shows only when EJ asks; your prompt this turn already has the live version.`);
+  }
+  // Cues per prompt (review 2026-11-21): a rule that moved from one prompt to another keeps its
+  // cue words, and words still used anywhere in that prompt don't count as stale.
+  const phrases = new Set<string>();
+  const cueWords = new Set<string>();
   for (const p of changed) {
     const { removed, added } = lineDiff(p.previous ?? '', p.content);
-    out.push(`### ${p.name}, now v${p.version} (${p.updatedAt.slice(0, 10)})`);
-    for (const l of removed) out.push(`- removed: ${cap(l)}`);
-    for (const l of added) out.push(`+ now: ${cap(l)}`);
-    if (removed.length === 0 && added.length === 0) out.push('(whitespace only)');
-    allRemoved.push(...removed);
-    allAdded.push(...added);
+    if (showDiffs) {
+      out.push(`### ${p.name}, now v${p.version} (${p.updatedAt.slice(0, 10)})`);
+      for (const l of removed) out.push(`- removed: ${cap(l)}`);
+      for (const l of added) out.push(`+ now: ${cap(l)}`);
+      if (removed.length === 0 && added.length === 0) out.push('(whitespace only)');
+    }
+    const cues = staleCues(removed, [p.content]);
+    for (const c of cues.phrases) phrases.add(c);
+    for (const w of cues.words) cueWords.add(w);
   }
 
-  const candidates = conflictCandidates(notes, staleCues(allRemoved, allAdded));
+  const candidates = conflictCandidates(notes, { phrases: [...phrases], words: [...cueWords] });
   out.push('', '## Your notes that may still follow a removed line');
   if (candidates.length === 0) {
     out.push('None found. (This matches words, so read the changes above too.)');
@@ -151,8 +171,8 @@ export function rulesReport(prompts: LivePrompt[], notes: Note[], now: Date = ne
   return out.join('\n');
 }
 
-/** Live prompts plus their previous versions, and the self-notes visible here. */
-export function loadRulesReport(guildId?: string, now: Date = new Date()): string {
+/** Live prompts plus their previous versions, and the self-notes this viewer may see here. */
+export function loadRulesReport(viewerId: string, guildId?: string, now: Date = new Date()): string {
   const db = getSyncDb();
   const prompts = db.all<{ id: number; name: string; version: number; content: string; updated_at: string }>(
     `SELECT id, name, version, content, updated_at FROM prompts WHERE is_active = 1 ORDER BY updated_at DESC, name`
@@ -166,19 +186,13 @@ export function loadRulesReport(guildId?: string, now: Date = new Date()): strin
     if (prev) previous = prev.content;
     return { name: p.name, version: p.version, content: p.content, updatedAt: p.updated_at, previous };
   });
-  // His self-notes, scoped like memory: guild-free ones everywhere, plus this server's.
-  let notes: Note[];
-  if (guildId) {
-    notes = db.all<Note>(
-      `SELECT id, content, importance FROM memories
-       WHERE user_id = 'artie-self' AND importance > 1 AND (guild_id IS NULL OR guild_id = ?)`,
-      [guildId]
-    );
-  } else {
-    notes = db.all<Note>(
-      `SELECT id, content, importance FROM memories
-       WHERE user_id = 'artie-self' AND importance > 1 AND guild_id IS NULL`
-    );
-  }
-  return rulesReport(live, notes, now);
+  // His self-notes under the same audience rule as everywhere else (memory.ts SELF_VISIBLE_SQL):
+  // self-notes carry their audience in metadata, not guild_id, which is always NULL for them.
+  let guild: string | null = null;
+  if (guildId) guild = guildId;
+  const notes = db.all<Note>(
+    `SELECT id, content, importance FROM memories WHERE ${SELF_VISIBLE_SQL}`,
+    selfVisibleParams(viewerId, guild)
+  );
+  return rulesReport(live, notes, now, isOwner(viewerId));
 }

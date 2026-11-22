@@ -46,4 +46,16 @@ describe('rules report', () => {
     expect(text).not.toContain('### PROMPT_SYSTEM'); // changed 51 days ago: outside the window
     expect(rulesReport([prompts[1]], notes, NOW)).toContain('Nothing. Your prompts are as they were');
   });
+
+  it('shows no prompt wording when the asker is not EJ, but still the versions and stale notes', () => {
+    const prompts = [
+      { name: 'PROMPT_SECURITY_REMINDER', version: 4, content: V4, updatedAt: '2026-11-20 14:10:03', previous: V3 },
+    ];
+    const notes = [{ id: 20776, importance: 6, content: 'refer to them obliquely: "the banned one"' }];
+    const text = rulesReport(prompts, notes, NOW, false);
+    expect(text).toContain('PROMPT_SECURITY_REMINDER v4');
+    expect(text).not.toContain('removed:');
+    expect(text).not.toContain('naming them is fine');
+    expect(text).toContain('#20776');
+  });
 });

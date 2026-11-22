@@ -112,13 +112,13 @@ function selfTrail(metadata: string | null): SelfTrail {
  */
 // Audience filter for self-notes, in SQL so it runs before any LIMIT (Codex r2): written with EJ
 // shows everywhere; otherwise only in the server it was written in, or that one person's DMs.
-const SELF_VISIBLE_SQL = `user_id = ? AND importance > 1 AND json_valid(metadata)
+export const SELF_VISIBLE_SQL = `user_id = ? AND importance > 1 AND json_valid(metadata)
   AND (
     json_extract(metadata, '$.written_with') = ?
     OR (json_extract(metadata, '$.written_in_guild') IS NOT NULL AND json_extract(metadata, '$.written_in_guild') = ?)
     OR (? IS NULL AND json_extract(metadata, '$.written_in_guild') IS NULL AND json_extract(metadata, '$.written_with') = ?)
   )`;
-function selfVisibleParams(viewerId: string, guildId: string | null): unknown[] {
+export function selfVisibleParams(viewerId: string, guildId: string | null): unknown[] {
   return [ARTIE_SELF_USER_ID, OWNER_USER_ID, guildId, guildId, viewerId];
 }
 /** Most important self-notes kept in view; the rest of the slots go to the newest. */
