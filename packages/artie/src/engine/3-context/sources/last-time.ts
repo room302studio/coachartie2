@@ -60,6 +60,8 @@ function snippet(text: string): string {
 
 const PROMISE_LINE_SLOTS = 3;
 const PROMISE_FADE_WARN_DAYS = 5;
+// Artie 2026-11-21: P1 "sat for 4 days with no nudge"; ask after 3 whether it's still live.
+const PROMISE_NUDGE_DAYS = 3;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 /**
@@ -79,7 +81,12 @@ export function promisesLine(
     // Warn before the silent fade (Artie: "a promise that silently disappears is still broken").
     const fadesInDays = Math.ceil((p.created_at + PROMISE_WINDOW_DAYS * DAY_MS - now.getTime()) / DAY_MS);
     let fade = '';
-    if (fadesInDays <= PROMISE_FADE_WARN_DAYS) fade = `, fades in ${Math.max(0, fadesInDays)}d: do it or drop it`;
+    const ageDays = Math.floor((now.getTime() - p.created_at) / DAY_MS);
+    if (fadesInDays <= PROMISE_FADE_WARN_DAYS) {
+      fade = `, fades in ${Math.max(0, fadesInDays)}d: do it or drop it`;
+    } else if (ageDays >= PROMISE_NUDGE_DAYS) {
+      fade = `, ${ageDays}d open: still on? do it now, or drop it`;
+    }
     const wait = waitNote(p.waits_on ?? null, p.waitStatus ?? null);
     if (wait) fade += `; ${wait}`;
     return `P${p.id} ${text} (${relativeAge(new Date(p.created_at).toISOString(), now)}${fade})`;

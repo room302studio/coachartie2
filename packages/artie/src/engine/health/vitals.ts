@@ -37,9 +37,10 @@ const LINE_TS_RE = /^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2}):/;
 // 'discord-out.log' and 'discord-out-1.log' naming schemes match.
 // The PM2 out-logs to read (newest file per prefix). 'coach-artie-out' is the one-process
 // app's (wave 9; wave 12 names the PM2 app coach-artie and must keep out_file
-// <repo>/logs/coach-artie-out*.log). The two old prefixes stay until CUTOVER retires those
-// files; a missing prefix only logs a warning.
-const LOG_PREFIXES = ['coach-artie-out', 'capabilities-out', 'discord-out'];
+// <repo>/logs/coach-artie-out*.log). The pre-cutover capabilities-out/discord-out logs were
+// archived to R2 and deleted 2026-11-20, so they're gone from here too (they had been frozen
+// since Oct 26 and only produced a warning every tick).
+const LOG_PREFIXES = ['coach-artie-out'];
 
 function envNum(name: string, fallback: number): number {
   const n = Number(process.env[name]);

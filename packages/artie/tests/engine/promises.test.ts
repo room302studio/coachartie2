@@ -152,10 +152,23 @@ describe('promisesLine', () => {
     const t = now.getTime();
     const open = [1, 2, 3, 4].map((n) => ({ id: n, text: `thing ${n}`, created_at: t - (5 - n) * DAY }));
     const line = promisesLine(open, now);
-    expect(line).toContain('P1 thing 1 (4d ago)');
+    expect(line).toContain('P1 thing 1 (4d ago');
     expect(line).toContain('P3 thing 3');
     expect(line).not.toContain('P4');
     expect(line).toContain('+1 more');
+  });
+
+  it('asks after 3 days whether a promise is still on (Artie 2026-11-21)', () => {
+    const now = new Date('2026-11-17T12:00:00Z');
+    const line = promisesLine(
+      [
+        { id: 1, text: 'four days', created_at: now.getTime() - 4 * DAY },
+        { id: 2, text: 'two days', created_at: now.getTime() - 2 * DAY },
+      ],
+      now
+    ) ?? '';
+    expect(line.split('P2')[0]).toContain('4d open: still on?');
+    expect(line.split('P2')[1]).not.toContain('still on?');
   });
 
   it('warns in the last days before a promise fades', () => {

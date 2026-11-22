@@ -167,6 +167,7 @@ const EXPECTED_HELPER_FILES = [
   'engine/tools/core/web-fetch.ts',
   'engine/tools/ops/embedded-mcp-runtime.ts',
   'engine/tools/ops/model-router.ts',
+  'engine/tools/ops/rules-format.ts',
   'engine/tools/ops/system-monitor-format.ts',
   'engine/tools/people/email-drafting.ts',
   'engine/tools/personal/reddit-client.ts',

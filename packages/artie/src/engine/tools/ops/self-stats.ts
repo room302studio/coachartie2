@@ -17,6 +17,7 @@ import {
 } from '../../5-tool-loop/tool-ledger.js';
 import { metricsRegistry } from '../../health/metrics.js';
 import { registryToTools } from '../../5-tool-loop/tool-schema.js';
+import { loadRulesReport } from './rules-format.js';
 
 /**
  * Self-Stats capability - Artie can check his own health and metrics
@@ -39,7 +40,8 @@ interface SelfStatsParams {
     | 'tools'
     | 'user_costs'
     | 'top_spenders'
-    | 'banlist';
+    | 'banlist'
+    | 'rules';
   timeRange?: string; // e.g., '1h', '24h', '7d'
   user_id?: string; // for user_costs — defaults to whoever is asking
   limit?: number; // for top_spenders
@@ -421,6 +423,8 @@ export const selfStatsCapability: RegisteredCapability = {
       },
     },
     banlist: { effect: 'read' }, // a public moderation record by design
+    // His own live prompt versions + recent changes + his own self-notes (scoped like memory).
+    rules: { effect: 'read' },
     top_spenders: {
       effect: 'read', // a public leaderboard by design
       params: { limit: { type: 'integer', description: 'How many spenders to list (default 10, max 25)' } },
@@ -443,6 +447,7 @@ export const selfStatsCapability: RegisteredCapability = {
     'user_costs',
     'top_spenders',
     'banlist',
+    'rules',
   ],
   description: `Check your own stats, health, and metrics — including what specific users have cost in LLM credits. Use this to understand how you're doing.
 
@@ -455,6 +460,7 @@ Actions:
 - tools: Your tool-call ledger over a window (default 7d): per tool:action calls, ok %, failure outcomes (invalid args, refused, taint-blocked, queued for approval, errors, unknown tool/action), top failure causes, and tools never called. Use when asked which tools you avoid or which calls fail.
 - user_costs: How much a specific user has cost in credits (lifetime, today, rank, worst days). Defaults to whoever is asking. Use when someone asks "how much money have I cost?", "what's my bill?", "how much have I spent?"
 - banlist: Who is currently banned from talking to you, and since when. Use when anyone asks who's banned / the banlist. Opt-outs are never listed.
+- rules: Which version of your rules is live: every database prompt's version (these override the code copies), what changed in the last 30 days (lines removed and now), and your own notes that still echo a removed line, by id, so you can fix or forget them. Use when your notes and your prompt seem to disagree, or you're unsure a rule still holds.
 - top_spenders: Leaderboard of the biggest credit consumers. Use when someone asks who costs the most / top spenders / biggest credit users.
 
 Use this when you want to reflect on your performance, check if something's wrong, or answer questions about who is costing what.`,
@@ -477,6 +483,7 @@ Use this when you want to reflect on your performance, check if something's wron
     logger.info(`📊 Self-stats: ${action}`);
 
     if (action === 'banlist') return banlistReport();
+    if (action === 'rules') return loadRulesReport(context?.guildId);
 
     // DB-backed actions don't need the metrics registry — handle them first.
     if (action === 'errors' || action === 'tools') {

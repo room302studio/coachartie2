@@ -13,6 +13,10 @@ import type { IncomingMessage } from '../../../shared/queue/types.js';
 import type { MemoryEntourageInterface } from '../../memory/types.js';
 import type { ContextSource } from './types.js';
 import { DEBUG } from './types.js';
+
+/** Heads the recalled notes: when a note disagrees with the live prompt, the prompt wins. */
+export const MEMORY_PRECEDENCE_LINE =
+  "(Notes below are older than your live prompt. If one disagrees with the prompt, the prompt wins: act on it, and fix or drop the stale note. Not sure what's live? self-stats rules.)";
 import {
   formatLearnedRulesForContext,
   extractParticipants,
@@ -205,11 +209,14 @@ export async function addRelevantMemories(
 
     // Only add memory context if we actually have useful content
     if (memoryResult.content && memoryResult.content.trim().length > 0) {
+      // Artie 2026-11-21: when a note and his live prompt disagreed he fell back on the
+      // strictest one and froze (the banlist riddles). Notes are older than the prompt.
+      const content = `${MEMORY_PRECEDENCE_LINE}\n${memoryResult.content}`;
       sources.push({
         name: 'memory_context',
         priority: 70,
-        tokenWeight: estimateTokens(memoryResult.content),
-        content: memoryResult.content,
+        tokenWeight: estimateTokens(content),
+        content,
         category: 'memory',
       });
 
