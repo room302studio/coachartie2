@@ -179,12 +179,16 @@ export function rulesReport(
 /** Live prompts plus their previous versions, and the self-notes this viewer may see here. */
 export function loadRulesReport(viewerId: string, guildId?: string, now: Date = new Date()): string {
   const db = getSyncDb();
+  // CAST: some prompt rows are stored as BLOBs (PROMPT_SYSTEM, an old PROMPT_SECURITY_REMINDER
+  // version) and come back as Buffers; the first live call died on `text.split` (2026-11-21).
   const prompts = db.all<{ id: number; name: string; version: number; content: string; updated_at: string }>(
-    `SELECT id, name, version, content, updated_at FROM prompts WHERE is_active = 1 ORDER BY updated_at DESC, name`
+    `SELECT id, name, version, CAST(content AS TEXT) AS content, updated_at FROM prompts
+     WHERE is_active = 1 ORDER BY updated_at DESC, name`
   );
   const live: LivePrompt[] = prompts.map((p) => {
     const prev = db.get<{ content: string }>(
-      `SELECT content FROM prompt_history WHERE prompt_id = ? AND version < ? ORDER BY version DESC, id DESC LIMIT 1`,
+      `SELECT CAST(content AS TEXT) AS content FROM prompt_history
+       WHERE prompt_id = ? AND version < ? ORDER BY version DESC, id DESC LIMIT 1`,
       [p.id, p.version]
     );
     let previous: string | null = null;
@@ -196,7 +200,7 @@ export function loadRulesReport(viewerId: string, guildId?: string, now: Date = 
   let guild: string | null = null;
   if (guildId) guild = guildId;
   const notes = db.all<Note>(
-    `SELECT id, content, importance FROM memories WHERE ${SELF_VISIBLE_SQL}`,
+    `SELECT id, CAST(content AS TEXT) AS content, importance FROM memories WHERE ${SELF_VISIBLE_SQL}`,
     selfVisibleParams(viewerId, guild)
   );
   return rulesReport(live, notes, now, isOwner(viewerId));
