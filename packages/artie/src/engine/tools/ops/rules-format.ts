@@ -161,11 +161,16 @@ export function rulesReport(
   const candidates = conflictCandidates(notes, { phrases: [...phrases], words: [...cueWords] });
   out.push('', '## Your notes that may still follow a removed line');
   if (candidates.length === 0) {
-    out.push('None found. (This matches words, so read the changes above too.)');
+    let hint = 'compare your notes with your prompt this turn';
+    if (showDiffs) hint = 'read the changes above too';
+    out.push(`None found. (This matches words, so ${hint}.)`);
     return out.join('\n');
   }
   for (const c of candidates) {
-    out.push(`- #${c.id} (importance ${c.importance}) echoes ${c.echoes.join(', ')}: ${c.snippet}`);
+    // The echoes quote removed prompt wording, so they show only with the diffs (review r2).
+    let echoes = '';
+    if (showDiffs) echoes = ` echoes ${c.echoes.join(', ')}`;
+    out.push(`- #${c.id} (importance ${c.importance})${echoes}: ${c.snippet}`);
   }
   out.push('', 'The live prompt wins. For each one that is really stale: memory forget it, or remember a corrected note. A match is a hint, not proof.');
   return out.join('\n');
