@@ -71,6 +71,32 @@ export async function addRecentGuildMessages(
 }
 
 /**
+ * Where this turn is, as ids Artie can hand to his Discord tools (his ask, 2026-11-23: "I don't
+ * know where I am": he couldn't react to, link or read around the message he was answering).
+ * A deliberate addition to the otherwise verbatim channel block.
+ */
+export function whereLines(ctx: Record<string, unknown>): string[] {
+  const lines: string[] = [];
+  const id = (value: unknown) => typeof value === 'string' && /^\d{15,22}$/.test(value);
+  if (id(ctx.channelId)) {
+    lines.push(`- Channel id: ${ctx.channelId} (the default for channel tools)`);
+  }
+  // Forum first: a forum post is also a thread whose parent is the forum.
+  if (id(ctx.forumId)) {
+    lines.push(`- This is a forum post in ${String(ctx.forumName || 'a forum')} (forum id ${ctx.forumId})`);
+  } else if (id(ctx.parentChannelId)) {
+    lines.push(`- This is a thread off #${String(ctx.parentChannelName || ctx.parentChannelId)} (id ${ctx.parentChannelId})`);
+  }
+  if (id(ctx.messageId)) {
+    lines.push(`- The message you're answering: id ${ctx.messageId}`);
+  }
+  if (id(ctx.replyingTo)) {
+    lines.push(`- It replies to message id ${ctx.replyingTo}`);
+  }
+  return lines;
+}
+
+/**
  * Add channel vibes - the social context of the room
  * Helps the LLM understand channel activity, type, and adjust response style
  * Works for both Discord and Slack
@@ -138,6 +164,7 @@ export async function addChannelVibes(
       `- Type: ${channelType}`,
       `- Activity: ${activityLevel} (${messageCount} msgs in last 10 min)`,
       `- Your recent usage: ${artieCount} responses in last hour`,
+      ...whereLines(messageContext),
     ];
 
     const content = vibes.join('\n');

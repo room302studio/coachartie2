@@ -42,6 +42,15 @@ const PROPERTY_NAME = /^[a-zA-Z0-9_.-]{1,64}$/;
 /** Attribute names that are tool selectors or are filled in by the engine, never by the model. */
 const NOT_A_PARAM = new Set(['name', 'action', 'content', 'userId', 'messageId', 'channelId', 'guildId']);
 
+/**
+ * For params a tool DECLARES, only these stay hidden. A declared channelId/messageId/userId is a
+ * target the model picks (which channel to read, which message to edit, whose history), not
+ * the conversation's own ids: those reach handlers as branded CapabilityContext, never params.
+ * Hiding them meant Artie had to guess send_message's channelId from error text (his report,
+ * 2026-11-23). guildId stays hidden: only EJ's own DM may name a server.
+ */
+const DECLARED_NOT_A_PARAM = new Set(['name', 'action', 'content', 'guildId']);
+
 const DESCRIPTION_FIRST_LINE_MAX = 200;
 // One example per tool: optional param names are already declared in the schema, so the
 // example only has to show a call's shape. The whole list rides on every tool turn.
@@ -133,7 +142,7 @@ export function capabilityToTool(cap: RegisteredCapability): ToolDefinition {
   // blob would otherwise surface as a param the native path never unpacks).
   const declared = declaredToolParams(cap.actions);
   for (const [param, spec] of declared) {
-    if (!PROPERTY_NAME.test(param) || param in properties || NOT_A_PARAM.has(param)) continue;
+    if (!PROPERTY_NAME.test(param) || param in properties || DECLARED_NOT_A_PARAM.has(param)) continue;
     const prop: Record<string, unknown> = {
       type: spec.type,
       description: paramDescription(spec, cap.supportedActions.length),

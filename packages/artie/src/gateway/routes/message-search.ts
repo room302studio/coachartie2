@@ -96,6 +96,71 @@ export function excerptOf(text: string | undefined | null): string {
   return flat.slice(0, EXCERPT_MAX - 1) + '…';
 }
 
+interface RawAttachment {
+  filename?: unknown;
+  content_type?: unknown;
+}
+interface RawEmbed {
+  title?: unknown;
+  url?: unknown;
+}
+interface RawSticker {
+  name?: unknown;
+}
+
+/** "image", "audio", "video" or "file", from a MIME type. */
+function attachmentKind(contentType: unknown): string {
+  const kind = String(contentType || '').split('/')[0];
+  if (kind === 'image' || kind === 'audio' || kind === 'video') {
+    return kind;
+  }
+  return 'file';
+}
+
+function listOf<T>(value: unknown): T[] {
+  if (Array.isArray(value)) {
+    return value as T[];
+  }
+  return [];
+}
+
+/**
+ * What a message holds besides text, as short markers (Artie, 2026-11-23: an image post came
+ * back as a blank excerpt and he couldn't tell what it was). Works on the search API's raw shape
+ * (attachments / embeds / sticker_items arrays).
+ */
+export function contentMarkers(m: {
+  attachments?: unknown;
+  embeds?: unknown;
+  sticker_items?: unknown;
+  message_snapshots?: unknown;
+}): string[] {
+  const out: string[] = [];
+  // A forward has no content of its own: the text lives in the snapshot (Artie's blank Nov 4
+  // excerpt was one). Same channel, same audience, so it's as readable as the forward itself.
+  for (const s of listOf<{ message?: { content?: unknown; attachments?: unknown; embeds?: unknown } }>(m.message_snapshots)) {
+    const inner = s.message ?? {};
+    const text = String(inner.content || '').replace(/\s+/g, ' ').trim().slice(0, 160);
+    const parts = [text, ...contentMarkers({ attachments: inner.attachments, embeds: inner.embeds })].filter(Boolean);
+    out.push(`[forwarded: ${parts.join(' ') || 'a message'}]`);
+  }
+  for (const a of listOf<RawAttachment>(m.attachments)) {
+    out.push(`[${attachmentKind(a.content_type)}: ${String(a.filename || 'unnamed').slice(0, 60)}]`);
+  }
+  for (const e of listOf<RawEmbed>(m.embeds)) {
+    const label = String(e.title || e.url || '').slice(0, 80);
+    if (label) {
+      out.push(`[embed: ${label}]`);
+    } else {
+      out.push('[embed]');
+    }
+  }
+  for (const s of listOf<RawSticker>(m.sticker_items)) {
+    out.push(`[sticker: ${String(s.name || '').slice(0, 40)}]`);
+  }
+  return out;
+}
+
 /** A requested limit clamped to 1..25 (default 10). */
 export function clampLimit(limit: number | undefined): number {
   const n = Math.floor(Number(limit));
@@ -201,7 +266,7 @@ export function shapeHits(
       channel: channelName,
       channelId,
       timestamp: String(m.timestamp || ''),
-      excerpt: excerptOf(m.content),
+      excerpt: excerptOf([m.content, ...contentMarkers(m)].filter(Boolean).join(' ')),
       url: `https://discord.com/channels/${guildId}/${channelId}/${m.id}`,
     });
   }
@@ -502,6 +567,19 @@ export async function readChannelMessages(
       channel_id: wanted,
       author: { id: m.author?.id, username: m.author?.username, global_name: m.author?.globalName },
       content: m.content,
+      // Same raw shape the search API returns, so contentMarkers can label non-text posts.
+      attachments: [...(m.attachments?.values?.() || [])].map((a) => ({ filename: a.name, content_type: a.contentType })),
+      embeds: (m.embeds || []).map((e: { title?: string; url?: string }) => ({ title: e.title, url: e.url })),
+      sticker_items: [...(m.stickers?.values?.() || [])].map((s) => ({ name: s.name })),
+      message_snapshots: [...(m.messageSnapshots?.values?.() || [])].map(
+        (s: { content?: string; attachments?: Map<string, { name?: string; contentType?: string | null }>; embeds?: Array<{ title?: string | null; url?: string | null }> }) => ({
+          message: {
+            content: s.content,
+            attachments: [...(s.attachments?.values() || [])].map((a) => ({ filename: a.name, content_type: a.contentType })),
+            embeds: (s.embeds || []).map((e) => ({ title: e.title, url: e.url })),
+          },
+        })
+      ),
       timestamp: m.createdAt?.toISOString?.() || '',
     }));
     const displayName = (userId: string, fallback: string) => guild.members.cache.get(userId)?.displayName || fallback;

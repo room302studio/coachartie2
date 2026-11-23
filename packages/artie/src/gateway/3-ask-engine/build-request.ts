@@ -156,11 +156,16 @@ export async function handleMessageAsIntent(
     } else {
       _channelName = 'DM';
     }
-    const channelInfo = {
+    const channelInfo: Record<string, unknown> = {
       channelId: message.channelId,
       channelType: message.channel.type,
       channelName: _channelName,
     };
+    // In a thread, say which channel it hangs off (Artie, 2026-11-23: "I can't tell I'm in it").
+    if (message.channel.isThread() && message.channel.parent) {
+      channelInfo.parentChannelId = message.channel.parent.id;
+      channelInfo.parentChannelName = message.channel.parent.name;
+    }
 
     let memberRoleNames: string[];
     if (message.member) {

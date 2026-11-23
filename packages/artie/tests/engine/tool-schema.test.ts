@@ -13,7 +13,7 @@ import {
   toToolName,
   type ToolDefinition,
 } from '../../src/engine/5-tool-loop/tool-schema.js';
-import { declaredToolContent, declaresParams } from '../../src/engine/5-tool-loop/tool-policy.js';
+import { declaredToolContent, declaresParams, declaredToolParams } from '../../src/engine/5-tool-loop/tool-policy.js';
 import { toCallNotation, stripXmlToolTeaching } from '../../src/engine/5-tool-loop/mode.js';
 
 async function bootRegistry(): Promise<void> {
@@ -110,6 +110,31 @@ describe('registryToTools over the real registry', () => {
     // No free-text `content`: no forums action reads it (create-post takes `message`).
     expect(props).toEqual(['action', 'forumId', 'message', 'repo', 'tag', 'threadId', 'title']);
     expect(forums.function.parameters.required).toEqual(['action']);
+  });
+
+  it('discord-channels offers channelId (Artie, 2026-11-23: "the tool definition doesn\'t list channelId")', () => {
+    const channels = tools.find((t) => t.function.name === 'discord-channels')!;
+    expect(Object.keys(channels.function.parameters.properties)).toEqual(
+      expect.arrayContaining(['action', 'channelId', 'limit', 'before', 'after'])
+    );
+    // The other body tools' targets are visible too; the server never is.
+    const props = (name: string) => Object.keys(tools.find((t) => t.function.name === name)!.function.parameters.properties);
+    expect(props('discord-send-message')).toEqual(expect.arrayContaining(['channelId', 'messageId']));
+    expect(props('discord-send-message')).not.toContain('guildId');
+    expect(props('discord-threads')).toEqual(expect.arrayContaining(['channelId', 'messageId']));
+    expect(props('discord-user-history')).toEqual(expect.arrayContaining(['userId']));
+  });
+
+  it('only these tools let the model pick a channel, message or person id (pinned)', () => {
+    // A new tool declaring one of these must be a deliberate edit here: its id becomes
+    // model-written, so its handler must take trust from CapabilityContext, not params.
+    const TARGETS = new Set(['channelId', 'messageId', 'userId']);
+    const exposing = capabilityRegistry
+      .list()
+      .filter((cap) => declaredToolParams(cap.actions).some(([param]) => TARGETS.has(param)))
+      .map((cap) => cap.name)
+      .sort();
+    expect(exposing).toEqual(['discord-channels', 'discord-send-message', 'discord-threads', 'discord-user-history']);
   });
 
   it('content is offered only where a declared action reads it', () => {
