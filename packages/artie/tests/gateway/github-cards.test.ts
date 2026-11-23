@@ -162,7 +162,9 @@ describe('every event type renders data, never a raw type', () => {
       const text = `${card.title}\n${card.description || ''}`;
       expect(card.title.length).toBeGreaterThan(0);
       expect(text).not.toContain(type);
-      expect(text).not.toMatch(/[🆕👀🎉❌✅🔄💬📝📋🏷️👤⬆️🚀]/u);
+      // 🏷️ and ⬆️ carry a variation selector, so they are alternatives, not class members
+      // (inside [...] the bare selector matched on its own).
+      expect(text).not.toMatch(/[🆕👀🎉❌✅🔄💬📝📋👤🚀]|🏷️|⬆️|🏷|⬆/u);
       expect(batchLine(event(type, data))).not.toContain(type);
     });
   }

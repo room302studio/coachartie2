@@ -1,102 +1,65 @@
-import { RegisteredCapability } from '../../5-tool-loop/registry.js';
+/**
+ * discord-user-history: what one person has said in this server, newest first. Until 2026-11-23
+ * it went to a gateway route that was never served (a 404 on every call). It is now a thin
+ * front on discord-search with an author: same scope (this server, channels everyone in the
+ * conversation can read, opted-out and banned people never shown), Discord's index instead of
+ * a 100-message channel scan, and it works across channels unless one is named.
+ */
+import { RegisteredCapability, CapabilityContext } from '../../5-tool-loop/registry.js';
 import { logger } from '../../../shared/logger.js';
 import * as gateway from '../../../gateway/api.js';
+import { snowflakeOf } from './search.js';
 
-interface _DiscordUserHistoryParams {
-  action: 'get_user_messages';
-  channelId: string;
-  userId: string;
-  limit?: number;
-}
-
-// Wave 9: the gateway has never served this tool's routes (no handler for GET
-// /api/channels/:id/messages): over HTTP every call got express's 404. In-process,
-// gateway.unservedRoute answers the same 404, so the tool fails exactly as it always has. Serving
-// them is new work, not part of the move.
-
-function ensureArray<T>(value: any): T[] {
-  if (Array.isArray(value)) {
-    return value;
+export async function userHistoryHandler(
+  params: Record<string, unknown>,
+  context?: CapabilityContext
+): Promise<string> {
+  if (params.action !== 'get_user_messages') {
+    throw new Error(`Unknown discord-user-history action: ${String(params.action)}`);
   }
-  return [];
+  const guildId = context?.guildId;
+  if (!guildId) {
+    return JSON.stringify({ success: false, error: 'user history only works in a server conversation, not in DMs' });
+  }
+  const authorId = snowflakeOf(params.userId ?? params.user_id);
+  if (!authorId) {
+    return JSON.stringify({ success: false, error: 'give the person as a user id or <@mention>' });
+  }
+  try {
+    const resp = await gateway.searchGuildMessages(guildId, context?.userId ?? null, {
+      authorId,
+      channelId: snowflakeOf(params.channelId),
+      limit: Number(params.limit),
+      sortBy: 'timestamp',
+      fromChannelId: context?.channelId,
+    });
+    return JSON.stringify(resp.body);
+  } catch (error) {
+    logger.error('[discord-user-history] failed:', error);
+    return JSON.stringify({ success: false, error: 'history unavailable: discord may be down' });
+  }
 }
-
 
 export const discordUserHistoryCapability: RegisteredCapability = {
   name: 'discord-user-history',
   emoji: '📜',
+  actions: {
+    get_user_messages: {
+      effect: 'read',
+      params: {
+        userId: { type: 'string', description: 'The person (user id or <@mention>)', required: true, aliases: ['user_id'] },
+        channelId: { type: 'string', description: 'Only this channel ("#bugs"); default: every channel you can see' },
+        limit: { type: 'integer', description: 'How many (default 10, max 25)' },
+      },
+    },
+  },
   supportedActions: ['get_user_messages'],
   description:
-    'Query Discord user message history - fetch all messages from a specific user in a channel. Useful for duplicate detection and checking if a user has reported before.',
-  requiredParams: ['action', 'channelId', 'userId'],
-
-  handler: async (params: any, _content: string | undefined) => {
-    const action = params.action as string;
-
-    try {
-      switch (action) {
-        case 'get_user_messages':
-          return JSON.stringify(await getUserMessages(params));
-        default:
-          throw new Error(`Unknown discord-user-history action: ${action}`);
-      }
-    } catch (error) {
-      logger.error(`Discord user history error: ${error}`);
-      throw error;
-    }
-  },
+    "A person's recent messages in this server, newest first, from channels everyone in this " +
+    'conversation can read. Useful for "have they reported this before?". Same as discord-search ' +
+    'with an author.',
+  requiredParams: ['action'],
+  examples: ['<capability name="discord-user-history" action="get_user_messages" userId="<@123456789012345678>" limit="5" />'],
+  handler: async (params: Record<string, unknown>, _content: string | undefined, context?: CapabilityContext) =>
+    userHistoryHandler(params, context),
 };
-
-/**
- * Fetch all messages from a specific user in a Discord channel
- */
-async function getUserMessages(params: {
-  channelId: string;
-  userId: string;
-  limit?: number;
-}): Promise<any> {
-  const { channelId, userId, limit = 50 } = params;
-
-  logger.info(`👤 Fetching messages from user ${userId} in channel ${channelId}`);
-
-  if (!channelId) {
-    throw new Error('Missing required parameter: channelId');
-  }
-
-  if (!userId) {
-    throw new Error('Missing required parameter: userId');
-  }
-
-  try {
-    const response = await gateway.unservedRoute('GET', `/api/channels/${channelId}/messages`);
-
-    if (!gateway.isOk(response)) {
-      throw new Error(`Discord service error: ${response.status} ${gateway.statusText(response)}`);
-    }
-
-    const messages = response.body as any;
-    const messageArray = ensureArray(messages);
-
-    return {
-      success: true,
-      data: {
-        channelId,
-        userId,
-        messageCount: messageArray.length,
-        messages: messageArray.map((msg: any) => ({
-          id: msg.id,
-          author: {
-            id: msg.author?.id,
-            username: msg.author?.username || 'Unknown',
-          },
-          content: msg.content,
-          timestamp: msg.timestamp,
-          attachments: msg.attachments?.length || 0,
-        })),
-      },
-    };
-  } catch (error) {
-    logger.error('❌ Failed to fetch user messages:', error);
-    throw error;
-  }
-}

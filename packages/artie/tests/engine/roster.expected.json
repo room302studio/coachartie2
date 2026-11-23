@@ -75,10 +75,13 @@
   ],
   "discord-channels": [
     "get_messages",
-    "get_pinned_messages",
-    "search_messages"
+    "get_pinned_messages"
+  ],
+  "discord-search": [
+    "search"
   ],
   "discord-forums": [
+    "create-post",
     "get-forum-summary",
     "get-thread",
     "list-forums",
@@ -108,6 +111,7 @@
     "rollup"
   ],
   "discord-send-message": [
+    "edit_message",
     "send_message"
   ],
   "discord-threads": [
@@ -359,6 +363,12 @@
     "read",
     "section",
     "write"
+  ],
+  "scribe": [
+    "last_summary",
+    "start",
+    "status",
+    "stop"
   ],
   "self-stats": [
     "banlist",

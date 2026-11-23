@@ -55,7 +55,6 @@ import {
 } from '../commands/quiz/daily.js';
 import { telemetry } from '../telemetry.js';
 import {
-  CorrelationContext,
   generateCorrelationId,
   getShortCorrelationId,
 } from '../correlation.js';

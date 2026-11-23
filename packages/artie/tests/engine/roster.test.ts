@@ -41,7 +41,6 @@ describe('Capability roster snapshot', () => {
     try {
       expect(actual).toEqual(expected);
     } catch (err) {
-      // eslint-disable-next-line no-console
       console.log('ROSTER_ACTUAL ' + JSON.stringify(actual));
       throw err;
     }

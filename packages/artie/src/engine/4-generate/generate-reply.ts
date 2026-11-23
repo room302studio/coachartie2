@@ -239,7 +239,7 @@ export class LLMResponseCoordinator {
               );
             }
           }
-        } catch (error) {
+        } catch {
           // Experiment lookup failed, continue with defaults
         }
       }

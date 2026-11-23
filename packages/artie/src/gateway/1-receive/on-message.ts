@@ -642,7 +642,7 @@ function recordActivity({ message }: Turn): StepResult {
       (u) => u.id !== botId && u.id !== message.author.id && !u.bot
     );
   }
-  let _activityData: {
+  const _activityData: {
     messageId: string;
     authorLabel: string;
     content: string;

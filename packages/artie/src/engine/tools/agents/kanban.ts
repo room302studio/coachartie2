@@ -86,7 +86,7 @@ async function kanbanFetch(endpoint: string, options: RequestInit = {}): Promise
 async function handleKanban(
   params: KanbanParams,
   content?: string,
-  ctx?: CapabilityContext
+  _ctx?: CapabilityContext
 ): Promise<string> {
   const { action } = params;
 

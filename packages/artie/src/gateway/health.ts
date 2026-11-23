@@ -318,12 +318,12 @@ export class HealthServer {
     try {
       const packageJson = JSON.parse(readFileSync('/app/packages/discord/package.json', 'utf8'));
       return packageJson.version || '1.0.0';
-    } catch (error) {
+    } catch {
       // Fallback for local development
       try {
         const packageJson = JSON.parse(readFileSync('./package.json', 'utf8'));
         return packageJson.version || '1.0.0';
-      } catch (fallbackError) {
+      } catch {
         return '1.0.0';
       }
     }

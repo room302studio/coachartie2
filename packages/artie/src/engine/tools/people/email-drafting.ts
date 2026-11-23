@@ -1,4 +1,5 @@
 import { logger } from '../../../shared/logger.js';
+import { mintTrusted } from '../../../shared/trusted-ids.js';
 import { IncomingMessage } from '../../../shared/queue/types.js';
 import { openRouterService } from '../../4-generate/openrouter.js';
 import { contextAlchemy } from '../../3-context/assemble.js';
@@ -224,7 +225,7 @@ Format your response using XML tags:
             from: 'artie@coachartiebot.com',
           },
           draft.body,
-          { userId: message.userId }
+          mintTrusted({ userId: message.userId }, 'discord-turn')
         );
 
         if (result.startsWith('⏸️')) {

@@ -56,6 +56,7 @@ import { discordNicknameCapability } from '../tools/discord/nickname.js';
 import { discordThreadsCapability } from '../tools/discord/threads.js';
 import { discordSendMessageCapability } from '../tools/discord/send-message.js';
 import { discordChannelsCapability } from '../tools/discord/channels.js';
+import { discordSearchCapability } from '../tools/discord/search.js';
 import { discordUserHistoryCapability } from '../tools/discord/user-history.js';
 import { discordIssueParserCapability } from '../tools/discord/issue-parser.js';
 import { sendMetroFileCapability } from '../tools/discord/send-metro-file.js';
@@ -71,6 +72,7 @@ import { selfStatsCapability } from '../tools/ops/self-stats.js';
 import { communityAnalyticsCapability } from '../tools/ops/community-analytics.js';
 // Media capabilities
 import { ttsCapability } from '../tools/media/tts.js';
+import { scribeCapability } from '../tools/media/scribe.js';
 // Research capabilities
 import { deepResearchCapability } from '../tools/research/deep-research.js';
 import { trendWatcherCapability } from '../proactive/trend-watcher.js';
@@ -138,8 +140,9 @@ export class CapabilityBootstrap {
         systemMemoryCapability, osintLookupCapability, discordPollCapability,
         discordReactionCapability, stripePaymentsCapability, discordNicknameCapability,
         discordThreadsCapability, discordSendMessageCapability, discordChannelsCapability,
+        discordSearchCapability,
         discordUserHistoryCapability, discordIssueParserCapability, sendMetroFileCapability,
-        relayCapability, ttsCapability,
+        relayCapability, ttsCapability, scribeCapability,
       ];
       for (const capability of ALL_CAPABILITIES) {
         capabilityRegistry.register(capability);

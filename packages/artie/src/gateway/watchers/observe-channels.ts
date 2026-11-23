@@ -3,7 +3,7 @@ import { getSyncDb } from '../../shared/db/client.js';
 import { isBlockedUser } from '../../shared/blocklist.js';
 import { Client, TextChannel, Message, Collection } from 'discord.js';
 import * as engine from '../../engine/api.js';
-import { getGuildConfig, GUILD_CONFIGS, GuildType, type GuildConfig } from '../../shared/config/guilds.js';
+import { getGuildConfig, GUILD_CONFIGS, type GuildConfig } from '../../shared/config/guilds.js';
 import { NON_EVENT_PATTERNS } from '../4-reply/output-safety.js';
 
 /**
@@ -183,7 +183,7 @@ export class ObservationalLearning {
         // Filter to only observation channels if configured
         const observationChannels = guildConfig.observationChannels || [];
 
-        for (const [channelId, channel] of textChannels) {
+        for (const [, channel] of textChannels) {
           // If observationChannels is configured, only process those channels
           if (observationChannels.length > 0) {
             const isWhitelisted = observationChannels.some((c) =>
@@ -214,11 +214,6 @@ export class ObservationalLearning {
     const processed = this.processedChannels.get(channelKey);
 
     try {
-      // Fetch messages from Discord API
-      const fetchOptions: { limit: number; before?: string } = {
-        limit: this.MESSAGES_PER_FETCH,
-      };
-
       // If we've processed this channel before, fetch only new messages
       if (processed?.lastMessageId) {
         // Fetch messages after the last processed one

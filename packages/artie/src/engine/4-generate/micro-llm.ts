@@ -10,13 +10,20 @@
 import { logger } from '../../shared/logger.js';
 import { assertGenerationAllowed } from '../../shared/kill-switch.js';
 import OpenAI from 'openai';
+import { NO_TRAINING_PROVIDER } from '../../shared/model-spec.js';
 
 // Micro LLM config - fast and cheap
 // The :free slug was retired (404 on every call, Oct 2026), so every micro decision silently
 // fell back to its default. The paid 8B is ~$0.02/M tokens.
 const MICRO_MODEL = process.env.MICRO_LLM_MODEL || 'meta-llama/llama-3.1-8b-instruct';
 const MICRO_MAX_TOKENS = 50; // Keep responses tiny
-const MICRO_TIMEOUT_MS = 3000; // Fail fast
+
+/**
+ * OpenRouter-only body field, spread into every micro call: no provider that trains on prompts
+ * (Discord Developer Policy; model-spec.ts NO_TRAINING_PROVIDER). Typed loosely because the
+ * OpenAI SDK's params type doesn't know OpenRouter's `provider`; the SDK sends it as is.
+ */
+const NO_TRAINING_BODY = { provider: NO_TRAINING_PROVIDER } as unknown as Record<string, never>;
 
 let client: OpenAI | null = null;
 
@@ -54,6 +61,7 @@ export async function askYesNo(
   try {
     const response = await getClient().chat.completions.create({
       model: MICRO_MODEL,
+      ...NO_TRAINING_BODY,
       messages: [
         {
           role: 'system',
@@ -96,6 +104,7 @@ export async function pickOne<T extends string>(
   try {
     const response = await getClient().chat.completions.create({
       model: MICRO_MODEL,
+      ...NO_TRAINING_BODY,
       messages: [
         {
           role: 'system',
@@ -136,6 +145,7 @@ export async function extract(
   try {
     const response = await getClient().chat.completions.create({
       model: MICRO_MODEL,
+      ...NO_TRAINING_BODY,
       messages: [
         {
           role: 'system',
@@ -165,6 +175,7 @@ export async function estimateResponseLength(userMessage: string): Promise<Micro
   try {
     const response = await getClient().chat.completions.create({
       model: MICRO_MODEL,
+      ...NO_TRAINING_BODY,
       messages: [
         {
           role: 'system',

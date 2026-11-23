@@ -273,7 +273,7 @@ export const filesystemCapability: RegisteredCapability = {
   supportedActions: ['read_file', 'list_directory', 'exists'],
   description: 'Reads files and lists directories inside the project (read-only)',
   requiredParams: ['path'],
-  handler: async (params, content) => {
+  handler: async (params, _content) => {
     const { action, path: filePath } = params;
 
     if (!filePath) {

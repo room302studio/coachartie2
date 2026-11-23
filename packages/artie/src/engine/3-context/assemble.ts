@@ -394,10 +394,10 @@ export class ContextAlchemy {
 
       // Count rules by parsing the content
       let rulesCount = 0;
-      let ruleIds: number[] = [];
+      const ruleIds: number[] = [];
       if (rulesSource) {
         // Count bullet points as rules
-        const bulletMatches = rulesSource.content.match(/^[•\-]/gm);
+        const bulletMatches = rulesSource.content.match(/^[•-]/gm);
         if (bulletMatches) {
           rulesCount = bulletMatches.length;
         }

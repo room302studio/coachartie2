@@ -12,6 +12,7 @@
  */
 import { randomUUID } from 'crypto';
 import { logger } from '../../../shared/logger.js';
+import { mintTrusted } from '../../../shared/trusted-ids.js';
 import { getErrorMessage } from '../../../shared/errors.js';
 import { isBlockedUser } from '../../../shared/blocklist.js';
 import { GUILD_CONFIGS } from '../../../shared/config/guilds.js';
@@ -223,11 +224,13 @@ async function summarizeAndFinish(
     summaryText = text;
 
     if (proposals.length > 0 && !summaryOnly) {
-      const outcomes = await submitScribeProposals(proposals, {
-        userId: OWNER_USER_ID,
-        guildId: session.guildId,
-        channelId: session.textChannelId,
-      });
+      const outcomes = await submitScribeProposals(
+        proposals,
+        mintTrusted(
+          { userId: OWNER_USER_ID, guildId: session.guildId, channelId: session.textChannelId },
+          'engine-job'
+        )
+      );
       pendingIds = outcomes.map((o) => o.pendingId).filter((id): id is number => id !== null);
     }
   } catch (error) {

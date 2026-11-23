@@ -1,4 +1,6 @@
 import { logger } from '../../shared/logger.js';
+import { mintTrusted } from '../../shared/trusted-ids.js';
+import type { CapabilityContext } from './registry.js';
 import { escapeRegex } from '../../shared/regex.js';
 import { capabilityRegistry, resolveToolCall } from './registry.js';
 import { gatesFor } from './tool-policy.js';
@@ -44,6 +46,11 @@ export const TAINTING_CAPABILITIES = new Set([
   'github',
   'reddit',
   'mediawiki',
+  // 2026-11-23: guild message search returns other people's messages verbatim; anyone in the
+  // server could plant instructions for Artie to find.
+  'discord-search',
+  // discord-channels and discord-forums deliberately do NOT taint (EJ, 2026-11-23: "skip the
+  // taint"), so Artie can read a channel and react to a message in it in the same turn.
 ]);
 
 // Which actions are blocked once the turn is tainted is no longer a list here: it is derived
@@ -655,14 +662,17 @@ export class CapabilityExecutor {
     }
 
     // Build capability context from discord_context (defined outside try for metrics access)
-    let capabilityContext: Record<string, any> | undefined;
+    let capabilityContext: CapabilityContext | undefined;
     if (context?.discord_context) {
-      capabilityContext = {
-        guildId: context.discord_context.guildId,
-        channelId: context.discord_context.channelId,
-        userId: context.userId,
-        messageId: context.messageId,
-      };
+      capabilityContext = mintTrusted(
+        {
+          guildId: context.discord_context.guildId,
+          channelId: context.discord_context.channelId,
+          userId: context.userId,
+          messageId: context.messageId,
+        },
+        'discord-turn'
+      );
     }
 
     try {

@@ -1289,8 +1289,8 @@ export class GitHubPollerService extends EventEmitter {
   private async silentFirstSync(
     owner: string,
     repo: string,
-    watch: GithubRepoWatch,
-    syncState: GithubSyncState
+    _watch: GithubRepoWatch,
+    _syncState: GithubSyncState
   ): Promise<void> {
     const repoFullName = `${owner}/${repo}`;
     logger.info(`Running silent first sync for ${repoFullName}`);
@@ -1326,7 +1326,7 @@ export class GitHubPollerService extends EventEmitter {
           if (comments.length > 0) {
             lastCommentId = comments[0].id;
           }
-        } catch (e) {
+        } catch {
           // No comments, that's fine
         }
 
@@ -1340,7 +1340,7 @@ export class GitHubPollerService extends EventEmitter {
           if (reviews.length > 0) {
             lastReviewId = reviews[reviews.length - 1].id;
           }
-        } catch (e) {
+        } catch {
           // No reviews, that's fine
         }
       }
@@ -1508,7 +1508,7 @@ export class GitHubPollerService extends EventEmitter {
   async listWatches(guildId?: string, channelId?: string): Promise<GithubRepoWatch[]> {
     try {
       const db = getDb();
-      let query = db.select().from(githubRepoWatches);
+      const query = db.select().from(githubRepoWatches);
 
       if (guildId && channelId) {
         return await query.where(

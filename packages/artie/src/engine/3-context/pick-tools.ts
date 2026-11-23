@@ -28,7 +28,7 @@ async function getCapabilityIntro(): Promise<string> {
       introLastFetched = now;
       return cachedCapabilityIntro;
     }
-  } catch (error) {
+  } catch {
     logger.warn('Capability selector: Could not load CAPABILITY_PROMPT_INTRO from database');
   }
 

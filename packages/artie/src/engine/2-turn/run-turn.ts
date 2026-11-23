@@ -12,6 +12,7 @@
  */
 import { IncomingMessage } from '../../shared/queue/types.js';
 import { logger } from '../../shared/logger.js';
+import { mintTrusted } from '../../shared/trusted-ids.js';
 import { openRouterService } from '../4-generate/openrouter.js';
 import { capabilityRegistry } from '../5-tool-loop/registry.js';
 import { costMonitor } from '../budget/usage-ledger.js';
@@ -484,12 +485,21 @@ export class CapabilityOrchestrator {
         .trim();
       logger.warn('🎼 Lyric sheet shipped with no tts call — auto-singing it (mechanical guarantee)');
       void capabilityRegistry
-        .execute('tts', 'sing', { lyrics }, undefined, {
-          userId: context.userId,
-          messageId: context.messageId,
-          channelId,
-          guildId: context.discord_context?.guildId,
-        })
+        .execute(
+          'tts',
+          'sing',
+          { lyrics },
+          undefined,
+          mintTrusted(
+            {
+              userId: context.userId,
+              messageId: context.messageId,
+              channelId,
+              guildId: context.discord_context?.guildId,
+            },
+            'discord-turn'
+          )
+        )
         .catch((e) => logger.warn('Auto-sing failed:', e));
     } catch (e) {
       logger.warn('Auto-sing detection failed:', e);

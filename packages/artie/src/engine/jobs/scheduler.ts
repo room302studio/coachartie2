@@ -1,5 +1,6 @@
 import { Queue, Worker } from 'bullmq';
 import { logger } from '../../shared/logger.js';
+import { mintTrusted } from '../../shared/trusted-ids.js';
 import { createRedisConnection, createWorker, testRedisConnection } from '../../shared/queue/redis.js';
 import { getSyncDb } from '../../shared/db/client.js';
 import { withTimeout } from '../../shared/async.js';
@@ -814,7 +815,7 @@ export class SchedulerService {
       const briefing = await morningBriefingCapability.handler(
         { action: 'now' },
         undefined,
-        { userId: userId as string }
+        mintTrusted({ userId }, 'engine-job')
       );
 
       // Deliver via the gateway's DM handler (a direct call avoids the BullMQ consumer race).
@@ -862,7 +863,7 @@ export class SchedulerService {
           limit: (limit as number) || 5,
         },
         undefined,
-        { userId: userId as string }
+        mintTrusted({ userId }, 'engine-job')
       );
 
       // Queue for Discord delivery
@@ -898,21 +899,16 @@ export class SchedulerService {
   }
 
   /**
-   * Execute daily conversation summarization
-   * Creates long-term memory summaries from daily interactions
+   * Daily conversation summaries are retired (2026-11-23, with Artie). They were never written
+   * by a model: a word-frequency "Topics discussed" list plus the first sentence of a few
+   * messages, saved guild-free at importance 8 and mixing DMs with every server. So they
+   * crowded recall ("last time" picks the newest importance >= 7 row) and could carry DM text
+   * into a server. The nightly dream pruned them as stubs. "When did X start?" questions are
+   * now answered from the source with discord-search after/before. The job stays registered so
+   * the repeatable doesn't log an unknown task; it does nothing.
    */
   private async executeDailySummarization(): Promise<void> {
-    logger.info('Daily conversation summarization triggered');
-
-    try {
-      const { runDailySummarization } = await import('../memory/summarizer.js');
-      const result = await runDailySummarization();
-      logger.info(
-        `Summarization complete: ${result.usersProcessed} users, ${result.summariesCreated} summaries`
-      );
-    } catch (error) {
-      logger.error('Daily summarization failed:', error);
-    }
+    logger.debug('Daily summarization is retired; nothing to do');
   }
 
   /**

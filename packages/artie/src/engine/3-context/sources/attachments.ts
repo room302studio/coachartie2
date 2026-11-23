@@ -19,6 +19,7 @@ import type { ContextSource } from './types.js';
 import { DEBUG } from './types.js';
 import { toolLoopMode, toCallNotation } from '../../5-tool-loop/mode.js';
 import { collapseWhitespace } from '../../../shared/text.js';
+import { isAudioAttachment, transcribeVoiceMemos, formatMemoContext } from '../../jobs/scribe/voice-memo.js';
 
 /** How to send the analyzed save back: XML tag on the XML path, call notation on native. */
 function sendMetroFileHint(): string {
@@ -251,7 +252,7 @@ export async function addAttachmentContext(
         const recentLabel = mostRecent.name || mostRecent.id || 'save.metro';
         lines.push(`Recent save from this user is available: ${recentLabel}`);
       }
-    } else if (addressed.length > 0) {
+    } else if (addressed.some((att: any) => !isAudioAttachment(att))) {
       lines.push(
         'Vision/OCR recommended: call the vision capability with these URLs to extract text/entities, or ask the user to paste the text if vision is unavailable.'
       );
@@ -268,14 +269,44 @@ export async function addAttachmentContext(
     });
   }
 
+  // Voice memos (2026-11-23): audio the person attached is transcribed, never sent to vision.
+  // The speaker's own memos carry their id; replied-to ones keep the poster's authorId and are
+  // marked, so they're framed as someone else's words and opt-outs are honored.
+  const heardAudio = addressed
+    .filter((att: any) => isAudioAttachment(att))
+    .map((att: any) => {
+      if (currentAttachments.includes(att)) {
+        return { ...att, authorId: message.userId, fromReply: false };
+      }
+      return { ...att, fromReply: true };
+    });
+  const visual = addressed.filter((att: any) => !isAudioAttachment(att));
+  if (heardAudio.length > 0 && process.env.OPENROUTER_API_KEY) {
+    const memos = await transcribeVoiceMemos(heardAudio, {
+      userId: message.userId,
+      guildId: message.context?.guildId,
+      messageId: message.context?.messageId,
+    });
+    if (memos.length > 0) {
+      const content = formatMemoContext(memos);
+      sources.push({
+        name: 'attachments_audio',
+        priority: 96, // it IS the message, often the whole of it
+        tokenWeight: estimateTokens(content),
+        content,
+        category: 'user_state',
+      });
+    }
+  }
+
   // Optional: auto vision extraction
   const autoVision =
     (process.env.AUTO_VISION_EXTRACT || 'true').toLowerCase() !== 'false' &&
     !!process.env.OPENROUTER_API_KEY &&
     visionCapability !== null;
 
-  if (autoVision && addressed.length > 0) {
-    const urls = addressed
+  if (autoVision && visual.length > 0) {
+    const urls = visual
       .map((att: any) => att.url || att.proxyUrl)
       .filter((u: any) => typeof u === 'string')
       .slice(0, 3); // cap auto-processing
@@ -316,7 +347,7 @@ Be precise with numbers - if it says 1.5%, report 1.5% not 1.1%. If you can't re
         }
 
         // Frame the vision output clearly so the LLM knows the images were already analyzed
-        const posters = [...new Set(addressed.map((att: any) => att.author).filter(Boolean))];
+        const posters = [...new Set(visual.map((att: any) => att.author).filter(Boolean))];
         let postedBy = '';
         if (posters.length > 0) {
           postedBy = ` (posted by ${posters.join(', ')})`;

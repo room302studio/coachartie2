@@ -2,7 +2,6 @@ import { MessageFlags, ChatInputCommandInteraction, SlashCommandBuilder, EmbedBu
 import { logger } from '../../shared/logger.js';
 import { testRedisConnection } from '../../shared/queue/redis.js';
 import { telemetry } from '../telemetry.js';
-import { capabilitiesClient } from '../3-ask-engine/engine-client.js';
 import * as engine from '../../engine/api.js';
 
 /**
@@ -232,7 +231,7 @@ async function createSystemStatusEmbed(): Promise<EmbedBuilder> {
       { name: '📊 Health Server', value: '🟢 Running :47319', inline: true },
       { name: '💾 Telemetry', value: '🟢 Recording', inline: true }
     );
-  } catch (error) {
+  } catch {
     embed.addFields({
       name: '❌ System Check Failed',
       value: 'Unable to verify all services',

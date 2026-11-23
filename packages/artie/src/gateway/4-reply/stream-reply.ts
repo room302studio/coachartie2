@@ -98,7 +98,6 @@ export async function processUserIntent(
     enableEditing = true, // DEFAULT TO EDITING to prevent spam
     enableThreading = false, // MINIMAL: Less auto-organization
     maxAttempts = 60,
-    statusUpdateInterval = 5,
   } = options;
 
   const correlationId = generateCorrelationId();
@@ -108,13 +107,11 @@ export async function processUserIntent(
   // Track processing state
   let jobCompleted = false;
   let typingInterval: NodeJS.Timeout | null = null;
-  let lastStatus = 'pending';
-  let updateCount = 0;
   let streamedChunks = 0;
   let lastSentContent = '';
   let streamingMessage: any = null; // For edit-based streaming
   let lastUpdateTime = 0; // Track time between edits to prevent spam
-  let lastEmoji: string | null = null; // Track dynamic emoji reactions
+  const lastEmoji: string | null = null; // Track dynamic emoji reactions
   const reactedEmojis = new Set<string>(); // Track capability emojis already reacted with
   let discordMessageLinked = false; // Context Alchemy: Track if we've linked the Discord message
 
@@ -212,8 +209,6 @@ export async function processUserIntent(
       logger.error(`❌ NULL JOB ID DETECTED [${shortId}]:`, errorDetails);
       throw new Error(`Invalid job response: ${JSON.stringify(errorDetails)}`);
     }
-
-    const jobShortId = jobInfo.messageId.slice(-8);
 
     logger.info(`Job submitted [${shortId}]:`, {
       correlationId,
@@ -362,9 +357,6 @@ export async function processUserIntent(
           }
 
           // MINIMAL: No emoji reactions - just pure human-like behavior
-          lastStatus = status.status;
-          updateCount++;
-
           // Add capability emoji reactions to user's message
           if (intent.addReaction && status.capabilityEmojis) {
             for (const emoji of status.capabilityEmojis) {
@@ -420,7 +412,7 @@ export async function processUserIntent(
           try {
             if (lastEmoji) await intent.removeReaction(lastEmoji);
             // No checkmark - response speaks for itself
-          } catch (error) {
+          } catch {
             // Silent cleanup
           }
         }
@@ -659,7 +651,7 @@ export async function processUserIntent(
         if (enableReactions && intent.removeReaction && lastEmoji) {
           try {
             await intent.removeReaction(lastEmoji);
-          } catch (error) {
+          } catch {
             // Silent cleanup
           }
         }

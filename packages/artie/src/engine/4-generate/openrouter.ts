@@ -3,7 +3,13 @@ import { estimateTokens } from '../../shared/async.js';
 import { logger } from '../../shared/logger.js';
 import { assertGenerationAllowed } from '../../shared/kill-switch.js';
 import { assertGuildBudget } from '../../shared/guild-budget.js';
-import { resolveModelSpec, isAutoRouted, autoReasoningFor } from '../../shared/model-spec.js';
+import {
+  resolveModelSpec,
+  isAutoRouted,
+  autoReasoningFor,
+  openRouterUser,
+  NO_TRAINING_PROVIDER,
+} from '../../shared/model-spec.js';
 import { responseFormatFor, type JsonOutputSpec } from '../../shared/structured-output.js';
 import { getErrorMessage } from '../../shared/errors.js';
 
@@ -382,9 +388,13 @@ class OpenRouterService {
 
     // Check credit balance on startup, then poll every 30 min so the operator gets a
     // low-balance DM warning BEFORE credits run dry (not just on a live 402).
-    import('../budget/openrouter-balance.js').then(({ creditMonitor }) => {
-      creditMonitor.startPeriodicBalanceCheck();
-    });
+    import('../budget/openrouter-balance.js')
+      .then(({ creditMonitor }) => {
+        creditMonitor.startPeriodicBalanceCheck();
+      })
+      .catch((err: unknown) => {
+        logger.error('❌ Could not start the OpenRouter credit monitor:', err);
+      });
   }
 
   /**
@@ -693,7 +703,7 @@ class OpenRouterService {
           variantTemperature = variant.config.temperature;
           logger.info(`🧪 Experiment ${experimentId}: Using temperature ${variantTemperature}`);
         }
-      } catch (error) {
+      } catch {
         // Experiment lookup failed, continue without experiment
         logger.debug('[experiment] Variant lookup failed, continuing normally');
       }
@@ -865,6 +875,14 @@ class OpenRouterService {
         if (reasoning) {
           extraBody.reasoning = reasoning;
         }
+        // Per-user pseudonym (model-spec.ts openRouterUser): an abuse block hits one person,
+        // not the whole key.
+        const orUser = openRouterUser(userId);
+        if (orUser) {
+          extraBody.user = orUser;
+        }
+        // Never a provider that trains on prompts (Discord Developer Policy; model-spec.ts).
+        extraBody.provider = NO_TRAINING_PROVIDER;
         const completionParams: Record<string, unknown> = {
           model,
           messages: cache.messages,
@@ -1318,7 +1336,7 @@ class OpenRouterService {
           variantTemperature = variant.config.temperature;
           logger.info(`🧪 Experiment ${experimentId}: Using temperature ${variantTemperature}`);
         }
-      } catch (error) {
+      } catch {
         logger.debug('[experiment] Variant lookup failed, continuing normally');
       }
     }
@@ -1407,6 +1425,14 @@ class OpenRouterService {
         if (reasoning) {
           extraBody.reasoning = reasoning;
         }
+        // Per-user pseudonym (model-spec.ts openRouterUser): an abuse block hits one person,
+        // not the whole key.
+        const orUser = openRouterUser(userId);
+        if (orUser) {
+          extraBody.user = orUser;
+        }
+        // Never a provider that trains on prompts (Discord Developer Policy; model-spec.ts).
+        extraBody.provider = NO_TRAINING_PROVIDER;
         const completion: AsyncIterable<OpenAI.Chat.Completions.ChatCompletionChunk> = await this.createCompletion({
           model,
           messages: cache.messages,

@@ -32,7 +32,6 @@ describe('registryToTools over the real registry', () => {
     await bootRegistry();
     tools = registryToTools(capabilityRegistry.list());
     // For the BUILD-LOG: how big the tool list is on the wire.
-    // eslint-disable-next-line no-console
     const biggest = tools
       .map((t) => [t.function.name, JSON.stringify(t).length] as const)
       .sort((a, b) => b[1] - a[1])
@@ -105,11 +104,11 @@ describe('registryToTools over the real registry', () => {
       .toEqual({ duration: '30' });
   });
 
-  it('declared params replace the data= blob: discord-forums shows forumId/threadId/repo', () => {
+  it('declared params replace the data= blob: discord-forums shows only its declared params', () => {
     const forums = tools.find((t) => t.function.name === 'discord-forums')!;
     const props = Object.keys(forums.function.parameters.properties).sort();
-    // No free-text `content`: no forums action reads it.
-    expect(props).toEqual(['action', 'forumId', 'repo', 'threadId']);
+    // No free-text `content`: no forums action reads it (create-post takes `message`).
+    expect(props).toEqual(['action', 'forumId', 'message', 'repo', 'tag', 'threadId', 'title']);
     expect(forums.function.parameters.required).toEqual(['action']);
   });
 

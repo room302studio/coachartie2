@@ -21,7 +21,6 @@ import {
   TextInputStyle,
 } from 'discord.js';
 import {
-  ACHIEVEMENTS,
   DAILY_QUESTION_COUNT,
   renderEmojiGrid,
   type Achievement,

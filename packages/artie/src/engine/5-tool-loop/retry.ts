@@ -1,4 +1,5 @@
 import { logger } from '../../shared/logger.js';
+import { mintTrusted } from '../../shared/trusted-ids.js';
 import { delay } from '../../shared/async.js';
 import { ParsedCapability } from './xml-parser.js';
 import { capabilityRegistry } from './registry.js';
@@ -387,12 +388,15 @@ export class RobustCapabilityExecutor {
       capability.action,
       ungatedParams,
       interpolatedContent,
-      {
-        userId: context.userId,
-        messageId: context.messageId,
-        channelId: context.channelId,
-        guildId: context.guildId,
-      }
+      mintTrusted(
+        {
+          userId: context.userId,
+          messageId: context.messageId,
+          channelId: context.channelId,
+          guildId: context.guildId,
+        },
+        'discord-turn'
+      )
     );
   }
 

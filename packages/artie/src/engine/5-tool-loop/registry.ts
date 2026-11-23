@@ -1,4 +1,5 @@
 import { logger } from '../../shared/logger.js';
+import type { TrustedContextIds } from '../../shared/trusted-ids.js';
 import {
   StructuredCapabilityError,
   createStructuredError,
@@ -6,6 +7,7 @@ import {
   ParameterSchema,
 } from '../errors.js';
 import { isOwnerConfirmed } from './approval-gate.js';
+import { resolveChannelParams } from './channel-names.js';
 import {
   gatesFor,
   requiredParamsFor,
@@ -21,12 +23,11 @@ import { trackRegistryCall, setLedgerNameCheck, type RegistryCallRecord } from '
 /**
  * Context passed to capability handlers
  */
-export interface CapabilityContext {
-  guildId?: string;
-  channelId?: string;
-  userId?: string;
-  messageId?: string;
-}
+/**
+ * Who and where a tool call is about. The ids are branded (shared/trusted-ids.ts): only
+ * mintTrusted() makes them, so a model-written id can never pose as the conversation's.
+ */
+export type CapabilityContext = TrustedContextIds;
 
 /**
  * Type definition for a capability handler function
@@ -593,6 +594,8 @@ export class CapabilityRegistry {
 
     // Declared aliases (forum_id) become their canonical names (forumId) first.
     params = canonicalParams(capability.actions, action, params ?? {});
+    // "#beta" (or a thread title) becomes that channel's id in this server (Artie, 2026-11-23).
+    params = resolveChannelParams(params, context?.guildId);
 
     // Validate required parameters: the tool-wide list plus this action's declared ones
     // (tool-policy.ts). The schema can't require per-action params, so this is where they bind.

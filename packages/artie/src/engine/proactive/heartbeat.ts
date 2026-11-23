@@ -239,7 +239,8 @@ function findInactiveUsers(dayThreshold: number = 3): string[] {
 /**
  * Generate daily insights from recent activity
  */
-async function generateDailyInsights(userId: string): Promise<string | null> {
+// Unused as of 2026-11-23 (lint pass); kept for reference.
+async function _generateDailyInsights(userId: string): Promise<string | null> {
   // CRITICAL: Only generate for whitelisted users
   if (!canReceiveProactiveDMs(userId)) {
     return null;

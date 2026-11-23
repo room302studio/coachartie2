@@ -74,8 +74,8 @@ class DistressMonitor {
 
     logger.info('🆘 Distress Monitor started with thresholds:', this.thresholds);
 
-    // Run immediately, then on interval
-    this.runCheck();
+    // Run immediately, then on interval (runCheck catches its own errors)
+    void this.runCheck();
     this.checkInterval = setInterval(() => this.runCheck(), this.CHECK_INTERVAL_MS);
   }
 

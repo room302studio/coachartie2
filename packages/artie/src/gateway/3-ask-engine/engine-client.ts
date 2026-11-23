@@ -353,8 +353,8 @@ export class CapabilitiesClient {
         }
       };
 
-      // Start polling
-      poll();
+      // Start polling (poll settles the outer promise itself and catches its own errors)
+      void poll();
     });
   }
 

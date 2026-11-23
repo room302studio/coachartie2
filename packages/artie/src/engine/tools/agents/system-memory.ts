@@ -63,7 +63,7 @@ function ensureTable(): void {
 async function handleSystemMemory(
   params: SystemMemoryParams,
   content?: string,
-  ctx?: CapabilityContext
+  _ctx?: CapabilityContext
 ): Promise<string> {
   const { action } = params;
   const callingAgent = params.agent || 'artie';

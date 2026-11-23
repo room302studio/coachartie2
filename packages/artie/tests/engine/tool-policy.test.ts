@@ -60,6 +60,13 @@ const GATE_FLOOR: Record<string, Record<string, string>> = {
   'discord-moderation': { timeout: 'T', add_enemy_role: 'T', remove_enemy_role: 'T', escalate: '' },
   'discord-nickname': { set_nickname: 'T', reset_nickname: 'T' },
   'discord-reaction': { react: 'T', read: '', rollup: '' },
+  'discord-search': { search: '' },
+  'discord-channels': { get_messages: '', get_pinned_messages: '' },
+  'discord-threads': { create_thread: 'T', get_thread_messages: '' },
+  'discord-user-history': { get_user_messages: '' },
+  'discord-send-message': { send_message: 'T', edit_message: 'T' },
+  // Recording people is EJ's call (same as /scribe start/stop); anyone may ask the status.
+  scribe: { status: '', last_summary: '', start: 'OT', stop: 'OT' },
   'proactive-dm': {
     send: 'T', dm: 'T', message: 'T', notify: 'T', alert: 'T', remind: 'T', followup: 'T',
     status: '',
@@ -79,7 +86,7 @@ const GATE_FLOOR: Record<string, Record<string, string>> = {
   // sync-to-github creates GitHub issues: approval-gated from 2026-11-17 (it skipped the gate).
   'discord-forums': {
     'list-forums': '', 'list-threads': '', 'get-thread': '', 'get-forum-summary': '',
-    'sync-to-github': 'TA',
+    'sync-to-github': 'TA', 'create-post': 'T',
   },
   // approve replays an email/payment: taint-blocked so injected text can't approve for EJ.
   approvals: { list: 'O', approve: 'OT', deny: 'OT' },
@@ -94,9 +101,9 @@ const GATE_FLOOR: Record<string, Record<string, string>> = {
  */
 const KNOWN_UNDECLARED = new Set([
   'ask-question', 'autonomous', 'bot-config', 'calculator', 'community-analytics',
-  'context', 'credit_status', 'diagnose', 'discord-channels',
-  'discord-issue-parser', 'discord-poll', 'discord-send-message',
-  'discord-threads', 'discord-user-history', 'embedded_mcp', 'flashcard', 'goals', 'image_gen',
+  'context', 'credit_status', 'diagnose',
+  'discord-issue-parser', 'discord-poll',
+  'embedded_mcp', 'flashcard', 'goals', 'image_gen',
   'kanban', 'morning-briefing', 'n8n_browser', 'pairing',
   'quiz-game', 'sb_changelog', 'scrapbook', 'send-metro-file', 'sequence',
   'skills', 'system-info', 'system_monitor', 'tasks', 'trend-watcher', 'tts', 'user-profile',

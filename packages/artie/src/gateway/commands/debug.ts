@@ -128,7 +128,7 @@ async function createConnectionTestEmbed(): Promise<EmbedBuilder> {
         latency: `HTTP ${response.status}`,
       });
     }
-  } catch (error) {
+  } catch {
     tests.push({
       name: '🧠 Capabilities Service',
       status: '🔴 Offline',
@@ -151,7 +151,7 @@ async function createConnectionTestEmbed(): Promise<EmbedBuilder> {
       status: responseStatus(response.ok),
       latency: latencyStatus(response.ok),
     });
-  } catch (error) {
+  } catch {
     tests.push({
       name: '📊 Health Server',
       status: '🔴 Offline',
@@ -230,7 +230,7 @@ async function createPerformanceEmbed(userId: string): Promise<EmbedBuilder> {
         inline: false,
       });
     }
-  } catch (error) {
+  } catch {
     embed.addFields({
       name: '❌ Performance Data Unavailable',
       value: 'Unable to fetch performance metrics',
@@ -274,7 +274,7 @@ async function createCapabilitiesTestEmbed(): Promise<EmbedBuilder> {
         inline: false,
       });
     }
-  } catch (error) {
+  } catch {
     embed.addFields({
       name: '❌ Capabilities Service Offline',
       value: 'Unable to connect to capabilities service',
@@ -345,7 +345,7 @@ async function createErrorsEmbed(userId: string): Promise<EmbedBuilder> {
         '• Try sending your message again\n• Use simpler requests if complex ones fail\n• Check `/bot-status` for system health\n• Report persistent issues to support',
       inline: false,
     });
-  } catch (error) {
+  } catch {
     embed.addFields({
       name: '❌ Error Log Unavailable',
       value: 'Unable to fetch recent error information',

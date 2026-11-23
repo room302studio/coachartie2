@@ -136,7 +136,7 @@ async function createModelsListEmbed(): Promise<EmbedBuilder> {
           configuredModels = `\n\n**Configured Models:**\n\`${errorData.configuredModels.join('`, `')}\``;
         }
       }
-    } catch (e) {
+    } catch {
       // Ignore error parsing, use default message
     }
 

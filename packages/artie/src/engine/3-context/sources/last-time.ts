@@ -155,14 +155,18 @@ function lastExchangeRow(
   return row || null;
 }
 
-/** Latest importance >= 7 memory about this person, guild-scoped like getRecentMemories. */
+/**
+ * Latest importance >= 7 memory about this person. In a guild, only that guild's rows: a
+ * guild-free row may have been saved in a DM (or be a "me" fact told privately), and this line
+ * is quoted into a reply that may be public (Artie, 2026-11-23).
+ */
 function highImportanceMemoryTopic(userId: string, guildId?: string): string | null {
   try {
     const db = getSyncDb();
     let guildFilter = '';
     let params: unknown[];
     if (guildId) {
-      guildFilter = 'AND (guild_id = ? OR guild_id IS NULL)';
+      guildFilter = 'AND guild_id = ?';
       params = [userId, guildId];
     } else {
       params = [userId];

@@ -10,7 +10,7 @@ import { octokitLog } from './octokit-log.js';
 import { delay } from '../../../shared/async.js';
 import { logger } from '../../../shared/logger.js';
 import { getErrorMessage } from '../../../shared/errors.js';
-import type { ForumThreadData, ThreadMessageData } from './forum-traversal.js';
+import type { ForumThreadData } from './forum-traversal.js';
 
 export interface GitHubIssueData {
   title: string;
@@ -50,7 +50,7 @@ export class GitHubIntegrationService {
     try {
       // Handle full GitHub URLs
       if (ref.includes('github.com')) {
-        const match = ref.match(/github\.com\/([^\/]+)\/([^\/]+)/);
+        const match = ref.match(/github\.com\/([^/]+)\/([^/]+)/);
         if (match) {
           return { owner: match[1], repo: match[2].replace(/\.git$/, '') };
         }
@@ -335,9 +335,9 @@ export class GitHubIntegrationService {
 
     // Regex patterns for GitHub URLs
     const patterns = {
-      pr: /https?:\/\/github\.com\/([^\/]+)\/([^\/]+)\/pull\/(\d+)/gi,
-      issue: /https?:\/\/github\.com\/([^\/]+)\/([^\/]+)\/issues\/(\d+)/gi,
-      repo: /https?:\/\/github\.com\/([^\/]+)\/([^\/\s?#]+)/gi,
+      pr: /https?:\/\/github\.com\/([^/]+)\/([^/]+)\/pull\/(\d+)/gi,
+      issue: /https?:\/\/github\.com\/([^/]+)\/([^/]+)\/issues\/(\d+)/gi,
+      repo: /https?:\/\/github\.com\/([^/]+)\/([^/\s?#]+)/gi,
     };
 
     // Check for PRs first (most specific)

@@ -6,6 +6,7 @@
  * context, so it clears the gate in registry.execute() and actually happens.
  */
 import { logger } from '../../../shared/logger.js';
+import { mintTrusted } from '../../../shared/trusted-ids.js';
 import { isOwner } from '../../../shared/config/owner.js';
 import {
   expireStalePendingActions,
@@ -162,7 +163,7 @@ async function handleApprovals(
             // Replay with the ORIGINAL guildId/channelId/messageId (so a tool that reads
             // context behaves the way it would have at the original call site), but userId
             // is always the owner now — that's what satisfies isOwnerConfirmed().
-            { ...originalContext, userId: callerId }
+            mintTrusted({ ...originalContext, userId: callerId }, 'approval-replay')
           );
         } catch (error) {
           markPendingActionOutcome(id, 'failed');

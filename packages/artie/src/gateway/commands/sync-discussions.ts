@@ -41,7 +41,7 @@ export async function execute(interaction: ChatInputCommandInteraction) {
     let githubService;
     try {
       githubService = getGitHubIntegration();
-    } catch (error) {
+    } catch {
       await interaction.reply({
         content:
           '❌ GitHub integration is not configured. Please set GITHUB_TOKEN environment variable.',

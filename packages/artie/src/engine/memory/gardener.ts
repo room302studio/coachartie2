@@ -157,7 +157,7 @@ export class MemoryGardener {
       }
 
       // For groups with 2+ memories, add cross-references in metadata
-      for (const [tag, memoryIds] of tagGroups) {
+      for (const [, memoryIds] of tagGroups) {
         if (memoryIds.length >= 2 && memoryIds.length <= 5) {
           for (const memId of memoryIds) {
             const relatedIds = memoryIds.filter((id) => id !== memId);

@@ -26,7 +26,8 @@ import { LLM_LOOP_TIMEOUT_MS } from './timeouts.js';
  */
 const explorationMaxIterations = (): number =>
   parseInt(process.env.EXPLORATION_MAX_ITERATIONS || '8');
-const explorationMinIterations = (): number =>
+// Unused as of 2026-11-23 (lint pass); kept for reference.
+const _explorationMinIterations = (): number =>
   parseInt(process.env.EXPLORATION_MIN_ITERATIONS || '1');
 
 // =====================================================
@@ -163,7 +164,6 @@ export class LLMLoopService {
     let iterationCount = 0;
     let lastLLMResponse = ''; // Track last meaningful LLM response for fallback
     const maxIterations = explorationMaxIterations(); // Reduced from 24 to save costs
-    const minIterations = explorationMinIterations(); // Reduced from 3 - simple messages don't need iteration
 
     // Stop STARTING new work when out of time, and fall through to the same graceful exit
     // that max-iterations uses. Previously this called a checkTimeout() that THREW: nothing
@@ -394,12 +394,6 @@ export class LLMLoopService {
       } else {
         actionGuidance = '';
       }
-
-      // Calculate exploration depth requirements
-      const iterationCount = context.currentStep;
-      const minDepth = explorationMinIterations();
-      const canStop = iterationCount >= minDepth;
-      const progressIndicator = `[Step ${iterationCount + 1}/${explorationMaxIterations()}]`;
 
       // Check if previous iteration had errors
       const hasErrors = contextSummary.includes('failed') || contextSummary.includes('error');

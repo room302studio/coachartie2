@@ -11,7 +11,7 @@
  * - Aggregate thread data with metadata
  */
 
-import { Client, ChannelType, ForumChannel, ThreadChannel, Message, Collection } from 'discord.js';
+import { Client, ChannelType, ForumChannel, ThreadChannel, Message } from 'discord.js';
 import { logger } from '../../../shared/logger.js';
 
 export interface ForumThreadData {

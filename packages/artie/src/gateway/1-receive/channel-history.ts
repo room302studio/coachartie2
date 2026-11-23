@@ -399,7 +399,7 @@ export async function fetchChannelWindow(
       limit: MAX_CHANNEL_HISTORY,
       before: message.id,
     });
-  } catch (e) {
+  } catch {
     logger.warn(`Failed to prefetch channel window [${shortId}] — transforms will re-fetch`);
   }
   return prefetchedChannel;

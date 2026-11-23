@@ -170,7 +170,7 @@ const UNKNOWN_JUDGMENT_PRICING: [number, number] = [0.005, 0.025];
 export async function shouldProactivelyAnswer(
   message: Message,
   guildContext: string,
-  correlationId: string
+  _correlationId: string
 ): Promise<boolean> {
   try {
     // Don't spend a judgment LLM call if we couldn't act on a "yes" anyway — the ambient
@@ -356,7 +356,7 @@ JSON response:`;
         );
         return shouldAnswer;
       }
-    } catch (parseError) {
+    } catch {
       logger.warn(`Failed to parse judgment JSON: ${rawResponse}`);
     }
 

@@ -368,7 +368,8 @@ function mergeTagsIfExplicit(explicitTags: unknown, basicTags: string[]): string
   return basicTags;
 }
 
-function ensureWrappedArray(value: unknown, parser: (v: unknown) => unknown[]): unknown[] {
+// Unused as of 2026-11-23 (lint pass); kept for reference.
+function _ensureWrappedArray(value: unknown, parser: (v: unknown) => unknown[]): unknown[] {
   if (Array.isArray(value)) {
     return value;
   }

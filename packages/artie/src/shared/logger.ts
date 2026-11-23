@@ -25,9 +25,9 @@ const transports: winston.transport[] = [
     format: winston.format.combine(
       winston.format.colorize(),
       winston.format.timestamp({ format: 'HH:mm:ss' }),
-      winston.format.printf(({ timestamp, level, service, message, ...meta }: any) => {
+      winston.format.printf(({ timestamp, level: _level, service, message, ...meta }: any) => {
         // Skip pid and nodeVersion
-        const { pid, nodeVersion, ...cleanMeta } = meta;
+        const { pid: _pid, nodeVersion: _nodeVersion, ...cleanMeta } = meta;
 
         // Collapse message to single line
         const cleanMessage = collapseWhitespace(String(message)).trim();
@@ -228,7 +228,7 @@ export const structuredLogger: StructuredLogger = {
 };
 
 // Request/Response logging middleware
-export const createRequestLogger = (serviceName: string) => {
+export const createRequestLogger = (_serviceName: string) => {
   return (req: any, res: any, next: any) => {
     const requestId = Math.random().toString(36).substring(7);
     const startTime = Date.now();

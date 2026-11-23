@@ -10,7 +10,7 @@
  * Runs on startup and periodically to keep mappings fresh.
  */
 
-import { Client, GuildMember } from 'discord.js';
+import { Client } from 'discord.js';
 import { Octokit } from '@octokit/rest';
 import { octokitLog } from './octokit-log.js';
 import { logger } from '../../../shared/logger.js';

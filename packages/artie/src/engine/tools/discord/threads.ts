@@ -1,147 +1,97 @@
-import { RegisteredCapability } from '../../5-tool-loop/registry.js';
+/**
+ * discord-threads: start a thread, or read one. Until 2026-11-23 both actions went to a gateway
+ * route that was never served, so every call got a 404 and Artie thought he could use threads.
+ * Reading now goes through the same scope as discord-channels (readChannelMessages: this server,
+ * only threads everyone in the conversation can read). Starting one follows
+ * gateway/routes/discord-write.ts: the channel we're talking in anywhere, any channel in Room 302,
+ * never a ping. The server and conversation channel come from the turn context, never params.
+ * Channel names work ("#general"); the registry resolves them first.
+ */
+import { RegisteredCapability, CapabilityContext } from '../../5-tool-loop/registry.js';
 import { logger } from '../../../shared/logger.js';
 import * as gateway from '../../../gateway/api.js';
 
-interface _DiscordThreadParams {
-  action: 'create_thread' | 'get_thread_messages';
-  channelId: string;
-  threadId?: string;
-  threadName?: string;
-  message?: string;
-  limit?: number;
-}
-
-// Wave 9: the gateway has never served this tool's routes (no handler for POST
-// /api/channels/:id/threads or GET /api/channels/:id/threads/:id/messages): over HTTP every call
-// got express's 404. In-process, gateway.unservedRoute answers the same 404, so the tool fails
-// exactly as it always has. Serving them is new work, not part of the move.
-
-function ensureArray<T>(value: any): T[] {
-  if (Array.isArray(value)) {
-    return value;
+function optionalString(value: unknown): string | undefined {
+  if (value === undefined || value === null || value === '') {
+    return undefined;
   }
-  return [];
+  return String(value);
 }
 
+export async function threadsHandler(params: Record<string, unknown>, context?: CapabilityContext): Promise<string> {
+  const action = String(params.action || '');
+  const guildId = context?.guildId ?? null;
+  if (!guildId) {
+    return JSON.stringify({ success: false, error: 'threads only work in a server conversation, not in DMs' });
+  }
+  try {
+    if (action === 'get_thread_messages') {
+      const threadId = optionalString(params.threadId) || optionalString(context?.channelId);
+      if (!threadId) {
+        return JSON.stringify({ success: false, error: 'name a thread (threadId)' });
+      }
+      const resp = await gateway.readChannelMessages(guildId, context?.userId ?? null, {
+        channelId: threadId,
+        fromChannelId: optionalString(context?.channelId),
+        limit: Number(params.limit),
+        before: optionalString(params.before),
+      });
+      return JSON.stringify(resp.body);
+    }
+    if (action === 'create_thread') {
+      const resp = await gateway.createThread(guildId, context?.channelId, {
+        channelId: optionalString(params.channelId),
+        name: String(params.threadName || params.name || ''),
+        message: optionalString(params.message),
+        messageId: optionalString(params.messageId),
+      });
+      return JSON.stringify(resp.body);
+    }
+    throw new Error(`Unknown discord-threads action: ${action}`);
+  } catch (error) {
+    if (error instanceof Error && error.message.startsWith('Unknown discord-threads action')) {
+      throw error;
+    }
+    logger.error('[discord-threads] failed:', error);
+    return JSON.stringify({ success: false, error: 'threads unavailable: discord may be down' });
+  }
+}
 
 export const discordThreadsCapability: RegisteredCapability = {
   name: 'discord-threads',
   emoji: '🧵',
+  actions: {
+    create_thread: {
+      effect: 'discord',
+      params: {
+        threadName: { type: 'string', description: 'Thread title (max 100 chars)', required: true, aliases: ['name'] },
+        message: { type: 'string', description: 'Optional first message in the thread' },
+        messageId: { type: 'string', description: 'Start the thread from this existing message' },
+        channelId: {
+          type: 'string',
+          description: 'Where to start it ("#general"); defaults to this channel. Other channels only in Room 302.',
+        },
+      },
+    },
+    get_thread_messages: {
+      effect: 'read',
+      params: {
+        threadId: { type: 'string', description: 'The thread (id, <#mention> or its title); defaults to this one' },
+        limit: { type: 'integer', description: 'How many recent messages (default 10, max 25)' },
+        before: { type: 'string', description: 'Only messages before this message id (page back)' },
+      },
+    },
+  },
   supportedActions: ['create_thread', 'get_thread_messages'],
   description:
-    'Manage Discord threads - create new threads in channels or retrieve messages from existing threads',
-  requiredParams: ['action', 'channelId'],
-
-  handler: async (params: any, _content: string | undefined) => {
-    const action = params.action as string;
-
-    try {
-      switch (action) {
-        case 'create_thread':
-          return JSON.stringify(await createThread(params));
-        case 'get_thread_messages':
-          return JSON.stringify(await getThreadMessages(params));
-        default:
-          throw new Error(`Unknown discord-threads action: ${action}`);
-      }
-    } catch (error) {
-      logger.error(`Discord threads error: ${error}`);
-      throw error;
-    }
-  },
+    'Start a thread (in the channel you are talking in, or any channel in Room 302) or read a ' +
+    'thread you can see, oldest first with message ids. Replies to someone inside a thread already ' +
+    'land in that thread, so you only need this to start one or read another.',
+  requiredParams: ['action'],
+  examples: [
+    '<capability name="discord-threads" action="create_thread" threadName="Crossover bug notes" message="Collecting repro steps here." />',
+    '<capability name="discord-threads" action="get_thread_messages" threadId="Crash on load" />',
+  ],
+  handler: async (params: Record<string, unknown>, _content: string | undefined, context?: CapabilityContext) =>
+    threadsHandler(params, context),
 };
-
-/**
- * Create a new thread in a Discord channel
- */
-async function createThread(params: {
-  channelId: string;
-  threadName: string;
-  message?: string;
-}): Promise<any> {
-  const { channelId, threadName, message } = params;
-
-  logger.info(`🧵 Creating thread "${threadName}" in channel ${channelId}`);
-
-  if (!channelId) {
-    throw new Error('Missing required parameter: channelId');
-  }
-
-  if (!threadName) {
-    throw new Error('Missing required parameter: threadName');
-  }
-
-  try {
-    const response = await gateway.unservedRoute('POST', `/api/channels/${channelId}/threads`);
-
-    if (!gateway.isOk(response)) {
-      throw new Error(`Discord service error: ${response.status} ${gateway.statusText(response)}`);
-    }
-
-    const thread = response.body as any;
-
-    return {
-      success: true,
-      data: {
-        threadId: thread.id,
-        threadName: thread.name,
-        channelId: thread.parent_id || channelId,
-        created: thread.created_timestamp || new Date().toISOString(),
-      },
-    };
-  } catch (error) {
-    logger.error('❌ Failed to create Discord thread:', error);
-    throw error;
-  }
-}
-
-/**
- * Get all messages in a Discord thread
- */
-async function getThreadMessages(params: {
-  channelId: string;
-  threadId: string;
-  limit?: number;
-}): Promise<any> {
-  const { channelId, threadId, limit = 50 } = params;
-
-  logger.info(`📬 Fetching messages from thread ${threadId} in channel ${channelId}`);
-
-  if (!channelId) {
-    throw new Error('Missing required parameter: channelId');
-  }
-
-  if (!threadId) {
-    throw new Error('Missing required parameter: threadId');
-  }
-
-  try {
-    const response = await gateway.unservedRoute('GET', `/api/channels/${channelId}/threads/${threadId}/messages`);
-
-    if (!gateway.isOk(response)) {
-      throw new Error(`Discord service error: ${response.status} ${gateway.statusText(response)}`);
-    }
-
-    const messages = response.body as any;
-    const messageArray = ensureArray(messages);
-
-    return {
-      success: true,
-      data: {
-        channelId,
-        threadId,
-        messageCount: messageArray.length,
-        messages: messageArray.map((msg: any) => ({
-          id: msg.id,
-          author: msg.author?.username || 'Unknown',
-          content: msg.content,
-          timestamp: msg.timestamp,
-          attachments: msg.attachments?.length || 0,
-        })),
-      },
-    };
-  } catch (error) {
-    logger.error('❌ Failed to fetch Discord thread messages:', error);
-    throw error;
-  }
-}

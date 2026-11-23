@@ -53,7 +53,7 @@ Be concise (2-3 sentences) and factual. Don't make assumptions beyond what's dir
       promptLastFetched = now;
       return cachedObservationPrompt;
     }
-  } catch (error) {
+  } catch {
     logger.warn('Observation handler: Could not load prompt from database, using fallback');
   }
 

@@ -1,12 +1,9 @@
 // XML-LOOP: delete after v3 soak (TOOL_LOOP=xml). The whole module: the XML capability
 // parser and its <read>/<recall> shortcut hints. Native tool calls never pass through here.
 import { logger } from '../../shared/logger.js';
-import { IncomingMessage } from '../../shared/queue/types.js';
-import { openRouterService } from '../4-generate/openrouter.js';
 import { capabilityRegistry, AUTO_INJECTED_PARAMS, resolveToolCall } from './registry.js';
 import { capabilityXMLParser } from './xml-parser.js';
-import { conscienceLLM } from '../health/conscience.js';
-import { ExtractedCapability, OrchestrationContext } from '../2-turn/types.js';
+import { ExtractedCapability } from '../2-turn/types.js';
 
 // =====================================================
 // CAPABILITY PARSER SERVICE

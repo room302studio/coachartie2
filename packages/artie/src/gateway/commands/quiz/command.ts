@@ -362,7 +362,7 @@ async function handleStart(
       deckId,
       questionCount,
       aiJudge,
-      onTimeout: async (timedOutSession: QuizSession) => {
+      onTimeout: async (_timedOutSession: QuizSession) => {
         try {
           const { answer, nextSession } = await quizSessionManager.handleTimeout(
             interaction.channelId

@@ -184,7 +184,7 @@ export const skillsCapability: RegisteredCapability = {
 - disable [name]: Disable a skill
 - reload [name]: Reload a skill from disk
 - paths: Show skill loading paths`,
-  handler: async (params, content, ctx) => {
+  handler: async (params, content, _ctx) => {
     const { action } = params;
     const skillName = params.name || params.skill || content;
 

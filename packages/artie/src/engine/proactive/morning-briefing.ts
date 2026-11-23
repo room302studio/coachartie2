@@ -777,7 +777,6 @@ function generateHealthSection(): string {
   }
   const h7 = parseInt(hrv7d) || 0;
   const h30 = parseInt(hrv30d) || h7;
-  const rhrVal = parseInt(rhr) || 0;
   const bd = parseFloat(breathingDist) || 0;
   const bdAvg = parseFloat(breathingAvg) || bd;
 

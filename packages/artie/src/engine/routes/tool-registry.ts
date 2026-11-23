@@ -1,5 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { logger } from '../../shared/logger.js';
+import { mintTrusted } from '../../shared/trusted-ids.js';
+import type { CapabilityContext } from '../5-tool-loop/registry.js';
 import { getErrorMessage } from '../../shared/errors.js';
 import { type ApiResult, sendResult } from '../../shared/api-result.js';
 
@@ -325,11 +327,11 @@ export async function executeTool(routeParams: { name: string }, body: any): Pro
     }
 
     // Build context from request body
-    let context: any;
+    // A trust boundary, named (shared/trusted-ids.ts): this route is local-only, so its caller
+    // is our own process or EJ's tooling, and the ids it sends are taken as given.
+    let context: CapabilityContext | undefined;
     if (guildId || channelId || userId || messageId) {
-      context = { guildId, channelId, userId, messageId };
-    } else {
-      context = undefined;
+      context = mintTrusted({ guildId, channelId, userId, messageId }, 'local-api');
     }
 
     const result = await capabilityRegistry.execute(name, action, params, content, context);

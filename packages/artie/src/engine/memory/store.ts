@@ -130,7 +130,8 @@ class AsyncQueue {
         }
       });
 
-      this.processQueue();
+      // Fire-and-forget on purpose: processQueue catches every operation's error itself.
+      void this.processQueue();
     });
   }
 

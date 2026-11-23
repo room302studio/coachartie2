@@ -232,8 +232,8 @@ function formatHackerNews(stories: HNStory[]): string {
  */
 async function handleTrendWatcher(
   params: TrendWatcherParams,
-  content?: string,
-  ctx?: CapabilityContext
+  _content?: string,
+  _ctx?: CapabilityContext
 ): Promise<string> {
   const { action, source = 'all', language, timeRange = 'daily', limit = 10 } = params;
 

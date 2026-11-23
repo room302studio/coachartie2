@@ -21,6 +21,7 @@
  */
 import type { Client } from 'discord.js';
 import { type ApiResult, wire } from '../shared/api-result.js';
+import type { TrustedGuildId, TrustedUserId, TrustedChannelId } from '../shared/trusted-ids.js';
 
 export type { ApiResult } from '../shared/api-result.js';
 export { isOk, statusText } from '../shared/api-result.js';
@@ -42,6 +43,37 @@ export function registerGatewayClient(client: Client | null): void {
 function client(): Client {
   if (!liveClient) throw new GatewayUnavailableError();
   return liveClient;
+}
+
+/** Discord channel types that hold messages or posts: text, announcement, threads, forum, media. */
+const NAMEABLE_CHANNEL_TYPES = new Set([0, 5, 10, 11, 12, 15, 16]);
+
+/**
+ * This guild's channels and cached threads as {id, name, public} for name lookup
+ * (engine/tools/discord/channel-names.ts). `public` = @everyone can view it. Empty when the
+ * gateway isn't up or the guild isn't cached, so a name simply doesn't resolve.
+ */
+export function guildChannelEntries(guildId: string): Array<{ id: string; name: string; public: boolean }> {
+  if (!liveClient) {
+    return [];
+  }
+  const guild = liveClient.guilds.cache.get(guildId);
+  if (!guild) {
+    return [];
+  }
+  const everyone = guild.roles.everyone;
+  const out: Array<{ id: string; name: string; public: boolean }> = [];
+  for (const ch of guild.channels.cache.values() as Iterable<any>) {
+    if (!ch || !NAMEABLE_CHANNEL_TYPES.has(ch.type)) {
+      continue;
+    }
+    // Threads are never suggested: a private thread under a public parent reads as viewable by
+    // @everyone in discord.js (membership isn't a permission), so its title could leak (Codex).
+    const isThread = Boolean(ch.isThread?.());
+    const perms = ch.permissionsFor?.(everyone);
+    out.push({ id: String(ch.id), name: String(ch.name || ''), public: !isThread && Boolean(perms?.has('ViewChannel')) });
+  }
+  return out;
 }
 
 const proxy = () => import('./routes/discord-proxy.js');
@@ -136,6 +168,119 @@ export async function canReadHistory(
   const c = client();
   const { requesterCanReadHistory } = await import('./1-receive/reaction-log.js');
   return requesterCanReadHistory(c, channelId, guildId, userId);
+}
+
+/**
+ * Search this guild's messages (Discord's guild search), limited to channels the asker can
+ * read; a non-member asker is judged as @everyone. The guild and asker come from the
+ * conversation, never from the model. See routes/message-search.ts.
+ */
+export async function searchGuildMessages(
+  guildId: TrustedGuildId | null,
+  askerId: TrustedUserId | null,
+  opts: import('./routes/message-search.js').SearchOptions
+): Promise<ApiResult> {
+  const c = client();
+  const { searchGuildMessages: search } = await import('./routes/message-search.js');
+  return search(c, guildId, askerId, opts);
+}
+
+// --- The scribe as a tool (rules in routes/scribe-control.ts) ---
+
+const scribe = () => import('./routes/scribe-control.js');
+
+export async function scribeStatus(
+  guildId: TrustedGuildId | null,
+  askerId: TrustedUserId | null,
+  fromChannelId: TrustedChannelId | undefined
+): Promise<ApiResult> {
+  const c = client();
+  return (await scribe()).scribeStatus(c, guildId, askerId, fromChannelId);
+}
+
+export async function scribeLastSummary(
+  guildId: TrustedGuildId | null,
+  askerId: TrustedUserId | null,
+  fromChannelId: TrustedChannelId | undefined
+): Promise<ApiResult> {
+  const c = client();
+  return (await scribe()).scribeLastSummary(c, guildId, askerId, fromChannelId);
+}
+
+export async function scribeStart(
+  guildId: TrustedGuildId | null,
+  userId: TrustedUserId | null,
+  fromChannelId: TrustedChannelId | undefined,
+  voiceChannelId: string | undefined
+): Promise<ApiResult> {
+  const c = client();
+  return (await scribe()).scribeStart(c, guildId, userId, fromChannelId, voiceChannelId);
+}
+
+export async function scribeStop(
+  guildId: TrustedGuildId | null,
+  userId: TrustedUserId | null,
+  fromChannelId: TrustedChannelId | undefined
+): Promise<ApiResult> {
+  const c = client();
+  return (await scribe()).scribeStop(c, guildId, userId, fromChannelId);
+}
+
+// --- Artie's own writes: threads, forum posts, edits (rules in routes/discord-write.ts) ---
+
+const writes = () => import('./routes/discord-write.js');
+
+export async function createThread(
+  guildId: TrustedGuildId | null,
+  fromChannelId: TrustedChannelId | undefined,
+  opts: import('./routes/discord-write.js').ThreadOptions
+): Promise<ApiResult> {
+  const c = client();
+  return (await writes()).createThread(c, guildId, fromChannelId, opts);
+}
+
+export async function createForumPost(
+  guildId: TrustedGuildId | null,
+  opts: import('./routes/discord-write.js').PostOptions
+): Promise<ApiResult> {
+  const c = client();
+  return (await writes()).createForumPost(c, guildId, opts);
+}
+
+export async function editOwnMessage(
+  guildId: TrustedGuildId | null,
+  who: { askerId: TrustedUserId | null; fromChannelId: TrustedChannelId | undefined; askerIsOwner: boolean },
+  opts: import('./routes/discord-write.js').EditOptions
+): Promise<ApiResult> {
+  const c = client();
+  return (await writes()).editOwnMessage(c, guildId, who, opts);
+}
+
+/** The audience check (routes/message-search.ts audienceReadable) for tools with their own fetch. */
+export async function audienceReadable(
+  guildId: TrustedGuildId,
+  askerId: TrustedUserId | null,
+  fromChannelId: TrustedChannelId | undefined,
+  channelId?: string
+): Promise<{ allowed: Set<string>; ok: boolean }> {
+  const c = client();
+  const { audienceReadable: check } = await import('./routes/message-search.js');
+  return check(c, guildId, askerId, fromChannelId, channelId);
+}
+
+/**
+ * Recent or pinned messages in one channel (the discord-channels tool), under the same scope as
+ * search: guild, asker and conversation channel come from the turn context. See
+ * routes/message-search.ts readChannelMessages.
+ */
+export async function readChannelMessages(
+  guildId: TrustedGuildId | null,
+  askerId: TrustedUserId | null,
+  opts: import('./routes/message-search.js').ReadOptions
+): Promise<ApiResult> {
+  const c = client();
+  const { readChannelMessages: read } = await import('./routes/message-search.js');
+  return read(c, guildId, askerId, opts);
 }
 
 export async function setNickname(guildId: string, body: { nickname?: string | null }): Promise<ApiResult> {

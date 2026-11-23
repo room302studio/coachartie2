@@ -14,7 +14,7 @@ import { octokitLog } from './octokit-log.js';
 import { logger } from '../../../shared/logger.js';
 import * as engine from '../../../engine/api.js';
 import { GITHUB_FEED_CHANNEL_ID } from '../../../shared/config/channels.js';
-import { getDb, eq, and } from '../../../shared/db/client.js';
+import { getDb, eq } from '../../../shared/db/client.js';
 import { githubRepoWatches } from '../../../shared/db/schema.js';
 
 interface OrgWatchConfig {

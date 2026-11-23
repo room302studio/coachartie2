@@ -86,7 +86,7 @@ export async function handleMessageAsIntent(
       if (hasMetroFile) {
         try {
           await message.react('👀');
-        } catch (e) {
+        } catch {
           logger.warn(`Failed to add 👀 reaction for metro file [${shortId}]`);
         }
       }

@@ -81,6 +81,27 @@ export default [
     },
   },
   {
+    // The no-any ratchet (EJ, 2026-11-23: "be strict as fuck"). Every file here has zero
+    // explicit `any`; a file joins once it's cleaned, and nothing ever leaves. Trust-sensitive
+    // code first: ids that scope a call must come from shared/trusted-ids.ts, and `any` is how
+    // a model-written id used to slip past that.
+    files: [
+      'packages/artie/src/shared/trusted-ids.ts',
+      'packages/artie/src/gateway/routes/discord-write.ts',
+      'packages/artie/src/gateway/routes/scribe-control.ts',
+      'packages/artie/src/engine/jobs/scribe/voice-memo.ts',
+      'packages/artie/src/engine/tools/media/scribe.ts',
+      'packages/artie/src/engine/tools/discord/channels.ts',
+      'packages/artie/src/engine/tools/discord/search.ts',
+      'packages/artie/src/engine/tools/discord/send-message.ts',
+      'packages/artie/src/engine/tools/discord/threads.ts',
+      'packages/artie/src/engine/tools/discord/user-history.ts',
+    ],
+    rules: {
+      '@typescript-eslint/no-explicit-any': 'error',
+    },
+  },
+  {
     ignores: [
       '**/node_modules/**',
       '**/dist/**',

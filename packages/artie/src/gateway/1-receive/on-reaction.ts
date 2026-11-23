@@ -310,7 +310,7 @@ export function setupReactionHandler(client: Client) {
             );
             break;
 
-          default:
+          default: {
             // Track ALL emoji reactions for community sentiment learning
             const sentiment = categorizeSentiment(emoji);
             if (sentiment) {
@@ -325,6 +325,7 @@ export function setupReactionHandler(client: Client) {
               logger.debug(`Untracked reaction emoji: ${emoji} [${shortId}]`);
             }
             return;
+          }
         }
       } catch (error) {
         logger.error(`Error handling reaction [${shortId}]:`, {
@@ -719,7 +720,7 @@ async function handleFeedbackReaction(
         if (ackReaction) {
           await ackReaction.users.remove(reaction.message.client.user!.id);
         }
-      } catch (error) {
+      } catch {
         // Silent cleanup
       }
     }, 3000);

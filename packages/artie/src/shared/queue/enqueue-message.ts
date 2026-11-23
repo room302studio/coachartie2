@@ -22,7 +22,7 @@ function getMessageQueue(): Queue<IncomingMessage> | null {
     try {
       messageQueue = createQueue<IncomingMessage>(QUEUES.INCOMING_MESSAGES);
       queueInitialized = true;
-    } catch (error) {
+    } catch {
       logger.warn('Failed to create message queue - Redis may be unavailable');
       return null;
     }

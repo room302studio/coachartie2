@@ -334,7 +334,7 @@ class MentionProxyService {
       case 'any_mention':
         return true;
 
-      case 'questions_only':
+      case 'questions_only': {
         // Basic question detection - checks for ? or question words
         // Note: The judgment layer (judgeIfShouldRespond) uses LLM for smart detection
         const lowerContent = content.toLowerCase();
@@ -355,13 +355,15 @@ class MentionProxyService {
           lowerContent.startsWith('do ') ||
           lowerContent.startsWith('does ')
         );
+      }
 
-      case 'keywords':
+      case 'keywords': {
         if (!rule.keywords || rule.keywords.length === 0) {
           return true; // No keywords = match any
         }
         const contentLower = content.toLowerCase();
         return rule.keywords.some((keyword) => contentLower.includes(keyword.toLowerCase()));
+      }
 
       default:
         return false;

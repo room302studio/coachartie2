@@ -8,7 +8,6 @@ import { Client, AttachmentBuilder, PollLayoutType } from 'discord.js';
 import { mentionProxyRouter } from './mention-proxy-api.js';
 import { violatesOutputSafety } from '../4-reply/output-safety.js';
 import { readFileSync, writeFileSync, existsSync, appendFileSync } from 'fs';
-import { join } from 'path';
 import { type ApiResult, sendResult } from '../../shared/api-result.js';
 import { getErrorMessage } from '../../shared/errors.js';
 
@@ -91,7 +90,8 @@ function loadPresenceInbox(): any[] {
 }
 
 // Append to inbox
-function appendPresenceInbox(msg: any): void {
+// Unused as of 2026-11-23 (lint pass); kept for reference.
+function _appendPresenceInbox(msg: any): void {
   appendFileSync(PRESENCE_INBOX_PATH, JSON.stringify(msg) + '\n');
 }
 
@@ -611,7 +611,7 @@ export async function addReaction(discordClient: Client, params: Record<string, 
 
 export async function sendPresenceCheckIn(discordClient: Client, body: any): Promise<ApiResult> {
   try {
-    const { message, context } = body;
+    const { message } = body;
 
     if (!message) {
       return reply(400, {

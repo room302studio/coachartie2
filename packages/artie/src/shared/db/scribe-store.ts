@@ -176,6 +176,17 @@ export function getActiveScribeSessionForGuild(guildId: string): ScribeSession |
   return null;
 }
 
+/** The most recent finished session in this guild (the scribe tool's "last time"). */
+export function getLastFinishedScribeSession(guildId: string): ScribeSession | null {
+  ensureTables();
+  const row = getSyncDb().get<SessionRow>(
+    `SELECT * FROM scribe_sessions WHERE guild_id = ? AND status != 'active' ORDER BY created_at DESC LIMIT 1`,
+    [guildId]
+  );
+  if (row) return fromRow(row);
+  return null;
+}
+
 /** Add to the running audio-seconds/cost totals. Returns the session's new total seconds. */
 export function addScribeUsage(sessionId: string, deltaSeconds: number, deltaCostUsd: number): number {
   ensureTables();

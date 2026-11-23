@@ -2,6 +2,10 @@ import type { RegisteredCapability, CapabilityContext } from '../../5-tool-loop/
 import { logger } from '../../../shared/logger.js';
 import * as gateway from '../../../gateway/api.js';
 import { getErrorMessage } from '../../../shared/errors.js';
+import { isOwner } from '../../../shared/config/owner.js';
+import { mintTrustedGuild, type TrustedGuildId } from '../../../shared/trusted-ids.js';
+import { isBlockedUser } from '../../../shared/blocklist.js';
+import { isOptedOut } from '../../../shared/privacy-opt-out.js';
 
 /**
  * Discord Forums Capability - Traverse and analyze Discord forum discussions
@@ -19,6 +23,31 @@ interface DiscordForumsParams {
   forumId?: string;
   threadId?: string;
   repo?: string; // For sync-to-github: owner/repo format or URL
+  /** Forums/channels the conversation's audience can read; undefined = no filter (EJ's DM). */
+  visibleIds?: Set<string>;
+}
+
+function stringOrUndefined(value: unknown): string | undefined {
+  if (typeof value === 'string') {
+    return value;
+  }
+  return undefined;
+}
+
+/** Forums the audience may see: all of them when there's no filter (EJ's DM). */
+function visibleForums(forums: any[], visibleIds: Set<string> | undefined): any[] {
+  if (!visibleIds) {
+    return forums;
+  }
+  return forums.filter((f: any) => visibleIds.has(String(f?.id)));
+}
+
+/** Thread messages minus opted-out and banned authors (same rule as search). */
+function withoutHiddenAuthors(messages: any[]): any[] {
+  return messages.filter((m: any) => {
+    const id = String(m?.author?.id || '');
+    return !isBlockedUser(id) && !isOptedOut(id);
+  });
 }
 
 const FETCH_TIMEOUT = 30000; // 30 second timeout
@@ -158,12 +187,46 @@ const handler = async (
   content?: string,
   context?: CapabilityContext
 ): Promise<string> => {
-  // Normalize parameters: accept both snake_case and camelCase from LLM. The guild defaults to
-  // the conversation's (guildId is engine-filled, never part of the model's schema).
-  const guildId = params.guildId || params.guild_id || context?.guildId;
+  // Normalize parameters: accept both snake_case and camelCase from LLM.
   const forumId = params.forumId || params.forum_id;
   const threadId = params.threadId || params.thread_id;
   const action = params.action;
+
+  // Scope (2026-11-23, same rule as discord-search): the server is the conversation's, never one
+  // the model names, and every forum or thread must be readable by everyone in the conversation.
+  // Before this a model-written guildId reached any server Artie is in, and get-thread read any
+  // thread id at all. Only EJ, in a DM, may name a server (he is the whole audience there).
+  const ownerDm = !context?.guildId && isOwner(String(context?.userId || ''));
+  let guildId: TrustedGuildId | undefined = context?.guildId;
+  if (ownerDm) {
+    guildId = mintTrustedGuild(params.guildId || params.guild_id, 'owner-dm-choice');
+  }
+  if (!guildId && !ownerDm) {
+    return 'Discord forums only work in a server conversation: they cover the server you are talking in.';
+  }
+  let visibleIds: Set<string> | undefined;
+  if (!ownerDm && guildId) {
+    // Every id the call carries is checked on its own: an action may fetch either (Codex).
+    const scope = await gateway.audienceReadable(guildId, context?.userId ?? null, context?.channelId);
+    for (const [kind, id] of [
+      ['forum', forumId],
+      ['thread', threadId],
+    ] as const) {
+      if (!id) {
+        continue;
+      }
+      const check = await gateway.audienceReadable(
+        guildId,
+        context?.userId ?? null,
+        context?.channelId,
+        String(id)
+      );
+      if (!check.ok) {
+        return `That ${kind} isn't one everyone in this conversation can read (or isn't in this server), so I won't open it here.`;
+      }
+    }
+    visibleIds = scope.allowed;
+  }
 
   logger.info(`🔍 Discord-forums handler: Raw params: ${JSON.stringify(params)}`);
   logger.info(
@@ -177,6 +240,7 @@ const handler = async (
     forumId,
     threadId,
     repo: params.repo,
+    visibleIds,
   };
 
   logger.info(`🔍 Discord-forums handler: normalizedParams: ${JSON.stringify(normalizedParams)}`);
@@ -197,6 +261,17 @@ const handler = async (
 
       case 'sync-to-github':
         return await syncToGitHub(normalizedParams, content);
+
+      case 'create-post': {
+        // guildId here is the conversation's (or EJ's DM pick); the Room 302 rule is in the gateway.
+        const resp = await gateway.createForumPost(guildId ?? null, {
+          forumId: String(forumId ?? ''),
+          title: String(params.title ?? ''),
+          message: String(params.message ?? ''),
+          tag: stringOrUndefined(params.tag),
+        });
+        return JSON.stringify(resp.body);
+      }
 
       default:
         throw new Error(`Unsupported action: ${action}`);
@@ -251,7 +326,7 @@ async function listForums(params: DiscordForumsParams): Promise<string> {
   }
 
   const data = response.body as any;
-  const forums = data.forums || data;
+  const forums = visibleForums(data.forums || data, params.visibleIds);
 
   logger.info(`📋 Listed ${forums.length} forums in guild ${guildId}`);
 
@@ -332,8 +407,9 @@ async function listThreads(params: DiscordForumsParams): Promise<string> {
         );
         if (gateway.isOk(forumsResponse)) {
           const forumsData = forumsResponse.body as any;
-          if (forumsData.forums && forumsData.forums.length > 0) {
-            const forumList = forumsData.forums
+          const shown = visibleForums(forumsData.forums || [], params.visibleIds);
+          if (shown.length > 0) {
+            const forumList = shown
               .map((f: any) => `- ${f.name} (ID: ${f.id})`)
               .join('\n');
             throw new Error(
@@ -361,7 +437,11 @@ async function listThreads(params: DiscordForumsParams): Promise<string> {
   }
 
   const data = response.body as any;
-  const threads = data.threads || data;
+  // Posts by opted-out or banned people are left out, title and preview included.
+  const threads = (data.threads || data).filter((t: any) => {
+    const id = String(t?.owner?.id || t?.author?.id || t?.ownerId || '');
+    return !isBlockedUser(id) && !isOptedOut(id);
+  });
 
   logger.info(`📝 Listed ${threads.length} threads in forum ${forumId}`);
 
@@ -466,7 +546,7 @@ async function getThread(params: DiscordForumsParams): Promise<string> {
   );
 
   // Extract messages with rich context
-  const messages = (thread.messages || []).map((m: any, i: number) => ({
+  const messages = withoutHiddenAuthors(thread.messages || []).map((m: any, i: number) => ({
     position: i + 1,
     id: m.id,
     author: {
@@ -741,6 +821,16 @@ export const discordForumsCapability: RegisteredCapability = {
         repo: { type: 'string', description: 'GitHub repo, owner/repo', required: true },
       },
     },
+    // Starts a post in a Room 302 forum (gateway/routes/discord-write.ts); never pings anyone.
+    'create-post': {
+      effect: 'discord',
+      params: {
+        forumId: { ...FORUM_ID, required: true },
+        title: { type: 'string', description: 'Post title (max 100 chars)', required: true },
+        message: { type: 'string', description: 'The first message of the post', required: true },
+        tag: { type: 'string', description: 'A forum tag by name (required by some forums)' },
+      },
+    },
   },
   supportedActions: [
     'list-forums',
@@ -748,9 +838,10 @@ export const discordForumsCapability: RegisteredCapability = {
     'get-thread',
     'get-forum-summary',
     'sync-to-github',
+    'create-post',
   ],
   description:
-    'Traverse Discord forum channels, read discussions, and sync them to GitHub issues. Use list-forums to discover available forums, list-threads to see discussions, get-thread for full thread details, get-forum-summary for overview, and sync-to-github to create GitHub issues from forum threads.',
+    'Traverse Discord forum channels, read discussions, and sync them to GitHub issues. Use list-forums to discover available forums, list-threads to see discussions, get-thread for full thread details, get-forum-summary for overview, sync-to-github to create GitHub issues from forum threads, and create-post to start a new post in a Room 302 forum.',
   requiredParams: [],
   examples: [
     '<capability name="discord-forums" action="list-threads" forumId="123456789" />',

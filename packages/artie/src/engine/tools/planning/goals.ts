@@ -78,7 +78,7 @@ async function resolveGoalId(db: ReturnType<typeof getDb>, id: string, userId: s
   error?: string;
 }> {
   // Try exact match first
-  let goals = await db.select().from(objectives).where(eq(objectives.id, id)).limit(1);
+  const goals = await db.select().from(objectives).where(eq(objectives.id, id)).limit(1);
 
   if (goals.length > 0) {
     return { goal: goals[0] };
@@ -468,7 +468,7 @@ async function getActiveGoals(userId: string = 'ej'): Promise<Objective[]> {
  * Get stalled goals (no activity in 3+ days)
  */
 export async function getStalledGoals(userId: string = 'ej'): Promise<Objective[]> {
-  const db = getDb();
+  getDb();
   const threeDaysAgo = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString();
 
   const activeGoals = await getActiveGoals(userId);

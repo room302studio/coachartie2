@@ -44,7 +44,6 @@ import { fileURLToPath } from 'url';
  */
 function findRepoRoot(startDir: string): string {
   let dir = startDir;
-  // eslint-disable-next-line no-constant-condition
   while (true) {
     if (existsSync(join(dir, 'pnpm-workspace.yaml'))) return dir;
     const parent = dirname(dir);

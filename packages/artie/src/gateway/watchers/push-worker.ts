@@ -3,7 +3,6 @@ import {
   ActionRowBuilder,
   ButtonBuilder,
   SelectMenuBuilder,
-  ModalBuilder,
 } from 'discord.js';
 import { createWorker, testRedisConnection } from '../../shared/queue/redis.js';
 import { QUEUES } from '../../shared/queue/names.js';
@@ -289,7 +288,7 @@ async function sendSelectMessage(channel: any, userMessage: string, uiData: any)
   });
 }
 
-async function sendModalInfo(channel: any, userMessage: string, uiData: any): Promise<void> {
+async function sendModalInfo(channel: any, userMessage: string, _uiData: any): Promise<void> {
   if (!('send' in channel)) return;
 
   // Modals can't be sent directly - they need to be shown in response to interactions
@@ -299,7 +298,7 @@ async function sendModalInfo(channel: any, userMessage: string, uiData: any): Pr
   });
 }
 
-async function sendContextMenuInfo(channel: any, userMessage: string, uiData: any): Promise<void> {
+async function sendContextMenuInfo(channel: any, userMessage: string, _uiData: any): Promise<void> {
   if (!('send' in channel)) return;
 
   // Context menus need to be registered as application commands

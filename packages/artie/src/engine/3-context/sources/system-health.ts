@@ -7,7 +7,7 @@ import { ContextSource } from './types.js';
 /**
  * Add credit/balance warnings so Artie knows to switch to cheaper models.
  */
-export async function addCreditWarnings(sources: ContextSource[]): Promise<void> {
+export async function addCreditWarnings(_sources:ContextSource[]): Promise<void> {
   try {
     const creditMonitor = CreditMonitor.getInstance();
     const creditInfo = await creditMonitor.getCurrentBalance();

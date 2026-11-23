@@ -77,7 +77,7 @@ function getRecentFiles(
 async function handleVPSClaude(
   params: VPSClaudeParams,
   content?: string,
-  ctx?: CapabilityContext
+  _ctx?: CapabilityContext
 ): Promise<string> {
   const { action } = params;
 

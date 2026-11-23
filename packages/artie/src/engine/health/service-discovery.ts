@@ -135,7 +135,7 @@ export class ServiceDiscovery {
           return service;
         }
       }
-    } catch (error) {
+    } catch {
       // Silently fail - Redis unavailable
     }
 
@@ -175,7 +175,7 @@ export class ServiceDiscovery {
           }
         }
       }
-    } catch (error) {
+    } catch {
       // Silently fail - Redis unavailable
     }
 
@@ -211,7 +211,7 @@ export class ServiceDiscovery {
       try {
         await redis.del(`${ServiceDiscovery.REDIS_PREFIX}${serviceName}`);
         logger.info(`📡 Unregistered ${serviceName} service`);
-      } catch (error) {
+      } catch {
         // Silently fail on shutdown - don't log errors
       }
     }
@@ -239,7 +239,7 @@ export class ServiceDiscovery {
               90,
               JSON.stringify(service)
             );
-          } catch (error) {
+          } catch {
             // Silently fail - don't spam logs for ping failures
           }
         }

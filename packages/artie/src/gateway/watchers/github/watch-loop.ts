@@ -13,7 +13,6 @@ import { githubRepoWatches } from '../../../shared/db/schema.js';
 import {
   GitHubPollerService,
   initializeGitHubPoller,
-  getGitHubPoller,
   type GitHubSyncEvent,
   type PollerConfig,
 } from './poller.js';
