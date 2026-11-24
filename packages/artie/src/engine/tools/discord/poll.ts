@@ -103,7 +103,10 @@ export async function pollTarget(params: Record<string, unknown>, context?: Capa
     return { ok: false, error: 'no such channel in this server' };
   }
   if (!(await gateway.mayPostElsewhere(guildId)) || !isOwner(String(context?.userId ?? ''))) {
-    return { ok: false, error: 'I only post polls in the channel we are talking in (EJ can send one elsewhere in Room 302)' };
+    return {
+      ok: false,
+      error: 'I only post polls in the channel we are talking in (EJ can send one elsewhere in Room 302 or the SB2 alpha server)',
+    };
   }
   return { ok: true, channelId: asked };
 }

@@ -69,7 +69,7 @@ export const discordThreadsCapability: RegisteredCapability = {
         messageId: { type: 'string', description: 'Start the thread from this existing message' },
         channelId: {
           type: 'string',
-          description: 'Where to start it ("#general"); defaults to this channel. Other channels only in Room 302.',
+          description: 'Where to start it ("#general"); defaults to this channel. Other channels only in Room 302 and the SB2 alpha server.',
         },
       },
     },
@@ -84,7 +84,7 @@ export const discordThreadsCapability: RegisteredCapability = {
   },
   supportedActions: ['create_thread', 'get_thread_messages'],
   description:
-    'Start a thread (in the channel you are talking in, or any channel in Room 302) or read a ' +
+    'Start a thread (in the channel you are talking in, or any channel in Room 302 or the SB2 alpha server) or read a ' +
     'thread you can see, oldest first with message ids. Replies to someone inside a thread already ' +
     'land in that thread, so you only need this to start one or read another.',
   requiredParams: ['action'],

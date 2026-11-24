@@ -45,9 +45,6 @@ export function refOf(params: Record<string, unknown>, context?: CapabilityConte
   };
 }
 
-// Room 302 Studio Guild whitelist
-const WHITELISTED_GUILD_IDS = ['932719842522443928'];
-
 export const discordSendMessageCapability: RegisteredCapability = {
   name: 'discord-send-message',
   emoji: '💬',
@@ -100,7 +97,8 @@ export const discordSendMessageCapability: RegisteredCapability = {
   },
   supportedActions: ['send_message', 'edit_message', 'delete_message', 'pin_message', 'unpin_message'],
   description:
-    'send_message: post to a channel in Room 302 (from a Room 302 conversation; EJ may also do it from his DM); ' +
+    'send_message: post to a channel in Room 302 or the SB2 pre-alpha server (from a conversation in that ' +
+    'server; EJ may also do it from his DM); ' +
     'add buttons and/or options to put clickable buttons, form buttons or a dropdown under the post. ' +
     'edit_message: fix a message YOU already sent in this server (channelId + messageId + message, ' +
     'the new full text) instead of posting a correction. ' +
@@ -196,12 +194,9 @@ async function sendMessage(params: {
     };
   }
 
-  // Check guild whitelist
-  if (!WHITELISTED_GUILD_IDS.includes(guildId)) {
-    logger.warn('❌ discord-send-message: Guild not whitelisted', {
-      guildId,
-      whitelistedCount: WHITELISTED_GUILD_IDS.length,
-    });
+  // The same list threads and forum posts use (discord-write.ts POST_GUILD_IDS).
+  if (!(await gateway.mayPostElsewhere(guildId))) {
+    logger.warn('❌ discord-send-message: Guild not whitelisted', { guildId });
     return {
       success: false,
       error: `Guild ${guildId} is not whitelisted for sending messages`,

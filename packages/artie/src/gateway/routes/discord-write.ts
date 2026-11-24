@@ -31,8 +31,10 @@ import { logger } from '../../shared/logger.js';
 import { getErrorMessage } from '../../shared/errors.js';
 import { isBlockedUser, scrubBlockedUserMentions } from '../../shared/blocklist.js';
 
-/** Room 302 Studio: where Artie may start threads and forum posts on his own. */
-export const POST_GUILD_IDS = new Set(['932719842522443928']);
+/** Room 302 Studio and SB2 pre-alpha: where Artie may post, start threads and forum posts on his own. */
+// The one list (send_message reads it too, through gateway/api.ts mayPostElsewhere).
+// SB2 pre-alpha testing added by EJ, 2026-11-24.
+export const POST_GUILD_IDS = new Set(['932719842522443928', '1561813873089323219']);
 /** Discord's message limit. Longer text is refused, never silently cut (Codex). */
 const MAX_LEN = 2000;
 const TOO_LONG = `that text is over Discord's ${MAX_LEN}-character limit: shorten it or split it`;
@@ -159,7 +161,7 @@ export async function createThread(
       return fail(404, 'no such channel in this server');
     }
     if (ch.id !== fromChannelId && !POST_GUILD_IDS.has(guildId)) {
-      return fail(403, 'outside Room 302 I only start threads in the channel we are talking in');
+      return fail(403, 'outside Room 302 and the SB2 alpha server I only start threads in the channel we are talking in');
     }
     if (isForumLike(ch)) {
       return fail(400, 'that is a forum: use discord-forums create-post');
@@ -214,7 +216,7 @@ export async function createForumPost(discordClient: Client, guildId: string | n
     return fail(400, 'forum posts only work inside a server');
   }
   if (!POST_GUILD_IDS.has(guildId)) {
-    return fail(403, 'I only start forum posts in Room 302');
+    return fail(403, 'I only start forum posts in Room 302 and the SB2 alpha server');
   }
   if (tooLong(opts.message)) {
     return fail(400, TOO_LONG);

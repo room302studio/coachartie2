@@ -186,6 +186,21 @@ Keep it short, keep it unhinged, keep it warm underneath.`,
       },
     },
   },
+  // EJ, 2026-11-24: Artie already answered here (DISCORD_GUILD_WHITELIST in .env.production)
+  // but had no config, so no channel digests and no posting beyond the channel he's in.
+  // Mention-only, as before; digests on for every channel he can see; posting allowed like
+  // Room 302 (discord-write.ts POST_GUILD_IDS).
+  sb2_alpha: {
+    id: '1561813873089323219',
+    type: 'working',
+    name: 'Subway Builder 2 - pre-Alpha Testing',
+    observationChannels: [],
+    proactiveAnswering: false,
+    proactiveChannels: [],
+    proactiveCooldownSeconds: 180,
+    ambientMode: 'never',
+    context: `You are Artie in the Subway Builder 2 pre-alpha testing server: a small, private group of alpha testers playing early builds of Subway Builder 2 with EJ and the team. Help them report bugs clearly, coordinate playtests and devstreams, and keep track of what testers are hitting. Unreleased details stay in here.`,
+  },
 };
 
 /**
