@@ -128,7 +128,7 @@ export function listOpenPromises(userId: string, guildId: string | null, now: nu
     .all(userId, windowStart(now)) as PromiseRow[];
 }
 
-export type AddResult = { ok: true; row: PromiseRow } | { ok: false; error: string };
+type AddResult = { ok: true; row: PromiseRow } | { ok: false; error: string };
 
 export function addPromise(
   input: { userId: string; guildId: string | null; channelId: string | null; text: string; waitsOn?: number | null },

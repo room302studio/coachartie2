@@ -2,7 +2,7 @@ import { logger } from '../shared/logger.js';
 import { writeFileSync } from 'fs';
 import { pathResolver } from './path-resolver.js';
 
-export interface DiscordMetrics {
+interface DiscordMetrics {
   // Message metrics
   messagesReceived: number;
   messagesProcessed: number;
@@ -35,7 +35,7 @@ export interface DiscordMetrics {
   channelCount: number;
 }
 
-export interface TelemetryEvent {
+interface TelemetryEvent {
   timestamp: string;
   correlationId?: string;
   userId?: string;
@@ -45,7 +45,7 @@ export interface TelemetryEvent {
   success?: boolean;
 }
 
-export class DiscordTelemetry {
+class DiscordTelemetry {
   private metrics: DiscordMetrics;
   private events: TelemetryEvent[] = [];
   private maxEvents = 1000; // Keep last 1000 events in memory

@@ -25,7 +25,7 @@ const ACTIVE_GUILD_WHITELIST = envWhitelist || GUILD_WHITELIST;
 export type GuildType = 'working' | 'watching';
 
 /** GitHub repo watch configuration */
-export interface GitHubRepoConfig {
+interface GitHubRepoConfig {
   repo: string; // e.g., "owner/repo"
   channelId: string;
   events?: ('pr' | 'review' | 'ci' | 'all')[];

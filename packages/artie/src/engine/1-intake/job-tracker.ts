@@ -1,6 +1,6 @@
 import { logger } from '../../shared/logger.js';
 
-export interface JobResult {
+interface JobResult {
   messageId: string;
   status: 'pending' | 'processing' | 'completed' | 'failed' | 'cancelled';
   result?: string;
@@ -16,7 +16,7 @@ export interface JobResult {
   capabilityEmojis?: string[]; // Emoji signatures of executing capabilities for Discord reactions
 }
 
-export class JobTracker {
+class JobTracker {
   private static instance: JobTracker;
   private jobs = new Map<string, JobResult>();
   private cleanupInterval: NodeJS.Timeout;

@@ -1,8 +1,8 @@
 import { logger } from '../../shared/logger.js';
 import { stripInternalMarkup, stripToolCalls } from '../../shared/clean-llm-output.js';
 import { MemoryEntourageInterface, MemoryEntourageResult } from './types.js';
-import { MemoryService, PERSONAL_TAG } from '../tools/core/memory.js';
-import { hybridDataLayer, recallGuildIds } from './store.js';
+import { MemoryService, PERSONAL_TAG } from '../capabilities/core/memory.js';
+import { memoryStore, recallGuildIds } from './store.js';
 import { isOwner } from '../../shared/config/owner.js';
 import { getSyncDb } from '../../shared/db/client.js';
 
@@ -24,7 +24,7 @@ const UNVERIFIED_OWNER_MENTION_IMPORTANCE_CAP = 6;
 /** Old memories that match the question by keyword, scoped like the recency pools. */
 function keywordCandidates(query: string, userId: string, guildId?: string) {
   if (!query) return [];
-  const hits = hybridDataLayer.keywordSearch(query, { userId, guildIds: recallGuildIds(guildId) });
+  const hits = memoryStore.keywordSearch(query, { userId, guildIds: recallGuildIds(guildId) });
   if (!guildId) return hits;
   return hits.map((m) => guardGuildMentionOfOwner(m, userId));
 }
@@ -34,7 +34,7 @@ function keywordCandidates(query: string, userId: string, guildId?: string) {
  * guild memory that names the owner used to join the SAME ranked candidate pool every other
  * user's recall draws from, with no signal that it was never verified and no cap on how
  * "important" (and therefore how likely to surface) it could claim to be. This can't change
- * who it was stored under (execute.ts already force-binds that to the real caller), only how
+ * who it was stored under (execute-tool-call.ts already force-binds that to the real caller), only how
  * it's framed and weighted once it's a recall candidate — so the ORIGINAL row in storage is
  * untouched; only what gets handed to the model is tagged and capped, and only when someone
  * other than the author is doing the asking.
@@ -227,7 +227,7 @@ const empty = (categories: string[], confidence = 0): MemoryEntourageResult => (
 });
 
 /** Words in a query that make recall weigh time (was six word-list regexes, one per row). */
-export const TEMPORAL_KEYWORDS: readonly string[] = [
+const TEMPORAL_KEYWORDS: readonly string[] = [
   ...['today', 'yesterday', 'tomorrow', 'now', 'recently', 'lately', 'earlier', 'later'],
   ...['morning', 'afternoon', 'evening', 'night', 'dawn', 'dusk'],
   ...['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'],
@@ -347,7 +347,7 @@ export class MemoryRecaller implements MemoryEntourageInterface {
     // (same idea as user memories being capped at 60); the top-K selection stays tiny.
     let guildMemories: any[] = [];
     if (guildId) {
-      const rawGuildMemories = await hybridDataLayer.getGuildMemories(guildId, 400);
+      const rawGuildMemories = await memoryStore.getGuildMemories(guildId, 400);
       // Security audit 2026-10-26 (sec-abuse.md Critical #2): only the shared guild pool
       // needs this — userMemories is already scoped to the asker, and artieMemories are
       // Artie's own, not a third party's claim about the owner.
@@ -917,5 +917,3 @@ export class MemoryRecaller implements MemoryEntourageInterface {
     };
   }
 }
-
-export const memoryRecaller = new MemoryRecaller();

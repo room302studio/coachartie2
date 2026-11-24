@@ -10,7 +10,7 @@ import { costMonitor } from '../budget/usage-ledger.js';
  * Detects when Artie is struggling and needs human intervention
  */
 
-export interface DistressSignals {
+interface DistressSignals {
   negativeReactionRate: number; // negative / total in last hour
   apiErrorRate: number; // errors / calls in last hour
   messageQueueDepth: number; // pending messages
@@ -18,7 +18,7 @@ export interface DistressSignals {
   timestamp: Date;
 }
 
-export interface DistressThresholds {
+interface DistressThresholds {
   negativeReactionRate: number; // 30% negative = distress
   apiErrorRate: number; // 10% errors = trouble
   messageQueueDepth: number; // 50+ backed up = overload

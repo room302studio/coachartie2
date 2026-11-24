@@ -14,6 +14,7 @@
 import { logger } from '../../shared/logger.js';
 import { getSyncDb } from '../../shared/db/client.js';
 import { randomUUID } from 'crypto';
+import { percentOf } from '../../shared/numbers.js';
 
 // Sampling rate for full context snapshots (0.01 = 1%)
 const SNAPSHOT_SAMPLE_RATE = parseFloat(process.env.SNAPSHOT_SAMPLE_RATE || '0.01');
@@ -27,21 +28,14 @@ const ENABLE_TRACING = process.env.ENABLE_TRACING !== 'false'; // Default to tru
 /**
  * Calculate a percentage rate, returning 0 if total is 0.
  */
-function calculatePercentage(count: number, total: number): number {
-  if (total > 0) {
-    return Math.round((count / total) * 100);
-  }
-  return 0;
-}
-
-export interface TraceCreateData {
+interface TraceCreateData {
   messageId: string;
   userId: string;
   guildId?: string;
   channelId?: string;
 }
 
-export interface TraceUpdateData {
+interface TraceUpdateData {
   completedAt?: string;
   durationMs?: number;
   modelUsed?: string;
@@ -61,19 +55,14 @@ export interface TraceUpdateData {
   errorType?: string;
 }
 
-export interface ContextSnapshotData {
+interface ContextSnapshotData {
   systemPrompt: string;
   contextSources: unknown[]; // ContextSource[]
   messageChain: unknown[]; // Message[]
   response: string | null;
 }
 
-export interface TraceFeedback {
-  sentiment: 'positive' | 'negative';
-  emoji: string;
-}
-
-export class TraceManager {
+class TraceManager {
   private static instance: TraceManager;
 
   static getInstance(): TraceManager {
@@ -648,7 +637,7 @@ export class TraceManager {
         };
         modelBreakdown[model.model_used] = {
           count: model.count,
-          positiveRate: calculatePercentage(model.positive, model.with_feedback),
+          positiveRate: percentOf(model.positive, model.with_feedback),
         };
       }
 
@@ -658,8 +647,8 @@ export class TraceManager {
         avgDurationMs: Math.round((basic?.avg_duration as number) || 0),
         avgMemories: Math.round(((basic?.avg_memories as number) || 0) * 10) / 10,
         avgRules: Math.round(((basic?.avg_rules as number) || 0) * 10) / 10,
-        positiveRate: calculatePercentage(positiveCount, totalFeedback),
-        negativeRate: calculatePercentage(negativeCount, totalFeedback),
+        positiveRate: percentOf(positiveCount, totalFeedback),
+        negativeRate: percentOf(negativeCount, totalFeedback),
         modelBreakdown,
       };
     } catch (error) {

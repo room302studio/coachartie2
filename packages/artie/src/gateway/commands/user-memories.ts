@@ -72,7 +72,7 @@ export function recentOwnMemories(userId: string, limit: number): OwnMemory[] {
   );
 }
 
-export interface OwnMemoryStats {
+interface OwnMemoryStats {
   total: number;
   lastWeek: number;
   oldest: string | null;

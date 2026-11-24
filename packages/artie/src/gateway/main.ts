@@ -12,13 +12,13 @@ import { getErrorMessage } from '../shared/errors.js';
 import { setupMessageHandler } from './1-receive/on-message.js';
 import { setupInteractionHandler } from './1-receive/on-interaction.js';
 import { setupReactionHandler } from './1-receive/on-reaction.js';
-import { startResponseConsumer } from './watchers/push-worker.js';
+import { startResponseConsumer } from './4-reply/send-queued-replies.js';
 import { writeFileSync } from 'fs';
 import { telemetry } from './telemetry.js';
 import { healthServer } from './health.js';
 import { apiServer } from './http.js';
 import { pathResolver } from './path-resolver.js';
-import { jobMonitor } from './3-ask-engine/job-watcher.js';
+import { jobWatcher } from './3-ask-engine/job-watcher.js';
 import { initializeForumTraversal } from './watchers/github/forum-traversal.js';
 import { initializeGitHubIntegration } from './watchers/github/issue-sync.js';
 import { initializeMentionProxyService } from './2-gate/mention-proxy.js';
@@ -39,7 +39,7 @@ import { stopAllVoiceScribeSessions } from './voice/scribe-session.js';
  * history and digests go quiet until verification lands. Then set
  * DISCORD_PRIVILEGED_INTENTS=true (and restart with --update-env).
  */
-export const privilegedIntents = process.env.DISCORD_PRIVILEGED_INTENTS === 'true';
+const privilegedIntents = process.env.DISCORD_PRIVILEGED_INTENTS === 'true';
 
 /**
  * Intent bits for optional privileged intents, if enabled.
@@ -61,7 +61,7 @@ function envStatus(value: string | undefined): string {
   return '❌ Missing';
 }
 
-export const client = new Client({
+const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
@@ -192,7 +192,7 @@ export async function startGateway(): Promise<GatewayHandle> {
       registerGatewayClient(client);
 
       // Start the persistent job monitor (single wheel for all jobs)
-      jobMonitor.startMonitoring();
+      jobWatcher.startMonitoring();
 
       // Initialize forum traversal service
       try {
@@ -419,7 +419,7 @@ export async function startGateway(): Promise<GatewayHandle> {
         registerGatewayClient(null);
         await healthServer.stop();
         await apiServer.stop();
-        jobMonitor.stopMonitoring();
+        jobWatcher.stopMonitoring();
         observationalLearning.shutdown();
         steamReviewNotes.shutdown();
         channelDigestLoop.stop();

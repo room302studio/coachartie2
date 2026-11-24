@@ -57,7 +57,7 @@ const lastAmbientReactionAt = new Map<string, number>();
 // AMBIENT_REACTION_EMOJI (whitespace-separated), so retuning what he's allowed to say costs
 // a sqlite UPDATE instead of a build + deploy + restart. Same rule as PROMPT_SYSTEM — if
 // you're about to paste personality into a .ts file, it belongs in the DB instead.
-// Cached 30s to match promptManager, so an edit shows up within half a minute.
+// Cached 30s to match promptStore, so an edit shows up within half a minute.
 const AMBIENT_EMOJI_PROMPT = 'AMBIENT_REACTION_EMOJI';
 const EMOJI_CACHE_MS = 30_000;
 let emojiCache: { at: number; emoji: string[] } | null = null;

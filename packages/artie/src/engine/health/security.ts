@@ -87,7 +87,7 @@ export function detectLeakPatterns(content: string): string[] {
   return patterns;
 }
 
-export class SecurityMonitor {
+class SecurityMonitor {
   private incidents: SecurityIncident[] = [];
   private patternCounts = new Map<string, number>();
 

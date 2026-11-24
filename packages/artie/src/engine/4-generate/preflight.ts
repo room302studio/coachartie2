@@ -13,7 +13,7 @@
 import { logger } from '../../shared/logger.js';
 import { microLLM } from './micro-llm.js';
 
-export interface PreflightAnalysis {
+interface PreflightAnalysis {
   // Response sizing
   responseTokens: number;
   responseTier: 'minimal' | 'short' | 'medium' | 'long' | 'extended';
@@ -59,7 +59,7 @@ function importanceMinForComplexity(complexity: string): number {
 /**
  * Default analysis - generous defaults that let the LLM decide
  */
-export function getDefaultAnalysis(): PreflightAnalysis {
+function getDefaultAnalysis(): PreflightAnalysis {
   return {
     responseTokens: 1000, // Generous default - LLM will use what it needs
     responseTier: 'medium',
@@ -78,7 +78,7 @@ export function getDefaultAnalysis(): PreflightAnalysis {
  * Quick preflight using micro LLM
  * Makes fast, cheap decisions instead of regex heuristics
  */
-export async function quickAnalysis(message: string): Promise<PreflightAnalysis> {
+async function quickAnalysis(message: string): Promise<PreflightAnalysis> {
   const defaults = getDefaultAnalysis();
 
   try {
@@ -138,7 +138,7 @@ export async function quickAnalysis(message: string): Promise<PreflightAnalysis>
 /**
  * Main entry point - uses micro LLM for smart analysis
  */
-export async function analyze(
+async function analyze(
   message: string,
   options?: {
     useMicroLLM?: boolean;

@@ -35,20 +35,20 @@ import {
 } from './daily.js';
 import type { FlashcardResponse } from './live-session.js';
 
-export const DAILY_PREFIX = 'quiz:daily:';
+const DAILY_PREFIX = 'quiz:daily:';
 export const DAILY_MODAL_INPUT = 'answer';
-export const SCHEDULE_PREFIX = 'quiz:schedule:';
-export const VOTE_PREFIX = 'quiz:vote:';
+const SCHEDULE_PREFIX = 'quiz:schedule:';
+const VOTE_PREFIX = 'quiz:vote:';
 
-export type DailyAction = 'guess' | 'modal' | 'share' | 'replay';
-export type ScheduleAction = 'shuffle' | 'save' | 'cancel';
-export type VoteAction = 'cast' | 'close';
+type DailyAction = 'guess' | 'modal' | 'share' | 'replay';
+type ScheduleAction = 'shuffle' | 'save' | 'cancel';
+type VoteAction = 'cast' | 'close';
 
 export function dailyCustomId(action: DailyAction, date: string, deck: string): string {
   return `${DAILY_PREFIX}${action}:${date}:${deck || 'all'}`;
 }
 
-export interface ParsedDailyId {
+interface ParsedDailyId {
   action: DailyAction;
   date: string;
   deck: string; // "" means all decks
@@ -253,7 +253,7 @@ export function scheduleCustomId(action: ScheduleAction, date: string, deck: str
   return `${SCHEDULE_PREFIX}${action}:${date}:${deck || 'all'}`;
 }
 
-export interface ParsedScheduleId {
+interface ParsedScheduleId {
   action: ScheduleAction;
   date: string;
   deck: string;
@@ -431,7 +431,7 @@ export function voteCustomId(action: VoteAction, pollId: number, deck?: string):
   return `${VOTE_PREFIX}close:${pollId}`;
 }
 
-export interface ParsedVoteId {
+interface ParsedVoteId {
   action: VoteAction;
   pollId: number;
   deck: string; // '' for the "all decks" sentinel; '' on close-action too

@@ -28,7 +28,7 @@ export interface SpeakInputs {
   ambientMode: AmbientMode;
 }
 
-export type SpeakRoute =
+type SpeakRoute =
   | { route: 'addressed' }
   | { route: 'ambient-approved' }
   | { route: 'gate' }

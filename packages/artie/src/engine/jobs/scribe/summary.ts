@@ -15,7 +15,7 @@ import type { ScribeProposal, ScribeSummaryResult } from './types.js';
 // Proposal call only (the summary itself is windowed). 16k cut a 37-min meeting to its last 15 min.
 const MAX_TRANSCRIPT_CHARS = 120_000;
 
-export function summaryModel(env: NodeJS.ProcessEnv = process.env): string | undefined {
+function summaryModel(env: NodeJS.ProcessEnv = process.env): string | undefined {
   // No per-task env override exists for this one — it rides SMART_MODEL (or the rotation,
   // if that's unset) like any other quality-sensitive one-shot call, per the build spec.
   return env.SMART_MODEL || undefined;
@@ -51,7 +51,7 @@ Return JSON only, this exact shape:
 "proposals": only for things someone explicitly asked to be filed or updated as a GitHub issue, or a clear bug/feature that came up as actionable work — not every topic discussed. Empty array is normal and expected for a meeting that didn't produce any. Default repo when none was named: "${args.defaultRepo}". "update" requires a real issue number mentioned in the transcript; if unsure whether something is a create or an update, use "create". Keep "body" to a few sentences: what, why, and who asked for it.`;
 }
 
-export const SCRIBE_SUMMARY_OUTPUT: JsonOutputSpec = {
+const SCRIBE_SUMMARY_OUTPUT: JsonOutputSpec = {
   name: 'scribe_summary',
   schema: {
     type: 'object',
@@ -119,7 +119,7 @@ const WINDOW_MS = 5 * 60_000;
 const WINDOW_MAX_CHARS = 12_000;
 const WINDOW_CONCURRENCY = 3;
 
-export interface WindowFacts {
+interface WindowFacts {
   discussed: string[];
   decisions: string[];
   actions: string[];
@@ -141,7 +141,7 @@ const WINDOW_FACTS_OUTPUT: JsonOutputSpec = {
   },
 };
 
-export function factsModel(env: NodeJS.ProcessEnv = process.env): string | undefined {
+function factsModel(env: NodeJS.ProcessEnv = process.env): string | undefined {
   return env.SCRIBE_FACTS_MODEL || env.BACKGROUND_MODEL || env.FAST_MODEL || undefined;
 }
 
@@ -234,7 +234,7 @@ export function concatWindowFacts(
   return out.join('\n\n') || 'Nothing substantive came up.';
 }
 
-export async function generateFactSummary(args: {
+async function generateFactSummary(args: {
   sessionId: string;
   userId: string;
   guildId: string;

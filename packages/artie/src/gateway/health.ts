@@ -7,7 +7,7 @@ import * as engine from '../engine/api.js';
 import { withTimeout } from '../shared/async.js';
 import { getErrorMessage } from '../shared/errors.js';
 
-export interface HealthCheckResponse {
+interface HealthCheckResponse {
   status: 'healthy' | 'degraded' | 'unhealthy';
   timestamp: string;
   service: 'discord-bot';
@@ -42,7 +42,7 @@ function healthStatusCode(status: 'healthy' | 'degraded' | 'unhealthy'): number 
   return 503;
 }
 
-export class HealthServer {
+class HealthServer {
   private server: any;
   private port: number;
   private discordClient: any;

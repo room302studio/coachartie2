@@ -1,5 +1,5 @@
 /**
- * Memory-oriented context source builders extracted verbatim from ContextAlchemy.
+ * Memory-oriented context source builders extracted verbatim from ContextAssembler (assemble.ts).
  *
  * Behavior is byte-for-byte identical to the original private methods — the only
  * change is that instance state (`this.memoryEntourage`) is now passed in as an
@@ -15,7 +15,7 @@ import type { ContextSource } from './types.js';
 import { DEBUG } from './types.js';
 
 /** Heads the recalled notes: when a note disagrees with the live prompt, the prompt wins. */
-export const MEMORY_PRECEDENCE_LINE =
+const MEMORY_PRECEDENCE_LINE =
   "(Notes below are older than your live prompt. If one disagrees with the prompt, the prompt wins: act on it, and fix or drop the stale note. Not sure what's live? self-stats rules.)";
 import {
   formatLearnedRulesForContext,
@@ -93,15 +93,15 @@ export async function addLearnedRules(
     const guildId = message.context?.guildId;
 
     // Import the reflection consolidator
-    const { reflectionConsolidator } = await import('../../memory/reflection-consolidator.js');
+    const { learnedRulesReader } = await import('../../memory/learned-rules.js');
 
     // Get system-wide rules (always apply)
-    const systemRules = await reflectionConsolidator.getActiveRules('system');
+    const systemRules = await learnedRulesReader.getActiveRules('system');
 
     // Get guild-specific rules if in a guild context
     let guildRules: any[] = [];
     if (guildId) {
-      guildRules = await reflectionConsolidator.getActiveRules('guild', guildId);
+      guildRules = await learnedRulesReader.getActiveRules('guild', guildId);
     }
 
     const allRules = [...systemRules, ...guildRules];

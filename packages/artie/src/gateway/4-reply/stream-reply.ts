@@ -16,8 +16,8 @@ import { stripToolCalls, stripInternalMarkup } from '../../shared/clean-llm-outp
 import { isBlockedUser, scrubBlockedUserMentions } from '../../shared/blocklist.js';
 import { isOperatorOnlyError } from '../../shared/anomalywatch.js';
 import { getErrorMessage } from '../../shared/errors.js';
-import { capabilitiesClient } from '../3-ask-engine/engine-client.js';
-import { jobMonitor } from '../3-ask-engine/job-watcher.js';
+import { engineClient } from '../3-ask-engine/engine-client.js';
+import { jobWatcher } from '../3-ask-engine/job-watcher.js';
 import { telemetry } from '../telemetry.js';
 import { generateCorrelationId, getShortCorrelationId } from '../correlation.js';
 import { OUTPUT_SLUR_BLOCKLIST, INTERNAL_LEAK_BLOCKLIST } from './output-safety.js';
@@ -59,7 +59,7 @@ export interface UserIntent {
   attachComponents?: (rows: Array<Record<string, unknown>>) => Promise<void>;
 }
 
-export interface ProcessorOptions {
+interface ProcessorOptions {
   enableStreaming?: boolean;
   enableTyping?: boolean;
   enableReactions?: boolean;
@@ -188,7 +188,7 @@ export async function processUserIntent(
       messageContent = `${senderSlug} uploaded ${filenames || 'attachment'}`;
     }
 
-    const jobInfo = await capabilitiesClient.submitJob(
+    const jobInfo = await engineClient.submitJob(
       messageContent,
       intent.userId,
       intent.context
@@ -220,7 +220,7 @@ export async function processUserIntent(
     telemetry.incrementJobsSubmitted(intent.userId, jobInfo.messageId);
 
     // Monitor job with unified progress handling
-    jobMonitor.monitorJob(jobInfo.messageId, {
+    jobWatcher.monitorJob(jobInfo.messageId, {
       maxAttempts,
 
       // Recovery: resubmit if job is orphaned (e.g., capabilities restarted)
@@ -238,7 +238,7 @@ export async function processUserIntent(
             systemNote: `[SYSTEM: You experienced a brief service interruption. You were processing this message for ${downtimeSeconds} seconds before your backend restarted. Acknowledge this briefly and naturally (e.g., "Whoa, sorry about that - I went down for a moment there. Anyway...") then continue helping with their request.]`,
           };
 
-          const newJobInfo = await capabilitiesClient.submitJob(
+          const newJobInfo = await engineClient.submitJob(
             messageContent,
             intent.userId,
             recoveryContext
@@ -309,7 +309,7 @@ export async function processUserIntent(
                       const discordMsgId = intent.getResponseMessageId();
                       if (discordMsgId && jobInfo?.messageId) {
                         discordMessageLinked = true;
-                        capabilitiesClient
+                        engineClient
                           .linkDiscordMessage(jobInfo.messageId, discordMsgId)
                           .catch((err) => {
                             logger.debug(`Failed to link Discord message [${shortId}]:`, err);
@@ -345,7 +345,7 @@ export async function processUserIntent(
                     const discordMsgId = intent.getResponseMessageId();
                     if (discordMsgId && jobInfo?.messageId) {
                       discordMessageLinked = true;
-                      capabilitiesClient
+                      engineClient
                         .linkDiscordMessage(jobInfo.messageId, discordMsgId)
                         .catch((err) => {
                           logger.debug(`Failed to link Discord message [${shortId}]:`, err);
@@ -509,7 +509,7 @@ export async function processUserIntent(
               const discordMsgId = intent.getResponseMessageId();
               if (discordMsgId && jobInfo?.messageId) {
                 discordMessageLinked = true;
-                capabilitiesClient
+                engineClient
                   .linkDiscordMessage(jobInfo.messageId, discordMsgId)
                   .catch((err) => {
                     logger.debug(`Failed to link Discord message [${shortId}]:`, err);
@@ -550,7 +550,7 @@ export async function processUserIntent(
           // text, so a suppressed reply can still legitimately carry one.
           if (intent.sendFile) {
             try {
-              const pendingAttachments = await capabilitiesClient.getPendingAttachments(
+              const pendingAttachments = await engineClient.getPendingAttachments(
                 jobInfo.messageId
               );
               if (pendingAttachments.length > 0) {
@@ -580,7 +580,7 @@ export async function processUserIntent(
           // above it). Never let an attach failure take down the (already-delivered) text.
           if (intent.attachComponents && !wasSuppressed) {
             try {
-              const rows = await capabilitiesClient.getPendingComponents(jobInfo.messageId);
+              const rows = await engineClient.getPendingComponents(jobInfo.messageId);
 
               const channelId =
                 (intent.context?.channelId as string | undefined) ??

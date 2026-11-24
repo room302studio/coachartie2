@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Coach Artie deploy (wave 12). WRITTEN, NOT RUN as part of this wave — read it, don't
-# execute it, until CUTOVER.md's migration steps have happened on the VPS at least once.
+# Coach Artie deploy (wave 12), from your machine. The one-time migration it assumes
+# (docs/notes/CUTOVER.md) happened on 2026-10-26. On the VPS itself, scripts/pm2-deploy.sh.
 #
 # Bundles the committed branch, ships it to prod, installs with a frozen lockfile, builds,
 # and restarts the one PM2 app (coach-artie). Modeled on verify-v3.sh's bundle/fetch pattern,
@@ -8,8 +8,7 @@
 #
 # Usage:
 #   scripts/deploy.sh [branch]        # default: the branch checked out locally right now.
-#                                      # Prod runs `artie-lean` today; after CUTOVER.md's
-#                                      # one-time migration it runs `v3` (this repo's branch).
+#                                      # Prod runs `v3` (since the 2026-10-26 cutover).
 #                                      # There is deliberately no hardcoded default like `main`
 #                                      # — `main` has never been what prod deploys from, and a
 #                                      # bare invocation should ship whatever you actually have
@@ -23,8 +22,7 @@
 # never `pm2 restart --update-env` — see the comment at that step. `--update-env` only forwards
 # the calling shell's env; it never re-reads ecosystem.config.cjs, which is the only thing that
 # loads .env.production, so a routine deploy that ships an .env.production change would
-# otherwise restart with the stale env and nobody would see an error. This script assumes
-# CUTOVER.md's one-time two-old-apps-to-one-new-app migration has already happened on prod.
+# otherwise restart with the stale env and nobody would see an error.
 
 set -euo pipefail
 
@@ -45,7 +43,7 @@ git diff --quiet && git diff --cached --quiet || {
 
 # 2. Bundle the branch and ship it. A bundle (not rsync) means prod's git history stays
 #    real — `git log`, `git rev-parse HEAD` on the VPS keep meaning what they say, and
-#    CUTOVER.md's rollback ("re-apply the previous bundle") has something to re-apply.
+#    docs/notes/CUTOVER.md's rollback ("re-apply the previous bundle") has something to re-apply.
 echo "📦 Bundling $BRANCH..."
 git bundle create "$SCRATCH/deploy.bundle" "$BRANCH"
 scp -q "$SCRATCH/deploy.bundle" "$DEPLOY_HOST:/tmp/coachartie-deploy.bundle"
@@ -105,9 +103,12 @@ echo "--- Installing (frozen lockfile) ---"
 pnpm install --frozen-lockfile
 
 echo "--- Building ---"
+# Build info first: with it, tsc emits only what it thinks changed, and after a file move that
+# left dist/ missing modules and the bot dead for ~4 minutes (2026-11-24).
+mv -f packages/artie/tsconfig.tsbuildinfo /tmp/coachartie-tsbuildinfo.prev 2>/dev/null || true
 pnpm build
 
-echo "--- PM2: delete + start fresh (ecosystem.config.cjs assumed current; see CUTOVER.md for the one-time migration) ---"
+echo "--- PM2: delete + start fresh (ecosystem.config.cjs assumed current; see docs/notes/CUTOVER.md) ---"
 # NOT `pm2 restart --update-env`. `--update-env` forwards THIS shell's env into the process;
 # it never re-reads ecosystem.config.cjs, which is the only thing that actually loads
 # .env.production (it does its own fs.readFileSync at require time, above). A routine deploy

@@ -22,9 +22,9 @@ import { collapseWhitespace } from './text.js';
  */
 
 export type AnomalywatchLevel = 'info' | 'warning' | 'error';
-export type ReportOutcome = 'sent' | 'logged' | 'rate-limited' | 'failed';
+type ReportOutcome = 'sent' | 'logged' | 'rate-limited' | 'failed';
 
-export const ANOMALYWATCH_SOURCE = 'coach-artie';
+const ANOMALYWATCH_SOURCE = 'coach-artie';
 
 /** Tried in order when ALERT_SH_PATH is unset. The first is what EJ named as canonical;
  * the second is the path social-media-behavior.ts already shells out to. */
@@ -33,7 +33,7 @@ const DEFAULT_ALERT_SH_PATHS = [
   '/home/debian/scripts/alert.sh',
 ];
 
-export interface AlertRateStore {
+interface AlertRateStore {
   /** Last ET day key an alert of this kind was reported, if any. */
   lastDay(kind: string): string | undefined;
   markDay(kind: string, day: string): void;
@@ -96,7 +96,7 @@ function ensureTable(): void {
   tableReady = true;
 }
 
-export function resolveAlertScriptPath(): string | null {
+function resolveAlertScriptPath(): string | null {
   const configured = process.env.ALERT_SH_PATH;
   if (configured) {
     if (existsSync(configured)) {
@@ -116,7 +116,7 @@ export function flattenAlertMessage(message: string, max = 500): string {
   return flat;
 }
 
-export type AlertExec = (
+type AlertExec = (
   file: string,
   args: string[],
   env?: Record<string, string>
@@ -143,7 +143,7 @@ const defaultExec: AlertExec = (file, args, env) =>
     );
   });
 
-export interface ReportOptions {
+interface ReportOptions {
   /** Rate-limit key. One report per kind per ET day. Defaults to the level + message head. */
   kind?: string;
   now?: Date;

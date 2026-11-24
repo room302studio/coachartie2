@@ -56,7 +56,7 @@ export function countNonBotMembers(
   return count;
 }
 
-export interface NoHumanStepInput {
+interface NoHumanStepInput {
   /** When the channel last had zero non-bot humans, or null if it currently has some (or the
    *  countdown hasn't started). */
   noHumanSince: number | null;
@@ -65,7 +65,7 @@ export interface NoHumanStepInput {
   timeoutMs?: number;
 }
 
-export interface NoHumanStepResult {
+interface NoHumanStepResult {
   /** The new value to store back on the session. */
   noHumanSince: number | null;
   /** True once zero-humans has held for `timeoutMs` — the caller should stop the session. */

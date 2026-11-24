@@ -32,7 +32,7 @@ collectDefaultMetrics({ register: metricsRegistry, prefix: 'artie_' });
 // ============================================================================
 
 // Total cost counter (accumulates over time)
-export const apiCostTotal = new Counter({
+const apiCostTotal = new Counter({
   name: 'artie_api_cost_dollars_total',
   help: 'Total API cost in dollars',
   labelNames: ['model', 'provider'],
@@ -40,7 +40,7 @@ export const apiCostTotal = new Counter({
 });
 
 // Cost per call histogram (for percentile analysis)
-export const apiCostPerCall = new Histogram({
+const apiCostPerCall = new Histogram({
   name: 'artie_api_cost_per_call_dollars',
   help: 'API cost per call in dollars',
   labelNames: ['model', 'provider'],
@@ -52,14 +52,14 @@ export const apiCostPerCall = new Histogram({
 // TOKEN METRICS
 // ============================================================================
 
-export const tokensInputTotal = new Counter({
+const tokensInputTotal = new Counter({
   name: 'artie_tokens_input_total',
   help: 'Total input tokens used',
   labelNames: ['model', 'provider'],
   registers: [metricsRegistry],
 });
 
-export const tokensOutputTotal = new Counter({
+const tokensOutputTotal = new Counter({
   name: 'artie_tokens_output_total',
   help: 'Total output tokens used',
   labelNames: ['model', 'provider'],
@@ -70,14 +70,14 @@ export const tokensOutputTotal = new Counter({
 // API CALL METRICS
 // ============================================================================
 
-export const apiCallsTotal = new Counter({
+const apiCallsTotal = new Counter({
   name: 'artie_api_calls_total',
   help: 'Total API calls made',
   labelNames: ['model', 'provider', 'status'],
   registers: [metricsRegistry],
 });
 
-export const apiCallDuration = new Histogram({
+const apiCallDuration = new Histogram({
   name: 'artie_api_call_duration_seconds',
   help: 'API call duration in seconds',
   labelNames: ['model', 'provider'],
@@ -85,40 +85,12 @@ export const apiCallDuration = new Histogram({
   registers: [metricsRegistry],
 });
 
-// ============================================================================
-// MESSAGE METRICS
-// ============================================================================
-
-export const messagesProcessed = new Counter({
-  name: 'artie_messages_processed_total',
-  help: 'Total messages processed',
-  labelNames: ['guild', 'type'],
-  registers: [metricsRegistry],
-});
-
-export const responsesGenerated = new Counter({
-  name: 'artie_responses_generated_total',
-  help: 'Total responses generated',
-  labelNames: ['guild', 'trigger'],
-  registers: [metricsRegistry],
-});
-
-// ============================================================================
-// CAPABILITY USAGE METRICS
-// ============================================================================
-
-export const capabilityUsageTotal = new Counter({
-  name: 'artie_capability_usage_total',
-  help: 'Total capability executions',
-  labelNames: ['capability', 'action', 'guild', 'status'],
-  registers: [metricsRegistry],
-});
 
 // ============================================================================
 // DAILY COST GAUGE (resets at midnight)
 // ============================================================================
 
-export const dailyCostGauge = new Gauge({
+const dailyCostGauge = new Gauge({
   name: 'artie_daily_cost_dollars',
   help: 'Estimated cost today in dollars',
   labelNames: ['model'],
@@ -167,41 +139,6 @@ export function recordApiCall(params: {
   // Update daily gauge
   dailyCosts[model] = (dailyCosts[model] || 0) + cost;
   dailyCostGauge.set({ model }, dailyCosts[model]);
-}
-
-/**
- * Record a message processed
- */
-export function recordMessage(guild: string, type: 'discord' | 'sms' | 'api'): void {
-  messagesProcessed.inc({ guild, type });
-}
-
-/**
- * Record a response generated
- */
-export function recordResponse(
-  guild: string,
-  trigger: 'mention' | 'dm' | 'robot_channel' | 'proactive'
-): void {
-  responsesGenerated.inc({ guild, trigger });
-}
-
-/**
- * Record a capability execution
- */
-export function recordCapabilityUsage(params: {
-  capability: string;
-  action: string;
-  guild?: string;
-  success: boolean;
-}): void {
-  const { capability, action, guild = 'unknown', success } = params;
-  capabilityUsageTotal.inc({
-    capability,
-    action,
-    guild,
-    status: getStatusString(success),
-  });
 }
 
 /**

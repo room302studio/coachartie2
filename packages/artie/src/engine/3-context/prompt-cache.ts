@@ -85,7 +85,7 @@ function cacheTtl(): { type: 'ephemeral'; ttl?: '1h' } {
   return { type: 'ephemeral', ttl: '1h' };
 }
 
-export type WireContent =
+type WireContent =
   | string
   | Array<{ type: 'text'; text: string; cache_control?: { type: 'ephemeral'; ttl?: '1h' } }>;
 export interface WireMessage {
@@ -120,11 +120,11 @@ export function supportsPromptCaching(model: string): boolean {
   return model.startsWith('anthropic/') || model.startsWith('~anthropic/');
 }
 
-export function cacheMinimumFor(model: string): number {
+function cacheMinimumFor(model: string): number {
   return CACHE_MIN_TOKENS[model] ?? UNKNOWN_ANTHROPIC_MIN;
 }
 
-export interface CacheDecision {
+interface CacheDecision {
   messages: WireMessage[];
   /** Whether a breakpoint was actually placed — logged so a silent no-op is visible. */
   applied: boolean;
@@ -198,17 +198,6 @@ export function applyCacheControl(
   });
 
   return { messages: wire, applied: true, reason: `ok (${marked.length} breakpoint(s))`, prefixTokens };
-}
-
-/**
- * Pull cached-prompt-token count out of an OpenRouter usage object.
- *
- * OpenRouter reports Anthropic cache hits on the OpenAI shape, under
- * prompt_tokens_details.cached_tokens, and it is a SUBSET of prompt_tokens. Some providers
- * spell it cache_read_input_tokens, so accept both rather than silently reading zero.
- */
-export function readCachedTokens(usage: unknown): number {
-  return readCacheUsage(usage).read;
 }
 
 /**

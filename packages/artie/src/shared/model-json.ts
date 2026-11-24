@@ -11,7 +11,7 @@
  * object or an array, so a reply like {"tags":[...]} can still yield the array when the
  * caller wants one. Returns null when nothing fits.
  */
-export type ModelJsonShape = 'object' | 'array';
+type ModelJsonShape = 'object' | 'array';
 
 const MAX_SCAN_STARTS = 50;
 

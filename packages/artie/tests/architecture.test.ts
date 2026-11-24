@@ -11,12 +11,13 @@ import { fileURLToPath } from 'url';
 //      of the gateway. src/main.ts (the one entry point, outside both zones) is unrestricted.
 //   2. src/shared/** imports neither src/gateway/** nor src/engine/**.
 //   3. No index.ts anywhere under src/ (no barrels: an import names the file it means).
-//   4. Every src/engine/tools/**/*.ts, and every src/engine/proactive/*.ts that exports a
-//      RegisteredCapability, is imported by 5-tool-loop/register-tools.ts (static or dynamic
-//      import), except the helper files in TOOL_HELPERS below. A tool file nobody registers
-//      is dead code that still looks alive.
-//   5. src/engine/tools/** never imports src/engine/2-turn/** or 5-tool-loop/{loop,native-loop}.ts:
-//      tools are called BY the loop and must not reach back up into it.
+//   4. Every .ts in a category folder of src/engine/capabilities/ (capabilities/<category>/**),
+//      and every src/engine/proactive/*.ts that exports a RegisteredCapability, is imported by
+//      capabilities/register-all.ts (static or dynamic import), except the helper files in
+//      CAPABILITY_HELPERS below. A capability nobody registers is dead code that still looks
+//      alive. Files directly in capabilities/ are the machinery (registry, policy, ledger...).
+//   5. src/engine/capabilities/** never imports src/engine/2-turn/** or 5-tool-loop/native-loop.ts:
+//      capabilities are called BY the loop and must not reach back up into it.
 //
 // Uses ts.preProcessFile (already a dependency via typescript) instead of regex, so this
 // doesn't miss re-exports, type-only imports, or multi-line import clauses the way a
@@ -141,41 +142,51 @@ function importTargets(file: string): string[] {
 }
 
 const rel = (abs: string) => relative(SRC, abs);
-const REGISTER_TOOLS = join(SRC, 'engine', '5-tool-loop', 'register-tools.ts');
+const CAPABILITIES = join(SRC, 'engine', 'capabilities');
+const REGISTER_ALL = join(CAPABILITIES, 'register-all.ts');
+
+/** Every .ts inside a category folder of capabilities/ (not the machinery at its root). */
+function capabilityFiles(): string[] {
+  return walk(CAPABILITIES)
+    .filter((f) => dirname(f) !== CAPABILITIES)
+    .map(rel);
+}
 
 /**
- * Helper files under src/engine/tools/ that register-tools.ts does not import: they hold code a
- * tool uses, not a tool. Each rule names why. The spec's helper shapes are *-client, *-fetch,
- * *-format, *-runtime, harness/**, skills/library/**, email-drafting and meeting helpers; the
- * last two rows (model-router, skills/loader) are helpers without a helper-shaped name.
+ * Files in capability category folders that register-all.ts does not import: they hold code a
+ * capability uses, not a capability. Each rule names why. The helper shapes are *-client,
+ * *-fetch, *-format, *-runtime, harness/**, skills/library/**; the rest are named one by one.
  */
-const TOOL_HELPERS: Array<{ why: string; match: (p: string) => boolean }> = [
-  { why: '*-client.ts: API client a tool calls', match: (p) => p.endsWith('-client.ts') },
+const CAPABILITY_HELPERS: Array<{ why: string; match: (p: string) => boolean }> = [
+  { why: '*-client.ts: API client a capability calls', match: (p) => p.endsWith('-client.ts') },
   { why: '*-fetch.ts: fetch helper', match: (p) => p.endsWith('-fetch.ts') },
   { why: '*-format.ts: output formatting', match: (p) => p.endsWith('-format.ts') },
-  { why: '*-runtime.ts: runtime a tool drives', match: (p) => p.endsWith('-runtime.ts') },
-  { why: 'research harness', match: (p) => p.startsWith('engine/tools/research/harness/') },
-  { why: 'skill library (SKILL.md + scripts)', match: (p) => p.startsWith('engine/tools/skills/library/') },
-  { why: 'email drafting mode, routed from run-turn', match: (p) => p === 'engine/tools/people/email-drafting.ts' },
-  { why: 'model tier table, used by ops/autonomous.ts', match: (p) => p === 'engine/tools/ops/model-router.ts' },
-  { why: 'skill discovery, used by skills/registry.ts', match: (p) => p === 'engine/tools/skills/loader.ts' },
+  { why: '*-runtime.ts: runtime a capability drives', match: (p) => p.endsWith('-runtime.ts') },
+  { why: 'research harness', match: (p) => p.startsWith('engine/capabilities/research/harness/') },
+  { why: 'skill library (SKILL.md + scripts)', match: (p) => p.startsWith('engine/capabilities/skills/library/') },
+  {
+    why: 'email drafting mode, routed from run-turn',
+    match: (p) => p === 'engine/capabilities/people/email-drafting.ts',
+  },
+  { why: 'model tier table, used by ops/autonomous.ts', match: (p) => p === 'engine/capabilities/ops/model-router.ts' },
+  { why: 'skill discovery, used by skills/registry.ts', match: (p) => p === 'engine/capabilities/skills/loader.ts' },
 ];
-const isToolHelper = (p: string) => TOOL_HELPERS.some((h) => h.match(p));
+const isCapabilityHelper = (p: string) => CAPABILITY_HELPERS.some((h) => h.match(p));
 
 /** Pinned so a new helper file is a deliberate decision, not a silent exception. */
 const EXPECTED_HELPER_FILES = [
-  'engine/tools/core/web-fetch.ts',
-  'engine/tools/ops/embedded-mcp-runtime.ts',
-  'engine/tools/ops/model-router.ts',
-  'engine/tools/ops/rules-format.ts',
-  'engine/tools/ops/system-monitor-format.ts',
-  'engine/tools/people/email-drafting.ts',
-  'engine/tools/personal/reddit-client.ts',
-  'engine/tools/research/harness/openai-research.ts',
-  'engine/tools/research/harness/research-queue.ts',
-  'engine/tools/research/harness/types.ts',
-  'engine/tools/skills/loader.ts',
-  'engine/tools/web/wolfram-client.ts',
+  'engine/capabilities/core/web-fetch.ts',
+  'engine/capabilities/ops/embedded-mcp-runtime.ts',
+  'engine/capabilities/ops/model-router.ts',
+  'engine/capabilities/ops/rules-format.ts',
+  'engine/capabilities/ops/system-monitor-format.ts',
+  'engine/capabilities/people/email-drafting.ts',
+  'engine/capabilities/personal/reddit-client.ts',
+  'engine/capabilities/research/harness/openai-research.ts',
+  'engine/capabilities/research/harness/research-queue.ts',
+  'engine/capabilities/research/harness/types.ts',
+  'engine/capabilities/skills/loader.ts',
+  'engine/capabilities/web/wolfram-client.ts',
 ];
 
 describe('architecture: no barrels', () => {
@@ -187,21 +198,21 @@ describe('architecture: no barrels', () => {
   });
 });
 
-describe('architecture: every tool is registered', () => {
-  const registered = new Set(importTargets(REGISTER_TOOLS));
-  const toolFiles = walk(join(SRC, 'engine', 'tools')).map(rel);
+describe('architecture: every capability is registered', () => {
+  const registered = new Set(importTargets(REGISTER_ALL));
+  const files = capabilityFiles();
 
-  it('every src/engine/tools/**/*.ts is imported by register-tools.ts, or is a named helper', () => {
-    const missing = toolFiles.filter((p) => !isToolHelper(p) && !registered.has(p));
-    expect(missing, `not imported by 5-tool-loop/register-tools.ts:\n${missing.join('\n')}`).toEqual([]);
+  it('every capabilities/<category>/**/*.ts is imported by register-all.ts, or is a named helper', () => {
+    const missing = files.filter((p) => !isCapabilityHelper(p) && !registered.has(p));
+    expect(missing, `not imported by capabilities/register-all.ts:\n${missing.join('\n')}`).toEqual([]);
   });
 
   it('the helper exceptions are exactly the expected files', () => {
-    const helpers = toolFiles.filter(isToolHelper).sort();
+    const helpers = files.filter(isCapabilityHelper).sort();
     expect(helpers).toEqual(EXPECTED_HELPER_FILES);
   });
 
-  it('every proactive/*.ts that exports a RegisteredCapability is imported by register-tools.ts', () => {
+  it('every proactive/*.ts that exports a RegisteredCapability is imported by register-all.ts', () => {
     const dir = join(SRC, 'engine', 'proactive');
     const capabilityFiles = readdirSync(dir)
       .filter((f) => f.endsWith('.ts'))
@@ -210,16 +221,16 @@ describe('architecture: every tool is registered', () => {
       .map(rel);
     expect(capabilityFiles.length).toBeGreaterThan(0); // not vacuous
     const missing = capabilityFiles.filter((p) => !registered.has(p));
-    expect(missing, `not imported by 5-tool-loop/register-tools.ts:\n${missing.join('\n')}`).toEqual([]);
+    expect(missing, `not imported by capabilities/register-all.ts:\n${missing.join('\n')}`).toEqual([]);
   });
 });
 
-describe('architecture: tools never reach back into the loop', () => {
-  it('src/engine/tools/** imports nothing under 2-turn/ and not the loop file', () => {
+describe('architecture: capabilities never reach back into the loop', () => {
+  it('src/engine/capabilities/** imports nothing under 2-turn/ and not the loop file', () => {
     const forbidden = (target: string) =>
       target.startsWith('engine/2-turn/') || target === 'engine/5-tool-loop/native-loop.ts';
     const violations: string[] = [];
-    for (const file of walk(join(SRC, 'engine', 'tools'))) {
+    for (const file of walk(CAPABILITIES)) {
       for (const target of importTargets(file)) {
         if (forbidden(target)) violations.push(`${rel(file)} imports ${target}`);
       }

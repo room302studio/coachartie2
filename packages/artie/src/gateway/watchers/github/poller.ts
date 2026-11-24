@@ -141,7 +141,7 @@ export function readIssueCommentCursor(state: GithubSyncState): number {
 }
 
 /** Issue numbers already handled at the issue watermark's exact second (sync metadata). */
-export function readIssuesAtWatermark(state: GithubSyncState): number[] {
+function readIssuesAtWatermark(state: GithubSyncState): number[] {
   if (!state.metadata) {
     return [];
   }
@@ -1550,15 +1550,5 @@ export function initializeGitHubPoller(
 
   pollerInstance = new GitHubPollerService(githubToken, config);
   logger.info('GitHub poller service initialized');
-  return pollerInstance;
-}
-
-/**
- * Get the GitHub poller service instance
- */
-export function getGitHubPoller(): GitHubPollerService {
-  if (!pollerInstance) {
-    throw new Error('GitHub poller service not initialized. Call initializeGitHubPoller first.');
-  }
   return pollerInstance;
 }

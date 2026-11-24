@@ -2,14 +2,14 @@ import express, { type Express } from 'express';
 import helmet from 'helmet';
 import { createRequestLogger } from '../shared/logger.js';
 import { healthRouter } from './routes/health.js';
-import { chatRouter } from './1-intake/chat-route.js';
+import { chatRouter } from './1-intake/turns.js';
 import { schedulerRouter } from './routes/scheduler.js';
 import { githubRouter } from './routes/github.js';
 import { servicesRouter } from './routes/services.js';
 import { memoriesRouter } from './routes/memories.js';
 import modelsRouter from './routes/models.js';
 import { logsRouter } from './routes/logs.js';
-import { apiRouter } from './routes/observability.js';
+import { observabilityRouter } from './routes/observability.js';
 import { securityRouter } from './routes/security.js';
 import { sbatRouter } from './routes/sbat-email-tickets.js';
 import { capabilitiesRouter } from './routes/tool-registry.js';
@@ -108,12 +108,12 @@ export function createEngineApp(deps: Partial<EngineDeps> = {}): Express {
   app.use('/services', servicesRouter);
   app.use('/api/memories', memoriesRouter);
   app.use('/api/models', modelsRouter);
-  app.use('/api', apiRouter); // Context Alchemy observability + experiments
+  app.use('/api', observabilityRouter); // traces, experiments, analytics
   app.use('/api/sbat', sbatRouter); // SBAT inbound email tickets
   app.use('/logs', logsRouter);
 
   // The routes that used to be inline in main.ts, mounted where they were registered (after
-  // /logs, so apiRouter still sees every /api/* request first): /api/observe,
+  // /logs, so observabilityRouter still sees every /api/* request first): /api/observe,
   // /api/observe/stats, /api/channel-digest, /api/route-repo and /api/reflection/*.
   app.use('/api', observeRouter);
   app.use('/api', channelDigestRouter);

@@ -67,7 +67,7 @@ const activeSessions = new Map<string, ActiveVoiceSession>();
 /** Guilds whose start is between the has() check and activeSessions.set (joining). */
 const startingGuilds = new Set<string>();
 
-export interface VoiceSessionSnapshot {
+interface VoiceSessionSnapshot {
   sessionId: string;
   guildId: string;
   voiceChannelId: string;
@@ -240,7 +240,7 @@ async function handleDisconnect(guildId: string): Promise<void> {
   }
 }
 
-export interface StartVoiceResult {
+interface StartVoiceResult {
   ok: boolean;
   sessionId?: string;
   reason?: string;
@@ -356,7 +356,7 @@ async function joinAndStart(input: {
   return { ok: true, sessionId };
 }
 
-export interface StopVoiceResult {
+interface StopVoiceResult {
   ok: boolean;
   reason?: string;
   pendingCount?: number;

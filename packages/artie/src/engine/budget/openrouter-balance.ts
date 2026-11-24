@@ -17,7 +17,7 @@ function storedBalanceIsFresh(lastUpdated: unknown, now: number = Date.now()): b
   return now - at < STORED_BALANCE_MAX_AGE_MS;
 }
 
-export interface CreditInfo {
+interface CreditInfo {
   provider: string;
   credits_remaining?: number;
   credits_used?: number;
@@ -28,7 +28,7 @@ export interface CreditInfo {
   raw_response?: any;
 }
 
-export interface CreditAlert {
+interface CreditAlert {
   alert_type: string;
   threshold_value?: number;
   current_value?: number;

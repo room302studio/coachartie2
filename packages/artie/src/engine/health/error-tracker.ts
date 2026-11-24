@@ -27,9 +27,9 @@ export const ERROR_TYPES = {
   UNKNOWN: 'unknown',
 } as const;
 
-export type ErrorType = (typeof ERROR_TYPES)[keyof typeof ERROR_TYPES];
+type ErrorType = (typeof ERROR_TYPES)[keyof typeof ERROR_TYPES];
 
-export interface ErrorContext {
+interface ErrorContext {
   traceId?: string;
   userId?: string;
   guildId?: string;

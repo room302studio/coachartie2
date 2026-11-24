@@ -13,7 +13,7 @@ router.get('/', async (req, res) => {
 
     if (search) {
       // Use memory capability directly via registry
-      const { capabilityRegistry } = await import('../5-tool-loop/registry.js');
+      const { capabilityRegistry } = await import('../capabilities/registry.js');
       const result = await capabilityRegistry.execute('memory', 'search', {
         query: search as string,
         userId: userId as string,
@@ -33,7 +33,7 @@ router.get('/', async (req, res) => {
       });
     } else {
       // Get recent memories directly
-      const memoryService = new (await import('../tools/core/memory.js')).MemoryService();
+      const memoryService = new (await import('../capabilities/core/memory.js')).MemoryService();
       let memoriesList;
 
       if (userId) {

@@ -94,7 +94,7 @@ function getAnalysisBufferPath(userId: string): string {
 /**
  * Save an analysis for a user (overwrites previous)
  */
-export function saveAnalysis(
+function saveAnalysis(
   userId: string,
   filename: string,
   summary: string,
@@ -169,16 +169,9 @@ export function readAnalysis(
 }
 
 /**
- * Check if user has a recent analysis
- */
-export function hasAnalysis(userId: string): boolean {
-  return readAnalysis(userId) !== null;
-}
-
-/**
  * Get the binary buffer if saved
  */
-export function getAnalysisBuffer(userId: string): Buffer | null {
+function getAnalysisBuffer(userId: string): Buffer | null {
   const bufferPath = getAnalysisBufferPath(userId);
   if (!fs.existsSync(bufferPath)) return null;
 
@@ -192,7 +185,7 @@ export function getAnalysisBuffer(userId: string): Buffer | null {
 /**
  * Clear analysis for a user
  */
-export function clearAnalysis(userId: string): void {
+function clearAnalysis(userId: string): void {
   const filePath = getAnalysisPath(userId);
   const bufferPath = getAnalysisBufferPath(userId);
 
@@ -201,86 +194,9 @@ export function clearAnalysis(userId: string): void {
 }
 
 // ============================================
-// BACKWARDS COMPATIBILITY
-// Old functions map to new file-based storage
+// METRO SAVE FILES (the only callers of the file store)
 // ============================================
 
-export interface StoredAnalyzedFile {
-  buffer: Buffer;
-  filename: string;
-  summary: string;
-  fileType: string;
-  mimeType?: string;
-  metadata?: Record<string, any>;
-  timestamp: number;
-}
-
-export function getFileType(filename: string): string {
-  const ext = filename.toLowerCase().split('.').pop() || '';
-  const typeMap: Record<string, string> = {
-    metro: 'metro',
-    csv: 'csv',
-    json: 'json',
-    md: 'markdown',
-    txt: 'text',
-    log: 'text',
-    ts: 'code',
-    js: 'code',
-    py: 'code',
-    png: 'image',
-    jpg: 'image',
-    jpeg: 'image',
-    gif: 'image',
-    pdf: 'document',
-    xml: 'xml',
-    html: 'html',
-  };
-  return typeMap[ext] || 'file';
-}
-
-export function storeAnalyzedFile(
-  userId: string,
-  filename: string,
-  buffer: Buffer,
-  summary: string,
-  _fileType?: string,
-  _mimeType?: string,
-  _metadata?: Record<string, any>
-): void {
-  saveAnalysis(userId, filename, summary, buffer);
-}
-
-export function getStoredFile(userId: string, _fileType?: string): StoredAnalyzedFile | null {
-  const analysis = readAnalysis(userId);
-  if (!analysis) return null;
-
-  const buffer = getAnalysisBuffer(userId) || Buffer.from('');
-  return {
-    buffer,
-    filename: analysis.filename,
-    summary: analysis.summary,
-    fileType: getFileType(analysis.filename),
-    timestamp: Date.now() - analysis.age * 60000,
-  };
-}
-
-export function hasStoredFile(userId: string, _fileType?: string): boolean {
-  return hasAnalysis(userId);
-}
-
-export function clearStoredFile(userId: string, _fileType?: string): void {
-  clearAnalysis(userId);
-}
-
-export function getAllStoredFiles(userId: string): StoredAnalyzedFile[] {
-  const file = getStoredFile(userId);
-  if (file) {
-    return [file];
-  }
-  return [];
-}
-
-// Metro-specific aliases
 export function storeAnalyzedMetroFile(
   userId: string,
   filename: string,
@@ -300,10 +216,6 @@ export function getStoredMetroFile(
     filename: analysis.filename,
     summary: analysis.summary,
   };
-}
-
-export function hasStoredMetroFile(userId: string): boolean {
-  return hasAnalysis(userId);
 }
 
 export function clearStoredMetroFile(userId: string): void {

@@ -79,11 +79,11 @@ function getAgeString(ageHours: number): string {
 const DIGEST_DAY_KEY = 'studio_digest_last_day';
 
 /** The ET day the morning digest last went out (survives restarts). */
-export function lastDigestDay(): string {
+function lastDigestDay(): string {
   return readState(DIGEST_DAY_KEY) ?? '';
 }
 
-export function rememberDigestDay(day: string): void {
+function rememberDigestDay(day: string): void {
   writeState(DIGEST_DAY_KEY, day);
 }
 
@@ -108,7 +108,7 @@ interface RepoDigest {
   needsHuman?: NeedsHumanCounts;
 }
 
-export interface NeedsHumanCounts {
+interface NeedsHumanCounts {
   unassigned: number;
   unlabeled: number;
   stale: number;
@@ -173,7 +173,7 @@ export async function fetchNeedsHumanCounts(
   }
 }
 
-export class GitHubStudioManager {
+class GitHubStudioManager {
   private client: Client;
   private octokit: Octokit;
   private digestTimer: NodeJS.Timeout | null = null;
@@ -534,8 +534,4 @@ export function initializeStudioManager(client: Client): void {
 
   studioManager = new GitHubStudioManager(client, token);
   studioManager.start();
-}
-
-export function getStudioManager(): GitHubStudioManager | null {
-  return studioManager;
 }

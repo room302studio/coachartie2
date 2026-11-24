@@ -37,13 +37,13 @@ const CHECK_MS = 60_000;
 const ALWAYS_KEY = 'always';
 const ALWAYS_WINDOW: AutoWindow = { start: -Infinity, end: Infinity, key: ALWAYS_KEY };
 
-export interface AutoWindow {
+interface AutoWindow {
   start: number;
   end: number;
   key: string;
 }
 
-export interface AutoScribeConfig {
+interface AutoScribeConfig {
   voiceChannelIds: string[];
   /** Fixed destination for notice + summary; undefined = the meeting's own voice-channel chat. */
   textChannelId?: string;

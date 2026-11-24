@@ -9,7 +9,7 @@ import { logger } from './logger.js';
 import { getSyncDb } from './db/client.js';
 
 // Types
-export interface PairingCode {
+interface PairingCode {
   id: number;
   platform: string;
   userId: string;
@@ -21,7 +21,7 @@ export interface PairingCode {
   createdAt: string;
 }
 
-export interface AllowlistEntry {
+interface AllowlistEntry {
   id: number;
   platform: string;
   userId: string;
@@ -31,7 +31,7 @@ export interface AllowlistEntry {
   status: 'active' | 'revoked';
 }
 
-export interface DMPolicy {
+interface DMPolicy {
   policy: 'pairing' | 'open' | 'closed';
   codeExpiryMinutes: number;
   pairingMessage: string | null;
@@ -52,7 +52,7 @@ Ask my owner to approve you with: \`pairing approve {CODE}\``;
  * Center "DM Gate" row queries `| json | dmGate != ""`. Blocked attempts log at warn so they
  * also reach pm2 stdout (console level is warn in prod).
  */
-export type DMGateDecision =
+type DMGateDecision =
   | 'owner'
   | 'allowed'
   | 'open'

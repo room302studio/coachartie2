@@ -40,7 +40,7 @@ function withScheme(raw: string): string {
   return `https://${raw}`;
 }
 
-export async function isDeadLink(raw: string): Promise<boolean> {
+async function isDeadLink(raw: string): Promise<boolean> {
   const url = withScheme(raw);
   const hit = cache.get(url);
   if (hit && Date.now() - hit.at < CACHE_MS) return hit.dead;

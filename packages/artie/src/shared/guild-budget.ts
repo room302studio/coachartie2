@@ -15,8 +15,8 @@ import { reportToAnomalywatch } from './anomalywatch.js';
 
 export const SUBWAY_BUILDER_GUILD_ID = '1420846272545296470';
 /** GUILD_BUDGET_SHARES format: "<guildId>:<fraction>,<guildId>:<fraction>". "off" disables. */
-export const DEFAULT_GUILD_BUDGET_SHARES = `${SUBWAY_BUILDER_GUILD_ID}:0.5`;
-export const DEFAULT_DAILY_BUDGET_USD = 3;
+const DEFAULT_GUILD_BUDGET_SHARES = `${SUBWAY_BUILDER_GUILD_ID}:0.5`;
+const DEFAULT_DAILY_BUDGET_USD = 3;
 
 /** DAILY_BUDGET_USD, default 3. 0, a negative number or "off" disables the cap. */
 export function readDailyBudgetUsd(): number | null {
@@ -50,7 +50,7 @@ export function guildBudgetShare(guildId?: string | null): number | null {
 }
 
 /** Today's (ET day) recorded spend attributed to this guild. Throws on DB failure. */
-export function getGuildSpendTodayUsd(guildId: string, now: Date = new Date()): number {
+function getGuildSpendTodayUsd(guildId: string, now: Date = new Date()): number {
   const { start, end } = easternDayBounds(now);
   const row = getSyncDb().get<{ spent: number | null }>(
     `SELECT COALESCE(SUM(estimated_cost), 0) AS spent
@@ -61,7 +61,7 @@ export function getGuildSpendTodayUsd(guildId: string, now: Date = new Date()): 
   return row?.spent ?? 0;
 }
 
-export interface GuildBudgetStatus {
+interface GuildBudgetStatus {
   guildId: string;
   capUsd: number;
   spentUsd: number;

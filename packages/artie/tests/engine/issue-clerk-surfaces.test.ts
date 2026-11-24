@@ -8,11 +8,11 @@ import { describe, it, expect, beforeAll, beforeEach, vi } from 'vitest';
 const { publishMessage } = vi.hoisted(() => ({ publishMessage: vi.fn(async () => {}) }));
 vi.mock('../../src/shared/queue/enqueue-message.js', () => ({ publishMessage }));
 
-import { capabilityBootstrap } from '../../src/engine/5-tool-loop/register-tools.js';
-import { executeNativeToolCall } from '../../src/engine/5-tool-loop/execute.js';
+import { capabilityBootstrap } from '../../src/engine/capabilities/register-all.js';
+import { executeNativeToolCall } from '../../src/engine/5-tool-loop/execute-tool-call.js';
 import { capabilityToTool } from '../../src/engine/5-tool-loop/tool-schema.js';
-import { githubCapability } from '../../src/engine/tools/dev/github.js';
-import { handleGitHubWebhook } from '../../src/engine/jobs/github-push/handle-push.js';
+import { githubCapability } from '../../src/engine/capabilities/dev/github.js';
+import { handleGitHubWebhook } from '../../src/engine/jobs/github-push/github-webhook.js';
 import type { OrchestrationContext } from '../../src/engine/2-turn/types.js';
 import { OWNER_USER_ID } from '../../src/shared/config/owner.js';
 import { getPendingAction } from '../../src/shared/pending-actions.js';

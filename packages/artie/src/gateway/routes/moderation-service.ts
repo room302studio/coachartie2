@@ -42,7 +42,7 @@ function ensureAutonomousTimeoutsTable(): void {
   autonomousTimeoutsTableReady = true;
 }
 
-export class ModerationService {
+class ModerationService {
   /**
    * Record one Artie-initiated timeout for the rate limit below. Call AFTER the real
    * Discord timeout succeeds, never before.

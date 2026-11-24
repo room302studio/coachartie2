@@ -84,22 +84,6 @@ export function stopCleanupInterval() {
 
 // Start cleanup when module loads
 startCleanupInterval();
-
-/**
- * Store a log entry for a specific job
- */
-export function logForJob(jobId: string, level: string, message: string) {
-  if (!jobLogs.has(jobId)) {
-    jobLogs.set(jobId, []);
-  }
-
-  jobLogs.get(jobId)!.push({
-    timestamp: new Date().toISOString(),
-    level,
-    message,
-  });
-}
-
 /**
  * GET /logs/:jobId - Get logs for a specific job
  */

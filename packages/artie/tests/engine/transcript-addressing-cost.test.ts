@@ -7,7 +7,7 @@ import { formatRecentReactionsNote } from '../../src/gateway/1-receive/reaction-
 
 /**
  * Not an assertion suite — a measurement. Prints the real added-token cost of each
- * multiplayer feature on representative inputs, so MULTIPLAYER-NOTES.md's numbers are
+ * multiplayer feature on representative inputs, so docs/notes/MULTIPLAYER-NOTES.md's numbers are
  * something that was actually run, not estimated by eyeballing string lengths. Run with
  * `pnpm -s test transcript-addressing-cost` and read the console output.
  */

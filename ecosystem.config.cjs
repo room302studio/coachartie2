@@ -6,12 +6,11 @@
  * Wave 9 collapsed the engine (capabilities) and gateway (Discord) into one Node
  * process; wave 12 collapses them into one PM2 app to match: `coach-artie`, running
  * `packages/artie/dist/main.js`. It serves both HTTP APIs (engine :47324, gateway
- * :47321/:47319) out of the same process. See ARCHITECTURE.md and CUTOVER.md — this
- * file describes the NEW target state; the cutover itself (deleting the two old PM2
- * apps and starting this one) is written, not run, in CUTOVER.md.
+ * :47321/:47319) out of the same process. See ARCHITECTURE.md; the 2026-10-26 cutover
+ * from the two old PM2 apps to this one is recorded in docs/notes/CUTOVER.md.
  *
  * Usage:
- *   pm2 start ecosystem.config.cjs --only coach-artie   # start the bot (post-cutover)
+ *   pm2 start ecosystem.config.cjs --only coach-artie   # start the bot
  *   pm2 restart coach-artie                              # restart
  *   pm2 save                                             # persist for auto-restart on reboot
  *
@@ -23,7 +22,7 @@
  *   - redis (port 47320): Job queues - docker compose up -d redis
  *   - sandbox (port 47323): Code execution - docker compose up -d sandbox
  *
- * @see ARCHITECTURE.md for the package layout and @see CUTOVER.md for the migration steps.
+ * @see ARCHITECTURE.md for the package layout and @see docs/notes/CUTOVER.md for the cutover.
  */
 
 const path = require('path');

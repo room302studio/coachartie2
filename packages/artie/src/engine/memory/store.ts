@@ -165,7 +165,7 @@ class AsyncQueue {
  * 2. Serializing writes through async queue
  * 3. Background persistence without blocking user requests
  */
-export class HybridDataLayer {
+class MemoryStore {
   private hotData = new Map<number, MemoryRecord>(); // In-memory for active data
   private userIndex = new Map<string, Set<number>>(); // User ID -> Memory IDs
   private writeQueue = new AsyncQueue(); // Serialize writes
@@ -871,4 +871,4 @@ export class HybridDataLayer {
 // getDatabasePath() (wave 2): same DATABASE_PATH env override, but the fallback is now
 // REPO_ROOT/data/coachartie.db instead of a Docker '/app/data/coachartie.db' path that no
 // longer exists anywhere this repo runs (Docker support was removed in wave 1).
-export const hybridDataLayer = new HybridDataLayer(getDatabasePath());
+export const memoryStore = new MemoryStore(getDatabasePath());

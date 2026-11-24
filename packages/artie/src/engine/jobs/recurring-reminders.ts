@@ -25,8 +25,8 @@ import { formatInTimeZone, fromZonedTime } from 'date-fns-tz';
 import { getRawDb, getSyncDb } from '../../shared/db/client.js';
 import { logger } from '../../shared/logger.js';
 
-export const MIN_INTERVAL_MS = 60 * 60 * 1000;
-export const MAX_INTERVAL_MS = 366 * 24 * 60 * 60 * 1000;
+const MIN_INTERVAL_MS = 60 * 60 * 1000;
+const MAX_INTERVAL_MS = 366 * 24 * 60 * 60 * 1000;
 export const MAX_ACTIVE_PER_USER = 5;
 export const MAX_MESSAGE_CHARS = 300;
 
@@ -37,7 +37,7 @@ export type ParsedSchedule =
   | { kind: 'interval'; intervalMs: number; text: string }
   | { kind: 'calendar'; days: number[]; time: string; text: string };
 
-export type ParseResult = { ok: true; schedule: ParsedSchedule } | { ok: false; error: string };
+type ParseResult = { ok: true; schedule: ParsedSchedule } | { ok: false; error: string };
 
 const DAY_NAMES: Record<string, number> = {
   sun: 0, sunday: 0,
@@ -126,7 +126,7 @@ function describeInterval(ms: number): string {
 }
 
 /** Canonical text of a parsed schedule, e.g. "every 6 hours" or "every weekday at 09:00". */
-export function describeSchedule(s: ParsedSchedule): string {
+function describeSchedule(s: ParsedSchedule): string {
   if (s.kind === 'interval') return `every ${describeInterval(s.intervalMs)}`;
   return `every ${describeDays(s.days)} at ${s.time}`;
 }
@@ -232,7 +232,7 @@ export function nextFireAfter(
 
 // ---- storage ---------------------------------------------------------------------------
 
-export interface RecurringReminderRow {
+interface RecurringReminderRow {
   id: number;
   user_id: string;
   message: string;
@@ -293,7 +293,7 @@ function rowToSchedule(row: RecurringReminderRow): ParsedSchedule {
   return s;
 }
 
-export type CreateResult =
+type CreateResult =
   | { ok: true; row: RecurringReminderRow }
   | { ok: false; error: string };
 
@@ -385,7 +385,7 @@ export function cancelRecurringReminder(id: number): boolean {
  * occurrenceKey is stable for one scheduled occurrence (reminder id + its slot time): the
  * queue uses it as a job id so a retried enqueue can't deliver the same occurrence twice.
  */
-export type SendReminder = (userId: string, content: string, occurrenceKey: string) => Promise<void>;
+type SendReminder = (userId: string, content: string, occurrenceKey: string) => Promise<void>;
 
 /**
  * Fire every due reminder once. Returns how many messages were sent. See the file header for

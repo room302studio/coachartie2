@@ -30,7 +30,7 @@ import {
 import type {
   RegisteredCapability,
   CapabilityContext,
-} from '../5-tool-loop/registry.js';
+} from '../capabilities/registry.js';
 import { schedulerService } from '../jobs/scheduler.js';
 import { execSync } from 'child_process';
 import { existsSync, readFileSync, readdirSync, statSync, writeFileSync, mkdirSync } from 'fs';

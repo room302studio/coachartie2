@@ -11,7 +11,7 @@
  *   is NOT stored here.
  */
 
-export interface ChannelActivityEntry {
+interface ChannelActivityEntry {
   messageId: string;
   authorLabel: string;
   content: string;

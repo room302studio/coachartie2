@@ -1,9 +1,9 @@
 /**
- * Pure transcript / formatting helpers extracted verbatim from ContextAlchemy.
+ * Pure transcript / formatting helpers extracted verbatim from ContextAssembler (assemble.ts).
  *
  * These functions depend only on their arguments (no `this`, no module state),
  * so they live here as plain functions for testability and to shrink the
- * ContextAlchemy monolith. Behavior is byte-for-byte identical to the original
+ * assembler. Behavior is byte-for-byte identical to the original
  * private methods — do not change wording, regexes, or output shape.
  */
 
@@ -40,7 +40,7 @@ export interface DiscordHistoryEntry {
  * Compact "who's talking to whom" suffix for one transcript line — a reply arrow, an
  * @-mention list, and an "not to you" flag when the line is addressed elsewhere. Pure
  * and cheap on purpose: this rides on every line of every turn's transcript, so each
- * added token here is paid on every reply (see MULTIPLAYER-NOTES.md for the measured cost).
+ * added token here is paid on every reply (see docs/notes/MULTIPLAYER-NOTES.md for the measured cost).
  */
 export function formatAddressingSuffix(
   entry: Pick<DiscordHistoryEntry, 'replyToAuthor' | 'replyToIsSelf' | 'replyToExcerpt' | 'mentions' | 'addressedElsewhere'>

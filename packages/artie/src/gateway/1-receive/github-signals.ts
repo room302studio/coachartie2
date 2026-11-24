@@ -7,7 +7,7 @@
  * matched "tissue" and "commit" matched "committee". Every alternative is whole-word now,
  * with the common inflections spelled out ("pushed", "commits", "PRs", "merged", ...).
  */
-export const GITHUB_SIGNALS_RE =
+const GITHUB_SIGNALS_RE =
   /\b(?:push(?:ed|es|ing)?|commit(?:s|ted|ting)?|prs?|pull requests?|issues?|merg(?:e|ed|es|ing)|branch(?:es)?|github|i opened|i filed)\b/i;
 
 export function looksLikeGithubActivity(text: string): boolean {

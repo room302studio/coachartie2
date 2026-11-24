@@ -4,7 +4,7 @@
  *
  * Before wave 9 the engine reached the gateway over loopback HTTP (:47321 /api/*, and :47319
  * /health for the forums tool). Each function here calls the same handler body the HTTP route
- * calls (routes/discord-proxy.ts, routes/moderation.ts, routes/mention-proxy-api.ts,
+ * calls (routes/discord-actions.ts, routes/moderation.ts, routes/mention-proxy-api.ts,
  * health.ts) and returns that route's `{ status, body }`, so a caller that used to branch on
  * `response.status` / `await response.json()` reads `.status` / `.body` instead.
  *
@@ -50,7 +50,7 @@ const NAMEABLE_CHANNEL_TYPES = new Set([0, 5, 10, 11, 12, 15, 16]);
 
 /**
  * This guild's channels and cached threads as {id, name, public} for name lookup
- * (engine/tools/discord/channel-names.ts). `public` = @everyone can view it. Empty when the
+ * (engine/capabilities/channel-names.ts). `public` = @everyone can view it. Empty when the
  * gateway isn't up or the guild isn't cached, so a name simply doesn't resolve.
  */
 export function guildChannelEntries(guildId: string): Array<{ id: string; name: string; public: boolean }> {
@@ -76,7 +76,7 @@ export function guildChannelEntries(guildId: string): Array<{ id: string; name: 
   return out;
 }
 
-const proxy = () => import('./routes/discord-proxy.js');
+const proxy = () => import('./routes/discord-actions.js');
 const moderation = () => import('./routes/moderation.js');
 const mentionProxy = () => import('./routes/mention-proxy-api.js');
 
@@ -128,11 +128,6 @@ export async function sendChunkedChannelMessage(channelId: string, content: stri
 export async function createPoll(channelId: string, body: any): Promise<ApiResult> {
   const c = client();
   return (await proxy()).createPoll(c, { channelId }, wire(body));
-}
-
-export async function readPoll(channelId: string, messageId: string): Promise<ApiResult> {
-  const c = client();
-  return (await proxy()).readPoll(c, { channelId, messageId });
 }
 
 export async function addReaction(

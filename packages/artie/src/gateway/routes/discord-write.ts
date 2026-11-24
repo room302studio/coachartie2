@@ -30,6 +30,7 @@ import {
 import { logger } from '../../shared/logger.js';
 import { getErrorMessage } from '../../shared/errors.js';
 import { isBlockedUser, scrubBlockedUserMentions } from '../../shared/blocklist.js';
+import { SNOWFLAKE } from '../../shared/discord-ids.js';
 
 /** Room 302 Studio and SB2 pre-alpha: where Artie may post, start threads and forum posts on his own. */
 // The one list (send_message reads it too, through gateway/api.ts mayPostElsewhere).
@@ -45,7 +46,6 @@ const UNKNOWN_CHANNEL = 10003;
 const UNKNOWN_MESSAGE = 10008;
 const MISSING_ACCESS = 50001;
 const MISSING_PERMISSIONS = 50013;
-const SNOWFLAKE = /^\d{15,22}$/;
 
 export interface Result {
   status: number;

@@ -1,12 +1,12 @@
 import express, { Express } from 'express';
 import { logger } from '../shared/logger.js';
-import { createApiRouter } from './routes/discord-proxy.js';
+import { createApiRouter } from './routes/discord-actions.js';
 import { setupModerationApi } from './routes/moderation.js';
 import { requireApiToken } from '../shared/require-api-token.js';
 import { mountLegalPages } from './routes/legal-pages.js';
 import { Client } from 'discord.js';
 
-export interface GatewayAppDeps {
+interface GatewayAppDeps {
   /** The live Discord client. Without one the app serves only the legal pages (as before login). */
   client: Client | null;
 }
@@ -49,7 +49,7 @@ export function createGatewayApp(deps: GatewayAppDeps): Express {
   return app;
 }
 
-export class ApiServer {
+class ApiServer {
   private server: any;
   private port: number;
   private discordClient: Client | null = null;

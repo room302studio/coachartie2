@@ -19,7 +19,7 @@ const LEDGER_PATH = getCasinoLedger();
 // floor — the ledger, the melt state, and the games are all preserved under the tarp.
 export const CASINO_OPEN = process.env.CASINO_OPEN === 'true';
 
-export interface CasinoEntry {
+interface CasinoEntry {
   name: string;
   spins: number;
   wins: number;
@@ -263,7 +263,7 @@ function bjSweep(): void {
   for (const [k, s] of bjTables) if (now - s.at > BJ_TTL_MS) bjTables.delete(k);
 }
 
-export interface BjState {
+interface BjState {
   session: BjSession;
   playerValue: number;
   dealerValue: number;
@@ -363,7 +363,7 @@ function slotReel(symbols: Array<[string, number]>): string {
   return symbols[0][0];
 }
 
-export interface SlotResult {
+interface SlotResult {
   reels: string[];
   credDelta: number;
   boxSeconds: number;

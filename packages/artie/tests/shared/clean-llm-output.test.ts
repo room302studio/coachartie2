@@ -9,8 +9,8 @@ import { describe, it, expect, vi, beforeAll } from 'vitest';
 
 // stream-reply.ts pulls the engine client, the job watcher and telemetry at import time
 // (intervals, HTTP clients); none of them run in these rows.
-vi.mock('../../src/gateway/3-ask-engine/engine-client.js', () => ({ capabilitiesClient: {} }));
-vi.mock('../../src/gateway/3-ask-engine/job-watcher.js', () => ({ jobMonitor: {} }));
+vi.mock('../../src/gateway/3-ask-engine/engine-client.js', () => ({ engineClient: {} }));
+vi.mock('../../src/gateway/3-ask-engine/job-watcher.js', () => ({ jobWatcher: {} }));
 vi.mock('../../src/gateway/telemetry.js', () => ({
   telemetry: new Proxy({}, { get: () => () => {} }),
 }));
@@ -20,10 +20,10 @@ import { cleanCapabilityTags } from '../../src/gateway/4-reply/stream-reply.js';
 import { sanitizeAssistantMessage } from '../../src/engine/3-context/sources/transcript.js';
 import { stripCapabilityTags } from '../../src/engine/memory/recall.js';
 
-type Coordinator = typeof import('../../src/engine/4-generate/generate-reply.js').llmResponseCoordinator;
-let coordinator: Coordinator;
+type Generator = typeof import('../../src/engine/4-generate/generate-reply.js').replyGenerator;
+let generator: Generator;
 beforeAll(async () => {
-  coordinator = (await import('../../src/engine/4-generate/generate-reply.js')).llmResponseCoordinator;
+  generator = (await import('../../src/engine/4-generate/generate-reply.js')).replyGenerator;
   // stripCapabilityXML reports every strip on console.error; keep the run quiet.
   vi.spyOn(console, 'error').mockImplementation(() => {});
 });
@@ -31,7 +31,7 @@ beforeAll(async () => {
 interface Row {
   name: string;
   input: string;
-  /** shared stripCapabilityXML: push-worker's last-line filter before channel.send */
+  /** shared stripCapabilityXML: send-queued-replies' last-line filter before channel.send */
   outbound: string;
   /** stream-reply cleanCapabilityTags: every streamed edit and the final reply */
   reply: string;
@@ -375,7 +375,7 @@ const CALLERS: Record<Exclude<keyof Row, 'name' | 'input'>, (t: string) => strin
   reply: (t) => cleanCapabilityTags(t),
   history: (t) => sanitizeAssistantMessage(t),
   recall: (t) => stripCapabilityTags(t),
-  generate: (t) => coordinator.stripThinkingTags(t),
+  generate: (t) => generator.stripThinkingTags(t),
 };
 
 // The XML loop is gone (2026-11-24), but models still slip its <wants_loop> tag: the reply path

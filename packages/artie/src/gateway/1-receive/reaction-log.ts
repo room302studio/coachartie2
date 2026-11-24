@@ -15,7 +15,7 @@ import type { Client } from 'discord.js';
 import { logger } from '../../shared/logger.js';
 import { insertReaction, clearReactions, type ReactorRole } from '../../shared/db/reaction-store.js';
 
-export interface ReactionLogEntry {
+interface ReactionLogEntry {
   messageId: string;
   channelId: string;
   emoji: string;
@@ -51,7 +51,7 @@ export function emojiKey(emoji: string, emojiId?: string | null): string {
   return emoji;
 }
 
-export function emojiLabel(emoji: string, emojiId?: string | null): string {
+function emojiLabel(emoji: string, emojiId?: string | null): string {
   if (emojiId) return `:${emoji}:`;
   return emoji;
 }
@@ -168,13 +168,13 @@ export function formatRecentReactionsNote(
   return `Recent reactions to your messages here: ${parts.join('; ')}.`;
 }
 
-export interface LiveReaction {
+interface LiveReaction {
   emoji: string;
   count: number;
   who: string[];
 }
 
-export interface LiveMessageReactions {
+interface LiveMessageReactions {
   messageId: string;
   channelId: string;
   snippet: string;

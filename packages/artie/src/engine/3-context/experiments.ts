@@ -1,5 +1,5 @@
 /**
- * Experiment Manager - A/B Testing for Context Alchemy
+ * Experiment Manager - A/B testing for context assembly (3-context/assemble.ts)
  *
  * Manages experiments to test different configurations:
  * - Model comparisons (Claude vs GPT vs local)
@@ -19,7 +19,7 @@ const ENABLE_EXPERIMENTS = process.env.ENABLE_EXPERIMENTS === 'true';
 
 export type VariantType = 'model' | 'prompt' | 'parameter' | 'feature';
 
-export type ExperimentStatus = 'draft' | 'active' | 'completed' | 'cancelled';
+type ExperimentStatus = 'draft' | 'active' | 'completed' | 'cancelled';
 
 export type TargetType = 'global' | 'guild' | 'user';
 
@@ -57,7 +57,7 @@ export interface ExperimentDefinition {
   }>;
 }
 
-export interface ExperimentResults {
+interface ExperimentResults {
   experimentId: string;
   name: string;
   status: ExperimentStatus;
@@ -76,13 +76,13 @@ export interface ExperimentResults {
   significance: number; // Statistical confidence 0-1
 }
 
-export interface VariantAssignment {
+interface VariantAssignment {
   experimentId: string | null;
   variantId: string | null;
   config: VariantConfig;
 }
 
-export class ExperimentManager {
+class ExperimentManager {
   private static instance: ExperimentManager;
 
   // Cache for user assignments (cleared periodically)

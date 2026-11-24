@@ -8,7 +8,7 @@ function ensureApiPhpUrl(url: string): string {
   return `${url}/api.php`;
 }
 
-export class MediaWikiManager {
+class WikiUpdater {
   private clients: Map<string, MediaWikiClient> = new Map();
   private lastUsedWiki: string | null = null;
 
@@ -250,4 +250,4 @@ export class MediaWikiManager {
 }
 
 // Export singleton
-export const mediaWikiManager = new MediaWikiManager();
+export const mediaWikiManager = new WikiUpdater();

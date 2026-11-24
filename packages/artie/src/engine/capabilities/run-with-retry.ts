@@ -1,0 +1,648 @@
+import { logger } from '../../shared/logger.js';
+import { mintTrusted } from '../../shared/trusted-ids.js';
+import { delay } from '../../shared/async.js';
+import { capabilityRegistry } from './registry.js';
+import { GlobalVariableStore, scopedOutputPrefix } from './variables.js';
+import Handlebars from 'handlebars';
+import {
+  StructuredCapabilityError,
+  formatStructuredErrorForLLM,
+} from './call-errors.js';
+import { errorPatternTracker } from './error-patterns.js';
+import { invocationTrace } from './invocation-trace.js';
+import { runInLedgerScope, looksLikeToolFailure } from './ledger.js';
+import { collapseWhitespace } from '../../shared/text.js';
+import { CallerError } from '../../shared/errors.js';
+
+interface ParsedCapability {
+  name: string;
+  action: string;
+  content: string;
+  params: Record<string, unknown>;
+}
+
+function getMaxRetries(capabilityName: string): number {
+  if (capabilityName === 'mcp_auto_installer') {
+    return 1; // No retries for MCP installs
+  }
+  return 3;
+}
+
+function ensureErrorObject(error: unknown): Error {
+  if (error instanceof Error) {
+    return error;
+  }
+  return new Error(String(error));
+}
+
+interface CapabilityResult {
+  capability: ParsedCapability;
+  success: boolean;
+  data?: unknown;
+  error?: string;
+  timestamp: string;
+  attempts: number;
+  fallbackUsed?: boolean;
+}
+
+class CapabilityRunner {
+  /**
+   * Execute a capability with retry logic and fallback strategies
+   */
+  async executeWithRetry(
+    capability: ParsedCapability,
+    context: {
+      userId: string;
+      messageId: string;
+      traceId?: string;
+      // Channel/guild MUST flow through here: capabilities executed from the ReAct loop
+      // used to lose them entirely, so tts/discord capabilities failed with "no channel"
+      // on every self-initiated multi-step attempt while direct executions worked.
+      channelId?: string;
+      guildId?: string;
+    },
+    maxRetries = getMaxRetries(capability.name)
+  ): Promise<CapabilityResult> {
+    // One ledger row for the whole retried call (final outcome), not one per attempt.
+    return runInLedgerScope(
+      {
+        tool: capability.name,
+        action: capability.action,
+        userId: context.userId,
+        guildId: context.guildId,
+      },
+      () => this.executeWithRetryInner(capability, context, maxRetries),
+      (result) => {
+        // validateResult only checks "not empty", so a handler that RETURNS "Error: ..." comes
+        // back success=true here; the ledger must not call that ok (or "rescued").
+        let success = result.success;
+        if (success && typeof result.data === 'string' && looksLikeToolFailure(result.data)) {
+          success = false;
+        }
+        return { success, error: result.error, fallbackUsed: result.fallbackUsed === true };
+      }
+    );
+  }
+
+  private async executeWithRetryInner(
+    capability: ParsedCapability,
+    context: {
+      userId: string;
+      messageId: string;
+      traceId?: string;
+      channelId?: string;
+      guildId?: string;
+    },
+    maxRetries: number
+  ): Promise<CapabilityResult> {
+    logger.info(
+      `🔧 ROBUST: Executing ${capability.name}:${capability.action} with retry capability`
+    );
+
+    let lastError: Error | null = null;
+    const startedAt = new Date();
+
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        logger.info(
+          `🔄 Attempt ${attempt}/${maxRetries} for ${capability.name}:${capability.action}`
+        );
+
+        // Clean and validate capability before execution
+        const cleanedCapability = this.cleanCapability(capability, attempt);
+
+        // Try to execute via registry
+        const result = await this.tryRegistryExecution(cleanedCapability, context);
+
+        // Validate result
+        // A handler that returns its own error text ("Error: database unavailable") failed,
+        // whatever the return path. Report it as a failure, without retrying (it may have half
+        // run) or a fallback (Codex crew 2026-11-18: it stayed success:true in results).
+        if (typeof result === 'string' && looksLikeToolFailure(result)) {
+          await invocationTrace
+            .logInvocation({
+              traceId: context.traceId,
+              capabilityName: cleanedCapability.name,
+              action: cleanedCapability.action,
+              params: cleanedCapability.params,
+              startedAt,
+              completedAt: new Date(),
+              success: false,
+              error: result,
+            })
+            .catch((error: unknown) => logger.warn('Tool invocation log failed:', error));
+          return {
+            capability: cleanedCapability,
+            success: false,
+            error: result,
+            timestamp: new Date().toISOString(),
+            attempts: attempt,
+          };
+        }
+
+        if (this.validateResult(cleanedCapability, result)) {
+          // Log successful invocation. A logging failure must not re-run a tool that already
+          // succeeded (duplicate promises, reminders, paid images; Codex crew 2026-11-18).
+          await invocationTrace
+            .logInvocation({
+              traceId: context.traceId,
+              capabilityName: cleanedCapability.name,
+              action: cleanedCapability.action,
+              params: cleanedCapability.params,
+              result,
+              startedAt,
+              completedAt: new Date(),
+              success: true,
+            })
+            .catch((error: unknown) => logger.warn('Tool invocation log failed (tool succeeded):', error));
+
+          return {
+            capability: cleanedCapability,
+            success: true,
+            data: result,
+            timestamp: new Date().toISOString(),
+            attempts: attempt,
+          };
+        } else {
+          throw new Error(`Invalid result: ${JSON.stringify(result)}`);
+        }
+      } catch (error) {
+        lastError = ensureErrorObject(error);
+        logger.warn(
+          `❌ Attempt ${attempt} failed for ${capability.name}:${capability.action}: ${lastError.message}`
+        );
+        // Wrong as asked: the same call gives the same answer, so don't repeat it.
+        if (lastError instanceof CallerError) break;
+
+        // Wait with exponential backoff (but not on last attempt)
+        if (attempt < maxRetries) {
+          const backoffMs = 100 * Math.pow(2, attempt - 1); // 100ms, 200ms, 400ms
+          await delay(backoffMs);
+        }
+      }
+    }
+
+    // All retries failed, try fallback strategies
+    logger.warn(
+      `🚨 All retries failed for ${capability.name}:${capability.action}, trying fallbacks`
+    );
+
+    try {
+      // No fallback for a call that was wrong as asked: the error itself says what to change.
+      if (lastError instanceof CallerError) throw lastError;
+      const fallbackResult = await this.tryFallbackExecution(capability, context);
+      return {
+        capability,
+        success: true,
+        data: fallbackResult,
+        timestamp: new Date().toISOString(),
+        attempts: maxRetries,
+        fallbackUsed: true,
+      };
+    } catch (_fallbackError) {
+      // Final failure - track the error
+      const errorMessage = this.getHelpfulErrorMessage(capability, lastError, {
+        userId: context.userId,
+      });
+
+      // Log failed invocation
+      await invocationTrace.logInvocation({
+        traceId: context.traceId,
+        capabilityName: capability.name,
+        action: capability.action,
+        params: capability.params,
+        startedAt,
+        completedAt: new Date(),
+        success: false,
+        error: errorMessage,
+      });
+
+      return {
+        capability,
+        success: false,
+        error: errorMessage,
+        timestamp: new Date().toISOString(),
+        attempts: maxRetries,
+      };
+    }
+  }
+
+  /**
+   * Clean and fix common capability parameter issues
+   */
+  private cleanCapability(capability: ParsedCapability, attempt: number): ParsedCapability {
+    const cleaned = { ...capability };
+
+    // Fix calculator parameters
+    if (capability.name === 'calculator') {
+      // Ensure expression parameter exists
+      if (!cleaned.params.expression && cleaned.content) {
+        cleaned.params.expression = cleaned.content;
+      }
+
+      // Clean math expression on retry attempts
+      if (attempt > 1 && cleaned.params.expression) {
+        cleaned.params.expression = this.cleanMathExpression(String(cleaned.params.expression));
+      }
+    }
+
+    // Fix memory parameters
+    if (capability.name === 'memory') {
+      // Ensure userId is included
+      if (!cleaned.params.userId) {
+        cleaned.params.userId = 'unknown-user'; // This should be injected elsewhere
+      }
+
+      // Fix search query parameter
+      if (capability.action === 'search' && !cleaned.params.query && cleaned.content) {
+        cleaned.params.query = cleaned.content;
+        cleaned.content = '';
+      }
+    }
+
+    // Fix MCP client parameters
+    if (capability.name === 'mcp_client') {
+      if (!cleaned.params.tool_name && cleaned.content) {
+        // Don't try to guess - the LLM should specify the tool name
+        cleaned.params.tool_name = 'unknown_tool';
+      }
+    }
+
+    logger.info(
+      `🧹 CLEANED: ${capability.name}:${capability.action} - params: ${JSON.stringify(cleaned.params)}`
+    );
+    return cleaned;
+  }
+
+  /**
+   * Try executing via capability registry
+   */
+  /**
+   * Interpolate variables in parameters using Handlebars template engine
+   * Supports both ${var} and {{var}} syntax
+   */
+  private async interpolateParams(
+    params: Record<string, any>,
+    userId: string,
+    guildId?: string
+  ): Promise<Record<string, any>> {
+    const interpolated: Record<string, any> = {};
+
+    // This caller's saved results as a flat object for Handlebars
+    const userVariables = await this.getUserVariablesForHandlebars(userId, guildId);
+
+    for (const [key, value] of Object.entries(params)) {
+      if (typeof value === 'string') {
+        try {
+          // Convert ${var} syntax to {{var}} for Handlebars compatibility
+          const normalizedTemplate = value.replace(/\$\{([^}]+)\}/g, '{{$1}}');
+
+          // Compile and execute the template with Handlebars
+          const template = Handlebars.compile(normalizedTemplate, { noEscape: true });
+          const interpolatedValue = template(userVariables);
+
+          if (interpolatedValue !== value) {
+            logger.info(`🔗 Interpolated ${key}: "${value}" → "${interpolatedValue}"`);
+          }
+
+          interpolated[key] = interpolatedValue;
+        } catch (error) {
+          logger.warn(`⚠️ Template interpolation failed for ${key}: ${error}`);
+          interpolated[key] = value; // Keep original on error
+        }
+      } else if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
+        // Recursively interpolate nested objects
+        interpolated[key] = await this.interpolateParams(value, userId, guildId);
+      } else {
+        interpolated[key] = value;
+      }
+    }
+
+    return interpolated;
+  }
+
+  /**
+   * Get all global variables as a flat object for Handlebars
+   */
+  private async getUserVariablesForHandlebars(
+    userId: string,
+    guildId?: string
+  ): Promise<Record<string, any>> {
+    // Only this person's results from this server, under their plain names.
+    const all = await GlobalVariableStore.getInstance().list();
+    const prefix = scopedOutputPrefix(userId, guildId);
+    const mine: Record<string, any> = {};
+    for (const [key, value] of Object.entries(all)) {
+      if (key.startsWith(prefix)) mine[key.slice(prefix.length)] = value;
+    }
+    return mine;
+  }
+
+  private async tryRegistryExecution(
+    capability: ParsedCapability,
+    context: { userId: string; messageId: string; channelId?: string; guildId?: string }
+  ): Promise<unknown> {
+    // Inject userId and messageId into params for capabilities that need context
+    let paramsWithContext: Record<string, any>;
+    if (['scheduler', 'memory', 'image_gen'].includes(capability.name)) {
+      paramsWithContext = {
+        ...capability.params,
+        userId: context.userId,
+        messageId: context.messageId,
+      };
+    } else {
+      paramsWithContext = capability.params;
+    }
+
+    // Interpolate variables in params
+    paramsWithContext = await this.interpolateParams(paramsWithContext, context.userId, context.guildId);
+
+    // Interpolate variables in content as well
+    let interpolatedContent = capability.content;
+    if (typeof capability.content === 'string') {
+      try {
+        const normalizedTemplate = capability.content.replace(/\$\{([^}]+)\}/g, '{{$1}}');
+        const template = Handlebars.compile(normalizedTemplate, { noEscape: true });
+        const userVariables = await this.getUserVariablesForHandlebars(context.userId, context.guildId);
+        interpolatedContent = template(userVariables);
+
+        if (interpolatedContent !== capability.content) {
+          logger.info(
+            `🔗 Interpolated content: "${capability.content}" → "${interpolatedContent}"`
+          );
+        }
+      } catch (error) {
+        logger.warn(`⚠️ Content interpolation failed: ${error}`);
+        interpolatedContent = capability.content; // Keep original on error
+      }
+    }
+
+    // Every model-originated call passes through here, so this is where the approval-gate
+    // bypass flag gets stripped. The approvals tool replays
+    // through capabilityRegistry.execute directly and keeps its confirmed:true.
+    const { confirmed: _ignoredConfirmed, ...ungatedParams } = paramsWithContext as Record<
+      string,
+      unknown
+    >;
+
+    logger.info(
+      `🎯 REGISTRY: Executing ${capability.name}:${capability.action} with params: ${JSON.stringify(ungatedParams)}`
+    );
+
+    return await capabilityRegistry.execute(
+      capability.name,
+      capability.action,
+      ungatedParams,
+      interpolatedContent,
+      mintTrusted(
+        {
+          userId: context.userId,
+          messageId: context.messageId,
+          channelId: context.channelId,
+          guildId: context.guildId,
+        },
+        'discord-turn'
+      )
+    );
+  }
+
+  /**
+   * Validate that a capability result makes sense
+   */
+  private validateResult(capability: ParsedCapability, result: unknown): boolean {
+    if (result === null || result === undefined) {
+      return false;
+    }
+
+    // Capability-specific validation
+    switch (capability.name) {
+      case 'calculator':
+        // Calculator should return a number or string that looks like a calculation result
+        if (typeof result === 'number') {
+          return true;
+        }
+        if (typeof result === 'string' && /\d+/.test(result)) {
+          return true;
+        }
+        return false;
+
+      case 'memory':
+        // Memory operations should return some kind of response
+        if (typeof result === 'string' && result.length > 0) {
+          return true;
+        }
+        if (typeof result === 'object' && result !== null) {
+          return true;
+        }
+        return false;
+
+      case 'web':
+        // Web search should return some content
+        if (typeof result === 'string' && result.length > 10) {
+          return true;
+        }
+        return false;
+
+      default:
+        // Generic validation - just check it's not empty
+        return result !== null && result !== undefined && result !== '';
+    }
+  }
+
+  /**
+   * Try fallback execution strategies when registry fails
+   */
+  private async tryFallbackExecution(
+    capability: ParsedCapability,
+    _context: { userId: string; messageId: string }
+  ): Promise<string> {
+    switch (capability.name) {
+      case 'calculator':
+        return this.fallbackCalculation(
+          capability.content || String(capability.params.expression || '')
+        );
+
+      // No memory fallback: it answered a failed remember with "I've noted ... (stored
+      // temporarily)" while storing nothing, which hid real errors from Artie, e.g. scope
+      // "here" from a DM (2026-11-17, he caught it). The real error reaches him instead.
+
+      case 'web':
+        return this.fallbackWebSearch(String(capability.params.query || capability.content));
+
+      case 'mcp_client':
+        return this.fallbackMCPTool(String(capability.params.tool_name || ''));
+
+      default:
+        throw new Error(`No fallback available for ${capability.name}`);
+    }
+  }
+
+  /**
+   * Fallback calculator using basic math evaluation
+   * NEVER THROWS - always returns a user-friendly message
+   */
+  /**
+   * Fallbacks return a result only when they actually produced one; otherwise they throw, so
+   * the call stays a failure with the real error (Codex crew 2026-11-18: "unavailable" prose
+   * came back as success with fallbackUsed, which looked rescued and hid the failure).
+   */
+  private fallbackCalculation(expression: string): string {
+    if (!expression || expression.trim().length === 0) {
+      throw new Error('No expression to calculate');
+    }
+    const cleaned = this.cleanMathExpression(expression);
+    // Only plain arithmetic; anything else (^, sqrt, ...) is the real calculator's job.
+    if (!/^[0-9+\-*/(). ]+$/.test(cleaned)) {
+      throw new Error(`Fallback can't evaluate "${cleaned}"`);
+    }
+    logger.info(`🧮 FALLBACK: Calculating "${cleaned}"`);
+    const result = this.safeEvaluate(cleaned);
+    if (!Number.isFinite(result)) throw new Error(`"${cleaned}" has no finite result`);
+    return `The result of ${cleaned} is ${result}`;
+  }
+
+  /** No substitute for web search exists, so this is a failure, not a rescue. */
+  private fallbackWebSearch(query: string): string {
+    logger.info(`🌐 FALLBACK: none for web search ("${query}")`);
+    throw new Error('Web search is unavailable right now');
+  }
+
+  /** Only the time tool has a real substitute (the local clock). */
+  private fallbackMCPTool(toolName: string): string {
+    logger.info(`🔧 FALLBACK: MCP tool: "${toolName}"`);
+    if (toolName.includes('time') || toolName.includes('current_time')) {
+      return `The current time is approximately ${new Date().toLocaleString()} (MCP time service unavailable)`;
+    }
+    throw new Error(`The ${toolName} tool is unavailable right now`);
+  }
+
+  /**
+   * Clean mathematical expressions
+   */
+  private cleanMathExpression(expression: string): string {
+    // Whitespace only. Deleting "unsupported" characters changed the meaning: 2^3+1 became
+    // 23+1 and the fallback confidently answered 24 (Codex crew 2026-11-18).
+    return collapseWhitespace(expression).trim();
+  }
+
+  /**
+   * Safe math evaluation without eval()
+   */
+  private safeEvaluate(expression: string): number {
+    // This is a simplified math evaluator - in production you'd use a proper math parser
+    // For now, handle basic cases
+    const cleaned = expression.replace(/\s/g, '');
+
+    // Handle simple cases like "42*42", "100+50", etc.
+    if (/^\d+[+\-*/]\d+$/.test(cleaned)) {
+      const match = cleaned.match(/^(\d+)([+\-*/])(\d+)$/);
+      if (match) {
+        const [, a, op, b] = match;
+        const numA = parseInt(a);
+        const numB = parseInt(b);
+
+        switch (op) {
+          case '+':
+            return numA + numB;
+          case '-':
+            return numA - numB;
+          case '*':
+            return numA * numB;
+          case '/':
+            if (numB !== 0) {
+              return numA / numB;
+            }
+            return NaN;
+        }
+      }
+    }
+
+    throw new Error('Complex mathematical expressions not supported in fallback mode');
+  }
+
+  /**
+   * Detect if error is a structured error from registry
+   */
+  private isStructuredError(errorMsg: string): errorMsg is string {
+    try {
+      const parsed = JSON.parse(errorMsg);
+      return (
+        typeof parsed === 'object' &&
+        parsed !== null &&
+        'errorCode' in parsed &&
+        'correctExample' in parsed
+      );
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Parse structured error from JSON string
+   */
+  private parseStructuredError(errorMsg: string): StructuredCapabilityError | null {
+    try {
+      return JSON.parse(errorMsg) as StructuredCapabilityError;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Generate helpful error messages for LLM
+   * Detects structured errors and formats them for LLM self-correction
+   */
+  private getHelpfulErrorMessage(
+    capability: ParsedCapability,
+    error: Error | null,
+    context?: { userId: string }
+  ): string {
+    const errorMsg = error?.message || 'Unknown error';
+
+    // Check if this is a structured error from the registry
+    if (this.isStructuredError(errorMsg)) {
+      const structuredError = this.parseStructuredError(errorMsg);
+      if (structuredError && context?.userId) {
+        // Track this error in the pattern tracker
+        errorPatternTracker.recordError(context.userId, structuredError);
+
+        // Check if they're in a repeat loop
+        const isRepeat = errorPatternTracker.isInErrorLoop(context.userId, structuredError);
+        let message = formatStructuredErrorForLLM(structuredError);
+
+        if (isRepeat) {
+          // Add special guidance for repeat errors
+          const guidance = errorPatternTracker.getRepeatErrorGuidance(
+            context.userId,
+            structuredError
+          );
+          if (guidance) {
+            message = `${guidance}\n\n${message}`;
+          }
+        }
+
+        return message;
+      }
+    }
+
+    // Fallback to human-friendly error messages
+    const baseName = capability.name;
+    const action = capability.action;
+
+    const suggestions = {
+      calculator: 'Try using a simpler mathematical expression like "42 * 42" or "100 + 50"',
+      memory: 'Nothing was stored. The error above says what to change.',
+      web: 'Try rephrasing your search query or check your internet connection',
+      mcp_client: 'The external tool service might be temporarily unavailable',
+    };
+
+    const suggestion =
+      suggestions[baseName as keyof typeof suggestions] || 'Please try again later';
+
+    return `I encountered an issue with the ${baseName} ${action} operation: ${errorMsg}. ${suggestion}`;
+  }
+
+}
+
+// Export singleton
+export const capabilityRunner = new CapabilityRunner();

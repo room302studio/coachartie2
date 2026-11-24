@@ -181,8 +181,8 @@ export const ARTIE_LOGS = join(REPO_ROOT, 'packages/artie/logs');
 
 /**
  * Where the two pre-v3 processes' winston logs live on prod (the capabilities engine's and
- * the Discord gateway's). Nothing in v3 writes or reads them; they stay exported so CUTOVER
- * and anyone back-reading old logs has the paths. The live directory is `ARTIE_LOGS`.
+ * the Discord gateway's). Nothing in v3 writes or reads them; they stay exported so
+ * docs/notes/CUTOVER.md and anyone back-reading old logs has the paths. The live directory is `ARTIE_LOGS`.
  */
 export const ENGINE_LOGS = join(REPO_ROOT, 'packages/capabilities/logs');
 
@@ -229,7 +229,7 @@ export function getLogsDir(): string {
 export const SKILLS_DIRS: readonly string[] = [
   join(REPO_ROOT, 'packages/artie/skills'),
   join(process.env.HOME || '', '.coachartie/skills'),
-  join(REPO_ROOT, 'packages/artie/src/engine/tools/skills/library'),
+  join(REPO_ROOT, 'packages/artie/src/engine/capabilities/skills/library'),
 ];
 
 /**

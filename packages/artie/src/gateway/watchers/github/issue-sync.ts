@@ -12,14 +12,14 @@ import { logger } from '../../../shared/logger.js';
 import { getErrorMessage } from '../../../shared/errors.js';
 import type { ForumThreadData } from './forum-traversal.js';
 
-export interface GitHubIssueData {
+interface GitHubIssueData {
   title: string;
   body: string;
   labels?: string[];
   assignees?: string[];
 }
 
-export interface SyncResult {
+interface SyncResult {
   success: boolean;
   issueNumber?: number;
   issueUrl?: string;

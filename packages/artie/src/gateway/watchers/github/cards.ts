@@ -81,7 +81,7 @@ const PR_SIZES: Array<{ label: string; maxLines: number; color: number }> = [
 
 // --- card data ---------------------------------------------------------------------------
 
-export interface CardData {
+interface CardData {
   title: string;
   url?: string;
   description?: string;
@@ -422,7 +422,7 @@ export function batchLine(event: GitHubSyncEvent, headline: string | null = null
 
 // --- headlines -------------------------------------------------------------------------------
 
-export interface HeadlineRequest {
+interface HeadlineRequest {
   key: string;
   kind: string;
   title: string;
@@ -505,7 +505,7 @@ export function numbered(num: number | undefined, text: string | undefined): str
 }
 
 /** "+412 −88", "14 files": only what's known. */
-export function statFacts(additions?: number, deletions?: number, files?: number): string[] {
+function statFacts(additions?: number, deletions?: number, files?: number): string[] {
   const out: string[] = [];
   if (additions !== undefined || deletions !== undefined) {
     out.push(`+${additions || 0} −${deletions || 0}`);

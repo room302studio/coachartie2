@@ -17,7 +17,7 @@
  * lives in the caller (on-message.ts) and is easy to keep out of this file's tests.
  */
 
-export interface BurstSchedulerOptions {
+interface BurstSchedulerOptions {
   clock?: () => number;
 }
 
@@ -92,7 +92,7 @@ export function burstDebounceMs(): number {
 }
 
 /** One burst item's renderable shape — everything needed to fold it into a combined turn. */
-export interface BurstMessage {
+interface BurstMessage {
   messageId: string;
   authorLabel: string;
   content: string;

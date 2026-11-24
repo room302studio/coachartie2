@@ -2,8 +2,8 @@ import { logger } from '../../shared/logger.js';
 import { IncomingMessage } from '../../shared/queue/types.js';
 import { stripChatPrefixes, stripInternalMarkup } from '../../shared/clean-llm-output.js';
 import { openRouterService } from './openrouter.js';
-import { promptManager } from '../3-context/system-prompt.js';
-import { contextAlchemy } from '../3-context/assemble.js';
+import { promptStore } from '../3-context/prompt-store.js';
+import { contextAssembler } from '../3-context/assemble.js';
 import { preflightAnalyzer } from './preflight.js';
 import { getBrownoutMode, applyBrevityNote, brownoutRoute } from '../budget/brownout.js';
 import { isAutoRouted } from '../../shared/model-spec.js';
@@ -12,7 +12,7 @@ import { errorTracker, ERROR_TYPES } from '../health/error-tracker.js';
 import { runToolLoop, type ToolLoopDeps } from '../5-tool-loop/native-loop.js';
 import { registryToTools } from '../5-tool-loop/tool-schema.js';
 import { recordToolTurn, shadowRouters, type ToolTurnContext } from '../2-turn/tool-exposure.js';
-import { capabilityRegistry } from '../5-tool-loop/registry.js';
+import { capabilityRegistry } from '../capabilities/registry.js';
 import { getErrorMessage } from '../../shared/errors.js';
 
 /** Per-turn options handed to every openRouterService call in this turn. */
@@ -37,14 +37,14 @@ function reasoningBudget(): number {
 // Handles all LLM interactions and response generation
 // =====================================================
 
-export class LLMResponseCoordinator {
-  private static instance: LLMResponseCoordinator;
+class ReplyGenerator {
+  private static instance: ReplyGenerator;
 
-  static getInstance(): LLMResponseCoordinator {
-    if (!LLMResponseCoordinator.instance) {
-      LLMResponseCoordinator.instance = new LLMResponseCoordinator();
+  static getInstance(): ReplyGenerator {
+    if (!ReplyGenerator.instance) {
+      ReplyGenerator.instance = new ReplyGenerator();
     }
-    return LLMResponseCoordinator.instance;
+    return ReplyGenerator.instance;
   }
 
   /**
@@ -167,7 +167,7 @@ export class LLMResponseCoordinator {
       const preflight = await preflightAnalyzer.analyze(message.message);
 
       // Get base capability instructions template
-      const baseInstructions = await promptManager.getCapabilityInstructions(message.message);
+      const baseInstructions = await promptStore.getCapabilityInstructions(message.message);
 
       // Check for experiment feature flags (memory/rules ablation)
       let experimentFeatureFlags: { enableMemories?: boolean; enableRules?: boolean } = {};
@@ -202,7 +202,7 @@ export class LLMResponseCoordinator {
       } else {
         discordContext = undefined;
       }
-      const { messages } = await contextAlchemy.buildMessageChain(
+      const { messages } = await contextAssembler.buildMessageChain(
         message.message,
         message.userId,
         baseInstructions,
@@ -439,4 +439,4 @@ export class LLMResponseCoordinator {
   }
 }
 
-export const llmResponseCoordinator = LLMResponseCoordinator.getInstance();
+export const replyGenerator = ReplyGenerator.getInstance();

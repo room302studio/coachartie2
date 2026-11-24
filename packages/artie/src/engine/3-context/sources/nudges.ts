@@ -1,5 +1,5 @@
 /**
- * Autonomous "nudge" context source builders extracted verbatim from ContextAlchemy.
+ * Autonomous "nudge" context source builders extracted verbatim from ContextAssembler (assemble.ts).
  *
  * Behavior is byte-for-byte identical to the original private methods — the only
  * change is that instance state (`this.lastSongNudgeAt`) is passed in as an explicit
@@ -21,7 +21,7 @@ import { DEBUG } from './types.js';
  * prompt so songs happen naturally without spamming or singing at a bug report.
  * Tunable via SONG_NUDGE_CHANCE (default 0.12); set to 0 to disable.
  *
- * `nudgeState` is the per-channel cooldown map owned by ContextAlchemy
+ * `nudgeState` is the per-channel cooldown map owned by ContextAssembler
  * (this.lastSongNudgeAt) — passed in so behavior is identical.
  */
 export async function addSongNudge(

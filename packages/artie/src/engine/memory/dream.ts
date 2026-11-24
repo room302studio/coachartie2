@@ -21,7 +21,7 @@ import { parseModelJson } from '../../shared/model-json.js';
 import type { JsonOutputSpec } from '../../shared/structured-output.js';
 import type { ChatMessage } from '../3-context/prompt-cache.js';
 
-export const KINDS = [
+const KINDS = [
   'person',
   'preference',
   'project',
@@ -95,9 +95,9 @@ function explicitTagsOf(metadata: string | null): string[] {
  * Why something was junk. Counted per night so the junk Artie keeps *creating* is visible
  * (Artie, 2026-10-28: "helps me understand what patterns to stop creating in the first place").
  */
-export const JUNK_CATEGORIES = ['stub', 'duplicate', 'outdated', 'test', 'filler'] as const;
+const JUNK_CATEGORIES = ['stub', 'duplicate', 'outdated', 'test', 'filler'] as const;
 
-export interface DreamVerdict {
+interface DreamVerdict {
   id: number;
   kind: string;
   tags: string[];
@@ -260,7 +260,7 @@ function audienceLetter(n: number): string {
  * kept; otherwise it becomes a keep (Codex crew 2026-11-18: the same note saved in two servers
  * could lose one server's only copy). Exported for tests.
  */
-export function guardDuplicates(batch: Candidate[], verdicts: DreamVerdict[]): DreamVerdict[] {
+function guardDuplicates(batch: Candidate[], verdicts: DreamVerdict[]): DreamVerdict[] {
   const byId = new Map(batch.map((m) => [m.id, m]));
   const keptAudiences = new Set<string>();
   for (const v of verdicts) {
@@ -526,7 +526,7 @@ export async function dream(limit = DREAM_BATCH): Promise<DreamResult> {
 // dream did; now each night leaves one journal memory, and the latest one rides in his context
 // for a day and a half (dreamRecallLine), so he remembers without being told.
 // ---------------------------------------------------------------------------------------------
-export const DREAM_JOURNAL_TAG = 'dream-journal';
+const DREAM_JOURNAL_TAG = 'dream-journal';
 /** How many non-duplicate prunes the journal names by id (Artie: "here are 5 that weren't plain duplicates"). */
 const LET_GO_SHOWN = 5;
 const JOURNAL_RECALL_HOURS = 36;
@@ -591,7 +591,7 @@ export function journalText(
   return parts.join('; ') + '. Pruned memories are hidden, not deleted.';
 }
 
-export interface LetGo {
+interface LetGo {
   id: number;
   category: string;
   userId: string;
@@ -599,7 +599,7 @@ export interface LetGo {
 
 /** What a journal row keeps out of its public text: one example per category, and the
  *  non-duplicate prunes (Artie: "here are 5 that weren't plain duplicates, so I can object"). */
-export interface JournalDetails {
+interface JournalDetails {
   examples?: Record<string, string>;
   letGo?: LetGo[];
   /** Topics of the memories kept; drawn from every server, so EJ-only like the examples. */
@@ -612,7 +612,7 @@ export interface JournalDetails {
  * topics, examples and every judgment call; anyone else sees only the calls on their own
  * memories, which they can restore. Pure.
  */
-export function journalDetails(details: JournalDetails, viewerId: string | undefined, isPrivate = false): string {
+function journalDetails(details: JournalDetails, viewerId: string | undefined, isPrivate = false): string {
   if (!viewerId || !isPrivate) return '';
   const owner = isOwner(viewerId);
   const parts: string[] = [];

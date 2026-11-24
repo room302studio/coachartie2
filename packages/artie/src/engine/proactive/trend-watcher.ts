@@ -16,7 +16,7 @@ import { getErrorMessage } from '../../shared/errors.js';
 import type {
   RegisteredCapability,
   CapabilityContext,
-} from '../5-tool-loop/registry.js';
+} from '../capabilities/registry.js';
 
 interface TrendWatcherParams {
   action: string;

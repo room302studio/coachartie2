@@ -19,7 +19,7 @@ import {
   parseSchedule,
   type ParsedSchedule,
 } from '../../../src/engine/jobs/recurring-reminders.js';
-import { schedulerCapability } from '../../../src/engine/tools/core/reminders.js';
+import { schedulerCapability } from '../../../src/engine/capabilities/core/reminders.js';
 import { schedulerService } from '../../../src/engine/jobs/scheduler.js';
 import { OWNER_USER_ID } from '../../../src/shared/config/owner.js';
 

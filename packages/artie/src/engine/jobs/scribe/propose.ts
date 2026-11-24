@@ -7,11 +7,11 @@
  */
 import { logger } from '../../../shared/logger.js';
 import { getErrorMessage } from '../../../shared/errors.js';
-import { capabilityRegistry } from '../../5-tool-loop/registry.js';
-import type { CapabilityContext } from '../../5-tool-loop/registry.js';
+import { capabilityRegistry } from '../../capabilities/registry.js';
+import type { CapabilityContext } from '../../capabilities/registry.js';
 import type { ScribeProposal } from './types.js';
 
-export interface ProposalOutcome {
+interface ProposalOutcome {
   proposal: ScribeProposal;
   message: string;
   pendingId: number | null;

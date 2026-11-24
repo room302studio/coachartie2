@@ -1,30 +1,28 @@
 # Coach Artie
 
 A Discord bot (Room 302 Studio, Subway Builder) with an agentic core: native LLM tool calls,
-persistent memory, and a scheduler for proactive stuff (reminders, digests, morning briefings).
+persistent memory, and a scheduler for proactive work (reminders, digests, briefings).
 TypeScript, one package, one process.
 
 ## The mental model
 
 Everything lives in `packages/artie/`:
 
-- **the gateway** is Discord — receiving messages, gating who gets a reply (mention-only by
-  default, DMs always), posting the answer.
-- **the engine** is the brain — turn assembly, the LLM call, tool execution, memory, the
-  scheduler.
-- **shared** is what both sides need and neither owns: the DB client, the logger, path
-  resolution, queue names.
+- **the gateway** is Discord: receiving messages, deciding who gets a reply (mentions and DMs
+  by default), posting the answer.
+- **the engine** is the brain: assembling context, calling the model, running capabilities,
+  memory, the scheduler.
+- **shared** is what both need and neither owns: the DB, config, logger, paths, queue names.
 
-The gateway and engine run in one Node process (one PM2 app, `coach-artie`) and talk to each
-other through exactly two files (`engine/api.ts`, `gateway/api.ts`) — no HTTP hop between them.
-They still each serve an HTTP API on their own port, for callers outside the process (the
-`~/scripts` helpers, the brain dashboard, GitHub webhooks, mesh bridges). See
-**[ARCHITECTURE.md](./ARCHITECTURE.md)** for the full tree, the pipeline stages, the seam rule,
-and the native-tool-calls flag.
+Both run in one Node process (PM2 app `coach-artie`) and meet in exactly two files,
+`engine/api.ts` and `gateway/api.ts`. Each still serves an HTTP API for callers outside the
+process (scripts, the brain dashboard, GitHub webhooks, mesh bridges).
 
-Tools (capabilities) are the thing the LLM can call — calculator, memory, scheduler, GitHub,
-sandbox shell, and about 60 more — each one file under `packages/artie/src/engine/tools/`,
-registered once, discoverable by the model through its OpenRouter `tools` schema.
+**Capabilities** are what Artie can do: remember, search Discord, run polls, open GitHub
+issues, use a sandbox shell, and about 60 more. Each is one file under
+`packages/artie/src/engine/capabilities/`, registered once and offered to the model as a tool.
+
+**[ARCHITECTURE.md](./ARCHITECTURE.md)** has the full map.
 
 ## Local dev
 
@@ -42,48 +40,41 @@ New Application -> Bot tab -> Reset Token -> enable "Message Content Intent" -> 
 Generator (scope `bot`, permissions Send Messages + Read Messages) -> invite it to a server.
 
 ```bash
-pnpm dev     # tsx watch, one process, both ports
+pnpm dev                # tsx watch, one process, both ports
 ```
 
-Say `@YourBot hello` in Discord. If it's quiet: check `DISCORD_TOKEN` is set, "Message Content
-Intent" is enabled, and the bot has permission to see the channel.
+Say `@YourBot hello` in Discord. If it's quiet: check `DISCORD_TOKEN`, "Message Content
+Intent", and that the bot can see the channel.
 
 ```bash
-pnpm build          # tsc, all packages
-pnpm test            # vitest, excludes the Redis-bound integration suite
-pnpm test:integration  # the Redis-bound suite (needs a live Redis)
-pnpm typecheck       # tsc --noEmit, all packages
+pnpm build              # tsc
+pnpm test               # vitest, without the Redis-bound integration suite
+pnpm test:integration   # the Redis-bound suite (needs a live Redis)
+pnpm lint               # eslint
 ```
 
 ## Deploy
 
-`scripts/deploy.sh [branch]` bundles the committed branch, ships it to the VPS, installs with
-a frozen lockfile, builds, and restarts the one PM2 app. It assumes `ecosystem.config.cjs` is
-already current on prod — the one-time migration from the old two-PM2-app setup (separate
-capabilities and discord apps) to the new one-app setup (`coach-artie`) is written, step by
-step with rollbacks, in **[CUTOVER.md](./CUTOVER.md)**. That migration has not run yet; read
-it before running anything against prod.
+Prod runs branch `v3` at `/data2/apps/coachartie2`. On the VPS, `scripts/pm2-deploy.sh` pulls
+(fast-forward only), installs with the frozen lockfile, builds clean, and restarts the one PM2
+app. `scripts/deploy.sh [branch]` does the same from a laptop by shipping a git bundle.
 
-`scripts/pm2-deploy.sh` is the old (pre-v3) deploy script, kept until `deploy.sh` has shipped
-once.
-
-Health checks on a running deploy: `curl :47324/health/ready` (engine), `curl 127.0.0.1:47319/health`
-(gateway), `tests/smoke.sh calculator dm-contract presence` (the three externally-visible
-contracts).
+Health: `curl 127.0.0.1:47324/health/ready` (engine), `curl 127.0.0.1:47319/health` (gateway),
+`tests/smoke.sh calculator dm-contract presence` (the external contracts).
 
 ## Database
 
-SQLite at `data/coachartie.db`. Schema: `packages/artie/src/shared/db/schema.ts` (drizzle ORM).
-`DATABASE_PATH` overrides the path. No destructive migration ever runs against it without a
-backup and an explicit yes — see `CUTOVER.md`'s DB section for the only two optional, EJ-approved
-`UPDATE`s this rebuild produced.
+SQLite at `data/coachartie.db` (`DATABASE_PATH` overrides). Schema:
+`packages/artie/src/shared/db/schema.ts` (drizzle). No destructive migration runs without a
+backup and an explicit yes.
 
 ## More
 
-- **[ARCHITECTURE.md](./ARCHITECTURE.md)** — the tree, the pipeline, naming rules, the tool
-  alias map, the `TOOL_LOOP` emergency flag, the proactive folder.
-- **[CUTOVER.md](./CUTOVER.md)** — the prod migration, written and not yet run.
-- **[CLAUDE.md](./CLAUDE.md)** — the short version, for an agent working in this repo.
-- **[docs/COST-GUARDRAILS.md](./docs/COST-GUARDRAILS.md)** — budget caps, brownout, prompt
+- **[ARCHITECTURE.md](./ARCHITECTURE.md)**: the map, the pipeline, the rules the tests
+  enforce, naming, ports.
+- **[CLAUDE.md](./CLAUDE.md)**: the short version, for an agent working in this repo.
+- **[docs/COST-GUARDRAILS.md](./docs/COST-GUARDRAILS.md)**: budget caps, brownout, prompt
   caching, the speak gate.
-- **[docs/archive/](./docs/archive/)** — superseded design docs, kept for history.
+- **[docs/notes/](./docs/notes/)**: feature notes (memory recall, the tip jar, voice,
+  multiplayer, security, capabilities) and the 2026-10-26 cutover record.
+- **[docs/archive/](./docs/archive/)**: superseded design docs, kept for history.

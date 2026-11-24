@@ -60,7 +60,7 @@ export interface ToolLoopDeps {
   onStep?: (info: { iteration: number; toolCalls: number; content: string }) => void;
 }
 
-export interface ToolLoopResult {
+interface ToolLoopResult {
   finalText: string;
   iterations: number;
   toolCallsMade: number;

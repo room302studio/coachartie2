@@ -20,7 +20,6 @@ import { unrecordedSpendUsd } from './unrecorded-spend.js';
  * the mute at midnight, and what catches spend written directly by the discord process).
  */
 
-export { DEFAULT_DAILY_BUDGET_USD } from '../../shared/guild-budget.js';
 export const BUDGET_ALERT_KIND = 'daily-budget-mute';
 
 /** DAILY_BUDGET_USD, default 3. 0, a negative number or "off" disables the cap. */
@@ -89,7 +88,7 @@ export function getUserActionCountToday(
   return row?.n ?? 0;
 }
 
-export type BudgetAction = 'none' | 'mute' | 'unmute';
+type BudgetAction = 'none' | 'mute' | 'unmute';
 
 /** Pure decision, so precedence is testable without files or a DB. */
 export function decideBudgetAction(input: {
@@ -117,13 +116,13 @@ export function decideBudgetAction(input: {
   return 'none';
 }
 
-export interface BudgetCheckResult {
+interface BudgetCheckResult {
   action: BudgetAction | 'error';
   spentUsd: number | null;
   budgetUsd: number | null;
 }
 
-export interface BudgetCheckOptions {
+interface BudgetCheckOptions {
   now?: Date;
   killSwitchPath?: string;
   /** Test seam; defaults to reportToAnomalywatch. */

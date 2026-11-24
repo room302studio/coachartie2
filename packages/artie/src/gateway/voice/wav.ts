@@ -8,7 +8,7 @@ const WAV_HEADER_SIZE = 44;
 const PCM_FORMAT_CODE = 1;
 const BITS_PER_SAMPLE = 16;
 
-export interface WavOptions {
+interface WavOptions {
   sampleRate: number;
   channels: number;
 }

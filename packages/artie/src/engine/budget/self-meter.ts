@@ -9,7 +9,7 @@ import type { BrownoutStatus } from './brownout.js';
 // credits and got switched off, hence the "don't bring it up" clause.
 // =====================================================
 
-export type LlmHiccup = 'fallback' | 'failed' | 'reasoning-retry';
+type LlmHiccup = 'fallback' | 'failed' | 'reasoning-retry';
 
 function pluralSuffix(count: number, singular: string = ''): string {
   if (count === 1) {

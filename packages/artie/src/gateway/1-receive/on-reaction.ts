@@ -27,7 +27,7 @@ import { recordReaction, clearLoggedReactions, emojiKey } from './reaction-log.j
 import type { ReactorRole } from '../../shared/db/reaction-store.js';
 
 // Import capabilities client for trace feedback correlation
-import { capabilitiesClient } from '../3-ask-engine/engine-client.js';
+import { engineClient } from '../3-ask-engine/engine-client.js';
 import * as engine from '../../engine/api.js';
 
 function getGuildInfo(guild: any): any {
@@ -655,7 +655,7 @@ async function handleFeedbackReaction(
 
   // Context Alchemy: Record feedback in trace for observability
   try {
-    await capabilitiesClient.recordTraceFeedback(reaction.message.id, sentiment, emoji);
+    await engineClient.recordTraceFeedback(reaction.message.id, sentiment, emoji);
   } catch (error) {
     // Non-critical - trace feedback is for observability only
     logger.debug(`Failed to record trace feedback [${shortId}]:`, error);

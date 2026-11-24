@@ -11,7 +11,7 @@ import { logger } from '../../../shared/logger.js';
 import { getErrorMessage } from '../../../shared/errors.js';
 import { scribeSttModel } from './cost.js';
 
-export interface TranscribeResult {
+interface TranscribeResult {
   text: string;
   model: string;
 }

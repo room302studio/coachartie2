@@ -16,7 +16,7 @@ import type { JsonOutputSpec } from '../../shared/structured-output.js';
 import { getSyncDb } from '../../shared/db/client.js';
 import { openRouterService } from '../4-generate/openrouter.js';
 
-export interface UserScores {
+interface UserScores {
   warmth: number;
   openness: number;
   expressiveness: number;

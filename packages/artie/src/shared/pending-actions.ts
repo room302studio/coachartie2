@@ -7,7 +7,7 @@
  * run, and a plain "needs EJ's approval" message back. EJ reviews and resolves it with the
  * `approvals` capability (list/approve/deny), which re-runs the exact original call on approve.
  *
- * Mirrors the lightweight `CREATE TABLE IF NOT EXISTS` pattern engine/tools/agents/system-memory.ts
+ * Mirrors the lightweight `CREATE TABLE IF NOT EXISTS` pattern engine/capabilities/agents/system-memory.ts
  * uses for its own table: a raw-SQL table outside the drizzle schema, created lazily on first
  * use. No migration needed, nothing to keep in sync with schema.ts.
  */
@@ -25,7 +25,7 @@ export type PendingActionStatus = 'pending' | 'approved' | 'denied' | 'executed'
  * params against an issue that has since moved on (closed, relabeled, answered), so old asks
  * lapse instead of lingering as a trap in the queue (2026-11-13, issue-clerk prep).
  */
-export const PENDING_TTL_DAYS = 7;
+const PENDING_TTL_DAYS = 7;
 
 export interface PendingAction {
   id: number;

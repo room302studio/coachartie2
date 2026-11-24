@@ -25,7 +25,7 @@ export interface ScheduledTask {
   };
 }
 
-export interface ScheduledJob {
+interface ScheduledJob {
   id: string;
   name: string;
   nextRun: Date;

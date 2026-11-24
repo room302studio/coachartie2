@@ -21,9 +21,9 @@ import { slugify } from '../../shared/text.js';
 import { getSyncDb } from '../../shared/db/client.js';
 import { saveChannelDigest, getChannelDigest } from '../../shared/db/channel-digest-store.js';
 import { openRouterService } from '../4-generate/openrouter.js';
-import { MemoryService } from '../tools/core/memory.js';
+import { MemoryService } from '../capabilities/core/memory.js';
 
-export interface DigestRequest {
+interface DigestRequest {
   guildId: string;
   guildName: string;
   channelId: string;
@@ -34,7 +34,7 @@ export interface DigestRequest {
   lastMessageId: string;
 }
 
-export interface DigestResult {
+interface DigestResult {
   digest: string;
   remembered: string | null;
 }
@@ -43,11 +43,11 @@ const DIGEST_MAX_CHARS = 900;
 const FACT_MAX_CHARS = 300;
 const LINE_MAX_CHARS = 280;
 
-export function digestModel(env: NodeJS.ProcessEnv = process.env): string {
+function digestModel(env: NodeJS.ProcessEnv = process.env): string {
   return env.DIGEST_MODEL || 'deepseek/deepseek-v4-flash-0731';
 }
 
-export function factsPerChannelPerDay(env: NodeJS.ProcessEnv = process.env): number {
+function factsPerChannelPerDay(env: NodeJS.ProcessEnv = process.env): number {
   const n = parseInt(env.DIGEST_FACTS_PER_DAY || '', 10);
   if (Number.isFinite(n) && n >= 0) {
     return n;

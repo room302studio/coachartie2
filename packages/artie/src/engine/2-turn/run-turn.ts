@@ -13,15 +13,15 @@ import { IncomingMessage } from '../../shared/queue/types.js';
 import { logger } from '../../shared/logger.js';
 import { mintTrusted } from '../../shared/trusted-ids.js';
 import { openRouterService } from '../4-generate/openrouter.js';
-import { capabilityRegistry } from '../5-tool-loop/registry.js';
+import { capabilityRegistry } from '../capabilities/registry.js';
 import { costMonitor } from '../budget/usage-ledger.js';
 import { updateUserScoresFromMessage } from './user-scores.js';
 import { tryVoiceNoteFastPath, maybeAutoCheckCredits } from './fast-paths.js';
 import { getErrorMessage, getErrorStack } from '../../shared/errors.js';
-import { emailDraftingService } from '../tools/people/email-drafting.js';
-import { llmResponseCoordinator } from '../4-generate/generate-reply.js';
-import { capabilityBootstrap } from '../5-tool-loop/register-tools.js';
-import { executeNativeToolCall } from '../5-tool-loop/execute.js';
+import { emailDraftingService } from '../capabilities/people/email-drafting.js';
+import { replyGenerator } from '../4-generate/generate-reply.js';
+import { capabilityBootstrap } from '../capabilities/register-all.js';
+import { executeNativeToolCall } from '../5-tool-loop/execute-tool-call.js';
 import { JOB_TIMEOUT_MS, SOFT_DEADLINE_RESERVE_MS } from '../5-tool-loop/timeouts.js';
 import { traceManager } from './trace.js';
 import { sessionManager } from './session-log.js';
@@ -81,7 +81,7 @@ export async function processMessage(
       }
 
       // Use capability orchestrator for full pipeline with streaming support
-      const orchestratedResponse = await capabilityOrchestrator.orchestrateMessage(
+      const orchestratedResponse = await turnRunner.orchestrateMessage(
         message,
         onPartialResponse
       );
@@ -95,16 +95,16 @@ export async function processMessage(
       logger.info(`🤖 Processing message with simple AI chat: ${message.id}`);
 
       // Fallback to Context Alchemy-powered AI response
-      const { contextAlchemy } = await import('../3-context/assemble.js');
-      const { promptManager } = await import('../3-context/system-prompt.js');
+      const { contextAssembler } = await import('../3-context/assemble.js');
+      const { promptStore } = await import('../3-context/prompt-store.js');
 
-      const baseSystemPrompt = await promptManager.getCapabilityInstructions(message.message);
+      const baseSystemPrompt = await promptStore.getCapabilityInstructions(message.message);
       let discordContext: Record<string, any> | undefined;
       if (message.context?.platform === 'discord' || message.context?.guildKnowledge) {
         discordContext = message.context;
       }
 
-      const { messages } = await contextAlchemy.buildMessageChain(
+      const { messages } = await contextAssembler.buildMessageChain(
         message.message,
         message.userId,
         baseSystemPrompt,
@@ -144,7 +144,7 @@ export async function processMessage(
   }
 }
 
-export class CapabilityOrchestrator {
+class TurnRunner {
   private contexts = new Map<string, OrchestrationContext>();
 
   constructor() {
@@ -308,7 +308,7 @@ export class CapabilityOrchestrator {
     onPartialResponse?: (partial: string) => void
   ): Promise<string> {
     logger.info(`🔧 Native tool turn for <${message.userId}> message ${message.id}`);
-    const finalText = await llmResponseCoordinator.getNativeToolResponse(message, {
+    const finalText = await replyGenerator.getNativeToolResponse(message, {
       executeTool: (invocation) => executeNativeToolCall(context, invocation),
       deadlineAt: context.deadlineAt,
       onStep: (step) => {
@@ -316,7 +316,7 @@ export class CapabilityOrchestrator {
         // the final answer is sent once, below.
         if (step.toolCalls > 0 && step.content.trim() && onPartialResponse) {
           onPartialResponse(
-            llmResponseCoordinator.stripThinkingTags(step.content, message.userId, message.id)
+            replyGenerator.stripThinkingTags(step.content, message.userId, message.id)
           );
         }
       },
@@ -511,4 +511,4 @@ export class CapabilityOrchestrator {
 // Export singleton instance. Constructing it at module load is what registers every
 // capability (capabilityBootstrap.initializeCapabilityRegistry), which is why main.ts
 // imports this module for its side effect.
-export const capabilityOrchestrator = new CapabilityOrchestrator();
+export const turnRunner = new TurnRunner();

@@ -24,7 +24,7 @@ const CHARS_PER_TOKEN = 2.7; // observed for Anthropic models (prompt-cache.ts h
 // and comparing those as strings lets a whole boundary day through.
 const ISO_CUTOFF = `strftime('%Y-%m-%dT%H:%M:%fZ', 'now', ?)`;
 
-export interface ShadowSet {
+interface ShadowSet {
   offered: string[];
 }
 

@@ -9,7 +9,7 @@ vi.mock('../../src/engine/4-generate/openrouter.js', () => ({
   responseFormatForModel: vi.fn(async () => undefined),
 }));
 
-import { salvageTextField } from '../../src/engine/tools/media/tts.js';
+import { salvageTextField } from '../../src/engine/capabilities/media/tts.js';
 import { parseDigestResponse, DIGEST_OUTPUT } from '../../src/engine/memory/channel-digest.js';
 import { parseRoutePick, ROUTE_OUTPUT } from '../../src/engine/routes/route-repo.js';
 

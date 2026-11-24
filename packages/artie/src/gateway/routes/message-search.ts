@@ -24,8 +24,10 @@ import type { Client } from 'discord.js';
 import { logger } from '../../shared/logger.js';
 import { isBlockedUser } from '../../shared/blocklist.js';
 import { isOptedOut } from '../../shared/privacy-opt-out.js';
+import { SNOWFLAKE } from '../../shared/discord-ids.js';
+import { delay } from '../../shared/async.js';
 
-export const SEARCH_MAX_LIMIT = 25;
+const SEARCH_MAX_LIMIT = 25;
 const EXCERPT_MAX = 300;
 /** Discord accepts at most 500 channel_id filters per search. */
 const MAX_CHANNEL_FILTERS = 500;
@@ -42,7 +44,6 @@ const UNKNOWN_MEMBER = 10007;
 /** Discord API error codes 10003 "Unknown Channel" and 50001 "Missing Access". */
 const UNKNOWN_CHANNEL = 10003;
 const MISSING_ACCESS = 50001;
-const SNOWFLAKE = /^\d{15,22}$/;
 /** Discord's epoch (2015-01-01T00:00:00Z), the zero point of snowflake timestamps. */
 const DISCORD_EPOCH_MS = 1420070400000;
 
@@ -63,7 +64,7 @@ export interface SearchOptions {
 const MAX_PAGES = 3;
 
 /** True when a `before` bound is at or before Discord existed, so nothing can match. */
-export function beforeDiscord(date: string | undefined): boolean {
+function beforeDiscord(date: string | undefined): boolean {
   const ms = Date.parse(String(date || ''));
   return Number.isFinite(ms) && ms <= DISCORD_EPOCH_MS;
 }
@@ -77,7 +78,7 @@ export function snowflakeAt(date: string | undefined): string | undefined {
   return String(BigInt(ms - DISCORD_EPOCH_MS) << 22n);
 }
 
-export interface SearchHit {
+interface SearchHit {
   author: string;
   authorId: string;
   channel: string;
@@ -222,7 +223,7 @@ export function pickHits(groups: unknown): any[] {
  * allowed set is fine; a thread Discord listed in the response (not in our cache, e.g. an
  * archived forum post) is fine only if it's public and its parent is in the allowed set.
  */
-export function visibleChannelName(
+function visibleChannelName(
   channelId: string,
   allowedChannels: Map<string, string>,
   threads: Map<string, any>
@@ -242,7 +243,7 @@ export function visibleChannelName(
 }
 
 /** Hits the asker may see, minus opted-out/banned authors, shaped for the model. */
-export function shapeHits(
+function shapeHits(
   hits: any[],
   guildId: string,
   allowedChannels: Map<string, string>,
@@ -447,10 +448,6 @@ async function readableChannels(guild: any, askerId: string | null, fromChannelI
   return { allowed, filterIds, skipped };
 }
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
 /**
  * The requested channel id if the asker and audience may read it, else undefined. A channel in
  * the allowed set is fine; an uncached thread (e.g. an archived forum post) is looked up and must
@@ -518,7 +515,7 @@ export interface ReadOptions {
   pinned?: boolean;
 }
 
-export interface ReadMessage extends SearchHit {
+interface ReadMessage extends SearchHit {
   id: string;
 }
 
@@ -616,7 +613,7 @@ async function fetchSearchPage(discordClient: Client, guildId: string, q: URLSea
     }
     if (attempt < MAX_INDEX_RETRIES) {
       const waitMs = Math.min(Math.max(Number(body.retry_after || 0) * 1000, 500), MAX_RETRY_WAIT_MS);
-      await sleep(waitMs);
+      await delay(waitMs);
     }
   }
   return null;

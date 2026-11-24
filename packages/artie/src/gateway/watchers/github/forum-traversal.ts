@@ -38,7 +38,7 @@ export interface ThreadMessageData {
   reactions: { emoji: string; count: number }[];
 }
 
-export interface ForumSummary {
+interface ForumSummary {
   forumId: string;
   forumName: string;
   threadCount: number;

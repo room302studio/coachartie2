@@ -1,6 +1,6 @@
 import { IncomingMessage } from '../../shared/queue/types.js';
 import { logger } from '../../shared/logger.js';
-import { capabilityRegistry } from '../5-tool-loop/registry.js';
+import { capabilityRegistry } from '../capabilities/registry.js';
 
 /**
  * Turn fast paths that run beside the generate → tool-loop spine in run-turn.ts:

@@ -19,7 +19,7 @@ import { QUEUES } from '../../shared/queue/names.js';
 import type {
   RegisteredCapability,
   CapabilityContext,
-} from '../5-tool-loop/registry.js';
+} from '../capabilities/registry.js';
 
 interface ProactiveDMParams {
   action: string;

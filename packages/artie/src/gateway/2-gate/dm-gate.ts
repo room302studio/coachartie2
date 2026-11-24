@@ -13,7 +13,7 @@ import { reportToAnomalywatch } from '../../shared/anomalywatch.js';
 import { telemetry } from '../telemetry.js';
 import type { ResponseConditions } from './ambient.js';
 
-export type DMGateVerdict = { stop: true } | { stop: false; isDMAllowed: boolean };
+type DMGateVerdict = { stop: true } | { stop: false; isDMAllowed: boolean };
 
 /** stop: the DM was answered with a pairing code or ignored; otherwise whether it may proceed. */
 export async function runDMGate(

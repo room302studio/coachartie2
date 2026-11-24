@@ -1,6 +1,6 @@
-import { AUTO_INJECTED_PARAMS, type RegisteredCapability } from './registry.js';
-import { declaredToolParams, declaredToolContent, declaresParams } from './tool-policy.js';
-import { parseTagAttributes, toCallNotation, TAG_ATTRS } from './mode.js';
+import { AUTO_INJECTED_PARAMS, type RegisteredCapability } from '../capabilities/registry.js';
+import { declaredToolParams, declaredToolContent, declaresParams } from '../capabilities/policy.js';
+import { parseTagAttributes, toCallNotation, TAG_ATTRS } from '../3-context/xml-teaching.js';
 
 /**
  * Capability → native tool-call schema (see TOOL-USE-MIGRATION.md; wired in wave 8).
@@ -137,7 +137,7 @@ export function capabilityToTool(cap: RegisteredCapability): ToolDefinition {
     }
   }
 
-  // Typed params declared per action (tool-policy.ts) win. They are the truth about what the
+  // Typed params declared per action (capabilities/policy.ts) win. They are the truth about what the
   // handler reads, so example scraping is skipped for that tool (an example's `data='{json}'`
   // blob would otherwise surface as a param the native path never unpacks).
   const declared = declaredToolParams(cap.actions);

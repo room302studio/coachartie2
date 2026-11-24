@@ -3,7 +3,7 @@ import { createRedisConnection } from '../../shared/queue/redis.js';
 import { QUEUES } from '../../shared/queue/names.js';
 import { logger } from '../../shared/logger.js';
 import { Queue } from 'bullmq';
-import { redditClient } from '../tools/personal/reddit-client.js';
+import { redditClient } from '../capabilities/personal/reddit-client.js';
 
 interface MentionJobContext {
   mentionId: string;
@@ -59,7 +59,7 @@ function formatBodyQuote(body: string | undefined): string | null {
   return null;
 }
 
-export class RedditMentionMonitor {
+class RedditMentionMonitor {
   private incomingQueue: Queue | null = null;
 
   constructor() {

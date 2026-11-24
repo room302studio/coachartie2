@@ -19,20 +19,20 @@ import { parseModelJson } from '../../shared/model-json.js';
 import type { JsonOutputSpec } from '../../shared/structured-output.js';
 import { openRouterService } from '../4-generate/openrouter.js';
 
-export interface ChannelOption {
+interface ChannelOption {
   id: string;
   name: string;
   topic?: string | null;
   category?: string | null;
 }
 
-export interface RepoInfo {
+interface RepoInfo {
   fullName: string;
   description?: string | null;
   language?: string | null;
 }
 
-export interface RoutePick {
+interface RoutePick {
   channelId: string;
   reason: string;
 }
@@ -109,7 +109,7 @@ export function parseRoutePick(raw: string, channels: ChannelOption[]): RoutePic
   }
 }
 
-export async function pickRepoChannel(
+async function pickRepoChannel(
   repo: RepoInfo,
   channels: ChannelOption[],
   existing: Array<{ repo: string; channel: string }>,

@@ -81,7 +81,7 @@ export function extractIssueRefs(text: string): number[] {
  * the channel has none, or several) SCRIBE_ISSUE_REPO / metro-maker4. Never both: a number
  * missing from the channel's repo must not pull a same-numbered issue from another one.
  */
-export function meetingRepo(guildId: string, textChannelId: string): string {
+function meetingRepo(guildId: string, textChannelId: string): string {
   const inChannel = listGuildWatches(guildId, textChannelId).filter((w) => w.isActive);
   if (inChannel.length === 1) {
     return inChannel[0].repo;
@@ -89,7 +89,7 @@ export function meetingRepo(guildId: string, textChannelId: string): string {
   return process.env.SCRIBE_ISSUE_REPO || DEFAULT_REPO;
 }
 
-export interface CalloutIssue {
+interface CalloutIssue {
   number: number;
   title: string;
   state: string;

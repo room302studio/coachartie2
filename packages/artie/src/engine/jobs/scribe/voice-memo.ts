@@ -18,14 +18,14 @@ import { join } from 'node:path';
 import { logger } from '../../../shared/logger.js';
 import { getErrorMessage } from '../../../shared/errors.js';
 import { getBrownoutMode } from '../../budget/brownout.js';
-import { UsageTracker } from '../../budget/usage-ledger.js';
+import { UsageLedger } from '../../budget/usage-ledger.js';
 import { transcribeWav } from './stt.js';
 import { computeSttCostUsd, scribeSttModel } from './cost.js';
 import { isOptedOut } from '../../../shared/privacy-opt-out.js';
 import { isBlockedUser } from '../../../shared/blocklist.js';
 
-export const MAX_MEMOS = 2;
-export const MAX_BYTES = 25 * 1024 * 1024;
+const MAX_MEMOS = 2;
+const MAX_BYTES = 25 * 1024 * 1024;
 export const MAX_SECONDS = 600;
 const SAMPLE_RATE = 16000;
 /** 16-bit mono PCM: bytes of audio per second of WAV. */
@@ -41,7 +41,7 @@ const AUDIO_EXTENSIONS = new Set(['ogg', 'oga', 'opus', 'mp3', 'm4a', 'aac', 'wa
 const DISCORD_CDN_HOSTS = new Set(['cdn.discordapp.com', 'media.discordapp.net']);
 
 /** The attachment fields this module reads (context attachments are untyped JSON). */
-export interface AudioCandidate {
+interface AudioCandidate {
   url?: unknown;
   proxyUrl?: unknown;
   name?: unknown;
@@ -54,7 +54,7 @@ export interface AudioCandidate {
   fromReply?: boolean;
 }
 
-export interface MemoTranscript {
+interface MemoTranscript {
   name: string;
   author?: string;
   fromReply: boolean;
@@ -228,7 +228,7 @@ export async function transcribeVoiceMemos(
       const seconds = wavSeconds(wav.length);
       const result = await transcribeWav(wav, { model });
       const costUsd = computeSttCostUsd(seconds, model);
-      await UsageTracker.recordUsage({
+      await UsageLedger.recordUsage({
         model_name: model,
         user_id: who.userId ?? 'unknown',
         message_id: who.messageId ?? '',

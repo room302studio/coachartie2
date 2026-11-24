@@ -17,7 +17,7 @@ import {
 import { logger } from '../../shared/logger.js';
 import { isBlockedUser } from '../../shared/blocklist.js';
 import { processUserIntent } from '../4-reply/stream-reply.js';
-import { capabilitiesClient } from '../3-ask-engine/engine-client.js';
+import { engineClient } from '../3-ask-engine/engine-client.js';
 
 /** `artie:<shortTurnId>:<index>` — the only shape discord-ui ever builds server-side. */
 export function parseArtieCustomId(customId: string): { turnId: string; index: number } | null {
@@ -56,7 +56,7 @@ function getClickCap(): number {
   return 8;
 }
 
-export type ClickCheck =
+type ClickCheck =
   | { allowed: true }
   | { allowed: false; reason: 'duplicate' | 'cap' };
 
@@ -158,7 +158,7 @@ export async function handleComponentClick(
 
   // A button with a form opens it (free: no LLM call). The caps apply when it's submitted.
   if (interaction.isButton()) {
-    const form = await capabilitiesClient.getComponentForm(interaction.customId);
+    const form = await engineClient.getComponentForm(interaction.customId);
     if (form) {
       await interaction.showModal(buildFormModal(interaction.customId, form)).catch((error: unknown) => {
         logger.warn('Could not open a form for a click:', error);
@@ -191,7 +191,7 @@ export async function handleComponentClick(
 // modal's `artie-form:<turn>:<n>`; fields are f0..f4. The submit is a turn like a click.
 // ---------------------------------------------------------------------------
 
-type FormSpec = NonNullable<Awaited<ReturnType<typeof capabilitiesClient.getComponentForm>>>;
+type FormSpec = NonNullable<Awaited<ReturnType<typeof engineClient.getComponentForm>>>;
 
 const FORM_PREFIX = 'artie-form:';
 /** Longest answer per field; a turn shouldn't balloon from one pasted wall of text. */
@@ -253,7 +253,7 @@ export async function handleFormSubmit(interaction: ModalSubmitInteraction): Pro
   const buttonId = buttonIdOfForm(interaction.customId);
   let form: FormSpec | null = null;
   if (buttonId) {
-    form = await capabilitiesClient.getComponentForm(buttonId);
+    form = await engineClient.getComponentForm(buttonId);
   }
   // Answers by field order; labels from the stored form (a restart leaves "field N").
   const answers: Array<{ label: string; value: string }> = [];
@@ -293,7 +293,7 @@ async function runInteractionTurn(
   const userId = interaction.user.id;
   let brownoutMode = 'normal';
   try {
-    brownoutMode = (await capabilitiesClient.getBrownoutMode()).mode;
+    brownoutMode = (await engineClient.getBrownoutMode()).mode;
   } catch (error) {
     logger.warn('Component click: brownout check failed, proceeding:', error);
   }

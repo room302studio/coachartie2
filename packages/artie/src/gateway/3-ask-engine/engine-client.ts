@@ -64,7 +64,7 @@ async function withRetry<T>(
   throw lastError || new Error(`${name} failed`);
 }
 
-export interface JobSubmissionResponse {
+interface JobSubmissionResponse {
   success: boolean;
   messageId: string;
   status: 'pending' | 'processing' | 'completed' | 'failed';
@@ -73,7 +73,7 @@ export interface JobSubmissionResponse {
   error?: string;
 }
 
-export interface JobStatusResponse {
+interface JobStatusResponse {
   success: boolean;
   messageId: string;
   status: 'pending' | 'processing' | 'completed' | 'failed';
@@ -97,7 +97,7 @@ function httpError(result: engine.ApiResult): string {
  * through engine/api.ts (same handler bodies as POST /chat, GET /chat/:id, ...) instead of
  * loopback HTTP to :47324. Retries, logging and return shapes are unchanged.
  */
-export class CapabilitiesClient {
+class EngineClient {
 
   /**
    * Submit a message for processing and get job ID
@@ -454,4 +454,4 @@ export class CapabilitiesClient {
 }
 
 // Export singleton instance
-export const capabilitiesClient = new CapabilitiesClient();
+export const engineClient = new EngineClient();

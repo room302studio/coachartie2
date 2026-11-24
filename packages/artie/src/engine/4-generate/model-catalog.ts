@@ -10,7 +10,7 @@ function contextLengthOrZero(value: unknown): number {
   return 0;
 }
 
-export interface OpenRouterModelInfo {
+interface OpenRouterModelInfo {
   id: string;
   name: string;
   description: string;
@@ -40,7 +40,7 @@ export interface OpenRouterModelInfo {
 /** One catalog fetch may not stall a reply: past this, the tool-capability check says "unknown". */
 const CATALOG_FETCH_TIMEOUT_MS = 5_000;
 
-export class OpenRouterModelsService {
+class OpenRouterModelsService {
   private modelsCache: Map<string, OpenRouterModelInfo> = new Map();
   private lastFetch: number = 0;
   private cacheTTL: number = 300000; // 5 minutes

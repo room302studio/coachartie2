@@ -25,7 +25,7 @@ vi.mock('child_process', async (importOriginal) => {
 const { getSyncDb } = await import('../../../src/shared/db/client.js');
 const { OWNER_USER_ID } = await import('../../../src/shared/config/owner.js');
 const { executeHeartbeat } = await import('../../../src/engine/proactive/heartbeat.js');
-const { logGoalAction } = await import('../../../src/engine/tools/planning/goals.js');
+const { logGoalAction } = await import('../../../src/engine/capabilities/planning/goals.js');
 const { readState } = await import('../../../src/shared/db/kv-state.js');
 
 const LONG_AGO = '2026-01-01T00:00:00.000Z';

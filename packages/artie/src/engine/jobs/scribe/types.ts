@@ -1,8 +1,8 @@
 /**
- * Shared shapes for the scribe pipeline (engine side). Not a tool, not a capability — this is
- * the "job" register-tools.ts/the architecture test don't need to know about (tests/
- * architecture.test.ts's rule 4 is scoped to engine/tools/**, not engine/jobs/**, matching the
- * precedent of engine/jobs/github-push).
+ * Shared shapes for the scribe pipeline (engine side). Not a capability: this is the "job"
+ * that register-all.ts and the architecture test don't need to know about (tests/
+ * architecture.test.ts's rule 4 is scoped to engine/capabilities/**, not engine/jobs/**,
+ * matching the precedent of engine/jobs/github-push).
  */
 
 export interface ScribeUtteranceInput {

@@ -608,13 +608,3 @@ export function initializeEventProcessor(config?: Partial<ProcessorConfig>): Git
   logger.info('GitHub event processor initialized');
   return processorInstance;
 }
-
-/**
- * Get the event processor instance
- */
-export function getEventProcessor(): GitHubEventProcessor {
-  if (!processorInstance) {
-    throw new Error('GitHub event processor not initialized. Call initializeEventProcessor first.');
-  }
-  return processorInstance;
-}

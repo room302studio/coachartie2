@@ -15,9 +15,9 @@
  */
 
 import {
-  promptManager,
+  promptStore,
   PromptTemplate,
-} from '../packages/artie/src/engine/3-context/system-prompt.js';
+} from '../packages/artie/src/engine/3-context/prompt-store.js';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 
@@ -56,7 +56,7 @@ function info(message: string) {
 
 // List prompts
 async function listPrompts(category?: string) {
-  const prompts = await promptManager.listPrompts(category);
+  const prompts = await promptStore.listPrompts(category);
 
   if (prompts.length === 0) {
     info('No prompts found');
@@ -90,7 +90,7 @@ async function listPrompts(category?: string) {
 
 // View prompt details
 async function viewPrompt(name: string) {
-  const prompt = await promptManager.getPrompt(name);
+  const prompt = await promptStore.getPrompt(name);
 
   if (!prompt) {
     error(`Prompt '${name}' not found`);
@@ -125,7 +125,7 @@ async function viewPrompt(name: string) {
 
 // Edit prompt (opens in $EDITOR)
 async function editPrompt(name: string) {
-  const prompt = await promptManager.getPrompt(name);
+  const prompt = await promptStore.getPrompt(name);
 
   if (!prompt) {
     error(`Prompt '${name}' not found`);
@@ -156,7 +156,7 @@ async function editPrompt(name: string) {
       if (newContent.trim() === prompt.content.trim()) {
         info('No changes detected');
       } else {
-        await promptManager.updatePrompt(name, newContent, 'cli-user', 'Edited via CLI');
+        await promptStore.updatePrompt(name, newContent, 'cli-user', 'Edited via CLI');
         success(`Updated ${name}`);
       }
     } else {
@@ -170,7 +170,7 @@ async function editPrompt(name: string) {
 
 // View prompt history
 async function viewHistory(name: string) {
-  const history = await promptManager.getPromptHistory(name);
+  const history = await promptStore.getPromptHistory(name);
 
   if (history.length === 0) {
     info(`No history found for '${name}'`);
@@ -196,7 +196,7 @@ async function viewHistory(name: string) {
 
 // Toggle active status
 async function toggleActive(name: string) {
-  const prompt = await promptManager.getPrompt(name);
+  const prompt = await promptStore.getPrompt(name);
 
   if (!prompt) {
     error(`Prompt '${name}' not found`);
@@ -214,7 +214,7 @@ async function toggleActive(name: string) {
 
 // Export prompts
 async function exportPrompts(name?: string) {
-  const prompts = name ? [await promptManager.getPrompt(name)] : await promptManager.listPrompts();
+  const prompts = name ? [await promptStore.getPrompt(name)] : await promptStore.listPrompts();
 
   const filtered = prompts.filter((p): p is PromptTemplate => p !== null);
 
@@ -247,11 +247,11 @@ async function importPrompts(file: string) {
   for (const prompt of prompts) {
     try {
       // Check if prompt exists
-      const existing = await promptManager.getPrompt(prompt.name);
+      const existing = await promptStore.getPrompt(prompt.name);
 
       if (existing) {
         info(`Updating existing prompt: ${prompt.name}`);
-        await promptManager.updatePrompt(
+        await promptStore.updatePrompt(
           prompt.name,
           prompt.content,
           'cli-import',
@@ -259,7 +259,7 @@ async function importPrompts(file: string) {
         );
       } else {
         info(`Creating new prompt: ${prompt.name}`);
-        await promptManager.createPrompt({
+        await promptStore.createPrompt({
           name: prompt.name,
           content: prompt.content,
           description: prompt.description,
@@ -318,7 +318,7 @@ Your prompt content here...
         return;
       }
 
-      await promptManager.createPrompt({
+      await promptStore.createPrompt({
         name,
         category,
         content: cleanContent,

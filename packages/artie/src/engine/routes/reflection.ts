@@ -11,11 +11,11 @@ export const reflectionRouter: Router = Router();
 // Reflection stats endpoint - get active rules and reflection statistics
 reflectionRouter.get('/reflection/stats', async (req, res) => {
   try {
-    const { reflectionConsolidator } = await import(
-      '../memory/reflection-consolidator.js'
+    const { learnedRulesReader } = await import(
+      '../memory/learned-rules.js'
     );
 
-    const systemRules = await reflectionConsolidator.getActiveRules('system');
+    const systemRules = await learnedRulesReader.getActiveRules('system');
 
     // Get guild-specific rules count
     const { getSyncDb } = await import('../../shared/db/client.js');

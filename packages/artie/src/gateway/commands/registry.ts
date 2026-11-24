@@ -27,7 +27,7 @@ import { scribeCommand } from './scribe.js';
  *
  * Guild-scoped commands (e.g. /stack-talk, register-stack-talk.ts) are registered separately.
  */
-export interface SlashCommand {
+interface SlashCommand {
   data: { name: string; toJSON(): RESTPostAPIChatInputApplicationCommandsJSONBody };
   execute(interaction: ChatInputCommandInteraction): Promise<unknown>;
   autocomplete?(interaction: AutocompleteInteraction): Promise<unknown>;

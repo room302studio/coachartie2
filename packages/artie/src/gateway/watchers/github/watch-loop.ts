@@ -27,7 +27,7 @@ import { GUILD_CONFIGS } from '../../../shared/config/guilds.js';
 import { readState, writeState } from '../../../shared/db/kv-state.js';
 import { easternDayKey, easternHour, isEasternWeekend } from '../../../shared/eastern-day.js';
 
-export interface GitHubSyncConfig {
+interface GitHubSyncConfig {
   poller?: Partial<PollerConfig>;
   processor?: Partial<ProcessorConfig>;
   autoStart?: boolean;
@@ -583,16 +583,6 @@ export async function initializeGitHubSync(
 }
 
 /**
- * Get the GitHub sync service instance
- */
-export function getGitHubSync(): GitHubSyncService {
-  if (!syncService) {
-    throw new Error('GitHub sync service not initialized');
-  }
-  return syncService;
-}
-
-/**
  * Stop the service if it ever started (shutdown path). Init is fire-and-forget at boot, so a
  * SIGTERM can arrive before there is anything to stop.
  */
@@ -601,11 +591,4 @@ export async function stopGitHubSync(): Promise<void> {
     return;
   }
   await syncService.stop();
-}
-
-/**
- * Check if GitHub sync is available
- */
-export function isGitHubSyncAvailable(): boolean {
-  return !!process.env.GITHUB_TOKEN;
 }

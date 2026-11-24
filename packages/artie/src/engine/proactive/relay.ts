@@ -18,7 +18,7 @@ import type { Relay } from '../../shared/db/schema.js';
 import {
   RegisteredCapability,
   CapabilityContext,
-} from '../5-tool-loop/registry.js';
+} from '../capabilities/registry.js';
 
 /** Who relays are for when nobody says otherwise. Matches the briefing owner. */
 const DEFAULT_RECIPIENT = process.env.RELAY_RECIPIENT || 'ej';

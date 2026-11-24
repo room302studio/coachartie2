@@ -52,7 +52,7 @@ function ensureTable(): void {
 }
 
 /** Normalize a person's handles into the names we match on. */
-export function optOutNames(names: Array<string | null | undefined>): string[] {
+function optOutNames(names: Array<string | null | undefined>): string[] {
   return [...new Set(names.map((n) => (n || '').trim().toLowerCase()).filter((n) => n.length >= MIN_NAME_LEN))];
 }
 
@@ -107,7 +107,7 @@ export function mentionsOptedOutUser(text?: string | null): boolean {
  * Tables holding content or profiles keyed by user. model_usage_stats (token counts and
  * cost, no content) is kept for budgeting. memories_fts follows memories via triggers.
  */
-export const USER_DATA_TABLES = [
+const USER_DATA_TABLES = [
   'memories',
   'messages',
   'generation_traces',

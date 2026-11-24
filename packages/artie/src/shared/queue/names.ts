@@ -9,5 +9,3 @@ export const QUEUES = {
   OUTGOING_REDDIT: 'coachartie-reddit-outgoing',
   DEAD_LETTER: 'coachartie-dlq',
 } as const;
-
-export type QueueName = (typeof QUEUES)[keyof typeof QUEUES];

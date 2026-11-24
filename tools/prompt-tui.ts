@@ -8,9 +8,9 @@
 
 import blessed from 'blessed';
 import {
-  promptManager,
+  promptStore,
   PromptTemplate,
-} from '../packages/artie/src/engine/3-context/system-prompt.js';
+} from '../packages/artie/src/engine/3-context/prompt-store.js';
 
 // Create screen
 const screen = blessed.screen({
@@ -180,7 +180,7 @@ function log(message: string, type: 'info' | 'success' | 'error' | 'warn' = 'inf
 async function loadPrompts(category?: string) {
   try {
     log('Loading prompts from database...', 'info');
-    currentPrompts = await promptManager.listPrompts(category);
+    currentPrompts = await promptStore.listPrompts(category);
 
     const items = currentPrompts.map((p) => {
       const activeIndicator = p.isActive ? '✓' : '✗';
@@ -313,7 +313,7 @@ function editPrompt(prompt: PromptTemplate) {
       form.destroy();
       log(`Saving changes to ${prompt.name}...`, 'info');
 
-      await promptManager.updatePrompt(prompt.name, newContent, 'tui-user', 'Edited via TUI');
+      await promptStore.updatePrompt(prompt.name, newContent, 'tui-user', 'Edited via TUI');
 
       log(`Successfully updated ${prompt.name}`, 'success');
       statusBar.setContent(`{green-fg}✓ Prompt updated successfully{/green-fg}`);
@@ -415,7 +415,7 @@ Press any key to close this help...
 async function viewHistory(prompt: PromptTemplate) {
   try {
     log(`Loading history for ${prompt.name}...`, 'info');
-    const history = await promptManager.getPromptHistory(prompt.name);
+    const history = await promptStore.getPromptHistory(prompt.name);
 
     const historyBox = blessed.list({
       parent: screen,
@@ -481,7 +481,7 @@ screen.key(['r'], async () => {
 });
 
 screen.key(['c'], () => {
-  promptManager.clearCache();
+  promptStore.clearCache();
   log('Cache cleared', 'success');
   statusBar.setContent('{green-fg}✓ Cache cleared{/green-fg}');
   screen.render();

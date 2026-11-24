@@ -15,7 +15,7 @@ import { githubRepoWatches, type GithubRepoWatch } from '../../../shared/db/sche
 
 /** Event names the poller understands (github-poller.ts pollRepo). */
 export const WATCH_EVENTS = ['all', 'pr', 'review', 'issues', 'push', 'ci'] as const;
-export type WatchEvent = (typeof WATCH_EVENTS)[number];
+type WatchEvent = (typeof WATCH_EVENTS)[number];
 
 export const REPO_PATTERN = /^[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+$/;
 
@@ -68,7 +68,7 @@ function watchesFor(repo: string, guildId: string): GithubRepoWatch[] {
     .all();
 }
 
-export type WatchOutcome = 'created' | 'updated' | 'resumed';
+type WatchOutcome = 'created' | 'updated' | 'resumed';
 
 /**
  * Watch a repo in a channel, or change an existing watch in this guild: move it to this

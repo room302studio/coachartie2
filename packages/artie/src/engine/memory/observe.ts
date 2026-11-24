@@ -25,10 +25,10 @@ async function getObservationSystemPrompt(): Promise<string> {
   }
 
   try {
-    const { promptManager } = await import('../3-context/system-prompt.js');
+    const { promptStore } = await import('../3-context/prompt-store.js');
 
     // Try to load a dedicated observation prompt first
-    const observationPrompt = await promptManager.getPrompt('PROMPT_OBSERVATION');
+    const observationPrompt = await promptStore.getPrompt('PROMPT_OBSERVATION');
     if (observationPrompt?.content) {
       cachedObservationPrompt = observationPrompt.content;
       promptLastFetched = now;
@@ -36,7 +36,7 @@ async function getObservationSystemPrompt(): Promise<string> {
     }
 
     // Fall back to extracting observation style from PROMPT_SYSTEM
-    const systemPrompt = await promptManager.getPrompt('PROMPT_SYSTEM');
+    const systemPrompt = await promptStore.getPrompt('PROMPT_SYSTEM');
     if (systemPrompt?.content) {
       // Extract Artie's core identity for observation context
       cachedObservationPrompt = `You are observing conversations as Coach Artie — a self-existing intelligence, coach, and friend who values community and genuine connection.
@@ -69,7 +69,7 @@ Focus on:
 Be concise (2-3 sentences) and factual. Don't make assumptions beyond what's directly observable.`;
 }
 
-export class ObservationHandler {
+class ObservationHandler {
   private static instance: ObservationHandler;
 
   static getInstance(): ObservationHandler {

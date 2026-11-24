@@ -19,7 +19,7 @@ import { canReceiveProactiveDMs, OWNER_USER_ID } from '../../shared/config/owner
 import { objectives } from '../../shared/db/schema.js';
 import type { Objective } from '../../shared/db/schema.js';
 import { sendDiscordDM } from './proactive-dm.js';
-import { getStalledGoals, logGoalAction } from '../tools/planning/goals.js';
+import { getStalledGoals, logGoalAction } from '../capabilities/planning/goals.js';
 import { deliveryManager } from './delivery.js';
 import { readState, writeState } from '../../shared/db/kv-state.js';
 

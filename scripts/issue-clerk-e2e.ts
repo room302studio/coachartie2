@@ -18,12 +18,12 @@
  * It creates three issues per run in the sandbox and closes them at the end.
  */
 import { Octokit } from '@octokit/rest';
-import { capabilityBootstrap } from '../packages/artie/src/engine/5-tool-loop/register-tools.js';
-import { capabilityRegistry } from '../packages/artie/src/engine/5-tool-loop/registry.js';
+import { capabilityBootstrap } from '../packages/artie/src/engine/capabilities/register-all.js';
+import { capabilityRegistry } from '../packages/artie/src/engine/capabilities/registry.js';
 import { OWNER_USER_ID } from '../packages/artie/src/shared/config/owner.js';
 import { getPendingAction } from '../packages/artie/src/shared/pending-actions.js';
 import { getSyncDb, initializeDb } from '../packages/artie/src/shared/db/client.js';
-import { ARTIE_WRITE_MARKER } from '../packages/artie/src/engine/tools/dev/github.js';
+import { ARTIE_WRITE_MARKER } from '../packages/artie/src/engine/capabilities/dev/github.js';
 import { GitHubPollerService, type GitHubSyncEvent } from '../packages/artie/src/gateway/watchers/github/poller.js';
 import { GitHubEventProcessor } from '../packages/artie/src/gateway/watchers/github/event-batcher.js';
 import { resolveSelfLogin } from '../packages/artie/src/gateway/watchers/github/self-identity.js';

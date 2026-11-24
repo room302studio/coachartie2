@@ -35,3 +35,11 @@ export function trimTrailingSlash(url: string): string {
 export function sanitizeIdentifier(s: string): string {
   return s.replace(/[^a-zA-Z0-9_-]/g, '_');
 }
+
+/** '...' when the text is longer than maxLength (to append after a cut), else ''. */
+export function truncationSuffix(text: string, maxLength: number): string {
+  if (text.length > maxLength) {
+    return '...';
+  }
+  return '';
+}

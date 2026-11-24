@@ -1259,7 +1259,7 @@ export const errorEvents = sqliteTable(
 
 /**
  * Tool Call Ledger - one row per logical tool call (outcome only, never params/results).
- * Created lazily by engine/5-tool-loop/tool-ledger.ts (same CREATE IF NOT EXISTS idiom as
+ * Created lazily by engine/capabilities/ledger.ts (same CREATE IF NOT EXISTS idiom as
  * pending_actions); this definition documents the shape. ts is epoch milliseconds.
  * Pruned past 30 days by the ledger itself.
  */

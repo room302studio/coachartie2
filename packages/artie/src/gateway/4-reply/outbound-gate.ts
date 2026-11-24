@@ -20,7 +20,7 @@ import { logger } from '../../shared/logger.js';
 import { getChannelPersona } from '../../shared/config/guilds.js';
 import { isStaffRole } from '../../shared/staff-role.js';
 
-export type OutboundAction = 'reply' | 'reaction' | 'timeout' | 'proxy-reply';
+type OutboundAction = 'reply' | 'reaction' | 'timeout' | 'proxy-reply';
 
 // Subway Builder — the public guild where Artie is only allowed to be visibly
 // active in coach-artie places. Other guilds (Room 302 etc.) and DMs are open.

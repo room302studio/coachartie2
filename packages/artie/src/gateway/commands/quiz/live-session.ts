@@ -60,7 +60,7 @@ export interface QuizSession {
   lastBanner?: string;
 }
 
-export interface QuizStartOptions {
+interface QuizStartOptions {
   channelId: string;
   userId: string;
   deckId?: string;
@@ -69,7 +69,7 @@ export interface QuizStartOptions {
   onTimeout?: (session: QuizSession) => void;
 }
 
-export interface AnswerResult {
+interface AnswerResult {
   correct: boolean;
   isFirstCorrect: boolean;
   correctAnswer: string;
@@ -139,7 +139,7 @@ export function looksLikeAnswerAttempt(text: string): boolean {
  * Ask a light LLM whether a user's answer is semantically equivalent to the
  * correct answer. Returns null if the call fails or the API key is missing.
  */
-export async function verifyAnswerWithLLM(
+async function verifyAnswerWithLLM(
   question: string,
   correctAnswer: string,
   userAnswer: string,

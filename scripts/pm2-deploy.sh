@@ -3,25 +3,32 @@
 # Coach Artie 2 - PM2 Native Deploy Script
 # Always builds before restarting to prevent stale dist/ issues
 #
-# One process now (wave 9/12): engine + gateway run as the single PM2 app `coach-artie`.
-# Superseded by scripts/deploy.sh (wave 12) once that has shipped once; kept until then.
+# One process (wave 9/12): engine + gateway run as the single PM2 app `coach-artie`.
+# Prod deploys from the v3 branch (since the 2026-10-26 cutover, docs/notes/CUTOVER.md).
 #
 # Usage: ./scripts/pm2-deploy.sh
 
-set -e
+set -euo pipefail
 
 ROOT_DIR="/data2/apps/coachartie2"
+BRANCH="v3"
 
 cd "$ROOT_DIR"
 
 echo "========================================"
-echo "  Coach Artie PM2 Deploy"
+echo "  Coach Artie PM2 Deploy ($BRANCH)"
 echo "========================================"
 echo ""
 
-# 1. Pull latest code
-echo "📦 Pulling latest code..."
-git pull origin main 2>&1 | tail -5
+# 1. Pull latest code. Fast-forward only: prod never gets a merge commit of its own. And only
+# from v3: a pull on some other checked-out branch would deploy that branch instead.
+CURRENT="$(git rev-parse --abbrev-ref HEAD)"
+if [ "$CURRENT" != "$BRANCH" ]; then
+  echo "REFUSING: prod has '$CURRENT' checked out, not '$BRANCH'." >&2
+  exit 1
+fi
+echo "📦 Pulling latest $BRANCH..."
+git pull --ff-only origin "$BRANCH" 2>&1 | tail -5
 echo ""
 
 # 2. Install dependencies (in case package.json changed)
@@ -29,13 +36,16 @@ echo "📥 Installing dependencies..."
 pnpm install --frozen-lockfile 2>&1 | tail -3
 echo ""
 
-# 3. Build ALL packages (critical - prevents stale dist/)
+# 3. Build ALL packages (critical - prevents stale dist/). The build info goes first: with it,
+# tsc emits only what it thinks changed, and after a file move that left dist/ missing modules
+# and the bot dead for ~4 minutes (2026-11-24).
 echo "🔨 Building all packages..."
+mv -f packages/artie/tsconfig.tsbuildinfo /tmp/coachartie-tsbuildinfo.prev 2>/dev/null || true
 pnpm build
 echo ""
 
 # 4. Restart the service. Wave 12 collapsed capabilities+discord into one PM2 app,
-# coach-artie (see ecosystem.config.cjs, CUTOVER.md). NOT `pm2 restart --update-env`:
+# coach-artie (see ecosystem.config.cjs, docs/notes/CUTOVER.md). NOT `pm2 restart --update-env`:
 # ecosystem.config.cjs does its own fs.readFileSync of .env.production at require time —
 # that's the ONLY thing that reads .env.production — and `--update-env` only forwards the
 # calling shell's env, it never re-requires the config file. A routine deploy that ships an

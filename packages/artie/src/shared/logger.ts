@@ -120,7 +120,7 @@ export const logger = winston.createLogger({
 });
 
 // Enhanced logging interface with metrics
-export interface LogMetrics {
+interface LogMetrics {
   duration?: number;
   statusCode?: number;
   userId?: string;
@@ -140,7 +140,7 @@ export interface LogMetrics {
   jobName?: string;
 }
 
-export interface StructuredLogger {
+interface StructuredLogger {
   info(message: string, meta?: LogMetrics): void;
   error(message: string, error?: Error, meta?: LogMetrics): void;
   warn(message: string, meta?: LogMetrics): void;
@@ -191,7 +191,7 @@ export const performanceLogger = {
 };
 
 // Structured logger implementation
-export const structuredLogger: StructuredLogger = {
+const structuredLogger: StructuredLogger = {
   info: (message: string, meta?: LogMetrics) => {
     logger.info(message, meta);
   },

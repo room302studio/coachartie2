@@ -420,7 +420,7 @@ export function markShared(userId: string, date: string, deck: string): void {
 /**
  * Daily leaderboard for one (date, deck) pairing, sorted by score then time.
  */
-export interface DailyLeaderboardRow {
+interface DailyLeaderboardRow {
   userId: string;
   username: string | null;
   score: number;
@@ -870,7 +870,7 @@ export function pickWinningDeck(tallies: DeckTally[]): string | null {
   return tallies.find((t) => t.votes === max)?.deck ?? null;
 }
 
-export interface CloseDeckPollResult {
+interface CloseDeckPollResult {
   winningDeck: string | null;
   tallies: DeckTally[];
 }

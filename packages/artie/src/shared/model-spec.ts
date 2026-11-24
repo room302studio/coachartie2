@@ -15,7 +15,7 @@ import { chmodSync, linkSync, readFileSync, renameSync, unlinkSync, writeFileSyn
 import { dirname, join } from 'node:path';
 import { getDatabasePath } from './paths.js';
 
-export interface ResolvedModel {
+interface ResolvedModel {
   model: string;
   plugins?: unknown[];
 }

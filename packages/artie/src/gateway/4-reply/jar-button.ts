@@ -108,7 +108,7 @@ export function buildJarButtonRow(url: string): Record<string, unknown> {
 // The one combined decision.
 // ---------------------------------------------------------------------------
 
-export interface JarButtonInput {
+interface JarButtonInput {
   /** Already-validated jar URL (shared/tip-jar-config.ts's tipJarUrl()), or null when unset
    *  or invalid — either way, no button. */
   url: string | null;

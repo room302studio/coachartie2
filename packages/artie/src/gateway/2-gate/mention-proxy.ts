@@ -31,17 +31,17 @@ import { replaceMention } from '../../shared/mentions.js';
  * - Handle common questions for busy people
  */
 
-export type ResponseMode =
+type ResponseMode =
   | 'direct' // Answer directly without announcing proxy
   | 'announced' // "Answering for @user: ..."
   | 'assistant'; // "I can help while @user is away..."
 
-export type TriggerType =
+type TriggerType =
   | 'any_mention' // Respond to any mention
   | 'questions_only' // Only respond to questions
   | 'keywords'; // Only respond if specific keywords present
 
-export interface MentionProxyRule {
+interface MentionProxyRule {
   // Unique identifier
   id: string;
 
@@ -77,7 +77,7 @@ export interface MentionProxyRule {
   createdBy?: string; // Discord user ID who created it
 }
 
-export interface MentionProxyConfig {
+interface MentionProxyConfig {
   rules: MentionProxyRule[];
   version: string;
 }
@@ -85,7 +85,7 @@ export interface MentionProxyConfig {
 /**
  * Default empty configuration
  */
-export const DEFAULT_CONFIG: MentionProxyConfig = {
+const DEFAULT_CONFIG: MentionProxyConfig = {
   rules: [],
   version: '1.0.0',
 };

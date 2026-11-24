@@ -149,14 +149,14 @@ describe('getLogsDir', () => {
 
 describe('SKILLS_DIRS', () => {
   // Wave 3: packages/capabilities is gone, its src/skills moved to
-  // packages/artie/src/engine/tools/skills/library. The first entry was already a dead/
-  // nonexistent directory before this wave and stays dead, just renamed to match — this is the
-  // one deliberate SKILLS_DIRS change the wave spec calls for.
+  // packages/artie/src/engine/tools/skills/library (engine/capabilities/ since 2026-11-24). The
+  // first entry was already a dead/nonexistent directory before this wave and stays dead, just
+  // renamed to match — this is the one deliberate SKILLS_DIRS change the wave spec calls for.
   it('is the three real candidates, highest priority first', () => {
     expect(SKILLS_DIRS).toEqual([
       join(REPO_ROOT, 'packages/artie/skills'),
       join(process.env.HOME || '', '.coachartie/skills'),
-      join(REPO_ROOT, 'packages/artie/src/engine/tools/skills/library'),
+      join(REPO_ROOT, 'packages/artie/src/engine/capabilities/skills/library'),
     ]);
   });
 });

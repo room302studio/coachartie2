@@ -8,27 +8,22 @@ import { getErrorMessage } from '../../shared/errors.js';
 const reply = (status: number, body: any): ApiResult => ({ status, body });
 import { getDb, desc, sql, countDistinct, getSyncDb } from '../../shared/db/client.js';
 import { memories, messages } from '../../shared/db/schema.js';
-import { errorPatternTracker } from '../5-tool-loop/tool-error-patterns.js';
+import { errorPatternTracker } from '../capabilities/error-patterns.js';
 import { traceManager } from '../2-turn/trace.js';
 import { experimentManager } from '../3-context/experiments.js';
 import type { ExperimentDefinition } from '../3-context/experiments.js';
-import { hybridDataLayer } from '../memory/store.js';
+import { memoryStore } from '../memory/store.js';
+import { percentOf } from '../../shared/numbers.js';
 
-function calculatePercentage(numerator: number, denominator: number): number {
-  if (denominator <= 0) {
-    return 0;
-  }
-  return Math.round((numerator / denominator) * 100);
-}
 
-export const apiRouter: ReturnType<typeof Router> = Router();
+export const observabilityRouter: ReturnType<typeof Router> = Router();
 
 // ============================================================================
 // CORE API ENDPOINTS
 // ============================================================================
 
 // GET /api/memories - Browse memories
-apiRouter.get('/memories', async (_req: Request, res: Response) => {
+observabilityRouter.get('/memories', async (_req: Request, res: Response) => {
   try {
     const db = getDb();
     const result = await db
@@ -59,7 +54,7 @@ apiRouter.get('/memories', async (_req: Request, res: Response) => {
 });
 
 // GET /api/messages - Browse messages
-apiRouter.get('/messages', async (_req: Request, res: Response) => {
+observabilityRouter.get('/messages', async (_req: Request, res: Response) => {
   try {
     const db = getDb();
     const result = await db
@@ -89,7 +84,7 @@ apiRouter.get('/messages', async (_req: Request, res: Response) => {
 });
 
 // GET /api/stats - General statistics
-apiRouter.get('/stats', async (_req: Request, res: Response) => {
+observabilityRouter.get('/stats', async (_req: Request, res: Response) => {
   try {
     const db = getDb();
 
@@ -116,7 +111,7 @@ apiRouter.get('/stats', async (_req: Request, res: Response) => {
 });
 
 // GET /api/error-analytics/user/:userId - User error statistics
-apiRouter.get('/error-analytics/user/:userId', (req: Request, res: Response) => {
+observabilityRouter.get('/error-analytics/user/:userId', (req: Request, res: Response) => {
   const { userId } = req.params;
   const stats = errorPatternTracker.getUserErrorStats(userId);
   const preventionTips = errorPatternTracker.getPreventionTips(userId);
@@ -129,7 +124,7 @@ apiRouter.get('/error-analytics/user/:userId', (req: Request, res: Response) => 
 });
 
 // GET /api/error-analytics/global - Global error statistics
-apiRouter.get('/error-analytics/global', (_req: Request, res: Response) => {
+observabilityRouter.get('/error-analytics/global', (_req: Request, res: Response) => {
   const stats = errorPatternTracker.getGlobalErrorStats();
 
   res.json({
@@ -143,12 +138,12 @@ apiRouter.get('/error-analytics/global', (_req: Request, res: Response) => {
 // ============================================================================
 
 // POST /api/traces/link-discord - Link Discord message ID to trace
-apiRouter.post('/traces/link-discord', async (req: Request, res: Response) =>
+observabilityRouter.post('/traces/link-discord', async (req: Request, res: Response) =>
   sendResult(res, await linkDiscordMessage(req.body))
 );
 
 // GET /api/traces - Query traces with filtering
-apiRouter.get('/traces', async (req: Request, res: Response) => {
+observabilityRouter.get('/traces', async (req: Request, res: Response) => {
   try {
     const query = req.query as {
       guildId?: string;
@@ -198,7 +193,7 @@ apiRouter.get('/traces', async (req: Request, res: Response) => {
 });
 
 // GET /api/traces/stats - Aggregate trace statistics
-apiRouter.get('/traces/stats', async (req: Request, res: Response) => {
+observabilityRouter.get('/traces/stats', async (req: Request, res: Response) => {
   try {
     const query = req.query as {
       guildId?: string;
@@ -226,7 +221,7 @@ apiRouter.get('/traces/stats', async (req: Request, res: Response) => {
 });
 
 // GET /api/traces/:id - Get a single trace with full details
-apiRouter.get('/traces/:id', async (req: Request, res: Response) => {
+observabilityRouter.get('/traces/:id', async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const trace = await traceManager.getTrace(id);
@@ -247,7 +242,7 @@ apiRouter.get('/traces/:id', async (req: Request, res: Response) => {
 });
 
 // POST /api/traces/feedback - Record feedback for a trace
-apiRouter.post('/traces/feedback', async (req: Request, res: Response) =>
+observabilityRouter.post('/traces/feedback', async (req: Request, res: Response) =>
   sendResult(res, await recordTraceFeedback(req.body))
 );
 
@@ -256,7 +251,7 @@ apiRouter.post('/traces/feedback', async (req: Request, res: Response) =>
 // ============================================================================
 
 // GET /api/experiments - List all experiments
-apiRouter.get('/experiments', async (req: Request, res: Response) => {
+observabilityRouter.get('/experiments', async (req: Request, res: Response) => {
   try {
     const query = req.query as { status?: string };
     const experiments = await experimentManager.listExperiments(
@@ -278,7 +273,7 @@ apiRouter.get('/experiments', async (req: Request, res: Response) => {
 });
 
 // GET /api/experiments/:id - Get a single experiment
-apiRouter.get('/experiments/:id', async (req: Request, res: Response) => {
+observabilityRouter.get('/experiments/:id', async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const experiment = await experimentManager.getExperiment(id);
@@ -299,7 +294,7 @@ apiRouter.get('/experiments/:id', async (req: Request, res: Response) => {
 });
 
 // POST /api/experiments - Create a new experiment
-apiRouter.post('/experiments', async (req: Request, res: Response) => {
+observabilityRouter.post('/experiments', async (req: Request, res: Response) => {
   try {
     const body = req.body as {
       name?: string;
@@ -359,7 +354,7 @@ apiRouter.post('/experiments', async (req: Request, res: Response) => {
 });
 
 // POST /api/experiments/:id/start - Start an experiment
-apiRouter.post('/experiments/:id/start', async (req: Request, res: Response) => {
+observabilityRouter.post('/experiments/:id/start', async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     await experimentManager.startExperiment(id);
@@ -375,7 +370,7 @@ apiRouter.post('/experiments/:id/start', async (req: Request, res: Response) => 
 });
 
 // POST /api/experiments/:id/end - End an experiment
-apiRouter.post('/experiments/:id/end', async (req: Request, res: Response) => {
+observabilityRouter.post('/experiments/:id/end', async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     await experimentManager.endExperiment(id);
@@ -391,7 +386,7 @@ apiRouter.post('/experiments/:id/end', async (req: Request, res: Response) => {
 });
 
 // GET /api/experiments/:id/results - Get experiment results
-apiRouter.get('/experiments/:id/results', async (req: Request, res: Response) => {
+observabilityRouter.get('/experiments/:id/results', async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const results = await experimentManager.getResults(id);
@@ -416,7 +411,7 @@ apiRouter.get('/experiments/:id/results', async (req: Request, res: Response) =>
 // ============================================================================
 
 // GET /api/analysis/feedback-by-model - Feedback rates by model
-apiRouter.get('/analysis/feedback-by-model', async (req: Request, res: Response) => {
+observabilityRouter.get('/analysis/feedback-by-model', async (req: Request, res: Response) => {
   try {
     const query = req.query as { startDate?: string; endDate?: string };
     const db = getSyncDb();
@@ -457,7 +452,7 @@ apiRouter.get('/analysis/feedback-by-model', async (req: Request, res: Response)
       positive: r.positive || 0,
       negative: r.negative || 0,
       withFeedback: r.with_feedback || 0,
-      positiveRate: calculatePercentage(
+      positiveRate: percentOf(
         r.positive as number,
         r.with_feedback as number
       ),
@@ -477,7 +472,7 @@ apiRouter.get('/analysis/feedback-by-model', async (req: Request, res: Response)
 });
 
 // GET /api/analysis/feedback-by-memory-count - Correlation between memory count and feedback
-apiRouter.get('/analysis/feedback-by-memory-count', async (_req: Request, res: Response) => {
+observabilityRouter.get('/analysis/feedback-by-memory-count', async (_req: Request, res: Response) => {
   try {
     const db = getSyncDb();
 
@@ -505,7 +500,7 @@ apiRouter.get('/analysis/feedback-by-memory-count', async (_req: Request, res: R
       positive: r.positive || 0,
       negative: r.negative || 0,
       withFeedback: r.with_feedback || 0,
-      positiveRate: calculatePercentage(
+      positiveRate: percentOf(
         r.positive as number,
         r.with_feedback as number
       ),
@@ -525,7 +520,7 @@ apiRouter.get('/analysis/feedback-by-memory-count', async (_req: Request, res: R
 });
 
 // GET /api/analysis/rule-effectiveness - How effective are learned rules
-apiRouter.get('/analysis/rule-effectiveness', async (_req: Request, res: Response) => {
+observabilityRouter.get('/analysis/rule-effectiveness', async (_req: Request, res: Response) => {
   try {
     const db = getSyncDb();
 
@@ -555,7 +550,7 @@ apiRouter.get('/analysis/rule-effectiveness', async (_req: Request, res: Respons
       positive: r.positive || 0,
       negative: r.negative || 0,
       withFeedback: r.with_feedback || 0,
-      positiveRate: calculatePercentage(
+      positiveRate: percentOf(
         r.positive as number,
         r.with_feedback as number
       ),
@@ -579,10 +574,10 @@ apiRouter.get('/analysis/rule-effectiveness', async (_req: Request, res: Respons
 // ============================================================================
 
 // GET /api/memories/most-recalled - Get most frequently accessed memories
-apiRouter.get('/memories/most-recalled', (_req: Request, res: Response) => {
+observabilityRouter.get('/memories/most-recalled', (_req: Request, res: Response) => {
   try {
     const limit = parseInt(_req.query.limit as string) || 20;
-    const memories = hybridDataLayer.getMostRecalledMemories(limit);
+    const memories = memoryStore.getMostRecalledMemories(limit);
 
     res.json({
       memories,
@@ -599,10 +594,10 @@ apiRouter.get('/memories/most-recalled', (_req: Request, res: Response) => {
 });
 
 // GET /api/memories/:id/recall-stats - Get recall statistics for a specific memory
-apiRouter.get('/memories/:id/recall-stats', (req: Request, res: Response) => {
+observabilityRouter.get('/memories/:id/recall-stats', (req: Request, res: Response) => {
   try {
     const memoryId = parseInt(req.params.id);
-    const stats = hybridDataLayer.getMemoryRecallStats(memoryId);
+    const stats = memoryStore.getMemoryRecallStats(memoryId);
 
     if (!stats) {
       res.status(404).json({ error: 'Memory not found' });
@@ -624,7 +619,7 @@ apiRouter.get('/memories/:id/recall-stats', (req: Request, res: Response) => {
 });
 
 // GET /api/memories/recall-history - Get recent recall events
-apiRouter.get('/memories/recall-history', (_req: Request, res: Response) => {
+observabilityRouter.get('/memories/recall-history', (_req: Request, res: Response) => {
   try {
     const limit = parseInt(_req.query.limit as string) || 50;
     const db = getSyncDb();
@@ -674,7 +669,7 @@ apiRouter.get('/memories/recall-history', (_req: Request, res: Response) => {
 // ============================================================================
 
 // GET /api/analytics/sessions/daily-active-users - DAU over time
-apiRouter.get('/analytics/sessions/daily-active-users', (_req: Request, res: Response) => {
+observabilityRouter.get('/analytics/sessions/daily-active-users', (_req: Request, res: Response) => {
   try {
     const days = parseInt(_req.query.days as string) || 30;
     const db = getSyncDb();
@@ -707,7 +702,7 @@ apiRouter.get('/analytics/sessions/daily-active-users', (_req: Request, res: Res
 });
 
 // GET /api/analytics/sessions/duration-distribution - Session length distribution
-apiRouter.get('/analytics/sessions/duration-distribution', (_req: Request, res: Response) => {
+observabilityRouter.get('/analytics/sessions/duration-distribution', (_req: Request, res: Response) => {
   try {
     const db = getSyncDb();
 
@@ -750,7 +745,7 @@ apiRouter.get('/analytics/sessions/duration-distribution', (_req: Request, res: 
 });
 
 // GET /api/analytics/capabilities/usage - Capability usage statistics
-apiRouter.get('/analytics/capabilities/usage', (_req: Request, res: Response) => {
+observabilityRouter.get('/analytics/capabilities/usage', (_req: Request, res: Response) => {
   try {
     const days = parseInt(_req.query.days as string) || 7;
     const db = getSyncDb();
@@ -777,7 +772,7 @@ apiRouter.get('/analytics/capabilities/usage', (_req: Request, res: Response) =>
         action: r.action,
         total: r.total,
         failures: r.failures || 0,
-        failureRate: calculatePercentage(
+        failureRate: percentOf(
           r.failures as number || 0,
           r.total as number
         ),
@@ -797,7 +792,7 @@ apiRouter.get('/analytics/capabilities/usage', (_req: Request, res: Response) =>
 });
 
 // GET /api/analytics/errors/by-type - Error breakdown by type
-apiRouter.get('/analytics/errors/by-type', (_req: Request, res: Response) => {
+observabilityRouter.get('/analytics/errors/by-type', (_req: Request, res: Response) => {
   try {
     const days = parseInt(_req.query.days as string) || 7;
     const db = getSyncDb();
@@ -831,7 +826,7 @@ apiRouter.get('/analytics/errors/by-type', (_req: Request, res: Response) => {
 });
 
 // GET /api/analytics/errors/recent - Recent errors
-apiRouter.get('/analytics/errors/recent', (_req: Request, res: Response) => {
+observabilityRouter.get('/analytics/errors/recent', (_req: Request, res: Response) => {
   try {
     const limit = parseInt(_req.query.limit as string) || 50;
     const db = getSyncDb();
@@ -862,7 +857,7 @@ apiRouter.get('/analytics/errors/recent', (_req: Request, res: Response) => {
 });
 
 // GET /api/analytics/traces/with-text - Get traces with input/response text for debugging
-apiRouter.get('/analytics/traces/with-text', (_req: Request, res: Response) => {
+observabilityRouter.get('/analytics/traces/with-text', (_req: Request, res: Response) => {
   try {
     const limit = parseInt(_req.query.limit as string) || 20;
     const sentiment = _req.query.sentiment as string;
@@ -915,7 +910,7 @@ apiRouter.get('/analytics/traces/with-text', (_req: Request, res: Response) => {
 });
 
 // GET /api/analytics/delivery/stats - Delivery attempt statistics
-apiRouter.get('/analytics/delivery/stats', async (_req: Request, res: Response) => {
+observabilityRouter.get('/analytics/delivery/stats', async (_req: Request, res: Response) => {
   try {
     const { deliveryManager } = await import('../proactive/delivery.js');
     const days = parseInt(_req.query.days as string) || 7;
@@ -936,7 +931,7 @@ apiRouter.get('/analytics/delivery/stats', async (_req: Request, res: Response) 
 });
 
 // GET /api/analytics/delivery/recent - Recent delivery attempts
-apiRouter.get('/analytics/delivery/recent', (_req: Request, res: Response) => {
+observabilityRouter.get('/analytics/delivery/recent', (_req: Request, res: Response) => {
   try {
     const limit = parseInt(_req.query.limit as string) || 50;
     const status = _req.query.status as string;

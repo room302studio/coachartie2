@@ -69,7 +69,7 @@ export function isBurstRepeat(message: Message, shortId: string): boolean {
   return false;
 }
 
-export type AntibodyVerdict =
+type AntibodyVerdict =
   | { silenced: true }
   | { silenced: false; guildContext: string | undefined };
 

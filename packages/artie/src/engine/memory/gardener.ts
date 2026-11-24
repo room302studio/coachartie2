@@ -49,7 +49,7 @@ interface WeeklyDigest {
   memoriesNeedingAttention: number;
 }
 
-export class MemoryGardener {
+class MemoryGardener {
   private static instance: MemoryGardener;
   private isRunning = false;
 
@@ -491,23 +491,3 @@ export class MemoryGardener {
 }
 
 export const memoryGardener = MemoryGardener.getInstance();
-
-/**
- * Convenience function to count recent negative feedback for emergency reflection
- */
-export async function countRecentNegativeFeedback(
-  guildId: string,
-  hours: number = 1
-): Promise<number> {
-  const db = getSyncDb();
-  const result = db.get<{ count: number }>(
-    `
-    SELECT COUNT(*) as count FROM memories
-    WHERE guild_id = ?
-      AND tags LIKE '%negative%'
-      AND created_at > datetime('now', '-${hours} hours')
-  `,
-    [guildId]
-  );
-  return result?.count || 0;
-}

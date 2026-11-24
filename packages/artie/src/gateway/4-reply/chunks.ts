@@ -18,9 +18,9 @@
  */
 
 /** A guaranteed non-empty list of Discord-sized chunks. */
-export type MessageChunks = [string, ...string[]];
+type MessageChunks = [string, ...string[]];
 
-export const DISCORD_MAX_MESSAGE_LENGTH = 2000;
+const DISCORD_MAX_MESSAGE_LENGTH = 2000;
 
 export function chunkMessage(
   text: string,

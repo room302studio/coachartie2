@@ -7,9 +7,9 @@
  * { success:false, error:"Timeout failed" } with no cause. Every failure now names its cause.
  */
 
-export const MIN_TIMEOUT_MINUTES = 1;
-export const MAX_TIMEOUT_MINUTES = 60;
-export const MAX_CANDIDATES_LISTED = 5;
+const MIN_TIMEOUT_MINUTES = 1;
+const MAX_TIMEOUT_MINUTES = 60;
+const MAX_CANDIDATES_LISTED = 5;
 
 /** The names a guild member can be known by. */
 export interface MemberCandidate {
@@ -19,7 +19,7 @@ export interface MemberCandidate {
   nickname?: string | null;
 }
 
-export type UserRef = { kind: 'id'; id: string } | { kind: 'name'; name: string } | { kind: 'empty' };
+type UserRef = { kind: 'id'; id: string } | { kind: 'name'; name: string } | { kind: 'empty' };
 
 /** A snowflake, <@id>, <@!id>, or a name (leading @ stripped). */
 export function parseUserRef(raw: unknown): UserRef {
@@ -53,7 +53,7 @@ function dedupe(list: MemberCandidate[]): MemberCandidate[] {
 }
 
 /** "name (aka nick) [id]" for an error message the model can relay. */
-export function describeCandidate(c: MemberCandidate): string {
+function describeCandidate(c: MemberCandidate): string {
   const names = [c.username, c.globalName, c.nickname]
     .map((n) => (n || '').trim())
     .filter((n, i, all) => n && all.indexOf(n) === i);
@@ -169,7 +169,7 @@ export function parseTimeoutMinutes(
  * Facts about the situation. Anything undefined is "unknown" and never blocks, so a partial
  * picture (or a test double) cannot invent a refusal.
  */
-export interface PreflightFacts {
+interface PreflightFacts {
   action: 'timeout' | 'role';
   targetName: string;
   targetIsOwner?: boolean;
@@ -182,7 +182,7 @@ export interface PreflightFacts {
   roleName?: string;
 }
 
-export type Preflight = { ok: true } | { ok: false; status: number; error: string };
+type Preflight = { ok: true } | { ok: false; status: number; error: string };
 
 export function preflight(f: PreflightFacts): Preflight {
   let verb = 'change roles for';

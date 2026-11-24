@@ -17,7 +17,7 @@ export type TrustedChannelId = string & { readonly [trustedBrand]: 'channel' };
 export type TrustedUserId = string & { readonly [trustedBrand]: 'user' };
 
 /** Where trusted ids come from. Each value is a reviewed trust boundary. */
-export type TrustSource =
+type TrustSource =
   /** The live Discord turn: the gateway saw the message in this guild/channel from this user. */
   | 'discord-turn'
   /** Replaying a call EJ approved: the ids were trusted when the original call was gated. */
@@ -29,7 +29,7 @@ export type TrustSource =
   /** EJ, in his own DM, naming a server for an owner-only action. */
   | 'owner-dm-choice';
 
-export interface RawContextIds {
+interface RawContextIds {
   guildId?: unknown;
   channelId?: unknown;
   userId?: unknown;

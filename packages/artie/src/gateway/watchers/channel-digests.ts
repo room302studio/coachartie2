@@ -34,7 +34,7 @@ const num = (v: string | undefined, d: number) => {
   return d;
 };
 
-export interface DigestThresholds {
+interface DigestThresholds {
   minMessages: number;
   staleMinMessages: number;
   staleMs: number;
@@ -85,7 +85,7 @@ function observedChannels(client: Client, cfg: GuildConfig): TextChannel[] {
   );
 }
 
-export class ChannelDigestLoop {
+class ChannelDigestLoop {
   private client: Client | null = null;
   private timer: NodeJS.Timeout | null = null;
   private running = false;

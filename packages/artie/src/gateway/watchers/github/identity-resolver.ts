@@ -33,7 +33,7 @@ interface IdentityMatch {
   source: string;
 }
 
-export class GitHubIdentityResolver {
+class GitHubIdentityResolver {
   private client: Client;
   private octokit: Octokit;
   private resolveInterval: NodeJS.Timeout | null = null;

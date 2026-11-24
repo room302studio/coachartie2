@@ -17,11 +17,11 @@ import { QUEUES } from '../../shared/queue/names.js';
 const MAX_ATTEMPTS = 3;
 const RETRY_DELAYS_MS = [5 * 60 * 1000, 30 * 60 * 1000, 2 * 60 * 60 * 1000]; // 5m, 30m, 2h
 
-export type MessageType = 'goal_nudge' | 'morning_briefing' | 'quest_nudge' | 'todo_nudge' | 'alert';
-export type DeliveryChannel = 'discord_dm' | 'discord_channel' | 'sms' | 'email';
-export type DeliveryStatus = 'pending' | 'sent' | 'failed' | 'fallback_sent' | 'abandoned';
+type MessageType = 'goal_nudge' | 'morning_briefing' | 'quest_nudge' | 'todo_nudge' | 'alert';
+type DeliveryChannel = 'discord_dm' | 'discord_channel' | 'sms' | 'email';
+type DeliveryStatus = 'pending' | 'sent' | 'failed' | 'fallback_sent' | 'abandoned';
 
-export interface DeliveryOptions {
+interface DeliveryOptions {
   messageType: MessageType;
   userId: string;
   content: string;
@@ -30,7 +30,7 @@ export interface DeliveryOptions {
   fallbackChannelId?: string; // Discord channel to mention user if DM fails
 }
 
-export interface DeliveryResult {
+interface DeliveryResult {
   success: boolean;
   channel?: DeliveryChannel;
   error?: string;

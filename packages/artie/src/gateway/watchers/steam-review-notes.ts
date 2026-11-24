@@ -87,7 +87,7 @@ interface ReviewEntry {
   text: string;
 }
 
-export class SteamReviewNotes {
+class SteamReviewNotes {
   private static instance: SteamReviewNotes;
   private client: Client | null = null;
   private timer: NodeJS.Timeout | null = null;

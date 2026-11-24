@@ -39,7 +39,7 @@ export { isSilent, stripSilentMarkers };
 // 1-per-day/3-per-hour DB limit (it's still audited). Only [TIMEOUT] counts (2026-10-31).
 const CASINO_STAKE = { game: true };
 
-export type ControlToken =
+type ControlToken =
   | { kind: 'silent' }
   | { kind: 'timeout'; seconds: number }
   | { kind: 'gamble'; stake: number; odds: number }
@@ -49,7 +49,7 @@ export type ControlToken =
   | { kind: 'slots'; stake: number }
   | { kind: 'wheel'; seconds: number; target: string | undefined };
 
-export type ControlTokenKind = ControlToken['kind'];
+type ControlTokenKind = ControlToken['kind'];
 
 type Parser<K extends ControlTokenKind> = (text: string) => Extract<ControlToken, { kind: K }> | null;
 

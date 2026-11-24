@@ -50,7 +50,7 @@ function envNum(name: string, fallback: number): number {
   return fallback;
 }
 
-export class VitalsMonitor {
+class VitalsMonitor {
   private static instance: VitalsMonitor;
   private tickTimer: ReturnType<typeof setInterval> | null = null;
   private intervalMs = 60 * 60 * 1000;
@@ -256,7 +256,7 @@ export const vitalsMonitor = VitalsMonitor.getInstance();
  * Just fixes the most common shit that breaks:
  * - Memory leaks
  */
-export class SimpleHealer {
+class SimpleHealer {
   private isRunning = false;
   private interval: NodeJS.Timeout | null = null;
 

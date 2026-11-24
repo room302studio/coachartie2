@@ -27,7 +27,7 @@ import { getErrorMessage } from '../../shared/errors.js';
 // slug) from the dev `.env` that `.env.production`/PM2 doesn't set. That is the invariant this
 // wave was told to protect. Loading .env is `C/index.ts` / `D/index.ts`'s job; this module just
 // reads `process.env` same as before.
-import { UsageTracker, TokenUsage } from '../budget/usage-ledger.js';
+import { UsageLedger, TokenUsage } from '../budget/usage-ledger.js';
 import {
   applyCacheControl,
   readCacheUsage,
@@ -60,7 +60,7 @@ export function servedModelName(served: string | undefined | null, requested: st
   return requested;
 }
 
-export function finiteOrUndefined(value: number | undefined): number | undefined {
+function finiteOrUndefined(value: number | undefined): number | undefined {
   if (value === undefined || !Number.isFinite(value)) return undefined;
   return value;
 }
@@ -69,7 +69,7 @@ export function finiteOrUndefined(value: number | undefined): number | undefined
 export function billedCost(reported: number | undefined, billedModel: string, usage: TokenUsage): number {
   const exact = finiteOrUndefined(reported);
   if (exact !== undefined) return exact;
-  return UsageTracker.calculateCost(billedModel, usage);
+  return UsageLedger.calculateCost(billedModel, usage);
 }
 
 function getStepType(userId: string, messageId: string | undefined, explicit?: string): string {
@@ -119,7 +119,7 @@ function stepTypeFor(userId: string, messageId: string | undefined, explicit?: s
 }
 
 /** Options shared by every generate call (streaming, plain and tool turns). */
-export interface GenerateOptions {
+interface GenerateOptions {
   traceId?: string | null;
   guildId?: string;
   maxTokens?: number; // answer ceiling for a known-short output; default wireMaxTokens
@@ -141,7 +141,7 @@ export interface GenerateOptions {
 }
 
 /** One generate turn's result. `toolCalls` is always [] unless the turn offered tools. */
-export interface GenerateTurnResult {
+interface GenerateTurnResult {
   content: string;
   toolCalls: ToolCall[];
   /** The model the request went to (after any tool-capable pin). */
@@ -155,7 +155,7 @@ export interface GenerateTurnResult {
  * moves down the ladder (2026-11-17: Opus spent a 500-token cap thinking and said nothing;
  * the fallback was cut mid-bullet).
  */
-export class ReplyTruncated extends Error {
+class ReplyTruncated extends Error {
   constructor(
     readonly model: string,
     readonly maxTokens: number,
@@ -1036,7 +1036,7 @@ class OpenRouterService {
 
         // Record usage statistics (don't await to avoid blocking)
         {
-          UsageTracker.recordUsage({
+          UsageLedger.recordUsage({
             model_name: billedModel,
             guild_id: options?.guildId ?? null,
             user_id: userId,
@@ -1115,7 +1115,7 @@ class OpenRouterService {
           } else {
             recordErrorType = errorMessage.slice(0, 80);
           }
-          UsageTracker.recordUsage({
+          UsageLedger.recordUsage({
             model_name: attemptUsage?.billed ?? model,
             guild_id: options?.guildId ?? null,
             user_id: userId,
@@ -1538,7 +1538,7 @@ class OpenRouterService {
 
         // Record usage statistics (don't await to avoid blocking)
         {
-          UsageTracker.recordUsage({
+          UsageLedger.recordUsage({
             model_name: billedModel,
             guild_id: options?.guildId ?? null,
             user_id: userId,

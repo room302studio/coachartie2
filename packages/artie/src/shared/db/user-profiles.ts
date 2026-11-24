@@ -16,7 +16,7 @@ const redis = createRedisConnection();
  * - Arbitrary key-value pairs
  */
 
-export interface UserProfile {
+interface UserProfile {
   // Contact & Social
   email?: string;
   phone?: string;

@@ -32,12 +32,12 @@ import { closeRedisConnection } from './shared/queue/redis.js';
 import { startEngine, type EngineHandle } from './engine/main.js';
 import { startGateway, type GatewayHandle } from './gateway/main.js';
 
-export interface BootOptions {
+interface BootOptions {
   /** Called once when everything is up. Default: process.send?.('ready') (PM2 wait_ready). */
   notifyReady?: () => void;
 }
 
-export interface Running {
+interface Running {
   engine: EngineHandle;
   gateway: GatewayHandle;
   /** True once notifyReady was called (Discord ready and all three listeners up). */

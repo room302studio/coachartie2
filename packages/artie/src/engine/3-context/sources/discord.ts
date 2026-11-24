@@ -1,6 +1,6 @@
 /**
  * Discord/Slack channel & environment context source builders extracted verbatim
- * from ContextAlchemy. These depend only on their arguments plus dynamically-imported
+ * from ContextAssembler (assemble.ts). These depend only on their arguments plus dynamically-imported
  * modules (database) — no instance state — so they live here as
  * plain functions. Behavior is byte-for-byte identical to the original private
  * methods; do not change wording, queries, priorities, or token weights.
@@ -12,6 +12,7 @@ import type { IncomingMessage } from '../../../shared/queue/types.js';
 import type { ContextSource } from './types.js';
 import { DEBUG } from './types.js';
 import * as gateway from '../../../gateway/api.js';
+import { isSnowflake } from '../../../shared/discord-ids.js';
 
 /**
  * Add recent messages from guild (Discord server)
@@ -88,7 +89,7 @@ export function isDiscordTurn(message: Pick<IncomingMessage, 'source' | 'context
  */
 export function whereLines(ctx: Record<string, unknown>): string[] {
   const lines: string[] = [];
-  const id = (value: unknown) => typeof value === 'string' && /^\d{15,22}$/.test(value);
+  const id = isSnowflake;
   if (id(ctx.channelId)) {
     lines.push(`- Channel id: ${ctx.channelId} (the default for channel tools)`);
   }

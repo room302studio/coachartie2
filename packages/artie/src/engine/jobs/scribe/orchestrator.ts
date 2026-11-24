@@ -32,7 +32,7 @@ import {
   type ScribeSession,
 } from '../../../shared/db/scribe-store.js';
 import { getBrownoutMode } from '../../budget/brownout.js';
-import { UsageTracker } from '../../budget/usage-ledger.js';
+import { UsageLedger } from '../../budget/usage-ledger.js';
 import { transcribeWav } from './stt.js';
 import { computeSttCostUsd, scribeSttModel } from './cost.js';
 import { generateScribeSummary } from './summary.js';
@@ -129,7 +129,7 @@ export async function submitScribeUtterance(input: ScribeUtteranceInput): Promis
 
   const costUsd = computeSttCostUsd(input.durationSeconds, model);
   addScribeUsage(input.sessionId, input.durationSeconds, costUsd);
-  await UsageTracker.recordUsage({
+  await UsageLedger.recordUsage({
     model_name: model,
     user_id: session.startedBy,
     message_id: input.sessionId,

@@ -17,7 +17,7 @@ import { getKillSwitch } from './paths.js';
  *    day it tripped on, and is lifted automatically at the next ET midnight.
  */
 
-export const BUDGET_MUTE_MARKER = 'BUDGET_MUTE';
+const BUDGET_MUTE_MARKER = 'BUDGET_MUTE';
 
 export function getKillSwitchPath(): string {
   return getKillSwitch();
@@ -36,7 +36,7 @@ export type KillSwitchState =
   | { muted: true; kind: 'manual' }
   | ({ muted: true; kind: 'budget' } & BudgetMuteInfo);
 
-export function parseKillSwitch(content: string): KillSwitchState {
+function parseKillSwitch(content: string): KillSwitchState {
   const trimmed = content.trim();
   if (trimmed.startsWith(BUDGET_MUTE_MARKER)) {
     try {
@@ -94,7 +94,7 @@ export function clearKillSwitch(path: string = getKillSwitchPath()): void {
  * Manual unmute during a budget mute = "I know, let him talk today". Recorded per ET day so
  * the very next generation doesn't re-trip the cap; it expires on its own at midnight.
  */
-export function budgetOverridePath(path: string = getKillSwitchPath()): string {
+function budgetOverridePath(path: string = getKillSwitchPath()): string {
   return `${path}.budget-override`;
 }
 

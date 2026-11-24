@@ -13,7 +13,7 @@ export interface MediaWikiConfig {
   description?: string;
 }
 
-export interface EditResult {
+interface EditResult {
   success: boolean;
   pageTitle: string;
   newRevId?: number;
@@ -21,7 +21,7 @@ export interface EditResult {
   error?: string;
 }
 
-export interface PageInfo {
+interface PageInfo {
   pageId: number;
   title: string;
   content: string;

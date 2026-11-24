@@ -1,7 +1,7 @@
 import { logger } from '../../shared/logger.js';
 import * as engine from '../../engine/api.js';
 
-export interface JobCallback {
+interface JobCallback {
   onComplete: (result: string) => void;
   onError?: (error: string) => void;
   onProgress?: (status: any) => void;
@@ -12,7 +12,7 @@ export interface JobCallback {
   createdAt: number;
 }
 
-export interface JobStatusResponse {
+interface JobStatusResponse {
   success: boolean;
   messageId: string;
   status: 'pending' | 'processing' | 'completed' | 'failed';
@@ -30,8 +30,8 @@ export interface JobStatusResponse {
  * Persistent Job Monitor - Single wheel that monitors ALL Discord jobs
  * Replaces the broken per-message polling system
  */
-export class JobMonitor {
-  private static instance: JobMonitor;
+class JobWatcher {
+  private static instance: JobWatcher;
   private pendingJobs = new Map<string, JobCallback>();
   private monitorInterval: NodeJS.Timeout | null = null;
   private isRunning = false;
@@ -41,11 +41,11 @@ export class JobMonitor {
   // job tracker, with the same events, timeouts, 404-means-orphaned rule and recovery.
   private constructor() {}
 
-  public static getInstance(): JobMonitor {
-    if (!JobMonitor.instance) {
-      JobMonitor.instance = new JobMonitor();
+  public static getInstance(): JobWatcher {
+    if (!JobWatcher.instance) {
+      JobWatcher.instance = new JobWatcher();
     }
-    return JobMonitor.instance;
+    return JobWatcher.instance;
   }
 
   /**
@@ -423,4 +423,4 @@ export class JobMonitor {
 }
 
 // Export singleton instance
-export const jobMonitor = JobMonitor.getInstance();
+export const jobWatcher = JobWatcher.getInstance();

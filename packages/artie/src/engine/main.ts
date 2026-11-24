@@ -21,19 +21,16 @@ import { distressMonitor } from './health/distress.js';
 import { vitalsMonitor, simpleHealer } from './health/vitals.js';
 import { startDailyBudgetWatch } from './budget/daily-cap.js';
 import { startJarEarningsWatch } from './budget/jar-earnings.js';
-import { GlobalVariableStore } from './5-tool-loop/variables.js';
+import { GlobalVariableStore } from './capabilities/variables.js';
 // Import the turn spine FIRST to trigger capability registration (its orchestrator
 // singleton runs the bootstrap at module load). Wave 3 left this path pointing at the
 // pre-move services/capability/ tree; tsc doesn't check side-effect-only imports, so it
 // would have thrown ERR_MODULE_NOT_FOUND at boot.
 import './2-turn/run-turn.js';
-import { capabilityRegistry } from './5-tool-loop/registry.js';
+import { capabilityRegistry } from './capabilities/registry.js';
 import { openRouterModelsService } from './4-generate/model-catalog.js';
-import { hybridDataLayer } from './memory/store.js';
+import { memoryStore } from './memory/store.js';
 import { endCrashedScribeSessions } from '../shared/db/scribe-store.js';
-
-// Export openRouterService for models endpoint
-export { openRouterService } from './4-generate/openrouter.js';
 
 export interface EngineHandle {
   /** The :47324 server, listening. */
@@ -172,7 +169,7 @@ export async function startEngine(): Promise<EngineHandle> {
   startDailyBudgetWatch();
 
   // Jar earnings (self-meter line only — no-op until ARTIE_TIP_JAR_URL/STRIPE_JAR_READ_KEY/
-  // ARTIE_TIP_JAR_PAYMENT_LINK_ID are all set; see JAR-NOTES.md).
+  // ARTIE_TIP_JAR_PAYMENT_LINK_ID are all set; see docs/notes/JAR-NOTES.md).
   console.log('🫙 Starting jar earnings watch...');
   startJarEarningsWatch();
 
@@ -239,7 +236,7 @@ export async function startEngine(): Promise<EngineHandle> {
       GlobalVariableStore.getInstance().shutdown();
 
       logger.info('Cleaning up hybrid data layer...');
-      await hybridDataLayer.cleanup();
+      await memoryStore.cleanup();
 
       logger.info('Shutting down service discovery...');
       await serviceDiscovery.shutdown();

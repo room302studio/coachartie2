@@ -14,9 +14,9 @@ import {
 } from 'discord.js';
 import { renderProgressBar, type QuizSession } from './live-session.js';
 
-export const QUIZ_BUTTON_PREFIX = 'quiz:';
+const QUIZ_BUTTON_PREFIX = 'quiz:';
 
-export type QuizButtonAction = 'hint' | 'skip' | 'end' | 'again';
+type QuizButtonAction = 'hint' | 'skip' | 'end' | 'again';
 
 export function quizButtonId(action: QuizButtonAction): string {
   return `${QUIZ_BUTTON_PREFIX}${action}`;

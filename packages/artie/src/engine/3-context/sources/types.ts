@@ -3,7 +3,7 @@
  *
  * A "context provider" is a small async function that gathers one kind of
  * context (temporal, memory, Discord situational, etc.) and pushes zero or more
- * ContextSource entries onto the shared `sources` array. ContextAlchemy owns the
+ * ContextSource entries onto the shared `sources` array. ContextAssembler owns the
  * budget/selection/assembly machinery and runs the providers; the providers live
  * in `./` as plain functions so each is independently testable and readable.
  */

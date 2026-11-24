@@ -13,7 +13,7 @@ import { openRouterService } from '../4-generate/openrouter.js';
 import { creditMonitor } from '../budget/openrouter-balance.js';
 import { isGenerationMuted } from '../../shared/kill-switch.js';
 
-export interface HeadlineRequest {
+interface HeadlineRequest {
   /** Stable cache key, e.g. "owner/repo#1499:merged". */
   key: string;
   /** What the item is: "pull request", "issue", "comment on #12 …", "review". */
@@ -136,9 +136,4 @@ export async function githubHeadline(req: HeadlineRequest): Promise<string | nul
     clearTimeout(timer);
   }
   return headline;
-}
-
-/** Test hook. */
-export function clearHeadlineCache(): void {
-  cache.clear();
 }

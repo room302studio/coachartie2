@@ -16,7 +16,7 @@ export interface JsonOutputSpec {
 }
 
 /** What the catalog says the model accepts (model-catalog.ts structuredOutputMode). */
-export type StructuredOutputMode = 'json_schema' | 'json_object';
+type StructuredOutputMode = 'json_schema' | 'json_object';
 
 export function responseFormatFor(spec: JsonOutputSpec, mode: StructuredOutputMode): Record<string, unknown> {
   if (mode === 'json_schema') {

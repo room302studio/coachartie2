@@ -30,7 +30,7 @@ function getMessageQueue(): Queue<IncomingMessage> | null {
   return messageQueue;
 }
 
-export interface PublishOptions {
+interface PublishOptions {
   /** Throw on a failed enqueue instead of logging and returning (default false). */
   rethrow?: boolean;
 }

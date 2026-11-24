@@ -261,7 +261,7 @@ export function brevityNoteFor(mode: BrownoutMode): string | null {
   return BREVITY_NOTES[mode];
 }
 
-export interface BrownoutRoute {
+interface BrownoutRoute {
   model: string;
   /** OpenRouter plugins for the request (unused by brownout since 2026-11-17). */
   plugins?: unknown[];

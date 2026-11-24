@@ -53,7 +53,7 @@ const IGNORE_PATTERNS = [
   /archived/i,
 ];
 
-export class GitHubOrgWatcher {
+class GitHubOrgWatcher {
   private client: Client;
   private octokit: Octokit;
   private watchTimer: NodeJS.Timeout | null = null;
@@ -345,8 +345,4 @@ export function initializeOrgWatcher(client: Client): void {
 
   orgWatcher = new GitHubOrgWatcher(client, token);
   orgWatcher.start();
-}
-
-export function getOrgWatcher(): GitHubOrgWatcher | null {
-  return orgWatcher;
 }

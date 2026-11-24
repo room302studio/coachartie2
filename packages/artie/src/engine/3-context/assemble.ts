@@ -2,14 +2,14 @@ import { logger } from '../../shared/logger.js';
 import { OWNER_USER_ID } from '../../shared/config/owner.js';
 import { estimateTokens } from '../../shared/async.js';
 import { getGuildKnowledgeDirs } from '../../shared/paths.js';
-import { stripXmlToolTeaching, NATIVE_TOOLS_LINE } from '../5-tool-loop/mode.js';
+import { stripXmlToolTeaching, NATIVE_TOOLS_LINE } from './xml-teaching.js';
 import { IncomingMessage } from '../../shared/queue/types.js';
 import { MemoryEntourageInterface } from '../memory/types.js';
 import { MemoryRecaller } from '../memory/recall.js';
 import { existsSync, readFileSync } from 'fs';
 import { join } from 'path';
 
-// Context Alchemy observability
+// Context-assembly observability
 import { traceManager } from '../2-turn/trace.js';
 import { ContextSource, ContextBudget, DEBUG } from './sources/types.js';
 import {
@@ -49,7 +49,7 @@ import { getBrownoutMode } from '../budget/brownout.js';
 import { getDailyBudgetUsd } from '../budget/daily-cap.js';
 import { recentHiccups, selfMeterLine } from '../budget/self-meter.js';
 import { dreamRecallLine } from '../memory/dream.js';
-import { selfNotesLine } from '../tools/core/memory.js';
+import { selfNotesLine } from '../capabilities/core/memory.js';
 import { getJarTippedUsd } from '../budget/jar-earnings.js';
 import { getLastTimeFacts, lastTimeLine, promisesLine } from './sources/last-time.js';
 import { listOpenPromises, withApprovalStatus } from '../../shared/db/promise-store.js';
@@ -138,7 +138,8 @@ This message is from EJ, verified by his Discord user ID. He built you and runs 
 </owner_note>`;
 
 /**
- * Context Alchemy System - Intelligent context window management
+ * ContextAssembler: builds the system prompt and message chain for a turn, within a token
+ * budget. (Its log lines still say "Context Alchemy", the old name, so log searches keep working.)
  *
  * Instead of hardcoded string replacements, this system:
  * 1. Gathers context from multiple sources
@@ -150,8 +151,8 @@ This message is from EJ, verified by his Discord user ID. He built you and runs 
 export type { PendingAttachment } from '../1-intake/pending-attachments.js';
 export { addPendingAttachment, getPendingAttachments } from '../1-intake/pending-attachments.js';
 
-export class ContextAlchemy {
-  private static instance: ContextAlchemy;
+class ContextAssembler {
+  private static instance: ContextAssembler;
   private memoryEntourage: MemoryEntourageInterface;
   // Per-channel cooldown for the autonomous song-moment nudge (see addSongNudge)
   private lastSongNudgeAt = new Map<string, number>();
@@ -164,11 +165,11 @@ export class ContextAlchemy {
     }
   }
 
-  static getInstance(): ContextAlchemy {
-    if (!ContextAlchemy.instance) {
-      ContextAlchemy.instance = new ContextAlchemy();
+  static getInstance(): ContextAssembler {
+    if (!ContextAssembler.instance) {
+      ContextAssembler.instance = new ContextAssembler();
     }
-    return ContextAlchemy.instance;
+    return ContextAssembler.instance;
   }
 
   /**
@@ -198,7 +199,7 @@ export class ContextAlchemy {
       discordChannelHistory?: DiscordHistoryEntry[];
       // Full Discord context (for guild knowledge, proactive answering, etc.)
       discordContext?: Record<string, any>;
-      // Context Alchemy observability: trace ID for metrics capture
+      // Observability: trace ID for metrics capture
       traceId?: string | null;
       // Experiment feature flags
       enableMemories?: boolean; // Default true - set to false to disable memory retrieval
@@ -378,7 +379,7 @@ export class ContextAlchemy {
       );
     }
 
-    // Context Alchemy observability: Update trace with context metrics
+    // Observability: update the trace with context metrics
     if (options.traceId) {
       const memoriesSource = selectedContext.find((s) => s.name === 'relevant_memories');
       const rulesSource = selectedContext.find((s) => s.name === 'learned_rules');
@@ -436,8 +437,8 @@ export class ContextAlchemy {
 
     // Load from database with fallback
     try {
-      const { promptManager } = await import('./system-prompt.js');
-      const synthesisTemplate = await promptManager.getPrompt('PROMPT_CAPABILITY_SYNTHESIS');
+      const { promptStore } = await import('./prompt-store.js');
+      const synthesisTemplate = await promptStore.getPrompt('PROMPT_CAPABILITY_SYNTHESIS');
 
       if (synthesisTemplate) {
         // Replace template variables
@@ -1048,8 +1049,8 @@ Important:
     // Loaded from DB (PROMPT_MESSAGE_FORMAT) with byte-identical fallback.
     let messageFormatBlock = MESSAGE_FORMAT_FALLBACK;
     try {
-      const { promptManager } = await import('./system-prompt.js');
-      const mfPrompt = await promptManager.getPrompt('PROMPT_MESSAGE_FORMAT');
+      const { promptStore } = await import('./prompt-store.js');
+      const mfPrompt = await promptStore.getPrompt('PROMPT_MESSAGE_FORMAT');
       if (mfPrompt?.content) {
         messageFormatBlock = mfPrompt.content;
       }
@@ -1061,8 +1062,8 @@ Important:
     // Add UI modality rules for Discord messages (from database)
     if (source === 'discord') {
       try {
-        const { promptManager } = await import('./system-prompt.js');
-        const uiPrompt = await promptManager.getPrompt('PROMPT_DISCORD_UI_MODALITY');
+        const { promptStore } = await import('./prompt-store.js');
+        const uiPrompt = await promptStore.getPrompt('PROMPT_DISCORD_UI_MODALITY');
         const uiRules = uiPrompt?.content || UI_MODALITY_RULES_FALLBACK;
         systemContent += `\n\n${uiRules}`;
       } catch (_error) {
@@ -1225,8 +1226,8 @@ ${userMessage}
     // Loaded from DB (PROMPT_SECURITY_REMINDER) with byte-identical fallback.
     let securityReminderBlock = SECURITY_REMINDER_FALLBACK;
     try {
-      const { promptManager } = await import('./system-prompt.js');
-      const srPrompt = await promptManager.getPrompt('PROMPT_SECURITY_REMINDER');
+      const { promptStore } = await import('./prompt-store.js');
+      const srPrompt = await promptStore.getPrompt('PROMPT_SECURITY_REMINDER');
       if (srPrompt?.content) {
         securityReminderBlock = srPrompt.content;
       }
@@ -1247,4 +1248,4 @@ ${userMessage}
 }
 
 // Export singleton
-export const contextAlchemy = ContextAlchemy.getInstance();
+export const contextAssembler = ContextAssembler.getInstance();

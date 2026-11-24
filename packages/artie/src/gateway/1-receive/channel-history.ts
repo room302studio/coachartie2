@@ -24,7 +24,7 @@ function getSafeUsername(uname: string): string {
 }
 
 const MIN_CHANNEL_HISTORY = 10; // Minimum messages to fetch
-export const MAX_CHANNEL_HISTORY = 25; // Maximum messages to fetch
+const MAX_CHANNEL_HISTORY = 25; // Maximum messages to fetch
 
 /**
  * Fetch the message this one is replying to (if any), as reply context.

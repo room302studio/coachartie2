@@ -20,7 +20,7 @@ function envTypeLabel(isDocker: boolean): string {
  * Bulletproof path resolver for Discord service
  * Handles both Docker (/app/data) and local development (./data) environments
  */
-export class PathResolver {
+class PathResolver {
   private static instance: PathResolver;
   private readonly isDocker: boolean;
   private readonly dataDir: string;

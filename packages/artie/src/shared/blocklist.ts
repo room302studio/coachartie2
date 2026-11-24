@@ -9,7 +9,7 @@
 import { isOptedOut } from './privacy-opt-out.js';
 import { escapeRegex } from './regex.js';
 
-export interface BlockedUser {
+interface BlockedUser {
   id: string; // Discord snowflake — immutable, survives renames
   names: string[]; // usernames/display names they're known by, for content matching
   since?: string; // YYYY-MM-DD the ban started, for the on-demand banlist report

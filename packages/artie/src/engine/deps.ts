@@ -8,7 +8,7 @@ import type { IncomingMessage } from '../shared/queue/types.js';
  * The two things the engine's HTTP layer touches Redis for, injectable so
  * `createEngineApp(deps)` can be built in a test with no Redis (wave 9).
  * Production uses the defaults: the INCOMING_MESSAGES BullMQ queue and the shared ioredis
- * connection, exactly what chat-route.ts and routes/health.ts used inline before.
+ * connection, exactly what 1-intake/turns.ts and routes/health.ts used inline before.
  */
 export interface EngineDeps {
   /** Put a turn on the INCOMING_MESSAGES queue (BullMQ job name 'process'). */
@@ -17,7 +17,7 @@ export interface EngineDeps {
   pingRedis: () => Promise<unknown>;
 }
 
-// Created on first use. chat-route.ts used to create it at module load; nothing reads it
+// Created on first use. turns.ts used to create it at module load; nothing reads it
 // before the first POST /chat, so the only difference is when the queue object exists.
 let incomingQueue: Queue<IncomingMessage> | null = null;
 

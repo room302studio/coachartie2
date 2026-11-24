@@ -1,0 +1,22 @@
+{
+  "$schema": "https://unpkg.com/knip@5/schema.json",
+  "workspaces": {
+    ".": {
+      "entry": [
+        "ecosystem.config.cjs",
+        "scripts/*.ts",
+        "tools/*.ts",
+        "packages/discord/register-commands.ts"
+      ]
+    },
+    "packages/artie": {
+      "entry": [
+        "src/main.ts",
+        "src/engine/metro-saves/child.ts",
+        "tests/**/*.test.ts",
+        "drizzle.config.ts"
+      ],
+      "project": ["src/**/*.ts", "tests/**/*.ts"]
+    }
+  }
+}

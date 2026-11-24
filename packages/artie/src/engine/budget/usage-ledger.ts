@@ -8,7 +8,7 @@ let replayingHeldUsage = false;
 import { recordApiCall } from '../health/metrics.js';
 
 /**
- * The one spend module: the durable per-call ledger (UsageTracker, model_usage_stats) and
+ * The one spend module: the durable per-call ledger (UsageLedger, model_usage_stats) and
  * the in-process spend counter (CostMonitor/costMonitor, was session-spend.ts). Today's
  * spend for the daily cap and brownout is getTodaySpendUsd in daily-cap.ts, the only
  * function that sums model_usage_stats for the ET day.
@@ -34,11 +34,11 @@ export interface TokenUsage {
 }
 
 /** Write premium matching prompt-cache.ts's TTL choice (PROMPT_CACHE_TTL=5m → 1.25x, else 1h → 2x). */
-export function cacheWriteMultiplier(): number {
+function cacheWriteMultiplier(): number {
   return getCacheWriteMultiplier();
 }
 
-export interface UsageStats {
+interface UsageStats {
   model_name: string;
   user_id: string;
   message_id: string;
@@ -120,7 +120,7 @@ function getCacheWriteMultiplier(): number {
   return 2.0;
 }
 
-export class UsageTracker {
+export class UsageLedger {
   /**
    * Calculate estimated cost based on token usage and model
    */
@@ -167,7 +167,7 @@ export class UsageTracker {
       replayingHeldUsage = true;
       try {
         for (const waiting of takeUnrecorded<UsageStats>()) {
-          await UsageTracker.recordUsage(waiting.row);
+          await UsageLedger.recordUsage(waiting.row);
         }
       } finally {
         replayingHeldUsage = false;
@@ -421,8 +421,6 @@ export class UsageTracker {
   }
 }
 
-export { UsageTracker as usageTracker };
-
 // ── In-process spend (was budget/session-spend.ts, folded in wave 6) ───────────────────────
 // Per-request $ and the rolling burn rate, in memory. The DB ledger above is the durable
 // record; this is the live counter the runway warning and brownout read.
@@ -464,7 +462,7 @@ class CostMonitor {
   private lastKnownBalance: number | null = null;
   private lastRunwayWarnAt = 0;
 
-  // Pricing lives in UsageTracker.MODEL_PRICING (one table, per model, rates from the live
+  // Pricing lives in UsageLedger.MODEL_PRICING (one table, per model, rates from the live
   // OpenRouter /models API). The flat $3/$15 Sonnet-3.5 constants that used to sit here
   // under-reported every Opus call by ~40% on input and ~40% on output, which means every
   // runway estimate and every brownout decision was made on a number that was too small.
@@ -519,9 +517,8 @@ class CostMonitor {
   }
 
   /**
-   * Track an API call
-   */
-  /**
+   * Track an API call.
+   *
    * @param cachedTokens Prompt tokens served from the prompt cache — a SUBSET of
    * inputTokens, billed at ~0.1x. This is not cosmetic: the brownout ladder steps Artie
    * down off Opus using the burn rate measured here, so billing cached tokens at full
@@ -655,10 +652,10 @@ class CostMonitor {
     model = 'unknown',
     cacheWriteTokens = 0
   ): number {
-    // Delegated so there is exactly one pricing table. UsageTracker.calculateCost already
+    // Delegated so there is exactly one pricing table. UsageLedger.calculateCost already
     // applies the per-model rate and the 0.1x cache-read discount, and bills an unknown
     // model at top-tier rates rather than free.
-    return UsageTracker.calculateCost(model, {
+    return UsageLedger.calculateCost(model, {
       prompt_tokens: inputTokens,
       completion_tokens: outputTokens,
       total_tokens: inputTokens + outputTokens,

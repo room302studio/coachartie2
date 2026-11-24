@@ -1,5 +1,5 @@
 import { Redis } from 'ioredis';
-import { Queue, Worker, QueueEvents, Job } from 'bullmq';
+import { Queue, Worker, Job } from 'bullmq';
 import { logger } from '../logger.js';
 
 let redisConnection: Redis | null = null;
@@ -118,7 +118,7 @@ export const createRedisConnection = (): Redis => {
 
 // Lazy getter - only creates connection when first accessed
 let _redis: Redis | null = null;
-export const getRedis = (): Redis => {
+const getRedis = (): Redis => {
   if (!_redis) {
     _redis = createRedisConnection();
   }
@@ -234,20 +234,6 @@ export const createWorker = <T = any, R = any>(
 
   return worker;
 };
-
-export const createQueueEvents = (name: string): QueueEvents => {
-  const events = new QueueEvents(name, {
-    connection: getBullMQConnectionConfig(),
-  });
-
-  // Suppress error events
-  events.on('error', () => {
-    // Silently ignore - errors are rate-limited elsewhere
-  });
-
-  return events;
-};
-
 export const closeRedisConnection = async (): Promise<void> => {
   if (redisConnection) {
     await redisConnection.quit();

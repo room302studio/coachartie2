@@ -9,7 +9,7 @@
  * donations/tips are; this is not, and must stay off until a SKU exists.
  *
  * Intended flow, once this can turn on for real (a product decision, not a code change —
- * see JAR-NOTES.md "turning bounties on later"):
+ * see docs/notes/JAR-NOTES.md "turning bounties on later"):
  *  1. A Discord Premium Apps consumable SKU, priced to match a Stripe payment link at the
  *     same price (price parity is exactly the requirement the jar sidesteps and this can't).
  *  2. An entitlement check (Discord's entitlements API) before any bounty work starts.
@@ -30,9 +30,9 @@ export interface BountyRequest {
   subject: string;
 }
 
-export type BountyRefusalReason = 'disabled' | 'no-sku' | 'daily-cap';
+type BountyRefusalReason = 'disabled' | 'no-sku' | 'daily-cap';
 
-export type BountyDecision = { allowed: false; reason: BountyRefusalReason } | { allowed: true };
+type BountyDecision = { allowed: false; reason: BountyRefusalReason } | { allowed: true };
 
 const MAX_DEEP_REVIEWS_PER_DAY = 2;
 

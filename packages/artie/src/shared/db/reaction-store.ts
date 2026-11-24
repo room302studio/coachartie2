@@ -79,12 +79,6 @@ function ensureTable(): void {
   tableReady = true;
 }
 
-/** Test-only: forget that the table exists / when we last pruned (a test may swap the DB). */
-export function resetReactionStoreState(): void {
-  tableReady = false;
-  lastPruneAt = 0;
-}
-
 /** Delete rows older than 14 days. Returns how many were removed. */
 export function pruneReactions(now: number = Date.now()): number {
   ensureTable();
@@ -135,7 +129,7 @@ export function clearReactions(messageId: string, emoji?: string): number {
   return Number((result as any)?.changes ?? 0);
 }
 
-export interface ReactionQuery {
+interface ReactionQuery {
   /** The conversation's guild; null/undefined for a DM (then only channelId rows match). */
   guildId?: string | null;
   /** Always set by the caller from context. With scope 'guild' it is only used for DMs. */

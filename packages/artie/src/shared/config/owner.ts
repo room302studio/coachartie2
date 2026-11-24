@@ -11,7 +11,7 @@ import { dmPairingService } from '../dm-pairing.js';
 export const OWNER_USER_ID = '688448399879438340';
 
 // Admin users who can access admin-only capabilities
-export const ADMIN_USERS = new Set([
+const ADMIN_USERS = new Set([
   OWNER_USER_ID,
 ]);
 

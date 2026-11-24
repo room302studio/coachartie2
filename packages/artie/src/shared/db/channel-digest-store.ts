@@ -12,7 +12,7 @@
 
 import { getSyncDb } from './client.js';
 
-export interface ChannelDigest {
+interface ChannelDigest {
   guildId: string;
   channelId: string;
   channelName: string;

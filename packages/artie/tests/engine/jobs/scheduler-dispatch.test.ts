@@ -6,7 +6,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { logger } from '../../../src/shared/logger.js';
 import { SchedulerService, resolveJobType } from '../../../src/engine/jobs/scheduler.js';
-import { schedulerCapability } from '../../../src/engine/tools/core/reminders.js';
+import { schedulerCapability } from '../../../src/engine/capabilities/core/reminders.js';
 
 function fakeQueue() {
   const added: Array<{ name: string; data: Record<string, unknown> }> = [];

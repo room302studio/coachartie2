@@ -17,12 +17,11 @@
  */
 import { type ApiResult, wire } from '../shared/api-result.js';
 import type { JsonOutputSpec } from '../shared/structured-output.js';
-import type { ScribeSession } from '../shared/db/scribe-store.js';
 
 export type { ApiResult } from '../shared/api-result.js';
 export { isOk, statusText } from '../shared/api-result.js';
 
-const chat = () => import('./1-intake/chat-route.js');
+const chat = () => import('./1-intake/turns.js');
 
 // --- turns (was POST :47324/chat, GET /chat/:id, /chat/:id/stream, /chat/pending-attachments) ---
 
@@ -193,11 +192,6 @@ export async function scribeStop(
   stopReason: string
 ): Promise<{ pendingCount: number; textChannelId: string; capped: boolean; posted: boolean }> {
   return (await scribe()).stopScribeSession(sessionId, stopReason);
-}
-
-/** The active session row for a guild (or null), for /scribe status. */
-export async function scribeStatus(guildId: string): Promise<ScribeSession | null> {
-  return (await scribe()).getScribeStatus(guildId);
 }
 
 // --- status (slash commands, the gateway's readiness check) ---

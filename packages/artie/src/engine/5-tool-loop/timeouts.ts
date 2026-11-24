@@ -24,7 +24,6 @@
  * When it stops holding, the symptom is not a slow bot — it's a silent one.
  */
 export const PER_REQUEST_TIMEOUT_MS = 45_000;
-export const LLM_LOOP_TIMEOUT_MS = 150_000;
 export const JOB_TIMEOUT_MS = 180_000;
 
 /**

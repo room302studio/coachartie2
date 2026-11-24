@@ -19,7 +19,7 @@ import { collapseWhitespace } from '../../../shared/text.js';
 import { logger } from '../../../shared/logger.js';
 import { PROMISE_WINDOW_DAYS, waitNote } from '../../../shared/db/promise-store.js';
 
-export interface LastTimeFacts {
+interface LastTimeFacts {
   /** ISO timestamp of the previous exchange — never the message being answered right now. */
   lastAt: string;
   /** A short, cheap guess at what that exchange (or the relationship) was about. */

@@ -7,7 +7,7 @@ import { getErrorMessage } from '../../shared/errors.js';
  * Allows services to register their actual ports and find each other
  */
 
-export interface ServiceInfo {
+interface ServiceInfo {
   name: string;
   port: number;
   host: string;
@@ -17,7 +17,7 @@ export interface ServiceInfo {
   pid?: number;
 }
 
-export class ServiceDiscovery {
+class ServiceDiscovery {
   private static readonly REDIS_PREFIX = 'coachartie:services:';
   private static readonly PING_INTERVAL = 30000; // 30 seconds
   private static instance: ServiceDiscovery;
@@ -289,24 +289,4 @@ export async function registerServiceWithDiscovery(
     await serviceDiscovery.markServiceRunning(serviceName);
     if (onReady) onReady();
   }, 1000);
-}
-
-/**
- * Helper to get service URLs with fallbacks
- */
-export async function getServiceUrlWithFallback(
-  serviceName: string,
-  fallbackPort: number,
-  fallbackHost: string = 'localhost'
-): Promise<string> {
-  const serviceUrl = await serviceDiscovery.getServiceUrl(serviceName);
-
-  if (serviceUrl) {
-    return serviceUrl;
-  }
-
-  // Return fallback URL
-  const fallbackUrl = `http://${fallbackHost}:${fallbackPort}`;
-  logger.warn(`Service ${serviceName} not found in discovery, using fallback: ${fallbackUrl}`);
-  return fallbackUrl;
 }

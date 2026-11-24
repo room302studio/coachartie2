@@ -1,6 +1,6 @@
 /**
  * Attachment / reply / user-state context source builders extracted verbatim from
- * ContextAlchemy. These depend only on their arguments plus module-level helpers
+ * ContextAssembler (assemble.ts). These depend only on their arguments plus module-level helpers
  * (vision wrapper, metro doctor, memory service, analysis reader) — no instance
  * state — so they live here as plain functions. Behavior matched the original private
  * methods at extraction; deliberate changes since are dated in place (2026-10-28:
@@ -10,14 +10,14 @@
 import { logger } from '../../../shared/logger.js';
 import { estimateTokens } from '../../../shared/async.js';
 import type { IncomingMessage } from '../../../shared/queue/types.js';
-import { visionCapability as visionCap } from '../../tools/media/vision.js';
-import { processMetroAttachment } from '../../metro/analyze.js';
-import { MemoryService } from '../../tools/core/memory.js';
+import { visionCapability as visionCap } from '../../capabilities/media/vision.js';
+import { processMetroAttachment } from '../../metro-saves/analyze.js';
+import { MemoryService } from '../../capabilities/core/memory.js';
 import { storeAnalyzedMetroFile, readAnalysis } from '../../1-intake/pending-attachments.js';
 import { getUserScores, formatUserScores } from '../../2-turn/user-scores.js';
 import type { ContextSource } from './types.js';
 import { DEBUG } from './types.js';
-import { toCallNotation } from '../../5-tool-loop/mode.js';
+import { toCallNotation } from '../xml-teaching.js';
 import { collapseWhitespace } from '../../../shared/text.js';
 import { isAudioAttachment, transcribeVoiceMemos, formatMemoContext } from '../../jobs/scribe/voice-memo.js';
 

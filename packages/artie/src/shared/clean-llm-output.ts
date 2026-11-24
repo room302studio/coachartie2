@@ -10,7 +10,7 @@
  *   isSilent             [SILENT]: the model chose not to speak
  *
  * Wave 5 folded five hand-rolled strippers into this module: this file's stripCapabilityXML
- * (push-worker's last filter), stream-reply's cleanCapabilityTags, transcript's
+ * (send-queued-replies' last filter), stream-reply's cleanCapabilityTags, transcript's
  * sanitizeAssistantMessage, recall's stripCapabilityTags and generate-reply's
  * stripThinkingTags/extractLoopDecision. They did not agree (case flags, capability-regex shape,
  * pass order, which tags each knew), and tests/shared/clean-llm-output.test.ts pins each one's
@@ -35,7 +35,7 @@
  *  - 'lazy': one case-sensitive pass from "<capability" to the first "/>" or
  *    "</capability>" (recall)
  */
-export type CapabilityMatch =
+type CapabilityMatch =
   | 'paired-then-self'
   | 'self-then-paired'
   | 'self-then-paired-case-sensitive'
@@ -62,7 +62,7 @@ const FUNCTION_CALL_PASSES: RegExp[] = [
   /<\/?(?:function_calls|function_results|invoke)>/g,
 ];
 
-export interface StripToolCallsOptions {
+interface StripToolCallsOptions {
   /** How <capability> tags are matched (default 'self-then-paired'); false skips them. */
   capability?: CapabilityMatch | false;
   /** Also strip <function_calls>/<function_results>/<invoke> (default false). */
@@ -104,7 +104,7 @@ const INTERNAL_MARKUP = {
   'step-markers': /^#{0,3}\s*Step \d+\s*\/\s*\d+.*$/gim,
 } as const;
 
-export type InternalMarkup = keyof typeof INTERNAL_MARKUP;
+type InternalMarkup = keyof typeof INTERNAL_MARKUP;
 
 /** Remove the named markup, in the order given (order is part of each caller's behavior). */
 export function stripInternalMarkup(text: string, tags: readonly InternalMarkup[]): string {

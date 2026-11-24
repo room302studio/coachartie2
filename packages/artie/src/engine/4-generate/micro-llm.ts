@@ -53,7 +53,7 @@ interface MicroDecision<T> {
 /**
  * Ask a yes/no question to the micro LLM
  */
-export async function askYesNo(
+async function askYesNo(
   question: string,
   context: string,
   defaultValue: boolean = false
@@ -95,7 +95,7 @@ export async function askYesNo(
 /**
  * Pick one option from a list
  */
-export async function pickOne<T extends string>(
+async function pickOne<T extends string>(
   question: string,
   context: string,
   options: T[],
@@ -137,7 +137,7 @@ export async function pickOne<T extends string>(
 /**
  * Extract a short value (like keywords, a number, etc.)
  */
-export async function extract(
+async function extract(
   instruction: string,
   context: string,
   defaultValue: string = ''
@@ -171,7 +171,7 @@ export async function extract(
 /**
  * Estimate response length needed for a message
  */
-export async function estimateResponseLength(userMessage: string): Promise<MicroDecision<number>> {
+async function estimateResponseLength(userMessage: string): Promise<MicroDecision<number>> {
   try {
     const response = await getClient().chat.completions.create({
       model: MICRO_MODEL,

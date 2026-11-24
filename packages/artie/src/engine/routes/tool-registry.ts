@@ -1,15 +1,15 @@
 import { Router, Request, Response } from 'express';
 import { logger } from '../../shared/logger.js';
 import { mintTrusted } from '../../shared/trusted-ids.js';
-import type { CapabilityContext } from '../5-tool-loop/registry.js';
+import type { CapabilityContext } from '../capabilities/registry.js';
 import { getErrorMessage } from '../../shared/errors.js';
 import { type ApiResult, sendResult } from '../../shared/api-result.js';
 
 // Wave 9: the handler body is an exported function returning the status + JSON it used to
 // send; the route sends it and engine/api.ts calls it in-process for the gateway.
 const reply = (status: number, body: any): ApiResult => ({ status, body });
-import { capabilityOrchestrator } from '../2-turn/run-turn.js';
-import { capabilityRegistry } from '../5-tool-loop/registry.js';
+import { turnRunner } from '../2-turn/run-turn.js';
+import { capabilityRegistry } from '../capabilities/registry.js';
 
 const router: Router = Router();
 
@@ -19,7 +19,7 @@ router.get('/', (_req: Request, res: Response) => sendResult(res, listCapabiliti
 // GET /capabilities/active - List active orchestrations
 router.get('/active', (req: Request, res: Response) => {
   try {
-    const activeOrchestrations = capabilityOrchestrator.getActiveOrchestrations();
+    const activeOrchestrations = turnRunner.getActiveOrchestrations();
 
     res.json({
       success: true,
@@ -39,7 +39,7 @@ router.get('/active', (req: Request, res: Response) => {
 router.get('/context/:messageId', (req: Request, res: Response) => {
   try {
     const { messageId } = req.params;
-    const context = capabilityOrchestrator.getContext(messageId);
+    const context = turnRunner.getContext(messageId);
 
     if (!context) {
       return res.status(404).json({
@@ -88,7 +88,7 @@ router.post('/test', (req: Request, res: Response) => {
     };
 
     // Test the orchestration (this will be async)
-    capabilityOrchestrator
+    turnRunner
       .orchestrateMessage(testMessage)
       .then((_response) => {
         logger.info(`Test orchestration completed for: ${message}`);
