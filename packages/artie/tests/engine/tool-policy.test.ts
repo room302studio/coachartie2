@@ -64,8 +64,10 @@ const GATE_FLOOR: Record<string, Record<string, string>> = {
   'discord-channels': { get_messages: '', get_pinned_messages: '' },
   'discord-threads': { create_thread: 'T', get_thread_messages: '' },
   'discord-user-history': { get_user_messages: '' },
-  'discord-send-message': { send_message: 'T', edit_message: 'T' },
-  'discord-poll': { create_poll: 'T', read_poll: '' },
+  'discord-send-message': {
+    send_message: 'T', edit_message: 'T', delete_message: 'T', pin_message: 'T', unpin_message: 'T',
+  },
+  'discord-poll': { create_poll: 'T', read_poll: '', end_poll: 'T' },
   // Recording people is EJ's call (same as /scribe start/stop); anyone may ask the status.
   scribe: { status: '', last_summary: '', start: 'OT', stop: 'OT' },
   'proactive-dm': {

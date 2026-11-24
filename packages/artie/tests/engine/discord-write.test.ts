@@ -2,8 +2,18 @@ import { describe, it, expect, vi } from 'vitest';
 
 vi.mock('../../src/shared/blocklist.js', () => ({
   scrubBlockedUserMentions: (text: string) => text.replace(/<@!?700000000000000002>/g, 'the banned one'),
+  isBlockedUser: (id: string) => id === '700000000000000002',
 }));
-import { createThread, createForumPost, editOwnMessage, POST_GUILD_IDS } from '../../src/gateway/routes/discord-write.js';
+import {
+  createThread,
+  createForumPost,
+  editOwnMessage,
+  deleteOwnMessage,
+  setPinned,
+  endOwnPoll,
+  readPollInGuild,
+  POST_GUILD_IDS,
+} from '../../src/gateway/routes/discord-write.js';
 
 const ROOM302 = [...POST_GUILD_IDS][0];
 const OTHER = '100000000000000009';
@@ -24,6 +34,14 @@ function authorOf(messageId: string): string {
   return '300000000000000001';
 }
 
+/** messages.fetch takes an id or { message: id, force } (a forced poll read). */
+function idOf(arg: string | { message: string }): string {
+  if (typeof arg === 'string') {
+    return arg;
+  }
+  return arg.message;
+}
+
 function fakeClient(guildId: string) {
   const sent: any[] = [];
   const edits: any[] = [];
@@ -37,14 +55,42 @@ function fakeClient(guildId: string) {
     isTextBased: () => true,
     threads: { create: vi.fn(async () => thread) },
     messages: {
-      fetch: vi.fn(async (mid: string) => ({
-        id: mid,
-        author: { id: authorOf(mid) },
-        edit: vi.fn(async (m: any) => edits.push(m)),
-        startThread: vi.fn(async () => thread),
-      })),
+      fetch: vi.fn(async (arg: string | { message: string }) => messageOf(idOf(arg))),
     },
   });
+  const messageOf = (mid: string) => ({
+    id: mid,
+    author: { id: authorOf(mid) },
+    pinned: false,
+    poll: pollOf(mid),
+    edit: vi.fn(async (m: any) => edits.push(m)),
+    delete: vi.fn(async () => acts.push(`delete ${mid}`)),
+    pin: vi.fn(async () => acts.push(`pin ${mid}`)),
+    unpin: vi.fn(async () => acts.push(`unpin ${mid}`)),
+    startThread: vi.fn(async () => thread),
+  });
+  /** Messages ...001 (Artie's) and ...002 (someone's) carry a poll with two voters on "Yes". */
+  const pollOf = (mid: string) => {
+    if (mid !== '600000000000000001' && mid !== '600000000000000002') {
+      return null;
+    }
+    const voters = new Map([
+      ['700000000000000001', { id: '700000000000000001', username: 'fan', globalName: 'Fan' }],
+      ['700000000000000002', { id: '700000000000000002', username: 'banned', globalName: null }],
+    ]);
+    return {
+      question: { text: 'Ship it?' },
+      allowMultiselect: true,
+      resultsFinalized: false,
+      expiresAt: null,
+      end: vi.fn(async () => acts.push(`end ${mid}`)),
+      answers: new Map([
+        [1, { partial: false, text: 'Yes', voteCount: 2, voters: { fetch: vi.fn(async () => voters) } }],
+        [2, { partial: false, text: 'No', voteCount: 0, voters: { fetch: vi.fn(async () => new Map()) } }],
+      ]),
+    };
+  };
+  const acts: string[] = [];
   const channels: Record<string, any> = {
     [HERE]: text(HERE),
     [ELSEWHERE]: text(ELSEWHERE),
@@ -71,7 +117,7 @@ function fakeClient(guildId: string) {
       }),
     },
   } as any;
-  return { client, sent, edits };
+  return { client, sent, edits, acts };
 }
 
 describe('discord writes', () => {
@@ -136,5 +182,42 @@ describe('discord writes', () => {
     const there = { channelId: ELSEWHERE, messageId: '600000000000000001', message: 'y' };
     expect((await editOwnMessage(client, OTHER, MEMBER_HERE, there)).status).toBe(403);
     expect((await editOwnMessage(client, OTHER, OWNER_ASKS, there)).status).toBe(200);
+  });
+
+  it('deletes only his own messages, here unless EJ, never in another server', async () => {
+    const { client, acts } = fakeClient(OTHER);
+    const mine = { channelId: HERE, messageId: '600000000000000001' };
+    expect((await deleteOwnMessage(client, OTHER, MEMBER_HERE, { channelId: HERE, messageId: '600000000000000002' })).status).toBe(403);
+    expect((await deleteOwnMessage(client, OTHER, MEMBER_HERE, { ...mine, channelId: ELSEWHERE })).status).toBe(403);
+    expect((await deleteOwnMessage(client, OTHER, OWNER_ASKS, { ...mine, channelId: FOREIGN })).status).toBe(404);
+    expect((await deleteOwnMessage(client, OTHER, MEMBER_HERE, mine)).status).toBe(200);
+    expect(acts).toEqual(['delete 600000000000000001']);
+  });
+
+  it("pins anyone's message in this channel, and unpins", async () => {
+    const { client, acts } = fakeClient(OTHER);
+    const theirs = { channelId: HERE, messageId: '600000000000000002' };
+    expect((await setPinned(client, OTHER, MEMBER_HERE, theirs, true)).status).toBe(200);
+    expect((await setPinned(client, OTHER, MEMBER_HERE, { ...theirs, channelId: ELSEWHERE }, true)).status).toBe(403);
+    const unchanged = await setPinned(client, OTHER, MEMBER_HERE, theirs, false);
+    expect(unchanged.body.unchanged).toBe(true);
+    expect(acts).toEqual(['pin 600000000000000002']);
+  });
+
+  it('ends only his own open polls', async () => {
+    const { client, acts } = fakeClient(OTHER);
+    expect((await endOwnPoll(client, OTHER, MEMBER_HERE, { channelId: HERE, messageId: '600000000000000002' })).status).toBe(403);
+    expect((await endOwnPoll(client, OTHER, MEMBER_HERE, { channelId: HERE, messageId: '600000000000000003' })).status).toBe(400);
+    expect((await endOwnPoll(client, OTHER, MEMBER_HERE, { channelId: HERE, messageId: '600000000000000001' })).status).toBe(200);
+    expect(acts).toEqual(['end 600000000000000001']);
+  });
+
+  it('reads a poll with voters, counting but never naming someone opted out', async () => {
+    const { client } = fakeClient(OTHER);
+    const r = await readPollInGuild(client, OTHER, { messageId: '600000000000000001' }, HERE);
+    expect(r.status).toBe(200);
+    expect(r.body).toMatchObject({ question: 'Ship it?', multi: true, mine: true, totalVotes: 2 });
+    expect((r.body.results as Array<{ voters?: string[] }>)[0].voters).toEqual(['Fan']);
+    expect((await readPollInGuild(client, OTHER, { channelId: FOREIGN, messageId: '600000000000000001' }, HERE)).status).toBe(404);
   });
 });

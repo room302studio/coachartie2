@@ -103,6 +103,7 @@
   ],
   "discord-poll": [
     "create_poll",
+    "end_poll",
     "read_poll"
   ],
   "discord-reaction": [
@@ -111,8 +112,11 @@
     "rollup"
   ],
   "discord-send-message": [
+    "delete_message",
     "edit_message",
-    "send_message"
+    "pin_message",
+    "send_message",
+    "unpin_message"
   ],
   "discord-threads": [
     "create_thread",

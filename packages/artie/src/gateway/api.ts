@@ -256,6 +256,38 @@ export async function editOwnMessage(
   return (await writes()).editOwnMessage(c, guildId, who, opts);
 }
 
+/** True in a server where Artie may post outside the conversation channel (Room 302). */
+export async function mayPostElsewhere(guildId: string | null | undefined): Promise<boolean> {
+  return (await writes()).POST_GUILD_IDS.has(String(guildId ?? ''));
+}
+
+type Asker = { askerId: TrustedUserId | null; fromChannelId: TrustedChannelId | undefined; askerIsOwner: boolean };
+type MessageRef = import('./routes/discord-write.js').MessageRef;
+
+export async function deleteOwnMessage(guildId: TrustedGuildId | null, who: Asker, ref: MessageRef): Promise<ApiResult> {
+  const c = client();
+  return (await writes()).deleteOwnMessage(c, guildId, who, ref);
+}
+
+export async function setPinned(guildId: TrustedGuildId | null, who: Asker, ref: MessageRef, pinned: boolean): Promise<ApiResult> {
+  const c = client();
+  return (await writes()).setPinned(c, guildId, who, ref, pinned);
+}
+
+export async function endOwnPoll(guildId: TrustedGuildId | null, who: Asker, ref: MessageRef): Promise<ApiResult> {
+  const c = client();
+  return (await writes()).endOwnPoll(c, guildId, who, ref);
+}
+
+export async function readPollInGuild(
+  guildId: TrustedGuildId | null,
+  ref: MessageRef,
+  fromChannelId: TrustedChannelId | undefined
+): Promise<ApiResult> {
+  const c = client();
+  return (await writes()).readPollInGuild(c, guildId, ref, fromChannelId);
+}
+
 /** The audience check (routes/message-search.ts audienceReadable) for tools with their own fetch. */
 export async function audienceReadable(
   guildId: TrustedGuildId,

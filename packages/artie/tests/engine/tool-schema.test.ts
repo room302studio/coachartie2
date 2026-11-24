@@ -134,7 +134,15 @@ describe('registryToTools over the real registry', () => {
       .filter((cap) => declaredToolParams(cap.actions).some(([param]) => TARGETS.has(param)))
       .map((cap) => cap.name)
       .sort();
-    expect(exposing).toEqual(['discord-channels', 'discord-send-message', 'discord-threads', 'discord-user-history']);
+    // discord-poll joined 2026-11-24: its channelId is checked against this server (and Room 302
+    // or EJ for another channel) in poll.ts pollTarget; read/end go through the gateway's guild check.
+    expect(exposing).toEqual([
+      'discord-channels',
+      'discord-poll',
+      'discord-send-message',
+      'discord-threads',
+      'discord-user-history',
+    ]);
   });
 
   it('content is offered only where a declared action reads it', () => {

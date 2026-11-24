@@ -37,6 +37,8 @@ interface DiscordUIParams {
   name?: string;
   style?: string;
   placeholder?: string;
+  /** select only: let people pick more than one option. */
+  multi?: boolean;
   options?: Array<{ label: string; value: string; description?: string }>;
   buttons?: Array<{ label: string; style?: string; customId?: string; url?: string }>;
   inputs?: Array<{
@@ -48,6 +50,89 @@ interface DiscordUIParams {
     minLength?: number;
     maxLength?: number;
   }>;
+}
+
+/** JSON if it parses, else undefined. */
+function jsonOrUndefined(text: string): unknown {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * A list param as the model sends it: a JSON array of objects, or plain labels separated by
+ * "|" (or newlines). Plain labels become {label} (buttons) or {label, value} (select options).
+ */
+export function parseItemList(raw: unknown, withValue: boolean): Array<Record<string, unknown>> | undefined {
+  if (Array.isArray(raw)) {
+    return raw.map((item) => itemOf(item, withValue));
+  }
+  if (typeof raw !== 'string' || !raw.trim()) {
+    return undefined;
+  }
+  const parsed = jsonOrUndefined(raw.trim());
+  if (Array.isArray(parsed)) {
+    return parsed.map((item) => itemOf(item, withValue));
+  }
+  let sep = '\n';
+  if (raw.includes('|')) {
+    sep = '|';
+  }
+  return raw
+    .split(sep)
+    .map((label) => label.trim())
+    .filter(Boolean)
+    .map((label) => itemOf(label, withValue));
+}
+
+function itemOf(item: unknown, withValue: boolean): Record<string, unknown> {
+  if (item && typeof item === 'object') {
+    return item as Record<string, unknown>;
+  }
+  const label = String(item ?? '');
+  if (withValue) {
+    return { label, value: label };
+  }
+  return { label };
+}
+
+/**
+ * Params as the tool loop delivers them (all strings) turned into what the builders expect.
+ * Until 2026-11-24 the schema offered only an undescribed `data` string that nothing read, so
+ * buttons and dropdowns from the native loop always failed with "requires buttons array".
+ */
+export function normalizeUIParams(raw: Record<string, unknown>): DiscordUIParams {
+  const out: Record<string, unknown> = { ...raw };
+  if (typeof raw.data === 'string') {
+    const data = jsonOrUndefined(raw.data);
+    if (Array.isArray(data)) {
+      if (raw.action === 'select') {
+        out.options = data;
+      } else {
+        out.buttons = data;
+      }
+    } else if (data && typeof data === 'object') {
+      Object.assign(out, data);
+    }
+  }
+  const buttons = parseItemList(out.buttons, false);
+  if (buttons) {
+    out.buttons = buttons;
+  }
+  const options = parseItemList(out.options, true);
+  if (options) {
+    out.options = options;
+  }
+  if (typeof out.inputs === 'string') {
+    const inputs = jsonOrUndefined(out.inputs);
+    if (Array.isArray(inputs)) {
+      out.inputs = inputs;
+    }
+  }
+  out.multi = out.multi === true || ['true', 'yes', '1'].includes(String(out.multi ?? '').toLowerCase());
+  return out as unknown as DiscordUIParams;
 }
 
 const handler = async (
@@ -79,8 +164,9 @@ const handler = async (
       }
     }
 
-    // Merge params and config
-    const mergedParams = { ...params, ...config };
+    // Merge params and config. The native tool loop hands every param over as a string, so
+    // `buttons` / `options` / `data` arrive as text and are parsed here (normalizeUIParams).
+    const mergedParams = { ...normalizeUIParams(params as unknown as Record<string, unknown>), ...config };
 
     switch (action) {
       case 'modal':
@@ -439,6 +525,10 @@ async function createSelectMenu(
   }
 
   const placeholder = (params.placeholder || 'Choose an option...').slice(0, 150);
+  let maxValues = 1;
+  if (params.multi) {
+    maxValues = options.length;
+  }
   const row = {
     type: 1, // ActionRow
     components: [
@@ -447,7 +537,7 @@ async function createSelectMenu(
         custom_id: artieCustomId(turnId, 0),
         placeholder,
         min_values: 1,
-        max_values: 1,
+        max_values: maxValues,
         options,
       },
     ],
@@ -584,23 +674,61 @@ export const discordUICapability: RegisteredCapability = {
   name: 'discord-ui',
   emoji: '🎨',
   // Posts buttons/selects/modals a user could mistake for a real prompt.
+  // Params declared 2026-11-24: the scraped schema offered only an undescribed `data` string
+  // that the handler never read, so buttons/dropdowns from the native loop never worked.
   actions: {
-    modal: { effect: 'discord' },
-    buttons: { effect: 'discord' },
-    select: { effect: 'discord' },
-    'context-menu': { effect: 'discord' },
+    modal: {
+      effect: 'discord',
+      content: 'field labels, one per line (instead of inputs)',
+      params: {
+        title: { type: 'string', description: 'Form title' },
+        inputs: { type: 'string', description: 'JSON array of fields: [{"label":"Name"},{"label":"Notes","style":"paragraph"}]' },
+      },
+    },
+    buttons: {
+      effect: 'discord',
+      params: {
+        buttons: {
+          type: 'string',
+          description:
+            'Button labels separated by "|" ("Yes | No | Maybe"), or a JSON array for styles and links: ' +
+            '[{"label":"Ship it","style":"success"},{"label":"Docs","style":"link","url":"https://..."}]. ' +
+            'Styles: primary, secondary, success, danger, link. Up to 25.',
+          required: true,
+        },
+      },
+    },
+    select: {
+      effect: 'discord',
+      params: {
+        options: {
+          type: 'string',
+          description:
+            'Choices separated by "|" ("Map A | Map B | Map C"), or a JSON array [{"label","value","description"}]. Up to 25.',
+          required: true,
+        },
+        placeholder: { type: 'string', description: 'Grey text shown before anyone picks' },
+        multi: { type: 'boolean', description: 'true lets people pick several options in one go' },
+      },
+    },
+    'context-menu': {
+      effect: 'discord',
+      params: { name: { type: 'string', description: 'Command name' } },
+    },
   },
   supportedActions: ['modal', 'buttons', 'select', 'context-menu'],
   description:
-    'Create interactive Discord UI components. buttons/select attach under THIS reply automatically ' +
-    "(no separate send needed) — a click comes back to you as a new turn describing who picked what. " +
-    'modal/context-menu need a live interaction to open and cannot attach to a plain reply.',
+    'Interactive pieces under YOUR reply. buttons: clickable buttons (labels "A | B | C"); select: a ' +
+    'dropdown (multi=true for several picks). They attach under this reply automatically, no separate ' +
+    'send, and each click comes back to you as a new turn saying who picked what (one click per person ' +
+    'per message, a few clicks per message in all). Link-style buttons just open a URL. ' +
+    'modal/context-menu need a live interaction to open and cannot attach to a plain reply. ' +
+    'For a vote that everyone sees tallied, use discord-poll instead.',
   requiredParams: [], // action is automatically injected by capability registry
   examples: [
-    '<capability name="discord-ui" action="modal" data=\'{"title":"User Feedback","inputs":[{"label":"Name","required":true},{"label":"Email"},{"label":"Message","style":"paragraph"}]}\' />',
-    '<capability name="discord-ui" action="buttons" data=\'[{"label":"Yes","style":"success"},{"label":"No","style":"danger"},{"label":"Maybe","style":"secondary"}]\' />',
-    '<capability name="discord-ui" action="select" data=\'{"placeholder":"Choose one...","options":[{"label":"Option 1","value":"1"},{"label":"Option 2","value":"2"}]}\' />',
-    '<capability name="discord-ui" action="context-menu" data=\'{"name":"Analyze Message"}\' />',
+    '<capability name="discord-ui" action="buttons" buttons="Yes | No | Maybe" />',
+    '<capability name="discord-ui" action="buttons" buttons=\'[{"label":"Ship it","style":"success"},{"label":"Hold","style":"danger"}]\' />',
+    '<capability name="discord-ui" action="select" placeholder="Which map next?" options="Tokyo | Berlin | NYC" multi="true" />',
   ],
   handler,
 };

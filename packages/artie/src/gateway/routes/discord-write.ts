@@ -21,13 +21,15 @@ import {
   type ForumChannel,
   type GuildBasedChannel,
   type MediaChannel,
+  type Message,
   type MessageMentionOptions,
   type NewsChannel,
   type TextChannel,
+  type User,
 } from 'discord.js';
 import { logger } from '../../shared/logger.js';
 import { getErrorMessage } from '../../shared/errors.js';
-import { scrubBlockedUserMentions } from '../../shared/blocklist.js';
+import { isBlockedUser, scrubBlockedUserMentions } from '../../shared/blocklist.js';
 
 /** Room 302 Studio: where Artie may start threads and forum posts on his own. */
 export const POST_GUILD_IDS = new Set(['932719842522443928']);
@@ -303,5 +305,189 @@ export async function editOwnMessage(
     };
   } catch (error: unknown) {
     return discordFailure('edit that message', error);
+  }
+}
+
+// --- Delete, pin, and his polls (EJ, 2026-11-24: "give him all discord functionality") ---
+// Same authority as an edit: the channel this conversation is in, anywhere only for EJ, and
+// only inside this server. Ownership (his message, his poll) is checked here against Discord,
+// never taken from the model.
+
+/** Who is asking, and from where: the same shape editOwnMessage takes. */
+export interface Asker {
+  askerId: string | null;
+  fromChannelId: string | undefined;
+  askerIsOwner: boolean;
+}
+
+export interface MessageRef {
+  /** Defaults to the conversation channel. */
+  channelId?: string;
+  messageId: string;
+}
+
+type Located = { ok: true; message: Message; channelId: string } | { ok: false; result: Result };
+
+/** The message, if this asker may act on it from here; else the refusal. Discord errors throw. */
+async function locate(discordClient: Client, guildId: string | null, who: Asker, ref: MessageRef, verb: string): Promise<Located> {
+  if (!guildId) {
+    return { ok: false, result: fail(400, `I can only ${verb} inside a server`) };
+  }
+  const channelId = String(ref.channelId || who.fromChannelId || '');
+  if (!who.askerIsOwner && channelId !== String(who.fromChannelId || '')) {
+    return { ok: false, result: fail(403, `I only ${verb} in the channel we are talking in`) };
+  }
+  if (!SNOWFLAKE.test(String(ref.messageId || ''))) {
+    return { ok: false, result: fail(400, 'give the message id') };
+  }
+  const ch = await channelInGuild(discordClient, guildId, channelId);
+  if (!ch || !ch.isTextBased()) {
+    return { ok: false, result: fail(404, 'no such channel in this server') };
+  }
+  // force: decisions below read live state (pinned, poll closed), never a stale cached copy (Codex).
+  const message = await ch.messages.fetch({ message: String(ref.messageId), force: true });
+  return { ok: true, message, channelId: ch.id };
+}
+
+function linkTo(guildId: string, channelId: string, messageId: string): string {
+  return `https://discord.com/channels/${guildId}/${channelId}/${messageId}`;
+}
+
+function isMine(discordClient: Client, message: Message): boolean {
+  return message.author.id === discordClient.user?.id;
+}
+
+/** Delete a message HE sent. Other people's messages are moderation, which is EJ's. */
+export async function deleteOwnMessage(discordClient: Client, guildId: string | null, who: Asker, ref: MessageRef): Promise<Result> {
+  try {
+    const found = await locate(discordClient, guildId, who, ref, 'delete messages');
+    if (!found.ok) {
+      return found.result;
+    }
+    if (!isMine(discordClient, found.message)) {
+      return fail(403, 'I can only delete my own messages');
+    }
+    await found.message.delete();
+    return { status: 200, body: { success: true, deleted: found.message.id, channelId: found.channelId } };
+  } catch (error: unknown) {
+    return discordFailure('delete that message', error);
+  }
+}
+
+/** Pin or unpin any message in the channel (pinning someone's good post is normal). */
+export async function setPinned(
+  discordClient: Client,
+  guildId: string | null,
+  who: Asker,
+  ref: MessageRef,
+  pinned: boolean
+): Promise<Result> {
+  let verb = 'unpin messages';
+  if (pinned) {
+    verb = 'pin messages';
+  }
+  try {
+    const found = await locate(discordClient, guildId, who, ref, verb);
+    if (!found.ok) {
+      return found.result;
+    }
+    const url = linkTo(String(guildId), found.channelId, found.message.id);
+    if (found.message.pinned === pinned) {
+      return { status: 200, body: { success: true, pinned, unchanged: true, url } };
+    }
+    if (pinned) {
+      await found.message.pin();
+    } else {
+      await found.message.unpin();
+    }
+    return { status: 200, body: { success: true, pinned, url } };
+  } catch (error: unknown) {
+    return discordFailure(verb.replace(' messages', ' that message'), error);
+  }
+}
+
+/** Close one of HIS polls now instead of waiting for it to expire. */
+export async function endOwnPoll(discordClient: Client, guildId: string | null, who: Asker, ref: MessageRef): Promise<Result> {
+  try {
+    const found = await locate(discordClient, guildId, who, ref, 'end polls');
+    if (!found.ok) {
+      return found.result;
+    }
+    const poll = found.message.poll;
+    if (!poll) {
+      return fail(400, 'that message has no poll');
+    }
+    if (!isMine(discordClient, found.message)) {
+      return fail(403, 'I can only end my own polls');
+    }
+    if (poll.resultsFinalized) {
+      return fail(400, 'that poll is already closed');
+    }
+    await poll.end();
+    return { status: 200, body: { success: true, ended: found.message.id, url: linkTo(String(guildId), found.channelId, found.message.id) } };
+  } catch (error: unknown) {
+    return discordFailure('end that poll', error);
+  }
+}
+
+/** Voter names shown per answer; Discord polls show voters to everyone in the channel anyway. */
+const MAX_VOTERS_SHOWN = 25;
+
+/** A display name for a voter, or null for someone who opted out (counted, never named). */
+function voterName(user: User): string | null {
+  if (isBlockedUser(user.id)) {
+    return null;
+  }
+  return user.globalName || user.username;
+}
+
+/** Read a poll in this server: question, tallies, who voted for what, and whether it's open. */
+export async function readPollInGuild(discordClient: Client, guildId: string | null, ref: MessageRef, fromChannelId: string | undefined): Promise<Result> {
+  if (!guildId) {
+    return fail(400, 'polls only work inside a server');
+  }
+  if (!SNOWFLAKE.test(String(ref.messageId || ''))) {
+    return fail(400, 'give the poll message id');
+  }
+  try {
+    const ch = await channelInGuild(discordClient, guildId, String(ref.channelId || fromChannelId || ''));
+    if (!ch || !ch.isTextBased()) {
+      return fail(404, 'no such channel in this server');
+    }
+    // force: a cached copy can hold stale tallies (Codex), and zero counts would skip voters.
+    const message = await ch.messages.fetch({ message: String(ref.messageId), force: true });
+    const poll = message.poll;
+    if (!poll) {
+      return fail(404, 'no poll on that message');
+    }
+    const results: Array<{ text: string; votes: number; voters?: string[] }> = [];
+    for (const answer of poll.answers.values()) {
+      const row: { text: string; votes: number; voters?: string[] } = { text: answer.text ?? '', votes: answer.voteCount ?? 0 };
+      if (!answer.partial && row.votes > 0) {
+        const users = await answer.voters.fetch({ limit: MAX_VOTERS_SHOWN });
+        row.voters = [...users.values()].map(voterName).filter((n): n is string => n !== null);
+      }
+      results.push(row);
+    }
+    let closesAt: string | null = null;
+    if (poll.expiresAt) {
+      closesAt = poll.expiresAt.toISOString();
+    }
+    return {
+      status: 200,
+      body: {
+        success: true,
+        question: poll.question.text ?? '',
+        multi: poll.allowMultiselect,
+        finalized: poll.resultsFinalized,
+        closesAt,
+        mine: isMine(discordClient, message),
+        totalVotes: results.reduce((sum, r) => sum + r.votes, 0),
+        results: results.sort((a, b) => b.votes - a.votes),
+        url: linkTo(guildId, ch.id, message.id),
+      },
+    };
+  } catch (error: unknown) {
+    return discordFailure('read that poll', error);
   }
 }

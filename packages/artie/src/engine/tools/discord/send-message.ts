@@ -1,6 +1,11 @@
 import { RegisteredCapability, CapabilityContext } from '../../5-tool-loop/registry.js';
 import { logger } from '../../../shared/logger.js';
-import { mintTrustedGuild, type TrustedGuildId } from '../../../shared/trusted-ids.js';
+import {
+  mintTrustedGuild,
+  type TrustedChannelId,
+  type TrustedGuildId,
+  type TrustedUserId,
+} from '../../../shared/trusted-ids.js';
 import * as gateway from '../../../gateway/api.js';
 import { getErrorMessage } from '../../../shared/errors.js';
 import { isOwner } from '../../../shared/config/owner.js';
@@ -19,6 +24,24 @@ function sentMessageId(body: unknown): string | undefined {
     return stringOrUndefined((body as { id: unknown }).id);
   }
   return undefined;
+}
+
+/** Who is asking and from where, for the gateway's same-channel-unless-EJ rule. */
+export function askerOf(context?: CapabilityContext): {
+  askerId: TrustedUserId | null;
+  fromChannelId: TrustedChannelId | undefined;
+  askerIsOwner: boolean;
+} {
+  const askerId = context?.userId ?? null;
+  return { askerId, fromChannelId: context?.channelId, askerIsOwner: isOwner(String(askerId ?? '')) };
+}
+
+/** The message a call is about: its channel (default: this one) and id. */
+export function refOf(params: Record<string, unknown>, context?: CapabilityContext): { channelId: string; messageId: string } {
+  return {
+    channelId: String(params.channelId || context?.channelId || ''),
+    messageId: String(params.messageId ?? params.message_id ?? ''),
+  };
 }
 
 // Room 302 Studio Guild whitelist
@@ -45,12 +68,36 @@ export const discordSendMessageCapability: RegisteredCapability = {
         message: { type: 'string', description: 'The new full text', required: true },
       },
     },
+    delete_message: {
+      effect: 'discord',
+      params: {
+        channelId: { type: 'string', description: 'Channel the message is in; defaults to this one' },
+        messageId: { type: 'string', description: 'Id of YOUR message to delete', required: true, aliases: ['message_id'] },
+      },
+    },
+    pin_message: {
+      effect: 'discord',
+      params: {
+        channelId: { type: 'string', description: 'Channel the message is in; defaults to this one' },
+        messageId: { type: 'string', description: 'Id of the message to pin', required: true, aliases: ['message_id'] },
+      },
+    },
+    unpin_message: {
+      effect: 'discord',
+      params: {
+        channelId: { type: 'string', description: 'Channel the message is in; defaults to this one' },
+        messageId: { type: 'string', description: 'Id of the message to unpin', required: true, aliases: ['message_id'] },
+      },
+    },
   },
-  supportedActions: ['send_message', 'edit_message'],
+  supportedActions: ['send_message', 'edit_message', 'delete_message', 'pin_message', 'unpin_message'],
   description:
     'send_message: post to a channel in Room 302 (from a Room 302 conversation; EJ may also do it from his DM). ' +
     'edit_message: fix a message YOU already sent in this server (channelId + messageId + message, ' +
-    'the new full text) instead of posting a correction.',
+    'the new full text) instead of posting a correction. ' +
+    'delete_message: take down a message YOU sent (a duplicate, a broken poll, a mistake); you cannot ' +
+    "delete other people's messages. pin_message / unpin_message: pin or unpin any message in the channel " +
+    "(a decision, a link everyone needs). All of these work in the channel you're talking in; EJ can point them elsewhere.",
   requiredParams: ['action'],
 
   handler: async (params: Record<string, unknown>, _content: string | undefined, context?: CapabilityContext) => {
@@ -74,19 +121,25 @@ export const discordSendMessageCapability: RegisteredCapability = {
       }
       case 'edit_message': {
         // The server is the conversation's, never a param: he edits only here, only his own.
-        const askerId = context?.userId ?? null;
-        const resp = await gateway.editOwnMessage(
+        const resp = await gateway.editOwnMessage(context?.guildId ?? null, askerOf(context), {
+          channelId: String(params.channelId ?? context?.channelId ?? ''),
+          messageId: String(params.messageId ?? params.message_id ?? ''),
+          message: String(params.message ?? ''),
+        });
+        return JSON.stringify(resp.body);
+      }
+      case 'delete_message': {
+        // Ownership is checked by the gateway against Discord, never taken from the model.
+        const resp = await gateway.deleteOwnMessage(context?.guildId ?? null, askerOf(context), refOf(params, context));
+        return JSON.stringify(resp.body);
+      }
+      case 'pin_message':
+      case 'unpin_message': {
+        const resp = await gateway.setPinned(
           context?.guildId ?? null,
-          {
-            askerId,
-            fromChannelId: context?.channelId,
-            askerIsOwner: isOwner(String(askerId ?? '')),
-          },
-          {
-            channelId: String(params.channelId ?? context?.channelId ?? ''),
-            messageId: String(params.messageId ?? params.message_id ?? ''),
-            message: String(params.message ?? ''),
-          }
+          askerOf(context),
+          refOf(params, context),
+          action === 'pin_message'
         );
         return JSON.stringify(resp.body);
       }

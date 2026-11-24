@@ -201,3 +201,41 @@ describe('discord-ui: modal/context-menu are honest, not success claims', () => 
     expect(result.toLowerCase()).toContain('needs to be registered');
   });
 });
+
+describe('discord-ui: params as the native tool loop sends them (all strings), 2026-11-24', () => {
+  it('"A | B" labels become buttons', async () => {
+    const turnId = 'turn-native-buttons';
+    const result = await handler({ action: 'buttons', buttons: 'Ship it | Hold' }, undefined, { messageId: turnId });
+    expect(result).toContain('2 buttons will appear under your reply: Ship it / Hold');
+    takePendingComponents(turnId);
+  });
+
+  it('a JSON-string buttons array keeps styles', async () => {
+    const turnId = 'turn-native-json';
+    await handler({ action: 'buttons', buttons: '[{"label":"Go","style":"success"}]' }, undefined, { messageId: turnId });
+    const row = takePendingComponents(turnId)[0] as any;
+    expect(row.components[0].style).toBe(3);
+  });
+
+  it('the legacy data string still works', async () => {
+    const turnId = 'turn-native-data';
+    const result = await handler({ action: 'buttons', data: '[{"label":"Yes"},{"label":"No"}]' }, undefined, {
+      messageId: turnId,
+    });
+    expect(result).toContain('Yes / No');
+    takePendingComponents(turnId);
+  });
+
+  it('a multi select lets people pick several', async () => {
+    const turnId = 'turn-native-select';
+    await handler({ action: 'select', options: 'Tokyo | Berlin | NYC', multi: 'true' }, undefined, { messageId: turnId });
+    const menu = (takePendingComponents(turnId)[0] as any).components[0];
+    expect(menu.max_values).toBe(3);
+    expect(menu.options.map((o: any) => o.value)).toEqual(['Tokyo', 'Berlin', 'NYC']);
+  });
+
+  it('declares the params the model needs (the scraped schema offered only an unread `data`)', () => {
+    expect(discordUICapability.actions?.buttons.params?.buttons.required).toBe(true);
+    expect(discordUICapability.actions?.select.params?.multi.type).toBe('boolean');
+  });
+});

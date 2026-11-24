@@ -13,6 +13,8 @@
 import { RegisteredCapability, CapabilityContext } from '../../5-tool-loop/registry.js';
 import { logger } from '../../../shared/logger.js';
 import * as gateway from '../../../gateway/api.js';
+import { isOwner } from '../../../shared/config/owner.js';
+import { askerOf } from './send-message.js';
 
 /** Discord's limits, mirrored from the gateway route that clamps them. */
 const MAX_OPTIONS = 10;
@@ -76,34 +78,79 @@ function picksLabel(multi: boolean): string {
   return 'single choice: one pick each';
 }
 
+type Target = { ok: true; channelId: string } | { ok: false; error: string };
+
+/**
+ * Where a poll goes. The conversation channel by default. Another channel only in this server,
+ * only in Room 302, and only when EJ asks (Codex: anyone else could have him post into a channel
+ * they can't post in themselves). Until 2026-11-24 a model-written channelId was trusted as is,
+ * so a poll could land in any channel of any server.
+ */
+export async function pollTarget(params: Record<string, unknown>, context?: CapabilityContext): Promise<Target> {
+  const here = String(context?.channelId || '');
+  const asked = String(params.channelId || params.channel_id || '').trim();
+  if (!asked || asked === here) {
+    if (!here) {
+      return { ok: false, error: 'polls only work in a channel' };
+    }
+    return { ok: true, channelId: here };
+  }
+  const guildId = context?.guildId;
+  if (!guildId) {
+    return { ok: false, error: 'a poll in another channel only works inside a server' };
+  }
+  if (!gateway.guildChannelEntries(guildId).some((e) => e.id === asked)) {
+    return { ok: false, error: 'no such channel in this server' };
+  }
+  if (!(await gateway.mayPostElsewhere(guildId)) || !isOwner(String(context?.userId ?? ''))) {
+    return { ok: false, error: 'I only post polls in the channel we are talking in (EJ can send one elsewhere in Room 302)' };
+  }
+  return { ok: true, channelId: asked };
+}
+
+/** The poll a read/end call means: the id given, else the last one he made in that channel. */
+function pollMessageId(params: Record<string, unknown>, channelId: string): string {
+  return String(params.message_id || params.messageId || lastPollByChannel.get(channelId) || '');
+}
+
 export async function pollHandler(params: Record<string, unknown>, context?: CapabilityContext): Promise<string> {
   const action = params.action;
-  // channelId is auto-injected into params (like discord-threads); context is a fallback.
-  const channelId = String(params.channelId || context?.channelId || '');
-
-  if (!channelId) {
-    return JSON.stringify({
-      success: false,
-      error: 'No channelId in context — polls only work in a channel',
-    });
-  }
-
   try {
-    if (action === 'read_poll') {
-      const messageId = String(params.message_id || lastPollByChannel.get(channelId) || '');
+    if (action === 'read_poll' || action === 'end_poll') {
+      // The gateway checks the channel is in this server (and, to end one, that it's his poll).
+      const channelId = String(params.channelId || params.channel_id || context?.channelId || '');
+      const messageId = pollMessageId(params, channelId);
       if (!messageId) {
-        return JSON.stringify({ success: false, error: 'no message_id given and no recent poll to read' });
+        return JSON.stringify({ success: false, error: 'no message_id given and no recent poll of yours here' });
       }
-      // Gateway's GET /api/channels/:id/polls/:messageId, in-process since wave 9
-      const resp = await gateway.readPoll(channelId, messageId);
-      const data = bodyOf(resp);
-      if (!gateway.isOk(resp) || !data.success) {
-        return JSON.stringify({ success: false, error: errorOf(data, 'could not read poll') });
+      const ref = { channelId, messageId };
+      let resp: gateway.ApiResult;
+      if (action === 'read_poll') {
+        // Another channel only if the person asking can read it, like search (Codex High:
+        // otherwise a private channel's poll and voter names leak to whoever asks).
+        if (channelId !== String(context?.channelId || '')) {
+          const guildId = context?.guildId;
+          if (!guildId) {
+            return JSON.stringify({ success: false, error: 'reading a poll elsewhere only works inside a server' });
+          }
+          const scope = await gateway.audienceReadable(guildId, context?.userId ?? null, context?.channelId, channelId);
+          if (!scope.ok) {
+            return JSON.stringify({ success: false, error: 'that channel is out of reach for this conversation' });
+          }
+        }
+        resp = await gateway.readPollInGuild(context?.guildId ?? null, ref, context?.channelId);
+      } else {
+        resp = await gateway.endOwnPoll(context?.guildId ?? null, askerOf(context), ref);
       }
-      return JSON.stringify(data);
+      return JSON.stringify(resp.body);
     }
 
     // create_poll
+    const target = await pollTarget(params, context);
+    if (!target.ok) {
+      return JSON.stringify({ success: false, error: target.error });
+    }
+    const channelId = target.channelId;
     const question = String(params.question || '').trim();
     const options = parseOptions(params.options);
     if (!question || options.length < 2) {
@@ -159,11 +206,16 @@ export async function pollHandler(params: Record<string, unknown>, context?: Cap
 export const discordPollCapability: RegisteredCapability = {
   name: 'discord-poll',
   emoji: '🗳️',
-  supportedActions: ['create_poll', 'read_poll'],
+  supportedActions: ['create_poll', 'read_poll', 'end_poll'],
   actions: {
     create_poll: {
       effect: 'discord',
       params: {
+        channelId: {
+          type: 'string',
+          description: 'Post it in another channel of this server ("#name" or id); default: this channel',
+          aliases: ['channel_id'],
+        },
         question: { type: 'string', description: 'The poll question (up to 300 characters)', required: true },
         options: {
           type: 'string',
@@ -186,23 +238,36 @@ export const discordPollCapability: RegisteredCapability = {
         message_id: {
           type: 'string',
           description: 'The poll message id (default: the poll you last created in this channel)',
+          aliases: ['messageId'],
         },
+        channelId: { type: 'string', description: 'Channel the poll is in; default: this channel', aliases: ['channel_id'] },
+      },
+    },
+    end_poll: {
+      effect: 'discord',
+      params: {
+        message_id: {
+          type: 'string',
+          description: 'YOUR poll\'s message id (default: the poll you last created in this channel)',
+          aliases: ['messageId'],
+        },
+        channelId: { type: 'string', description: 'Channel the poll is in; default: this channel', aliases: ['channel_id'] },
       },
     },
   },
   description:
-    'Create a native Discord poll in the current channel, or read a poll\'s live results. ' +
-    'Use create_poll with a question and options (2-10, separated by "|") to run a vote — ' +
-    'great for launch-tagline votes, ranking bits, scheduling, and sales-team standings. ' +
-    'Set multi=true when people should pick more than one (any "pick all that work" poll). ' +
-    'The result says single or multiple choice and lists any option Discord cut; say so honestly. ' +
-    'Use read_poll with a message_id to fetch current tallies (or omit it to read the poll you last created here). ' +
-    'Channels cap how many of your polls can be active at once, so make them count.',
+    'Native Discord polls. create_poll: a question and options (2-10, separated by "|"), for votes, ' +
+    'scheduling, tagline picks, standings. Set multi=true when people should pick more than one (any ' +
+    '"pick all that work" poll). The result says single or multiple choice and lists any option Discord ' +
+    'cut; say so honestly. read_poll: live tallies, who voted for what, and whether it is still open. ' +
+    'end_poll: close one of YOUR polls now (the results freeze; to take a broken poll down entirely, ' +
+    'discord-send-message delete_message). Channels cap how many of your polls can be active at once.',
   requiredParams: [],
   examples: [
     '<capability name="discord-poll" action="create_poll" question="Best launch tagline?" options="Build the city it deserves | Every great city runs on rails | Wishlist the commute" />',
     '<capability name="discord-poll" action="create_poll" question="Which nights work for the playtest? Pick all that work" options="Sat 8pm ET | Sun 2pm ET | Tue 7pm ET" duration_hours="72" multi="true" />',
     '<capability name="discord-poll" action="read_poll" message_id="1520088794551025684" />',
+    '<capability name="discord-poll" action="end_poll" />',
   ],
 
   handler: async (params: Record<string, unknown>, _content: string | undefined, context?: CapabilityContext) =>
