@@ -22,7 +22,7 @@ import {
   readChannelMessages,
   contentMarkers,
 } from '../../src/gateway/routes/message-search.js';
-import { whereLines } from '../../src/engine/3-context/sources/discord.js';
+import { whereLines, isDiscordTurn, addChannelVibes } from '../../src/engine/3-context/sources/discord.js';
 import { searchHandler, snowflakeOf, sortFor } from '../../src/engine/tools/discord/search.js';
 import { channelsHandler } from '../../src/engine/tools/discord/channels.js';
 
@@ -487,5 +487,33 @@ describe('where this turn is (Artie: "I don\'t know where I am")', () => {
     expect(
       whereLines({ forumId: '300000000000000005', forumName: 'ideas', parentChannelId: '300000000000000005', parentChannelName: 'ideas' })
     ).toEqual(['- This is a forum post in ideas (forum id 300000000000000005)']);
+  });
+});
+
+describe('channel sources reach real turns (the assembler mocks source as "capabilities")', () => {
+  it('a Discord context counts as a Discord turn whatever message.source says', () => {
+    expect(isDiscordTurn({ source: 'capabilities', context: { platform: 'discord' } } as any)).toBe(true);
+    expect(isDiscordTurn({ source: 'discord', context: undefined } as any)).toBe(true);
+    expect(isDiscordTurn({ source: 'api', context: { guildId: '1' } } as any)).toBe(false);
+  });
+
+  it('channel vibes (with the where-am-I ids) land for the mock message assemble.ts builds', async () => {
+    const sources: any[] = [];
+    await addChannelVibes(
+      {
+        message: 'you here?',
+        userId: '688448399879438340',
+        id: 'context-gen',
+        source: 'capabilities',
+        respondTo: { type: 'api' },
+        timestamp: new Date(),
+        retryCount: 0,
+        context: { platform: 'discord', channelId: '300000000000000001', channelName: 'general', messageId: '300000000000000003' },
+      } as any,
+      sources
+    );
+    expect(sources.map((s) => s.name)).toEqual(['channel_vibes']);
+    expect(sources[0].content).toContain('- Channel id: 300000000000000001');
+    expect(sources[0].content).toContain("- The message you're answering: id 300000000000000003");
   });
 });

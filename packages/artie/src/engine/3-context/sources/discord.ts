@@ -71,6 +71,17 @@ export async function addRecentGuildMessages(
 }
 
 /**
+ * Is this a Discord turn? The context assembler hands sources a mock message with
+ * source 'capabilities' (assemble.ts buildMessageChain), so `message.source` alone said "no" on
+ * every real turn: channel vibes and channel digests silently never reached Artie, while the
+ * digest loop kept paying to write them (found 2026-11-23). The Discord context's own platform
+ * field is what survives into the mock.
+ */
+export function isDiscordTurn(message: Pick<IncomingMessage, 'source' | 'context'>): boolean {
+  return message.source === 'discord' || message.context?.platform === 'discord';
+}
+
+/**
  * Where this turn is, as ids Artie can hand to his Discord tools (his ask, 2026-11-23: "I don't
  * know where I am": he couldn't react to, link or read around the message he was answering).
  * A deliberate addition to the otherwise verbatim channel block.
@@ -108,12 +119,7 @@ export async function addChannelVibes(
   try {
     // Only for Discord or Slack messages with context
     const messageContext = message.context;
-    if (
-      !messageContext ||
-      (message.source !== 'discord' &&
-        message.source !== 'slack' &&
-        messageContext.platform !== 'slack')
-    ) {
+    if (!messageContext || (!isDiscordTurn(message) && message.source !== 'slack' && messageContext.platform !== 'slack')) {
       return;
     }
 
@@ -202,7 +208,7 @@ export async function addChannelDigest(
 ): Promise<void> {
   try {
     const channelId = message.context?.channelId;
-    if (!channelId || message.source !== 'discord') return;
+    if (!channelId || !isDiscordTurn(message)) return;
 
     const { getChannelDigest, digestAge } = await import('../../../shared/db/channel-digest-store.js');
     const d = getChannelDigest(channelId);
