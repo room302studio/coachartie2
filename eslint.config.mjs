@@ -92,6 +92,7 @@ export default [
       'packages/artie/src/engine/jobs/scribe/voice-memo.ts',
       'packages/artie/src/engine/tools/media/scribe.ts',
       'packages/artie/src/engine/tools/discord/channels.ts',
+      'packages/artie/src/engine/tools/discord/poll.ts',
       'packages/artie/src/engine/tools/discord/search.ts',
       'packages/artie/src/engine/tools/discord/send-message.ts',
       'packages/artie/src/engine/tools/discord/threads.ts',

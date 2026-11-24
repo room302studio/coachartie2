@@ -2,19 +2,30 @@
  * Discord Poll Capability
  * Lets Artie create native Discord polls in the current channel and read their results.
  * Active polls are rate-limited per channel by the discord service (anti-spam).
+ *
+ * The params are declared (EJ, 2026-11-24): until then the schema was scraped from the
+ * examples, none of which used `multi`, so the model never saw it. Two "pick all that work"
+ * scheduling polls went out single-select, and once the model put "allow_multiselect: true"
+ * in the free-text body instead. The result now says whether picks are single or multiple, and
+ * names any option Discord's limits cut, so Artie can't tell people something the poll isn't.
  */
 
-import {
-  RegisteredCapability,
-  CapabilityContext,
-} from '../../5-tool-loop/registry.js';
+import { RegisteredCapability, CapabilityContext } from '../../5-tool-loop/registry.js';
 import { logger } from '../../../shared/logger.js';
 import * as gateway from '../../../gateway/api.js';
 
+/** Discord's limits, mirrored from the gateway route that clamps them. */
+const MAX_OPTIONS = 10;
+const MAX_OPTION_CHARS = 55;
+
 /** Split "A | B | C" (preferred) or newline-separated option lists into an array. */
-function parseOptions(raw: unknown): string[] {
-  if (Array.isArray(raw)) return raw.map((o) => String(o));
-  if (typeof raw !== 'string') return [];
+export function parseOptions(raw: unknown): string[] {
+  if (Array.isArray(raw)) {
+    return raw.map((o) => String(o).trim()).filter(Boolean);
+  }
+  if (typeof raw !== 'string') {
+    return [];
+  }
   let sep: string;
   if (raw.includes('|')) {
     sep = '|';
@@ -27,91 +38,175 @@ function parseOptions(raw: unknown): string[] {
     .filter(Boolean);
 }
 
+/** True for a yes in any spelling a model sends: true, "true", "yes", "1". */
+export function isYes(value: unknown): boolean {
+  if (value === true || value === 1) {
+    return true;
+  }
+  return ['true', 'yes', '1'].includes(String(value ?? '').trim().toLowerCase());
+}
+
+/** What Discord's limits will do to these options: the ones dropped and the ones shortened. */
+export function optionLosses(options: string[]): { dropped: string[]; shortened: string[] } {
+  return {
+    dropped: options.slice(MAX_OPTIONS),
+    shortened: options.slice(0, MAX_OPTIONS).filter((o) => o.length > MAX_OPTION_CHARS),
+  };
+}
+
+function bodyOf(resp: gateway.ApiResult): Record<string, unknown> {
+  const body = resp.body;
+  if (body && typeof body === 'object') {
+    return body as Record<string, unknown>;
+  }
+  return {};
+}
+
+function errorOf(body: Record<string, unknown>, fallback: string): string {
+  if (typeof body.error === 'string' && body.error) {
+    return body.error;
+  }
+  return fallback;
+}
+
+function picksLabel(multi: boolean): string {
+  if (multi) {
+    return 'multiple choice: people can pick as many as they like';
+  }
+  return 'single choice: one pick each';
+}
+
+export async function pollHandler(params: Record<string, unknown>, context?: CapabilityContext): Promise<string> {
+  const action = params.action;
+  // channelId is auto-injected into params (like discord-threads); context is a fallback.
+  const channelId = String(params.channelId || context?.channelId || '');
+
+  if (!channelId) {
+    return JSON.stringify({
+      success: false,
+      error: 'No channelId in context — polls only work in a channel',
+    });
+  }
+
+  try {
+    if (action === 'read_poll') {
+      const messageId = String(params.message_id || lastPollByChannel.get(channelId) || '');
+      if (!messageId) {
+        return JSON.stringify({ success: false, error: 'no message_id given and no recent poll to read' });
+      }
+      // Gateway's GET /api/channels/:id/polls/:messageId, in-process since wave 9
+      const resp = await gateway.readPoll(channelId, messageId);
+      const data = bodyOf(resp);
+      if (!gateway.isOk(resp) || !data.success) {
+        return JSON.stringify({ success: false, error: errorOf(data, 'could not read poll') });
+      }
+      return JSON.stringify(data);
+    }
+
+    // create_poll
+    const question = String(params.question || '').trim();
+    const options = parseOptions(params.options);
+    if (!question || options.length < 2) {
+      return JSON.stringify({
+        success: false,
+        error: 'create_poll needs a question and at least 2 options separated by "|"',
+      });
+    }
+
+    let durationHours: number | undefined;
+    if (params.duration_hours) {
+      durationHours = Number(params.duration_hours);
+    }
+    const multi = isYes(params.multi);
+    // Gateway's POST /api/channels/:id/polls, in-process since wave 9
+    const resp = await gateway.createPoll(channelId, {
+      question,
+      options,
+      durationHours,
+      allowMultiselect: multi,
+    });
+    const data = bodyOf(resp);
+    if (!gateway.isOk(resp) || !data.success) {
+      return JSON.stringify({ success: false, error: errorOf(data, 'poll creation failed') });
+    }
+
+    const messageId = String(data.messageId);
+    lastPollByChannel.set(channelId, messageId);
+    logger.info(`[poll] Created poll in ${channelId} (multi=${multi}): "${question}"`);
+    const losses = optionLosses(options);
+    const result: Record<string, unknown> = {
+      success: true,
+      message: `Poll is live: "${question}" (${Math.min(options.length, MAX_OPTIONS)} options, ${data.durationHours}h, ${picksLabel(multi)})`,
+      messageId,
+      multi,
+    };
+    if (losses.dropped.length > 0) {
+      result.dropped_options = losses.dropped;
+    }
+    if (losses.shortened.length > 0) {
+      result.shortened_options = losses.shortened.map((o) => `${o.slice(0, MAX_OPTION_CHARS)}…`);
+    }
+    if (losses.dropped.length > 0 || losses.shortened.length > 0) {
+      result.note = `Discord allows ${MAX_OPTIONS} options of ${MAX_OPTION_CHARS} characters; the options listed here did not make it in whole.`;
+    }
+    return JSON.stringify(result);
+  } catch (error) {
+    logger.error('[poll] failed:', error);
+    return JSON.stringify({ success: false, error: 'poll request failed — discord service may be down' });
+  }
+}
+
 export const discordPollCapability: RegisteredCapability = {
   name: 'discord-poll',
   emoji: '🗳️',
   supportedActions: ['create_poll', 'read_poll'],
+  actions: {
+    create_poll: {
+      effect: 'discord',
+      params: {
+        question: { type: 'string', description: 'The poll question (up to 300 characters)', required: true },
+        options: {
+          type: 'string',
+          description: `The answers, separated by "|" (2-${MAX_OPTIONS}, up to ${MAX_OPTION_CHARS} characters each)`,
+          required: true,
+        },
+        duration_hours: { type: 'integer', description: 'How long the poll stays open (default 24, max 768)' },
+        multi: {
+          type: 'boolean',
+          description:
+            'true lets people pick more than one answer. Use it whenever you ask people to "pick all that ' +
+            'work" (scheduling, availability, "which of these do you like"). Default false: one pick each.',
+          aliases: ['multiselect', 'allow_multiselect', 'multiple'],
+        },
+      },
+    },
+    read_poll: {
+      effect: 'read',
+      params: {
+        message_id: {
+          type: 'string',
+          description: 'The poll message id (default: the poll you last created in this channel)',
+        },
+      },
+    },
+  },
   description:
     'Create a native Discord poll in the current channel, or read a poll\'s live results. ' +
     'Use create_poll with a question and options (2-10, separated by "|") to run a vote — ' +
-    'great for launch-tagline votes, ranking bits, and sales-team standings. Optional: ' +
-    'duration_hours (default 24) and multi="true" to allow multiple picks. ' +
+    'great for launch-tagline votes, ranking bits, scheduling, and sales-team standings. ' +
+    'Set multi=true when people should pick more than one (any "pick all that work" poll). ' +
+    'The result says single or multiple choice and lists any option Discord cut; say so honestly. ' +
     'Use read_poll with a message_id to fetch current tallies (or omit it to read the poll you last created here). ' +
     'Channels cap how many of your polls can be active at once, so make them count.',
   requiredParams: [],
   examples: [
     '<capability name="discord-poll" action="create_poll" question="Best launch tagline?" options="Build the city it deserves | Every great city runs on rails | Wishlist the commute" />',
-    '<capability name="discord-poll" action="create_poll" question="Rank the S-tier builder" options="jan_gbg | rebecka_j | anseriform" duration_hours="6" />',
+    '<capability name="discord-poll" action="create_poll" question="Which nights work for the playtest? Pick all that work" options="Sat 8pm ET | Sun 2pm ET | Tue 7pm ET" duration_hours="72" multi="true" />',
     '<capability name="discord-poll" action="read_poll" message_id="1520088794551025684" />',
   ],
 
-  handler: async (params: any, _content: string | undefined, context?: CapabilityContext) => {
-    const action = params.action;
-    // channelId is auto-injected into params (like discord-threads); context is a fallback.
-    const channelId = params.channelId || context?.channelId;
-
-    if (!channelId) {
-      return JSON.stringify({
-        success: false,
-        error: 'No channelId in context — polls only work in a channel',
-      });
-    }
-
-    try {
-      if (action === 'read_poll') {
-        const messageId = params.message_id || lastPollByChannel.get(channelId);
-        if (!messageId) {
-          return JSON.stringify({ success: false, error: 'no message_id given and no recent poll to read' });
-        }
-        // Gateway's GET /api/channels/:id/polls/:messageId, in-process since wave 9
-        const resp = await gateway.readPoll(String(channelId), String(messageId));
-        const data = resp.body;
-        if (!gateway.isOk(resp) || !(data as any).success) {
-          return JSON.stringify({ success: false, error: (data as any).error || 'could not read poll' });
-        }
-        return JSON.stringify(data);
-      }
-
-      // create_poll
-      const question = String(params.question || '').trim();
-      const options = parseOptions(params.options);
-      if (!question || options.length < 2) {
-        return JSON.stringify({
-          success: false,
-          error: 'create_poll needs a question and at least 2 options separated by "|"',
-        });
-      }
-
-      // Gateway's POST /api/channels/:id/polls, in-process since wave 9
-      let durationHours: number | undefined;
-      if (params.duration_hours) {
-        durationHours = Number(params.duration_hours);
-      } else {
-        durationHours = undefined;
-      }
-      const resp = await gateway.createPoll(String(channelId), {
-        question,
-        options,
-        durationHours,
-        allowMultiselect: params.multi === 'true' || params.multi === true,
-      });
-      const data = resp.body as any;
-      if (!gateway.isOk(resp) || !data.success) {
-        return JSON.stringify({ success: false, error: data.error || 'poll creation failed' });
-      }
-
-      lastPollByChannel.set(channelId, data.messageId);
-      logger.info(`[poll] Created poll in ${channelId}: "${question}"`);
-      return JSON.stringify({
-        success: true,
-        message: `Poll is live: "${question}" (${options.length} options, ${data.durationHours}h)`,
-        messageId: data.messageId,
-      });
-    } catch (error) {
-      logger.error('[poll] failed:', error);
-      return JSON.stringify({ success: false, error: 'poll request failed — discord service may be down' });
-    }
-  },
+  handler: async (params: Record<string, unknown>, _content: string | undefined, context?: CapabilityContext) =>
+    pollHandler(params, context),
 };
 
 // Remember the last poll Artie made per channel so read_poll works without an explicit id.

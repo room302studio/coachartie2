@@ -65,6 +65,7 @@ const GATE_FLOOR: Record<string, Record<string, string>> = {
   'discord-threads': { create_thread: 'T', get_thread_messages: '' },
   'discord-user-history': { get_user_messages: '' },
   'discord-send-message': { send_message: 'T', edit_message: 'T' },
+  'discord-poll': { create_poll: 'T', read_poll: '' },
   // Recording people is EJ's call (same as /scribe start/stop); anyone may ask the status.
   scribe: { status: '', last_summary: '', start: 'OT', stop: 'OT' },
   'proactive-dm': {
@@ -102,7 +103,7 @@ const GATE_FLOOR: Record<string, Record<string, string>> = {
 const KNOWN_UNDECLARED = new Set([
   'ask-question', 'autonomous', 'bot-config', 'calculator', 'community-analytics',
   'context', 'credit_status', 'diagnose',
-  'discord-issue-parser', 'discord-poll',
+  'discord-issue-parser',
   'embedded_mcp', 'flashcard', 'goals', 'image_gen',
   'kanban', 'morning-briefing', 'n8n_browser', 'pairing',
   'quiz-game', 'sb_changelog', 'scrapbook', 'send-metro-file', 'sequence',
