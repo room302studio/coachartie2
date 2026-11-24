@@ -687,7 +687,11 @@ export async function searchGuildMessages(
         break;
       }
       const threads = new Map<string, any>();
-      for (const t of Array.isArray(body.threads) ? body.threads : []) {
+      let threadList: any[] = [];
+      if (Array.isArray(body.threads)) {
+        threadList = body.threads;
+      }
+      for (const t of threadList) {
         if (t?.id) {
           threads.set(String(t.id), t);
         }
