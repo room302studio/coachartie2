@@ -335,6 +335,29 @@ describe('searchGuildMessages scope', () => {
     expect(audienceCanRead(guild, undefined)(art)).toBe(false);
   });
 
+  it('the conversation channel and its threads pass even when a viewing role lacks history there', () => {
+    // Room 302 #subwaybuilder-2 (EJ's call, 2026-11-24): the Subway Builder role can view it but
+    // has no Read Message History, so the channel failed its own audience check and Artie couldn't
+    // read the room he was talking in, or any thread in it.
+    const everyone = { id: 'everyone' };
+    const builders = { id: 'builders' };
+    const sb2 = {
+      id: 'sb2',
+      permissionsFor: (who: any) => ({ has: (p: string) => who.id === 'builders' && p === 'ViewChannel' }),
+    };
+    const thread = { id: 'th', parentId: 'sb2', isThread: () => true, permissionsFor: () => perms(false) };
+    const other = { id: 'other', parentId: 'elsewhere', isThread: () => true, permissionsFor: () => perms(false) };
+    const guild = {
+      roles: { everyone, cache: new Map([['everyone', everyone], ['builders', builders]]) },
+      channels: { cache: new Map([['sb2', sb2]]) },
+      members: { cache: new Map() },
+    };
+    const inSb2 = audienceCanRead(guild, 'sb2');
+    expect(inSb2(sb2)).toBe(true);
+    expect(inSb2(thread)).toBe(true);
+    expect(inSb2(other)).toBe(false);
+  });
+
   it('leaves out channels that deny a single member or a non-everyone role', () => {
     const deny = (id: string) => ({ id, deny: { has: (p: string) => p === 'ViewChannel' } });
     const guild = { id: 'g', roles: { everyone: { id: 'g' } }, channels: { cache: new Map() } };

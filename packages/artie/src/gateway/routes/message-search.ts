@@ -366,7 +366,17 @@ export function audienceCanRead(guild: any, fromChannelId: string | undefined): 
   const viewerMembers = overwrites
     .filter((o: any) => o.type === MEMBER_OVERWRITE && o.allow?.has?.('ViewChannel'))
     .map((o: any) => String(o.id));
+  const convId = String(conv.id);
   return (ch: any) => {
+    // The conversation's own channel, and threads in it, always pass (EJ's call, 2026-11-24).
+    // Before, they failed whenever some viewing role lacked Read Message History there (Room 302
+    // #subwaybuilder-2: the Subway Builder role), so Artie couldn't read the room he was talking
+    // in, or any thread in it. Accepted trade-off (Codex flagged it High): a viewer without
+    // history there may see older messages from this same channel quoted back. The asker's and
+    // Artie's own permissions are still checked by the callers.
+    if (String(ch?.id) === convId || (ch?.isThread?.() && String(ch.parentId) === convId)) {
+      return true;
+    }
     if (hasTargetedDeny(guild, ch, conv)) {
       return false;
     }
