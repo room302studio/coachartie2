@@ -239,6 +239,16 @@ export class CapabilitiesClient {
     }
   }
 
+  /** The form behind one of Artie's buttons (by custom_id), or null: no form, or it expired. */
+  async getComponentForm(customId: string): Promise<Awaited<ReturnType<typeof engine.componentForm>>> {
+    try {
+      return await engine.componentForm(customId);
+    } catch (error) {
+      logger.warn('Failed to look up a component form; treating the click as a plain click:', error);
+      return null;
+    }
+  }
+
   /** Current brownout mode, for the component-click cap (critical → no paid LLM call). */
   async getBrownoutMode(): Promise<{ mode: 'normal' | 'lean' | 'critical' }> {
     try {

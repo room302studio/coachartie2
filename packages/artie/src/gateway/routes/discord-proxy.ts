@@ -427,7 +427,7 @@ export async function sendDm(discordClient: Client, body: any): Promise<ApiResul
 export async function sendChannelMessage(discordClient: Client, params: Record<string, string>, body: any): Promise<ApiResult> {
   try {
     const { channelId } = params;
-    const { content, fileBase64, fileName } = body;
+    const { content, fileBase64, fileName, components } = body;
 
     if (!content && !(fileBase64 && fileName)) {
       return reply(400, {
@@ -456,11 +456,20 @@ export async function sendChannelMessage(discordClient: Client, params: Record<s
     }
 
     // Send the message (narrowed to channels with send method)
-    const channelMessageOptions: { content?: string; files?: AttachmentBuilder[] } = {};
+    const channelMessageOptions: {
+      content?: string;
+      files?: AttachmentBuilder[];
+      components?: Array<Record<string, unknown>>;
+    } = {};
     if (content) channelMessageOptions.content = content;
     if (fileBase64 && fileName) {
       const buffer = Buffer.from(fileBase64, 'base64');
       channelMessageOptions.files = [new AttachmentBuilder(buffer, { name: fileName })];
+    }
+    // Raw action rows built server-side by engine/tools/discord/ui.ts (buttons/select, custom_id
+    // `artie:<turn>:<n>`), so clicks on a message he sent come back like clicks under a reply.
+    if (Array.isArray(components) && components.length > 0) {
+      channelMessageOptions.components = components.slice(0, 5);
     }
     const sentMessage = await (channel as any).send(channelMessageOptions);
 

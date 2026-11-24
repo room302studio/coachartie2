@@ -4,7 +4,16 @@
  * burning the budget: one click-turn per user per message, a total cap per message
  * (ARTIE_BUTTON_CLICK_CAP, default 8), and a brownout cutoff (critical → no LLM call at all).
  */
-import { MessageFlags, ButtonInteraction, SelectMenuInteraction, ActionRowBuilder } from 'discord.js';
+import {
+  MessageFlags,
+  ButtonInteraction,
+  SelectMenuInteraction,
+  ActionRowBuilder,
+  ModalBuilder,
+  ModalSubmitInteraction,
+  TextInputBuilder,
+  TextInputStyle,
+} from 'discord.js';
 import { logger } from '../../shared/logger.js';
 import { isBlockedUser } from '../../shared/blocklist.js';
 import { processUserIntent } from '../4-reply/stream-reply.js';
@@ -147,6 +156,141 @@ export async function handleComponentClick(
     return;
   }
 
+  // A button with a form opens it (free: no LLM call). The caps apply when it's submitted.
+  if (interaction.isButton()) {
+    const form = await capabilitiesClient.getComponentForm(interaction.customId);
+    if (form) {
+      await interaction.showModal(buildFormModal(interaction.customId, form)).catch((error: unknown) => {
+        logger.warn('Could not open a form for a click:', error);
+      });
+      return;
+    }
+  }
+
+  const label = describeSelection(interaction);
+  const displayName = (interaction.member as { displayName?: string } | null)?.displayName
+    || interaction.user.username;
+  const clickContent = buildClickTurnText(
+    displayName,
+    label,
+    interaction.message.content,
+    interaction.message.createdTimestamp
+  );
+  let componentType: 'button' | 'select';
+  if (interaction.isButton()) {
+    componentType = 'button';
+  } else {
+    componentType = 'select';
+  }
+  logger.info(`🔘 Component click [${interaction.customId}]:`, { userId, messageId, label });
+  await runInteractionTurn(interaction, messageId, clickContent, componentType);
+}
+
+// ---------------------------------------------------------------------------
+// Forms behind buttons (2026-11-24): the button's custom_id `artie:<turn>:<n>` becomes the
+// modal's `artie-form:<turn>:<n>`; fields are f0..f4. The submit is a turn like a click.
+// ---------------------------------------------------------------------------
+
+type FormSpec = NonNullable<Awaited<ReturnType<typeof capabilitiesClient.getComponentForm>>>;
+
+const FORM_PREFIX = 'artie-form:';
+/** Longest answer per field; a turn shouldn't balloon from one pasted wall of text. */
+const FORM_ANSWER_MAX = 1000;
+
+export function formModalId(buttonCustomId: string): string {
+  return `${FORM_PREFIX}${buttonCustomId.slice('artie:'.length)}`;
+}
+
+export function buttonIdOfForm(modalCustomId: string): string | null {
+  if (!modalCustomId.startsWith(FORM_PREFIX)) {
+    return null;
+  }
+  return `artie:${modalCustomId.slice(FORM_PREFIX.length)}`;
+}
+
+export function buildFormModal(buttonCustomId: string, form: FormSpec): ModalBuilder {
+  const modal = new ModalBuilder().setCustomId(formModalId(buttonCustomId)).setTitle(form.title || 'Form');
+  form.fields.slice(0, 5).forEach((field, i) => {
+    let style = TextInputStyle.Short;
+    if (field.paragraph) {
+      style = TextInputStyle.Paragraph;
+    }
+    const input = new TextInputBuilder()
+      .setCustomId(`f${i}`)
+      .setLabel(field.label)
+      .setStyle(style)
+      .setRequired(field.required !== false)
+      // The same cap the submit applies, shown to the person typing (Codex: no silent cut).
+      .setMaxLength(FORM_ANSWER_MAX);
+    if (field.placeholder) {
+      input.setPlaceholder(field.placeholder);
+    }
+    modal.addComponents(new ActionRowBuilder<TextInputBuilder>().addComponents(input));
+  });
+  return modal;
+}
+
+/** What a submitted form tells Artie: who, which form, on which message, and each answer. */
+export function buildFormTurnText(
+  displayName: string,
+  title: string,
+  answers: Array<{ label: string; value: string }>,
+  originalMessageContent: string
+): string {
+  const snippet = (originalMessageContent || '').slice(0, 80);
+  const lines = answers.map((a) => `- ${a.label}: ${a.value || '(left blank)'}`);
+  return [`[form] ${displayName} filled in "${title}" on your message "${snippet}":`, ...lines].join('\n');
+}
+
+export async function handleFormSubmit(interaction: ModalSubmitInteraction): Promise<void> {
+  const userId = interaction.user.id;
+  if (isBlockedUser(userId)) {
+    await interaction
+      .reply({ content: "This account can't interact with Artie.", flags: MessageFlags.Ephemeral })
+      .catch(() => {});
+    return;
+  }
+  const buttonId = buttonIdOfForm(interaction.customId);
+  let form: FormSpec | null = null;
+  if (buttonId) {
+    form = await capabilitiesClient.getComponentForm(buttonId);
+  }
+  // Answers by field order; labels from the stored form (a restart leaves "field N").
+  const answers: Array<{ label: string; value: string }> = [];
+  for (let i = 0; i < 5; i++) {
+    let value: string;
+    try {
+      value = interaction.fields.getTextInputValue(`f${i}`);
+    } catch {
+      break;
+    }
+    let label = `field ${i + 1}`;
+    if (form && form.fields[i]) {
+      label = form.fields[i].label;
+    }
+    answers.push({ label, value: value.trim().slice(0, FORM_ANSWER_MAX) });
+  }
+  let title = 'a form';
+  if (form) {
+    title = form.title;
+  }
+  const displayName = (interaction.member as { displayName?: string } | null)?.displayName
+    || interaction.user.username;
+  const message = interaction.message;
+  const messageId = message?.id ?? interaction.customId;
+  const content = buildFormTurnText(displayName, title, answers, message?.content ?? '');
+  logger.info(`📝 Form submitted [${interaction.customId}]:`, { userId, messageId, fields: answers.length });
+  await runInteractionTurn(interaction, messageId, content, 'form');
+}
+
+/** Caps, then one paid turn answering in place (shared by clicks and form submits). */
+async function runInteractionTurn(
+  interaction: ButtonInteraction | SelectMenuInteraction | ModalSubmitInteraction,
+  messageId: string,
+  turnText: string,
+  componentType: 'button' | 'select' | 'form'
+): Promise<void> {
+  const userId = interaction.user.id;
   let brownoutMode = 'normal';
   try {
     brownoutMode = (await capabilitiesClient.getBrownoutMode()).mode;
@@ -162,33 +306,10 @@ export async function handleComponentClick(
   }
   recordClick(messageId, userId);
 
-  const label = describeSelection(interaction);
-  const displayName = (interaction.member as { displayName?: string } | null)?.displayName
-    || interaction.user.username;
-  const clickContent = buildClickTurnText(
-    displayName,
-    label,
-    interaction.message.content,
-    interaction.message.createdTimestamp
-  );
-
-  logger.info(`🔘 Component click [${interaction.customId}]:`, {
-    userId,
-    messageId,
-    label,
-  });
-
   await interaction.deferReply();
 
-  let componentType: 'button' | 'select';
-  if (interaction.isButton()) {
-    componentType = 'button';
-  } else {
-    componentType = 'select';
-  }
-
   await processUserIntent({
-    content: clickContent,
+    content: turnText,
     userId,
     username: interaction.user.username,
     source: 'button',

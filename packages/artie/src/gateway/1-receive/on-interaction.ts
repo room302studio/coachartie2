@@ -59,7 +59,7 @@ import {
   getShortCorrelationId,
 } from '../correlation.js';
 import { processUserIntent } from '../4-reply/stream-reply.js';
-import { handleComponentClick } from './on-component-click.js';
+import { buttonIdOfForm, handleComponentClick, handleFormSubmit } from './on-component-click.js';
 
 // Routed from the same registry register-commands.ts publishes (commands/registry.ts).
 const commands = new Map<string, any>(globalCommands.map((c) => [c.data.name, c]));
@@ -692,6 +692,11 @@ async function handleVoteButton(
  * Modal submit dispatcher. Only handles the daily quiz answer modal for now.
  */
 async function handleModalSubmit(interaction: ModalSubmitInteraction): Promise<void> {
+  // Forms behind Artie's buttons (on-component-click.ts) come back as a turn.
+  if (buttonIdOfForm(interaction.customId)) {
+    await handleFormSubmit(interaction);
+    return;
+  }
   const parsed = parseDailyCustomId(interaction.customId);
   if (!parsed || parsed.action !== 'modal') {
     await interaction.reply({

@@ -96,7 +96,7 @@ export async function sendDm(body: {
 /** POST /api/channels/:channelId/messages: text and/or a base64 file (tts voice notes, sbat). */
 export async function sendChannelMessage(
   channelId: string,
-  body: { content?: string; fileBase64?: string; fileName?: string }
+  body: { content?: string; fileBase64?: string; fileName?: string; components?: Array<Record<string, unknown>> }
 ): Promise<ApiResult> {
   const c = client();
   return (await proxy()).sendChannelMessage(c, { channelId }, wire(body));

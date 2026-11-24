@@ -10,6 +10,7 @@ import * as gateway from '../../../gateway/api.js';
 import { getErrorMessage } from '../../../shared/errors.js';
 import { isOwner } from '../../../shared/config/owner.js';
 import { scrubBlockedUserMentions } from '../../../shared/blocklist.js';
+import { componentRowsFor } from './ui.js';
 
 function stringOrUndefined(value: unknown): string | undefined {
   if (typeof value === 'string') {
@@ -58,6 +59,13 @@ export const discordSendMessageCapability: RegisteredCapability = {
         guildId: { type: 'string', description: 'Only from EJ\'s DM: the server id (Room 302). Ignored in a server.' },
         channelId: { type: 'string', description: 'Channel ("#general" or id)', required: true },
         message: { type: 'string', description: 'The text to post', required: true },
+        buttons: {
+          type: 'string',
+          description: 'Optional buttons under the post, same format as discord-ui buttons ("Yes | No", or JSON with styles, links, forms)',
+        },
+        options: { type: 'string', description: 'Optional dropdown under the post: "A | B | C" or JSON, as in discord-ui select' },
+        placeholder: { type: 'string', description: 'Dropdown placeholder text' },
+        multi: { type: 'boolean', description: 'Dropdown allows several picks' },
       },
     },
     edit_message: {
@@ -92,7 +100,8 @@ export const discordSendMessageCapability: RegisteredCapability = {
   },
   supportedActions: ['send_message', 'edit_message', 'delete_message', 'pin_message', 'unpin_message'],
   description:
-    'send_message: post to a channel in Room 302 (from a Room 302 conversation; EJ may also do it from his DM). ' +
+    'send_message: post to a channel in Room 302 (from a Room 302 conversation; EJ may also do it from his DM); ' +
+    'add buttons and/or options to put clickable buttons, form buttons or a dropdown under the post. ' +
     'edit_message: fix a message YOU already sent in this server (channelId + messageId + message, ' +
     'the new full text) instead of posting a correction. ' +
     'delete_message: take down a message YOU sent (a duplicate, a broken poll, a mistake); you cannot ' +
@@ -111,11 +120,19 @@ export const discordSendMessageCapability: RegisteredCapability = {
         if (!guildId && isOwner(String(context?.userId ?? ''))) {
           guildId = mintTrustedGuild(params.guildId, 'owner-dm-choice');
         }
+        // Buttons/dropdown, numbered under this turn so clicks come back as turns (ui.ts).
+        const turnId = String(context?.messageId || `send-${Date.now()}`);
+        const components = componentRowsFor(
+          { buttons: params.buttons, options: params.options, placeholder: params.placeholder, multi: params.multi },
+          turnId
+        );
         return JSON.stringify(
           await sendMessage({
             guildId,
             channelId: stringOrUndefined(params.channelId),
             message: stringOrUndefined(params.message),
+            components: components.rows,
+            componentSummary: components.summary,
           })
         );
       }
@@ -160,8 +177,10 @@ async function sendMessage(params: {
   guildId?: string;
   channelId?: string;
   message?: string;
+  components?: Array<Record<string, unknown>>;
+  componentSummary?: string[];
 }): Promise<Record<string, unknown>> {
-  const { guildId, channelId, message } = params;
+  const { guildId, channelId, message, components, componentSummary } = params;
 
   // Validate required parameters
   if (!guildId || !channelId || !message) {
@@ -205,9 +224,13 @@ async function sendMessage(params: {
     // Gateway's POST /api/channels/:id/messages, in-process since wave 9
     // Same scrub as his normal replies (gateway/4-reply/stream-reply.ts): banned people become
     // their epithet, and opted-out banned people lose name, id and ping (Artie asked, 2026-11-23).
-    const response = await gateway.sendChannelMessage(String(channelId), {
+    const body: { content: string; components?: Array<Record<string, unknown>> } = {
       content: scrubBlockedUserMentions(message),
-    });
+    };
+    if (components && components.length > 0) {
+      body.components = components;
+    }
+    const response = await gateway.sendChannelMessage(String(channelId), body);
 
     if (!gateway.isOk(response)) {
       const errorData = JSON.stringify(response.body);
@@ -238,13 +261,17 @@ async function sendMessage(params: {
       preview = message;
     }
 
-    return {
+    const result: Record<string, unknown> = {
       success: true,
       messageId,
       channelId,
       guildId,
       content: preview,
     };
+    if (componentSummary && componentSummary.length > 0) {
+      result.attached = `${componentSummary.join('; ')}. Clicks come back to you as turns.`;
+    }
+    return result;
   } catch (error) {
     const errorMessage = getErrorMessage(error);
     logger.error('❌ discord-send-message: Exception', {

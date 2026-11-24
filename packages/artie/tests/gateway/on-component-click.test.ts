@@ -6,6 +6,10 @@ import {
   resetClickCountersForTests,
   buildClickTurnText,
   clickRefusal,
+  formModalId,
+  buttonIdOfForm,
+  buildFormModal,
+  buildFormTurnText,
 } from '../../src/gateway/1-receive/on-component-click.js';
 
 describe('parseArtieCustomId', () => {
@@ -136,5 +140,35 @@ describe('buildClickTurnText', () => {
     vi.setSystemTime(0);
     const text = buildClickTurnText('ejfox', 'Yes', 'msg', 5000); // "posted" in the future
     expect(text).toContain('(0s after you posted)');
+  });
+});
+
+describe('forms behind buttons (2026-11-24)', () => {
+  it('a form modal id maps back to exactly its button', () => {
+    const modalId = formModalId('artie:abc123:7');
+    expect(modalId).toBe('artie-form:abc123:7');
+    expect(buttonIdOfForm(modalId)).toBe('artie:abc123:7');
+    expect(buttonIdOfForm('daily:modal:2026-11-24')).toBeNull();
+  });
+
+  it('builds a modal with one input per field, paragraphs where asked', () => {
+    const modal = buildFormModal('artie:abc123:0', {
+      title: 'Report a bug',
+      fields: [{ label: 'What happened?' }, { label: 'Steps', paragraph: true, required: false }],
+    }).toJSON();
+    expect(modal.custom_id).toBe('artie-form:abc123:0');
+    expect(modal.title).toBe('Report a bug');
+    const inputs = modal.components.map((row: any) => row.components[0]);
+    expect(inputs.map((i: any) => i.custom_id)).toEqual(['f0', 'f1']);
+    expect(inputs[1].style).toBe(2);
+    expect(inputs[1].required).toBe(false);
+    expect(inputs[0].max_length).toBe(1000);
+  });
+
+  it('tells Artie who filled in what', () => {
+    const text = buildFormTurnText('fan', 'Report a bug', [{ label: 'What happened?', value: 'trains vanish' }, { label: 'Steps', value: '' }], 'Found a bug?');
+    expect(text).toContain('[form] fan filled in "Report a bug" on your message "Found a bug?"');
+    expect(text).toContain('- What happened?: trains vanish');
+    expect(text).toContain('- Steps: (left blank)');
   });
 });

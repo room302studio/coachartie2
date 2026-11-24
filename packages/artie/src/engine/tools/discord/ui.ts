@@ -1,7 +1,13 @@
 import { RegisteredCapability, CapabilityContext } from '../../5-tool-loop/registry.js';
 import { logger } from '../../../shared/logger.js';
 import { getErrorMessage } from '../../../shared/errors.js';
-import { addPendingComponents } from '../../1-intake/pending-components.js';
+import {
+  addPendingComponents,
+  claimComponentIndexes,
+  registerForm,
+  type FormField,
+  type FormSpec,
+} from '../../1-intake/pending-components.js';
 
 // Discord.js component types (without importing the library)
 enum TextInputStyle {
@@ -290,6 +296,49 @@ interface SanitizedButton {
   label: string;
   style: string;
   url?: string;
+  /** A form this button opens instead of sending a plain click (2026-11-24). */
+  form?: FormSpec;
+}
+
+// Discord's modal limits: 5 text inputs, labels and titles up to 45 characters.
+const MAX_FORM_FIELDS = 5;
+const MAX_FORM_LABEL = 45;
+
+/**
+ * A button's `form`: field labels as "Name | Notes", or an array of labels / objects
+ * {label, paragraph, required, placeholder}. undefined when there is no usable field.
+ */
+export function parseForm(raw: unknown, title: unknown, fallbackTitle: string): FormSpec | undefined {
+  const items = parseItemList(raw, false);
+  if (!items) {
+    return undefined;
+  }
+  const fields: FormField[] = [];
+  for (const item of items) {
+    const label = String(item.label ?? '').trim().slice(0, MAX_FORM_LABEL);
+    if (!label) {
+      continue;
+    }
+    const field: FormField = { label, paragraph: item.paragraph === true || item.paragraph === 'true' };
+    if (item.required === false || item.required === 'false') {
+      field.required = false;
+    }
+    if (typeof item.placeholder === 'string' && item.placeholder.trim()) {
+      field.placeholder = item.placeholder.trim().slice(0, 100);
+    }
+    fields.push(field);
+    if (fields.length >= MAX_FORM_FIELDS) {
+      break;
+    }
+  }
+  if (fields.length === 0) {
+    return undefined;
+  }
+  let formTitle = fallbackTitle;
+  if (typeof title === 'string' && title.trim()) {
+    formTitle = title.trim();
+  }
+  return { title: formTitle.slice(0, MAX_FORM_LABEL), fields };
 }
 
 /** Validate + clamp a raw buttons array: drop entries that can't be made into a real button
@@ -317,7 +366,12 @@ function sanitizeButtons(raw: any[]): SanitizedButton[] {
       if (typeof btn.url !== 'string' || !/^https?:\/\//i.test(btn.url)) continue;
       out.push({ label, style, url: btn.url });
     } else {
-      out.push({ label, style });
+      const button: SanitizedButton = { label, style };
+      const form = parseForm(btn.form, btn.form_title ?? btn.formTitle, label);
+      if (form) {
+        button.form = form;
+      }
+      out.push(button);
     }
 
     if (out.length >= MAX_BUTTON_ROWS * MAX_BUTTONS_PER_ROW) break;
@@ -332,7 +386,9 @@ function artieCustomId(turnId: string, index: number): string {
 
 function buildButtonActionRows(buttons: SanitizedButton[], turnId: string): any[] {
   const rows: any[] = [];
-  let index = 0;
+  // Numbers continue across every component this turn makes (reply and sent messages alike),
+  // so each custom_id, and the form registered under it, names exactly one button.
+  let index = claimComponentIndexes(turnId, buttons.length);
   for (let i = 0; i < buttons.length && rows.length < MAX_BUTTON_ROWS; i += MAX_BUTTONS_PER_ROW) {
     const rowButtons = buttons.slice(i, i + MAX_BUTTONS_PER_ROW);
     const row = {
@@ -347,6 +403,9 @@ function buildButtonActionRows(buttons: SanitizedButton[], turnId: string): any[
           component.url = btn.url;
         } else {
           component.custom_id = artieCustomId(turnId, index);
+          if (btn.form) {
+            registerForm(component.custom_id, btn.form);
+          }
         }
         index++;
         return component;
@@ -436,7 +495,14 @@ async function createButtons(
     count: buttons.length,
   });
 
-  return `${buttons.length} button${pluralSuffix(buttons.length)} will appear under your reply: ${labels}`;
+  let forms = '';
+  const withForms = buttons.filter((b) => b.form).map((b) => b.label);
+  if (withForms.length === 1) {
+    forms = ` (${withForms[0]} opens a form; the answers come back to you)`;
+  } else if (withForms.length > 1) {
+    forms = ` (${withForms.join(', ')} open forms; the answers come back to you)`;
+  }
+  return `${buttons.length} button${pluralSuffix(buttons.length)} will appear under your reply: ${labels}${forms}`;
 }
 
 interface SanitizedOption {
@@ -524,25 +590,7 @@ async function createSelectMenu(
     throw new Error('No valid options after validation: each needs a non-empty label.');
   }
 
-  const placeholder = (params.placeholder || 'Choose an option...').slice(0, 150);
-  let maxValues = 1;
-  if (params.multi) {
-    maxValues = options.length;
-  }
-  const row = {
-    type: 1, // ActionRow
-    components: [
-      {
-        type: 3, // StringSelectMenu
-        custom_id: artieCustomId(turnId, 0),
-        placeholder,
-        min_values: 1,
-        max_values: maxValues,
-        options,
-      },
-    ],
-  };
-
+  const row = selectRow(options, params, turnId);
   addPendingComponents(turnId, [row]);
 
   logger.info('📋 Queued Discord select menu for turn:', {
@@ -551,6 +599,56 @@ async function createSelectMenu(
   });
 
   return `A dropdown with ${options.length} option${pluralSuffix(options.length)} will appear under your reply: ${options.map((o) => o.label).join(', ')}`;
+}
+
+/** One dropdown row; its number is claimed like a button's so custom_ids never repeat in a turn. */
+function selectRow(options: SanitizedOption[], params: DiscordUIParams, turnId: string): Record<string, unknown> {
+  const placeholder = (params.placeholder || 'Choose an option...').slice(0, 150);
+  let maxValues = 1;
+  if (params.multi) {
+    maxValues = options.length;
+  }
+  return {
+    type: 1, // ActionRow
+    components: [
+      {
+        type: 3, // StringSelectMenu
+        custom_id: artieCustomId(turnId, claimComponentIndexes(turnId, 1)),
+        placeholder,
+        min_values: 1,
+        max_values: maxValues,
+        options,
+      },
+    ],
+  };
+}
+
+/**
+ * Component rows for a message Artie sends himself (discord-send-message), from the same
+ * params discord-ui takes: `buttons` and/or `options` (+ placeholder, multi). Clicks come back
+ * as turns exactly like buttons under a reply. Returns no rows when neither was given.
+ */
+export function componentRowsFor(raw: Record<string, unknown>, turnId: string): { rows: Array<Record<string, unknown>>; summary: string[] } {
+  const params = normalizeUIParams(raw);
+  const rows: Array<Record<string, unknown>> = [];
+  const summary: string[] = [];
+  const buttons = sanitizeButtons(params.buttons ?? []);
+  if (buttons.length > 0) {
+    // A select needs a row of its own, so buttons get at most 4 of the 5 rows when one comes too.
+    let maxButtonRows = MAX_BUTTON_ROWS;
+    if (params.options && params.options.length > 0) {
+      maxButtonRows = MAX_BUTTON_ROWS - 1;
+    }
+    const kept = buttons.slice(0, maxButtonRows * MAX_BUTTONS_PER_ROW);
+    rows.push(...buildButtonActionRows(kept, turnId));
+    summary.push(`buttons: ${kept.map((b) => b.label).join(' / ')}`);
+  }
+  const options = sanitizeOptions(params.options ?? []);
+  if (options.length > 0) {
+    rows.push(selectRow(options, params, turnId));
+    summary.push(`dropdown: ${options.map((o) => o.label).join(', ')}`);
+  }
+  return { rows, summary };
 }
 
 async function createContextMenu(params: DiscordUIParams, _content?: string): Promise<string> {
@@ -691,9 +789,11 @@ export const discordUICapability: RegisteredCapability = {
         buttons: {
           type: 'string',
           description:
-            'Button labels separated by "|" ("Yes | No | Maybe"), or a JSON array for styles and links: ' +
-            '[{"label":"Ship it","style":"success"},{"label":"Docs","style":"link","url":"https://..."}]. ' +
-            'Styles: primary, secondary, success, danger, link. Up to 25.',
+            'Button labels separated by "|" ("Yes | No | Maybe"), or a JSON array for styles, links and forms: ' +
+            '[{"label":"Ship it","style":"success"},{"label":"Docs","style":"link","url":"https://..."},' +
+            '{"label":"Report a bug","form":["What happened?",{"label":"Steps to reproduce","paragraph":true}]}]. ' +
+            'Styles: primary, secondary, success, danger, link. Up to 25. A button with a form opens a ' +
+            'pop-up form (up to 5 fields) and you get the answers as a turn.',
           required: true,
         },
       },
@@ -721,14 +821,17 @@ export const discordUICapability: RegisteredCapability = {
     'Interactive pieces under YOUR reply. buttons: clickable buttons (labels "A | B | C"); select: a ' +
     'dropdown (multi=true for several picks). They attach under this reply automatically, no separate ' +
     'send, and each click comes back to you as a new turn saying who picked what (one click per person ' +
-    'per message, a few clicks per message in all). Link-style buttons just open a URL. ' +
-    'modal/context-menu need a live interaction to open and cannot attach to a plain reply. ' +
-    'For a vote that everyone sees tallied, use discord-poll instead.',
+    'per message, a few clicks per message in all). Link-style buttons just open a URL. A button with ' +
+    'a `form` opens a pop-up form; the answers come back to you as a turn (use this for sign-ups, bug ' +
+    'reports, feedback). To put buttons on a message in another channel, use discord-send-message ' +
+    'send_message with buttons/options. modal/context-menu on their own cannot open from a plain reply; ' +
+    'use a form button instead. For a vote that everyone sees tallied, use discord-poll.',
   requiredParams: [], // action is automatically injected by capability registry
   examples: [
     '<capability name="discord-ui" action="buttons" buttons="Yes | No | Maybe" />',
     '<capability name="discord-ui" action="buttons" buttons=\'[{"label":"Ship it","style":"success"},{"label":"Hold","style":"danger"}]\' />',
     '<capability name="discord-ui" action="select" placeholder="Which map next?" options="Tokyo | Berlin | NYC" multi="true" />',
+    '<capability name="discord-ui" action="buttons" buttons=\'[{"label":"Sign up for the playtest","style":"primary","form":["Your timezone","What do you want to try?"]}]\' />',
   ],
   handler,
 };

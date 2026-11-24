@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { discordUICapability } from '../../src/engine/tools/discord/ui.js';
-import { takePendingComponents } from '../../src/engine/1-intake/pending-components.js';
+import { discordUICapability, componentRowsFor } from '../../src/engine/tools/discord/ui.js';
+import { takePendingComponents, formFor } from '../../src/engine/1-intake/pending-components.js';
 
 const handler = discordUICapability.handler;
 
@@ -232,6 +232,36 @@ describe('discord-ui: params as the native tool loop sends them (all strings), 2
     const menu = (takePendingComponents(turnId)[0] as any).components[0];
     expect(menu.max_values).toBe(3);
     expect(menu.options.map((o: any) => o.value)).toEqual(['Tokyo', 'Berlin', 'NYC']);
+  });
+
+  it('a button with a form registers it under its own custom_id', async () => {
+    const turnId = 'turn-form-1';
+    const result = await handler(
+      { action: 'buttons', buttons: '[{"label":"Yes"},{"label":"Report a bug","form":["What happened?",{"label":"Steps","paragraph":true}]}]' },
+      undefined,
+      { messageId: turnId }
+    );
+    expect(result).toContain('Report a bug opens a form');
+    const buttons = (takePendingComponents(turnId)[0] as any).components;
+    expect(formFor(buttons[0].custom_id)).toBeNull();
+    expect(formFor(buttons[1].custom_id)).toEqual({
+      title: 'Report a bug',
+      fields: [{ label: 'What happened?', paragraph: false }, { label: 'Steps', paragraph: true }],
+    });
+  });
+
+  it('numbers never repeat within a turn, across buttons, dropdowns and sent messages', async () => {
+    const turnId = 'turn-numbering';
+    await handler({ action: 'buttons', buttons: 'A | B' }, undefined, { messageId: turnId });
+    await handler({ action: 'select', options: 'X | Y' }, undefined, { messageId: turnId });
+    const sent = componentRowsFor({ buttons: 'C' }, turnId);
+    const ids = [...takePendingComponents(turnId), ...sent.rows].flatMap((row: any) => row.components.map((c: any) => c.custom_id));
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(ids).toHaveLength(4); // A, B, the dropdown (one component), C
+  });
+
+  it('componentRowsFor gives nothing when no buttons or options were asked for', () => {
+    expect(componentRowsFor({}, 'turn-none').rows).toEqual([]);
   });
 
   it('declares the params the model needs (the scraped schema offered only an unread `data`)', () => {

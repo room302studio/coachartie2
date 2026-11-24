@@ -78,6 +78,15 @@ export async function pendingComponents(turnId: string): Promise<ApiResult> {
 }
 
 /**
+ * The form (modal fields) behind one of Artie's buttons, by the button's custom_id, or null.
+ * The gateway's click handler asks before deciding between opening a form and a click turn.
+ */
+export async function componentForm(customId: string): Promise<import('./1-intake/pending-components.js').FormSpec | null> {
+  const { formFor } = await pendingComponentsStore();
+  return formFor(customId);
+}
+
+/**
  * Current brownout mode/runway (engine/budget/brownout.ts), for the gateway's component-click
  * cap: a click under `critical` brownout gets an ephemeral "running lean" instead of a paid
  * LLM turn. Not an HTTP route.
