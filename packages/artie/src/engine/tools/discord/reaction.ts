@@ -118,9 +118,39 @@ function clampInt(value: unknown, fallback: number, min: number, max: number): n
   return Math.min(max, Math.max(min, n));
 }
 
+/**
+ * Which channel a read means. The conversation's own by default. Another channel of this server
+ * (added 2026-11-24: Artie said reactions were "blind outside the origin channel") only when
+ * everyone in this conversation can read it, the same scope as search and read_poll, so a
+ * private channel's reactors never surface in a more public room.
+ */
+async function readTarget(
+  params: any,
+  context?: CapabilityContext
+): Promise<{ ok: true; channelId: string | undefined } | { ok: false; error: string }> {
+  const here = context?.channelId;
+  const asked = String(params.channelId || params.channel_id || '').trim();
+  if (!asked || asked === String(here || '')) {
+    return { ok: true, channelId: here };
+  }
+  const guildId = context?.guildId;
+  if (!guildId) {
+    return { ok: false, error: 'reading reactions in another channel only works inside a server' };
+  }
+  const scope = await gateway.audienceReadable(guildId, context?.userId ?? null, here, asked);
+  if (!scope.ok) {
+    return { ok: false, error: 'that channel is out of reach for this conversation' };
+  }
+  return { ok: true, channelId: asked };
+}
+
 async function readReactions(params: any, context?: CapabilityContext): Promise<string> {
-  // Scope comes ONLY from the conversation, never from model-supplied params.
-  const channelId = context?.channelId;
+  // The server comes ONLY from the conversation; another channel must pass readTarget.
+  const target = await readTarget(params, context);
+  if (!target.ok) {
+    return JSON.stringify({ success: false, error: target.error });
+  }
+  const channelId = target.channelId;
   const guildId = context?.guildId ?? null;
   if (!channelId) {
     return JSON.stringify({
@@ -413,7 +443,12 @@ export const discordReactionCapability: RegisteredCapability = {
       params: {
         message_id: {
           type: 'string',
-          description: 'Read live reactions on this message in the current conversation',
+          description: 'Read live reactions on this message (in this channel, or in channelId)',
+        },
+        channelId: {
+          type: 'string',
+          description: 'Another channel of this server ("#name" or id); default: this channel',
+          aliases: ['channel_id'],
         },
         hours: { type: 'integer', description: 'Look back this many hours (default 24, max 336)' },
         limit: { type: 'integer', description: 'Max messages to return (default 10, max 25)' },
@@ -435,7 +470,8 @@ export const discordReactionCapability: RegisteredCapability = {
     '🫀 🧷 🪬 🚽 🦟 🧫) instead of explaining the joke. Optional message_id to react to a specific message. ' +
     'action="read" looks reactions up: with message_id it reads that message live (emoji, counts, who); ' +
     'without it, it lists who reacted to your recent messages in this conversation (last 24h by default, ' +
-    'kept 14 days). It only sees this channel, or this DM. ' +
+    'kept 14 days). It reads this channel (or this DM) unless you pass channelId for another channel ' +
+    'of this server that everyone in this conversation can read. ' +
     'action="rollup" is your feedback pattern over a longer window (default a week): emoji totals, ' +
     'how many came from the person each reply answered vs someone else, reactions taken back, and ' +
     'your most-reacted replies with their text. Never names anyone. In a server it counts the whole ' +

@@ -4,6 +4,8 @@ vi.mock('../../src/gateway/api.js', () => ({
   addReaction: vi.fn(),
   readMessageReactions: vi.fn(),
   canReadHistory: vi.fn(async () => true),
+  // Fails closed by default: another channel is out of reach unless a test opens it.
+  audienceReadable: vi.fn(async () => ({ allowed: new Set<string>(), ok: false })),
   isOk: (r: any) => r.status >= 200 && r.status < 300,
 }));
 
@@ -117,10 +119,27 @@ describe('reaction read: scope isolation', () => {
     expect(out.messages.map((m: any) => m.message_id)).toEqual(['mine']);
   });
 
-  it('model-supplied guild/channel params are ignored', async () => {
+  it('a model-supplied guildId is ignored, and a channel out of reach is refused', async () => {
     add({ messageId: 'other-guild', guildId: 'g2', channelId: 'c9' });
     const out = await run({ guildId: 'g2', channelId: 'c9', guild_id: 'g2' }, { guildId: 'g1', channelId: 'c1' });
-    expect(out.messages).toEqual([]);
+    expect(out.success).toBe(false);
+    expect(out.messages).toBeUndefined();
+    expect(gateway.audienceReadable).toHaveBeenCalledWith('g1', 'asker', 'c1', 'c9');
+  });
+
+  // Artie, 2026-11-24: reactions were "blind outside the origin channel".
+  it('another channel everyone here can read is read, in this server only', async () => {
+    vi.mocked(gateway.audienceReadable).mockResolvedValueOnce({ allowed: new Set(['c2']), ok: true });
+    add({ messageId: 'sibling', channelId: 'c2' });
+    add({ messageId: 'here', channelId: 'c1' });
+    add({ messageId: 'other-guild', guildId: 'g2', channelId: 'c2' });
+    const out = await run({ channelId: 'c2' }, { guildId: 'g1', channelId: 'c1' });
+    expect(out.messages.map((m: any) => m.message_id)).toEqual(['sibling']);
+  });
+
+  it('another channel from a DM is refused', async () => {
+    const out = await run({ channelId: 'c2' }, { channelId: 'dm1' });
+    expect(out.success).toBe(false);
   });
 
   it('a DM sees only its own channel, and never guild rows, even with scope guild', async () => {
@@ -131,7 +150,7 @@ describe('reaction read: scope isolation', () => {
     expect(out.messages.map((m: any) => m.message_id)).toEqual(['dm']);
   });
 
-  it('live read passes the conversation scope, not the model params', async () => {
+  it('live read passes the conversation scope when no other channel is asked', async () => {
     vi.mocked(gateway.readMessageReactions).mockResolvedValue({
       status: 200,
       body: {
@@ -145,7 +164,7 @@ describe('reaction read: scope isolation', () => {
         },
       },
     });
-    const out = await run({ message_id: 'm1', channelId: 'evil' }, { guildId: 'g1', channelId: 'c1' });
+    const out = await run({ message_id: 'm1', guildId: 'evil' }, { guildId: 'g1', channelId: 'c1' });
     expect(gateway.readMessageReactions).toHaveBeenCalledWith('c1', 'm1', 'g1');
     expect(out.source).toBe('live');
     expect(out.messages[0].reactions[0]).toEqual({ emoji: '🔥', count: 2, who: ['A', 'B'] });

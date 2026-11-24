@@ -136,9 +136,11 @@ describe('registryToTools over the real registry', () => {
       .sort();
     // discord-poll joined 2026-11-24: its channelId is checked against this server (and Room 302
     // or EJ for another channel) in poll.ts pollTarget; read/end go through the gateway's guild check.
+    // discord-reaction joined 2026-11-24: read's channelId must pass audienceReadable (reaction.ts readTarget).
     expect(exposing).toEqual([
       'discord-channels',
       'discord-poll',
+      'discord-reaction',
       'discord-send-message',
       'discord-threads',
       'discord-user-history',
