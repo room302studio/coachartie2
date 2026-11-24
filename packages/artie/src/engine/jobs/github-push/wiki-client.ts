@@ -1,7 +1,7 @@
 import { logger } from '../../../shared/logger.js';
 import fetch from 'node-fetch';
 import FormData from 'form-data';
-import { getErrorMessage } from '../../error-utils.js';
+import { getErrorMessage } from '../../../shared/errors.js';
 
 export interface MediaWikiConfig {
   id: string;

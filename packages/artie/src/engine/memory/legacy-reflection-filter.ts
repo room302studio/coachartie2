@@ -3,13 +3,13 @@
  *
  * The old free-text reflection prompt ran inside Artie's persona, and about a third of the
  * ~7.6k stored "reflections" are him answering in character ("Lap eighteen, comrade") instead
- * of writing a note; recalled, they replay old loops. New reflections are structured JSON
- * (2-turn/reflection-facts.ts) and carry the `reflection_v3` tag, so nothing on the write path
- * calls this any more. It stays so the old rows stay hidden. The rows themselves stay in the
+ * of writing a note; recalled, they replay old loops. Later reflections were structured JSON
+ * and carry the `reflection_v3` tag (the writer, ENABLE_AUTO_REFLECTION, has since been
+ * removed). This stays so the old rows stay hidden. The rows themselves stay in the
  * database (history, audits).
  */
 
-/** Tag on reflection rows written by the JSON path (2-turn/reflection-facts.ts REFLECTION_V3_TAG). */
+/** Tag on reflection rows written by the JSON path. */
 const V3_TAG = '"reflection_v3"';
 
 /** A pre-wave-10 reflection row whose content is an in-character reply, not a note. */

@@ -1,5 +1,5 @@
 import { logger } from '../../shared/logger.js';
-import { StructuredCapabilityError } from '../errors.js';
+import { StructuredCapabilityError } from './tool-errors.js';
 
 /**
  * Tracks error patterns from LLM to help prevent repeated mistakes

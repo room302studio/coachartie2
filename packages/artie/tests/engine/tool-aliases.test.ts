@@ -69,7 +69,6 @@ import {
   TOOL_ALIASES,
 } from '../../src/engine/5-tool-loop/registry.js';
 import { getRawDb } from '../../src/shared/db/client.js';
-import { promptManager } from '../../src/engine/3-context/system-prompt.js';
 
 const PRE_MERGE_TOOLS: Record<string, string[]> = {
   // planning/goal.ts
@@ -137,8 +136,6 @@ const PRE_MERGE_TOOLS: Record<string, string[]> = {
     'set_model_tier',
     'get_context_size',
     'set_context_size',
-    'get_iteration_limits',
-    'set_iteration_limits',
     'auto_optimize',
   ],
   // ops/model-manager.ts
@@ -192,22 +189,6 @@ describe('tool alias map', () => {
       params: { command: 'ls' },
     });
     expect(resolveToolCall('web', 'search', {})).toMatchObject({ name: 'web', action: 'search' });
-  });
-
-  it('the prompt roster lists only canonical names', async () => {
-    // Wave 6: buildCapabilityRoster is the only roster (the registry's compressed listing,
-    // which this assertion used to read, is gone). Its lines are "- name [a, b]: desc".
-    const roster = await promptManager.buildCapabilityRoster();
-    const listed = roster
-      .split('\n')
-      .filter((line) => line.startsWith('- '))
-      .map((line) => line.slice(2, line.indexOf(' [')));
-    for (const alias of Object.keys(TOOL_ALIASES)) {
-      expect(listed).not.toContain(alias);
-    }
-    for (const canonical of CANONICAL) {
-      expect(listed).toContain(canonical);
-    }
   });
 
   it('has/supportsAction/get see through aliases', () => {
@@ -272,11 +253,11 @@ describe('execution through an alias', () => {
     expect(list).toContain('pin the aliases');
   });
 
-  it('runtime_config:get_iteration_limits runs bot-config', async () => {
-    const out = await capabilityRegistry.execute('runtime_config', 'get_iteration_limits', {});
+  it('runtime_config:get_context_size runs bot-config', async () => {
+    const out = await capabilityRegistry.execute('runtime_config', 'get_context_size', {});
     const parsed = JSON.parse(out);
     expect(parsed.success).toBe(true);
-    expect(parsed.data).toHaveProperty('max_iterations');
+    expect(parsed.data).toHaveProperty('context_size');
   });
 
   it('goal:set creates a goal in goals, and goal:check lists it', async () => {

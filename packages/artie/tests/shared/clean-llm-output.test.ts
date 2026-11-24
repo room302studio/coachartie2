@@ -41,8 +41,6 @@ interface Row {
   recall: string;
   /** generate-reply stripThinkingTags: every tool-loop response */
   generate: string;
-  /** generate-reply extractLoopDecision(...).response: the <wants_loop> strip */
-  loopStrip: string;
 }
 
 const ROWS: Row[] = [
@@ -54,7 +52,6 @@ const ROWS: Row[] = [
     history: "just text, nothing to strip",
     recall: "just text, nothing to strip",
     generate: "  just text, nothing to strip",
-    loopStrip: "just text, nothing to strip",
   },
   {
     name: "self-closing capability",
@@ -64,7 +61,6 @@ const ROWS: Row[] = [
     history: "Sure.  Done.",
     recall: "Sure. Done.",
     generate: "Sure. <capability name=\"web\" action=\"search\" query=\"x\"/> Done.",
-    loopStrip: "Sure. <capability name=\"web\" action=\"search\" query=\"x\"/> Done.",
   },
   {
     name: "paired capability",
@@ -74,7 +70,6 @@ const ROWS: Row[] = [
     history: "Hi  there",
     recall: "Hi there",
     generate: "Hi <capability name=\"memory\" action=\"remember\">likes tea</capability> there",
-    loopStrip: "Hi <capability name=\"memory\" action=\"remember\">likes tea</capability> there",
   },
   {
     name: "upper-case CAPABILITY tag",
@@ -84,7 +79,6 @@ const ROWS: Row[] = [
     history: "A  B",
     recall: "A <CAPABILITY name=\"x\"/> B",
     generate: "A <CAPABILITY name=\"x\"/> B",
-    loopStrip: "A <CAPABILITY name=\"x\"/> B",
   },
   {
     name: "attribute containing >",
@@ -94,7 +88,6 @@ const ROWS: Row[] = [
     history: "<capability name=\"x\" data=\"a>b\"/> tail",
     recall: "tail",
     generate: "<capability name=\"x\" data=\"a>b\"/> tail",
-    loopStrip: "<capability name=\"x\" data=\"a>b\"/> tail",
   },
   {
     name: "self-closing then paired (order)",
@@ -104,7 +97,6 @@ const ROWS: Row[] = [
     history: "keep  end",
     recall: "keep end",
     generate: "<capability a=\"1\"/> keep <capability b=\"2\">body</capability> end",
-    loopStrip: "<capability a=\"1\"/> keep <capability b=\"2\">body</capability> end",
   },
   {
     name: "multiline paired capability",
@@ -114,7 +106,6 @@ const ROWS: Row[] = [
     history: "Start\n\nEnd",
     recall: "Start End",
     generate: "Start\n<capability name=\"tts\" action=\"sing\">\nla la\n</capability>\nEnd",
-    loopStrip: "Start\n<capability name=\"tts\" action=\"sing\">\nla la\n</capability>\nEnd",
   },
   {
     name: "<thinking> block",
@@ -124,7 +115,6 @@ const ROWS: Row[] = [
     history: "<thinking>plan the reply</thinking>Answer here",
     recall: "<thinking>plan the reply</thinking>Answer here",
     generate: "Answer here",
-    loopStrip: "<thinking>plan the reply</thinking>Answer here",
   },
   {
     name: "<think> block",
@@ -134,37 +124,6 @@ const ROWS: Row[] = [
     history: "<think>plan the reply</think>Answer here",
     recall: "<think>plan the reply</think>Answer here",
     generate: "<think>plan the reply</think>Answer here",
-    loopStrip: "<think>plan the reply</think>Answer here",
-  },
-  {
-    name: "<wants_loop>true",
-    input: "Done for now <wants_loop>true</wants_loop>",
-    outbound: "Done for now <wants_loop>true</wants_loop>",
-    reply: "Done for now",
-    history: "Done for now <wants_loop>true</wants_loop>",
-    recall: "Done for now <wants_loop>true</wants_loop>",
-    generate: "Done for now <wants_loop>true</wants_loop>",
-    loopStrip: "Done for now",
-  },
-  {
-    name: "<wants_loop>FALSE (case)",
-    input: "Done <WANTS_LOOP>FALSE</WANTS_LOOP> ok",
-    outbound: "Done <WANTS_LOOP>FALSE</WANTS_LOOP> ok",
-    reply: "Done <WANTS_LOOP>FALSE</WANTS_LOOP> ok",
-    history: "Done <WANTS_LOOP>FALSE</WANTS_LOOP> ok",
-    recall: "Done <WANTS_LOOP>FALSE</WANTS_LOOP> ok",
-    generate: "Done <WANTS_LOOP>FALSE</WANTS_LOOP> ok",
-    loopStrip: "Done  ok",
-  },
-  {
-    name: "<wants_loop> non-boolean body",
-    input: "Done <wants_loop>maybe</wants_loop>",
-    outbound: "Done <wants_loop>maybe</wants_loop>",
-    reply: "Done",
-    history: "Done <wants_loop>maybe</wants_loop>",
-    recall: "Done <wants_loop>maybe</wants_loop>",
-    generate: "Done <wants_loop>maybe</wants_loop>",
-    loopStrip: "Done <wants_loop>maybe</wants_loop>",
   },
   {
     name: "<function_calls>/<invoke> closed",
@@ -174,7 +133,6 @@ const ROWS: Row[] = [
     history: "Ok <function_calls><invoke name=\"x\"><parameter name=\"a\">1</parameter></invoke></function_calls> after",
     recall: "Ok <function_calls><invoke name=\"x\"><parameter name=\"a\">1</parameter></invoke></function_calls> after",
     generate: "Ok <function_calls><invoke name=\"x\"><parameter name=\"a\">1</parameter></invoke></function_calls> after",
-    loopStrip: "Ok <function_calls><invoke name=\"x\"><parameter name=\"a\">1</parameter></invoke></function_calls> after",
   },
   {
     name: "<function_calls> unclosed to end",
@@ -184,7 +142,6 @@ const ROWS: Row[] = [
     history: "Ok then <function_calls><invoke name=\"x\">trailing",
     recall: "Ok then <function_calls><invoke name=\"x\">trailing",
     generate: "Ok then <function_calls><invoke name=\"x\">trailing",
-    loopStrip: "Ok then <function_calls><invoke name=\"x\">trailing",
   },
   {
     name: "bare <invoke> unclosed",
@@ -194,7 +151,6 @@ const ROWS: Row[] = [
     history: "Ok <invoke name=\"y\">param stuff",
     recall: "Ok <invoke name=\"y\">param stuff",
     generate: "Ok <invoke name=\"y\">param stuff",
-    loopStrip: "Ok <invoke name=\"y\">param stuff",
   },
   {
     name: "<function_results> and stray closing tags",
@@ -204,7 +160,6 @@ const ROWS: Row[] = [
     history: "A <function_results>r</function_results> B </invoke> C",
     recall: "A <function_results>r</function_results> B </invoke> C",
     generate: "A <function_results>r</function_results> B </invoke> C",
-    loopStrip: "A <function_results>r</function_results> B </invoke> C",
   },
   {
     name: "<system-reminder>",
@@ -214,7 +169,6 @@ const ROWS: Row[] = [
     history: "Hi <system-reminder>secret rules</system-reminder> there",
     recall: "Hi <system-reminder>secret rules</system-reminder> there",
     generate: "Hi <system-reminder>secret rules</system-reminder> there",
-    loopStrip: "Hi <system-reminder>secret rules</system-reminder> there",
   },
   {
     name: "<security_reminder>",
@@ -224,7 +178,6 @@ const ROWS: Row[] = [
     history: "Real answer",
     recall: "<security_reminder>be safe</security_reminder>Real answer",
     generate: "Real answer",
-    loopStrip: "<security_reminder>be safe</security_reminder>Real answer",
   },
   {
     name: "<user_message> wrapper",
@@ -234,7 +187,6 @@ const ROWS: Row[] = [
     history: "Echo  back",
     recall: "Echo <user_message from=\"x\">hello</user_message> back",
     generate: "Echo <user_message from=\"x\">hello</user_message> back",
-    loopStrip: "Echo <user_message from=\"x\">hello</user_message> back",
   },
   {
     name: "[USER_MESSAGE] bracket wrapper",
@@ -244,7 +196,6 @@ const ROWS: Row[] = [
     history: "Echo [USER_MESSAGE]hello[/USER_MESSAGE] back",
     recall: "Echo [USER_MESSAGE]hello[/USER_MESSAGE] back",
     generate: "Echo  back",
-    loopStrip: "Echo [USER_MESSAGE]hello[/USER_MESSAGE] back",
   },
   {
     name: "[SYSTEM: …] bracket",
@@ -254,7 +205,6 @@ const ROWS: Row[] = [
     history: "Reply [SYSTEM: internal note] text",
     recall: "Reply [SYSTEM: internal note] text",
     generate: "Reply  text",
-    loopStrip: "Reply [SYSTEM: internal note] text",
   },
   {
     name: "<artie> wrapper tags",
@@ -264,7 +214,6 @@ const ROWS: Row[] = [
     history: "<artie>hello there</artie>",
     recall: "<artie>hello there</artie>",
     generate: "hello there",
-    loopStrip: "<artie>hello there</artie>",
   },
   {
     name: "[artie]: prefix",
@@ -274,7 +223,6 @@ const ROWS: Row[] = [
     history: "[artie]: hello",
     recall: "[artie]: hello",
     generate: "hello",
-    loopStrip: "[artie]: hello",
   },
   {
     name: "**Response:** prefix",
@@ -284,7 +232,6 @@ const ROWS: Row[] = [
     history: "hello",
     recall: "**Response:** hello",
     generate: "hello",
-    loopStrip: "**Response:** hello",
   },
   {
     name: "**Me:** then **Artie:** prefixes",
@@ -294,7 +241,6 @@ const ROWS: Row[] = [
     history: "hi",
     recall: "**Me:** **Artie:** hi",
     generate: "hi",
-    loopStrip: "**Me:** **Artie:** hi",
   },
   {
     name: "**Coach Artie:** prefix",
@@ -304,7 +250,6 @@ const ROWS: Row[] = [
     history: "yo",
     recall: "**Coach Artie:** yo",
     generate: "yo",
-    loopStrip: "**Coach Artie:** yo",
   },
   {
     name: "poisoned **Reply:** prefix",
@@ -314,7 +259,6 @@ const ROWS: Row[] = [
     history: "hello",
     recall: "**Reply:** hello",
     generate: "**Reply:** hello",
-    loopStrip: "**Reply:** hello",
   },
   {
     name: "poisoned Here's my response: prefix",
@@ -324,7 +268,6 @@ const ROWS: Row[] = [
     history: "hello",
     recall: "Here's my response: hello",
     generate: "Here's my response: hello",
-    loopStrip: "Here's my response: hello",
   },
   {
     name: "poisoned Response to your message: prefix",
@@ -334,7 +277,6 @@ const ROWS: Row[] = [
     history: "hi",
     recall: "Response to your message: hi",
     generate: "Response to your message: hi",
-    loopStrip: "Response to your message: hi",
   },
   {
     name: "step marker line",
@@ -344,7 +286,6 @@ const ROWS: Row[] = [
     history: "Actual text",
     recall: "## Step 2/5 searching\nActual text",
     generate: "## Step 2/5 searching\nActual text",
-    loopStrip: "## Step 2/5 searching\nActual text",
   },
   {
     name: "[SILENT] alone",
@@ -354,7 +295,6 @@ const ROWS: Row[] = [
     history: "",
     recall: "[SILENT]",
     generate: "[SILENT]",
-    loopStrip: "[SILENT]",
   },
   {
     name: "leading [SILENT] with chatter",
@@ -364,7 +304,6 @@ const ROWS: Row[] = [
     history: "",
     recall: "[SILENT] not worth it",
     generate: "[SILENT] not worth it",
-    loopStrip: "[SILENT] not worth it",
   },
   {
     name: "embedded [SILENT]",
@@ -374,7 +313,6 @@ const ROWS: Row[] = [
     history: "ok [SILENT] fine",
     recall: "ok [SILENT] fine",
     generate: "ok [SILENT] fine",
-    loopStrip: "ok [SILENT] fine",
   },
   {
     name: "[silent] lowercase",
@@ -384,7 +322,6 @@ const ROWS: Row[] = [
     history: "",
     recall: "[silent]",
     generate: "[silent]",
-    loopStrip: "[silent]",
   },
   {
     name: "[SILENT] with meta parenthetical",
@@ -394,7 +331,6 @@ const ROWS: Row[] = [
     history: "",
     recall: "[SILENT]\n(that was a test)",
     generate: "[SILENT]\n(that was a test)",
-    loopStrip: "[SILENT]\n(that was a test)",
   },
   {
     name: "<recall> tag",
@@ -404,7 +340,6 @@ const ROWS: Row[] = [
     history: "<recall>x</recall> y",
     recall: "x y",
     generate: "<recall>x</recall> y",
-    loopStrip: "<recall>x</recall> y",
   },
   {
     name: "excess newlines and double spaces",
@@ -414,7 +349,6 @@ const ROWS: Row[] = [
     history: "line1\n\n\n\nline2  and  more",
     recall: "line1 line2 and more",
     generate: "line1\n\n\n\nline2  and  more",
-    loopStrip: "line1\n\n\n\nline2  and  more",
   },
   {
     name: "nested/overlapping think and function_calls",
@@ -424,7 +358,6 @@ const ROWS: Row[] = [
     history: "<think>a <function_calls>b</think> c</function_calls> d",
     recall: "<think>a <function_calls>b</think> c</function_calls> d",
     generate: "<think>a <function_calls>b</think> c</function_calls> d",
-    loopStrip: "<think>a <function_calls>b</think> c</function_calls> d",
   },
   {
     name: "capability inside think",
@@ -434,7 +367,6 @@ const ROWS: Row[] = [
     history: "<think>x  y</think> visible",
     recall: "<think>x y</think> visible",
     generate: "<think>x <capability name=\"a\"/> y</think> visible",
-    loopStrip: "<think>x <capability name=\"a\"/> y</think> visible",
   },
 ];
 
@@ -444,8 +376,15 @@ const CALLERS: Record<Exclude<keyof Row, 'name' | 'input'>, (t: string) => strin
   history: (t) => sanitizeAssistantMessage(t),
   recall: (t) => stripCapabilityTags(t),
   generate: (t) => coordinator.stripThinkingTags(t),
-  loopStrip: (t) => coordinator.extractLoopDecision(t).response,
 };
+
+// The XML loop is gone (2026-11-24), but models still slip its <wants_loop> tag: the reply path
+// keeps stripping it so it never reaches Discord.
+describe('stray <wants_loop> after the XML loop', () => {
+  it('the reply stripper removes it', () => {
+    expect(cleanCapabilityTags('Done for now <wants_loop>true</wants_loop>')).toBe('Done for now');
+  });
+});
 
 describe('LLM-output strippers, pinned per caller', () => {
   for (const row of ROWS) {

@@ -8,7 +8,6 @@ import { creditStatusCapability } from '../tools/ops/credit-status.js';
 // bot-config = runtime_config + model_manager (wave 4; old names alias in registry.ts)
 import { botConfigCapability } from '../tools/ops/bot-config.js';
 import { systemMonitorCapability } from '../tools/ops/system-monitor.js';
-import { variableStoreCapability } from './variables.js';
 import { sequenceCapability } from '../tools/ops/sequence.js';
 import { contextCapability } from '../tools/core/context.js';
 import { diagnoseCapability } from '../tools/ops/diagnose.js';
@@ -126,7 +125,7 @@ export class CapabilityBootstrap {
         calculatorCapability, sbChangelogCapability, webCapability, httpCapability,
         filesystemCapability, memoryCapability,
         githubCapability, creditStatusCapability, botConfigCapability,
-        systemMonitorCapability, variableStoreCapability, tasksCapability,
+        systemMonitorCapability, tasksCapability,
         meetingCapability, discordUICapability, askQuestionCapability, discordForumsCapability,
         discordModerationCapability, mentionProxyCapability, emailCapability, proactiveDMCapability,
         userProfileCapability, pairingCapability, approvalsCapability, mediaWikiCapability, wolframCapability,

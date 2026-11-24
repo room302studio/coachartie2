@@ -1,7 +1,7 @@
 /**
  * bot-config: query and tune Artie's own operating parameters.
  *
- * Merged on 2026-10-23 (wave 4) from `runtime_config` (models, context size, iteration limits)
+ * Merged on 2026-10-23 (wave 4) from `runtime_config` (models, context size)
  * and `model_manager` (model tiers, pricing, cost-aware recommendations). Their actions never
  * collided, so every action keeps its name; each original handler survives unchanged as an
  * internal function. The old names still work through TOOL_ALIASES in 5-tool-loop/registry.ts.
@@ -43,8 +43,6 @@ const RUNTIME_ACTIONS = [
   'set_model_tier',
   'get_context_size',
   'set_context_size',
-  'get_iteration_limits',
-  'set_iteration_limits',
   'auto_optimize',
 ];
 
@@ -214,89 +212,6 @@ async function runRuntimeConfig(params: any, _content?: string): Promise<string>
           });
         }
 
-      case 'get_iteration_limits':
-        try {
-          const maxIterations = parseInt(process.env.EXPLORATION_MAX_ITERATIONS || '8');
-          const minIterations = parseInt(process.env.EXPLORATION_MIN_ITERATIONS || '1');
-          const maxCostPerHour = parseFloat(process.env.MAX_COST_PER_HOUR || '10.0');
-
-          let response = `🔄 **Iteration Limits:**\n\n`;
-          response += `  • Max iterations: ${maxIterations}\n`;
-          response += `  • Min iterations: ${minIterations}\n`;
-          response += `  • Max cost/hour: $${maxCostPerHour}\n\n`;
-          response += `💡 Lower iterations = faster + cheaper\n`;
-          response += `💡 Higher iterations = deeper exploration + more expensive`;
-
-          return JSON.stringify({
-            success: true,
-            data: {
-              max_iterations: maxIterations,
-              min_iterations: minIterations,
-              max_cost_per_hour: maxCostPerHour,
-            },
-            message: response,
-          });
-        } catch (error) {
-          logger.error('❌ Failed to get iteration limits:', error);
-          return JSON.stringify({
-            success: false,
-            error: 'Failed to retrieve iteration limits',
-          });
-        }
-
-      case 'set_iteration_limits':
-        try {
-          const { max_iterations, min_iterations } = params;
-
-          if (max_iterations !== undefined) {
-            const maxIter = parseInt(max_iterations);
-            if (isNaN(maxIter) || maxIter < 1 || maxIter > 24) {
-              return JSON.stringify({
-                success: false,
-                error: 'max_iterations must be between 1 and 24',
-              });
-            }
-            process.env.EXPLORATION_MAX_ITERATIONS = maxIter.toString();
-          }
-
-          if (min_iterations !== undefined) {
-            const minIter = parseInt(min_iterations);
-            if (isNaN(minIter) || minIter < 1 || minIter > 5) {
-              return JSON.stringify({
-                success: false,
-                error: 'min_iterations must be between 1 and 5',
-              });
-            }
-            process.env.EXPLORATION_MIN_ITERATIONS = minIter.toString();
-          }
-
-          const finalMax = parseInt(process.env.EXPLORATION_MAX_ITERATIONS || '8');
-          const finalMin = parseInt(process.env.EXPLORATION_MIN_ITERATIONS || '1');
-
-          logger.warn(`🔧 Iteration limits changed: min=${finalMin}, max=${finalMax}`);
-
-          let response = `✅ **Iteration limits updated:**\n`;
-          response += `  • Max iterations: ${finalMax}\n`;
-          response += `  • Min iterations: ${finalMin}\n\n`;
-          response += `⚠️ Changes apply to new messages only`;
-
-          return JSON.stringify({
-            success: true,
-            data: {
-              max_iterations: finalMax,
-              min_iterations: finalMin,
-              session_only: true,
-            },
-            message: response,
-          });
-        } catch (error) {
-          logger.error('❌ Failed to set iteration limits:', error);
-          return JSON.stringify({
-            success: false,
-            error: 'Failed to update iteration limits',
-          });
-        }
-
       case 'auto_optimize':
         try {
           const creditInfo = await creditMonitor.getCurrentBalance();
@@ -312,44 +227,32 @@ async function runRuntimeConfig(params: any, _content?: string): Promise<string>
 
           // CRITICAL: Survival mode (<$5)
           if (balance < 5) {
-            process.env.EXPLORATION_MAX_ITERATIONS = '3';
-            process.env.EXPLORATION_MIN_ITERATIONS = '1';
             process.env.CONTEXT_WINDOW_SIZE = '16000';
             changes.push('🚨 SURVIVAL MODE ACTIVATED');
-            changes.push('  • Max iterations: 24 → 3');
             changes.push('  • Context window: 32000 → 16000');
             changes.push('  • Using FAST_MODEL for everything');
             logger.error(`🚨 SURVIVAL MODE: Credits critically low ($${balance})`);
           }
           // WARNING: Conservative mode (<$25)
           else if (balance < 25) {
-            process.env.EXPLORATION_MAX_ITERATIONS = '5';
-            process.env.EXPLORATION_MIN_ITERATIONS = '1';
             process.env.CONTEXT_WINDOW_SIZE = '24000';
             changes.push('⚠️ CONSERVATIVE MODE ACTIVATED');
-            changes.push('  • Max iterations: 24 → 5');
             changes.push('  • Context window: 32000 → 24000');
             changes.push('  • Preferring FAST_MODEL');
             logger.warn(`⚠️ CONSERVATIVE MODE: Credits low ($${balance})`);
           }
           // MODERATE: Efficient mode (<$50)
           else if (balance < 50) {
-            process.env.EXPLORATION_MAX_ITERATIONS = '8';
-            process.env.EXPLORATION_MIN_ITERATIONS = '1';
             process.env.CONTEXT_WINDOW_SIZE = '32000';
             changes.push('💡 EFFICIENT MODE');
-            changes.push('  • Max iterations: 8 (default)');
             changes.push('  • Context window: 32000 (default)');
             changes.push('  • Standard tier usage');
             logger.info(`💡 EFFICIENT MODE: Credits moderate ($${balance})`);
           }
           // HEALTHY: Full power (>$50)
           else {
-            process.env.EXPLORATION_MAX_ITERATIONS = '12';
-            process.env.EXPLORATION_MIN_ITERATIONS = '1';
             process.env.CONTEXT_WINDOW_SIZE = '64000';
             changes.push('✅ FULL POWER MODE');
-            changes.push('  • Max iterations: 12 (enhanced)');
             changes.push('  • Context window: 64000 (enhanced)');
             changes.push('  • All model tiers available');
             logger.info(`✅ FULL POWER: Credits healthy ($${balance})`);
@@ -660,7 +563,7 @@ export const botConfigCapability: RegisteredCapability = {
   description: `Query and tune Artie's own operating parameters.
 
 Runtime settings: get_active_model, set_model_tier, get_context_size, set_context_size,
-get_iteration_limits, set_iteration_limits, auto_optimize.
+auto_optimize.
 Models: list_models (configured tiers), get_pricing (model=), get_recommendation (cost-aware,
 from the credit balance), compare_models (models=[...], at least 2).`,
   handler: async (params, content) => {
@@ -681,8 +584,6 @@ from the credit balance), compare_models (models=[...], at least 2).`,
     '<capability name="bot-config" action="set_model_tier" tier="fast" model="google/gemini-2.5-flash" />',
     '<capability name="bot-config" action="get_context_size" />',
     '<capability name="bot-config" action="set_context_size" size="16000" />',
-    '<capability name="bot-config" action="get_iteration_limits" />',
-    '<capability name="bot-config" action="set_iteration_limits" max_iterations="5" min_iterations="1" />',
     '<capability name="bot-config" action="auto_optimize" />',
     '<capability name="bot-config" action="list_models" />',
     '<capability name="bot-config" action="get_pricing" model="google/gemini-2.5-flash" />',

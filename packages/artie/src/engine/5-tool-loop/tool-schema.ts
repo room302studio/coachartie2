@@ -1,6 +1,6 @@
 import { AUTO_INJECTED_PARAMS, type RegisteredCapability } from './registry.js';
 import { declaredToolParams, declaredToolContent, declaresParams } from './tool-policy.js';
-import { parseTagAttributes, toCallNotation, TAG_ATTRS, XML_ONLY_TOOLS } from './mode.js';
+import { parseTagAttributes, toCallNotation, TAG_ATTRS } from './mode.js';
 
 /**
  * Capability → native tool-call schema (see TOOL-USE-MIGRATION.md; wired in wave 8).
@@ -214,12 +214,11 @@ export function capabilityToTool(cap: RegisteredCapability): ToolDefinition {
 
 /**
  * The tool list for a native turn: canonical capabilities only (aliases resolve at execute
- * time and are never listed; `capabilityRegistry.list()` holds no aliases), minus the XML
- * plumbing (`variable`), sorted by name so the JSON is byte-stable across restarts.
+ * time and are never listed; `capabilityRegistry.list()` holds no aliases), sorted by name so
+ * the JSON is byte-stable across restarts.
  */
 export function registryToTools(capabilities: RegisteredCapability[]): ToolDefinition[] {
   return [...capabilities]
-    .filter((cap) => !XML_ONLY_TOOLS.has(cap.name))
     .sort((a, b) => compareStrings(a.name, b.name))
     .map(capabilityToTool);
 }

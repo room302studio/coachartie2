@@ -110,7 +110,7 @@ const KNOWN_UNDECLARED = new Set([
   'kanban', 'morning-briefing', 'n8n_browser', 'pairing',
   'quiz-game', 'sb_changelog', 'scrapbook', 'send-metro-file', 'sequence',
   'skills', 'system-info', 'system_monitor', 'tasks', 'trend-watcher', 'tts', 'user-profile',
-  'variable', 'vision', 'vps_claude', 'web', 'wolfram',
+  'vision', 'vps_claude', 'web', 'wolfram',
 ]);
 
 function flags(tool: string, action: string): string {

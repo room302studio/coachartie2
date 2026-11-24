@@ -131,15 +131,6 @@ export async function routeRepo(body: any): Promise<ApiResult> {
   return (await import('./routes/route-repo.js')).routeRepo(wire(body));
 }
 
-/** POST /api/reflection/check-threshold: emergency reflection after a burst of 👎. */
-export async function checkReflectionThreshold(body: {
-  guildId: string;
-  threshold: number;
-  hours?: number;
-}): Promise<ApiResult> {
-  return (await import('./routes/reflection.js')).checkReflectionThreshold(wire(body));
-}
-
 /** POST /capabilities/registry/:name/execute: run one tool action directly (no LLM). */
 export async function executeTool(
   name: string,

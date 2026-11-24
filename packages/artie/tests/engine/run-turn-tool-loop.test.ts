@@ -1,5 +1,5 @@
 /**
- * Wave 8: run-turn takes the native tool loop by default and the XML path under TOOL_LOOP=xml.
+ * Wave 8: run-turn runs the native tool loop.
  *
  * The real pipeline runs (context assembly against the in-memory DB, the real registry, the
  * real openrouter request path); only the OpenAI client (the HTTP boundary) and the model
@@ -56,8 +56,6 @@ function incoming(text: string) {
   };
 }
 
-const savedToolLoop = process.env.TOOL_LOOP;
-
 beforeAll(async () => {
   // Skills register in a setImmediate after bootstrap (see roster.test.ts).
   const deadline = Date.now() + 5000;
@@ -65,7 +63,7 @@ beforeAll(async () => {
     await new Promise((resolve) => setTimeout(resolve, 25));
   }
   await new Promise((resolve) => setTimeout(resolve, 50));
-  // A PROMPT_SYSTEM row keeps the XML path off its LLM-backed capability selector.
+  // A PROMPT_SYSTEM row gives the turn its base prompt.
   getSyncDb().run(
     `INSERT OR REPLACE INTO prompts (name, content, category, is_active) VALUES (?, ?, ?, 1)`,
     ['PROMPT_SYSTEM', '<role>\nyou are coach artie (test).\n</role>', 'system']
@@ -74,19 +72,13 @@ beforeAll(async () => {
 
 afterAll(() => {
   getSyncDb().run(`DELETE FROM prompts WHERE name = ?`, ['PROMPT_SYSTEM']);
-  if (savedToolLoop === undefined) delete process.env.TOOL_LOOP;
-  else process.env.TOOL_LOOP = savedToolLoop;
 });
 
 beforeEach(() => {
   createMock.mockReset();
 });
 
-describe('TOOL_LOOP unset: the native tool loop', () => {
-  beforeEach(() => {
-    delete process.env.TOOL_LOOP;
-  });
-
+describe('the native tool loop', () => {
   it('offers native tools, and an ALIAS name in a tool_call runs the canonical tool', async () => {
     const tasks = capabilityRegistry.get('tasks', 'list');
     const handler = vi.spyOn(tasks, 'handler').mockResolvedValue('3 open todos');
@@ -155,38 +147,6 @@ describe('TOOL_LOOP unset: the native tool loop', () => {
     expect(result).toBe('that math broke');
     const toolMsg = (createMock.mock.calls.at(-1)![0].messages as WireMsg[]).find((m) => m.role === 'tool');
     expect(String(toolMsg?.content)).toMatch(/^Error: /);
-    handler.mockRestore();
-  }, 30000);
-});
-
-describe('TOOL_LOOP=xml: the XML path end to end', () => {
-  beforeEach(() => {
-    process.env.TOOL_LOOP = 'xml';
-  });
-
-  it('parses <capability/> from text, runs it, and loops via llm-loop; no tools on the wire', async () => {
-    const calc = capabilityRegistry.get('calculator', 'calculate');
-    const handler = vi.spyOn(calc, 'handler').mockResolvedValue('4');
-
-    createMock.mockImplementation(async (params: { messages: WireMsg[] }) => {
-      if (JSON.stringify(params.messages).includes('CONVERSATION SO FAR')) {
-        return reply({ content: 'the answer is 4' });
-      } else {
-        return reply({ content: 'on it <capability name="calculator" action="calculate" expression="2+2" />' });
-      }
-    });
-
-    const result = await capabilityOrchestrator.orchestrateMessage(incoming('2+2?') as never);
-
-    expect(result).toBe('the answer is 4');
-    for (const [params] of createMock.mock.calls) {
-      expect(params.tools).toBeUndefined();
-    }
-    expect(handler).toHaveBeenCalled();
-    // The XML roster is back in the system prompt.
-    expect(JSON.stringify(createMock.mock.calls[0][0].messages[0].content)).toContain(
-      '## Your capability roster'
-    );
     handler.mockRestore();
   }, 30000);
 });

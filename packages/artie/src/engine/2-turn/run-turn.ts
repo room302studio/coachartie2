@@ -3,8 +3,7 @@
  *
  *   processMessage → fast paths (fast-paths.ts) → runTurn:
  *     trace → email short-circuit → native tool loop (default; runNativeTurn)
- *     → after-turn effects (auto-sing, reflection gate)
- *   TOOL_LOOP=xml swaps the middle for the old XML turn (runXmlTurn). // XML-LOOP: delete after v3 soak (TOOL_LOOP=xml)
+ *     → after-turn effects (auto-sing)
  *
  * Wave 6 merged the old process-message handler and capability-orchestrator.ts into this
  * file. The voice-note TTS fast path and the periodic credit_status check live in
@@ -18,14 +17,11 @@ import { capabilityRegistry } from '../5-tool-loop/registry.js';
 import { costMonitor } from '../budget/usage-ledger.js';
 import { updateUserScoresFromMessage } from './user-scores.js';
 import { tryVoiceNoteFastPath, maybeAutoCheckCredits } from './fast-paths.js';
-import { getErrorMessage, getErrorStack } from '../error-utils.js';
+import { getErrorMessage, getErrorStack } from '../../shared/errors.js';
 import { emailDraftingService } from '../tools/people/email-drafting.js';
 import { llmResponseCoordinator } from '../4-generate/generate-reply.js';
 import { capabilityBootstrap } from '../5-tool-loop/register-tools.js';
-import { memoryOrchestration } from './save-reflection.js';
-import { llmLoopService } from '../5-tool-loop/loop.js'; // XML-LOOP: delete after v3 soak (TOOL_LOOP=xml)
 import { executeNativeToolCall } from '../5-tool-loop/execute.js';
-import { toolLoopMode } from '../5-tool-loop/mode.js';
 import { JOB_TIMEOUT_MS, SOFT_DEADLINE_RESERVE_MS } from '../5-tool-loop/timeouts.js';
 import { traceManager } from './trace.js';
 import { sessionManager } from './session-log.js';
@@ -291,25 +287,20 @@ export class CapabilityOrchestrator {
   }
 
   /**
-   * The turn pipeline. Native (default): one runToolLoop over native tool calls.
-   * TOOL_LOOP=xml: today's XML path, unchanged (runXmlTurn).
+   * The turn pipeline: one runToolLoop over native tool calls.
    */
   private async assembleMessageOrchestration(
     context: OrchestrationContext,
     message: IncomingMessage,
     onPartialResponse?: (partial: string) => void
   ): Promise<string> {
-    if (toolLoopMode() === 'xml') {
-      return this.runXmlTurn(context, message, onPartialResponse); // XML-LOOP: delete after v3 soak (TOOL_LOOP=xml)
-    }
     return this.runNativeTurn(context, message, onPartialResponse);
   }
 
   /**
-   * Native tool turn (wave 8): generate with tools → run the calls (parallel, same execute
-   * path as XML plus the taint guard) → repeat until the model answers without calls, the
-   * round cap (timeouts.ts, 8) or the turn's soft deadline. Generate errors propagate to
-   * orchestrateMessage's failure reply, as the XML first generate's did.
+   * Native tool turn (wave 8): generate with tools → run the calls (parallel, with the taint
+   * guard) → repeat until the model answers without calls, the round cap (timeouts.ts, 8) or
+   * the turn's soft deadline. Generate errors propagate to orchestrateMessage's failure reply.
    */
   private async runNativeTurn(
     context: OrchestrationContext,
@@ -321,8 +312,8 @@ export class CapabilityOrchestrator {
       executeTool: (invocation) => executeNativeToolCall(context, invocation),
       deadlineAt: context.deadlineAt,
       onStep: (step) => {
-        // Text that rides along with tool calls ("one sec, checking") streams like the XML
-        // loop's narrated actions did; the final answer is sent once, below.
+        // Text that rides along with tool calls ("one sec, checking") streams as it comes;
+        // the final answer is sent once, below.
         if (step.toolCalls > 0 && step.content.trim() && onPartialResponse) {
           onPartialResponse(
             llmResponseCoordinator.stripThinkingTags(step.content, message.userId, message.id)
@@ -334,84 +325,8 @@ export class CapabilityOrchestrator {
     if (onPartialResponse && finalText) {
       onPartialResponse(finalText);
     }
-    await this.storeReflectionMemory(context, message, finalText);
     this.contexts.delete(message.id);
     return finalText;
-  }
-
-  /**
-   * XML-LOOP: delete after v3 soak (TOOL_LOOP=xml).
-   * The XML turn: first generate, the <wants_loop> decision, then the llm-loop ReAct loop.
-   * Each step is one call, so a step can be commented out to debug it.
-   */
-  private async runXmlTurn(
-    context: OrchestrationContext,
-    message: IncomingMessage,
-    onPartialResponse?: (partial: string) => void
-  ): Promise<string> {
-    logger.info(`⚡ ASSEMBLING MESSAGE ORCHESTRATION - ENTRY POINT REACHED!`);
-    logger.info(`⚡ Assembling message orchestration for <${message.userId}> message`);
-
-    // Get initial LLM response
-    logger.info(`🤖 Getting initial LLM response for loop decision`);
-
-    const initialLLMResponse = await llmResponseCoordinator.getLLMResponseWithCapabilities(
-      message,
-      undefined // Don't stream initial response - we'll stream from the loop
-    );
-
-    // Extract the bot's loop decision from the response
-    const { response: llmResponse, wantsLoop } =
-      llmResponseCoordinator.extractLoopDecision(initialLLMResponse);
-
-    let loopDecision: string;
-    if (wantsLoop) {
-      loopDecision = '✅ WANTS LOOP';
-    } else {
-      loopDecision = '❌ NO LOOP NEEDED';
-    }
-    logger.info(`🎯 Bot loop decision: ${loopDecision}`);
-
-    // If the bot doesn't want to loop, return the response directly
-    if (!wantsLoop) {
-      logger.info(`🏁 Returning response directly - bot decided loop not needed`);
-      if (onPartialResponse) {
-        onPartialResponse(llmResponse);
-      }
-      await this.storeReflectionMemory(context, message, llmResponse);
-      this.contexts.delete(message.id);
-      return llmResponse;
-    }
-
-    // Bot wants to iterate - enter the ReAct loop
-    logger.info(`🎯 Entering ReAct execution loop - bot requested iteration`);
-
-    // The llmLoopService.executeLLMDrivenLoop will:
-    // 1. Let the LLM see the initial response
-    // 2. Let the LLM decide what tools to use next
-    // 3. Execute tools autonomously
-    // 4. Re-reason about results
-    // 5. Continue until LLM decides it's done
-    try {
-      const finalResponse = await llmLoopService.executeLLMDrivenLoop(
-        context,
-        llmResponse,
-        onPartialResponse
-      );
-
-      logger.info(`✅ ReAct loop completed successfully`);
-      await this.storeReflectionMemory(context, message, finalResponse);
-      this.contexts.delete(message.id);
-      return finalResponse;
-    } catch (loopError) {
-      logger.warn(
-        `⚠️ ReAct loop encountered error, falling back to direct LLM response: ${getErrorMessage(loopError)}`
-      );
-      // Fallback: Return the LLM response if loop fails
-      await this.storeReflectionMemory(context, message, llmResponse);
-      this.contexts.delete(message.id);
-      return llmResponse;
-    }
   }
 
   /**
@@ -503,31 +418,6 @@ export class CapabilityOrchestrator {
         .catch((e) => logger.warn('Auto-sing failed:', e));
     } catch (e) {
       logger.warn('Auto-sing detection failed:', e);
-    }
-  }
-
-  /**
-   * Store reflection memory about successful patterns (gated by ENABLE_AUTO_REFLECTION)
-   */
-  private async storeReflectionMemory(
-    context: OrchestrationContext,
-    message: IncomingMessage,
-    finalResponse: string
-  ): Promise<void> {
-    // COST CONTROL: Automatic reflection is expensive (2 LLM calls per message)
-    // Only enable if explicitly requested via environment variable
-    const enableAutoReflection = process.env.ENABLE_AUTO_REFLECTION === 'true';
-
-    if (!enableAutoReflection) {
-      logger.info('⏭️  Skipping automatic reflection (disabled for cost control)');
-      return;
-    }
-
-    try {
-      await memoryOrchestration.autoStoreReflectionMemory(context, message, finalResponse);
-    } catch (error) {
-      logger.error('❌ Failed to store reflection memory (non-critical):', error);
-      // Don't throw - reflection failure shouldn't break the main flow
     }
   }
 

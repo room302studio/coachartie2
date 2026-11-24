@@ -1,23 +1,19 @@
 import { logger } from '../../shared/logger.js';
 import { IncomingMessage } from '../../shared/queue/types.js';
-import { estimateTokens } from '../../shared/async.js';
 import { stripChatPrefixes, stripInternalMarkup } from '../../shared/clean-llm-output.js';
 import { openRouterService } from './openrouter.js';
 import { promptManager } from '../3-context/system-prompt.js';
 import { contextAlchemy } from '../3-context/assemble.js';
-import { modelAwarePrompter } from './model-prompt-style.js';
 import { preflightAnalyzer } from './preflight.js';
 import { getBrownoutMode, applyBrevityNote, brownoutRoute } from '../budget/brownout.js';
 import { isAutoRouted } from '../../shared/model-spec.js';
 import { experimentManager } from '../3-context/experiments.js';
-import { errorTracker, ERROR_TYPES } from './error-tracker.js';
-import { CapabilityResult, OrchestrationContext } from '../2-turn/types.js';
+import { errorTracker, ERROR_TYPES } from '../health/error-tracker.js';
 import { runToolLoop, type ToolLoopDeps } from '../5-tool-loop/native-loop.js';
 import { registryToTools } from '../5-tool-loop/tool-schema.js';
 import { recordToolTurn, shadowRouters, type ToolTurnContext } from '../2-turn/tool-exposure.js';
 import { capabilityRegistry } from '../5-tool-loop/registry.js';
-import { getErrorMessage } from '../error-utils.js';
-import { generateReflectionFacts, type ReflectionType } from '../2-turn/reflection-facts.js';
+import { getErrorMessage } from '../../shared/errors.js';
 
 /** Per-turn options handed to every openRouterService call in this turn. */
 interface TurnGenerationOptions {
@@ -52,58 +48,13 @@ export class LLMResponseCoordinator {
   }
 
   /**
-   * Get LLM response with capability extraction (the XML path's first generate).
-   * XML-LOOP: delete after v3 soak (TOOL_LOOP=xml)
-   */
-  async getLLMResponseWithCapabilities(
-    message: IncomingMessage,
-    onPartialResponse?: (partial: string) => void,
-    capabilityNames?: string[]
-  ): Promise<string> {
-    try {
-      logger.info(`🚀 getLLMResponseWithCapabilities called for message: "${message.message}"`);
-      const turn = await this.prepareTurn(message, capabilityNames, 'xml');
-      const { modelAwareMessages, smartModel, generationOptions } = turn;
-
-      // Use streaming if callback provided, otherwise regular generation
-      // Pass the fast model explicitly to ensure consistent model selection
-      // Context Alchemy: Include traceId and guildId for observability
-      // Preflight: Include maxTokens for dynamic response length
-      let generated: string;
-      if (onPartialResponse) {
-        generated = await openRouterService.generateFromMessageChainStreaming(
-            modelAwareMessages,
-            message.userId,
-            onPartialResponse,
-            message.id,
-            smartModel,
-            generationOptions
-          );
-      } else {
-        generated = await openRouterService.generateFromMessageChain(
-            modelAwareMessages,
-            message.userId,
-            message.id,
-            smartModel,
-            generationOptions
-          );
-      }
-
-      return this.disarmWarden(generated, turn);
-    } catch (error: any) {
-      return this.rethrowClassified(error, message);
-    }
-  }
-
-  /**
-   * The NATIVE tool turn (wave 8, the default): the same prepared prompt as the XML path
-   * (preflight, context assembly, complexity route, brownout model/max_tokens/brevity note),
-   * then runToolLoop with openrouter's generateWithTools and the given executeTool. Tool turns
-   * are non-streaming; the caller hands the final text to onPartialResponse.
+   * The native tool turn: the prepared prompt (preflight, context assembly, complexity route,
+   * brownout model/max_tokens/brevity note), then runToolLoop with openrouter's
+   * generateWithTools and the given executeTool. Tool turns are non-streaming; the caller
+   * hands the final text to onPartialResponse.
    *
    * If a later round fails after the model already said something (e.g. every model 5xx on
-   * round 3), that text is the reply instead of an error, the way the XML path fell back to its
-   * first response when the ReAct loop threw.
+   * round 3), that text is the reply instead of an error.
    */
   async getNativeToolResponse(
     message: IncomingMessage,
@@ -112,7 +63,7 @@ export class LLMResponseCoordinator {
     }
   ): Promise<string> {
     try {
-      const turn = await this.prepareTurn(message, undefined, 'native');
+      const turn = await this.prepareTurn(message, undefined);
       // Built per turn (skills can register after boot); same registry → same bytes.
       const tools = registryToTools(capabilityRegistry.list());
       // Tool exposure log: what he was offered, what he called, what shadow routers would
@@ -198,13 +149,12 @@ export class LLMResponseCoordinator {
   }
 
   /**
-   * Everything before the first generate, shared by both loops: preflight, the base system
-   * prompt, context assembly, the complexity route and brownout (model, max_tokens, brevity).
+   * Everything before the first generate: preflight, the base system prompt, context
+   * assembly, the complexity route and brownout (model, max_tokens, brevity).
    */
   private async prepareTurn(
     message: IncomingMessage,
-    capabilityNames: string[] | undefined,
-    mode: 'native' | 'xml'
+    capabilityNames: string[] | undefined
   ): Promise<{
     modelAwareMessages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>;
     smartModel: string;
@@ -303,23 +253,8 @@ export class LLMResponseCoordinator {
           `🕯️ Brownout ${brownout.mode.toUpperCase()} (runway ${brownout.runwayHours?.toFixed(1) ?? '?'}h, ${daily}) → ${smartModel}, brevity note + reasoning off`
         );
       }
-      let messagesToProcess: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>;
-      if (mode === 'native') {
-        messagesToProcess = messages;
-      } else {
-        // XML-LOOP: delete after v3 soak (TOOL_LOOP=xml). A pass-through today.
-        messagesToProcess = messages.map((msg) => {
-          if (msg.role === 'system') {
-            return {
-              ...msg,
-              content: modelAwarePrompter.generateCapabilityPrompt(smartModel, msg.content),
-            };
-          }
-          return msg;
-        });
-      }
       const modelAwareMessages = applyBrevityNote(
-        messagesToProcess,
+        messages,
         // Lean/critical cap max_tokens; ask for a complete short reply that fits rather than
         // a normal one that gets cut off. Inserted after the cache breakpoint.
         brownout.mode
@@ -485,62 +420,6 @@ export class LLMResponseCoordinator {
   }
 
   /**
-   * The facts worth remembering from one turn, as {"facts": string[]} (wave 10): [] means
-   * nothing to remember (or an unparseable reply, logged once). The prompt is code-owned and
-   * persona-free — see 2-turn/reflection-facts.ts. PROMPT_REFLECTION_GENERAL /
-   * PROMPT_REFLECTION_CAPABILITY in the prompts table are no longer read here.
-   */
-  async generateReflection(
-    contextText: string,
-    type: ReflectionType,
-    userId: string,
-    /** Conversation key: keeps this conversation's reflections on one model so its cache stays warm. */
-    rotationKey?: string
-  ): Promise<string[]> {
-    return generateReflectionFacts(contextText, type, userId, rotationKey);
-  }
-
-  /**
-   * Build capability context for reflection
-   * Formats capability execution details for memory storage
-   */
-  buildCapabilityContext(context: OrchestrationContext): string {
-    const capabilityDetails = context.capabilities
-      .map((cap, i) => {
-        const result = context.results[i];
-        let status: string;
-        if (result) {
-          if (result.success) {
-            status = 'SUCCESS';
-          } else {
-            status = 'FAILED';
-          }
-        } else {
-          status = 'UNKNOWN';
-        }
-        let data = '';
-        if (result?.data) {
-          data = ` - Result: ${JSON.stringify(result.data).substring(0, 100)}`;
-        }
-        let error = '';
-        if (result?.error) {
-          error = ` - Error: ${result.error}`;
-        }
-
-        return `Capability ${i + 1}: ${cap.name}:${cap.action}
-Arguments: ${JSON.stringify(cap.params)}
-Content: ${cap.content || 'none'}
-Status: ${status}${data}${error}`;
-      })
-      .join('\n\n');
-
-    return `User Message: ${context.originalMessage}
-
-Capabilities Used:
-${capabilityDetails}`;
-  }
-
-  /**
    * Strip thinking tags and other internal artifacts from LLM responses
    * Security measure to prevent information disclosure
    */
@@ -557,186 +436,6 @@ ${capabilityDetails}`;
 
     // Use trimEnd() to preserve leading spaces needed for text concatenation
     return result.trimEnd();
-  }
-
-  /**
-   * XML-LOOP: delete after v3 soak (TOOL_LOOP=xml). The native loop has no <wants_loop>.
-   * Extract loop decision from LLM response
-   * Checks for <wants_loop>true</wants_loop> signal in the response
-   * Returns both the cleaned response and the loop decision flag
-   */
-  extractLoopDecision(content: string): { response: string; wantsLoop: boolean } {
-    const wantsLoopMatch = content.match(/<wants_loop>(true|false)<\/wants_loop>/i);
-    const hasCapabilities = content.includes('<capability');
-
-    // CRITICAL: Also detect shorthand capability tags like <read>, <recall>, <websearch> etc.
-    // These are aliases defined in xml-parser.ts that expand to full capability calls
-    const shorthandTags = [
-      // File operations
-      'read',
-      'readfile',
-      'write',
-      'writefile',
-      'append',
-      'listdir',
-      'ls',
-      'exists',
-      'mkdir',
-      'rm',
-      'delete',
-      // Memory
-      'remember',
-      'store',
-      'recall',
-      'forget',
-      // Search
-      'search',
-      'websearch',
-      'google',
-      // Vision
-      'see',
-      'ocr',
-      'lookatimage',
-      // GitHub
-      'github-search_issues',
-      'github-get_issue',
-      'github-list_issues',
-      'github-create_issue',
-      'github-search_code',
-      'github-get_file',
-      'github-list_repo_files',
-      'github-get_pr',
-      // Calculator
-      'calc',
-      'calculate',
-      'math',
-    ];
-    const shorthandPattern = new RegExp(`<(${shorthandTags.join('|')})[^>]*>`, 'i');
-    const hasShorthandCapabilities = shorthandPattern.test(content);
-
-    // SIMPLE LOGIC: If there are capabilities in the response, execute them.
-    // Don't care about explicit tags or defaults - just execute what's there.
-    const hasAnyCapabilities = hasCapabilities || hasShorthandCapabilities;
-    let wantsLoop = hasAnyCapabilities;
-    let decisionSource: string;
-    if (hasCapabilities) {
-      decisionSource = 'detected <capability> tags';
-    } else if (hasShorthandCapabilities) {
-      decisionSource = 'detected shorthand capability tags (e.g., <read>, <recall>)';
-    } else {
-      decisionSource = 'no capabilities found';
-    }
-
-    // If there's an explicit wants_loop tag, respect it
-    if (wantsLoopMatch) {
-      wantsLoop = wantsLoopMatch[1].toLowerCase() === 'true';
-      decisionSource = 'explicit wants_loop tag';
-    }
-
-    // Remove the wants_loop tag from the response
-    const cleanedResponse = stripInternalMarkup(content, ['wants_loop_bool']).trim();
-
-    logger.info(`🎯 Loop decision: wantsLoop=${wantsLoop} (${decisionSource})`);
-
-    return {
-      response: cleanedResponse,
-      wantsLoop,
-    };
-  }
-
-  /**
-   * XML-LOOP: delete after v3 soak (TOOL_LOOP=xml). Used only by the llm-loop ReAct loop.
-   * Extract suggested next actions from capability results
-   * Parses "Next Actions:" sections from capability responses
-   */
-  extractSuggestedNextActions(results: CapabilityResult[]): string[] {
-    const suggestions: string[] = [];
-
-    for (const result of results) {
-      if (!result.success || !result.data) {
-        continue;
-      }
-
-      const data = String(result.data);
-
-      // Look for "Next Actions:" section in capability response
-      const nextActionsMatch = data.match(/Next Actions?:\s*([\s\S]*?)(?=\n\n|💡|📦|$)/i);
-      if (nextActionsMatch) {
-        const actionsText = nextActionsMatch[1];
-
-        // Extract capability XML tags from the next actions section
-        const capabilityTags = actionsText.match(/<capability[^>]*\/>/g);
-        if (capabilityTags) {
-          suggestions.push(...capabilityTags);
-        }
-      }
-
-      // Also look for "💡 Recommended Next Steps:" section
-      const recommendedMatch = data.match(/💡 Recommended Next Steps?:\s*([\s\S]*?)(?=\n\n|📦|$)/i);
-      if (recommendedMatch) {
-        const recommendedText = recommendedMatch[1];
-        const capabilityTags = recommendedText.match(/<capability[^>]*\/>/g);
-        if (capabilityTags) {
-          suggestions.push(...capabilityTags);
-        }
-      }
-    }
-
-    // Deduplicate suggestions
-    return [...new Set(suggestions)];
-  }
-
-  /**
-   * XML-LOOP: delete after v3 soak (TOOL_LOOP=xml). Used only by the llm-loop ReAct loop.
-   * Intelligently truncate conversation history to prevent context overflow
-   * Keeps first 2 messages (user + initial response) + recent messages within token budget
-   */
-  truncateConversationHistory(history: string[], maxTokens: number): string[] {
-    // Strategy: Keep first 2 messages (user + initial response) + recent N messages
-    const keepFirst = 2;
-
-    // Estimate tokens via the shared heuristic
-    const estimatedTokens = history.reduce((sum, msg) => sum + estimateTokens(msg), 0);
-
-    if (estimatedTokens <= maxTokens) {
-      return history; // No truncation needed
-    }
-
-    logger.info(
-      `📊 Truncating conversation history: ${estimatedTokens} tokens → target ${maxTokens}`
-    );
-
-    // Keep first messages + most recent messages that fit budget
-    const firstMessages = history.slice(0, keepFirst);
-    const firstTokens = firstMessages.reduce((sum, msg) => sum + estimateTokens(msg), 0);
-    const remainingBudget = maxTokens - firstTokens;
-
-    // Take messages from end until budget exhausted
-    const recentMessages: string[] = [];
-    let currentTokens = 0;
-
-    for (let i = history.length - 1; i >= keepFirst; i--) {
-      const msgTokens = estimateTokens(history[i]);
-      if (currentTokens + msgTokens > remainingBudget) {
-        break;
-      }
-      recentMessages.unshift(history[i]);
-      currentTokens += msgTokens;
-    }
-
-    // Add separator if we truncated
-    let separator: string[];
-    if (recentMessages.length < history.length - keepFirst) {
-      separator = ['[... earlier messages omitted for context budget ...]'];
-    } else {
-      separator = [];
-    }
-
-    const truncated = [...firstMessages, ...separator, ...recentMessages];
-    const finalTokens = truncated.reduce((sum, msg) => sum + estimateTokens(msg), 0);
-    logger.info(`✂️ Truncated to ${truncated.length} messages (${finalTokens} tokens)`);
-
-    return truncated;
   }
 }
 

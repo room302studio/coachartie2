@@ -77,9 +77,10 @@ export interface ProcessorOptions {
 export function cleanCapabilityTags(text: string): string {
   // Same passes, same order as before the shared stripper: capability tags (case-sensitive,
   // self-closing first), then wants_loop/think/system-reminder, then function-call blocks.
-  // Kept on the native path too: models still slip old tags. XML-LOOP: delete after v3 soak (TOOL_LOOP=xml) — the wants_loop entry only.
+  // Kept on the native path too: models still slip old tags (wants_loop is from the retired
+  // XML loop; stripping it costs nothing and keeps it out of Discord).
   let out = stripToolCalls(text, { capability: 'self-then-paired-case-sensitive' });
-  out = stripInternalMarkup(out, ['wants_loop', 'think', 'system-reminder']); // XML-LOOP: delete after v3 soak (TOOL_LOOP=xml) — 'wants_loop'
+  out = stripInternalMarkup(out, ['wants_loop', 'think', 'system-reminder']);
   out = stripToolCalls(out, { capability: false, functionCalls: true });
   return out.replace(/\n{3,}/g, '\n\n').trim();
 }

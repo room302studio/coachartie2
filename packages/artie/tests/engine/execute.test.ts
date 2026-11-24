@@ -1,262 +1,20 @@
 /**
  * Tool execution plumbing in 5-tool-loop/execute.ts and registry.ts, against the REAL code.
  *
- * Wave 11 folded six files in here. Five of them ("atomic" tests + the older
- * template-substitution.test.ts) tested local copies of logic that drifted from src; each of
- * their `it`s now pins what the real function does on the same axis. Where the copy asserted
- * behavior src never had, the case says so in a comment ("copy said … src does …").
+ * Wave 11 folded six files in here; the XML chain cases (substituteKeys, the {{result}} keys,
+ * the DB-backed {{var}} pass) went with the XML loop.
  *
- *   substitute-keys.test.ts            -> "substituteKeys" (moved verbatim)
- *   atomic/template-substitution       -> "substituteKeys" + "GlobalVariableStore.substitute"
- *   template-substitution.test.ts      -> "substituteKeys" + "substituteTemplateVariables"
- *   atomic/variable-context-builder    -> "substituteTemplateVariables: the {{result}} keys"
  *   atomic/action-alias-mapper         -> "registry: action aliases"
  *   atomic/error-message-builder       -> "registry: action error messages"
  */
 import { describe, it, expect, beforeAll } from 'vitest';
-import {
-  substituteKeys,
-  capabilityExecutor,
-  looksLikeToolFailure,
-  executeNativeToolCall,
-} from '../../src/engine/5-tool-loop/execute.js';
+import { looksLikeToolFailure, executeNativeToolCall } from '../../src/engine/5-tool-loop/execute.js';
 import {
   CapabilityRegistry,
   capabilityRegistry,
   type RegisteredCapability,
 } from '../../src/engine/5-tool-loop/registry.js';
-import { capabilityParser } from '../../src/engine/5-tool-loop/parse-tool-calls.js';
-import { GlobalVariableStore } from '../../src/engine/5-tool-loop/variables.js';
-import type {
-  CapabilityResult,
-  ExtractedCapability,
-  OrchestrationContext,
-} from '../../src/engine/2-turn/types.js';
-
-const subs = (o: Record<string, string>) => new Map(Object.entries(o));
-
-// ---------------------------------------------------------------------------------------------
-// substituteKeys: the local {{key}} pass
-// ---------------------------------------------------------------------------------------------
-
-// Wave 7 / ledger #11: {{key}} substitution treats the key and the value literally.
-describe('substituteKeys', () => {
-  it('a key containing . substitutes only itself', () => {
-    const s = new Map([['a.b', 'X']]);
-    expect(substituteKeys('{{a.b}} {{ a.b }} {{aZb}}', s)).toBe('X X {{aZb}}');
-  });
-
-  it('a key containing * is literal, not a quantifier', () => {
-    const s = new Map([['n*', 'Y']]);
-    expect(substituteKeys('{{n*}} {{nnn}} {{}}', s)).toBe('Y {{nnn}} {{}}');
-  });
-
-  it('values with $& or $1 are inserted verbatim', () => {
-    const s = new Map([['result', 'costs $& and $1']]);
-    expect(substituteKeys('got: {{result}}', s)).toBe('got: costs $& and $1');
-  });
-
-  it('the real keys still work', () => {
-    const s = new Map([
-      ['result', 'r'],
-      ['result_1', 'r1'],
-      ['memories', 'm'],
-    ]);
-    expect(substituteKeys('{{result}}/{{result_1}}/{{ memories }}', s)).toBe('r/r1/m');
-  });
-
-  // from atomic/template-substitution.test.ts
-  it('substitutes a single variable', () => {
-    expect(substituteKeys('Hello {{name}}', subs({ name: 'World' }))).toBe('Hello World');
-  });
-
-  it('substitutes multiple variables', () => {
-    expect(
-      substituteKeys('{{greeting}} {{name}}!', subs({ greeting: 'Hello', name: 'Coach Artie' }))
-    ).toBe('Hello Coach Artie!');
-  });
-
-  it('leaves a missing variable unchanged', () => {
-    expect(substituteKeys('Hello {{name}} and {{missing}}', subs({ name: 'World' }))).toBe(
-      'Hello World and {{missing}}'
-    );
-  });
-
-  it('allows whitespace inside the braces', () => {
-    expect(
-      substituteKeys('{{ name }} and {{  title  }}', subs({ name: 'Coach Artie', title: 'AI Assistant' }))
-    ).toBe('Coach Artie and AI Assistant');
-  });
-
-  it('handles an empty template', () => {
-    expect(substituteKeys('', subs({ name: 'test' }))).toBe('');
-  });
-
-  it('handles a template with no variables', () => {
-    expect(substituteKeys('No variables here', subs({ name: 'test' }))).toBe('No variables here');
-  });
-
-  it('leaves malformed syntax alone', () => {
-    expect(substituteKeys('{{incomplete', subs({ incomplete: 'test' }))).toBe('{{incomplete');
-  });
-
-  // from template-substitution.test.ts
-  it('substitutes basic variables', () => {
-    expect(substituteKeys('Hello {{name}}!', subs({ name: 'Coach Artie' }))).toBe('Hello Coach Artie!');
-  });
-
-  it('substitutes several variables in a sentence', () => {
-    expect(
-      substituteKeys('User {{user}} wants {{item}}', subs({ user: 'Alice', item: 'coffee' }))
-    ).toBe('User Alice wants coffee');
-  });
-
-  it('leaves missing variables unchanged mid-sentence', () => {
-    expect(
-      substituteKeys('Hello {{name}}, you have {{count}} messages', subs({ name: 'Bob' }))
-    ).toBe('Hello Bob, you have {{count}} messages');
-  });
-
-  it('handles whitespace around a single key', () => {
-    expect(substituteKeys('Result: {{ result }}', subs({ result: 'success' }))).toBe('Result: success');
-  });
-});
-
-// ---------------------------------------------------------------------------------------------
-// GlobalVariableStore.substitute: the DB-backed {{var}} pass (the in-memory test DB)
-// ---------------------------------------------------------------------------------------------
-
-describe('GlobalVariableStore.substitute', () => {
-  const store = GlobalVariableStore.getInstance();
-
-  // atomic/template-substitution "should stringify objects": the copy did this for local
-  // values; in src only the global store JSON-stringifies (local results go through String()).
-  it('stringifies a stored object', async () => {
-    await store.set('wave11_data', { key: 'value', count: 42 });
-    expect(await store.substitute('Data: {{wave11_data}}')).toBe('Data: {"key":"value","count":42}');
-  });
-
-  // template-substitution.test.ts "should handle object values by stringifying them"
-  it('stringifies a stored object with a number field', async () => {
-    await store.set('wave11_obj', { key: 'value', number: 42 });
-    expect(await store.substitute('Data: {{wave11_obj}}')).toBe('Data: {"key":"value","number":42}');
-  });
-});
-
-// ---------------------------------------------------------------------------------------------
-// substituteTemplateVariables: previous results -> {{result}}, {{content}}, {{result_N}}, {{memories}}
-// ---------------------------------------------------------------------------------------------
-
-function cap(content: string, params: Record<string, unknown> = {}): ExtractedCapability {
-  return { name: 'web', action: 'search', params, content, priority: 0 };
-}
-function res(name: string, data: unknown, success = true): CapabilityResult {
-  return {
-    capability: { name, action: 'x', params: {}, priority: 0 },
-    success,
-    data,
-    timestamp: '2026-10-23T00:00:00Z',
-  };
-}
-const fill = async (content: string, results: CapabilityResult[]) =>
-  (await capabilityExecutor.substituteTemplateVariables(cap(content), results)).content;
-
-const ALL_KEYS = 'r={{result}} c={{content}} 1={{result_1}} 2={{result_2}} m={{memories}}';
-
-describe('substituteTemplateVariables', () => {
-  // from template-substitution.test.ts
-  it('builds the keys from previous results', async () => {
-    const out = await fill(ALL_KEYS, [
-      res('memory', 'Alice prefers tea'),
-      res('web', 'Generated content here'),
-    ]);
-    expect(out).toBe(
-      'r=Generated content here c=Generated content here 1=Alice prefers tea 2=Generated content here m=Alice prefers tea'
-    );
-  });
-
-  it('handles the LEGO-block chaining pattern', async () => {
-    const results = [res('memory', 'User achievements: Led 3 major projects, Expert in TypeScript')];
-    expect(await fill('Format as resume: {{memories}}', results)).toBe(
-      'Format as resume: User achievements: Led 3 major projects, Expert in TypeScript'
-    );
-
-    results.push(res('web', '# Resume\n\n## Experience\n- Led 3 major projects\n- Expert in TypeScript'));
-    expect(await fill('{{content}}', results)).toBe(
-      '# Resume\n\n## Experience\n- Led 3 major projects\n- Expert in TypeScript'
-    );
-  });
-
-  it('leaves {{result}} alone with no previous results', async () => {
-    expect(await fill('Hello {{result}}', [])).toBe('Hello {{result}}');
-  });
-
-  it('handles several keys in one template', async () => {
-    const out = await fill('Previous: {{result_1}}, Current: {{result}}, Memory: {{memories}}', [
-      res('memory', 'chocolate preferences'),
-      res('variable', 'stored_value'),
-      res('web', 'final output'),
-    ]);
-    expect(out).toBe('Previous: chocolate preferences, Current: final output, Memory: chocolate preferences');
-  });
-
-  it('substitutes string params too, without mutating the original', async () => {
-    const original = cap('', { query: 'about {{result}}', limit: 3 });
-    const out = await capabilityExecutor.substituteTemplateVariables(original, [res('web', 'cats')]);
-    expect(out.params).toEqual({ query: 'about cats', limit: 3 });
-    expect(original.params.query).toBe('about {{result}}');
-  });
-});
-
-// Was atomic/variable-context-builder.test.ts: a VariableContextBuilder class that existed only
-// in the test. These pin the real map substituteTemplateVariables builds.
-describe('substituteTemplateVariables: the {{result}} keys', () => {
-  it('no results: every key stays as written', async () => {
-    expect(await fill(ALL_KEYS, [])).toBe(ALL_KEYS);
-  });
-
-  it('a single memory result fills result, content, result_1 and memories', async () => {
-    expect(await fill(ALL_KEYS, [res('memory', 'test data')])).toBe(
-      'r=test data c=test data 1=test data 2={{result_2}} m=test data'
-    );
-  });
-
-  it('several results: result/content are the latest; there is no {{web_content}}', async () => {
-    // copy said a web result also sets {{web_content}}; src has no such key.
-    const out = await fill(ALL_KEYS + ' w={{web_content}}', [
-      res('memory', 'memory data'),
-      res('web', 'web data'),
-    ]);
-    expect(out).toBe('r=web data c=web data 1=memory data 2=web data m=memory data w={{web_content}}');
-  });
-
-  it('failed results are NOT skipped', async () => {
-    // copy said failed results are skipped; src indexes every previous result.
-    const out = await fill(ALL_KEYS + ' 3={{result_3}}', [
-      res('memory', 'good data'),
-      res('web', 'bad data', false),
-      res('filesystem', 'final data'),
-    ]);
-    expect(out).toBe('r=final data c=final data 1=good data 2=bad data m=good data 3=final data');
-  });
-
-  it('memories is the latest memory result', async () => {
-    const out = await fill('{{memories}} {{result_1}} {{result_2}}', [
-      res('memory', 'first memory'),
-      res('memory', 'second memory'),
-    ]);
-    expect(out).toBe('second memory first memory second memory');
-  });
-
-  it('object data goes through String(), and empty data becomes ""', async () => {
-    // copy said objects are kept/JSON'd; src does String(data || '').
-    const out = await fill('[{{result_1}}] [{{result}}]', [
-      res('memory', { user: 'test', preferences: ['dark_mode'] }),
-      res('web', null),
-    ]);
-    expect(out).toBe('[[object Object]] []');
-  });
-});
+import type { OrchestrationContext } from '../../src/engine/2-turn/types.js';
 
 // ---------------------------------------------------------------------------------------------
 // registry: action aliases and action errors (fresh registries with stub tools, not the singleton)
@@ -347,9 +105,8 @@ describe('registry: action error messages', () => {
     expect(() => registry.get('filesystem', 'wri')).toThrow("Did you mean 'write_file'?");
   });
 
-  it('a short prefix finds create_directory (registry and parser suggesters)', () => {
+  it('a short prefix finds create_directory', () => {
     expect(registry.generateActionError('filesystem', 'cre')).toContain('create_directory');
-    expect(capabilityParser.findSimilarActions('cre', FS_ACTIONS)).toContain('create_directory');
   });
 
   it('no good match: the plain message', () => {

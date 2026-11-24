@@ -5,7 +5,7 @@ import {
   createStructuredError,
   formatStructuredErrorCompact,
   ParameterSchema,
-} from '../errors.js';
+} from './tool-errors.js';
 import { isOwnerConfirmed } from './approval-gate.js';
 import { resolveChannelParams } from './channel-names.js';
 import {
@@ -181,7 +181,7 @@ export const TOOL_ALIASES: Record<string, ToolAlias> = {
     to: 'bot-config',
     actions: identity([
       'get_active_model', 'set_model_tier', 'get_context_size', 'set_context_size',
-      'get_iteration_limits', 'set_iteration_limits', 'auto_optimize',
+      'auto_optimize',
     ]),
   },
   model_manager: {
@@ -209,7 +209,7 @@ export interface ResolvedToolCall<P = any> {
 
 /**
  * The ONE place an old tool name becomes its canonical tool. Used by registry
- * execute/has/get/supportsAction, the executor's taint check, conscience and the parse path.
+ * execute/has/get/supportsAction and the executor's taint check.
  * Runs before ACTION_ALIASES. Idempotent: a canonical name resolves to itself.
  */
 export function resolveToolCall<P = any>(

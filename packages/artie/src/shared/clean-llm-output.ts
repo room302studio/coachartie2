@@ -3,7 +3,7 @@
  *
  *   stripToolCalls       <capability …/>, <capability>…</capability>, and the Anthropic-native
  *                        <function_calls>/<function_results>/<invoke> scaffolding
- *   stripInternalMarkup  reasoning and wrapper blocks (<think>, <thinking>, <wants_loop> [XML-LOOP: delete after v3 soak (TOOL_LOOP=xml)],
+ *   stripInternalMarkup  reasoning and wrapper blocks (<think>, <thinking>, <wants_loop>,
  *                        <system-reminder>, <security_reminder>, [USER_MESSAGE], [SYSTEM: …],
  *                        <artie>, <recall>, "Step N/M" markers), by name
  *   stripChatPrefixes    role prefixes a reply should never start with ("[artie]:", "**Me:**")
@@ -87,12 +87,8 @@ export function stripToolCalls(text: string, opts: StripToolCallsOptions = {}): 
 // -----------------------------------------------------------------------------
 
 const INTERNAL_MARKUP = {
-  // XML-LOOP: delete after v3 soak (TOOL_LOOP=xml). These two <wants_loop> patterns are
-  // defensive on the native path (a model can still slip the old tag); they go with XML.
-  /** any <wants_loop> body (stream-reply) */
-  wants_loop: /<wants_loop>[^<]*<\/wants_loop>/gs, // XML-LOOP: delete after v3 soak (TOOL_LOOP=xml)
-  /** only <wants_loop>true|false</wants_loop>, any case (generate-reply's loop decision) */
-  wants_loop_bool: /<wants_loop>(true|false)<\/wants_loop>/gi, // XML-LOOP: delete after v3 soak (TOOL_LOOP=xml)
+  /** <wants_loop> from the retired XML loop: models still slip it, so it never reaches Discord. */
+  wants_loop: /<wants_loop>[^<]*<\/wants_loop>/gs,
   think: /<think>[\s\S]*?<\/think>/gs,
   thinking: /<thinking>[\s\S]*?<\/thinking>/gi,
   'system-reminder': /<system-reminder>[\s\S]*?<\/system-reminder>/gs,
@@ -208,10 +204,3 @@ export function stripCapabilityXML(text: string): string {
   return stripped.trim();
 }
 
-/**
- * Check if text contains capability XML (for detection without modifying)
- */
-export function containsCapabilityXML(text: string): boolean {
-  if (!text) return false;
-  return /<capability\b[^>]*(?:>[\s\S]*?<\/capability>|\/>;)/i.test(text);
-}

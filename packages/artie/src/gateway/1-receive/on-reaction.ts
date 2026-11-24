@@ -699,11 +699,6 @@ async function handleFeedbackReaction(
 
     if (engine.isOk(response)) {
       logger.info(`Stored ${sentiment} feedback memory for guild ${guildId} [${shortId}]`);
-
-      // Check if negative feedback threshold crossed - trigger emergency reflection
-      if (sentiment === 'negative' && guildId) {
-        await checkNegativeFeedbackThreshold(guildId, shortId);
-      }
     }
   } catch (error) {
     logger.warn(`Failed to store feedback memory [${shortId}]:`, error);
@@ -731,38 +726,3 @@ async function handleFeedbackReaction(
   logger.info(`Feedback logged successfully [${shortId}]`);
 }
 
-
-/**
- * Check if negative feedback threshold is crossed and trigger emergency reflection
- * Threshold is configurable via REFLECTION_NEGATIVE_THRESHOLD env var (default: 5)
- */
-async function checkNegativeFeedbackThreshold(guildId: string, shortId: string): Promise<void> {
-  try {
-    // Check if reflection is enabled
-    if (process.env.ENABLE_REFLECTION_CONSOLIDATION !== 'true') {
-      return;
-    }
-
-    const threshold = parseInt(process.env.REFLECTION_NEGATIVE_THRESHOLD || '5', 10);
-
-    // Call the capabilities service to check threshold and trigger reflection (wave 9:
-    // in-process, was POST :47324/api/reflection/check-threshold)
-    const response = await engine.checkReflectionThreshold({
-      guildId,
-      threshold,
-      hours: 1, // Check last hour
-    });
-
-    if (engine.isOk(response)) {
-      const result = response.body as { triggered?: boolean; count?: number };
-      if (result.triggered) {
-        logger.warn(
-          `🚨 Emergency reflection triggered for guild ${guildId}: ${result.count} negative reactions in last hour [${shortId}]`
-        );
-      }
-    }
-  } catch (error) {
-    // Don't fail the reaction handler if threshold check fails
-    logger.debug(`Failed to check negative feedback threshold [${shortId}]:`, error);
-  }
-}

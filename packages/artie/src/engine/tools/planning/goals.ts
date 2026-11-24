@@ -6,7 +6,7 @@ import { getErrorMessage } from '../../../shared/errors.js';
  * in on 2026-10-23 (wave 4): its name and actions resolve here through TOOL_ALIASES in
  * 5-tool-loop/registry.ts (set → create, check → list, update, complete, history → list;
  * objective → title, deadline → target_date, goal_id → id). The legacy `goals` table and its
- * rows are untouched; conscience's goal whisper still reads it.
+ * rows are untouched.
  *
  * Goals are directions Artie works toward over time, not tasks to complete.
  * They give Artie purpose and enable proactive, autonomous behavior.

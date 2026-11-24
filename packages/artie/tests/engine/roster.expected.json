@@ -21,12 +21,10 @@
     "compare_models",
     "get_active_model",
     "get_context_size",
-    "get_iteration_limits",
     "get_pricing",
     "get_recommendation",
     "list_models",
     "set_context_size",
-    "set_iteration_limits",
     "set_model_tier"
   ],
   "calculator": [
@@ -478,14 +476,6 @@
     "link-twitter",
     "set",
     "set-many"
-  ],
-  "variable": [
-    "clear",
-    "delete",
-    "get",
-    "list",
-    "set",
-    "substitute"
   ],
   "vision": [
     "extract"

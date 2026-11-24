@@ -78,8 +78,6 @@ const HANDLED_JOB_TYPES = new Set([
   'recurring-reminders',
   'cleanup-old-data',
   'reddit-mentions',
-  'daily-reflection',
-  'weekly-rule-review',
   'memory-gardening',
   'morning-briefing',
   'trend-digest',
@@ -423,14 +421,6 @@ export class SchedulerService {
           await this.executeRedditMentions();
           break;
 
-        case 'daily-reflection':
-          await this.executeDailyReflection();
-          break;
-
-        case 'weekly-rule-review':
-          await this.executeWeeklyRuleReview();
-          break;
-
         case 'memory-gardening':
           await this.executeMemoryGardening();
           break;
@@ -720,56 +710,6 @@ export class SchedulerService {
   }
 
   /**
-   * Execute daily reflection consolidation
-   * Analyzes recent feedback and generates/updates learned rules
-   */
-  private async executeDailyReflection(): Promise<void> {
-    logger.info('🔄 Daily reflection consolidation triggered');
-
-    // Check if reflection is enabled
-    if (process.env.ENABLE_REFLECTION_CONSOLIDATION !== 'true') {
-      logger.info(
-        '⏭️ Reflection consolidation disabled (set ENABLE_REFLECTION_CONSOLIDATION=true to enable)'
-      );
-      return;
-    }
-
-    try {
-      const { reflectionConsolidator } = await import('../memory/reflection-consolidator.js');
-      const result = await reflectionConsolidator.runDailyConsolidation();
-      logger.info(
-        `✅ Daily reflection complete: ${result.rulesCreated} created, ${result.rulesUpdated} updated, ${result.guildsProcessed} guilds`
-      );
-    } catch (error) {
-      logger.error('❌ Daily reflection failed:', error);
-    }
-  }
-
-  /**
-   * Execute weekly rule review
-   * Reviews existing rules and retires/modifies based on recent feedback
-   */
-  private async executeWeeklyRuleReview(): Promise<void> {
-    logger.info('📋 Weekly rule review triggered');
-
-    // Check if reflection is enabled
-    if (process.env.ENABLE_REFLECTION_CONSOLIDATION !== 'true') {
-      logger.info('⏭️ Rule review disabled (set ENABLE_REFLECTION_CONSOLIDATION=true to enable)');
-      return;
-    }
-
-    try {
-      const { reflectionConsolidator } = await import('../memory/reflection-consolidator.js');
-      const result = await reflectionConsolidator.reviewAndPruneRules();
-      logger.info(
-        `✅ Weekly rule review complete: ${result.kept} kept, ${result.modified} modified, ${result.retired} retired`
-      );
-    } catch (error) {
-      logger.error('❌ Weekly rule review failed:', error);
-    }
-  }
-
-  /**
    * Execute memory gardening
    * Links related memories, consolidates duplicates, prunes stale ones, surfaces gems
    * Inspired by: https://robdodson.me/posts/i-gave-my-second-brain-a-gardener/
@@ -979,28 +919,6 @@ export class SchedulerService {
       name: 'reddit-mentions',
       cron: '0 * * * *',
       data: { type: 'reddit-mentions' },
-      options: { immediate: false },
-    });
-
-    // Daily reflection consolidation - 4 AM UTC
-    // Analyzes feedback from the past 24 hours and generates learned rules
-    const dailyReflectionCron = process.env.REFLECTION_DAILY_CRON || '0 4 * * *';
-    await this.scheduleTask({
-      id: 'daily-reflection',
-      name: 'daily-reflection',
-      cron: dailyReflectionCron,
-      data: { type: 'daily-reflection' },
-      options: { immediate: false },
-    });
-
-    // Weekly rule review - Monday 3 AM UTC
-    // Reviews existing rules and retires ineffective ones
-    const weeklyRuleReviewCron = process.env.REFLECTION_WEEKLY_CRON || '0 3 * * 1';
-    await this.scheduleTask({
-      id: 'weekly-rule-review',
-      name: 'weekly-rule-review',
-      cron: weeklyRuleReviewCron,
-      data: { type: 'weekly-rule-review' },
       options: { immediate: false },
     });
 

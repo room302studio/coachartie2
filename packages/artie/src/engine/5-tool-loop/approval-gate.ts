@@ -8,7 +8,7 @@
  *
  * Checked in CapabilityRegistry.execute(), after resolveToolCall (so an alias is caught under its
  * canonical name) and before the handler runs: the one choke point every call path shares
- * (native loop, the legacy XML loop, the HTTP execute-tool route). The email drafting flow's
+ * (native loop, the HTTP execute-tool route). The email drafting flow's
  * real send calls capabilityRegistry.execute('email', 'send', …) for exactly that reason.
  */
 import { OWNER_USER_ID } from '../../shared/config/owner.js';

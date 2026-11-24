@@ -17,7 +17,7 @@ import type {
   CapabilityContext,
 } from '../../5-tool-loop/registry.js';
 import { readFileSync } from 'fs';
-import { getErrorMessage } from '../../error-utils.js';
+import { getErrorMessage } from '../../../shared/errors.js';
 
 // Default coordinates are only used for owner — never exposed to other users
 const DEFAULT_LAT = 41.75;

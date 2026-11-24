@@ -11,7 +11,7 @@
  *   - execute.ts checkTaintBlock sites: blocked_taint (the registry is never reached).
  *   - robustExecutor.executeWithRetry (retry.ts) opens a ledger scope around its attempts, so
  *     up to 3 registry attempts (plus fallbacks) collapse into ONE row: the final outcome.
- *     Without a scope (HTTP execute-tool route, XML loop, approvals replay) the registry
+ *     Without a scope (HTTP execute-tool route, approvals replay) the registry
  *     writes its own row directly. A call made from inside another call's handler (approvals
  *     replaying a gated call) is a separate logical call and gets its own row.
  *

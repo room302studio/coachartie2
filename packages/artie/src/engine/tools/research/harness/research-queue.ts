@@ -12,7 +12,7 @@ import { logger } from '../../../../shared/logger.js';
 import { getSyncDb } from '../../../../shared/db/client.js';
 import type { ResearchTask, TaskHandle, TaskResult } from './types.js';
 import { openaiResearchHarness } from './openai-research.js';
-import { getErrorMessage } from '../../../error-utils.js';
+import { getErrorMessage } from '../../../../shared/errors.js';
 import { UsageTracker } from '../../../budget/usage-ledger.js';
 
 // Initialize research queue table

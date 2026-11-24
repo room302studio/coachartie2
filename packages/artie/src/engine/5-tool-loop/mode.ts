@@ -1,44 +1,13 @@
-import { logger } from '../../shared/logger.js';
-
 /**
- * Which tool loop a turn runs (wave 8, F3).
- *
- *   native (default)  OpenRouter/OpenAI `tools` + `tool_calls`, runToolLoop (native-loop.ts).
- *   xml               TOOL_LOOP=xml: the old path end to end — the XML roster and format
- *                     teaching in the system prompt, the <capability/> parser, <wants_loop>,
- *                     the llm-loop ReAct loop, {{var}} substitution and the `variable` tool.
- *                     XML-LOOP: delete after v3 soak (TOOL_LOOP=xml)
- *
- * TOOL_LOOP=xml is the ONE emergency flag and exists only until v3 has soaked. Rollback is
- * `TOOL_LOOP=xml` in the environment + a restart. This getter is the only reader of the
- * variable; it reads it on every call, so a test can flip it after import.
+ * Native tool-call helpers: the one prompt line native mode adds, and the scrubbers for old
+ * XML tool teaching that DB prompt rows and registry hints can still carry.
  */
-export type ToolLoopMode = 'native' | 'xml';
-
-let warnedUnknown = false;
-
-export function toolLoopMode(): ToolLoopMode {
-  const raw = (process.env.TOOL_LOOP ?? '').trim().toLowerCase();
-  if (raw === 'xml') return 'xml'; // XML-LOOP: delete after v3 soak (TOOL_LOOP=xml)
-  if (raw && raw !== 'native' && !warnedUnknown) {
-    warnedUnknown = true;
-    logger.warn(`TOOL_LOOP="${raw}" is not 'native' or 'xml'; using native`);
-  }
-  return 'native';
-}
 
 /** The one line native mode adds to the system prompt (spec §5). */
 export const NATIVE_TOOLS_LINE = 'Use the provided tools; never write <capability> tags.';
 
-/**
- * Tools that exist only as XML plumbing and are never offered as native tools.
- * `variable` carries values between <capability/> tags ({{var}}); native tool results come
- * back to the model directly.
- */
-export const XML_ONLY_TOOLS = new Set(['variable']); // XML-LOOP: delete after v3 soak (TOOL_LOOP=xml)
-
-/** Header of the XML-mode roster (system-prompt.ts buildCapabilityRoster). */
-export const ROSTER_HEADER = '## Your capability roster';
+/** Header of the old roster section that DB prompt rows can still carry. */
+const ROSTER_HEADER = '## Your capability roster';
 
 const ATTR = /([\w.-]+)\s*=\s*(?:"([^"]*)"|'([^']*)')/g;
 
@@ -87,9 +56,8 @@ const SELF_CLOSING_TAG = new RegExp(`<capability\\b${TAG_ATTRS}\\s*\\/>`, 'g');
 const PAIRED_TAG = new RegExp(`<capability\\b${TAG_ATTRS}>([\\s\\S]*?)<\\/capability>`, 'g');
 
 /**
- * XML-LOOP: delete after v3 soak (TOOL_LOOP=xml), once the DB prompt rows are cleaned too
- * (BUILD-LOG wave 8 has the SQL): this only exists because those rows still teach XML.
- * Native-mode system prompt clean-up, by marker (spec §5). The live DB prompts can carry XML
+ * Delete once the DB prompt rows are cleaned (BUILD-LOG wave 8 has the SQL): this only
+ * exists because those rows still teach XML. Native-mode system prompt clean-up, by marker (spec §5). The live DB prompts can carry XML
  * tool teaching (PROMPT_DISCORD_UI_MODALITY's `Use: <capability name="discord-ui" .../>`
  * lines, tool examples). This:
  *  - drops the XML roster section if one is present ("## Your capability roster" to the next

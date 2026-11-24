@@ -1,19 +1,25 @@
 import { logger } from '../../shared/logger.js';
 import { mintTrusted } from '../../shared/trusted-ids.js';
 import { delay } from '../../shared/async.js';
-import { ParsedCapability } from './xml-parser.js';
 import { capabilityRegistry } from './registry.js';
 import { GlobalVariableStore, scopedOutputPrefix } from './variables.js';
 import Handlebars from 'handlebars';
 import {
   StructuredCapabilityError,
   formatStructuredErrorForLLM,
-} from '../errors.js';
+} from './tool-errors.js';
 import { errorPatternTracker } from './tool-error-patterns.js';
 import { capabilityTracker } from './tool-tracker.js';
 import { runInLedgerScope, looksLikeToolFailure } from './tool-ledger.js';
 import { collapseWhitespace } from '../../shared/text.js';
 import { CallerError } from '../../shared/errors.js';
+
+export interface ParsedCapability {
+  name: string;
+  action: string;
+  content: string;
+  params: Record<string, unknown>;
+}
 
 function getMaxRetries(capabilityName: string): number {
   if (capabilityName === 'mcp_auto_installer') {
@@ -371,8 +377,8 @@ export class RobustCapabilityExecutor {
       }
     }
 
-    // Every model-originated call (native and legacy XML loop) passes through here, so this is
-    // where the approval-gate bypass flag gets stripped for both. The approvals tool replays
+    // Every model-originated call passes through here, so this is where the approval-gate
+    // bypass flag gets stripped. The approvals tool replays
     // through capabilityRegistry.execute directly and keeps its confirmed:true.
     const { confirmed: _ignoredConfirmed, ...ungatedParams } = paramsWithContext as Record<
       string,

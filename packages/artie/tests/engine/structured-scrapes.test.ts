@@ -9,35 +9,9 @@ vi.mock('../../src/engine/4-generate/openrouter.js', () => ({
   responseFormatForModel: vi.fn(async () => undefined),
 }));
 
-import { parseTriagePicks, TRIAGE_OUTPUT } from '../../src/engine/3-context/pick-tools.js';
 import { salvageTextField } from '../../src/engine/tools/media/tts.js';
 import { parseDigestResponse, DIGEST_OUTPUT } from '../../src/engine/memory/channel-digest.js';
 import { parseRoutePick, ROUTE_OUTPUT } from '../../src/engine/routes/route-repo.js';
-
-describe('pick-tools triage: {capabilities: [{capability, score, reason}]}', () => {
-  it('reads picks, with the old line parser defaults for a missing score or reason', () => {
-    expect(
-      parseTriagePicks(
-        '{"capabilities":[{"capability":"calculator","score":0.95,"reason":"math"},{"capability":"remember"}]}'
-      )
-    ).toEqual([
-      { capability: 'calculator', score: 0.95, reason: 'math' },
-      { capability: 'remember', score: 0.5, reason: 'Selected by triage' },
-    ]);
-  });
-
-  it('an empty list is "no capabilities"; prose or the old line format is unparseable (null)', () => {
-    expect(parseTriagePicks('{"capabilities": []}')).toEqual([]);
-    expect(parseTriagePicks('CAPABILITY: calculator | SCORE: 0.9 | REASON: x')).toBeNull();
-    expect(parseTriagePicks('NONE')).toBeNull();
-  });
-
-  it('a reason that says "none" no longer reads as NONE (the old includes check did)', () => {
-    expect(
-      parseTriagePicks('{"capabilities":[{"capability":"web","score":0.9,"reason":"NONE of the cached data is fresh"}]}')
-    ).toHaveLength(1);
-  });
-});
 
 describe('tts salvage of a demoted JSON payload', () => {
   const LYRICS = /"(?:lyrics|text)"\s*:\s*"([\s\S]+?)"\s*[,}]/;
@@ -62,7 +36,7 @@ describe('tts salvage of a demoted JSON payload', () => {
 
 describe('response_format schemas are strict-mode shaped', () => {
   it('object root, every property required, no extras', () => {
-    for (const spec of [TRIAGE_OUTPUT, DIGEST_OUTPUT, ROUTE_OUTPUT]) {
+    for (const spec of [DIGEST_OUTPUT, ROUTE_OUTPUT]) {
       const s = spec.schema as { type: string; properties: object; required: string[]; additionalProperties: boolean };
       expect(s.type).toBe('object');
       expect(s.additionalProperties).toBe(false);

@@ -72,8 +72,8 @@ describe('registryToTools over the real registry', () => {
       expect(names).not.toContain(alias);
     }
     expect(names).not.toContain('variable');
-    expect(capabilityRegistry.has('variable')).toBe(true); // still executable on the XML path
-    expect(names.length).toBe(capabilityRegistry.list().length - 1);
+    expect(capabilityRegistry.has('variable')).toBe(false); // no longer registered at all
+    expect(names.length).toBe(capabilityRegistry.list().length);
   });
 
   it('is sorted by name and byte-identical across two builds', () => {

@@ -12,7 +12,6 @@ const SRC = join(__dirname, '../../src');
 
 /** file -> the sources it may mint with. */
 const MINT_SITES: Record<string, string[]> = {
-  'engine/5-tool-loop/execute.ts': ['discord-turn'],
   'engine/5-tool-loop/retry.ts': ['discord-turn'],
   'engine/2-turn/run-turn.ts': ['discord-turn'],
   'engine/tools/people/email-drafting.ts': ['discord-turn'],

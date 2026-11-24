@@ -1,7 +1,6 @@
 import { getSyncDb } from '../../shared/db/client.js';
 import { logger } from '../../shared/logger.js';
 import { stripUserMessagePlaceholder } from './prompt-cache.js';
-import { toolLoopMode } from '../5-tool-loop/mode.js';
 
 /** Base prompt when the DB has no PROMPT_SYSTEM row (native mode; tests, a fresh DB). */
 export const NATIVE_FALLBACK_BASE_PROMPT =
@@ -117,7 +116,7 @@ export class PromptManager {
   /**
    * Get capability instructions - DB first, registry fallback 🚀
    */
-  async getCapabilityInstructions(userMessage: string): Promise<string> {
+  async getCapabilityInstructions(_userMessage: string): Promise<string> {
     try {
       // First, try to get the rich system prompt
       logger.info(`🔍 Attempting to load rich system prompt from database`);
@@ -125,32 +124,11 @@ export class PromptManager {
       if (systemPrompt) {
         // Never substitute the user message here: this text becomes the cached system prefix,
         // and a per-request byte in it means no cache hit ever (see prompt-cache.ts).
-        let instructions = stripUserMessagePlaceholder(systemPrompt.content);
+        const instructions = stripUserMessagePlaceholder(systemPrompt.content);
 
-        // Native tools (the default): tools describe themselves on the wire, so no XML format
-        // teaching and no roster. assemble.ts strips any XML teaching left in the DB prompts
-        // and adds the one native line.
-        if (toolLoopMode() === 'native') {
-          logger.info(`🎯 Using rich PROMPT_SYSTEM from database (v${systemPrompt.version}), native tools`);
-          return instructions;
-        }
-
-        // XML-LOOP: delete after v3 soak (TOOL_LOOP=xml) — the intro and roster below.
-        // Append capability format instructions
-        const capabilityIntro = await this.getPrompt('CAPABILITY_PROMPT_INTRO');
-        if (capabilityIntro) {
-          instructions += '\n\n' + capabilityIntro.content;
-          logger.info(`📝 Appended CAPABILITY_PROMPT_INTRO to PROMPT_SYSTEM`);
-        }
-
-        // Append the live capability roster. CAPABILITY_PROMPT_INTRO teaches the
-        // XML format but only name-drops three example tools — on this (the
-        // production) path the registry was never consulted, so the model had no
-        // idea what capabilities exist unless the user typed their exact names.
-        // Compact one-liners keep it ~2k tokens for the full registry.
-        instructions += '\n\n' + (await this.buildCapabilityRoster());
-
-        logger.info(`🎯 Using rich PROMPT_SYSTEM from database (v${systemPrompt.version})`);
+        // Tools describe themselves on the wire, so no format teaching and no roster.
+        // assemble.ts strips any XML teaching left in the DB prompts and adds the one native line.
+        logger.info(`🎯 Using rich PROMPT_SYSTEM from database (v${systemPrompt.version}), native tools`);
         return instructions;
       } else {
         // Fallback to basic capability instructions
@@ -168,68 +146,9 @@ export class PromptManager {
       logger.warn(`⚠️ Failed to load DB prompts, falling back to registry:`, error);
     }
 
-    // Native tools need no selector: the tool list rides on the request. (The selector costs a
-    // FAST_MODEL call and writes XML instructions.)
-    if (toolLoopMode() === 'native') {
-      logger.warn('⚠️ No PROMPT_SYSTEM or capability_instructions in the DB; using the minimal native base prompt');
-      return NATIVE_FALLBACK_BASE_PROMPT;
-    }
-
-    // XML-LOOP: delete after v3 soak (TOOL_LOOP=xml) — the selector fallbacks below.
-    // Fallback: Use two-tier capability selector to nominate relevant capabilities
-    logger.info('🎯 Using two-tier capability selector for intelligent triage');
-    const { capabilitySelector } = await import('./pick-tools.js');
-
-    try {
-      // TIER 1: Use FAST_MODEL to nominate 3-5 relevant capabilities
-      const nominated = await capabilitySelector.selectRelevantCapabilities(userMessage);
-
-      // TIER 2: Generate instructions for ONLY nominated capabilities
-      const instructions = stripUserMessagePlaceholder(
-        capabilitySelector.generateNominatedInstructions(nominated)
-      );
-
-      logger.info(
-        `✅ Two-tier selector: Nominated ${nominated.length} capabilities (reduced from full registry)`
-      );
-
-      return instructions;
-    } catch (selectorError) {
-      // Fallback if selector fails: use ALL capabilities, as the one roster (wave 6: this
-      // used to be a separate, longer listing built by the registry).
-      logger.warn('⚠️ Capability selector failed, falling back to full registry:', selectorError);
-      const { capabilityRegistry } = await import('../5-tool-loop/registry.js');
-      const instructions = await this.buildCapabilityRoster();
-      logger.info(
-        `🎯 Using fallback capability instructions from registry (${capabilityRegistry.size()} capabilities)`
-      );
-
-      return instructions;
-    }
-  }
-
-  /**
-   * XML-LOOP: delete after v3 soak (TOOL_LOOP=xml). Native mode lists tools on the wire.
-   * Compact roster of every registered capability: name, actions, and the first
-   * line of its description. This just makes the tools discoverable.
-   *
-   * The ONLY capability roster (wave 6). Context assembly used to add a second, compressed
-   * listing built by the registry (a 'capability_context' source) into the same cached
-   * system message, so every first turn carried the roster twice.
-   */
-  async buildCapabilityRoster(): Promise<string> {
-    const { capabilityRegistry } = await import('../5-tool-loop/registry.js');
-    // Sorted, not registration-ordered. This roster sits inside the cached system prefix, and
-    // prompt caching is a byte-exact prefix match — if registration order shifts between
-    // restarts (it has: see the double-registration fix in b46d9814f) the whole prefix stops
-    // matching and silently re-bills at full price. Sorting costs nothing and pins the bytes.
-    const lines = [...capabilityRegistry.list()]
-      .sort((a, b) => a.name.localeCompare(b.name))
-      .map((cap) => {
-        const firstLine = (cap.description || '').split('\n')[0].slice(0, 140);
-        return `- ${cap.name} [${[...cap.supportedActions].sort().join(', ')}]: ${firstLine}`;
-      });
-    return `## Your capability roster\nThese are the ONLY capabilities that exist. Invoke with the XML format above (name + action must match exactly):\n${lines.join('\n')}`;
+    // The tool list rides on the request, so there is no selector or roster to build.
+    logger.warn('⚠️ No PROMPT_SYSTEM or capability_instructions in the DB; using the minimal native base prompt');
+    return NATIVE_FALLBACK_BASE_PROMPT;
   }
 
   /**

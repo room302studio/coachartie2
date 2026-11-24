@@ -2,8 +2,7 @@ import { logger } from '../../shared/logger.js';
 import { OWNER_USER_ID } from '../../shared/config/owner.js';
 import { estimateTokens } from '../../shared/async.js';
 import { getGuildKnowledgeDirs } from '../../shared/paths.js';
-import { conscienceLLM } from '../health/conscience.js';
-import { toolLoopMode, stripXmlToolTeaching, NATIVE_TOOLS_LINE } from '../5-tool-loop/mode.js';
+import { stripXmlToolTeaching, NATIVE_TOOLS_LINE } from '../5-tool-loop/mode.js';
 import { IncomingMessage } from '../../shared/queue/types.js';
 import { MemoryEntourageInterface } from '../memory/types.js';
 import { MemoryRecaller } from '../memory/recall.js';
@@ -584,9 +583,6 @@ Important:
     // Previously analyzed files - so follow-up messages know about them
     await addStoredFileContext(message, sources);
 
-    // Goal whisper from Conscience - high-level intent/guidance
-    await this.addGoalWhisper(message, sources);
-
     // Self-awareness - am I under stress? (distress monitor)
     await addSelfAwareness(sources);
 
@@ -642,13 +638,10 @@ Important:
 
     // Capability learnings - only loaded when we know which capabilities are actually being executed
     // (not during initial context building - that's wasteful)
-    // These get loaded later in the orchestration flow after extraction + conscience review
+    // These get loaded later in the orchestration flow after extraction
     // await this.addCapabilityLearnings(message, sources, capabilityContext);
 
-    // No capability manifest source here (wave 6). It used to push a second, compressed
-    // roster into the cached system prefix on every turn, on top of the one
-    // system-prompt.ts's buildCapabilityRoster already appends to the base system prompt.
-    // That roster is now the only one.
+    // No capability roster source here: tools are listed on the wire, not in the prompt.
 
     // Discord environment - connected servers (where we are)
     await addDiscordEnvironment(sources);
@@ -961,30 +954,6 @@ Important:
   }
 
   /**
-   * Add goal whisper to message context (matches assembleMessagePreamble pattern)
-   */
-  private async addGoalWhisper(message: IncomingMessage, sources: ContextSource[]): Promise<void> {
-    try {
-      const goalWhisper = await conscienceLLM.getGoalWhisper(message.message, message.userId);
-
-      if (goalWhisper) {
-        const content = `[Conscience: ${goalWhisper}]`;
-
-        sources.push({
-          name: 'goal_context',
-          priority: 90, // High priority when available
-          tokenWeight: estimateTokens(content),
-          content,
-          category: 'goals',
-        });
-      }
-    } catch (error) {
-      logger.warn('Failed to add goal whisper:', error);
-      // Graceful degradation - continue without goal context
-    }
-  }
-
-  /**
    * Select optimal context sources within token budget
    */
   private selectOptimalContext(sources: ContextSource[], budget: ContextBudget): ContextSource[] {
@@ -1068,8 +1037,7 @@ Important:
     //
     // Anything added here must be identical call to call. Per-message content goes in the
     // "Relevant context" block or the final user turn, never above this line.
-    // The capability roster is already inside baseSystemPrompt (system-prompt.ts
-    // buildCapabilityRoster); no context source is in the 'capabilities' bucket since wave 6.
+    // No context source is in the 'capabilities' bucket since wave 6.
     let systemContent = baseSystemPrompt;
 
     // Message-format protocol. The final user turn carries harness-injected
@@ -1103,12 +1071,10 @@ Important:
       }
     }
 
-    // Native tools (wave 8, the default): the DB prompts above can still teach the XML tag
-    // format (PROMPT_DISCORD_UI_MODALITY's `Use: <capability .../>` lines, any roster). Rewrite
+    // Native tools: the DB prompts above can still teach the XML tag format
+    // (PROMPT_DISCORD_UI_MODALITY's `Use: <capability .../>` lines, any roster). Rewrite
     // it by marker and say once how tools work now. Deterministic, so the prefix stays cacheable.
-    if (toolLoopMode() === 'native') {
-      systemContent = `${stripXmlToolTeaching(systemContent.trim())}\n\n${NATIVE_TOOLS_LINE}`;
-    }
+    systemContent = `${stripXmlToolTeaching(systemContent.trim())}\n\n${NATIVE_TOOLS_LINE}`;
 
     messages.push({ role: 'system', content: systemContent.trim() });
 

@@ -215,11 +215,9 @@ describe('architecture: every tool is registered', () => {
 });
 
 describe('architecture: tools never reach back into the loop', () => {
-  it('src/engine/tools/** imports nothing under 2-turn/ and neither loop file', () => {
+  it('src/engine/tools/** imports nothing under 2-turn/ and not the loop file', () => {
     const forbidden = (target: string) =>
-      target.startsWith('engine/2-turn/') ||
-      target === 'engine/5-tool-loop/loop.ts' ||
-      target === 'engine/5-tool-loop/native-loop.ts';
+      target.startsWith('engine/2-turn/') || target === 'engine/5-tool-loop/native-loop.ts';
     const violations: string[] = [];
     for (const file of walk(join(SRC, 'engine', 'tools'))) {
       for (const target of importTargets(file)) {

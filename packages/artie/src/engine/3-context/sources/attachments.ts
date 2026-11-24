@@ -17,18 +17,15 @@ import { storeAnalyzedMetroFile, readAnalysis } from '../../1-intake/pending-att
 import { getUserScores, formatUserScores } from '../../2-turn/user-scores.js';
 import type { ContextSource } from './types.js';
 import { DEBUG } from './types.js';
-import { toolLoopMode, toCallNotation } from '../../5-tool-loop/mode.js';
+import { toCallNotation } from '../../5-tool-loop/mode.js';
 import { collapseWhitespace } from '../../../shared/text.js';
 import { isAudioAttachment, transcribeVoiceMemos, formatMemoContext } from '../../jobs/scribe/voice-memo.js';
 
-/** How to send the analyzed save back: XML tag on the XML path, call notation on native. */
+/** How to send the analyzed save back, in call notation. */
 function sendMetroFileHint(): string {
   const xml =
     'TO SEND FILE: <capability name="send-metro-file" action="send" userId="USER_ID" message="Your message here" />';
-  if (toolLoopMode() === 'native') {
-    return toCallNotation(xml);
-  }
-  return xml;
+  return toCallNotation(xml);
 }
 
 // Vision capability wrapper for auto-extraction

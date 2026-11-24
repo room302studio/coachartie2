@@ -28,7 +28,6 @@ import { GlobalVariableStore } from './5-tool-loop/variables.js';
 // would have thrown ERR_MODULE_NOT_FOUND at boot.
 import './2-turn/run-turn.js';
 import { capabilityRegistry } from './5-tool-loop/registry.js';
-import { toolLoopMode } from './5-tool-loop/mode.js';
 import { openRouterModelsService } from './4-generate/model-catalog.js';
 import { hybridDataLayer } from './memory/store.js';
 import { endCrashedScribeSessions } from '../shared/db/scribe-store.js';
@@ -148,18 +147,9 @@ export async function startEngine(): Promise<EngineHandle> {
   console.log('📊 Initializing orchestrator...');
   const stats = capabilityRegistry.getStats();
 
-  // Which tool loop this process runs (wave 8). warn, so it reaches the PM2 log file.
-  const loopMode = toolLoopMode();
-  let loopModeMsg: string;
-  if (loopMode === 'native') {
-    loopModeMsg = '🔧 Tool loop: native tool calls (default). Rollback: TOOL_LOOP=xml + restart.';
-  } else {
-    loopModeMsg = '🔧 Tool loop: XML (TOOL_LOOP=xml, emergency fallback)';
-  }
-  logger.warn(loopModeMsg);
   // Native tool turns check the model catalog's supported_parameters; warm it now so the
   // first reply after boot doesn't wait on the fetch.
-  if (loopMode === 'native') void openRouterModelsService.fetchLiveModelInfo();
+  void openRouterModelsService.fetchLiveModelInfo();
 
   // Scribe rows a crash left 'active' are ghosts (no voice session survives a restart), and
   // the gateway, which starts after this, would otherwise treat them as live (2026-10-31).

