@@ -517,3 +517,15 @@ describe('channel sources reach real turns (the assembler mocks source as "capab
     expect(sources[0].content).toContain("- The message you're answering: id 300000000000000003");
   });
 });
+
+describe('which reads taint the turn (EJ: "skip the taint", search too on 2026-11-24)', () => {
+  it('Discord reads do not taint; outside-web text still does', async () => {
+    const { TAINTING_CAPABILITIES } = await import('../../src/engine/5-tool-loop/execute.js');
+    for (const read of ['discord-search', 'discord-channels', 'discord-forums']) {
+      expect(TAINTING_CAPABILITIES.has(read)).toBe(false);
+    }
+    for (const outside of ['http', 'web', 'github', 'reddit', 'mediawiki']) {
+      expect(TAINTING_CAPABILITIES.has(outside)).toBe(true);
+    }
+  });
+});

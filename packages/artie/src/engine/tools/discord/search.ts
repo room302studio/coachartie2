@@ -2,8 +2,8 @@
  * discord-search: Artie looks things up in the server he's talking in, for his own context.
  * EJ, 2026-11-23: internal use only, current server only. The server and the person he's
  * talking to come from the turn context, never from the model's params, and the gateway keeps
- * results to channels that person can read (gateway/routes/message-search.ts). Results are other
- * people's words, so a search taints the turn (execute.ts TAINTING_CAPABILITIES).
+ * results to channels that person can read (gateway/routes/message-search.ts). Like channel and
+ * forum reads, a search does NOT taint the turn (EJ, 2026-11-24; execute.ts TAINTING_CAPABILITIES).
  */
 import { RegisteredCapability, CapabilityContext } from '../../5-tool-loop/registry.js';
 import { logger } from '../../../shared/logger.js';

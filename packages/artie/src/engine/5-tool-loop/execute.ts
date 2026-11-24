@@ -46,11 +46,11 @@ export const TAINTING_CAPABILITIES = new Set([
   'github',
   'reddit',
   'mediawiki',
-  // 2026-11-23: guild message search returns other people's messages verbatim; anyone in the
-  // server could plant instructions for Artie to find.
-  'discord-search',
-  // discord-channels and discord-forums deliberately do NOT taint (EJ, 2026-11-23: "skip the
-  // taint"), so Artie can read a channel and react to a message in it in the same turn.
+  // discord-channels, discord-forums and discord-search deliberately do NOT taint (EJ,
+  // 2026-11-23: "skip the taint"; search followed on 2026-11-24), so Artie can find or read a
+  // message and act on it in the same turn. They return the same kind of server text he
+  // already sees in channel history, audience-gated; his Discord writes never mass-ping and
+  // threads/posts stay Room 302-scoped.
 ]);
 
 // Which actions are blocked once the turn is tainted is no longer a list here: it is derived
