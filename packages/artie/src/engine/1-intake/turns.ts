@@ -6,7 +6,7 @@ import { engineDeps, defaultEngineDeps, type EngineDeps } from '../deps.js';
 import { v4 as uuidv4 } from 'uuid';
 import { rateLimiter } from './rate-limiter.js';
 import { jobTracker } from './job-tracker.js';
-import { getPendingAttachments } from '../3-context/assemble.js';
+import { getPendingAttachments } from './pending-attachments.js';
 import { type ApiResult, sendResult } from '../../shared/api-result.js';
 
 // Wave 9: POST /chat, GET /chat/:id, its /stream and /pending-attachments are functions

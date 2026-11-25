@@ -16,20 +16,6 @@ export default defineConfig({
 
     setupFiles: ['./test-setup.ts'],
 
-    coverage: {
-      provider: 'v8',
-      reporter: ['text', 'json', 'html'],
-      exclude: [
-        'coverage/**',
-        'dist/**',
-        'packages/**/node_modules/**',
-        'packages/**/dist/**',
-        '**/*.d.ts',
-        '**/*.config.*',
-        '**/test-setup.ts',
-      ],
-    },
-
     reporter: ['verbose', 'json'],
     retry: 1,
     passWithNoTests: true,

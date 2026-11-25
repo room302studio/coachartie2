@@ -5,7 +5,7 @@
  */
 import { describe, it, expect, beforeAll } from 'vitest';
 import { capabilityBootstrap } from '../../../src/engine/capabilities/register-all.js';
-import { capabilityRegistry, TOOL_ALIASES } from '../../../src/engine/capabilities/registry.js';
+import { capabilityRegistry, CAPABILITY_ALIASES } from '../../../src/engine/capabilities/registry.js';
 import {
   registryToTools,
   capabilityToTool,
@@ -13,7 +13,7 @@ import {
   toToolName,
   type ToolDefinition,
 } from '../../../src/engine/5-tool-loop/tool-schema.js';
-import { declaredToolContent, declaresParams, declaredToolParams } from '../../../src/engine/capabilities/policy.js';
+import { declaredActionContent, declaresParams, declaredActionParams } from '../../../src/engine/capabilities/policy.js';
 import { toCallNotation, stripXmlToolTeaching } from '../../../src/engine/3-context/xml-teaching.js';
 
 async function bootRegistry(): Promise<void> {
@@ -68,7 +68,7 @@ describe('registryToTools over the real registry', () => {
 
   it('lists canonical names only: no alias, no variable', () => {
     const names = tools.map((t) => t.function.name);
-    for (const alias of Object.keys(TOOL_ALIASES)) {
+    for (const alias of Object.keys(CAPABILITY_ALIASES)) {
       expect(names).not.toContain(alias);
     }
     expect(names).not.toContain('variable');
@@ -131,7 +131,7 @@ describe('registryToTools over the real registry', () => {
     const TARGETS = new Set(['channelId', 'messageId', 'userId']);
     const exposing = capabilityRegistry
       .list()
-      .filter((cap) => declaredToolParams(cap.actions).some(([param]) => TARGETS.has(param)))
+      .filter((cap) => declaredActionParams(cap.actions).some(([param]) => TARGETS.has(param)))
       .map((cap) => cap.name)
       .sort();
     // discord-poll joined 2026-11-24: its channelId is checked against this server (and Room 302
@@ -160,7 +160,7 @@ describe('registryToTools over the real registry', () => {
     for (const cap of capabilityRegistry.list()) {
       const tool = byName(cap.name);
       if (!tool || !declaresParams(cap.actions)) continue;
-      const declared = declaredToolContent(cap.actions) !== undefined;
+      const declared = declaredActionContent(cap.actions) !== undefined;
       expect(tool.function.parameters.properties.content !== undefined, cap.name).toBe(declared);
     }
   });

@@ -12,7 +12,7 @@
  *   git    <verb> → git_<verb> (status, diff, log, branch, show, blame)
  *   search files → find_files, content → grep, both → search
  *
- * The old names still work through TOOL_ALIASES in capabilities/registry.ts.
+ * The old names still work through CAPABILITY_ALIASES in capabilities/registry.ts.
  * The docker command strings are byte-identical to the pre-merge files (each section keeps its
  * own exec helper, because their -w / -e flags differ), except shell's tmux/pwd helper, which
  * became an execFile argv call in wave 7 (ledger #10; see execInContainer).

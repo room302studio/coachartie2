@@ -8,6 +8,7 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { OWNER_USER_ID } from '../../../src/shared/config/owner.js';
+import { testUserId } from '../../test-ids.js';
 
 vi.mock('../../../src/engine/budget/brownout.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../../src/engine/budget/brownout.js')>();
@@ -49,7 +50,7 @@ describe('image_gen brownout + owner exemption', () => {
     const result = await imageGenCapability.handler(
       { action: 'generate', prompt: 'a cat', userId: 'some-random-user' },
       undefined,
-      { userId: 'some-random-user' }
+      { userId: testUserId('some-random-user') }
     );
 
     expect(result).toMatch(/lean|paused/i);
@@ -62,7 +63,7 @@ describe('image_gen brownout + owner exemption', () => {
     const result = await imageGenCapability.handler(
       { action: 'generate', prompt: 'a cat', userId: OWNER_USER_ID },
       undefined,
-      { userId: OWNER_USER_ID }
+      { userId: testUserId(OWNER_USER_ID) }
     );
 
     expect(result).not.toMatch(/lean|paused/i);
@@ -75,7 +76,7 @@ describe('image_gen brownout + owner exemption', () => {
     const result = await imageGenCapability.handler(
       { action: 'generate', prompt: 'a dog', userId: `non-critical-user-${Date.now()}` },
       undefined,
-      { userId: 'non-critical-user' }
+      { userId: testUserId('non-critical-user') }
     );
 
     expect(global.fetch).toHaveBeenCalled();
@@ -105,15 +106,15 @@ describe('image_gen per-user daily cap', () => {
     const userId = `cap-test-user-${Date.now()}`;
     // Seed today's usage at the cap via the real ledger write path (calling the handler
     // twice IS the seed — the cap counts rows the handler itself just wrote).
-    await imageGenCapability.handler({ action: 'generate', prompt: 'one', userId }, undefined, { userId });
-    await imageGenCapability.handler({ action: 'generate', prompt: 'two', userId }, undefined, { userId });
+    await imageGenCapability.handler({ action: 'generate', prompt: 'one', userId }, undefined, { userId: testUserId(userId) });
+    await imageGenCapability.handler({ action: 'generate', prompt: 'two', userId }, undefined, { userId: testUserId(userId) });
     expect(getUserActionCountToday(userId, 'image_gen')).toBeGreaterThanOrEqual(2);
 
     const fetchCallsBefore = (global.fetch as ReturnType<typeof vi.fn>).mock.calls.length;
     const third = await imageGenCapability.handler(
       { action: 'generate', prompt: 'three', userId },
       undefined,
-      { userId }
+      { userId: testUserId(userId) }
     );
 
     expect(third).toMatch(/limit/i);
@@ -121,13 +122,13 @@ describe('image_gen per-user daily cap', () => {
   });
 
   it('the owner is exempt from the per-user cap', async () => {
-    await imageGenCapability.handler({ action: 'generate', prompt: 'owner 1', userId: OWNER_USER_ID }, undefined, { userId: OWNER_USER_ID });
-    await imageGenCapability.handler({ action: 'generate', prompt: 'owner 2', userId: OWNER_USER_ID }, undefined, { userId: OWNER_USER_ID });
-    await imageGenCapability.handler({ action: 'generate', prompt: 'owner 3', userId: OWNER_USER_ID }, undefined, { userId: OWNER_USER_ID });
+    await imageGenCapability.handler({ action: 'generate', prompt: 'owner 1', userId: OWNER_USER_ID }, undefined, { userId: testUserId(OWNER_USER_ID) });
+    await imageGenCapability.handler({ action: 'generate', prompt: 'owner 2', userId: OWNER_USER_ID }, undefined, { userId: testUserId(OWNER_USER_ID) });
+    await imageGenCapability.handler({ action: 'generate', prompt: 'owner 3', userId: OWNER_USER_ID }, undefined, { userId: testUserId(OWNER_USER_ID) });
     const result = await imageGenCapability.handler(
       { action: 'generate', prompt: 'owner fourth', userId: OWNER_USER_ID },
       undefined,
-      { userId: OWNER_USER_ID }
+      { userId: testUserId(OWNER_USER_ID) }
     );
     expect(result).not.toMatch(/limit/i);
   });

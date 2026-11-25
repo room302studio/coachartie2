@@ -1,5 +1,6 @@
 {
   "$schema": "https://unpkg.com/knip@5/schema.json",
+  "ignoreBinaries": ["pm2", "ffmpeg", "sqlite3"],
   "workspaces": {
     ".": {
       "entry": [
@@ -10,12 +11,7 @@
       ]
     },
     "packages/artie": {
-      "entry": [
-        "src/main.ts",
-        "src/engine/metro-saves/child.ts",
-        "tests/**/*.test.ts",
-        "drizzle.config.ts"
-      ],
+      "entry": ["src/engine/metro-saves/child.ts", "tests/**/*.test.ts"],
       "project": ["src/**/*.ts", "tests/**/*.ts"]
     }
   }

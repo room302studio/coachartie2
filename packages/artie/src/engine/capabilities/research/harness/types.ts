@@ -5,7 +5,7 @@
  * Supports sync (OpenRouter), async/polling (o4-deep-research), and streaming.
  */
 
-export type HarnessType = 'sync' | 'async' | 'streaming';
+type HarnessType = 'sync' | 'async' | 'streaming';
 
 export interface GenerateOptions {
   maxTokens?: number;
@@ -16,7 +16,7 @@ export interface GenerateOptions {
   taskId?: string;
 }
 
-export interface ToolDefinition {
+interface ToolDefinition {
   type: string;
   name?: string;
   description?: string;
@@ -61,13 +61,13 @@ export interface TaskResult {
   completedAt: Date;
 }
 
-export interface TokenUsage {
+interface TokenUsage {
   inputTokens: number;
   outputTokens: number;
   reasoningTokens?: number;
 }
 
-export interface CostBreakdown {
+interface CostBreakdown {
   tokens: number;
   webSearches: number;
   codeInterpreter: number;

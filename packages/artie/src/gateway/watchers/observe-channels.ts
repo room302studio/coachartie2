@@ -380,7 +380,7 @@ Focus on patterns that would help understand this community's needs and interest
     try {
       // Call memory capability to store observation (wave 9: in-process, was POST
       // :47324/capabilities/registry/memory/execute; same handler)
-      const memoryResponse = await engine.executeTool('memory', {
+      const memoryResponse = await engine.executeCapability('memory', {
         action: 'remember',
         params: {
           content: `[Observation from ${guildName} #${channelName} (${messageCount} messages)] ${summary}`,

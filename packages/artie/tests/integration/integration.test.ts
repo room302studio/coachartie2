@@ -17,8 +17,9 @@ describe('Redis Queue Integration Tests', () => {
     const incomingQueue = createQueue<IncomingMessage>(QUEUES.INCOMING_MESSAGES);
     const outgoingQueue = createQueue<OutgoingMessage>(QUEUES.OUTGOING_DISCORD);
 
-    let receivedMessage: IncomingMessage | null = null;
-    let processedResponse: OutgoingMessage | null = null;
+    // Assigned inside worker callbacks, which control-flow narrowing can't see.
+    let receivedMessage = null as IncomingMessage | null;
+    let processedResponse = null as OutgoingMessage | null;
 
     // Set up a worker to process incoming messages
     const incomingWorker = createWorker<IncomingMessage, void>(

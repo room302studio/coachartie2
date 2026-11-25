@@ -685,7 +685,7 @@ async function handleFeedbackReaction(
     } else {
       importance = 3;
     }
-    const response = await engine.executeTool('memory', {
+    const response = await engine.executeCapability('memory', {
       action: 'remember',
       params: {
         content: feedbackNote,

@@ -26,7 +26,7 @@ Words: a **capability** is something Artie can do; a **tool** is only the wire f
   `capabilities/register-all.ts`, with an `actions` declaration (each action's `effect` derives
   its owner-only, taint and approval gates; see `capabilities/policy.ts`). Then update
   `tests/engine/capabilities/roster.expected.json`.
-- Old capability names keep working through `TOOL_ALIASES` in `capabilities/registry.ts`.
+- Old capability names keep working through `CAPABILITY_ALIASES` in `capabilities/registry.ts`.
 - Never rename for tidiness: capability names, DB tables/columns, env vars, HTTP routes, slash
   commands, ledger outcomes.
 - Gated actions (money, anything leaving Discord) queue for EJ's approval; owner-only actions

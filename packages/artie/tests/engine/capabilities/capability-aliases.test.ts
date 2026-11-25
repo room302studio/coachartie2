@@ -3,7 +3,7 @@
  *
  * Ten pre-merge tools collapse into four canonical ones (goals, tasks, sandbox, bot-config).
  * The model may still emit the old names, so every old `name:action` pair must keep resolving
- * through `resolveToolCall` to a registered canonical tool and an action that tool supports.
+ * through `resolveCapabilityAlias` to a registered canonical capability and an action it supports.
  *
  * PRE_MERGE_TOOLS is copied by hand from the pre-merge sources (supportedActions of
  * planning/{goal,goals,todo,quests,task-status}.ts, dev/sandbox/{shell,edit,git,search}.ts,
@@ -24,7 +24,7 @@ const { execMock } = vi.hoisted(() => ({
     ) => {
       let cb: (err: Error | null, out?: { stdout: string; stderr: string }) => void;
       if (typeof optsOrCb === 'function') {
-        cb = optsOrCb;
+        cb = optsOrCb as typeof cb;
       } else {
         cb = maybeCb as (err: Error | null, out?: { stdout: string; stderr: string }) => void;
       }
@@ -65,10 +65,11 @@ vi.mock('child_process', async (importOriginal) => {
 import { capabilityBootstrap } from '../../../src/engine/capabilities/register-all.js';
 import {
   capabilityRegistry,
-  resolveToolCall,
-  TOOL_ALIASES,
+  resolveCapabilityAlias,
+  CAPABILITY_ALIASES,
 } from '../../../src/engine/capabilities/registry.js';
 import { getRawDb } from '../../../src/shared/db/client.js';
+import { testUserId } from '../../test-ids.js';
 
 const PRE_MERGE_TOOLS: Record<string, string[]> = {
   // planning/goal.ts
@@ -154,8 +155,8 @@ beforeAll(() => {
 
 describe('tool alias map', () => {
   it.each(PAIRS)('%s:%s resolves to a registered canonical tool + action', (name, action) => {
-    const resolved = resolveToolCall(name, action, {});
-    expect(TOOL_ALIASES[resolved.name]).toBeUndefined();
+    const resolved = resolveCapabilityAlias(name, action, {});
+    expect(CAPABILITY_ALIASES[resolved.name]).toBeUndefined();
     const cap = capabilityRegistry.list().find((c) => c.name === resolved.name);
     expect(cap, `${name}:${action} -> ${resolved.name} is not registered`).toBeDefined();
     expect(cap!.supportedActions).toContain(resolved.action);
@@ -166,29 +167,29 @@ describe('tool alias map', () => {
     for (const canonical of CANONICAL) {
       expect(names).toContain(canonical);
     }
-    for (const alias of Object.keys(TOOL_ALIASES)) {
+    for (const alias of Object.keys(CAPABILITY_ALIASES)) {
       expect(names).not.toContain(alias);
     }
   });
 
   it('every alias targets a registered canonical tool', () => {
-    for (const [alias, entry] of Object.entries(TOOL_ALIASES)) {
+    for (const [alias, entry] of Object.entries(CAPABILITY_ALIASES)) {
       expect(capabilityRegistry.has(entry.to), `${alias} -> ${entry.to}`).toBe(true);
-      expect(TOOL_ALIASES[entry.to]).toBeUndefined();
+      expect(CAPABILITY_ALIASES[entry.to]).toBeUndefined();
     }
   });
 
   it('keeps an unknown action on an old name, but still maps the name', () => {
-    expect(resolveToolCall('git', 'push', {})).toMatchObject({ name: 'sandbox', action: 'push' });
+    expect(resolveCapabilityAlias('git', 'push', {})).toMatchObject({ name: 'sandbox', action: 'push' });
   });
 
   it('leaves canonical and unrelated tools untouched', () => {
-    expect(resolveToolCall('sandbox', 'exec', { command: 'ls' })).toMatchObject({
+    expect(resolveCapabilityAlias('sandbox', 'exec', { command: 'ls' })).toMatchObject({
       name: 'sandbox',
       action: 'exec',
       params: { command: 'ls' },
     });
-    expect(resolveToolCall('web', 'search', {})).toMatchObject({ name: 'web', action: 'search' });
+    expect(resolveCapabilityAlias('web', 'search', {})).toMatchObject({ name: 'web', action: 'search' });
   });
 
   it('has/supportsAction/get see through aliases', () => {
@@ -206,7 +207,7 @@ describe('execution through an alias', () => {
   it('shell:exec runs sandbox:exec with the same docker command', async () => {
     // sandbox is owner-only (owner-only.ts), so this alias routing test calls as the owner.
     const out = await capabilityRegistry.execute('shell', 'exec', { command: 'echo hi' }, undefined, {
-      userId: OWNER_USER_ID,
+      userId: testUserId(OWNER_USER_ID),
     });
     expect(out).toContain('$ echo hi');
     expect(out).toContain('mocked-output');
@@ -224,7 +225,7 @@ describe('execution through an alias', () => {
 
   it('git:status runs sandbox:git_status in the same container', async () => {
     const out = await capabilityRegistry.execute('git', 'status', {}, undefined, {
-      userId: OWNER_USER_ID,
+      userId: testUserId(OWNER_USER_ID),
     });
     expect(out).toContain('Branch: mocked-output');
     const commands = execMock.mock.calls.map((c) => c[0]);
@@ -240,7 +241,7 @@ describe('execution through an alias', () => {
       'start',
       { taskName: 'pin the aliases' },
       undefined,
-      { userId: 'alias-test-user' }
+      { userId: testUserId('alias-test-user') }
     );
     expect(out).toContain('Started:** pin the aliases');
     const list = await capabilityRegistry.execute(
@@ -248,7 +249,7 @@ describe('execution through an alias', () => {
       'active',
       {},
       undefined,
-      { userId: 'alias-test-user' }
+      { userId: testUserId('alias-test-user') }
     );
     expect(list).toContain('pin the aliases');
   });
@@ -274,7 +275,7 @@ describe('execution through an alias', () => {
       id INTEGER PRIMARY KEY AUTOINCREMENT, goal_id TEXT NOT NULL, action_type TEXT NOT NULL,
       action_description TEXT, result TEXT, triggered_at TEXT DEFAULT CURRENT_TIMESTAMP)`);
 
-    const ctx = { userId: 'alias-goal-user' };
+    const ctx = { userId: testUserId('alias-goal-user') };
     const created = await capabilityRegistry.execute(
       'goal',
       'set',
@@ -295,7 +296,7 @@ describe('execution through an alias', () => {
 // actions all collapse into diagnose's harmless `ping`.
 describe('hello-world merge (F1: merged, not deleted)', () => {
   it.each(['greet', 'wave', 'introduce'])('hello-world:%s resolves to diagnose:ping', (action) => {
-    expect(resolveToolCall('hello-world', action, {})).toMatchObject({
+    expect(resolveCapabilityAlias('hello-world', action, {})).toMatchObject({
       name: 'diagnose',
       action: 'ping',
     });

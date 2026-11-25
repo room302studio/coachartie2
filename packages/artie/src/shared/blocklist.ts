@@ -29,10 +29,6 @@ export const BLOCKED_USER_EPITHET = 'the banned one';
 
 export const BLOCKED_USER_IDS: ReadonlySet<string> = new Set(BLOCKED_USERS.map((u) => u.id));
 
-// Name matching is deliberately loose (case-insensitive substring): these names only
-// appear in Discord-sourced text, and a false positive just means one less memory.
-const BLOCKED_NAME_PATTERNS = BLOCKED_USERS.flatMap((u) => u.names.map((n) => n.toLowerCase()));
-
 /**
  * True for anyone Artie must treat as absent from his DATA: EJ's blocklist plus users who
  * opted out themselves (services/privacy-opt-out.ts). Gates intake, history, digests,
@@ -41,19 +37,6 @@ const BLOCKED_NAME_PATTERNS = BLOCKED_USERS.flatMap((u) => u.names.map((n) => n.
  */
 export function isBlockedUser(userId?: string | null): boolean {
   return !!userId && (BLOCKED_USER_IDS.has(userId) || isOptedOut(userId));
-}
-
-/**
- * True if the text mentions a blocked user by id or any known name.
- * Used to keep them out of formed memories and recalled context.
- */
-export function mentionsBlockedUser(text?: string | null): boolean {
-  if (!text) return false;
-  const lower = text.toLowerCase();
-  return (
-    BLOCKED_NAME_PATTERNS.some((name) => lower.includes(name)) ||
-    BLOCKED_USERS.some((u) => lower.includes(u.id))
-  );
 }
 
 /**

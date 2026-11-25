@@ -1,5 +1,5 @@
 import { AUTO_INJECTED_PARAMS, type RegisteredCapability } from '../capabilities/registry.js';
-import { declaredToolParams, declaredToolContent, declaresParams } from '../capabilities/policy.js';
+import { declaredActionParams, declaredActionContent, declaresParams } from '../capabilities/policy.js';
 import { parseTagAttributes, toCallNotation, TAG_ATTRS } from '../3-context/xml-teaching.js';
 
 /**
@@ -140,7 +140,7 @@ export function capabilityToTool(cap: RegisteredCapability): ToolDefinition {
   // Typed params declared per action (capabilities/policy.ts) win. They are the truth about what the
   // handler reads, so example scraping is skipped for that tool (an example's `data='{json}'`
   // blob would otherwise surface as a param the native path never unpacks).
-  const declared = declaredToolParams(cap.actions);
+  const declared = declaredActionParams(cap.actions);
   for (const [param, spec] of declared) {
     if (!PROPERTY_NAME.test(param) || param in properties || DECLARED_NOT_A_PARAM.has(param)) continue;
     const prop: Record<string, unknown> = {
@@ -170,9 +170,9 @@ export function capabilityToTool(cap: RegisteredCapability): ToolDefinition {
   // The whole list rides on every tool turn (~63 tools), so per-tool text stays short: the
   // action enum already lists the actions, and this one description is repeated 63 times.
   // A tool that declares typed params has been audited: `content` is offered only when an action
-  // declares it reads it (ToolActionSpec.content), so the model is not handed a free-text field
+  // declares it reads it (ActionSpec.content), so the model is not handed a free-text field
   // the handler ignores. Tools with no declared params keep the generic field.
-  const declaredContent = declaredToolContent(cap.actions);
+  const declaredContent = declaredActionContent(cap.actions);
   if (declaredContent) {
     properties.content = {
       type: 'string',

@@ -16,7 +16,7 @@ import type {
   CapabilityContext,
 } from '../registry.js';
 import { heartbeatStatus } from '../../proactive/heartbeat.js';
-import { getRecentSummaries } from '../../memory/summarizer.js';
+import { getRecentSummaries } from '../../memory/daily-summaries.js';
 import { MODEL_TIERS, routeMessage } from './model-router.js';
 
 interface AutonomousParams {

@@ -8,6 +8,7 @@ import { describe, it, expect, beforeAll } from 'vitest';
 import { memoryCapability, NON_OWNER_MAX_IMPORTANCE } from '../../../../src/engine/capabilities/core/memory.js';
 import { OWNER_USER_ID } from '../../../../src/shared/config/owner.js';
 import { getSyncDb } from '../../../../src/shared/db/client.js';
+import { testUserId } from '../../../test-ids.js';
 
 const ATTACKER = 'memory-cap-test-attacker';
 
@@ -29,7 +30,7 @@ describe('memory:remember importance cap', () => {
     const result = await memoryCapability.handler(
       { action: 'remember', scope: 'me', content: 'poisoned fact', importance: '10' },
       undefined,
-      { userId: ATTACKER }
+      { userId: testUserId(ATTACKER) }
     );
     expect(result).toContain(`importance: ${NON_OWNER_MAX_IMPORTANCE}/10`);
   });
@@ -38,7 +39,7 @@ describe('memory:remember importance cap', () => {
     const result = await memoryCapability.handler(
       { action: 'remember', scope: 'me', content: 'owner fact', importance: '10' },
       undefined,
-      { userId: OWNER_USER_ID }
+      { userId: testUserId(OWNER_USER_ID) }
     );
     expect(result).toContain('importance: 10/10');
   });
@@ -49,7 +50,7 @@ describe('memory:pin importance cap', () => {
     const remembered = await memoryCapability.handler(
       { action: 'remember', scope: 'me', content: 'attacker self note', importance: '5' },
       undefined,
-      { userId: ATTACKER }
+      { userId: testUserId(ATTACKER) }
     );
     const idMatch = remembered.match(/ID: (-?\d+)/);
     expect(idMatch).toBeTruthy();
@@ -58,7 +59,7 @@ describe('memory:pin importance cap', () => {
     const pinned = await memoryCapability.handler(
       { action: 'pin', memoryId },
       undefined,
-      { userId: ATTACKER }
+      { userId: testUserId(ATTACKER) }
     );
     expect(pinned).toContain(`now importance ${NON_OWNER_MAX_IMPORTANCE}/10`);
   });

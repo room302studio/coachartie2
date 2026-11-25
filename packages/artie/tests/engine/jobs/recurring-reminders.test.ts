@@ -183,7 +183,7 @@ describe('fireDueRecurringReminders', () => {
   it('sends nothing before the slot, once at it, and not again on the next tick', async () => {
     const t0 = new Date('2026-11-17T10:00:00Z');
     const { user } = make('every 6 hours', t0);
-    const send = vi.fn(async () => {});
+    const send = vi.fn(async (_userId: string, _content: string, _occurrenceKey: string) => {});
     const mine = (calls: unknown[][]) => calls.filter((c) => c[0] === user);
 
     await fireDueRecurringReminders(new Date('2026-11-17T15:59:00Z'), send);
@@ -202,7 +202,7 @@ describe('fireDueRecurringReminders', () => {
   it('after downtime fires once and skips ahead, no burst', async () => {
     const t0 = new Date('2026-11-17T10:00:00Z');
     const { user } = make('every 6 hours', t0);
-    const send = vi.fn(async () => {});
+    const send = vi.fn(async (_userId: string, _content: string, _occurrenceKey: string) => {});
     await fireDueRecurringReminders(new Date('2026-11-19T03:30:00Z'), send);
     expect(send.mock.calls.filter((c) => c[0] === user)).toHaveLength(1);
     expect(listRecurringReminders(user)[0].next_fire_at).toBe('2026-11-19T04:00:00.000Z');
@@ -214,7 +214,7 @@ describe('fireDueRecurringReminders', () => {
     const t0 = new Date('2026-11-17T10:00:00Z');
     const { user } = make('every 6 hours', t0);
     const now = new Date('2026-11-17T16:00:05Z');
-    const send = vi.fn(async () => {});
+    const send = vi.fn(async (_userId: string, _content: string, _occurrenceKey: string) => {});
     await Promise.all([fireDueRecurringReminders(now, send), fireDueRecurringReminders(now, send)]);
     expect(send.mock.calls.filter((c) => c[0] === user)).toHaveLength(1);
   });
@@ -228,7 +228,7 @@ describe('fireDueRecurringReminders', () => {
     });
     await fireDueRecurringReminders(now, failing);
     expect(listRecurringReminders(user)[0].next_fire_at).toBe(row.next_fire_at);
-    const ok = vi.fn(async () => {});
+    const ok = vi.fn(async (_userId: string, _content: string, _occurrenceKey: string) => {});
     await fireDueRecurringReminders(new Date('2026-11-17T16:01:05Z'), ok);
     expect(ok.mock.calls.filter((c) => c[0] === user)).toHaveLength(1);
   });
@@ -237,7 +237,7 @@ describe('fireDueRecurringReminders', () => {
     const t0 = new Date('2026-11-17T10:00:00Z');
     const { user, row } = make('every 6 hours', t0);
     cancelRecurringReminder(row.id);
-    const send = vi.fn(async () => {});
+    const send = vi.fn(async (_userId: string, _content: string, _occurrenceKey: string) => {});
     await fireDueRecurringReminders(new Date('2026-11-18T10:00:00Z'), send);
     expect(send.mock.calls.filter((c) => c[0] === user)).toHaveLength(0);
   });

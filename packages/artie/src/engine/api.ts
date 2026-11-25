@@ -131,11 +131,11 @@ export async function routeRepo(body: any): Promise<ApiResult> {
 }
 
 /** POST /capabilities/registry/:name/execute: run one tool action directly (no LLM). */
-export async function executeTool(
+export async function executeCapability(
   name: string,
   body: { action: string; params?: Record<string, unknown>; content?: string; [k: string]: unknown }
 ): Promise<ApiResult> {
-  return (await import('./routes/tool-registry.js')).executeTool({ name }, wire(body));
+  return (await import('./routes/capability-registry.js')).executeCapability({ name }, wire(body));
 }
 
 /** POST /api/traces/link-discord: tie a Discord reply to its generation trace. */
@@ -208,7 +208,7 @@ export async function models(): Promise<ApiResult> {
 
 /** GET /capabilities: the tool registry and its stats. */
 export async function capabilities(): Promise<ApiResult> {
-  return (await import('./routes/tool-registry.js')).listCapabilities();
+  return (await import('./routes/capability-registry.js')).listCapabilities();
 }
 
 // --- model catalog (wave 10; not an HTTP route) ---

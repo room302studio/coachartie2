@@ -190,13 +190,6 @@ export function startJarEarningsWatch(intervalMs: number = REFRESH_INTERVAL_MS):
   }, intervalMs);
 }
 
-export function stopJarEarningsWatch(): void {
-  if (watchTimer) {
-    clearInterval(watchTimer);
-    watchTimer = null;
-  }
-}
-
 /** Test hook. */
 export function resetJarEarningsCacheForTests(): void {
   cachedTotalCents = null;

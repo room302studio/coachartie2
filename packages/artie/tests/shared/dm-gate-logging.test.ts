@@ -3,7 +3,9 @@ import { logDMGate } from '../../src/shared/dm-pairing.js';
 import { logger } from '../../src/shared/logger.js';
 
 describe('logDMGate', () => {
-  afterEach(() => vi.restoreAllMocks());
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
 
   it('logs blocked attempts at warn with a dmGate field for the dashboard', () => {
     const warn = vi.spyOn(logger, 'warn').mockImplementation(() => logger);
@@ -20,7 +22,8 @@ describe('logDMGate', () => {
     logDMGate('allowed', { userId: '456' });
     logDMGate('approved', { userId: '789', by: 'owner', code: '123456' });
     expect(warn).not.toHaveBeenCalled();
-    expect(info.mock.calls.map((c) => (c[1] as { dmGate: string }).dmGate)).toEqual([
+    const calls = info.mock.calls as unknown as Array<[string, { dmGate: string }]>;
+    expect(calls.map((c) => c[1].dmGate)).toEqual([
       'allowed',
       'approved',
     ]);

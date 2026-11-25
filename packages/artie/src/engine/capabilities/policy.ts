@@ -1,12 +1,12 @@
 /**
- * Tool policy: every tool action declares what it touches and who may run it, and the three
- * security gates are DERIVED from that declaration (EJ, 2026-11-17).
+ * Capability policy: every capability action declares what it touches and who may run it, and
+ * the three security gates are DERIVED from that declaration (EJ, 2026-11-17).
  *
- * Why: until 2026-11-17 the gates were four hand-kept tables keyed by tool name, in three
- * files (owner-only, taint, taint exemptions, approval). A new tool was open on every gate
- * unless someone remembered all four. `hermes` (an agent with a shell on the VPS host) sat
- * ungated that way, and the filesystem taint exemptions named actions that didn't exist.
- * Now the declaration lives next to the handler, in the tool's own file.
+ * Why: until 2026-11-17 the gates were four hand-kept tables keyed by capability name, in
+ * three files (owner-only, taint, taint exemptions, approval). A new capability was open on
+ * every gate unless someone remembered all four. `hermes` (an agent with a shell on the VPS
+ * host) sat ungated that way, and the filesystem taint exemptions named actions that didn't
+ * exist. Now the declaration lives next to the handler, in the capability's own file.
  *
  * Undeclared actions stay OPEN (EJ's pick: fail loudly, not closed). They are named in a
  * startup warning (register-all.ts) and fail tests/engine/capabilities/policy.test.ts, whose static
@@ -23,11 +23,11 @@
  * - outside: leaves Discord for the public world (email, reddit, github, wiki, raw http writes)
  * - money: real money (stripe)
  */
-type ToolEffect = 'read' | 'own' | 'discord' | 'workspace' | 'host' | 'outside' | 'money';
+type ActionEffect = 'read' | 'own' | 'discord' | 'workspace' | 'host' | 'outside' | 'money';
 
-type ToolAudience = 'anyone' | 'owner';
+type ActionAudience = 'anyone' | 'owner';
 
-interface ToolParamSpec {
+interface ActionParamSpec {
   type: 'string' | 'number' | 'integer' | 'boolean';
   description: string;
   enum?: readonly string[];
@@ -37,48 +37,49 @@ interface ToolParamSpec {
   aliases?: readonly string[];
 }
 
-export interface ToolActionSpec {
-  effect: ToolEffect;
+interface ActionSpec {
+  effect: ActionEffect;
   /** Default 'anyone'. */
-  who?: ToolAudience;
+  who?: ActionAudience;
   /**
    * Default: derived from effect (outside and money need EJ's approval). Set false only with a
    * reason in a comment, e.g. an owner-only action EJ runs himself.
    */
   approval?: boolean;
-  params?: Record<string, ToolParamSpec>;
+  params?: Record<string, ActionParamSpec>;
   /**
    * What this action reads from the free-text `content` argument (the body the XML format put
    * between the tags), in one short phrase. Absence = the handler ignores `content`.
-   * It only matters for a tool that declares params: the native schema then lists `content`
-   * only when some action sets this, instead of offering every tool a free-text field it never
-   * reads. A tool with NO declared params keeps `content` (its handlers were never audited).
+   * It only matters for a capability that declares params: the native tool schema then lists
+   * `content` only when some action sets this, instead of offering every capability a free-text
+   * field it never reads. One with NO declared params keeps `content` (its handlers were never
+   * audited).
    * Declare it whenever the handler reads `content` as the primary input; a mere fallback for a
    * param that is already declared does not need it.
    */
   content?: string;
 }
 
-export type ToolActions = Record<string, ToolActionSpec>;
+export type CapabilityActions = Record<string, ActionSpec>;
 
-interface ToolGates {
+interface ActionGates {
   declared: boolean;
   ownerOnly: boolean;
   dangerousWhenTainted: boolean;
   needsApproval: boolean;
 }
 
-const OPEN: ToolGates = {
+const OPEN: ActionGates = {
   declared: false,
   ownerOnly: false,
   dangerousWhenTainted: false,
   needsApproval: false,
 };
 
-const HARMLESS: ReadonlySet<ToolEffect> = new Set<ToolEffect>(['read', 'own']);
-const NEEDS_APPROVAL: ReadonlySet<ToolEffect> = new Set<ToolEffect>(['outside', 'money']);
+const HARMLESS: ReadonlySet<ActionEffect> = new Set<ActionEffect>(['read', 'own']);
+const NEEDS_APPROVAL: ReadonlySet<ActionEffect> = new Set<ActionEffect>(['outside', 'money']);
 
-function gatesOf(spec: ToolActionSpec): ToolGates {
+function gatesOf(spec: ActionSpec): ActionGates {
   let needsApproval = NEEDS_APPROVAL.has(spec.effect);
   if (spec.approval !== undefined) {
     needsApproval = spec.approval;
@@ -91,8 +92,8 @@ function gatesOf(spec: ToolActionSpec): ToolGates {
   };
 }
 
-/** The strictest gates across a tool's declared actions. */
-function strictest(actions: ToolActions): ToolGates {
+/** The strictest gates across a capability's declared actions. */
+function strictest(actions: CapabilityActions): ActionGates {
   const all = Object.values(actions).map(gatesOf);
   return {
     declared: true,
@@ -103,11 +104,11 @@ function strictest(actions: ToolActions): ToolGates {
 }
 
 /**
- * The gates for one call. `actions` is the tool's declaration (undefined = undeclared tool).
- * An action the tool doesn't declare (an old synonym, a typo, a model's invention) gets the
- * strictest gates of that tool, since the gates run before the "unsupported action" check.
+ * The gates for one call. `actions` is the capability's declaration (undefined = undeclared).
+ * An action the capability doesn't declare (an old synonym, a typo, a model's invention) gets
+ * its strictest gates, since the gates run before the "unsupported action" check.
  */
-export function gatesFor(actions: ToolActions | undefined, action: string): ToolGates {
+export function gatesFor(actions: CapabilityActions | undefined, action: string): ActionGates {
   if (!actions) {
     return OPEN;
   }
@@ -123,7 +124,7 @@ export function gatesFor(actions: ToolActions | undefined, action: string): Tool
  * canonical name wins if both are present. Returns a new object; undeclared actions pass through.
  */
 export function canonicalParams(
-  actions: ToolActions | undefined,
+  actions: CapabilityActions | undefined,
   action: string,
   params: Record<string, unknown>
 ): Record<string, unknown> {
@@ -145,7 +146,7 @@ export function canonicalParams(
 }
 
 /** Params this action declares as required (none for an undeclared action). */
-export function requiredParamsFor(actions: ToolActions | undefined, action: string): string[] {
+export function requiredParamsFor(actions: CapabilityActions | undefined, action: string): string[] {
   if (!actions || !Object.hasOwn(actions, action)) {
     return [];
   }
@@ -154,14 +155,14 @@ export function requiredParamsFor(actions: ToolActions | undefined, action: stri
 }
 
 /**
- * The model-facing params of a tool: the union of every action's declared params, sorted by
+ * The model-facing params of a capability: the union of every action's declared params, sorted by
  * name (byte-stable for the prompt cache), each described with the actions that use it.
  * Empty when no action declares params (the schema then falls back to example scraping).
  */
-export function declaredToolParams(
-  actions: ToolActions | undefined
-): Array<[string, ToolParamSpec & { usedBy: string[]; requiredBy: string[] }]> {
-  const merged = new Map<string, ToolParamSpec & { usedBy: string[]; requiredBy: string[] }>();
+export function declaredActionParams(
+  actions: CapabilityActions | undefined
+): Array<[string, ActionParamSpec & { usedBy: string[]; requiredBy: string[] }]> {
+  const merged = new Map<string, ActionParamSpec & { usedBy: string[]; requiredBy: string[] }>();
   for (const [action, spec] of Object.entries(actions ?? {})) {
     for (const [name, param] of Object.entries(spec.params ?? {})) {
       let entry = merged.get(name);
@@ -183,11 +184,11 @@ export function declaredToolParams(
 }
 
 /**
- * The `content` argument a tool's declaration accepts: what it is (the distinct per-action
+ * The `content` argument a capability's declaration accepts: what it is (the distinct per-action
  * phrases, in action order) and which actions read it. undefined when no action declares it.
  */
-export function declaredToolContent(
-  actions: ToolActions | undefined
+export function declaredActionContent(
+  actions: CapabilityActions | undefined
 ): { description: string; usedBy: string[] } | undefined {
   const usedBy: string[] = [];
   const phrases: string[] = [];
@@ -206,14 +207,14 @@ export function declaredToolContent(
   return { description: phrases.join(' / '), usedBy };
 }
 
-/** True when any action declares typed params (the tool's schema is then fully declared). */
-export function declaresParams(actions: ToolActions | undefined): boolean {
+/** True when any action declares typed params (the capability's schema is then fully declared). */
+export function declaresParams(actions: CapabilityActions | undefined): boolean {
   return Object.values(actions ?? {}).some((spec) => Object.keys(spec.params ?? {}).length > 0);
 }
 
-/** "tool:action" for every supported action with no declaration, sorted. */
+/** "capability:action" for every supported action with no declaration, sorted. */
 export function undeclaredActions(
-  capabilities: Array<{ name: string; supportedActions: string[]; actions?: ToolActions }>
+  capabilities: Array<{ name: string; supportedActions: string[]; actions?: CapabilityActions }>
 ): string[] {
   const missing: string[] = [];
   for (const cap of capabilities) {
@@ -226,9 +227,9 @@ export function undeclaredActions(
   return missing.sort();
 }
 
-/** Supported actions declared on a tool but missing from supportedActions (a typo in either). */
+/** Actions declared on a capability but missing from supportedActions (a typo in either). */
 export function strayDeclarations(
-  capabilities: Array<{ name: string; supportedActions: string[]; actions?: ToolActions }>
+  capabilities: Array<{ name: string; supportedActions: string[]; actions?: CapabilityActions }>
 ): string[] {
   const stray: string[] = [];
   for (const cap of capabilities) {

@@ -10,7 +10,7 @@ import {
 } from './call-errors.js';
 import { errorPatternTracker } from './error-patterns.js';
 import { invocationTrace } from './invocation-trace.js';
-import { runInLedgerScope, looksLikeToolFailure } from './ledger.js';
+import { runInLedgerScope, looksLikeFailedCall } from './ledger.js';
 import { collapseWhitespace } from '../../shared/text.js';
 import { CallerError } from '../../shared/errors.js';
 
@@ -76,7 +76,7 @@ class CapabilityRunner {
         // validateResult only checks "not empty", so a handler that RETURNS "Error: ..." comes
         // back success=true here; the ledger must not call that ok (or "rescued").
         let success = result.success;
-        if (success && typeof result.data === 'string' && looksLikeToolFailure(result.data)) {
+        if (success && typeof result.data === 'string' && looksLikeFailedCall(result.data)) {
           success = false;
         }
         return { success, error: result.error, fallbackUsed: result.fallbackUsed === true };
@@ -118,7 +118,7 @@ class CapabilityRunner {
         // A handler that returns its own error text ("Error: database unavailable") failed,
         // whatever the return path. Report it as a failure, without retrying (it may have half
         // run) or a fallback (Codex crew 2026-11-18: it stayed success:true in results).
-        if (typeof result === 'string' && looksLikeToolFailure(result)) {
+        if (typeof result === 'string' && looksLikeFailedCall(result)) {
           await invocationTrace
             .logInvocation({
               traceId: context.traceId,

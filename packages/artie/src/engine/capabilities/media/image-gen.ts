@@ -1,7 +1,7 @@
 import { RegisteredCapability, CapabilityContext } from '../registry.js';
 import { logger } from '../../../shared/logger.js';
 import { assertGenerationAllowed } from '../../../shared/kill-switch.js';
-import { addPendingAttachment } from '../../3-context/assemble.js';
+import { addPendingAttachment } from '../../1-intake/pending-attachments.js';
 import { isOwner } from '../../../shared/config/owner.js';
 import { getBrownoutMode } from '../../budget/brownout.js';
 import { getUserActionCountToday } from '../../budget/daily-cap.js';

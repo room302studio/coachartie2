@@ -15,6 +15,7 @@ import {
 } from '../../../src/gateway/routes/moderation-resolve.js';
 import { timeoutMember, addRole, resolveTarget } from '../../../src/gateway/routes/moderation.js';
 import { failureFrom } from '../../../src/engine/capabilities/discord/moderation.js';
+import { testChannelId, testUserId } from '../../test-ids.js';
 
 const members: MemberCandidate[] = [
   { id: '111111111111111111', username: 'yellowaquarium', globalName: 'Yellow Aquarium', nickname: null },
@@ -330,7 +331,7 @@ describe('moderation in a DM', () => {
       const out = await discordModerationCapability.handler(
         { action, user: 'someone', durationMinutes: 5, reason: 'x' },
         undefined,
-        { userId: 'dm-user', channelId: 'dm-channel' }
+        { userId: testUserId('dm-user'), channelId: testChannelId('dm-channel') }
       );
       expect(JSON.parse(out as string).error, action).toMatch(/not in a DM/);
     }

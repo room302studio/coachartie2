@@ -23,6 +23,7 @@ import {
   ageLabel,
   formatPersisted,
 } from '../../../../src/engine/capabilities/discord/reaction.js';
+import { testChannelId, testGuildId } from '../../../test-ids.js';
 
 const NOW = 1_800_000_000_000;
 const MIN = 60 * 1000;
@@ -59,7 +60,7 @@ describe('reaction read: the asker needs history access', () => {
 
   it('refuses with no asker at all (fails closed)', async () => {
     const out = await discordReactionCapability
-      .handler({ action: 'read' }, undefined, { guildId: 'g1', channelId: 'c1' })
+      .handler({ action: 'read' }, undefined, { guildId: testGuildId('g1'), channelId: testChannelId('c1') })
       .then((s: string) => JSON.parse(s));
     expect(out.success).toBe(false);
   });

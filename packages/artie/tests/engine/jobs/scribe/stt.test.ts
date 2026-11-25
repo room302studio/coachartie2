@@ -46,7 +46,10 @@ describe('transcribeWav: request shape', () => {
     expect(result.model).toBe('openai/whisper-large-v3-turbo');
     expect(fetchMock).toHaveBeenCalledTimes(1);
 
-    const [url, init] = fetchMock.mock.calls[0];
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [
+      string,
+      { method: string; headers: Record<string, string>; body: unknown },
+    ];
     expect(String(url)).toContain('/audio/transcriptions');
     expect(init.method).toBe('POST');
     expect(init.headers.Authorization).toBe('Bearer test-key');

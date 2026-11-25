@@ -464,6 +464,7 @@ describe('embed builders', () => {
     const play = {
       userId: 'alice',
       username: 'Alice',
+      guildId: null,
       date: '2026-05-19',
       deck: '',
       currentQuestion: 5,

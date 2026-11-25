@@ -8,6 +8,7 @@ import { capabilityRegistry } from '../../../src/engine/capabilities/registry.js
 import { OWNER_ONLY_REFUSAL, gatesFor } from '../../../src/engine/capabilities/policy.js';
 import { recallTargetUser } from '../../../src/engine/capabilities/core/memory.js';
 import { OWNER_USER_ID } from '../../../src/shared/config/owner.js';
+import { testUserId } from '../../test-ids.js';
 
 const NOT_OWNER = 'some-random-discord-user';
 
@@ -59,7 +60,7 @@ describe('registry refuses owner-only calls from anyone else', () => {
   for (const [tool, action, params] of cases) {
     it(`${tool}:${action} from a non-owner returns the refusal, not the handler`, async () => {
       const out = await capabilityRegistry.execute(tool, action, params, undefined, {
-        userId: NOT_OWNER,
+        userId: testUserId(NOT_OWNER),
       });
       expect(out).toBe(OWNER_ONLY_REFUSAL);
     });
@@ -79,7 +80,7 @@ describe('registry refuses owner-only calls from anyone else', () => {
         steps: JSON.stringify([{ name: 'sandbox', action: 'exec', command: 'id' }]),
       },
       undefined,
-      { userId: NOT_OWNER }
+      { userId: testUserId(NOT_OWNER) }
     );
     expect(out).toContain(OWNER_ONLY_REFUSAL);
   });

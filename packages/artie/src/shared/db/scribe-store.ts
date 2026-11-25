@@ -14,7 +14,7 @@
  */
 import { getSyncDb } from './client.js';
 
-export type ScribeSessionStatus = 'active' | 'stopped' | 'error';
+type ScribeSessionStatus = 'active' | 'stopped' | 'error';
 
 export interface ScribeSession {
   sessionId: string;

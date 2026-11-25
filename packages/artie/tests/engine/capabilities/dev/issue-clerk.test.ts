@@ -24,6 +24,7 @@ import {
   listPendingActions,
 } from '../../../../src/shared/pending-actions.js';
 import { getSyncDb } from '../../../../src/shared/db/client.js';
+import { testUserId } from '../../../test-ids.js';
 
 const NOT_OWNER = 'issue-clerk-test-user';
 
@@ -74,7 +75,7 @@ describe('github gating', () => {
       'add_comment',
       { repo: 'o/r', issueNumber: '5', body: 'gate test unique 1' },
       undefined,
-      { userId: NOT_OWNER }
+      { userId: testUserId(NOT_OWNER) }
     );
     expect(out).toContain("needs EJ's approval");
     expect(calls).toHaveLength(0);
@@ -83,9 +84,9 @@ describe('github gating', () => {
   it('an identical gated call reuses the pending row instead of stacking another', async () => {
     const params = { repo: 'o/r', issueNumber: '6', labels: 'bug' };
     const reordered = { labels: 'bug', issueNumber: '6', repo: 'o/r' };
-    const first = await capabilityRegistry.execute('github', 'add_labels', params, undefined, { userId: NOT_OWNER });
+    const first = await capabilityRegistry.execute('github', 'add_labels', params, undefined, { userId: testUserId(NOT_OWNER) });
     const second = await capabilityRegistry.execute('github', 'add_labels', reordered, undefined, {
-      userId: NOT_OWNER,
+      userId: testUserId(NOT_OWNER),
     });
     const id = Number(/#(\d+)/.exec(first)![1]);
     expect(second).toContain('already waiting');
@@ -105,7 +106,7 @@ describe('pending TTL', () => {
       'remove_label',
       { repo: 'o/r', issueNumber: '7', label: 'ttl-test' },
       undefined,
-      { userId: NOT_OWNER }
+      { userId: testUserId(NOT_OWNER) }
     );
     const id = Number(/#(\d+)/.exec(out)![1]);
     getSyncDb().run(`UPDATE pending_actions SET created_at = datetime('now', '-8 days') WHERE id = ?`, [id]);
@@ -114,7 +115,7 @@ describe('pending TTL', () => {
 
     const calls = stubFetch(() => ({ body: [] }));
     const approve = await capabilityRegistry.execute('approvals', 'approve', { id }, undefined, {
-      userId: OWNER_USER_ID,
+      userId: testUserId(OWNER_USER_ID),
     });
     expect(approve).toContain('already expired');
     expect(calls).toHaveLength(0);
@@ -222,7 +223,7 @@ describe('issue clerk actions (owner-confirmed, fetch stubbed)', () => {
       'update_issue',
       { repo: 'o/r', issueNumber: '5', state_reason: 'reopened', confirmed: true },
       undefined,
-      { userId: OWNER_USER_ID }
+      { userId: testUserId(OWNER_USER_ID) }
     );
     expect(JSON.parse(String(calls[0].init?.body))).toMatchObject({ state: 'open', state_reason: 'reopened' });
   });
@@ -277,7 +278,7 @@ describe('issue clerk actions (owner-confirmed, fetch stubbed)', () => {
       'update_issue',
       { repo: 'o/r', issueNumber: '5', duplicateOf: '#4', confirmed: true },
       undefined,
-      { userId: OWNER_USER_ID }
+      { userId: testUserId(OWNER_USER_ID) }
     );
     expect(out).toContain('duplicate of #4');
     const patch = calls.find((c) => c.init?.method === 'PATCH');

@@ -9,6 +9,7 @@ import {
   getPendingAttachments,
   type PendingAttachment,
 } from '../../../src/engine/1-intake/pending-attachments.js';
+import { testUserId } from '../../test-ids.js';
 
 function file(name: string): PendingAttachment {
   return { buffer: Buffer.from(name), filename: name };
@@ -55,7 +56,7 @@ describe('pending-attachments store', () => {
     );
     storeAnalyzedMetroFile('metro-user', 'city.metro', Buffer.from('x'), 'summary');
     await sendMetroFileCapability.handler({ action: 'send', userId: 'metro-user' }, undefined, {
-      userId: 'metro-user',
+      userId: testUserId('metro-user'),
       messageId: 'turn-metro',
     });
     expect(getPendingAttachments('metro-user')).toEqual([]);

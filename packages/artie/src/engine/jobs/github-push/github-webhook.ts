@@ -226,15 +226,6 @@ export async function handleGitHubWebhook(
     repo: payload.repository?.full_name,
   });
 
-  // Verify webhook signature if secret is configured
-  if (process.env.GITHUB_WEBHOOK_SECRET) {
-    const signature = headers['x-hub-signature-256'];
-    if (!verifySignature(payload, signature, process.env.GITHUB_WEBHOOK_SECRET)) {
-      logger.warn('🚨 GitHub webhook signature verification failed');
-      throw new Error('Invalid webhook signature');
-    }
-  }
-
   switch (event) {
     case 'push':
       await handlePushEvent(payload as unknown as GitHubPushPayload);
@@ -703,17 +694,27 @@ function generatePRCelebration(payload: GitHubWebhookPayload): string {
   return message;
 }
 
-function verifySignature(
-  payload: GitHubWebhookPayload,
+/**
+ * True only for a delivery GitHub signed with our secret. Fails CLOSED: no secret configured,
+ * no raw body, or no signature all reject. Until 2026-11-24 it skipped the check when
+ * GITHUB_WEBHOOK_SECRET was unset (it was, on prod), so /github/webhook, which is exempt from
+ * the API token because it "verifies its own signature", accepted forged events from anyone.
+ * It also HMAC'd JSON.stringify(payload), which is not the bytes GitHub signed.
+ */
+export function verifyGitHubSignature(
+  rawBody: string | undefined,
   signature: string | undefined,
-  secret: string
+  secret: string | undefined
 ): boolean {
-  if (!signature) {
+  if (!secret || rawBody === undefined || !signature) {
     return false;
   }
-
-  const hmac = crypto.createHmac('sha256', secret);
-  const digest = 'sha256=' + hmac.update(JSON.stringify(payload)).digest('hex');
-
-  return crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(digest));
+  const digest = 'sha256=' + crypto.createHmac('sha256', secret).update(rawBody).digest('hex');
+  const given = Buffer.from(signature);
+  const expected = Buffer.from(digest);
+  // timingSafeEqual throws on a length mismatch; a wrong length is just a bad signature.
+  if (given.length !== expected.length) {
+    return false;
+  }
+  return crypto.timingSafeEqual(given, expected);
 }

@@ -13,7 +13,7 @@ import { getErrorMessage } from '../../../shared/errors.js';
  * Actions that more than one tracker knows (create, start, list, status, complete, …) are told
  * apart by `tracker`, default "todo". With no tracker, an action only quests know goes to the
  * quest tracker, and one only task-status knew goes to the task tracker.
- * The old names still work through TOOL_ALIASES in capabilities/registry.ts, which set tracker.
+ * The old names still work through CAPABILITY_ALIASES in capabilities/registry.ts, which set tracker.
  */
 
 import { logger } from '../../../shared/logger.js';

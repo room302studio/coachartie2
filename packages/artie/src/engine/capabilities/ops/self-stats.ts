@@ -12,7 +12,7 @@ import { isOwner } from '../../../shared/config/owner.js';
 import {
   ledgerCounts,
   ledgerFirstTs,
-  ledgerToolsCalled,
+  ledgerCapabilitiesCalled,
   ledgerTopFailures,
 } from '../ledger.js';
 import { metricsRegistry } from '../../health/metrics.js';
@@ -267,7 +267,7 @@ export function toolsReport(windowMinutes: number, now: number = Date.now()): st
     }
   }
 
-  const called = ledgerToolsCalled(since);
+  const called = ledgerCapabilitiesCalled(since);
   // Only tools the model is actually offered: internal plumbing (e.g. `variable`) can't be
   // "never used" by it (Artie asked what `variable` was).
   const never = registryToTools(capabilityRegistry.list())

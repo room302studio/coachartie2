@@ -225,8 +225,3 @@ export function startDailyBudgetWatch(intervalMs = 60_000): void {
   timer = setInterval(scheduleDailyBudgetCheck, intervalMs);
   timer.unref?.();
 }
-
-export function stopDailyBudgetWatch(): void {
-  if (timer) clearInterval(timer);
-  timer = null;
-}

@@ -18,7 +18,7 @@ const MINT_SITES: Record<string, string[]> = {
   'engine/jobs/scheduler.ts': ['engine-job'],
   'engine/jobs/scribe/orchestrator.ts': ['engine-job'],
   'engine/capabilities/ops/approvals.ts': ['approval-replay'],
-  'engine/routes/tool-registry.ts': ['local-api'],
+  'engine/routes/capability-registry.ts': ['local-api'],
   // EJ in his own DM naming a server; both files check isOwner and !context.guildId first.
   'engine/capabilities/discord/forums.ts': ['owner-dm-choice'],
   'engine/capabilities/discord/send-message.ts': ['owner-dm-choice'],

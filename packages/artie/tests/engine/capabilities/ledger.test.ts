@@ -13,8 +13,8 @@ import { executeNativeToolCall } from '../../../src/engine/5-tool-loop/execute-t
 import { capabilityRunner } from '../../../src/engine/capabilities/run-with-retry.js';
 import {
   writeLedgerRow,
-  pruneToolLedger,
-  resetToolLedgerState,
+  pruneLedger,
+  resetLedgerState,
   LEDGER_RETENTION_DAYS,
   describeError,
 } from '../../../src/engine/capabilities/ledger.js';
@@ -26,6 +26,7 @@ import {
 } from '../../../src/engine/capabilities/ops/self-stats.js';
 import { OWNER_USER_ID } from '../../../src/shared/config/owner.js';
 import type { OrchestrationContext } from '../../../src/engine/2-turn/types.js';
+import { testGuildId, testUserId } from '../../test-ids.js';
 
 const NOT_OWNER = 'ledger-test-visitor';
 const DAY = 24 * 60 * 60 * 1000;
@@ -100,7 +101,7 @@ beforeAll(() => {
 });
 
 beforeEach(() => {
-  resetToolLedgerState();
+  resetLedgerState();
   getSyncDb().exec(`CREATE TABLE IF NOT EXISTS tool_call_ledger (id INTEGER PRIMARY KEY AUTOINCREMENT, ts INTEGER NOT NULL, tool TEXT NOT NULL, action TEXT NOT NULL, outcome TEXT NOT NULL, error_class TEXT, duration_ms INTEGER, attempts INTEGER NOT NULL DEFAULT 1, user_id TEXT, guild_id TEXT)`);
   getSyncDb().exec(`DELETE FROM tool_call_ledger`);
   flakyCalls = 0;
@@ -110,8 +111,8 @@ beforeEach(() => {
 describe('ledger: one row per outcome, registry path', () => {
   it('ok', async () => {
     await capabilityRegistry.execute('ledger-probe', 'fine', {}, undefined, {
-      userId: NOT_OWNER,
-      guildId: 'g9',
+      userId: testUserId(NOT_OWNER),
+      guildId: testGuildId('g9'),
     });
     const r = rows();
     expect(r).toHaveLength(1);
@@ -121,7 +122,7 @@ describe('ledger: one row per outcome, registry path', () => {
   it('invalid_args (missing required param), with the param NAME but never values', async () => {
     await expect(
       capabilityRegistry.execute('ledger-probe', 'needs', { other: 'private-value' }, undefined, {
-        userId: NOT_OWNER,
+        userId: testUserId(NOT_OWNER),
       })
     ).rejects.toThrow();
     const r = rows();
@@ -133,7 +134,7 @@ describe('ledger: one row per outcome, registry path', () => {
 
   it('refused_owner', async () => {
     const out = await capabilityRegistry.execute('ledger-probe', 'mine', {}, undefined, {
-      userId: NOT_OWNER,
+      userId: testUserId(NOT_OWNER),
     });
     expect(out).toBeTruthy();
     expect(probeRuns).toBe(0);
@@ -146,7 +147,7 @@ describe('ledger: one row per outcome, registry path', () => {
       'create_payment_link',
       { name: 'ledger', amount: 1 },
       undefined,
-      { userId: NOT_OWNER }
+      { userId: testUserId(NOT_OWNER) }
     );
     expect(out).toContain("needs EJ's approval");
     expect(rows('stripe').map((x) => x.outcome)).toEqual(['queued_approval']);
@@ -156,7 +157,7 @@ describe('ledger: one row per outcome, registry path', () => {
     await expect(capabilityRegistry.execute('no-such-tool-xyz', 'go', {})).rejects.toThrow();
     // (an undeclared action is owner-gated first, so a non-owner would be refused_owner)
     await expect(
-      capabilityRegistry.execute('ledger-probe', 'nope', {}, undefined, { userId: OWNER_USER_ID })
+      capabilityRegistry.execute('ledger-probe', 'nope', {}, undefined, { userId: testUserId(OWNER_USER_ID) })
     ).rejects.toThrow();
     // An invented tool name is never stored (it can carry arbitrary text): "(unknown)".
     expect(rows('no-such-tool-xyz')).toEqual([]);
@@ -271,7 +272,7 @@ describe('ledger: never throws, prunes', () => {
     // ensureTable thinks the table exists (same db handle) and the INSERT then fails.
     expect(() => writeLedgerRow({ tool: 't', action: 'a', outcome: 'ok' })).not.toThrow();
     getSyncDb().exec(`DROP TABLE tool_call_ledger`);
-    resetToolLedgerState();
+    resetLedgerState();
   });
 
   it('a ledger failure does not break the tool call', async () => {
@@ -280,7 +281,7 @@ describe('ledger: never throws, prunes', () => {
     const out = await capabilityRegistry.execute('ledger-probe', 'fine', {});
     expect(out).toContain('fine result');
     getSyncDb().exec(`DROP TABLE tool_call_ledger`);
-    resetToolLedgerState();
+    resetLedgerState();
   });
 
   it('clips error text to 200 chars; an unregistered tool/action name is never stored', () => {
@@ -308,12 +309,12 @@ describe('ledger: never throws, prunes', () => {
 
   it('prunes rows older than the retention window and keeps newer ones', () => {
     const now = Date.now();
-    pruneToolLedger(now); // first-use prune done; the explicit prune below is the one under test
+    pruneLedger(now); // first-use prune done; the explicit prune below is the one under test
     // Told apart by outcome: names must be registered to be stored (unregistered = "(unknown)").
     writeLedgerRow({ tool: 'memory', action: 'recall', outcome: 'error' }, now - (LEDGER_RETENTION_DAYS + 1) * DAY);
     writeLedgerRow({ tool: 'memory', action: 'recall', outcome: 'invalid_args' }, now - (LEDGER_RETENTION_DAYS - 1) * DAY);
     writeLedgerRow({ tool: 'memory', action: 'recall', outcome: 'ok' }, now);
-    const removed = pruneToolLedger(now);
+    const removed = pruneLedger(now);
     expect(removed).toBeGreaterThanOrEqual(1);
     const left = getSyncDb()
       .all<{ outcome: string }>(`SELECT outcome FROM tool_call_ledger ORDER BY outcome`)

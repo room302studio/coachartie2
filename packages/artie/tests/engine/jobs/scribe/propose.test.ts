@@ -8,8 +8,9 @@ vi.mock('../../../../src/engine/capabilities/registry.js', () => ({
 
 import { submitScribeProposals } from '../../../../src/engine/jobs/scribe/propose.js';
 import type { ScribeProposal } from '../../../../src/engine/jobs/scribe/types.js';
+import { testChannelId, testGuildId, testUserId } from '../../../test-ids.js';
 
-const CONTEXT = { userId: 'owner-1', guildId: 'guild-1', channelId: 'channel-1' };
+const CONTEXT = { userId: testUserId('owner-1'), guildId: testGuildId('guild-1'), channelId: testChannelId('channel-1') };
 
 beforeEach(() => {
   executeMock.mockReset();

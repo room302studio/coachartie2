@@ -22,7 +22,7 @@ const ACTIVE_GUILD_WHITELIST = envWhitelist || GUILD_WHITELIST;
  * - "working": Full features including auto-expansion of GitHub links
  * - "watching": Passive observation only, no auto-expansion
  */
-export type GuildType = 'working' | 'watching';
+type GuildType = 'working' | 'watching';
 
 /** GitHub repo watch configuration */
 interface GitHubRepoConfig {
@@ -32,7 +32,7 @@ interface GitHubRepoConfig {
 }
 
 /** GitHub sync configuration for a guild */
-export interface GitHubSyncConfig {
+interface GitHubSyncConfig {
   enabled: boolean;
   /** Default poll interval in minutes */
   defaultPollIntervalMinutes?: number;

@@ -14,6 +14,7 @@ import { capabilityBootstrap } from '../../../src/engine/capabilities/register-a
 import { capabilityRegistry } from '../../../src/engine/capabilities/registry.js';
 import { OWNER_USER_ID } from '../../../src/shared/config/owner.js';
 import { listPendingActions } from '../../../src/shared/pending-actions.js';
+import { testUserId } from '../../test-ids.js';
 
 const NOT_OWNER = 'some-random-discord-user';
 
@@ -28,7 +29,7 @@ describe('approval gate: gated calls are blocked, not run', () => {
       'create_payment_link',
       { name: 'Test', amount: 10 },
       undefined,
-      { userId: NOT_OWNER }
+      { userId: testUserId(NOT_OWNER) }
     );
     expect(out).toContain("needs EJ's approval");
     expect(out).toContain('stripe:create_payment_link');
@@ -40,7 +41,7 @@ describe('approval gate: gated calls are blocked, not run', () => {
       'create_payment_link',
       { name: 'Test', amount: 10 },
       undefined,
-      { userId: OWNER_USER_ID }
+      { userId: testUserId(OWNER_USER_ID) }
     );
     expect(out).toContain("needs EJ's approval");
   });
@@ -51,7 +52,7 @@ describe('approval gate: gated calls are blocked, not run', () => {
       'create_payment_link',
       { name: 'Test', amount: 10, confirmed: true },
       undefined,
-      { userId: OWNER_USER_ID }
+      { userId: testUserId(OWNER_USER_ID) }
     );
     // Not configured in the test env, so the REAL handler fails for its own reason — the
     // point is it's not the gate's canned message.
@@ -64,12 +65,12 @@ describe('approval gate: gated calls are blocked, not run', () => {
       'send',
       { to: 'a@b.com', subject: 'hi', body: 'hi' },
       undefined,
-      { userId: NOT_OWNER }
+      { userId: testUserId(NOT_OWNER) }
     );
     expect(gated).toContain("needs EJ's approval");
 
     const ungated = await capabilityRegistry.execute('email', 'status', {}, undefined, {
-      userId: NOT_OWNER,
+      userId: testUserId(NOT_OWNER),
     });
     expect(ungated).not.toContain("needs EJ's approval");
   });
@@ -82,7 +83,7 @@ describe('approval gate: gated calls are blocked, not run', () => {
       'post',
       { url: 'https://example.com', body: {} },
       undefined,
-      { userId: OWNER_USER_ID }
+      { userId: testUserId(OWNER_USER_ID) }
     );
     expect(gatedPost).toContain("needs EJ's approval");
 
@@ -95,7 +96,7 @@ describe('approval gate: gated calls are blocked, not run', () => {
         'get',
         { url: 'https://example.invalid/does-not-matter' },
         undefined,
-        { userId: OWNER_USER_ID }
+        { userId: testUserId(OWNER_USER_ID) }
       );
       expect(ungatedGet).not.toContain("needs EJ's approval");
     } catch (error) {
@@ -106,7 +107,7 @@ describe('approval gate: gated calls are blocked, not run', () => {
   it('a gated call creates a pending_actions row', async () => {
     const before = listPendingActions('pending').length;
     await capabilityRegistry.execute('reddit', 'post', { subreddit: 'x', title: 'y', text: 'z' }, undefined, {
-      userId: NOT_OWNER,
+      userId: testUserId(NOT_OWNER),
     });
     const after = listPendingActions('pending').length;
     expect(after).toBe(before + 1);
@@ -117,7 +118,7 @@ describe('approval gate: gated calls are blocked, not run', () => {
     // the only thing under test is that it's not the gate's canned message.
     try {
       const out = await capabilityRegistry.execute('reddit', 'read', {}, undefined, {
-        userId: NOT_OWNER,
+        userId: testUserId(NOT_OWNER),
       });
       expect(out).not.toContain("needs EJ's approval");
     } catch (error) {
@@ -134,7 +135,7 @@ describe('approvals tool: EJ-only review of the pending queue', () => {
       'deactivate_payment_link',
       { linkId: 'plink_test123' },
       undefined,
-      { userId: NOT_OWNER }
+      { userId: testUserId(NOT_OWNER) }
     );
   });
 
@@ -142,7 +143,7 @@ describe('approvals tool: EJ-only review of the pending queue', () => {
     // Refused at the registry (approvals declares who:'owner') before the handler's own check.
     for (const action of ['list', 'approve', 'deny']) {
       const out = await capabilityRegistry.execute('approvals', action, { id: 1 }, undefined, {
-        userId: NOT_OWNER,
+        userId: testUserId(NOT_OWNER),
       });
       expect(out, action).toContain('EJ-only');
     }
@@ -150,7 +151,7 @@ describe('approvals tool: EJ-only review of the pending queue', () => {
 
   it('EJ can list pending actions', async () => {
     const out = await capabilityRegistry.execute('approvals', 'list', {}, undefined, {
-      userId: OWNER_USER_ID,
+      userId: testUserId(OWNER_USER_ID),
     });
     expect(out).toContain('stripe:deactivate_payment_link');
   });
@@ -164,7 +165,7 @@ describe('approvals tool: EJ-only review of the pending queue', () => {
       'deny',
       { id: pending!.id },
       undefined,
-      { userId: OWNER_USER_ID }
+      { userId: testUserId(OWNER_USER_ID) }
     );
     expect(out).toContain('Denied');
 
@@ -183,7 +184,7 @@ describe('approvals tool: EJ-only review of the pending queue', () => {
       'approve',
       { id: pending!.id },
       undefined,
-      { userId: OWNER_USER_ID }
+      { userId: testUserId(OWNER_USER_ID) }
     );
     expect(out).toContain('Approved');
     // The replayed call reached the real stripe handler (not configured in test env, so it
@@ -223,7 +224,7 @@ describe('approval gate: content (not just params) survives the pending/approve 
       'echo',
       {},
       'the drafted body',
-      { userId: NOT_OWNER }
+      { userId: testUserId(NOT_OWNER) }
     );
     expect(queued).toContain("needs EJ's approval");
 
@@ -236,7 +237,7 @@ describe('approval gate: content (not just params) survives the pending/approve 
       'approve',
       { id: pending!.id },
       undefined,
-      { userId: OWNER_USER_ID }
+      { userId: testUserId(OWNER_USER_ID) }
     );
     expect(approved).toContain('echoed: the drafted body');
   });

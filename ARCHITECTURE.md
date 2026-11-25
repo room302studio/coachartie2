@@ -131,7 +131,7 @@ files allowed to mint trusted ids (`trusted-ids.test.ts`).
 - A class or singleton is named for its file: `assemble.ts` → `ContextAssembler`,
   `store.ts` → `MemoryStore`, `usage-ledger.ts` → `UsageLedger`.
 - `capabilities/<category>/<name>.ts`: the registered name is the basename unless an alias
-  says otherwise. Merged names keep working through `TOOL_ALIASES` in `registry.ts`
+  says otherwise. Merged names keep working through `CAPABILITY_ALIASES` in `registry.ts`
   (`goal` → `goals`; `todo`/`quests`/`task-status` → `tasks`; `shell`/`edit`/`git` →
   `sandbox`; `runtime_config`/`model_manager` → `bot-config`). Only canonical names are offered
   to the model.

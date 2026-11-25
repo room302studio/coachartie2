@@ -73,8 +73,12 @@ describe('renderBurstForContext', () => {
 });
 
 describe('BurstScheduler', () => {
-  beforeEach(() => vi.useFakeTimers());
-  afterEach(() => vi.useRealTimers());
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
 
   it('flushes a single item after the window', () => {
     const scheduler = new BurstScheduler<string>();

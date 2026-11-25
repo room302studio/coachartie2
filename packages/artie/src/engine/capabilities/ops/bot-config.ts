@@ -4,7 +4,7 @@
  * Merged on 2026-10-23 (wave 4) from `runtime_config` (models, context size)
  * and `model_manager` (model tiers, pricing, cost-aware recommendations). Their actions never
  * collided, so every action keeps its name; each original handler survives unchanged as an
- * internal function. The old names still work through TOOL_ALIASES in capabilities/registry.ts.
+ * internal function. The old names still work through CAPABILITY_ALIASES in capabilities/registry.ts.
  */
 
 import { logger } from '../../../shared/logger.js';

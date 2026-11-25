@@ -120,7 +120,7 @@ const USER_DATA_TABLES = [
  * Delete everything Artie holds about a user: rows keyed to their id, plus memories stored
  * under anyone else's id that name them. Returns rows removed per table.
  */
-export function deleteUserData(userId: string, names: string[] = []): Record<string, number> {
+function deleteUserData(userId: string, names: string[] = []): Record<string, number> {
   const db = getSyncDb();
   const removed: Record<string, number> = {};
   for (const table of USER_DATA_TABLES) {

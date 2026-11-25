@@ -25,6 +25,7 @@ import {
 import { whereLines, isDiscordTurn, addChannelVibes } from '../../../../src/engine/3-context/sources/discord.js';
 import { searchHandler, snowflakeOf, sortFor } from '../../../../src/engine/capabilities/discord/search.js';
 import { channelsHandler } from '../../../../src/engine/capabilities/discord/channels.js';
+import { testChannelId, testGuildId, testUserId } from '../../../test-ids.js';
 
 const GUILD = '100000000000000001';
 const PUBLIC = '200000000000000001';
@@ -412,7 +413,7 @@ describe('discord-search tool', () => {
   it('takes the guild, asker and conversation channel from context, never from params', async () => {
     await searchHandler(
       { query: 'x', guildId: '999999999999999999', fromChannelId: MODS },
-      { guildId: GUILD, userId: ASKER, channelId: PUBLIC }
+      { guildId: testGuildId(GUILD), userId: testUserId(ASKER), channelId: testChannelId(PUBLIC) }
     );
     expect(gatewayMock.searchGuildMessages).toHaveBeenCalledWith(
       GUILD,
@@ -422,7 +423,7 @@ describe('discord-search tool', () => {
   });
 
   it('does nothing in a DM', async () => {
-    const out = JSON.parse(await searchHandler({ query: 'x', guildId: GUILD }, { userId: ASKER }));
+    const out = JSON.parse(await searchHandler({ query: 'x', guildId: GUILD }, { userId: testUserId(ASKER) }));
     expect(out.success).toBe(false);
     expect(gatewayMock.searchGuildMessages).not.toHaveBeenCalled();
   });
@@ -466,9 +467,9 @@ describe('discord-channels read (readChannelMessages)', () => {
   it('the tool takes server, person and conversation channel from context, defaulting to this channel', async () => {
     const readMock = gatewayMock.readChannelMessages;
     readMock.mockResolvedValue({ status: 200, body: { success: true, messages: [] } });
-    await channelsHandler({ action: 'get_messages', guildId: '999999999999999999' }, { guildId: GUILD, userId: ASKER, channelId: PUBLIC });
+    await channelsHandler({ action: 'get_messages', guildId: '999999999999999999' }, { guildId: testGuildId(GUILD), userId: testUserId(ASKER), channelId: testChannelId(PUBLIC) });
     expect(readMock).toHaveBeenCalledWith(GUILD, ASKER, expect.objectContaining({ channelId: PUBLIC, fromChannelId: PUBLIC }));
-    const dm = JSON.parse(await channelsHandler({ action: 'get_messages' }, { userId: ASKER }));
+    const dm = JSON.parse(await channelsHandler({ action: 'get_messages' }, { userId: testUserId(ASKER) }));
     expect(dm.success).toBe(false);
   });
 });

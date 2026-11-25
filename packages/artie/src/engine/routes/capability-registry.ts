@@ -172,7 +172,7 @@ router.get('/registry/:name', (req: Request, res: Response) => {
 
 // POST /capabilities/registry/:name/execute - Execute a capability directly
 router.post('/registry/:name/execute', async (req: Request, res: Response) =>
-  sendResult(res, await executeTool(req.params as { name: string }, req.body))
+  sendResult(res, await executeCapability(req.params as { name: string }, req.body))
 );
 
 // POST /capabilities/mcp/test - Direct MCP testing without LLM
@@ -300,7 +300,7 @@ export function listCapabilities(): ApiResult {
  * POST /capabilities/registry/:name/execute's body: run one capability action directly, no LLM
  * (the gateway stores observation and reaction-feedback memories through this).
  */
-export async function executeTool(routeParams: { name: string }, body: any): Promise<ApiResult> {
+export async function executeCapability(routeParams: { name: string }, body: any): Promise<ApiResult> {
   try {
     const { name } = routeParams;
     const { action, params = {}, content, guildId, channelId, userId, messageId } = body;

@@ -3,6 +3,7 @@ import { OWNER_USER_ID } from '../../../src/shared/config/owner.js';
 import { mkdtempSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
+import { testUserId } from '../../test-ids.js';
 
 process.env.DATABASE_PATH = join(mkdtempSync(join(tmpdir(), 'memory-dream-')), 'test.db');
 process.env.DREAM_TAGS_URL = 'http://127.0.0.1:9/tags.json'; // unreachable: exercises the fallback
@@ -257,10 +258,10 @@ describe('dream journal + recall', () => {
     expect(dreamMod.dreamRecallLine(Date.now(), OWNER_USER_ID, true)).toContain(`#${stub} stub`);
 
     await expect(
-      memoryMod.memoryCapability.handler({ action: 'restore', memoryId: String(stub) }, undefined, { userId: 'someone-else' })
+      memoryMod.memoryCapability.handler({ action: 'restore', memoryId: String(stub) }, undefined, { userId: testUserId('someone-else') })
     ).rejects.toThrow(/belongs to someone else/);
 
-    const out = await memoryMod.memoryCapability.handler({ action: 'restore', id: `#${stub}` }, undefined, { userId: 'u1' });
+    const out = await memoryMod.memoryCapability.handler({ action: 'restore', id: `#${stub}` }, undefined, { userId: testUserId('u1') });
     expect(out).toContain(`Restored memory #${stub} (importance 4)`);
     for (let i = 0; i < 50 && row(stub).importance === 1; i++) await new Promise((r) => setTimeout(r, 10));
     expect(row(stub).importance).toBe(4);
@@ -268,14 +269,14 @@ describe('dream journal + recall', () => {
     expect(JSON.parse(row(stub).metadata).restored_by).toBe('u1');
 
     await expect(
-      memoryMod.memoryCapability.handler({ action: 'restore', memoryId: String(stub) }, undefined, { userId: 'u1' })
+      memoryMod.memoryCapability.handler({ action: 'restore', memoryId: String(stub) }, undefined, { userId: testUserId('u1') })
     ).rejects.toThrow(/already restored/);
   });
 
   it("won't restore a memory the dream never pruned", async () => {
     const plain = insert('Jan builds Tokyo maps', 1);
     await expect(
-      memoryMod.memoryCapability.handler({ action: 'restore', memoryId: String(plain) }, undefined, { userId: 'u1' })
+      memoryMod.memoryCapability.handler({ action: 'restore', memoryId: String(plain) }, undefined, { userId: testUserId('u1') })
     ).rejects.toThrow(/wasn't let go by the dream/);
   });
 
@@ -301,18 +302,6 @@ describe('dream journal + recall', () => {
       ]
     );
     expect(dreamMod.dreamRecallLine(Date.now(), OWNER_USER_ID, true)).toBe('');
-  });
-});
-
-describe('daily summary stubs', () => {
-  it('skips a day with no topics or key points, stores one with content', async () => {
-    db.run('DELETE FROM memories');
-    const { storeSummary } = await import('../../../src/engine/memory/summarizer.js');
-    const base = { userId: 'u9', date: '2026-10-28', sentiment: 'neutral' as const, messageCount: 1 };
-    storeSummary({ ...base, summary: '1 messages exchanged', topics: [], keyPoints: [] });
-    expect(db.get<any>('SELECT COUNT(*) AS n FROM memories').n).toBe(0);
-    storeSummary({ ...base, summary: '4 messages exchanged. Topics discussed: express trains', topics: ['express trains'], keyPoints: [] });
-    expect(db.get<any>('SELECT COUNT(*) AS n FROM memories').n).toBe(1);
   });
 });
 

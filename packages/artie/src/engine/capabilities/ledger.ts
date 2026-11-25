@@ -22,7 +22,7 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import { getRawDb, getSyncDb } from '../../shared/db/client.js';
 import { logger } from '../../shared/logger.js';
 
-export type LedgerOutcome =
+type LedgerOutcome =
   | 'ok'
   | 'invalid_args'
   | 'refused_owner'
@@ -67,7 +67,7 @@ const PRUNE_EVERY_MS = 24 * 60 * 60 * 1000;
  */
 const FAILURE_TEXT_PREFIX = /^(?:[A-Za-z][\w -]{0,40}\s)?error:\s/i;
 
-export function looksLikeToolFailure(text: string): boolean {
+export function looksLikeFailedCall(text: string): boolean {
   if (!text) return false;
   if (text.startsWith('❌')) return true;
   if (FAILURE_TEXT_PREFIX.test(text)) return true;
@@ -183,7 +183,7 @@ function ensureTable(): void {
 }
 
 /** Delete rows past retention. Returns the number removed (0 on any failure). */
-export function pruneToolLedger(now: number = Date.now()): number {
+export function pruneLedger(now: number = Date.now()): number {
   try {
     ensureTable();
     const cutoff = now - LEDGER_RETENTION_DAYS * 24 * 60 * 60 * 1000;
@@ -227,7 +227,7 @@ function safeNames(tool: string, action: string): { tool: string; action: string
 export function writeLedgerRow(entry: LedgerEntry, now: number = Date.now()): void {
   try {
     ensureTable();
-    if (now - lastPruneAt > PRUNE_EVERY_MS) pruneToolLedger(now);
+    if (now - lastPruneAt > PRUNE_EVERY_MS) pruneLedger(now);
     let errorClass: string | null = null;
     if (entry.errorClass) errorClass = clip(entry.errorClass, MAX_ERROR_CHARS);
     const names = safeNames(String(entry.tool ?? ''), String(entry.action ?? ''));
@@ -252,7 +252,7 @@ export function writeLedgerRow(entry: LedgerEntry, now: number = Date.now()): vo
 }
 
 /** Test hook: forget table/prune state so a fresh in-memory DB is re-ensured. */
-export function resetToolLedgerState(): void {
+export function resetLedgerState(): void {
   ensuredFor = null;
   lastPruneAt = 0;
 }
@@ -295,7 +295,7 @@ export async function trackRegistryCall<T>(
     const result = await fn();
     if (!rec.outcome) {
       rec.outcome = 'ok';
-      if (typeof result === 'string' && looksLikeToolFailure(result)) {
+      if (typeof result === 'string' && looksLikeFailedCall(result)) {
         rec.outcome = 'error';
         rec.errorClass = 'returned_error_text';
       }
@@ -455,7 +455,7 @@ export function ledgerFirstTs(): number | null {
 }
 
 /** Tools that were called at all since `sinceMs`. */
-export function ledgerToolsCalled(sinceMs: number): Set<string> {
+export function ledgerCapabilitiesCalled(sinceMs: number): Set<string> {
   ensureTable();
   const rows = getSyncDb().all<{ tool: string }>(
     `SELECT DISTINCT tool FROM tool_call_ledger WHERE ts >= ?`,

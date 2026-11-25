@@ -1,10 +1,10 @@
 import { logger } from '../../shared/logger.js';
-import { capabilityRegistry, resolveToolCall } from '../capabilities/registry.js';
+import { capabilityRegistry, resolveCapabilityAlias } from '../capabilities/registry.js';
 import { gatesFor } from '../capabilities/policy.js';
 import { capabilityRunner } from '../capabilities/run-with-retry.js';
 import { jobTracker } from '../1-intake/job-tracker.js';
 import { toCallNotation } from '../3-context/xml-teaching.js';
-import { looksLikeToolFailure, writeLedgerRow } from '../capabilities/ledger.js';
+import { looksLikeFailedCall, writeLedgerRow } from '../capabilities/ledger.js';
 import { ExtractedCapability, OrchestrationContext } from '../2-turn/types.js';
 
 // =====================================================
@@ -18,7 +18,7 @@ import { ExtractedCapability, OrchestrationContext } from '../2-turn/types.js';
 // =====================================================
 
 // Every name in these three sets is a REGISTERED CANONICAL tool name (taint-tracking.test.ts
-// asserts it). Old merged names (shell, git, …) are resolved through resolveToolCall before
+// asserts it). Old merged names (shell, git, …) are resolved through resolveCapabilityAlias before
 // these sets are consulted, so they never need listing here.
 
 // Capabilities that fetch external untrusted content - executing these taints the context
@@ -58,7 +58,7 @@ function checkTaintBlock(
   }
 
   // Canonical name + action (an old name like shell/git maps to sandbox first).
-  const resolved = resolveToolCall(capability.name, capability.action, undefined, { log: false });
+  const resolved = resolveCapabilityAlias(capability.name, capability.action, undefined, { log: false });
   const capName = String(resolved.name).toLowerCase();
   const declared = capabilityRegistry.list().find((c) => c.name === capName)?.actions;
   if (!gatesFor(declared, String(resolved.action).toLowerCase()).dangerousWhenTainted) {
@@ -89,7 +89,7 @@ function checkTaintBlock(
  * Check if executing a capability should taint the context
  */
 function shouldTaintContext(capability: ExtractedCapability): boolean {
-  const { name } = resolveToolCall(capability.name, capability.action, undefined, { log: false });
+  const { name } = resolveCapabilityAlias(capability.name, capability.action, undefined, { log: false });
   return TAINTING_CAPABILITIES.has(String(name).toLowerCase());
 }
 
@@ -107,7 +107,8 @@ function toolResultText(data: unknown): string {
 /**
  * Execute ONE native tool call (wave 8): runToolLoop's executeTool in run-turn.ts.
  *
- *   resolveToolCall (TOOL_ALIASES: an old name like shell/todo runs its canonical tool)
+ *   resolveCapabilityAlias (CAPABILITY_ALIASES: an old name like shell/todo runs its canonical
+ *   capability)
  *   → taint block (DANGEROUS_WHEN_TAINTED after a web/http fetch in this turn)
  *   → job tracker emoji (the gateway's "using <tool>" reactions)
  *   → capabilityRunner.executeWithRetry (retry wrapper → registry.execute: ACTION_ALIASES,
@@ -129,7 +130,7 @@ export async function executeNativeToolCall(
   // one place every native tool call enters, so the model can't set it no matter what it puts
   // in the arguments.
   const { confirmed: _ignoredConfirmed, ...sanitizedParams } = invocation.params ?? {};
-  const resolved = resolveToolCall(invocation.name, invocation.action ?? '', sanitizedParams);
+  const resolved = resolveCapabilityAlias(invocation.name, invocation.action ?? '', sanitizedParams);
   const capability: ExtractedCapability = {
     name: resolved.name,
     action: resolved.action,
@@ -198,7 +199,7 @@ export async function executeNativeToolCall(
     successText = null;
   }
   let text: string;
-  if (successText !== null && !looksLikeToolFailure(successText)) {
+  if (successText !== null && !looksLikeFailedCall(successText)) {
     text = successText;
   } else {
     let errorMsg: string;

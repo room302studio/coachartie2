@@ -14,6 +14,7 @@
  */
 import { describe, it, expect, vi, beforeAll, afterAll } from 'vitest';
 import type { AddressInfo } from 'net';
+import { createHmac } from 'crypto';
 import type { Server } from 'http';
 
 vi.mock('../src/shared/queue/redis.js', async (importOriginal) => {
@@ -146,22 +147,60 @@ describe('engine HTTP contracts (:47324)', () => {
     }
   });
 
-  it('POST /github/webhook with a bad signature is 500 {error, timestamp}', async () => {
-    const prev = process.env.GITHUB_WEBHOOK_SECRET;
-    process.env.GITHUB_WEBHOOK_SECRET = 'contract-test-secret'; // not a real secret
-    try {
-      const r = await call(base, '/github/webhook', {
+  // /github/webhook skips the API token, so its signature check is the only gate and it fails
+  // closed (2026-11-24: it used to accept anything while GITHUB_WEBHOOK_SECRET was unset).
+  describe('POST /github/webhook', () => {
+    const secret = 'contract-test-secret'; // not a real secret
+    const body = JSON.stringify({ zen: 'Keep it logically awesome.', hook_id: 1 });
+    const sign = (raw: string, key: string) =>
+      'sha256=' + createHmac('sha256', key).update(raw).digest('hex');
+    const post = (headers: Record<string, string>) =>
+      call(base, '/github/webhook', {
         method: 'POST',
-        headers: { 'x-github-event': 'push', 'x-github-delivery': 'test' },
-        body: JSON.stringify({ repository: { full_name: 'a/b' } }),
+        headers: { 'x-github-event': 'ping', 'x-github-delivery': 'test', ...headers },
+        body,
       });
-      expect(r.status).toBe(500);
-      expect(keys(r.body)).toEqual(['error', 'timestamp']);
-      expect(r.body.error).toBe('Internal server error');
-    } finally {
-      if (prev === undefined) delete process.env.GITHUB_WEBHOOK_SECRET;
-      else process.env.GITHUB_WEBHOOK_SECRET = prev;
-    }
+    let prev: string | undefined;
+    beforeAll(() => {
+      prev = process.env.GITHUB_WEBHOOK_SECRET;
+    });
+    afterAll(() => {
+      if (prev === undefined) {
+        delete process.env.GITHUB_WEBHOOK_SECRET;
+      } else {
+        process.env.GITHUB_WEBHOOK_SECRET = prev;
+      }
+    });
+
+    it('is 401 {error} with no secret configured, even if signed', async () => {
+      delete process.env.GITHUB_WEBHOOK_SECRET;
+      const r = await post({ 'x-hub-signature-256': sign(body, secret) });
+      expect(r.status).toBe(401);
+      expect(keys(r.body)).toEqual(['error']);
+    });
+
+    it('is 401 {error} with a missing or wrong signature', async () => {
+      process.env.GITHUB_WEBHOOK_SECRET = secret;
+      expect((await post({})).status).toBe(401);
+      expect((await post({ 'x-hub-signature-256': sign(body, 'other-key') })).status).toBe(401);
+      expect((await post({ 'x-hub-signature-256': 'sha256=short' })).status).toBe(401);
+    });
+
+    it('refuses a validly signed body re-sent under a non-utf-8 charset', async () => {
+      process.env.GITHUB_WEBHOOK_SECRET = secret;
+      const r = await post({
+        'x-hub-signature-256': sign(body, secret),
+        'Content-Type': 'application/json; charset=utf-7',
+      });
+      expect(r.status).not.toBe(200);
+    });
+
+    it('is 200 {status, timestamp} when GitHub signed the raw body', async () => {
+      process.env.GITHUB_WEBHOOK_SECRET = secret;
+      const r = await post({ 'x-hub-signature-256': sign(body, secret) });
+      expect(r.status).toBe(200);
+      expect(keys(r.body)).toEqual(['status', 'timestamp']);
+    });
   });
 
   it('GET /api/memories is 200 {success, data, count}', async () => {

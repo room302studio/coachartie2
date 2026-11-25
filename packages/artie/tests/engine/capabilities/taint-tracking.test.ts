@@ -27,7 +27,7 @@ vi.mock('child_process', async (importOriginal) => {
 
 import { executeNativeToolCall, TAINTING_CAPABILITIES } from '../../../src/engine/5-tool-loop/execute-tool-call.js';
 import { capabilityBootstrap } from '../../../src/engine/capabilities/register-all.js';
-import { capabilityRegistry, TOOL_ALIASES } from '../../../src/engine/capabilities/registry.js';
+import { capabilityRegistry, CAPABILITY_ALIASES } from '../../../src/engine/capabilities/registry.js';
 import { OrchestrationContext } from '../../../src/engine/2-turn/types.js';
 
 interface Call {
@@ -47,7 +47,7 @@ describe('Taint sets name only registered canonical tools', () => {
     const registered = new Set(capabilityRegistry.list().map((c) => c.name));
     for (const name of TAINTING_CAPABILITIES) {
       expect(registered.has(name), `${name} is not a registered tool`).toBe(true);
-      expect(TOOL_ALIASES[name], `${name} is an alias, not canonical`).toBeUndefined();
+      expect(CAPABILITY_ALIASES[name], `${name} is an alias, not canonical`).toBeUndefined();
     }
   });
 });
@@ -64,7 +64,7 @@ describe('Taint Tracking Security', () => {
       capabilities: [],
       results: [],
       currentStep: 0,
-      respondTo: async () => {},
+      respondTo: { type: 'api' },
       capabilityFailureCount: new Map(),
       taintedByExternalContent: false,
       taintSource: undefined,

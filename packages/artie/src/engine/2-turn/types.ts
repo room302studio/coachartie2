@@ -13,7 +13,7 @@ export interface ExtractedCapability {
   priority: number;
 }
 
-export interface CapabilityResult {
+interface CapabilityResult {
   capability: ExtractedCapability;
   success: boolean;
   data?: unknown;

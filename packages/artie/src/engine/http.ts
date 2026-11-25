@@ -12,7 +12,7 @@ import { logsRouter } from './routes/logs.js';
 import { observabilityRouter } from './routes/observability.js';
 import { securityRouter } from './routes/security.js';
 import { sbatRouter } from './routes/sbat-email-tickets.js';
-import { capabilitiesRouter } from './routes/tool-registry.js';
+import { capabilitiesRouter } from './routes/capability-registry.js';
 import { observeRouter } from './routes/observe.js';
 import { channelDigestRouter } from './routes/channel-digest.js';
 import { routeRepoRouter } from './routes/route-repo.js';
@@ -55,10 +55,15 @@ export function createEngineApp(deps: Partial<EngineDeps> = {}): Express {
     })
   );
   app.use(express.json({
-    // Capture raw body for webhook signature verification (SBAT inbound email)
-    verify: (req, _res, buf) => {
-      if (req.headers['x-mailersend-signature']) {
-        (req as any).rawBody = buf.toString();
+    // Capture the raw body for webhook signature checks (MailerSend -> SBAT, GitHub).
+    verify: (req, _res, buf, encoding) => {
+      if (req.headers['x-mailersend-signature'] || req.headers['x-hub-signature-256']) {
+        // The HMAC is over UTF-8, but the parser decodes any utf-* charset: a signed body
+        // replayed as charset=utf-7 would keep its signature and parse to different JSON (Codex).
+        if (encoding !== 'utf-8') {
+          throw new Error('signed webhook bodies must be utf-8');
+        }
+        (req as any).rawBody = buf.toString('utf8');
       }
     },
   }));

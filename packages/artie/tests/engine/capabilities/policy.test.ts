@@ -26,6 +26,7 @@ import {
   canonicalParams,
   requiredParamsFor,
 } from '../../../src/engine/capabilities/policy.js';
+import { testUserId } from '../../test-ids.js';
 
 const GATE_FLOOR: Record<string, Record<string, string>> = {
   sandbox: {
@@ -183,7 +184,7 @@ describe('gatesFor', () => {
 
   it('per-action required params bind in registry.execute, with the field named', async () => {
     await expect(
-      capabilityRegistry.execute('discord-forums', 'list-threads', {}, undefined, { userId: 'u' })
+      capabilityRegistry.execute('discord-forums', 'list-threads', {}, undefined, { userId: testUserId('u') })
     ).rejects.toThrow(/forumId/);
   });
 

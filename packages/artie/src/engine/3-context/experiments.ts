@@ -17,13 +17,13 @@ import { randomUUID } from 'crypto';
 // Whether experiments are enabled
 const ENABLE_EXPERIMENTS = process.env.ENABLE_EXPERIMENTS === 'true';
 
-export type VariantType = 'model' | 'prompt' | 'parameter' | 'feature';
+type VariantType = 'model' | 'prompt' | 'parameter' | 'feature';
 
 type ExperimentStatus = 'draft' | 'active' | 'completed' | 'cancelled';
 
-export type TargetType = 'global' | 'guild' | 'user';
+type TargetType = 'global' | 'guild' | 'user';
 
-export interface VariantConfig {
+interface VariantConfig {
   // Model variants
   smartModel?: string; // Override for smart/manager model
   fastModel?: string; // Override for fast model

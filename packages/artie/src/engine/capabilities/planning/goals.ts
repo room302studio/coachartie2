@@ -3,7 +3,7 @@ import { getErrorMessage } from '../../../shared/errors.js';
  * Goals Capability - Artie's Persistent Objectives
  *
  * The one goal tool. The older `goal` tool (planning/goal.ts, legacy `goals` table) was folded
- * in on 2026-10-23 (wave 4): its name and actions resolve here through TOOL_ALIASES in
+ * in on 2026-10-23 (wave 4): its name and actions resolve here through CAPABILITY_ALIASES in
  * capabilities/registry.ts (set → create, check → list, update, complete, history → list;
  * objective → title, deadline → target_date, goal_id → id). The legacy `goals` table and its
  * rows are untouched.

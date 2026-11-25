@@ -13,7 +13,7 @@ import {
   requiredParamsFor,
   canonicalParams,
   OWNER_ONLY_REFUSAL,
-  type ToolActions,
+  type CapabilityActions,
 } from './policy.js';
 import { isOwner } from '../../shared/config/owner.js';
 import { createPendingAction, findPendingDuplicate } from '../../shared/pending-actions.js';
@@ -53,7 +53,7 @@ export interface RegisteredCapability {
    * Per-action policy: what each action touches and who may run it. The owner-only, taint and
    * approval gates are derived from this (policy.ts). Undeclared = open + flagged.
    */
-  actions?: ToolActions;
+  actions?: CapabilityActions;
 }
 
 /**
@@ -103,9 +103,9 @@ const ACTION_ALIASES: Record<string, Record<string, string>> = {
  * - `paramRenames`: old param key → canonical key, applied only when the canonical key is absent.
  *
  * Aliases are never registered, so they never appear in the prompt roster or a tool schema.
- * Resolve them ONLY through resolveToolCall().
+ * Resolve them ONLY through resolveCapabilityAlias().
  */
-interface ToolAlias {
+interface CapabilityAlias {
   to: string;
   actions: Record<string, string>;
   params?: Record<string, unknown>;
@@ -115,7 +115,7 @@ interface ToolAlias {
 const identity = (actions: string[]): Record<string, string> =>
   Object.fromEntries(actions.map((a) => [a, a]));
 
-export const TOOL_ALIASES: Record<string, ToolAlias> = {
+export const CAPABILITY_ALIASES: Record<string, CapabilityAlias> = {
   // planning: goal (legacy `goals` table) → goals (`objectives` table)
   goal: {
     to: 'goals',
@@ -199,7 +199,7 @@ export const TOOL_ALIASES: Record<string, ToolAlias> = {
   },
 };
 
-interface ResolvedToolCall<P = any> {
+interface ResolvedCapabilityCall<P = any> {
   name: string;
   action: string;
   params: P;
@@ -212,19 +212,19 @@ interface ResolvedToolCall<P = any> {
  * execute/has/get/supportsAction and the executor's taint check.
  * Runs before ACTION_ALIASES. Idempotent: a canonical name resolves to itself.
  */
-export function resolveToolCall<P = any>(
+export function resolveCapabilityAlias<P = any>(
   name: string,
   action: string,
   params?: P,
   opts: { log?: boolean } = {}
-): ResolvedToolCall<P> {
+): ResolvedCapabilityCall<P> {
   let key: string;
   if (typeof name === 'string') {
     key = name;
   } else {
     key = String(name ?? '');
   }
-  const alias = TOOL_ALIASES[key] ?? TOOL_ALIASES[key.toLowerCase()];
+  const alias = CAPABILITY_ALIASES[key] ?? CAPABILITY_ALIASES[key.toLowerCase()];
   if (!alias) {
     return { name, action, params: params as P };
   }
@@ -298,7 +298,7 @@ export class CapabilityRegistry {
    * @throws Error if capability not found or action not supported
    */
   get(name: string, action: string): RegisteredCapability {
-    ({ name, action } = resolveToolCall(name, action, undefined, { log: false }));
+    ({ name, action } = resolveCapabilityAlias(name, action, undefined, { log: false }));
     const capability = this.capabilities.get(name);
 
     if (!capability) {
@@ -347,7 +347,7 @@ export class CapabilityRegistry {
    * @returns True if capability exists
    */
   has(name: string): boolean {
-    return this.capabilities.has(resolveToolCall(name, '', undefined, { log: false }).name);
+    return this.capabilities.has(resolveCapabilityAlias(name, '', undefined, { log: false }).name);
   }
 
   /**
@@ -358,7 +358,7 @@ export class CapabilityRegistry {
    * @returns True if capability exists and supports the action
    */
   supportsAction(name: string, action: string): boolean {
-    ({ name, action } = resolveToolCall(name, action, undefined, { log: false }));
+    ({ name, action } = resolveCapabilityAlias(name, action, undefined, { log: false }));
     const capability = this.capabilities.get(name);
     if (capability) {
       return capability.supportedActions.includes(action);
@@ -512,7 +512,7 @@ export class CapabilityRegistry {
   ): Promise<string> {
     // Old merged tool names (goal, shell, todo, …) resolve to their canonical tool first,
     // before ACTION_ALIASES and before any validation.
-    ({ name, action, params } = resolveToolCall(name, action, params));
+    ({ name, action, params } = resolveCapabilityAlias(name, action, params));
     rec.tool = name;
     rec.action = action;
 
@@ -528,7 +528,7 @@ export class CapabilityRegistry {
     }
 
     // Approval gate: money and anything leaving Discord (effect outside/money) needs EJ's
-    // sign-off, unless EJ is the one calling and explicitly confirmed. resolveToolCall already
+    // sign-off, unless EJ is the one calling and explicitly confirmed. resolveCapabilityAlias already
     // ran, so `name` is canonical here.
     if (gates.needsApproval && !isOwnerConfirmed(context, params)) {
       // An identical ask already waiting (a model retry, a re-proposed scribe issue) reuses
@@ -900,7 +900,7 @@ setLedgerNameCheck((tool, action) => {
   if (!capabilityRegistry.has(tool)) {
     return { tool: false, action: false };
   }
-  const canonical = resolveToolCall(tool, action, undefined, { log: false });
+  const canonical = resolveCapabilityAlias(tool, action, undefined, { log: false });
   const cap = capabilityRegistry.list().find((c) => c.name === canonical.name);
   let actionKnown = false;
   if (cap) {

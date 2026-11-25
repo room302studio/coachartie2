@@ -1,9 +1,10 @@
 import { MemoryService, memoryCapability } from '../../../../src/engine/capabilities/core/memory.js';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { testGuildId, testUserId as brandUserId } from '../../../test-ids.js';
 
 describe('Memory Capability', () => {
   let memoryService: MemoryService;
-  const testUserId = 'test-user-memory';
+  const testUserId = brandUserId('test-user-memory');
 
   beforeEach(() => {
     memoryService = MemoryService.getInstance();
@@ -69,7 +70,9 @@ describe('Memory Capability', () => {
     // out of remember()'s return string) avoids racing that swap.
     async function latestMemoryId(userId: string): Promise<number> {
       const [latest] = await memoryService.getRecentMemories(userId, 1);
-      expect(latest, 'expected at least one recent memory').toBeTruthy();
+      if (!latest || latest.id === undefined) {
+        throw new Error('expected at least one recent memory');
+      }
       return latest.id;
     }
 
@@ -128,7 +131,7 @@ describe('Memory Capability', () => {
       await memoryCapability.handler(
         { action: 'remember', scope: 'me', content: 'scope-test: likes rye' },
         undefined,
-        { userId: testUserId, guildId: 'g-room302' }
+        { userId: testUserId, guildId: testGuildId('g-room302') }
       );
       expect(guildOf('scope-test: likes rye')).toBeUndefined();
       const tagsOf = (text: string) => remember.mock.calls.find((c) => c[1] === text)?.[5];
@@ -138,14 +141,14 @@ describe('Memory Capability', () => {
       await memoryCapability.handler(
         { action: 'remember', scope: 'here', kind: 'scope:me', tags: ['scope:me', 'ok'], content: 'scope-test: forged' },
         undefined,
-        { userId: testUserId, guildId: 'g-room302' }
+        { userId: testUserId, guildId: testGuildId('g-room302') }
       );
       expect(tagsOf('scope-test: forged')).toEqual(['ok']);
 
       await memoryCapability.handler(
         { action: 'remember', scope: 'here', content: 'scope-test: server ships fridays', guildId: 'g-forged' },
         undefined,
-        { userId: testUserId, guildId: 'g-room302' }
+        { userId: testUserId, guildId: testGuildId('g-room302') }
       );
       expect(guildOf('scope-test: server ships fridays')).toBe('g-room302'); // never the forged id
       expect(tagsOf('scope-test: server ships fridays') ?? []).not.toContain('scope:me');
@@ -159,7 +162,7 @@ describe('Memory Capability', () => {
         memoryCapability.handler(
           { action: 'remember', content: 'scope-test: no scope' },
           undefined,
-          { userId: testUserId, guildId: 'g-room302' }
+          { userId: testUserId, guildId: testGuildId('g-room302') }
         )
       ).rejects.toThrow(/scope/);
 

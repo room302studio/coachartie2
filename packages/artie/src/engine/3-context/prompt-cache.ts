@@ -88,7 +88,7 @@ function cacheTtl(): { type: 'ephemeral'; ttl?: '1h' } {
 type WireContent =
   | string
   | Array<{ type: 'text'; text: string; cache_control?: { type: 'ephemeral'; ttl?: '1h' } }>;
-export interface WireMessage {
+interface WireMessage {
   role: 'system' | 'user' | 'assistant' | 'tool';
   content: WireContent;
   /** Native tool calls (wave 8): an assistant turn that requested tools, and each result. */

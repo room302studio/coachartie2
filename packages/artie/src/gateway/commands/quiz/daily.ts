@@ -730,7 +730,7 @@ export function isDeckAllowedForGuild(guildId: string | null, deck: string): boo
 // Deck votes: group-decided deck for tomorrow's daily puzzle.
 // ---------------------------------------------------------------------------
 
-export type PollStatus = 'open' | 'closed';
+type PollStatus = 'open' | 'closed';
 
 export interface DeckPoll {
   id: number;

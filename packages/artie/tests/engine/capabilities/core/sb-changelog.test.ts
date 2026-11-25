@@ -47,7 +47,9 @@ describe('sb_changelog parsing', () => {
 });
 
 describe('sb_changelog tool', () => {
-  afterEach(() => vi.unstubAllGlobals());
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
 
   it('answers a specific version, labelling betas, and says so when a version is unknown', async () => {
     const main = SOURCE.replace(/\{\s*version: '2\.0\.1'[\s\S]*?\},\n {4}\{/, '{');

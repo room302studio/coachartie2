@@ -6,6 +6,7 @@ import { describe, it, expect, beforeAll, afterEach, vi } from 'vitest';
 import { mkdtempSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
+import { testUserId } from '../../../test-ids.js';
 
 process.env.DATABASE_PATH = join(mkdtempSync(join(tmpdir(), 'approvals-outcome-')), 'test.db');
 
@@ -39,7 +40,7 @@ describe('approvals:approve outcome', () => {
     vi.spyOn(registry, 'execute').mockResolvedValue('sent');
     const id = park();
     await approvals.approvalsCapability.handler({ action: 'approve', id }, undefined, {
-      userId: owner,
+      userId: testUserId(owner),
     });
     expect(pendingActions.getPendingAction(id)?.status).toBe('executed');
   });
@@ -48,7 +49,7 @@ describe('approvals:approve outcome', () => {
     vi.spyOn(registry, 'execute').mockRejectedValue(new Error('smtp down'));
     const id = park();
     await expect(
-      approvals.approvalsCapability.handler({ action: 'approve', id }, undefined, { userId: owner })
+      approvals.approvalsCapability.handler({ action: 'approve', id }, undefined, { userId: testUserId(owner) })
     ).rejects.toThrow('smtp down');
     expect(pendingActions.getPendingAction(id)?.status).toBe('failed');
   });
@@ -57,10 +58,10 @@ describe('approvals:approve outcome', () => {
     const execute = vi.spyOn(registry, 'execute').mockResolvedValue('sent');
     const id = park();
     await approvals.approvalsCapability.handler({ action: 'approve', id }, undefined, {
-      userId: owner,
+      userId: testUserId(owner),
     });
     const again = await approvals.approvalsCapability.handler({ action: 'approve', id }, undefined, {
-      userId: owner,
+      userId: testUserId(owner),
     });
     expect(execute).toHaveBeenCalledTimes(1);
     expect(again).toContain('already executed');

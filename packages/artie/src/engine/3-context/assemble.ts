@@ -147,9 +147,6 @@ This message is from EJ, verified by his Discord user ID. He built you and runs 
  * 3. Manages token budget intelligently
  * 4. Assembles optimal context for the LLM
  */
-// Re-export pending attachment functions for backwards compatibility
-export type { PendingAttachment } from '../1-intake/pending-attachments.js';
-export { addPendingAttachment, getPendingAttachments } from '../1-intake/pending-attachments.js';
 
 class ContextAssembler {
   private static instance: ContextAssembler;

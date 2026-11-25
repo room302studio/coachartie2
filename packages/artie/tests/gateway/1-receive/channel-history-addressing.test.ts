@@ -28,7 +28,8 @@ function fakeMessage(opts: {
 
   let repliedUser: { id: string; displayName: string; username: string } | null;
   if (opts.repliedUserId) {
-    repliedUser = { id: opts.repliedUserId, displayName: opts.repliedUserName, username: opts.repliedUserName };
+    const name = opts.repliedUserName ?? opts.repliedUserId;
+    repliedUser = { id: opts.repliedUserId, displayName: name, username: name };
   } else {
     repliedUser = null;
   }

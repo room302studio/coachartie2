@@ -11,7 +11,9 @@ vi.mock('dns/promises', () => ({
 const { stripDeadLinks, DEAD_LINK_NOTE } = await import('../../../src/gateway/4-reply/link-check.js');
 
 describe('stripDeadLinks', () => {
-  afterEach(() => vi.unstubAllGlobals());
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
 
   it('removes a bare invented page, keeps live and merely-flaky ones', async () => {
     const fetchMock = vi.fn(async (url: string) => {
