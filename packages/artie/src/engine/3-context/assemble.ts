@@ -1131,6 +1131,13 @@ Important:
       messages.push({ role: 'system', content: contextContent.trim() });
     }
 
+    // Caller-supplied system messages go here, with the other system blocks: Anthropic rejects
+    // a 'system' message after an 'assistant' turn, and history (below) can contain Artie's own
+    // replies. Their user/assistant turns still follow the history (step 4).
+    const callerSystem = existingMessages.filter((m) => m.role === 'system');
+    const callerTurns = existingMessages.filter((m) => m.role !== 'system');
+    messages.push(...callerSystem);
+
     // 3. Add conversation history.
     // Discord group chats come as a single labeled transcript (system block) so the
     // model can attribute every line to the right speaker. Everything else (DMs from
@@ -1147,8 +1154,8 @@ Important:
       messages.push(...conversationHistory);
     }
 
-    // 4. Add any existing conversation history from the caller
-    messages.push(...existingMessages);
+    // 4. Add the caller's own conversation turns (its system messages went in above)
+    messages.push(...callerTurns);
 
     // 5–7. Final USER turn: evidence + wrapped user message + security reminder.
     //

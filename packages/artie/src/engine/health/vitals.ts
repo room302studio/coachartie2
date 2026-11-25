@@ -33,9 +33,9 @@ type Counts = Record<SignalKey, number>;
 // PM2 out logs prefix each entry with 'YYYY-MM-DD HH:mm:ss:' (server-local time).
 const LINE_TS_RE = /^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2}):/;
 
-// Newest file per prefix wins (PM2 suffixes rotations); no trailing dash so both
-// 'discord-out.log' and 'discord-out-1.log' naming schemes match.
-// The PM2 out-logs to read (newest file per prefix). 'coach-artie-out' is the one-process
+// Every file per prefix written during the window is read (PM2 suffixes rotations); no
+// trailing dash so both 'x-out.log' and 'x-out-1.log' / 'x-out__<date>.log' schemes match.
+// The PM2 out-logs to read. 'coach-artie-out' is the one-process
 // app's (wave 9; wave 12 names the PM2 app coach-artie and must keep out_file
 // <repo>/logs/coach-artie-out*.log). The pre-cutover capabilities-out/discord-out logs were
 // archived to R2 and deleted 2026-11-20, so they're gone from here too (they had been frozen
@@ -118,35 +118,43 @@ class VitalsMonitor {
     }
 
     for (const prefix of LOG_PREFIXES) {
-      const file = await this.newestByMtime(logDir, entries, prefix);
-      if (!file) {
-        logger.warn(`🩺 Vitals: no '${prefix}*.log' file found in ${logDir}`);
+      // Every file written to during the window, not just the newest: if pm2-logrotate rotated
+      // mid-window, the kills logged before the rotation are in the rotated file (Codex,
+      // 2026-11-25). countWindow keeps only lines inside the window, so nothing double-counts.
+      const files = await this.filesTouchedSince(logDir, entries, prefix, sinceMs);
+      if (files.length === 0) {
+        logger.warn(`🩺 Vitals: no '${prefix}*.log' file written in this window in ${logDir}`);
         continue;
       }
-      const text = await this.readTail(file);
-      if (text !== null) {
-        this.countWindow(text, sinceMs, untilMs, counts);
+      for (const file of files) {
+        const text = await this.readTail(file);
+        if (text !== null) {
+          this.countWindow(text, sinceMs, untilMs, counts);
+        }
       }
     }
     return counts;
   }
 
-  private async newestByMtime(dir: string, entries: string[], prefix: string): Promise<string | null> {
-    let newest: string | null = null;
-    let newestMtime = -1;
+  private async filesTouchedSince(
+    dir: string,
+    entries: string[],
+    prefix: string,
+    sinceMs: number
+  ): Promise<string[]> {
+    const files: string[] = [];
     for (const name of entries) {
       if (!name.startsWith(prefix) || !name.endsWith('.log')) continue;
       try {
         const stat = await fs.stat(join(dir, name));
-        if (stat.mtimeMs > newestMtime) {
-          newestMtime = stat.mtimeMs;
-          newest = join(dir, name);
+        if (stat.mtimeMs >= sinceMs) {
+          files.push(join(dir, name));
         }
       } catch {
         // rotated away between readdir and stat — skip
       }
     }
-    return newest;
+    return files;
   }
 
   private async readTail(filePath: string): Promise<string | null> {

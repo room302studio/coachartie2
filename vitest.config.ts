@@ -1,4 +1,6 @@
 import { defineConfig } from 'vitest/config';
+import { tmpdir } from 'os';
+import { join } from 'path';
 
 export default defineConfig({
   test: {
@@ -15,6 +17,13 @@ export default defineConfig({
     exclude: ['**/node_modules/**', '**/dist/**', '**/build/**', '**/.turbo/**', 'mcp-servers/**'],
 
     setupFiles: ['./test-setup.ts'],
+
+    // Test workers log to a temp dir, never the bot's real one (getLogsDir() honors LOGS_DIR):
+    // test runs on the VPS used to fill prod's error log with fake "SCHEMA VALIDATION FAILED"
+    // lines from in-memory DBs (2026-11-25).
+    env: {
+      LOGS_DIR: join(tmpdir(), 'coachartie-test-logs'),
+    },
 
     reporter: ['verbose', 'json'],
     retry: 1,
