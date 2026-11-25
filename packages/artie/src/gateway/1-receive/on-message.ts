@@ -19,6 +19,7 @@ import { Client, Events, Message, ChannelType } from 'discord.js';
 import { checkGuildBudget, reportGuildBudgetSpent } from '../../shared/guild-budget.js';
 import { logger } from '../../shared/logger.js';
 import { BLOCKED_USER_IDS, BLOCKED_USER_EPITHET, isBlockedUser } from '../../shared/blocklist.js';
+import { hasArtieEnemyRole } from '../../shared/artie-enemy.js';
 import { isOperatorOnlyError } from '../../shared/anomalywatch.js';
 import { getErrorMessage, getErrorStackOrUndefined } from '../../shared/errors.js';
 import { getKillSwitchPath, isGenerationMuted } from '../../shared/kill-switch.js';
@@ -263,6 +264,47 @@ function dropOptedOut({ message }: Turn): StepResult {
   if (isBlockedUser(message.author.id)) {
     return 'stop';
   }
+}
+
+// The artie-enemy role (shared/artie-enemy.ts): ignored before anything can answer or react
+// (it runs ahead of the 💔 blocklist step too). They stay in history and memory.
+async function dropArtieEnemy({ message, client, shortId }: Turn): Promise<StepResult> {
+  if (await isArtieEnemy(message, client)) {
+    logger.info(`artie-enemy ${message.author.username}: ignored [${shortId}]`);
+    return 'stop';
+  }
+}
+
+async function isArtieEnemy(message: Message, client: Client): Promise<boolean> {
+  if (message.author.id === OWNER_USER_ID) {
+    return false;
+  }
+  if (message.member) {
+    return hasArtieEnemyRole(message.member.roles.cache.map((r) => r.name));
+  }
+  if (message.guildId) {
+    return false; // a guild message with no member (webhook): no roles to check
+  }
+  // A DM: an enemy in any server Artie is in is an enemy in DMs too. fetch() answers from the
+  // member cache when it can. Fails closed: only "not a member" (10007) or "unknown user"
+  // (10013) counts as absence; any other lookup error ignores the DM.
+  for (const guild of client.guilds.cache.values()) {
+    let member;
+    try {
+      member = await guild.members.fetch(message.author.id);
+    } catch (error) {
+      const code = (error as { code?: number }).code;
+      if (code === 10007 || code === 10013) {
+        continue;
+      }
+      logger.warn(`artie-enemy check failed in ${guild.name}; ignoring this DM`, error);
+      return true;
+    }
+    if (hasArtieEnemyRole(member.roles.cache.map((r) => r.name))) {
+      return true;
+    }
+  }
+  return false;
 }
 
 function requireCoachArtiePlace({ message, shortId, isCoachArtiePlace }: Turn): StepResult {
@@ -1052,6 +1094,7 @@ const STEPS: ReadonlyArray<readonly [name: string, step: Step]> = [
   ['log-received', logReceived],
   ['ignore-own-messages', ignoreOwnMessages],
   ['coach-artie-place', resolveCoachArtiePlace],
+  ['artie-enemy', dropArtieEnemy],
   ['blocked-user', dropBlockedUser],
   ['opted-out', dropOptedOut],
   ['require-coach-artie-place', requireCoachArtiePlace],

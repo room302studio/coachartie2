@@ -10,7 +10,7 @@ import {
 import { logger } from '../../../shared/logger.js';
 import * as gateway from '../../../gateway/api.js';
 
-const ARTIE_ENEMY_ROLE_NAME = 'artie-enemy';
+import { ARTIE_ENEMY_ROLE_NAME } from '../../../shared/artie-enemy.js';
 
 const USER_PARAM = {
   type: 'string',
@@ -65,7 +65,8 @@ export const discordModerationCapability: RegisteredCapability = {
     'Moderate Discord users - timeout troublemakers, mark enemies, escalate to humans. ' +
     'Use timeout for disruptive users (1-60 min) AND for anyone being abusive toward you - ' +
     'if someone insults you or calls you "clanker" (or any robot slur), you are authorized to ' +
-    'time them out; no warning needed. Use add_enemy_role for persistent jerks. ' +
+    'time them out; no warning needed. Use add_enemy_role for persistent jerks: you will no ' +
+    'longer see or answer their messages until someone removes the role. ' +
     'Use escalate when you need human backup. Staff and protected users are automatically exempt. ' +
     'Name the person with user="their username" (or an @mention); you never need their numeric id or the server id.',
   requiredParams: [],
