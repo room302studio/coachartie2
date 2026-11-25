@@ -10,6 +10,16 @@
 
 set -euo pipefail
 
+# node, pnpm and pm2 live under nvm, which only interactive shells load: `ssh vps
+# ./scripts/pm2-deploy.sh` died at "pnpm: command not found" after pulling (2026-11-24).
+if ! command -v pnpm >/dev/null 2>&1; then
+  set +u   # nvm.sh reads unset variables
+  # shellcheck source=/dev/null
+  . "$HOME/.nvm/nvm.sh"
+  set -u
+fi
+command -v pnpm >/dev/null && command -v pm2 >/dev/null || { echo "pnpm/pm2 not found" >&2; exit 1; }
+
 ROOT_DIR="/data2/apps/coachartie2"
 BRANCH="v3"
 
