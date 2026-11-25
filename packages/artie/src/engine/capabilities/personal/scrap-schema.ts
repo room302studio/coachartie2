@@ -2,7 +2,7 @@
 /* eslint-disable */
 /**
  * VENDORED COPY of @scrapbook/schema (packages/schema/index.js).
- * Source: ejfox/scrapbook-core (private) @ 604786f (origin/main 8dc4559, 2026-11-24).
+ * Source: ejfox/scrapbook-core (private) @ fe7ee46 (branch outputs, on origin/main 8dc4559; cleanTitle fix, 2026-11-24).
  * Vendored as .ts (with @ts-nocheck) because packages/artie has no allowJs; the body is byte-identical JS.
  * Do not edit below the marker; re-copy and update this header instead.
  * Check: node scripts/check-scrap-schema-drift.mjs
@@ -297,6 +297,7 @@ export function isPlaceholderTitle(title) {
 export function cleanTitle(title) {
   if (isPlaceholderTitle(title)) return ''
   let t = title.trim()
+  let removedPrefix = false
   let changed = true
   while (changed) {
     changed = false
@@ -309,11 +310,14 @@ export function cleanTitle(title) {
     for (const p of AI_TITLE_PREFIXES) {
       if (t.startsWith(p)) {
         t = t.slice(p.length).trim()
+        removedPrefix = true
         changed = true
       }
     }
     // leftovers from a stripped prefix: "**Summary:** Foo" -> ":** Foo"
-    const stripped = t.replace(/^[\s:*•·-]+/, '')
+    // only after an AI prefix was removed: '-5°C forecast' must keep its minus sign
+    let stripped = t
+    if (removedPrefix) stripped = t.replace(/^[\s:*•·-]+/, '')
     if (stripped !== t) {
       t = stripped
       changed = true
