@@ -36,10 +36,15 @@ Words: a **capability** is something Artie can do; a **tool** is only the wire f
 
 ```bash
 pnpm build       # tsc
+pnpm typecheck   # tsc on src, then tsconfig.tests.json (src + tests)
 pnpm test        # vitest, without tests/integration (Redis-bound)
 pnpm lint        # eslint, zero warnings
 pnpm dev         # tsx watch src/main.ts, one process, both ports
 ```
+
+Tests are type-checked. Code takes branded `TrustedUserId`/`GuildId`/`ChannelId`, minted
+only at the sites pinned in `tests/shared/trusted-ids.test.ts`; in a test, brand a literal
+with `testUserId('u1')` etc. from `tests/test-ids.ts`.
 
 On the VPS, `scripts/pm2-deploy.sh` deploys `v3`. A build after files moved needs
 `packages/artie/tsconfig.tsbuildinfo` out of the way (the script does it), or `dist/` misses
