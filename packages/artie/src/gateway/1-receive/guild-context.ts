@@ -8,7 +8,7 @@ import type { Message } from 'discord.js';
 import { readFileSync, existsSync } from 'fs';
 import { join } from 'path';
 import { logger } from '../../shared/logger.js';
-import { REPO_ROOT } from '../../shared/paths.js';
+import { getGuildDocsRoot } from '../../shared/paths.js';
 import { isStaffRole } from '../../shared/staff-role.js';
 import type { ChannelPersona, GuildConfig } from '../../shared/config/guilds.js';
 import {
@@ -22,22 +22,6 @@ import {
  * Load guild context with scratchpad notes
  * Returns the base context plus any notes from the guild's scratchpad file
  */
-/**
- * Resolve the repo root that holds reference-docs/. This used to probe `APP_ROOT`, the
- * hardcoded Docker path `/app`, and two cwd-relative guesses in order, falling through to the
- * next candidate whenever the previous one didn't actually contain reference-docs/. Docker
- * support was removed in wave 1 (the `/app` and bare-cwd candidates are unreachable dead code:
- * `.env.production` is read by `ecosystem.config.cjs`, not by this process, so I can't confirm
- * `APP_ROOT` is unset there — the `APP_ROOT` override itself stays, exactly as before, rather
- * than assume). `REPO_ROOT` (found by walking up to `pnpm-workspace.yaml`, not by probing cwd)
- * replaces the cwd-relative fallback, since it always contains reference-docs/ in every
- * environment this now runs in.
- */
-function resolveRepoRoot(): string {
-  const appRoot = process.env.APP_ROOT;
-  if (appRoot && existsSync(join(appRoot, 'reference-docs'))) return appRoot;
-  return REPO_ROOT;
-}
 
 // Exported so the prompt-measurement harness can build the REAL guild context. Measuring
 // without it understated the prompt by ~4,000 tokens and produced a 68%-reduction claim that
@@ -51,7 +35,7 @@ export function getEnhancedGuildContext(
 
   if (guildConfig?.contextPath) {
     try {
-      const baseDir = resolveRepoRoot();
+      const baseDir = getGuildDocsRoot();
       const contextFullPath = join(baseDir, guildConfig.contextPath);
       if (existsSync(contextFullPath)) {
         baseContext = readFileSync(contextFullPath, 'utf-8');
@@ -74,7 +58,7 @@ export function getEnhancedGuildContext(
   // Load scratchpad if configured (guildConfig is guaranteed to exist if we have baseContext from it)
   if (guildConfig?.scratchpadPath) {
     try {
-      const scratchpadFullPath = join(resolveRepoRoot(), guildConfig.scratchpadPath);
+      const scratchpadFullPath = join(getGuildDocsRoot(), guildConfig.scratchpadPath);
       if (existsSync(scratchpadFullPath)) {
         const scratchpadContent = readFileSync(scratchpadFullPath, 'utf-8');
         fullContext += `
@@ -82,13 +66,8 @@ export function getEnhancedGuildContext(
 📝 YOUR SCRATCHPAD (your personal notes for this guild):
 ${scratchpadContent}
 
-To add notes: <append path="${guildConfig.scratchpadPath}">
-## New Note (include date/username)
-Your observation here
-</append>
-
-To rewrite entirely: <write path="${guildConfig.scratchpadPath}">full new content</write>
-To delete: <rm path="${guildConfig.scratchpadPath}" />`;
+To add a note, call the scratchpad tool (action "note" or "append", with the date and who it's
+about); "write" replaces the whole pad. What you save shows up here next turn.`;
       }
     } catch (error) {
       logger.warn(`Failed to load scratchpad for ${guildConfig?.name}:`, error);

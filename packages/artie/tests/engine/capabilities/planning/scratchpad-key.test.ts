@@ -3,7 +3,37 @@
  * open another server's pad from any conversation.
  */
 import { describe, it, expect } from 'vitest';
-import { scratchpadKey } from '../../../../src/engine/capabilities/planning/scratchpad.js';
+import { join } from 'path';
+import {
+  findHeadingLine,
+  getGuildNotesPath,
+  scratchpadKey,
+} from '../../../../src/engine/capabilities/planning/scratchpad.js';
+import { getGuildConfig } from '../../../../src/shared/config/guilds.js';
+import { GUILD_NOTES_DIR, getGuildDocsRoot } from '../../../../src/shared/paths.js';
+
+// 2026-11-24: the tool wrote one file and the gateway put a different one in context, so notes
+// Artie saved never reached him. The pad IS the guild's scratchpadPath now.
+describe('getGuildNotesPath', () => {
+  it("a configured guild's pad is the file the gateway reads into its context", () => {
+    const room302 = getGuildConfig('932719842522443928');
+    expect(room302?.scratchpadPath).toBeTruthy();
+    expect(getGuildNotesPath('932719842522443928')).toBe(
+      join(getGuildDocsRoot(), room302?.scratchpadPath ?? '')
+    );
+  });
+
+  it('a section heading matches whole lines only', () => {
+    const pad = '# Notes\n## Community Members\n- a\n## Community\n- b';
+    expect(findHeadingLine(pad, '## Community')).toBe(pad.indexOf('## Community\n'));
+    expect(findHeadingLine(pad, '## Recurring')).toBe(-1);
+  });
+
+  it('DM, default and unconfigured pads live in GUILD_NOTES_DIR', () => {
+    expect(getGuildNotesPath('dm-u1')).toBe(join(GUILD_NOTES_DIR, 'guild-dm-u1.md'));
+    expect(getGuildNotesPath('default')).toBe(join(GUILD_NOTES_DIR, 'guild-default.md'));
+  });
+});
 
 describe('scratchpadKey', () => {
   it("a server conversation uses that server's pad, never a model-supplied one", () => {

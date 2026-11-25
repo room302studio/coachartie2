@@ -1,12 +1,9 @@
 import { logger } from '../../../shared/logger.js';
-import { SCRATCHPAD_NOTES_DIR } from '../../../shared/paths.js';
-import {
-  RegisteredCapability,
-  CapabilityContext,
-} from '../registry.js';
-import { readFile, writeFile, mkdir } from 'fs/promises';
+import { GUILD_NOTES_DIR, getGuildDocsRoot } from '../../../shared/paths.js';
+import { getGuildConfig } from '../../../shared/config/guilds.js';
+import { RegisteredCapability, CapabilityContext } from '../registry.js';
+import { readFile, writeFile, mkdir, rename } from 'fs/promises';
 import { dirname, resolve } from 'path';
-import { existsSync } from 'fs';
 
 /**
  * Scratchpad capability - persistent guild notes
@@ -41,13 +38,26 @@ function appendSeparator(current: string): string {
   return '';
 }
 
-// Base path for guild notes
-const NOTES_BASE_PATH = SCRATCHPAD_NOTES_DIR;
+/**
+ * One load-modify-save at a time per file, so two notes in the same moment both land (one
+ * process: engine and gateway are one PM2 app). No content cache: the file is also edited by
+ * hand and read by the gateway, so the disk is the only truth.
+ */
+const padLocks = new Map<string, Promise<unknown>>();
 
-// In-memory cache of loaded scratchpads
-const scratchpadCache = new Map<string, string>();
+async function withPadLock<T>(filePath: string, run: () => Promise<T>): Promise<T> {
+  const previous = padLocks.get(filePath) ?? Promise.resolve();
+  const next = previous.catch(() => undefined).then(run);
+  padLocks.set(filePath, next);
+  try {
+    return await next;
+  } finally {
+    if (padLocks.get(filePath) === next) {
+      padLocks.delete(filePath);
+    }
+  }
+}
 
-// Get the file path for a guild's scratchpad
 /**
  * Which pad a call uses (2026-11-17 merge). Inside a conversation: that server's pad, or in a DM
  * a pad for that one person (it used to be one 'default' pad shared by every DM user). A
@@ -71,38 +81,34 @@ export function scratchpadKey(
   return 'default';
 }
 
-function getGuildNotesPath(guildId: string): string {
-  // Map known guild IDs to their note files
-  const guildFiles: Record<string, string> = {
-    '1420846272545296470': 'subwaybuilder.md',
-    '932719842522443928': 'room302studio.md',
-  };
-
-  const filename = guildFiles[guildId] || `guild-${guildId}.md`;
-  return resolve(NOTES_BASE_PATH, filename);
+/**
+ * The pad's file: the guild's `scratchpadPath` from shared/config/guilds.ts, which is the same
+ * file gateway/1-receive/guild-context.ts puts in that guild's context every turn, so what
+ * Artie writes he sees next turn. Other keys (dm-<user>, default, unconfigured guilds) get
+ * `guild-<key>.md` in GUILD_NOTES_DIR.
+ */
+export function getGuildNotesPath(key: string): string {
+  const configured = getGuildConfig(key)?.scratchpadPath;
+  if (configured) {
+    return resolve(getGuildDocsRoot(), configured);
+  }
+  return resolve(GUILD_NOTES_DIR, `guild-${key}.md`);
 }
 
-// Load scratchpad from disk
+// Load scratchpad from disk. Only a MISSING file starts from the template: any other read
+// error is thrown, so a write can never replace notes it failed to read (Codex, 2026-11-24).
 async function loadScratchpad(guildId: string): Promise<string> {
-  // Check cache first
-  if (scratchpadCache.has(guildId)) {
-    return scratchpadCache.get(guildId)!;
-  }
-
-  const filePath = getGuildNotesPath(guildId);
-
   try {
-    if (existsSync(filePath)) {
-      const content = await readFile(filePath, 'utf-8');
-      scratchpadCache.set(guildId, content);
-      return content;
-    }
+    return await readFile(getGuildNotesPath(guildId), 'utf-8');
   } catch (error) {
-    logger.warn(`Could not load scratchpad for guild ${guildId}:`, error);
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+      throw error;
+    }
   }
+  return PAD_TEMPLATE;
+}
 
-  // Return default template if file doesn't exist
-  const template = `# Guild Notes
+const PAD_TEMPLATE = `# Guild Notes
 
 *Artie's observations and notes about this community*
 
@@ -118,9 +124,6 @@ async function loadScratchpad(guildId: string): Promise<string> {
 ## Notes
 <!-- Ongoing observations -->
 `;
-  scratchpadCache.set(guildId, template);
-  return template;
-}
 
 // Save scratchpad to disk
 async function saveScratchpad(guildId: string, content: string): Promise<void> {
@@ -129,13 +132,28 @@ async function saveScratchpad(guildId: string, content: string): Promise<void> {
   try {
     // Ensure directory exists
     await mkdir(dirname(filePath), { recursive: true });
-    await writeFile(filePath, content, 'utf-8');
-    scratchpadCache.set(guildId, content);
+    // Temp file + rename, so the gateway (which reads the pad without the lock) never sees a
+    // half-written file.
+    const tmpPath = `${filePath}.${process.pid}.tmp`;
+    await writeFile(tmpPath, content, 'utf-8');
+    await rename(tmpPath, filePath);
     logger.info(`📝 Saved guild notes for ${guildId} to ${filePath}`);
   } catch (error) {
     logger.error(`Failed to save scratchpad for guild ${guildId}:`, error);
     throw error;
   }
+}
+
+/** Index of the line that is exactly `heading` (trailing spaces allowed), or -1. */
+export function findHeadingLine(content: string, heading: string): number {
+  let offset = 0;
+  for (const line of content.split('\n')) {
+    if (line.trimEnd() === heading) {
+      return offset;
+    }
+    offset += line.length + 1;
+  }
+  return -1;
 }
 
 // Format for display
@@ -158,8 +176,8 @@ function formatPad(content: string): string {
 export const scratchpadCapability: RegisteredCapability = {
   name: 'scratchpad',
   emoji: '📝',
-  // The pad is ONE markdown file per server (guild-<id>.md), shared by everyone Artie talks to
-  // there; in a DM there is no guild, so every DM shares the single 'default' pad. Two kinds of
+  // The pad is ONE markdown file per server (getGuildNotesPath), shared by everyone Artie talks
+  // to there; each DM user gets their own pad (scratchpadKey). Two kinds of
   // write: adding a line (note/append/section) is Artie's own state; replacing or wiping the whole
   // file (write/clear) is destructive, so it is taint-blocked like other workspace writes.
   actions: {
@@ -223,98 +241,110 @@ Use it for community quirks, recurring questions, solutions that worked. Facts a
     logger.info(`📝 Scratchpad [${guildId}]: ${action}${sectionSuffix(section)}`);
 
     try {
-      switch (action) {
-        case 'write': {
-          if (!text) {
-            return `Error: content required for write. Usage: action="write" content="your notes"`;
-          }
-
-          await saveScratchpad(guildId, text);
-          const lineCount = text.split('\n').length;
-          return `Wrote ${lineCount} lines to guild notes.`;
-        }
-
-        case 'read': {
-          const pad = await loadScratchpad(guildId);
-          return `--- Guild Notes ---\n${formatPad(pad)}`;
-        }
-
-        case 'note': {
-          if (!text) {
-            return `Error: content required for note. Usage: action="note" content="something I learned"`;
-          }
-
-          const current = await loadScratchpad(guildId);
-          const timestamp = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
-          const newContent = current + `\n- [${timestamp}] ${text}`;
-
-          await saveScratchpad(guildId, newContent);
-          return `📝 Noted!`;
-        }
-
-        case 'append': {
-          if (!text) {
-            return `Error: content required for append. Usage: action="append" content="more notes"`;
-          }
-
-          const current = await loadScratchpad(guildId);
-          const separator = appendSeparator(current);
-          const newContent = current + separator + text;
-
-          await saveScratchpad(guildId, newContent);
-          return `Appended to guild notes (now ${newContent.split('\n').length} lines)`;
-        }
-
-        case 'section': {
-          if (!section) {
-            return `Error: section name required. Usage: action="section" section="Community Members" content="..."`;
-          }
-
-          const current = await loadScratchpad(guildId);
-
-          // Try to find existing section and append to it
-          const sectionHeader = `## ${section}`;
-          const sectionIndex = current.indexOf(sectionHeader);
-
-          let newContent: string;
-          if (sectionIndex !== -1 && text) {
-            // Find where this section ends (next ## or end of file)
-            const afterSection = current.substring(sectionIndex + sectionHeader.length);
-            const nextSectionMatch = afterSection.match(/\n## /);
-
-            if (nextSectionMatch && nextSectionMatch.index !== undefined) {
-              // Insert before next section
-              const insertPoint = sectionIndex + sectionHeader.length + nextSectionMatch.index;
-              newContent =
-                current.substring(0, insertPoint) + `\n- ${text}` + current.substring(insertPoint);
-            } else {
-              // Append to end of this section (end of file)
-              newContent = current + `\n- ${text}`;
-            }
-          } else if (text) {
-            // Section doesn't exist, create it
-            newContent = current + `\n\n## ${section}\n- ${text}`;
-          } else {
-            newContent = current + `\n\n## ${section}`;
-          }
-
-          await saveScratchpad(guildId, newContent.trim());
-          return `Added to section: ${section}`;
-        }
-
-        case 'clear': {
-          const template = `# Guild Notes\n\n*Cleared on ${new Date().toISOString().split('T')[0]}*\n`;
-          await saveScratchpad(guildId, template);
-          return 'Guild notes cleared (template restored).';
-        }
-
-        default:
-          return `Unknown action: ${action}
-Available: note, read, section, append, write, clear`;
-      }
+      return await withPadLock(getGuildNotesPath(guildId), () =>
+        runPadAction(action, guildId, text, section)
+      );
     } catch (error: any) {
       logger.error(`Scratchpad failed:`, { action, guildId, error: error.message });
       return `Scratchpad error: ${error.message}`;
     }
   },
 };
+
+async function runPadAction(
+  action: ScratchpadParams['action'],
+  guildId: string,
+  text: string,
+  section: string | undefined
+): Promise<string> {
+  switch (action) {
+    case 'write': {
+      if (!text) {
+        return `Error: content required for write. Usage: action="write" content="your notes"`;
+      }
+
+      await saveScratchpad(guildId, text);
+      const lineCount = text.split('\n').length;
+      return `Wrote ${lineCount} lines to guild notes.`;
+    }
+
+    case 'read': {
+      const pad = await loadScratchpad(guildId);
+      return `--- Guild Notes ---\n${formatPad(pad)}`;
+    }
+
+    case 'note': {
+      if (!text) {
+        return `Error: content required for note. Usage: action="note" content="something I learned"`;
+      }
+
+      const current = await loadScratchpad(guildId);
+      const timestamp = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+      const newContent = current + `\n- [${timestamp}] ${text}`;
+
+      await saveScratchpad(guildId, newContent);
+      return `📝 Noted!`;
+    }
+
+    case 'append': {
+      if (!text) {
+        return `Error: content required for append. Usage: action="append" content="more notes"`;
+      }
+
+      const current = await loadScratchpad(guildId);
+      const separator = appendSeparator(current);
+      const newContent = current + separator + text;
+
+      await saveScratchpad(guildId, newContent);
+      return `Appended to guild notes (now ${newContent.split('\n').length} lines)`;
+    }
+
+    case 'section': {
+      if (!section) {
+        return `Error: section name required. Usage: action="section" section="Community Members" content="..."`;
+      }
+
+      const current = await loadScratchpad(guildId);
+
+      // Find the section by its WHOLE heading line ("Community" must not match
+      // "## Community Members") and append to it
+      const sectionHeader = `## ${section}`;
+      const sectionIndex = findHeadingLine(current, sectionHeader);
+
+      let newContent: string;
+      if (sectionIndex !== -1 && text) {
+        // Find where this section ends (next ## or end of file)
+        const afterSection = current.substring(sectionIndex + sectionHeader.length);
+        const nextSectionMatch = afterSection.match(/\n## /);
+
+        if (nextSectionMatch && nextSectionMatch.index !== undefined) {
+          // Insert before next section
+          const insertPoint = sectionIndex + sectionHeader.length + nextSectionMatch.index;
+          newContent =
+            current.substring(0, insertPoint) + `\n- ${text}` + current.substring(insertPoint);
+        } else {
+          // Append to end of this section (end of file)
+          newContent = current + `\n- ${text}`;
+        }
+      } else if (text) {
+        // Section doesn't exist, create it
+        newContent = current + `\n\n## ${section}\n- ${text}`;
+      } else {
+        newContent = current + `\n\n## ${section}`;
+      }
+
+      await saveScratchpad(guildId, newContent.trim());
+      return `Added to section: ${section}`;
+    }
+
+    case 'clear': {
+      const template = `# Guild Notes\n\n*Cleared on ${new Date().toISOString().split('T')[0]}*\n`;
+      await saveScratchpad(guildId, template);
+      return 'Guild notes cleared (template restored).';
+    }
+
+    default:
+      return `Unknown action: ${action}
+Available: note, read, section, append, write, clear`;
+  }
+}

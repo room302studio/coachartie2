@@ -9,7 +9,7 @@ import {
   getCasinoLedger,
   LAUNCH_STATE,
   getDatabasePath,
-  SCRATCHPAD_NOTES_DIR,
+  GUILD_NOTES_DIR,
   MENTION_PROXY_DATA,
   PROMPTS_DIR,
   REFERENCE_DOCS,
@@ -96,8 +96,8 @@ describe('single files', () => {
 });
 
 describe('directories', () => {
-  it('SCRATCHPAD_NOTES_DIR resolves to <repo>/reference-docs/scratchpad', () => {
-    expect(SCRATCHPAD_NOTES_DIR).toBe(join(REPO_ROOT, 'reference-docs/scratchpad'));
+  it('GUILD_NOTES_DIR resolves to <repo>/reference-docs/guild-notes', () => {
+    expect(GUILD_NOTES_DIR).toBe(join(REPO_ROOT, 'reference-docs/guild-notes'));
   });
 
   it('MENTION_PROXY_DATA resolves to <repo>/capabilities/data (not packages/capabilities/data)', () => {

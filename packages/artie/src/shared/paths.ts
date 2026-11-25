@@ -138,12 +138,28 @@ export function getDatabasePath(): string {
 // ---------------------------------------------------------------------------
 
 /**
- * The `scratchpad` capability's per-guild notes (one Markdown file per guild), which Artie
- * writes. Until 2026-11-24 they lived in packages/capabilities/reference-docs/guild-notes, a
- * leftover of the package merged into artie. Not the same as `reference-docs/guild-notes`,
- * the hand-written guild context the gateway reads.
+ * Artie's per-guild notes, one Markdown file each. The `scratchpad` capability writes them and
+ * the gateway puts them in that guild's context every turn: ONE file per guild, named by
+ * `scratchpadPath` in shared/config/guilds.ts, else `guild-<key>.md` here. Until 2026-11-24
+ * the tool wrote a different copy (packages/capabilities/..., then reference-docs/scratchpad/)
+ * that never reached his context.
  */
-export const SCRATCHPAD_NOTES_DIR = join(REPO_ROOT, 'reference-docs/scratchpad');
+export const GUILD_NOTES_DIR = join(REPO_ROOT, 'reference-docs/guild-notes');
+
+/**
+ * The root that guild `contextPath` / `scratchpadPath` (shared/config/guilds.ts) resolve
+ * against: `APP_ROOT` when it holds a reference-docs/ (an override kept from the Docker days;
+ * on prod it equals the repo root), else REPO_ROOT. ONE resolver for the gateway, which reads
+ * these files into context, and the scratchpad tool, which writes them, so the two can't
+ * point at different files (Codex, 2026-11-24).
+ */
+export function getGuildDocsRoot(): string {
+  const appRoot = process.env.APP_ROOT;
+  if (appRoot && existsSync(join(appRoot, 'reference-docs'))) {
+    return appRoot;
+  }
+  return REPO_ROOT;
+}
 
 /**
  * The directory the Discord-side "mention proxy" status/metrics/events files and config live
@@ -161,7 +177,7 @@ export const PROMPTS_DIR = join(REPO_ROOT, 'prompts');
 /**
  * The one `reference-docs/` tree: guild context files (`contextPath` / `scratchpadPath` in
  * shared/config/guilds.ts, resolved against the repo root), Steam review notes, and
- * SCRATCHPAD_NOTES_DIR above.
+ * GUILD_NOTES_DIR above.
  */
 export const REFERENCE_DOCS = {
   root: join(REPO_ROOT, 'reference-docs'),
