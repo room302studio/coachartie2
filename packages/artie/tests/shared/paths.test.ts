@@ -9,7 +9,7 @@ import {
   getCasinoLedger,
   LAUNCH_STATE,
   getDatabasePath,
-  CAPABILITIES_GUILD_NOTES,
+  SCRATCHPAD_NOTES_DIR,
   MENTION_PROXY_DATA,
   PROMPTS_DIR,
   REFERENCE_DOCS,
@@ -96,10 +96,8 @@ describe('single files', () => {
 });
 
 describe('directories', () => {
-  it('CAPABILITIES_GUILD_NOTES resolves to <repo>/packages/capabilities/reference-docs/guild-notes', () => {
-    expect(CAPABILITIES_GUILD_NOTES).toBe(
-      join(REPO_ROOT, 'packages/capabilities/reference-docs/guild-notes')
-    );
+  it('SCRATCHPAD_NOTES_DIR resolves to <repo>/reference-docs/scratchpad', () => {
+    expect(SCRATCHPAD_NOTES_DIR).toBe(join(REPO_ROOT, 'reference-docs/scratchpad'));
   });
 
   it('MENTION_PROXY_DATA resolves to <repo>/capabilities/data (not packages/capabilities/data)', () => {
@@ -110,9 +108,8 @@ describe('directories', () => {
     expect(PROMPTS_DIR).toBe(join(REPO_ROOT, 'prompts'));
   });
 
-  it('REFERENCE_DOCS has both the root and capabilities trees', () => {
-    expect(REFERENCE_DOCS.root).toBe(join(REPO_ROOT, 'reference-docs'));
-    expect(REFERENCE_DOCS.capabilities).toBe(join(REPO_ROOT, 'packages/capabilities/reference-docs'));
+  it('REFERENCE_DOCS is the one root tree', () => {
+    expect(REFERENCE_DOCS).toEqual({ root: join(REPO_ROOT, 'reference-docs') });
   });
 
   it('ENGINE_LOGS resolves to <repo>/packages/capabilities/logs', () => {

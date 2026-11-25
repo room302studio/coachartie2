@@ -1,5 +1,5 @@
 import { logger } from '../../../shared/logger.js';
-import { CAPABILITIES_GUILD_NOTES } from '../../../shared/paths.js';
+import { SCRATCHPAD_NOTES_DIR } from '../../../shared/paths.js';
 import {
   RegisteredCapability,
   CapabilityContext,
@@ -42,7 +42,7 @@ function appendSeparator(current: string): string {
 }
 
 // Base path for guild notes
-const NOTES_BASE_PATH = CAPABILITIES_GUILD_NOTES;
+const NOTES_BASE_PATH = SCRATCHPAD_NOTES_DIR;
 
 // In-memory cache of loaded scratchpads
 const scratchpadCache = new Map<string, string>();

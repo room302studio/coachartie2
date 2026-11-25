@@ -15,7 +15,7 @@ real consumers:
 | Tool | Storage | Consumers | Verdict |
 |---|---|---|---|
 | `memory` | `memories` table (hybridDataLayer, hot cache + SQLite) | the LLM only, via the tool | **canonical** — kept, extended |
-| `scratchpad` | one Markdown file per guild on disk (`CAPABILITIES_GUILD_NOTES`) | the LLM via the tool, **and** `gateway/1-receive/guild-context.ts` reads the file directly, outside any tool call, to build context for every turn | **kept separate** |
+| `scratchpad` | one Markdown file per guild on disk (`SCRATCHPAD_NOTES_DIR`, `reference-docs/scratchpad/`) | the LLM via the tool, **and** `gateway/1-receive/guild-context.ts` reads the file directly, outside any tool call, to build context for every turn | **kept separate** |
 | `system_memory` | its own `system_memory` table, keyed by `agent` (`'artie'` / `'vps-claude'`), not by Discord `userId` | Artie **and** VPS Claude (a different process); VPS Claude also writes a *separate* Postgres `mesh_memories` for its own durable cross-session memory | **kept separate** |
 | `user-profile` | `UserProfileService`, one row per user, one column per attribute (`email`, `github`, `timezone`, …), with per-attribute validation (email/phone format) | the LLM only | **kept separate** |
 | `goal` / `goals` | `objectives` + `goal_actions` tables, its own status/progress/`achieved_at` lifecycle | the LLM, the scheduler (nudges) | **kept separate** — named as an exception in the brief itself |

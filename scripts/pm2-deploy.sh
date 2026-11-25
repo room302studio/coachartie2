@@ -39,8 +39,10 @@ echo ""
 # 3. Build ALL packages (critical - prevents stale dist/). The build info goes first: with it,
 # tsc emits only what it thinks changed, and after a file move that left dist/ missing modules
 # and the bot dead for ~4 minutes (2026-11-24).
+echo "🔎 Type-checking src and tests..."
+(cd packages/artie && npm run -s typecheck)   # a type error stops the deploy here (set -e)
 echo "🔨 Building all packages..."
-mv -f packages/artie/tsconfig.tsbuildinfo /tmp/coachartie-tsbuildinfo.prev 2>/dev/null || true
+rm -f packages/artie/tsconfig.tsbuildinfo   # a cache; if it can't go, stop (set -e)
 pnpm build
 echo ""
 
@@ -65,8 +67,23 @@ echo ""
 # 6. Quick health check
 echo "🩺 Health checks:"
 sleep 3
-curl -sf http://localhost:47324/health/ready >/dev/null && echo "  ✅ Engine healthy (:47324)" || echo "  ❌ Engine unhealthy (:47324)"
-curl -sf http://127.0.0.1:47319/health >/dev/null && echo "  ✅ Gateway healthy (:47319)" || echo "  ❌ Gateway unhealthy (:47319)"
+HEALTHY=1
+if curl -sf --connect-timeout 3 --max-time 10 http://127.0.0.1:47324/health/ready >/dev/null; then
+  echo "  ✅ Engine healthy (:47324)"
+else
+  echo "  ❌ Engine unhealthy (:47324)"
+  HEALTHY=0
+fi
+if curl -sf --connect-timeout 3 --max-time 10 http://127.0.0.1:47319/health >/dev/null; then
+  echo "  ✅ Gateway healthy (:47319)"
+else
+  echo "  ❌ Gateway unhealthy (:47319)"
+  HEALTHY=0
+fi
 echo ""
 
+if [ "$HEALTHY" -ne 1 ]; then
+  echo "❌ Deploy finished but a health check failed: pm2 logs coach-artie --err" >&2
+  exit 1
+fi
 echo "✅ Deploy complete!"

@@ -137,11 +137,13 @@ export function getDatabasePath(): string {
 // Directories
 // ---------------------------------------------------------------------------
 
-/** The capabilities-package `scratchpad` capability's per-guild notes directory. */
-export const CAPABILITIES_GUILD_NOTES = join(
-  REPO_ROOT,
-  'packages/capabilities/reference-docs/guild-notes'
-);
+/**
+ * The `scratchpad` capability's per-guild notes (one Markdown file per guild), which Artie
+ * writes. Until 2026-11-24 they lived in packages/capabilities/reference-docs/guild-notes, a
+ * leftover of the package merged into artie. Not the same as `reference-docs/guild-notes`,
+ * the hand-written guild context the gateway reads.
+ */
+export const SCRATCHPAD_NOTES_DIR = join(REPO_ROOT, 'reference-docs/scratchpad');
 
 /**
  * The directory the Discord-side "mention proxy" status/metrics/events files and config live
@@ -157,18 +159,12 @@ export const MENTION_PROXY_DATA = join(REPO_ROOT, 'capabilities/data');
 export const PROMPTS_DIR = join(REPO_ROOT, 'prompts');
 
 /**
- * The two `reference-docs/` trees that exist today. They are NOT the same directory and NOT
- * interchangeable:
- *  - `root`: used by the Discord gateway for guild context/scratchpad files configured in
- *    `guild-whitelist.ts` (`contextPath` / `scratchpadPath`), resolved via `resolveRepoRoot()`
- *    in `message-handler.ts`.
- *  - `capabilities`: the capabilities package's own `reference-docs/`, home to
- *    `CAPABILITIES_GUILD_NOTES` above (the `scratchpad` capability's notes, a different guild
- *    notes concept from the Discord-side one).
+ * The one `reference-docs/` tree: guild context files (`contextPath` / `scratchpadPath` in
+ * shared/config/guilds.ts, resolved against the repo root), Steam review notes, and
+ * SCRATCHPAD_NOTES_DIR above.
  */
 export const REFERENCE_DOCS = {
   root: join(REPO_ROOT, 'reference-docs'),
-  capabilities: join(REPO_ROOT, 'packages/capabilities/reference-docs'),
 } as const;
 
 /**
