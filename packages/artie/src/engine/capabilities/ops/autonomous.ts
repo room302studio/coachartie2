@@ -161,10 +161,6 @@ Control Artie's proactive behavior:
 - Nudges users with stalled quests
 - Delivers daily insights at 9 AM and 6 PM
 
-**Summarization Settings**
-- SUMMARIZATION_CRON: When to summarize (default: "0 6 * * *")
-- Creates daily memory summaries
-
 **Model Routing**
 - Automatic tier selection based on complexity
 - Override with explicit model requests

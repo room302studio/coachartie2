@@ -5,7 +5,11 @@
  */
 import { describe, it, expect, vi } from 'vitest';
 import { logger } from '../../../src/shared/logger.js';
-import { SchedulerService, resolveJobType } from '../../../src/engine/jobs/scheduler.js';
+import {
+  RETIRED_JOB_NAMES,
+  SchedulerService,
+  resolveJobType,
+} from '../../../src/engine/jobs/scheduler.js';
 import { schedulerCapability } from '../../../src/engine/capabilities/core/reminders.js';
 
 function fakeQueue() {
@@ -45,6 +49,13 @@ describe('resolveJobType', () => {
   it('has no handler for user-task or orphans', () => {
     expect(resolveJobType('water plants', { type: 'user-task' })).toBe('');
     expect(resolveJobType('moltbook-social', {})).toBe('');
+  });
+
+  // 2026-11-25: retired repeatables stayed in Redis and logged "unknown job" nightly.
+  it('no retired job name resolves to a handler', () => {
+    for (const name of RETIRED_JOB_NAMES) {
+      expect(resolveJobType(name, { type: name })).toBe('');
+    }
   });
 });
 

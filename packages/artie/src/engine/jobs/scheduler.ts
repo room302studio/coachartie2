@@ -82,8 +82,20 @@ const HANDLED_JOB_TYPES = new Set([
   'morning-briefing',
   'trend-digest',
   'heartbeat',
-  'daily-summarization',
   'delivery-retries',
+]);
+
+/**
+ * Repeatable jobs an older build put in Redis whose handlers are gone. BullMQ keeps a
+ * repeatable forever once added, so retiring a job in code isn't enough: these kept firing
+ * and logging "Unknown scheduled job type" every night. setupDefaultTasks removes them at boot.
+ * An explicit list on purpose: getRepeatableJobs() returns names only, and user-made jobs can
+ * have any name, so "remove whatever has no handler" could delete someone's reminder.
+ */
+export const RETIRED_JOB_NAMES: ReadonlySet<string> = new Set([
+  'daily-reflection', // Auto-reflection, deleted 2026-11 (EJ)
+  'weekly-rule-review', // the Rule consolidator, deleted 2026-11 (EJ)
+  'daily-summarization', // retired 2026-11-23; was a no-op until 2026-11-25
 ]);
 
 /**
@@ -435,10 +447,6 @@ export class SchedulerService {
 
         case 'heartbeat':
           await this.executeAutonomousHeartbeat();
-          break;
-
-        case 'daily-summarization':
-          await this.executeDailySummarization();
           break;
 
         case 'delivery-retries':
@@ -838,17 +846,16 @@ export class SchedulerService {
     }
   }
 
-  /**
-   * Daily conversation summaries are retired (2026-11-23, with Artie). They were never written
-   * by a model: a word-frequency "Topics discussed" list plus the first sentence of a few
-   * messages, saved guild-free at importance 8 and mixing DMs with every server. So they
-   * crowded recall ("last time" picks the newest importance >= 7 row) and could carry DM text
-   * into a server. The nightly dream pruned them as stubs. "When did X start?" questions are
-   * now answered from the source with discord-search after/before. The job stays registered so
-   * the repeatable doesn't log an unknown task; it does nothing.
-   */
-  private async executeDailySummarization(): Promise<void> {
-    logger.debug('Daily summarization is retired; nothing to do');
+  /** Remove the RETIRED_JOB_NAMES repeatables from Redis (see the constant). */
+  private async removeRetiredRepeatables(): Promise<void> {
+    if (!this.schedulerQueue) return;
+    const repeatableJobs = await this.schedulerQueue.getRepeatableJobs();
+    for (const job of repeatableJobs) {
+      if (RETIRED_JOB_NAMES.has(job.name)) {
+        await this.schedulerQueue.removeRepeatableByKey(job.key);
+        logger.info(`Removed retired scheduled job '${job.name}'`);
+      }
+    }
   }
 
   /**
@@ -874,7 +881,10 @@ export class SchedulerService {
    * Setup default scheduled tasks
    */
   async setupDefaultTasks(): Promise<void> {
-    // Set up default tasks
+    // Jobs retired in code are still in Redis until removed (RETIRED_JOB_NAMES). Never fatal.
+    await this.removeRetiredRepeatables().catch((error) =>
+      logger.warn('Could not remove retired scheduled jobs:', error)
+    );
 
     // Health check every 5 minutes
     await this.scheduleTask({
@@ -952,17 +962,6 @@ export class SchedulerService {
       name: 'delivery-retries',
       cron: deliveryRetryCron,
       data: { type: 'delivery-retries' },
-      options: { immediate: false },
-    });
-
-    // Daily conversation summarization - 6 AM UTC
-    // Aggregates daily conversations into long-term memory summaries
-    const summarizationCron = process.env.SUMMARIZATION_CRON || '0 6 * * *';
-    await this.scheduleTask({
-      id: 'daily-summarization',
-      name: 'daily-summarization',
-      cron: summarizationCron,
-      data: { type: 'daily-summarization' },
       options: { immediate: false },
     });
 
