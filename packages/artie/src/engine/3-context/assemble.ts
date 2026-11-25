@@ -920,9 +920,7 @@ Important:
     // holds a 1,591-char February copy of subwaybuilder.md, so it shadowed the live
     // 8,543-char file in the actual repo — a 5x smaller persona, loaded silently. The
     // running repo now comes first, and the legacy Docker//data2 paths are last-resort.
-    // Under PM2 the cwd is packages/<name>, hence the ../.. candidate. Routed through
-    // paths.ts's getGuildKnowledgeDirs() (wave 2) — same search order, now anchored off
-    // REPO_ROOT instead of recomputed from cwd each call.
+    // The order lives in paths.ts's getGuildKnowledgeDirs(), anchored on REPO_ROOT (never cwd).
     const baseDirs = getGuildKnowledgeDirs();
 
     for (const baseDir of baseDirs) {

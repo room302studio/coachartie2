@@ -5,10 +5,10 @@
  * was answered a dozen different ways across two packages, almost all of them
  * `process.cwd()`-relative (`join(process.cwd(), '..', '..', 'KILL_SWITCH')`) or
  * `import.meta.url`-relative (`dirname(fileURLToPath(import.meta.url))`). Those happened to
- * agree today because PM2, `turbo run test`, and `nodemon` all launch each service with its
- * cwd set to that service's own package directory (`packages/capabilities` or
- * `packages/discord`) — but nothing enforced that, and the next layout change (wave 3's move
- * into `packages/artie`) would have silently re-pointed every one of them.
+ * agreed back then only because PM2, `turbo run test`, and `nodemon` launched each of the two
+ * old services with its cwd set to its own package directory (the since-deleted
+ * `packages/capabilities` and `packages/discord`) — nothing enforced that, and wave 3's move
+ * into `packages/artie` would have silently re-pointed every one of them.
  *
  * REPO_ROOT below is found by walking up from THIS FILE's own location (never `process.cwd()`)
  * until a directory containing `pnpm-workspace.yaml` is found. Every other export is built from
@@ -189,7 +189,7 @@ export const ARTIE_LOGS = join(REPO_ROOT, 'packages/artie/logs');
 
 /**
  * PM2's own `out_file`/`error_file` directory — `ecosystem.config.cjs`'s
- * `capabilities-out.log`/`discord-out.log` etc, NOT winston's `*-combined.log`
+ * `coach-artie-out.log`/`coach-artie-error.log` and brain's, NOT winston's `*-combined.log`
  * (`ARTIE_LOGS` above). The vitals monitor is the one reader, and until now it
  * hardcoded the prod absolute path (`/data2/apps/coachartie2/logs`) with `VITALS_LOG_DIR` as
  * its only escape hatch — wrong for this worktree, and wrong for any environment besides that
@@ -252,7 +252,7 @@ export function getGuildKnowledgeDirs(): string[] {
 /**
  * The `.env` files the bot loads at boot, in load order, HIGHEST priority first: `dotenv`'s
  * `config()` never overrides a variable that's already set, so the FIRST file to define a
- * name wins, and anything PM2 already put in `process.env` beats all three.
+ * name wins, and anything PM2 already put in `process.env` beats it.
  *
  * Just the repo-root `.env`. Wave 9 also listed `packages/capabilities/.env` and
  * `packages/discord/.env` (the two old processes' own files); neither ever existed on prod

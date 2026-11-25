@@ -103,7 +103,7 @@ class VitalsMonitor {
 
   private async collectCounts(sinceMs: number, untilMs: number): Promise<Counts> {
     const counts = Object.fromEntries(SIGNALS.map((s) => [s.key, 0])) as Counts;
-    // PM2's out/error log dir (capabilities-out.log, discord-out.log, …), not winston's
+    // PM2's out/error log dir (coach-artie-out.log, …), not winston's
     // ARTIE_LOGS. VITALS_LOG_DIR still wins; PM2_LOGS (paths.ts) replaces the old
     // hardcoded '/data2/apps/coachartie2/logs' with the same path, cwd-independent (wave 2
     // review fix — see BUILD-LOG.md).
