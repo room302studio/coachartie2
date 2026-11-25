@@ -10,6 +10,16 @@
  * and ids in arbitrary stored text, not just mention tokens.
  */
 
+/**
+ * True when `text` @-mentions `userId` itself (`<@id>` / `<@!id>`). Role mentions (`<@&id>`),
+ * @everyone and reply pings don't count, and they don't cancel a real mention next to them:
+ * "<@&mods> <@artie> help" addresses Artie (until 2026-11-24 any role mention vetoed it).
+ */
+export function mentionsUser(text: string, userId: string | undefined | null): boolean {
+  if (!userId || !/^\d+$/.test(userId)) return false;
+  return new RegExp(`<@!?${userId}>`).test(text);
+}
+
 /** Replace every `<@id>` / `<@!id>` mention of `userId` with `replacement`. Non-ids are left alone. */
 export function replaceMention(text: string, userId: string | undefined | null, replacement: string): string {
   if (!userId || !/^\d+$/.test(userId)) return text;

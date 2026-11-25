@@ -67,7 +67,7 @@ import { handleQuizAnswer } from '../commands/quiz/command.js';
 import { existsSync, unlinkSync } from 'fs';
 import { createHash } from 'crypto';
 import { looksLikeGithubActivity } from './github-signals.js';
-import { replaceMention } from '../../shared/mentions.js';
+import { mentionsUser, replaceMention } from '../../shared/mentions.js';
 import {
   BurstScheduler,
   burstDebounceMs,
@@ -462,11 +462,9 @@ async function detectResponseConditions(turn: Turn): Promise<StepResult> {
   const isForum = await isForumThread(message);
   const guildConfig = getGuildConfig(message.guildId);
 
-  // Check for direct @bot mention (exclude role mentions and @everyone/@here)
-  const isDirectBotMention =
-    message.mentions.has(client.user!.id) &&
-    !message.mentions.everyone && // Exclude @everyone and @here
-    !message.content.includes(`<@&`); // Exclude role mentions (format: <@&ROLE_ID>)
+  // A direct @Artie in the text. @everyone/@here and role mentions alone don't count, and
+  // don't cancel a real @Artie next to them (shared/mentions.ts).
+  const isDirectBotMention = mentionsUser(message.content, client.user!.id);
 
   // A Discord reply to one of Artie's messages addresses him even without a ping (#88).
   const repliedToBot = !isDirectBotMention && (await isReplyToBot(message, client.user!.id));

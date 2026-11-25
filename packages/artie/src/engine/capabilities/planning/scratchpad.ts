@@ -154,10 +154,13 @@ function h2Lines(content: string): Array<{ offset: number; line: string }> {
   let offset = 0;
   let fence: { char: string; length: number } | null = null;
   for (const line of content.split('\n')) {
-    const run = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(line);
+    // Any indent, and an optional list marker: a fence inside a list item ("- ```" opening,
+    // an indented "  ```" closing) is still a fence.
+    const run = /^\s*(?:(?:[-*+]|\d+[.)])\s+)?(`{3,}|~{3,})(.*)$/.exec(line);
     if (fence) {
-      const closes =
-        run && run[1][0] === fence.char && run[1].length >= fence.length && !run[2].trim();
+      // A closer is a bare (optionally indented) run: "- ```" inside a fence is content.
+      const closer = /^\s*(`{3,}|~{3,})\s*$/.exec(line);
+      const closes = closer && closer[1][0] === fence.char && closer[1].length >= fence.length;
       if (closes) {
         fence = null;
       }

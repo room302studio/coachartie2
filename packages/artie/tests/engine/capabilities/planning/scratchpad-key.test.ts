@@ -44,6 +44,12 @@ describe('getGuildNotesPath', () => {
     expect(findSectionEnd(pad, 0)).toBe(pad.indexOf('\n## B'));
   });
 
+  it('a fence inside a list item is still a fence', () => {
+    const pad = '## One\n- ```md\n  ## Example\n  ```\n## Two\n- b';
+    expect(findHeadingLine(pad, '## Two')).toBe(pad.indexOf('## Two'));
+    expect(findSectionEnd(pad, 0)).toBe(pad.indexOf('\n## Two'));
+  });
+
   it('a line of inline code is not a fence', () => {
     const pad = '## A\n```inline code```\n## B';
     expect(findHeadingLine(pad, '## B')).toBe(pad.indexOf('## B'));
