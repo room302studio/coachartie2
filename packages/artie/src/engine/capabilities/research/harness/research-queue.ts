@@ -131,6 +131,7 @@ class ResearchQueueService {
   }
 
   /** Oldest first, for the poll loop: newest-first let new tasks starve old ones (Codex). */
+  /** limit -1 = no limit (SQLite). */
   private oldestTasks(status: QueuedTask['status'], limit: number): QueuedTask[] {
     this.ensureTable();
     const rows = getSyncDb().all<Record<string, unknown>>(
@@ -223,8 +224,8 @@ class ResearchQueueService {
         await this.submitTask(task);
       }
 
-      // Poll every running task (submissions are capped at 5 a tick, so this stays small)
-      const running = this.oldestTasks('running', 1000);
+      // Poll every running task, oldest first
+      const running = this.oldestTasks('running', -1);
       for (const task of running) {
         await this.pollTask(task);
       }
