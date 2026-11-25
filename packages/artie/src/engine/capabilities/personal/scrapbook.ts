@@ -2,6 +2,8 @@ import { logger } from '../../../shared/logger.js';
 import { getErrorMessage } from '../../../shared/errors.js';
 import type { RegisteredCapability } from '../registry.js';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
+// Vendored copy of @scrapbook/schema (private monorepo); see header + scripts/check-scrap-schema-drift.mjs
+import { isPublicScrap, publicTags, cleanTitle, permalink } from './scrap-schema.js';
 
 // Initialize Supabase client lazily
 let supabase: SupabaseClient | null = null;
@@ -23,6 +25,22 @@ function getSupabase(): SupabaseClient {
 // Select fields (exclude heavy embedding fields)
 const SELECT_FIELDS =
   'scrap_id,id,created_at,source,type,content,url,title,tags,concept_tags,summary,relationships,location,content_type,shared';
+
+// The bot only ever talks about public rows: shared=true in the query, then the schema's
+// visibility rule (drops __run_lock__/init-test sentinels, !hide, url-less rows) in code.
+// Over-fetch because the code filter drops rows after the SQL limit.
+const FETCH_FACTOR = 3;
+const FETCH_MAX = 200;
+
+function overfetch(limit: number): number {
+  return Math.min(limit * FETCH_FACTOR, FETCH_MAX);
+}
+
+function publicOnly(rows: Scrap[] | null): Scrap[] {
+  return (rows || []).filter((row) => isPublicScrap(row));
+}
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 interface Scrap {
   scrap_id: string;
@@ -63,8 +81,9 @@ function formatScrap(scrap: Scrap): string {
   parts.push(`(${typeIcons[type?.toLowerCase()] || type})`);
 
   // Title or content preview
-  if (scrap.title && scrap.title !== '[no title]') {
-    parts.push(scrap.title.substring(0, 100));
+  const title = cleanTitle(scrap.title);
+  if (title) {
+    parts.push(title.substring(0, 100));
   } else if (scrap.content) {
     parts.push(scrap.content.substring(0, 100).replace(/\n/g, ' '));
   }
@@ -75,8 +94,9 @@ function formatScrap(scrap: Scrap): string {
   }
 
   // Tags
-  if (scrap.tags?.length > 0) {
-    parts.push(`\n  Tags: ${scrap.tags.slice(0, 5).join(', ')}`);
+  const tags = publicTags(scrap.tags);
+  if (tags.length > 0) {
+    parts.push(`\n  Tags: ${tags.slice(0, 5).join(', ')}`);
   }
 
   // Summary (truncated)
@@ -91,7 +111,11 @@ function formatScrap(scrap: Scrap): string {
   }
 
   // Public URL
-  parts.push(`\n  View: https://ejfox.com/scrapbook/${scrap.scrap_id || scrap.id}`);
+  // website2 serves /scraps/<uuid id>; there is no /scrapbook/ route and scrap_id is not the key
+  const link = permalink(scrap);
+  if (link) {
+    parts.push(`\n  View: ${link}`);
+  }
 
   return parts.join(' ');
 }
@@ -104,22 +128,24 @@ async function searchScraps(query: string, limit: number = 10): Promise<string> 
   const { data, error } = await client
     .from('scraps')
     .select(SELECT_FIELDS)
+    .eq('shared', true)
     .or(
       `content.ilike.${searchPattern},summary.ilike.${searchPattern},title.ilike.${searchPattern}`
     )
     .order('created_at', { ascending: false })
-    .limit(limit);
+    .limit(overfetch(limit));
 
   if (error) {
     throw new Error(`Scrapbook search error: ${error.message}`);
   }
 
-  if (!data || data.length === 0) {
+  const rows = publicOnly(data as Scrap[] | null).slice(0, limit);
+  if (rows.length === 0) {
     return `No scraps found matching "${query}"`;
   }
 
-  const results = data.map((scrap: Scrap, i: number) => `${i + 1}. ${formatScrap(scrap)}`);
-  return `Found ${data.length} scraps matching "${query}":\n\n${results.join('\n\n')}`;
+  const results = rows.map((scrap: Scrap, i: number) => `${i + 1}. ${formatScrap(scrap)}`);
+  return `Found ${rows.length} scraps matching "${query}":\n\n${results.join('\n\n')}`;
 }
 
 async function getRecentScraps(limit: number = 10, source?: string): Promise<string> {
@@ -128,8 +154,9 @@ async function getRecentScraps(limit: number = 10, source?: string): Promise<str
   let queryBuilder = client
     .from('scraps')
     .select(SELECT_FIELDS)
+    .eq('shared', true)
     .order('created_at', { ascending: false })
-    .limit(limit);
+    .limit(overfetch(limit));
 
   if (source) {
     queryBuilder = queryBuilder.eq('source', source);
@@ -141,37 +168,50 @@ async function getRecentScraps(limit: number = 10, source?: string): Promise<str
     throw new Error(`Scrapbook fetch error: ${error.message}`);
   }
 
-  if (!data || data.length === 0) {
+  const rows = publicOnly(data as Scrap[] | null).slice(0, limit);
+  if (rows.length === 0) {
     return 'No recent scraps found';
   }
 
-  const results = data.map((scrap: Scrap, i: number) => `${i + 1}. ${formatScrap(scrap)}`);
+  const results = rows.map((scrap: Scrap, i: number) => `${i + 1}. ${formatScrap(scrap)}`);
   let sourceStr: string;
   if (source) {
     sourceStr = ` from ${source}`;
   } else {
     sourceStr = '';
   }
-  return `${data.length} most recent scraps${sourceStr}:\n\n${results.join('\n\n')}`;
+  return `${rows.length} most recent scraps${sourceStr}:\n\n${results.join('\n\n')}`;
 }
 
 async function getScrapById(scrapId: string): Promise<string> {
   const client = getSupabase();
 
-  const { data, error } = await client.from('scraps').select('*').eq('scrap_id', scrapId).single();
+  // Accepts the scrap_id ("pinboard-<hash>") or the uuid id from the permalink. Explicit
+  // columns: select('*') drags the jsonb embedding columns (13 MB at 500 rows) over the wire.
+  let column = 'scrap_id';
+  if (UUID_RE.test(scrapId)) {
+    column = 'id';
+  }
+  const { data, error } = await client
+    .from('scraps')
+    .select(SELECT_FIELDS)
+    .eq('shared', true)
+    .eq(column, scrapId)
+    .maybeSingle();
 
   if (error) {
     throw new Error(`Scrapbook fetch error: ${error.message}`);
   }
 
-  if (!data) {
+  if (!data || !isPublicScrap(data)) {
     return `No scrap found with ID: ${scrapId}`;
   }
 
   // Format full details
   const parts: string[] = [`Scrap Details (${scrapId}):`];
 
-  if (data.title) parts.push(`Title: ${data.title}`);
+  const title = cleanTitle(data.title);
+  if (title) parts.push(`Title: ${title}`);
   parts.push(`Created: ${new Date(data.created_at).toLocaleString()}`);
   if (data.source) parts.push(`Source: ${data.source}`);
   if (data.content_type) parts.push(`Type: ${data.content_type}`);
@@ -194,8 +234,9 @@ async function getScrapById(scrapId: string): Promise<string> {
     parts.push(`\nSummary:\n${data.summary}`);
   }
 
-  if (data.tags?.length > 0) {
-    parts.push(`\nTags: ${data.tags.join(', ')}`);
+  const tags = publicTags(data.tags);
+  if (tags.length > 0) {
+    parts.push(`\nTags: ${tags.join(', ')}`);
   }
 
   if (data.concept_tags?.length > 0) {
@@ -212,7 +253,10 @@ async function getScrapById(scrapId: string): Promise<string> {
     parts.push(`\nRelationships:\n${rels.join('\n')}`);
   }
 
-  parts.push(`\nPublic URL: https://ejfox.com/scrapbook/${data.scrap_id || data.id}`);
+  const link = permalink(data);
+  if (link) {
+    parts.push(`\nPublic URL: ${link}`);
+  }
 
   return parts.join('\n');
 }
@@ -224,6 +268,7 @@ async function queryByEntity(entityName: string, limit: number = 20): Promise<st
   const { data, error } = await client
     .from('scraps')
     .select(SELECT_FIELDS)
+    .eq('shared', true)
     .not('relationships', 'is', null);
 
   if (error) {
@@ -237,7 +282,7 @@ async function queryByEntity(entityName: string, limit: number = 20): Promise<st
   // Filter scraps that mention the entity
   const normalizedQuery = entityName.toLowerCase().trim();
 
-  const matchingScraps = data.filter((scrap: Scrap) => {
+  const matchingScraps = publicOnly(data as Scrap[]).filter((scrap: Scrap) => {
     if (!scrap.relationships || !Array.isArray(scrap.relationships)) return false;
 
     return scrap.relationships.some((rel) => {
