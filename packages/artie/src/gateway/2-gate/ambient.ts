@@ -344,20 +344,19 @@ JSON response:`;
         reason: string;
       }>(rawResponse, 'object');
       if (judgment) {
+        // No `reason`: the judge often quotes the message, and logs ship to Loki.
         logger.info(
-          `🤔 Proactive judgment: answer=${judgment.answer}, confidence=${judgment.confidence}, reason="${judgment.reason}"`
+          `🤔 Proactive judgment: answer=${judgment.answer}, confidence=${judgment.confidence}`
         );
 
         // Require confidence > 0.7 to answer (be conservative)
         const shouldAnswer = judgment.answer && judgment.confidence > 0.7;
         const decisionText = booleanToYesNo(shouldAnswer);
-        logger.info(
-          `🤔 Final decision for "${message.content.substring(0, 50)}...": ${decisionText}`
-        );
+        logger.info(`🤔 Final decision for message ${message.id}: ${decisionText}`);
         return shouldAnswer;
       }
     } catch {
-      logger.warn(`Failed to parse judgment JSON: ${rawResponse}`);
+      logger.warn(`Failed to parse judgment JSON (${rawResponse.length} chars) for ${message.id}`);
     }
 
     // Fallback: check for yes/no in response
@@ -365,7 +364,7 @@ JSON response:`;
     const hasYes = decision.includes('yes');
     const fallbackDecisionText = booleanToYesNo(hasYes);
     logger.info(
-      `🤔 Fallback judgment for "${message.content.substring(0, 50)}...": "${rawResponse}" -> ${fallbackDecisionText}`
+      `🤔 Fallback judgment for message ${message.id}: -> ${fallbackDecisionText}`
     );
     return hasYes;
   } catch (error) {

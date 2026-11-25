@@ -6,6 +6,7 @@ import { describe, it, expect } from 'vitest';
 import { join } from 'path';
 import {
   findHeadingLine,
+  findSectionEnd,
   getGuildNotesPath,
   scratchpadKey,
 } from '../../../../src/engine/capabilities/planning/scratchpad.js';
@@ -27,6 +28,25 @@ describe('getGuildNotesPath', () => {
     const pad = '# Notes\n## Community Members\n- a\n## Community\n- b';
     expect(findHeadingLine(pad, '## Community')).toBe(pad.indexOf('## Community\n'));
     expect(findHeadingLine(pad, '## Recurring')).toBe(-1);
+  });
+
+  it('headings inside code fences are not section boundaries', () => {
+    const pad = '## Notes\n- a\n```md\n## Example\n```\n## Other\n- b';
+    expect(findHeadingLine(pad, '## Example')).toBe(-1);
+    expect(findSectionEnd(pad, 0)).toBe(pad.indexOf('\n## Other'));
+    expect(findSectionEnd(pad, pad.indexOf('## Other'))).toBe(-1);
+  });
+
+  it('a fence closes only on the same marker, at least as long', () => {
+    const pad = '## A\n````\n```\n## Inside\n````\n~~~\n## Tilde\n~~~\n## B';
+    expect(findHeadingLine(pad, '## Inside')).toBe(-1);
+    expect(findHeadingLine(pad, '## Tilde')).toBe(-1);
+    expect(findSectionEnd(pad, 0)).toBe(pad.indexOf('\n## B'));
+  });
+
+  it('a line of inline code is not a fence', () => {
+    const pad = '## A\n```inline code```\n## B';
+    expect(findHeadingLine(pad, '## B')).toBe(pad.indexOf('## B'));
   });
 
   it('DM, default and unconfigured pads live in GUILD_NOTES_DIR', () => {

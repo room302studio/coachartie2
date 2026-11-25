@@ -144,14 +144,48 @@ async function saveScratchpad(guildId: string, content: string): Promise<void> {
   }
 }
 
-/** Index of the line that is exactly `heading` (trailing spaces allowed), or -1. */
-export function findHeadingLine(content: string, heading: string): number {
+/**
+ * Offsets of the `## ` heading lines, skipping any inside code fences. CommonMark fences: an
+ * opening run of 3+ backticks or tildes; only a run of the SAME character, at least as long,
+ * with nothing after it, closes it.
+ */
+function h2Lines(content: string): Array<{ offset: number; line: string }> {
+  const found: Array<{ offset: number; line: string }> = [];
   let offset = 0;
+  let fence: { char: string; length: number } | null = null;
   for (const line of content.split('\n')) {
-    if (line.trimEnd() === heading) {
-      return offset;
+    const run = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(line);
+    if (fence) {
+      const closes =
+        run && run[1][0] === fence.char && run[1].length >= fence.length && !run[2].trim();
+      if (closes) {
+        fence = null;
+      }
+    } else if (run && !(run[1][0] === '`' && run[2].includes('`'))) {
+      // (a backtick run with another backtick after it is inline code, not a fence)
+      fence = { char: run[1][0], length: run[1].length };
+    } else if (line.startsWith('## ')) {
+      found.push({ offset, line: line.trimEnd() });
     }
     offset += line.length + 1;
+  }
+  return found;
+}
+
+/** Index of the heading line that is exactly `heading` (outside code fences), or -1. */
+export function findHeadingLine(content: string, heading: string): number {
+  const hit = h2Lines(content).find((h) => h.line === heading);
+  if (hit) {
+    return hit.offset;
+  }
+  return -1;
+}
+
+/** Where the section starting at `start` ends: the newline before the next heading, or -1. */
+export function findSectionEnd(content: string, start: number): number {
+  const next = h2Lines(content).find((h) => h.offset > start);
+  if (next) {
+    return next.offset - 1;
   }
   return -1;
 }
@@ -313,13 +347,11 @@ async function runPadAction(
 
       let newContent: string;
       if (sectionIndex !== -1 && text) {
-        // Find where this section ends (next ## or end of file)
-        const afterSection = current.substring(sectionIndex + sectionHeader.length);
-        const nextSectionMatch = afterSection.match(/\n## /);
+        // Find where this section ends (next ## outside a code fence, or end of file)
+        const insertPoint = findSectionEnd(current, sectionIndex);
 
-        if (nextSectionMatch && nextSectionMatch.index !== undefined) {
+        if (insertPoint !== -1) {
           // Insert before next section
-          const insertPoint = sectionIndex + sectionHeader.length + nextSectionMatch.index;
           newContent =
             current.substring(0, insertPoint) + `\n- ${text}` + current.substring(insertPoint);
         } else {

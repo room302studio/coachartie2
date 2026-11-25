@@ -47,7 +47,8 @@ export async function runDMGate(
       // Pairing mode: send pairing code
       logDMGate('blocked_pairing', {
         ...dmWho,
-        detail: `unverified, sent pairing code: "${message.content.slice(0, 80)}" [${shortId}]`,
+        // No message text: this goes to logs (Loki). The pairing alert to EJ below quotes it.
+        detail: `unverified, sent pairing code (${message.content.length} chars) [${shortId}]`,
       });
 
       try {

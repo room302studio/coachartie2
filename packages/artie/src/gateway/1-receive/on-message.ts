@@ -65,6 +65,7 @@ import { runMentionProxy } from '../2-gate/mention-proxy.js';
 import { handleMessageAsIntent } from '../3-ask-engine/build-request.js';
 import { handleQuizAnswer } from '../commands/quiz/command.js';
 import { existsSync, unlinkSync } from 'fs';
+import { createHash } from 'crypto';
 import { looksLikeGithubActivity } from './github-signals.js';
 import { replaceMention } from '../../shared/mentions.js';
 import {
@@ -740,8 +741,14 @@ async function respondOrObserve(turn: Turn): Promise<StepResult> {
       cleanMessage = replaceMention(cleanMessage, id, `@${name}`);
     }
 
-    // Deduplication: prevent processing identical messages within TTL window
-    const messageKey = `${message.author.id}-${fullMessage}-${message.channelId}`;
+    // Deduplication: prevent processing identical messages within TTL window. The key is a
+    // hash, never the text: it is logged and sent to telemetry, which ship to Loki.
+    // Attachment ids are in it so two different text-less uploads aren't "duplicates".
+    const attachmentIds = [...message.attachments.keys()].join(',');
+    const messageKey = createHash('sha256')
+      .update(`${message.author.id}\n${message.channelId}\n${attachmentIds}\n${fullMessage}`)
+      .digest('hex')
+      .slice(0, 16);
     const now = Date.now();
 
     // Cleanup expired cache entries
@@ -791,17 +798,11 @@ async function respondOrObserve(turn: Turn): Promise<StepResult> {
         recordAmbientResponse();
       }
 
-      const _truncatedMsg = cleanMessage.substring(0, 100);
-      let _suffix: string;
-      if (cleanMessage.length > 100) {
-        _suffix = '...';
-      } else {
-        _suffix = '';
-      }
+      // Length only, never the text: logs ship to Loki.
       logger.info(`🤖 Will respond to message [${shortId}] (trigger: ${triggerType})`, {
         correlationId,
         author: message.author.tag,
-        cleanMessage: _truncatedMsg + _suffix,
+        messageLength: cleanMessage.length,
       });
 
       telemetry.logEvent(
