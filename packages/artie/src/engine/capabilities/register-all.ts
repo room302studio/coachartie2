@@ -60,7 +60,6 @@ import { discordUserHistoryCapability } from './discord/user-history.js';
 import { discordIssueParserCapability } from './discord/issue-parser.js';
 import { sendMetroFileCapability } from './discord/send-metro-file.js';
 // Communication capabilities
-import { askQuestionCapability } from './people/ask-question.js';
 import { mentionProxyCapability } from './people/mention-proxy.js';
 import { emailCapability } from './people/email.js';
 import { redditCapability } from './personal/reddit.js';
@@ -126,7 +125,7 @@ class CapabilityBootstrap {
         filesystemCapability, memoryCapability,
         githubCapability, creditStatusCapability, botConfigCapability,
         systemMonitorCapability, tasksCapability,
-        meetingCapability, discordUICapability, askQuestionCapability, discordForumsCapability,
+        meetingCapability, discordUICapability, discordForumsCapability,
         discordModerationCapability, mentionProxyCapability, emailCapability, proactiveDMCapability,
         userProfileCapability, pairingCapability, approvalsCapability, mediaWikiCapability, wolframCapability,
         schedulerCapability, promisesCapability, sequenceCapability, sandboxCapability,

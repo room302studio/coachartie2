@@ -1,5 +1,6 @@
-# Dependencies
-node_modules/
+# Dependencies (no trailing slash: "node_modules/" skips symlinks, and a worktree's
+# node_modules symlink got committed that way in 9870569b and broke a deploy)
+node_modules
 .pnp
 .pnp.js
 

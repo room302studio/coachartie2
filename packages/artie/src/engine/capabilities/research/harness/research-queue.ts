@@ -311,7 +311,6 @@ class ResearchQueueService {
           step_type: 'deep_research',
         });
 
-        // TODO: Write results to wiki, notify user
         await this.handleCompletion(task, result);
       } else if (status.status === 'failed') {
         db.run(`UPDATE research_tasks SET status = 'failed', error = ? WHERE id = ?`, [
@@ -327,19 +326,15 @@ class ResearchQueueService {
   }
 
   /**
-   * Handle completed research - write to wiki, notify user
+   * Log a finished task. Delivery is pull-based: the result is saved on the task row and the
+   * person (or Artie) reads it with deep_research `results`. Nothing pushes it anywhere, by
+   * design; there's no wiki/Discord/entityhub hand-off.
    */
   private async handleCompletion(task: QueuedTask, result: TaskResult): Promise<void> {
-    // TODO: Implement wiki integration
-    // TODO: Implement Discord notification
-    // TODO: Implement entityhub integration
-
     logger.info(`🔬 Research "${task.prompt.slice(0, 50)}..." completed`);
     logger.info(`   Cost: $${result.cost.total.toFixed(2)}`);
     logger.info(`   Tool calls: ${result.toolCalls?.length || 0}`);
     logger.info(`   Result length: ${result.content.length} chars`);
-
-    // For now, just log. Will wire up wiki/notifications later.
   }
 }
 

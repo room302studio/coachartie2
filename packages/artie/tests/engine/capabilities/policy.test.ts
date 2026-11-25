@@ -104,7 +104,7 @@ const GATE_FLOOR: Record<string, Record<string, string>> = {
  * must ship declared, and a tool that becomes fully declared must be removed from here.
  */
 const KNOWN_UNDECLARED = new Set([
-  'ask-question', 'autonomous', 'bot-config', 'calculator', 'community-analytics',
+  'autonomous', 'bot-config', 'calculator', 'community-analytics',
   'context', 'credit_status', 'diagnose',
   'discord-issue-parser',
   'embedded_mcp', 'flashcard', 'goals', 'image_gen',

@@ -4,9 +4,6 @@
     "deny",
     "list"
   ],
-  "ask-question": [
-    "ask"
-  ],
   "autonomous": [
     "config",
     "heartbeat",

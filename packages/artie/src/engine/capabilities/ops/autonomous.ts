@@ -5,7 +5,7 @@
  * - Heartbeat status and configuration
  * - Model routing preferences
  * - Scheduled task management
- * - Daily summarization
+ * - Reading old daily summaries (none are written any more; see memory/daily-summaries.ts)
  *
  * This is the control panel for Artie's proactive behavior.
  */
@@ -67,9 +67,7 @@ async function handleAutonomous(
 
 **Scheduled Jobs**
 - Heartbeat: Every hour at :30
-- Daily Summarization: 6 AM UTC
 - Memory Gardening: 5 AM UTC
-- Daily Reflection: 4 AM UTC
 
 Say "autonomous config" to customize these settings.`;
       }
@@ -177,16 +175,14 @@ Artie runs proactive behaviors in the background:
 **Commands:**
 - \`autonomous status\` - Overall system health
 - \`autonomous heartbeat\` - Heartbeat status
-- \`autonomous summaries\` - Your conversation summaries
+- \`autonomous summaries\` - Your old conversation summaries (up to 2026-11-23)
 - \`autonomous models\` - Model routing config
 - \`autonomous route [message]\` - Test model selection
 - \`autonomous config\` - Configuration options
 
 **What Runs Automatically:**
 1. **Hourly Heartbeat** - Checks on stalled quests, nudges you
-2. **Daily Summarization** - Creates memory from conversations
-3. **Memory Gardening** - Links and prunes memories
-4. **Daily Reflection** - Learns from feedback`;
+2. **Memory Gardening** - Links and prunes memories`;
       }
     }
   } catch (error) {
@@ -208,11 +204,11 @@ export const autonomousCapability: RegisteredCapability = {
   description: `Control panel for Artie's autonomous behaviors. Actions:
 - status: Overall autonomous system health
 - heartbeat: Check heartbeat status (proactive nudges)
-- summaries: View your daily conversation summaries
+- summaries: View your old daily conversation summaries (none written after 2026-11-23)
 - models: See model routing configuration (Haiku/Sonnet/Opus)
 - route: Test which model would be selected for a message
 - config: View configuration options
 
-Artie automatically: nudges stalled quests, creates daily memory summaries, routes to cost-effective models.`,
+Artie automatically: nudges stalled quests, gardens memories, routes to cost-effective models.`,
   handler: handleAutonomous,
 };

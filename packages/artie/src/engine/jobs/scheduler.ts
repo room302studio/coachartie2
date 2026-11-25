@@ -784,8 +784,7 @@ export class SchedulerService {
           logger.error('❌ Morning briefing DM delivery failed:', dmError);
         }
       }
-
-      // TODO: Add SMS delivery when channel === 'sms' or 'both'
+      // Discord DM is the only delivery: the SMS package was removed (2026-11-25).
     } catch (error) {
       logger.error('❌ Morning briefing failed:', error);
     }
