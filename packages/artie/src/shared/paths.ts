@@ -50,7 +50,7 @@ function findRepoRoot(startDir: string): string {
     if (parent === dir) {
       throw new Error(
         `paths.ts: walked up from ${startDir} to the filesystem root without finding ` +
-          `pnpm-workspace.yaml. This module (packages/shared/src/paths.ts) must live inside ` +
+          `pnpm-workspace.yaml. This module (packages/artie/src/shared/paths.ts) must live inside ` +
           `the coachartie2 workspace for REPO_ROOT to resolve.`
       );
     }
@@ -59,9 +59,8 @@ function findRepoRoot(startDir: string): string {
 }
 
 // This file's own location — NOT process.cwd(). Whether it's loaded from
-// packages/shared/src/paths.ts (ts-node/tsx/vitest) or packages/shared/dist/paths.js (the
-// built output PM2 actually runs), it sits at the same depth under the repo root, so the walk
-// up finds the same REPO_ROOT either way.
+// packages/artie/src/shared/paths.ts (tsx/vitest) or packages/artie/dist/shared/paths.js (the
+// built output PM2 runs), the walk up finds the same REPO_ROOT either way.
 const __selfDir = dirname(fileURLToPath(import.meta.url));
 
 /**
@@ -74,12 +73,9 @@ const __selfDir = dirname(fileURLToPath(import.meta.url));
  * fallback — it was always plain `path.resolve(process.cwd(), '../..')`.
  *
  * `REPO_ROOT` here deliberately does NOT read `APP_ROOT` — it is the one answer every call site
- * shares, and `APP_ROOT` was historically an override for exactly one of them
- * (`message-handler.ts`'s guild-persona lookup), not a repo-wide one. `.env.production` (read
- * by `ecosystem.config.cjs`, not by this process, and off-limits to open or print per the
- * secrets rules) might still set `APP_ROOT` for all I can verify from here, so
- * `message-handler.ts`'s `resolveRepoRoot()` keeps checking it itself before falling back to
- * `REPO_ROOT`, exactly as it did before. The `/app` Docker fallback there is genuinely gone —
+ * shares, and `APP_ROOT` was historically an override for guild-file lookups only, not a
+ * repo-wide one. That override lives in `getGuildDocsRoot()` below (prod sets `APP_ROOT` to the
+ * repo root, so today both agree). The `/app` Docker fallback is genuinely gone —
  * the Dockerfiles, docker-compose.prod.yml and start.sh it depended on were deleted in wave 1,
  * so no directory named `/app` exists in any environment this repo now runs in.
  */
