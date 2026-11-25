@@ -4,7 +4,9 @@
  * Encoded customId scheme so we can route interactions without per-user state
  * in memory:
  *   quiz:daily:guess:<date>:<deck>    button → opens guess modal
- *   quiz:daily:modal:<date>:<deck>    modal submit
+ *   quiz:daily:modal:<date>:q<n>:<deck>  modal submit for question n (1-based). The n lets a
+ *                                        stale modal be refused (one opened on two devices).
+ *                                        Modals from before 2026-11-25 have no q<n>.
  *   quiz:daily:share:<date>:<deck>    button → posts public share card
  *   quiz:daily:replay:<date>:<deck>   button (post-share) → no-op informational
  *
@@ -52,6 +54,7 @@ interface ParsedDailyId {
   action: DailyAction;
   date: string;
   deck: string; // "" means all decks
+  question?: number; // modal ids only: the 1-based question the modal was opened for
 }
 
 export function parseDailyCustomId(customId: string): ParsedDailyId | null {
@@ -63,6 +66,11 @@ export function parseDailyCustomId(customId: string): ParsedDailyId | null {
   if (action !== 'guess' && action !== 'modal' && action !== 'share' && action !== 'replay') {
     return null;
   }
+  let question: number | undefined;
+  if (action === 'modal' && deckParts.length >= 2 && /^q\d+$/.test(deckParts[0])) {
+    question = Number(deckParts[0].slice(1));
+    deckParts.shift();
+  }
   const deckRaw = deckParts.join(':');
   let deck: string;
   if (deckRaw === 'all') {
@@ -70,7 +78,10 @@ export function parseDailyCustomId(customId: string): ParsedDailyId | null {
   } else {
     deck = deckRaw;
   }
-  return { action, date, deck };
+  if (question === undefined) {
+    return { action, date, deck };
+  }
+  return { action, date, deck, question };
 }
 
 function deckLabel(deck: string): string {
@@ -796,7 +807,7 @@ export function buildLeaderboardMessage(
  */
 export function buildGuessModal(date: string, deck: string, questionNumber: number): ModalBuilder {
   const modal = new ModalBuilder()
-    .setCustomId(dailyCustomId('modal', date, deck))
+    .setCustomId(`${DAILY_PREFIX}modal:${date}:q${questionNumber}:${deck || 'all'}`)
     .setTitle(`Daily Quiz · Question ${questionNumber}`);
 
   const input = new TextInputBuilder()

@@ -142,7 +142,7 @@ describe('customId encoding', () => {
     expect(parseDailyCustomId(id)).toEqual({ action, date, deck });
   });
 
-  it.each(['quiz:hint', 'ask_123_yes'])('returns null for non-daily custom id %s', (id) => {
+  it.each(['quiz:hint', 'quiz:daily:bogus:2026-05-19:all'])('returns null for non-daily custom id %s', (id) => {
     expect(parseDailyCustomId(id)).toBeNull();
   });
 });
@@ -483,7 +483,19 @@ describe('embed builders', () => {
 
   it('guess modal has a single short text input', () => {
     const modal = buildGuessModal('2026-05-19', 'POLITICS', 3).toJSON();
-    expect(modal.custom_id).toBe('quiz:daily:modal:2026-05-19:POLITICS');
+    expect(modal.custom_id).toBe('quiz:daily:modal:2026-05-19:q3:POLITICS');
+    expect(parseDailyCustomId(modal.custom_id)).toEqual({
+      action: 'modal',
+      date: '2026-05-19',
+      deck: 'POLITICS',
+      question: 3,
+    });
+    // A modal opened before the q<n> segment existed still parses, with no question.
+    expect(parseDailyCustomId('quiz:daily:modal:2026-05-19:POLITICS')).toEqual({
+      action: 'modal',
+      date: '2026-05-19',
+      deck: 'POLITICS',
+    });
     expect(modal.title).toContain('Question 3');
     const row = modal.components[0] as any;
     expect(row.components[0].custom_id).toBe('answer');

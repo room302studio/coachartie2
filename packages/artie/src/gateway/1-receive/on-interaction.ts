@@ -716,6 +716,16 @@ async function handleModalSubmit(interaction: ModalSubmitInteraction): Promise<v
       return;
     }
 
+    // A modal opened for an earlier question (e.g. on a second device) must not grade its
+    // answer against the current one.
+    if (parsed.question !== undefined && parsed.question !== play.currentQuestion + 1) {
+      await interaction.reply({
+        content: '⚠️ That question was already answered. Press Guess again for the current one.',
+        ephemeral: true,
+      });
+      return;
+    }
+
     const card = puzzle.cards[play.currentQuestion];
     if (!card) {
       await interaction.reply({

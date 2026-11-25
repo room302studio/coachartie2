@@ -130,6 +130,16 @@ class ResearchQueueService {
     return rows.map((row) => this.rowToTask(row));
   }
 
+  /** Oldest first, for the poll loop: newest-first let new tasks starve old ones (Codex). */
+  private oldestTasks(status: QueuedTask['status'], limit: number): QueuedTask[] {
+    this.ensureTable();
+    const rows = getSyncDb().all<Record<string, unknown>>(
+      'SELECT * FROM research_tasks WHERE status = ? ORDER BY created_at ASC LIMIT ?',
+      [status, limit]
+    );
+    return rows.map((row) => this.rowToTask(row));
+  }
+
   private rowToTask(row: Record<string, unknown>): QueuedTask {
     let tools: QueuedTask['tools'];
     if (row.tools) {
@@ -207,14 +217,14 @@ class ResearchQueueService {
         return;
       }
 
-      // Submit pending tasks
-      const pending = this.listTasks('pending', 5);
+      // Submit pending tasks, first come first served
+      const pending = this.oldestTasks('pending', 5);
       for (const task of pending) {
         await this.submitTask(task);
       }
 
-      // Poll running tasks
-      const running = this.listTasks('running', 10);
+      // Poll every running task (submissions are capped at 5 a tick, so this stays small)
+      const running = this.oldestTasks('running', 1000);
       for (const task of running) {
         await this.pollTask(task);
       }
