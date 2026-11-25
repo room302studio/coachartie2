@@ -13,8 +13,6 @@ import {
   MENTION_PROXY_DATA,
   PROMPTS_DIR,
   REFERENCE_DOCS,
-  ENGINE_LOGS,
-  GATEWAY_LOGS,
   PM2_LOGS,
   getLogsDir,
   SKILLS_DIRS,
@@ -112,14 +110,6 @@ describe('directories', () => {
     expect(REFERENCE_DOCS).toEqual({ root: join(REPO_ROOT, 'reference-docs') });
   });
 
-  it('ENGINE_LOGS resolves to <repo>/packages/capabilities/logs', () => {
-    expect(ENGINE_LOGS).toBe(join(REPO_ROOT, 'packages/capabilities/logs'));
-  });
-
-  it('GATEWAY_LOGS resolves to <repo>/packages/discord/logs', () => {
-    expect(GATEWAY_LOGS).toBe(join(REPO_ROOT, 'packages/discord/logs'));
-  });
-
   it('PM2_LOGS resolves to <repo>/logs (PM2 out/error dir, not a winston dir)', () => {
     expect(PM2_LOGS).toBe(join(REPO_ROOT, 'logs'));
   });
@@ -166,7 +156,6 @@ describe('getGuildKnowledgeDirs', () => {
   it('matches the historical search order when APP_ROOT is unset', () => {
     delete process.env.APP_ROOT;
     expect(getGuildKnowledgeDirs()).toEqual([
-      join(REPO_ROOT, 'packages/capabilities'),
       REPO_ROOT,
       '/data2/apps/coachartie2',
       '/data2/coachartie2',
@@ -181,20 +170,8 @@ describe('getGuildKnowledgeDirs', () => {
 });
 
 describe('getEnvFiles', () => {
-  // Wave 9: one process loads the union of what the engine and gateway each loaded, in their
-  // precedence (dotenv: the first file to set a name wins).
-  it('returns the repo-root .env first, then the engine package .env (capabilities)', () => {
-    expect(getEnvFiles().slice(0, 2)).toEqual([
-      join(REPO_ROOT, '.env'),
-      join(REPO_ROOT, 'packages/capabilities/.env'),
-    ]);
-  });
-
-  it('then the gateway package .env (discord), last, and nothing else', () => {
-    expect(getEnvFiles()).toEqual([
-      join(REPO_ROOT, '.env'),
-      join(REPO_ROOT, 'packages/capabilities/.env'),
-      join(REPO_ROOT, 'packages/discord/.env'),
-    ]);
+  // 2026-11-25: the two old package .env files never existed on prod and are dropped.
+  it('is just the repo-root .env', () => {
+    expect(getEnvFiles()).toEqual([join(REPO_ROOT, '.env')]);
   });
 });

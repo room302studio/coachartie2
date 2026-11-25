@@ -19,8 +19,8 @@
 ```
 packages/artie/        The bot (below).
 packages/brain/        Nuxt dashboard: a submodule, its own PM2 app (coach-artie-brain).
-packages/capabilities/ Leftovers, no code: reference-docs/guild-notes (read at runtime).
-packages/discord/      Leftovers, no code: register-commands.ts (slash command registration).
+packages/discord/      Leftovers: register-commands.ts (slash command registration) and data/
+                       (casino ledger, launch state: live, see shared/paths.ts).
 docs/                  COST-GUARDRAILS.md (live), notes/ (feature notes, the cutover record),
                        great/, archive/ (superseded; history only).
 reference-docs/        Guild knowledge the model reads at runtime (room302studio/,
@@ -155,8 +155,8 @@ would kill every in-flight turn. PM2's `max_memory_restart` catches real leaks.
 
 ## Environment and data
 
-Env files load first-wins via `shared/paths.ts getEnvFiles()`: repo `.env`, then
-`packages/capabilities/.env`, then `packages/discord/.env`; PM2's env beats all three.
+Env files load via `shared/paths.ts getEnvFiles()`: just the repo `.env`; PM2's env beats
+it (dotenv never overrides a set variable).
 `.env.production` is read only by `ecosystem.config.cjs`, so an env change needs
 `pm2 delete coach-artie && pm2 start ecosystem.config.cjs --only coach-artie`, not a restart.
 

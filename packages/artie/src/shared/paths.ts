@@ -192,19 +192,9 @@ export const REFERENCE_DOCS = {
 export const ARTIE_LOGS = join(REPO_ROOT, 'packages/artie/logs');
 
 /**
- * Where the two pre-v3 processes' winston logs live on prod (the capabilities engine's and
- * the Discord gateway's). Nothing in v3 writes or reads them; they stay exported so
- * docs/notes/CUTOVER.md and anyone back-reading old logs has the paths. The live directory is `ARTIE_LOGS`.
- */
-export const ENGINE_LOGS = join(REPO_ROOT, 'packages/capabilities/logs');
-
-/** The pre-v3 Discord gateway's winston logs directory. See `ENGINE_LOGS`. */
-export const GATEWAY_LOGS = join(REPO_ROOT, 'packages/discord/logs');
-
-/**
  * PM2's own `out_file`/`error_file` directory — `ecosystem.config.cjs`'s
  * `capabilities-out.log`/`discord-out.log` etc, NOT winston's `*-combined.log`
- * (`ENGINE_LOGS`/`GATEWAY_LOGS` above). The vitals monitor is the one reader, and until now it
+ * (`ARTIE_LOGS` above). The vitals monitor is the one reader, and until now it
  * hardcoded the prod absolute path (`/data2/apps/coachartie2/logs`) with `VITALS_LOG_DIR` as
  * its only escape hatch — wrong for this worktree, and wrong for any environment besides that
  * one prod path. `VITALS_LOG_DIR` still wins at the call site; this just fixes the fallback to
@@ -245,12 +235,10 @@ export const SKILLS_DIRS: readonly string[] = [
 ];
 
 /**
- * The guild-prompt file search order `context-alchemy.ts`'s `loadGuildPrompt` walks, in order.
- * Preserves the exact order (and the two legacy `/data2/*` / `/app` absolute fallbacks
- * verbatim) from before — only the first two entries (`process.cwd()` and
- * `join(process.cwd(), '..', '..')`) are now anchored off `REPO_ROOT` instead of recomputed
- * from cwd each call; they resolve to the identical absolute paths today (cwd is always
- * `<repo>/packages/capabilities` for this call site).
+ * The guild-prompt file search order `engine/3-context/assemble.ts` walks, in order: the
+ * `APP_ROOT` override, the repo, then the legacy `/data2/*` / `/app` absolute fallbacks
+ * verbatim. (`<repo>/packages/capabilities` used to sit second, the old engine's cwd; it held
+ * no guild prompts and was removed with that directory on 2026-11-25.)
  *
  * `APP_ROOT` is read per call (not baked in at module load) because it's an env var this
  * search order has always consulted dynamically.
@@ -258,7 +246,6 @@ export const SKILLS_DIRS: readonly string[] = [
 export function getGuildKnowledgeDirs(): string[] {
   return [
     process.env.APP_ROOT,
-    join(REPO_ROOT, 'packages/capabilities'),
     REPO_ROOT,
     '/data2/apps/coachartie2',
     '/data2/coachartie2',
@@ -271,11 +258,9 @@ export function getGuildKnowledgeDirs(): string[] {
  * `config()` never overrides a variable that's already set, so the FIRST file to define a
  * name wins, and anything PM2 already put in `process.env` beats all three.
  *
- * Wave 9 (one process): the union of what the two processes loaded, in their precedence —
- * the repo-root `.env` (both loaded it first), then `packages/capabilities/.env` (the engine's
- * second file), then `packages/discord/.env` (the gateway's). If the two package files ever
- * define the same name differently, the engine's value now wins for the gateway too. Neither
- * package file exists on prod (checked 2026-10-23), so prod loads exactly the root `.env`.
+ * Just the repo-root `.env`. Wave 9 also listed `packages/capabilities/.env` and
+ * `packages/discord/.env` (the two old processes' own files); neither ever existed on prod
+ * (checked 2026-10-23 and 2026-11-25), so dropping them changed nothing that loads.
  *
  * `openrouter.ts` deliberately does NOT call this — see its own comment. On prod its old
  * `resolve(__dirname, …)` paths never existed, so it only ever read what PM2 already put in
@@ -284,9 +269,5 @@ export function getGuildKnowledgeDirs(): string[] {
  * and model env vars resolve to.
  */
 export function getEnvFiles(): string[] {
-  return [
-    join(REPO_ROOT, '.env'),
-    join(REPO_ROOT, 'packages', 'capabilities', '.env'),
-    join(REPO_ROOT, 'packages', 'discord', '.env'),
-  ];
+  return [join(REPO_ROOT, '.env')];
 }
